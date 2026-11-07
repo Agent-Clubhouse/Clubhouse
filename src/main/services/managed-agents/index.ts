@@ -11,7 +11,7 @@ import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
 import type { OrchestratorProvider } from '../../orchestrators/types';
 import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
-import type { ManagedAgentStatus } from '../../../shared/managed-agents-types';
+import type { ManagedAgentStatus, ManagedMcpProblem } from '../../../shared/managed-agents-types';
 import { createManagedAgentsService, ManagedError, type ManagedAgentsService } from './service';
 import { createManagedStateStore, managedStateDir } from './state-store';
 import { ensureBuiltinsOnceFor } from './builtins-once';
@@ -84,6 +84,16 @@ export function _setManagedAgentsForTesting(next: ManagedAgentsService | null): 
 const delivered = new Map<string, DeliveryRecord>();
 /** Agents whose last delivery failed, with the reason, until a delivery succeeds. */
 const failedDeliveries = new Map<string, string>();
+/** Each running session's MCP servers that can't start for want of a variable, by name (D91). */
+const mcpProblems = new Map<string, ManagedMcpProblem[]>();
+
+/** The spawn path: what this session's MCP servers lack. Details shows it while the agent runs. */
+export function recordMcpStartProblems(agentId: string, problems: ManagedMcpProblem[]): void {
+  const before = JSON.stringify(mcpProblems.get(agentId) ?? []);
+  if (problems.length > 0) mcpProblems.set(agentId, problems.map((p) => ({ server: p.server, missingEnv: [...p.missingEnv] })));
+  else mcpProblems.delete(agentId);
+  if (JSON.stringify(problems) !== before) broadcastToAllWindows(IPC.MANAGED.CHANGED);
+}
 
 /** Spawn path: write the setup into the agent's folder and remember what this session got. */
 export async function deliverForSpawn(projectPath: string, agent: DurableAgentConfig, provider: OrchestratorProvider): Promise<void> {
@@ -191,9 +201,11 @@ export async function statusFor(projectPath: string, agentId: string): Promise<M
     const migrationFailed = agent?.managedMigrationFailure?.message;
     return { managed: false, running, waiting: false, changes: [], cliChanged: false, ...(migrationFailed && { migrationFailed }) };
   }
-  const notice = agent.managedMigration && !agent.managedMigration.dismissed
-    ? { migrated: { from: agent.managedMigration.from, backup: agent.managedMigration.backup } }
-    : {};
+  const problems = running ? mcpProblems.get(agentId) : undefined;
+  const notice = {
+    ...(agent.managedMigration && !agent.managedMigration.dismissed && { migrated: { from: agent.managedMigration.from, backup: agent.managedMigration.backup } }),
+    ...(problems && problems.length > 0 && { mcpProblems: problems }),
+  };
   const failed = failedDeliveries.get(agentId);
   if (running && failed) {
     return { managed: true, running, waiting: true, changes: [`Setup couldn't be written: ${failed}`], cliChanged: false, deliveryFailed: failed, ...notice };
@@ -229,6 +241,7 @@ export async function dismissMigrationNotice(projectPath: string, agentId: strin
 export function forgetDelivery(agentId: string): void {
   delivered.delete(agentId);
   failedDeliveries.delete(agentId);
+  mcpProblems.delete(agentId);
 }
 
 // ── Restart ────────────────────────────────────────────────────────────

@@ -36,6 +36,7 @@ import { lookupClaudeCliVersion, type ClaudeVersionLookup } from './cli-version'
 import { ClaudeSdkTransport } from './sdk-transport';
 import { ClaudeStreamTransport } from './stream-transport';
 import { CLAUDE_EFFORTS, ClaudeStartupTimeoutError, type ClaudeEffort, type ClaudeImageInput, type ClaudeTransport, type ClaudeTransportLog, type ClaudeTransportOptions } from './transport';
+import { safeMcpErrorLine } from '../../services/mcp-error-text';
 
 export type ClaudeChatDriverId = Extract<ChatDriverId, 'claude_agent_sdk' | 'claude_stream_json'>;
 
@@ -922,7 +923,10 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
             nativeSessionId: ev.sessionId || undefined,
             cliVersion: ev.cliVersion || undefined,
             model: ev.model || undefined,
-            ...(ev.mcpServers && { mcpServers: ev.mcpServers.map((s) => ({ name: s.name, status: claudeMcpStatus(s.status) })) }),
+            ...(ev.mcpServers && { mcpServers: ev.mcpServers.map((s) => {
+              const error = s.error ? safeMcpErrorLine(s.error) : undefined;
+              return { name: s.name, status: claudeMcpStatus(s.status), ...(error && { error }) };
+            }) }),
             ...(ev.sessionId && ev.sessionId.length <= 512 && { providerSkills: {
               provider: PROVIDER, driver: this.driverId, source: 'system/init' as const,
               nativeSessionId: ev.sessionId, names: ev.skills ?? null,

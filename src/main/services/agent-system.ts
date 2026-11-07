@@ -718,6 +718,26 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
   }
 }
 
+/**
+ * A managed agent starting in the terminal: its MCP servers whose variables
+ * aren't set in the environment the CLI gets (the shell's plus Clubhouse's)
+ * won't start. Say which by name in the terminal's setup notice, and keep them
+ * for Details (D91). Never fails the start.
+ */
+async function noteTerminalMcpProblems(projectPath: string, agentId: string, config: DurableAgentConfig, spawnEnv: Record<string, string>): Promise<void> {
+  try {
+    const { resolveProjectMcpServers } = await import('./agent-mcp-servers');
+    const { missingEnvNotice, missingMcpEnv } = await import('../../shared/mcp-start-problems');
+    const { getShellEnvironment } = await import('../util/shell');
+    const problems = missingMcpEnv(await resolveProjectMcpServers(projectPath, config), { ...getShellEnvironment(), ...spawnEnv });
+    (await import('./managed-agents')).recordMcpStartProblems(agentId, problems);
+    for (const problem of problems) broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, agentId, missingEnvNotice(problem));
+  } catch (err) {
+    // telemetry-exempt: a hint only; the CLI reports the server's own failure
+    appLog('core:agent', 'warn', 'Could not check managed MCP server variables', { meta: { agentId, error: err instanceof Error ? err.message : String(err) } });
+  }
+}
+
 async function spawnPtyAgent(
   params: SpawnAgentParams,
   provider: OrchestratorProvider,
@@ -892,6 +912,9 @@ async function spawnPtyAgent(
   };
   // No bridge here: never point the agent at a port from its base env (#2620).
   if (mcpPort <= 0) delete spawnEnv.CLUBHOUSE_MCP_PORT;
+
+  // A managed agent's MCP server whose variables aren't set won't start: say which, by name (D91).
+  if (params.kind === 'durable' && durableConfig?.managed) await noteTerminalMcpProblems(params.projectPath, params.agentId, durableConfig, spawnEnv);
 
   if (profileEnv) {
     appLog('core:agent', 'info', 'Profile env injected', {

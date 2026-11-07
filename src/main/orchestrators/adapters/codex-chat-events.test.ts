@@ -689,22 +689,35 @@ describe('MCP startup status', () => {
     params: { threadId: null, name: 'remote', status: s, error, failureReason: null },
   });
 
-  it('reports a server that failed to start', () => {
+  it('reports a server that failed to start, in the chat and in its MCP server list', () => {
     expect(status('failed', 'connection refused')).toEqual([
+      { type: 'session_info', data: { mcpServers: [{ name: 'remote', status: 'failed', error: 'connection refused' }] } },
       { type: 'notice', data: { level: 'warn', code: 'mcp_server_failed', message: 'MCP server remote failed to start: connection refused' } },
     ]);
   });
 
   it('strips URL query strings and shortens Codex\'s error text', () => {
-    const [notice] = status('failed', `GET https://mcp.example.test/mcp?token=abc123&x=1 returned 401 ${'x'.repeat(300)}`);
+    const events = status('failed', `GET https://mcp.example.test/mcp?token=abc123&x=1 returned 401 ${'x'.repeat(300)}`);
+    const notice = events.find((e) => e.type === 'notice')!;
+    expect(JSON.stringify(events)).not.toContain('abc123');
     expect(notice.type === 'notice' && notice.data.message).not.toContain('abc123');
     expect(notice.type === 'notice' && notice.data.message).toContain('https://mcp.example.test/mcp?…');
     expect(notice.type === 'notice' && notice.data.message.length).toBeLessThan(260);
   });
 
-  it('stays quiet while servers start or once they are ready', () => {
-    expect(status('starting')).toEqual([]);
-    expect(status('ready')).toEqual([]);
+  it('lists servers as they start and once they are ready, with no notice, and each change once', () => {
+    const mapper = new CodexChatEventMapper();
+    const update = (name: string, s: 'starting' | 'ready' | 'failed', error: string | null = null) => mapper.mapNotification({
+      method: 'mcpServer/startupStatus/updated', params: { threadId: null, name, status: s, error, failureReason: null },
+    });
+    expect(update('remote', 'starting')).toEqual([{ type: 'session_info', data: { mcpServers: [{ name: 'remote', status: 'pending' }] } }]);
+    expect(update('remote', 'starting')).toEqual([]);
+    expect(update('remote', 'ready')).toEqual([{ type: 'session_info', data: { mcpServers: [{ name: 'remote', status: 'connected' }] } }]);
+    const failed = update('local', 'failed', 'MCP server exited with code 1\nError: WORKIQ_TENANT is required\nat main');
+    expect(failed[0]).toEqual({ type: 'session_info', data: { mcpServers: [
+      { name: 'remote', status: 'connected' },
+      { name: 'local', status: 'failed', error: 'MCP server exited with code 1' },
+    ] } });
   });
 });
 

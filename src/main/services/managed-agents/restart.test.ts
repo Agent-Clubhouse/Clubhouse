@@ -33,7 +33,7 @@ vi.mock('../agent-system', () => ({
   spawnAgent,
 }));
 
-import { deliverForSpawn, restartManagedAgent, statusFor } from './index';
+import { deliverForSpawn, forgetDelivery, recordMcpStartProblems, restartManagedAgent, statusFor } from './index';
 import type { OrchestratorProvider } from '../../orchestrators/types';
 
 function add(id: string, managed: boolean): void {
@@ -216,5 +216,22 @@ describe('the managed exclude block (D16)', () => {
       '/.agents/skills/.clubhouse-managed-skills.json', '/.agents/skills/build/',
       '/.codex/skills/.clubhouse-managed-skills.json', '/.codex/skills/ship/',
     ]);
+  });
+});
+
+describe('MCP start problems in the status (#2896, D91)', () => {
+  it('reports what a running session\'s servers lack, by name, and forgets it when the agent stops', async () => {
+    add('mcp-user', true);
+    state.running.add('mcp-user');
+    recordMcpStartProblems('mcp-user', [{ server: 'workiq', missingEnv: ['WORKIQ_TENANT'] }]);
+    expect((await statusFor('/p', 'mcp-user')).mcpProblems).toEqual([{ server: 'workiq', missingEnv: ['WORKIQ_TENANT'] }]);
+    state.running.delete('mcp-user');
+    expect((await statusFor('/p', 'mcp-user')).mcpProblems).toBeUndefined();
+    state.running.add('mcp-user');
+    recordMcpStartProblems('mcp-user', []);
+    expect((await statusFor('/p', 'mcp-user')).mcpProblems).toBeUndefined();
+    recordMcpStartProblems('mcp-user', [{ server: 'jira', missingEnv: ['JIRA_URL'] }]);
+    forgetDelivery('mcp-user');
+    expect((await statusFor('/p', 'mcp-user')).mcpProblems).toBeUndefined();
   });
 });

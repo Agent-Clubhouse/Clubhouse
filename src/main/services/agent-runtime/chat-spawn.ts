@@ -49,6 +49,7 @@ import { chatIdleTimeoutMs, onAgentIdleSleepChange, setAgentIdleSleep } from '..
 import { codePart, recordBreadcrumb } from '../breadcrumbs';
 import { routeHelperQuestion } from '../clubhouse-mcp/tools/helper-question-tools';
 import { cleanSpawnEnv, getShellEnvironment, summarizeSpawnEnv } from '../../util/shell';
+import { missingEnvNotice, missingMcpEnv } from '../../../shared/mcp-start-problems';
 
 export interface ChatSpawnParams {
   agentId: string;
@@ -84,6 +85,15 @@ export function levelForFreeAgent(freeAgentMode: boolean | undefined, permission
 export async function findChatSessionFor(agentId: string, nativeSessionId: string): Promise<{ sessionId: string; lastSeq: number } | undefined> {
   const session = (await listChatSessions(agentId)).find((s) => s.nativeSessionId === nativeSessionId);
   return session ? { sessionId: session.sessionId, lastSeq: session.lastSeq } : undefined;
+}
+
+/** Remember a managed agent's MCP start problems for its Details. Never fails the start. */
+async function noteMcpStartProblems(agentId: string, problems: ReturnType<typeof missingMcpEnv>): Promise<void> {
+  try {
+    (await import('../managed-agents')).recordMcpStartProblems(agentId, problems);
+  } catch {
+    // telemetry-exempt: Details only; the chat notice already says it
+  }
 }
 
 /** A chat runtime notice, also shown to the user when an agent falls back. */
@@ -581,6 +591,10 @@ async function runChatStart(
     };
     // No bridge here: never point the agent at a port from its base env (#2620).
     if (mcpPort <= 0) delete env.CLUBHOUSE_MCP_PORT;
+    // A server whose variables aren't set won't start: say which, by name, in the chat and Details (D91).
+    const envProblems = missingMcpEnv(configuredServers, env);
+    for (const problem of envProblems) mcpNotices.push({ level: 'warn', code: 'mcp_server_env_missing', message: missingEnvNotice(problem) });
+    if (durableConfig?.managed) await noteMcpStartProblems(params.agentId, envProblems);
     const continued = resumeNativeSessionId ? await findChatSessionFor(params.agentId, resumeNativeSessionId) : undefined;
     return { env, mcpServers, mcpHttpEndpoints, mcpNotices, continued };
   }

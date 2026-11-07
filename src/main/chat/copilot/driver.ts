@@ -26,6 +26,7 @@ import {
 } from './normalizer';
 import { loadCopilotSdk } from './sdk-loader';
 import { copilotTierEntry, type CopilotTierEntry } from '../../../shared/context-window';
+import { safeMcpErrorLine } from '../../services/mcp-error-text';
 
 type ReasoningEffort = NonNullable<NonNullable<Parameters<CopilotSession['setModel']>[1]>['reasoningEffort']>;
 
@@ -987,7 +988,10 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       case 'session.mcp_servers_loaded': {
         if (fromSubagent) return;
         // Repeats before every turn; report changes only.
-        const servers = event.data.servers.map((m) => ({ name: m.name, status: mcpStatus(m.status) }));
+        const servers = event.data.servers.map((m) => {
+          const error = m.error ? safeMcpErrorLine(m.error) : undefined;
+          return { name: m.name, status: mcpStatus(m.status), ...(error && { error }) };
+        });
         const reported = JSON.stringify(servers);
         if (reported === this.mcpReported) return;
         this.mcpReported = reported;
