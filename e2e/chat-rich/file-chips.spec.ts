@@ -133,7 +133,10 @@ test.describe('claude: file chips in one reply', () => {
   });
 
   test.afterAll(async () => {
-    await chat?.close();
+    if (!chat) return;
+    const owned = chat.electronApp.process();
+    await chat.close();
+    console.log('[file-preview owned-process-closed]', JSON.stringify({ mainPid: owned.pid, exitCode: owned.exitCode, signalCode: owned.signalCode }));
   });
 
   test('a path with spaces chips whole, as a code span and quoted in prose', async () => {
@@ -144,6 +147,13 @@ test.describe('claude: file chips in one reply', () => {
   });
 
   test('scratch files open in-app through Open in Files and supported Markdown links', async ({}, testInfo) => {
+    const owned = chat.electronApp.process();
+    const receipt = {
+      mainPid: owned.pid,
+      metrics: await chat.electronApp.evaluate(({ app }) => app.getAppMetrics().map(({ pid, type }) => ({ pid, type }))),
+    };
+    console.log('[file-preview owned-process]', JSON.stringify(receipt));
+    await testInfo.attach('owned-electron-processes', { body: JSON.stringify(receipt, null, 2), contentType: 'application/json' });
     const dom = chatDom(chat.window);
     const view = chat.window.getByTestId('local-file-preview');
     const filesBefore = await Promise.all([p.plan, p.report, p.scratch].map((file) => fs.promises.readFile(file)));
