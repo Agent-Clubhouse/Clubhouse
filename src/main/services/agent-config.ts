@@ -860,14 +860,34 @@ async function agentsFileSignature(projectPath: string): Promise<string | null> 
   }
 }
 
-async function refreshAgentsFileSignature(watched: ConfigWatch, projectPath: string): Promise<void> {
-  const signature = await agentsFileSignature(projectPath);
-  if (signature !== null && configWatchers.get(projectPath) === watched) watched.signature = signature;
+/** Looks at agents.json still in flight, so a test can wait for them rather than guess how long a stat takes. */
+const agentsFileLookups = new Set<Promise<void>>();
+
+function trackLookup(lookup: Promise<void>): Promise<void> {
+  agentsFileLookups.add(lookup);
+  void lookup.finally(() => agentsFileLookups.delete(lookup));
+  return lookup;
+}
+
+/** Test hook: resolves once no look at a watched agents.json is in flight. */
+export async function settleAgentsFileChecksForTests(): Promise<void> {
+  while (agentsFileLookups.size > 0) await Promise.allSettled([...agentsFileLookups]);
+}
+
+function refreshAgentsFileSignature(watched: ConfigWatch, projectPath: string): Promise<void> {
+  return trackLookup((async () => {
+    const signature = await agentsFileSignature(projectPath);
+    if (signature !== null && configWatchers.get(projectPath) === watched) watched.signature = signature;
+  })());
 }
 
 /** The backstop: a change the watcher didn't report, found by looking at the file. */
-async function checkAgentsFile(projectPath: string, watched: ConfigWatch): Promise<void> {
-  if (watched.checking) return;
+function checkAgentsFile(projectPath: string, watched: ConfigWatch): Promise<void> {
+  if (watched.checking) return Promise.resolve();
+  return trackLookup(checkAgentsFileNow(projectPath, watched));
+}
+
+async function checkAgentsFileNow(projectPath: string, watched: ConfigWatch): Promise<void> {
   watched.checking = true;
   try {
     const signature = await agentsFileSignature(projectPath);

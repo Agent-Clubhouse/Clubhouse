@@ -15,6 +15,16 @@ vi.mock('fs', async (importOriginal) => {
   return { ...actual, default: actual, watch: vi.fn() };
 });
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+/** A slow disk: every stat takes this long, as on a busy CI runner. */
+const slow = vi.hoisted(() => ({ statMs: 0 }));
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  const stat = (async (...args: Parameters<typeof actual.stat>) => {
+    if (slow.statMs > 0) await new Promise((resolve) => setTimeout(resolve, slow.statMs));
+    return actual.stat(...args);
+  }) as typeof actual.stat;
+  return { ...actual, default: { ...actual, stat }, stat };
+});
 
 import {
   AGENTS_FILE_CHECK_INTERVAL_MS,
@@ -23,6 +33,7 @@ import {
   listDurable,
   onAgentConfigChanged,
   renameDurable,
+  settleAgentsFileChecksForTests,
 } from './agent-config';
 
 type Listener = (eventType: string, filename: string) => void;
@@ -35,10 +46,8 @@ const agent = (name: string) => ({ id: 'durable_watch_1', name, color: 'indigo',
 const saveByHand = (name: string) => fs.writeFileSync(agentsFile, JSON.stringify([agent(name)], null, 2));
 const shownName = async () => (await listDurable(projectPath))[0]?.name;
 
-/** Let the async file checks started by a timer finish. */
-async function settle(): Promise<void> {
-  for (let i = 0; i < 20; i++) await new Promise((resolve) => setImmediate(resolve));
-}
+/** Wait for every look at agents.json in flight (the first look, a check, a refresh) to finish. */
+const settle = () => settleAgentsFileChecksForTests();
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
@@ -61,7 +70,11 @@ afterEach(() => {
   fs.rmSync(projectPath, { recursive: true, force: true });
 });
 
-describe('agents.json watcher (#2729)', () => {
+// Once with stat as fast as the disk, and once slow, so no test leans on how long a look takes.
+describe.each([0, 25])('agents.json watcher (#2729), stat taking %i ms extra', (statMs) => {
+  beforeEach(() => { slow.statMs = statMs; });
+  afterEach(() => { slow.statMs = 0; });
+
   it('stays open across its own events, so a second hand edit is still seen', async () => {
     expect(await shownName()).toBe('first');
     expect(fs.watch).toHaveBeenCalledWith(path.join(projectPath, '.clubhouse'), expect.any(Function));
