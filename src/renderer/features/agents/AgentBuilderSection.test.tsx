@@ -15,9 +15,9 @@ const settle = () => waitFor(() => expect(screen.queryByText('Saving in Builderâ
 beforeEach(() => {
   saved = { revision: 1, templateId: 'builtin-builder-researcher', templates: [{ id: 'builtin-builder-researcher', name: 'Researcher' }, { id: 'builtin-builder-custom', name: 'Custom' }], blocks: structuredClone([identity, role]), customOrder: false, text: 'You are @@AgentName.\n\nFind the evidence.' };
   requests = [];
-  api.builderRead = vi.fn(async () => ({ ok: true, view: structuredClone(saved) }));
-  api.builderPreview = vi.fn(async (contents) => composeInstructions(contents.map((content) => ({ content }))));
-  api.builderCommand = vi.fn(async (_project, _agent, _revision, command): Promise<BuilderResult> => {
+  api.builderRead = vi.fn<typeof api.builderRead>(async () => ({ ok: true, view: structuredClone(saved) }));
+  api.builderPreview = vi.fn<typeof api.builderPreview>(async (contents) => composeInstructions(contents.map((content) => ({ content }))));
+  api.builderCommand = vi.fn<typeof api.builderCommand>(async (_project, _agent, _revision, command): Promise<BuilderResult> => {
     requests.push(command);
     if (command.type === 'template' && !command.confirm) return { ok: true, view: { ...saved, blocks: [identity], templateId: command.templateId } };
     if (command.type === 'template') { saved.blocks = [identity]; saved.templateId = command.templateId; }
@@ -50,7 +50,7 @@ it('previews template replacement before confirming; cancel keeps the saved list
   await screen.findByText(/This replaces the saved block list/);
   expect(rows()).toHaveLength(1);
   expect(saved.blocks).toHaveLength(2);
-  fireEvent.click(screen.getByRole('button', { name: 'Cancel', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   expect(rows()).toHaveLength(2);
   fireEvent.change(screen.getByLabelText('Choose a template'), { target: { value: 'builtin-builder-custom' } });
   fireEvent.click(await screen.findByRole('button', { name: 'Save template' }));
@@ -164,7 +164,7 @@ it('shows raised defaults and requires explicit agreement before saving a templa
 });
 
 it('shows explicit unsupported composition refusal without a successful snapshot or skill workflow', async () => {
-  api.builderRead = vi.fn(async () => ({ ok: false, code: 'unsupported' }));
+  api.builderRead = vi.fn<typeof api.builderRead>(async () => ({ ok: false, code: 'unsupported' }));
   renderBuilder();
   expect(await screen.findByText('This composition contains MCP or native subagent references. Builder cannot preview or save it. Nothing was changed or loaded.')).toBeVisible();
   expect(screen.queryByRole('region', { name: 'Builder skills' })).not.toBeInTheDocument();

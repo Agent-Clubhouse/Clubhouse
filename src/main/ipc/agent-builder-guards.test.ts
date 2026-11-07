@@ -62,8 +62,9 @@ function deferred() {
   const promise = new Promise<void>((done) => { resolve = done; });
   return { promise, resolve };
 }
-const gates: Array<ReturnType<typeof gate>> = [];
-function gate() {
+type Gate = { entered: Promise<void>; hold: () => Promise<void>; release: () => void };
+const gates: Gate[] = [];
+function gate(): Gate {
   const entered = deferred(), released = deferred();
   const value = {
     entered: entered.promise,
