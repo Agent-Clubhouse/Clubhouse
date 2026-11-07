@@ -52,7 +52,7 @@ export const MODEL_PROBE_TIMEOUT_MS = 10_000;
  * Handles common patterns shared across all providers:
  * - Binary discovery and availability checking
  * - Instructions file read/write
- * - Exit command, tool verbs, permissions, model options, profile env keys
+ * - Exit command, tool verbs, permissions, model options
  *
  * Concrete providers extend this class and supply their unique configuration
  * via abstract properties, then only override methods where their behavior
@@ -92,9 +92,6 @@ export abstract class BaseProvider implements OrchestratorProvider {
 
   /** Static model option list used when dynamic fetching is unavailable */
   protected abstract readonly fallbackModelOptions: ReadonlyArray<{ id: string; label: string }>;
-
-  /** Env var keys used for config/profile isolation */
-  protected abstract readonly configEnvKeys: readonly string[];
 
   /**
    * Optional config for dynamic model fetching.
@@ -208,7 +205,7 @@ export abstract class BaseProvider implements OrchestratorProvider {
 
   /**
    * The models this CLI accepts: its live handshake, else the older command
-   * probe, else the static list. Cached per profile env; concurrent
+   * probe, else the static list. Cached per `env`; concurrent
    * callers share one probe.
    */
   async listModels(opts: ListModelsOptions = {}): Promise<ModelList> {
@@ -232,7 +229,7 @@ export abstract class BaseProvider implements OrchestratorProvider {
   }
 
   /**
-   * A catalog read that needs a process, cached per profile env with one read
+   * A catalog read that needs a process, cached per `env` with one read
    * shared by concurrent callers. A failed read is remembered too, for less
    * time, so a CLI that can't answer isn't spawned on every look.
    */
@@ -348,11 +345,6 @@ export abstract class BaseProvider implements OrchestratorProvider {
   /** Map tool name to a human-readable verb */
   toolVerb(toolName: string): string | undefined {
     return this.toolVerbs[toolName];
-  }
-
-  /** Environment variable keys used for config isolation */
-  getProfileEnvKeys(): string[] {
-    return [...this.configEnvKeys];
   }
 
   /** Default paste submit timing — works for Claude Code's paste preview flow */

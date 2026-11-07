@@ -340,7 +340,8 @@ const PROJECT_SECTIONS: ReadonlyArray<Section<ProjectContext>> = [
       ['persona', retired],
       ['mission', retired],
       ['free_agent_mode', ({ defaults }) => held(defaults.freeAgentMode, 'project')],
-      ['profile_id', ({ defaults }) => held(defaults.profileId, 'project')],
+      // Provider profiles were removed (#2749): always null, kept so phones and read_settings callers keep the key.
+      ['profile_id', retired],
       ['source_control_provider', ({ defaults }) => held(defaults.sourceControlProvider, 'project')],
       ['default_mcps', ({ defaultMcps }) => ({ stored: defaultMcps, effective: defaultMcps, source: defaultMcps.length > 0 ? 'project' : 'default' })],
     ],

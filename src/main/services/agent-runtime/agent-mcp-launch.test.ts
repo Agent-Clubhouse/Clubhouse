@@ -75,7 +75,7 @@ async function save(content: string) { return handlers.get(IPC.AGENT.WRITE_MCP_R
 async function start() {
   // No explicit legacy selection: exercise the standard Copilot SDK adapter.
   const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli'); registerChatDriver(driver);
-  expect(await tryStartChatAgent({ agentId: agent.id, projectPath: root, cwd, kind: 'durable', permissionMode: 'auto' }, copilot, undefined, undefined, agent)).toBe('chat');
+  expect(await tryStartChatAgent({ agentId: agent.id, projectPath: root, cwd, kind: 'durable', permissionMode: 'auto' }, copilot, undefined, agent)).toBe('chat');
   return driver.last.startOptions!.mcpServers;
 }
 
@@ -169,7 +169,7 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
     await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, bytes);
     const codex = { ...copilot, id: 'codex-cli', conventions: { ...conventions, mcpConfigFile: '.codex/config.toml', settingsFormat: 'toml' } } as OrchestratorProvider;
     const driver = new FakeChatDriver('codex_app_server', 'codex-cli'); registerChatDriver(driver);
-    expect(await tryStartChatAgent({ agentId: agent.id, projectPath: root, cwd, kind: 'durable', permissionMode: 'auto' }, codex, undefined, undefined, agent)).toBe('chat');
+    expect(await tryStartChatAgent({ agentId: agent.id, projectPath: root, cwd, kind: 'durable', permissionMode: 'auto' }, codex, undefined, agent)).toBe('chat');
     expect(driver.last.startOptions!.mcpServers).toEqual({ ...projectMap, clubhouse: { command: 'synthetic-live-bridge' } });
     expect(await fs.readFile(file, 'utf8')).toBe(bytes);
     expect(injectClubhouseMcp).not.toHaveBeenCalled();

@@ -4,7 +4,6 @@ import type { Agent } from '../../../../shared/types';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useChatIdleSettingsStore } from '../../../stores/chatIdleSettingsStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
-import { useProfileStore } from '../../../stores/profileStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { resetChatFlagCache } from '../chat/AgentRuntimePane';
@@ -89,7 +88,6 @@ describe('CLI row (#2593)', () => {
 
   beforeEach(() => {
     offer(['claude-code', 'codex-cli']);
-    useProfileStore.setState({ profiles: [], loadProfiles: vi.fn(async () => {}) } as never);
     window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn(async () => ({})) as never;
   });
 
@@ -108,12 +106,11 @@ describe('CLI row (#2593)', () => {
     expect(optionLabels(cli()!)).toEqual(['GitHub Copilot (disabled)', 'Claude Code', 'Codex']);
   });
 
-  it('narrows the list to the project\'s profile', async () => {
+  it('offers every enabled CLI, whatever an old saved profileId says (#2749)', async () => {
     offer(['claude-code', 'codex-cli', 'github-copilot']);
-    useProfileStore.setState({ profiles: [{ id: 'work', name: 'Work', orchestrators: { 'claude-code': {}, 'github-copilot': {} } }] } as never);
     window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn(async () => ({ profileId: 'work' })) as never;
     render(<AgentDetails agent={sleeping} />);
-    await waitFor(() => expect(cli() && optionLabels(cli()!)).toEqual(['Claude Code', 'GitHub Copilot']));
+    await waitFor(() => expect(cli() && optionLabels(cli()!)).toEqual(['Claude Code', 'Codex', 'GitHub Copilot']));
   });
 
   it('stays read-only with only one CLI on offer', async () => {

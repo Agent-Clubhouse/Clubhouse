@@ -75,11 +75,11 @@ import { chatDetailedStatus } from '../../shared/chat-agent-status';
 import { CHAT_IMAGE_MAX_BYTES, type ChatEvent, type ChatSessionState } from '../../shared/chat';
 import { injectPtyText } from './agent-runtime/pty-input';
 import { AgentStoppingError } from './agent-runtime/agent-stopping';
-import { spawnAgent, killAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
+import { spawnAgent, killAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator } from './agent-system';
 import { appLog } from './log-service';
 import { buildChatPage } from './annex-chat-pages';
 import { forgetAppendedNotes, MOBILE_PERSISTENT_APPROVALS, OUTER_TOOL_INPUT_MAX_BYTES, PERMISSION_INPUT_MAX_BYTES, boundChatEvent, boundToolInput, toolInputSizeBucket } from './annex-chat-bounds';
-import { ICON_TEMPORARILY_UNAVAILABLE, readIconImage, type IconImage } from './icon-images';
+import { ICON_TEMPORARILY_UNAVAILABLE, TEMPORARY_FAILURE_RETRY_MS as ICON_RETRY_MS, readIconImage, type IconImage } from './icon-images';
 
 /**
  * Check if an agent is currently running in any execution mode.
@@ -600,22 +600,53 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
 
 const MAX_BODY_SIZE = 1024 * 1024; // 1 MB
 
+/** How much of a refused upload is discarded, and for how long, so the client gets to read its answer. */
+const OVERSIZED_BODY_DRAIN_BYTES = 16 * 1024 * 1024;
+const OVERSIZED_BODY_DRAIN_MS = 10_000;
+
+/**
+ * Answers a request whose upload won't be read, such as a body over its limit.
+ * Ending the response closes the socket, and closing on unread upload bytes can
+ * reset the connection and lose the answer, so the answer goes out now and the
+ * response ends once the upload is over or a bound is hit.
+ */
+function sendJsonAndDrain(req: http.IncomingMessage, res: http.ServerResponse, status: number, body: unknown): void {
+  const json = JSON.stringify(body);
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(json), Connection: 'close' });
+  res.write(json);
+  if (req.readableEnded || req.destroyed) { res.end(); return; }
+  let discarded = 0;
+  const finish = () => {
+    clearTimeout(timer);
+    req.off('data', discard);
+    req.off('end', finish);
+    req.off('close', finish);
+    res.end();
+  };
+  const discard = (chunk: Buffer) => {
+    discarded += chunk.length;
+    if (discarded > OVERSIZED_BODY_DRAIN_BYTES) finish();
+  };
+  const timer = setTimeout(finish, OVERSIZED_BODY_DRAIN_MS);
+  req.on('data', discard);
+  req.on('end', finish);
+  req.on('close', finish);
+  req.resume();
+}
+
+function isBodyTooLarge(err: unknown): boolean {
+  return err instanceof MobileUploadError && err.code === 'too_large';
+}
+
+/** A body over the 1 MB cap: drained, then answered with a 413 the client can read. Never its content. */
+function refuseOversizedBody(req: http.IncomingMessage, res: http.ServerResponse): void {
+  appLog('core:annex', 'warn', 'Annex request body too large', { meta: { method: req.method, path: req.url?.split('?')[0], maxBytes: MAX_BODY_SIZE } });
+  sendJsonAndDrain(req, res, 413, { error: 'too_large', maxBytes: MAX_BODY_SIZE });
+}
+
+/** The request body as text, at most MAX_BODY_SIZE bytes; over that it rejects with a `too_large` MobileUploadError. */
 function readBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let totalSize = 0;
-    req.on('data', (chunk: Buffer) => {
-      if (totalSize + chunk.length > MAX_BODY_SIZE) {
-        req.destroy();
-        reject(new Error('Body exceeded maximum allowed size'));
-        return;
-      }
-      totalSize += chunk.length;
-      chunks.push(chunk);
-    });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString()));
-    req.on('error', (err) => reject(err));
-  });
+  return readCappedBody(req, MAX_BODY_SIZE).then((body) => body.toString());
 }
 
 function parseJsonBody(raw: string): Record<string, unknown> | null {
@@ -639,6 +670,7 @@ function readJsonBody(
     }
     return handler(body);
   }).catch((err) => {
+    if (isBodyTooLarge(err) && !res.headersSent) { refuseOversizedBody(req, res); return; }
     appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
     res.writeHead(400);
     res.end();
@@ -913,11 +945,13 @@ async function buildSnapshotIcons(
     });
   }
   lastIconBudgetWarning = warning;
+  const iconsUnknown = images.includes(ICON_TEMPORARILY_UNAVAILABLE);
+  noteSnapshotIconsUnknown(iconsUnknown);
   return {
     projectIcons,
     agentIcons,
     // Present means complete, and no entry means removed. So with an icon whose answer isn't known, say nothing.
-    ...(images.includes(ICON_TEMPORARILY_UNAVAILABLE) ? {} : { iconRefs }),
+    ...(iconsUnknown ? {} : { iconRefs }),
     stats: { iconCount: Object.keys(projectIcons).length + Object.keys(agentIcons).length, iconBytes: includedBytes, iconsLeftOut: leftOutCount },
   };
 }
@@ -1378,6 +1412,31 @@ let snapshotBlock: { kind: 'failed' | 'oversize'; until: number; startedAt: numb
 let snapshotFailures = 0;
 let snapshotOversizeRecheck: ReturnType<typeof setTimeout> | null = null;
 let snapshotBlockTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * A snapshot built while an icon couldn't be read for a reason that can pass has no
+ * `iconRefs`, and nothing else may change for a long time. So once the icon's retry is
+ * due, one refresh tries again. Bounded: an icon that keeps failing counts as no image
+ * after a few tries (icon-images.ts), and these refreshes stop after a few in a row.
+ */
+const ICON_RETRY_REFRESH_MAX = 3;
+/** Past the icon's retry time, so the refresh reads the file again rather than its cached failure. */
+const ICON_RETRY_REFRESH_DELAY_MS = ICON_RETRY_MS + 1_000;
+let iconRetryRefresh: ReturnType<typeof setTimeout> | null = null;
+let iconRetryRefreshes = 0;
+
+function noteSnapshotIconsUnknown(unknown: boolean): void {
+  if (!unknown) { iconRetryRefreshes = 0; return; }
+  if (iconRetryRefresh || iconRetryRefreshes >= ICON_RETRY_REFRESH_MAX) return;
+  iconRetryRefreshes++;
+  iconRetryRefresh = setTimeout(() => {
+    iconRetryRefresh = null;
+    // No one to tell: the next socket's own build reads the icons again.
+    if (!wss || wss.clients.size === 0) { iconRetryRefreshes = 0; return; }
+    broadcastSnapshotRefresh();
+  }, ICON_RETRY_REFRESH_DELAY_MS);
+  iconRetryRefresh.unref?.();
+}
 
 function setSnapshotBlock(kind: 'failed' | 'oversize'): void {
   // Several builds can fail together: that's one failure, not several steps of backoff.
@@ -2261,8 +2320,9 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
         fingerprint: identity.fingerprint,
       });
     }).catch((err) => {
-      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
       recordPairServed(pairStartMs, 'invalid_request');
+      if (isBodyTooLarge(err) && !res.headersSent) { refuseOversizedBody(req, res); return; }
+      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
       res.writeHead(400);
       res.end();
     });
@@ -2589,7 +2649,7 @@ async function handleSessionListRoute(ctx: AnnexRouteContext, match: RegExpMatch
   try {
     const config = await agentConfig.getDurableConfig(project.path, agentId);
     const provider = await resolveOrchestrator(project.path, orchestrator || config?.orchestrator);
-    const sessions = isSessionCapable(provider) ? await provider.listSessions(config?.worktreePath || project.path, await resolveProfileEnv(project.path, provider.id)) : [];
+    const sessions = isSessionCapable(provider) ? await provider.listSessions(config?.worktreePath || project.path) : [];
     sendJson(ctx.res, 200, sessions);
   } catch (err) {
     sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'list_sessions_failed' });
@@ -2612,8 +2672,7 @@ async function handleSessionTranscriptRoute(ctx: AnnexRouteContext, match: RegEx
     const provider = await resolveOrchestrator(project.path, orchestrator || config?.orchestrator);
     if (!isSessionCapable(provider)) { sendJson(ctx.res, 200, null); return; }
     const cwd = config?.worktreePath || project.path;
-    const profileEnv = await resolveProfileEnv(project.path, provider.id);
-    const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv);
+    const rawEvents = await provider.readSessionTranscript(sessionId, cwd);
     if (!rawEvents) { sendJson(ctx.res, 200, null); return; }
     const events = normalizeSessionEvents(rawEvents);
     sendJson(ctx.res, 200, paginateEvents(events, offset, limit));
@@ -2636,8 +2695,7 @@ async function handleSessionSummaryRoute(ctx: AnnexRouteContext, match: RegExpMa
     const provider = await resolveOrchestrator(project.path, orchestrator || config?.orchestrator);
     if (!isSessionCapable(provider)) { sendJson(ctx.res, 200, null); return; }
     const cwd = config?.worktreePath || project.path;
-    const profileEnv = await resolveProfileEnv(project.path, provider.id);
-    const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv, { maxBytes: SUMMARY_TRANSCRIPT_MAX_BYTES });
+    const rawEvents = await provider.readSessionTranscript(sessionId, cwd, { maxBytes: SUMMARY_TRANSCRIPT_MAX_BYTES });
     if (!rawEvents) { sendJson(ctx.res, 200, null); return; }
     const events = normalizeSessionEvents(rawEvents);
     sendJson(ctx.res, 200, buildSessionSummary(events, provider.id));
@@ -3314,7 +3372,7 @@ async function handleMobileAgentSettingsRoute(ctx: AnnexRouteContext, match: Reg
   }
 }
 
-/** Helper presets, app-wide or under an agent's or project's profile (#2671). No filter returns every label family too. */
+/** Helper presets, app-wide or for an agent's or project's Auto setting (#2671). No filter returns every label family too. */
 async function handleMobileHelperRoutingRoute(ctx: AnnexRouteContext): Promise<void> {
   try {
     const query = new URL(ctx.req.url ?? '', 'http://annex').searchParams;
@@ -3324,9 +3382,9 @@ async function handleMobileHelperRoutingRoute(ctx: AnnexRouteContext): Promise<v
     if (agentId && !agent && !isDisabledDispatcherId(agentId)) { sendJson(ctx.res, 404, { error: 'agent_not_found' }); return; }
     const project = projectId && !isDispatcherProjectId(projectId) ? await findProjectById(projectId) : undefined;
     if (projectId && !project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
-    // The Dispatcher's folder has no CLI profile of its own, and it can't use presets.
-    const profileProject = project ?? (agentId && activeDispatcher(agentId) ? undefined : agent?.project);
-    const settings = await mobileHelperRouting({ projectPath: profileProject?.path, agentId, agent });
+    // The Dispatcher's folder has no project of its own, and it can't use presets.
+    const routingProject = project ?? (agentId && activeDispatcher(agentId) ? undefined : agent?.project);
+    const settings = await mobileHelperRouting({ projectPath: routingProject?.path, agentId, agent });
     sendJson(ctx.res, 200, { version: 1, epoch: mobileCommands.epoch, ...settings });
   } catch (err) {
     // telemetry-exempt: read errors are bounded in the API response, and logged here.
@@ -3530,39 +3588,14 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
   return command.expectedProvider !== undefined ? withAgentTransition(command.agentId, start) : start();
 }
 
-/** How much of a refused upload is discarded, and for how long, so the client gets to read its 413. */
-const OVERSIZED_COMMAND_DRAIN_BYTES = 16 * 1024 * 1024;
-const OVERSIZED_COMMAND_DRAIN_MS = 10_000;
-
 /**
- * Refuses a body over the limit. It can't be parsed, so the answer has no
- * commandId and no receipt is kept. Ending the response closes the socket, and
- * closing on unread upload bytes can reset the connection and lose the answer,
- * so the answer goes out now and the response ends once the upload is over or a bound is hit.
+ * Refuses a command body over the limit. It can't be parsed, so the answer has
+ * no commandId and no receipt is kept.
  */
 function refuseOversizedMobileCommand(req: http.IncomingMessage, res: http.ServerResponse): void {
   const response = mobileCommands.reject('too_large', 413);
   logRefusedMobileCommand(response);
-  const json = JSON.stringify(response.body);
-  res.writeHead(response.statusCode, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(json), Connection: 'close' });
-  res.write(json);
-  let discarded = 0;
-  const finish = () => {
-    clearTimeout(timer);
-    req.off('data', discard);
-    req.off('end', finish);
-    req.off('close', finish);
-    res.end();
-  };
-  const discard = (chunk: Buffer) => {
-    discarded += chunk.length;
-    if (discarded > OVERSIZED_COMMAND_DRAIN_BYTES) finish();
-  };
-  const timer = setTimeout(finish, OVERSIZED_COMMAND_DRAIN_MS);
-  req.on('data', discard);
-  req.on('end', finish);
-  req.on('close', finish);
-  req.resume();
+  sendJsonAndDrain(req, res, response.statusCode, response.body);
 }
 
 async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
@@ -3589,7 +3622,7 @@ async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
     logRefusedMobileCommand(response, input);
     sendJson(ctx.res, response.statusCode, response.body);
   } catch (err) {
-    if (err instanceof MobileUploadError && err.code === 'too_large') { refuseOversizedMobileCommand(ctx.req, ctx.res); return; }
+    if (isBodyTooLarge(err)) { refuseOversizedMobileCommand(ctx.req, ctx.res); return; }
     // telemetry-exempt: invalid JSON/body is reported to the caller and logged by code, without its content.
     const response = mobileCommands.reject('invalid_command', 400);
     logRefusedMobileCommand(response);
@@ -3626,10 +3659,11 @@ async function handleMobileAttachmentRoute(ctx: AnnexRouteContext, match: RegExp
   const refuse = (status: number, error: string, retryAfterMs?: number) => {
     if (retryAfterMs !== undefined) ctx.res.setHeader('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
     if (!bodyRead) {
-      // Discard a body within the cap so the client reads this answer; never read a bigger one.
+      // Discard a body within the cap so the client reads this answer. A bigger one is
+      // drained up to a bound while the answer goes out, then the connection closes.
       const declared = Number(ctx.req.headers['content-length']);
       if (Number.isFinite(declared) && declared <= CHAT_IMAGE_MAX_BYTES && status !== 413) ctx.req.resume();
-      else ctx.res.setHeader('Connection', 'close');
+      else { sendJsonAndDrain(ctx.req, ctx.res, status, { version: 1, error }); return; }
     }
     sendJson(ctx.res, status, { version: 1, error });
   };
@@ -4761,6 +4795,9 @@ export function stop(): void {
   clearSnapshotBlock();
   if (snapshotOversizeRecheck) clearTimeout(snapshotOversizeRecheck);
   snapshotOversizeRecheck = null;
+  if (iconRetryRefresh) clearTimeout(iconRetryRefresh);
+  iconRetryRefresh = null;
+  iconRetryRefreshes = 0;
   lastLargeFrameLog.clear();
   lastFrameLimitLog.clear();
   lastSnapshotLog = null;
@@ -5361,6 +5398,8 @@ export const _testing = {
   SNAPSHOT_BUILD_TIMEOUT_MS,
   SNAPSHOT_OVERSIZE_RETRY_MS,
   SNAPSHOT_OVERSIZE_RECHECK_MS,
+  ICON_RETRY_REFRESH_MAX,
+  ICON_RETRY_REFRESH_DELAY_MS,
   heldBytes: (ws: WebSocket) => heldFrames.get(ws)?.bytes,
   holdForTest(ws: WebSocket, data: string) {
     const held = heldFrames.get(ws);

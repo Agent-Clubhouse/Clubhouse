@@ -117,7 +117,7 @@ Desktops that support them advertise `attachments: {version:1, imageTypes, maxIm
 | 404 | `agent_not_found` | unknown or disposed agent |
 | 409 | `not_chat` | the agent isn't a running chat agent (start it first) |
 | 409 | `images_not_supported` | the agent's `capabilities.images` isn't `true` |
-| 413 | `too_large` | over `maxImageBytes` (3.75 MB; checked from Content-Length before reading, the connection then closes) |
+| 413 | `too_large` | over `maxImageBytes` (3.75 MB; checked from Content-Length before reading). The answer goes out at once, and the desktop drains the rest of the upload within the same bounds as [an oversized command](#oversized-commands), then closes the connection |
 | 415 | `unsupported_media_type` / `unsupported_image` | wrong Content-Type / bytes aren't PNG, JPEG, GIF or WebP |
 | 429 | `rate_limited` / `quota_exceeded` | per-peer limits below; honor `Retry-After` (seconds) |
 
@@ -168,7 +168,7 @@ A phone that opts in gets image references in its snapshots and fetches images s
 
 - `version` is the lowercase SHA-256 of the bytes the route serves. Compare it for equality only. Don't rely on it staying the same for the same picture: a file sent as it is keeps its version, but a generated thumbnail comes from the desktop's image code, so an app or OS update can change its bytes, and a restart isn't promised to keep them. A new `version` just means one refetch.
 - `type` is `image/png`, `image/jpeg`, `image/gif` or `image/webp`, read from the bytes. Never SVG. `bytes`, `width` and `height` describe the served image too.
-- **`iconRefs` has three states.** Absent means unknown, so keep what you have: a snapshot over its limit leaves it out and `snapshotTruncated.omitted` says so, and so does a snapshot built while an icon can't be read for a reason that can pass, with no `snapshotTruncated`. Present means complete, so replace. No entry for an id in a present map means no image, so drop what you cached. A different `version` means fetch. `icon` set with no entry is normal, and draws initials until a later snapshot gives a `version`.
+- **`iconRefs` has three states.** Absent means unknown, so keep what you have: a snapshot over its limit leaves it out and `snapshotTruncated.omitted` says so, and so does a snapshot built while an icon can't be read for a reason that can pass, with no `snapshotTruncated`. The desktop sends a fresh snapshot once that icon can be tried again (about 30 seconds), up to 3 in a row, and an icon that fails 3 tries in a row with no change to its file counts as no image. Present means complete, so replace. No entry for an id in a present map means no image, so drop what you cached. A different `version` means fetch. `icon` set with no entry is normal, and draws initials until a later snapshot gives a `version`.
 - Projects are in `iconRefs.projects`. Durable agents **and the Dispatcher** are in `iconRefs.agents`. That isn't the snapshot's own `agents` map, which doesn't list the Dispatcher. A quick agent never has an entry, and draws its lightning bolt. An emoji still comes before an image.
 - REST catalogs don't carry `iconRefs`, so a catalog response must not clear them. Only a snapshot on the socket changes them.
 - A snapshot follows a change to an agent's or project's image and the Dispatcher turning on or off, as soon as the change is noticed. An image file replaced directly on disk under the same name has nothing to notice it: the next snapshot picks it up, whatever causes that.
@@ -593,7 +593,7 @@ Create (#2451) and settings (#2452) follow the desktop New agent page and the De
  "freeAgentMode":{"allowed":true}}
 ```
 
-`orchestrators` are the enabled ones, narrowed to the project's profile when it covers any, in the desktop's order; the first is the default. `available:false` (with `unavailableReason`) means the CLI isn't found; the desktop still lets you create such an agent. `permissions:false` means the CLI sets access itself. `chat` means the agent can run in chat (Chat preview on, and the provider has a chat driver). `models` may include custom IDs; any model string is accepted. `badge` and `unavailableReason` are omitted when absent. `suggestedName` is a fresh random name per request. `freeAgentMode.allowed` means `agent.create` takes `freeAgentMode`; offer the toggle only for orchestrators with `permissions:true`, as the desktop page does ("Free Agent Mode (skip all permissions)", otherwise "(not supported)").
+`orchestrators` are the enabled ones, in the desktop's order (provider profiles were removed in #2749, so a project no longer narrows them); the first is the default. `available:false` (with `unavailableReason`) means the CLI isn't found; the desktop still lets you create such an agent. `permissions:false` means the CLI sets access itself. `chat` means the agent can run in chat (Chat preview on, and the provider has a chat driver). `models` may include custom IDs; any model string is accepted. `badge` and `unavailableReason` are omitted when absent. `suggestedName` is a fresh random name per request. `freeAgentMode.allowed` means `agent.create` takes `freeAgentMode`; offer the toggle only for orchestrators with `permissions:true`, as the desktop page does ("Free Agent Mode (skip all permissions)", otherwise "(not supported)").
 
 ### agent.create
 
@@ -787,7 +787,7 @@ Gate on `helperRouting` in capabilities. It lists only what works now, so don't 
 
 ### Reading
 
-`GET /api/v1/mobile/helper-routing`, with optional `projectId` or `agentId`. Either reads the model lists under that project's profile, since a profile can be a different login. 404 `project_not_found`, `agent_not_found`.
+`GET /api/v1/mobile/helper-routing`, with optional `projectId` or `agentId`, which add that project's or agent's Auto setting. Model lists and quota are each CLI's own, for its one local login (provider profiles were removed in #2749), whichever is given. 404 `project_not_found`, `agent_not_found`.
 
 ```json
 {"version":1,"epoch":"uuid","revision":"r12.0","serverTime":"…","labels":{…},
@@ -803,7 +803,7 @@ Gate on `helperRouting` in capabilities. It lists only what works now, so don't 
 - **labels**: the words for every code, in the families `reason`, `fallback`, `skipped`, `quota`, `unknown`, `window`, `autoSource`, `autoOff`, `cell` and `generic`. Every read has all of them, including a bare one, so cache them once per revision for rows that only have codes. For a code you don't have, use `labels.generic.unknownCode`, then your own generic "Other".
 - **cells**: `effective` is what a start uses now. `custom` is the saved choice, or null. `state` is that of the saved choice, or of the built-in without one: `valid`, `unverified` (the list may be out of date, so it couldn't be checked) or `stale` (no longer offered, with `staleReason` `model_unavailable` or `effort_unavailable`). A stale saved choice stays saved. `effective` is then the built-in, with `fallback: "builtin_preset"`, or null if that is stale too, and a start with that difficulty is refused. Offer Reset whenever `custom` is set.
 - **autoEligible**: whether a provider has presets and Auto can pick it. Copilot can't: its list reports no per-model efforts, and it has no quota source.
-- **choices**: what the pickers offer, per model, with `source` `live` or `fallback`. Always the app-wide list, even with `projectId` or `agentId`, because a write is checked against it. `default` isn't offered, since a preset has to name a model. Cells do follow that profile: a cell can read `stale` there while its model is in `choices`, which means a start in that project would be refused or fall back.
+- **choices**: what the pickers offer, per model, with `source` `live` or `fallback`. Always the app-wide list, even with `projectId` or `agentId`, because a write is checked against it. `default` isn't offered, since a preset has to name a model.
 - **agent**: with `agentId` only. `{usable: true}`, or `{usable: false, reason}` with `dispatcher_locked` or `orchestration_off`, for presets. The Dispatcher doesn't start helpers, and this gives it no new authority.
 - **auto**: whether `cli: "auto"` is allowed at the scope asked about. See [Auto provider](#auto-provider).
 
@@ -811,7 +811,7 @@ The built-in presets are starting choices, not measured best ones. Don't present
 
 ### Quota
 
-Each provider's `quota` is what its CLI says about its plan limits. Read token-free, with no prompt, only when this route or Settings asks. Under `projectId` or `agentId` it follows that project's profile, since a profile can be another login. Fixtures: `helper-routing-quota.json`.
+Each provider's `quota` is what its CLI says about its plan limits. Read token-free, with no prompt, only when this route or Settings asks. It is the same whatever `projectId` or `agentId` says. Fixtures: `helper-routing-quota.json`.
 
 | `state` | Meaning |
 |---|---|
@@ -837,7 +837,7 @@ The thresholds are starting proposals, not measured values. `known` means under 
 - A provider with no `refreshAfterSeconds`, such as `not_supported`, asks for nothing. With none at all, set no timer.
 - Also fetch on returning to the foreground.
 
-A read still going returns `not_read` after at most 3 seconds, with a short `refreshAfterSeconds`. A refresh still going returns the last reading, with `0`. Fetching can't cause extra CLI reads: they are shared and cached for 5 minutes per provider and profile, with a minute's wait after a failure. `helper-routing-quota.json` has whole responses for these under `fullResponses`, with the delay each one gives.
+A read still going returns `not_read` after at most 3 seconds, with a short `refreshAfterSeconds`. A refresh still going returns the last reading, with `0`. Fetching can't cause extra CLI reads: they are shared and cached for 5 minutes per provider, with a minute's wait after a failure. `helper-routing-quota.json` has whole responses for these under `fullResponses`, with the delay each one gives.
 
 ### Auto provider
 

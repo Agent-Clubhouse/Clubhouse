@@ -891,6 +891,44 @@ describe('AgentSettingsView', () => {
       expect(closeAgentSettings).toHaveBeenCalled();
     });
 
+    it('gives a managed agent one Settings page with its runtime, effort, auto-sleep, orchestration and helper template (#2895)', async () => {
+      const managedConfig = { managed: { version: 1, blocks: [], skills: [], mcps: [] }, effort: 'high', helperTemplateId: 'builtin-template-quality-assurance' };
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue(managedConfig);
+      vi.spyOn(window.clubhouse.managed, 'modelEfforts').mockResolvedValue({ ok: true, value: { default: ['low', 'high'] } } as never);
+      vi.spyOn(window.clubhouse.managed, 'listTemplates').mockResolvedValue({ ok: true, value: [
+        { id: 'builtin-template-helper', name: 'Helper', description: '', builtin: true, setup: { blocks: [], skills: [], mcps: [] }, settings: {}, usedBy: 0 },
+        { id: 'builtin-template-quality-assurance', name: 'Quality Assurance', description: '', builtin: true, setup: { blocks: [], skills: [], mcps: [] }, settings: {}, usedBy: 0 },
+      ] } as never);
+      (window.clubhouse.agent as any).getOrchestrationPolicy = vi.fn().mockResolvedValue({ policy: { orchestrate: true, access: 'same', control: 'hands-off', maxHelpers: 5, crossProjectHelpers: false, connectToDispatcher: true, autoHelpers: false, sources: {} } });
+      const apply = vi.spyOn(window.clubhouse.managed, 'applySettings').mockResolvedValue({ ok: true, value: undefined } as never);
+      renderSettings({ status: 'running' });
+      await waitFor(() => expect(useAgentSettingsPages.getState().hiddenPages).toEqual(['helpers', 'permissions']));
+      const page = screen.getByTestId('agent-settings-page-settings');
+      // Runtime moved off General for a managed agent.
+      expect(screen.getByTestId('agent-settings-page-general')).not.toContainElement(document.getElementById('agent-settings-model'));
+      expect(page).toContainElement(document.getElementById('agent-settings-model'));
+      // While it runs, its model can change: it applies when it restarts. Its CLI waits for it to stop.
+      expect(document.getElementById('agent-settings-model')).not.toBeDisabled();
+      expect(screen.getByTestId('agent-settings-running')).toHaveTextContent('Other changes apply when it restarts.');
+
+      const effort = await screen.findByLabelText('Effort') as HTMLSelectElement;
+      await waitFor(() => expect(effort.value).toBe('high'));
+      fireEvent.change(effort, { target: { value: 'low' } });
+      await waitFor(() => expect(apply).toHaveBeenCalledWith('/project', 'agent-1', { effort: 'low' }));
+      fireEvent.change(effort, { target: { value: '' } });
+      await waitFor(() => expect(apply).toHaveBeenLastCalledWith('/project', 'agent-1', { effort: null }));
+
+      fireEvent.change(screen.getByLabelText('Auto-sleep'), { target: { value: 'never' } });
+      await waitFor(() => expect(apply).toHaveBeenLastCalledWith('/project', 'agent-1', { idleSleep: 'never' }));
+
+      const helperTemplate = screen.getByLabelText('Helper template') as HTMLSelectElement;
+      await waitFor(() => expect(helperTemplate.value).toBe('builtin-template-quality-assurance'));
+      expect(page).toContainElement(helperTemplate);
+      fireEvent.change(helperTemplate, { target: { value: '' } });
+      await waitFor(() => expect(apply).toHaveBeenLastCalledWith('/project', 'agent-1', { helperTemplateId: null }));
+      expect(page).toContainElement(screen.getByTestId('agent-helpers-settings'));
+    });
+
     it('opens on a requested page once a managed agent\'s setup shows it (#2896)', async () => {
       (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ managed: { version: 1, blocks: [], skills: [], mcps: [] } });
       useAgentSettingsPages.getState().setRequestedPage({ agentId: defaultAgent.id, page: 'preview' });

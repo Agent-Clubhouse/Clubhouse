@@ -27,7 +27,6 @@ vi.mock('./agent-system', () => ({
     const { readProjectOrchestrator } = await import('./agent-registry');
     return { id: id ?? await readProjectOrchestrator(projectPath) ?? 'claude-code', getModelOptions };
   }),
-  resolveProfileEnv: vi.fn(),
 }));
 vi.mock('./agent-creation', () => ({ parseStartCreationParams: vi.fn(), startDurableCreation: vi.fn() }));
 vi.mock('./agent-runtime/chat-drivers', () => ({ resolveChatDriver: () => ({}) }));
@@ -565,6 +564,12 @@ describe('values and sources', () => {
     });
     const project = (await read(ordinary(), { select: ['project.defaults.persona'], detail: true })).targets.find((t) => t.target === 'project');
     expect(project?.settings['project.defaults.persona']).toEqual({ stored: null, effective: null, source: 'default' });
+  });
+
+  it('reads a removed provider profile id as null, keeping the key (#2749)', async () => {
+    writeProjectSettings(one, { agentDefaults: { profileId: 'work' } });
+    const project = (await read(ordinary(), { select: ['project.defaults.profile_id'], detail: true })).targets.find((t) => t.target === 'project');
+    expect(project?.settings['project.defaults.profile_id']).toEqual({ stored: null, effective: null, source: 'default' });
   });
 
   it('reports orchestration with the policy\'s own sources, and a retired persona file decides nothing (#2901)', async () => {

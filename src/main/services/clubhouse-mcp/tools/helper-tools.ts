@@ -496,7 +496,7 @@ async function finishHelperStart(
     const failedOn = await agentConfig.getDurableConfig(helperPath, helperId).catch((): null => null);
     if (failedOn?.routing?.mode === 'auto' && failedOn.orchestrator) {
       cooldownKind = classifyStartFailure(err);
-      await noteProviderFailure(failedOn.orchestrator, helperPath, cooldownKind);
+      await noteProviderFailure(failedOn.orchestrator, cooldownKind);
     }
     spawnFailures.set(helperId, reason);
     broadcastToAllWindows(IPC.AGENT.AGENT_WAKE_FAILED, helperId, reason);
@@ -637,9 +637,10 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
   const { projectPath: homePath, config: orchestrator } = await resolveCaller(orchestratorId);
 
   // Checked before anything is created, with the checks saving it runs: a helper never starts without its setup.
+  // With no template named, the orchestrator's own helper template, else the app's default (#2895).
   let managedHelper: Awaited<ReturnType<typeof managedHelperSetup>>;
   try {
-    managedHelper = await managedHelperSetup(managedAgents(), args);
+    managedHelper = await managedHelperSetup(managedAgents(), args, orchestrator.helperTemplateId);
   } catch (err) {
     // telemetry-exempt: the refusal reaches the calling agent as the tool result
     return refused(`Could not start helper "${args.name}": ${errorText(err)}`);
@@ -649,13 +650,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
   const orchestratorCli = orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator;
   const runsOn = args.cli === AUTO_CLI ? undefined : (args.cli ?? orchestratorCli);
   const templateModel = await helperTemplateModel(managedHelper.settings, args, runsOn, async (helperCli, templateModelId) => {
-    let checkProject = homePath;
-    try {
-      checkProject = (await resolveTargetProject(homePath, orchestratorId, args.project)).path;
-    } catch {
-      // telemetry-exempt: a bad project is refused under the lock; check the model with the home profile
-    }
-    const check = await checkHelperModel(helperCli, templateModelId, checkProject);
+    const check = await checkHelperModel(helperCli, templateModelId);
     return check.ok && !check.warning;
   });
   if (templateModel) args = { ...args, model: templateModel };
@@ -671,7 +666,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     try {
       modelProject = (await resolveTargetProject(homePath, orchestratorId, args.project)).path;
     } catch {
-      // telemetry-exempt: a bad project is refused under the lock; check the model with the home profile
+      // telemetry-exempt: a bad project is refused under the lock; plan with the home project
     }
     const auto = cli === AUTO_CLI ? await autoStateFor(homePath, modelProject, orchestrator) : undefined;
     const planned = await planHelperStart({
@@ -687,18 +682,18 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     plan = planned.plan;
     if (plan?.warning) modelWarning = plan.warning;
     if (model) {
-      const check = await checkHelperModel(plan?.provider, model, modelProject);
+      const check = await checkHelperModel(plan?.provider, model);
       if (check.ok === false) return refused(check.message);
       modelWarning = check.warning;
     }
     if (effort) {
-      const check = await checkHelperEffort(plan?.provider, plan?.model, effort, modelProject);
+      const check = await checkHelperEffort(plan?.provider, plan?.model, effort);
       if (check.ok === false) return refused(check.message);
       effortWarning = check.warning;
     }
     // An explicit start isn't blocked by quota or a cooldown, only told, from what is already known.
     if (plan?.provider && !plan.pendingAuto) {
-      quotaWarning = await providerStartWarning(plan.provider, modelProject);
+      quotaWarning = await providerStartWarning(plan.provider);
       if (quotaWarning) plan = { ...plan, routing: { ...plan.routing, warning: quotaWarning } };
     }
   }
@@ -1338,15 +1333,15 @@ export function registerHelperTools(): void {
         'approves or declines. With project, the helper is created in another Clubhouse project ' +
         '(see list_projects); that needs cross-project helpers turned on for you. ' +
         'Templates replace personas: every helper is built from a template ' +
-        '(the one you name, or the default helper template), with parts added or removed for it only, and persona is ignored. ' +
-        'Naming a template or changing parts needs the person to let orchestrators choose helper templates; otherwise every helper gets the default helper template.',
+        '(the one you name, else your helper template, which is the default helper template unless the person set one for you), with parts added or removed for it only, and persona is ignored. ' +
+        'Naming a template or changing parts needs the person to let orchestrators choose helper templates; otherwise every helper gets your helper template.',
       inputSchema: {
         type: 'object',
         properties: {
           name: { type: 'string', description: 'The helper\'s name (also its default folder).' },
           task: { type: 'string', description: 'The task, sent as the helper\'s first message.' },
           persona: { type: 'string', description: 'Ignored: templates replace personas, so use template.' },
-          template: { type: 'string', description: `${NEEDS_MANAGED} The template to build the helper from (list_agent_templates). Leave out for the default helper template.` },
+          template: { type: 'string', description: `${NEEDS_MANAGED} The template to build the helper from (list_agent_templates). Leave out for your helper template (the default helper template unless the person set one for you).` },
           addParts: { type: 'array', items: { type: 'string' }, description: `${NEEDS_MANAGED} Agent part ids (list_agent_parts) to add for this helper only.` },
           removeParts: { type: 'array', items: { type: 'string' }, description: `${NEEDS_MANAGED} Agent part ids from the template to leave out for this helper only. To swap a part, remove one and add another. The Clubhouse MCP part can't be removed.` },
           cli: {

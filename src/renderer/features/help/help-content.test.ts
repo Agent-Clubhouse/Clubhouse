@@ -142,7 +142,7 @@ describe('help-content in the new shell', () => {
   it('getHelpSections follows the shell flag', () => {
     expect(getHelpSections()).toBe(HELP_SECTIONS);
     useChromeFlagStore.setState({ enabled: true });
-    expect(getHelpSections()).toBe(CHROME_HELP_SECTIONS);
+    expect(getHelpSections().map((s) => s.id)).toEqual(CHROME_HELP_SECTIONS.map((s) => s.id));
   });
 
   it('keeps the classic section ids and drops Dashboard', () => {
@@ -175,7 +175,7 @@ describe('help-content in the new shell', () => {
   });
 
   it('points only at settings pages that exist', () => {
-    const pages = ['About', 'Agents & providers', 'Managed agents', 'Helpers', 'Profiles', 'Display & UI', 'External editor', 'Keyboard shortcuts',
+    const pages = ['About', 'Agents & providers', 'Managed agents', 'Helpers', 'Display & UI', 'External editor', 'Keyboard shortcuts',
       'Notifications & alerts', 'Plugins', 'Annex', 'Annex control', 'Updates', 'Logging', 'Feedback', "What's new"];
     for (const t of articles()) {
       for (const m of t.content.matchAll(/\*\*Settings > ([^*]+)\*\*/g)) {
@@ -185,10 +185,11 @@ describe('help-content in the new shell', () => {
     }
   });
 
-  it('lists Annex under Settings only when asked', () => {
+  it('lists Annex under Settings on every build, since Annex is stable (#2811)', () => {
     useChromeFlagStore.setState({ enabled: true });
     const settingsIds = (sections: typeof HELP_SECTIONS) => sections.find((s) => s.id === 'settings')!.topics.map((t) => t.id);
-    expect(settingsIds(getHelpSections())).not.toContain('settings-annex');
-    expect(settingsIds(getHelpSections({ annex: true }))).toContain('settings-annex');
+    expect(settingsIds(getHelpSections())).toEqual(['settings-themes', 'settings-sound', 'settings-notifications', 'settings-annex', 'settings-logging']);
+    // Only the new shell's sections get it: the classic articles are left as they were.
+    expect(settingsIds(CHROME_HELP_SECTIONS)).not.toContain('settings-annex');
   });
 });

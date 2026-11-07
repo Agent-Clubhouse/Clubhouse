@@ -306,7 +306,6 @@ vi.mock('./agent-system', () => ({
       ? [{ id: 'default', label: 'Default' }, { id: 'gpt-5', label: 'GPT-5' }]
       : [{ id: 'default', label: 'Default' }, { id: 'opus', label: 'Opus' }, { id: 'sonnet', label: 'Sonnet' }]),
   }),
-  resolveProfileEnv: async () => undefined,
   spawnAgent: async () => {},
   killAgent: async (id: string, _p: string, _o: string, _t: string, opts?: { waitForExit?: boolean }) => { if (opts?.waitForExit && !W.stopFails) W.running.delete(id); },
   isAgentRunning: (id: string) => W.running.has(id),
@@ -367,7 +366,6 @@ vi.mock('../orchestrators', async (importOriginal) => {
   };
 });
 vi.mock('./orchestrator-settings', () => ({ getSettings: () => ({ enabled: ['claude-code', 'codex-cli'] }) }));
-vi.mock('./profile-settings', () => ({ getProfile: () => undefined }));
 vi.mock('./chat-idle-settings', () => ({ chatIdleSettings: { getSettings: () => ({ idleTimeoutMinutes: 30 }) } }));
 vi.mock('./chat-runtime-settings', () => ({
   isChatEnabled: () => true,

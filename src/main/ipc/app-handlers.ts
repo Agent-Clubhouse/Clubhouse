@@ -20,6 +20,7 @@ import * as sessionSettings from '../services/session-settings';
 import * as fsp from 'fs/promises';
 import * as logSettings from '../services/log-settings';
 import { isPreviewEligible } from '../services/preview-eligible';
+import { takeRemovedProfilesNotice } from '../services/provider-profiles-removed';
 import { ClipboardSettings, ExperimentalSettings, SoundEvent, SoundSettings, UpdateSettings } from '../../shared/types';
 import * as annexServer from '../services/annex-server';
 import * as experimentalSettings from '../services/experimental-settings';
@@ -117,6 +118,8 @@ export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.IS_PREVIEW_ELIGIBLE, () => {
     return isPreviewEligible();
   });
+
+  ipcMain.handle(IPC.APP.TAKE_REMOVED_PROFILES_NOTICE, () => takeRemovedProfilesNotice());
 
   ipcMain.handle(IPC.APP.GET_CLI_INSTALL_STATUS, () => getCliInstallStatus());
   ipcMain.handle(IPC.APP.INSTALL_CLI, () => installCli());

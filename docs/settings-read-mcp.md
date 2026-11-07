@@ -71,7 +71,7 @@ Only the keys below ever come out. Each is read by name from its source, never b
 | `agent.idle` | `idle_sleep` |
 | `agent.orchestration` | `orchestrate`, `access`, `control`, `max_helpers`, `cross_project_helpers`, `connect_to_dispatcher`, `auto_helpers` |
 | `project.identity` | `name`, `display_name`, `color`, `emoji`, `has_image` |
-| `project.defaults` | `orchestrator`, `persona` (always null), `mission` (always null), `free_agent_mode`, `profile_id`, `source_control_provider`, `default_mcps` |
+| `project.defaults` | `orchestrator`, `persona` (always null), `mission` (always null), `free_agent_mode`, `profile_id` (always null: provider profiles were removed, #2749), `source_control_provider`, `default_mcps` |
 | `project.modes` | `clubhouse_mode` (always null), `mcp` (always on), `permission_mode` |
 | `app.defaults` | `idle_timeout_minutes`, `chat_enabled`, `provider_runtime`, `mcp_enabled` (always on), `clubhouse_mode_enabled` (always null), `permission_mode`, `global_helper_cap`, `enabled_orchestrators` |
 | `app.system` | `dispatcher_enabled`, `experimental_chat`, `experimental_copilot_sdk`, `experimental_copilot_legacy_acp`, `annex_server_enabled`, `annex_client_enabled` |
@@ -80,7 +80,7 @@ Only the keys below ever come out. Each is read by name from its source, never b
 
 ### Deliberately left out
 
-- **Secrets and raw config:** `agents.json` and `settings.json` as a whole, `mcpJson`, `mcpConfigs`, launch wrappers, `commandPrefix`, profile env and contents, Annex pairing, TLS and device data, the CLI token, nonces, and the whole telemetry settings file.
+- **Secrets and raw config:** `agents.json` and `settings.json` as a whole, `mcpJson`, `mcpConfigs`, launch wrappers, `commandPrefix`, the old `profiles.json`, Annex pairing, TLS and device data, the CLI token, nonces, and the whole telemetry settings file.
 - **Free text that can hold a credential:** build, test and lint commands, project instructions and permissions.
 - **Session and work data:** session ids and history, `pendingTask`, handoff notes.
 - **Editor, Goobers and security settings.** Nothing an agent needs to explain its own behavior. `allowLocalFileWebviews` lives behind the IPC layer, which this service shouldn't import.

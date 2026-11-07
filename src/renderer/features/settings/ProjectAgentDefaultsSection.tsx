@@ -1,8 +1,6 @@
 import { useEffect, useId, useState, useCallback, useMemo, type ReactNode } from 'react';
 
 import type { SourceControlProvider, ProjectConfigBreakdown, ProvenancedConfigItem } from '../../../shared/types';
-import { useProfileStore } from '../../stores/profileStore';
-import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { Toggle } from '../../components/Toggle';
 import { Modal } from '../../components/Modal';
@@ -32,7 +30,6 @@ interface ProjectAgentDefaults {
   lintCommand?: string;
   mission?: string;
   persona?: string;
-  profileId?: string;
   commandPrefix?: string;
 }
 
@@ -233,14 +230,10 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
   const [buildCommand, setBuildCommand] = useState('');
   const [testCommand, setTestCommand] = useState('');
   const [lintCommand, setLintCommand] = useState('');
-  const [profileId, setProfileId] = useState<string | undefined>(undefined);
   const [commandPrefix, setCommandPrefix] = useState('');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const profiles = useProfileStore((s) => s.profiles);
-  const loadProfiles = useProfileStore((s) => s.loadProfiles);
-  const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const idBase = useId();
 
   // Provenance breakdown state
@@ -269,7 +262,6 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
       setBuildCommand(d.buildCommand || '');
       setTestCommand(d.testCommand || '');
       setLintCommand(d.lintCommand || '');
-      setProfileId(d.profileId);
       setCommandPrefix(d.commandPrefix || '');
       setLoaded(true);
       setDirty(false);
@@ -291,8 +283,7 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
 
   useEffect(() => {
     loadDefaults();
-    loadProfiles();
-  }, [loadDefaults, loadProfiles]);
+  }, [loadDefaults]);
 
   useEffect(() => {
     if (loaded) {
@@ -348,7 +339,6 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
     // Personas and missions aren't offered (#2901); a saved default stays for the switch to managed to read.
     if (defaults.mission) newDefaults.mission = defaults.mission;
     if (defaults.persona) newDefaults.persona = defaults.persona;
-    if (profileId) newDefaults.profileId = profileId;
     if (commandPrefix.trim()) newDefaults.commandPrefix = commandPrefix.trim();
 
     await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, newDefaults);
@@ -420,12 +410,6 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
   const hasPluginPerms = pluginAllowRules.length > 0 || pluginDenyRules.length > 0;
   const hasPluginMcp = pluginMcpServers.length > 0;
 
-  const activeProfile = profiles.find((p) => p.id === profileId);
-  const coveredNames = activeProfile
-    ? Object.keys(activeProfile.orchestrators).map(
-        (id) => allOrchestrators.find((o) => o.id === id)?.displayName || id
-      )
-    : [];
   const markDirty = () => setDirty(true);
 
   return (
@@ -468,32 +452,6 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
             <option value="azure-devops">Azure DevOps (az CLI)</option>
           </select>
         </SettingsField>
-
-        {profiles.length > 0 && (
-          <SettingsField
-            label="Default profile"
-            help={
-              <>
-                Profile env vars are injected when agents in this project start.
-                {activeProfile && ' Agent creation only offers the orchestrators the profile configures.'}
-                {coveredNames.length > 0 && <span className="block mt-px">Covers {coveredNames.join(', ')}.</span>}
-              </>
-            }
-            htmlFor={`${idBase}-profile`}
-          >
-            <select
-              id={`${idBase}-profile`}
-              value={profileId || ''}
-              onChange={(e) => { setProfileId(e.target.value || undefined); markDirty(); }}
-              className={SELECT_CLASS}
-            >
-              <option value="">None (default credentials)</option>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </SettingsField>
-        )}
 
         <SettingsField
           label="Command prefix"

@@ -5,8 +5,8 @@ import { chatFixturePath } from '../../src/main/orchestrators/adapters/testing/f
 
 /** Override every provider/model input read by the SDK driver. An empty base
  * URL disables provider mapping; synthetic fixture auth supplies the login.
- * Applied at launch AND through a project profile, after login-shell env. This
- * is a narrow fixture override, not an allowlist of the app's environment. */
+ * Applied in the app's launch environment. This is a narrow fixture override,
+ * not an allowlist of the app's environment. */
 export const SDK_FIXTURE_ENV: Record<string, string> = {
   COPILOT_MODEL: 'fake-model',
   COPILOT_PROVIDER_BASE_URL: '',

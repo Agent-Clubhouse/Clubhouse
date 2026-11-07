@@ -38,7 +38,6 @@ import { telemetry } from './telemetry';
 import { chat } from './chat';
 import { dispatcher } from './dispatcher';
 import { plugin } from './plugin';
-import { profile } from './profile';
 import { marketplace } from './marketplace';
 import { file } from './file';
 import { agentSettings } from './agentSettings';
@@ -75,7 +74,6 @@ describe('preload IPC bridge', () => {
       log,
       processApi,
       app,
-      profile,
       annex,
       annexClient,
       windowApi,

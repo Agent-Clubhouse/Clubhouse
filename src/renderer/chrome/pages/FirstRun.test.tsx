@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { FirstRun } from './FirstRun';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { useUIStore } from '../../stores/uiStore';
 
 let pickAndAddProject: ReturnType<typeof vi.fn>;
 let addProject: ReturnType<typeof vi.fn>;
@@ -59,6 +60,16 @@ describe('FirstRun', () => {
     expect(rows.map((r) => r.querySelectorAll('[data-testid="agent-mascot"]').length)).toEqual([1, 1]);
     expect(rows[0].querySelector('.opacity-45')).toBeNull();
     expect(rows[1].querySelector('.opacity-45')).not.toBeNull();
+  });
+
+  it('offers Annex with Preview off and opens Annex control, since Annex is stable (#2811)', () => {
+    window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
+    const toggleSettings = vi.fn();
+    useUIStore.setState({ explorerTab: 'agents', toggleSettings } as never);
+    render(<FirstRun />);
+    fireEvent.click(screen.getByTestId('first-run-annex'));
+    expect(useUIStore.getState()).toMatchObject({ settingsContext: 'app', settingsSubPage: 'annex-control' });
+    expect(toggleSettings).toHaveBeenCalled();
   });
 
   it('adds a dropped folder', () => {

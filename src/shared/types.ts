@@ -180,24 +180,6 @@ export interface CompletedQuickAgent {
   managedTemplateId?: string;
 }
 
-// --- Profile types ---
-
-/** Per-orchestrator env config within a profile */
-export interface OrchestratorProfileEntry {
-  env: Record<string, string>;  // e.g. { CLAUDE_CONFIG_DIR: "~/.claude-work" }
-}
-
-/** Named profile containing env configs for multiple orchestrators */
-export interface OrchestratorProfile {
-  id: string;
-  name: string;           // e.g. "Work", "Personal"
-  orchestrators: Record<string, OrchestratorProfileEntry>;
-}
-
-export interface ProfilesSettings {
-  profiles: OrchestratorProfile[];
-}
-
 // --- Config inheritance types ---
 
 export interface PermissionsConfig {
@@ -250,7 +232,11 @@ export interface ProjectAgentDefaults {
   buildCommand?: string;
   testCommand?: string;
   lintCommand?: string;
-  /** Default profile to use for agents in this project */
+  /**
+   * @deprecated Provider profiles were removed (#2749): every agent runs on its
+   * provider's own login. Old project settings may still hold an id. Nothing
+   * applies it; only the one-time removal log reads it.
+   */
   profileId?: string;
   /** `off` stops `cli: "auto"` in this project (#2671). A project can't turn it on. */
   helperAuto?: 'off';
@@ -295,9 +281,10 @@ export interface DurableAgentConfig {
   /** Why a saved context choice was cleared, shown until the next choice. */
   contextWindowNotice?: string;
   /**
-   * The reasoning effort start_helper asked for (#2671), passed on every launch.
-   * Only the start writes it. A new model or CLI clears it, since a level means
-   * something only to the model it was checked against.
+   * The reasoning effort (#2671), passed on every launch. start_helper writes
+   * it, and so do a managed agent's Settings and templates. A new model or CLI
+   * clears it, since a level means something only to the model it was checked
+   * against.
    */
   effort?: string;
   /** What start_helper decided and why (#2671). A later change of model or CLI clears it. */
@@ -411,6 +398,12 @@ export interface DurableAgentConfig {
    * services/managed-agents, never updateDurableConfig.
    */
   managed?: import('./managed-agents-types').ManagedAgentSetup;
+  /**
+   * The template this agent's helpers start from when start_helper names
+   * none (#2895). Unset, or a template that no longer exists, means the app's
+   * default helper template.
+   */
+  helperTemplateId?: string;
   /**
    * Unmanaged agents only (#2893): false turns off Clubhouse's hooks and MCP
    * bridge for a plain CLI. Unset means on.
@@ -540,7 +533,8 @@ export interface HelperStartArgs {
   project?: string;
   /**
    * Clubhouse-managed helpers (#2899): the template to build the helper from.
-   * Unset means the app's default helper template.
+   * Unset means the orchestrator's helper template, else the app's default
+   * helper template (#2895).
    */
   template?: string;
   /** Agent part ids to add for this helper only (#2899). Nothing is saved to the template. */
@@ -751,6 +745,10 @@ export interface DurableConfigUpdates {
   runtimeMode?: import('./chat').AgentRuntimeMode | null;
   /** Per-agent auto-sleep; 'inherit' or null clears it (app default). */
   idleSleep?: import('./idle-sleep').AgentIdleSleep | null;
+  /** Reasoning effort for the model it runs; null clears it (the CLI's default). Applied after a model or CLI change. */
+  effort?: string | null;
+  /** The template its helpers start from; null clears it (the app's default helper template). */
+  helperTemplateId?: string | null;
   mission?: string;
   buildCommand?: string;
   testCommand?: string;
@@ -949,7 +947,7 @@ export interface SoundSettings {
   }>;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher'
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher'
   // Clubhouse-managed agents (#2819).
   | 'managed-blocks' | 'managed-skills' | 'managed-mcp' | 'managed-templates' | 'managed-orchestration' | 'managed-switch';
 

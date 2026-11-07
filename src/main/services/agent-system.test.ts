@@ -84,6 +84,10 @@ vi.mock('./context-window', () => ({
   contextWindowForLaunch: (...args: unknown[]) => mockContextWindowForLaunch(...args),
 }));
 
+// Saved provider profiles' old state folders (#2749): none unless a test says so.
+const mockRemovedProfileStateDirs = vi.fn(async (_providerId: string): Promise<string[]> => []);
+vi.mock('./provider-profiles-removed', () => ({ removedProfileStateDirs: (id: string) => mockRemovedProfileStateDirs(id) }));
+
 vi.mock('./agent-config', () => ({
   getSessionHistory: (...args: unknown[]) => mockGetSessionHistory(...(args as [])),
   removeSessionEntries: (...args: unknown[]) => mockRemoveSessionEntries(...(args as [])),
@@ -120,12 +124,6 @@ vi.mock('./agent-mcp-servers', () => ({
 }));
 vi.mock('./toml-config-cleanup', () => ({
   cleanupStaleJsonInTomlConfigs: (...args: unknown[]) => mockCleanupStaleJsonInTomlConfigs(...args),
-}));
-
-// Mock profile-settings
-vi.mock('./profile-settings', () => ({
-  getProfile: vi.fn(() => null),
-  resolveProfileEnv: vi.fn(() => undefined),
 }));
 
 // Mock agent-settings-service
@@ -203,7 +201,6 @@ const mockProvider = {
   getModelOptions: vi.fn(() => []),
   getDefaultPermissions: vi.fn((kind: string) => kind === 'quick' ? ['Read', 'Write'] : []),
   toolVerb: vi.fn(),
-  getProfileEnvKeys: vi.fn(() => ['CLAUDE_CONFIG_DIR']),
   getCapabilities: vi.fn(() => ({
     headless: true, structuredOutput: true, hooks: true,
     sessionResume: true, permissions: true,
@@ -232,7 +229,6 @@ const mockCodexProvider = {
     headless: true, structuredOutput: false, hooks: false,
     sessionResume: true, permissions: true,
   })),
-  getProfileEnvKeys: vi.fn(() => ['OPENAI_API_KEY']),
   // Codex passes its mission as a bare trailing positional argument, so
   // buildSpawnCommand puts it in trailingArgs (see SpawnCommandResult) and
   // buildMcpArgs must be spliced in ahead of it, never appended after.
@@ -354,6 +350,7 @@ function notSessionCapable(provider: Record<string, unknown>): void {
   delete provider.findRunSession;
   delete provider.hasSession;
   delete provider.hasSessionForCwd;
+  delete provider.hasSessionInStore;
 }
 
 describe('agent-system', () => {
@@ -628,6 +625,19 @@ describe('agent-system', () => {
       );
     });
 
+    it('starts on the provider\'s own environment when old settings still name a profile (#2749)', async () => {
+      mockReadProjectAgentDefaults.mockReturnValue({ profileId: 'work' } as never);
+      try {
+        await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/worktree', kind: 'durable' });
+        expect(mockProvider.checkAvailability).toHaveBeenCalledWith();
+        const env = mockPtySpawn.mock.calls.at(-1)![4] as Record<string, string>;
+        expect(env).toMatchObject({ CLUBHOUSE_AGENT_ID: 'agent-1' });
+        expect(env).not.toHaveProperty('CLAUDE_CONFIG_DIR');
+      } finally {
+        mockReadProjectAgentDefaults.mockReturnValue({});
+      }
+    });
+
     it('uses quick default permissions when kind is quick and no allowedTools', async () => {
       await spawnAgent({
         agentId: 'agent-1',
@@ -734,8 +744,8 @@ describe('agent-system', () => {
       } as unknown as TelemetryRuntime);
       const realStart = mockTryStartChatAgent.getMockImplementation()!;
       mockTryStartChatAgent.mockImplementationOnce(async (...args: unknown[]) => {
-        (args[5] as () => void)();
-        Object.assign(args[6] as object, { attempts: [{ driver: 'claude_agent_sdk', checkMs: 5 }], reason: 'killed' });
+        (args[4] as () => void)();
+        Object.assign(args[5] as object, { attempts: [{ driver: 'claude_agent_sdk', checkMs: 5 }], reason: 'killed' });
         return 'cancelled';
       });
       try {
@@ -1117,6 +1127,18 @@ describe('agent-system', () => {
       mockBroadcastToAllWindows.mockClear();
       await spawn();
       expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, 'agent-1', 'left out');
+    });
+
+    it('tells the person through the setup notice when Codex launch flags left MCP env variables out (#2932)', async () => {
+      withConfig({});
+      const build = mockCodexProvider.buildMcpArgs as ReturnType<typeof vi.fn>;
+      build.mockImplementationOnce((_servers: unknown, onNotice?: (m: string) => void) => {
+        onNotice?.('env left out');
+        return [];
+      });
+      mockBroadcastToAllWindows.mockClear();
+      await spawn();
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, 'agent-1', 'env left out');
     });
 
     it('gives a managed agent its own MCP servers and the bridge, a saved mcpOverride from before ignored (#2896)', async () => {
@@ -1846,7 +1868,7 @@ describe('agent-system', () => {
         const { onExit } = await wake('codex-cli');
         onExit('agent-1', 0, `session: ${OTHER}`);
         await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
-        expect(hasSessionForCwd).toHaveBeenCalledWith(OTHER, '/project', undefined);
+        expect(hasSessionForCwd).toHaveBeenCalledWith(OTHER, '/project');
         expect(mockAddSessionEntry).not.toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: OTHER }));
       });
 
@@ -2062,6 +2084,23 @@ describe('agent-system', () => {
           const { onExit } = await wake('codex-cli');
           onExit('agent-1', 0, 'bye');
           expect(await capture()).toMatchObject({ 'clubhouse.session.capture.result': 'capture_failed' });
+        });
+
+        it('a saved id only a removed provider profile\'s store has: fresh, kept, nothing cleared (#2749)', async () => {
+          (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => false);
+          const inStore = vi.fn(async () => true);
+          (mockCodexProvider as Record<string, unknown>).hasSessionInStore = inStore;
+          mockRemovedProfileStateDirs.mockResolvedValueOnce(['/old/codex-home']);
+          mockCodexProvider.buildSpawnCommand.mockClear();
+          const { resumedWith } = await wake('codex-cli');
+          expect(resumedWith).toBeTruthy();
+          expect(inStore).toHaveBeenCalledWith(resumedWith, '/old/codex-home');
+          expect(mockCodexProvider.buildSpawnCommand.mock.calls.at(-1)![0]).toMatchObject({ resume: false });
+          expect(recorded('clubhouse.agent.session_stale_cleared')).toEqual([]);
+          expect(recorded('clubhouse.agent.resume_outcome')).toEqual([
+            { 'clubhouse.orchestrator': 'codex-cli', 'clubhouse.agent.id_hash': 'agent-1', 'clubhouse.session.resume.result': 'fresh_not_found' },
+          ]);
+          expect(config.lastSessionId).toBe(resumedWith);
         });
 
         it('a saved id the store lacks at wake: cleared store_missing, fresh_not_found', async () => {
@@ -2283,11 +2322,6 @@ describe('agent-system', () => {
         capabilities: expect.objectContaining({ hooks: false }),
         conventions: expect.objectContaining({ configDir: '.codex' }),
       });
-    });
-
-    it('uses provider fixtures with the expected profile env keys', () => {
-      expect(mockProvider.getProfileEnvKeys()).toEqual(['CLAUDE_CONFIG_DIR']);
-      expect(mockCodexProvider.getProfileEnvKeys()).toEqual(['OPENAI_API_KEY']);
     });
   });
 
@@ -3273,6 +3307,41 @@ describe('listSessions: saved ids the CLI store lacks (#2156)', () => {
 
     expect(sessions.map((s) => s.sessionId)).toEqual(['codex-1']);
     expect(mockRemoveSessionEntries).not.toHaveBeenCalled();
+  });
+
+  it('never prunes an entry a removed provider profile\'s store has; still prunes a truly missing one (#2749)', async () => {
+    sessionCapable(mockCodexProvider);
+    mockRemoveSessionEntries.mockClear();
+    mockGetDurableConfig.mockResolvedValue({ id: 'durable_cp', orchestrator: 'codex-cli' });
+    mockGetSessionHistory.mockResolvedValue([entry('old-profile-1'), entry('dead-1'), entry('real-1')]);
+    (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async (id: string) => id === 'real-1');
+    const inStore = vi.fn(async (id: string, dir: string) => dir === '/old/codex-home' && id === 'old-profile-1');
+    (mockCodexProvider as Record<string, unknown>).hasSessionInStore = inStore;
+    mockRemovedProfileStateDirs.mockResolvedValue(['/old/codex-home']);
+    try {
+      const sessions = await listSessions('/project', 'durable_cp', 'codex-cli');
+      expect(sessions.map((s) => s.sessionId)).toEqual(['real-1']);
+      expect(mockRemoveSessionEntries).toHaveBeenCalledWith('/project', 'durable_cp', ['dead-1']);
+      expect(mockRemovedProfileStateDirs).toHaveBeenCalledWith('codex-cli');
+    } finally {
+      mockRemovedProfileStateDirs.mockResolvedValue([]);
+    }
+  });
+
+  it('keeps an entry when a removed profile\'s store can\'t be read (#2749)', async () => {
+    sessionCapable(mockCodexProvider);
+    mockRemoveSessionEntries.mockClear();
+    mockGetDurableConfig.mockResolvedValue({ id: 'durable_cp', orchestrator: 'codex-cli' });
+    mockGetSessionHistory.mockResolvedValue([entry('old-profile-1')]);
+    (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => false);
+    (mockCodexProvider as Record<string, unknown>).hasSessionInStore = vi.fn(async () => undefined);
+    mockRemovedProfileStateDirs.mockResolvedValue(['/old/codex-home']);
+    try {
+      await listSessions('/project', 'durable_cp', 'codex-cli');
+      expect(mockRemoveSessionEntries).not.toHaveBeenCalled();
+    } finally {
+      mockRemovedProfileStateDirs.mockResolvedValue([]);
+    }
   });
 
   it('prunes nothing when every entry exists', async () => {

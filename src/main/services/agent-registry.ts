@@ -7,6 +7,7 @@ import { ACCESS_LEVELS, accessLevelOf, launchAccessFor } from '../../shared/orch
 import { setOrchestrationEnabled } from './clubhouse-mcp/orchestration-gate';
 import { setDispatcherAgent } from './clubhouse-mcp/dispatcher-gate';
 import { forgetMcpCaller } from './clubhouse-mcp/mcp-call-gate';
+import { dropRunningSnapshot } from './managed-agents/delivery-records';
 
 export const DEFAULT_ORCHESTRATOR: OrchestratorId = 'claude-code';
 
@@ -151,6 +152,8 @@ export function getAgentCwd(agentId: string): string | undefined {
 
 export function untrackAgent(agentId: string): void {
   agentRegistry.untrack(agentId);
+  // Its session ended: what Preview showed as "Running now" isn't running any more.
+  dropRunningSnapshot(agentId);
 }
 
 /** Read the project-level orchestrator setting from .clubhouse/settings.json */

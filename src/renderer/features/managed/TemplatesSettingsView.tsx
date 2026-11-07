@@ -1,7 +1,9 @@
 import { useId, useState } from 'react';
 import { TabList, tabPanelProps } from '../../components/TabList';
 import { isListed, type ManagedTemplate, type ManagedTemplateChange, type ManagedTemplatePushTarget } from '../../../shared/managed-agents-types';
-import { DEFAULT_MAX_HELPERS, MAX_HELPER_LIMIT } from '../../../shared/orchestration-policy';
+import { DEFAULT_MAX_HELPERS, MAX_HELPER_LIMIT, ORCHESTRATION_DEFAULTS } from '../../../shared/orchestration-policy';
+import { normalizeIdleSleep } from '../../../shared/idle-sleep';
+import type { OrchestratorId } from '../../../shared/types';
 import { Button } from '../../components/Button';
 import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAction';
 import { PopupMenu } from '../../components/PopupMenu';
@@ -10,6 +12,15 @@ import { SettingsField, SettingsPage, SettingsSection, settingsError, settingsHe
 import { ManagedBuilder, type SetupDraft } from './ManagedBuilder';
 import { TemplatePushDialog } from './TemplatePushDialog';
 import { errorText, managed, unwrap, useManagedTemplates } from './managedApi';
+import {
+  EffortSelect, HELPER_SELECTION_HELP, HELPER_TEMPLATE_HELP, HelperSelectionSelect, HelperTemplateSelect, IDLE_SLEEP_HELP, IdleSleepSelect,
+  effortHelp, useModelEfforts,
+} from './settings-fields';
+import { AccessSelect, ControlSelect, DISPATCHER_HELP, DispatcherToggle } from '../agents/helpers/OrchestrationFields';
+import { useModelOptions } from '../../hooks/useModelOptions';
+import { useOrchestratorStore } from '../../stores/orchestratorStore';
+
+const selectClass = `${settingsInput} pr-6 cursor-pointer`;
 
 type ListedTemplate = ManagedTemplate & { usedBy: number };
 type TemplateDraft = Pick<ManagedTemplate, 'name' | 'description' | 'setup' | 'settings'> & { id?: string };
@@ -64,7 +75,28 @@ function TemplateEditor({ initial, onDone }: { initial: TemplateDraft; onDone: (
 
   const setSetup = (setup: SetupDraft) => setDraft((d) => ({ ...d, setup: { blocks: setup.blocks, skills: setup.skills, mcps: setup.mcps } }));
   const setOrch = (patch: Partial<NonNullable<TemplateDraft['settings']['orchestration']>>) =>
-    setDraft((d) => ({ ...d, settings: { ...d.settings, orchestration: { ...(d.settings.orchestration ?? {}), ...patch } } }));
+    setDraft((d) => {
+      const next = { ...(d.settings.orchestration ?? {}), ...patch };
+      // Unset means the agent follows the app or the default, so the key goes.
+      for (const k of Object.keys(next) as Array<keyof typeof next>) if (next[k] === undefined) delete next[k];
+      return { ...d, settings: { ...d.settings, orchestration: next } };
+    });
+  /** A template sets only what it names: an unset value takes the key out. */
+  const setSetting = (patch: Partial<TemplateDraft['settings']>) =>
+    setDraft((d) => {
+      const next = { ...d.settings, ...patch } as Record<string, unknown>;
+      for (const k of Object.keys(patch)) if (next[k] === undefined) delete next[k];
+      return { ...d, settings: next as TemplateDraft['settings'] };
+    });
+  const settings = draft.settings;
+  const allOrchestrators = useOrchestratorStore((st) => st.allOrchestrators);
+  const cli = settings.orchestrator ?? '';
+  const { options: modelOptions, loading: modelsLoading } = useModelOptions(cli || undefined);
+  const modelValue = settings.model ?? 'default';
+  const modelChoices = modelOptions.some((o) => o.id === modelValue) ? modelOptions : [...modelOptions, { id: modelValue, label: modelValue }];
+  const { levelsFor, loading: effortsLoading } = useModelEfforts(cli || undefined);
+  const effortLevels = cli ? levelsFor(modelValue) : [];
+  const effortValue = settings.effort ?? '';
   const commitMax = () => {
     const n = Number(maxDraft);
     if (!Number.isInteger(n) || n < 1 || n > MAX_HELPER_LIMIT) { setMaxDraft(String(orch.maxHelpers ?? DEFAULT_MAX_HELPERS)); return; }
@@ -157,6 +189,42 @@ function TemplateEditor({ initial, onDone }: { initial: TemplateDraft; onDone: (
       </SettingsSection>
 
       <SettingsSection title="Settings">
+        <SettingsField label="CLI" htmlFor="managed-template-cli" help="Not set: an agent made from it runs on its project's CLI.">
+          <select
+            id="managed-template-cli"
+            className={selectClass}
+            value={cli}
+            onChange={(e) => setSetting({ orchestrator: (e.target.value || undefined) as OrchestratorId | undefined, model: undefined, effort: undefined })}
+          >
+            <option value="">Not set</option>
+            {cli && !allOrchestrators.some((o) => o.id === cli) && <option value={cli}>{cli}</option>}
+            {allOrchestrators.map((o) => <option key={o.id} value={o.id}>{o.displayName}</option>)}
+          </select>
+        </SettingsField>
+        <SettingsField label="Model" htmlFor="managed-template-model" help={cli ? undefined : 'Pick a CLI to set a model.'} disabled={!cli}>
+          <select
+            id="managed-template-model"
+            className={selectClass}
+            value={modelValue}
+            disabled={!cli || modelsLoading}
+            onChange={(e) => setSetting({ model: e.target.value === 'default' ? undefined : e.target.value, effort: undefined })}
+          >
+            {modelChoices.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+        </SettingsField>
+        <SettingsField label="Effort" htmlFor="managed-template-effort" help={cli ? effortHelp(effortLevels, effortsLoading) : 'Pick a CLI to set an effort.'} disabled={!cli}>
+          <EffortSelect
+            id="managed-template-effort"
+            value={effortValue}
+            levels={effortLevels}
+            disabled={!cli || effortsLoading || (effortLevels.length === 0 && !effortValue)}
+            className={selectClass}
+            onChange={(next) => setSetting({ effort: next || undefined })}
+          />
+        </SettingsField>
+        <SettingsField label="Free Agent Mode" help="Uses the configured Free agent permission mode. Only for CLIs that support it.">
+          <Toggle checked={!!settings.freeAgentMode} onChange={(v) => setSetting({ freeAgentMode: v })} aria-label="Free Agent Mode" data-testid="managed-template-free-agent-mode" />
+        </SettingsField>
         <SettingsField label="Orchestration" help="Agents made from this template can start helpers.">
           <Toggle checked={orchestrate} onChange={(v) => setOrch({ orchestrate: v })} aria-label="Orchestration" data-testid="managed-template-orchestrate" />
         </SettingsField>
@@ -175,6 +243,62 @@ function TemplateEditor({ initial, onDone }: { initial: TemplateDraft; onDone: (
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitMax(); } }}
           />
         </SettingsField>
+        <SettingsField label="Helper selection" htmlFor="managed-template-helper-selection" help={HELPER_SELECTION_HELP} disabled={!orchestrate}>
+          <HelperSelectionSelect
+            id="managed-template-helper-selection"
+            value={orch.autoHelpers}
+            disabled={!orchestrate}
+            className={selectClass}
+            onChange={(next) => setOrch({ autoHelpers: next })}
+          />
+        </SettingsField>
+        <SettingsField label="Helper template" htmlFor="managed-template-helper-template" help={HELPER_TEMPLATE_HELP} disabled={!orchestrate}>
+          <HelperTemplateSelect
+            id="managed-template-helper-template"
+            value={settings.helperTemplateId ?? ''}
+            disabled={!orchestrate}
+            className={selectClass}
+            onChange={(next) => setSetting({ helperTemplateId: next || undefined })}
+          />
+        </SettingsField>
+        <SettingsField label="Approvals" htmlFor="managed-template-control" disabled={!orchestrate}>
+          <ControlSelect
+            id="managed-template-control"
+            value={orch.control ?? ORCHESTRATION_DEFAULTS.control}
+            disabled={!orchestrate}
+            className={selectClass}
+            onChange={(next) => setOrch({ control: next })}
+          />
+        </SettingsField>
+        <SettingsField label="Helper access" htmlFor="managed-template-access" help="Never more than the agent has when a helper starts." disabled={!orchestrate}>
+          <AccessSelect
+            id="managed-template-access"
+            value={orch.access ?? ORCHESTRATION_DEFAULTS.access}
+            access={null}
+            running={false}
+            name="the agent"
+            disabled={!orchestrate}
+            className={selectClass}
+            onChange={(next) => setOrch({ access: next })}
+          />
+        </SettingsField>
+        <SettingsField label="Connect to Dispatcher" help={DISPATCHER_HELP}>
+          <DispatcherToggle
+            checked={orch.connectToDispatcher ?? orchestrate}
+            name="new agents"
+            onChange={(on) => setOrch({ connectToDispatcher: on })}
+            testId="managed-template-dispatcher"
+          />
+        </SettingsField>
+        <SettingsField label="Auto-sleep" htmlFor="managed-template-idle-sleep" help={IDLE_SLEEP_HELP}>
+          <IdleSleepSelect
+            id="managed-template-idle-sleep"
+            value={normalizeIdleSleep(settings.idleSleep)}
+            className={selectClass}
+            onChange={(next) => setSetting({ idleSleep: next === 'inherit' ? undefined : next })}
+          />
+        </SettingsField>
+        <p className={`${settingsHelp} py-2 border-t border-surface-0`}>Agents made from a template always get their own worktree and branch, so there is no workspace setting.</p>
       </SettingsSection>
 
       {push && (

@@ -144,9 +144,6 @@ async function tempDir(prefix: string): Promise<string> {
 
 export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
   const sdk = opts.cli === 'copilot';
-  if (sdk && opts.projectFiles?.['.clubhouse/settings.json'] !== undefined) {
-    throw new Error('Copilot fake coverage needs its test-owned project profile in .clubhouse/settings.json');
-  }
   const root = await tempDir(`chat-rich-${opts.cli}-`);
   const projectDir = path.join(root, 'project');
   const outsideDir = path.join(root, 'outside');
@@ -189,17 +186,13 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
     copilotHome = path.join(root, 'copilot-home');
     await fs.promises.mkdir(path.join(copilotHome, 'session-state'), { recursive: true });
   }
+  // The app's own launch environment: every CLI runs with the environment
+  // Clubhouse starts in (provider profiles were removed, #2749).
   const sdkEnv = sdk ? {
     ...SDK_FIXTURE_ENV,
     COPILOT_HOME: copilotHome!, HOME: copilotHome!, USERPROFILE: copilotHome!,
     XDG_CONFIG_HOME: copilotHome!, XDG_STATE_HOME: copilotHome!,
   } : {};
-  const sdkProfileId = 'chat-rich-sdk-fixture';
-  if (sdk) {
-    // Profile values win over the login shell as well as process.env. No other
-    // provider is enabled in this test-owned profile or has an installed binary.
-    await seed(projectDir, { '.clubhouse/settings.json': JSON.stringify({ agentDefaults: { profileId: sdkProfileId } }) });
-  }
   const fakes = await installFakeClis({ [opts.cli]: fixture });
   const removeAll = async () => {
     await fakes.cleanup();
@@ -213,10 +206,7 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
     const app = await launchApp({
       ...(opts.reviewEntry && { executablePath: opts.reviewEntry.executablePath, args: [opts.reviewEntry.bootstrapPath] }),
       experimental: { newChrome: false },
-      userDataFiles: {
-        ...USER_DATA_FILES,
-        ...(sdk && { 'profiles.json': { profiles: [{ id: sdkProfileId, name: 'SDK fake fixture', orchestrators: { 'copilot-cli': { env: sdkEnv } } }] } }),
-      },
+      userDataFiles: USER_DATA_FILES,
       env: { ...fakes.env, ...sdkEnv, ...(opts.reviewEntry && { CLUBHOUSE_REVIEW_GUARD_RECEIPT: opts.reviewEntry.receiptPath }), CLUBHOUSE_TEST_HELPER_SEAM: '1', [GITHUB_REFS_ENV]: githubRefsDir, ...(copilotHome && { COPILOT_HOME: copilotHome }) },
     });
     electronApp = app.electronApp;

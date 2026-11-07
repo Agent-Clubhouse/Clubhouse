@@ -123,7 +123,6 @@ const stopping = new Map<string, { exited: Promise<void>; exit: () => void }>();
 const mockSpawnAgent = vi.fn();
 const mockKillAgent = vi.fn();
 vi.mock('../../agent-system', () => ({
-  resolveProfileEnv: (...args: unknown[]) => mockResolveProfileEnv(...args),
   spawnAgent: (...args: unknown[]) => mockSpawnAgent(...args),
   killAgent: (...args: unknown[]) => mockKillAgent(...args),
   isAgentRunning: (id: string) => running.has(id),
@@ -191,7 +190,6 @@ vi.mock('../../orchestration-policy', () => ({
 const modelLists = new Map<string, ModelList>();
 /** Claude Code's real alias rules, loaded in beforeAll. */
 let claudeAcceptsModel: (model: string, list: ModelList) => boolean;
-const mockResolveProfileEnv = vi.fn(async (..._args: unknown[]): Promise<Record<string, string> | undefined> => undefined);
 vi.mock('../../../orchestrators', () => ({
   getProvider: (id: string) => (['claude-code', 'codex-cli', 'copilot-cli'].includes(id)
     ? {
@@ -548,6 +546,37 @@ describe('start_helper with Clubhouse-managed agents (#2899)', () => {
     expect(agents.get('helper_plain')!.managed).toMatchObject({ templateId: 'builtin-template-helper' });
   });
 
+  it('with no template named, uses the orchestrator\'s own helper template, even with the choice off (#2895)', async () => {
+    await withSettingsSurface('ui', undefined, () => managedAgents().setHelperTemplateChoice(false));
+    agents.set('orch', { ...agents.get('orch')!, helperTemplateId: 'builtin-template-quality-assurance' });
+    controllableCreation();
+    const result = await callTool('orch', 'start_helper', { name: 'own', task: 't' });
+    expect(result.isError).toBeFalsy();
+    const [, , options] = mockStartDurableCreation.mock.calls[0];
+    await options.inject(agents.get('helper_own'));
+    expect(agents.get('helper_own')!.managed).toMatchObject({ templateId: 'builtin-template-quality-assurance' });
+  });
+
+  it('falls back to the app\'s default helper template when the orchestrator\'s is gone (#2895)', async () => {
+    agents.set('orch', { ...agents.get('orch')!, helperTemplateId: 'template-deleted' });
+    controllableCreation();
+    const result = await callTool('orch', 'start_helper', { name: 'fallback', task: 't' });
+    expect(result.isError).toBeFalsy();
+    const [, , options] = mockStartDurableCreation.mock.calls[0];
+    await options.inject(agents.get('helper_fallback'));
+    expect(agents.get('helper_fallback')!.managed).toMatchObject({ templateId: 'builtin-template-helper' });
+  });
+
+  it('a template start_helper names wins over the orchestrator\'s own (#2895)', async () => {
+    agents.set('orch', { ...agents.get('orch')!, helperTemplateId: 'builtin-template-quality-assurance' });
+    controllableCreation();
+    const result = await callTool('orch', 'start_helper', { name: 'named', task: 't', template: 'builtin-template-developer-no-merge' });
+    expect(result.isError).toBeFalsy();
+    const [, , options] = mockStartDurableCreation.mock.calls[0];
+    await options.inject(agents.get('helper_named'));
+    expect(agents.get('helper_named')!.managed).toMatchObject({ templateId: 'builtin-template-developer-no-merge' });
+  });
+
   it('builds the helper from the default template in a required inject step, with no persona anywhere', async () => {
     controllableCreation();
     const result = await callTool('orch', 'start_helper', { name: 'm', task: 't', persona: 'workhorse' });
@@ -701,13 +730,6 @@ describe('start_helper model check (#2569)', () => {
     const result = await callTool('orch', 'start_helper', { name: 'h', task: 't', cli: 'codex-cli', model: 'opus' });
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('not one codex-cli accepts');
-  });
-
-  it('lists under the profile of the project the helper is created in', async () => {
-    controllableCreation();
-    modelLists.set('claude-code', claudeLive);
-    await callTool('orch', 'start_helper', { name: 'h', task: 't', model: 'opus', project: 'far' });
-    expect(mockResolveProfileEnv).toHaveBeenCalledWith(FAR, 'claude-code');
   });
 
   it('refuses before holding a start for approval', async () => {
@@ -1067,8 +1089,8 @@ describe('start_helper cli "auto" (#2671)', () => {
   });
 
   it('a refusal records a refused decision and holds nothing', async () => {
-    await noteProviderFailure('claude-code', PROJECT, 'auth');
-    await noteProviderFailure('codex-cli', PROJECT, 'auth');
+    await noteProviderFailure('claude-code', 'auth');
+    await noteProviderFailure('codex-cli', 'auth');
     const result = await start({});
     expect(result.isError).toBe(true);
     expect(mockRecordDecision).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'refused', refusalCode: 'no_candidate' }));
@@ -1151,7 +1173,7 @@ describe('start_helper cli "auto" (#2671)', () => {
 
   it('an explicit start on a cooling provider isn\'t blocked, only told', async () => {
     controllableCreation();
-    await noteProviderFailure('codex-cli', PROJECT, 'auth');
+    await noteProviderFailure('codex-cli', 'auth');
     const body = parse(await callTool('orch', 'start_helper', { name: 'h', task: 't', cli: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high' }));
     expect(body.state).toBe('starting');
     expect(body.quotaWarning).toContain('as asked');
@@ -1161,7 +1183,7 @@ describe('start_helper cli "auto" (#2671)', () => {
 
   it('a held start keeps the warning for the person, and an approval decides it again', async () => {
     mockGetPolicy.mockResolvedValue({ ...policy, control: 'ask-before-start' });
-    await noteProviderFailure('codex-cli', PROJECT, 'auth');
+    await noteProviderFailure('codex-cli', 'auth');
     await callTool('orch', 'start_helper', { name: 'h', task: 't', cli: 'codex-cli', model: 'gpt-6.1-sol' });
     const [request] = listStartRequests();
     expect(request.warning).toMatchObject({ code: 'cooling_down' });

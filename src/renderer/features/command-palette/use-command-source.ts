@@ -86,14 +86,6 @@ export function useCommandSource(): CommandItem[] {
   const appActiveCanvasId = useAppCanvasStore((s) => s.activeCanvasId);
   const canvasPluginEnabled = usePluginStore((s) => s.appEnabled.includes('canvas'));
 
-  // Annex is a stable feature — commands always available
-  const [annexEnabled, setAnnexEnabled] = useState(false);
-  useEffect(() => {
-    window.clubhouse.app.isPreviewEligible().then((eligible) => {
-      setAnnexEnabled(eligible);
-    }).catch(() => {});
-  }, []);
-
   // Load canvases from non-active projects (reactive via store subscriptions)
   const [otherProjectCanvases, setOtherProjectCanvases] = useState<CrossProjectCanvas[]>([]);
 
@@ -488,39 +480,38 @@ export function useCommandSource(): CommandItem[] {
       });
     }
 
-    if (annexEnabled) {
-      items.push({
-        id: 'action:toggle-annex-server',
-        label: annexSettings.enableServer ? 'Disable Annex server' : 'Enable Annex server',
-        category: CATEGORY.commands,
-        keywords: ['annex', 'server', 'companion', 'ios', 'network', 'remote', 'control'],
-        execute: () => {
-          useAnnexStore.getState().saveSettings({ ...annexSettings, enableServer: !annexSettings.enableServer });
-        },
-      });
-      items.push({
-        id: 'action:toggle-annex-client',
-        label: annexSettings.enableClient ? 'Disable Annex client' : 'Enable Annex client',
-        category: CATEGORY.commands,
-        keywords: ['annex', 'client', 'satellite', 'connect', 'network', 'discover'],
-        execute: () => {
-          useAnnexStore.getState().saveSettings({ ...annexSettings, enableClient: !annexSettings.enableClient });
-        },
-      });
-      items.push({
-        id: 'action:annex-show-pin',
-        label: 'Show Annex PIN',
-        category: CATEGORY.commands,
-        keywords: ['annex', 'pairing', 'pin', 'companion'],
-        detail: annexSettings.enableServer && annexStatus.pin ? `PIN: ${annexStatus.pin}` : undefined,
-        execute: () => {
-          const uiState = useUIStore.getState();
-          if (uiState.explorerTab !== 'settings') toggleSettings();
-          setSettingsContext('app');
-          setSettingsSubPage('annex');
-        },
-      });
-    }
+    // Annex is stable, so its commands are always listed (#2811).
+    items.push({
+      id: 'action:toggle-annex-server',
+      label: annexSettings.enableServer ? 'Disable Annex server' : 'Enable Annex server',
+      category: CATEGORY.commands,
+      keywords: ['annex', 'server', 'companion', 'ios', 'network', 'remote', 'control'],
+      execute: () => {
+        useAnnexStore.getState().saveSettings({ ...annexSettings, enableServer: !annexSettings.enableServer });
+      },
+    });
+    items.push({
+      id: 'action:toggle-annex-client',
+      label: annexSettings.enableClient ? 'Disable Annex client' : 'Enable Annex client',
+      category: CATEGORY.commands,
+      keywords: ['annex', 'client', 'satellite', 'connect', 'network', 'discover'],
+      execute: () => {
+        useAnnexStore.getState().saveSettings({ ...annexSettings, enableClient: !annexSettings.enableClient });
+      },
+    });
+    items.push({
+      id: 'action:annex-show-pin',
+      label: 'Show Annex PIN',
+      category: CATEGORY.commands,
+      keywords: ['annex', 'pairing', 'pin', 'companion'],
+      detail: annexSettings.enableServer && annexStatus.pin ? `PIN: ${annexStatus.pin}` : undefined,
+      execute: () => {
+        const uiState = useUIStore.getState();
+        if (uiState.explorerTab !== 'settings') toggleSettings();
+        setSettingsContext('app');
+        setSettingsSubPage('annex');
+      },
+    });
 
     items.push({
       id: 'action:agent-config',
@@ -590,7 +581,7 @@ export function useCommandSource(): CommandItem[] {
 
     return items;
   }, [
-    shortcuts, activeProjectId, annexEnabled, annexSettings, annexStatus,
+    shortcuts, activeProjectId, annexSettings, annexStatus,
     toggleSettings, toggleExplorerCollapse, toggleAccessoryCollapse,
     removeProject, setSettingsContext, setSettingsSubPage,
   ]);

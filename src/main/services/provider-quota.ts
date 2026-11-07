@@ -3,7 +3,7 @@
  * Read-only: a token-free handshake and one question, never a prompt, and only
  * on demand, when Settings > Helpers or a phone's page asks. There is no polling.
  *
- * Per provider and profile, since a profile can be a different login: one shared
+ * Per provider, for the one login each CLI has in the local environment: one shared
  * read at a time, kept for {@link QUOTA_CACHE_MS}, with {@link QUOTA_FAILURE_BACKOFF_MS}
  * after a failure. A caller waits at most its budget, and sees `not_read` if the
  * read is still going. Running chat sessions also report limits, which fill in
@@ -31,7 +31,6 @@ import { isLoginRequiredError } from './agent-runtime/login-error';
 import { AUTO_COOLDOWN_AUTH_MS, AUTO_COOLDOWN_AVAILABILITY_MS, AUTO_COOLDOWN_QUOTA_MS } from './helper-auto-policy';
 import { onChatEvent } from './agent-runtime/chat-event-bus';
 import { agentRegistry } from './agent-registry';
-import { resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
 
 /** These are tunable starting proposals, not measured values. */
@@ -63,7 +62,7 @@ interface QuotaEntry {
   failedAt?: number;
   inFlight?: Promise<SettledRead>;
   /**
-   * Auto leaves this provider and profile alone until the last of these ends.
+   * Auto leaves this provider alone until the last of these ends.
    * Explicit starts aren't affected. By kind, since one can be cleared and the
    * others can't.
    */
@@ -72,23 +71,21 @@ interface QuotaEntry {
 
 const entries = new Map<string, QuotaEntry>();
 
-async function entryFor(providerId: string, projectPath: string | undefined): Promise<{ entry: QuotaEntry; env?: Record<string, string> }> {
-  const env = projectPath ? await resolveProfileEnv(projectPath, providerId) : undefined;
-  const key = JSON.stringify([providerId, Object.entries(env ?? {}).sort()]);
-  let entry = entries.get(key);
+function entryFor(providerId: string): QuotaEntry {
+  let entry = entries.get(providerId);
   if (!entry) {
     entry = { windows: [], source: 'none', cooldowns: {} };
-    entries.set(key, entry);
+    entries.set(providerId, entry);
   }
-  return { entry, ...(env && { env }) };
+  return entry;
 }
 
-function startRead(providerId: string, entry: QuotaEntry, env: Record<string, string> | undefined): Promise<SettledRead> {
+function startRead(providerId: string, entry: QuotaEntry): Promise<SettledRead> {
   if (entry.inFlight) return entry.inFlight;
   const provider = getProvider(providerId as OrchestratorId);
   const startedAt = Date.now();
   entry.inFlight = Promise.resolve()
-    .then(() => provider!.readPlanQuota!({ ...(env && { env }) }))
+    .then(() => provider!.readPlanQuota!())
     .then((reading: PlanQuotaReading): SettledRead => {
       const now = Date.now();
       entry.readAt = now;
@@ -140,19 +137,19 @@ function viewOf(entry: QuotaEntry, now: number, model?: string): QuotaView {
 
 /**
  * What a provider's limits look like now. Never throws. A provider that can't
- * report is `not_supported`. Reads under `projectPath`'s profile when given.
+ * report is `not_supported`.
  * `model` also counts that model's own limit, for a choice of that model.
  */
-export async function readProviderQuota(providerId: string, projectPath?: string, options: { budgetMs?: number; model?: string } = {}): Promise<QuotaView> {
+export async function readProviderQuota(providerId: string, options: { budgetMs?: number; model?: string } = {}): Promise<QuotaView> {
   const provider = getProvider(providerId as OrchestratorId);
   if (!provider?.readPlanQuota) return { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null };
   try {
-    const { entry, env } = await entryFor(providerId, projectPath);
+    const entry = entryFor(providerId);
     const now = Date.now();
     const fresh = entry.readAt !== undefined && now - entry.readAt < QUOTA_CACHE_MS;
     const backingOff = entry.failedAt !== undefined && now - entry.failedAt < QUOTA_FAILURE_BACKOFF_MS;
     if (!fresh && !backingOff) {
-      const read = startRead(providerId, entry, env);
+      const read = startRead(providerId, entry);
       let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([read, new Promise<void>((resolve) => { timer = setTimeout(resolve, options.budgetMs ?? QUOTA_READ_BUDGET_MS); })]);
       clearTimeout(timer);
@@ -177,13 +174,13 @@ export type ForcedQuotaOutcome = 'ok' | 'failed' | 'timed_out' | 'not_supported'
  * counts: Codex answers `not_applicable` when logged out as well as for an API key.
  * A quota or availability cooldown says nothing about the login, so it stays.
  */
-export async function forceProviderQuota(providerId: string, projectPath?: string, options: { budgetMs?: number } = {}): Promise<{ quota: QuotaView; outcome: ForcedQuotaOutcome }> {
+export async function forceProviderQuota(providerId: string, options: { budgetMs?: number } = {}): Promise<{ quota: QuotaView; outcome: ForcedQuotaOutcome }> {
   const provider = getProvider(providerId as OrchestratorId);
   if (!provider?.readPlanQuota) return { quota: { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null }, outcome: 'not_supported' };
   try {
-    const { entry, env } = await entryFor(providerId, projectPath);
+    const entry = entryFor(providerId);
     let outcome: ForcedQuotaOutcome = 'timed_out';
-    const read = startRead(providerId, entry, env).then((settled) => {
+    const read = startRead(providerId, entry).then((settled) => {
       outcome = settled.outcome === 'failed' ? 'failed' : 'ok';
       const auth = entry.cooldowns.auth;
       if (settled.outcome === 'windows' && auth && auth.at <= settled.startedAt) delete entry.cooldowns.auth;
@@ -244,9 +241,9 @@ export function classifyStartFailure(err: unknown): StartFailureClass {
  * provider saying its limit is reached, so the state says so too, until a read
  * says otherwise. Never throws.
  */
-export async function noteProviderFailure(providerId: string, projectPath: string | undefined, kind: StartFailureClass, resetsAt?: number): Promise<void> {
+export async function noteProviderFailure(providerId: string, kind: StartFailureClass, resetsAt?: number): Promise<void> {
   try {
-    const { entry } = await entryFor(providerId, projectPath);
+    const entry = entryFor(providerId);
     const now = Date.now();
     // A limit we already know is reached says when it comes back.
     const knownReset = kind === 'quota'
@@ -270,8 +267,8 @@ function activeCooldowns(entry: QuotaEntry, now: number): Cooldown[] {
   return Object.values(entry.cooldowns).filter((cooldown) => cooldown.until > now);
 }
 
-export async function isProviderCoolingDown(providerId: string, projectPath: string | undefined): Promise<boolean> {
-  const { entry } = await entryFor(providerId, projectPath);
+export async function isProviderCoolingDown(providerId: string): Promise<boolean> {
+  const entry = entryFor(providerId);
   return activeCooldowns(entry, Date.now()).length > 0;
 }
 
@@ -280,9 +277,9 @@ export async function isProviderCoolingDown(providerId: string, projectPath: str
  * explicit start is never blocked by quota or a cooldown, and this reads nothing
  * from a CLI, so it says nothing until something has. Never throws.
  */
-export async function providerStartWarning(providerId: string, projectPath: string | undefined): Promise<HelperStartWarning | undefined> {
+export async function providerStartWarning(providerId: string): Promise<HelperStartWarning | undefined> {
   try {
-    const { entry } = await entryFor(providerId, projectPath);
+    const entry = entryFor(providerId);
     const now = Date.now();
     const cooling = activeCooldowns(entry, now);
     if (cooling.length > 0) {
@@ -320,7 +317,7 @@ export function watchSessionQuota(): () => void {
     if (event.type === 'error') {
       const kind = SESSION_ERROR_CLASS[(event.data as { code?: string }).code ?? ''];
       const running = kind && agentRegistry.get(event.agentId);
-      if (running && running.orchestrator) void noteProviderFailure(running.orchestrator, running.projectPath, kind);
+      if (running && running.orchestrator) void noteProviderFailure(running.orchestrator, kind);
       return;
     }
     if (event.type !== 'usage') return;
@@ -328,12 +325,12 @@ export function watchSessionQuota(): () => void {
     if (!limits?.length) return;
     const registration = agentRegistry.get(event.agentId);
     if (!registration?.orchestrator) return;
-    entryFor(registration.orchestrator, registration.projectPath)
-      .then(({ entry }) => mergeSessionLimits(entry, limits, Date.now()))
-      .catch((err: unknown) => {
-        // telemetry-exempt: logged; the next read has it anyway.
-        appLog('core:orchestrator', 'warn', 'Could not note a session\'s plan limits', { meta: { error: err instanceof Error ? err.name : 'unknown' } });
-      });
+    try {
+      mergeSessionLimits(entryFor(registration.orchestrator), limits, Date.now());
+    } catch (err) {
+      // telemetry-exempt: logged; the next read has it anyway.
+      appLog('core:orchestrator', 'warn', 'Could not note a session\'s plan limits', { meta: { error: err instanceof Error ? err.name : 'unknown' } });
+    }
   });
 }
 

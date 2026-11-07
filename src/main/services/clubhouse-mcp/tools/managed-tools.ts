@@ -284,7 +284,7 @@ export function registerManagedTools(): void {
     async () => json((await svc().listTemplates()).filter(isListed)));
 
   tool('save_agent_template',
-    'Create a custom template (name required), or edit one by id. Editing an id keeps every field you leave out as saved; settings, when given, replaces the template\'s settings as a whole. Editing changes future agents only; use push_agent_template to apply it to agents made from it. settings: orchestrator, model, freeAgentMode, orchestration {...}.',
+    'Create a custom template (name required), or edit one by id. Editing an id keeps every field you leave out as saved; settings, when given, replaces the template\'s settings as a whole. Editing changes future agents only; use push_agent_template to apply it to agents made from it. settings: orchestrator, model, effort, freeAgentMode, orchestration {...}, idleSleep (minutes or "never"), helperTemplateId.',
     { id: S, name: S, description: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, [],
     async (callerId, args) => {
       const id = optionalString(args, 'id');

@@ -309,7 +309,7 @@ Quick agents have no main-process create step. The renderer `spawnQuickAgent` (`
   - `c.chat.driver` (`claude_agent_sdk`/`claude_stream_json`/`codex_app_server`/`copilot_sdk`), from chat's capability record. Data from before #2868 can also carry `copilot_acp`, and the allowlist sends anything else as `other`. It is added by the chat telemetry work (§9.1). Claude chat is designed to default to the Agent SDK, with raw `-p` stream-json as a second mode.
   - `c.agent.resume` (bool)
   - `c.model.family` (bucketed from the model string: `opus`/`sonnet`/`haiku`/`gpt-5`/`default`/`other`; the raw model is never sent)
-  - `c.hooks.enabled`, `c.profile.active`, `c.wrapper.applied` (all bool; each only once the spawn reached the step that decides it)
+  - `c.hooks.enabled`, `c.wrapper.applied` (all bool; each only once the spawn reached the step that decides it)
   - Not recorded: `c.agent.runtime.reason` (the fallback decision is implicit in the runtime) and per-agent hashed IDs on spawn spans.
 - **`error.type`:** `orchestrator_unknown`, `preflight_failed` (CLI missing or unauthenticated), `cwd_invalid`, `pty_spawn_failed` (or, when the spawn error names one, its errno: `ENOENT`, `EACCES`, `EPERM`, `ENOTDIR`, `EISDIR`, `EMFILE`, `ENOSPC`; #2306), `headless_no_pid` (the span ends `error` though the call returns), `chat_start_failed`; `materialize_failed` on the non-fatal child only. Errors are typed with `tagError` / `withErrorType` at the throw site (§6.5); anything untagged is `unknown`.
 - **Metrics:** `c.agent.spawns` (counter: kind, orchestrator, runtime, outcome, `error.type`) and `c.agent.spawn.duration` (histogram, s, successful spawns only).
@@ -758,7 +758,7 @@ Explicitly **not set**: `host.name`, `os.description`, `process.command_args`, `
 
 | Area | Attributes |
 |---|---|
-| Counts | `c.projects.count`, `c.projects.git.count`, `c.projects.remote.count`, `c.agents.durable.count`, `c.profiles.count` |
+| Counts | `c.projects.count`, `c.projects.git.count`, `c.projects.remote.count`, `c.agents.durable.count` |
 | Orchestrators | `c.orchestrators.used` (sorted CSV from the enum) |
 | Theme | `c.theme.kind`, `c.theme.builtin_id` |
 | Feature flags | `c.headless.enabled`, `c.annex.server`, `c.annex.client`, `c.annex.satellites.count` |
@@ -782,7 +782,7 @@ Never sent:
 - MCP tool names other than Clubhouse built-ins; MCP server names;
 - error messages and raw stacks (only sanitized frames are sent);
 - hostnames, device names and aliases, IPs, Annex fingerprints, bearer tokens, PINs, nonces;
-- environment variables and profile env;
+- environment variables;
 - model strings other than the bucketed `c.model.family`.
 
 ---

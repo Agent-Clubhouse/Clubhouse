@@ -40,15 +40,12 @@ const MANAGED_PAGES: SettingsCategory[] = [
 export function useSettingsCategories(): { app: SettingsCategory[]; project: SettingsCategory[] } {
   const previewChannel = useUpdateStore((s) => s.settings.previewChannel);
   const [showExperimental, setShowExperimental] = useState(false);
-  const [showAnnex, setShowAnnex] = useState(false);
   const [showGoobers, setShowGoobers] = useState(false);
   const initFeedback = useFeedbackStore((s) => s.init);
   useEffect(() => { void initFeedback(); }, [initFeedback]);
   useEffect(() => {
     window.clubhouse.app.isPreviewEligible().then((isPreview) => {
       setShowExperimental(isPreview);
-      // Annex is always available on preview-eligible builds
-      setShowAnnex(isPreview);
     });
     window.clubhouse.app.getExperimentalSettings().then((s) => {
       setShowGoobers(!!s.goobers);
@@ -60,13 +57,14 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
     { label: 'Agents & providers', page: 'orchestrators' },
     ...MANAGED_PAGES,
     { label: 'Dispatcher', page: 'dispatcher' },
-    { label: 'Profiles', page: 'profiles' },
     { label: 'Display & UI', page: 'display' },
     { label: 'External editor', page: 'editor' },
     { label: 'Keyboard shortcuts', page: 'keyboard-shortcuts' },
     { label: 'Notifications & alerts', page: 'notifications' },
     { label: 'Plugins', page: 'plugins' },
-    ...(showAnnex ? [{ label: 'Annex', page: 'annex' as SettingsSubPage }, { label: 'Annex control', page: 'annex-control' as SettingsSubPage }] : []),
+    // Annex is stable (#1151), so its pages show with Preview off too (#2811).
+    { label: 'Annex', page: 'annex' },
+    { label: 'Annex control', page: 'annex-control' },
     ...(showGoobers ? [{ label: 'Goobers', page: 'goobers' as SettingsSubPage }] : []),
     { label: 'Updates', page: 'updates' },
     { label: 'Logging', page: 'logging' },
