@@ -5,7 +5,7 @@
  * instead, with Reset. These are starting choices, not measured best ones.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   HELPER_DIFFICULTIES,
   quotaRefetchDelaySeconds,
@@ -112,7 +112,17 @@ function PresetRow({ provider, difficulty, view, labels, busy, onSave, onReset }
   );
 }
 
-export function HelperPresetsSection() {
+/**
+ * `title`, `autoLabel` and `footer` let the managed-agents Helpers page (#2899)
+ * call this Smart helper selection. Unset, it reads as it always has.
+ */
+export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabel = 'Auto provider', toggleText, footer }: {
+  title?: string;
+  autoLabel?: string;
+  /** Visible text beside the switch, when the section title already names it. Defaults to `autoLabel`. */
+  toggleText?: string;
+  footer?: ReactNode;
+} = {}) {
   const [settings, setSettings] = useState<HelperRoutingSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -177,7 +187,7 @@ export function HelperPresetsSection() {
 
   const providers = settings ? Object.entries(settings.providers) : [];
   return (
-    <SettingsSection title="Presets by difficulty">
+    <SettingsSection title={title}>
       <SettingsBlock>
         {settings && (
           <label className="flex items-center gap-2.5 text-[13px] text-ctp-text mb-1.5">
@@ -185,10 +195,10 @@ export function HelperPresetsSection() {
               checked={settings.auto.scopes.app.value}
               disabled={busy}
               onChange={(on) => void update({ auto: on })}
-              aria-label="Let orchestrators use Auto provider"
+              aria-label={`Let orchestrators use ${autoLabel}`}
               data-testid="helper-presets-auto"
             />
-            <span>Auto provider</span>
+            <span>{toggleText ?? autoLabel}</span>
           </label>
         )}
         {settings && (
@@ -243,6 +253,7 @@ export function HelperPresetsSection() {
           ) : null
         ))}
         {error && <p className="mt-1.5 text-xs text-ctp-error" role="alert" data-testid="helper-presets-error">{error}</p>}
+        {footer && <p className={`${settingsHelp} mt-2`} data-testid="helper-presets-footer">{footer}</p>}
       </SettingsBlock>
     </SettingsSection>
   );

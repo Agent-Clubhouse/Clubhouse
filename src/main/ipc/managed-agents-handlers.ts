@@ -7,12 +7,13 @@ import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { ManagedPartContent, ManagedPartKind, ManagedResult, ManagedTemplate, ManagedTemplateSettings } from '../../shared/managed-agents-types';
 import { managedAgents, restartManagedAgent, statusFor, isAgentWorking } from '../services/managed-agents';
-import { applyManagedSettings, convertToManaged, createManagedAgent } from '../services/managed-agents/agents';
+import { applyManagedSettings, convertToManaged, createManagedAgent, previewConvert } from '../services/managed-agents/agents';
 import { previewManagedSetup } from '../services/managed-agents/delivery';
 import { ManagedError } from '../services/managed-agents/service';
 import * as agentConfig from '../services/agent-config';
 import { resolveOrchestrator } from '../services/agent-system';
 import { appLog } from '../services/log-service';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { arrayArg, booleanArg, numberArg, objectArg, stringArg, withValidatedArgs, type ArgValidator } from './validation';
 
 const KINDS: ManagedPartKind[] = ['block', 'skill', 'mcp'];
@@ -136,6 +137,8 @@ export function registerManagedAgentsHandlers(): void {
   ));
   ipcMain.handle(IPC.MANAGED.CONVERT_AGENT, withValidatedArgs([stringArg(), idArg(), booleanArg(), stringArg({ optional: true, maxLength: 128 })],
     (_e, projectPath, agentId, keep, templateId) => result(() => convertToManaged(projectPath, agentId, { keep, ...(templateId && { templateId }) }))));
+  ipcMain.handle(IPC.MANAGED.PREVIEW_CONVERT, withValidatedArgs([stringArg(), idArg()],
+    (_e, projectPath, agentId) => result(() => previewConvert(projectPath, agentId))));
   ipcMain.handle(IPC.MANAGED.APPLY_SETTINGS, withValidatedArgs([stringArg(), idArg(), objectArg<ManagedTemplateSettings>()],
     (_e, projectPath, agentId, settings) => result(() => applyManagedSettings(projectPath, agentId, settings))));
   ipcMain.handle(IPC.MANAGED.STATUS, withValidatedArgs([stringArg(), idArg()], (_e, projectPath, agentId) => result(() => statusFor(projectPath, agentId))));
@@ -145,5 +148,9 @@ export function registerManagedAgentsHandlers(): void {
     (_e, projectPath, agentId, options) => result(() => restartManagedAgent(projectPath, agentId, options ?? {})),
   ));
   ipcMain.handle(IPC.MANAGED.SET_CLUBHOUSE_FEATURES, withValidatedArgs([stringArg(), idArg(), booleanArg()],
-    (_e, projectPath, agentId, on) => result(() => agentConfig.setClubhouseFeatures(projectPath, agentId, on))));
+    (_e, projectPath, agentId, on) => result(async () => {
+      await agentConfig.setClubhouseFeatures(projectPath, agentId, on);
+      // Every open settings page and card shows the switch: tell them, as the service does for its writes.
+      broadcastToAllWindows(IPC.MANAGED.CHANGED);
+    })));
 }

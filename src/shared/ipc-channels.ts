@@ -24,6 +24,7 @@ export const IPC = {
     SET_DEFAULT_HELPER_TEMPLATE: 'managed:set-default-helper-template',
     CREATE_AGENT: 'managed:create-agent',
     CONVERT_AGENT: 'managed:convert-agent',
+    PREVIEW_CONVERT: 'managed:preview-convert',
     APPLY_SETTINGS: 'managed:apply-settings',
     STATUS: 'managed:status',
     IS_WORKING: 'managed:is-working',

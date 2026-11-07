@@ -164,7 +164,7 @@ describe('chat and rich content, in any build', () => {
 describe('the preview-only list', () => {
   it('names each feature by the same key its reader uses', () => {
     expect([...PREVIEW_ONLY_EXPERIMENTAL_FLAGS].sort()).toEqual([
-      'goobers', COPILOT_SDK_FLAG, 'copilotLegacyAcp',
+      'goobers', 'managedAgents', COPILOT_SDK_FLAG, 'copilotLegacyAcp',
     ].sort());
   });
 });

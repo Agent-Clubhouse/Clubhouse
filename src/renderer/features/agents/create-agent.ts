@@ -25,6 +25,21 @@ export interface DurableAgentInput {
   freeAgentMode?: boolean;
   mcpIds?: string[];
   persona?: string;
+  /**
+   * False turns Clubhouse's hooks, permission prompts and MCP bridge off
+   * (#2893), set before the first session starts so it never gets them.
+   */
+  clubhouseFeatures?: false;
+}
+
+/** Delete an agent that was created but never started. A failure is logged; the caller reports its own error. */
+async function removeUnstartedAgent(projectPath: string, agentId: string): Promise<void> {
+  try {
+    await window.clubhouse.agent.deleteDurable(projectPath, agentId);
+  } catch (err) {
+    console.error('Failed to remove the agent after its setup failed:', err);
+    tel.exception(err, { handled: true, attrs: [ATTR.uiAction('agent_create')] });
+  }
 }
 
 function toastFailure(err: unknown): void {
@@ -42,7 +57,7 @@ export async function createDurableAgent(
   { onError }: { onError?: (message: string) => void } = {},
 ): Promise<string | null> {
   const fail = (err: unknown) => (onError ? onError(err instanceof Error ? err.message : String(err)) : toastFailure(err));
-  const { name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, persona } = input;
+  const { name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, persona, clubhouseFeatures } = input;
 
   if (isRemoteProjectId(project.id)) {
     // Remote project — proxy create to satellite via REST
@@ -79,6 +94,14 @@ export async function createDurableAgent(
       project.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds, undefined, persona,
     );
     if (tempId) removeAgent(tempId);
+    if (clubhouseFeatures === false) {
+      const off = await window.clubhouse.managed.setClubhouseFeatures(project.path, config.id, false);
+      if (off.ok === false) {
+        // Leave no half-made agent behind: it never started, so remove it before saying why.
+        await removeUnstartedAgent(project.path, config.id);
+        throw new Error(off.message || "Couldn't turn Clubhouse features off");
+      }
+    }
     await spawnDurableAgent(project.id, project.path, config, false);
     return config.id;
   } catch (err) {

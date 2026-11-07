@@ -1,7 +1,8 @@
 /**
- * Agent-level managed operations (#2893): create a managed agent, switch an
- * existing one to managed, and apply a template's settings. They combine the
- * managed-agents service with agent config and orchestration policy.
+ * Agent-level managed operations (#2893): create a managed agent, preview
+ * and switch an existing one to managed, and apply a template's settings.
+ * They combine the managed-agents service with agent config and
+ * orchestration policy.
  */
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -9,7 +10,18 @@ import * as agentConfig from '../agent-config';
 import { setOrchestrationPolicy } from '../orchestration-policy';
 import { resolveOrchestrator } from '../agent-system';
 import type { DurableAgentConfig } from '../../../shared/types';
-import type { ManagedAgentSetup, ManagedTemplateSettings } from '../../../shared/managed-agents-types';
+import type {
+  ManagedAgentSetup,
+  ManagedConvertPreview,
+  ManagedMcpContent,
+  ManagedPartContent,
+  ManagedSkillContent,
+  ManagedTemplateSettings,
+} from '../../../shared/managed-agents-types';
+import type { ValidationIssue } from '../../../shared/asset-catalog-types';
+import type { OrchestratorProvider } from '../../orchestrators/types';
+import { readLocalMcpJson } from '../agent-settings-service';
+import { adoptNativeMcpServer, MAX_SKILL_BUNDLE_BYTES, MAX_SKILL_FILES, validatePayload } from '../asset-catalog/validation';
 import { CLUBHOUSE_MCP_PART_ID } from '../../../shared/managed-agents-types';
 import { managedAgents } from './index';
 import { BUILTIN_BLOCK_IDS } from './builtins';
@@ -65,45 +77,218 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
   return (await agentConfig.getDurableConfig(projectPath, config.id)) ?? config;
 }
 
+// ── Switching an existing agent to managed ─────────────────────────────
+
+interface ConvertPlan {
+  /** The instructions file as it is now; empty when there is none. */
+  instructions: string;
+  /** The block the instructions become. */
+  blockName: string;
+  skills: Array<{ folder: string; content: ManagedSkillContent }>;
+  mcps: Array<{ serverKey: string; content: ManagedMcpContent }>;
+  notes: string[];
+}
+
+/** Why the catalog refuses a skill or MCP server, in words. */
+function refusal(issues: ValidationIssue[]): string {
+  const codes = new Set(issues.map((i) => i.code));
+  if (codes.has('secret_value')) return 'it holds a secret value, and Clubhouse stores no secrets';
+  if (codes.has('missing_skill_entrypoint')) return 'it has no SKILL.md';
+  if (codes.has('too_large')) return 'it is too large';
+  if (codes.has('reserved_namespace')) return 'its name is reserved for Clubhouse';
+  if (codes.has('unsupported_native_field')) return 'it uses settings Clubhouse can\'t keep';
+  return 'Clubhouse can\'t read it';
+}
+
+/** A skill folder as catalog files: text as UTF-8, anything else base64, scripts marked executable. */
+async function readSkillFolder(dir: string): Promise<{ files: ManagedSkillContent['files'] } | { problem: string }> {
+  const files: ManagedSkillContent['files'] = [];
+  let total = 0;
+  const walk = async (rel: string): Promise<string | null> => {
+    const entries = await fsp.readdir(path.join(dir, rel), { withFileTypes: true });
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      const relPath = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isSymbolicLink()) return 'it contains a symbolic link';
+      if (entry.isDirectory()) {
+        const nested = await walk(relPath);
+        if (nested) return nested;
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const full = path.join(dir, relPath);
+      const buf = await fsp.readFile(full);
+      total += buf.length;
+      if (files.length >= MAX_SKILL_FILES || total > MAX_SKILL_BUNDLE_BYTES) return 'it is too large';
+      const text = !buf.subarray(0, 8000).includes(0) && Buffer.from(buf.toString('utf8'), 'utf8').equals(buf);
+      const executable = process.platform !== 'win32' && ((await fsp.stat(full)).mode & 0o111) !== 0;
+      files.push({
+        path: relPath,
+        content: text ? buf.toString('utf8') : buf.toString('base64'),
+        ...(!text && { encoding: 'base64' as const }),
+        ...(executable && { executable: true }),
+      });
+    }
+    return null;
+  };
+  try {
+    const problem = await walk('');
+    return problem ? { problem } : { files };
+  } catch {
+    // telemetry-exempt: the folder becomes a note in the preview.
+    return { problem: 'Clubhouse can\'t read it' };
+  }
+}
+
+/**
+ * What Keep makes of the agent's current files: its instructions file as a
+ * block, each skill folder in its worktree and each MCP server in its MCP
+ * file as custom parts for this agent only. Reads only; writes nothing.
+ */
+async function readInstructionsOf(provider: OrchestratorProvider, worktreePath: string): Promise<string> {
+  try {
+    return await provider.readInstructions(worktreePath);
+  } catch {
+    // telemetry-exempt: no instructions file yet
+    return '';
+  }
+}
+
+async function planConvert(agent: DurableAgentConfig, worktreePath: string, provider: OrchestratorProvider): Promise<ConvertPlan> {
+  const conv = provider.conventions;
+  const notes: string[] = [];
+  const instructions = await readInstructionsOf(provider, worktreePath);
+
+  const skills: ConvertPlan['skills'] = [];
+  const skillsRoot = path.join(worktreePath, conv.configDir, conv.skillsDir);
+  let folders: string[] = [];
+  try {
+    folders = (await fsp.readdir(skillsRoot, { withFileTypes: true }))
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+      .map((e) => e.name)
+      .sort((a, b) => a.localeCompare(b));
+  } catch { /* telemetry-exempt: no skills folder, so no skills to bring over */ }
+  for (const folder of folders) {
+    const read = await readSkillFolder(path.join(skillsRoot, folder));
+    if ('problem' in read) { notes.push(`The ${folder} skill isn't brought over because ${read.problem}.`); continue; }
+    const checked = validatePayload('skill', { skillName: folder, files: read.files });
+    if (checked.ok === false) { notes.push(`The ${folder} skill isn't brought over because ${refusal(checked.issues)}.`); continue; }
+    skills.push({ folder, content: { kind: 'skill', skillName: checked.payload.skillName, files: checked.payload.files.map((f) => ({ ...f })) } });
+  }
+
+  const mcps: ConvertPlan['mcps'] = [];
+  let raw: string | null = null;
+  try {
+    raw = conv.settingsFormat === 'toml' ? null : await readLocalMcpJson(worktreePath, conv);
+    if (conv.settingsFormat === 'toml') notes.push(`MCP servers in ${conv.mcpConfigFile} aren't brought over because Clubhouse can't read that format yet.`);
+  } catch {
+    // telemetry-exempt: the file becomes a note in the preview.
+    notes.push(`MCP servers in ${conv.mcpConfigFile} aren't brought over because Clubhouse can't read the file.`);
+  }
+  if (raw !== null) {
+    let servers: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(raw) as { mcpServers?: unknown };
+      if (parsed && typeof parsed.mcpServers === 'object' && parsed.mcpServers && !Array.isArray(parsed.mcpServers)) servers = parsed.mcpServers as Record<string, unknown>;
+      else notes.push(`MCP servers in ${conv.mcpConfigFile} aren't brought over because the file has no mcpServers list.`);
+    } catch {
+      // telemetry-exempt: the file becomes a note in the preview.
+      notes.push(`MCP servers in ${conv.mcpConfigFile} aren't brought over because the file isn't valid JSON.`);
+    }
+    for (const [serverKey, def] of Object.entries(servers)) {
+      // Clubhouse's own bridge is the built-in Clubhouse part, added below.
+      if (serverKey === 'clubhouse') continue;
+      const adopted = adoptNativeMcpServer(serverKey, def);
+      if (adopted.ok === false) { notes.push(`The ${serverKey} MCP server isn't brought over because ${refusal(adopted.issues)}.`); continue; }
+      const p = adopted.payload;
+      mcps.push({
+        serverKey,
+        content: {
+          kind: 'mcp',
+          serverKey: p.serverKey,
+          transport: p.transport,
+          ...(p.command !== undefined && { command: p.command }),
+          ...(p.args && { args: [...p.args] }),
+          ...(p.url !== undefined && { url: p.url }),
+          ...(p.envVars && { envVars: [...p.envVars] }),
+          ...(p.env && Object.keys(p.env).length > 0 && { env: { ...p.env } }),
+        },
+      });
+    }
+  }
+  return { instructions, blockName: `${agent.name} notes`, skills, mcps, notes };
+}
+
+async function agentForConvert(projectPath: string, agentId: string): Promise<DurableAgentConfig & { worktreePath: string }> {
+  const agent = await agentConfig.getDurableConfig(projectPath, agentId);
+  if (!agent) throw new ManagedError('not_found');
+  if (!agent.worktreePath) throw new ManagedError('invalid', 'This agent works in the project folder. Managed agents need their own folder.');
+  return agent as DurableAgentConfig & { worktreePath: string };
+}
+
+/** What Keep would make of the agent's files, by name, and what it can't bring over. Writes nothing. */
+export async function previewConvert(projectPath: string, agentId: string): Promise<ManagedConvertPreview> {
+  const agent = await agentForConvert(projectPath, agentId);
+  if (agent.managed) throw new ManagedError('invalid', 'This agent is already Clubhouse managed.');
+  const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
+  const plan = await planConvert(agent, agent.worktreePath, provider);
+  return {
+    blocks: plan.instructions.trim() ? [plan.blockName] : [],
+    skills: plan.skills.map((s) => s.folder),
+    mcps: plan.mcps.map((m) => m.serverKey),
+    notes: plan.notes,
+  };
+}
+
+/** A part named after this agent, with a number added when the name is taken. */
+async function createAgentPart(name: string, description: string, content: ManagedPartContent): Promise<string> {
+  const service = managedAgents();
+  for (let n = 1; n < 100; n++) {
+    try {
+      return (await service.createPart({ name: n === 1 ? name : `${name} ${n}`, description, content })).id;
+    } catch (err) {
+      if (err instanceof ManagedError && err.code === 'name_taken') continue;
+      throw err;
+    }
+  }
+  return (await service.createPart({ name: `${name} ${Date.now().toString(36)}`, description, content })).id;
+}
+
 /**
  * Switch an existing agent to managed (#2893). Keep turns its current
- * instructions file into a block for this agent only. Nothing on disk is
- * deleted: the next start overwrites the instructions file it manages.
+ * instructions file into a block, and its skill folders and MCP servers into
+ * custom parts, all for this agent only. What can't be brought over is listed
+ * by previewConvert first. Nothing on disk is deleted: the next start
+ * overwrites the instructions file it manages, and skill folders it replaces
+ * are moved to app data (D15).
  */
 export async function convertToManaged(projectPath: string, agentId: string, options: { keep: boolean; templateId?: string }): Promise<ManagedAgentSetup> {
   const service = managedAgents();
-  const agent = await agentConfig.getDurableConfig(projectPath, agentId);
-  if (!agent) throw new ManagedError('not_found');
+  const agent = await agentForConvert(projectPath, agentId);
   if (agent.managed) return agent.managed;
-  if (!agent.worktreePath) throw new ManagedError('invalid', 'This agent works in the project folder. Managed agents need their own folder.');
   if (!options.keep && !options.templateId) throw new ManagedError('invalid', 'Choose a template, or keep what the agent has now.');
   const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
-  let existing = '';
-  try {
-    existing = await provider.readInstructions(agent.worktreePath);
-  } catch { /* telemetry-exempt: no instructions file yet */ }
-  await backupInstructions(agent, provider.conventions.legacyInstructionsFile, existing);
   if (!options.keep && options.templateId) {
+    await backupInstructions(agent, provider.conventions.legacyInstructionsFile, await readInstructionsOf(provider, agent.worktreePath));
     const { setup, settings } = await service.setupFromTemplate(options.templateId);
     const saved = await service.saveSetup(projectPath, agentId, setup);
     await applyManagedSettings(projectPath, agentId, settings);
     return saved;
   }
+  const plan = await planConvert(agent, agent.worktreePath, provider);
+  await backupInstructions(agent, provider.conventions.legacyInstructionsFile, plan.instructions);
   const blocks: string[] = [];
-  if (existing.trim()) {
-    const part = await service.createPart({
-      name: `${agent.name} notes`,
-      description: `What ${agent.name} had before it was managed.`,
-      content: { kind: 'block', content: existing },
-    }).catch(async (err) => {
-      if (err instanceof ManagedError && err.code === 'name_taken') {
-        return service.createPart({ name: `${agent.name} notes ${Date.now().toString(36)}`, content: { kind: 'block', content: existing } });
-      }
-      throw err;
-    });
-    blocks.push(part.id);
+  if (plan.instructions.trim()) {
+    blocks.push(await createAgentPart(plan.blockName, `What ${agent.name} had before it was managed.`, { kind: 'block', content: plan.instructions }));
   }
-  return service.saveSetup(projectPath, agentId, { blocks, skills: [], mcps: agent.mcpOverride === false ? [] : [CLUBHOUSE_MCP_PART_ID] });
+  const skills: string[] = [];
+  for (const skill of plan.skills) {
+    skills.push(await createAgentPart(`${skill.folder}, ${agent.name}`, `The ${skill.folder} skill ${agent.name} had before it was managed.`, skill.content));
+  }
+  const mcps: string[] = agent.mcpOverride === false ? [] : [CLUBHOUSE_MCP_PART_ID];
+  for (const mcp of plan.mcps) {
+    mcps.push(await createAgentPart(`${mcp.serverKey}, ${agent.name}`, `The ${mcp.serverKey} MCP server ${agent.name} had before it was managed.`, mcp.content));
+  }
+  return service.saveSetup(projectPath, agentId, { blocks, skills, mcps });
 }
 
 /** Keep a copy of the instructions file before Clubhouse takes it over, so nothing is lost. */

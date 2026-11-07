@@ -40,6 +40,9 @@ import { useAgentDetailsStore } from './detailsStore';
 import { useDurableConfig } from './useDurableConfig';
 import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
 import { openDispatcherSettings } from '../../dispatcher/dispatcherNav';
+import { useManagedFlag } from '../../managed/managed-flag';
+import { useManagedSetup } from '../../managed/managedApi';
+import { SetupCard } from './SetupCard';
 
 /**
  * When a row's setting can change: at any time (applied live), only while the
@@ -166,7 +169,7 @@ function runtimeName(mode: string | undefined): 'Chat' | 'CLI' | null {
 /** "Applied on the next wake": spawn settings of a sleeping agent take effect when it wakes. */
 export const NEXT_WAKE_NOTE = 'Applied on the next wake';
 
-export function SettingsCard({ agent, chat, projectPath, provider }: {
+interface SettingsCardProps {
   agent: Agent;
   /** The chat session, when the agent runs in chat. */
   chat?: ChatViewState;
@@ -174,7 +177,24 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
   projectPath: string | undefined;
   /** The CLI's name ("Claude Code"). */
   provider: string;
-}) {
+}
+
+/**
+ * Settings, or Setup for a Clubhouse-managed agent with the preview flag on
+ * (#2896). An unmanaged agent, or any agent with the flag off, keeps Settings.
+ */
+export function SettingsCard(props: SettingsCardProps) {
+  const { agent, chat, projectPath, provider } = props;
+  const flag = useManagedFlag();
+  const local = agent.kind === 'durable' && !isRemoteProjectId(agent.projectId) && !!projectPath;
+  const { value: setup } = useManagedSetup(flag && local ? projectPath : undefined, flag && local ? agent.id : undefined);
+  if (!flag || !local || !setup || !projectPath) return <AgentSettingsCard {...props} />;
+  const awake = agent.status !== 'sleeping' && agent.status !== 'error';
+  const runsOn = `${provider} · ${modelLabel(chat && awake ? chat.model : agent.model, awake ? chat : undefined)}`;
+  return <SetupCard agent={agent} projectPath={projectPath} setup={setup} runsOn={runsOn} />;
+}
+
+function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardProps) {
   const open = useAgentDetailsStore((s) => s.settingsOpen);
   const setOpen = useAgentDetailsStore((s) => s.setSettingsOpen);
   const hintId = useId();

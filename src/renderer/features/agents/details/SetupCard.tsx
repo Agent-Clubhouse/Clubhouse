@@ -1,0 +1,109 @@
+/**
+ * The Setup card (#2896): for a Clubhouse-managed agent, the Settings card
+ * becomes Setup. It says what the agent is built from (template,
+ * instruction blocks, skills, MCP servers, CLI and model) and, for a running
+ * agent whose setup changed after its session started, what is waiting.
+ * Open builder goes to the agent's Instructions page; Restart applies what
+ * is waiting.
+ */
+import type { Agent } from '../../../../shared/types';
+import type { ManagedAgentSetup, ManagedPartSummary } from '../../../../shared/managed-agents-types';
+import { Button } from '../../../components/Button';
+import { useManagedParts, useManagedStatus, useManagedTemplates } from '../../managed/managedApi';
+import { PENDING_RESTART_NOTE, useManagedRestart } from '../../managed/restart';
+import { openAgentSettingsOn } from '../agentSettingsPages';
+import { CardNote, CardRow, DetailsCard } from './DetailsCard';
+import { useAgentDetailsStore } from './detailsStore';
+
+export const SETUP_WAITING_NOTE = 'Applies when it restarts or next wakes.';
+
+/** "Managed · Release lead · 2 changes waiting". */
+export function setupSummary(templateName: string | null, waiting: number): string {
+  const changes = waiting > 0 ? `${waiting} ${waiting === 1 ? 'change' : 'changes'} waiting` : null;
+  return ['Managed', templateName, changes].filter(Boolean).join(' · ');
+}
+
+/** The parts' names in setup order, and how many ids no longer match a part. */
+export function partNames(ids: string[], parts: ManagedPartSummary[] | null): { names: string[]; missing: number } {
+  if (!parts) return { names: [], missing: 0 };
+  const byId = new Map(parts.map((p) => [p.id, p.name]));
+  const names = ids.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
+  return { names, missing: ids.length - names.length };
+}
+
+function NameList({ ids, parts }: { ids: string[]; parts: ManagedPartSummary[] | null }) {
+  if (ids.length === 0) return <>None</>;
+  if (!parts) return <span className="text-ctp-overlay1">Loading</span>;
+  const { names, missing } = partNames(ids, parts);
+  return (
+    <>
+      {names.join(', ')}
+      {missing > 0 && <span className="text-ctp-overlay1">{names.length > 0 ? ', ' : ''}{missing} no longer in the library</span>}
+    </>
+  );
+}
+
+/** The rows, read only while the card is open. */
+function SetupRows({ setup, templateName, runsOn, changes }: {
+  setup: ManagedAgentSetup;
+  templateName: string | null;
+  runsOn: string;
+  changes: string[] | null;
+}) {
+  const skills = useManagedParts('skill');
+  const mcps = useManagedParts('mcp');
+  const blocks = setup.blocks.length;
+  return (
+    <>
+      <CardRow label="Managed" labelWidth="wide" testId="details-setup-managed">By Clubhouse</CardRow>
+      <CardRow label="Template" labelWidth="wide" testId="details-setup-template">{templateName ?? 'None'}</CardRow>
+      <CardRow label="Instructions" labelWidth="wide" testId="details-setup-instructions">{blocks} {blocks === 1 ? 'block' : 'blocks'}</CardRow>
+      <CardRow label="Skills" labelWidth="wide" testId="details-setup-skills"><NameList ids={setup.skills} parts={skills.value} /></CardRow>
+      <CardRow label="MCP servers" labelWidth="wide" testId="details-setup-mcp"><NameList ids={setup.mcps} parts={mcps.value} /></CardRow>
+      <CardRow label="Runs on" labelWidth="wide" testId="details-setup-runs-on">{runsOn}</CardRow>
+      {changes && (
+        <CardRow label="Waiting" labelWidth="wide" testId="details-setup-waiting">
+          <span className="flex flex-col text-ctp-warning">
+            {changes.length > 0 ? changes.map((c, i) => <span key={i}>{c}</span>) : <span>Setup changed</span>}
+          </span>
+        </CardRow>
+      )}
+    </>
+  );
+}
+
+export function SetupCard({ agent, projectPath, setup, runsOn }: {
+  agent: Agent;
+  projectPath: string;
+  setup: ManagedAgentSetup;
+  /** "Claude Code · Opus 5.5". */
+  runsOn: string;
+}) {
+  const open = useAgentDetailsStore((s) => s.settingsOpen);
+  const setOpen = useAgentDetailsStore((s) => s.setSettingsOpen);
+  const templates = useManagedTemplates();
+  const { value: status } = useManagedStatus(projectPath, agent.id);
+  const { restart, busy, pending, error, dialog } = useManagedRestart({ projectPath, agentId: agent.id, agentName: agent.name });
+
+  const templateName = setup.templateId ? templates.value?.find((t) => t.id === setup.templateId)?.name ?? null : null;
+  const changes = status?.waiting && status.running ? status.changes : null;
+  const waiting = changes !== null;
+  const summary = setupSummary(templateName, changes ? Math.max(1, changes.length) : 0);
+
+  return (
+    <DetailsCard id="settings" title="Setup" summary={summary} open={open} onToggle={() => setOpen(!open)}>
+      <SetupRows setup={setup} templateName={templateName} runsOn={runsOn} changes={changes} />
+      {(waiting || pending) && <CardNote><span data-testid="details-setup-note">{pending ? PENDING_RESTART_NOTE : SETUP_WAITING_NOTE}</span></CardNote>}
+      {error && <CardNote><span className="text-ctp-error" role="alert" data-testid="details-setup-error">{error}</span></CardNote>}
+      <div className="pr-3.5 pl-[33px] pt-1 flex items-center gap-1.5">
+        <Button kind="ghost" onClick={() => openAgentSettingsOn(agent.id, 'instructions')} data-testid="details-setup-open-builder">Open builder</Button>
+        {waiting && (
+          <Button kind="ghost" onClick={() => restart({ fresh: !!status?.cliChanged })} disabled={busy} data-testid="details-setup-restart">
+            {busy ? 'Restarting' : 'Restart'}
+          </Button>
+        )}
+      </div>
+      {dialog}
+    </DetailsCard>
+  );
+}

@@ -44,6 +44,10 @@ import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { Field, FieldLabel, inputClass, PageTitle, SectionHeading, selectClass, textareaClass } from './agentSettingsUi';
 import { AgentHelpersSettings } from './helpers/AgentHelpersSettings';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
+import type { ManagedAgentSetup } from '../../../shared/managed-agents-types';
+import { useManagedFlag } from '../managed/managed-flag';
+import { ManagedBuilder, PreviewPane } from '../managed/ManagedBuilder';
+import { ManagedGeneralSection } from '../managed/ManagedGeneralSection';
 
 interface Props {
   agent: Agent;
@@ -189,16 +193,50 @@ export function AgentSettingsView({ agent }: Props) {
     resetPages();
   }, [agent.id, resetPages]);
 
+  // Clubhouse-managed agents (#2893): the setup on the agent's config, kept fresh as parts change.
+  const managedFlag = useManagedFlag();
+  const [managedSetup, setManagedSetup] = useState<ManagedAgentSetup | null>(null);
+  const [clubhouseFeatures, setClubhouseFeatures] = useState(true);
+  useEffect(() => {
+    if (!managedFlag || !projectPath || isRemoteProjectId(agent.projectId)) { setManagedSetup(null); return; }
+    let cancelled = false;
+    const load = () => {
+      window.clubhouse.agent.getDurableConfig(projectPath, agent.id)
+        .then((c) => { if (!cancelled) { setManagedSetup(c?.managed ?? null); setClubhouseFeatures(c?.clubhouseFeatures !== false); } })
+        .catch(() => { /* telemetry-exempt: the General page shows the agent as unmanaged until a read works */ });
+    };
+    load();
+    const off = window.clubhouse.managed.onChanged(load);
+    return () => { cancelled = true; off(); };
+  }, [managedFlag, projectPath, agent.id, agent.projectId]);
+  const isManagedAgent = managedFlag && !!managedSetup;
+  // One object per agent, so the builder doesn't see a new target on every render.
+  const builderAgent = useMemo(
+    () => (projectPath ? { projectPath, agentId: agent.id, agentName: agent.name } : null),
+    [projectPath, agent.id, agent.name],
+  );
+  const builderTarget = useMemo(() => (builderAgent ? { kind: 'agent' as const, agent: builderAgent } : null), [builderAgent]);
+
   // Helpers (#2232): not for a helper or an agent on another machine, like the Orchestration card.
   const setHiddenPages = useAgentSettingsPages((s) => s.setHiddenPages);
   const hiddenPages = useMemo(
-    () => hiddenAgentSettingsPages(agent, isRemoteProjectId(agent.projectId)),
-    [agent.parentAgentId, agent.projectId],
+    () => hiddenAgentSettingsPages(agent, isRemoteProjectId(agent.projectId), { flag: managedFlag, on: !!managedSetup }),
+    [agent.parentAgentId, agent.projectId, managedFlag, !!managedSetup],
   );
   useEffect(() => {
     setHiddenPages(hiddenPages);
   }, [agent.id, hiddenPages, setHiddenPages]);
   const showHelpers = !hiddenPages.includes('helpers');
+
+  // A page asked for by whoever opened settings ("What changed" asks for Preview),
+  // selected once it shows for this agent: a managed agent's builder pages appear after its setup loads.
+  const requestedPage = useAgentSettingsPages((s) => s.requestedPage);
+  useEffect(() => {
+    if (!requestedPage || requestedPage.agentId !== agent.id || hiddenPages.includes(requestedPage.page)) return;
+    setPage(requestedPage.page);
+    // The classic shell stacks the pages: bring the asked-for section into view instead.
+    if (!pageMode) document.getElementById(`agent-settings-section-${requestedPage.page}`)?.scrollIntoView?.({ block: 'start' });
+  }, [requestedPage, agent.id, hiddenPages, setPage, pageMode]);
 
   // Shell in worktree: the sidebar row (new chrome) or the row under the page
   // (classic) opens it. It stays mounted once opened.
@@ -1207,7 +1245,7 @@ export function AgentSettingsView({ agent }: Props) {
       {chatFlagEnabled && projectPath && !isRemoteProjectId(agent.projectId) && (
         <HandshakeRetry projectPath={projectPath} agentId={agent.id} provider={agentOrchestrator} runtime={runtimeMode} />
       )}
-      <Field
+      {!managedFlag && <Field
         label="Persona"
         help={<>Overrides the project persona when Clubhouse Mode is on. See <code className="font-mono">.clubhouse/clubhouse-mode.md</code>.</>}
         htmlFor="agent-settings-persona"
@@ -1225,7 +1263,7 @@ export function AgentSettingsView({ agent }: Props) {
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
-      </Field>
+      </Field>}
       <Field
         label="Free Agent Mode"
         help={freeAgentMode && permissionsSupported
@@ -1241,7 +1279,19 @@ export function AgentSettingsView({ agent }: Props) {
         />
       </Field>
 
-      {clubhouseActive && (
+      {managedFlag && projectPath && !isRemoteProjectId(agent.projectId) && (
+        <ManagedGeneralSection
+          projectPath={projectPath}
+          agentId={agent.id}
+          agentName={agent.name}
+          setup={managedSetup}
+          clubhouseFeatures={clubhouseFeatures}
+          onClubhouseFeaturesChange={setClubhouseFeatures}
+          isRunning={isRunning}
+        />
+      )}
+
+      {clubhouseActive && !managedFlag && (
         <>
           <SectionHeading title="Clubhouse Mode" />
           <Field
@@ -1343,13 +1393,15 @@ export function AgentSettingsView({ agent }: Props) {
         </>
       )}
 
-      <SectionHeading title="Template" />
-      <Field label="Copy as template" help="Copies this agent's definition to the clipboard to share or reuse.">
-        <Button onClick={handleExportAsTemplate} disabled={exportingTemplate}>
-          Copy
-        </Button>
-      </Field>
-      {!isManagedByClubhouse && !pageMode && (
+      {!managedFlag && <>
+        <SectionHeading title="Template" />
+        <Field label="Copy as template" help="Copies this agent's definition to the clipboard to share or reuse.">
+          <Button onClick={handleExportAsTemplate} disabled={exportingTemplate}>
+            Copy
+          </Button>
+        </Field>
+      </>}
+      {!isManagedByClubhouse && !isManagedAgent && !pageMode && (
         <p className="mt-3 text-xs text-ctp-overlay1">
           Skills, agent definitions and MCP settings live in the agent worktree. Agents that share a root directory share them.
         </p>
@@ -1561,7 +1613,14 @@ export function AgentSettingsView({ agent }: Props) {
       permissions: <span className="font-mono">{permissionsPathLabel}</span>,
       helpers: `How ${agent.name} starts, runs and disposes of helper agents. The same switches are in its Orchestration card beside the chat.`,
       quick: `Defaults for quick agents ${agent.name} starts`,
+      preview: `What ${agent.name} gets at its next start`,
     };
+    const builderNote = isRunning ? <span className="ml-2 text-ctp-overlay1">· Changes apply when the next session starts</span> : null;
+    if (isManagedAgent && builderAgent) {
+      sub.instructions = <>In the order {agent.name} reads them{builderNote}</>;
+      sub.skills = <>Copied into {agent.name}'s folder at its next start{builderNote}</>;
+      sub.mcp = <>Sign-in comes from your environment{builderNote}</>;
+    }
     const content: Record<AgentSettingsPage, React.ReactNode> = {
       general,
       instructions: instructionsEditor,
@@ -1571,12 +1630,18 @@ export function AgentSettingsView({ agent }: Props) {
       permissions: permissionsEditor,
       helpers: helpersSettings,
       quick: quickDefaults,
+      preview: isManagedAgent && builderAgent ? <PreviewPane agent={builderAgent} /> : null,
     };
+    if (isManagedAgent && builderTarget) {
+      content.instructions = <ManagedBuilder target={builderTarget} tab="instructions" />;
+      content.skills = <ManagedBuilder target={builderTarget} tab="skills" />;
+      content.mcp = <ManagedBuilder target={builderTarget} tab="mcp" />;
+    }
     // Every page stays mounted and only the selected one shows, so edits held
     // inside a page (an open skill editor, .mcp.json) survive a page switch.
     body = AGENT_SETTINGS_PAGES.filter(({ page: p }) => !hiddenPages.includes(p)).map(({ page: p, label }) => {
       // Clubhouse Mode manages files in the worktree; the orchestration policy isn't one.
-      const managed = isManagedByClubhouse && p !== 'general' && p !== 'quick' && p !== 'helpers';
+      const managed = isManagedByClubhouse && !isManagedAgent && p !== 'general' && p !== 'quick' && p !== 'helpers' && p !== 'preview';
       return (
         <div key={p} data-testid={`agent-settings-page-${p}`} hidden={p !== page}>
           <PageTitle title={label} sub={sub[p]} right={p === page ? reloadButton : undefined} />
@@ -1584,6 +1649,34 @@ export function AgentSettingsView({ agent }: Props) {
         </div>
       );
     });
+  } else if (isManagedAgent && builderAgent && builderTarget) {
+    // Classic shell, managed agent: Clubhouse writes its instructions, skills and
+    // MCP files at every start, so the builder takes the place of the file editors.
+    const builderNote = isRunning ? 'Changes apply when the next session starts' : undefined;
+    body = (
+      <>
+        {general}
+        <div id="agent-settings-section-instructions" data-testid="agent-settings-section-instructions">
+          <SectionHeading title="Instructions" sub={builderNote ?? `In the order ${agent.name} reads them`} />
+          <ManagedBuilder target={builderTarget} tab="instructions" />
+        </div>
+        <div id="agent-settings-section-skills" data-testid="agent-settings-section-skills">
+          <SectionHeading title="Skills" sub={builderNote ?? `Copied into ${agent.name}'s folder at its next start`} />
+          <ManagedBuilder target={builderTarget} tab="skills" />
+        </div>
+        <div id="agent-settings-section-mcp" data-testid="agent-settings-section-mcp">
+          <SectionHeading title="MCP servers" sub={builderNote ?? 'Sign-in comes from your environment'} />
+          <ManagedBuilder target={builderTarget} tab="mcp" />
+        </div>
+        <div id="agent-settings-section-preview" data-testid="agent-settings-section-preview">
+          <SectionHeading title="Preview" sub={`What ${agent.name} gets at its next start`} />
+          <PreviewPane agent={builderAgent} />
+        </div>
+        {helpersSettings}
+        <SectionHeading title="Quick agents" sub={`Defaults for quick agents ${agent.name} starts`} />
+        {quickDefaults}
+      </>
+    );
   } else {
     body = (
       <>
