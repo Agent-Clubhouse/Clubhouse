@@ -552,6 +552,7 @@ vi.stubGlobal('clubhouse', {
     applySettings: async () => ({ ok: true, value: undefined }),
     status: async () => ({ ok: true, value: { managed: false, running: false, waiting: false, changes: [], cliChanged: false } }),
     isWorking: async () => ({ ok: true, value: false }),
+    dismissMigrationNotice: async () => ({ ok: true, value: undefined }),
     restart: async () => ({ ok: true, value: { resumed: true } }),
     setClubhouseFeatures: async () => ({ ok: true, value: undefined }),
     onChanged: () => noop,

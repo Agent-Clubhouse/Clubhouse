@@ -401,6 +401,20 @@ export interface DurableAgentConfig {
    * bridge for a plain CLI. Unset means on.
    */
   clubhouseFeatures?: false;
+  /**
+   * Set when Clubhouse switched this agent to managed on its own (D59). Kept
+   * after the notice is dismissed, so it is never switched automatically
+   * again. Written only through services/managed-agents.
+   */
+  managedMigration?: import('./managed-agents-types').ManagedMigration;
+  /** The last automatic switch to managed failed (D59). Cleared when it switches. */
+  managedMigrationFailure?: import('./managed-agents-types').ManagedMigrationFailure;
+  /**
+   * When the orchestration fields a persona layer (a project or user
+   * `orchestrator.md`) decided for this plain agent were kept as its own
+   * (D62). Set once, so it isn't done again.
+   */
+  personaLayerCarriedAt?: string;
 }
 
 /** How an orchestrator took a helper's work (#2229). */

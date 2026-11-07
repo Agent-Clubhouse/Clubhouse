@@ -153,7 +153,8 @@ describe('Settings, Switch agents', () => {
     for (const name of ['dot', 'hal', 'ivy', 'jo']) expect(screen.queryByText(name)).toBeNull();
     expect(row('ada')).toHaveTextContent('alpha · Clubhouse Mode');
     expect(row('bea')).toHaveTextContent('alpha · Clubhouse Mode, Quality Assurance persona');
-    expect(row('bea')).toHaveTextContent('Running: the switch applies at its next start.');
+    // A running legacy agent switches on its own at its next start (D59).
+    expect(row('bea')).toHaveTextContent('Running. It switches on its own at its next start.');
     expect(row('cal')).toHaveTextContent('alpha · Plain');
     expect(row('eve')).toHaveTextContent("Beta · Quality Assurance persona");
     expect(row('eve')).toHaveTextContent("Works in the project folder, so it can't be managed.");
@@ -162,7 +163,23 @@ describe('Settings, Switch agents', () => {
     expect(box('bea').disabled).toBe(false);
     expect(box('eve').disabled).toBe(true);
     expect(screen.getByTestId('managed-switch-run')).toHaveTextContent('Switch 1 to managed');
-    expect(screen.getByText(/A running agent gets the change at its next start\./)).toBeTruthy();
+    expect(screen.getByText(/switch on their own at their next start, so most agents here are plain ones, plus any that couldn't switch\./)).toBeTruthy();
+  });
+
+  it('shows why an automatic switch failed, and keeps the agent ticked to switch by hand (D59)', async () => {
+    lists.alpha[0] = config('ada', { managedMigrationFailure: { at: '2026-11-07T02:00:00.000Z', code: 'invalid', message: 'Two skills use the folder name ship.' } });
+    useAgentStore.setState({ agents: { bea: { id: 'bea', status: 'running' } as Agent, cal: { id: 'cal', status: 'running' } as Agent } });
+    try {
+      render(<SwitchAgentsSettingsView />);
+      await waitFor(() => expect(screen.getAllByTestId('managed-switch-row')).toHaveLength(5));
+      expect(within(row('ada')).getByTestId('managed-switch-failed')).toHaveTextContent("Clubhouse couldn't switch it when it updated. Two skills use the folder name ship.");
+      expect(box('ada').checked).toBe(true);
+      expect(within(row('bea')).queryByTestId('managed-switch-failed')).toBeNull();
+      // A plain agent never switches on its own.
+      expect(row('cal')).toHaveTextContent('Running: the switch applies at its next start.');
+    } finally {
+      lists.alpha[0] = config('ada');
+    }
   });
 
   it('disables an agent that is waking, and drops its tick', async () => {

@@ -401,6 +401,26 @@ describe('Setup card', () => {
     expect(useAgentSettingsPages.getState().requestedPage).toEqual({ agentId: 'a1', page: 'instructions' });
   });
 
+  it('says an agent Clubhouse switched on its own was switched, until the line is dismissed (D59)', async () => {
+    setFlag(true);
+    let listener: (() => void) | null = null;
+    vi.spyOn(m(), 'onChanged').mockImplementation((fn) => { listener = fn; return () => {}; });
+    let current = status({ waiting: false, changes: [], migrated: { from: 'clubhouse-mode', backup: '~/.clubhouse/managed-agents/before-managed/a1' } });
+    vi.spyOn(m(), 'status').mockImplementation(async () => ({ ok: true, value: current }) as never);
+    const dismiss = vi.spyOn(m(), 'dismissMigrationNotice').mockImplementation(async () => {
+      current = status({ waiting: false, changes: [] });
+      listener?.();
+      return { ok: true, value: undefined } as never;
+    });
+    render(<SettingsCard agent={agent} projectPath="/work/proj" provider="Claude Code" />);
+    expect(await screen.findByTestId('details-setup-migrated')).toHaveTextContent(
+      'Switched to managed when Clubhouse updated. Its earlier files are kept in ~/.clubhouse/managed-agents/before-managed/a1.',
+    );
+    await act(async () => { fireEvent.click(screen.getByTestId('details-setup-migrated-dismiss')); });
+    expect(dismiss).toHaveBeenCalledWith('/work/proj', 'a1');
+    await waitFor(() => expect(screen.queryByTestId('details-setup-migrated')).toBeNull());
+  });
+
   it('keeps Settings with the flag off', async () => {
     setFlag(false);
     const read = vi.spyOn(m(), 'getSetup');

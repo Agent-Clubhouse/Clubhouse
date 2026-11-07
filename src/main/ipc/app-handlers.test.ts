@@ -72,6 +72,9 @@ vi.mock('../services/clubhouse-mode-settings', () => ({
   isClubhouseModeEnabled: vi.fn(() => false),
 }));
 
+const mockSetAppScp = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('../services/source-control-settings', () => ({ setAppSourceControlProvider: mockSetAppScp }));
+
 vi.mock('../services/badge-settings', () => ({
   getSettings: vi.fn(() => ({ showBadge: true })),
   saveSettings: vi.fn(),
@@ -926,6 +929,15 @@ describe('app-handlers', () => {
     expect(clubhouseModeSettings.saveSettings).toHaveBeenCalledWith({ enabled: true });
     expect(ensureDefaultTemplates).toHaveBeenCalledWith('/project');
     expect(enableExclusions).toHaveBeenCalledWith('/project', expect.anything());
+  });
+
+  it('SAVE_CLUBHOUSE_MODE_SETTINGS keeps the source control provider the same in its own setting (D61)', async () => {
+    mockSetAppScp.mockClear();
+    const handler = handleHandlers.get(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS)!;
+    await handler({}, { enabled: false });
+    expect(mockSetAppScp).not.toHaveBeenCalled();
+    await handler({}, { enabled: false, sourceControlProvider: 'azure-devops' });
+    expect(mockSetAppScp).toHaveBeenCalledWith('azure-devops');
   });
 
   it('SAVE_CLUBHOUSE_MODE_SETTINGS removes exclusions on disable', async () => {

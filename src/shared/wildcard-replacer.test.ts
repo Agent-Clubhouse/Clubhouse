@@ -305,3 +305,14 @@ describe('@@Persona replacement', () => {
     );
   });
 });
+
+describe('replaceWildcards for managed agents (D60)', () => {
+  const ctx = { agentName: 'ada', standbyBranch: 'ada/standby', agentPath: '.clubhouse/agents/ada/', mission: 'Ship it.', persona: 'Be careful.' };
+  it('leaves @@Mission and @@Persona exactly as written with missionAndPersona: false', () => {
+    expect(replaceWildcards('@@AgentName: @@Mission / @@Persona', ctx, { conditionals: false, missionAndPersona: false })).toBe('ada: @@Mission / @@Persona');
+  });
+  it('fills them otherwise, as Clubhouse Mode does', () => {
+    expect(replaceWildcards('@@Mission / @@Persona', ctx)).toBe('Ship it. / Be careful.');
+    expect(replaceWildcards('[@@Mission]', { ...ctx, mission: undefined })).toBe('[]');
+  });
+});

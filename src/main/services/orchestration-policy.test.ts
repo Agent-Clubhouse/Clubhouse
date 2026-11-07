@@ -514,6 +514,23 @@ describe('switching to managed keeps the persona\'s policy (#2901)', () => {
     expect(await carryPersonaOrchestration(PROJECT, 'm')).toBeNull();
   });
 
+  it('a plain agent that stays unmanaged keeps what orchestrator.md decided for it, and only that (D62)', async () => {
+    state.personas.set('orchestrator', persona({ orchestrate: true, maxHelpers: 2, access: 'standard' }));
+    setAgents(PROJECT, [agent('plain', { orchestration: { access: 'same' } })]);
+    const before = await getOrchestrationPolicy(PROJECT, 'plain');
+    const carry = await carryPersonaOrchestration(PROJECT, 'plain', 'plain');
+    // orchestrate and connectToDispatcher never come from the project file for a non-Orchestrator agent.
+    expect(carry?.carried).toEqual({ maxHelpers: 2 });
+    expect(find('plain').orchestration).toEqual({ access: 'same', maxHelpers: 2 });
+    expect(auditRows.filter((r) => r.code === 'carried_from_persona_layer').map((r) => r.key)).toEqual(['orchestration.maxHelpers']);
+    // With the persona layer gone, it resolves the same.
+    state.personas.clear();
+    const after = await getOrchestrationPolicy(PROJECT, 'plain');
+    for (const key of ['orchestrate', 'access', 'control', 'maxHelpers', 'crossProjectHelpers', 'connectToDispatcher', 'autoHelpers'] as const) {
+      expect(after?.[key]).toEqual(before?.[key]);
+    }
+  });
+
   it('puts the fields back when the switch fails, leaving fields changed since', async () => {
     state.personas.set('orchestrator', persona({ orchestrate: true, maxHelpers: 3 }));
     setAgents(PROJECT, [agent('orch', { persona: 'orchestrator', orchestration: { access: 'same' } })]);

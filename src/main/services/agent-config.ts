@@ -28,7 +28,7 @@ import { ACCESS_LEVELS, type AgentAccessLevel, type OrchestrationPolicyConfig } 
 import { notifyPersonaChanged } from './persona-change-hook';
 import { uncommittedPorcelain } from './clubhouse-owned-files';
 import { DISPATCHER_PERSONA, isDispatcherPath } from './dispatcher/dispatcher-paths';
-import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup } from '../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedMigration, type ManagedMigrationFailure } from '../../shared/managed-agents-types';
 import { noteManagedSettingsChanged } from './managed-agents/changed-notice';
 
 /**
@@ -3090,11 +3090,41 @@ async function setManagedSetupInner(projectPath: string, agentId: string, setup:
     agent.mcpOverride = setup.mcps.includes(CLUBHOUSE_MCP_PART_ID);
     delete agent.clubhouseFeatures;
     delete agent.persona;
+    // Switched, by hand or on its own: an earlier automatic switch's failure no longer applies (D59).
+    delete agent.managedMigrationFailure;
   } else {
     delete agent.managed;
   }
   await writeAgents(projectPath, agents);
   await auditChanges('agent', 'agent', agentId, managedBefore, managedAuditFields(agent), MANAGED_AUDIT_CATALOG);
+}
+
+/**
+ * The automatic switch to managed (D59): record that it happened, that it
+ * failed, or that the person dismissed the notice. Bookkeeping, not a
+ * setting: the switch itself is audited by setManagedSetup. Written only by
+ * services/managed-agents. A missing agent is a no-op.
+ */
+async function setManagedMigrationInner(
+  projectPath: string,
+  agentId: string,
+  change: { migrated: ManagedMigration } | { failed: ManagedMigrationFailure } | { dismissed: true } | { layerCarriedAt: string },
+): Promise<void> {
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) return;
+  if ('layerCarriedAt' in change) {
+    agent.personaLayerCarriedAt = change.layerCarriedAt;
+  } else if ('migrated' in change) {
+    agent.managedMigration = { ...change.migrated };
+    delete agent.managedMigrationFailure;
+  } else if ('failed' in change) {
+    agent.managedMigrationFailure = { ...change.failed };
+  } else {
+    if (!agent.managedMigration || agent.managedMigration.dismissed) return;
+    agent.managedMigration = { ...agent.managedMigration, dismissed: true };
+  }
+  await writeAgents(projectPath, agents);
 }
 
 /**
@@ -3802,6 +3832,10 @@ export async function setOrchestrationConfig(projectPath: string, agentId: strin
 
 export async function setManagedSetup(projectPath: string, agentId: string, setup: ManagedAgentSetup | null): Promise<void> {
   return withAgentActivity(agentId, () => setManagedSetupInner(projectPath, agentId, setup));
+}
+
+export async function setManagedMigration(...args: Parameters<typeof setManagedMigrationInner>): Promise<void> {
+  return withAgentActivity(args[1], () => setManagedMigrationInner(...args));
 }
 
 export async function setClubhouseFeatures(projectPath: string, agentId: string, on: boolean): Promise<void> {

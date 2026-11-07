@@ -53,6 +53,9 @@ vi.mock('./git-exclude-manager', () => ({
 const mockManagedMcp = vi.fn(async () => ({ workiq: { command: 'npx' } }));
 vi.mock('./managed-agents', () => ({ managedMcpServersFor: (...args: unknown[]) => mockManagedMcp(...(args as [])) }));
 
+const appScp = vi.hoisted(() => ({ value: undefined as 'github' | 'azure-devops' | undefined }));
+vi.mock('./source-control-settings', () => ({ getAppSourceControlProvider: () => appScp.value }));
+
 vi.mock('./clubhouse-mode-settings', () => ({
   getSettings: vi.fn(() => ({ enabled: false })),
   saveSettings: vi.fn(),
@@ -308,6 +311,19 @@ describe('materialization-service', () => {
       });
 
       expect(await resolveSourceControlProvider('/project')).toBe('azure-devops');
+    });
+
+    it('reads the app-level setting\'s own home first, then the old Clubhouse Mode one (D61)', async () => {
+      mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {}, agentDefaults: {} }));
+      vi.mocked(clubhouseModeSettings.getSettings).mockReturnValue({ enabled: false, sourceControlProvider: 'github' });
+      appScp.value = 'azure-devops';
+      try {
+        expect(await resolveSourceControlProvider('/project')).toBe('azure-devops');
+        appScp.value = undefined;
+        expect(await resolveSourceControlProvider('/project')).toBe('github');
+      } finally {
+        appScp.value = undefined;
+      }
     });
 
     it('defaults to github when nothing is configured', async () => {

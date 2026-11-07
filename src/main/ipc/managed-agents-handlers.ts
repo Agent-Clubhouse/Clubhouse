@@ -6,7 +6,7 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { ManagedPartContent, ManagedPartKind, ManagedResult, ManagedTemplate, ManagedTemplateSettings } from '../../shared/managed-agents-types';
-import { managedAgents, restartManagedAgent, statusFor, isAgentWorking } from '../services/managed-agents';
+import { dismissMigrationNotice, managedAgents, restartManagedAgent, statusFor, isAgentWorking } from '../services/managed-agents';
 import { applyManagedSettings, convertToManaged, createManagedAgent, previewConvert } from '../services/managed-agents/agents';
 import { previewManagedSetup } from '../services/managed-agents/delivery';
 import { ManagedError } from '../services/managed-agents/service';
@@ -144,6 +144,8 @@ export function registerManagedAgentsHandlers(): void {
   ipcMain.handle(IPC.MANAGED.APPLY_SETTINGS, withValidatedArgs([stringArg(), idArg(), objectArg<ManagedTemplateSettings>()],
     (_e, projectPath, agentId, settings) => result(() => applyManagedSettings(projectPath, agentId, settings))));
   ipcMain.handle(IPC.MANAGED.STATUS, withValidatedArgs([stringArg(), idArg()], (_e, projectPath, agentId) => result(() => statusFor(projectPath, agentId))));
+  ipcMain.handle(IPC.MANAGED.DISMISS_MIGRATION_NOTICE, withValidatedArgs([stringArg(), idArg()],
+    (_e, projectPath, agentId) => result(() => dismissMigrationNotice(projectPath, agentId))));
   ipcMain.handle(IPC.MANAGED.IS_WORKING, withValidatedArgs([idArg()], (_e, agentId) => result(() => isAgentWorking(agentId))));
   ipcMain.handle(IPC.MANAGED.RESTART, withValidatedArgs(
     [stringArg(), idArg(), objectArg<{ fresh?: boolean; whenTurnEnds?: boolean }>({ optional: true })],

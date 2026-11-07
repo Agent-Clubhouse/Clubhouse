@@ -35,3 +35,13 @@ export function legacyLabel(use: LegacyUse | null): string {
   if (use.clubhouseMode) return 'Clubhouse Mode';
   return `${use.persona} persona`;
 }
+
+/** The notice on an agent Clubhouse switched to managed on its own (D59). */
+export function migratedLine(backup: string): string {
+  return `Switched to managed when Clubhouse updated. Its earlier files are kept in ${backup}.`;
+}
+
+/** Why an automatic switch didn't happen, beside the switch offer (D59). */
+export function migrationFailedLine(reason: string): string {
+  return `Clubhouse couldn't switch it when it updated. ${reason}`;
+}

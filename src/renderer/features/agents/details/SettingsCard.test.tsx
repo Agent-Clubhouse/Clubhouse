@@ -322,6 +322,19 @@ describe('Settings card with Clubhouse-managed agents on (#2901)', () => {
     }
   });
 
+  it('says why the automatic switch failed beside the switch offer (D59)', async () => {
+    const status = vi.spyOn(window.clubhouse.managed, 'status').mockResolvedValue({ ok: true, value: { managed: false, running: false, waiting: false, changes: [], cliChanged: false, migrationFailed: 'It was changing state at the time.' } } as never);
+    try {
+      render(<AgentDetails agent={agent} chat={chatState()} />);
+      const card = openSettings();
+      expect(await card.findByTestId('details-settings-migration-failed')).toHaveTextContent("Clubhouse couldn't switch it when it updated. It was changing state at the time.");
+      expect(card.getByTestId('details-settings-legacy')).toHaveTextContent('faithful-urchin uses Clubhouse Mode.');
+      expect(card.getByRole('button', { name: 'Switch to managed…' })).toBeTruthy();
+    } finally {
+      status.mockRestore();
+    }
+  });
+
   it('names the persona, and says nothing for an agent that uses neither', async () => {
     useClubhouseModeStore.setState({ enabled: false } as never);
     saved = { idleSleep: 30, persona: 'qa' };

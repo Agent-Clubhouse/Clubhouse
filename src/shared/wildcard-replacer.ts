@@ -14,8 +14,11 @@ export interface WildcardContext {
  * Replace @@AgentName, @@StandbyBranch, @@Path, and @@SourceControlProvider
  * wildcards in a string, and process @@If(value)...@@EndIf conditional blocks.
  * Returns the input unchanged if no wildcards are found.
+ *
+ * Managed agents pass `missionAndPersona: false`: @@Mission and @@Persona
+ * stay exactly as written there, as Preview and the switch say (D58, D60).
  */
-export function replaceWildcards(text: string, ctx: WildcardContext, opts: { conditionals?: boolean } = {}): string {
+export function replaceWildcards(text: string, ctx: WildcardContext, opts: { conditionals?: boolean; missionAndPersona?: boolean } = {}): string {
   let result = text
     .replace(/@@AgentName/g, ctx.agentName)
     .replace(/@@StandbyBranch/g, ctx.standbyBranch)
@@ -23,9 +26,12 @@ export function replaceWildcards(text: string, ctx: WildcardContext, opts: { con
     .replace(/@@SourceControlProvider/g, ctx.sourceControlProvider || '')
     .replace(/@@BuildCommand/g, ctx.buildCommand || 'npm run build')
     .replace(/@@TestCommand/g, ctx.testCommand || 'npm test')
-    .replace(/@@LintCommand/g, ctx.lintCommand || 'npm run lint')
-    .replace(/@@Mission/g, ctx.mission || '')
-    .replace(/@@Persona/g, ctx.persona || '');
+    .replace(/@@LintCommand/g, ctx.lintCommand || 'npm run lint');
+  if (opts.missionAndPersona !== false) {
+    result = result
+      .replace(/@@Mission/g, ctx.mission || '')
+      .replace(/@@Persona/g, ctx.persona || '');
+  }
 
   // Process @@If(value)...@@EndIf conditional blocks. Managed agents pass
   // conditionals: false: a variant is its own instruction block there (#2901).

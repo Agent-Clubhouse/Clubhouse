@@ -351,6 +351,33 @@ describe('ManagedGeneralSection', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it('a managed agent Clubhouse switched on its own says so in one line with Dismiss (D59)', async () => {
+    let listener: (() => void) | null = null;
+    vi.spyOn(m(), 'onChanged').mockImplementation((fn) => { listener = fn; return () => {}; });
+    let migrated: { from: 'persona'; backup: string } | undefined = { from: 'persona', backup: '~/.clubhouse/managed-agents/before-managed/ada' };
+    vi.spyOn(m(), 'status').mockImplementation(async () => ({ ok: true, value: { managed: true, running: false, waiting: false, changes: [], cliChanged: false, ...(migrated && { migrated }) } }) as never);
+    const dismiss = vi.spyOn(m(), 'dismissMigrationNotice').mockImplementation(async () => {
+      migrated = undefined;
+      listener?.();
+      return { ok: true, value: undefined } as never;
+    });
+    render(<ManagedGeneralSection projectPath="/p" agentId="ada" agentName="ada" setup={{ version: 1, blocks: [], skills: [], mcps: [] }} clubhouseFeatures isRunning={false} />);
+    const line = await screen.findByTestId('managed-general-migrated');
+    expect(line).toHaveTextContent('Switched to managed when Clubhouse updated. Its earlier files are kept in ~/.clubhouse/managed-agents/before-managed/ada.');
+    expect(line.textContent).not.toContain('\u2014');
+    await act(async () => { fireEvent.click(within(line).getByRole('button', { name: 'Dismiss' })); });
+    expect(dismiss).toHaveBeenCalledWith('/p', 'ada');
+    await waitFor(() => expect(screen.queryByTestId('managed-general-migrated')).toBeNull());
+  });
+
+  it('an unmanaged agent whose automatic switch failed says why beside the switch offer (D59)', async () => {
+    vi.spyOn(m(), 'status').mockResolvedValue({ ok: true, value: { managed: false, running: false, waiting: false, changes: [], cliChanged: false, migrationFailed: 'Two skills use the folder name ship.' } } as never);
+    render(<ManagedGeneralSection projectPath="/p" agentId="ada" agentName="ada" setup={null} clubhouseFeatures isRunning={false} legacy={{ clubhouseMode: true, persona: null }} />);
+    expect(await screen.findByTestId('managed-general-migration-failed')).toHaveTextContent("Clubhouse couldn't switch it when it updated. Two skills use the folder name ship.");
+    expect(screen.getByTestId('managed-general-legacy')).toHaveTextContent('ada uses Clubhouse Mode. Switch to managed keeps what it has now.');
+    expect(screen.getByRole('button', { name: 'Switch to managed…' })).toBeTruthy();
+  });
+
   it('warns what stops working when Clubhouse features go off', () => {
     render(<ManagedGeneralSection projectPath="/p" agentId="ada" agentName="ada" setup={null} clubhouseFeatures={false} isRunning={false} />);
     expect(screen.getByTestId('managed-clubhouse-features').textContent).toMatch(/can't show this agent's status/);
