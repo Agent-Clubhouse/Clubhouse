@@ -103,7 +103,8 @@ describe('copilot normalizer', () => {
   it('sums zeros as zero and leaves a figure no call reported absent', () => {
     const sum = addTokens(copilotTokens({ inputTokens: 0, outputTokens: 0 }), copilotTokens({ inputTokens: 0, outputTokens: 0 }));
     expect(sum).toMatchObject({ input: 0, output: 0, total: 0 });
-    expect(sum.reasoning).toBeUndefined();
-    expect(sum.cachedInput).toBeUndefined();
+    // Absent means no key at all, not a key holding undefined.
+    expect(sum).not.toHaveProperty('reasoning');
+    expect(sum).not.toHaveProperty('cachedInput');
   });
 });

@@ -129,18 +129,14 @@ export function copilotTokens(u: { inputTokens?: number; outputTokens?: number; 
   };
 }
 
-/** Sum across calls. A figure no call reported stays absent; a sum of reported zeros is zero. */
+/** Sum across calls. A figure no call reported stays absent (no key); a sum of reported zeros is zero. */
 export function addTokens(a: TokenUsage | undefined, b: TokenUsage): TokenUsage {
   if (!a) return b;
-  const sum = (x?: number, y?: number) => (x === undefined && y === undefined ? undefined : (x ?? 0) + (y ?? 0));
-  return {
-    input: sum(a.input, b.input),
-    output: sum(a.output, b.output),
-    cachedInput: sum(a.cachedInput, b.cachedInput),
-    cacheWrite: sum(a.cacheWrite, b.cacheWrite),
-    reasoning: sum(a.reasoning, b.reasoning),
-    total: sum(a.total, b.total),
-  };
+  const out: TokenUsage = {};
+  for (const key of ['input', 'output', 'cachedInput', 'cacheWrite', 'reasoning', 'total'] as const) {
+    if (a[key] !== undefined || b[key] !== undefined) out[key] = (a[key] ?? 0) + (b[key] ?? 0);
+  }
+  return out;
 }
 
 // ── Your own model key ──────────────────────────────────────────────────────
