@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installContentContextMenu } from '../preload/content-context-menu';
 import { contentContext } from '../shared/content-context-target';
 
@@ -7,7 +7,9 @@ function context(el: Element, x = 12, y = 20) {
   Object.defineProperty(event, 'target', { value: el });
   return contentContext(event, document);
 }
-afterEach(() => { document.body.innerHTML = ''; document.getSelection()?.removeAllRanges(); });
+const hit = vi.fn();
+beforeEach(() => { Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: hit }); });
+afterEach(() => { Reflect.deleteProperty(document, 'elementFromPoint'); document.body.innerHTML = ''; document.getSelection()?.removeAllRanges(); });
 
 describe('content menu targets', () => {
   it('copies a nested link destination, not its rendered label', () => {
@@ -28,15 +30,40 @@ describe('content menu targets', () => {
   it('offers image pixels only after load, and retains both linked-image targets', () => {
     document.body.innerHTML = '<a href="https://example.com/article"><img src="https://example.com/pic.png"></a>';
     const img = document.querySelector('img')!;
-    expect(context(img)?.image).toBeUndefined();
+    expect(context(img)?.image).toEqual({ address: 'https://example.com/pic.png' });
     Object.defineProperties(img, { complete: { value: true }, naturalWidth: { value: 100 } });
-    expect(context(img)).toEqual({ link: 'https://example.com/article', image: { x: 12, y: 20, address: 'https://example.com/pic.png' }, editable: false });
+    img.getBoundingClientRect = () => ({ left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100 }) as DOMRect; hit.mockReturnValue(img);
+    expect(context(img)).toEqual({ link: 'https://example.com/article', image: { point: { x: 12, y: 20 }, address: 'https://example.com/pic.png' }, editable: false });
   });
   it.each(['data:image/png;base64,AA==', 'blob:https://example.com/private'])('copies rendered pixels but not ephemeral image address %s', (src) => {
     const img = document.createElement('img'); img.src = src;
     Object.defineProperties(img, { complete: { value: true }, naturalWidth: { value: 100 } });
-    img.getBoundingClientRect = () => ({ left: 30, top: 40, width: 20, height: 30 }) as DOMRect;
-    expect(context(img, 0, 0)?.image).toEqual({ x: 40, y: 55 });
+    hit.mockReturnValue(img);
+    img.getBoundingClientRect = () => ({ left: 30, top: 40, right: 50, bottom: 70, width: 20, height: 30 }) as DOMRect;
+    expect(context(img, 0, 0)?.image).toEqual({ point: { x: 40, y: 55 } });
+  });
+  it.each(['clipped', 'offscreen', 'covered', 'zero-sized'])('keeps addresses independent of %s image pixel availability', (kind) => {
+    document.body.innerHTML = '<a href="https://example.com/article"><img src="https://example.com/image.png"></a>';
+    const img = document.querySelector('img')!;
+    Object.defineProperties(img, { complete: { value: true }, naturalWidth: { value: 100 } });
+    const rect = kind === 'offscreen' ? { left: -100, right: -20, top: 10, bottom: 30, width: 80, height: 20 }
+      : kind === 'zero-sized' ? { left: 10, right: 10, top: 10, bottom: 10, width: 0, height: 0 }
+      : { left: -50, right: 50, top: 10, bottom: 30, width: 100, height: 20 };
+    img.getBoundingClientRect = () => rect as DOMRect;
+    hit.mockReturnValue(kind === 'clipped' ? img : document.body);
+    const result = context(img, 0, 0)!;
+    expect(result.link).toBe('https://example.com/article');
+    expect(result.image?.address).toBe('https://example.com/image.png');
+    if (kind === 'clipped') {
+      expect(result.image?.point).toEqual({ x: 25, y: 20 }); expect(hit).toHaveBeenCalledWith(25, 20);
+    } else expect(result.image?.point).toBeUndefined();
+  });
+  it('does not copy pixels when ancestor clipping hides the candidate point', () => {
+    const img = document.createElement('img'); img.src = 'data:image/png;base64,AA==';
+    Object.defineProperties(img, { complete: { value: true }, naturalWidth: { value: 100 } });
+    img.getBoundingClientRect = () => ({ left: 0, right: 100, top: 0, bottom: 100, width: 100, height: 100 }) as DOMRect;
+    hit.mockReturnValue(null);
+    expect(context(img, 0, 0)).toBeNull();
   });
   it('preserves exact selected multiline text', () => {
     const p = document.createElement('p'); p.textContent = 'first\n second'; document.body.append(p);

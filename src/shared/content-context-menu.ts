@@ -2,7 +2,7 @@
 export interface ContentContextMenu {
   link?: string;
   path?: string;
-  image?: { x: number; y: number; address?: string };
+  image?: { point?: { x: number; y: number }; address?: string };
   selection?: string;
   editable: boolean;
 }
@@ -15,7 +15,13 @@ export function isContentContextMenu(value: unknown): value is ContentContextMen
   if (v.image !== undefined) {
     if (!v.image || typeof v.image !== 'object') return false;
     const image = v.image as Record<string, unknown>;
-    if (!text(image.address) || ![image.x, image.y].every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100_000)) return false;
+    if (!text(image.address)) return false;
+    if (image.point !== undefined) {
+      if (!image.point || typeof image.point !== 'object') return false;
+      const point = image.point as Record<string, unknown>;
+      if (![point.x, point.y].every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100_000)) return false;
+    }
+    if (!image.point && !image.address) return false;
   }
   return true;
 }

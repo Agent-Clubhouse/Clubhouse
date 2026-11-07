@@ -12,9 +12,10 @@ export function contentMenuItems(context: ContentContextMenu, contents: Electron
   if (context.path) items.push({ label: 'Copy file path', click: () => write(context.path!) });
   if (context.image) {
     const image = context.image;
-    items.push({ label: 'Copy image', click: () => {
+    const point = image.point;
+    if (point) items.push({ label: 'Copy image', click: () => {
       if (contents.isDestroyed()) return;
-      try { contents.copyImageAt(Math.round(image.x), Math.round(image.y)); } catch { failed(); }
+      try { contents.copyImageAt(point.x, point.y); } catch { failed(); }
     } });
     if (image.address) items.push({ label: 'Copy image address', click: () => write(image.address!) });
   }

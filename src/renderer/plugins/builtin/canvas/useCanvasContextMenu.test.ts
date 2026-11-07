@@ -20,7 +20,7 @@ function event(target: Element, defaultPrevented = false) {
 afterEach(() => { document.body.innerHTML = ''; document.getSelection()?.removeAllRanges(); });
 describe('canvas content context menu boundary', () => {
   it.each(['link', 'image', 'selection', 'input'])('lets %s copy actions reach the native fallback', (kind) => {
-    document.body.innerHTML = '<div data-testid="canvas-view-content"><a href="https://example.com">link</a><img><p>selected text</p><input></div>';
+    document.body.innerHTML = '<div data-testid="canvas-view-content"><a href="https://example.com">link</a><img src="https://example.com/a.png"><p>selected text</p><input></div>';
     const target = document.querySelector({ link: 'a', image: 'img', selection: 'p', input: 'input' }[kind]!)!;
     if (kind === 'image') Object.defineProperties(target, { complete: { value: true }, naturalWidth: { value: 100 } });
     if (kind === 'selection') {

@@ -17,10 +17,16 @@ describe('native copy content menu', () => {
     expect(mock.write.mock.calls).toEqual([['https://example.com/real'], ['visible\ntext']]);
   });
   it('copies image pixels in the requesting web contents, not the image URL or a new fetch', () => {
-    const items = contentMenuItems({ editable: false, image: { x: 10.2, y: 22.8, address: 'https://example.com/a.png' } }, wc);
+    const items = contentMenuItems({ editable: false, image: { point: { x: 10, y: 23 }, address: 'https://example.com/a.png' } }, wc);
     click(items[0]); expect(contents.copyImageAt).toHaveBeenCalledWith(10, 23); expect(mock.write).not.toHaveBeenCalled();
     click(items[1]); expect(mock.write).toHaveBeenCalledWith('https://example.com/a.png');
     contents.isDestroyed.mockReturnValue(true); click(items[0]); expect(contents.copyImageAt).toHaveBeenCalledOnce();
+  });
+  it('keeps image addresses available without a verified pixel target', () => {
+    const items = contentMenuItems({ editable: false, image: { address: 'https://example.com/a.png' } }, wc);
+    expect(items.map(i => i.label)).toEqual(['Copy image address']);
+    click(items[0]); expect(mock.write).toHaveBeenCalledWith('https://example.com/a.png');
+    expect(contents.copyImageAt).not.toHaveBeenCalled();
   });
   it('uses native editing roles, and copy-only for readonly selection', () => {
     expect(contentMenuItems({ editable: true }, wc).map(i => i.role || i.type)).toEqual(['undo', 'redo', 'separator', 'cut', 'copy', 'paste', 'selectAll']);
@@ -33,8 +39,8 @@ describe('native copy content menu', () => {
     expect(JSON.stringify(mock.error.mock.calls)).not.toContain('/private/file');
   });
   it('validates payloads without accepting nonfinite coordinates or malformed strings', () => {
-    expect(isContentContextMenu({ editable: false, image: { x: NaN, y: 0 } })).toBe(false);
-    expect(isContentContextMenu({ editable: false, image: { x: -1, y: 0 } })).toBe(false);
+    expect(isContentContextMenu({ editable: false, image: { point: { x: NaN, y: 0 } } })).toBe(false);
+    expect(isContentContextMenu({ editable: false, image: { point: { x: -1, y: 0 } } })).toBe(false);
     expect(isContentContextMenu({ editable: false, link: {} })).toBe(false);
     expect(isContentContextMenu({ editable: false, selection: 'x'.repeat(1_000_001) })).toBe(false);
     expect(isContentContextMenu({ editable: false, link: 'file:///tmp/a' })).toBe(true);
@@ -45,7 +51,7 @@ describe('native copy content menu', () => {
     handler(event, { editable: false, link: 'file:///tmp/a' }); expect(mock.popup).toHaveBeenCalledOnce();
     expect(() => handler({ ...event, senderFrame: {} }, { editable: true })).toThrow('app window');
     mock.owner.mockReturnValue(null); expect(() => handler(event, { editable: true })).toThrow('app window');
-    mock.owner.mockReturnValue({}); expect(() => handler(event, { editable: true, image: { x: Infinity, y: 0 } })).toThrow('Invalid');
+    mock.owner.mockReturnValue({}); expect(() => handler(event, { editable: true, image: { point: { x: Infinity, y: 0 } } })).toThrow('Invalid');
     expect(mock.popup).toHaveBeenCalledOnce();
   });
 });

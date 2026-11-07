@@ -21,14 +21,24 @@ export function contentContext(event: MouseEvent, doc: Document): ContentContext
   const path = !anchor ? target.closest('[data-chat-file]')?.getAttribute('data-chat-path') || undefined : undefined;
   const img = target.closest('img');
   let image: ContentContextMenu['image'];
-  if (img && img.complete && img.naturalWidth > 0) {
-    const rect = img.getBoundingClientRect();
-    // Keyboard context menus may report (0,0); target the focused image itself.
-    const keyboard = event.clientX === 0 && event.clientY === 0;
-    const x = keyboard ? Math.max(0, rect.left + rect.width / 2) : event.clientX;
-    const y = keyboard ? Math.max(0, rect.top + rect.height / 2) : event.clientY;
+  if (img) {
     const src = img.currentSrc || img.src;
-    image = { x, y, ...(/^https?:\/\//i.test(src) ? { address: src } : {}) };
+    const address = /^https?:\/\//i.test(src) ? src : undefined;
+    let point: { x: number; y: number } | undefined;
+    if (img.complete && img.naturalWidth > 0 && doc.defaultView) {
+      const rect = img.getBoundingClientRect();
+      const left = Math.max(0, rect.left), top = Math.max(0, rect.top);
+      const right = Math.min(doc.defaultView.innerWidth, rect.right);
+      const bottom = Math.min(doc.defaultView.innerHeight, rect.bottom);
+      const keyboard = event.clientX === 0 && event.clientY === 0;
+      const x = Math.round(keyboard ? (left + right) / 2 : event.clientX);
+      const y = Math.round(keyboard ? (top + bottom) / 2 : event.clientY);
+      // Hit-test the exact integer point sent to Electron. Clipping, overlays,
+      // zero size and offscreen images must not copy some other image's pixels.
+      if (rect.width > 0 && rect.height > 0 && x >= left && x < right && y >= top && y < bottom
+        && doc.elementFromPoint(x, y) === img) point = { x, y };
+    }
+    if (point || address) image = { ...(point ? { point } : {}), ...(address ? { address } : {}) };
   }
   if (!link && !path && !image && !selection && !editable) return null;
   return { ...(link ? { link } : {}), ...(path ? { path } : {}), ...(image ? { image } : {}), ...(selection ? { selection } : {}), editable };
