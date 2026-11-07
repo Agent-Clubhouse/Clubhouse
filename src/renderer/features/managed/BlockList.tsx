@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/Button';
 import { textareaClass } from '../agents/agentSettingsUi';
 import type { ManagedPartConsumer, ManagedPartSummary } from '../../../shared/managed-agents-types';
@@ -18,7 +18,7 @@ export interface BuilderAgent {
  * handle and use the arrow keys, to reorder. Editing a block edits it for
  * every agent that uses it; Save, Discard and Fork-instead sit in the block.
  */
-export function BlockList({ blocks, parts, agent, onChange, onFork, onBackToShared, onWrite, wildcardValues, disabled }: {
+export function BlockList({ blocks, parts, agent, onChange, onFork, onBackToShared, onWrite, wildcardValues, disabled, notice }: {
   blocks: string[];
   parts: ManagedPartSummary[];
   agent?: BuilderAgent;
@@ -30,12 +30,29 @@ export function BlockList({ blocks, parts, agent, onChange, onFork, onBackToShar
   onWrite: () => void;
   wildcardValues?: Partial<Record<string, string>>;
   disabled?: boolean;
+  /** Said in the list's live region, such as "Identity added." from the library. `seq` makes a repeat count. */
+  notice?: { text: string; seq: number };
 }) {
   const byId = new Map(parts.map((p) => [p.id, p]));
   const [dragging, setDragging] = useState<number | null>(null);
   const [over, setOver] = useState<number | null>(null);
   const [announce, setAnnounce] = useState('');
   const handles = useRef<Array<HTMLButtonElement | null>>([]);
+  const writeButton = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => { if (notice) setAnnounce(notice.text); }, [notice]);
+
+  /** Take a block out, and put focus on the block that took its place, the one before, or Write a block. */
+  const remove = (index: number) => {
+    const id = blocks[index];
+    const next = blocks.filter((b) => b !== id);
+    onChange(next);
+    setAnnounce(`${byId.get(id)?.name ?? 'Block'} removed.`);
+    requestAnimationFrame(() => {
+      const target = next.length === 0 ? null : handles.current[Math.min(index, next.length - 1)];
+      if (target && !target.disabled) target.focus();
+      else writeButton.current?.focus();
+    });
+  };
 
   const move = (from: number, to: number) => {
     if (to < 0 || to >= blocks.length || from === to) return;
@@ -75,7 +92,7 @@ export function BlockList({ blocks, parts, agent, onChange, onFork, onBackToShar
                 onDragStart={() => setDragging(index)}
                 onDragEnd={() => { setDragging(null); setOver(null); }}
                 onMove={(delta) => move(index, index + delta)}
-                onRemove={() => onChange(blocks.filter((b) => b !== id))}
+                onRemove={() => remove(index)}
                 onFork={() => onFork(id)}
                 onBackToShared={onBackToShared && part?.forkedFrom ? () => onBackToShared(id) : undefined}
                 wildcardValues={wildcardValues}
@@ -86,6 +103,7 @@ export function BlockList({ blocks, parts, agent, onChange, onFork, onBackToShar
       </ol>
       <button
         type="button"
+        ref={writeButton}
         onClick={onWrite}
         disabled={disabled}
         data-testid="managed-write-block"
@@ -201,11 +219,11 @@ function BlockCard({ index, id, part, agent, disabled, handleRef, onDragStart, o
         </button>
         <span className="w-4 text-xs text-ctp-overlay0 tabular-nums">{index + 1}</span>
         <span className="text-[13px] font-semibold text-ctp-text truncate">{part.name}</span>
-        <span className="text-xs text-ctp-overlay1 truncate">{sourceLabel(part, agent?.agentId, agent?.agentName)}</span>
+        <span className="text-xs text-ctp-overlay1 truncate" data-testid="managed-block-source">{sourceLabel(part, agent?.agentId, agent?.agentName)}</span>
         <span className="ml-auto flex items-center gap-0.5">
-          {!editing && !part.builtin && <Button kind="quiet" aria-label={`Edit ${part.name}`} onClick={() => void startEdit()} disabled={disabled || busy}>Edit</Button>}
+          {!editing && !part.builtin && <Button kind="quiet" aria-label={`Edit ${part.name}`} onClick={() => void startEdit()} disabled={disabled || busy} data-testid="managed-block-edit">Edit</Button>}
           {!editing && (
-            <Button kind="quiet" aria-label={part.builtin ? `Make your copy of ${part.name}` : `Fork ${part.name}`} onClick={() => void onFork()} disabled={disabled || busy}>
+            <Button kind="quiet" aria-label={part.builtin ? `Make your copy of ${part.name}` : `Fork ${part.name}`} onClick={() => void onFork()} disabled={disabled || busy} data-testid="managed-block-fork">
               {part.builtin ? 'Make your copy' : 'Fork'}
             </Button>
           )}
@@ -223,6 +241,7 @@ function BlockCard({ index, id, part, agent, disabled, handleRef, onDragStart, o
           <label className="sr-only" htmlFor={`block-edit-${id}`}>{part.name} text</label>
           <textarea
             id={`block-edit-${id}`}
+            data-testid="managed-block-text"
             className={`${textareaClass} min-h-28`}
             value={editing.text}
             onChange={(e) => setEditing({ ...editing, text: e.target.value })}

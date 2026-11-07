@@ -32,6 +32,7 @@ vi.mock('../agent-system', () => ({
   }),
 }));
 vi.mock('./index', () => ({ managedAgents: () => h.service }));
+vi.mock('../git-exclude-manager', () => ({ addExclusions: vi.fn(async () => {}) }));
 vi.mock('./state-store', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./state-store')>()),
   managedStateDir: () => h.stateDir,
@@ -41,7 +42,8 @@ import { createAssetCatalogStore } from '../asset-catalog/store';
 import { withSettingsSurface, _resetSettingsAuditForTesting } from '../settings-audit';
 import { createManagedStateStore } from './state-store';
 import { createManagedAgentsService, type ManagedAgentsService } from './service';
-import { convertToManaged, previewConvert } from './agents';
+import * as agentConfig from '../agent-config';
+import { convertToManaged, previewConvert, settingsForConvert } from './agents';
 
 const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
 
@@ -104,11 +106,13 @@ describe('previewConvert', () => {
     const preview = await user(() => previewConvert('/p', 'ada'));
     expect(preview.blocks).toEqual(['ada notes']);
     expect(preview.skills).toEqual(['release-notes']);
-    expect(preview.mcps).toEqual(['github', 'docs']);
+    expect(preview.mcps).toEqual(['github', 'docs', 'leaky']);
     expect(preview.notes).toEqual([
       "The no-entry skill isn't brought over because it has no SKILL.md.",
-      "The leaky MCP server isn't brought over because it holds a secret value, and Clubhouse stores no secrets.",
+      "leaky: values for API_TOKEN aren't kept. Set them in your environment.",
+      'Its .mcp.json is copied to .clubhouse-before-managed/.mcp.json in its folder before Clubhouse writes its own. The copy stays out of commits.',
     ]);
+    expect(fs.existsSync(path.join(wt, '.clubhouse-before-managed'))).toBe(false);
     expect(h.agents.get('ada')!.managed).toBeUndefined();
     expect((await user(() => service.listParts('skill'))).filter((p) => !p.builtin)).toEqual([]);
     expect((await user(() => service.listParts('mcp'))).filter((p) => !p.builtin)).toEqual([]);
@@ -124,7 +128,10 @@ describe('previewConvert', () => {
     write('.mcp.json', '{ not json');
     const preview = await user(() => previewConvert('/p', 'ada'));
     expect(preview.mcps).toEqual([]);
-    expect(preview.notes).toEqual(["MCP servers in .mcp.json aren't brought over because the file isn't valid JSON."]);
+    expect(preview.notes).toEqual([
+      "MCP servers in .mcp.json aren't brought over because the file isn't valid JSON.",
+      'Its .mcp.json is copied to .clubhouse-before-managed/.mcp.json in its folder before Clubhouse writes its own. The copy stays out of commits.',
+    ]);
   });
 });
 
@@ -135,7 +142,15 @@ describe('convertToManaged with keep', () => {
     expect(setup.blocks).toHaveLength(1);
     expect(setup.skills).toHaveLength(1);
     expect(setup.mcps[0]).toBe(CLUBHOUSE_MCP_PART_ID);
-    expect(setup.mcps).toHaveLength(3);
+    expect(setup.mcps).toHaveLength(4);
+    // The env value never reaches a part; the original MCP file is kept in the agent's folder.
+    const leaky = await user(() => service.getPart(setup.mcps[3]));
+    expect(leaky.content).toEqual({ kind: 'mcp', serverKey: 'leaky', transport: 'stdio', command: 'leaky', envVars: ['API_TOKEN'] });
+    expect(fs.readFileSync(path.join(wt, '.clubhouse-before-managed', '.mcp.json'), 'utf-8')).toContain('sk-live-1234567890abcdef');
+    for (const file of fs.readdirSync(path.join(root, 'catalog'), { recursive: true }) as string[]) {
+      const full = path.join(root, 'catalog', file);
+      if (fs.statSync(full).isFile()) expect(fs.readFileSync(full, 'utf-8')).not.toContain('sk-live-1234567890abcdef');
+    }
 
     const block = await user(() => service.getPart(setup.blocks[0]));
     expect(block.name).toBe('ada notes');
@@ -171,5 +186,49 @@ describe('convertToManaged with keep', () => {
     h.agents.get('ada')!.mcpOverride = false;
     const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
     expect(setup).toMatchObject({ blocks: [], skills: [], mcps: [] });
+  });
+});
+
+describe('convert acceptance (#2819)', () => {
+  it('runs block validation in the preview, so a refused instructions file becomes a note and no block', async () => {
+    h.instructions = '---\nmodel: opus\n---\nShip small PRs.';
+    const preview = await user(() => previewConvert('/p', 'ada'));
+    expect(preview.blocks).toEqual([]);
+    expect(preview.notes).toEqual(["CLAUDE.md isn't brought over as a block because its front matter sets a model or CLI, which belong in the agent's settings. Clubhouse keeps a copy in its app data."]);
+    const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    expect(setup.blocks).toEqual([]);
+    expect(fs.readFileSync(path.join(h.stateDir, 'before-managed', 'ada', 'CLAUDE.md'), 'utf-8')).toContain('Ship small PRs.');
+  });
+
+  it('says a skill with a credentials file is not brought over, in words', async () => {
+    write('.claude/skills/deploy/SKILL.md', '# Deploy');
+    write('.claude/skills/deploy/.env', 'X=1');
+    const preview = await user(() => previewConvert('/p', 'ada'));
+    expect(preview.skills).toEqual([]);
+    expect(preview.notes).toEqual(["The deploy skill isn't brought over because it contains a credentials file (such as .env or a key file), and Clubhouse stores no secrets."]);
+  });
+
+  it('with a template keeps the agent\'s CLI, so it keeps its conversation (D51)', async () => {
+    const t = await user(() => service.saveTemplate({ name: 'Other CLI', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: { orchestrator: 'codex-cli', model: 'gpt-5', freeAgentMode: true } }));
+    vi.mocked(agentConfig.updateDurableConfig).mockClear();
+    await user(() => convertToManaged('/p', 'ada', { keep: false, templateId: t.id }));
+    expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/p', 'ada', { freeAgentMode: true });
+  });
+
+  it('keeps a template model only when the template is for the agent\'s CLI', () => {
+    expect(settingsForConvert('claude-code', { orchestrator: 'claude-code', model: 'opus' })).toEqual({ model: 'opus' });
+    expect(settingsForConvert('claude-code', { model: 'opus', freeAgentMode: false })).toEqual({ model: 'opus', freeAgentMode: false });
+    expect(settingsForConvert('claude-code', { orchestrator: 'codex-cli', model: 'gpt-5' })).toEqual({});
+  });
+
+  it('copies the MCP file aside once, and a second copy never overwrites the first', async () => {
+    write('.mcp.json', JSON.stringify({ mcpServers: {} }));
+    write('.clubhouse-before-managed/.mcp.json', 'earlier');
+    await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    const kept = fs.readdirSync(path.join(wt, '.clubhouse-before-managed'));
+    expect(kept).toHaveLength(2);
+    expect(fs.readFileSync(path.join(wt, '.clubhouse-before-managed', '.mcp.json'), 'utf-8')).toBe('earlier');
+    // The original stays until the first managed start rewrites it.
+    expect(fs.existsSync(path.join(wt, '.mcp.json'))).toBe(true);
   });
 });

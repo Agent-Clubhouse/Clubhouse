@@ -1,14 +1,15 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ManagedPartConsumer, ManagedPartSummary } from '../../../shared/managed-agents-types';
 import { BlockList } from './BlockList';
-import { PartToggleList } from './LibraryPanel';
+import { LibraryPanel, PartToggleList } from './LibraryPanel';
 import { ImpactDialog } from './ImpactDialog';
-import { ManagedBuilder } from './ManagedBuilder';
+import { ManagedBuilder, PreviewPane } from './ManagedBuilder';
 import { PartDialog } from './PartDialog';
 import { ManagedGeneralSection, convertSummary } from './ManagedGeneralSection';
 import { useToastStore } from '../../stores/toastStore';
-import { resetPendingRestarts } from './restart';
+import { NO_SESSION_NOTE, requestManagedRestart, resetPendingRestarts } from './restart';
 
 const consumer = (agentId: string, running = false): ManagedPartConsumer => ({
   projectPath: '/p', projectName: 'Clubhouse', agentId, agentName: agentId, color: 'indigo', running,
@@ -162,8 +163,17 @@ describe('PartToggleList', () => {
   it('switches a skill on and off for the agent', () => {
     const onToggle = vi.fn();
     render(<PartToggleList kind="skill" parts={[part('notes', { kind: 'skill', name: 'Notes' })]} selected={[]} agent={agent} onToggle={onToggle} onFork={vi.fn()} onEdit={vi.fn()} onNew={vi.fn()} />);
-    fireEvent.click(screen.getByRole('switch', { name: 'Add Notes' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Notes' }));
     expect(onToggle).toHaveBeenCalledWith('notes', true);
+  });
+
+  it('gives an MCP server stored with env values a short line saying to set them in the environment (D46)', () => {
+    render(<PartToggleList kind="mcp" parts={[
+      part('old', { kind: 'mcp', name: 'Old', droppedEnvValues: ['MODE', 'REGION', 'TIER'] }),
+      part('clean', { kind: 'mcp', name: 'Clean' }),
+    ]} selected={[]} agent={agent} onToggle={vi.fn()} onFork={vi.fn()} onEdit={vi.fn()} onNew={vi.fn()} />);
+    expect(screen.getByTestId('managed-part-dropped-env-old').textContent).toBe('Set MODE, REGION and TIER in your environment. Clubhouse no longer stores these values.');
+    expect(screen.queryByTestId('managed-part-dropped-env-clean')).toBeNull();
   });
 });
 
@@ -190,7 +200,7 @@ describe('ManagedBuilder', () => {
     vi.spyOn(m(), 'getSetup').mockResolvedValue({ ok: true, value: { version: 1, blocks: [], skills: [], mcps: [] } } as never);
     const save = vi.spyOn(m(), 'saveSetup').mockResolvedValue({ ok: true, value: { version: 1, blocks: [], skills: ['notes'], mcps: [] } } as never);
     render(<ManagedBuilder target={{ kind: 'agent', agent }} tab="skills" />);
-    fireEvent.click(await screen.findByRole('switch', { name: 'Add Notes' }));
+    fireEvent.click(await screen.findByRole('switch', { name: 'Notes' }));
     await waitFor(() => expect(save).toHaveBeenCalledWith('/p', 'release-lead', { blocks: [], skills: ['notes'], mcps: [] }));
   });
 });
@@ -217,14 +227,14 @@ describe('ManagedBuilder setup loading', () => {
     const getSetup = vi.spyOn(m(), 'getSetup').mockResolvedValueOnce({ ok: true, value: empty } as never);
     vi.spyOn(m(), 'saveSetup').mockResolvedValue({ ok: true, value: { ...empty, skills: ['notes'] } } as never);
     render(<ManagedBuilder target={{ kind: 'agent', agent }} tab="skills" />);
-    const toggle = await screen.findByRole('switch', { name: 'Add Notes' });
+    const toggle = await screen.findByRole('switch', { name: 'Notes' });
     // Something else changed: a reload starts, and answers only after the save below.
     getSetup.mockImplementationOnce(() => new Promise((r) => { answerLate = r; }) as never);
     act(() => changed());
     fireEvent.click(toggle);
-    await waitFor(() => expect(screen.getByRole('switch', { name: 'Remove Notes' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Notes' }).getAttribute('aria-checked')).toBe('true'));
     await act(async () => { answerLate({ ok: true, value: empty }); });
-    expect(screen.getByRole('switch', { name: 'Remove Notes' })).toBeTruthy();
+    expect(screen.getByRole('switch', { name: 'Notes' }).getAttribute('aria-checked')).toBe('true');
   });
 });
 
@@ -344,5 +354,132 @@ describe('ManagedGeneralSection', () => {
   it('warns what stops working when Clubhouse features go off', () => {
     render(<ManagedGeneralSection projectPath="/p" agentId="ada" agentName="ada" setup={null} clubhouseFeatures={false} isRunning={false} />);
     expect(screen.getByTestId('managed-clubhouse-features').textContent).toMatch(/can't show this agent's status/);
+  });
+});
+
+describe('focus and announcements (#2819)', () => {
+  function StatefulBlocks({ initial }: { initial: string[] }) {
+    const [blocks, setBlocks] = useState(initial);
+    return <BlockList blocks={blocks} parts={[part('a'), part('b'), part('c')]} agent={agent} onChange={setBlocks} onFork={vi.fn()} onWrite={vi.fn()} />;
+  }
+
+  it('Remove says what was removed and moves focus to the block that took its place', async () => {
+    render(<StatefulBlocks initial={['a', 'b', 'c']} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove b' }));
+    expect(screen.getByRole('status').textContent).toBe('b removed.');
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: /Move c/ })));
+    // The last block: focus goes to the one before.
+    fireEvent.click(screen.getByRole('button', { name: 'Remove c' }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: /Move a/ })));
+    // None left: Write a block.
+    fireEvent.click(screen.getByRole('button', { name: 'Remove a' }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('managed-write-block')));
+  });
+
+  it('Add in the library moves focus to the next block that can be added, then the search box', async () => {
+    function Library() {
+      const [inUse, setInUse] = useState<string[]>([]);
+      return <LibraryPanel parts={[part('a'), part('b')]} inUse={inUse} onAdd={(id) => setInUse((u) => [...u, id])} onNew={vi.fn()} />;
+    }
+    render(<Library />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add a' }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add b' })));
+    fireEvent.click(screen.getByRole('button', { name: 'Add b' }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Search instruction blocks' })));
+  });
+
+  it('the builder announces a block added from the library in the block list\'s live region', async () => {
+    vi.spyOn(m(), 'listParts').mockImplementation(async (kind: string) => ({ ok: true, value: kind === 'block' ? [part('identity', { name: 'Identity', builtin: true })] : [] }) as never);
+    function Draft() {
+      const [value, setValue] = useState({ blocks: [] as string[], skills: [] as string[], mcps: [] as string[] });
+      return <ManagedBuilder target={{ kind: 'draft', value, onChange: setValue, agentName: 'cool-gazelle' }} tab="instructions" />;
+    }
+    render(<Draft />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Add Identity' }));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Identity added.'));
+  });
+
+  it('a part switch keeps its name, with the state in aria-checked', () => {
+    const { rerender } = render(<PartToggleList kind="skill" parts={[part('notes', { kind: 'skill', name: 'Notes' })]} selected={[]} agent={agent} onToggle={vi.fn()} onFork={vi.fn()} onEdit={vi.fn()} onNew={vi.fn()} />);
+    expect(screen.getByRole('switch', { name: 'Notes' }).getAttribute('aria-checked')).toBe('false');
+    rerender(<PartToggleList kind="skill" parts={[part('notes', { kind: 'skill', name: 'Notes' })]} selected={['notes']} agent={agent} onToggle={vi.fn()} onFork={vi.fn()} onEdit={vi.fn()} onNew={vi.fn()} />);
+    expect(screen.getByRole('switch', { name: 'Notes' }).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('each skill file\'s executable checkbox is named for its file', async () => {
+    vi.spyOn(m(), 'getPart').mockResolvedValue({ ok: true, value: { ...part('deploy', { kind: 'skill' }), content: { kind: 'skill', skillName: 'deploy', files: [
+      { path: 'SKILL.md', content: '# Deploy' }, { path: 'scripts/run.sh', content: 'echo', executable: true }, { path: 'scripts/check.sh', content: 'echo' },
+    ] } } } as never);
+    render(<PartDialog open kind="skill" editId="deploy" onClose={vi.fn()} />);
+    expect(((await screen.findByRole('checkbox', { name: 'Executable: scripts/run.sh' })) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('checkbox', { name: 'Executable: scripts/check.sh' }) as HTMLInputElement).checked).toBe(false);
+  });
+});
+
+describe('Preview: what the CLI reads besides the setup (#2819)', () => {
+  it('lists tracked repo skills, files Claude Code is told not to read, and files it reads anyway', async () => {
+    vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value: {
+      instructions: 'x', blocks: [], skills: [], mcps: [], missing: [],
+      repoSkills: ['.claude/skills/repo-skill'], notRead: ['CLAUDE.md'], alsoRead: ['AGENTS.md'], cliName: 'Claude Code',
+    } } as never);
+    render(<PreviewPane agent={agent} />);
+    expect((await screen.findByTestId('managed-preview-repo-skills')).textContent).toBe('.claude/skills/repo-skill');
+    expect(screen.getByText('Also loaded from the repo')).toBeTruthy();
+    expect(screen.getByTestId('managed-preview-not-read').textContent).toBe('Not read: CLAUDE.md');
+    expect(screen.getByText('Also read by Claude Code')).toBeTruthy();
+    expect(screen.getByTestId('managed-preview-also-read').textContent).toBe('AGENTS.md');
+  });
+
+  it('lists skill folders Clubhouse left in place because the skills folder is a link, or git failed (D48)', async () => {
+    const spy = vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value: {
+      instructions: 'x', blocks: [], skills: [], mcps: [], missing: [],
+      keptSkills: ['.claude/skills/theirs'], keptSkillsReason: 'link', cliName: 'Claude Code',
+    } } as never);
+    const { unmount } = render(<PreviewPane agent={agent} />);
+    expect((await screen.findByTestId('managed-preview-kept-skills')).textContent).toBe('.claude/skills/theirs');
+    expect(screen.getByText('Also loaded')).toBeTruthy();
+    expect(screen.getByText(/links to somewhere outside this agent's folder/)).toBeTruthy();
+    unmount();
+    spy.mockResolvedValue({ ok: true, value: {
+      instructions: 'x', blocks: [], skills: [], mcps: [], missing: [],
+      keptSkills: ['.claude/skills/maybe'], keptSkillsReason: 'git', cliName: 'Claude Code',
+    } } as never);
+    render(<PreviewPane agent={agent} />);
+    expect((await screen.findByTestId('managed-preview-kept-skills')).textContent).toBe('.claude/skills/maybe');
+    expect(screen.getByText(/couldn't ask git which of these it tracks/)).toBeTruthy();
+  });
+
+  it('says in the MCP section which env values to set in the environment (D46)', async () => {
+    vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value: {
+      instructions: 'x', blocks: [], skills: [], missing: [],
+      mcps: [{ id: 'old', name: 'Old', serverKey: 'old', builtin: false, droppedEnvValues: ['MODE'] }, { id: 'clean', name: 'Clean', serverKey: 'clean', builtin: false }],
+    } } as never);
+    render(<PreviewPane agent={agent} />);
+    expect((await screen.findByTestId('managed-preview-dropped-env-old')).textContent).toBe('Set MODE in your environment. Clubhouse no longer stores this value.');
+    expect(screen.queryByTestId('managed-preview-dropped-env-clean')).toBeNull();
+  });
+
+  it('shows none of it when there is nothing outside the setup', async () => {
+    vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value: { instructions: 'x', blocks: [], skills: [], mcps: [], missing: [] } } as never);
+    render(<PreviewPane agent={agent} />);
+    await screen.findByTestId('managed-preview');
+    expect(screen.queryByText('Also loaded from the repo')).toBeNull();
+    expect(screen.queryByTestId('managed-preview-not-read')).toBeNull();
+  });
+});
+
+describe('restart with nothing to resume (#2819)', () => {
+  it('says it started a new conversation when one was not asked for', async () => {
+    vi.spyOn(m(), 'isWorking').mockResolvedValue({ ok: true, value: false } as never);
+    vi.spyOn(m(), 'restart').mockResolvedValue({ ok: true, value: { resumed: false, noSession: true } } as never);
+    await requestManagedRestart({ projectPath: '/p', agentId: 'ada', agentName: 'ada' });
+    expect(toasts()).toContain(`info: ${NO_SESSION_NOTE}`);
+  });
+
+  it('says nothing when a new conversation was asked for', async () => {
+    vi.spyOn(m(), 'isWorking').mockResolvedValue({ ok: true, value: false } as never);
+    vi.spyOn(m(), 'restart').mockResolvedValue({ ok: true, value: { resumed: false } } as never);
+    await requestManagedRestart({ projectPath: '/p', agentId: 'ada', agentName: 'ada' }, { fresh: true });
+    expect(toasts()).toEqual([]);
   });
 });

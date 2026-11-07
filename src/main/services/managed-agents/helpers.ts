@@ -4,7 +4,7 @@
  * parts added or left out for that helper only. Nothing is saved back.
  */
 import type { HelperStartArgs } from '../../../shared/types';
-import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
 import type { ManagedAgentsService } from './service';
 
 export const HELPER_KEEPS_CLUBHOUSE_PART = 'Helpers always keep the Clubhouse MCP part so they can reach their orchestrator.';
@@ -24,7 +24,7 @@ export const HELPER_TEMPLATE_CHOICE_OFF =
 export async function managedHelperSetup(
   service: ManagedAgentsService,
   args: Pick<HelperStartArgs, 'template' | 'addParts' | 'removeParts'>,
-): Promise<ManagedAgentSetup & { templateId: string }> {
+): Promise<ManagedAgentSetup & { templateId: string; settings: ManagedTemplateSettings }> {
   const defaultId = await service.defaultHelperTemplateId();
   // Off (the default), only the default helper template is used. Naming it is no choice, so that passes.
   const choosing = (args.template !== undefined && args.template !== defaultId) || !!args.addParts?.length || !!args.removeParts?.length;
@@ -60,5 +60,29 @@ export async function managedHelperSetup(
   if (!setup.mcps.includes(CLUBHOUSE_MCP_PART_ID)) setup.mcps.unshift(CLUBHOUSE_MCP_PART_ID);
   // The same checks a saved setup runs, so a helper is never created with a setup that can't be saved.
   const checked = await service.checkSetup({ ...setup, templateId });
-  return { ...checked, templateId };
+  return { ...checked, templateId, settings: base.settings };
+}
+
+/**
+ * The model a managed helper starts on when start_helper leaves it out: the
+ * helper template's (D52), when it is for the CLI the helper runs on.
+ * `runsOn` is that CLI: the one asked for, else the orchestrator's; unknown
+ * (undefined) for Auto, which decides later. Nothing when start_helper names
+ * a model or a difficulty (a preset picks the model then), or the template
+ * says `default` (the CLI's default, so nothing is passed).
+ *
+ * A template with a CLI gives its model only to a helper on that CLI. A
+ * template without one gives it only when `modelFits` says the CLI the helper
+ * runs on takes it (start_helper's model check, passed without a warning).
+ */
+export async function helperTemplateModel(
+  settings: ManagedTemplateSettings,
+  asked: { model?: string; difficulty?: string },
+  runsOn: string | undefined,
+  modelFits: (cli: string, model: string) => Promise<boolean>,
+): Promise<string | undefined> {
+  if (asked.model || asked.difficulty || !settings.model || settings.model === 'default') return undefined;
+  if (!runsOn) return undefined;
+  if (settings.orchestrator) return settings.orchestrator === runsOn ? settings.model : undefined;
+  return (await modelFits(runsOn, settings.model)) ? settings.model : undefined;
 }

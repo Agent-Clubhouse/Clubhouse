@@ -47,10 +47,13 @@ function cleanOptions({ fresh, whenTurnEnds }: RestartOptions): RestartOptions {
   return { ...(fresh ? { fresh: true } : {}), ...(whenTurnEnds ? { whenTurnEnds: true } : {}) };
 }
 
-/** Restart, returning an error to show, or null. */
+export const NO_SESSION_NOTE = 'No conversation to resume, so it started a new one.';
+
+/** Restart, returning an error to show, or null. A restart that had nothing to resume says so, since the person asked to resume. */
 async function runRestart(target: RestartTarget, options: RestartOptions): Promise<string | null> {
   try {
-    await unwrap(managed().restart(target.projectPath, target.agentId, cleanOptions(options)));
+    const result = await unwrap(managed().restart(target.projectPath, target.agentId, cleanOptions(options)));
+    if (result.noSession && !options.fresh) toast(NO_SESSION_NOTE, 'info');
     return null;
   } catch (err) {
     // telemetry-exempt: the caller shows the reason where the person asked to restart.

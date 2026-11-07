@@ -90,6 +90,7 @@ import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import { appendSettingsAudit, currentSettingsOrigin, type SettingsAuditRow, type SettingsAuditSurface } from './settings-audit';
 import { isMcpEnabled, onMcpEnablementChanged } from './mcp-settings';
 import { setPersonaChangeHook, type PersonaChange } from './persona-change-hook';
+import { noteManagedSettingsChanged } from './managed-agents/changed-notice';
 import { clubhouseMcpOverride, isDisposedAgent } from '../../shared/agent-helpers';
 import { readFrontMatterValue } from '../../shared/persona-pattern';
 import type { DurableAgentConfig } from '../../shared/types';
@@ -476,6 +477,8 @@ export async function setOrchestrationPolicy(
     // Copied now: the write can change this agent's own record.
     const storedBefore = agent.orchestration && { ...agent.orchestration };
     await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
+    // A managed agent's setup-changed bar compares the policy with what its session started on.
+    if (agent.managed) noteManagedSettingsChanged();
     applyGate(projectPath, agent, next);
     await auditPolicyChange(audit, storedBefore, stored);
     // Its own switch or orchestrate as saved, or the outcome: a clear from false to unset can change the outcome,

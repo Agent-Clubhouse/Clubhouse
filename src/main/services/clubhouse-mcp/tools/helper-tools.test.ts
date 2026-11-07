@@ -633,6 +633,47 @@ describe('start_helper with Clubhouse-managed agents (#2899)', () => {
     expect(mockStartDurableCreation).not.toHaveBeenCalled();
   });
 
+  it('starts on the helper template\'s model when start_helper leaves model out (D52)', async () => {
+    controllableCreation();
+    const svc = managedAgents();
+    const t = await withSettingsSurface('ui', undefined, () => svc.saveTemplate({ name: 'Haiku helper', description: '', setup: { blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, settings: { model: 'haiku' } }));
+    const result = await callTool('orch', 'start_helper', { name: 'quick', task: 't', template: t.id });
+    expect(result.isError).toBeFalsy();
+    expect(mockStartDurableCreation.mock.calls[0][1]).toMatchObject({ model: 'haiku' });
+    // The start's own model wins.
+    await callTool('orch', 'start_helper', { name: 'quick2', task: 't', template: t.id, model: 'opus' });
+    expect(mockStartDurableCreation.mock.calls[1][1]).toMatchObject({ model: 'opus' });
+  });
+
+  it('lets a difficulty pick the model over the helper template\'s (D52)', async () => {
+    controllableCreation();
+    modelLists.set('claude-code', {
+      source: 'live', via: 'handshake', fetchedAt: 0,
+      models: [{ id: 'haiku', label: 'Haiku', efforts: ['low'] }, { id: 'sonnet', label: 'Sonnet', efforts: ['medium'] }, { id: 'opus', label: 'Opus', efforts: ['low', 'high'] }],
+    });
+    const svc = managedAgents();
+    const t = await withSettingsSurface('ui', undefined, () => svc.saveTemplate({ name: 'Haiku preset helper', description: '', setup: { blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, settings: { model: 'haiku' } }));
+    const result = await callTool('orch', 'start_helper', { name: 'hard', task: 't', template: t.id, difficulty: 'hard' });
+    expect(result.isError).toBeFalsy();
+    expect(mockStartDurableCreation.mock.calls[0][1]).toMatchObject({ model: 'opus' });
+  });
+
+  it('gives a template with no CLI its model only when the helper\'s CLI takes it (D52)', async () => {
+    controllableCreation();
+    modelLists.set('claude-code', { source: 'live', via: 'handshake', fetchedAt: 0, models: [{ id: 'haiku', label: 'Haiku' }, { id: 'opus', label: 'Opus' }] });
+    modelLists.set('codex-cli', { source: 'live', via: 'handshake', fetchedAt: 0, models: [{ id: 'gpt-6-luna', label: 'Luna' }] });
+    const svc = managedAgents();
+    const t = await withSettingsSurface('ui', undefined, () => svc.saveTemplate({ name: 'Luna helper', description: '', setup: { blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, settings: { model: 'gpt-6-luna' } }));
+    // On the orchestrator's CLI (Claude Code) the model doesn't fit: left out, and the start isn't refused.
+    const onClaude = await callTool('orch', 'start_helper', { name: 'luna1', task: 't', template: t.id });
+    expect(onClaude.isError).toBeFalsy();
+    expect(mockStartDurableCreation.mock.calls[0][1]).not.toHaveProperty('model');
+    // On Codex, asked for by name, it does.
+    const onCodex = await callTool('orch', 'start_helper', { name: 'luna2', task: 't', template: t.id, cli: 'codex-cli' });
+    expect(onCodex.isError).toBeFalsy();
+    expect(mockStartDurableCreation.mock.calls[1][1]).toMatchObject({ orchestrator: 'codex-cli', model: 'gpt-6-luna' });
+  });
+
   it('refuses the template arguments while managed agents are off', async () => {
     managedFlags.value = {};
     for (const args of [{ template: 'builtin-template-helper' }, { addParts: ['x'] }, { removeParts: ['x'] }]) {

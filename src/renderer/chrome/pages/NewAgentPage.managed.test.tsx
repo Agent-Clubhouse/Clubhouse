@@ -165,7 +165,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     expect(screen.getByText('Clubhouse · from the Orchestrator template · nothing runs until you create it')).toBeTruthy();
     expect(await screen.findByTestId('managed-builder-instructions')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
     expect(screen.getByText("Instructions don't grant access. These settings do.")).toBeTruthy();
     expect((screen.getByLabelText('Model') as HTMLSelectElement).value).toBe('opus');
     expect(screen.getByRole('switch', { name: 'Can start helpers' }).getAttribute('aria-checked')).toBe('true');
@@ -260,7 +260,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     fireEvent.click(within(await screen.findByRole('list', { name: 'Managed agents' })).getByText('gallant-swift'));
     await screen.findByTestId('new-agent-builder');
     expect(config).toHaveBeenCalledWith('/tmp/gb', 'a1');
-    fireEvent.click(screen.getByRole('radio', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
     expect(screen.getByRole('switch', { name: 'Can start helpers' }).getAttribute('aria-checked')).toBe('true');
     expect((screen.getByLabelText('Helper limit') as HTMLInputElement).value).toBe('2');
     fireEvent.click(screen.getByTestId('new-agent-builder-create'));
@@ -278,7 +278,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     await managedSwitch();
     fireEvent.change(screen.getByTestId('new-agent-name'), { target: { value: 'keen-heron' } });
     fireEvent.click(screen.getByTestId('new-agent-scratch'));
-    fireEvent.click(screen.getByRole('radio', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
     fireEvent.click(screen.getByRole('switch', { name: 'Free Agent Mode' }));
     fireEvent.click(screen.getByTestId('new-agent-builder-create'));
     expect((await screen.findByTestId('new-agent-error')).textContent).toMatch(/That name is taken/);
@@ -300,7 +300,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     openWith();
     await managedSwitch();
     fireEvent.click(screen.getByTestId('new-agent-scratch'));
-    fireEvent.click(screen.getByRole('radio', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
     fireEvent.click(screen.getByRole('switch', { name: 'Can start helpers' }));
     fireEvent.keyDown(screen.getByLabelText('Helper limit'), { key: 'Escape' });
     fireEvent.keyDown(screen.getByLabelText('Model'), { key: 'Escape' });
@@ -333,7 +333,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     await managedSwitch();
     fireEvent.click(screen.getByTestId('new-agent-submit'));
     fireEvent.click(await screen.findByRole('button', { name: 'Customize Orchestrator' }));
-    fireEvent.click(screen.getByRole('radio', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
     const helpers = screen.getByRole('switch', { name: 'Can start helpers' });
     expect(helpers).toBeDisabled();
     expect(helpers.getAttribute('aria-checked')).toBe('false');

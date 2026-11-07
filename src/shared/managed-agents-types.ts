@@ -45,6 +45,11 @@ export interface ManagedPartSummary {
   templates: Array<{ id: string; name: string }>;
   /** A short one-line preview of the content (block text, skill file list, MCP command). */
   preview: string;
+  /**
+   * MCP only: env names that were stored with literal values. Clubhouse no
+   * longer uses the values, so each must be set in the person's environment (D46).
+   */
+  droppedEnvValues?: string[];
 }
 
 export interface ManagedPartConsumer {
@@ -129,6 +134,8 @@ export interface ManagedAgentStatus {
   deliveredAt?: string;
   /** True when the CLI changed since the session started, so a restart can't resume it. */
   cliChanged: boolean;
+  /** Set when this session's setup couldn't be written: the reason. The session runs on whatever files were there. */
+  deliveryFailed?: string;
 }
 
 /** The exact result an agent gets at its next start. */
@@ -136,8 +143,24 @@ export interface ManagedPreview {
   instructions: string;
   blocks: Array<{ id: string; name: string; builtin: boolean; usedBy: number; startLine: number; endLine: number }>;
   skills: Array<{ id: string; name: string; skillName: string; files: number; folder: string }>;
-  mcps: Array<{ id: string; name: string; serverKey: string; builtin: boolean }>;
+  /** `droppedEnvValues`: env names stored with literal values, which must now come from the environment (D46). */
+  mcps: Array<{ id: string; name: string; serverKey: string; builtin: boolean; droppedEnvValues?: string[] }>;
   missing: string[];
+  /** Skill folders git tracks in the agent's folder. Clubhouse can't move them, so the CLI loads them too. */
+  repoSkills?: string[];
+  /**
+   * Other skill folders Clubhouse left in place because moving them wasn't
+   * safe: the skills folder is a link (`link`), or git couldn't say what it
+   * tracks (`git`). The CLI loads them too (D48).
+   */
+  keptSkills?: string[];
+  keptSkillsReason?: 'link' | 'git';
+  /** Instruction files above the agent's folder that the CLI is told not to read. */
+  notRead?: string[];
+  /** Instruction files the CLI reads besides the setup, which Clubhouse can't turn off. */
+  alsoRead?: string[];
+  /** The CLI's name, for "Also read by …". */
+  cliName?: string;
 }
 
 /**

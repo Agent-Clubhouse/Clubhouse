@@ -14,11 +14,14 @@ import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
 import type { ManagedAgentStatus } from '../../../shared/managed-agents-types';
 import { createManagedAgentsService, ManagedError, type ManagedAgentsService } from './service';
 import { createManagedStateStore, managedStateDir } from './state-store';
+import { MCP_BACKUP_DIR } from './mcp-backup';
 import * as path from 'path';
 import {
   deliverManagedSetup,
+  EXCLUDES_MANIFEST,
   mcpServersOf,
   quickManagedLaunch,
+  removeManagedClaudeExcludes,
   resolveManagedSetup,
   setupFingerprint,
   type DeliveryRecord,
@@ -44,6 +47,16 @@ export function managedAgents(): ManagedAgentsService {
       setManagedSetup: (projectPath, agentId, setup) => agentConfig.setManagedSetup(projectPath, agentId, setup),
       isRunning,
       onChanged: () => broadcastToAllWindows(IPC.MANAGED.CHANGED),
+      onUnmanaged: async (_projectPath, agent) => {
+        if (!agent.worktreePath) return;
+        try {
+          // The CLAUDE.md excludes Clubhouse added come out; the person's settings stay (D49).
+          await removeManagedClaudeExcludes(agent.worktreePath);
+        } catch (err) {
+          // telemetry-exempt: the agent is already unmanaged; the entries only turn off parent CLAUDE.md files.
+          appLog('core:managed', 'warn', 'Could not remove the CLAUDE.md excludes Clubhouse added', { meta: { agentId: agent.id, error: err instanceof Error ? err.message : String(err) } });
+        }
+      },
     });
   }
   return service;
@@ -57,19 +70,31 @@ export function _setManagedAgentsForTesting(next: ManagedAgentsService | null): 
 // ── What each running session started with ─────────────────────────────
 
 const delivered = new Map<string, DeliveryRecord>();
+/** Agents whose last delivery failed, with the reason, until a delivery succeeds. */
+const failedDeliveries = new Map<string, string>();
 
 /** Spawn path: write the setup into the agent's folder and remember what this session got. */
 export async function deliverForSpawn(projectPath: string, agent: DurableAgentConfig, provider: OrchestratorProvider): Promise<void> {
   if (!agent.managed) {
     delivered.delete(agent.id);
+    failedDeliveries.delete(agent.id);
     return;
   }
   // Forget the last record first: if this delivery fails, nothing claims the agent is up to date.
   delivered.delete(agent.id);
-  const record = await deliverManagedSetup({
-    service: managedAgents(), projectPath, agent, provider,
-    backupRoot: path.join(managedStateDir(), 'replaced-skills', agent.id),
-  });
+  let record: DeliveryRecord | null;
+  try {
+    record = await deliverManagedSetup({
+      service: managedAgents(), projectPath, agent, provider,
+      backupRoot: path.join(managedStateDir(), 'replaced-skills', agent.id),
+    });
+  } catch (err) {
+    // The session still starts on whatever files are there; statusFor shows the bar with the reason.
+    failedDeliveries.set(agent.id, err instanceof Error ? err.message : String(err));
+    broadcastToAllWindows(IPC.MANAGED.CHANGED);
+    throw err;
+  }
+  failedDeliveries.delete(agent.id);
   if (record) delivered.set(agent.id, record);
   void excludeManagedFiles(projectPath, provider);
   broadcastToAllWindows(IPC.MANAGED.CHANGED);
@@ -87,6 +112,11 @@ async function excludeManagedFiles(projectPath: string, provider: OrchestratorPr
     await gitExclude.addExclusions(projectPath, `clubhouse-managed-${provider.id}`, [
       conv.mcpConfigFile,
       `${conv.configDir}/${conv.skillsDir}/`,
+      // Where Claude Code's claudeMdExcludes go (D49).
+      ...(provider.id === 'claude-code' ? [`${conv.configDir}/${conv.localSettingsFile || 'settings.local.json'}`] : []),
+      // Which of those excludes Clubhouse added, so it replaces only its own.
+      EXCLUDES_MANIFEST,
+      `${MCP_BACKUP_DIR}/`,
     ]);
   } catch (err) {
     // telemetry-exempt: not a git project, or the exclude file is read-only; delivery already succeeded.
@@ -128,8 +158,12 @@ export async function managedMcpServersFor(agent: DurableAgentConfig): Promise<R
 
 export async function statusFor(projectPath: string, agentId: string): Promise<ManagedAgentStatus> {
   const agent = await agentConfig.getDurableConfig(projectPath, agentId);
-  const running = isRunning(agentId);
+  const running = (await import('../agent-system')).isAgentRunning(agentId);
   if (!agent?.managed) return { managed: false, running, waiting: false, changes: [], cliChanged: false };
+  const failed = failedDeliveries.get(agentId);
+  if (running && failed) {
+    return { managed: true, running, waiting: true, changes: [`Setup couldn't be written: ${failed}`], cliChanged: false, deliveryFailed: failed };
+  }
   const record = delivered.get(agentId);
   if (!running || !record) return { managed: true, running, waiting: false, changes: [], cliChanged: false };
   const resolved = await resolveManagedSetup(managedAgents(), agent.managed);
@@ -154,6 +188,7 @@ export async function statusFor(projectPath: string, agentId: string): Promise<M
 
 export function forgetDelivery(agentId: string): void {
   delivered.delete(agentId);
+  failedDeliveries.delete(agentId);
 }
 
 // ── Restart ────────────────────────────────────────────────────────────
@@ -191,7 +226,7 @@ export async function isAgentWorking(agentId: string): Promise<boolean> {
  * Only a running managed agent: a sleeping one picks its setup up at its next
  * start, and starting it here would wake it outside the wake rules.
  */
-export async function restartManagedAgent(projectPath: string, agentId: string, options: { fresh?: boolean; whenTurnEnds?: boolean } = {}): Promise<{ resumed: boolean }> {
+export async function restartManagedAgent(projectPath: string, agentId: string, options: { fresh?: boolean; whenTurnEnds?: boolean } = {}): Promise<{ resumed: boolean; noSession?: boolean }> {
   const target = await agentConfig.getDurableConfig(projectPath, agentId);
   if (!target) throw new ManagedError('not_found', 'agent not found');
   if (!target.managed) throw new ManagedError('not_managed', `${target.name} isn't Clubhouse managed, so there is no setup to restart into.`);
@@ -232,8 +267,10 @@ export async function restartManagedAgent(projectPath: string, agentId: string, 
       broadcastToAllWindows(IPC.AGENT.AGENT_WAKE_FAILED, agentId, err instanceof Error ? err.message : String(err));
       throw err;
     }
-    appLog('core:managed', 'info', 'Restarted managed agent', { meta: { agentId, resume } });
-    return { resumed: resume };
+    // Neither asked for nor forced by a CLI change: there was no conversation to resume.
+    const noSession = !resume && !options.fresh && !cliChanged;
+    appLog('core:managed', 'info', 'Restarted managed agent', { meta: { agentId, resume, noSession } });
+    return { resumed: resume, ...(noSession && { noSession: true }) };
   } finally {
     restarting.delete(agentId);
   }

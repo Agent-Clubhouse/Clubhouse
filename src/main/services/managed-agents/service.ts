@@ -47,6 +47,8 @@ export interface ManagedAgentsDeps {
   isRunning(agentId: string): boolean;
   /** Called after anything that may change what an agent gets, so the UI can refresh. */
   onChanged?(): void;
+  /** Called after an agent stops being managed, to remove what Clubhouse added to its folder for itself. Never throws. */
+  onUnmanaged?(projectPath: string, agent: DurableAgentConfig): Promise<void>;
 }
 
 const KINDS: ManagedPartKind[] = ['block', 'skill', 'mcp'];
@@ -77,23 +79,42 @@ function replaceIn(setup: ManagedAgentSetup, from: string, to: string | null): M
   return { ...setup, blocks: swap(setup.blocks), skills: swap(setup.skills), mcps: swap(setup.mcps) };
 }
 
-function payloadToContent(kind: ManagedPartKind, payload: AssetPayload): ManagedPartContent {
-  if (kind === 'block') return { kind, content: (payload as BlockAssetPayload).content };
+/**
+ * A part's content as Clubhouse uses it. `droppedEnvValues` names the MCP
+ * env entries that were stored with literal values: those values are no
+ * longer used, so the person must set them in their environment (D46).
+ */
+function payloadToContent(kind: ManagedPartKind, payload: AssetPayload): { content: ManagedPartContent; droppedEnvValues: string[] } {
+  if (kind === 'block') return { content: { kind, content: (payload as BlockAssetPayload).content }, droppedEnvValues: [] };
   if (kind === 'skill') {
     const p = payload as SkillAssetPayload;
-    return { kind, skillName: p.skillName, files: p.files.map((f) => ({ ...f })) };
+    return { content: { kind, skillName: p.skillName, files: p.files.map((f) => ({ ...f })) }, droppedEnvValues: [] };
   }
   const p = payload as McpAssetPayload;
+  // Env values never leave the catalog (D46): a part saved with literal values
+  // reads, forks and delivers as their names, taken from the signed-in environment.
+  const droppedEnvValues = Object.keys(p.env ?? {});
+  const envVars = [...new Set([...(p.envVars ?? []), ...droppedEnvValues])];
   return {
-    kind,
-    serverKey: p.serverKey,
-    transport: p.transport,
-    ...(p.command !== undefined && { command: p.command }),
-    ...(p.args && { args: [...p.args] }),
-    ...(p.url !== undefined && { url: p.url }),
-    ...(p.envVars && { envVars: [...p.envVars] }),
-    ...(p.env && Object.keys(p.env).length > 0 && { env: { ...p.env } }),
+    content: {
+      kind,
+      serverKey: p.serverKey,
+      transport: p.transport,
+      ...(p.command !== undefined && { command: p.command }),
+      ...(p.args && { args: [...p.args] }),
+      ...(p.url !== undefined && { url: p.url }),
+      ...((p.envVars || envVars.length > 0) && { envVars }),
+    },
+    droppedEnvValues,
   };
+}
+
+/** Managed MCP parts keep env names only. Values come from the person's signed-in environment. */
+function refuseEnvValues(content: ManagedPartContent | undefined): void {
+  if (content?.kind !== 'mcp' || !content.env) return;
+  const names = Object.keys(content.env);
+  if (names.length === 0) return;
+  throw new ManagedError('invalid', `MCP servers keep variable names only, never values. List ${names.join(', ')} under Environment (envVars) and set the values in your environment.`);
 }
 
 function contentToPayload(content: ManagedPartContent): AssetPayload {
@@ -175,9 +196,13 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     return entry;
   }
 
-  async function contentOf(entry: CatalogEntry): Promise<ManagedPartContent> {
+  async function readHead(entry: CatalogEntry): Promise<{ content: ManagedPartContent; droppedEnvValues: string[] }> {
     const payload = await catalog.readRevision(entry.id, entry.headRevision);
     return payloadToContent(entry.kind as ManagedPartKind, payload);
+  }
+
+  async function contentOf(entry: CatalogEntry): Promise<ManagedPartContent> {
+    return (await readHead(entry)).content;
   }
 
   /** Every agent with a managed setup, across registered projects. */
@@ -217,7 +242,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     const builtin = entry.source.kind === 'builtin';
     const s = await state.read();
     const meta = s.parts[entry.id] ?? {};
-    const content = await contentOf(entry);
+    const { content, droppedEnvValues } = await readHead(entry);
     const head = entry.revisions[entry.revisions.length - 1];
     const usedBy = consumers ?? await consumersOf(entry.id);
     const tpls = (templates ?? await allTemplates()).filter((t) => listOf({ version: 1, ...t.setup }, kind).includes(entry.id));
@@ -235,6 +260,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       usedBy,
       templates: tpls.map((t) => ({ id: t.id, name: t.name })),
       preview: previewOf(content),
+      ...(droppedEnvValues.length > 0 && { droppedEnvValues }),
     };
   }
 
@@ -295,6 +321,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       const kind = input.content.kind;
       const name = input.name.trim();
       if (!name) throw new ManagedError('invalid', 'Give it a name.');
+      refuseEnvValues(input.content);
       const taken = (await liveEntries());
       if (Object.values(taken).some((e) => e.kind === kind && e.name.toLowerCase() === name.toLowerCase())) {
         throw new ManagedError('name_taken', `${name} already exists. Use it, or pick another name.`);
@@ -319,6 +346,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       let entry = await entryOf(input.id);
       if (entry.source.kind === 'builtin') throw new ManagedError('builtin_read_only', 'Built-in parts can\'t be edited. Make your copy instead.');
       if (entry.headRevision !== input.expectedRevision) throw new ManagedError('stale', 'It changed since you opened it.');
+      refuseEnvValues(input.content);
       try {
         if (input.content) {
           if (input.content.kind !== entry.kind) throw new ManagedError('invalid');
@@ -505,9 +533,15 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       return next;
     },
 
-    /** Stop managing an agent. It keeps the last files Clubhouse wrote. */
+    /**
+     * Stop managing an agent. It keeps the last files Clubhouse wrote, except
+     * the settings Clubhouse added for itself, which onUnmanaged removes.
+     */
     async unmanage(projectPath: string, agentId: string): Promise<void> {
+      const agent = await deps.getAgent(projectPath, agentId);
+      const wasManaged = !!agent?.managed;
       await deps.setManagedSetup(projectPath, agentId, null);
+      if (agent && wasManaged) await deps.onUnmanaged?.(projectPath, agent);
       changed();
     },
 
@@ -694,11 +728,11 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     },
 
     /** Read a part's head content, for delivery. */
-    async headContent(id: string): Promise<{ entry: CatalogEntry; content: ManagedPartContent } | null> {
+    async headContent(id: string): Promise<{ entry: CatalogEntry; content: ManagedPartContent; droppedEnvValues: string[] } | null> {
       const live = await liveEntries();
       const entry = live[id];
       if (!entry) return null;
-      return { entry, content: await contentOf(entry) };
+      return { entry, ...(await readHead(entry)) };
     },
 
     async liveEntries(): Promise<Record<string, CatalogEntry>> {

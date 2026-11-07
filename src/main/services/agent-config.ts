@@ -29,6 +29,7 @@ import { notifyPersonaChanged } from './persona-change-hook';
 import { uncommittedPorcelain } from './clubhouse-owned-files';
 import { DISPATCHER_PERSONA, isDispatcherPath } from './dispatcher/dispatcher-paths';
 import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup } from '../../shared/managed-agents-types';
+import { noteManagedSettingsChanged } from './managed-agents/changed-notice';
 
 /**
  * Non-blocking git command execution. Prevents UI freezes in large repos.
@@ -1465,6 +1466,8 @@ async function updateDurableConfigInner(
     throw err;
   }
   if (updates.orchestrator !== undefined) noteProviderSelection(agentId, updates.orchestrator);
+  // A managed agent's setup-changed bar compares these with what its session started on.
+  if (agent.managed && (updates.orchestrator !== undefined || updates.model !== undefined || updates.freeAgentMode !== undefined)) noteManagedSettingsChanged();
   await auditChanges('agent', 'agent', agentId, auditBefore, pickAudited(agent, AGENT_AUDIT_CATALOG), AGENT_AUDIT_CATALOG);
   // A running chat session picks the new timeout up now.
   if (updates.idleSleep !== undefined) setAgentIdleSleep(agentId, agent.idleSleep);

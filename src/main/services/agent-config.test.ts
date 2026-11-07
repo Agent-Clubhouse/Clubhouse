@@ -67,9 +67,14 @@ vi.mock('./chat-idle-settings', () => ({
   setAgentIdleSleep: vi.fn(),
 }));
 
+vi.mock('./managed-agents/changed-notice', () => ({
+  noteManagedSettingsChanged: vi.fn(),
+}));
+
 import * as fsp from 'fs/promises';
 import { watch } from 'fs';
 import { setAgentIdleSleep } from './chat-idle-settings';
+import { noteManagedSettingsChanged } from './managed-agents/changed-notice';
 import { execFile } from 'child_process';
 import { pathExists } from './fs-utils';
 import { assertProviderSelection, noteProviderSelection } from './agent-transition';
@@ -1378,6 +1383,31 @@ describe('updateDurableConfig', () => {
     const result = await getDurableConfig(PROJECT_PATH, 'durable_model');
     expect(result).not.toBeNull();
     expect(result!.model).toBe('sonnet');
+  });
+
+  it('tells open windows when a managed agent\'s model or Free Agent Mode changes, so its bar refreshes (#2819)', async () => {
+    const managed = { version: 1, blocks: [], skills: [], mcps: [] };
+    const agents = [
+      { id: 'durable_managed', name: 'managed-one', color: 'indigo', createdAt: '2024-01-01', managed },
+      { id: 'durable_plain', name: 'plain-one', color: 'indigo', createdAt: '2024-01-01' },
+    ];
+    const writtenData: Record<string, string> = { [path.join(PROJECT_PATH, '.clubhouse', 'agents.json')]: JSON.stringify(agents) };
+    vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('agents.json'));
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => writtenData[String(p)] || '[]');
+    vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => { writtenData[String(p)] = String(data); });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    vi.mocked(noteManagedSettingsChanged).mockClear();
+    await updateDurableConfig(PROJECT_PATH, 'durable_managed', { model: 'sonnet' });
+    await updateDurableConfig(PROJECT_PATH, 'durable_managed', { freeAgentMode: true });
+    expect(noteManagedSettingsChanged).toHaveBeenCalledTimes(2);
+    // Not for a field the bar doesn't compare, nor for an unmanaged agent.
+    await updateDurableConfig(PROJECT_PATH, 'durable_managed', { idleSleep: 15 });
+    await updateDurableConfig(PROJECT_PATH, 'durable_plain', { model: 'sonnet' });
+    expect(noteManagedSettingsChanged).toHaveBeenCalledTimes(2);
   });
 
   it('persists and clears the per-agent auto-sleep, and applies it live (#2143)', async () => {

@@ -105,7 +105,7 @@ import { contextWindowCheck } from '../../context-window';
 import { helperAutoRefused, helperRouted } from '../../../telemetry/feature-events';
 import { getSettings as getExperimentalSettings } from '../../experimental-settings';
 import { managedAgents } from '../../managed-agents';
-import { managedHelperSetup } from '../../managed-agents/helpers';
+import { helperTemplateModel, managedHelperSetup } from '../../managed-agents/helpers';
 
 // ── Results ──────────────────────────────────────────────────────────────
 
@@ -644,7 +644,6 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
   }
   if (!isOrchestrationEnabled(orchestratorId)) return refused('orchestration is off for its orchestrator.');
   const { projectPath: homePath, config: orchestrator } = await resolveCaller(orchestratorId);
-  const { name, task, persona, cli, model, effort, difficulty, access, branchFrom, folder } = args;
 
   // Checked before anything is created, with the checks saving it runs: a helper never starts without its setup.
   let managedHelper: Awaited<ReturnType<typeof managedHelperSetup>> | null = null;
@@ -653,9 +652,25 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
       managedHelper = await managedHelperSetup(managedAgents(), args);
     } catch (err) {
       // telemetry-exempt: the refusal reaches the calling agent as the tool result
-      return refused(`Could not start helper "${name}": ${errorText(err)}`);
+      return refused(`Could not start helper "${args.name}": ${errorText(err)}`);
     }
+    // No model or difficulty asked for: the helper template's, when it is for the CLI the helper runs on (D52).
+    // Managed helpers have no persona, so that CLI is the one asked for, else the orchestrator's; Auto decides later.
+    const orchestratorCli = orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator;
+    const runsOn = args.cli === AUTO_CLI ? undefined : (args.cli ?? orchestratorCli);
+    const templateModel = await helperTemplateModel(managedHelper.settings, args, runsOn, async (helperCli, templateModelId) => {
+      let checkProject = homePath;
+      try {
+        checkProject = (await resolveTargetProject(homePath, orchestratorId, args.project)).path;
+      } catch {
+        // telemetry-exempt: a bad project is refused under the lock; check the model with the home profile
+      }
+      const check = await checkHelperModel(helperCli, templateModelId, checkProject);
+      return check.ok && !check.warning;
+    });
+    if (templateModel) args = { ...args, model: templateModel };
   }
+  const { name, task, persona, cli, model, effort, difficulty, access, branchFrom, folder } = args;
 
   // Model and effort are checked before the start lock: listing models can take a CLI handshake (#2569).
   let modelWarning: string | undefined;
@@ -812,7 +827,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
       };
       // A managed helper's setup is required: if it can't be saved, the creation fails rather than start a helper without it.
       // What the start named stays: a persona's pin only fills what it left open (#2671).
-      const setup = managedHelper;
+      const setup = managedHelper && (({ settings: _templateSettings, ...rest }) => rest)(managedHelper);
       started = await startDurableCreation(target.path, params, setup
         ? { inject: async (created) => { await managedAgents().saveSetup(target.path, created.id, setup); }, injectRequired: true }
         : personaInjection(target.path, params, plan?.keep));

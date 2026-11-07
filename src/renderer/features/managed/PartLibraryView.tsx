@@ -7,7 +7,7 @@ import { formatAgo } from '../agents/states/format';
 import { SettingsPage, settingsError, settingsHelp, settingsInput } from '../settings/SettingsLayout';
 import { PartDialog } from './PartDialog';
 import { errorText, managed, partKindLabel, unwrap, useManagedParts } from './managedApi';
-import { AgentDot } from './parts-ui';
+import { AgentDot, DroppedEnvNote } from './parts-ui';
 
 type SourceFilter = 'all' | 'builtin' | 'custom';
 
@@ -143,6 +143,7 @@ function PartDetail({ part, onEdit, onFork, onDelete }: {
       )}
       {error && <p role="alert" className={settingsError}>{error}</p>}
       <PartContent id={part.id} revision={part.revision} />
+      <DroppedEnvNote names={part.droppedEnvValues} testId="managed-part-dropped-env" />
       <div>
         <h4 className="text-xs font-medium text-ctp-subtext1 mb-1">Used by</h4>
         {part.usedBy.length === 0 && part.templates.length === 0 ? (

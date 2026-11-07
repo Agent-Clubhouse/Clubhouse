@@ -384,10 +384,12 @@ export function registerManagedTools(): void {
       const now = optionalBoolean(args, 'now') === true;
       // No catalog grant: a restart writes no parts, and the spawn must not inherit one.
       const restart = restartManagedAgent(t.project.path, t.agentId, { fresh: optionalBoolean(args, 'fresh'), whenTurnEnds: !now });
-      if (now) return json({ status: 'restarted', resumed: (await restart).resumed });
+      const answer = (r: { resumed: boolean; noSession?: boolean }) => json({ status: 'restarted', resumed: r.resumed,
+        ...(r.noSession && { note: 'There was no conversation to resume, so it started a new one.' }) });
+      if (now) return answer(await restart);
       // Waiting for a turn can take long: answer after a short wait, and let the restart finish behind it.
       const done = await settleWithin(restart, RESTART_ANSWER_MS);
-      if (done) return json({ status: 'restarted', resumed: done.resumed });
+      if (done) return answer(done);
       restart.catch((err: unknown) => {
         // telemetry-exempt: the Dispatcher already has its answer; the failure is logged
         appLog('core:mcp', 'warn', 'restart_agent: restart after the turn failed', { meta: { callerId, agentId: t.agentId, error: err instanceof Error ? err.message : String(err) } });

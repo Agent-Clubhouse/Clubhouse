@@ -24,6 +24,7 @@ export const CHAT_SHARDS = {
     'chat-rich/queue-merging.spec.ts',
     'chat-rich/reading.spec.ts',
     'dispatcher.spec.ts',
+    'managed-agents-acceptance.spec.ts',
   ],
 };
 

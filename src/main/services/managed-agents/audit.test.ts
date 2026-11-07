@@ -57,10 +57,10 @@ describe('managed agents settings audit (D13)', () => {
   it('records part create, update and delete by id, with who asked and never the content', async () => {
     const part = await user(() => service.createPart({
       name: 'Secret server', description: 'Uses the vault',
-      content: { kind: 'mcp', serverKey: 'vault', transport: 'stdio', command: 'vault-mcp', envVars: ['VAULT_TOKEN'], env: { VAULT_REGION: 'region-hunter2' } },
+      content: { kind: 'mcp', serverKey: 'vault', transport: 'stdio', command: 'vault-mcp', envVars: ['VAULT_TOKEN', 'VAULT_REGION'], args: ['--region', 'region-hunter2'] },
     }));
     const updated = await user(() => service.updatePart({ id: part.id, expectedRevision: part.revision, description: 'Now with a new token',
-      content: { kind: 'mcp', serverKey: 'vault', transport: 'stdio', command: 'vault-mcp', envVars: ['VAULT_TOKEN'], env: { VAULT_REGION: 'region-another' } } }));
+      content: { kind: 'mcp', serverKey: 'vault', transport: 'stdio', command: 'vault-mcp', envVars: ['VAULT_TOKEN', 'VAULT_REGION'], args: ['--region', 'region-another'] } }));
     await user(() => service.deletePart({ id: part.id, expectedRevision: updated.revision, mode: 'remove' }));
     expect(await managedRows()).toEqual([
       { surface: 'ui', scope: 'app', key: 'managed.part.created', targetId: part.id, changed: true, outcome: 'ok' },

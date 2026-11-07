@@ -3,6 +3,7 @@ import type { ManagedAgentSetup, ManagedPartKind, ManagedPreview, ManagedPartSum
 import { BlockList, type BuilderAgent } from './BlockList';
 import { LibraryPanel, PartToggleList } from './LibraryPanel';
 import { PartDialog } from './PartDialog';
+import { DroppedEnvNote } from './parts-ui';
 import { errorText, managed, unwrap, useManagedParts } from './managedApi';
 
 export type BuilderTab = 'instructions' | 'skills' | 'mcp' | 'preview';
@@ -80,6 +81,7 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
   const mcps = useManagedParts('mcp');
   const [dialog, setDialog] = useState<{ kind: ManagedPartKind; editId?: string } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; seq: number } | undefined>(undefined);
   const agent = target.kind === 'agent' ? target.agent : undefined;
   const agentName = agent?.agentName ?? (target.kind === 'draft' ? target.agentName : undefined);
 
@@ -132,8 +134,18 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
             onFork={(id) => fork('block', id)}
             onBackToShared={agent ? backToShared : undefined}
             onWrite={() => setDialog({ kind: 'block' })}
+            notice={notice}
           />
-          <LibraryPanel parts={blocks.value ?? []} inUse={setup.blocks} onAdd={(id) => update('block', [...setup.blocks, id])} onNew={() => setDialog({ kind: 'block' })} />
+          <LibraryPanel
+            parts={blocks.value ?? []}
+            inUse={setup.blocks}
+            onAdd={(id) => {
+              update('block', [...setup.blocks, id]);
+              const name = blocks.value?.find((p) => p.id === id)?.name ?? 'Block';
+              setNotice((n) => ({ text: `${name} added.`, seq: (n?.seq ?? 0) + 1 }));
+            }}
+            onNew={() => setDialog({ kind: 'block' })}
+          />
         </div>
       )}
       {tab === 'skills' && (
@@ -219,12 +231,67 @@ export function PreviewPane({ agent, setup }: { agent: BuilderAgent; setup?: Set
           <h3 className="text-[13px] font-semibold text-ctp-text mb-1">MCP servers</h3>
           {preview.mcps.length === 0 ? <p className="text-xs text-ctp-overlay1">None.</p> : (
             <dl className="grid grid-cols-[140px_minmax(0,1fr)] gap-x-3.5 gap-y-1 text-xs">
-              {preview.mcps.map((m) => <Fragment key={m.id}><dt className="text-ctp-overlay1">{m.name}</dt><dd className="text-ctp-text">{m.builtin ? 'Built-in' : 'Custom'} · {m.serverKey}</dd></Fragment>)}
+              {preview.mcps.map((m) => (
+                <Fragment key={m.id}>
+                  <dt className="text-ctp-overlay1">{m.name}</dt>
+                  <dd className="text-ctp-text">
+                    {m.builtin ? 'Built-in' : 'Custom'} · {m.serverKey}
+                    <DroppedEnvNote names={m.droppedEnvValues} testId={`managed-preview-dropped-env-${m.id}`} className="mt-0.5" />
+                  </dd>
+                </Fragment>
+              ))}
             </dl>
           )}
         </section>
       </div>
       {preview.missing.length > 0 && <p className="text-xs text-ctp-warning">{preview.missing.length} part{preview.missing.length === 1 ? '' : 's'} in this setup no longer exist and are skipped.</p>}
+      <OutsideTheSetup preview={preview} />
     </div>
+  );
+}
+
+/** What the CLI reads besides the setup: files Clubhouse can't move or turn off, and the ones it turned off. */
+function OutsideTheSetup({ preview }: { preview: ManagedPreview }) {
+  const cli = preview.cliName ?? 'the CLI';
+  const list = (paths: string[], testId: string, prefix = '') => (
+    <ul className="flex flex-col gap-0.5 text-xs font-mono text-ctp-text" data-testid={testId}>
+      {paths.map((p) => <li key={p} className="truncate">{prefix}{p}</li>)}
+    </ul>
+  );
+  return (
+    <>
+      {preview.repoSkills && preview.repoSkills.length > 0 && (
+        <section>
+          <h3 className="text-[13px] font-semibold text-ctp-text mb-1">Also loaded from the repo</h3>
+          <p className="text-xs text-ctp-overlay1 mb-1">Git tracks these skill folders, so Clubhouse leaves them in place and {cli} loads them too.</p>
+          {list(preview.repoSkills, 'managed-preview-repo-skills')}
+        </section>
+      )}
+      {preview.keptSkills && preview.keptSkills.length > 0 && (
+        <section>
+          <h3 className="text-[13px] font-semibold text-ctp-text mb-1">Also loaded</h3>
+          <p className="text-xs text-ctp-overlay1 mb-1">
+            {preview.keptSkillsReason === 'link'
+              ? `The skills folder links to somewhere outside this agent's folder, so Clubhouse moves nothing out of it and ${cli} loads these too.`
+              : `Clubhouse couldn't ask git which of these it tracks, so it leaves them in place and ${cli} loads them too.`}
+          </p>
+          {list(preview.keptSkills, 'managed-preview-kept-skills')}
+        </section>
+      )}
+      {preview.alsoRead && preview.alsoRead.length > 0 && (
+        <section>
+          <h3 className="text-[13px] font-semibold text-ctp-text mb-1">Also read by {cli}</h3>
+          <p className="text-xs text-ctp-overlay1 mb-1">{cli} reads these instruction files as well. Clubhouse can't turn them off.</p>
+          {list(preview.alsoRead, 'managed-preview-also-read')}
+        </section>
+      )}
+      {preview.notRead && preview.notRead.length > 0 && (
+        <section>
+          <h3 className="text-[13px] font-semibold text-ctp-text mb-1">Instruction files above its folder</h3>
+          <p className="text-xs text-ctp-overlay1 mb-1">{cli} would read these too. Clubhouse tells it not to.</p>
+          {list(preview.notRead, 'managed-preview-not-read', 'Not read: ')}
+        </section>
+      )}
+    </>
   );
 }

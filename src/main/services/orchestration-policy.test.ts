@@ -452,6 +452,20 @@ describe('setOrchestrationPolicy audit (#2671)', () => {
   });
 });
 
+describe('setOrchestrationPolicy for a managed agent (#2819)', () => {
+  it('tells open windows after the write, so the setup-changed bar refreshes; not for an unmanaged agent', async () => {
+    const { broadcastToAllWindows } = await import('../util/ipc-broadcast');
+    const { IPC } = await import('../../shared/ipc-channels');
+    setAgents(PROJECT, [agent('managed-orch', { managed: { version: 1, blocks: [], skills: [], mcps: [] } }), agent('plain-orch')]);
+    vi.mocked(broadcastToAllWindows).mockClear();
+    await setOrchestrationPolicy(PROJECT, 'managed-orch', { maxHelpers: 7 });
+    expect(vi.mocked(broadcastToAllWindows).mock.calls.filter((c) => c[0] === IPC.MANAGED.CHANGED)).toHaveLength(1);
+    vi.mocked(broadcastToAllWindows).mockClear();
+    await setOrchestrationPolicy(PROJECT, 'plain-orch', { maxHelpers: 7 });
+    expect(vi.mocked(broadcastToAllWindows).mock.calls.filter((c) => c[0] === IPC.MANAGED.CHANGED)).toHaveLength(0);
+  });
+});
+
 describe('setOrchestrationPolicy precondition (#2661)', () => {
   it('sees the fresh config and refuses by throwing, before anything is written', async () => {
     setAgents(PROJECT, [agent('orch')]);

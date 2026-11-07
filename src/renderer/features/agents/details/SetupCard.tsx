@@ -93,6 +93,7 @@ export function SetupCard({ agent, projectPath, setup, runsOn }: {
   return (
     <DetailsCard id="settings" title="Setup" summary={summary} open={open} onToggle={() => setOpen(!open)}>
       <SetupRows setup={setup} templateName={templateName} runsOn={runsOn} changes={changes} />
+      <span role="status" className="sr-only" data-testid="details-setup-live">{pending ? PENDING_RESTART_NOTE : waiting ? SETUP_WAITING_NOTE : ''}</span>
       {(waiting || pending) && <CardNote><span data-testid="details-setup-note">{pending ? PENDING_RESTART_NOTE : SETUP_WAITING_NOTE}</span></CardNote>}
       {error && <CardNote><span className="text-ctp-error" role="alert" data-testid="details-setup-error">{error}</span></CardNote>}
       <div className="pr-3.5 pl-[33px] pt-1 flex items-center gap-1.5">
