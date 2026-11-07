@@ -60,8 +60,8 @@ export type AutoTier = (typeof AUTO_TIERS)[number];
 
 export interface AutoCandidate {
   /**
-   * The provider and profile this would run under. A proxy for a subscription:
-   * two profiles signed in to one account aren't known to be the same.
+   * The provider this would run under, on its one local login. A proxy for a
+   * subscription, never more.
    */
   key: string;
   provider: string;

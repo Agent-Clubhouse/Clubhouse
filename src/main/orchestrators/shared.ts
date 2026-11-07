@@ -303,6 +303,35 @@ export function homePath(...segments: string[]): string {
   return path.join(app.getPath('home'), ...segments);
 }
 
+/**
+ * `key` from the environment agents launch with: the login shell's, then
+ * Clubhouse's own. Trimmed; blank counts as unset.
+ */
+export function launchEnvValue(key: string): string | undefined {
+  let shellEnv: Record<string, string> | undefined;
+  try {
+    shellEnv = getShellEnvironment();
+  } catch {
+    // telemetry-exempt: the shell env can't be read; process.env still applies
+  }
+  return [shellEnv?.[key], process.env[key]]
+    .map((v) => v?.trim())
+    .find((v): v is string => !!v);
+}
+
+/**
+ * A CLI's state directory: `key` (CLAUDE_CONFIG_DIR, CODEX_HOME) from the
+ * launch environment, else `~/<fallback>`. `~` is expanded. Session lookups
+ * use it so they read the same store the CLI writes.
+ */
+export function cliStateDir(key: string, fallback: string): string {
+  const dir = launchEnvValue(key);
+  if (!dir) return homePath(fallback);
+  if (dir === '~') return homePath();
+  if (dir.startsWith('~/') || dir.startsWith('~\\')) return homePath(dir.slice(2));
+  return dir;
+}
+
 // Hook URLs are embedded verbatim into shell command strings written to disk
 // (e.g. Claude Code / Codex hooks configs).  Only allow characters that are
 // safe in both POSIX sh and cmd.exe without quoting: no metacharacters, no

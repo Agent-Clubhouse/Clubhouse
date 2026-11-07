@@ -305,7 +305,7 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
   // Settings, prefilled from the template or the copied agent.
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const availability = useOrchestratorStore((s) => s.availability);
-  const { effectiveOrchestrators } = useEffectiveOrchestrators(projectPath);
+  const { effectiveOrchestrators } = useEffectiveOrchestrators();
   const resolvedOrchestrator = orchestrator || effectiveOrchestrators[0]?.id || 'claude-code';
   const { options: modelOptions, loading: modelsLoading } = useModelOptions(resolvedOrchestrator, projectPath);
   const selectedOrch = allOrchestrators.find((o) => o.id === resolvedOrchestrator);

@@ -81,7 +81,6 @@ class TestProvider extends BaseProvider {
     { id: 'model-a', label: 'Model A' },
     { id: 'model-b', label: 'Model B' },
   ];
-  protected readonly configEnvKeys = ['TEST_CONFIG_DIR'];
 
   getCapabilities(): ProviderCapabilities {
     return {
@@ -357,19 +356,6 @@ describe('BaseProvider', () => {
 
     it('returns undefined for unknown tools', () => {
       expect(provider.toolVerb('unknown')).toBeUndefined();
-    });
-  });
-
-  describe('getProfileEnvKeys', () => {
-    it('returns configured env keys', () => {
-      expect(provider.getProfileEnvKeys()).toEqual(['TEST_CONFIG_DIR']);
-    });
-
-    it('returns a new array each call (defensive copy)', () => {
-      const a = provider.getProfileEnvKeys();
-      const b = provider.getProfileEnvKeys();
-      expect(a).not.toBe(b);
-      expect(a).toEqual(b);
     });
   });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import * as path from 'path';
 import * as os from 'os';
 
@@ -49,6 +49,14 @@ import * as fsp from 'fs/promises';
 import * as childProcess from 'child_process';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { CodexCliProvider, parseCodexDebugModels } from './codex-cli-provider';
+
+const DEFAULT_SHELL_ENV = { PATH: `/usr/local/bin${path.delimiter}/usr/bin`, OPENAI_API_KEY: 'sk-test-key' };
+
+/** CODEX_HOME as the environment Clubhouse launches agents with sets it, for one test. */
+function withLaunchCodexHome(home: string): void {
+  vi.mocked(getShellEnvironment).mockReturnValue({ ...DEFAULT_SHELL_ENV, CODEX_HOME: home });
+  onTestFinished(() => { vi.mocked(getShellEnvironment).mockReturnValue({ ...DEFAULT_SHELL_ENV }); });
+}
 
 /** Match any path whose basename is 'codex' (with or without .exe/.cmd) */
 function isCodexPath(p: string | Buffer | URL): boolean {
@@ -1346,8 +1354,9 @@ describe('CodexCliProvider', () => {
       expect(sessions[0].sessionId).toBe('019d0eff-598f-7ce2-92f2-200d97c54271');
     });
 
-    it('honours CODEX_HOME from a profile instead of the default store', async () => {
-      const profileHome = path.join(path.sep, 'profiles', 'agent-a', '.codex');
+    it('honours CODEX_HOME from the launch environment instead of the default store', async () => {
+      const profileHome = path.join(path.sep, 'launch', 'codex-home');
+      withLaunchCodexHome(profileHome);
       const profileSessions = path.join(profileHome, 'sessions');
       mockCodexStore(profileSessions, {
         [profileSessions]: [{ name: '2026', dir: true }],
@@ -1358,7 +1367,7 @@ describe('CodexCliProvider', () => {
         [F1]: rolloutMeta(PROJECT, '2026-09-05T17:28:00.000Z', '01a0741d-6c83-7720-8fc2-6412909a95ab'),
       });
 
-      const sessions = await provider.listSessions(PROJECT, { CODEX_HOME: profileHome });
+      const sessions = await provider.listSessions(PROJECT);
       expect(sessions).toHaveLength(1);
       // The default store must not have been consulted
       expect(vi.mocked(fsp.readdir)).not.toHaveBeenCalledWith(SESSIONS, expect.anything());
@@ -1416,10 +1425,11 @@ describe('CodexCliProvider', () => {
       expect(await provider.readSessionTranscript('does-not-exist', '/any')).toBeNull();
     });
 
-    it('reads from the profile store when CODEX_HOME is set', async () => {
-      const profileHome = path.join(path.sep, 'profiles', 'agent-a', '.codex');
+    it('reads from CODEX_HOME when the launch environment sets it', async () => {
+      const profileHome = path.join(path.sep, 'launch', 'codex-home');
+      withLaunchCodexHome(profileHome);
       vi.mocked(fsp.readdir).mockImplementation((async () => { throw new Error('ENOENT'); }) as never);
-      expect(await provider.readSessionTranscript(ID, '/any', { CODEX_HOME: profileHome })).toBeNull();
+      expect(await provider.readSessionTranscript(ID, '/any')).toBeNull();
       expect(vi.mocked(fsp.readdir)).toHaveBeenCalledWith(
         path.join(profileHome, 'sessions'),
         expect.anything(),

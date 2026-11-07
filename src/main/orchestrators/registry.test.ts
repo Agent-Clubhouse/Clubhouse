@@ -27,7 +27,6 @@ function makeFakeProvider(id: OrchestratorId, displayName: string): Orchestrator
     getModelOptions: async () => [],
     getDefaultPermissions: () => [],
     toolVerb: () => undefined,
-    getProfileEnvKeys: () => [],
   };
 }
 

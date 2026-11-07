@@ -16,10 +16,9 @@ import { AGENT_COLORS, generateDurableName } from '../../shared/name-generator';
 import { validateAgentGitName } from '../../shared/agent-name';
 import * as agentConfig from './agent-config';
 import { parseStartCreationParams, startDurableCreation } from './agent-creation';
-import { checkAvailability, getAvailableOrchestrators, resolveOrchestrator, resolveProfileEnv } from './agent-system';
-import { readDefaultMcps, readMcpCatalog, readProjectAgentDefaults } from './agent-settings-service';
+import { checkAvailability, getAvailableOrchestrators, resolveOrchestrator } from './agent-system';
+import { readDefaultMcps, readMcpCatalog } from './agent-settings-service';
 import * as orchestratorSettings from './orchestrator-settings';
-import * as profileSettings from './profile-settings';
 import { chatIdleSettings } from './chat-idle-settings';
 import { isChatEnabled, resolveRuntimeMode } from './chat-runtime-settings';
 import { resolveChatDriver } from './agent-runtime/chat-drivers';
@@ -47,15 +46,10 @@ const LOCKED_DETAIL = 'Sleep the agent to change these';
 
 export const MOBILE_AGENT_COLORS = AGENT_COLORS.map(({ id, label, hex }) => ({ id, label, hex }));
 
-/** The orchestrators the New agent page offers: the enabled ones, narrowed to the project's profile when it covers any. */
-export async function effectiveOrchestrators(projectPath: string) {
+/** The orchestrators the New agent page offers: the enabled ones. */
+export function effectiveOrchestrators() {
   const enabled = orchestratorSettings.getSettings().enabled ?? [DEFAULT_ORCHESTRATOR];
-  const all = getAvailableOrchestrators().filter((o) => enabled.includes(o.id));
-  const profileId = (await readProjectAgentDefaults(projectPath).catch((): undefined => undefined))?.profileId;
-  const profile = profileId ? profileSettings.getProfile(profileId) : undefined;
-  if (!profile) return all;
-  const inProfile = all.filter((o) => o.id in profile.orchestrators);
-  return inProfile.length > 0 ? inProfile : all;
+  return getAvailableOrchestrators().filter((o) => enabled.includes(o.id));
 }
 
 const chatAvailable = (orchestrator: string): boolean => isChatEnabled() && !!resolveChatDriver(orchestrator, resolveRuntimeMode(orchestrator).driver);
@@ -66,9 +60,7 @@ const permissionsSupported = (orchestrator: string): boolean =>
 async function modelOptions(projectPath: string, orchestrator: string): Promise<Array<{ id: string; label: string }>> {
   try {
     const provider = await resolveOrchestrator(projectPath, orchestrator);
-    // A profile can change the CLI's login, and so the models it lists (#2569), as GET_MODEL_OPTIONS passes it.
-    const env = await resolveProfileEnv(projectPath, provider.id);
-    const options = await provider.getModelOptions(env ? { env } : undefined);
+    const options = await provider.getModelOptions();
     if (Array.isArray(options) && options.length > 0) return options;
   } catch {
     // telemetry-exempt: the picker falls back to the provider default, as useModelOptions does.
@@ -81,7 +73,7 @@ async function modelOptions(projectPath: string, orchestrator: string): Promise<
  * `personas` is always empty: personas were retired (#2901), and the key stays for phones that read it.
  */
 export async function buildAgentOptions(projectPath: string) {
-  const orchestrators = await effectiveOrchestrators(projectPath);
+  const orchestrators = effectiveOrchestrators();
   const rows = await Promise.all(orchestrators.map(async (o) => {
     const [availability, models] = await Promise.all([
       checkAvailability(projectPath, o.id).catch((err: unknown) => ({ available: false, error: err instanceof Error ? err.message : 'unavailable' })),
@@ -379,8 +371,8 @@ function assertGitName(value: string, kind: 'folder' | 'branch', code: string): 
   if (problem) throw invalid(code, problem);
 }
 
-async function assertOrchestrator(projectPath: string, orchestrator: string): Promise<void> {
-  if (!(await effectiveOrchestrators(projectPath)).some((o) => o.id === orchestrator)) throw new MobileControlError('orchestrator_unavailable', 409);
+function assertOrchestrator(orchestrator: string): void {
+  if (!effectiveOrchestrators().some((o) => o.id === orchestrator)) throw new MobileControlError('orchestrator_unavailable', 409);
 }
 
 /**
@@ -417,8 +409,8 @@ export async function createMobileAgent(project: MobileAgentProject, command: Mo
   // The name (or folder) becomes a folder and a git branch on this machine (#2221).
   if (useWorktree) assertGitName(folderName ?? name, 'folder', folderName === undefined ? 'invalid_name' : 'invalid_folder_name');
   if (branchName !== undefined) assertGitName(branchName, 'branch', 'invalid_branch_name');
-  const orchestrator = command.orchestrator ?? (await effectiveOrchestrators(project.path))[0]?.id ?? DEFAULT_ORCHESTRATOR;
-  await assertOrchestrator(project.path, orchestrator);
+  const orchestrator = command.orchestrator ?? effectiveOrchestrators()[0]?.id ?? DEFAULT_ORCHESTRATOR;
+  assertOrchestrator(orchestrator);
   if (command.freeAgentMode && !permissionsSupported(orchestrator)) throw new MobileControlError('free_agent_mode_unavailable');
   if (command.persona != null) refusePersona(name);
   const orchestration = command.orchestration !== undefined ? parseMobileOrchestration(command.orchestration, 'create') : undefined;
@@ -489,7 +481,7 @@ export async function updateMobileAgent(
   const orchestrator = command.orchestrator
     ?? (config.orchestrator || await resolveOrchestrator(project.path).then((p) => p.id).catch(() => DEFAULT_ORCHESTRATOR));
   if (command.orchestrator !== undefined) {
-    await assertOrchestrator(project.path, command.orchestrator);
+    assertOrchestrator(command.orchestrator);
     updates.orchestrator = command.orchestrator as DurableConfigUpdates['orchestrator'];
   }
   if (command.model !== undefined) updates.model = command.model;
@@ -550,7 +542,7 @@ export async function updateMobileDispatcher(
   const orchestrator = command.orchestrator ?? current;
   if (command.orchestrator !== undefined && command.orchestrator !== config.orchestrator) {
     // The current CLI stays listed even when it has since been turned off for new agents.
-    if (command.orchestrator !== current) await assertOrchestrator(project.path, command.orchestrator);
+    if (command.orchestrator !== current) assertOrchestrator(command.orchestrator);
     updates.orchestrator = command.orchestrator as DurableConfigUpdates['orchestrator'];
     updates.model = 'default';
   }

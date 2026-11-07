@@ -175,7 +175,7 @@ describe('help-content in the new shell', () => {
   });
 
   it('points only at settings pages that exist', () => {
-    const pages = ['About', 'Agents & providers', 'Managed agents', 'Helpers', 'Profiles', 'Display & UI', 'External editor', 'Keyboard shortcuts',
+    const pages = ['About', 'Agents & providers', 'Managed agents', 'Helpers', 'Display & UI', 'External editor', 'Keyboard shortcuts',
       'Notifications & alerts', 'Plugins', 'Annex', 'Annex control', 'Updates', 'Logging', 'Feedback', "What's new"];
     for (const t of articles()) {
       for (const m of t.content.matchAll(/\*\*Settings > ([^*]+)\*\*/g)) {

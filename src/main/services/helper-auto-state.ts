@@ -43,7 +43,7 @@ interface RotationFile {
   cursors: Record<string, { key: string; at: number }>;
 }
 
-/** Tie sets are a handful of providers under a handful of profiles. This only bounds a file nobody prunes. */
+/** Tie sets are a handful of providers. This only bounds a file nobody prunes. */
 export const AUTO_MAX_ROTATION_CURSORS = 64;
 
 const rotationStore = createSettingsStore<RotationFile>('helper-auto-rotation.json', { version: 1, cursors: {} }, (raw) => {
@@ -84,7 +84,7 @@ function commitRotation(cursorKey: string, key: string, now: number): void {
 
 interface Reservation {
   provider: string;
-  /** Provider and profile: see AutoCandidate.key. */
+  /** Provider: see AutoCandidate.key. */
   key: string;
   at: number;
   helperId?: string;

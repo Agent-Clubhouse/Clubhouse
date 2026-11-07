@@ -178,24 +178,6 @@ export interface CompletedQuickAgent {
   managedTemplateId?: string;
 }
 
-// --- Profile types ---
-
-/** Per-orchestrator env config within a profile */
-export interface OrchestratorProfileEntry {
-  env: Record<string, string>;  // e.g. { CLAUDE_CONFIG_DIR: "~/.claude-work" }
-}
-
-/** Named profile containing env configs for multiple orchestrators */
-export interface OrchestratorProfile {
-  id: string;
-  name: string;           // e.g. "Work", "Personal"
-  orchestrators: Record<string, OrchestratorProfileEntry>;
-}
-
-export interface ProfilesSettings {
-  profiles: OrchestratorProfile[];
-}
-
 // --- Config inheritance types ---
 
 export interface PermissionsConfig {
@@ -248,7 +230,11 @@ export interface ProjectAgentDefaults {
   buildCommand?: string;
   testCommand?: string;
   lintCommand?: string;
-  /** Default profile to use for agents in this project */
+  /**
+   * @deprecated Provider profiles were removed (#2749): every agent runs on its
+   * provider's own login. Old project settings may still hold an id. Nothing
+   * applies it; only the one-time removal log reads it.
+   */
   profileId?: string;
   /** `off` stops `cli: "auto"` in this project (#2671). A project can't turn it on. */
   helperAuto?: 'off';
@@ -947,7 +933,7 @@ export interface SoundSettings {
   }>;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher'
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher'
   // Clubhouse-managed agents (#2819).
   | 'managed-blocks' | 'managed-skills' | 'managed-mcp' | 'managed-templates' | 'managed-orchestration' | 'managed-switch';
 

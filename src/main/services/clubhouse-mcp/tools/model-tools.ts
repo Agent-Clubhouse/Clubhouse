@@ -19,7 +19,6 @@
 
 import { registerGlobalTool } from '../tool-registry';
 import type { McpToolResult } from '../types';
-import { agentRegistry } from '../../agent-registry';
 import { modelListFor } from '../../model-check';
 import { getSettings as getOrchestratorSettings } from '../../orchestrator-settings';
 import { appLog } from '../../log-service';
@@ -58,9 +57,9 @@ function enabledProviders(): OrchestratorProvider[] {
   return picked.length > 0 ? picked : all;
 }
 
-async function describeProvider(provider: OrchestratorProvider, projectPath: string | undefined, refresh: boolean): Promise<Record<string, unknown>> {
+async function describeProvider(provider: OrchestratorProvider, refresh: boolean): Promise<Record<string, unknown>> {
   try {
-    const list = await modelListFor(provider, projectPath, refresh);
+    const list = await modelListFor(provider, refresh);
     if (!list) {
       const models = await provider.getModelOptions();
       return { cli: provider.id, name: provider.displayName, source: 'fallback', via: 'static', models: models.map((m) => describeModel(m)) };
@@ -79,7 +78,7 @@ async function describeProvider(provider: OrchestratorProvider, projectPath: str
   }
 }
 
-async function listModels(agentId: string, args: Record<string, unknown>): Promise<McpToolResult> {
+async function listModels(args: Record<string, unknown>): Promise<McpToolResult> {
   const cli = optionalString(args, 'cli')?.trim() || undefined;
   const refresh = args.refresh === true;
   let providers: OrchestratorProvider[];
@@ -90,8 +89,7 @@ async function listModels(agentId: string, args: Record<string, unknown>): Promi
   } else {
     providers = enabledProviders();
   }
-  const projectPath = agentRegistry.get(agentId)?.projectPath;
-  const listed = await Promise.all(providers.map((p) => describeProvider(p, projectPath, refresh)));
+  const listed = await Promise.all(providers.map((p) => describeProvider(p, refresh)));
   return { content: [{ type: 'text', text: JSON.stringify({ note: LIST_SCOPE_NOTE, providers: listed }, null, 2) }] };
 }
 
@@ -120,7 +118,7 @@ export function registerModelTools(): void {
     },
     async (agentId, args) => {
       try {
-        return await listModels(agentId, args);
+        return await listModels(args);
       } catch (err) {
         // telemetry-exempt: the error reaches the calling agent as the tool result
         if (!(err instanceof McpArgError)) appLog('core:mcp', 'warn', 'list_models failed', { meta: { agentId, error: errorText(err) } });

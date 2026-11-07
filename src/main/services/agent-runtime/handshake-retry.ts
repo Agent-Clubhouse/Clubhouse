@@ -2,7 +2,6 @@
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { getBaseDirPath } from '../base-dir';
-import { getSettings as profileSettings } from '../profile-settings';
 import { projectSettingsMutationState } from '../agent-settings-service';
 import * as path from 'node:path';
 import type { ChatHandshakeRetryResult } from '../../../shared/chat';
@@ -12,7 +11,7 @@ import { projectRegistryMutationState, peekProjects } from '../project-store';
 import { isDispatcherPath } from '../dispatcher/dispatcher-paths';
 import { agentRegistry } from '../agent-registry';
 import { agentTransitionGeneration } from '../agent-transition';
-import { resolveOrchestrator, resolveProfileEnv, resolveCommandPrefix } from '../agent-system';
+import { resolveOrchestrator, resolveCommandPrefix } from '../agent-system';
 import { resolveRuntimeMode } from '../chat-runtime-settings';
 import { resolveChatDriver } from './chat-drivers';
 import { chatLaunchEnvironment } from './chat-spawn';
@@ -72,7 +71,6 @@ async function context(requestedProjectPath: string, agentId: string) {
   const files = inputFiles();
   const configVersion = agentConfigGeneration();
   const transition = agentTransitionGeneration(agentId);
-  const profiles = hash(profileSettings());
   const config = (await peekDurableConfigs(projectPath)).find((a) => a.id === agentId);
   if (!config || isDisposedAgent(config) || config.creation) throw new RetryContextError('Agent is unavailable for a handshake check.');
   const generation = transition;
@@ -87,8 +85,7 @@ async function context(requestedProjectPath: string, agentId: string) {
   const binary = provider.getBinaryPath();
   const identity = binaryIdentity(binary);
   if (identity === undefined) throw new RetryContextError('The selected CLI binary could not be inspected. Check its installation.');
-  const profileEnv = await resolveProfileEnv(projectPath, provider.id);
-  const env = chatLaunchEnvironment(profileEnv);
+  const env = chatLaunchEnvironment();
   const prefix = await resolveCommandPrefix(projectPath);
   const key = driverHealthKey(driver, binary, env, prefix);
   const modeKey = hash(mode);
@@ -98,16 +95,16 @@ async function context(requestedProjectPath: string, agentId: string) {
       const currentMode = resolveRuntimeMode(provider.id, config.runtimeMode);
       return !mutationWitness().some((m) => m.pending) && hash(mutationWitness()) === versions
       && agentConfigGeneration() === configVersion && agentTransitionGeneration(agentId) === transition
-      && inputFiles() === files && hash(profileSettings()) === profiles
+      && inputFiles() === files
       && hash(agentRegistry.get(agentId)) === activeKey
       && hash(currentMode) === modeKey && resolveChatDriver(provider.id, currentMode.driver) === driver
       && provider.getBinaryPath?.() === binary && binaryIdentity(binary) === identity
-      && hash(chatLaunchEnvironment(profileEnv)) === hash(env);
+      && hash(chatLaunchEnvironment()) === hash(env);
     } catch { return false; /* telemetry-exempt: stale receipt, never readiness */ }
   };
   // No await between this live-state check and returning the dispatch witness.
   if (!valid()) throw new RetryContextError('Launch settings changed while resolving this check.');
-  const fingerprint = hash([projectPath, agentId, cwd, provider.id, mode, generation, configVersion, versions, files, profiles, key, identity, active]);
+  const fingerprint = hash([projectPath, agentId, cwd, provider.id, mode, generation, configVersion, versions, files, key, identity, active]);
   return { driver, binary, env, prefix, key, fingerprint, valid };
 }
 

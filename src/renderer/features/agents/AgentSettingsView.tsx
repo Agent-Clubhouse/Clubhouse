@@ -155,17 +155,17 @@ export function AgentSettingsView({ agent }: Props) {
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const worktreePath = agent.worktreePath || activeProject?.path || '';
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
-  // Resolve orchestrators the same way AddAgentDialog does — profile-aware and scoped
-  // to this agent's project — so the selector behaves consistently with agent creation.
+  // Resolve orchestrators the same way AddAgentDialog does, so the selector
+  // behaves consistently with agent creation.
   const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
-  const { effectiveOrchestrators } = useEffectiveOrchestrators(projectPath);
+  const { effectiveOrchestrators } = useEffectiveOrchestrators();
   const agentOrchestrator = agent.orchestrator || 'claude-code';
   // Scope the model list to *this agent's* orchestrator, not the project default —
   // otherwise a Codex/Copilot agent is offered (and validated against) Claude's ids.
   const { options: MODEL_OPTIONS, loading: modelOptionsLoading } = useModelOptions(agentOrchestrator);
   // Always offer the agent's current orchestrator, even if it's disabled app-wide or
-  // missing from this machine's settings (e.g. a worktree-synced agent whose project
-  // profile wasn't synced). See buildOrchestratorOptions / #fix-orchestrator-selector AC #2.
+  // missing from this machine's settings (e.g. a worktree-synced agent from a
+  // machine with other CLIs enabled). See buildOrchestratorOptions / #fix-orchestrator-selector AC #2.
   const orchestratorOptions = useMemo(
     () => buildOrchestratorOptions(effectiveOrchestrators, allOrchestrators, agentOrchestrator),
     [effectiveOrchestrators, allOrchestrators, agentOrchestrator],

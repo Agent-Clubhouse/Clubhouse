@@ -294,7 +294,7 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
   const contextNow = !asleep && chat ? contextSummary(chat.contextLimits, chat.usage.context?.size) : null;
 
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
-  const { effectiveOrchestrators } = useEffectiveOrchestrators(local ? projectPath : undefined);
+  const { effectiveOrchestrators } = useEffectiveOrchestrators();
   const cliOptions = useMemo(
     () => buildOrchestratorOptions(effectiveOrchestrators, allOrchestrators, orchestrator)
       .map((o) => ({ id: o.id, label: o.displayName })),

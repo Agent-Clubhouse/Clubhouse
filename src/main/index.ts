@@ -283,6 +283,10 @@ app.on('ready', () => {
   )).catch((err) => {
     appLog('core:managed', 'warn', 'The managed agents startup work stopped', { meta: { code: codeOf(err) } });
   });
+  // Provider profiles were removed (#2749): one log line, once, for anyone who had saved some.
+  void import('./services/provider-profiles-removed').then(({ noteRemovedProviderProfiles }) => noteRemovedProviderProfiles()).catch((err) => {
+    appLog('core:agent', 'warn', 'Could not check for removed provider profiles', { meta: { code: codeOf(err) } });
+  });
   buildMenu();
 
   // Resume satellite connections when the machine wakes from sleep

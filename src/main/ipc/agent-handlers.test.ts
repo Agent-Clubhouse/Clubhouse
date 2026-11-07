@@ -64,7 +64,6 @@ vi.mock('../services/agent-system', () => ({
   isHeadlessAgent: vi.fn(() => false),
   getRunningAgentIds: vi.fn((ids: string[]) => ids.filter((id) => id === 'running_one')),
   isAgentRunning: vi.fn(() => false),
-  resolveProfileEnv: vi.fn(async () => undefined),
 }));
 
 vi.mock('../services/agent-runtime', () => ({
@@ -796,13 +795,11 @@ describe('agent-handlers', () => {
     expect(result).toEqual([{ id: 'default', label: 'Default' }]);
   });
 
-  it('GET_MODEL_OPTIONS lists models under the project\'s profile env', async () => {
+  it('GET_MODEL_OPTIONS lists models for the CLI\'s local login, with no env override', async () => {
     const getModelOptions = vi.fn(async () => [{ id: 'default', label: 'Default' }]);
     vi.mocked(agentSystem.resolveOrchestrator).mockResolvedValueOnce({ id: 'codex-cli', getModelOptions } as never);
-    vi.mocked(agentSystem.resolveProfileEnv).mockResolvedValueOnce({ CODEX_HOME: 'profile-home' });
     await handlers.get(IPC.AGENT.GET_MODEL_OPTIONS)!({}, '/project', 'codex-cli');
-    expect(agentSystem.resolveProfileEnv).toHaveBeenCalledWith('/project', 'codex-cli');
-    expect(getModelOptions).toHaveBeenCalledWith({ env: { CODEX_HOME: 'profile-home' } });
+    expect(getModelOptions).toHaveBeenCalledWith();
   });
 
   it('CHECK_ORCHESTRATOR delegates to agentSystem.checkAvailability', async () => {
@@ -1097,7 +1094,7 @@ describe('agent-handlers', () => {
       getCapabilities: () => ({ sessionResume: true }),
       listSessions: vi.fn(async () => []),
       extractSessionId: vi.fn(() => null),
-      readSessionTranscript: vi.fn(async (_id: string, _cwd: string, _env: unknown, opts?: { stats?: Record<string, unknown> }) => {
+      readSessionTranscript: vi.fn(async (_id: string, _cwd: string, opts?: { stats?: Record<string, unknown> }) => {
         Object.assign(opts!.stats!, { lookupMs: 1.4, readMs: 2.6, probes: 2, found: true, fileBytes: 10, bytesRead: 10 });
         return [{ type: 'result', result: SECRET, timestamp: Date.now() }];
       }),
@@ -1108,7 +1105,7 @@ describe('agent-handlers', () => {
       const summary = await handlers.get(IPC.AGENT.GET_SESSION_SUMMARY)!({}, '/project', 'agent-1', 'sess-uuid-1', 'copilot-cli');
       expect(summary.summary).toBe(SECRET);
 
-      const opts = provider.readSessionTranscript.mock.calls[0][3];
+      const opts = provider.readSessionTranscript.mock.calls[0][2];
       expect(opts?.stats).toBeDefined();
       expect((opts as { maxBytes?: number }).maxBytes).toBeGreaterThan(0);
 

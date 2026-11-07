@@ -20,7 +20,6 @@ import { getDurableConfig, addSessionEntry, updateDurableConfig } from './agent-
 import type { QuickManagedLaunch } from './managed-agents/delivery';
 import { isDisposedAgent, isEffortValue } from '../../shared/agent-helpers';
 import { cleanupStaleJsonInTomlConfigs } from './toml-config-cleanup';
-import * as profileSettings from './profile-settings';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
 import { applyLaunchWrapper, validateWrapperConfig } from '../orchestrators/shared';
 import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode } from '../../shared/types';
@@ -326,12 +325,6 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
   // Copilot discovers repository hooks in every runtime, even with the Clubhouse hook server off.
   if (provider.id === 'copilot-cli') await readCopilotHooksConfig(params.cwd);
 
-  // Resolve profile env early so it can be passed to checkAvailability.
-  // This ensures auth checks (e.g. CLAUDE_CONFIG_DIR) use the correct
-  // config directory when a profile is active.
-  const profileEnv = await resolveProfileEnv(params.projectPath, provider.id);
-  facts.profileActive = profileEnv !== undefined;
-
   // Read project-level command prefix for shell environment setup
   const commandPrefix = await resolveCommandPrefix(params.projectPath);
 
@@ -339,7 +332,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
   // This catches missing binaries and auth issues early with clear errors,
   // rather than letting the PTY start and exit immediately.
   await tel.step('clubhouse.provider.check_availability', async () => {
-    const availability = await provider.checkAvailability(profileEnv);
+    const availability = await provider.checkAvailability();
     if (!availability.available) {
       const msg = availability.error || `${provider.displayName} CLI is not available`;
       appLog('core:agent', 'error', `Pre-flight check failed for ${provider.id}`, {
@@ -513,7 +506,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     if (params.kind === 'durable' && params.resume && params.sessionId) {
       const madeBy = durableConfig?.sessionHistory?.find((s) => s.sessionId === params.sessionId)?.orchestrator;
       const exists = madeBy && madeBy !== provider.id ? false
-        : isSessionCapable(provider) && provider.hasSession ? await provider.hasSession(params.sessionId, profileEnv).catch((): undefined => undefined)
+        : isSessionCapable(provider) && provider.hasSession ? await provider.hasSession(params.sessionId).catch((): undefined => undefined)
           : undefined;
       if (params.strictResume && (exists === false || madeBy !== provider.id)) throw new AgentResumeError('resume_unverified');
       if (exists === false) {
@@ -572,7 +565,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           strictResume: p.strictResume,
           sessionId: p.sessionId,
           interactive: p.interactive,
-        }, provider, profileEnv, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }, chatFacts));
+        }, provider, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }, chatFacts));
         recordChatStart(chatStartMs, result, chatFacts, chatContext);
         return result;
       } catch (err) {
@@ -675,7 +668,6 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         agentRegistry.setNonce(params.agentId, nonce);
         const spawnEnv: Record<string, string> = {
           ...headlessResult.env,
-          ...profileEnv,
           ...(wrapperApplied ? wrapperConfig?.env : undefined),
           CLUBHOUSE_AGENT_ID: params.agentId,
           CLUBHOUSE_HOOK_NONCE: nonce,
@@ -710,7 +702,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
 
     // Fall back to PTY mode
     facts.runtime = 'pty';
-    await spawnPtyAgent(params, provider, allowedTools, profileEnv, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts, managed, quickManaged);
+    await spawnPtyAgent(params, provider, allowedTools, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts, managed, quickManaged);
     if (!managed || ptyManager.isRunning(params.agentId)) broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
   } catch (err) {
     if (!(err instanceof ProcessStartedReceiptError)) untrackAgent(params.agentId);
@@ -722,7 +714,6 @@ async function spawnPtyAgent(
   params: SpawnAgentParams,
   provider: OrchestratorProvider,
   allowedTools: string[] | undefined,
-  profileEnv: Record<string, string> | undefined,
   commandPrefix?: string,
   wrapperConfig?: LaunchWrapperConfig,
   mcpIds?: string[],
@@ -881,7 +872,6 @@ async function spawnPtyAgent(
 
   const spawnEnv: Record<string, string> = {
     ...env,
-    ...profileEnv,
     ...(wrapperApplied ? wrapperConfig?.env : undefined),
     CLUBHOUSE_AGENT_ID: params.agentId,
     // The only place the nonce goes: hooks and the MCP bridge read it from
@@ -892,12 +882,6 @@ async function spawnPtyAgent(
   };
   // No bridge here: never point the agent at a port from its base env (#2620).
   if (mcpPort <= 0) delete spawnEnv.CLUBHOUSE_MCP_PORT;
-
-  if (profileEnv) {
-    appLog('core:agent', 'info', 'Profile env injected', {
-      meta: { agentId: params.agentId, profileKeys: Object.keys(profileEnv).join(',') },
-    });
-  }
 
   noteSpawnKind(params.agentId, params.kind);
   const spawnedAt = Date.now();
@@ -925,7 +909,7 @@ async function spawnPtyAgent(
       // A kill nobody asked for through killAgent is Clubhouse's own (quitting): no reason to show.
       if (kill || !killed) void recordSleep(params.projectPath, exitAgentId, sleepInfoForExit(kill, exitCode));
       const capture = captureSessionOnExit(params, provider, exitAgentId, {
-        exitCode, buffer, killed: killed === true, runMs: Date.now() - spawnedAt, profileEnv, assignedId: spawnCmd.sessionId,
+        exitCode, buffer, killed: killed === true, runMs: Date.now() - spawnedAt, assignedId: spawnCmd.sessionId,
       });
       if (capture) trackSessionCapture(exitAgentId, capture);
     }
@@ -978,7 +962,7 @@ function captureSessionOnExit(
   params: SpawnAgentParams,
   provider: OrchestratorProvider,
   agentId: string,
-  exit: { exitCode: number; buffer?: string; killed: boolean; runMs: number; profileEnv?: Record<string, string>; assignedId?: string },
+  exit: { exitCode: number; buffer?: string; killed: boolean; runMs: number; assignedId?: string },
 ): Promise<void> {
   // Async: the id may come from the CLI's own session files (it never rejects; failures are logged).
   return captureSession(params, provider, agentId, exit);
@@ -988,7 +972,7 @@ async function captureSession(
   params: SpawnAgentParams,
   provider: OrchestratorProvider,
   agentId: string,
-  { exitCode, buffer, killed, runMs, profileEnv, assignedId }: { exitCode: number; buffer?: string; killed: boolean; runMs: number; profileEnv?: Record<string, string>; assignedId?: string },
+  { exitCode, buffer, killed, runMs, assignedId }: { exitCode: number; buffer?: string; killed: boolean; runMs: number; assignedId?: string },
 ): Promise<void> {
   const resumedId = params.resume ? params.sessionId : undefined;
   // Only a resume that quit on its own with an error can have failed to resume.
@@ -1015,7 +999,7 @@ async function captureSession(
     // `assigned`: the run's own id, which the CLI may simply not have created yet; not a bad id.
     const exists = async (id: string | null, assigned = false): Promise<string | null> => {
       if (!id || !isSessionCapable(provider) || !provider.hasSession) return id;
-      const has = await provider.hasSession(id, profileEnv).catch((): undefined => undefined);
+      const has = await provider.hasSession(id).catch((): undefined => undefined);
       if (has === false) {
         appLog('core:agent', 'warn', 'Ignoring a session id the CLI store does not have', { meta: { agentId, sessionId: id } });
         if (!assigned) rejected = 'ignored_not_in_store';
@@ -1027,7 +1011,7 @@ async function captureSession(
     // so: the conversation can mention a real session from another cwd.
     const scraped = async (id: string | null): Promise<string | null> => {
       if (!id || !isSessionCapable(provider) || !provider.hasSessionForCwd) return exists(id);
-      const ours = await provider.hasSessionForCwd(id, params.cwd, profileEnv).catch((): undefined => undefined);
+      const ours = await provider.hasSessionForCwd(id, params.cwd).catch((): undefined => undefined);
       if (ours === false) {
         appLog('core:agent', 'warn', 'Ignoring a scraped session id that is not this agent\'s', { meta: { agentId, sessionId: id } });
         rejected = 'ignored_foreign';
@@ -1046,7 +1030,7 @@ async function captureSession(
     // A resume that failed wrote no session of its own, so there's nothing to look up.
     if (!sessionId && !failedResume && isSessionCapable(provider) && provider.findRunSession) {
       const endedAt = Date.now();
-      sessionId = await provider.findRunSession({ cwd: params.cwd, startedAt: endedAt - runMs, endedAt, resumedId, profileEnv });
+      sessionId = await provider.findRunSession({ cwd: params.cwd, startedAt: endedAt - runMs, endedAt, resumedId });
       if (sessionId) source = 'run_store';
     }
     if (!sessionId && resumedId && exitCode === 0) {
@@ -1218,37 +1202,12 @@ export async function checkAvailability(
   if (!provider) {
     return { available: false, error: `Unknown orchestrator: ${id}` };
   }
-  const profileEnv = projectPath ? await resolveProfileEnv(projectPath, id) : undefined;
-  return provider.checkAvailability(profileEnv);
+  return provider.checkAvailability();
 }
 
 /** Shared by actual launch and an explicit handshake check. */
 export async function resolveCommandPrefix(projectPath: string): Promise<string | undefined> {
   return (await readProjectAgentDefaults(projectPath))?.commandPrefix || undefined;
-}
-
-/**
- * Resolve the profile env vars for an agent spawn.
- * Uses project-level profileId, then looks up the orchestrator-specific entry.
- * If the orchestrator is not configured in the profile, logs a warning and returns undefined.
- */
-export async function resolveProfileEnv(projectPath: string, orchestratorId: string): Promise<Record<string, string> | undefined> {
-  const defaults = await readProjectAgentDefaults(projectPath);
-  const profileId = defaults?.profileId;
-  if (!profileId) return undefined;
-
-  const profile = profileSettings.getProfile(profileId);
-  if (!profile) return undefined;
-
-  const resolved = profileSettings.resolveProfileEnv(profile, orchestratorId);
-  if (!resolved) {
-    appLog('core:agent', 'warn', `Profile "${profile.name}" has no config for orchestrator "${orchestratorId}" — spawning without profile env`, {
-      meta: { profileId, orchestratorId },
-    });
-    return undefined;
-  }
-
-  return resolved;
 }
 
 /**
@@ -1279,8 +1238,7 @@ export async function listSessions(
   let providerSessions: Array<{ sessionId: string; startedAt: string; lastActiveAt: string }> = [];
   if (isSessionCapable(provider)) {
     try {
-      const profileEnv = await resolveProfileEnv(projectPath, provider.id);
-      providerSessions = await provider.listSessions(cwd, profileEnv);
+      providerSessions = await provider.listSessions(cwd);
     } catch (err) {
       appLog('core:agent', 'warn', 'Failed to list provider sessions', {
         meta: { agentId, error: err instanceof Error ? err.message : String(err) },
@@ -1305,8 +1263,7 @@ export async function listSessions(
     // Another CLI's session: not this one's to offer, and not missing either (#2593).
     if (s.orchestrator && s.orchestrator !== provider.id) continue;
     if (isSessionCapable(provider) && provider.hasSession) {
-      const profileEnv = await resolveProfileEnv(projectPath, provider.id);
-      const has = await provider.hasSession(s.sessionId, profileEnv).catch((): undefined => undefined);
+      const has = await provider.hasSession(s.sessionId).catch((): undefined => undefined);
       if (has === false) {
         missing.push(s.sessionId);
         continue;

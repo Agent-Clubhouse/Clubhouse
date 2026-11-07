@@ -32,7 +32,7 @@ import { buildCliSpawnEnv } from '../util/shell';
 export interface ModelProbeContext {
   binary: string;
   cwd: string;
-  /** Profile env to layer over the login shell's (CLAUDE_CONFIG_DIR, CODEX_HOME…). */
+  /** Env to layer over the login shell's (CLAUDE_CONFIG_DIR, CODEX_HOME…); normally none. */
   env?: Record<string, string>;
   /** Kills the probe's process when aborted. */
   signal: AbortSignal;

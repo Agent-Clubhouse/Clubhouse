@@ -153,7 +153,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
 
   const [name, setName] = useState(generateDurableName);
   const [color, setColor] = useState<string>(AGENT_COLORS[0].id);
-  const { effectiveOrchestrators } = useEffectiveOrchestrators(project?.path);
+  const { effectiveOrchestrators } = useEffectiveOrchestrators();
   const [orchestrator, setOrchestrator] = useState('');
   const resolvedOrchestrator = orchestrator || effectiveOrchestrators[0]?.id || 'claude-code';
   const [model, setModel] = useState('default');

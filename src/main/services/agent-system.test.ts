@@ -122,12 +122,6 @@ vi.mock('./toml-config-cleanup', () => ({
   cleanupStaleJsonInTomlConfigs: (...args: unknown[]) => mockCleanupStaleJsonInTomlConfigs(...args),
 }));
 
-// Mock profile-settings
-vi.mock('./profile-settings', () => ({
-  getProfile: vi.fn(() => null),
-  resolveProfileEnv: vi.fn(() => undefined),
-}));
-
 // Mock agent-settings-service
 const mockReadProjectAgentDefaults = vi.fn(() => ({}));
 const mockReadLaunchWrapper = vi.fn(() => undefined);
@@ -203,7 +197,6 @@ const mockProvider = {
   getModelOptions: vi.fn(() => []),
   getDefaultPermissions: vi.fn((kind: string) => kind === 'quick' ? ['Read', 'Write'] : []),
   toolVerb: vi.fn(),
-  getProfileEnvKeys: vi.fn(() => ['CLAUDE_CONFIG_DIR']),
   getCapabilities: vi.fn(() => ({
     headless: true, structuredOutput: true, hooks: true,
     sessionResume: true, permissions: true,
@@ -232,7 +225,6 @@ const mockCodexProvider = {
     headless: true, structuredOutput: false, hooks: false,
     sessionResume: true, permissions: true,
   })),
-  getProfileEnvKeys: vi.fn(() => ['OPENAI_API_KEY']),
   // Codex passes its mission as a bare trailing positional argument, so
   // buildSpawnCommand puts it in trailingArgs (see SpawnCommandResult) and
   // buildMcpArgs must be spliced in ahead of it, never appended after.
@@ -628,6 +620,19 @@ describe('agent-system', () => {
       );
     });
 
+    it('starts on the provider\'s own environment when old settings still name a profile (#2749)', async () => {
+      mockReadProjectAgentDefaults.mockReturnValue({ profileId: 'work' } as never);
+      try {
+        await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/worktree', kind: 'durable' });
+        expect(mockProvider.checkAvailability).toHaveBeenCalledWith();
+        const env = mockPtySpawn.mock.calls.at(-1)![4] as Record<string, string>;
+        expect(env).toMatchObject({ CLUBHOUSE_AGENT_ID: 'agent-1' });
+        expect(env).not.toHaveProperty('CLAUDE_CONFIG_DIR');
+      } finally {
+        mockReadProjectAgentDefaults.mockReturnValue({});
+      }
+    });
+
     it('uses quick default permissions when kind is quick and no allowedTools', async () => {
       await spawnAgent({
         agentId: 'agent-1',
@@ -734,8 +739,8 @@ describe('agent-system', () => {
       } as unknown as TelemetryRuntime);
       const realStart = mockTryStartChatAgent.getMockImplementation()!;
       mockTryStartChatAgent.mockImplementationOnce(async (...args: unknown[]) => {
-        (args[5] as () => void)();
-        Object.assign(args[6] as object, { attempts: [{ driver: 'claude_agent_sdk', checkMs: 5 }], reason: 'killed' });
+        (args[4] as () => void)();
+        Object.assign(args[5] as object, { attempts: [{ driver: 'claude_agent_sdk', checkMs: 5 }], reason: 'killed' });
         return 'cancelled';
       });
       try {
@@ -1846,7 +1851,7 @@ describe('agent-system', () => {
         const { onExit } = await wake('codex-cli');
         onExit('agent-1', 0, `session: ${OTHER}`);
         await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
-        expect(hasSessionForCwd).toHaveBeenCalledWith(OTHER, '/project', undefined);
+        expect(hasSessionForCwd).toHaveBeenCalledWith(OTHER, '/project');
         expect(mockAddSessionEntry).not.toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: OTHER }));
       });
 
@@ -2283,11 +2288,6 @@ describe('agent-system', () => {
         capabilities: expect.objectContaining({ hooks: false }),
         conventions: expect.objectContaining({ configDir: '.codex' }),
       });
-    });
-
-    it('uses provider fixtures with the expected profile env keys', () => {
-      expect(mockProvider.getProfileEnvKeys()).toEqual(['CLAUDE_CONFIG_DIR']);
-      expect(mockCodexProvider.getProfileEnvKeys()).toEqual(['OPENAI_API_KEY']);
     });
   });
 

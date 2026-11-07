@@ -23,7 +23,7 @@ import {
 } from './types';
 import { BaseProvider } from './base-provider';
 import { probeClaudeModels, type ModelProbeContext } from './model-probes';
-import { homePath, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile } from './shared';
+import { cliStateDir, homePath, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
 
@@ -152,7 +152,6 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
     if (CLAUDE_MODEL_ALIASES.includes(base)) return true;
     return list.models.some((m) => m.id.toLowerCase() === base || m.resolvedId?.toLowerCase() === base);
   }
-  protected readonly configEnvKeys = ['CLAUDE_CONFIG_DIR'];
 
   // ── Core interface ──────────────────────────────────────────────────────
 
@@ -327,19 +326,20 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
   /**
    * Resolve the Claude Code project directory for a given working directory.
    *
-   * Claude Code stores sessions under ~/.claude/projects/<encoded-path>/.
-   * The encoded path replaces path separators with dashes.
+   * Claude Code stores sessions under <config dir>/projects/<encoded-path>/,
+   * where the config dir is CLAUDE_CONFIG_DIR from the launch environment,
+   * else ~/.claude. The encoded path replaces path separators with dashes.
    */
-  private resolveProjectDir(cwd: string, profileEnv?: Record<string, string>): string | null {
-    const configDir = profileEnv?.CLAUDE_CONFIG_DIR || homePath('.claude');
+  private resolveProjectDir(cwd: string): string | null {
+    const configDir = cliStateDir('CLAUDE_CONFIG_DIR', '.claude');
     return resolveEncodedPathDir(path.join(configDir, 'projects'), cwd);
   }
 
   /**
    * List available CLI sessions by scanning Claude Code's project session storage.
    */
-  async listSessions(cwd: string, profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
-    const projectDir = this.resolveProjectDir(cwd, profileEnv);
+  async listSessions(cwd: string): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
+    const projectDir = this.resolveProjectDir(cwd);
 
     if (!projectDir) return [];
 
@@ -401,10 +401,9 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
   async readSessionTranscript(
     sessionId: string,
     cwd: string,
-    profileEnv?: Record<string, string>,
     opts?: TranscriptReadOptions,
   ): Promise<import('../services/jsonl-parser').StreamJsonEvent[] | null> {
-    const projectDir = this.resolveProjectDir(cwd, profileEnv);
+    const projectDir = this.resolveProjectDir(cwd);
 
     if (!projectDir) return null;
 

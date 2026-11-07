@@ -612,9 +612,7 @@ export function registerAgentHandlers(): void {
     [stringArg(), stringArg({ optional: true })],
     async (_event, projectPath, orchestrator) => {
       const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator);
-      // A profile can change the CLI's login, and so the models it lists (#2569).
-      const env = await agentSystem.resolveProfileEnv(projectPath, provider.id);
-      return provider.getModelOptions(env ? { env } : undefined);
+      return provider.getModelOptions();
     },
   ));
 
@@ -718,9 +716,7 @@ export function registerAgentHandlers(): void {
           const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator || config?.orchestrator);
           if (!isSessionCapable(provider)) return null;
           const cwd = config?.worktreePath || projectPath;
-          // Pass profileEnv so the provider resolves the correct config directory
-          const profileEnv = await agentSystem.resolveProfileEnv(projectPath, provider.id);
-          const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv);
+          const rawEvents = await provider.readSessionTranscript(sessionId, cwd);
           if (!rawEvents) return null;
           const events = normalizeSessionEvents(rawEvents);
           return paginateEvents(events, offset, limit);
@@ -750,11 +746,9 @@ export function registerAgentHandlers(): void {
           timing.provider = provider?.id;
           if (!isSessionCapable(provider)) return null;
           const cwd = config?.worktreePath || projectPath;
-          // Pass profileEnv so the provider resolves the correct config directory
-          const profileEnv = await agentSystem.resolveProfileEnv(projectPath, provider.id);
           timing.resolveMs = lap();
           const stats: TranscriptReadStats = {};
-          const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv, { maxBytes: SUMMARY_TRANSCRIPT_MAX_BYTES, stats });
+          const rawEvents = await provider.readSessionTranscript(sessionId, cwd, { maxBytes: SUMMARY_TRANSCRIPT_MAX_BYTES, stats });
           timing.transcriptMs = lap();
           Object.assign(timing, roundStats(stats));
           if (!rawEvents) return null;

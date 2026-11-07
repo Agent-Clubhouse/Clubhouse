@@ -7,7 +7,6 @@ vi.mock('./agent-system', () => ({
     if (mocks.fails) throw new Error('no provider');
     return { id: 'x', displayName: 'X', getContextWindowOptions: async () => mocks.options };
   }),
-  resolveProfileEnv: vi.fn(async () => undefined),
 }));
 vi.mock('./agent-config', () => ({ clearContextWindow: mocks.clear }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));

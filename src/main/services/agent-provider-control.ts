@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { getDurableConfig, updateDurableConfig, flushAgentConfig } from './agent-config';
 import { agentRegistry } from './agent-registry';
 import { agentTransitionGeneration, withAgentTransition } from './agent-transition';
-import { isAgentRunning, isAgentStopping, checkAvailability, resolveOrchestrator, resolveProfileEnv, waitForAgentStopped } from './agent-system';
+import { isAgentRunning, isAgentStopping, checkAvailability, resolveOrchestrator, waitForAgentStopped } from './agent-system';
 import { sessionCaptureFor, hasSessionCaptureFailure, noteSessionCaptureFailure } from './session-capture-barrier';
 import { effectiveOrchestrators } from './mobile-agents';
 import { readProjectAgentDefaults } from './agent-settings-service';
@@ -26,11 +26,10 @@ export async function previewAgentProvider(projectPath: string, agentId: string,
   const config = snapshot(found);
   const generation = agentTransitionGeneration(agentId);
   const current = await resolveOrchestrator(projectPath, config.orchestrator);
-  const allowed = await effectiveOrchestrators(projectPath);
+  const allowed = effectiveOrchestrators();
   if (!allowed.some((p) => p.id === providerId)) return fail('orchestrator_unavailable');
   const provider = await resolveOrchestrator(projectPath, providerId);
   const defaults = await readProjectAgentDefaults(projectPath);
-  const env = await resolveProfileEnv(projectPath, providerId);
   const availability = await checkAvailability(projectPath, providerId);
   const cwd = config.worktreePath || projectPath;
   let instructions: 'equivalent' | 'different' | 'unverified' = 'unverified';
@@ -58,7 +57,7 @@ export async function previewAgentProvider(projectPath: string, agentId: string,
   if (hash(fresh) !== hash(config) || agentTransitionGeneration(agentId) !== generation) return fail('stale_state');
   // Secrets and source text participate only in this opaque precondition; neither is returned/logged.
   const expectedState = hash([actor.key, projectPath, config, tokenGeneration ?? generation, providerId, current.id, state,
-    defaults, env, mode, getPermissionMode(projectPath), instructionFingerprint, blocked]);
+    defaults, mode, getPermissionMode(projectPath), instructionFingerprint, blocked]);
   return {
     agentId, savedProvider: current.id, activeProvider, provider: providerId, state, expectedState,
     available: availability.available, availabilityMeaning: 'local_cli_only' as const,

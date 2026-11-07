@@ -20,7 +20,6 @@ vi.mock('./annex-handlers', () => ({
   maybeStartAnnexClient: vi.fn(),
 }));
 vi.mock('./marketplace-handlers', () => ({ registerMarketplaceHandlers: vi.fn() }));
-vi.mock('./profile-handlers', () => ({ registerProfileHandlers: vi.fn() }));
 vi.mock('./goobers-handlers', () => ({ registerGoobersHandlers: vi.fn() }));
 vi.mock('../orchestrators', () => ({ registerBuiltinProviders: vi.fn(), getAllProviders: vi.fn(() => []) }));
 vi.mock('../services/orchestrator-settings', () => ({ autoDetectDefaults: vi.fn(async () => {}) }));
@@ -55,7 +54,6 @@ import { registerProcessHandlers } from './process-handlers';
 import { registerWindowHandlers } from './window-handlers';
 import { registerAnnexHandlers, maybeStartAnnex, maybeStartAnnexClient } from './annex-handlers';
 import { registerMarketplaceHandlers } from './marketplace-handlers';
-import { registerProfileHandlers } from './profile-handlers';
 import { registerGoobersHandlers } from './goobers-handlers';
 import { registerBuiltinProviders } from '../orchestrators';
 import * as hookServer from '../services/hook-server';
@@ -84,7 +82,6 @@ describe('registerAllHandlers', () => {
     expect(registerWindowHandlers).toHaveBeenCalled();
     expect(registerAnnexHandlers).toHaveBeenCalled();
     expect(registerMarketplaceHandlers).toHaveBeenCalled();
-    expect(registerProfileHandlers).toHaveBeenCalled();
     expect(registerGoobersHandlers).toHaveBeenCalled();
     expect(registerDefaultBroadcastPolicies).toHaveBeenCalled();
   });
