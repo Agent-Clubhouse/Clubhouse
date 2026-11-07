@@ -38,6 +38,7 @@ import { AgentHelpersSettings } from './helpers/AgentHelpersSettings';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
 import type { ManagedAgentSetup } from '../../../shared/managed-agents-types';
 import { ManagedBuilder, PreviewPane } from '../managed/ManagedBuilder';
+import { ManagedEffortField, ManagedHelperTemplateField, ManagedIdleSleepField } from '../managed/ManagedAgentSettingsFields';
 import { ManagedGeneralSection } from '../managed/ManagedGeneralSection';
 import { legacyUse } from '../managed/legacy';
 import { isDispatcherAgent } from '../dispatcher/dispatcherStore';
@@ -351,6 +352,11 @@ export function AgentSettingsView({ agent }: Props) {
       };
     });
   };
+
+  // A managed agent's model, Free Agent Mode and effort can change while it runs: they
+  // apply at its next start, and the setup-changed bar offers Restart (D7, D18).
+  // Its CLI still waits for it to stop, as for any agent.
+  const lockedWhileRunning = isRunning && !managedSetup;
 
   const { requestCliChange, cliChangeDialog } = useCliChangeConfirm({
     projectPath,
@@ -911,7 +917,7 @@ export function AgentSettingsView({ agent }: Props) {
     <div data-testid="agent-settings-running" className="h-10 mb-2 flex items-center gap-2 border-b border-surface-0 text-[13px]">
       <span className="w-2 h-2 rounded-full flex-shrink-0 bg-ctp-success" aria-hidden="true" />
       <span className="text-ctp-text">Working</span>
-      <span className="text-xs text-ctp-overlay1 truncate">Stop the agent to change these settings.</span>
+      <span className="text-xs text-ctp-overlay1 truncate">{isManagedAgent ? 'Stop the agent to change its name or CLI. Other changes apply when it restarts.' : 'Stop the agent to change these settings.'}</span>
       <Button
         kind="ghost"
         onClick={handleStop}
@@ -926,6 +932,118 @@ export function AgentSettingsView({ agent }: Props) {
   const freeAgentModeHelp = !permissionsSupported
     ? `Not supported by ${orchestratorName}.`
     : 'Handle permissions using the configured Free agent permission mode.';
+
+  // Runtime: on General for a plain agent, on Settings for a managed one (#2895).
+  const runtimeFields = (
+    <>
+      <SectionHeading title="Runtime" sub={isManagedAgent && isRunning ? 'Applies when it restarts' : 'Applied on the next wake'} />
+      {orchestratorOptions.length > 1 ? (
+        <Field label="Runs on" htmlFor="agent-settings-orchestrator">
+          <select
+            id="agent-settings-orchestrator"
+            value={agentOrchestrator}
+            onChange={(e) => void requestCliChange(e.target.value)}
+            disabled={isRunning}
+            title={stopFirst}
+            className={selectClass}
+          >
+            {orchestratorOptions.map((o) => (
+              <option key={o.id} value={o.id}>{o.displayName}</option>
+            ))}
+          </select>
+        </Field>
+      ) : (orchestratorInfo || orchestratorOptions[0]) ? (
+        <Field label="Runs on">
+          <span className="text-xs text-ctp-subtext1">{(orchestratorInfo || orchestratorOptions[0]).displayName}</span>
+        </Field>
+      ) : null}
+      <Field label="Model" htmlFor="agent-settings-model">
+        {agentModel === 'custom' && (
+          <input
+            type="text"
+            aria-label="Custom model"
+            value={agentCustomModel}
+            onChange={(e) => setAgentCustomModel(e.target.value)}
+            onBlur={handleCustomModelBlur}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCustomModelBlur(); }}
+            placeholder="e.g. claude-opus-4-6"
+            disabled={lockedWhileRunning}
+            spellCheck={false}
+            className={`${inputClass} w-44`}
+          />
+        )}
+        <select
+          id="agent-settings-model"
+          value={agentModel}
+          onChange={(e) => handleModelChange(e.target.value)}
+          disabled={lockedWhileRunning}
+          title={lockedWhileRunning ? stopFirst : undefined}
+          className={selectClass}
+        >
+          {MODEL_OPTIONS.map((opt) => (
+            <option key={opt.id} value={opt.id}>{opt.label}</option>
+          ))}
+          <option value="custom">Custom...</option>
+        </select>
+      </Field>
+      {isManagedAgent && projectPath && (
+        <ManagedEffortField projectPath={projectPath} agentId={agent.id} orchestrator={agentOrchestrator} model={savedModel} />
+      )}
+      <Field label={contextOptions?.label ?? 'Context'} help={contextWindowHelp(contextOptions)} htmlFor="agent-settings-context">
+        {/* Awake it can't change, so the saved choice is enough and the CLI's catalog isn't read. */}
+        {isRunning ? (
+          <span title={stopFirst} data-testid="agent-settings-context-saved">
+            {contextWindow ? `${formatContextChoice(contextWindow)} on the next start` : 'CLI default'}
+          </span>
+        ) : (
+          <ContextWindowSelect
+            id="agent-settings-context"
+            options={contextOptions}
+            value={contextWindow}
+            className={selectClass}
+            onChange={(v) => void handleContextWindowChange(v)}
+          />
+        )}
+        {contextWindowNotice && <p className="text-ctp-subtext0 mt-1" data-testid="agent-settings-context-notice">{contextWindowNotice}</p>}
+      </Field>
+      {chatFlagEnabled && (
+        <Field label="Runtime" help="Chat or CLI for this agent. Overrides the provider setting." htmlFor="agent-settings-runtime">
+          <select
+            id="agent-settings-runtime"
+            aria-label="Runtime"
+            value={runtimeMode}
+            onChange={(e) => handleRuntimeModeChange(e.target.value as AgentRuntimeMode | '')}
+            disabled={isRunning || runtimeSaving || runtimeLoadedTarget !== runtimeTarget}
+            title={stopFirst}
+            className={selectClass}
+          >
+            <option value="">Provider default</option>
+            <option value="chat">Chat</option>
+            <option value="terminal">CLI</option>
+          </select>
+          {runtimeLoadFailed && <p role="alert" className="text-ctp-error mt-1">Couldn't load the saved runtime. <button type="button" onClick={() => setRuntimeLoadAttempt((n) => n + 1)}>Retry loading runtime</button></p>}
+          {runtimeSaveFailed && <p role="alert" className="text-ctp-error mt-1">Couldn't save that setting, so it wasn't changed. Try again.</p>}
+        </Field>
+      )}
+      {chatFlagEnabled && projectPath && !isRemoteProjectId(agent.projectId) && (
+        <HandshakeRetry projectPath={projectPath} agentId={agent.id} provider={agentOrchestrator} runtime={runtimeMode} />
+      )}
+      <Field
+        label="Free Agent Mode"
+        help={freeAgentMode && permissionsSupported
+          ? <span className="text-ctp-error">Permissions follow the configured Free agent permission mode.</span>
+          : freeAgentModeHelp}
+        testId="agent-settings-free-agent-mode"
+      >
+        <Toggle
+          checked={freeAgentMode}
+          onChange={handleFreeAgentModeChange}
+          disabled={lockedWhileRunning || !permissionsSupported}
+          aria-label="Free Agent Mode"
+        />
+      </Field>
+    </>
+  );
 
   const general = (
     <>
@@ -989,109 +1107,8 @@ export function AgentSettingsView({ agent }: Props) {
         </div>
       </Field>
 
-      <SectionHeading title="Runtime" sub="Applied on the next wake" />
-      {orchestratorOptions.length > 1 ? (
-        <Field label="Runs on" htmlFor="agent-settings-orchestrator">
-          <select
-            id="agent-settings-orchestrator"
-            value={agentOrchestrator}
-            onChange={(e) => void requestCliChange(e.target.value)}
-            disabled={isRunning}
-            title={stopFirst}
-            className={selectClass}
-          >
-            {orchestratorOptions.map((o) => (
-              <option key={o.id} value={o.id}>{o.displayName}</option>
-            ))}
-          </select>
-        </Field>
-      ) : (orchestratorInfo || orchestratorOptions[0]) ? (
-        <Field label="Runs on">
-          <span className="text-xs text-ctp-subtext1">{(orchestratorInfo || orchestratorOptions[0]).displayName}</span>
-        </Field>
-      ) : null}
-      <Field label="Model" htmlFor="agent-settings-model">
-        {agentModel === 'custom' && (
-          <input
-            type="text"
-            aria-label="Custom model"
-            value={agentCustomModel}
-            onChange={(e) => setAgentCustomModel(e.target.value)}
-            onBlur={handleCustomModelBlur}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleCustomModelBlur(); }}
-            placeholder="e.g. claude-opus-4-6"
-            disabled={isRunning}
-            spellCheck={false}
-            className={`${inputClass} w-44`}
-          />
-        )}
-        <select
-          id="agent-settings-model"
-          value={agentModel}
-          onChange={(e) => handleModelChange(e.target.value)}
-          disabled={isRunning}
-          title={stopFirst}
-          className={selectClass}
-        >
-          {MODEL_OPTIONS.map((opt) => (
-            <option key={opt.id} value={opt.id}>{opt.label}</option>
-          ))}
-          <option value="custom">Custom...</option>
-        </select>
-      </Field>
-      <Field label={contextOptions?.label ?? 'Context'} help={contextWindowHelp(contextOptions)} htmlFor="agent-settings-context">
-        {/* Awake it can't change, so the saved choice is enough and the CLI's catalog isn't read. */}
-        {isRunning ? (
-          <span title={stopFirst} data-testid="agent-settings-context-saved">
-            {contextWindow ? `${formatContextChoice(contextWindow)} on the next start` : 'CLI default'}
-          </span>
-        ) : (
-          <ContextWindowSelect
-            id="agent-settings-context"
-            options={contextOptions}
-            value={contextWindow}
-            className={selectClass}
-            onChange={(v) => void handleContextWindowChange(v)}
-          />
-        )}
-        {contextWindowNotice && <p className="text-ctp-subtext0 mt-1" data-testid="agent-settings-context-notice">{contextWindowNotice}</p>}
-      </Field>
-      {chatFlagEnabled && (
-        <Field label="Runtime" help="Chat or CLI for this agent. Overrides the provider setting." htmlFor="agent-settings-runtime">
-          <select
-            id="agent-settings-runtime"
-            aria-label="Runtime"
-            value={runtimeMode}
-            onChange={(e) => handleRuntimeModeChange(e.target.value as AgentRuntimeMode | '')}
-            disabled={isRunning || runtimeSaving || runtimeLoadedTarget !== runtimeTarget}
-            title={stopFirst}
-            className={selectClass}
-          >
-            <option value="">Provider default</option>
-            <option value="chat">Chat</option>
-            <option value="terminal">CLI</option>
-          </select>
-          {runtimeLoadFailed && <p role="alert" className="text-ctp-error mt-1">Couldn't load the saved runtime. <button type="button" onClick={() => setRuntimeLoadAttempt((n) => n + 1)}>Retry loading runtime</button></p>}
-          {runtimeSaveFailed && <p role="alert" className="text-ctp-error mt-1">Couldn't save that setting, so it wasn't changed. Try again.</p>}
-        </Field>
-      )}
-      {chatFlagEnabled && projectPath && !isRemoteProjectId(agent.projectId) && (
-        <HandshakeRetry projectPath={projectPath} agentId={agent.id} provider={agentOrchestrator} runtime={runtimeMode} />
-      )}
-      <Field
-        label="Free Agent Mode"
-        help={freeAgentMode && permissionsSupported
-          ? <span className="text-ctp-error">Permissions follow the configured Free agent permission mode.</span>
-          : freeAgentModeHelp}
-        testId="agent-settings-free-agent-mode"
-      >
-        <Toggle
-          checked={freeAgentMode}
-          onChange={handleFreeAgentModeChange}
-          disabled={isRunning || !permissionsSupported}
-          aria-label="Free Agent Mode"
-        />
-      </Field>
+      {!isManagedAgent && runtimeFields}
+
 
       {projectPath && !isRemoteProjectId(agent.projectId) && (
         <ManagedGeneralSection
@@ -1279,7 +1296,24 @@ export function AgentSettingsView({ agent }: Props) {
   );
 
   // Orchestration (#2232): saved by its own controls, like the Orchestration card.
-  const helpersSettings = showHelpers ? <AgentHelpersSettings agent={agent} projectPath={projectPath} /> : null;
+  // A managed agent has it on its Settings page, with its helper template (#2895).
+  const canOrchestrate = !agent.parentAgentId && !isRemoteProjectId(agent.projectId);
+  const helpersSettings = showHelpers || (isManagedAgent && canOrchestrate) ? (
+    <AgentHelpersSettings
+      agent={agent}
+      projectPath={projectPath}
+      helperDefaults={isManagedAgent && projectPath ? <ManagedHelperTemplateField projectPath={projectPath} agentId={agent.id} /> : undefined}
+    />
+  ) : null;
+  // A managed agent's Settings (#2895): everything that isn't a part, in one place.
+  const managedSettings = isManagedAgent && projectPath ? (
+    <>
+      {runtimeFields}
+      <SectionHeading title="Sleep" />
+      <ManagedIdleSleepField projectPath={projectPath} agentId={agent.id} />
+      {helpersSettings}
+    </>
+  ) : null;
 
   // ── Page content ───────────────────────────────────────────────
 
@@ -1291,6 +1325,7 @@ export function AgentSettingsView({ agent }: Props) {
       skills: undefined,
       mcp: undefined,
       permissions: <span className="font-mono">{permissionsPathLabel}</span>,
+      settings: <>Instructions don't grant access. These settings do.{isRunning ? <span className="ml-2 text-ctp-overlay1">· Changes apply when it restarts</span> : null}</>,
       helpers: `How ${agent.name} starts, runs and disposes of helper agents. The same switches are in its Orchestration card beside the chat.`,
       quick: `Defaults for quick agents ${agent.name} starts`,
       preview: `What ${agent.name} gets at its next start`,
@@ -1306,6 +1341,7 @@ export function AgentSettingsView({ agent }: Props) {
       instructions: instructionsEditor,
       skills: skillsSection,
       mcp: mcpSections,
+      settings: managedSettings,
       permissions: permissionsEditor,
       helpers: helpersSettings,
       quick: quickDefaults,
@@ -1343,11 +1379,13 @@ export function AgentSettingsView({ agent }: Props) {
           <SectionHeading title="MCP servers" sub={builderNote ?? 'Sign-in comes from your environment'} />
           <ManagedBuilder target={builderTarget} tab="mcp" />
         </div>
+        <div id="agent-settings-section-settings" data-testid="agent-settings-section-settings">
+          {managedSettings}
+        </div>
         <div id="agent-settings-section-preview" data-testid="agent-settings-section-preview">
           <SectionHeading title="Preview" sub={`What ${agent.name} gets at its next start`} />
           <PreviewPane agent={builderAgent} />
         </div>
-        {helpersSettings}
         <SectionHeading title="Quick agents" sub={`Defaults for quick agents ${agent.name} starts`} />
         {quickDefaults}
       </>
