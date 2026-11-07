@@ -103,6 +103,18 @@ describe('migrateLegacySettings', () => {
     }
   });
 
+  it('makes the app-level switch explicit once: turning MCP off afterwards stays off at later starts', async () => {
+    h.mode = { enabled: true };
+    expect((await migrateLegacySettings(state)).mcp).toBe(true);
+    expect(h.mcp.enabled).toBe(true);
+    // The person turns MCP off in Settings.
+    h.mcp = { ...h.mcp, enabled: false };
+    vi.mocked(mcpSettings.saveSettings).mockClear();
+    expect((await migrateLegacySettings(state)).mcp).toBe(false);
+    expect(mcpSettings.saveSettings).not.toHaveBeenCalled();
+    expect(h.mcp.enabled).toBe(false);
+  });
+
   it('records nothing when the save fails, so the next start tries again', async () => {
     h.mode = { enabled: true };
     h.failMcpSave = true;
