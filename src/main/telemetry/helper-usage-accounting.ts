@@ -131,7 +131,7 @@ export class RunUsageTracker {
   /** `resumed`: the run continues a native session, so the provider's running totals carry earlier runs' use. */
   constructor(
     private readonly driver: ChatDriverId,
-    private readonly maxSamples = HELPER_TELEMETRY_LIMITS.maxUsageSamplesPerRun,
+    private readonly maxSamples: number = HELPER_TELEMETRY_LIMITS.maxUsageSamplesPerRun,
     private readonly resumed = false,
   ) {}
 
