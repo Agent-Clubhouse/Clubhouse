@@ -168,10 +168,10 @@ describe('PartToggleList', () => {
 });
 
 describe('ImpactDialog', () => {
-  it('offers restart only for running agents and says restart resumes', () => {
+  it('offers restart only for running agents and says restart keeps the conversation', () => {
     render(<ImpactDialog open partName="Rules" consumers={[consumer('a', true), consumer('b')]} onSave={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getAllByRole('checkbox')).toHaveLength(1);
-    expect(screen.getByText(/resumes the same conversation/)).toBeTruthy();
+    expect(screen.getByText(/Restart keeps the conversation. The new setup applies from the next turn./)).toBeTruthy();
   });
 });
 

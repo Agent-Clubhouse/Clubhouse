@@ -143,7 +143,7 @@ export function RestartConfirmDialog({ agentName, fresh, busy, onWhenTurnEnds, o
       <p className="text-[13px] text-ctp-subtext1">
         {agentName} is in the middle of a turn. {fresh
           ? 'Restarting starts a new conversation. This one stays in History.'
-          : 'Restarting resumes this conversation on the new setup.'}
+          : 'Restart keeps the conversation. The new setup applies from the next turn.'}
       </p>
     </Modal>
   );
