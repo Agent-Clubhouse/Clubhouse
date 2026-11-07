@@ -1,3 +1,4 @@
+vi.mock('../services/asset-catalog/builder-seeds', () => ({ seedBuilderTemplates: vi.fn(async () => {}) }));
 /**
  * Integration tests for registerAllHandlers().
  *

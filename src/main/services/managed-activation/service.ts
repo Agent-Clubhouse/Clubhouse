@@ -3,6 +3,7 @@
  * No generic run cleanup owns these pins. No workspace files are created, replaced or removed.
  */
 import * as fs from 'fs/promises';
+import { renameSync } from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import type { BaseAdoption } from '../../../shared/asset-catalog-types';
@@ -121,14 +122,24 @@ export function createManagedActivationService(options: ManagedActivationOptions
       fail('activation_corrupt');
     }
   }
-  async function save(state: ActivationReceipt): Promise<void> {
+  async function save(state: ActivationReceipt, beforeCommit?: () => void): Promise<void> {
     const file = statePath(state.agentId);
     await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
     const temp = `${file}.${randomUUID()}.tmp`;
     const handle = await fs.open(temp, 'wx', 0o600);
     try { await handle.writeFile(JSON.stringify(state)); await handle.sync(); }
     finally { await handle.close(); }
-    await (options.rename ?? fs.rename)(temp, file);
+    if (beforeCommit) {
+      // A local-user target version check and replacement share one synchronous boundary:
+      // no registry/config callback can interleave after approval and before the commit.
+      try { beforeCommit(); renameSync(temp, file); }
+      finally {
+        try { await fs.rm(temp, { force: true }); }
+        catch {
+          // telemetry-exempt: an orphan private temp is inert; preserve the original commit result.
+        }
+      }
+    } else await (options.rename ?? fs.rename)(temp, file);
   }
   async function audit<T>(agentId: string, action: 'desired' | 'unassigned', fn: () => Promise<T>): Promise<T> {
     checkedId(agentId);
@@ -194,7 +205,7 @@ export function createManagedActivationService(options: ManagedActivationOptions
   }
   return {
     read, preview,
-    adopt(input: AdoptionRequest & { previewToken: string }): Promise<ActivationReceipt> {
+    adopt(input: AdoptionRequest & { previewToken: string }, beforeCommit?: () => void): Promise<ActivationReceipt> {
       return audit(input.agentId, 'desired', () => serial(input.agentId, async () => {
         if (launches.has(key(input.agentId)) || uncertainRuntimes.has(key(input.agentId))) fail('activation_busy');
         const delivery = await preview(input);
@@ -218,16 +229,16 @@ export function createManagedActivationService(options: ManagedActivationOptions
         };
         const state: ActivationReceipt = old ?? { version: 1, agentId: input.agentId, revision: 0, scope, desired: null, materialized: null, generations: {} };
         state.generations[id] = prepared; state.desired = id; state.revision++;
-        await save(state); return state;
+        await save(state, beforeCommit); return state;
       }));
     },
     /** Drops only future references. Retains generations/pins/history and touches no repo or runtime. */
-    unassign(agentId: string, expectedRevision: number): Promise<ActivationReceipt> {
+    unassign(agentId: string, expectedRevision: number, beforeCommit?: () => void): Promise<ActivationReceipt> {
       return audit(agentId, 'unassigned', () => serial(agentId, async () => {
         if (launches.has(key(agentId)) || uncertainRuntimes.has(key(agentId))) fail('activation_busy');
         const state = await read(agentId);
         if (!state || state.revision !== expectedRevision) fail('activation_stale');
-        state.desired = null; delete state.pending; state.revision++; await save(state); return state;
+        state.desired = null; delete state.pending; state.revision++; await save(state, beforeCommit); return state;
       }));
     },
     async launch<T>(agentId: string, workspace: () => Promise<WorkspaceRequest>, isRunning: () => boolean,
