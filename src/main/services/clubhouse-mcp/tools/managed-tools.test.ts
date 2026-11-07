@@ -133,6 +133,17 @@ describe('builder tools for the Dispatcher (#2900)', () => {
     expect(read.json.content).toEqual({ kind: 'mcp', serverKey: 'envsvc', transport: 'stdio', command: 'svc', envVars: ['MODE'] });
   });
 
+  it('reads a setup saved before the Clubhouse MCP part was required as having it (D69)', async () => {
+    state.agents.set('old', { id: 'old', name: 'old-timer', color: 'indigo', createdAt: '', worktreePath: '/w/old', managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+    const r = await call('get_agent_setup', { project: 'Clubhouse', agent: 'old-timer' });
+    expect(r.json.setup.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+    // And the part's "used by" counts it.
+    const part = (await call('get_agent_part', { id: CLUBHOUSE_MCP_PART_ID })).json;
+    expect(part.usedBy.map((c: { agentName: string }) => c.agentName)).toContain('old-timer');
+    // Reading never writes.
+    expect(state.agents.get('old')!.managed!.mcps).toEqual([]);
+  });
+
   it('says plainly when the project or agent is unknown', async () => {
     const r = await call('get_agent_setup', { project: 'Nope', agent: 'x' });
     expect(r.isError).toBe(true);

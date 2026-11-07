@@ -156,7 +156,8 @@ describe('deliverManagedSetup', () => {
   it('skips a part that no longer exists instead of failing the start', async () => {
     agent.managed = { version: 1, blocks: [BUILTIN_BLOCK_IDS.identity, 'gone'], skills: [], mcps: [] };
     const record = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
-    expect(Object.keys(record!.parts)).toEqual([BUILTIN_BLOCK_IDS.identity]);
+    // The Clubhouse MCP part reads as in every setup, saved before it was required or not (D69).
+    expect(Object.keys(record!.parts)).toEqual([BUILTIN_BLOCK_IDS.identity, CLUBHOUSE_MCP_PART_ID]);
     expect(record!.missing).toBe(1);
   });
 });

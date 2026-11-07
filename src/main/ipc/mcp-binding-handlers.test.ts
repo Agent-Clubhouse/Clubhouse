@@ -23,7 +23,7 @@ vi.mock('../services/clubhouse-mcp', () => ({
     getBindingsForAgent: vi.fn(() => []),
     onChange: vi.fn(),
   },
-  bridgeServer: { start: vi.fn(async () => 0), getAgentConnection: vi.fn(() => null) },
+  bridgeServer: { start: vi.fn(async () => 0), stop: vi.fn(), getAgentConnection: vi.fn(() => null) },
 }));
 
 vi.mock('../services/clubhouse-mcp/tools/agent-tools', () => ({
@@ -544,6 +544,8 @@ describe('startMcpBridge', () => {
     // Allow the promise rejection to settle
     await new Promise((r) => setTimeout(r, 0));
 
+    // The dead server is closed and its subscriptions dropped before the retry.
+    expect(bridgeServer.stop).toHaveBeenCalledTimes(1);
     // Now a retry should work because bridgeStarted was reset
     vi.mocked(bridgeServer.start).mockResolvedValueOnce(0 as any);
     startMcpBridge();

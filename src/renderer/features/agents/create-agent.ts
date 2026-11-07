@@ -24,8 +24,9 @@ export interface DurableAgentInput {
   freeAgentMode?: boolean;
   mcpIds?: string[];
   /**
-   * False turns Clubhouse's hooks, permission prompts and MCP bridge off
-   * (#2893), set before the first session starts so it never gets them.
+   * False turns Clubhouse's hooks and permission prompts off (#2893, D70),
+   * set before the first session starts so it never gets them. The Clubhouse
+   * MCP always runs (D69).
    */
   clubhouseFeatures?: false;
 }

@@ -1174,7 +1174,8 @@ describe('agent-system', () => {
         } finally {
           delete codex.buildHeadlessCommand;
         }
-        expect(flagsFromBuild()).toEqual({ workiq: { command: 'workiq' } });
+        expect(Object.keys(flagsFromBuild()!).sort()).toEqual(['clubhouse', 'workiq']);
+        expect(flagsFromBuild()!.workiq).toEqual({ command: 'workiq' });
         expect(mockHeadlessSpawn.mock.calls.at(-1)![3]).toEqual(['exec', 'prompt', '--json', '-c', 'mcp_servers.clubhouse.command=node']);
       });
 
@@ -1208,6 +1209,100 @@ describe('agent-system', () => {
       expect(mockEnsureMcpBridge).toHaveBeenCalled();
       expect(mockPtySpawn).toHaveBeenCalled();
       expect(Object.keys(flagsFromBuild()!)).toEqual(['github']);
+    });
+  });
+
+  describe('headless quick agents get the bridge too (D69)', () => {
+    type HeadlessMock = { buildHeadlessCommand?: unknown; buildMcpArgs?: unknown; getCapabilities: ReturnType<typeof vi.fn> };
+    const withHeadless = async (provider: HeadlessMock, orchestrator: string | undefined, binary: string) => {
+      mockGetSpawnMode.mockReturnValueOnce('headless');
+      mockMcpWaitReady.mockResolvedValueOnce(23456);
+      const caps = provider.getCapabilities;
+      const hadMcpArgs = 'buildMcpArgs' in provider;
+      const mcpArgs = vi.fn(() => ['--mcp-flag']);
+      provider.getCapabilities = vi.fn(() => ({ ...caps(), headless: true }));
+      provider.buildHeadlessCommand = vi.fn(() => Promise.resolve({ binary, args: ['-p', 'mission'], env: {}, outputKind: 'stream-json' as const }));
+      if (orchestrator) provider.buildMcpArgs = mcpArgs;
+      try {
+        await spawnAgent({ agentId: 'quick-1', projectPath: '/project', cwd: '/project/parent-wt', kind: 'quick', mission: 'do thing', ...(orchestrator ? { orchestrator } : {}) } as never);
+      } finally {
+        provider.getCapabilities = caps;
+        delete provider.buildHeadlessCommand;
+        if (!hadMcpArgs) delete provider.buildMcpArgs;
+        untrackAgent('quick-1');
+      }
+      return mcpArgs;
+    };
+
+    beforeEach(() => {
+      mockInjectClubhouseMcp.mockClear();
+      mockSnapshotFile.mockClear();
+      mockBuildClubhouseMcpDef.mockClear();
+      mockEnsureMcpBridge.mockClear();
+    });
+
+    it('Claude: the bridge goes in the folder\'s MCP config, snapshotted first and restored on exit', async () => {
+      await withHeadless(mockProvider as unknown as HeadlessMock, undefined, '/usr/local/bin/claude');
+      expect(mockSnapshotFile).toHaveBeenCalledWith('quick-1', path.join('/project/parent-wt', '.mcp.json'));
+      expect(mockInjectClubhouseMcp).toHaveBeenCalledWith('/project/parent-wt', 'quick-1', 23456, mockClaudeConventions);
+      expect(mockSnapshotFile.mock.invocationCallOrder[0]).toBeLessThan(mockInjectClubhouseMcp.mock.invocationCallOrder[0]);
+      expect(mockHeadlessSpawn.mock.calls.at(-1)![3]).toEqual(['-p', 'mission']);
+      const onExit = mockHeadlessSpawn.mock.calls.at(-1)![6] as (id: string) => void;
+      mockRestoreForAgent.mockClear();
+      onExit('quick-1');
+      expect(mockRestoreForAgent).toHaveBeenCalledWith('quick-1');
+    });
+
+    it.each([
+      ['Codex', mockCodexProvider, 'codex-cli', '/usr/local/bin/codex'],
+      ['Copilot', mockCopilotProvider, 'copilot-cli', '/usr/local/bin/copilot'],
+    ] as const)('%s: the bridge is in the launch flags, after the command\'s own', async (_label, provider, orchestrator, binary) => {
+      const mcpArgs = await withHeadless(provider as unknown as HeadlessMock, orchestrator, binary);
+      expect(mcpArgs).toHaveBeenCalledTimes(1);
+      expect(Object.keys((mcpArgs.mock.calls[0] as unknown[])[0] as Record<string, unknown>)).toEqual(['clubhouse']);
+      expect(mockBuildClubhouseMcpDef).toHaveBeenCalledWith(23456, 'quick-1');
+      expect(mockHeadlessSpawn.mock.calls.at(-1)![3]).toEqual(['-p', 'mission', '--mcp-flag']);
+      expect(mockInjectClubhouseMcp).toHaveBeenCalledWith('/project/parent-wt', 'quick-1', 23456, provider.conventions);
+    });
+
+    it('starts without the bridge when it isn\'t up, after asking for it again', async () => {
+      mockGetSpawnMode.mockReturnValueOnce('headless');
+      const codex = mockCodexProvider as unknown as HeadlessMock;
+      codex.buildHeadlessCommand = vi.fn(() => Promise.resolve({ binary: 'codex', args: ['exec'], env: {}, outputKind: 'stream-json' as const }));
+      (mockCodexProvider.buildMcpArgs as ReturnType<typeof vi.fn>).mockClear();
+      try {
+        await spawnAgent({ agentId: 'quick-1', projectPath: '/project', cwd: '/project', kind: 'quick', orchestrator: 'codex-cli', mission: 'x' });
+      } finally {
+        delete codex.buildHeadlessCommand;
+        untrackAgent('quick-1');
+      }
+      expect(mockEnsureMcpBridge).toHaveBeenCalled();
+      expect(mockInjectClubhouseMcp).not.toHaveBeenCalled();
+      expect(mockCodexProvider.buildMcpArgs).not.toHaveBeenCalled();
+      expect(mockHeadlessSpawn.mock.calls.at(-1)![3]).toEqual(['exec']);
+    });
+  });
+
+  describe('a bridge that failed at app start is retried for every spawn', () => {
+    beforeEach(() => mockEnsureMcpBridge.mockClear());
+
+    it.each([
+      ['a quick agent', 'quick'],
+      ['a durable agent', 'durable'],
+    ] as const)('%s asks for the bridge again', async (_label, kind) => {
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind, mission: 'x' });
+      expect(mockEnsureMcpBridge).toHaveBeenCalledTimes(1);
+    });
+
+    it('a quick agent doesn\'t wait for or fail on a bridge that is still down', async () => {
+      mockMcpWaitReady.mockImplementation(() => Promise.reject(new Error('port in use')));
+      try {
+        await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'quick', mission: 'x' });
+      } finally {
+        mockMcpWaitReady.mockImplementation(() => Promise.reject(new Error('MCP bridge server not started')));
+      }
+      expect(mockEnsureMcpBridge).toHaveBeenCalled();
+      expect(mockPtySpawn).toHaveBeenCalled();
     });
   });
 

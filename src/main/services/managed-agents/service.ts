@@ -72,6 +72,15 @@ export function withClubhousePart(mcps: readonly string[]): string[] {
   return mcps.includes(CLUBHOUSE_MCP_PART_ID) ? [...mcps] : [CLUBHOUSE_MCP_PART_ID, ...mcps];
 }
 
+/**
+ * A saved setup as every reader sees it: one saved before the part was
+ * required reads as having it, so the delivery fingerprint, status, "used
+ * by" counts and get_agent_setup all agree with what the next save writes.
+ */
+export function withClubhouseSetup(setup: ManagedAgentSetup): ManagedAgentSetup {
+  return setup.mcps.includes(CLUBHOUSE_MCP_PART_ID) ? setup : { ...setup, mcps: withClubhousePart(setup.mcps) };
+}
+
 function withClubhousePartIn<T extends { setup: { blocks: string[]; skills: string[]; mcps: string[] } }>(t: T): T {
   return t.setup.mcps.includes(CLUBHOUSE_MCP_PART_ID) ? t : { ...t, setup: { ...t.setup, mcps: withClubhousePart(t.setup.mcps) } };
 }
@@ -230,7 +239,9 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         continue;
       }
       for (const agent of agents) {
-        if (agent.managed && !agent.disposedAt) out.push({ projectPath: project.path, projectName: project.name, agent });
+        if (agent.managed && !agent.disposedAt) {
+          out.push({ projectPath: project.path, projectName: project.name, agent: { ...agent, managed: withClubhouseSetup(agent.managed) } });
+        }
       }
     }
     return out;
@@ -500,7 +511,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     async getSetup(projectPath: string, agentId: string): Promise<ManagedAgentSetup | null> {
       const agent = await deps.getAgent(projectPath, agentId);
       if (!agent) throw new ManagedError('not_found');
-      return agent.managed ?? null;
+      return agent.managed ? withClubhouseSetup(agent.managed) : null;
     },
 
     /**

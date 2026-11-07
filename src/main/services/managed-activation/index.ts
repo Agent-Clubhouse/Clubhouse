@@ -15,6 +15,7 @@ import { isDisposedAgent } from '../../../shared/agent-helpers';
 import { readLaunchWrapper, readProjectAgentDefaults } from '../agent-settings-service';
 import { currentSettingsOrigin } from '../settings-audit';
 import { ManagedActivationError } from './types';
+import { managedPathDeliversMcpBridge } from './bridge-delivery';
 import { assertDeliveryCapability, cliIdentity, establishDeliveryCapability } from './capability';
 import { createManagedActivationService, type AdoptionRequest, type ManagedLaunchLease, type WorkspaceRequest } from './service';
 
@@ -35,8 +36,8 @@ function assertUser() {
 }
 function assertSynchronousCompatibility(config: DurableAgentConfig): void {
   if (process.platform !== 'darwin' || resolveRuntimeMode('claude-code', config.runtimeMode).mode !== 'terminal') throw new ManagedActivationError('activation_unsupported');
-  // The Clubhouse MCP always runs, so it is no longer a setting to refuse on. This path doesn't deliver the bridge yet (docs/managed-activation.md).
-  if (isHookServerEnabled('claude-code')) throw new ManagedActivationError('activation_incompatible_config');
+  // The Clubhouse MCP always runs (D69), and this path doesn't deliver the bridge yet (docs/managed-activation.md).
+  if (isHookServerEnabled('claude-code') || !managedPathDeliversMcpBridge()) throw new ManagedActivationError('activation_incompatible_config');
 }
 async function context(projectPath: string, agentId: string, launch?: SpawnAgentParams): Promise<{ workspace: WorkspaceRequest; binary: string; assertCanCreate(): void }> {
   if (process.platform !== 'darwin') throw new ManagedActivationError('activation_unsupported');
@@ -51,7 +52,7 @@ async function context(projectPath: string, agentId: string, launch?: SpawnAgent
     || (launch.orchestrator && launch.orchestrator !== provider.id) || launch.cwd !== config.worktreePath)) throw new ManagedActivationError('activation_unsupported');
   if (config.agentFile || config.agentSource || config.parentAgentId || config.orchestration?.orchestrate
     || (await readProjectAgentDefaults(projectPath)).commandPrefix
-    || isHookServerEnabled(provider.id) || await readLaunchWrapper(projectPath)) {
+    || isHookServerEnabled(provider.id) || !managedPathDeliversMcpBridge() || await readLaunchWrapper(projectPath)) {
     throw new ManagedActivationError('activation_incompatible_config');
   }
   const otherWorkspaces = [...configs.filter((agent) => agent.id !== agentId).flatMap((agent) => agent.worktreePath ? [agent.worktreePath] : []),

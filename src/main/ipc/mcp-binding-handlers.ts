@@ -276,6 +276,8 @@ export function startMcpBridge(): void {
   bridgeServer.start().then(() => {
     bridgeState = 'started';
   }).catch((err) => {
+    // Close the dead server and drop its subscriptions, so the retry starts clean.
+    bridgeServer.stop();
     bridgeState = 'idle'; // Allow retry on failure
     appLog('core:mcp', 'error', 'Failed to start MCP bridge server', {
       meta: { error: err instanceof Error ? err.message : String(err) },

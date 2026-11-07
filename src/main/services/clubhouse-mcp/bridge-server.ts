@@ -470,7 +470,19 @@ let unsubscribeBindingChanges: (() => void) | null = null;
 let unsubscribeOrchestrationGate: (() => void) | null = null;
 let unsubscribeAgentAuth: (() => void) | null = null;
 
+/** Drop the change subscriptions, so a restart doesn't notify each change twice. */
+function unsubscribeAll(): void {
+  unsubscribeBindingChanges?.();
+  unsubscribeBindingChanges = null;
+  unsubscribeAgentAuth?.();
+  unsubscribeAgentAuth = null;
+  unsubscribeOrchestrationGate?.();
+  unsubscribeOrchestrationGate = null;
+}
+
 export function start(): Promise<number> {
+  // A retry after a failed start: the last attempt's subscriptions go first.
+  unsubscribeAll();
   // Subscribe to binding changes to notify agents
   unsubscribeBindingChanges = bindingManager.onChange((agentId) => {
     notifyToolsChanged(agentId);
@@ -514,14 +526,7 @@ export function start(): Promise<number> {
 }
 
 export function stop(): void {
-  if (unsubscribeBindingChanges) {
-    unsubscribeBindingChanges();
-    unsubscribeBindingChanges = null;
-  }
-  unsubscribeAgentAuth?.();
-  unsubscribeAgentAuth = null;
-  unsubscribeOrchestrationGate?.();
-  unsubscribeOrchestrationGate = null;
+  unsubscribeAll();
 
   // Close all SSE connections
   for (const connections of sseConnections.values()) {

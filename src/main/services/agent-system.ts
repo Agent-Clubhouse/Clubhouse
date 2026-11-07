@@ -482,7 +482,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       params = { ...params, freeAgentMode: capped.freeAgentMode, permissionMode: capped.permissionMode };
       permissionMode = capped.permissionMode;
     }
-    if (params.kind === 'durable') await prepareMcpBridge(durableConfig);
+    // Every spawn retries a bridge that failed at app start; only a helper waits for it.
+    await prepareMcpBridge(durableConfig);
     // The final launch access, the ceiling for this agent's helpers (#2228).
     // Every runtime below starts with exactly these values.
     agentRegistry.setLaunchCap(params.agentId, { freeAgentMode: params.freeAgentMode === true, permissionMode });
@@ -627,11 +628,32 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         // Plugin-enabled lookup is treated as always-true: plugins live renderer-side,
         // main has no real-time view. Binary-on-PATH check still catches the common case.
         let { binary: headlessBin, args: headlessArgs } = headlessResult;
-        // A quick agent's template servers (D25), as the terminal path passes them. Only
-        // CLIs with launch flags have any here (quickLaunchFor empties them otherwise),
-        // and their headless commands take options after the prompt.
-        if (quickManaged && provider.buildMcpArgs && Object.keys(quickManaged.servers).length > 0) {
-          headlessArgs = [...headlessArgs, ...provider.buildMcpArgs(quickManaged.servers)];
+        // The Clubhouse MCP always runs, so a headless quick agent gets the
+        // bridge as a terminal one does: in the folder's MCP config (snapshot
+        // first, restored on exit), which Claude reads, and in the launch flags
+        // for CLIs that take MCP servers only that way (Codex, Copilot).
+        const mcpPort = await waitMcpBridgeReady().catch(() => 0);
+        if (mcpPort > 0) {
+          const mcpConfigPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
+          configPipeline.snapshotFile(params.agentId, mcpConfigPath);
+          await tel.step('clubhouse.mcp.inject', () => injectClubhouseMcp(params.cwd, params.agentId, mcpPort, provider.conventions)).catch((err) => {
+            appLog('core:mcp', 'warn', 'MCP bridge injection skipped', {
+              meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+            });
+          });
+        }
+        // A quick agent's template servers (D25) and the bridge, as the terminal path
+        // passes them. Only CLIs with launch flags have template servers here
+        // (quickLaunchFor empties them otherwise), and their headless commands take
+        // options after the prompt.
+        if (provider.buildMcpArgs) {
+          const { buildClubhouseMcpDef } = await import('./clubhouse-mcp/injection');
+          const servers = {
+            ...quickManaged?.servers,
+            // The bridge is last so a template server of the same name can't shadow it.
+            ...(mcpPort > 0 ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId) } : {}),
+          };
+          if (Object.keys(servers).length > 0) headlessArgs = [...headlessArgs, ...provider.buildMcpArgs(servers)];
         }
         let wrapperApplied = false;
         if (wrapperConfig) {
@@ -651,7 +673,6 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         // agent), and the bridge there takes both from this env (#2222).
         const nonce = randomUUID();
         agentRegistry.setNonce(params.agentId, nonce);
-        const mcpPort = await waitMcpBridgeReady().catch(() => 0);
         const spawnEnv: Record<string, string> = {
           ...headlessResult.env,
           ...profileEnv,

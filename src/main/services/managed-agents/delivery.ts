@@ -27,7 +27,7 @@ import {
   type ManagedPreview,
   type ManagedSkillContent,
 } from '../../../shared/managed-agents-types';
-import type { ManagedAgentsService } from './service';
+import { withClubhouseSetup, type ManagedAgentsService } from './service';
 
 /** Written beside the managed skills so a later start removes only what Clubhouse put there. */
 const SKILLS_MANIFEST = '.clubhouse-managed-skills.json';
@@ -42,7 +42,10 @@ interface Resolved {
   missing: string[];
 }
 
-async function resolveSetup(service: ManagedAgentsService, setup: ManagedAgentSetup): Promise<Resolved> {
+async function resolveSetup(service: ManagedAgentsService, saved: ManagedAgentSetup): Promise<Resolved> {
+  // Both sides of the delivery fingerprint (delivered and current) resolve here,
+  // so a setup saved before the Clubhouse part was required fingerprints the same.
+  const setup = withClubhouseSetup(saved);
   const out: Resolved = { blocks: [], skills: [], mcps: [], missing: [] };
   for (const id of setup.blocks) {
     const head = await service.headContent(id);
