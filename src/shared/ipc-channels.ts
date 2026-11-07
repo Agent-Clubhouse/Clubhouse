@@ -1,5 +1,7 @@
 export const IPC = {
   CATALOG_SKILL_BUNDLE: {
+    CREATE: 'catalog-skill-bundle:create',
+    COPY: 'catalog-skill-bundle:copy',
     LIST: 'catalog-skill-bundle:list',
     READ: 'catalog-skill-bundle:read',
     PREVIEW: 'catalog-skill-bundle:preview',

@@ -1,4 +1,4 @@
-import type { InstanceEntry, PlannedOperationalDefault, StructureBinding } from './asset-catalog-types';
+import type { InstanceEntry, PlannedAsset, PlannedOperationalDefault, SkillAssetPayload, StructureBinding } from './asset-catalog-types';
 
 export interface BuilderBlock {
   key: string;
@@ -10,7 +10,13 @@ export interface BuilderBlock {
   source: string;
   editable: boolean;
 }
+export interface BuilderSkill extends PlannedAsset { payload: SkillAssetPayload }
 export interface BuilderView {
+  skills?: BuilderSkill[];
+  excludedSkills?: Array<{ assetId: string; name: string }>;
+  /** Desired composition only; never runtime-load evidence. */
+  skillFingerprint?: string;
+  unsupported?: string[];
   revision: number;
   templateId: string | null;
   templates: Array<{ id: string; name: string }>;
@@ -21,6 +27,8 @@ export interface BuilderView {
   operationalIncreases?: Array<Pick<PlannedOperationalDefault, 'key' | 'value'>>;
 }
 export type BuilderCommand =
+  | { type: 'skill'; assetId: string; expectedRevision: number; confirm: boolean; fingerprint?: string }
+  | { type: 'removeSkill'; assetId: string; confirm: boolean; fingerprint?: string }
   | { type: 'template'; templateId: string; confirm: boolean; binding?: StructureBinding; acknowledgeOperationalIncreases?: boolean }
   | { type: 'order'; keys: string[] }
   | { type: 'baseOrder' }

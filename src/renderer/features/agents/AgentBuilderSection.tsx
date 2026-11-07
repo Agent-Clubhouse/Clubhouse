@@ -1,3 +1,4 @@
+import { AgentBuilderSkills } from './AgentBuilderSkills';
 import { AgentAdoptionSection } from './AgentAdoptionSection';
 import { useEffect, useRef, useState } from 'react';
 import type { BuilderBlock, BuilderCommand, BuilderView } from '../../../shared/agent-builder-types';
@@ -35,11 +36,14 @@ export function AgentBuilderSection({ projectPath, projectId, agentId, onDirtyCh
   const [template, setTemplate] = useState('');
   const [acknowledgeIncreases, setAcknowledgeIncreases] = useState(false);
   const [replacement, setReplacement] = useState<BuilderView | null>(null);
+  const [skillDirty, setSkillDirty] = useState(false);
+  const [skillBusy, setSkillBusy] = useState(false);
+  const [skillPreview, setSkillPreview] = useState<BuilderView | null>(null);
   const [preview, setPreview] = useState('');
   const [previewError, setPreviewError] = useState('');
   const dragKey = useRef<string | null>(null);
   const operation = useRef(false);
-  const dirty = Object.keys(drafts).length > 0 || !!name || !!content || !!replacement;
+  const dirty = Object.keys(drafts).length > 0 || !!name || !!content || !!replacement || skillDirty;
   useReportDirty(onDirtyChange, dirty);
 
   useEffect(() => {
@@ -57,7 +61,7 @@ export function AgentBuilderSection({ projectPath, projectId, agentId, onDirtyCh
     return () => { cancelled = true; };
   }, [projectPath, agentId]);
 
-  const displayed = replacement ?? view;
+  const displayed = replacement ?? skillPreview ?? view;
   const blocks = displayed?.blocks ?? [];
   const previewContents = blocks.map((block) => drafts[block.key] ?? block.content);
   const previewKey = JSON.stringify(previewContents);
@@ -135,7 +139,7 @@ export function AgentBuilderSection({ projectPath, projectId, agentId, onDirtyCh
     reordered.splice(to, 0, block);
     void run({ type: 'order', keys: reordered.map((b) => b.key) }, { ...view, blocks: reordered }, `Moved ${block.name} to position ${to + 1}. Saved in Builder.`);
   }
-  const locked = busy || !!replacement;
+  const locked = busy || !!replacement || skillDirty || skillBusy;
   const hasEdits = Object.keys(drafts).length > 0 || !!name || !!content;
   function discardReplacement() { setReplacement(null); setTemplate(view?.templateId ?? ''); }
   function row(block: BuilderBlock, index: number) {
@@ -192,7 +196,7 @@ export function AgentBuilderSection({ projectPath, projectId, agentId, onDirtyCh
     </div>
     <div className="flex items-center justify-between my-3">
       <p className="text-xs text-ctp-overlay1">Instruction blocks. Wildcards stay unexpanded.</p>
-      <Button kind="quiet" disabled={busy || dirty} onClick={() => { setError(''); void reload().catch(() => {
+      <Button kind="quiet" disabled={busy || dirty || skillBusy} onClick={() => { setError(''); void reload().catch(() => {
         // telemetry-exempt: visible error, no instruction content in telemetry.
         setError('Could not reload the Builder.');
       }); }}>Reload</Button>
@@ -201,13 +205,14 @@ export function AgentBuilderSection({ projectPath, projectId, agentId, onDirtyCh
     <p role="status" aria-live="polite" className="text-xs text-ctp-subtext0">{busy ? 'Saving in Builder…' : announcement}</p>
     {!view ? <p className="text-ctp-subtext0">{error ? 'Builder unavailable.' : 'Loading Builder…'}</p> : <>
       <label htmlFor="builder-template" className="block mb-1">Choose a template</label>
-      <select id="builder-template" className={`${selectClass} my-1`} value={template} disabled={busy || hasEdits}
+      <select id="builder-template" className={`${selectClass} my-1`} value={template} disabled={busy || hasEdits || skillDirty || skillBusy}
         onChange={(event) => { setTemplate(event.target.value); void run({ type: 'template', templateId: event.target.value, confirm: false }); }}>
         <option value="" disabled>Choose a template</option>
         {view.templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
       </select>
       {replacement && <div className="my-3 space-y-2">
         <p>This replaces the saved block list. Forks and local blocks will be left out. Review the preview below before saving.</p>
+        <p>Selected skill references are also replaced by the template’s skill list. Catalog bundles and copies are retained.</p>
         {!!replacement.operationalIncreases?.length && <div>
           <p>This template raises these saved operational defaults. They aren't used by this agent yet.</p>
           <ul aria-label="Operational increases" className="list-disc pl-5 my-2">
@@ -236,6 +241,8 @@ export function AgentBuilderSection({ projectPath, projectId, agentId, onDirtyCh
         <Button type="submit" kind="ghost" disabled={locked || !name.trim() || !content || Object.keys(drafts).length > 0}>Add block</Button>
         {(name || content) && <Button kind="quiet" disabled={locked} onClick={() => { setName(''); setContent(''); }}>Discard new block</Button>}
       </form>}
+      <AgentBuilderSkills key={JSON.stringify([projectId, agentId])} projectId={projectId} projectPath={projectPath} agentId={agentId} view={replacement ?? view}
+        suspended={busy || !!replacement || hasEdits} onSaved={setView} onPreview={setSkillPreview} onDirtyChange={setSkillDirty} onBusyChange={setSkillBusy} />
       <SectionHeading title="Effective preview" />
       <p className="text-xs text-ctp-overlay1 mb-2">Exact composed text for these blocks. Wildcards are unexpanded. {Object.keys(drafts).length > 0 ? 'Includes unsaved block edits.' : 'Saved in Builder only.'}</p>
       {previewError && <p role="alert" className="text-ctp-error">{previewError}</p>}
@@ -248,7 +255,7 @@ export function AgentBuilderSection({ projectPath, projectId, agentId, onDirtyCh
         </ol>
         <pre data-testid="builder-effective-preview" className="whitespace-pre-wrap break-words min-w-0 text-xs font-mono text-ctp-text border border-surface-0 rounded-md p-3">{preview}</pre>
       </div>
-      <AgentAdoptionSection projectId={projectId} agentId={agentId} compositionRevision={view.revision} hasDrafts={dirty || busy} />
+      <AgentAdoptionSection projectId={projectId} agentId={agentId} compositionRevision={view.revision} hasDrafts={dirty || busy || skillBusy} />
     </>}
   </section>;
 }

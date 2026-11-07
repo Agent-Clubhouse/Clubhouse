@@ -1,3 +1,4 @@
+import { renameSync } from 'node:fs';
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { BuilderCommand, BuilderResult } from '../../shared/agent-builder-types';
@@ -6,6 +7,10 @@ import { createAgentBuilder, builderSnapshotAdoption } from '../services/asset-c
 import { seedBuilderTemplates } from '../services/asset-catalog/builder-seeds';
 import { composeInstructions } from '../services/asset-catalog/composer';
 import { AssetCatalogError, assetCatalogDir, createAssetCatalogStore, type AssetCatalogStore } from '../services/asset-catalog/store';
+import { registeredSkillBundleContext } from '../services/catalog-skill-bundles';
+import { peekProjects } from '../services/project-store';
+import { withAgentTransition } from '../services/agent-transition';
+import { currentSettingsOrigin } from '../services/settings-audit';
 import { arrayArg, booleanArg, numberArg, objectArg, stringArg, withValidatedArgs, type ArgValidator } from './validation';
 
 /** Validate the complete command without ever including supplied text in errors. */
@@ -14,11 +19,14 @@ export const builderCommandArg: ArgValidator<BuilderCommand> = (value, label) =>
   const type = stringArg()(raw.type, 'command type');
   const fields: Record<string, string[]> = {
     template: ['templateId', 'confirm', 'binding', 'acknowledgeOperationalIncreases'], order: ['keys'], baseOrder: [], append: ['name', 'content'],
+    skill: ['assetId', 'expectedRevision', 'confirm', 'fingerprint'], removeSkill: ['assetId', 'confirm', 'fingerprint'],
     fork: ['key'], return: ['key'], edit: ['key', 'content'], remove: ['key'],
   };
   if (!Object.prototype.hasOwnProperty.call(fields, type) || Object.keys(raw).some((key) => key !== 'type' && !fields[type].includes(key))) throw new Error('Invalid builder command');
   for (const key of fields[type]) {
-    if (key === 'binding') {
+    if (key === 'expectedRevision') numberArg({ integer: true, min: 1 })(raw[key], key);
+    else if (key === 'fingerprint') stringArg({ optional: true, maxLength: 64 })(raw[key], key);
+    else if (key === 'binding') {
       if (raw[key] !== undefined) {
         const binding = objectArg<Record<string, unknown>>()(raw[key], 'binding');
         if (Object.keys(binding).length !== 3) throw new Error('Invalid builder binding');
@@ -32,20 +40,30 @@ export const builderCommandArg: ArgValidator<BuilderCommand> = (value, label) =>
   return raw as unknown as BuilderCommand;
 };
 
-export function registerAgentBuilderHandlers(store: AssetCatalogStore = createAssetCatalogStore({ dir: assetCatalogDir() })): void {
-  const builder = createAgentBuilder(store);
+export function registerAgentBuilderHandlers(injectedStore?: AssetCatalogStore): void {
+  const seedStore = injectedStore ?? createAssetCatalogStore({ dir: assetCatalogDir() });
   // Starts on the main/system surface, before any renderer request. A failed
   // seed is visible in the Builder; its payload never goes into telemetry.
-  const ready = seedBuilderTemplates(store).then(() => true, () => false);
+  const ready = seedBuilderTemplates(seedStore).then(() => true, () => false);
   async function perform(projectPath: string, agentId: string, action?: BuilderCommand, revision?: number): Promise<BuilderResult> {
     try {
       if (!await ready) return { ok: false, code: 'failed' };
-      // Peek must not repair agents.json, settle creations or register watchers.
-      const agent = (await peekDurableConfigs(projectPath)).find((candidate) => candidate.id === agentId);
-      if (!agent || agent.persona === 'dispatcher') return { ok: false, code: 'failed' };
-      const adoption = await builderSnapshotAdoption(store, await builder.compositionOf(agentId));
-      const view = action ? await builder.command(agentId, revision!, action, adoption) : await builder.read(agentId, adoption);
-      return { ok: true, view };
+      const origin = currentSettingsOrigin();
+      if (origin.surface !== 'ui' || origin.actorId) return { ok: false, code: 'failed' };
+      return await withAgentTransition(agentId, async () => {
+        const project = (await peekProjects()).find((candidate) => candidate.path === projectPath);
+        if (!project) return { ok: false as const, code: 'failed' as const };
+        const guard = await registeredSkillBundleContext({ projectId: project.id, agentId }, projectPath);
+        // Peek never repairs agents.json or settles creations.
+        const agent = (await peekDurableConfigs(projectPath)).find((candidate) => candidate.id === agentId);
+        if (!agent || agent.persona === 'dispatcher') return { ok: false as const, code: 'failed' as const };
+        const store = injectedStore ?? createAssetCatalogStore({ dir: assetCatalogDir(), rename: async (from, to) => { guard(); renameSync(from, to); } });
+        const builder = createAgentBuilder(store, project.id);
+        const adoption = await builderSnapshotAdoption(store, await builder.compositionOf(agentId));
+        const view = action ? await builder.command(agentId, revision!, action, adoption) : await builder.read(agentId, adoption);
+        guard();
+        return { ok: true as const, view };
+      });
     } catch (error) {
       // telemetry-exempt: instruction content must never reach logs or telemetry. Visible error in the Builder.
       return { ok: false, code: error instanceof AssetCatalogError && ['stale_revision', 'stale_preview', 'stale_choice'].includes(error.code) ? 'stale' : 'failed' };

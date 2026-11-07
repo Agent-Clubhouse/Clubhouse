@@ -1017,12 +1017,14 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
      * records the exact origin revision it started from. It's only a copy: nothing
      * merges, rebases or syncs it, and it isn't assigned until a composition says so.
      * A copy of a built-in keeps a reserved skill name until the user saves one of their own.
+     * Optional main-only expectedHeadRevision checks the source under this same serial lock.
      */
-    copyAsset(input: { assetId: string; revision: number; agentId: string; name?: string }): Promise<CatalogEntry> {
+    copyAsset(input: { assetId: string; revision: number; expectedHeadRevision?: number; agentId: string; name?: string }): Promise<CatalogEntry> {
       return guarded({ scope: 'agent', key: 'assetCatalog.copy', targetId: isCatalogId(input.agentId) ? input.agentId : undefined }, () => serial(async () => {
         requireAgentId(input.agentId);
         const index = await loadIndex();
         const origin = getLiveEntry(index, input.assetId);
+        if (input.expectedHeadRevision !== undefined && origin.headRevision !== input.expectedHeadRevision) throw new AssetCatalogError('stale_revision');
         const copyable: readonly CopyableAssetKind[] = ['skill', 'block', 'subagent'];
         if (!(copyable as readonly string[]).includes(origin.kind)) throw new AssetCatalogError('not_copyable', { assetId: origin.id });
         const name = input.name ?? origin.name;
@@ -1310,11 +1312,16 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       composition: unknown;
       adoption: BaseAdoption;
       previewFingerprint: string;
+      /** Main-only reviewed source heads, checked under the same serial lock as the commit. */
+      expectedAssetRevisions?: Record<string, number>;
       foreign?: readonly ForeignDestination[];
       projectId?: string;
     }): Promise<AgentComposition> {
       return guarded({ scope: 'agent', key: 'assetCatalog.composition', targetId: isCatalogId(input.agentId) ? input.agentId : undefined }, () => serial(async () => {
         const index = await loadIndex();
+        for (const [assetId, revision] of Object.entries(input.expectedAssetRevisions ?? {})) {
+          if (getLiveEntry(index, assetId).headRevision !== revision) throw new AssetCatalogError('stale_revision');
+        }
         const plan = planWith(index, {
           agentId: input.agentId,
           ...(input.projectId !== undefined && { projectId: input.projectId }),

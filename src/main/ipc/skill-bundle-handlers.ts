@@ -31,7 +31,25 @@ const saveArg: ArgValidator<SaveRequest> = objectArg({ validate: (request: SaveR
   revision(request.expectedRevision);
 } });
 
+type CreateRequest = Parameters<SkillBundleEditorBridge['create']>[0];
+const createArg: ArgValidator<CreateRequest> = objectArg({ validate: (request: CreateRequest) => {
+  fields(request, ['context', 'name', 'scope', 'payload']);
+  contextArg(request.context, 'context');
+  stringArg({ maxLength: 120 })(request.name, 'name');
+  if (!['library', 'project', 'agent'].includes(request.scope)) throw new Error('Invalid bundle scope');
+  objectArg()(request.payload, 'payload');
+} });
+type CopyRequest = Parameters<SkillBundleEditorBridge['copy']>[0];
+const copyArg: ArgValidator<CopyRequest> = objectArg({ validate: (request: CopyRequest) => {
+  fields(request, ['context', 'assetId', 'expectedRevision']);
+  contextArg(request.context, 'context');
+  stringArg({ maxLength: 128 })(request.assetId, 'assetId');
+  revision(request.expectedRevision);
+} });
+
 export function registerSkillBundleHandlers(service: SkillBundleEditorBridge = createCatalogSkillBundleEditor()): void {
+  ipcMain.handle(IPC.CATALOG_SKILL_BUNDLE.CREATE, withValidatedArgs([createArg], (_event, request) => service.create(request)));
+  ipcMain.handle(IPC.CATALOG_SKILL_BUNDLE.COPY, withValidatedArgs([copyArg], (_event, request) => service.copy(request)));
   ipcMain.handle(IPC.CATALOG_SKILL_BUNDLE.LIST, withValidatedArgs([contextArg], (_event, context) => service.list(context)));
   ipcMain.handle(IPC.CATALOG_SKILL_BUNDLE.READ, withValidatedArgs([contextArg, stringArg({ maxLength: 128 })], (_event, context, assetId) => service.read(context, assetId)));
   ipcMain.handle(IPC.CATALOG_SKILL_BUNDLE.PREVIEW, withValidatedArgs([previewArg], (_event, request) => service.preview(request)));
