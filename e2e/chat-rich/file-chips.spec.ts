@@ -169,7 +169,29 @@ test.describe('claude: file chips in one reply', () => {
       await expect(view).toContainText(file);
       await expect(view).toContainText('(Read-only)');
       await expect(view.locator('.view-lines')).toContainText(marker, { timeout: TURN_TIMEOUT });
-      await expect(view.locator('textarea.inputarea')).toHaveJSProperty('readOnly', true);
+      // Monaco 0.55 uses a native EditContext div when available, and a
+      // textarea otherwise. Both derive this semantic attribute from readOnly.
+      const editor = view.getByRole('textbox');
+      await expect(editor).toHaveAttribute('aria-autocomplete', 'none');
+      await editor.focus();
+      await expect(editor).toBeFocused();
+      const diskBefore = await fs.promises.readFile(file);
+      const lines = view.locator('.view-lines .view-line');
+      const renderedBefore = await lines.allTextContents();
+      // These tiny fixtures fit entirely in the viewport: no unseen model
+      // lines can hide a mutation behind Monaco's virtualized rendering.
+      expect(renderedBefore).toHaveLength(diskBefore.toString('utf8').split('\n').length);
+      const assertUnchanged = async () => {
+        // Key handling updates the model synchronously; let its scheduled
+        // view render finish before comparing the complete rendered fixture.
+        await editor.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+        expect(await lines.allTextContents()).toEqual(renderedBefore);
+        expect(await fs.promises.readFile(file)).toEqual(diskBefore);
+      };
+      await editor.pressSequentially('READONLY_EDIT_PROBE');
+      await assertUnchanged();
+      await editor.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s');
+      await assertUnchanged();
     };
     const pdfShown = async () => {
       await expect(view).toBeVisible();
