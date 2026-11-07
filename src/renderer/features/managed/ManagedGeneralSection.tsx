@@ -4,14 +4,16 @@ import { Modal } from '../../components/Modal';
 import { Toggle } from '../../components/Toggle';
 import { Field, SectionHeading, inputClass, selectClass } from '../agents/agentSettingsUi';
 import type { ManagedAgentSetup, ManagedConvertPreview } from '../../../shared/managed-agents-types';
-import { errorText, managed, unwrap, useManagedTemplates } from './managedApi';
-import { legacyLine, type LegacyUse } from './legacy';
+import { errorText, managed, unwrap, useManagedStatus, useManagedTemplates } from './managedApi';
+import { legacyLine, migratedLine, migrationFailedLine, type LegacyUse } from './legacy';
 
 /**
  * General › Setup for an agent (#2893). Managed: which template it came from,
  * Save as template, Stop managing. Unmanaged: the switch to managed, and the
  * Clubhouse features opt-out for a plain CLI. An unmanaged agent that uses
- * Clubhouse Mode or a persona says so, as the offer to switch (#2901).
+ * Clubhouse Mode or a persona says so, as the offer to switch (#2901), with
+ * the reason when the automatic switch failed. An agent Clubhouse switched on
+ * its own says so until the notice is dismissed (D59).
  */
 export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, clubhouseFeatures, onClubhouseFeaturesChange, isRunning, legacy, onClubhouseModeOff }: {
   projectPath: string;
@@ -31,6 +33,7 @@ export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, 
   onClubhouseModeOff?: () => Promise<void>;
 }) {
   const templates = useManagedTemplates();
+  const { value: status } = useManagedStatus(setup || legacy ? projectPath : undefined, agentId);
   const [convertOpen, setConvertOpen] = useState(false);
   const [saveAsOpen, setSaveAsOpen] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
@@ -52,13 +55,22 @@ export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, 
             <Button onClick={() => setSaveAsOpen(true)} disabled={busy}>Save as template…</Button>
             <Button kind="quiet" onClick={() => setConfirmStop(true)} disabled={busy}>Stop managing</Button>
           </Field>
+          {status?.migrated && (
+            <div className="flex items-center gap-6 py-2 border-t border-surface-0" data-testid="managed-general-migrated">
+              <p className="flex-1 min-w-0 text-xs text-ctp-subtext1">{migratedLine(status.migrated.backup)}</p>
+              <Button kind="quiet" onClick={() => void run(() => unwrap(managed().dismissMigrationNotice(projectPath, agentId)))} disabled={busy}>Dismiss</Button>
+            </div>
+          )}
         </>
       ) : (
         <>
           <Field
             label="Clubhouse managed"
             help={legacy
-              ? <span data-testid="managed-general-legacy">{legacyLine(agentName, legacy)} Switch to managed keeps what it has now.</span>
+              ? <span data-testid="managed-general-legacy">
+                {legacyLine(agentName, legacy)} Switch to managed keeps what it has now.
+                {status?.migrationFailed && <span className="block mt-px" data-testid="managed-general-migration-failed">{migrationFailedLine(status.migrationFailed)}</span>}
+              </span>
               : `Off. ${agentName} uses the instructions, skills and MCP config in its folder, and Clubhouse doesn't change them.`}
             testId="managed-general-off"
           >

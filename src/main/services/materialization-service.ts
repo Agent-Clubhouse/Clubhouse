@@ -24,6 +24,7 @@ import {
 } from './agent-settings-service';
 import { SettingsConventions } from './agent-settings-service';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
+import { getAppSourceControlProvider } from './source-control-settings';
 import * as gitExcludeManager from './git-exclude-manager';
 import { appLog } from './log-service';
 import { jsonMcpToToml } from './toml-utils';
@@ -157,7 +158,7 @@ export function resolveAgentCommands(
 /**
  * Resolve the effective source control provider.
  * Priority: per-agent override → project-level agentDefaults → app-level
- * clubhouse mode settings → 'github'.
+ * source control setting → app-level clubhouse mode settings (before D61) → 'github'.
  */
 export async function resolveSourceControlProvider(
   projectPath: string,
@@ -170,7 +171,9 @@ export async function resolveSourceControlProvider(
   const defaults = await readProjectAgentDefaults(projectPath);
   if (defaults.sourceControlProvider) return defaults.sourceControlProvider;
 
-  // 2. App-level clubhouse mode settings
+  // 2. App level: its own setting (D61), then where Clubhouse Mode kept it before.
+  const appLevel = getAppSourceControlProvider();
+  if (appLevel) return appLevel;
   const appSettings = clubhouseModeSettings.getSettings();
   if (appSettings.sourceControlProvider) return appSettings.sourceControlProvider;
 

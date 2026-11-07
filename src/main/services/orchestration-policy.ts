@@ -654,8 +654,11 @@ export interface CarriedPersonaOrchestration {
  * same after the switch. A managed agent, or one whose persona layer decides
  * nothing, is left as it is. The gate isn't touched: the outcome doesn't change.
  * Saved as is, without the MCP check: MCP off masks it the same either way.
+ *
+ * `plain`: the same for a plain agent that stays unmanaged (D62), so it keeps
+ * what a project or user `orchestrator.md` gave it once the persona layer goes.
  */
-export async function carryPersonaOrchestration(projectPath: string, agentId: string): Promise<CarriedPersonaOrchestration | null> {
+export async function carryPersonaOrchestration(projectPath: string, agentId: string, why: 'managed' | 'plain' = 'managed'): Promise<CarriedPersonaOrchestration | null> {
   return withAgentLock(projectPath, agentId, async () => {
     const agent = await agentConfig.getDurableConfig(projectPath, agentId);
     if (!agent || agent.managed) return null;
@@ -671,9 +674,11 @@ export async function carryPersonaOrchestration(projectPath: string, agentId: st
     const stored = normalizeOrchestrationConfig({ ...before, ...carried });
     await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
     for (const [key, value] of Object.entries(carried)) {
-      await appendSettingsAudit({ surface: 'persona', targetId: agentId, scope: 'agent', key: `orchestration.${key}`, before: null, after: value as boolean | number | string, outcome: 'ok', code: 'carried_to_managed' });
+      await appendSettingsAudit({ surface: 'persona', targetId: agentId, scope: 'agent', key: `orchestration.${key}`, before: null, after: value as boolean | number | string, outcome: 'ok', code: why === 'plain' ? 'carried_from_persona_layer' : 'carried_to_managed' });
     }
-    appLog('core:orchestration', 'info', 'Orchestration defaults from the persona kept on the agent before it switched to managed', {
+    appLog('core:orchestration', 'info', why === 'plain'
+      ? 'Orchestration defaults from the persona layer kept on a plain agent'
+      : 'Orchestration defaults from the persona kept on the agent before it switched to managed', {
       meta: { agentId, fields: Object.keys(carried) },
     });
     return { previousPersona, before, carried };

@@ -16,6 +16,8 @@ import {
 } from '../orchestration-policy';
 import { resolveOrchestrator } from '../agent-system';
 import { isClubhouseModeEnabled } from '../clubhouse-mode-settings';
+import { isMcpEnabled } from '../mcp-settings';
+import { clubhouseMcpOverride } from '../../../shared/agent-helpers';
 import { materializedDefaults, materializedInstructions, type MaterializedDefaults } from '../materialization-service';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type {
@@ -34,7 +36,16 @@ import { CLUBHOUSE_MCP_PART_ID } from '../../../shared/managed-agents-types';
 import { managedAgents } from './index';
 import { BUILTIN_BLOCK_IDS } from './builtins';
 import { ManagedError } from './service';
-import { backupInstructions, clearAwaitingFirstStart, markAwaitingFirstStart } from './before-managed';
+import {
+  backupInstructions,
+  clearAwaitingFirstStart,
+  clearPendingSwitch,
+  discardBackup,
+  markAwaitingFirstStart,
+  readPendingSwitch,
+  writePendingSwitch,
+  type PendingSwitch,
+} from './before-managed';
 import { backupMcpFile, hasMcpFileToKeep, MCP_BACKUP_DIR, mcpBackupPath } from './mcp-backup';
 import { appLog } from '../log-service';
 
@@ -442,29 +453,27 @@ async function createAgentPart(name: string, description: string, content: Manag
 export async function convertToManaged(projectPath: string, agentId: string, options: { keep: boolean; templateId?: string }): Promise<ManagedAgentSetup> {
   const service = managedAgents();
   const agent = await agentForConvert(projectPath, agentId);
-  if (agent.managed) return agent.managed;
+  if (agent.managed) {
+    // A switch that was saved and then cut short left its in-progress record: those parts are its setup now.
+    await clearPendingSwitch(agent.id).catch(() => { /* telemetry-exempt: nothing to clear */ });
+    return agent.managed;
+  }
   if (!options.keep && !options.templateId) throw new ManagedError('invalid', 'Choose a template, or keep what the agent has now.');
   const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
   if (!options.keep && options.templateId) {
     const { setup, settings } = await service.setupFromTemplate(options.templateId);
     await service.checkSetup(setup);
-    await backupInstructions(agent.id, provider.conventions.legacyInstructionsFile, await readInstructionsOf(provider, agent.worktreePath));
-    await keepMcpFile(projectPath, agent.worktreePath, provider);
-    return switchWith(projectPath, agent, [], () => service.saveSetup(projectPath, agentId, setup), () => applyManagedSettings(projectPath, agentId, settingsForConvert(provider.id, settings)));
+    return switchWith(projectPath, agent, provider, await readInstructionsOf(provider, agent.worktreePath), async () => {
+      await stillUnmanaged(projectPath, agentId);
+      return service.saveSetup(projectPath, agentId, setup);
+    }, () => applyManagedSettings(projectPath, agentId, settingsForConvert(provider.id, settings)));
   }
   const plan = await planConvert(projectPath, agent, agent.worktreePath, provider);
-  const bridge = agent.mcpOverride === false ? [] : [CLUBHOUSE_MCP_PART_ID];
+  // The bridge as it is today: on only where MCP is on for this agent now (the same check its spawn makes).
+  const bridge = isMcpEnabled(projectPath, clubhouseMcpOverride(agent)) ? [CLUBHOUSE_MCP_PART_ID] : [];
   // Before any part is made, so a setup that can't be saved leaves nothing behind.
   await service.checkSetup({ blocks: [], skills: [], mcps: bridge }, { skillFolders: plan.skills.map((s) => s.content.skillName) });
-  await backupInstructions(agent.id, provider.conventions.legacyInstructionsFile, plan.onDisk);
-  await keepMcpFile(projectPath, agent.worktreePath, provider);
-  const made: string[] = [];
-  const make = async (name: string, description: string, content: ManagedPartContent) => {
-    const id = await createAgentPart(name, description, content);
-    made.push(id);
-    return id;
-  };
-  return switchWith(projectPath, agent, made, async () => {
+  return switchWith(projectPath, agent, provider, plan.onDisk, async (make) => {
     const blocks: string[] = [];
     if (plan.keepInstructions) {
       blocks.push(await make(plan.blockName, `What ${agent.name} had before it was managed.`, { kind: 'block', content: plan.instructions }));
@@ -481,32 +490,92 @@ export async function convertToManaged(projectPath: string, agentId: string, opt
         ? `The ${mcp.serverKey} MCP server Clubhouse Mode gave ${agent.name} from the project's defaults before it was managed.`
         : `The ${mcp.serverKey} MCP server ${agent.name} had before it was managed.`, mcp.content));
     }
+    await stillUnmanaged(projectPath, agentId);
     return service.saveSetup(projectPath, agentId, { blocks, skills, mcps });
   });
 }
 
+/** Right before the save: another switch of this agent may have finished meanwhile. Its parts stay, these go. */
+async function stillUnmanaged(projectPath: string, agentId: string): Promise<void> {
+  if ((await agentConfig.getDurableConfig(projectPath, agentId))?.managed) {
+    throw new ManagedError('invalid', 'This agent is already Clubhouse managed.');
+  }
+}
+
+type MakePart = (name: string, description: string, content: ManagedPartContent) => Promise<string>;
+
 /**
- * The switch itself: keep the persona's orchestration defaults on the agent,
- * save the setup, then settle as a persona change does. On a failure before
- * the setup is saved, the parts in `made` are removed and the policy put back.
+ * A switch cut short (the app quit or crashed) left parts it made: remove
+ * them before this switch makes its own, so the library has no duplicates.
+ * A part in use by an agent or a template is left alone, as is everything
+ * from a switch that was saved (the agent went managed after it started).
+ */
+async function removeLeftoverParts(agent: DurableAgentConfig): Promise<void> {
+  const pending = await readPendingSwitch(agent.id);
+  if (!pending) return;
+  const saved = !!agent.switchedToManagedAt && !!pending.startedAt && agent.switchedToManagedAt >= pending.startedAt;
+  const left: string[] = [];
+  if (!saved) {
+    const service = managedAgents();
+    for (const id of pending.parts) {
+      try {
+        const part = await service.getPart(id);
+        if (part.usedBy.length > 0 || part.templates.length > 0) continue;
+        await service.deletePart({ id, expectedRevision: part.revision, mode: 'remove' });
+      } catch (err) {
+        if (err instanceof ManagedError && err.code === 'not_found') continue;
+        left.push(id);
+        // telemetry-exempt: logged; the next switch tries again.
+        appLog('core:managed', 'warn', 'Could not remove a part an interrupted switch to managed made', { meta: { agentId: agent.id, partId: id, error: err instanceof Error ? err.message : String(err) } });
+      }
+    }
+  }
+  if (left.length > 0) await writePendingSwitch(agent.id, { ...pending, parts: left });
+  else await clearPendingSwitch(agent.id);
+}
+
+/**
+ * The switch itself: back up its files, keep the persona's orchestration
+ * defaults on the agent, make its parts and save the setup (`build`), then
+ * settle as a persona change does. The parts are listed in a pending file in
+ * its before-managed folder as they are made, so a switch cut short can be
+ * cleaned up by the next one. On a failure before the setup is saved, the
+ * parts it made and its backup are removed and the policy put back.
  */
 async function switchWith(
   projectPath: string,
-  agent: DurableAgentConfig,
-  made: string[],
-  save: () => Promise<ManagedAgentSetup>,
+  agent: DurableAgentConfig & { worktreePath: string },
+  provider: OrchestratorProvider,
+  onDisk: string,
+  build: (make: MakePart) => Promise<ManagedAgentSetup>,
   after?: () => Promise<void>,
 ): Promise<ManagedAgentSetup> {
+  await removeLeftoverParts(agent);
+  const made: string[] = [];
+  const pending: PendingSwitch = { startedAt: new Date().toISOString(), parts: made };
   let carry: CarriedPersonaOrchestration | null = null;
+  let backup: string | null = null;
   let saved: ManagedAgentSetup;
   try {
+    await writePendingSwitch(agent.id, pending);
+    backup = await backupInstructions(agent.id, provider.conventions.legacyInstructionsFile, onDisk);
+    await keepMcpFile(projectPath, agent.worktreePath, provider);
     carry = await carryPersonaOrchestration(projectPath, agent.id);
-    saved = await save();
+    saved = await build(async (name, description, content) => {
+      const id = await createAgentPart(name, description, content);
+      made.push(id);
+      await writePendingSwitch(agent.id, pending);
+      return id;
+    });
   } catch (err) {
-    await undoSwitch(projectPath, agent, made, carry);
+    await undoSwitch(projectPath, agent, made, carry, backup);
     throw err;
   }
-  await markAwaitingFirstStart(agent.id).catch((err) => {
+  await clearPendingSwitch(agent.id).catch((err) => {
+    // telemetry-exempt: the switch stands; the next switch of this agent sees it was saved and keeps the parts.
+    appLog('core:managed', 'warn', 'Could not clear the switch-in-progress record', { meta: { agentId: agent.id, error: err instanceof Error ? err.message : String(err) } });
+  });
+  await markAwaitingFirstStart(agent.id, backup).catch((err) => {
     // telemetry-exempt: the switch stands; the first start just doesn't check the file again.
     appLog('core:managed', 'warn', 'Could not mark the agent for a last instructions check at its first managed start', { meta: { agentId: agent.id, error: err instanceof Error ? err.message : String(err) } });
   });
@@ -516,14 +585,16 @@ async function switchWith(
   return saved;
 }
 
-async function undoSwitch(projectPath: string, agent: DurableAgentConfig, made: string[], carry: CarriedPersonaOrchestration | null): Promise<void> {
+async function undoSwitch(projectPath: string, agent: DurableAgentConfig, made: string[], carry: CarriedPersonaOrchestration | null, backup: string | null): Promise<void> {
   const service = managedAgents();
+  const left: string[] = [];
   for (const id of made) {
     try {
       const part = await service.getPart(id);
       await service.deletePart({ id, expectedRevision: part.revision, mode: 'remove' });
     } catch (err) {
-      // telemetry-exempt: logged; the part stays in the library, unused, where it can be deleted.
+      left.push(id);
+      // telemetry-exempt: logged; the part stays in the library, unused, and the next switch tries again.
       appLog('core:managed', 'warn', 'Could not remove a part a failed switch to managed made', { meta: { agentId: agent.id, partId: id, error: err instanceof Error ? err.message : String(err) } });
     }
   }
@@ -534,6 +605,12 @@ async function undoSwitch(projectPath: string, agent: DurableAgentConfig, made: 
     });
   }
   await clearAwaitingFirstStart(agent.id).catch(() => { /* telemetry-exempt: nothing was marked */ });
+  // Nothing changed, so the file it copied is still in its folder: a failed switch leaves no backup behind.
+  await discardBackup(agent.id, backup).catch(() => { /* telemetry-exempt: the copy stays, harmless */ });
+  const settle = left.length > 0
+    ? writePendingSwitch(agent.id, { startedAt: '', parts: left })
+    : clearPendingSwitch(agent.id);
+  await settle.catch(() => { /* telemetry-exempt: the next switch finds the parts unused, or the file again */ });
 }
 
 /**

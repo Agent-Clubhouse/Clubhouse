@@ -6,8 +6,9 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { ManagedPartContent, ManagedPartKind, ManagedResult, ManagedTemplate, ManagedTemplateSettings } from '../../shared/managed-agents-types';
-import { managedAgents, restartManagedAgent, statusFor, isAgentWorking } from '../services/managed-agents';
+import { dismissMigrationNotice, managedAgents, restartManagedAgent, statusFor, isAgentWorking } from '../services/managed-agents';
 import { applyManagedSettings, convertToManaged, createManagedAgent, previewConvert } from '../services/managed-agents/agents';
+import { withSwitchLock } from '../services/managed-agents/auto-migrate';
 import { previewManagedSetup } from '../services/managed-agents/delivery';
 import { ManagedError } from '../services/managed-agents/service';
 import * as agentConfig from '../services/agent-config';
@@ -138,12 +139,15 @@ export function registerManagedAgentsHandlers(): void {
     (_e, projectPath, input) => result(() => createManagedAgent(projectPath, input)),
   ));
   ipcMain.handle(IPC.MANAGED.CONVERT_AGENT, withValidatedArgs([stringArg(), idArg(), booleanArg(), stringArg({ optional: true, maxLength: 128 })],
-    (_e, projectPath, agentId, keep, templateId) => result(() => convertToManaged(projectPath, agentId, { keep, ...(templateId && { templateId }) }))));
+    // One switch of an agent at a time, with the automatic one (D59): the second finds it managed.
+    (_e, projectPath, agentId, keep, templateId) => result(() => withSwitchLock(agentId, () => convertToManaged(projectPath, agentId, { keep, ...(templateId && { templateId }) })))));
   ipcMain.handle(IPC.MANAGED.PREVIEW_CONVERT, withValidatedArgs([stringArg(), idArg()],
     (_e, projectPath, agentId) => result(() => previewConvert(projectPath, agentId))));
   ipcMain.handle(IPC.MANAGED.APPLY_SETTINGS, withValidatedArgs([stringArg(), idArg(), objectArg<ManagedTemplateSettings>()],
     (_e, projectPath, agentId, settings) => result(() => applyManagedSettings(projectPath, agentId, settings))));
   ipcMain.handle(IPC.MANAGED.STATUS, withValidatedArgs([stringArg(), idArg()], (_e, projectPath, agentId) => result(() => statusFor(projectPath, agentId))));
+  ipcMain.handle(IPC.MANAGED.DISMISS_MIGRATION_NOTICE, withValidatedArgs([stringArg(), idArg()],
+    (_e, projectPath, agentId) => result(() => dismissMigrationNotice(projectPath, agentId))));
   ipcMain.handle(IPC.MANAGED.IS_WORKING, withValidatedArgs([idArg()], (_e, agentId) => result(() => isAgentWorking(agentId))));
   ipcMain.handle(IPC.MANAGED.RESTART, withValidatedArgs(
     [stringArg(), idArg(), objectArg<{ fresh?: boolean; whenTurnEnds?: boolean }>({ optional: true })],

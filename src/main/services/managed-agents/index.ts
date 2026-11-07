@@ -63,9 +63,27 @@ export function managedAgents(): ManagedAgentsService {
   return service;
 }
 
+let builtins: Promise<void> | null = null;
+
+/**
+ * Install or update the built-in parts once per app run. Startup and the
+ * automatic switch to managed (D59) share it; a failure lets the next caller
+ * try again.
+ */
+export function ensureBuiltinsOnce(): Promise<void> {
+  if (!builtins) {
+    builtins = managedAgents().ensureBuiltins().catch((err) => {
+      builtins = null;
+      throw err;
+    });
+  }
+  return builtins;
+}
+
 /** Tests only. */
 export function _setManagedAgentsForTesting(next: ManagedAgentsService | null): void {
   service = next;
+  builtins = null;
 }
 
 // ── What each running session started with ─────────────────────────────
@@ -162,17 +180,24 @@ export async function managedMcpServersFor(agent: DurableAgentConfig): Promise<R
 export async function statusFor(projectPath: string, agentId: string): Promise<ManagedAgentStatus> {
   const agent = await agentConfig.getDurableConfig(projectPath, agentId);
   const running = (await import('../agent-system')).isAgentRunning(agentId);
-  if (!agent?.managed) return { managed: false, running, waiting: false, changes: [], cliChanged: false };
+  if (!agent?.managed) {
+    // The switch offer says why an automatic switch didn't happen (D59).
+    const migrationFailed = agent?.managedMigrationFailure?.message;
+    return { managed: false, running, waiting: false, changes: [], cliChanged: false, ...(migrationFailed && { migrationFailed }) };
+  }
+  const notice = agent.managedMigration && !agent.managedMigration.dismissed
+    ? { migrated: { from: agent.managedMigration.from, backup: agent.managedMigration.backup } }
+    : {};
   const failed = failedDeliveries.get(agentId);
   if (running && failed) {
-    return { managed: true, running, waiting: true, changes: [`Setup couldn't be written: ${failed}`], cliChanged: false, deliveryFailed: failed };
+    return { managed: true, running, waiting: true, changes: [`Setup couldn't be written: ${failed}`], cliChanged: false, deliveryFailed: failed, ...notice };
   }
   const record = delivered.get(agentId);
-  if (!running || !record) return { managed: true, running, waiting: false, changes: [], cliChanged: false };
+  if (!running || !record) return { managed: true, running, waiting: false, changes: [], cliChanged: false, ...notice };
   const resolved = await resolveManagedSetup(managedAgents(), agent.managed);
   const now = setupFingerprint(agent, resolved);
   if (now.fingerprint === record.fingerprint) {
-    return { managed: true, running, waiting: false, changes: [], deliveredAt: record.deliveredAt, cliChanged: false };
+    return { managed: true, running, waiting: false, changes: [], deliveredAt: record.deliveredAt, cliChanged: false, ...notice };
   }
   const changes: string[] = [];
   for (const [id, part] of Object.entries(now.parts)) {
@@ -186,7 +211,13 @@ export async function statusFor(projectPath: string, agentId: string): Promise<M
   if (changes.length === 0 && now.order.join('|') !== record.order.join('|')) changes.push('The block order changed');
   const cliChanged = (record.orchestrator ?? '') !== (agent.orchestrator ?? '');
   if (changes.length === 0) changes.push(cliChanged ? 'The CLI changed' : 'Its settings changed');
-  return { managed: true, running, waiting: true, changes, deliveredAt: record.deliveredAt, cliChanged };
+  return { managed: true, running, waiting: true, changes, deliveredAt: record.deliveredAt, cliChanged, ...notice };
+}
+
+/** The person dismissed the "Switched to managed when Clubhouse updated" notice. The marker stays (D59). */
+export async function dismissMigrationNotice(projectPath: string, agentId: string): Promise<void> {
+  await agentConfig.setManagedMigration(projectPath, agentId, { dismissed: true });
+  broadcastToAllWindows(IPC.MANAGED.CHANGED);
 }
 
 export function forgetDelivery(agentId: string): void {

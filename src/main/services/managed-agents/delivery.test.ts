@@ -84,6 +84,17 @@ describe('deliverManagedSetup', () => {
     expect(text).toContain('@@If(nope)\nOnly sometimes.\n@@EndIf');
   });
 
+  it('leaves @@Mission and @@Persona as written, and Preview shows the same bytes (D60)', async () => {
+    const rules = await user(() => service.createPart({ name: 'Tokens', content: { kind: 'block', content: 'Mission: @@Mission\nPersona: @@Persona\nName: @@AgentName' } }));
+    agent.managed = { version: 1, blocks: [rules.id], skills: [], mcps: [] };
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    const text = fs.readFileSync(path.join(agent.worktreePath!, 'CLAUDE.md'), 'utf-8');
+    expect(text).toBe('Mission: @@Mission\nPersona: @@Persona\nName: cool-gazelle');
+    const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(preview.instructions).toBe(text);
+    expect(preview.blocks[0]).toMatchObject({ startLine: 1, endLine: 3 });
+  });
+
   it('copies skills whole, including binary files, and removes a skill dropped from the setup', async () => {
     const a = await user(() => service.createPart({ name: 'Deploy', content: { kind: 'skill', skillName: 'deploy', files: [
       { path: 'SKILL.md', content: '# Deploy' },
