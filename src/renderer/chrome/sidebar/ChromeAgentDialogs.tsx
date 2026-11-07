@@ -8,6 +8,7 @@ import { DeleteAgentDialog } from '../../features/agents/DeleteAgentDialog';
 import { ApplyPersonaDialog } from '../../features/agents/ApplyPersonaDialog';
 import { ExtractPersonaDialog } from '../../features/agents/ExtractPersonaDialog';
 import { HelperDisposeRequestDialog } from '../../features/agents/helpers/HelperDisposeRequestDialog';
+import { ManagedRestartHost } from '../../features/managed/restart';
 import { createDurableAgentFromTemplate } from '../../features/agents/create-agent';
 import { openCreatedAgent } from '../startPage';
 import type { PersonaTemplate } from '../../features/personas';
@@ -98,6 +99,7 @@ export function ChromeAgentDialogs() {
       {deleteDialogAgent && <DeleteAgentDialog />}
       {applyPersonaDialogAgent && <ApplyPersonaDialog />}
       {extractPersonaDialogAgent && <ExtractPersonaDialog />}
+      <ManagedRestartHost />
       <HelperDisposeRequestDialog />
     </>
   );

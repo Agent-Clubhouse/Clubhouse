@@ -46,6 +46,12 @@ interface AgentSettingsPagesState {
    * confirm, then closes settings and runs this (what the user was going to).
    */
   pendingLeave: (() => void) | null;
+  /**
+   * A page asked for by whoever opened settings (openAgentSettingsOn). The view
+   * selects it once the page is shown for that agent: a managed agent's
+   * builder pages appear only after its setup loads.
+   */
+  requestedPage: { agentId: string; page: AgentSettingsPage } | null;
   setPage: (page: AgentSettingsPage) => void;
   setDirtyPages: (pages: AgentSettingsPage[]) => void;
   setCount: (page: AgentSettingsPage, count: number) => void;
@@ -53,7 +59,8 @@ interface AgentSettingsPagesState {
   clearCounts: () => void;
   setShellOpen: (open: boolean) => void;
   setPendingLeave: (then: (() => void) | null) => void;
-  /** Back to General with nothing dirty, for a newly opened agent. */
+  setRequestedPage: (request: { agentId: string; page: AgentSettingsPage } | null) => void;
+  /** Back to General with nothing dirty, for a newly opened agent. Keeps a requested page. */
   reset: () => void;
 }
 
@@ -69,7 +76,9 @@ const INITIAL: Pick<AgentSettingsPagesState, 'page' | 'dirtyPages' | 'counts' | 
 
 export const useAgentSettingsPages = create<AgentSettingsPagesState>((set, get) => ({
   ...INITIAL,
-  setPage: (page) => set({ page }),
+  requestedPage: null,
+  // Picking a page drops a request that hasn't been met yet.
+  setPage: (page) => set({ page, requestedPage: null }),
   setDirtyPages: (pages) => {
     const prev = get().dirtyPages;
     if (prev.length === pages.length && prev.every((p, i) => p === pages[i])) return;
@@ -90,8 +99,18 @@ export const useAgentSettingsPages = create<AgentSettingsPagesState>((set, get) 
   },
   setShellOpen: (shellOpen) => set({ shellOpen }),
   setPendingLeave: (pendingLeave) => set({ pendingLeave }),
+  setRequestedPage: (requestedPage) => set({ requestedPage }),
   reset: () => set(INITIAL),
 }));
+
+/**
+ * Open an agent's settings on one page (the setup-changed bar's "What changed"
+ * opens Preview). The view selects it once that page is shown for the agent.
+ */
+export function openAgentSettingsOn(agentId: string, page: AgentSettingsPage): void {
+  useAgentSettingsPages.getState().setRequestedPage({ agentId, page });
+  useAgentStore.getState().openAgentSettings(agentId);
+}
 
 const NOTHING_NEXT = () => {};
 
@@ -108,6 +127,7 @@ export function requestLeaveAgentSettings(then?: () => void): void {
     return;
   }
   if (settingsOpen) useAgentStore.getState().closeAgentSettings();
+  useAgentSettingsPages.getState().setRequestedPage(null);
   then?.();
 }
 

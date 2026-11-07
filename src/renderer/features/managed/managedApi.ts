@@ -5,6 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
+  ManagedAgentSetup,
   ManagedAgentStatus,
   ManagedErrorCode,
   ManagedPartKind,
@@ -55,6 +56,9 @@ function useLive<T>(load: () => Promise<T>, deps: unknown[]): { value: T | null;
       .catch((err) => { if (id === seq.current) setError(errorText(err)); });
   }, deps);
   useEffect(() => {
+    // New ids: the last answer was about something else, so it doesn't show meanwhile.
+    setValue(null);
+    setError(null);
     run();
     const off = managed().onChanged(run);
     return () => { seq.current++; off(); };
@@ -73,6 +77,14 @@ export function useManagedTemplates() {
 export function useManagedStatus(projectPath: string | undefined, agentId: string | undefined) {
   return useLive<ManagedAgentStatus | null>(
     () => (projectPath && agentId ? unwrap(managed().status(projectPath, agentId)) : Promise.resolve(null)),
+    [projectPath, agentId],
+  );
+}
+
+/** The agent's setup, or null for an unmanaged agent (and while either id is unknown). */
+export function useManagedSetup(projectPath: string | undefined, agentId: string | undefined) {
+  return useLive<ManagedAgentSetup | null>(
+    () => (projectPath && agentId ? unwrap(managed().getSetup(projectPath, agentId)) : Promise.resolve(null)),
     [projectPath, agentId],
   );
 }

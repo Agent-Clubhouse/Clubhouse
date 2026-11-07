@@ -29,6 +29,7 @@ import { useNarrow, useShortWindow } from '../pane/useNarrow';
 import { useChatActions, useChatAttachments, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, useEarlierHistory, type ChatActions } from './useChatSession';
 import { buildAgentMap, commandForRequest, diffsForRequest, implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
 import { HelperHeader } from '../helpers/HelperHeader';
+import { SetupChangedBar } from '../../managed/SetupChangedBar';
 
 /** Where a ChatView is shown; several can show the same agent at once. */
 export type ChatViewContext = 'main' | 'popout' | 'canvas' | 'plugin';
@@ -343,6 +344,8 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
                   )}
                 </div>
               )}
+              {/* Managed agents (#2896): the setup changed after this session started. Main pane only, like the helper header. */}
+              {context === 'main' && <SetupChangedBar agent={agent} variant="dock" />}
               {dock}
             </div>
           </div>
