@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Modal } from '../../components/Modal';
 import { Button } from '../../components/Button';
 import { inputClass, selectClass, textareaClass } from '../agents/agentSettingsUi';
-import type { ManagedPartConsumer, ManagedPartContent, ManagedPartKind, ManagedPartSummary, ManagedSkillContent } from '../../../shared/managed-agents-types';
-import { ImpactDialog } from './ImpactDialog';
-import { errorText, managed, partKindLabel, unwrap } from './managedApi';
+import type { ManagedPart, ManagedPartConsumer, ManagedPartContent, ManagedPartKind, ManagedPartSummary, ManagedSkillContent } from '../../../shared/managed-agents-types';
+import { ImpactDialog, needsImpactDialog } from './ImpactDialog';
+import { errorText, isStale, managed, partKindLabel, unwrap } from './managedApi';
 import { WildcardBar } from './parts-ui';
-import { restartAfterSave } from './restart';
+import { noteRunningLeftAlone, restartAfterSave } from './restart';
+import { StaleEditDialog } from './StaleEditDialog';
 
 type SkillFile = ManagedSkillContent['files'][number];
 
@@ -78,6 +79,9 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
   const [content, setContent] = useState<ManagedPartContent>(() => blankContent(kind));
   const [revision, setRevision] = useState(0);
   const [usedBy, setUsedBy] = useState<ManagedPartConsumer[]>([]);
+  const [templates, setTemplates] = useState<Array<{ id: string; name: string }>>([]);
+  // Saving found a newer version (#2897): theirs, and the restarts the person had ticked.
+  const [stale, setStale] = useState<{ theirs: ManagedPart; restart: ManagedPartConsumer[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [impact, setImpact] = useState(false);
@@ -92,14 +96,15 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
     if (!open) return;
     setError(null);
     setImpact(false);
+    setStale(null);
     if (!editId) {
-      setName(''); setDescription(''); setContent(blankContent(kind)); setRevision(0); setUsedBy([]); setArgsText(''); setEnvText('');
+      setName(''); setDescription(''); setContent(blankContent(kind)); setRevision(0); setUsedBy([]); setTemplates([]); setArgsText(''); setEnvText('');
       return;
     }
     let cancelled = false;
     void unwrap(managed().getPart(editId)).then((p) => {
       if (cancelled) return;
-      setName(p.name); setDescription(p.description); setContent(p.content); setRevision(p.revision); setUsedBy(p.usedBy);
+      setName(p.name); setDescription(p.description); setContent(p.content); setRevision(p.revision); setUsedBy(p.usedBy); setTemplates(p.templates);
       setArgsText(p.content.kind === 'mcp' ? (p.content.args ?? []).join('\n') : '');
       setEnvText(p.content.kind === 'mcp' ? (p.content.envVars ?? []).join(', ') : '');
     }).catch((err) => { /* telemetry-exempt: shown to the person */ if (!cancelled) setError(errorText(err)); });
@@ -131,35 +136,66 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
     await addFiles(items);
   };
 
-  const commit = async (restart: ManagedPartConsumer[] = []) => {
+  /** The content as it will be saved: MCP arguments and names parsed from what was typed. */
+  const toSave = (): ManagedPartContent => (content.kind === 'mcp'
+    ? { ...content, ...(content.transport === 'stdio' && { args: parseArgs(argsText) }), envVars: parseEnvVars(envText) }
+    : content);
+
+  /** Save. `expected` is their revision when the person chose Keep mine, so a third change is still caught. */
+  const commit = async (restart: ManagedPartConsumer[] = [], expected = revision) => {
     setBusy(true);
     setError(null);
-    const saved: ManagedPartContent = content.kind === 'mcp'
-      ? { ...content, ...(content.transport === 'stdio' && { args: parseArgs(argsText) }), envVars: parseEnvVars(envText) }
-      : content;
+    const saved = toSave();
+    let reached: ManagedPartConsumer[] = [];
     try {
       if (editId) {
-        await unwrap(managed().updatePart({ id: editId, expectedRevision: revision, name, description, content: saved }));
+        reached = (await unwrap(managed().updatePart({ id: editId, expectedRevision: expected, name, description, content: saved }))).usedBy;
       } else {
         const created = await unwrap(managed().createPart({ name, description, content: saved }));
         onCreated?.(created);
       }
     } catch (err) {
-      // telemetry-exempt: shown to the person in the dialog.
-      setError(errorText(err));
+      // telemetry-exempt: a newer version is shown beside this one; anything else in the dialog.
+      if (editId && isStale(err)) {
+        try {
+          setStale({ theirs: await unwrap(managed().getPart(editId)), restart });
+        } catch (readErr) { /* telemetry-exempt: shown in the dialog */ setError(errorText(readErr)); }
+      } else {
+        setError(errorText(err));
+      }
       setBusy(false);
       setImpact(false);
       return;
     }
     setBusy(false);
     setImpact(false);
+    setStale(null);
     onClose();
     // Saved: restarts run on their own and report their own failures.
     restartAfterSave(restart.map(({ projectPath, agentId, agentName }) => ({ projectPath, agentId, agentName })));
+    noteRunningLeftAlone(reached, restart);
   };
   const save = () => {
-    if (editId && usedBy.length > 1) setImpact(true);
+    if (editId && needsImpactDialog({ usedBy, templates })) setImpact(true);
     else void commit();
+  };
+  /** Stale, and the person wants their version kept apart: a library copy with their edit, the shared part untouched. */
+  const saveAsCopy = async () => {
+    if (!editId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const copy = await unwrap(managed().forkPart(editId));
+      await unwrap(managed().updatePart({ id: copy.id, expectedRevision: copy.revision, description, content: toSave() }));
+    } catch (err) {
+      // telemetry-exempt: shown in the dialog.
+      setError(errorText(err));
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
+    setStale(null);
+    onClose();
   };
 
   const title = `${editId ? 'Edit' : 'New'} ${partKindLabel(kind).toLowerCase()}`.replace(/^./, (c) => c.toUpperCase());
@@ -168,7 +204,7 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
   return (
     <>
       <Modal
-        open={open && !impact}
+        open={open && !impact && !stale}
         onClose={onClose}
         onDismiss={() => {}}
         title={title}
@@ -309,7 +345,19 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
         </div>
       </Modal>
       {impact && (
-        <ImpactDialog open partName={name} consumers={usedBy} busy={busy} error={error} onCancel={() => setImpact(false)} onSave={(restart) => void commit(restart)} />
+        <ImpactDialog open partName={name} consumers={usedBy} templates={templates} busy={busy} error={error} onCancel={() => setImpact(false)} onSave={(restart) => void commit(restart)} />
+      )}
+      {stale && (
+        <StaleEditDialog
+          theirs={stale.theirs}
+          mine={{ name, description, content: toSave() }}
+          busy={busy}
+          error={error}
+          onKeepMine={() => { setRevision(stale.theirs.revision); void commit(stale.restart, stale.theirs.revision); }}
+          onTakeTheirs={() => { setStale(null); onClose(); }}
+          onFork={() => void saveAsCopy()}
+          forkLabel="Save mine as a copy"
+        />
       )}
     </>
   );

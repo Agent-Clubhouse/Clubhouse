@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/Button';
 import { textareaClass } from '../agents/agentSettingsUi';
-import type { ManagedPartConsumer, ManagedPartSummary } from '../../../shared/managed-agents-types';
-import { ImpactDialog } from './ImpactDialog';
-import { errorText, managed, sourceLabel, unwrap } from './managedApi';
-import { restartAfterSave } from './restart';
+import type { ManagedPart, ManagedPartConsumer, ManagedPartSummary } from '../../../shared/managed-agents-types';
+import { ImpactDialog, needsImpactDialog } from './ImpactDialog';
+import { errorText, isStale, managed, sourceLabel, unwrap } from './managedApi';
+import { noteRunningLeftAlone, restartAfterSave } from './restart';
+import { StaleEditDialog } from './StaleEditDialog';
 import { GripIcon, WildcardBar } from './parts-ui';
 
 export interface BuilderAgent {
@@ -135,6 +136,8 @@ function BlockCard({ index, id, part, agent, disabled, handleRef, onDragStart, o
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [impact, setImpact] = useState<ManagedPartConsumer[] | null>(null);
+  // Saving found a newer version (#2897): theirs, and the restarts the person had ticked.
+  const [stale, setStale] = useState<{ theirs: ManagedPart; restart: ManagedPartConsumer[] } | null>(null);
 
   if (!part) {
     return (
@@ -153,14 +156,25 @@ function BlockCard({ index, id, part, agent, disabled, handleRef, onDragStart, o
       if (full.content.kind === 'block') setEditing({ text: full.content.content, revision: full.revision });
     } catch (err) { /* telemetry-exempt: shown to the person beside the control */ setError(errorText(err)); }
   };
-  const save = async (restart: ManagedPartConsumer[] = []) => {
-    if (!editing) return;
+  /** Save the edit. `revision` is theirs when the person chose Keep mine, so a third change is still caught. */
+  const save = async (restart: ManagedPartConsumer[] = [], revision = editing?.revision) => {
+    if (!editing || revision === undefined) return;
     setBusy(true);
     setError(null);
+    let saved: ManagedPartSummary;
     try {
-      await unwrap(managed().updatePart({ id, expectedRevision: editing.revision, content: { kind: 'block', content: editing.text } }));
+      saved = await unwrap(managed().updatePart({ id, expectedRevision: revision, content: { kind: 'block', content: editing.text } }));
     } catch (err) {
-      // telemetry-exempt: shown to the person beside the control
+      // telemetry-exempt: a newer version is shown beside this one; anything else beside the control
+      if (isStale(err)) {
+        try {
+          const theirs = await unwrap(managed().getPart(id));
+          setImpact(null);
+          setStale({ theirs, restart });
+          setBusy(false);
+          return;
+        } catch (readErr) { /* telemetry-exempt: shown beside the control */ setError(errorText(readErr)); setBusy(false); return; }
+      }
       setError(errorText(err));
       setBusy(false);
       return;
@@ -168,15 +182,18 @@ function BlockCard({ index, id, part, agent, disabled, handleRef, onDragStart, o
     // Saved: the editor closes, and restarts run on their own (a working agent waits for its turn to end).
     setEditing(null);
     setImpact(null);
+    setStale(null);
     setBusy(false);
     restartAfterSave(restart.map(({ projectPath, agentId, agentName }) => ({ projectPath, agentId, agentName })));
+    noteRunningLeftAlone(saved.usedBy, restart);
   };
   const requestSave = () => {
-    if (part.usedBy.length > 1 || others.length > 0) setImpact(part.usedBy);
+    if (needsImpactDialog(part, others.length)) setImpact(part.usedBy);
     else void save();
   };
   const forkInstead = async () => {
     setImpact(null);
+    setStale(null);
     setBusy(true);
     setError(null);
     try {
@@ -271,8 +288,21 @@ function BlockCard({ index, id, part, agent, disabled, handleRef, onDragStart, o
           error={error}
           onCancel={() => setImpact(null)}
           onSave={(restart) => void save(restart)}
+          templates={part.templates}
           onForkInstead={() => void forkInstead()}
           forkLabel={`Fork for ${agent?.agentName ?? 'this agent'} instead`}
+        />
+      )}
+      {stale && editing && (
+        <StaleEditDialog
+          theirs={stale.theirs}
+          mine={{ name: stale.theirs.name, description: stale.theirs.description, content: { kind: 'block', content: editing.text } }}
+          busy={busy}
+          error={error}
+          onKeepMine={() => void save(stale.restart, stale.theirs.revision)}
+          onTakeTheirs={() => { setStale(null); setEditing(null); setError(null); }}
+          onFork={() => void forkInstead()}
+          forkLabel={`Fork for ${agent?.agentName ?? 'this agent'}`}
         />
       )}
     </div>

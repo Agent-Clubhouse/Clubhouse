@@ -116,14 +116,15 @@ describe('BlockList', () => {
   });
 
   it('a failed save keeps the editor open with the text and restarts nobody', async () => {
-    vi.spyOn(m(), 'updatePart').mockResolvedValue({ ok: false, code: 'stale' } as never);
+    // A stale save shows both versions instead (SharedEdits.test.tsx).
+    vi.spyOn(m(), 'updatePart').mockResolvedValue({ ok: false, code: 'failed' } as never);
     const restart = vi.spyOn(m(), 'restart');
     await openSharedEditor();
     fireEvent.click(screen.getByTestId('managed-block-save'));
     const dialog = await screen.findByTestId('managed-impact-dialog');
     fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Restart release-lead' }));
     fireEvent.click(within(dialog).getByTestId('managed-impact-save'));
-    expect((await within(dialog).findByRole('alert')).textContent).toMatch(/changed since you opened it/);
+    expect((await within(dialog).findByRole('alert')).textContent).toMatch(/Something went wrong/);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('new');
     expect(restart).not.toHaveBeenCalled();
