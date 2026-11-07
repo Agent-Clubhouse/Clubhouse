@@ -47,13 +47,12 @@ import { ensureMcpBridgeForAgent } from '../../mcp-settings';
 import type { McpToolResult } from '../types';
 import * as agentConfig from '../../agent-config';
 import { agentRegistry } from '../../agent-registry';
-import { personaInjection, startDurableCreation } from '../../agent-creation';
+import { startDurableCreation } from '../../agent-creation';
 import * as agentSystem from '../../agent-system';
 import { getAgentRuntime } from '../../agent-runtime';
 import { findGitCommonDir, getDefaultBranch, getGitInfo } from '../../git-service';
 import { withoutClubhouseOwnedChanges } from '../../clubhouse-owned-files';
 import { findParent, listAllHelpers, listHelpersEverywhere, type HelperEntry } from '../../helper-index';
-import { listAvailablePersonas } from '../../materialization-service';
 import * as projectStore from '../../project-store';
 import {
   checkHelperLimitFor,
@@ -103,7 +102,6 @@ import type { HelperSpawnResult } from '../../../../shared/telemetry/helper-usag
 import { classifyStartFailure, noteProviderFailure, providerStartWarning } from '../../provider-quota';
 import { contextWindowCheck } from '../../context-window';
 import { helperAutoRefused, helperRouted } from '../../../telemetry/feature-events';
-import { getSettings as getExperimentalSettings } from '../../experimental-settings';
 import { managedAgents } from '../../managed-agents';
 import { helperTemplateModel, managedHelperSetup } from '../../managed-agents/helpers';
 
@@ -539,11 +537,8 @@ async function noteContextOutcome(helperPath: string, helperId: string, provider
 
 // ── start_helper ─────────────────────────────────────────────────────────
 
-/** How start_helper's template arguments are described: the registry has no per-flag schemas, so they are always listed. */
-const NEEDS_MANAGED = 'Needs Clubhouse-managed agents (Settings > Experimental), and refused while they are off. '
-  + 'Also refused unless the person lets orchestrators choose helper templates (Settings › Managed agents › Helpers).';
-const MANAGED_ARGS_OFF =
-  'template, addParts and removeParts need Clubhouse-managed agents, which are off. Leave them out, or ask the person to turn on Clubhouse-managed agents in Settings > Experimental.';
+/** How start_helper's template arguments are described. */
+const NEEDS_MANAGED = 'Refused unless the person lets orchestrators choose helper templates (Settings › Managed agents › Helpers).';
 
 /** Check start_helper's arguments. Throws McpArgError. */
 function validateStartArgs(args: HelperStartArgs): void {
@@ -625,14 +620,10 @@ function noticeApprovalNeeded(orchestrator: DurableAgentConfig, args: HelperStar
  */
 async function runHelperStart(orchestratorId: string, args: HelperStartArgs, approvedIn?: string): Promise<StartOutcome> {
   validateStartArgs(args);
-  // Clubhouse-managed helpers (#2899): with the flag on, every helper is built
-  // from a template and never gets a persona, so the persona is dropped before
-  // anything plans or checks with it. With it off, the template arguments are refused, not ignored.
-  const managedOn = getExperimentalSettings().managedAgents === true;
-  if (!managedOn && (args.template || args.addParts?.length || args.removeParts?.length)) {
-    return refused(MANAGED_ARGS_OFF);
-  }
-  if (managedOn && args.persona) {
+  // Clubhouse-managed helpers (#2899): every helper is built from a template
+  // and never gets a persona, so the persona is dropped before anything plans
+  // or checks with it.
+  if (args.persona) {
     const { persona: _dropped, ...rest } = args;
     args = rest;
   }
@@ -646,30 +637,28 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
   const { projectPath: homePath, config: orchestrator } = await resolveCaller(orchestratorId);
 
   // Checked before anything is created, with the checks saving it runs: a helper never starts without its setup.
-  let managedHelper: Awaited<ReturnType<typeof managedHelperSetup>> | null = null;
-  if (managedOn) {
-    try {
-      managedHelper = await managedHelperSetup(managedAgents(), args);
-    } catch (err) {
-      // telemetry-exempt: the refusal reaches the calling agent as the tool result
-      return refused(`Could not start helper "${args.name}": ${errorText(err)}`);
-    }
-    // No model or difficulty asked for: the helper template's, when it is for the CLI the helper runs on (D52).
-    // Managed helpers have no persona, so that CLI is the one asked for, else the orchestrator's; Auto decides later.
-    const orchestratorCli = orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator;
-    const runsOn = args.cli === AUTO_CLI ? undefined : (args.cli ?? orchestratorCli);
-    const templateModel = await helperTemplateModel(managedHelper.settings, args, runsOn, async (helperCli, templateModelId) => {
-      let checkProject = homePath;
-      try {
-        checkProject = (await resolveTargetProject(homePath, orchestratorId, args.project)).path;
-      } catch {
-        // telemetry-exempt: a bad project is refused under the lock; check the model with the home profile
-      }
-      const check = await checkHelperModel(helperCli, templateModelId, checkProject);
-      return check.ok && !check.warning;
-    });
-    if (templateModel) args = { ...args, model: templateModel };
+  let managedHelper: Awaited<ReturnType<typeof managedHelperSetup>>;
+  try {
+    managedHelper = await managedHelperSetup(managedAgents(), args);
+  } catch (err) {
+    // telemetry-exempt: the refusal reaches the calling agent as the tool result
+    return refused(`Could not start helper "${args.name}": ${errorText(err)}`);
   }
+  // No model or difficulty asked for: the helper template's, when it is for the CLI the helper runs on (D52).
+  // Managed helpers have no persona, so that CLI is the one asked for, else the orchestrator's; Auto decides later.
+  const orchestratorCli = orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator;
+  const runsOn = args.cli === AUTO_CLI ? undefined : (args.cli ?? orchestratorCli);
+  const templateModel = await helperTemplateModel(managedHelper.settings, args, runsOn, async (helperCli, templateModelId) => {
+    let checkProject = homePath;
+    try {
+      checkProject = (await resolveTargetProject(homePath, orchestratorId, args.project)).path;
+    } catch {
+      // telemetry-exempt: a bad project is refused under the lock; check the model with the home profile
+    }
+    const check = await checkHelperModel(helperCli, templateModelId, checkProject);
+    return check.ok && !check.warning;
+  });
+  if (templateModel) args = { ...args, model: templateModel };
   const { name, task, persona, cli, model, effort, difficulty, access, branchFrom, folder } = args;
 
   // Model and effort are checked before the start lock: listing models can take a CLI handshake (#2569).
@@ -826,11 +815,9 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
         freeAgentMode: launch.freeAgentMode,
       };
       // A managed helper's setup is required: if it can't be saved, the creation fails rather than start a helper without it.
-      // What the start named stays: a persona's pin only fills what it left open (#2671).
-      const setup = managedHelper && (({ settings: _templateSettings, ...rest }) => rest)(managedHelper);
-      started = await startDurableCreation(target.path, params, setup
-        ? { inject: async (created) => { await managedAgents().saveSetup(target.path, created.id, setup); }, injectRequired: true }
-        : personaInjection(target.path, params, plan?.keep));
+      const { settings: _templateSettings, ...setup } = managedHelper;
+      started = await startDurableCreation(target.path, params,
+        { inject: async (created) => { await managedAgents().saveSetup(target.path, created.id, setup); }, injectRequired: true });
     } catch (err) {
       // telemetry-exempt: the refusal reaches the calling agent as the tool result
       // Refused up front: a bad or taken name, folder, branch or base, or an unknown persona.
@@ -870,8 +857,13 @@ const PENDING_NOTE =
   'Waiting requests are kept in memory only: each expires after 24 hours and all are cleared when ' +
   'Clubhouse quits or your orchestration is turned off. If you hear nothing, ask the user or call start_helper again.';
 
+/** Said in start_helper's result when an orchestrator passes a persona, which managed helpers don't take (#2901). */
+export const HELPER_PERSONA_IGNORED = 'persona was ignored: helpers start from a template. Pass cli or model to choose them.';
+
 async function startHelper(agentId: string, args: Record<string, unknown>): Promise<McpToolResult> {
-  const outcome = await runHelperStart(agentId, parseStartArgs(args));
+  const parsed = parseStartArgs(args);
+  const personaNote = parsed.persona ? { personaNote: HELPER_PERSONA_IGNORED } : {};
+  const outcome = await runHelperStart(agentId, parsed);
   switch (outcome.kind) {
     case 'refused':
       return textResult(outcome.message, true);
@@ -891,6 +883,7 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
         ...(outcome.modelWarning && { modelWarning: outcome.modelWarning }),
         ...(outcome.effortWarning && { effortWarning: outcome.effortWarning }),
         ...(outcome.quotaWarning && { quotaWarning: outcome.quotaWarning.message }),
+        ...personaNote,
         message:
           (outcome.reused ? 'You already asked for this start, and it is still waiting. ' : '') +
           'This agent is set to ask the user before starting helpers, so nothing was created yet. ' +
@@ -911,6 +904,7 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
         ...(outcome.modelWarning && { modelWarning: outcome.modelWarning }),
         ...(outcome.effortWarning && { effortWarning: outcome.effortWarning }),
         ...(outcome.quotaWarning && { quotaWarning: outcome.quotaWarning.message }),
+        ...personaNote,
         ...(outcome.launch.clamped && { accessNote: `Access lowered to ${outcome.launch.level}: a helper never gets more than you run with or than its CLI allows at that level.` }),
         message:
           `Helper "${outcome.name}" is being created${outcome.project.cross ? ` in ${outcome.project.name}` : ''}. Its worktree can take up to a minute; ` +
@@ -1304,24 +1298,17 @@ async function messageParent(agentId: string, args: Record<string, unknown>): Pr
 
 // ── list_projects (#2515) ────────────────────────────────────────────────
 
-/** One local project's entry: what start_helper's `project` and `persona` can name there. */
+/** One local project's entry: what start_helper's `project` can name. Helpers take no persona (#2901), so none are listed. */
 async function describeProject(project: Project, homePath: string, homeGit: string | null): Promise<Record<string, unknown>> {
-  const [yours, git, defaultBranch, personas] = await Promise.all([
+  const [yours, git, defaultBranch] = await Promise.all([
     agentConfig.isSameProject(project.path, homePath),
     findGitCommonDir(project.path),
     getDefaultBranch(project.path).catch((): null => null),
-    // The same layered lookup a persona is applied with: project, user, built-in.
-    listAvailablePersonas(project.path).catch((err: unknown): Array<{ id: string }> => {
-      // telemetry-exempt: logged; the project is listed without its personas
-      appLog('core:mcp', 'warn', 'list_projects: could not list personas', { meta: { projectPath: project.path, error: errorText(err) } });
-      return [];
-    }),
   ]);
   return {
     name: projectName(project),
     path: project.path,
     defaultBranch,
-    personas: personas.map((p) => p.id),
     ...(yours && { yours: true }),
     ...(!yours && !git && { notGit: true }),
     ...(!yours && git && homeGit && samePath(git, homeGit) && { sameRepository: true }),
@@ -1352,7 +1339,7 @@ export function registerHelperTools(): void {
         'it returns "needs_approval" with a requestId instead, and you get a message when the user ' +
         'approves or declines. With project, the helper is created in another Clubhouse project ' +
         '(see list_projects); that needs cross-project helpers turned on for you. ' +
-        'With Clubhouse-managed agents on, templates replace personas: every helper is built from a template ' +
+        'Templates replace personas: every helper is built from a template ' +
         '(the one you name, or the default helper template), with parts added or removed for it only, and persona is ignored. ' +
         'Naming a template or changing parts needs the person to let orchestrators choose helper templates; otherwise every helper gets the default helper template.',
       inputSchema: {
@@ -1360,7 +1347,7 @@ export function registerHelperTools(): void {
         properties: {
           name: { type: 'string', description: 'The helper\'s name (also its default folder).' },
           task: { type: 'string', description: 'The task, sent as the helper\'s first message.' },
-          persona: { type: 'string', description: 'Optional persona id to apply, from the project the helper is created in. With Clubhouse-managed agents on, templates replace personas: this is ignored, so use template.' },
+          persona: { type: 'string', description: 'Ignored: templates replace personas, so use template.' },
           template: { type: 'string', description: `${NEEDS_MANAGED} The template to build the helper from (list_agent_templates). Leave out for the default helper template.` },
           addParts: { type: 'array', items: { type: 'string' }, description: `${NEEDS_MANAGED} Agent part ids (list_agent_parts) to add for this helper only.` },
           removeParts: { type: 'array', items: { type: 'string' }, description: `${NEEDS_MANAGED} Agent part ids from the template to leave out for this helper only. To swap a part, remove one and add another. The Clubhouse MCP part can't be removed.` },
@@ -1456,7 +1443,7 @@ export function registerHelperTools(): void {
     {
       description:
         'List the Clubhouse projects on this machine that start_helper can create a helper in: name, path, ' +
-        'default branch and the persona ids each one has. Your own project is marked "yours". ' +
+        'and default branch. Your own project is marked "yours". ' +
         'Projects marked "sameRepository" (the same git repository as yours) or "notGit" can\'t take a helper from you.',
       inputSchema: { type: 'object', properties: {} },
     },

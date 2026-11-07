@@ -264,3 +264,16 @@ describe('createManagedSettings with a shared store (#2589)', () => {
     expect(shared.get()).toEqual(next);
   });
 });
+
+describe('createManagedSettings with a read option (D61)', () => {
+  it('returns the effective value from the get channel, and still saves to the store', async () => {
+    vi.mocked(ipcMain.handle).mockClear();
+    const managed = createManagedSettings(TEST_DEF, { read: () => ({ enabled: true, name: 'effective' }) });
+    managed.register();
+    const handler = (ch: string) => vi.mocked(ipcMain.handle).mock.calls.find(([c]) => c === ch)![1];
+    expect(handler('settings:test:get')({} as any)).toEqual({ enabled: true, name: 'effective' });
+    expect(managed.getSettings()).toEqual(TEST_DEF.defaults);
+    await handler('settings:test:save')({} as any, { enabled: false, name: 'saved' });
+    expect(managed.getSettings()).toEqual({ enabled: false, name: 'saved' });
+  });
+});

@@ -387,6 +387,11 @@ test.describe.serial('default path smoke', () => {
     await w.getByRole('button', { name: `New agent in ${alpha.name}`, exact: true }).click();
     await expect(newAgentPage()).toBeVisible({ timeout: 10_000 });
 
+    // A plain agent: Clubhouse managed is on by default, and its Start with template flow is managed-agents.spec's.
+    const managed = newAgentPage().getByRole('switch', { name: 'Clubhouse managed' });
+    await expect(managed).toHaveAttribute('aria-checked', 'true');
+    await managed.click();
+    await expect(managed).toHaveAttribute('aria-checked', 'false');
     await w.locator('[data-testid="new-agent-name"]').fill(CREATED_AGENT);
     await expect(w.locator('[data-testid="new-agent-submit"]')).toBeEnabled({ timeout: 10_000 });
     await w.locator('[data-testid="new-agent-submit"]').click();

@@ -82,8 +82,6 @@ describe('agentStore', () => {
       activeAgentId: null,
       agentSettingsOpenFor: null,
       deleteDialogAgent: null,
-      configChangesDialogAgent: null,
-      configChangesProjectPath: null,
       agentActivity: {},
       agentSpawnedAt: {},
       agentTerminalAt: {},
@@ -829,8 +827,6 @@ describe('agentStore', () => {
         activeAgentId: 'a_cleanup',
         agentSettingsOpenFor: 'a_cleanup',
         deleteDialogAgent: 'a_cleanup',
-        configChangesDialogAgent: 'a_cleanup',
-        configChangesProjectPath: '/project',
         sessionNamePromptFor: 'a_cleanup',
         agentActivity: { a_cleanup: 10, keep: 20 },
         agentSpawnedAt: { a_cleanup: 11, keep: 21 },
@@ -855,8 +851,6 @@ describe('agentStore', () => {
       expect(getState().activeAgentId).toBeNull();
       expect(getState().agentSettingsOpenFor).toBeNull();
       expect(getState().deleteDialogAgent).toBeNull();
-      expect(getState().configChangesDialogAgent).toBeNull();
-      expect(getState().configChangesProjectPath).toBeNull();
       expect(getState().sessionNamePromptFor).toBeNull();
       expect(getState().projectActiveAgent.proj_1).toBeUndefined();
       expect(getState().projectActiveAgent.proj_2).toBe('keep');

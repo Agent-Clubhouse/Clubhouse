@@ -111,6 +111,27 @@ describe('settings-handlers', () => {
     });
   });
 
+  describe('source control settings (D61)', () => {
+    function files(byName: Record<string, unknown>): void {
+      vi.mocked(fs.readFileSync).mockImplementation(((file: string) => {
+        const value = byName[path.basename(file)];
+        if (value === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        return JSON.stringify(value);
+      }) as typeof fs.readFileSync);
+    }
+    const get = () => registeredHandlers.get('settings:source_control:get')!({} as any);
+
+    it('shows the effective app level: its own setting, then the old Clubhouse Mode one, then GitHub', () => {
+      expect(get()).toEqual({ provider: 'github' });
+      resetAllSettingsStoresForTests();
+      files({ 'clubhouse-mode-settings.json': { enabled: false, sourceControlProvider: 'azure-devops' } });
+      expect(get()).toEqual({ provider: 'azure-devops' });
+      resetAllSettingsStoresForTests();
+      files({ 'clubhouse-mode-settings.json': { enabled: false, sourceControlProvider: 'azure-devops' }, 'source-control-settings.json': { provider: 'github' } });
+      expect(get()).toEqual({ provider: 'github' });
+    });
+  });
+
   describe('registerSettingsHandlers', () => {
     it('is idempotent — calling twice does not double-register', () => {
       registerSettingsHandlers(); // already called in beforeAll

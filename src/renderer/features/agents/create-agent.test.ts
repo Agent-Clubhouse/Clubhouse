@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDurableAgent } from './create-agent';
 import { useAgentStore } from '../../stores/agentStore';
-import { loadManagedFlag, resetManagedFlag } from '../managed/managed-flag';
 
 const input = { name: 'plain-otter', color: 'emerald', model: 'default', useWorktree: false, orchestrator: 'claude-code' };
 const project = { id: 'p1', path: '/tmp/ch' };
@@ -54,11 +53,6 @@ describe('createDurableAgent with Clubhouse features off (#2893)', () => {
 
 describe('createDurableAgent in a Clubhouse Mode project (#2901)', () => {
   let order: string[];
-  const setFlag = async (on: boolean) => {
-    vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: on } as never);
-    resetManagedFlag();
-    await loadManagedFlag();
-  };
   beforeEach(() => {
     vi.restoreAllMocks();
     order = [];
@@ -68,26 +62,19 @@ describe('createDurableAgent in a Clubhouse Mode project (#2901)', () => {
     useAgentStore.setState({ spawnDurableAgent: vi.fn(async () => { order.push('spawn'); return 'a-new'; }) } as never);
   });
 
-  it('with the flag on, turns Clubhouse Mode off for the plain agent before its first start', async () => {
-    await setFlag(true);
+  it('turns Clubhouse Mode off for the plain agent before its first start', async () => {
     await expect(createDurableAgent(project, input)).resolves.toBe('a-new');
     expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/tmp/ch', 'a-new', { clubhouseModeOverride: true });
     expect(order).toEqual(['create', 'override', 'spawn']);
-    resetManagedFlag();
   });
 
-  it('leaves it alone in a project without Clubhouse Mode, and with the flag off', async () => {
-    await setFlag(true);
+  it('leaves it alone in a project without Clubhouse Mode', async () => {
     await createDurableAgent({ id: 'p2', path: '/tmp/other' }, input);
-    await setFlag(false);
-    await createDurableAgent(project, input);
     expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
-    expect(order).toEqual(['create', 'spawn', 'create', 'spawn']);
-    resetManagedFlag();
+    expect(order).toEqual(['create', 'spawn']);
   });
 
   it('removes the agent unstarted when the override can\'t be saved', async () => {
-    await setFlag(true);
     vi.mocked(window.clubhouse.agent.updateDurableConfig).mockRejectedValue(new Error('disk full'));
     const del = vi.spyOn(window.clubhouse.agent, 'deleteDurable').mockImplementation(async () => { order.push('delete'); });
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -96,6 +83,5 @@ describe('createDurableAgent in a Clubhouse Mode project (#2901)', () => {
     expect(del).toHaveBeenCalledWith('/tmp/ch', 'a-new');
     expect(onError).toHaveBeenCalledWith("Couldn't turn Clubhouse Mode off for it: disk full");
     expect(order).toEqual(['create', 'delete']);
-    resetManagedFlag();
   });
 });

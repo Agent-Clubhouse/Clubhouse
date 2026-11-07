@@ -135,7 +135,7 @@ export interface Agent {
   runCwd?: string;
   /** Quick agents: HEAD sha of `runCwd` when the run was spawned (best-effort). */
   runBaseSha?: string;
-  /** Quick agents started from a template (D25, Clubhouse-managed agents on): its id, so Retry keeps it. */
+  /** Quick agents started from a template (D25): its id, so Retry keeps it. */
   managedTemplateId?: string;
 }
 
@@ -232,6 +232,11 @@ export interface QuickAgentDefaults {
 }
 
 export type SourceControlProvider = 'github' | 'azure-devops';
+
+/** The app-level source control provider (D61), in source-control-settings.json. Unset falls back to the old Clubhouse Mode value. */
+export interface SourceControlSettings {
+  provider?: SourceControlProvider;
+}
 
 /** Project-level default settings applied as snapshots when creating new agents. */
 export interface ProjectAgentDefaults {
@@ -1004,7 +1009,7 @@ export interface SoundSettings {
 }
 
 export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'mcp' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher'
-  // Clubhouse-managed agents (#2819), behind the managedAgents flag.
+  // Clubhouse-managed agents (#2819).
   | 'managed-blocks' | 'managed-skills' | 'managed-mcp' | 'managed-templates' | 'managed-orchestration' | 'managed-switch';
 
 // --- Chat idle settings ---
@@ -1083,8 +1088,6 @@ export const STRUCTURED_MODE_REMOVED_NOTICE_KEY = 'structuredModeRemovedNotice';
  */
 export const PREVIEW_ONLY_EXPERIMENTAL_FLAGS: readonly string[] = [
   'goobers',
-  // Clubhouse-managed agents (#2819), while the epic lands.
-  'managedAgents',
   'copilotSdk', // Legacy preference retained for downgrade compatibility only.
   'copilotLegacyAcp',
 ];
@@ -1585,7 +1588,7 @@ export interface SpawnAgentParams {
   agentFile?: string;
   /** Source directory for agent file (e.g. --source ~/.copilot/agents/) */
   agentSource?: string;
-  /** Clubhouse-managed quick agents (#2893): start from this template. Needs the managedAgents preview flag. */
+  /** Clubhouse-managed quick agents (#2893): start from this template. */
   managedTemplate?: { id: string; agentName: string };
 }
 

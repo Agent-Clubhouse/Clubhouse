@@ -14,6 +14,7 @@ import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
 import type { ManagedAgentStatus } from '../../../shared/managed-agents-types';
 import { createManagedAgentsService, ManagedError, type ManagedAgentsService } from './service';
 import { createManagedStateStore, managedStateDir } from './state-store';
+import { ensureBuiltinsOnceFor } from './builtins-once';
 import { MCP_BACKUP_DIR } from './mcp-backup';
 import { keepInstructionsAtFirstStart } from './before-managed';
 import * as path from 'path';
@@ -63,27 +64,18 @@ export function managedAgents(): ManagedAgentsService {
   return service;
 }
 
-let builtins: Promise<void> | null = null;
-
 /**
- * Install or update the built-in parts once per app run. Startup and the
- * automatic switch to managed (D59) share it; a failure lets the next caller
- * try again.
+ * Install or update the app service's built-in parts once per app run.
+ * Startup, the automatic switch to managed (D59) and helper starts share it;
+ * a failure lets the next caller try again.
  */
 export function ensureBuiltinsOnce(): Promise<void> {
-  if (!builtins) {
-    builtins = managedAgents().ensureBuiltins().catch((err) => {
-      builtins = null;
-      throw err;
-    });
-  }
-  return builtins;
+  return ensureBuiltinsOnceFor(managedAgents());
 }
 
 /** Tests only. */
 export function _setManagedAgentsForTesting(next: ManagedAgentsService | null): void {
   service = next;
-  builtins = null;
 }
 
 // ── What each running session started with ─────────────────────────────

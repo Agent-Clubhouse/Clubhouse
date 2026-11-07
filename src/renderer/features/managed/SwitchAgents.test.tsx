@@ -5,18 +5,11 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentRowActions } from '../agents/useAgentRowActions';
-import { CHROME_HELP_SECTIONS, HELP_SECTIONS, MANAGED_CLASSIC_HELP_EDITS, MANAGED_HELP_EDITS, applyHelpEdits, managedHelpSections, normalizeNewlines } from '../help/help-content';
+import { CHROME_HELP_SECTIONS, HELP_SECTIONS } from '../help/help-content';
 import { legacyLabel, legacyLine, legacyUse } from './legacy';
-import { loadManagedFlag, resetManagedFlag } from './managed-flag';
 import { SwitchAgentsSettingsView } from './SwitchAgentsSettingsView';
 
 const m = () => window.clubhouse.managed;
-
-async function setFlag(on: boolean) {
-  vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: on } as never);
-  resetManagedFlag();
-  await loadManagedFlag();
-}
 
 const config = (id: string, over: Partial<DurableAgentConfig> = {}): DurableAgentConfig => ({
   id, name: id, color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: `wt-${id}`, ...over,
@@ -24,14 +17,12 @@ const config = (id: string, over: Partial<DurableAgentConfig> = {}): DurableAgen
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  resetManagedFlag();
 });
 
 afterEach(() => {
   useProjectStore.setState({ projects: [] });
   useAgentStore.setState({ agents: {} });
   useClubhouseModeStore.setState({ enabled: false, projectOverrides: {} });
-  resetManagedFlag();
 });
 
 describe('legacy detection', () => {
@@ -60,14 +51,7 @@ describe('Apply and Extract persona in the agent menu', () => {
   const ids = (actions: Array<{ id: string }>) => actions.map((a) => a.id);
   beforeEach(() => useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: 'proj' }] as never, activeProjectId: 'p1' }));
 
-  it('stay with the flag off', async () => {
-    await setFlag(false);
-    const { result } = renderHook(() => useAgentRowActions(agent));
-    expect(ids(result.current)).toEqual(expect.arrayContaining(['apply-persona', 'extract-persona']));
-  });
-
-  it('go with the flag on', async () => {
-    await setFlag(true);
+  it('are gone', async () => {
     const { result } = renderHook(() => useAgentRowActions(agent));
     await act(async () => { await Promise.resolve(); });
     expect(ids(result.current)).not.toContain('apply-persona');
@@ -76,43 +60,28 @@ describe('Apply and Extract persona in the agent menu', () => {
   });
 });
 
-describe('Help with the flag on', () => {
+describe('Help without Clubhouse Mode and personas (#2901)', () => {
+  const EDITED = ['agents-durable', 'agents-overview', 'projects-settings', 'agents-orchestrated-helpers'];
+
   it('drops Clubhouse Mode and personas from both shells', () => {
-    for (const sections of [managedHelpSections(HELP_SECTIONS, MANAGED_CLASSIC_HELP_EDITS), managedHelpSections(CHROME_HELP_SECTIONS, MANAGED_HELP_EDITS)]) {
+    for (const sections of [HELP_SECTIONS, CHROME_HELP_SECTIONS]) {
       expect(sections.find((s) => s.id === 'personas')).toBeUndefined();
       expect(sections.flatMap((s) => s.topics).find((t) => t.id === 'agents-clubhouse-mode')).toBeUndefined();
     }
-    expect(HELP_SECTIONS.find((s) => s.id === 'personas')).toBeDefined();
   });
 
-  it('rewrites each article it names in both shells, and every edit still matches its article', () => {
-    for (const [sections, all] of [[CHROME_HELP_SECTIONS, MANAGED_HELP_EDITS], [HELP_SECTIONS, MANAGED_CLASSIC_HELP_EDITS]] as const) {
-      const original = sections.flatMap((s) => s.topics);
-      const edited = managedHelpSections(sections, all).flatMap((s) => s.topics);
-      for (const [id, edits] of Object.entries(all)) {
-        // A Windows checkout has CRLF articles; the edits match either way.
-        const before = normalizeNewlines(original.find((t) => t.id === id)!.content);
-        const after = edited.find((t) => t.id === id)!.content;
-        for (const e of edits) {
-          expect(before).toContain(e.from);
-          expect(after).not.toContain(e.from);
-          expect(e.to).not.toContain('—');
-        }
+  it('leaves no persona or Clubhouse Mode instructions in the articles that offered them', () => {
+    for (const sections of [HELP_SECTIONS, CHROME_HELP_SECTIONS]) {
+      for (const topic of sections.flatMap((s) => s.topics).filter((t) => EDITED.includes(t.id))) {
         // Folder contents like "personas" in Reset project stay: they describe what's on disk.
-        expect(after).not.toMatch(/\*\*Persona|persona…|\*\*Clubhouse mode\*\*|\bSee the \*\*Clubhouse Mode/i);
+        expect(topic.content).not.toMatch(/\*\*Persona|persona…|\*\*Clubhouse mode\*\*|\bSee the \*\*Clubhouse Mode/i);
+        expect(topic.content).not.toContain('Agent from a template…');
       }
     }
   });
 
-  it('matches an article checked out with CRLF line endings', () => {
-    const article = CHROME_HELP_SECTIONS.flatMap((s) => s.topics).find((t) => t.id === 'agents-durable')!.content;
-    const crlf = normalizeNewlines(article).replace(/\n/g, '\r\n');
-    expect(applyHelpEdits(crlf, MANAGED_HELP_EDITS['agents-durable'])).toBe(applyHelpEdits(article, MANAGED_HELP_EDITS['agents-durable']));
-    expect(applyHelpEdits(crlf, MANAGED_HELP_EDITS['agents-durable'])).not.toContain('| **Persona** |');
-  });
-
   it('tells a plain agent what it still sets, and that Orchestrator agents keep orchestrating when switched', () => {
-    const topics = managedHelpSections(CHROME_HELP_SECTIONS, MANAGED_HELP_EDITS).flatMap((s) => s.topics);
+    const topics = CHROME_HELP_SECTIONS.flatMap((s) => s.topics);
     const durable = topics.find((t) => t.id === 'agents-durable')!.content;
     expect(durable).toContain('set its **Runs on** and **Model**, and optionally its **MCP servers** and **Free Agent Mode**');
     const helpers = topics.find((t) => t.id === 'agents-orchestrated-helpers')!.content;

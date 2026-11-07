@@ -931,25 +931,13 @@ describe('app-handlers', () => {
     expect(enableExclusions).toHaveBeenCalledWith('/project', expect.anything());
   });
 
-  it('SAVE_CLUBHOUSE_MODE_SETTINGS keeps the source control provider the same in its own setting (D61)', async () => {
-    mockSetAppScp.mockClear();
-    const handler = handleHandlers.get(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS)!;
-    await handler({}, { enabled: false });
-    expect(mockSetAppScp).not.toHaveBeenCalled();
-    await handler({}, { enabled: false, sourceControlProvider: 'azure-devops' });
-    expect(mockSetAppScp).toHaveBeenCalledWith('azure-devops');
-  });
-
-  it('SAVE_CLUBHOUSE_MODE_SETTINGS writes the provider to its own store first, so a failed write leaves the old setting as it was (D61)', async () => {
+  it('SAVE_CLUBHOUSE_MODE_SETTINGS never writes the app-level source control setting, so it can\'t undo the Agents & providers row (D61)', async () => {
     mockSetAppScp.mockClear();
     vi.mocked(clubhouseModeSettings.saveSettings).mockClear();
-    mockSetAppScp.mockRejectedValueOnce(Object.assign(new Error('disk full'), { code: 'ENOSPC' }));
     const handler = handleHandlers.get(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS)!;
-    await expect(handler({}, { enabled: false, sourceControlProvider: 'github' })).rejects.toThrow('disk full');
-    expect(clubhouseModeSettings.saveSettings).not.toHaveBeenCalled();
-
     await handler({}, { enabled: false, sourceControlProvider: 'github' });
-    expect(mockSetAppScp.mock.invocationCallOrder[1]).toBeLessThan(vi.mocked(clubhouseModeSettings.saveSettings).mock.invocationCallOrder[0]);
+    expect(clubhouseModeSettings.saveSettings).toHaveBeenCalledWith({ enabled: false, sourceControlProvider: 'github' });
+    expect(mockSetAppScp).not.toHaveBeenCalled();
   });
 
   it('SAVE_CLUBHOUSE_MODE_SETTINGS removes exclusions on disable', async () => {

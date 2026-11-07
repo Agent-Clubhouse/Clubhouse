@@ -14,7 +14,6 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useChromeStore, type NewAgentRequest } from '../chromeStore';
-import { useChromeDialogStore } from '../sidebar/ChromeAgentDialogs';
 
 const projects = [
   { id: 'p1', name: 'Clubhouse', path: '/tmp/ch' },
@@ -24,6 +23,8 @@ let spawnQuickAgent: ReturnType<typeof vi.fn>;
 const req = (over: Partial<NewAgentRequest> = {}): NewAgentRequest => ({ kind: 'durable', seq: 1, ...over });
 
 beforeEach(() => {
+  // The plain-agent form: Clubhouse managed off, as last chosen. NewAgentPage.managed.test covers managed.
+  window.localStorage.setItem('clubhouse.newAgent.managed', 'off');
   createDurableAgent.mockReset().mockResolvedValue('a-new');
   spawnQuickAgent = vi.fn().mockResolvedValue('q-new');
   window.clubhouse.project.checkGit = vi.fn().mockResolvedValue(true);
@@ -38,7 +39,6 @@ beforeEach(() => {
     availability: {},
   });
   useUIStore.setState({ explorerTab: 'agents', activeHostId: null });
-  useChromeDialogStore.setState({ request: null });
   useChromeStore.setState({ newAgent: req(), newAgentBusy: false, lastProjectId: 'p2', projectActivity: {}, projectScopeId: null });
 });
 
@@ -167,12 +167,6 @@ describe('NewAgentPage', () => {
     fireEvent.change(screen.getByLabelText('Runs in'), { target: { value: 'a1' } });
     expect(screen.getByText('Runs on the same CLI as gallant-swift.')).toBeTruthy();
     expect(screen.getByLabelText('Runs on')).toBeDisabled();
-  });
-
-  it('offers the Orchestrator and Workhorse personas (#2233)', () => {
-    render(<NewAgentPage request={req()} />);
-    const personas = Array.from(screen.getByTestId('new-agent-persona').querySelectorAll('option')).map((o) => o.textContent);
-    expect(personas).toEqual(expect.arrayContaining(['Orchestrator', 'Workhorse']));
   });
 
   it('the picker searches every project', () => {
@@ -308,30 +302,6 @@ describe('NewAgentPage', () => {
     fireEvent.click(screen.getByText('Add project…'));
     await waitFor(() => expect(screen.getByTestId('new-agent-project').textContent).toContain('Site'));
     expect(useChromeStore.getState().newAgent).not.toBeNull();
-  });
-
-  it('From a template… hands the opener to the template dialogs instead of ending it', () => {
-    const onCreated = vi.fn();
-    const onClosed = vi.fn();
-    openWith({ projectId: 'p2', onCreated, onClosed });
-    fireEvent.click(screen.getByText('From a template…'));
-    expect(useChromeStore.getState().newAgent).toBeNull();
-    expect(onClosed).not.toHaveBeenCalled();
-    expect(useChromeDialogStore.getState().request).toEqual({ kind: 'gallery', projectId: 'p2', opener: { onCreated, onClosed, stayInView: undefined } });
-  });
-
-  it('From a template… is off while creating, and the hand-off refuses then', async () => {
-    createDurableAgent.mockReturnValue(new Promise(() => {}));
-    const onClosed = vi.fn();
-    openWith({ onClosed });
-    await submitWhenReady();
-    const link = screen.getByText('From a template…') as HTMLButtonElement;
-    expect(link.disabled).toBe(true);
-    fireEvent.click(link);
-    expect(useChromeStore.getState().handOffNewAgent()).toBeNull();
-    expect(useChromeStore.getState().newAgent).not.toBeNull();
-    expect(useChromeDialogStore.getState().request).toBeNull();
-    expect(onClosed).not.toHaveBeenCalled();
   });
 
   it('Cancel closes the page and tells the opener nothing was made', () => {

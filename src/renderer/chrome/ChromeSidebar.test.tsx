@@ -1,26 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
-import { render, screen, fireEvent, within, act, waitFor, cleanup as cleanupRender } from '@testing-library/react';
+import { render, screen, fireEvent, within, act, waitFor } from '@testing-library/react';
 
 vi.mock('../panels/AccessoryPanel', async (orig) => ({
   ...(await orig<typeof import('../panels/AccessoryPanel')>()),
   AccessoryPanel: () => <div data-testid="accessory-panel" />,
 }));
 
-vi.mock('./sidebar/ChromeAgentDialogs', async () => {
-  const { create } = await import('zustand');
-  const store = create<{ request: unknown; openNewAgent: (id: string) => void; openGallery: (id: string) => void; close: () => void }>((set) => ({
-    request: null,
-    openNewAgent: (projectId) => set({ request: { kind: 'durable', projectId } }),
-    openGallery: (projectId) => set({ request: { kind: 'gallery', projectId } }),
-    close: () => set({ request: null }),
-  }));
-  return { ChromeAgentDialogs: () => null, useChromeDialogStore: store };
-});
+vi.mock('./sidebar/ChromeAgentDialogs', () => ({ ChromeAgentDialogs: () => null }));
 
 import { ChromeSidebar } from './ChromeSidebar';
 import { feedbackStatus, setFeedback } from '../features/feedback/feedback-test-utils';
-import { useChromeDialogStore } from './sidebar/ChromeAgentDialogs';
 import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useAgentStore } from '../stores/agentStore';
@@ -42,7 +32,6 @@ import { useDispatcherSync } from '../features/dispatcher/useDispatcherSync';
 import { DispatcherView } from '../features/dispatcher/DispatcherView';
 import { DISPATCHER_PROJECT_ID, DISPATCHER_OFF, type DispatcherState } from '../../shared/dispatcher-types';
 import type { DurableAgentConfig } from '../../shared/types';
-import { loadManagedFlag, resetManagedFlag } from '../features/managed/managed-flag';
 
 function registerAppPlugin(id: string, label: string, position: 'top' | 'bottom' = 'top') {
   usePluginStore.getState().registerPlugin(
@@ -87,7 +76,6 @@ beforeEach(() => {
   });
   usePluginStore.setState({ plugins: {}, appEnabled: [] });
   useChromeStore.setState({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
-  useChromeDialogStore.setState({ request: null });
   useUIStore.setState({ activeHostId: null });
   useAnnexClientStore.setState({ satellites: [] });
   useRemoteProjectStore.setState({ satelliteProjects: {}, remoteAgents: {}, remoteAgentDetailedStatus: {}, remoteProjectIcons: {} });
@@ -207,7 +195,6 @@ describe('ChromeSidebar', () => {
       fireEvent.mouseEnter(header);
       fireEvent.click(screen.getByLabelText('New agent in Goobers'));
       expect(useChromeStore.getState().newAgent).toMatchObject({ kind: 'durable', projectId: 'p2' });
-      expect(useChromeDialogStore.getState().request).toBeNull();
     });
 
     it('opens from each New menu item with that kind chosen', () => {
@@ -221,24 +208,11 @@ describe('ChromeSidebar', () => {
       expect(useChromeStore.getState().newAgent).toMatchObject({ kind: 'durable' });
     });
 
-    it('offers Agent from a template only with Clubhouse-managed agents off (#2901)', async () => {
+    it('leaves out Agent from a template: New agent offers templates (#2901)', () => {
       render(<ChromeSidebar />);
       fireEvent.click(screen.getByTestId('chrome-new'));
-      expect(screen.getByRole('menuitem', { name: /Agent from a template/ })).toBeTruthy();
-      cleanupRender();
-
-      const flag = vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
-      resetManagedFlag();
-      try {
-        await loadManagedFlag();
-        render(<ChromeSidebar />);
-        fireEvent.click(screen.getByTestId('chrome-new'));
-        expect(screen.getByRole('menuitem', { name: /Durable agent/ })).toBeTruthy();
-        expect(screen.queryByRole('menuitem', { name: /Agent from a template/ })).toBeNull();
-      } finally {
-        flag.mockRestore();
-        resetManagedFlag();
-      }
+      expect(screen.getByRole('menuitem', { name: /Durable agent/ })).toBeTruthy();
+      expect(screen.queryByRole('menuitem', { name: /Agent from a template/ })).toBeNull();
     });
 
     it("shows the New agent shortcut the platform's way", () => {

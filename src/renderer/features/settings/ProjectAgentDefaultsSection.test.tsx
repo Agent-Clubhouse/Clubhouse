@@ -1,7 +1,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
-import { loadManagedFlag, resetManagedFlag } from '../managed/managed-flag';
 
 function renderSection(overrides: Partial<React.ComponentProps<typeof ProjectAgentDefaultsSection>> = {}) {
   return render(
@@ -22,8 +21,6 @@ describe('ProjectAgentDefaultsSection', () => {
       freeAgentMode: false,
     });
     window.clubhouse.agentSettings.writeProjectAgentDefaults = vi.fn().mockResolvedValue(undefined);
-    window.clubhouse.agentSettings.listSourceSkills = vi.fn().mockResolvedValue([]);
-    window.clubhouse.agentSettings.listSourceAgentTemplates = vi.fn().mockResolvedValue([]);
     window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockResolvedValue({
       userInstructions: 'Default instructions',
       pluginInstructionBlocks: [],
@@ -66,14 +63,12 @@ describe('ProjectAgentDefaultsSection', () => {
       expect(await screen.findByText('Save defaults')).toBeInTheDocument();
     });
 
-    it('shows Skills section', async () => {
+    it('has no project skills or agent definitions sections (#2901)', async () => {
       renderSection();
-      expect(await screen.findByText('Skills')).toBeInTheDocument();
-    });
-
-    it('shows Agent Definitions section', async () => {
-      renderSection();
-      expect(await screen.findByText('Agent definitions')).toBeInTheDocument();
+      await screen.findByText('Default agent settings');
+      expect(screen.queryByText('Skills')).not.toBeInTheDocument();
+      expect(screen.queryByText('Agent definitions')).not.toBeInTheDocument();
+      expect(screen.queryByText('Managed skills')).not.toBeInTheDocument();
     });
   });
 
@@ -139,34 +134,13 @@ describe('ProjectAgentDefaultsSection', () => {
     });
   });
 
-  describe('clubhouse mode banner', () => {
-    it('shows snapshot note when clubhouse mode is off', async () => {
-      renderSection({ clubhouseMode: false });
+  describe('intro', () => {
+    it('says the defaults are snapshots for new agents, with no Clubhouse Mode wildcard list', async () => {
+      renderSection();
       expect(await screen.findByText(/snapshots when new durable agents/)).toBeInTheDocument();
-    });
-
-    it('shows clubhouse mode active banner when on', async () => {
-      renderSection({ clubhouseMode: true });
-      expect(await screen.findByText(/Clubhouse Mode is on/)).toBeInTheDocument();
-      expect(screen.getByText('@@AgentName')).toBeInTheDocument();
-      expect(screen.getByText('@@StandbyBranch')).toBeInTheDocument();
-      expect(screen.getByText('@@Path')).toBeInTheDocument();
-    });
-
-    it('lists @@Mission and @@Persona in the active banner', async () => {
-      renderSection({ clubhouseMode: true });
-      await screen.findByText(/Clubhouse Mode is on/);
-      // Both tokens are mentioned in the banner *and* in helper text under
-      // their respective inputs — just assert presence.
-      expect(screen.getAllByText('@@Mission').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText('@@Persona').length).toBeGreaterThanOrEqual(1);
-    });
-
-    it('references the self-edit guide path when clubhouse mode is on', async () => {
-      renderSection({ clubhouseMode: true });
-      await screen.findByText(/Clubhouse Mode is on/);
-      // Referenced in the banner and again in the persona helper text.
-      expect(screen.getAllByText('.clubhouse/clubhouse-mode.md').length).toBeGreaterThanOrEqual(1);
+      expect(screen.queryByText(/still use Clubhouse Mode/)).not.toBeInTheDocument();
+      expect(screen.queryByText('@@AgentName')).not.toBeInTheDocument();
+      expect(screen.queryByText('.clubhouse/clubhouse-mode.md')).not.toBeInTheDocument();
     });
   });
 
@@ -224,73 +198,22 @@ describe('ProjectAgentDefaultsSection', () => {
     });
   });
 
-  describe('default persona', () => {
-    it('renders the Default Persona dropdown', async () => {
-      renderSection();
-      expect(await screen.findByText('Default persona')).toBeInTheDocument();
-    });
-
-    it('loads a saved persona value', async () => {
-      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({
-        instructions: 'test',
-        persona: 'qa',
-      });
-      window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockResolvedValue({
-        userInstructions: 'test',
-        pluginInstructionBlocks: [],
-        allowRules: [],
-        denyRules: [],
-        skills: [],
-        agentTemplates: [],
-        mcpServers: [],
-        orphanedPluginIds: [],
-      });
-      renderSection();
-      await waitFor(() => {
-        expect(screen.getByDisplayValue('Quality Assurance')).toBeInTheDocument();
-      });
-    });
-
-    it('saves persona when set', async () => {
-      renderSection();
-      await screen.findByText('Default persona');
-      const select = screen.getByDisplayValue('None') as HTMLSelectElement;
-      fireEvent.change(select, { target: { value: 'qa' } });
-      fireEvent.click(screen.getByText('Save defaults'));
-
-      await waitFor(() => {
-        const call = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0];
-        expect(call[1].persona).toBe('qa');
-      });
-    });
-
-    it('omits persona when left as None', async () => {
-      renderSection();
-      await screen.findByText('Default persona');
-      // Trigger dirty without changing persona
-      const textarea = screen.getByDisplayValue('Default instructions');
-      fireEvent.change(textarea, { target: { value: 'Updated' } });
-      fireEvent.click(screen.getByText('Save defaults'));
-
-      await waitFor(() => {
-        const call = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0];
-        expect(call[1].persona).toBeUndefined();
-      });
-    });
-  });
-
   describe('source control provider', () => {
     it('renders the source control provider dropdown', async () => {
       renderSection();
       expect(await screen.findByText('Source control provider')).toBeInTheDocument();
     });
 
-    it('defaults to GitHub', async () => {
+    it('shows Use app setting when the project has no value', async () => {
       renderSection();
       await screen.findByText('Source control provider');
+      expect(screen.getByDisplayValue('Use app setting')).toBeInTheDocument();
+    });
 
-      const select = screen.getByDisplayValue('GitHub (gh CLI)');
-      expect(select).toBeInTheDocument();
+    it('loads a saved GitHub value as GitHub, not the app setting', async () => {
+      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({ sourceControlProvider: 'github' });
+      renderSection();
+      await waitFor(() => expect(screen.getByDisplayValue('GitHub (gh CLI)')).toBeInTheDocument());
     });
 
     it('loads azure-devops from saved defaults', async () => {
@@ -318,7 +241,7 @@ describe('ProjectAgentDefaultsSection', () => {
       renderSection();
       await screen.findByText('Source control provider');
 
-      const select = screen.getByDisplayValue('GitHub (gh CLI)');
+      const select = screen.getByDisplayValue('Use app setting');
       fireEvent.change(select, { target: { value: 'azure-devops' } });
 
       expect(screen.getByText('Save defaults')).not.toBeDisabled();
@@ -328,7 +251,7 @@ describe('ProjectAgentDefaultsSection', () => {
       renderSection();
       await screen.findByText('Source control provider');
 
-      const select = screen.getByDisplayValue('GitHub (gh CLI)');
+      const select = screen.getByDisplayValue('Use app setting');
       fireEvent.change(select, { target: { value: 'azure-devops' } });
       fireEvent.click(screen.getByText('Save defaults'));
 
@@ -342,7 +265,27 @@ describe('ProjectAgentDefaultsSection', () => {
       });
     });
 
-    it('omits sourceControlProvider when set to github (default)', async () => {
+    it('saves GitHub explicitly when picked, so it wins over an app setting of Azure DevOps', async () => {
+      renderSection();
+      await screen.findByText('Source control provider');
+      fireEvent.change(screen.getByDisplayValue('Use app setting'), { target: { value: 'github' } });
+      fireEvent.click(screen.getByText('Save defaults'));
+      await waitFor(() => {
+        expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith('/project', expect.objectContaining({ sourceControlProvider: 'github' }));
+      });
+    });
+
+    it('keeps a saved GitHub value on an unrelated save', async () => {
+      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({ instructions: 'Default instructions', sourceControlProvider: 'github' });
+      renderSection();
+      fireEvent.change(await screen.findByDisplayValue('Default instructions'), { target: { value: 'Changed' } });
+      fireEvent.click(screen.getByText('Save defaults'));
+      await waitFor(() => {
+        expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith('/project', expect.objectContaining({ sourceControlProvider: 'github' }));
+      });
+    });
+
+    it('omits sourceControlProvider when left on Use app setting', async () => {
       renderSection();
       await screen.findByRole('heading', { name: 'Default instructions' });
 
@@ -353,6 +296,17 @@ describe('ProjectAgentDefaultsSection', () => {
 
       await waitFor(() => {
         const call = (window.clubhouse.agentSettings.writeProjectAgentDefaults as ReturnType<typeof vi.fn>).mock.calls[0];
+        expect(call[1].sourceControlProvider).toBeUndefined();
+      });
+    });
+
+    it('saves Use app setting as no value, after a project value', async () => {
+      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({ sourceControlProvider: 'azure-devops' });
+      renderSection();
+      fireEvent.change(await screen.findByDisplayValue('Azure DevOps (az CLI)'), { target: { value: '' } });
+      fireEvent.click(screen.getByText('Save defaults'));
+      await waitFor(() => {
+        const call = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0];
         expect(call[1].sourceControlProvider).toBeUndefined();
       });
     });
@@ -503,25 +457,13 @@ describe('ProjectAgentDefaultsSection', () => {
     });
   });
 
-  describe('with Clubhouse-managed agents on (#2901)', () => {
-    let flag: ReturnType<typeof vi.spyOn>;
-    beforeEach(async () => {
-      flag = vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
-      resetManagedFlag();
-      await loadManagedFlag();
-    });
-    afterEach(() => {
-      flag.mockRestore();
-      resetManagedFlag();
-    });
-
+  describe('without personas and conditional blocks (#2901)', () => {
     it('offers no default persona or conditional blocks, and keeps a saved persona on save', async () => {
       window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({ instructions: 'Default instructions', persona: 'qa' });
-      renderSection({ clubhouseMode: true });
+      renderSection();
       expect(await screen.findByText('Source control provider')).toBeInTheDocument();
       expect(screen.queryByText('Default persona')).not.toBeInTheDocument();
       expect(screen.queryByText(/controls conditional blocks/)).not.toBeInTheDocument();
-      expect(screen.getByText("Agents here that still use Clubhouse Mode get these settings each time they wake. Managed agents don't use them.")).toBeInTheDocument();
 
       fireEvent.change(screen.getByPlaceholderText('implement-and-ship'), { target: { value: 'ship' } });
       fireEvent.click(screen.getByText('Save defaults'));

@@ -252,6 +252,7 @@ export type GitOp = (typeof GIT_OPS)[number];
 export const SETTINGS_KEYS = [
   'clipboard', 'editor', 'mcp', 'security', 'goobers', 'annex', 'notifications', 'orchestrators', 'headless',
   'free_agent', 'badge', 'update', 'logging', 'sound', 'session', 'clubhouse_mode', 'experimental', 'marketplace', 'theme', 'chat_idle', 'orchestration',
+  'source_control',
 ] as const;
 
 /** Built-in theme ids (shared/types.ts BuiltinThemeId); plugin themes report `other`. */

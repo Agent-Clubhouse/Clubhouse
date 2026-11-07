@@ -105,7 +105,7 @@ describe('#2849 effective-provider save → materialize → chat prepare (no pro
   });
   it('refuses managed Save, then materializes and delivers canonical defaults', async () => {
     agent.clubhouseModeOverride = false;
-    expect(await save(raw({ local: { command: 'never' } }))).toMatchObject({ ok: false, error: expect.stringContaining('Local overrides') });
+    expect(await save(raw({ local: { command: 'never' } }))).toMatchObject({ ok: false, error: expect.stringContaining('Turn Clubhouse Mode off for it in General › Setup') });
     await expect(fs.readFile(localPath)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await start()).toEqual({ ...projectMap, clubhouse: { command: 'synthetic-live-bridge' } });
     expect(agent.clubhouseModeOverride).toBe(false);

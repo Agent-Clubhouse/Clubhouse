@@ -322,7 +322,6 @@ describe('App.tsx – global dialog presence in all return paths', () => {
   const requiredDialogs = [
     'QuickAgentDialog',
     'CommandPalette',
-    'ConfigChangesDialog',
     'PluginUpdateBanner',
   ];
 

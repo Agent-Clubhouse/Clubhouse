@@ -20,7 +20,6 @@ import { useHelperStartRequestStore } from './stores/helperStartRequestStore';
 import { useFilePreviewStore } from './stores/filePreviewStore';
 import { useToastStore } from './stores/toastStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
-import { useClubhouseModeStore } from './stores/clubhouseModeStore';
 import { handleShortcutKeydown } from './shortcut-dispatch';
 import { pluginEventBus } from './plugins/plugin-events';
 import { useAppCanvasStore, getProjectCanvasStore, hasProjectCanvasStore, getKnownProjectIds } from './plugins/builtin/canvas/main';
@@ -301,24 +300,6 @@ function initPtyExitListener(): () => void {
         pluginEventBus.emit('agent:completed', { agentId, exitCode, name: agent?.name });
       } catch {
         // Plugin listener error — don't break the app
-      }
-
-      // Config changes detection for durable agents in clubhouse mode
-      if (agent?.kind === 'durable' && agent.worktreePath) {
-        const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
-        if (project) {
-          const cmEnabled = useClubhouseModeStore.getState().isEnabledForProject(project.path);
-          if (cmEnabled) {
-            try {
-              const diff = await window.clubhouse.agentSettings.computeConfigDiff(project.path, agentId);
-              if (diff.hasDiffs) {
-                useAgentStore.getState().openConfigChangesDialog(agentId, project.path);
-              }
-            } catch (err) {
-              console.warn('[app-event-bridge] Failed to compute config diff for agent', agentId, err);
-            }
-          }
-        }
       }
     },
   );

@@ -8,7 +8,7 @@ import { launchApp, type LaunchedApp } from './launch';
 import { addProject } from './smoke-helpers';
 
 /**
- * Clubhouse-managed agents (#2819) at the UI level, with the preview flag on,
+ * Clubhouse-managed agents (#2819) at the UI level,
  * over a fake `claude`, so no tokens are spent: the parts library in Settings,
  * New agent from a built-in template, the agent's builder pages and Preview, a
  * part switch that survives leaving settings, and the instructions file its
@@ -72,7 +72,7 @@ test('parts library, New agent from a template, its builder pages and Preview, a
   projectDir = makeProject();
   app = await launchApp({
     label: 'managed-agents',
-    experimental: { chat: true, managedAgents: true },
+    experimental: { chat: true },
     userDataFiles: {
       // The provider is installed (the fake), so no first-run CLI probe.
       'orchestrator-settings.json': { enabled: ['claude-code'], autoDetected: true },

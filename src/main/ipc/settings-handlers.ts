@@ -24,11 +24,13 @@ import {
   isClipboardCompatPlatform,
   MCP_SETTINGS,
   SECURITY_SETTINGS,
+  SOURCE_CONTROL_SETTINGS,
 } from '../../shared/settings-definitions';
 import { onMcpSettingsChanged } from './mcp-binding-handlers';
 import { mcpSettingsStore } from '../services/mcp-settings';
 import { goobersService } from '../services/goobers-service';
 import { chatIdleSettings } from '../services/chat-idle-settings';
+import { effectiveAppSourceControlProvider, sourceControlSettingsStore } from '../services/source-control-settings';
 
 export { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, MCP_SETTINGS, SECURITY_SETTINGS };
 
@@ -50,6 +52,15 @@ export const mcpSettings = createManagedSettings(MCP_SETTINGS, {
 
 export const securitySettings = createManagedSettings(SECURITY_SETTINGS);
 
+/**
+ * The app-level source control provider (D61): the store resolveSourceControlProvider reads. Its row
+ * shows what the app level resolves to, so the old Clubhouse Mode value shows until the startup pass copies it.
+ */
+export const sourceControlSettings = createManagedSettings(SOURCE_CONTROL_SETTINGS, {
+  store: sourceControlSettingsStore,
+  read: () => ({ ...sourceControlSettingsStore.get(), provider: effectiveAppSourceControlProvider() }),
+});
+
 // ---------------------------------------------------------------------------
 // To migrate more settings, add them here following the same pattern.
 // For settings with side effects on save, use the onSave option:
@@ -66,6 +77,7 @@ export function registerSettingsHandlers(): void {
   editorSettings.register();
   mcpSettings.register();
   securitySettings.register();
+  sourceControlSettings.register();
   chatIdleSettings.register();
   // Goobers settings must be readable/savable even before the panel ever
   // subscribes to the service (spec §4.1) — a settings UI needs them

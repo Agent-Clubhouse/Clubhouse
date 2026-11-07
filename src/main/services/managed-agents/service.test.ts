@@ -344,6 +344,29 @@ describe('managed helpers (#2899)', () => {
     const two = await user(() => service.createPart({ name: 'Ship two', content: { kind: 'skill', skillName: 'ship', files: [{ path: 'SKILL.md', content: '# 2' }] } }));
     await expectCode(user(() => managedHelperSetup(service, { addParts: [one.id, two.id] })), 'invalid');
   });
+
+  it('installs the built-ins first when a helper starts before they are installed, and retries after a failed install', async () => {
+    const { managedHelperSetup } = await import('./helpers');
+    const freshRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-agents-fresh-'));
+    const fresh = createManagedAgentsService({
+      catalog: createAssetCatalogStore({ dir: path.join(freshRoot, 'catalog') }),
+      state: createManagedStateStore(path.join(freshRoot, 'managed')),
+      listProjects: async () => [],
+      listAgents: async () => [],
+      getAgent: async () => null,
+      setManagedSetup: async () => {},
+      isRunning: () => false,
+    });
+    const install = vi.spyOn(fresh, 'ensureBuiltins').mockRejectedValueOnce(new Error('disk full'));
+    // The failed install is logged, and the start is refused for the part it needs.
+    await expect(user(() => managedHelperSetup(fresh, {}))).rejects.toThrow();
+    const setup = await user(() => managedHelperSetup(fresh, {}));
+    expect(setup.templateId).toBe('builtin-template-helper');
+    expect(setup.mcps).toContain(CLUBHOUSE_MCP_PART_ID);
+    await user(() => managedHelperSetup(fresh, {}));
+    // Once installed, later starts don't install again.
+    expect(install).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('letting orchestrators choose helper templates (D31)', () => {

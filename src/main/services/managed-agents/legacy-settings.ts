@@ -1,6 +1,6 @@
 /**
  * Settings migrations for the move away from Clubhouse Mode (#2901), run by
- * the startup pass with the `managedAgents` flag on. Each makes explicit
+ * the startup pass. Each makes explicit
  * something that today only follows from Clubhouse Mode, so that removing
  * Clubhouse Mode later changes nothing for the person. Nothing is removed
  * here: the old fallbacks stay until the legacy runtime goes.
@@ -9,7 +9,9 @@
  * a project after the first run. It never changes what a project resolves
  * to, so running it again is safe. The source control one is done once,
  * recorded in `managed-agents/state.json` only after its write succeeded:
- * saving the Clubhouse Mode settings keeps the new store in step after that.
+ * after that only the Agents & providers row sets the new store.
+ *
+ * Both run at app start whether or not the built-in parts installed.
  */
 import * as clubhouseModeSettings from '../clubhouse-mode-settings';
 import * as mcpSettings from '../mcp-settings';
@@ -21,6 +23,8 @@ import { codeOf } from './log-code';
 
 export const MCP_FROM_CLUBHOUSE_MODE = 'mcp-from-clubhouse-mode';
 export const SOURCE_CONTROL_PROVIDER = 'source-control-provider';
+/** Set once the app-level MCP switch has been made explicit; after that a person's own off choice stands. */
+export const MCP_APP_LEVEL_EXPLICIT = 'mcp-app-level-explicit';
 
 /**
  * The MCP settings with every scope where Clubhouse Mode turns MCP on today
@@ -31,8 +35,14 @@ export const SOURCE_CONTROL_PROVIDER = 'source-control-provider';
  * Clubhouse Mode (its project override, then its app switch). With the MCP
  * app switch on, Clubhouse Mode never decides, so nothing changes.
  */
-export function mcpSettingsWithoutClubhouseMode(mcp: McpSettings, mode: { enabled: boolean; projectOverrides?: Record<string, boolean> }): McpSettings | null {
+export function mcpSettingsWithoutClubhouseMode(
+  mcp: McpSettings,
+  mode: { enabled: boolean; projectOverrides?: Record<string, boolean> },
+  opts: { appLevelDone?: boolean } = {},
+): McpSettings | null {
   if (mcp.enabled) return null;
+  // The app-level switch is made explicit once. After that, MCP off is the person's choice and stays off.
+  if (mode.enabled && opts.appLevelDone) return null;
   const overrides = { ...(mcp.projectOverrides ?? {}) };
   let enabled = false;
   let changed = false;
@@ -67,13 +77,19 @@ export async function migrateLegacySettings(state: ManagedStateStore = createMan
   const result = { mcp: false, sourceControl: false };
   try {
     // Every start, not once: Clubhouse Mode turned on for a project since the last start is made explicit too.
-    const next = mcpSettingsWithoutClubhouseMode(mcpSettings.getSettings(), clubhouseModeSettings.getSettings());
+    const mode = clubhouseModeSettings.getSettings();
+    const appLevelDone = !!(await state.read()).migrations?.[MCP_APP_LEVEL_EXPLICIT];
+    const next = mcpSettingsWithoutClubhouseMode(mcpSettings.getSettings(), mode, { appLevelDone });
     if (next) {
       await mcpSettings.saveSettings(next);
       mcpSettings.notifyMcpEnablementChanged();
       result.mcp = true;
       // Informational only: when it last changed something. Never read to skip it.
       await state.update((s) => { s.migrations = { ...(s.migrations ?? {}), [MCP_FROM_CLUBHOUSE_MODE]: new Date().toISOString() }; });
+    }
+    // Once Clubhouse Mode's app-level meaning has been made explicit (now or by an earlier start), stop re-applying it.
+    if (mode.enabled && !appLevelDone) {
+      await state.update((s) => { s.migrations = { ...(s.migrations ?? {}), [MCP_APP_LEVEL_EXPLICIT]: new Date().toISOString() }; });
     }
   } catch (err) {
     // telemetry-exempt: logged; the Clubhouse Mode fallback still turns MCP on, and the next start tries again.

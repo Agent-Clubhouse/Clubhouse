@@ -77,15 +77,7 @@ describe('SettingsNav', () => {
     expect(document.activeElement).toBe(screen.getByTestId('settings-nav-project-p2'));
   });
 
-  it('shows the Managed agents group only with the flag on (#2819)', async () => {
-    const { unmount } = render(<SettingsNav />);
-    await act(async () => {});
-    expect(screen.queryByTestId('settings-nav-group-managed')).toBeNull();
-    expect(screen.queryByTestId('settings-nav-app-managed-blocks')).toBeNull();
-    expect(screen.getByTestId('settings-nav-app-helpers')).toBeTruthy();
-    unmount();
-
-    vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
+  it('shows the Managed agents group after Agents & providers (#2819)', async () => {
     render(<SettingsNav />);
     await screen.findByTestId('settings-nav-group-managed');
     const order = [...screen.getByTestId('settings-nav').querySelectorAll<HTMLElement>('[data-testid^="settings-nav-app-"], [data-testid="settings-nav-group-managed"]')]

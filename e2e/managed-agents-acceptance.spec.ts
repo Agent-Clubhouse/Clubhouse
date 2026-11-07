@@ -9,7 +9,7 @@ import { addProject } from './smoke-helpers';
 
 /**
  * The maintainer's acceptance test for Clubhouse-managed agents (#2819), in the
- * real app with the preview flag on, over a fake `claude`, so no tokens are spent:
+ * real app, over a fake `claude`, so no tokens are spent:
  *
  *   "start with a base <orchestrator, pm, researcher, custom> then add a new
  *   skill; add an existing skill I have in another agent; add an additional MCP
@@ -162,7 +162,7 @@ test('base template, a new skill, a skill from another agent, an MCP server, and
   projectDir = makeProject();
   app = await launchApp({
     label: 'managed-agents-acceptance',
-    experimental: { chat: true, managedAgents: true },
+    experimental: { chat: true },
     userDataFiles: {
       // The provider is installed (the fake), so no first-run CLI probe.
       'orchestrator-settings.json': { enabled: ['claude-code'], autoDetected: true },

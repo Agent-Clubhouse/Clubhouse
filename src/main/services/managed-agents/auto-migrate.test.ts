@@ -15,7 +15,6 @@ const h = vi.hoisted(() => ({
   projects: new Map<string, Map<string, DurableAgentConfig>>(),
   service: null as unknown,
   stateDir: '',
-  flag: true,
   /** Projects with Clubhouse Mode on. */
   clubhouseMode: new Set<string>(),
   dispatcherPath: '',
@@ -60,7 +59,6 @@ vi.mock('../agent-config', () => ({
 vi.mock('../project-store', () => ({
   peekProjects: async () => [...h.projects.keys()].filter((p) => p !== h.dispatcherPath && !p.startsWith('remote')).map((p) => ({ id: p, name: p, path: p })),
 }));
-vi.mock('../experimental-settings', () => ({ getSettings: () => ({ managedAgents: h.flag }) }));
 vi.mock('../clubhouse-mode-settings', () => ({ isClubhouseModeEnabled: (p: string) => h.clubhouseMode.has(p) }));
 vi.mock('../dispatcher/dispatcher-paths', () => ({ isDispatcherPath: (p: string) => p === h.dispatcherPath }));
 vi.mock('../agent-transition', () => ({ agentTransitionBusy: (id: string) => h.busy.has(id) }));
@@ -124,6 +122,7 @@ import {
   legacyConfiguredFrom,
   migrateAtSpawn,
   runStartupMigration,
+  startManagedAtAppStart,
   withSwitchLock,
 } from './auto-migrate';
 
@@ -147,7 +146,6 @@ beforeEach(async () => {
   vi.mocked(agentConfig.setManagedMigration).mockClear();
   vi.mocked(legacySettings.migrateLegacySettings).mockClear();
   h.stateDir = path.join(root, 'managed');
-  h.flag = true;
   h.projects.clear();
   h.clubhouseMode = new Set();
   h.dispatcherPath = 'dispatcher';
@@ -297,14 +295,10 @@ describe('the switch at spawn (D59)', () => {
     expect(get('alpha', 'ada').managedMigrationFailure).toBeUndefined();
   });
 
-  it('leaves plain agents, agents in projects not on this machine, and any agent with the flag off', async () => {
+  it('leaves plain agents and agents in projects not on this machine', async () => {
     expect(await migrateAtSpawn('beta', agent('beta', 'plain'))).toBeNull();
     expect(await migrateAtSpawn('remote-1', agent('remote-1', 'far', { persona: 'qa' }))).toBeNull();
-    h.flag = false;
-    h.clubhouseMode.add('alpha');
-    expect(await migrateAtSpawn('alpha', agent('alpha', 'ada', { persona: 'qa' }))).toBeNull();
-    expect(get('alpha', 'ada').managed).toBeUndefined();
-    expect(get('alpha', 'ada').persona).toBe('qa');
+    expect(get('remote-1', 'far').managed).toBeUndefined();
     expect(agentConfig.setManagedMigration).not.toHaveBeenCalled();
     expect(await parts('block')).toEqual([]);
   });
@@ -420,15 +414,23 @@ describe('the startup pass (D59)', () => {
     expect(get('beta', 'plain').orchestration).toEqual({ maxHelpers: 3, helperAccess: 'standard' });
   });
 
-  it('does nothing with the flag off', async () => {
-    seed();
-    h.projectLayer = { maxHelpers: 3 };
-    h.flag = false;
-    expect(await runStartupMigration()).toEqual({ switched: 0, failed: 0, deferred: 0, carried: 0 });
-    expect(get('alpha', 'sleepy').managed).toBeUndefined();
-    expect(get('beta', 'plain').orchestration).toBeUndefined();
-    expect(agentConfig.setManagedMigration).not.toHaveBeenCalled();
-    expect(legacySettings.migrateLegacySettings).not.toHaveBeenCalled();
+  describe('managed agents work at app start (D61, D63)', () => {
+    it('runs the settings migration even when the built-in parts fail to install, and switches no agents', async () => {
+      seed();
+      const save = vi.spyOn(service, 'saveSetup');
+      await startManagedAtAppStart(async () => { throw new Error('catalog unreadable'); });
+      expect(legacySettings.migrateLegacySettings).toHaveBeenCalledTimes(1);
+      expect(save).not.toHaveBeenCalled();
+      expect(appLog).toHaveBeenCalledWith('core:managed', 'warn', 'Could not install built-in agent parts', expect.anything());
+    });
+
+    it('runs the settings migration once per start, with the startup pass sharing it', async () => {
+      seed();
+      await startManagedAtAppStart(async () => {});
+      await runStartupMigration();
+      expect(legacySettings.migrateLegacySettings).toHaveBeenCalledTimes(1);
+      expect(get('alpha', 'sleepy').managedMigration?.from).toBe('clubhouse-mode');
+    });
   });
 });
 

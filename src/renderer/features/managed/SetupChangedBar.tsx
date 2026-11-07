@@ -15,7 +15,6 @@ import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { useProjectPath } from '../agents/details/AgentDetails';
 import { openAgentSettingsOn } from '../agents/agentSettingsPages';
 import { XIcon } from '../agents/chat/icons';
-import { useManagedFlag } from './managed-flag';
 import { useManagedStatus } from './managedApi';
 import { PENDING_RESTART_NOTE, useManagedRestart } from './restart';
 
@@ -42,11 +41,10 @@ export function resetSetupBarDismissals(): void {
   useDismissed.setState({ byAgent: {} });
 }
 
-/** The managed status of a local running agent, read only with the flag on. */
+/** The managed status of a local running agent. */
 export function useRunningManagedStatus(agent: Agent): { status: ManagedAgentStatus | null; projectPath: string | undefined } {
-  const flag = useManagedFlag();
   const projectPath = useProjectPath(agent.projectId);
-  const eligible = flag && agent.kind === 'durable' && !isRemoteProjectId(agent.projectId) && !!projectPath;
+  const eligible = agent.kind === 'durable' && !isRemoteProjectId(agent.projectId) && !!projectPath;
   const { value } = useManagedStatus(eligible ? projectPath : undefined, eligible ? agent.id : undefined);
   return { status: eligible ? value : null, projectPath };
 }

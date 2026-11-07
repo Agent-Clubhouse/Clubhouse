@@ -2,9 +2,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useToastStore } from '../../stores/toastStore';
 import { isRemoteProjectId, parseNamespacedId } from '../../stores/remoteProjectStore';
-import type { TemplateConfig } from './TemplateConfigDialog';
 import { ATTR, tel } from '../../telemetry';
-import { loadManagedFlag } from '../managed/managed-flag';
 
 /**
  * Durable-agent creation shared by the legacy agent list and the new chrome's
@@ -34,12 +32,10 @@ export interface DurableAgentInput {
 }
 
 /**
- * With Clubhouse-managed agents on (#2901), a plain agent keeps its own files:
- * in a project with Clubhouse Mode on, Clubhouse Mode is turned off for it
- * before its first start. With the flag off, nothing changes.
+ * A plain agent keeps its own files (#2901): in a project with Clubhouse Mode
+ * on, Clubhouse Mode is turned off for it before its first start.
  */
 async function plainAgentSkipsClubhouseMode(projectPath: string): Promise<boolean> {
-  if (!await loadManagedFlag()) return false;
   const settings = await window.clubhouse.app.getClubhouseModeSettings();
   return !!(settings?.projectOverrides?.[projectPath] ?? settings?.enabled);
 }
@@ -131,30 +127,6 @@ export async function createDurableAgent(
     tel.event('clubhouse.ui.action_failed', [ATTR.uiAction('agent_create'), ATTR.errorType('unknown')]);
     tel.exception(err, { handled: true, attrs: [ATTR.uiAction('agent_create')] });
     fail(err);
-    return null;
-  }
-}
-
-/** Resolves to the new agent's id, or null when it failed (reported with a toast). */
-export async function createDurableAgentFromTemplate(project: AgentProjectRef, templateConfig: TemplateConfig): Promise<string | null> {
-  const { persona, name, color, model, useWorktree, orchestrator: orch, freeAgentMode: fam, mcpIds } = templateConfig;
-  const { registerCreatingAgent, removeAgent, spawnDurableAgent } = useAgentStore.getState();
-
-  const tempId = registerCreatingAgent(project.id, name, color, undefined, undefined);
-  try {
-    const config = await window.clubhouse.agent.createDurable(
-      project.path, name, color, model !== 'default' ? model : undefined, useWorktree,
-      orch, fam || undefined, mcpIds, undefined, persona.id,
-    );
-    if (tempId) removeAgent(tempId);
-    await spawnDurableAgent(project.id, project.path, config, false);
-    return config.id;
-  } catch (err) {
-    if (tempId) removeAgent(tempId);
-    console.error('Failed to create agent from template:', err);
-    tel.event('clubhouse.ui.action_failed', [ATTR.uiAction('agent_create'), ATTR.errorType('unknown')]);
-    tel.exception(err, { handled: true, attrs: [ATTR.uiAction('agent_create')] });
-    toastFailure(err);
     return null;
   }
 }

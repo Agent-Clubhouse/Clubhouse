@@ -3,18 +3,18 @@ import { HELP_SECTIONS, CHROME_HELP_SECTIONS, getHelpSections } from './help-con
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 
 describe('help-content', () => {
-  it('has 7 sections', () => {
-    expect(HELP_SECTIONS).toHaveLength(7);
+  it('has 6 sections', () => {
+    expect(HELP_SECTIONS).toHaveLength(6);
   });
 
   it('has the expected section IDs in order', () => {
     const ids = HELP_SECTIONS.map((s) => s.id);
-    expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting', 'personas']);
+    expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting']);
   });
 
-  it('has 36 total topics', () => {
+  it('has 24 total topics', () => {
     const total = HELP_SECTIONS.reduce((sum, s) => sum + s.topics.length, 0);
-    expect(total).toBe(36);
+    expect(total).toBe(24);
   });
 
   it('each section has at least 1 topic', () => {
@@ -46,9 +46,9 @@ describe('help-content', () => {
     expect(general?.topics).toHaveLength(6);
   });
 
-  it('Agents & Orchestrators section has 7 topics', () => {
+  it('Agents & Orchestrators section has 6 topics', () => {
     const agents = HELP_SECTIONS.find((s) => s.id === 'agents');
-    expect(agents?.topics).toHaveLength(7);
+    expect(agents?.topics).toHaveLength(6);
   });
 
   it('Settings section has 4 topics', () => {
@@ -61,27 +61,11 @@ describe('help-content', () => {
     expect(allTopicIds).toContain('command-palette');
     expect(allTopicIds).not.toContain('hub');
     expect(allTopicIds).toContain('dashboard');
-    expect(allTopicIds).toContain('agents-clubhouse-mode');
+    // Clubhouse Mode and personas left Help when Clubhouse-managed agents graduated (#2901).
+    expect(allTopicIds).not.toContain('agents-clubhouse-mode');
+    expect(allTopicIds.some((id) => id.startsWith('persona-'))).toBe(false);
     expect(allTopicIds).toContain('settings-sound');
     expect(allTopicIds).toContain('orchestrators');
-  });
-
-  it('Agent Personas section has 11 topics', () => {
-    const personas = HELP_SECTIONS.find((s) => s.id === 'personas');
-    expect(personas?.topics).toHaveLength(11);
-  });
-
-  it('includes all persona topics', () => {
-    const allTopicIds = HELP_SECTIONS.flatMap((s) => s.topics.map((t) => t.id));
-    expect(allTopicIds).toContain('persona-project-manager');
-    expect(allTopicIds).toContain('persona-qa');
-    expect(allTopicIds).toContain('persona-quality-auditor');
-    expect(allTopicIds).toContain('persona-executor-merge');
-    expect(allTopicIds).toContain('persona-doc-updater');
-    expect(allTopicIds).toContain('persona-judge');
-    expect(allTopicIds).toContain('persona-researcher');
-    expect(allTopicIds).toContain('persona-orchestrator');
-    expect(allTopicIds).toContain('persona-workhorse');
   });
 
   describe('orchestrated helpers (#2233)', () => {
@@ -98,7 +82,7 @@ describe('help-content', () => {
     it('covers the cards, access, control, limits, disposing and connections', () => {
       const content = find(HELP_SECTIONS, 'agents-orchestrated-helpers').content;
       expect(content).toContain('**Let this agent orchestrate**');
-      for (const name of ['**Orchestration**', '**Helpers**', '**Connections**', '**Settings > Helpers**', '**Dispose anyway**', '**Needs you**']) {
+      for (const name of ['**Orchestration**', '**Helpers**', '**Connections**', '**Settings > Managed agents > Helpers**', '**Dispose anyway**', '**Needs you**']) {
         expect(content, name).toContain(name);
       }
       for (const heading of ['## Access', '## Control levels', '## Limits', '## Disposing', '## Connections']) {
@@ -128,17 +112,8 @@ describe('help-content', () => {
       expect(content).toContain('| `connectToDispatcher` |');
     });
 
-    it('shows persona bodies without their settings front-matter', () => {
-      for (const sections of [HELP_SECTIONS, CHROME_HELP_SECTIONS]) {
-        const orchestrator = find(sections, 'persona-orchestrator').content;
-        expect(orchestrator.startsWith('# Orchestrator')).toBe(true);
-        expect(orchestrator).not.toContain('orchestration:');
-        expect(find(sections, 'persona-workhorse').content.startsWith('# Workhorse')).toBe(true);
-      }
-    });
-
     it('keeps the new copy free of em dashes', () => {
-      for (const id of ['agents-orchestrated-helpers', 'persona-orchestrator', 'persona-workhorse']) {
+      for (const id of ['agents-orchestrated-helpers']) {
         expect(find(HELP_SECTIONS, id).content, id).not.toContain('\u2014');
       }
     });
@@ -200,7 +175,7 @@ describe('help-content in the new shell', () => {
   });
 
   it('points only at settings pages that exist', () => {
-    const pages = ['About', 'Agents & providers', 'Helpers', 'Profiles', 'Display & UI', 'External editor', 'Keyboard shortcuts',
+    const pages = ['About', 'Agents & providers', 'Managed agents', 'Helpers', 'Profiles', 'Display & UI', 'External editor', 'Keyboard shortcuts',
       'Notifications & alerts', 'Plugins', 'Annex', 'Annex control', 'Clubhouse MCP', 'Updates', 'Logging', 'Feedback', "What's new"];
     for (const t of articles()) {
       for (const m of t.content.matchAll(/\*\*Settings > ([^*]+)\*\*/g)) {

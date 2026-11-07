@@ -615,8 +615,8 @@ describe('list_projects for the Dispatcher', () => {
     await runDispatcher();
     const body = parse(await callTool('dispatcher', 'list_projects', {}));
     expect(body.projects).toEqual([
-      { name: 'alpha', path: PROJECT_A, defaultBranch: 'main', personas: [] },
-      { name: 'Beta', path: PROJECT_B, defaultBranch: 'main', personas: [] },
+      { name: 'alpha', path: PROJECT_A, defaultBranch: 'main' },
+      { name: 'Beta', path: PROJECT_B, defaultBranch: 'main' },
     ]);
   });
 });

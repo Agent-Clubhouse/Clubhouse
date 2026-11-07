@@ -1,6 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
-import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import { SettingsPage, SettingsSection, SettingsField } from './SettingsLayout';
 import { Button } from '../../components/Button';
@@ -11,11 +10,24 @@ export function McpSettingsView() {
   const loaded = useMcpSettingsStore((s) => s.loaded);
   const loadSettings = useMcpSettingsStore((s) => s.loadSettings);
   const saveSettings = useMcpSettingsStore((s) => s.saveSettings);
-  const clubhouseMode = useClubhouseModeStore((s) => s.enabled);
-  const loadClubhouseMode = useClubhouseModeStore((s) => s.loadSettings);
   const { requestMcpChange, mcpOffDialog } = useMcpOffConfirm();
+  // MCP's own switch can be off while agents that still use Clubhouse Mode keep it on (D63).
+  const [keptByClubhouseMode, setKeptByClubhouseMode] = useState(false);
 
-  useEffect(() => { loadSettings(); loadClubhouseMode(); }, [loadSettings, loadClubhouseMode]);
+  useEffect(() => { loadSettings(); }, [loadSettings]);
+
+  useEffect(() => {
+    if (!loaded || enabled) {
+      setKeptByClubhouseMode(false);
+      return;
+    }
+    let live = true;
+    window.clubhouse.app.getMcpOffImpact({}).then(
+      (impact) => { if (live) setKeptByClubhouseMode(impact.appKeptByClubhouseMode); },
+      () => { if (live) setKeptByClubhouseMode(false); },
+    );
+    return () => { live = false; };
+  }, [loaded, enabled]);
 
   if (!loaded) return null;
 
@@ -40,9 +52,9 @@ export function McpSettingsView() {
           label="MCP bridge"
           help={(
             <>
-              Helpers, orchestration and the Dispatcher need this. Clubhouse mode also keeps MCP on, and a project or agent can have its own setting.
+              Helpers, orchestration and the Dispatcher need this. A project or agent can have its own setting.
               Turning it off keeps your saved settings. Turning it back on restores them and doesn’t start any session.
-              {!enabled && clubhouseMode && <span data-testid="mcp-kept-by-clubhouse-mode"> Clubhouse mode is on, so MCP is still on at app level.</span>}
+              {keptByClubhouseMode && <span className="block mt-px" data-testid="mcp-kept-by-clubhouse-mode">Clubhouse keeps MCP on for agents that still use Clubhouse Mode.</span>}
             </>
           )}
         >

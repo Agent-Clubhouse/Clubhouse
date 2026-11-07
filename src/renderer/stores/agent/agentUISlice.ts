@@ -5,10 +5,6 @@ export function createUISlice(set: SetAgentState, get: GetAgentState): AgentUISl
     activeAgentId: null,
     agentSettingsOpenFor: null,
     deleteDialogAgent: null,
-    applyPersonaDialogAgent: null,
-    extractPersonaDialogAgent: null,
-    configChangesDialogAgent: null,
-    configChangesProjectPath: null,
     sessionNamePromptFor: null,
     projectActiveAgent: {},
     agentSelectionSeq: 0,
@@ -45,26 +41,6 @@ export function createUISlice(set: SetAgentState, get: GetAgentState): AgentUISl
     openDeleteDialog: (agentId) => set({ deleteDialogAgent: agentId }),
 
     closeDeleteDialog: () => set({ deleteDialogAgent: null }),
-
-    openApplyPersonaDialog: (agentId) => set({ applyPersonaDialogAgent: agentId }),
-
-    closeApplyPersonaDialog: () => set({ applyPersonaDialogAgent: null }),
-
-    openExtractPersonaDialog: (agentId) => set({ extractPersonaDialogAgent: agentId }),
-
-    closeExtractPersonaDialog: () => set({ extractPersonaDialogAgent: null }),
-
-    openConfigChangesDialog: (agentId, projectPath) =>
-      set({
-        configChangesDialogAgent: agentId,
-        configChangesProjectPath: projectPath,
-      }),
-
-    closeConfigChangesDialog: () =>
-      set({
-        configChangesDialogAgent: null,
-        configChangesProjectPath: null,
-      }),
 
     setSessionNamePrompt: (agentId) => set({ sessionNamePromptFor: agentId }),
   };

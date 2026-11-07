@@ -107,9 +107,6 @@ vi.stubGlobal('window', {
       onDiscoveredChanged: vi.fn(() => mockRemovers.onDiscoveredChanged),
       onSatelliteEvent: vi.fn(() => mockRemovers.onSatelliteEvent),
     },
-    agentSettings: {
-      computeConfigDiff: vi.fn(),
-    },
     mcpBinding: {
       getBindings: vi.fn(async () => []),
       bind: vi.fn(),
@@ -175,7 +172,6 @@ vi.mock('./stores/agentStore', () => ({
         clearStaleStatuses: vi.fn(),
         setActiveAgent: vi.fn(),
         restoreProjectAgent: vi.fn(),
-        openConfigChangesDialog: vi.fn(),
         setSessionNamePrompt: vi.fn(),
         noteLaunchFailure: mockNoteLaunchFailure,
       })),
@@ -265,17 +261,6 @@ vi.mock('./stores/quickAgentStore', () => ({
     {
       getState: vi.fn(() => ({
         addCompleted: vi.fn(),
-      })),
-    },
-  ),
-}));
-
-vi.mock('./stores/clubhouseModeStore', () => ({
-  useClubhouseModeStore: Object.assign(
-    vi.fn(),
-    {
-      getState: vi.fn(() => ({
-        isEnabledForProject: vi.fn(() => false),
       })),
     },
   ),
@@ -422,7 +407,6 @@ describe('initAppEventBridge', () => {
       clearStaleStatuses: vi.fn(),
       setActiveAgent: vi.fn(),
       restoreProjectAgent: vi.fn(),
-      openConfigChangesDialog: vi.fn(),
       setSessionNamePrompt: vi.fn(),
     } as any);
 
@@ -451,7 +435,6 @@ describe('initAppEventBridge', () => {
         clearStaleStatuses: vi.fn(),
         setActiveAgent: vi.fn(),
         restoreProjectAgent: vi.fn(),
-        openConfigChangesDialog: vi.fn(),
         setSessionNamePrompt: vi.fn(),
       } as any);
       vi.mocked(useQuickAgentStore.getState).mockReturnValue({ addCompleted, selectCompleted } as any);
@@ -644,7 +627,6 @@ describe('initAppEventBridge', () => {
       clearStaleStatuses: vi.fn(),
       setActiveAgent: vi.fn(),
       restoreProjectAgent: vi.fn(),
-      openConfigChangesDialog: vi.fn(),
       setSessionNamePrompt: vi.fn(),
     } as any);
 
@@ -672,7 +654,6 @@ describe('initAppEventBridge', () => {
       clearStaleStatuses: vi.fn(),
       setActiveAgent: vi.fn(),
       restoreProjectAgent: vi.fn(),
-      openConfigChangesDialog: vi.fn(),
       setSessionNamePrompt: vi.fn(),
     } as any);
 
@@ -723,7 +704,6 @@ describe('initAppEventBridge', () => {
       clearStaleStatuses: vi.fn(),
       setActiveAgent: vi.fn(),
       restoreProjectAgent: vi.fn(),
-      openConfigChangesDialog: vi.fn(),
       setSessionNamePrompt: vi.fn(),
     } as any);
 
@@ -784,7 +764,6 @@ describe('initAppEventBridge', () => {
       clearStaleStatuses: vi.fn(),
       setActiveAgent: vi.fn(),
       restoreProjectAgent: vi.fn(),
-      openConfigChangesDialog: vi.fn(),
       setSessionNamePrompt: vi.fn(),
     } as any);
 
@@ -813,7 +792,6 @@ describe('initAppEventBridge', () => {
       clearStaleStatuses: vi.fn(),
       setActiveAgent: vi.fn(),
       restoreProjectAgent: vi.fn(),
-      openConfigChangesDialog: vi.fn(),
       setSessionNamePrompt: vi.fn(),
     } as any);
 

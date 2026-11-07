@@ -9,7 +9,7 @@ Durable agents are persistent, long-lived agents designed for ongoing work. They
 3. Click **Create** — the agent appears in the explorer immediately
 4. Give it a mission to start working, or leave it sleeping
 
-> **Tip:** Use templates to pre-fill configuration for recurring agent types.
+> **Tip:** Templates for Clubhouse managed agents are in **Settings > Managed agents > Templates**.
 
 ## Git Worktree Isolation
 
@@ -25,7 +25,6 @@ Each durable agent operates in its own worktree on a dedicated branch:
 | **Instructions** | Markdown files in `.clubhouse/` guiding agent behavior — coding style, restrictions, workflow rules |
 | **MCP** | Per-agent Model Context Protocol config — tool servers, resources, environment variables |
 | **Skills** | Reusable prompt + tool packages (e.g., "commit", "review-pr", "test") defined at the project level |
-| **Templates** | Save an agent's full config as a reusable starting point for new agents |
 
 ## Quick Agent Defaults
 

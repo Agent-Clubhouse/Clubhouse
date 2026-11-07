@@ -122,8 +122,7 @@ export interface SpawnAgentParams {
   /**
    * Clubhouse-managed quick agents (#2893, D25): build a quick agent from this
    * template. Its instructions go in the system prompt and its MCP servers in
-   * the launch flags; nothing is written into the folder it runs in. Needs the
-   * managedAgents preview flag.
+   * the launch flags; nothing is written into the folder it runs in.
    */
   managedTemplate?: { id: string; agentName: string };
 }
@@ -376,11 +375,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
 
     // Clubhouse-managed agents (#2896): write the agent's setup into its folder
     // before every start. Managed agents never take the Clubhouse Mode path.
-    // Not gated on the managedAgents flag: an agent already configured as
-    // managed keeps getting its setup with the flag off, or it would start
-    // half-configured (D56).
     let managedSetup = false;
-    // With Clubhouse-managed agents on, an agent that uses Clubhouse Mode or a
+    // An agent that uses Clubhouse Mode or a
     // persona switches to managed first, keeping what it has, and this start is
     // its first managed one (D59). A failed switch starts it as it is.
     if (params.kind === 'durable' && !managed && firstConfig && !firstConfig.managed) {
@@ -412,10 +408,6 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // the person chose it.
     let quickManaged: QuickManagedLaunch | null = null;
     if (params.kind === 'quick' && params.managedTemplate) {
-      const { getSettings: getExperimentalSettings } = await import('./experimental-settings');
-      if (getExperimentalSettings().managedAgents !== true) {
-        throw tagError(new Error('A quick agent can start from a template only with Clubhouse-managed agents on (Settings > Experimental).'), 'preflight_failed');
-      }
       const template = params.managedTemplate;
       const { quickLaunchFor } = await import('./managed-agents');
       quickManaged = await tel.step('clubhouse.agent.materialize', () =>

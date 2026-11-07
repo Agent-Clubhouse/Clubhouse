@@ -26,7 +26,6 @@ Each setting here can follow the app-wide value or override it for this project:
 - **Agents run on**, the CLI for new agents. Only CLIs that are turned on and installed are listed.
 - **Quick agent mode**: interactive or headless.
 - **Free agent permission mode**: Auto or skip all permissions.
-- **Clubhouse Mode**, which keeps durable agents in sync with project defaults. See **Clubhouse mode**.
 - **MCP override** and **Session name on quit**.
 
 ## Plugins

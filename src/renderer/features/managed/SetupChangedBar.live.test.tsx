@@ -10,7 +10,6 @@ import type { ManagedAgentStatus } from '../../../shared/managed-agents-types';
 import { useProjectStore } from '../../stores/projectStore';
 import { SettingsCard } from '../agents/details/SettingsCard';
 import { useAgentDetailsStore } from '../agents/details/detailsStore';
-import { resetManagedFlag } from './managed-flag';
 import { resetSetupBarDismissals, SetupChangedBar } from './SetupChangedBar';
 import { resetPendingRestarts } from './restart';
 
@@ -37,14 +36,11 @@ beforeEach(() => {
   vi.restoreAllMocks();
   resetSetupBarDismissals();
   resetPendingRestarts();
-  resetManagedFlag();
-  vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
   useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: '/work/proj' }] as never });
 });
 
 afterEach(() => {
   useProjectStore.setState({ projects: [] });
-  resetManagedFlag();
 });
 
 describe('setup-changed bar live region', () => {
