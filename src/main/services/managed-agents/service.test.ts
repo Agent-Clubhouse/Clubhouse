@@ -550,6 +550,18 @@ describe('managed helpers (#2899)', () => {
     expect(back.helperChanges).toEqual({ added: [], removed: [] });
   });
 
+  it('records changes against what the helper gets after the working Identity swap (#2902)', async () => {
+    const { managedHelperSetup } = await import('./helpers');
+    // The swap itself is no change: the template's Identity is the working one for every helper.
+    const plain = await user(() => managedHelperSetup(service, {}));
+    expect(plain.blocks).toContain(BUILTIN_BLOCK_IDS.identityHelper);
+    expect(plain.helperChanges).toEqual({ added: [], removed: [] });
+    // Removing either Identity removes the one the helper had, and that is what Details names.
+    const noIdentity = await user(() => managedHelperSetup(service, { removeParts: [BUILTIN_BLOCK_IDS.identity] }));
+    expect(noIdentity.blocks).not.toContain(BUILTIN_BLOCK_IDS.identityHelper);
+    expect(noIdentity.helperChanges).toEqual({ added: [], removed: [BUILTIN_BLOCK_IDS.identityHelper] });
+  });
+
   it('names a template, and refuses an unknown template or part', async () => {
     const { managedHelperSetup } = await import('./helpers');
     const qa = await user(() => managedHelperSetup(service, { template: 'builtin-template-quality-assurance' }));
