@@ -2,13 +2,83 @@ import { randomUUID } from 'crypto';
 import type { StreamJsonEvent } from './jsonl-parser';
 import type { SessionEvent, SessionSummary, SessionTranscriptPage } from '../../shared/session-types';
 
+type EventUsage = NonNullable<SessionEvent['usage']>;
+
+const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+const reported = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined);
+
+/** A message's usage as the transcript reported it. A field the transcript left out stays absent: it is not zero. */
+function readEventUsage(raw: unknown): EventUsage | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const u = raw as Record<string, unknown>;
+  const usage: EventUsage = {
+    inputTokens: reported(u.input_tokens),
+    outputTokens: reported(u.output_tokens),
+    cacheReadTokens: reported(u.cache_read_input_tokens),
+    cacheWriteTokens: reported(u.cache_creation_input_tokens),
+  };
+  for (const key of Object.keys(usage) as Array<keyof EventUsage>) if (usage[key] === undefined) delete usage[key];
+  return Object.keys(usage).length > 0 ? usage : undefined;
+}
+
+/**
+ * A later record of the same message. A stream can repeat a message with a
+ * count still growing, so a figure only moves up; one that comes back lower
+ * disagrees with the earlier record and flags a conflict, keeping the higher
+ * count. A field the later record left out keeps what was known.
+ */
+function mergeRepeatedUsage(earlier: EventUsage | undefined, later: EventUsage): EventUsage {
+  const merged: EventUsage = { ...earlier };
+  for (const key of ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const) {
+    const next = later[key];
+    if (next === undefined) continue;
+    const prev = merged[key];
+    if (prev !== undefined && next < prev) merged.conflict = true;
+    merged[key] = prev === undefined ? next : Math.max(prev, next);
+  }
+  return merged;
+}
+
 /**
  * Normalize raw StreamJsonEvent[] from Claude Code's JSONL transcript
  * into richer SessionEvent[] with timestamps and usage data.
+ *
+ * A message's usage is counted once. Claude Code writes one record per content
+ * block of a message, each repeating the message's id and usage (an earlier
+ * record's output count can still be partial), so usage rides on the first event
+ * of the message, whatever its block type, and a later record with the same id
+ * updates it rather than adding to it. A message with no id counts once per record.
  */
 export function normalizeSessionEvents(rawEvents: StreamJsonEvent[]): SessionEvent[] {
   const events: SessionEvent[] = [];
+  /** The first event of each message id: it carries the message's usage, or says it had none. */
+  const heads = new Map<string, SessionEvent>();
   let lastTimestamp = 0;
+
+  const noteAssistant = (from: number, messageId: string | undefined, usage: EventUsage | undefined, hadContent: boolean, ts: number, model: string | undefined): void => {
+    const known = messageId ? heads.get(messageId) : undefined;
+    if (known) {
+      if (usage) {
+        known.usage = mergeRepeatedUsage(known.usage, usage);
+        delete known.usageMissing;
+      }
+      return;
+    }
+    if (!usage && !hadContent) return;
+    // Text or a tool call stands for the message. One with neither (thinking only) gets a usage-only event, not invented text.
+    let head = events.slice(from).find((e) => e.type === 'assistant_message' || e.type === 'tool_use');
+    if (!head) {
+      head = { id: randomUUID(), timestamp: ts, type: 'usage', model };
+      events.push(head);
+    }
+    if (model && !head.model) head.model = model;
+    if (usage) head.usage = usage;
+    else head.usageMissing = true;
+    if (messageId) {
+      head.messageId = messageId;
+      heads.set(messageId, head);
+    }
+  };
 
   for (const raw of rawEvents) {
     // Derive timestamp — use explicit timestamp if present, else increment
@@ -41,12 +111,14 @@ export function normalizeSessionEvents(rawEvents: StreamJsonEvent[]): SessionEve
     // --verbose format: 'assistant' type messages with content blocks
     if (raw.type === 'assistant') {
       const msg = raw.message as {
+        id?: string;
         role?: string;
         content?: Array<{ type: string; name?: string; text?: string; input?: Record<string, unknown>; id?: string }>;
-        usage?: { input_tokens?: number; output_tokens?: number };
+        usage?: unknown;
         model?: string;
       } | undefined;
 
+      const from = events.length;
       if (msg?.content) {
         for (const block of msg.content) {
           if (block.type === 'text' && block.text) {
@@ -55,10 +127,6 @@ export function normalizeSessionEvents(rawEvents: StreamJsonEvent[]): SessionEve
               timestamp: ts,
               type: 'assistant_message',
               text: block.text,
-              usage: msg.usage ? {
-                inputTokens: msg.usage.input_tokens ?? 0,
-                outputTokens: msg.usage.output_tokens ?? 0,
-              } : undefined,
               model: (msg as any).model ?? (raw as any).model,
             });
           }
@@ -89,6 +157,7 @@ export function normalizeSessionEvents(rawEvents: StreamJsonEvent[]): SessionEve
           }
         }
       }
+      noteAssistant(from, str(msg?.id) ?? str((raw as any).uuid), readEventUsage(msg?.usage), Array.isArray(msg?.content) && msg.content.length > 0, ts, (msg as any)?.model ?? (raw as any).model);
       continue;
     }
 
@@ -152,8 +221,9 @@ export function normalizeSessionEvents(rawEvents: StreamJsonEvent[]): SessionEve
 
     if (rawRole === 'assistant') {
       const content = (raw as any).content;
-      const usage = (raw as any).usage as { input_tokens?: number; output_tokens?: number } | undefined;
+      const usage = readEventUsage((raw as any).usage);
       const model = (raw as any).model as string | undefined;
+      const from = events.length;
       if (Array.isArray(content)) {
         for (const block of content) {
           if (block.type === 'text' && block.text) {
@@ -162,10 +232,6 @@ export function normalizeSessionEvents(rawEvents: StreamJsonEvent[]): SessionEve
               timestamp: ts,
               type: 'assistant_message',
               text: block.text,
-              usage: usage ? {
-                inputTokens: usage.input_tokens ?? 0,
-                outputTokens: usage.output_tokens ?? 0,
-              } : undefined,
               model,
             });
           }
@@ -204,6 +270,7 @@ export function normalizeSessionEvents(rawEvents: StreamJsonEvent[]): SessionEve
           model,
         });
       }
+      noteAssistant(from, str((raw as any).id), usage, (Array.isArray(content) && content.length > 0) || typeof content === 'string', ts, model);
       continue;
     }
   }
@@ -227,6 +294,11 @@ export function buildSessionSummary(events: SessionEvent[], orchestrator?: strin
   let totalDurationMs = 0;
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
+  let totalCacheReadTokens: number | undefined;
+  let totalCacheWriteTokens: number | undefined;
+  let usageEvents = 0;
+  let usageGaps = 0;
+  let usageConflicts = 0;
   let model: string | null = null;
   const filesModified = new Set<string>();
   const toolsUsed = new Set<string>();
@@ -242,10 +314,20 @@ export function buildSessionSummary(events: SessionEvent[], orchestrator?: strin
 
     if (event.type === 'assistant_message') {
       if (event.text) lastAssistantText = event.text;
-      if (event.usage) {
-        totalInputTokens += event.usage.inputTokens;
-        totalOutputTokens += event.usage.outputTokens;
-      }
+      if (event.model && !model) model = event.model;
+    }
+
+    // Usage rides on the first event of its message (text, tool call, or a usage-only record).
+    if (event.usageMissing) usageGaps++;
+    if (event.usage) {
+      usageEvents++;
+      // Only what the transcript reported is added; a field it left out is not counted as zero.
+      if (event.usage.inputTokens === undefined || event.usage.outputTokens === undefined) usageGaps++;
+      if (event.usage.conflict) usageConflicts++;
+      totalInputTokens += event.usage.inputTokens ?? 0;
+      totalOutputTokens += event.usage.outputTokens ?? 0;
+      if (event.usage.cacheReadTokens !== undefined) totalCacheReadTokens = (totalCacheReadTokens ?? 0) + event.usage.cacheReadTokens;
+      if (event.usage.cacheWriteTokens !== undefined) totalCacheWriteTokens = (totalCacheWriteTokens ?? 0) + event.usage.cacheWriteTokens;
       if (event.model && !model) model = event.model;
     }
 
@@ -284,6 +366,11 @@ export function buildSessionSummary(events: SessionEvent[], orchestrator?: strin
     totalDurationMs,
     totalInputTokens,
     totalOutputTokens,
+    ...(totalCacheReadTokens !== undefined && { totalCacheReadTokens }),
+    ...(totalCacheWriteTokens !== undefined && { totalCacheWriteTokens }),
+    // `complete` only when every message reported input and output and no repeats disagreed; a conflict's merged count is not an actual sample.
+    tokenUsage: usageEvents === 0 ? 'none' : usageGaps > 0 || usageConflicts > 0 ? 'partial' : 'complete',
+    ...(usageConflicts > 0 && { tokenUsageConflicts: usageConflicts }),
     model,
     orchestrator: orchestrator ?? null,
     eventCount: events.length,

@@ -15,6 +15,24 @@ import { IPC } from '../ipc-channels';
 
 /** Bump on breaking attribute changes; exported as `clubhouse.telemetry.schema`. */
 import { SUPPORTED_PLUGIN_API_VERSIONS } from '../marketplace-types';
+import {
+  DECISION_QUOTA_QUALITIES,
+  DECISION_SCORE_BASES,
+  DECISION_TIE_REASONS,
+  HELPER_COOLDOWN_KINDS,
+  HELPER_DECISION_OUTCOMES,
+  HELPER_REUSE_KINDS,
+  HELPER_RUN_OUTCOMES,
+  HELPER_SPAWN_RESULTS,
+  HELPER_TASK_PROFILES,
+  MAPPING_KINDS,
+  USAGE_BASELINES,
+  USAGE_COMPLETENESS,
+  USAGE_DEDUPS,
+  USAGE_SAMPLE_KINDS,
+  USAGE_SCOPES,
+  USAGE_SOURCES,
+} from './helper-usage-contract';
 
 export const TELEMETRY_SCHEMA_VERSION = 1;
 
@@ -542,17 +560,123 @@ export const ATTR = {
   helperRoutingEffort: enumAttr('clubhouse.helper_routing.effort', ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'other']),
   helperRoutingPreset: enumAttr('clubhouse.helper_routing.preset', ['builtin', 'custom', 'none']),
   helperRoutingConfigSource: enumAttr('clubhouse.helper_routing.config_source', ['request', 'persona', 'orchestrator', 'auto', 'custom_mapping', 'builtin_mapping', 'cli_default']),
-  helperRoutingReason: enumAttr('clubhouse.helper_routing.reason', ['explicit_request', 'persona_pinned', 'preset_on_cli', 'only_candidate', 'lower_load', 'better_quota_tier', 'sticky', 'default_order']),
+  helperRoutingReason: enumAttr('clubhouse.helper_routing.reason', ['explicit_request', 'persona_pinned', 'preset_on_cli', 'only_candidate', 'lower_pressure', 'lower_load', 'fair_rotation', 'better_quota_tier', 'unknown_fallback', 'sticky', 'default_order']),
   helperRoutingFallback: enumAttr('clubhouse.helper_routing.fallback', ['none', 'builtin_preset', 'candidate_skipped', 'model_unverified']),
   helperRoutingPolicyVersion: intAttr('clubhouse.helper_routing.policy_version'),
   helperRoutingLoad: enumAttr('clubhouse.helper_routing.load_bucket', ['0', '1', '2-3', '4-7', '8+']),
-  helperRoutingQuotaBasis: enumAttr('clubhouse.helper_routing.quota_basis', ['known', 'unknown_scored_as_healthy', 'none']),
+  helperRoutingQuotaBasis: enumAttr('clubhouse.helper_routing.quota_basis', ['known', 'unknown_fallback', 'unknown_scored_as_healthy', 'none']),
   helperRoutingQuotaAge: enumAttr('clubhouse.helper_routing.quota_age', ['fresh', 'under_15m', 'over_15m', 'none']),
   helperAutoRefusal: enumAttr('clubhouse.helper_auto.refusal', ['auto_off', 'no_candidate', 'no_valid_mapping', 'auto_not_supported']),
   helperAutoCooldown: enumAttr('clubhouse.helper_auto.cooldown', ['auth', 'quota', 'availability']),
   helperQuotaState: enumAttr('clubhouse.helper_quota.state', ['known', 'low', 'near_limit', 'exhausted', 'unknown']),
   helperPresetsAction: enumAttr('clubhouse.helper_presets.action', ['set', 'toggle', 'reset_cell', 'reset_provider', 'reset_all']),
   helperPresetsSurface: enumAttr('clubhouse.helper_presets.surface', ['ui', 'mcp', 'mobile', 'dispatcher', 'persona', 'cli', 'system']),
+
+  // Helper decisions, outcomes and usage (#2747). Local recording only (EventOptions.localOnly): ids are hashed, models are hashes plus a family,
+  // percentages are basis points, times are epoch ms. An absent attribute is unavailable; 0 is a reported zero.
+  helperSchemaVersion: intAttr('clubhouse.helper_telemetry.schema_version'),
+  helperDecisionIdHash: hashAttr('clubhouse.helper_decision.id_hash'),
+  helperRunIdHash: hashAttr('clubhouse.helper_run.id_hash'),
+  helperDecisionKnown: boolAttr('clubhouse.helper_decision.known'),
+  helperDecisionOutcome: enumAttr('clubhouse.helper_decision.outcome', HELPER_DECISION_OUTCOMES),
+  helperAskerCli: enumAttr('clubhouse.helper_decision.asker_cli', ['claude-code', 'codex-cli', 'copilot-cli', 'other', 'none']),
+  helperTaskProfile: enumAttr('clubhouse.helper_decision.task_profile', HELPER_TASK_PROFILES),
+  helperDecidedAtMs: intAttr('clubhouse.helper_decision.decided_at_ms'),
+  helperDecisionAgeMs: intAttr('clubhouse.helper_decision.age_ms'),
+  helperModelHash: hashAttr('clubhouse.helper_decision.model_hash'),
+  helperRequestedModelHash: hashAttr('clubhouse.helper_decision.requested_model_hash'),
+  helperMappingRevisionHash: hashAttr('clubhouse.helper_decision.mapping_revision_hash'),
+  helperMappingFingerprintHash: hashAttr('clubhouse.helper_decision.mapping_fingerprint_hash'),
+  helperMappingKind: enumAttr('clubhouse.helper_decision.mapping_kind', MAPPING_KINDS),
+  helperCandidateCount: intAttr('clubhouse.helper_decision.candidates'),
+  helperEligibleCount: intAttr('clubhouse.helper_decision.eligible'),
+  helperAutoEnabled: boolAttr('clubhouse.helper_decision.auto_enabled'),
+  helperEnabledProviders: intAttr('clubhouse.helper_decision.enabled_providers'),
+  helperThresholdQuotaLowBp: intAttr('clubhouse.helper_decision.quota_low_bp'),
+  helperThresholdQuotaNearBp: intAttr('clubhouse.helper_decision.quota_near_limit_bp'),
+  helperThresholdQuotaStaleMs: intAttr('clubhouse.helper_decision.quota_stale_ms'),
+  helperThresholdReservationMs: intAttr('clubhouse.helper_decision.reservation_ms'),
+  helperThresholdStickyMs: intAttr('clubhouse.helper_decision.sticky_ms'),
+  helperThresholdLoadMargin: intAttr('clubhouse.helper_decision.load_margin'),
+  helperCooldownsAuth: intAttr('clubhouse.helper_decision.cooldowns_auth'),
+  helperCooldownsQuota: intAttr('clubhouse.helper_decision.cooldowns_quota'),
+  helperCooldownsAvailability: intAttr('clubhouse.helper_decision.cooldowns_availability'),
+  helperTieReason: enumAttr('clubhouse.helper_tie.reason', DECISION_TIE_REASONS),
+  helperTieSetSize: intAttr('clubhouse.helper_tie.set_size'),
+  helperTieBandBp: intAttr('clubhouse.helper_tie.band_bp'),
+  helperTieByLoad: boolAttr('clubhouse.helper_tie.by_load'),
+  helperTieCursorKeyHash: hashAttr('clubhouse.helper_tie.cursor_key_hash'),
+  helperTieCursorBefore: intAttr('clubhouse.helper_tie.cursor_before'),
+  helperTieCursorAfter: intAttr('clubhouse.helper_tie.cursor_after'),
+  // One candidate of a decision.
+  helperCandidateEligible: boolAttr('clubhouse.helper_candidate.eligible'),
+  helperCandidateChosen: boolAttr('clubhouse.helper_candidate.chosen'),
+  helperCandidateExcluded: enumAttr('clubhouse.helper_candidate.excluded', ['cli_disabled', 'cli_unavailable', 'auto_not_supported', 'no_valid_mapping', 'cooling_down', 'quota_near_limit', 'quota_exhausted', 'none']),
+  helperCandidateMappedSource: enumAttr('clubhouse.helper_candidate.mapped_source', ['request', 'persona', 'orchestrator', 'auto', 'custom_mapping', 'builtin_mapping', 'cli_default']),
+  helperCandidateMappedVerified: boolAttr('clubhouse.helper_candidate.mapped_verified'),
+  helperCandidateLoadLive: intAttr('clubhouse.helper_candidate.load_live'),
+  helperCandidateLoadReserved: intAttr('clubhouse.helper_candidate.load_reserved'),
+  helperCandidateAccountKnown: boolAttr('clubhouse.helper_candidate.account_known'),
+  helperCandidateTier: intAttr('clubhouse.helper_candidate.tier'),
+  helperCandidateRank: intAttr('clubhouse.helper_candidate.rank'),
+  helperScoreBasis: enumAttr('clubhouse.helper_candidate.score_basis', DECISION_SCORE_BASES),
+  helperScoreWeeklyUsedBp: intAttr('clubhouse.helper_candidate.score_weekly_used_bp'),
+  helperScoreCyclePhaseBp: intAttr('clubhouse.helper_candidate.score_cycle_phase_bp'),
+  helperScoreTargetBp: intAttr('clubhouse.helper_candidate.score_target_bp'),
+  helperScorePressureBp: intAttr('clubhouse.helper_candidate.score_pressure_bp'),
+  // A quota reading, in a decision's candidate or on its own.
+  helperQuotaSource: enumAttr('clubhouse.helper_quota.source', ['cli_query', 'session_event', 'none']),
+  helperQuotaUnknownReason: enumAttr('clubhouse.helper_quota.unknown_reason', ['not_read', 'stale', 'not_applicable', 'read_failed', 'not_supported', 'none']),
+  helperQuotaQuality: enumAttr('clubhouse.helper_quota.quality', DECISION_QUOTA_QUALITIES),
+  helperQuotaAsOfMs: intAttr('clubhouse.helper_quota.as_of_ms'),
+  helperQuotaMeasuredAtMs: intAttr('clubhouse.helper_quota.measured_at_ms'),
+  helperQuotaLimitingWindow: enumAttr('clubhouse.helper_quota.limiting_window', ['weekly', 'fiveHour', 'other', 'model', 'none']),
+  helperQuotaLimitReached: boolAttr('clubhouse.helper_quota.limit_reached'),
+  helperQuotaWeeklyUsedBp: intAttr('clubhouse.helper_quota.weekly_used_bp'),
+  helperQuotaWeeklyResetsMs: intAttr('clubhouse.helper_quota.weekly_resets_ms'),
+  helperQuotaFiveHourUsedBp: intAttr('clubhouse.helper_quota.five_hour_used_bp'),
+  helperQuotaFiveHourResetsMs: intAttr('clubhouse.helper_quota.five_hour_resets_ms'),
+  helperQuotaOtherWindows: intAttr('clubhouse.helper_quota.other_windows'),
+  helperQuotaTrigger: enumAttr('clubhouse.helper_quota.trigger', ['first', 'state_change', 'window_change', 'interval']),
+  /** Weekly used basis points now minus the previous sample's, only when both are in one reset window. Provider-wide, so outside use is in it. */
+  helperQuotaWeeklyDeltaBp: intAttr('clubhouse.helper_quota.weekly_delta_bp'),
+  helperQuotaFiveHourDeltaBp: intAttr('clubhouse.helper_quota.five_hour_delta_bp'),
+  helperQuotaResetBetween: boolAttr('clubhouse.helper_quota.reset_between'),
+  helperQuotaDeltaSpanMs: intAttr('clubhouse.helper_quota.delta_span_ms'),
+  // What became of a decision.
+  helperSpawnResult: enumAttr('clubhouse.helper_spawn.result', HELPER_SPAWN_RESULTS),
+  helperSpawnCooldown: enumAttr('clubhouse.helper_spawn.cooldown', HELPER_COOLDOWN_KINDS),
+  helperSpawnDiffers: boolAttr('clubhouse.helper_spawn.differs_from_decision'),
+  helperReuseKind: enumAttr('clubhouse.helper_reuse.kind', HELPER_REUSE_KINDS),
+  helperRunOutcome: enumAttr('clubhouse.helper_run.outcome', HELPER_RUN_OUTCOMES),
+  helperRunDurationMs: intAttr('clubhouse.helper_run.duration_ms'),
+  helperRunTurns: intAttr('clubhouse.helper_run.turns'),
+  helperRunAuthErrors: intAttr('clubhouse.helper_run.auth_errors'),
+  helperRunRateLimitErrors: intAttr('clubhouse.helper_run.rate_limit_errors'),
+  helperRunQuotaErrors: intAttr('clubhouse.helper_run.quota_errors'),
+  helperRunModelHash: hashAttr('clubhouse.helper_run.model_hash'),
+  helperRunNativeResumed: boolAttr('clubhouse.helper_run.native_resumed'),
+  helperRunUsageSamplesDropped: intAttr('clubhouse.helper_run.usage_samples_dropped'),
+  // One usage sample. Token figures follow src/shared/chat TokenUsage: input includes cache reads and writes.
+  helperUsageKind: enumAttr('clubhouse.helper_usage.kind', USAGE_SAMPLE_KINDS),
+  helperUsageSource: enumAttr('clubhouse.helper_usage.source', USAGE_SOURCES),
+  helperUsageDedup: enumAttr('clubhouse.helper_usage.dedup', USAGE_DEDUPS),
+  helperUsageScope: enumAttr('clubhouse.helper_usage.scope', USAGE_SCOPES),
+  helperUsageBaseline: enumAttr('clubhouse.helper_usage.baseline', USAGE_BASELINES),
+  helperUsageCompleteness: enumAttr('clubhouse.helper_usage.completeness', USAGE_COMPLETENESS),
+  helperUsageInputTokens: intAttr('clubhouse.helper_usage.input_tokens'),
+  helperUsageCachedInputTokens: intAttr('clubhouse.helper_usage.cached_input_tokens'),
+  helperUsageCacheWriteTokens: intAttr('clubhouse.helper_usage.cache_write_tokens'),
+  helperUsageOutputTokens: intAttr('clubhouse.helper_usage.output_tokens'),
+  helperUsageReasoningTokens: intAttr('clubhouse.helper_usage.reasoning_tokens'),
+  helperUsageMeasuredAtMs: intAttr('clubhouse.helper_usage.measured_at_ms'),
+  helperUsageTurnIndex: intAttr('clubhouse.helper_usage.turn_index'),
+  helperUsageTurnDurationMs: intAttr('clubhouse.helper_usage.turn_duration_ms'),
+  /** The provider's running total went down, so it was reset or compacted and no delta is claimed. */
+  helperUsageReset: boolAttr('clubhouse.helper_usage.reset'),
+  /** Turns of the run that reported no usage at all. */
+  helperUsageTurnsMissing: intAttr('clubhouse.helper_usage.turns_missing'),
+  helperUsageSubagentExcluded: boolAttr('clubhouse.helper_usage.subagent_excluded'),
   /** Bucketed from the model string; never the raw model name. */
   modelFamily: enumAttr('clubhouse.model.family', ['opus', 'sonnet', 'haiku', 'gpt-5', 'default', 'other']),
   /**
@@ -1451,6 +1575,21 @@ export const EVENTS = {
    * effort, preset, config source, reason, fallback and policy version.
    */
   'clubhouse.helper.routed': { level: 'standard' },
+  // Helper decisions, outcomes and usage (#2747). Recorded locally at the default level and written with `localOnly`: never exported.
+  /** One routing decision, accepted or refused. Attributes: decision and agent id hashes, mode, orchestrator, model hash and family, effort, task profile, mapping hashes, thresholds, counts, tie fields. */
+  'clubhouse.helper.decision': { level: 'standard' },
+  /** One provider as a decision saw it. Attributes: decision id hash, orchestrator, eligibility, exclusion, load, quota, score. */
+  'clubhouse.helper.decision.candidate': { level: 'standard' },
+  /** What became of a decision: started, left asleep, failed, refused, cancelled. */
+  'clubhouse.helper.spawn_result': { level: 'standard' },
+  /** A wake or resume of an existing helper, joined to its earlier decision. Never a new decision. */
+  'clubhouse.helper.reuse': { level: 'standard' },
+  /** A helper run's usage after a finished turn, or its closing figure. Absent figures are unavailable. */
+  'clubhouse.helper.usage.sample': { level: 'standard' },
+  /** A helper run ended (or the helper was disposed), with the errors the session saw. */
+  'clubhouse.helper.outcome': { level: 'standard' },
+  /** A provider's plan-limit reading, on first read, a state or window change, or a bounded interval. Token-free. */
+  'clubhouse.helper_quota.sample': { level: 'standard' },
   /** Helper presets were changed or reset, or a change was refused. Attributes: action, surface, `clubhouse.outcome`. */
   'clubhouse.helper_routing.changed': { level: 'standard' },
   /** `cli: "auto"` was refused. Attributes: the refusal's code. */

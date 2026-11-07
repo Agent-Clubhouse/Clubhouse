@@ -112,31 +112,31 @@ export function copilotErrorCode(data: { errorType?: string; statusCode?: number
   return 'unknown';
 }
 
-/** `assistant.usage` for one model call as contract tokens: `input` already includes cache reads and writes. */
+/**
+ * `assistant.usage` for one model call as contract tokens: `input` already includes cache reads and writes.
+ * A figure the call did not report stays absent, and a reported zero stays zero.
+ */
 export function copilotTokens(u: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number; reasoningTokens?: number }): TokenUsage {
-  const input = u.inputTokens ?? 0;
-  const output = u.outputTokens ?? 0;
+  const { inputTokens: input, outputTokens: output } = u;
   return {
-    input,
-    output,
-    ...(u.cacheReadTokens && { cachedInput: u.cacheReadTokens }),
-    ...(u.cacheWriteTokens && { cacheWrite: u.cacheWriteTokens }),
-    ...(u.reasoningTokens && { reasoning: u.reasoningTokens }),
-    total: input + output,
+    ...(input !== undefined && { input }),
+    ...(output !== undefined && { output }),
+    ...(u.cacheReadTokens !== undefined && { cachedInput: u.cacheReadTokens }),
+    ...(u.cacheWriteTokens !== undefined && { cacheWrite: u.cacheWriteTokens }),
+    ...(u.reasoningTokens !== undefined && { reasoning: u.reasoningTokens }),
+    // A total of only half the figures would read as the whole.
+    ...(input !== undefined && output !== undefined && { total: input + output }),
   };
 }
 
+/** Sum across calls. A figure no call reported stays absent (no key); a sum of reported zeros is zero. */
 export function addTokens(a: TokenUsage | undefined, b: TokenUsage): TokenUsage {
   if (!a) return b;
-  const sum = (x?: number, y?: number) => ((x ?? 0) + (y ?? 0)) || undefined;
-  return {
-    input: sum(a.input, b.input),
-    output: sum(a.output, b.output),
-    cachedInput: sum(a.cachedInput, b.cachedInput),
-    cacheWrite: sum(a.cacheWrite, b.cacheWrite),
-    reasoning: sum(a.reasoning, b.reasoning),
-    total: sum(a.total, b.total),
-  };
+  const out: TokenUsage = {};
+  for (const key of ['input', 'output', 'cachedInput', 'cacheWrite', 'reasoning', 'total'] as const) {
+    if (a[key] !== undefined || b[key] !== undefined) out[key] = (a[key] ?? 0) + (b[key] ?? 0);
+  }
+  return out;
 }
 
 // ── Your own model key ──────────────────────────────────────────────────────

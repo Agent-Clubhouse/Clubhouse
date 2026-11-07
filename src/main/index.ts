@@ -48,6 +48,8 @@ import { registerTelemetryRendererHandlers } from './ipc/telemetry-renderer-hand
 import { configuredRecordingLevel } from './telemetry/bootstrap';
 import { installAgentTelemetry } from './telemetry/agent-telemetry';
 import { installChatTelemetry } from './telemetry/chat-telemetry';
+import { installHelperUsageTelemetry } from './telemetry/helper-usage';
+import { getBaseDirPath } from './services/base-dir';
 import { installIpcTelemetry } from './telemetry/ipc-telemetry';
 import { installOsSessionEndFlush } from './os-session-end';
 import { getAgentOrchestrator } from './services/agent-registry';
@@ -97,6 +99,7 @@ installLifecycleTelemetry();
 installOsSessionEndFlush();
 installAgentTelemetry(getAgentOrchestrator);
 installChatTelemetry();
+installHelperUsageTelemetry({ ledgerFile: path.join(getBaseDirPath(), 'helper-decisions.json') });
 // Before registerAllHandlers, so every app invoke handler is timed at the
 // Detailed level. Telemetry's own handlers (registered above) stay untimed.
 installIpcTelemetry(ipcMain);

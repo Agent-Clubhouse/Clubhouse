@@ -142,8 +142,11 @@
           "persona_pinned",
           "preset_on_cli",
           "only_candidate",
+          "lower_pressure",
           "lower_load",
+          "fair_rotation",
           "better_quota_tier",
+          "unknown_fallback",
           "sticky",
           "default_order"
         ],

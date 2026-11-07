@@ -87,6 +87,8 @@ export class CodexChatEventMapper {
   private readonly lastTotals = new Map<string, TokenUsageBreakdown>();
   /** Per running turn: the thread total before it, and the latest total during it. */
   private readonly turnTokens = new Map<string, { before: TokenUsageBreakdown; latest: TokenUsageBreakdown }>();
+  /** Threads a subagent tool call named: their token totals are their own, not the main thread's. */
+  private readonly subagentThreads = new Set<string>();
 
   /** Translate one notification. Known methods with no chat meaning map to nothing. */
   mapNotification(notification: ServerNotification): ChatEventDraft[] {
@@ -170,6 +172,11 @@ export class CodexChatEventMapper {
           type: 'usage',
           data: {
             scope: 'session',
+            // A thread's cumulative total, by thread id, so a subagent's never reads as the session's.
+            // No `coverage`: the pinned protocol types (generated ThreadTokenUsage) don't say whether
+            // one thread's total excludes the threads it spawned, so none is claimed.
+            threadId,
+            ...(this.subagentThreads.has(threadId) && { subagentId: threadId }),
             tokens: {
               input: total.inputTokens,
               cachedInput: total.cachedInputTokens,
@@ -432,20 +439,27 @@ export class CodexChatEventMapper {
     this.lastTotals.set(threadId, total);
   }
 
-  /** The finished turn's tokens, for its turn_ended; undefined if Codex reported none. */
+  /**
+   * The finished turn's tokens, for its turn_ended; undefined if Codex reported none.
+   * A figure whose running total went down during the turn (a reset or a
+   * compaction) is left out rather than shown as zero.
+   */
   private takeTurnUsage(turnId: string): TokenUsage | undefined {
     const entry = this.turnTokens.get(turnId);
     if (!entry) return undefined;
     this.turnTokens.delete(turnId);
-    const d = subtractTokens(entry.latest, entry.before);
-    return {
-      input: d.inputTokens,
-      cachedInput: d.cachedInputTokens,
-      cacheWrite: d.cacheWriteInputTokens,
-      output: d.outputTokens,
-      reasoning: d.reasoningOutputTokens,
-      total: d.totalTokens,
+    const { latest: l, before: b } = entry;
+    const delta = (x: number, y: number): number | undefined => (x >= y ? x - y : undefined);
+    const usage: TokenUsage = {
+      input: delta(l.inputTokens, b.inputTokens),
+      cachedInput: delta(l.cachedInputTokens, b.cachedInputTokens),
+      cacheWrite: delta(l.cacheWriteInputTokens, b.cacheWriteInputTokens),
+      output: delta(l.outputTokens, b.outputTokens),
+      reasoning: delta(l.reasoningOutputTokens, b.reasoningOutputTokens),
+      total: delta(l.totalTokens, b.totalTokens),
     };
+    for (const key of Object.keys(usage) as Array<keyof TokenUsage>) if (usage[key] === undefined) delete usage[key];
+    return Object.keys(usage).length > 0 ? usage : undefined;
   }
 
   private mapItemStarted(item: ThreadItem): ChatEventDraft[] {
@@ -498,6 +512,7 @@ export class CodexChatEventMapper {
           data: { toolCallId: item.id, kind: 'other', title: 'Generating image', status: 'in_progress', toolName: 'imageGeneration', mediaOnly: true },
         }];
       case 'collabAgentToolCall':
+        for (const threadId of item.receiverThreadIds) this.subagentThreads.add(threadId);
         return item.receiverThreadIds.map((threadId) => ({
           type: 'subagent' as const,
           data: { subagentId: threadId, name: item.tool, status: 'running' as const, parentToolCallId: item.id, nativeSessionId: threadId },
@@ -598,6 +613,7 @@ export class CodexChatEventMapper {
       }
       case 'collabAgentToolCall': {
         const status = item.status === 'failed' ? 'failed' : item.status === 'interrupted' ? 'cancelled' : item.status === 'completed' ? 'completed' : 'running';
+        for (const threadId of item.receiverThreadIds) this.subagentThreads.add(threadId);
         return item.receiverThreadIds.map((threadId) => ({
           type: 'subagent' as const,
           data: { subagentId: threadId, name: item.tool, status, parentToolCallId: item.id, nativeSessionId: threadId },

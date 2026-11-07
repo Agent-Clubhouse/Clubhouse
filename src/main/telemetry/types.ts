@@ -38,6 +38,8 @@ export type EventSeverity = 'info' | 'warn' | 'error' | 'fatal';
 
 export interface EventOptions {
   severity?: EventSeverity;
+  /** Written to the local recording only; never handed to any export destination, whatever its level or preset. */
+  localOnly?: boolean;
 }
 
 export interface TraceIds {
