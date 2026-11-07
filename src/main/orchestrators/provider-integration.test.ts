@@ -910,43 +910,6 @@ describe('Provider integration tests', () => {
     });
   });
 
-  describe('getProfileEnvKeys', () => {
-    it('ClaudeCode: returns CLAUDE_CONFIG_DIR', () => {
-      const provider = new ClaudeCodeProvider();
-      const keys = provider.getProfileEnvKeys();
-      expect(keys).toContain('CLAUDE_CONFIG_DIR');
-      expect(keys).toHaveLength(1);
-    });
-
-    it('CopilotCli: returns GH_HOST and GH_TOKEN', () => {
-      const provider = new CopilotCliProvider();
-      const keys = provider.getProfileEnvKeys();
-      expect(keys).toContain('GH_HOST');
-      expect(keys).toContain('GH_TOKEN');
-      expect(keys).toHaveLength(2);
-    });
-
-    it('CodexCli: returns CODEX_HOME, OPENAI_API_KEY and OPENAI_BASE_URL', () => {
-      const provider = new CodexCliProvider();
-      const keys = provider.getProfileEnvKeys();
-      expect(keys).toContain('OPENAI_API_KEY');
-      expect(keys).toContain('OPENAI_BASE_URL');
-      // CODEX_HOME is the config-isolation root, the analogue of
-      // CLAUDE_CONFIG_DIR — a profile needs it to sandbox an agent's Codex state.
-      expect(keys).toContain('CODEX_HOME');
-      expect(keys).toHaveLength(3);
-    });
-
-    it('all providers return non-empty arrays', () => {
-      const providers = [new ClaudeCodeProvider(), new CopilotCliProvider(), new CodexCliProvider()];
-      for (const p of providers) {
-        const keys = p.getProfileEnvKeys();
-        expect(Array.isArray(keys)).toBe(true);
-        expect(keys.length).toBeGreaterThan(0);
-      }
-    });
-  });
-
   describe('getModelOptions', () => {
     it('CopilotCli: falls back to static list when binary not found', async () => {
       const provider = new CopilotCliProvider();

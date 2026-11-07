@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
 
 vi.mock('fs', () => ({
@@ -25,6 +25,7 @@ vi.mock('../util/shell', () => ({
 
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
+import { getShellEnvironment } from '../util/shell';
 import { ClaudeCodeProvider } from './claude-code-provider';
 import type { ModelList } from './types';
 
@@ -538,7 +539,13 @@ describe('ClaudeCodeProvider', () => {
     // Use a custom config dir to avoid path.resolve ambiguity with homedir
     const customConfigDir = '/test/config';
     const projectsDir = path.join(customConfigDir, 'projects');
-    const profileEnv = { CLAUDE_CONFIG_DIR: customConfigDir };
+    // CLAUDE_CONFIG_DIR as the environment Clubhouse launches agents with sets it.
+    beforeEach(() => {
+      vi.mocked(getShellEnvironment).mockReturnValue({ PATH: `/usr/local/bin${path.delimiter}/usr/bin`, CLAUDE_CONFIG_DIR: customConfigDir });
+    });
+    afterEach(() => {
+      vi.mocked(getShellEnvironment).mockReturnValue({ PATH: `/usr/local/bin${path.delimiter}/usr/bin` });
+    });
 
     // Encode cwd the same way the provider does
     function encodeCwd(cwd: string): string {
@@ -551,7 +558,7 @@ describe('ClaudeCodeProvider', () => {
         return false;
       });
 
-      const result = await provider.listSessions('/my/project', profileEnv);
+      const result = await provider.listSessions('/my/project');
       expect(result).toEqual([]);
     });
 
@@ -561,7 +568,7 @@ describe('ClaudeCodeProvider', () => {
         return false;
       });
 
-      const result = await provider.readSessionTranscript('some-id', '/my/project', profileEnv);
+      const result = await provider.readSessionTranscript('some-id', '/my/project');
       expect(result).toBeNull();
     });
 
@@ -577,7 +584,7 @@ describe('ClaudeCodeProvider', () => {
         return false;
       });
 
-      await provider.readSessionTranscript('test-session', '/my/project', profileEnv);
+      await provider.readSessionTranscript('test-session', '/my/project');
       expect(fs.existsSync).toHaveBeenCalledWith(projectDir);
     });
 
@@ -596,12 +603,12 @@ describe('ClaudeCodeProvider', () => {
         return false;
       });
 
-      await provider.readSessionTranscript('test-session', '/my/project', profileEnv);
+      await provider.readSessionTranscript('test-session', '/my/project');
       expect(fs.existsSync).toHaveBeenCalledWith(projectDirWithDash);
       expect(fs.existsSync).toHaveBeenCalledWith(projectDirWithoutDash);
     });
 
-    it('uses CLAUDE_CONFIG_DIR from profileEnv when provided', async () => {
+    it('uses CLAUDE_CONFIG_DIR from the launch environment', async () => {
       vi.mocked(fs.existsSync).mockImplementation((p) => {
         const s = String(p);
         if (isClaudePath(s)) return true;
@@ -609,8 +616,21 @@ describe('ClaudeCodeProvider', () => {
         return false;
       });
 
-      await provider.listSessions('/my/project', profileEnv);
+      await provider.listSessions('/my/project');
       expect(fs.existsSync).toHaveBeenCalledWith(projectsDir);
+    });
+
+    it('falls back to ~/.claude when the launch environment has no CLAUDE_CONFIG_DIR', async () => {
+      vi.mocked(getShellEnvironment).mockReturnValue({ PATH: '/usr/bin' });
+      vi.stubEnv('CLAUDE_CONFIG_DIR', '');
+      try {
+        const { app } = await import('electron');
+        await provider.listSessions('/my/project');
+        expect(fs.existsSync).toHaveBeenCalledWith(path.join(app.getPath('home'), '.claude', 'projects'));
+        expect(fs.existsSync).not.toHaveBeenCalledWith(projectsDir);
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
 
     it('returns empty/null when no matching project dir exists', async () => {
@@ -621,10 +641,10 @@ describe('ClaudeCodeProvider', () => {
         return false;
       });
 
-      const sessions = await provider.listSessions('/my/project', profileEnv);
+      const sessions = await provider.listSessions('/my/project');
       expect(sessions).toEqual([]);
 
-      const transcript = await provider.readSessionTranscript('id', '/my/project', profileEnv);
+      const transcript = await provider.readSessionTranscript('id', '/my/project');
       expect(transcript).toBeNull();
     });
 
@@ -642,8 +662,8 @@ describe('ClaudeCodeProvider', () => {
         return false;
       });
 
-      await provider.listSessions('/my/project', profileEnv);
-      await provider.readSessionTranscript('id', '/my/project', profileEnv);
+      await provider.listSessions('/my/project');
+      await provider.readSessionTranscript('id', '/my/project');
 
       const projectDirChecks = existsSyncCalls.filter(c => c === projectDir);
       // At least 2: one from each method's resolveProjectDir call
@@ -655,7 +675,13 @@ describe('ClaudeCodeProvider', () => {
   describe('readSessionTranscript file format support', () => {
     const customConfigDir = '/test/config';
     const projectsDir = path.join(customConfigDir, 'projects');
-    const profileEnv = { CLAUDE_CONFIG_DIR: customConfigDir };
+    // CLAUDE_CONFIG_DIR as the environment Clubhouse launches agents with sets it.
+    beforeEach(() => {
+      vi.mocked(getShellEnvironment).mockReturnValue({ PATH: `/usr/local/bin${path.delimiter}/usr/bin`, CLAUDE_CONFIG_DIR: customConfigDir });
+    });
+    afterEach(() => {
+      vi.mocked(getShellEnvironment).mockReturnValue({ PATH: `/usr/local/bin${path.delimiter}/usr/bin` });
+    });
 
     function encodeCwd(cwd: string): string {
       return path.resolve(cwd).replace(/[/\\]/g, '-');
@@ -685,7 +711,7 @@ describe('ClaudeCodeProvider', () => {
         throw new Error('ENOENT');
       });
 
-      const result = await provider.readSessionTranscript('test-session', '/my/project', profileEnv);
+      const result = await provider.readSessionTranscript('test-session', '/my/project');
       expect(result).not.toBeNull();
       expect(result).toHaveLength(1);
       expect(result![0].type).toBe('user');
@@ -713,7 +739,7 @@ describe('ClaudeCodeProvider', () => {
         throw new Error('ENOENT');
       });
 
-      const result = await provider.readSessionTranscript('test-session', '/my/project', profileEnv);
+      const result = await provider.readSessionTranscript('test-session', '/my/project');
       expect(result).not.toBeNull();
       expect(result).toHaveLength(1);
       expect(result![0].message).toBe('from json');
@@ -740,7 +766,7 @@ describe('ClaudeCodeProvider', () => {
         throw new Error('ENOENT');
       });
 
-      const result = await provider.readSessionTranscript('test-session', '/my/project', profileEnv);
+      const result = await provider.readSessionTranscript('test-session', '/my/project');
       expect(result).not.toBeNull();
       expect(result![0].message).toBe('from jsonl');
     });
@@ -762,7 +788,7 @@ describe('ClaudeCodeProvider', () => {
         throw new Error('ENOENT');
       });
 
-      const result = await provider.readSessionTranscript('test-session', '/my/project', profileEnv);
+      const result = await provider.readSessionTranscript('test-session', '/my/project');
       expect(result).not.toBeNull();
       expect(result![0].message).toBe('root json');
     });

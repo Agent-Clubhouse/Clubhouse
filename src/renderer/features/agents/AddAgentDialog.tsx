@@ -26,7 +26,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
   const [selectedMcps, setSelectedMcps] = useState<string[]>([]);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const availability = useOrchestratorStore((s) => s.availability);
-  const { effectiveOrchestrators: enabledOrchestrators } = useEffectiveOrchestrators(projectPath);
+  const { effectiveOrchestrators: enabledOrchestrators } = useEffectiveOrchestrators();
   const [orchestrator, setOrchestrator] = useState(enabledOrchestrators[0]?.id || 'claude-code');
   const selectedAvail = availability[orchestrator];
   const { options: MODEL_OPTIONS, loading: modelsLoading } = useModelOptions(orchestrator);

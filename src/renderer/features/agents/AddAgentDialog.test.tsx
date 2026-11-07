@@ -26,8 +26,6 @@ vi.mock('../../hooks/useEffectiveOrchestrators', () => ({
     effectiveOrchestrators: [
       { id: 'claude-code', displayName: 'Claude Code', shortName: 'CC', capabilities: { permissions: true } },
     ],
-    activeProfile: undefined,
-    isOrchestratorInProfile: () => true,
   }),
 }));
 

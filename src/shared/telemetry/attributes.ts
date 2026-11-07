@@ -550,7 +550,6 @@ export const ATTR = {
   agentResume: boolAttr('clubhouse.agent.resume'),
   usesWorktree: boolAttr('clubhouse.agent.uses_worktree'),
   hooksEnabled: boolAttr('clubhouse.hooks.enabled'),
-  profileActive: boolAttr('clubhouse.profile.active'),
   wrapperApplied: boolAttr('clubhouse.wrapper.applied'),
   // A helper's start and the presets behind it (#2671). Codes only: never a raw model id, a task or a persona.
   helperRoutingRequestedCli: enumAttr('clubhouse.helper_routing.requested_cli', ['claude-code', 'codex-cli', 'copilot-cli', 'auto', 'other', 'unset']),

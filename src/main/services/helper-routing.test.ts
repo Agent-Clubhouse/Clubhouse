@@ -37,7 +37,6 @@ vi.mock('../orchestrators', () => {
   const all = ['claude-code', 'codex-cli', 'copilot-cli'].map(provider);
   return { getProvider: (id: string) => all.find((p) => p.id === id), getAllProviders: () => all };
 });
-vi.mock('./agent-system', () => ({ resolveProfileEnv: vi.fn(async () => undefined) }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./settings-store', () => ({
   createSettingsStore: <T>(_file: string, defaults: T) => {
@@ -78,7 +77,6 @@ vi.mock('./settings-audit', async (importOriginal) => ({
 }));
 vi.mock('../telemetry/feature-events', () => ({ helperAutoRefused: () => undefined, helperPresetsChanged: (...args: unknown[]) => { W.telemetry.push(args); } }));
 
-import { resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
 import {
   HelperRoutingError,
@@ -286,29 +284,6 @@ describe('readHelperRouting', () => {
     expect(view.cells.hard).toMatchObject({ state: 'stale', staleReason: 'model_unavailable', fallback: 'builtin_preset', effective: { model: 'opus' } });
   });
 
-  it('choices are what a write accepts: app-wide, even when cells are read under a project\'s profile', async () => {
-    const { getProvider } = await import('../orchestrators');
-    const provider = getProvider('codex-cli' as never)!;
-    const asked: Array<unknown> = [];
-    const original = provider.listModels;
-    provider.listModels = async (options?: { env?: unknown }) => { asked.push(options?.env ?? null); return options?.env ? live([m('gpt-6-luna')]) : live(CODEX); };
-    vi.mocked(resolveProfileEnv).mockResolvedValue({ CODEX_HOME: '/profile' });
-    try {
-      const view = (await readHelperRouting({ projectPath: '/p' })).providers['codex-cli'];
-      if (!view.autoEligible) throw new Error('eligible');
-      expect(view.choices.models.map((c) => c.id)).toEqual(CODEX.map((c) => c.id));
-      // The state says what a start in that project would do.
-      expect(view.cells.hard).toMatchObject({ state: 'stale', effective: null });
-      // So a value picked from the choices is one the write takes.
-      await updateHelperPresets({ revision: helperRoutingRevision(), cells: [{ provider: 'codex-cli', difficulty: 'hard', model: 'gpt-6.1-terra', effort: 'high' }] } as never, { surface: 'mobile' });
-      expect(W.saved['codex-cli'].hard.model).toBe('gpt-6.1-terra');
-    } finally {
-      provider.listModels = original;
-      vi.mocked(resolveProfileEnv).mockReset();
-      vi.mocked(resolveProfileEnv).mockResolvedValue(undefined);
-    }
-  });
-
   it('moves the revision when a cell\'s state changes, once, and tells listeners, with no write', async () => {
     const changed: string[] = [];
     onHelperRoutingChanged((revision) => changed.push(revision));
@@ -321,7 +296,7 @@ describe('readHelperRouting', () => {
     expect(W.revision).toBe(0);
   });
 
-  it('a read under a project\'s profile doesn\'t move it: another login can list other models', async () => {
+  it('a read for a project doesn\'t move it', async () => {
     const first = (await readHelperRouting()).revision;
     W.lists.set('codex-cli', live([m('gpt-6-luna')]));
     expect((await readHelperRouting({ projectPath: '/p' })).revision).toBe(first);

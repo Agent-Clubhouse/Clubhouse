@@ -90,8 +90,8 @@ function runVersion(binary: string, opts: ClaudeVersionLookupOptions, spawnFn: t
 /**
  * `claude --version` for the preflight when the initialize response omits
  * `claude_code_version` (#2275). Asynchronous, bounded by a timeout, and
- * launched the way sessions are (profile env, command prefix, Windows shims).
- * Cached per binary, command prefix and profile env while the binary's mtime
+ * launched the way sessions are (launch env, command prefix, Windows shims).
+ * Cached per binary, command prefix and env while the binary's mtime
  * is unchanged, so it spawns once per install rather than once per start.
  * Failures aren't cached.
  */

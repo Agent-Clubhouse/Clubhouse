@@ -20,7 +20,6 @@ import { registerCanvasIndexHandlers } from './canvas-index-handlers';
 import { registerGroupProjectHandlers } from './group-project-handlers';
 import { registerAnnexClientHandlers } from './annex-client-handlers';
 import { registerMarketplaceHandlers } from './marketplace-handlers';
-import { registerProfileHandlers } from './profile-handlers';
 import { registerSettingsHandlers } from './settings-handlers';
 import { registerBlueprintHandlers } from './blueprint-handlers';
 import { registerGoobersHandlers } from './goobers-handlers';
@@ -80,7 +79,6 @@ export function registerAllHandlers(): void {
   registerAnnexHandlers();
   registerAnnexClientHandlers();
   registerMarketplaceHandlers();
-  registerProfileHandlers();
   registerSettingsHandlers();
   setMcpBridgeStarter(ensureMcpBridgeStarted);
   registerMcpBindingHandlers();

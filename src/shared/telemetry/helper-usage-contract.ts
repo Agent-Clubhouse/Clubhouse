@@ -108,7 +108,7 @@ export interface DecisionCandidate {
   mapped?: { model: string | null; effort: string | null; source: HelperRoutingFieldSource; verified: boolean };
   load: { live: number; reserved: number };
   quota?: DecisionQuota;
-  /** Same-plan profiles that cannot be told apart (an API-key login, say) are marked, never guessed at. */
+  /** Logins that cannot be told apart (an API-key login, say) are marked, never guessed at. */
   accountKnown?: boolean;
   tier?: number;
   score?: DecisionScore;

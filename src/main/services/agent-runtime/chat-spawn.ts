@@ -336,7 +336,6 @@ export function hasChatStartInFlight(agentId: string): boolean {
 export async function tryStartChatAgent(
   params: ChatSpawnParams,
   provider: OrchestratorProvider,
-  profileEnv: Record<string, string> | undefined,
   commandPrefix: string | undefined,
   durableConfig: DurableAgentConfig | null | undefined,
   onStarting?: () => void,
@@ -395,7 +394,7 @@ export async function tryStartChatAgent(
   }
   onStarting?.();
   try {
-    return await runChatStart(params, provider, profileEnv, commandPrefix, durableConfig, candidates, binaryPath, start, facts, unavailablePreference);
+    return await runChatStart(params, provider, commandPrefix, durableConfig, candidates, binaryPath, start, facts, unavailablePreference);
   } catch (err) {
     if (!(err instanceof ChatStartCancelledError)) {
       facts.reason = 'error';
@@ -410,14 +409,13 @@ export async function tryStartChatAgent(
 }
 
 /** Exactly the environment passed to both a launch probe and session start. */
-export function chatLaunchEnvironment(profileEnv?: Record<string, string>): Record<string, string> {
-  return cleanSpawnEnv({ ...getShellEnvironment(), ...profileEnv });
+export function chatLaunchEnvironment(): Record<string, string> {
+  return cleanSpawnEnv({ ...getShellEnvironment() });
 }
 
 async function runChatStart(
   params: ChatSpawnParams,
   provider: OrchestratorProvider,
-  profileEnv: Record<string, string> | undefined,
   commandPrefix: string | undefined,
   durableConfig: DurableAgentConfig | null | undefined,
   candidates: ChatDriver[],
@@ -434,8 +432,8 @@ async function runChatStart(
 
   // Electron's inherited PATH may not contain Node for npm CLI shims. Match
   // the terminal launch and use the same effective env for probing, health
-  // keys and the actual session; profile values remain overrides.
-  const launchEnv = chatLaunchEnvironment(profileEnv);
+  // keys and the actual session.
+  const launchEnv = chatLaunchEnvironment();
   const level = levelForFreeAgent(params.freeAgentMode, params.permissionMode);
   const resumeNativeSessionId = params.resume ? params.sessionId : undefined;
   appLog('core:chat', 'info', 'Chat start requested', {
@@ -445,7 +443,6 @@ async function runChatStart(
       candidates: candidates.map((d) => d.id),
       resumeSessionId: resumeNativeSessionId ?? null,
       binaryPath,
-      profileEnvKeys: profileEnv ? Object.keys(profileEnv) : [],
     },
   });
   let prepared: { env: Record<string, string>; mcpServers: Record<string, unknown>; mcpHttpEndpoints: Record<string, McpHttpEndpoint>; mcpNotices: ChatRuntimeNotice[]; continued?: { sessionId: string; lastSeq: number } } | undefined;
@@ -650,7 +647,7 @@ async function runChatStart(
       driverId: driver.id,
       cwd: params.cwd,
       richMedia: () => isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG),
-      // Read from the env the CLI runs with: a profile's COPILOT_HOME moves it.
+      // Read from the env the CLI runs with: COPILOT_HOME moves it.
       sessionOutputDir: (nativeSessionId) => sessionOutputDir(provider.id, nativeSessionId, env),
       level,
       // A resumed session already has its instructions; only new sessions need them.

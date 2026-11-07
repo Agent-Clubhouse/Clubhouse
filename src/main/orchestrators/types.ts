@@ -255,17 +255,20 @@ export interface TranscriptReadStats {
   truncated?: boolean;
 }
 
-/** Providers that support session listing, transcript reading, and ID extraction */
+/**
+ * Providers that support session listing, transcript reading, and ID extraction.
+ * Each reads the CLI's own store where the launch environment puts it
+ * (CLAUDE_CONFIG_DIR, CODEX_HOME, COPILOT_HOME), else the default location.
+ */
 export interface SessionCapable {
   /** List available CLI sessions for the given project directory */
-  listSessions(cwd: string, profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>>;
+  listSessions(cwd: string): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>>;
 
   /** Read a historical session transcript from the CLI's own storage.
    *  Returns raw StreamJsonEvent[] or null if session not found. */
   readSessionTranscript(
     sessionId: string,
     cwd: string,
-    profileEnv?: Record<string, string>,
     opts?: TranscriptReadOptions,
   ): Promise<StreamJsonEvent[] | null>;
 
@@ -277,17 +280,25 @@ export interface SessionCapable {
    * don't print their id (Codex). `startedAt`/`endedAt` bound the run (epoch ms);
    * `resumedId` is the session the run resumed, if any.
    */
-  findRunSession?(run: { cwd: string; startedAt: number; endedAt: number; resumedId?: string; profileEnv?: Record<string, string> }): Promise<string | null>;
+  findRunSession?(run: { cwd: string; startedAt: number; endedAt: number; resumedId?: string }): Promise<string | null>;
 
   /** Whether the CLI still has `sessionId`; undefined when it can't tell. */
-  hasSession?(sessionId: string, profileEnv?: Record<string, string>): Promise<boolean | undefined>;
+  hasSession?(sessionId: string): Promise<boolean | undefined>;
 
   /**
    * Whether `sessionId` is a session the CLI recorded for `cwd`; undefined
    * when it can't tell. Used to vet ids scraped from terminal output, which
    * can name any session the conversation mentions.
    */
-  hasSessionForCwd?(sessionId: string, cwd: string, profileEnv?: Record<string, string>): Promise<boolean | undefined>;
+  hasSessionForCwd?(sessionId: string, cwd: string): Promise<boolean | undefined>;
+
+  /**
+   * Whether `sessionId` is in the CLI's store under `stateDir` (a
+   * CLAUDE_CONFIG_DIR, CODEX_HOME or COPILOT_HOME) rather than the launch
+   * environment's. Read-only. Only used for sessions a removed provider profile
+   * may have saved (#2749), so they are never pruned or cleared as missing.
+   */
+  hasSessionInStore?(sessionId: string, stateDir: string): Promise<boolean | undefined>;
 }
 
 /**
@@ -390,7 +401,7 @@ export interface ModelList {
 }
 
 export interface ListModelsOptions {
-  /** Profile env (CLAUDE_CONFIG_DIR, CODEX_HOME…): a profile can change login and so the list. */
+  /** Env to layer over the login shell's for the probe (CLAUDE_CONFIG_DIR, CODEX_HOME…); callers normally pass none. */
   env?: Record<string, string>;
   /** Skip the cache and probe again. */
   refresh?: boolean;
@@ -429,14 +440,14 @@ export interface OrchestratorProvider {
    * The models the CLI accepts, from its own handshake where it has one, else
    * the older probe, else the static list; `source` says which. Probes run
    * in an empty temp dir, so the list reflects the CLI's user-level settings,
-   * never a project's. Cached per profile env for about ten minutes.
+   * never a project's. Cached per `env` for about ten minutes.
    */
   listModels?(opts?: ListModelsOptions): Promise<ModelList>;
   /** What the CLI says about its plan limits (#2671). Token-free. Only providers that can report have it. */
   readPlanQuota?(opts?: ListModelsOptions): Promise<import('../../shared/helper-routing').PlanQuotaReading>;
   /**
    * The context choices for `model` (#2660). A CLI whose catalog needs a process
-   * caches it per profile env and shares one read, so opening settings can't
+   * caches it per `env` and shares one read, so opening settings can't
    * spawn repeatedly. Never throws: an unreadable catalog is `unavailable`.
    */
   getContextWindowOptions?(model: string | undefined, opts?: ListModelsOptions): Promise<ContextWindowOptions>;
@@ -447,10 +458,6 @@ export interface OrchestratorProvider {
 
   /** Timing for the paste-then-submit sequence used by agent-to-agent messaging */
   getPasteSubmitTiming(): PasteSubmitTiming;
-
-  // Profile support
-  /** Return the env var keys this orchestrator uses for config isolation (e.g. CLAUDE_CONFIG_DIR) */
-  getProfileEnvKeys(): string[];
 
   /**
    * Optional: return CLI args to inject MCP server config at spawn time.
@@ -464,6 +471,8 @@ export interface OrchestratorProvider {
    *
    * Receives the full set of servers keyed by name — the Clubhouse bridge plus
    * whatever the project configured — to avoid transitive electron imports.
+   * `onNotice` gets a message for the person when part of a server can't be
+   * passed this way and was left out.
    */
-  buildMcpArgs?(servers: Record<string, McpServerDef>): string[];
+  buildMcpArgs?(servers: Record<string, McpServerDef>, onNotice?: (message: string) => void): string[];
 }

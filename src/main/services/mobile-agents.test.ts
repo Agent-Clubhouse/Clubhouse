@@ -18,7 +18,6 @@ vi.mock('./agent-system', () => ({
     id: id ?? 'claude-code',
     getModelOptions: (opts?: unknown) => getModelOptions(id, opts),
   })),
-  resolveProfileEnv: vi.fn(async () => undefined),
 }));
 vi.mock('./dispatcher/dispatcher-settings', () => ({ dispatcherEnablement: vi.fn(() => ({ savedOn: false, enabled: false, reason: 'switch_off' })) }));
 vi.mock('./agent-settings-service', () => ({
@@ -27,7 +26,6 @@ vi.mock('./agent-settings-service', () => ({
   readDefaultMcps: vi.fn(async () => ['ado']),
 }));
 vi.mock('./orchestrator-settings', () => ({ getSettings: vi.fn(() => ({ enabled: ['claude-code', 'codex-cli'] })) }));
-vi.mock('./profile-settings', () => ({ getProfile: vi.fn() }));
 vi.mock('./chat-idle-settings', () => ({ chatIdleSettings: { getSettings: () => ({ idleTimeoutMinutes: 30 }) } }));
 vi.mock('./chat-runtime-settings', () => ({
   isChatEnabled: vi.fn(() => true),
@@ -50,10 +48,9 @@ vi.mock('./orchestration-policy', async () => {
 
 import * as agentConfig from './agent-config';
 import { startDurableCreation } from './agent-creation';
-import { checkAvailability, getAvailableOrchestrators, resolveProfileEnv } from './agent-system';
+import { checkAvailability, getAvailableOrchestrators } from './agent-system';
 import { dispatcherEnablement } from './dispatcher/dispatcher-settings';
 import { readProjectAgentDefaults } from './agent-settings-service';
-import { getProfile } from './profile-settings';
 import { isChatEnabled } from './chat-runtime-settings';
 import { isChatAgent } from './agent-runtime';
 import { getBranchChanges, isInsideGitRepo } from './git-service';
@@ -99,12 +96,10 @@ describe('create options', () => {
     expect(options.colors).toContainEqual({ id: 'rose', label: 'Rose', hex: '#f43f5e' });
     expect(options.suggestedName).toMatch(/^[a-z]+-[a-z]+$/);
   });
-  it('narrows orchestrators to the project profile, unless it covers none', async () => {
+  it('offers every enabled orchestrator, whatever an old saved profileId says (#2749)', async () => {
     vi.mocked(readProjectAgentDefaults).mockResolvedValue({ profileId: 'work' } as never);
-    vi.mocked(getProfile).mockReturnValue({ id: 'work', name: 'Work', orchestrators: { 'codex-cli': { env: {} } } });
-    expect((await buildCreateOptions(project)).orchestrators.map((o) => o.id)).toEqual(['codex-cli']);
-    vi.mocked(getProfile).mockReturnValue({ id: 'work', name: 'Work', orchestrators: { gemini: { env: {} } } });
     expect((await buildCreateOptions(project)).orchestrators.map((o) => o.id)).toEqual(['claude-code', 'codex-cli']);
+    vi.mocked(readProjectAgentDefaults).mockResolvedValue({});
   });
   it('offers no worktree outside a git repo', async () => {
     vi.mocked(isInsideGitRepo).mockResolvedValueOnce(false);
@@ -518,13 +513,10 @@ describe('the Clubhouse MCP always runs', () => {
   });
 });
 
-describe('model options use the profile env (#2569)', () => {
-  it('passes the profile env, as GET_MODEL_OPTIONS does', async () => {
-    vi.mocked(resolveProfileEnv).mockResolvedValue({ CLAUDE_CONFIG_DIR: '/profiles/work' });
+describe('model options (#2569)', () => {
+  it('list the CLI\'s own login, with no env override, as GET_MODEL_OPTIONS does', async () => {
     await buildAgentSettingsOptions('/work/app');
-    expect(resolveProfileEnv).toHaveBeenCalledWith('/work/app', 'claude-code');
-    expect(getModelOptions).toHaveBeenCalledWith('claude-code', { env: { CLAUDE_CONFIG_DIR: '/profiles/work' } });
-    vi.mocked(resolveProfileEnv).mockResolvedValue(undefined);
+    expect(getModelOptions).toHaveBeenCalledWith('claude-code', undefined);
   });
 });
 

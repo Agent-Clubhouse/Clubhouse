@@ -88,7 +88,6 @@ vi.mock('../orchestrators', () => ({
   registerBuiltinProviders: vi.fn(),
   getAllProviders: vi.fn(() => []),
   getProvider: vi.fn(() => ({
-    getProfileEnvKeys: vi.fn(() => ['ANTHROPIC_API_KEY']),
   })),
 }));
 
@@ -217,15 +216,6 @@ vi.mock('../services/plugin-manifest-registry', () => ({
   refreshManifest: vi.fn(),
   unregisterManifest: vi.fn(),
   getManifest: vi.fn(() => null),
-}));
-
-// ── Service mocks (profile-handlers deps) ──────────────────────────────
-vi.mock('../services/profile-settings', () => ({
-  getSettings: vi.fn(() => ({
-    profiles: [{ id: 'prof1', name: 'Default', orchestratorId: 'claude-code', env: {} }],
-  })),
-  saveProfile: vi.fn(),
-  deleteProfile: vi.fn(),
 }));
 
 // ── Service mocks (pty-handlers deps) ──────────────────────────────────
@@ -397,7 +387,6 @@ import { registerAllHandlers } from './index';
 import { execFile } from 'child_process';
 import * as notificationService from '../services/notification-service';
 import * as projectStore from '../services/project-store';
-import * as profileSettings from '../services/profile-settings';
 import { getAllowedCommands } from '../services/plugin-manifest-registry';
 import { setMcpBridgeStarter } from '../services/mcp-bridge-starter';
 import { ensureMcpBridgeStarted } from './mcp-binding-handlers';
@@ -426,7 +415,6 @@ describe('registerAllHandlers — integration', () => {
     expect(handleHandlers.has(IPC.APP.GET_VERSION)).toBe(true);
     expect(handleHandlers.has(IPC.PROJECT.LIST)).toBe(true);
     expect(handleHandlers.has(IPC.PROCESS.EXEC)).toBe(true);
-    expect(handleHandlers.has(IPC.PROFILE.GET_SETTINGS)).toBe(true);
     expect(handleHandlers.has(IPC.GIT.INFO)).toBe(true);
     expect(handleHandlers.has(IPC.FILE.READ)).toBe(true);
   });
@@ -533,24 +521,6 @@ describe('registerAllHandlers — integration', () => {
     const handler = handleHandlers.get(IPC.LOG.GET_LOG_PATH)!;
     const result = await handler({});
     expect(result).toMatch(/[\\/]\.clubhouse[\\/]logs$/);
-  });
-
-  // ── Profile handlers: actual invocation ─────────────────────────────
-
-  it('PROFILE.GET_SETTINGS handler returns profile settings', async () => {
-    const handler = handleHandlers.get(IPC.PROFILE.GET_SETTINGS)!;
-    const result = await handler({});
-    expect(profileSettings.getSettings).toHaveBeenCalled();
-    expect(result).toEqual({
-      profiles: [{ id: 'prof1', name: 'Default', orchestratorId: 'claude-code', env: {} }],
-    });
-  });
-
-  it('PROFILE.SAVE_PROFILE handler delegates to profileSettings', async () => {
-    const handler = handleHandlers.get(IPC.PROFILE.SAVE_PROFILE)!;
-    const profile = { id: 'prof2', name: 'Custom', orchestratorId: 'claude-code', env: { FOO: 'bar' } };
-    await handler({}, profile);
-    expect(profileSettings.saveProfile).toHaveBeenCalledWith(profile);
   });
 });
 

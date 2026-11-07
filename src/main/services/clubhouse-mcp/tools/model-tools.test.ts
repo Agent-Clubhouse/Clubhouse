@@ -20,8 +20,6 @@ vi.mock('../../../orchestrators', () => ({
   getAllProviders: () => [...providers],
 }));
 
-const mockResolveProfileEnv = vi.fn(async (..._args: unknown[]): Promise<Record<string, string> | undefined> => undefined);
-vi.mock('../../agent-system', () => ({ resolveProfileEnv: (...args: unknown[]) => mockResolveProfileEnv(...args) }));
 
 let enabled: string[] = [];
 vi.mock('../../orchestrator-settings', () => ({ getSettings: () => ({ enabled }) }));
@@ -134,11 +132,9 @@ describe('list_models', () => {
     expect(body.providers.map((p: any) => p.cli)).toEqual(['claude-code', 'codex-cli', 'copilot-cli']);
   });
 
-  it('lists under the caller\'s project profile, and refresh asks again', async () => {
-    mockResolveProfileEnv.mockResolvedValue({ CLAUDE_CONFIG_DIR: 'profile-dir' });
+  it('lists for the CLI\'s local login, and refresh asks again', async () => {
     await callTool('orch', 'list_models', { cli: 'claude-code', refresh: true });
-    expect(mockResolveProfileEnv).toHaveBeenCalledWith(PROJECT, 'claude-code');
-    expect(providers[0].listModels).toHaveBeenCalledWith({ env: { CLAUDE_CONFIG_DIR: 'profile-dir' }, refresh: true });
+    expect(providers[0].listModels).toHaveBeenCalledWith({ refresh: true });
   });
 
   it('reports one provider\'s failure without failing the others', async () => {

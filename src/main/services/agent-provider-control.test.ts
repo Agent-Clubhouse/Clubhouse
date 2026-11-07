@@ -10,12 +10,11 @@ vi.mock('./agent-config', () => ({
 }));
 vi.mock('./agent-system', () => ({
   resolveOrchestrator: async (_p: string, id = 'claude-code') => ({ id, getCapabilities: () => ({ permissions: true }), inspectInstructions: async () => id === 'codex-cli' ? w.instructions : 'same' }),
-  resolveProfileEnv: async () => undefined,
   checkAvailability: async () => { w.beforeAvailability?.(); return { available: w.available }; },
   isAgentRunning: () => w.running, isAgentStopping: () => false,
   waitForAgentStopped: async () => !w.running,
 }));
-vi.mock('./mobile-agents', () => ({ effectiveOrchestrators: async () => [{ id: 'claude-code' }, { id: 'codex-cli' }] }));
+vi.mock('./mobile-agents', () => ({ effectiveOrchestrators: () => [{ id: 'claude-code' }, { id: 'codex-cli' }] }));
 vi.mock('./agent-settings-service', () => ({ readProjectAgentDefaults: async () => ({}) }));
 vi.mock('./free-agent-settings', () => ({ getPermissionMode: () => 'skip-all' }));
 vi.mock('./chat-runtime-settings', () => ({ isChatEnabled: () => true, resolveRuntimeMode: () => ({ mode: w.runtime }) }));

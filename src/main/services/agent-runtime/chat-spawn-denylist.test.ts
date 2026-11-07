@@ -88,7 +88,7 @@ async function receiveManifestWith(list: unknown[]) {
   await applyRemoteCliDenylist(JSON.parse(text).chatCliDenylist);
 }
 
-const start = () => tryStartChatAgent(params, provider, undefined, undefined, null);
+const start = () => tryStartChatAgent(params, provider, undefined, null);
 const toasts = () => vi.mocked(broadcastToAllWindows).mock.calls
   .filter((c) => c[0] === IPC.CHAT.RUNTIME_NOTICE)
   .map((c) => c[2] as { code: string; message: string });

@@ -496,7 +496,7 @@ async function finishHelperStart(
     const failedOn = await agentConfig.getDurableConfig(helperPath, helperId).catch((): null => null);
     if (failedOn?.routing?.mode === 'auto' && failedOn.orchestrator) {
       cooldownKind = classifyStartFailure(err);
-      await noteProviderFailure(failedOn.orchestrator, helperPath, cooldownKind);
+      await noteProviderFailure(failedOn.orchestrator, cooldownKind);
     }
     spawnFailures.set(helperId, reason);
     broadcastToAllWindows(IPC.AGENT.AGENT_WAKE_FAILED, helperId, reason);
@@ -649,13 +649,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
   const orchestratorCli = orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator;
   const runsOn = args.cli === AUTO_CLI ? undefined : (args.cli ?? orchestratorCli);
   const templateModel = await helperTemplateModel(managedHelper.settings, args, runsOn, async (helperCli, templateModelId) => {
-    let checkProject = homePath;
-    try {
-      checkProject = (await resolveTargetProject(homePath, orchestratorId, args.project)).path;
-    } catch {
-      // telemetry-exempt: a bad project is refused under the lock; check the model with the home profile
-    }
-    const check = await checkHelperModel(helperCli, templateModelId, checkProject);
+    const check = await checkHelperModel(helperCli, templateModelId);
     return check.ok && !check.warning;
   });
   if (templateModel) args = { ...args, model: templateModel };
@@ -671,7 +665,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     try {
       modelProject = (await resolveTargetProject(homePath, orchestratorId, args.project)).path;
     } catch {
-      // telemetry-exempt: a bad project is refused under the lock; check the model with the home profile
+      // telemetry-exempt: a bad project is refused under the lock; plan with the home project
     }
     const auto = cli === AUTO_CLI ? await autoStateFor(homePath, modelProject, orchestrator) : undefined;
     const planned = await planHelperStart({
@@ -687,18 +681,18 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     plan = planned.plan;
     if (plan?.warning) modelWarning = plan.warning;
     if (model) {
-      const check = await checkHelperModel(plan?.provider, model, modelProject);
+      const check = await checkHelperModel(plan?.provider, model);
       if (check.ok === false) return refused(check.message);
       modelWarning = check.warning;
     }
     if (effort) {
-      const check = await checkHelperEffort(plan?.provider, plan?.model, effort, modelProject);
+      const check = await checkHelperEffort(plan?.provider, plan?.model, effort);
       if (check.ok === false) return refused(check.message);
       effortWarning = check.warning;
     }
     // An explicit start isn't blocked by quota or a cooldown, only told, from what is already known.
     if (plan?.provider && !plan.pendingAuto) {
-      quotaWarning = await providerStartWarning(plan.provider, modelProject);
+      quotaWarning = await providerStartWarning(plan.provider);
       if (quotaWarning) plan = { ...plan, routing: { ...plan.routing, warning: quotaWarning } };
     }
   }

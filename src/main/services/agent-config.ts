@@ -146,7 +146,29 @@ async function readAgentsEntry(projectPath: string): Promise<{ agents: DurableAg
 }
 
 const configCache = new Map<string, CacheEntry>();
-const configWatchers = new Map<string, FSWatcher>();
+
+/**
+ * A project's agents.json watcher. It stays open across its own events and
+ * cache clears (#2729): macOS can deliver events late or drop them when a
+ * watcher in the process opens or closes, so reopening on every event made
+ * later hand edits easy to miss. `check` is the backstop for a lost event.
+ */
+interface ConfigWatch {
+  /** Null once it has failed: the check keeps running until a read or write opens a new one. */
+  watcher: FSWatcher | null;
+  check: ReturnType<typeof setInterval>;
+  /** agents.json as last seen: inode, size and mtime, 'missing', or null before the first look. */
+  signature: string | null;
+  checking: boolean;
+}
+
+const configWatchers = new Map<string, ConfigWatch>();
+
+/**
+ * How often a watched agents.json is checked for a change the watcher missed.
+ * The watcher stays the fast path; this bounds how late a missed edit is seen.
+ */
+export const AGENTS_FILE_CHECK_INTERVAL_MS = 5_000;
 
 // ---------------------------------------------------------------------------
 // Cross-project durable ID ownership
@@ -698,6 +720,9 @@ async function writeAgentsToDiskWithOptions(
     await fsp.writeFile(tmpPath, JSON.stringify(agents, null, 2), 'utf-8');
     await fsp.rename(tmpPath, configPath);
   });
+  // The watcher reports this write, so the backstop check needn't report it again.
+  const watched = configWatchers.get(projectPath);
+  if (watched) void refreshAgentsFileSignature(watched, projectPath);
 
   if (!skipBackup && previousConfig !== null) {
     const backupTmpPath = backupPath + '.tmp.' + randomUUID().slice(0, 8);
@@ -767,27 +792,120 @@ function mergeExternalAgents(
 }
 
 function ensureConfigWatcher(projectPath: string): void {
-  if (configWatchers.has(projectPath)) return;
+  const previous = configWatchers.get(projectPath);
+  if (previous?.watcher) return;
+  let watcher: FSWatcher;
   try {
-    const watcher = watch(clubhouseDir(projectPath), (_eventType, filename) => {
+    watcher = watch(clubhouseDir(projectPath), (_eventType, filename) => {
       if (String(filename) !== 'agents.json') return;
-      const entry = configCache.get(projectPath);
-      if (entry && !entry.dirty && !entry.pendingFlush) {
-        clearAgentConfigCache(projectPath);
-      }
-      notifyAgentConfigChanged(projectPath);
+      onAgentsFileChanged(projectPath);
+      const watched = configWatchers.get(projectPath);
+      if (watched?.watcher === watcher) void refreshAgentsFileSignature(watched, projectPath);
     });
     watcher.on('error', (err) => {
       appLog('core:agent-config', 'warn', 'Failed to watch agents.json for external changes', {
         meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
       });
+      const watched = configWatchers.get(projectPath);
+      if (watched?.watcher === watcher) onConfigWatcherFailed(projectPath, watched);
     });
-    configWatchers.set(projectPath, watcher);
   } catch (err) {
     appLog('core:agent-config', 'warn', 'Failed to watch agents.json for external changes', {
       meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
     });
+    return;
   }
+  // A failed watcher's check hands over what it last saw, so a change in between is still found.
+  if (previous) closeConfigWatch(projectPath, previous);
+  const watched: ConfigWatch = {
+    watcher,
+    check: setInterval(() => { void checkAgentsFile(projectPath, watched); }, AGENTS_FILE_CHECK_INTERVAL_MS),
+    signature: previous?.signature ?? null,
+    checking: false,
+  };
+  watched.check.unref?.();
+  configWatchers.set(projectPath, watched);
+  if (watched.signature === null) void refreshAgentsFileSignature(watched, projectPath);
+}
+
+/**
+ * A watcher that errored reports nothing more. Close it but keep its check, so
+ * an idle project still sees hand edits, and drop a clean cache entry, so the
+ * next read opens a new watcher.
+ */
+function onConfigWatcherFailed(projectPath: string, watched: ConfigWatch): void {
+  watched.watcher?.close();
+  watched.watcher = null;
+  const entry = configCache.get(projectPath);
+  if (entry && !entry.dirty && !entry.pendingFlush) dropCacheEntry(projectPath, entry);
+}
+
+/** An external change to agents.json: drop a clean cache entry and tell listeners. The watcher stays open. */
+function onAgentsFileChanged(projectPath: string): void {
+  const entry = configCache.get(projectPath);
+  if (entry && !entry.dirty && !entry.pendingFlush) {
+    dropCacheEntry(projectPath, entry);
+  }
+  notifyAgentConfigChanged(projectPath);
+}
+
+/** agents.json's inode, size and mtime; 'missing' if it isn't there; null if that can't be told. */
+async function agentsFileSignature(projectPath: string): Promise<string | null> {
+  try {
+    const stats = await fsp.stat(agentsConfigPath(projectPath));
+    if (!stats) return null;
+    return `${stats.ino}:${stats.size}:${stats.mtimeMs}`;
+  } catch (err) {
+    return isMissingFileError(err) ? 'missing' : null;
+  }
+}
+
+/** Looks at agents.json still in flight, so a test can wait for them rather than guess how long a stat takes. */
+const agentsFileLookups = new Set<Promise<void>>();
+
+function trackLookup(lookup: Promise<void>): Promise<void> {
+  agentsFileLookups.add(lookup);
+  void lookup.finally(() => agentsFileLookups.delete(lookup));
+  return lookup;
+}
+
+/** Test hook: resolves once no look at a watched agents.json is in flight. */
+export async function settleAgentsFileChecksForTests(): Promise<void> {
+  while (agentsFileLookups.size > 0) await Promise.allSettled([...agentsFileLookups]);
+}
+
+function refreshAgentsFileSignature(watched: ConfigWatch, projectPath: string): Promise<void> {
+  return trackLookup((async () => {
+    const signature = await agentsFileSignature(projectPath);
+    if (signature !== null && configWatchers.get(projectPath) === watched) watched.signature = signature;
+  })());
+}
+
+/** The backstop: a change the watcher didn't report, found by looking at the file. */
+function checkAgentsFile(projectPath: string, watched: ConfigWatch): Promise<void> {
+  if (watched.checking) return Promise.resolve();
+  return trackLookup(checkAgentsFileNow(projectPath, watched));
+}
+
+async function checkAgentsFileNow(projectPath: string, watched: ConfigWatch): Promise<void> {
+  watched.checking = true;
+  try {
+    const signature = await agentsFileSignature(projectPath);
+    if (signature === null || configWatchers.get(projectPath) !== watched) return;
+    const previous = watched.signature;
+    watched.signature = signature;
+    if (previous === null || previous === signature) return;
+    appLog('core:agent-config', 'debug', 'agents.json changed without a watcher event', { meta: { projectPath } });
+    onAgentsFileChanged(projectPath);
+  } finally {
+    watched.checking = false;
+  }
+}
+
+function closeConfigWatch(projectPath: string, watched: ConfigWatch): void {
+  clearInterval(watched.check);
+  watched.watcher?.close();
+  if (configWatchers.get(projectPath) === watched) configWatchers.delete(projectPath);
 }
 
 /**
@@ -1043,7 +1161,21 @@ export async function flushAllAgentConfigs(): Promise<void> {
   } while ([...configCache.values()].some((entry) => entry.dirty || entry.pendingFlush));
 }
 
-/** Clear the in-memory cache (cancels pending timers without flushing). Useful for tests. */
+/** Drop one project's cache entry and its pending flush timer. Its watcher stays open. */
+function dropCacheEntry(projectPath: string, entry: CacheEntry): void {
+  configGeneration++;
+  if (entry.flushTimer) {
+    clearTimeout(entry.flushTimer);
+    entry.flushTimer = null;
+  }
+  configCache.delete(projectPath);
+}
+
+/**
+ * Clear the in-memory cache (cancels pending timers without flushing) and close
+ * the agents.json watchers. Useful for tests. The watcher's own events use
+ * dropCacheEntry instead, so the watcher stays open (#2729).
+ */
 export function clearAgentConfigCache(projectPath?: string): void {
   configGeneration++;
   const entries = projectPath ? [configCache.get(projectPath)].filter((entry): entry is CacheEntry => !!entry) : configCache.values();
@@ -1055,15 +1187,14 @@ export function clearAgentConfigCache(projectPath?: string): void {
   }
   if (projectPath) {
     configCache.delete(projectPath);
-    configWatchers.get(projectPath)?.close();
-    configWatchers.delete(projectPath);
+    const watched = configWatchers.get(projectPath);
+    if (watched) closeConfigWatch(projectPath, watched);
   } else {
     configCache.clear();
     agentIdOwners.clear();
     creationRecoveries.clear();
-    for (const [watchedProjectPath, watcher] of configWatchers) {
-      watcher.close();
-      configWatchers.delete(watchedProjectPath);
+    for (const [watchedProjectPath, watched] of configWatchers) {
+      closeConfigWatch(watchedProjectPath, watched);
     }
   }
 }

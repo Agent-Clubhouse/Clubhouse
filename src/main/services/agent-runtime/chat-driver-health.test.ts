@@ -172,7 +172,7 @@ describe('chat driver health', () => {
     done();
   });
 
-  it('keys health by driver, binary and profile env', () => {
+  it('keys health by driver, binary and env', () => {
     const d = new FakeChatDriver('claude_agent_sdk');
     const a = driverHealthKey(d, 'bin', { CLAUDE_CONFIG_DIR: 'one' });
     expect(driverHealthKey(d, 'bin', { CLAUDE_CONFIG_DIR: 'one' })).toBe(a);
@@ -194,7 +194,7 @@ describe('chat driver health', () => {
     fs.utimesSync(bin, new Date(), new Date(Date.now() + 60_000));
     await probeDriver(driver, bin);
     expect(probes).toBe(2);
-    // A different profile env is a different key.
+    // A different env is a different key.
     await probeDriver(driver, bin, { CLAUDE_CONFIG_DIR: 'x' });
     expect(probes).toBe(3);
     done();

@@ -57,7 +57,6 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
     { label: 'Agents & providers', page: 'orchestrators' },
     ...MANAGED_PAGES,
     { label: 'Dispatcher', page: 'dispatcher' },
-    { label: 'Profiles', page: 'profiles' },
     { label: 'Display & UI', page: 'display' },
     { label: 'External editor', page: 'editor' },
     { label: 'Keyboard shortcuts', page: 'keyboard-shortcuts' },
