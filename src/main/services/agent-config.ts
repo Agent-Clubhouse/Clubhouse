@@ -3099,17 +3099,20 @@ async function setHelperStartFieldsInner(projectPath: string, agentId: string, f
   await writeAgents(projectPath, agents);
 }
 
-/** A released helper is an ordinary agent: drop its link and every start_helper field. */
 /**
- * Rows just written as no longer live helpers: disposed, deleted, removed from
- * the list or released to ordinary agents. Auto stops holding a provider for
- * them (#2887). Called only after the write, and only for these changes: a row
- * missing from a listing proves nothing, so that never releases anything.
+ * Rows no longer live helpers: disposed, deleted, removed from the list or
+ * released to ordinary agents. Auto stops holding a provider for them (#2887).
+ * Called once writeAgents has accepted the change into the config cache, which
+ * every reader sees from then on; the disk flush is scheduled, not awaited, so a
+ * crash before it can bring the row back on launch. That is safe here: the
+ * reservation was in memory and is gone after a restart too. Only these changes
+ * release: a row missing from a listing proves nothing.
  */
 function helpersEnded(ids: readonly string[]): void {
   for (const id of ids) forgetAutoHelper(id);
 }
 
+/** A released helper is an ordinary agent: drop its link and every start_helper field. */
 function clearHelperLink(agent: DurableAgentConfig): void {
   delete agent.parentAgentId;
   delete agent.parentProjectPath;

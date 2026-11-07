@@ -11,9 +11,10 @@
  * Reservations are in memory and don't expire. One counts as load until it is
  * reconciled: its helper seen live in a count, after which the row counts it, or
  * an outcome confirming it isn't running (refused, cancelled, failed, left
- * asleep, seen not running), or agent-config writing a change that ends it as a
- * helper (disposed, deleted, removed from the list, released), whichever surface
- * asked. A count that doesn't see the helper's row at all keeps counting the
+ * asleep, seen not running), or agent-config accepting a change that ends it as
+ * a helper (disposed, deleted, removed from the list, released) into its config
+ * cache, whichever surface asked. That is the cached change, not a finished disk
+ * write. A count that doesn't see the helper's row at all keeps counting the
  * reservation: a missing row proves nothing. A restart loses them, which is safe:
  * a quit interrupts every creation and start, live helpers are counted again
  * from their rows, and an interrupted creation is marked failed at launch
@@ -67,7 +68,7 @@ function commitRotation(cursorKey: string, key: string, now: number): void {
   const kept = Object.entries(cursors).sort((a, b) => b[1].at - a[1].at).slice(0, AUTO_MAX_ROTATION_CURSORS);
   // In memory at once; the write is queued. A failed write leaves this run's value in place.
   rotationStore.save({ version: 1, cursors: Object.fromEntries(kept) }).catch((err: unknown) => {
-    // telemetry-exempt: logged; the cost is at most one repeated turn after a restart
+    // telemetry-exempt: logged; this run is unaffected, and a restart reads older history (see the header)
     appLog('core:mcp', 'warn', 'Auto: could not save the rotation', { meta: { error: err instanceof Error ? err.name : 'unknown' } });
   });
 }
