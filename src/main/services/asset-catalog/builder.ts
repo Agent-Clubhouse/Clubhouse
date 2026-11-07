@@ -132,6 +132,7 @@ export function createAgentBuilder(store: AssetCatalogStore, projectId?: string)
         ...(projectId && { projectId }) });
       return read(agentId, nextAdoption);
     }
+    const sourceHeads: Record<string, number> = {};
     const before = await read(agentId, adoption, composition);
     if (action.type === 'order') {
       if (action.keys.length !== composition.entries.length || new Set(action.keys).size !== action.keys.length) throw new AssetCatalogError('invalid_composition');
@@ -158,11 +159,21 @@ export function createAgentBuilder(store: AssetCatalogStore, projectId?: string)
       if (!entry || !block) throw new AssetCatalogError('invalid_composition');
       if (action.type === 'fork') {
         if (entry.source.kind !== 'follow') throw new AssetCatalogError('invalid_composition');
-        const copy = await store.copyAsset({ assetId: block.assetId, revision: block.revision, agentId });
+        if (!entry.baseEntryId) {
+          if (composition.floors[block.assetId] !== block.revision || index.assets[block.assetId]?.headRevision !== block.revision) throw new AssetCatalogError('stale_revision');
+          sourceHeads[block.assetId] = block.revision;
+        }
+        const copy = await store.copyAsset({ assetId: block.assetId, revision: block.revision, agentId,
+          ...(!entry.baseEntryId && { expectedHeadRevision: block.revision }) });
         entry.source = { kind: 'fork', blockId: copy.id, forkedFrom: { assetId: block.assetId, revision: block.revision } };
       } else if (action.type === 'return') {
         if (entry.source.kind !== 'fork') throw new AssetCatalogError('invalid_composition');
         const origin = entry.source.forkedFrom;
+        if (!entry.baseEntryId) {
+          const original = index.assets[origin.assetId];
+          if (!original || original.deletedAt || original.headRevision !== origin.revision) throw new AssetCatalogError('stale_revision');
+          sourceHeads[origin.assetId] = origin.revision;
+        }
         entry.source = entry.baseEntryId ? { kind: 'follow' } : { kind: 'follow', blockId: origin.assetId };
         if (!entry.baseEntryId) composition.floors[origin.assetId] = Math.max(composition.floors[origin.assetId] ?? 0, origin.revision);
       } else if (action.type === 'remove') {
@@ -181,7 +192,7 @@ export function createAgentBuilder(store: AssetCatalogStore, projectId?: string)
     }
     const nextAdoption = await builderSnapshotAdoption(store, composition);
     const plan = await store.plan({ agentId, adoption: nextAdoption, draft: composition, ...(projectId && { projectId }) });
-    await store.saveComposition({ agentId, expectedRevision, composition, adoption: nextAdoption, previewFingerprint: plan.fingerprint, ...(projectId && { projectId }) });
+    await store.saveComposition({ agentId, expectedRevision, composition, adoption: nextAdoption, previewFingerprint: plan.fingerprint, ...(Object.keys(sourceHeads).length > 0 && { expectedAssetRevisions: sourceHeads }), ...(projectId && { projectId }) });
     return read(agentId, nextAdoption);
   }
   return { read, command, compositionOf };

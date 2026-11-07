@@ -321,3 +321,45 @@ it('forks and returns a direct shared block without changing its source or anoth
   expect(after.assets[shared.id]).toEqual(before.assets[shared.id]);
   expect(after.compositions['other-consumer']).toEqual(before.compositions['other-consumer']);
 });
+async function directSharedFixture() {
+  await choose('custom');
+  const shared = await store.createAsset({ kind: 'block', name: 'Direct source', owner: { kind: 'library' }, payload: { content: 'ORIGINAL' } });
+  const composition = await builder.compositionOf(agentId);
+  composition.entries.push({ localId: 'direct', source: { kind: 'follow', blockId: shared.id } });
+  composition.floors[shared.id] = 1;
+  const held = await builderSnapshotAdoption(store, composition);
+  const plan = await store.plan({ agentId, draft: composition, adoption: held });
+  await store.saveComposition({ agentId, expectedRevision: 1, composition, adoption: held, previewFingerprint: plan.fingerprint });
+  return shared;
+}
+it('persists direct fork provenance and floor through a reopened store', async () => {
+  const shared = await directSharedFixture();
+  const view = await command({ type: 'fork', key: 'local:direct' });
+  const reopenedStore = createAssetCatalogStore({ dir: path.join(root, 'catalog') });
+  const reopened = createAgentBuilder(reopenedStore);
+  const composition = await reopened.compositionOf(agentId);
+  expect(composition.floors[shared.id]).toBe(1);
+  expect(composition.entries.at(-1)?.source).toMatchObject({ kind: 'fork', forkedFrom: { assetId: shared.id, revision: 1 } });
+  expect(await reopened.read(agentId, await builderSnapshotAdoption(reopenedStore, composition))).toEqual(view);
+});
+it.each(['changed', 'deleted'] as const)('refuses return when direct fork origin is %s without a composition write', async (mode) => {
+  const shared = await directSharedFixture();
+  const view = await command({ type: 'fork', key: 'local:direct' });
+  if (mode === 'deleted') await store.deleteAsset({ assetId: shared.id, expectedRevision: 1 });
+  else {
+    const payload = { content: 'NEW_CONTENT' };
+    const impact = await store.previewAssetEdit({ assetId: shared.id, payload });
+    await store.saveRevision({ assetId: shared.id, expectedRevision: 1, payload, impactFingerprint: impact.fingerprint });
+  }
+  const before = await store.read();
+  await expect(command({ type: 'return', key: 'local:direct' }, view.revision)).rejects.toMatchObject({ code: 'stale_revision' });
+  expect(await store.read()).toEqual(before);
+});
+it('refuses stale direct fork commands before creating a copy', async () => {
+  await directSharedFixture();
+  const view = await read();
+  await command({ type: 'append', name: 'Later local block', content: 'later' });
+  const before = await store.read();
+  await expect(command({ type: 'fork', key: 'local:direct' }, view.revision)).rejects.toMatchObject({ code: 'stale_revision' });
+  expect(await store.read()).toEqual(before);
+});
