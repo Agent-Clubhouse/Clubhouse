@@ -1667,6 +1667,8 @@ interface ActiveCreation {
   /** The project path the creation was started with (the cache key). */
   projectPath: string;
   controller: AbortController;
+  /** Survives removal of the journal at ready, preventing cancel/delete races. */
+  compositionAttempted?: boolean;
   /** Settles once the creation has finished, including its cleanup. */
   settled: Promise<void>;
 }
@@ -2304,6 +2306,7 @@ async function runDurableCreation(
         prepare: async () => {
           // Set before persistence: even an ambiguous journal write must retain the record.
           compositionAttempted = true;
+          active.compositionAttempted = true;
           await update((agent) => {
             if (!agent.creation) throw new DurableCreationCancelledError();
             agent.creation.composition = { reservationId, agentId: id, beforeRevision: 0, expectedRevision: 1, phase: 'prepared' };
@@ -2323,7 +2326,7 @@ async function runDurableCreation(
 
     checkCancelled();
     // Flushed when a worktree was made, so a quit right after ready is not mistaken for an interrupted creation.
-    const ready = await update((agent) => { delete agent.creation; }, !!plan);
+    const ready = await update((agent) => { checkCancelled(); delete agent.creation; }, !!plan || compositionAttempted);
     emit('ready', ready);
     return ready;
   } catch (err) {
@@ -2383,7 +2386,7 @@ export async function cancelDurableCreation(projectPath: string, agentId: string
   const active = activeCreations.get(agentId);
   if (!(await stopDurableCreation(projectPath, agentId))) return false;
   const retained = (await readAgentsEntry(active!.projectPath)).agentsById.get(agentId);
-  if (retained?.creation?.composition) throw new CreationCompositionRetainedError();
+  if (active!.compositionAttempted || retained?.creation?.composition) throw new CreationCompositionRetainedError();
   if (retained) {
     await deleteDurable(active!.projectPath, agentId);
   }
