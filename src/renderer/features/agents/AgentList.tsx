@@ -27,6 +27,7 @@ import { buildAgentForest, forestSiblingGroups, helperRollup, localParentId, mov
 import { OtherProjectParentLine } from './helpers/OtherProjectParentLine';
 import { useAgentStatuses } from './agent-status-store';
 import { useChromeStore, syncCollapsedAgentsWithAgents, ensureChromeStateLoaded } from '../../chrome/chromeStore';
+import { ManagedRestartHost } from '../managed/restart';
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
 const EMPTY_AGENTS: Agent[] = [];
@@ -891,6 +892,7 @@ function AgentListInner() {
       {deleteDialogAgent && <DeleteAgentDialog />}
       {applyPersonaDialogAgent && <ApplyPersonaDialog />}
       {extractPersonaDialogAgent && <ExtractPersonaDialog />}
+      <ManagedRestartHost />
     </div>
   );
 }

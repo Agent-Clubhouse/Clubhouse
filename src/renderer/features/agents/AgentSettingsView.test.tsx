@@ -9,6 +9,7 @@ import { AgentSettingsView } from './AgentSettingsView';
 import { useAgentSettingsPages, requestCloseAgentSettings, requestLeaveAgentSettings } from './agentSettingsPages';
 import { useToastStore } from '../../stores/toastStore';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
+import { resetManagedFlag } from '../managed/managed-flag';
 import type { Agent, MaterializationPreview } from '../../../shared/types';
 
 // Mock heavy child components
@@ -1087,6 +1088,32 @@ describe('AgentSettingsView', () => {
       expect(within(page).getByTestId('agent-settings-managed')).toBeInTheDocument();
       fireEvent.click(within(page).getByRole('button', { name: /Turn on local overrides in General/ }));
       expect(useAgentSettingsPages.getState().page).toBe('general');
+    });
+
+    it('opens on a requested page once a managed agent\'s setup shows it (#2896)', async () => {
+      resetManagedFlag();
+      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ managedAgents: true });
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+      useAgentSettingsPages.getState().setRequestedPage({ agentId: defaultAgent.id, page: 'preview' });
+      try {
+        renderSettings();
+        await waitFor(() => expect(useAgentSettingsPages.getState().page).toBe('preview'));
+        expect(useAgentSettingsPages.getState().requestedPage).toBeNull();
+      } finally {
+        useAgentSettingsPages.getState().setRequestedPage(null);
+        resetManagedFlag();
+      }
+    });
+
+    it('ignores a page requested for another agent', async () => {
+      useAgentSettingsPages.getState().setRequestedPage({ agentId: 'someone-else', page: 'mcp' });
+      try {
+        renderSettings();
+        await act(async () => { await Promise.resolve(); });
+        expect(useAgentSettingsPages.getState().page).toBe('general');
+      } finally {
+        useAgentSettingsPages.getState().setRequestedPage(null);
+      }
     });
 
     it('opens the shell from the store and hides its row while closed', () => {

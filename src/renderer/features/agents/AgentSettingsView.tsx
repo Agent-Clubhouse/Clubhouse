@@ -222,6 +222,14 @@ export function AgentSettingsView({ agent }: Props) {
   }, [agent.id, hiddenPages, setHiddenPages]);
   const showHelpers = !hiddenPages.includes('helpers');
 
+  // A page asked for by whoever opened settings ("What changed" asks for Preview),
+  // selected once it shows for this agent: a managed agent's builder pages appear after its setup loads.
+  const requestedPage = useAgentSettingsPages((s) => s.requestedPage);
+  useEffect(() => {
+    if (!requestedPage || requestedPage.agentId !== agent.id || hiddenPages.includes(requestedPage.page)) return;
+    setPage(requestedPage.page);
+  }, [requestedPage, agent.id, hiddenPages, setPage]);
+
   // Shell in worktree: the sidebar row (new chrome) or the row under the page
   // (classic) opens it. It stays mounted once opened.
   const shellOpen = useAgentSettingsPages((s) => s.shellOpen);
