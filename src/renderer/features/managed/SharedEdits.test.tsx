@@ -4,7 +4,8 @@ import type { ManagedPart, ManagedPartConsumer, ManagedPartSummary } from '../..
 import { BlockList } from './BlockList';
 import { ImpactDialog, impactTitle, needsImpactDialog } from './ImpactDialog';
 import { PartDialog } from './PartDialog';
-import { changedLine } from './StaleEditDialog';
+import { TemplatesSettingsView } from './TemplatesSettingsView';
+import { builtFromLine, changedLine } from './attribution';
 import { lineDiff, partAsText } from './stale-edit';
 import { leftAloneNotice, resetPendingRestarts } from './restart';
 import { useToastStore } from '../../stores/toastStore';
@@ -178,5 +179,24 @@ describe('the diff', () => {
     const now = Date.parse('2026-11-07T12:00:00Z');
     expect(changedLine('2026-11-07T11:58:00Z', 'Dispatcher', now)).toBe('Changed by Dispatcher, 2m ago.');
     expect(changedLine('2026-11-07T11:58:00Z', undefined, now)).toBe('Changed 2m ago.');
+  });
+
+  it('says what a helper was built from', () => {
+    const names: Record<string, string> = { pw: 'Playwright', cr: 'code-review', lint: 'Lint' };
+    expect(builtFromLine('Helper', { added: ['pw'], removed: ['cr'] }, (id) => names[id])).toBe('Helper template, plus Playwright, minus code-review');
+    expect(builtFromLine('Helper', { added: ['pw', 'lint'], removed: [] }, (id) => names[id])).toBe('Helper template, plus Playwright, Lint');
+    expect(builtFromLine(null, { added: [], removed: ['gone'] }, (id) => names[id])).toBe('Its template, minus a part no longer in the library');
+  });
+});
+
+describe('template attribution (#2900)', () => {
+  it('says the Dispatcher changed a template in the list', async () => {
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [
+      { id: 't1', name: 'Reviewer', description: '', builtin: false, setup: { blocks: [], skills: [], mcps: [] }, settings: {}, usedBy: 0, updatedBy: 'Dispatcher', updatedAt: new Date(Date.now() - 5 * 60_000).toISOString() },
+      { id: 't2', name: 'Mine', description: '', builtin: false, setup: { blocks: [], skills: [], mcps: [] }, settings: {}, usedBy: 0 },
+    ] } as never);
+    render(<TemplatesSettingsView />);
+    const changed = await screen.findAllByTestId('managed-template-changed');
+    expect(changed.map((el) => el.textContent)).toEqual(['Changed by Dispatcher, 5m ago.']);
   });
 });

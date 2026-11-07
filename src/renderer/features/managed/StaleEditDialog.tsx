@@ -2,16 +2,8 @@ import { useMemo } from 'react';
 import { Modal } from '../../components/Modal';
 import { Button } from '../../components/Button';
 import type { ManagedPart } from '../../../shared/managed-agents-types';
-import { formatAgo } from '../agents/states/format';
+import { changedLine } from './attribution';
 import { lineDiff, partAsText, type PartVersion } from './stale-edit';
-
-/** "Changed by Dispatcher, 2m ago." or "Changed 2m ago." */
-export function changedLine(updatedAt: string, updatedBy?: string, now = Date.now()): string {
-  const t = Date.parse(updatedAt);
-  const when = Number.isFinite(t) ? formatAgo(t, now) : '';
-  if (updatedBy) return when ? `Changed by ${updatedBy}, ${when}.` : `Changed by ${updatedBy}.`;
-  return when ? `Changed ${when}.` : 'Changed since you opened it.';
-}
 
 /**
  * A part changed after it was opened, in another window or by the Dispatcher
