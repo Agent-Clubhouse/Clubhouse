@@ -96,7 +96,7 @@ import {
 import { McpArgError, optionalString } from './validation';
 import { _resetHelperDeliveryForTesting, deliverHelperUpdate, deliverNow } from './helper-delivery';
 import { checkHelperEffort, checkHelperModel } from '../../model-check';
-import { AUTO_CLI, autoOffRefusal, decideAutoPlan, planHelperStart, readHelperAuto, type AutoLoad, type StartPlan } from '../../helper-routing';
+import { AUTO_CLI, autoOffRefusal, decideAutoPlan, planHelperStart, readHelperAuto, startDecisionRecord, type AutoLoad, type StartPlan } from '../../helper-routing';
 import { commitAutoDecision, reservedLoad, settleAutoDecision } from '../../helper-auto-state';
 import { recordHelperDecision, recordHelperReuse, recordHelperSpawnResult } from '../../../telemetry/helper-usage';
 import type { HelperSpawnResult } from '../../../../shared/telemetry/helper-usage-contract';
@@ -301,16 +301,23 @@ async function autoStateFor(homePath: string, helperPath: string, orchestrator: 
  * use nothing, and agents that aren't helpers aren't counted.
  */
 async function currentHelperLoad(homePath: string): Promise<Record<string, AutoLoad>> {
+  const helpers = await listAllHelpers(homePath);
+  // From here to the return nothing is awaited: statuses and reservations are read
+  // in one pass, so a start settling elsewhere lands wholly before or after it.
   const load: Record<string, AutoLoad> = {};
   const live = new Set<string>();
-  for (const { config } of await listAllHelpers(homePath)) {
+  const notRunning = new Set<string>();
+  for (const { config } of helpers) {
     const { status } = helperStatus(config);
-    if (status === 'sleeping' || status === 'failed' || status === 'stopping' || !config.orchestrator) continue;
+    if (status === 'sleeping' || status === 'failed' || status === 'stopping' || !config.orchestrator) {
+      notRunning.add(config.id);
+      continue;
+    }
     live.add(config.id);
     (load[config.orchestrator] ??= { live: 0, reserved: 0 }).live++;
   }
-  // After the rows: a reservation is left out only for a helper counted above.
-  for (const [provider, count] of Object.entries(reservedLoad(live))) (load[provider] ??= { live: 0, reserved: 0 }).reserved += count;
+  // A reservation is left out only for a helper counted above: see helper-auto-state.
+  for (const [provider, count] of Object.entries(reservedLoad({ live, notRunning }))) (load[provider] ??= { live: 0, reserved: 0 }).reserved += count;
   return load;
 }
 
@@ -738,16 +745,18 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
       plan = decided.plan;
       if (plan?.warning) modelWarning = plan.warning;
     }
-    // An Auto decision holds its provider from here. Until the helper exists, any way out releases it.
-    const decision = plan?.decision;
+    const namedCli = cli === AUTO_CLI ? undefined : cli;
+    const helperProvider = plan?.provider ?? namedCli ?? orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator;
+    // Every start has a record, so its helper can be joined to what it used. Only
+    // Auto's holds a provider: from here until the helper exists, any way out releases it.
+    const decision = plan?.decision ?? startDecisionRecord(plan?.routing, {
+      ...(helperProvider && { provider: helperProvider }), ...(plan?.model && { model: plan.model }), ...(plan?.effort && { effort: plan.effort }),
+    });
     const abandonDecision = () => {
-      if (!decision) return;
       settleAutoDecision(decision.decisionId, 'creation_refused');
       recordHelperDecision(decision);
       recordHelperSpawnResult({ decisionId: decision.decisionId, result: 'creation_refused' });
     };
-    const namedCli = cli === AUTO_CLI ? undefined : cli;
-    const helperProvider = plan?.provider ?? namedCli ?? orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator;
     const launch = await resolveLaunchFor(homePath, orchestratorId, helperProvider, access).catch((err: unknown) => {
       abandonDecision();
       throw err;
@@ -775,12 +784,10 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     const { agentId: helperId, config, done } = started;
     // Before anything is awaited: no wake may spawn it while this start owns it.
     spawning.add(helperId);
-    if (decision) {
-      // The helper's row now counts it, and the reservation names it, so it is counted once.
-      commitAutoDecision(decision.decisionId, helperId);
-      recordHelperDecision({ ...decision, helperId });
-    }
-    const background = finishHelperStart(homePath, target.path, orchestrator, helperId, name, task, access, plan?.effort, done, decision?.decisionId)
+    // The helper's row now counts it, and an Auto reservation names it, so it is counted once.
+    commitAutoDecision(decision.decisionId, helperId);
+    recordHelperDecision({ ...decision, helperId });
+    const background = finishHelperStart(homePath, target.path, orchestrator, helperId, name, task, access, plan?.effort, done, decision.decisionId)
       .catch((err) => {
         appLog('core:mcp', 'error', 'start_helper: background start failed', { meta: { helperId, error: errorText(err) } });
       });

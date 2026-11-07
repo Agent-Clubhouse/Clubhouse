@@ -66,6 +66,8 @@ export interface SimResult {
   /** Decisions that chose an unmeasured subscription. */
   unknownChosen: number;
   decisions: AutoDecision[];
+  /** The rotation at the end, as a clean shutdown would have saved it. */
+  cursors: Record<string, string>;
 }
 
 interface Running { key: string; from: number; until: number; rate: number }
@@ -84,7 +86,7 @@ export function runReplay(config: SimConfig): SimResult {
   const result: SimResult = {
     picks: Object.fromEntries(subs.map((s) => [s.key, 0])), sequence: [], refused: 0, reasons: {},
     maxSpreadBp: 0, meanSpreadBp: 0, unusedAtReset: Object.fromEntries(subs.map((s) => [s.key, []])),
-    minHeadroomPercent: 100, exhaustedAt: {}, unknownChosen: 0, decisions: [],
+    minHeadroomPercent: 100, exhaustedAt: {}, unknownChosen: 0, decisions: [], cursors,
   };
   let spreadSum = 0;
   let ticks = 0;

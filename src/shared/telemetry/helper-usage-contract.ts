@@ -33,6 +33,8 @@ export const HELPER_TELEMETRY_LIMITS = {
   maxQuotaSamplesPerProviderPerHour: 12,
   /** Least time between two quota samples of one provider unless its state changed. */
   quotaSampleMinGapMs: 5 * 60_000,
+  /** An unchanged reading is sampled at most this often. */
+  quotaSampleIntervalMs: 15 * 60_000,
   /** A window that moved this much (basis points) between readings is a change worth a sample. */
   quotaSampleChangeBp: 100,
   /** Every helper-telemetry event of all kinds, per hour. Past it they are dropped and counted. */
@@ -45,13 +47,27 @@ export const HELPER_TELEMETRY_LIMITS = {
 
 // --- The decision --------------------------------------------------------------
 
-export type HelperDecisionOutcome = 'chosen' | 'refused';
-export type HelperRefusalCode = 'auto_off' | 'no_candidate' | 'no_valid_mapping' | 'auto_not_supported';
+export const HELPER_DECISION_OUTCOMES = ['chosen', 'refused'] as const;
+export type HelperDecisionOutcome = (typeof HELPER_DECISION_OUTCOMES)[number];
+export const HELPER_REFUSAL_CODES = ['auto_off', 'no_candidate', 'no_valid_mapping', 'auto_not_supported'] as const;
+export type HelperRefusalCode = (typeof HELPER_REFUSAL_CODES)[number];
+
+/**
+ * The kind of task, as a closed set, never its text. Only when the caller
+ * supplied one. The difficulty a start named is a mapping input and is recorded
+ * as such (`helper_routing.difficulty`); it is not an observed task type, so it
+ * is never copied here. `unspecified`: nothing was supplied.
+ */
+export const HELPER_TASK_PROFILES = ['unspecified', 'small', 'medium', 'large'] as const;
+export type HelperTaskProfile = (typeof HELPER_TASK_PROFILES)[number];
+
+export const DECISION_QUOTA_WINDOW_NAMES = ['weekly', 'fiveHour', 'other', 'model'] as const;
+export const DECISION_QUOTA_QUALITIES = ['fresh', 'stale', 'unknown'] as const;
 
 /** What a candidate's quota looked like to the decision. All numbers are basis points; absent = unavailable. */
 export interface DecisionQuotaWindow {
   /** `weekly`, `fiveHour`, `other` or `model`. The model's name is not recorded. */
-  name: 'weekly' | 'fiveHour' | 'other' | 'model';
+  name: (typeof DECISION_QUOTA_WINDOW_NAMES)[number];
   usedBp?: number;
   resetsAtMs?: number;
   /** The provider itself said this limit is reached. */
@@ -65,11 +81,12 @@ export interface DecisionQuota {
   asOfMs?: number;
   unknownReason?: QuotaUnknownReason;
   /** Recent, stale or unknown, as the policy judged it. */
-  quality?: 'fresh' | 'stale' | 'unknown';
+  quality?: (typeof DECISION_QUOTA_QUALITIES)[number];
   windows?: DecisionQuotaWindow[];
 }
 
-export type DecisionScoreBasis = 'none' | 'load_only' | 'quota_tier' | 'weekly_used' | 'normalized_utilization' | 'other';
+export const DECISION_SCORE_BASES = ['none', 'load_only', 'quota_tier', 'weekly_used', 'normalized_utilization', 'reset_schedule', 'unmeasured', 'other'] as const;
+export type DecisionScoreBasis = (typeof DECISION_SCORE_BASES)[number];
 
 /** A policy's own ranking inputs, policy-versioned by the decision's `policyVersion`. All optional. */
 export interface DecisionScore {
@@ -99,7 +116,8 @@ export interface DecisionCandidate {
   chosen?: boolean;
 }
 
-export type DecisionTieReason = 'none' | 'lower_load' | 'rotation' | 'registration_order' | 'sticky' | 'other';
+export const DECISION_TIE_REASONS = ['none', 'lower_load', 'rotation', 'registration_order', 'sticky', 'other'] as const;
+export type DecisionTieReason = (typeof DECISION_TIE_REASONS)[number];
 
 export interface DecisionTie {
   /** Candidates inside the band that decided the tie. */
@@ -107,15 +125,17 @@ export interface DecisionTie {
   bandBp?: number;
   reason: DecisionTieReason;
   byLoad?: boolean;
-  /** Rotation state before and after, as small integers; the key itself is hashed on recording. */
+  /** The rotation or tie state key (hashed on recording) and its counter before and after, as small integers. */
   cursorKey?: string;
   cursorBefore?: number;
   cursorAfter?: number;
 }
 
+export const MAPPING_KINDS = ['custom', 'builtin', 'mixed', 'none'] as const;
+
 /** What one routing decision saw and chose. Produced by routing at the moment it decides. */
 export interface HelperDecisionRecord {
-  /** UUID v4 from {@link newDecisionId}. Immutable, and the reservation id too. */
+  /** UUID v4 (`newDecisionId()` in main/telemetry/helper-usage.ts). Immutable, and the reservation id too. */
   decisionId: string;
   decidedAtMs: number;
   policyVersion: number;
@@ -126,40 +146,49 @@ export interface HelperDecisionRecord {
   helperId?: string;
   /** The orchestrator that asked, when it was one of the known CLIs. */
   orchestratorProvider?: string;
+  /** Only if supplied; absent records `unspecified`. Not inferred from difficulty. */
+  taskProfile?: HelperTaskProfile;
   requested: { provider: string | null; model: string | null; effort: string | null; difficulty: HelperDifficulty | null };
   resolved: { provider: string | null; model: string | null; effort: string | null; difficulty: HelperDifficulty | null };
-  source: { provider?: HelperRoutingFieldSource; model: HelperRoutingFieldSource; effort?: HelperRoutingFieldSource };
-  reason: HelperRoutingReason;
-  fallback: HelperRoutingFallback;
+  /** Absent on a refusal: nothing was resolved, so nothing has a source. */
+  source?: { provider?: HelperRoutingFieldSource; model?: HelperRoutingFieldSource; effort?: HelperRoutingFieldSource };
+  /** Absent on a refusal: no reason is invented for a choice that was not made. */
+  reason?: HelperRoutingReason;
+  fallback?: HelperRoutingFallback;
   /** Identity of the effective mapping, bumped with each edit. Hashed on recording. */
   mappingRevision?: string;
   /** Fingerprint across the effective cells, so two runs on the same mapping compare equal. Hashed on recording. */
   mappingFingerprint?: string;
   /** The mapping came from the user's own cells, the built-ins, or neither. */
-  mappingKind?: 'custom' | 'builtin' | 'mixed' | 'none';
+  mappingKind?: (typeof MAPPING_KINDS)[number];
   /** Auto settings in force. Counts and booleans only. */
   settings?: { autoEnabled: boolean; enabledProviders: number };
   candidates: DecisionCandidate[];
   tie?: DecisionTie;
+  /** Numeric thresholds in force (basis points, milliseconds), so the policy can be replayed from the record. */
+  thresholds?: { quotaLowBp?: number; quotaNearLimitBp?: number; quotaStaleMs?: number; reservationMs?: number; stickyMs?: number; loadMargin?: number };
   /** Cooldowns in force, by provider count and kind, not the providers themselves. */
   cooldownsInForce?: { auth: number; quota: number; availability: number };
 }
 
 // --- What happened after ---------------------------------------------------------
 
-export type HelperSpawnResult = 'creation_refused' | 'cancelled' | 'spawn_failed' | 'started' | 'left_asleep';
+export const HELPER_SPAWN_RESULTS = ['creation_refused', 'cancelled', 'spawn_failed', 'started', 'left_asleep'] as const;
+export type HelperSpawnResult = (typeof HELPER_SPAWN_RESULTS)[number];
+export const HELPER_COOLDOWN_KINDS = ['auth', 'quota', 'availability'] as const;
 
 export interface HelperSpawnResultRecord {
   decisionId: string;
   helperId?: string;
   result: HelperSpawnResult;
   /** A failure that put the provider into a cooldown. */
-  cooldownKind?: 'auth' | 'quota' | 'availability';
+  cooldownKind?: (typeof HELPER_COOLDOWN_KINDS)[number];
   /** The provider and model that actually launched, when they differ from the decision's. */
   actual?: { provider: string | null; model: string | null; effort: string | null };
 }
 
-export type HelperReuseKind = 'wake' | 'resume';
+export const HELPER_REUSE_KINDS = ['wake', 'resume'] as const;
+export type HelperReuseKind = (typeof HELPER_REUSE_KINDS)[number];
 
 export interface HelperReuseRecord {
   helperId: string;
@@ -167,31 +196,36 @@ export interface HelperReuseRecord {
 }
 
 /** How a helper's run ended. */
-export type HelperRunOutcome = 'completed' | 'failed' | 'cancelled' | 'killed' | 'disposed' | 'unknown';
-
-/** A session error the run saw, by class. */
-export type HelperRunErrorClass = 'auth' | 'rate_limit' | 'quota' | 'other';
+export const HELPER_RUN_OUTCOMES = ['completed', 'failed', 'cancelled', 'disposed', 'unknown'] as const;
+export type HelperRunOutcome = (typeof HELPER_RUN_OUTCOMES)[number];
 
 // --- Usage ------------------------------------------------------------------------
 
 /** Where a usage number came from. */
-export type UsageSource =
+export const USAGE_SOURCES = [
   /** The provider's own total for one finished turn. */
-  | 'provider_turn'
+  'provider_turn',
   /** The provider's running total for the session or thread, as last reported. */
-  | 'provider_session_cumulative'
+  'provider_session_cumulative',
   /** Our sum of the provider's per-call figures, each counted once. */
-  | 'summed_calls'
-  /** Unknown scope: do not add to anything. */
-  | 'unscoped';
+  'summed_calls',
+] as const;
+export type UsageSource = (typeof USAGE_SOURCES)[number];
+
+/** A sample's place in the run: one finished turn, or the closing figure. */
+export const USAGE_SAMPLE_KINDS = ['turn', 'final'] as const;
 
 /** How repeats were told apart. `none` means they could not be, and the sample says so. */
-export type UsageDedup = 'turn_id' | 'message_id' | 'thread_cumulative' | 'content_equal' | 'none';
+export const USAGE_DEDUPS = ['turn_id', 'message_id', 'thread_cumulative', 'content_equal', 'none'] as const;
+export type UsageDedup = (typeof USAGE_DEDUPS)[number];
 
 /** Which activity a figure covers. Samples of different scopes are never added together. */
-export type UsageScope = 'main' | 'inclusive';
+/** `unscoped`: the driver did not say, so the figure is not added to anything. */
+export const USAGE_SCOPES = ['main', 'inclusive', 'unscoped'] as const;
+export type UsageScope = (typeof USAGE_SCOPES)[number];
 
-export type UsageCompleteness = 'complete' | 'partial' | 'none';
+export const USAGE_COMPLETENESS = ['complete', 'partial', 'none'] as const;
+export type UsageCompleteness = (typeof USAGE_COMPLETENESS)[number];
 
 /** Token figures in the contract's convention (src/shared/chat/events.ts TokenUsage). Absent = not reported. */
 export interface UsageFigures {

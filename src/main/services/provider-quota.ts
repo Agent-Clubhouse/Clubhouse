@@ -83,8 +83,7 @@ async function entryFor(providerId: string, projectPath: string | undefined): Pr
   return { entry, ...(env && { env }) };
 }
 
-/** `trigger` says who asked for the read that starts here; one already going is shared, and keeps its own. */
-function startRead(providerId: string, entry: QuotaEntry, env: Record<string, string> | undefined, trigger: 'read' | 'refresh'): Promise<SettledRead> {
+function startRead(providerId: string, entry: QuotaEntry, env: Record<string, string> | undefined): Promise<SettledRead> {
   if (entry.inFlight) return entry.inFlight;
   const provider = getProvider(providerId as OrchestratorId);
   const startedAt = Date.now();
@@ -99,7 +98,7 @@ function startRead(providerId: string, entry: QuotaEntry, env: Record<string, st
       entry.windows = reading.kind === 'windows' ? reading.windows : [];
       const view = viewOf(entry, now);
       helperQuotaRead(providerId, view.state, true);
-      recordQuotaSample(providerId, view, trigger);
+      recordQuotaSample(providerId, view);
       return { startedAt, outcome: reading.kind };
     })
     .catch((err: unknown): SettledRead => {
@@ -153,7 +152,7 @@ export async function readProviderQuota(providerId: string, projectPath?: string
     const fresh = entry.readAt !== undefined && now - entry.readAt < QUOTA_CACHE_MS;
     const backingOff = entry.failedAt !== undefined && now - entry.failedAt < QUOTA_FAILURE_BACKOFF_MS;
     if (!fresh && !backingOff) {
-      const read = startRead(providerId, entry, env, 'read');
+      const read = startRead(providerId, entry, env);
       let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([read, new Promise<void>((resolve) => { timer = setTimeout(resolve, options.budgetMs ?? QUOTA_READ_BUDGET_MS); })]);
       clearTimeout(timer);
@@ -184,7 +183,7 @@ export async function forceProviderQuota(providerId: string, projectPath?: strin
   try {
     const { entry, env } = await entryFor(providerId, projectPath);
     let outcome: ForcedQuotaOutcome = 'timed_out';
-    const read = startRead(providerId, entry, env, 'refresh').then((settled) => {
+    const read = startRead(providerId, entry, env).then((settled) => {
       outcome = settled.outcome === 'failed' ? 'failed' : 'ok';
       const auth = entry.cooldowns.auth;
       if (settled.outcome === 'windows' && auth && auth.at <= settled.startedAt) delete entry.cooldowns.auth;

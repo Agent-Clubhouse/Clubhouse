@@ -16,6 +16,9 @@ import {
   HELPER_DIFFICULTIES,
   HELPER_ROUTING_LABELS,
   HELPER_ROUTING_POLICY_VERSION,
+  QUOTA_LOW_PERCENT,
+  QUOTA_NEAR_LIMIT_PERCENT,
+  QUOTA_STALE_MS,
   PRESET_PROVIDERS,
   routingLabel,
   isHelperDifficulty,
@@ -521,6 +524,7 @@ function autoDecisionRecord(args: {
     mappingFingerprint: mappingFingerprint(options),
     mappingKind: sources.size === 0 ? 'none' : sources.size > 1 ? 'mixed' : sources.has('custom_mapping') ? 'custom' : 'builtin',
     settings: { autoEnabled: true, enabledProviders: enabled.length > 0 ? enabled.length : getAllProviders().length },
+    thresholds: AUTO_THRESHOLDS,
     candidates,
     ...(tie && {
       tie: {
@@ -533,6 +537,31 @@ function autoDecisionRecord(args: {
         ...(tie.cursorAfter !== undefined && { cursorAfter: tie.set.indexOf(tie.cursorAfter) }),
       },
     }),
+  };
+}
+
+/** The numbers policy 2 ran with, so a record can be replayed. It has no reservation expiry, sticky time or margin. */
+const AUTO_THRESHOLDS = { quotaLowBp: QUOTA_LOW_PERCENT * 100, quotaNearLimitBp: QUOTA_NEAR_LIMIT_PERCENT * 100, quotaStaleMs: QUOTA_STALE_MS };
+
+/**
+ * The record of a start Auto didn't decide: an explicit or preset start, or one
+ * that asked for nothing and runs on the orchestrator's CLI. Only what the start
+ * itself resolved; no candidates were compared, so none are listed. Routing is
+ * unchanged by it.
+ */
+export function startDecisionRecord(routing: HelperRouting | undefined, launched: { provider?: string; model?: string; effort?: string }, now = Date.now()): HelperDecisionRecord {
+  return {
+    decisionId: randomUUID(),
+    decidedAtMs: now,
+    policyVersion: routing?.policyVersion ?? HELPER_ROUTING_POLICY_VERSION,
+    mode: routing?.mode ?? 'explicit',
+    outcome: 'chosen',
+    requested: routing?.requested ?? { provider: null, model: null, effort: null, difficulty: null },
+    resolved: routing?.resolved ?? { provider: launched.provider ?? null, model: launched.model ?? null, effort: launched.effort ?? null, difficulty: null },
+    ...(routing
+      ? { source: routing.source, reason: routing.reason, fallback: routing.fallback }
+      : launched.provider ? { source: { provider: 'orchestrator' as const } } : {}),
+    candidates: [],
   };
 }
 

@@ -19,6 +19,17 @@ const where = new Map<string, string>();
 const isAt = (projectPath: string, id: string) => !where.has(id) || where.get(id) === projectPath;
 const configListeners = new Set<(projectPath: string) => void>();
 
+const mockRecordDecision = vi.fn();
+const mockRecordSpawnResult = vi.fn();
+const mockRecordReuse = vi.fn();
+vi.mock('../../../telemetry/helper-usage', () => ({
+  recordHelperDecision: (...args: unknown[]) => mockRecordDecision(...args),
+  recordHelperSpawnResult: (...args: unknown[]) => mockRecordSpawnResult(...args),
+  recordHelperReuse: (...args: unknown[]) => mockRecordReuse(...args),
+  recordHelperDisposed: () => undefined,
+  recordQuotaSample: () => undefined,
+}));
+
 const mockCheckDurableCreation = vi.fn(async (_projectPath: string, _params: Record<string, unknown>) => {});
 vi.mock('../../agent-config', () => ({
   checkDurableCreation: (projectPath: string, params: Record<string, unknown>) => mockCheckDurableCreation(projectPath, params),
@@ -199,6 +210,7 @@ import { agentRegistry } from '../../agent-registry';
 import { setHelperStartFields as agentConfigSetStartFields } from '../../agent-config';
 import { _resetProviderQuotaForTesting, noteProviderFailure } from '../../provider-quota';
 import { _resetHelperRoutingForTesting } from '../../helper-routing';
+import { reservationSummary } from '../../helper-auto-state';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
@@ -866,6 +878,66 @@ describe('start_helper cli "auto" (#2671)', () => {
     modelLists.set('codex-cli', live([['gpt-6.1-sol', ['high']], ['gpt-6.1-terra', ['medium']], ['gpt-6-luna', ['low']]]));
     mockGetPolicy.mockResolvedValue(policy);
     agents.set('orch', { ...agents.get('orch')!, orchestration: { orchestrate: true, autoHelpers: true } } as never);
+    mockRecordDecision.mockClear();
+    mockRecordSpawnResult.mockClear();
+    mockRecordReuse.mockClear();
+  });
+
+  it('records the decision with its helper, holds the provider through the start, and records it started', async () => {
+    const creation = controllableCreation();
+    const body = parse(await start({}));
+    const decisionId = (body.routing as { decisionId: string }).decisionId;
+    expect(mockRecordDecision).toHaveBeenCalledTimes(1);
+    expect(mockRecordDecision.mock.calls[0][0]).toMatchObject({ decisionId, helperId: 'helper_h', outcome: 'chosen', mode: 'auto' });
+    expect(reservationSummary()).toMatchObject({ held: 1, startedPending: 0 });
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+    expect(mockRecordSpawnResult).toHaveBeenCalledWith({ decisionId, helperId: 'helper_h', result: 'started' });
+    // Started, and kept until a count sees it: the next start's count reconciles it once.
+    expect(reservationSummary()).toMatchObject({ held: 1, startedPending: 1 });
+    const next = parse(await start({ name: 'h2', folder: 'h2' }));
+    expect((next.routing as { load: Record<string, number> }).load).toEqual({ 'claude-code': 1, 'codex-cli': 0 });
+    expect(reservationSummary()).toMatchObject({ held: 1, startedPending: 0 });
+  });
+
+  it('a creation refused up front releases the provider and records why', async () => {
+    mockStartDurableCreation.mockRejectedValueOnce(new Error('That name is taken.'));
+    const result = await start({});
+    expect(result.isError).toBe(true);
+    expect(reservationSummary().held).toBe(0);
+    expect(mockRecordDecision.mock.calls[0][0]).toMatchObject({ outcome: 'chosen' });
+    expect(mockRecordDecision.mock.calls[0][0].helperId).toBeUndefined();
+    expect(mockRecordSpawnResult).toHaveBeenCalledWith({ decisionId: mockRecordDecision.mock.calls[0][0].decisionId, result: 'creation_refused' });
+  });
+
+  it('a failed creation releases the provider and records it as a failed start', async () => {
+    const creation = controllableCreation();
+    parse(await start({}));
+    creation.fail('helper_h', 'no space');
+    await _settleHelperStartsForTesting();
+    expect(reservationSummary().held).toBe(0);
+    expect(mockRecordSpawnResult).toHaveBeenCalledWith(expect.objectContaining({ helperId: 'helper_h', result: 'spawn_failed' }));
+  });
+
+  it('a refusal records a refused decision and holds nothing', async () => {
+    await noteProviderFailure('claude-code', PROJECT, 'auth');
+    await noteProviderFailure('codex-cli', PROJECT, 'auth');
+    const result = await start({});
+    expect(result.isError).toBe(true);
+    expect(mockRecordDecision).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'refused', refusalCode: 'no_candidate' }));
+    expect(reservationSummary().held).toBe(0);
+  });
+
+  it('a wake is reuse, never a new decision', async () => {
+    const creation = controllableCreation();
+    parse(await start({}));
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+    running.delete('helper_h');
+    mockRecordDecision.mockClear();
+    await callTool('orch', 'wake_helper', { helper: 'helper_h' });
+    expect(mockRecordReuse).toHaveBeenCalledWith({ helperId: 'helper_h', kind: expect.stringMatching(/^(wake|resume)$/) });
+    expect(mockRecordDecision).not.toHaveBeenCalled();
   });
 
   it('needs a difficulty, and refuses a model or effort, which belong to one CLI', async () => {

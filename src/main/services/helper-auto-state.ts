@@ -1,22 +1,31 @@
 /**
  * What Auto keeps between decisions (#2887): a reservation per decision until
  * its start settles, and the rotation cursor for each set of tied providers.
- * Every change here happens under start_helper's start lock, so two decisions
- * never see each other half done.
+ * Every function here is synchronous, so none is ever seen half done. Reserve
+ * and commit run under start_helper's start lock. Settle runs when a background
+ * start ends, outside the lock, as its own turn of the event loop. A count reads
+ * the helpers' statuses and then the reservations in one synchronous pass after
+ * its last await, so a settle lands wholly before that pass or wholly after it:
+ * see {@link reservedLoad} for why both orders count a helper exactly once.
  *
- * Reservations are in memory and counted once: a reservation counts as load
- * only while its helper isn't already counted live. They don't expire. One is
- * released when its start reaches an end (refused, cancelled, failed, left
- * asleep), and a started one when the next count has seen it. A restart loses
- * them, which is safe: a quit interrupts every creation and start, live helpers
- * are counted again from their rows, and an interrupted creation is marked failed
- * at launch (agent-config's recovery), so nothing is counted twice.
+ * Reservations are in memory and don't expire. One counts as load until it is
+ * reconciled: its helper seen live in a count, after which the row counts it, or
+ * an outcome confirming it isn't running (refused, cancelled, failed, left
+ * asleep, seen not running, or disposed). A count that doesn't see the helper's
+ * row at all keeps counting the reservation. A restart loses them, which is safe:
+ * a quit interrupts every creation and start, live helpers are counted again
+ * from their rows, and an interrupted creation is marked failed at launch
+ * (agent-config's recovery), so nothing is counted twice.
  *
- * The cursor is saved so a restart doesn't hand the next tie to the first
- * provider again. It moves only when a decision commits, that is once the helper
- * exists, so a refused start doesn't take a provider's turn. If the save fails
- * this run keeps rotating from memory; after a restart the cursor is the last
- * one saved, and at most one turn repeats per tie set.
+ * The rotation is saved so a restart doesn't hand the next tie to the first
+ * provider. It moves only when a decision commits, once the helper exists, so a
+ * refused start doesn't take a provider's turn. Within a run it is exact, from
+ * memory, whatever the disk does. Across restarts it is best-effort history: a
+ * failed or unflushed write, an evicted set or an unreadable file brings back an
+ * older cursor or none. Within a run, decisions the rotation alone settled for
+ * one tie set (every member tied on load too) are a round robin from wherever it
+ * started, so their counts differ by at most one. Across R restarts, whatever
+ * each restored, by at most R + 1.
  */
 
 import type { HelperSpawnResult } from '../../shared/telemetry/helper-usage-contract';
@@ -71,7 +80,7 @@ interface Reservation {
   helperId?: string;
   /** The rotation this decision takes, saved when it commits. */
   rotation?: { cursorKey: string; key: string };
-  /** It started: dropped at the next count, which sees it live or not running. */
+  /** It started: kept, and counted, until a count sees it live or not running. */
   started?: true;
 }
 
@@ -93,7 +102,8 @@ export function commitAutoDecision(decisionId: string, helperId: string, now = D
 /**
  * A start reached its end. `started` is kept until a count has seen the helper,
  * so there's no moment it's counted neither as live nor reserved. Anything else
- * is released at once. Each decision settles once; a second call does nothing.
+ * confirms it isn't running, and is released at once. A second call does nothing
+ * to a released one.
  */
 export function settleAutoDecision(decisionId: string, result: HelperSpawnResult): void {
   const reservation = reservations.get(decisionId);
@@ -108,26 +118,55 @@ export function autoDecisionFor(helperId: string): string | undefined {
   return undefined;
 }
 
+/** A helper that is gone for good (disposed): whatever it held is released. */
+export function forgetAutoHelper(helperId: string): void {
+  for (const [decisionId, reservation] of reservations) if (reservation.helperId === helperId) reservations.delete(decisionId);
+}
+
+/** What one count saw: helpers it counted live, and helpers whose rows it saw not running. */
+export interface HelperSnapshot {
+  live: ReadonlySet<string>;
+  notRunning: ReadonlySet<string>;
+}
+
 /**
- * Reservations per provider, leaving out any whose helper is in `liveIds`,
- * since that one is already counted. A started reservation is dropped here, once
- * this count has it either way.
+ * Reservations per provider that the snapshot doesn't already count. Call it in
+ * the same synchronous pass that read the statuses. Each reservation is:
+ * - seen live: the row counts it, so it doesn't. A started one is reconciled and
+ *   released here.
+ * - seen not running: a started one is released, since it ran and stopped. One
+ *   still starting counts, because its start hasn't ended.
+ * - not seen at all, or not yet a helper: it counts.
+ *
+ * A settle after the pass finds the reservation counted or skipped by the rule
+ * above; a settle before it has either released it (an end that isn't running)
+ * or marked it started, which the pass reconciles. Either way, once.
  */
-export function reservedLoad(liveIds: ReadonlySet<string>): Record<string, number> {
+export function reservedLoad(snapshot: HelperSnapshot): Record<string, number> {
   const load: Record<string, number> = {};
   for (const [decisionId, reservation] of reservations) {
-    const live = !!reservation.helperId && liveIds.has(reservation.helperId);
-    if (reservation.started) reservations.delete(decisionId);
-    if (live || reservation.started) continue;
+    const id = reservation.helperId;
+    if (id && snapshot.live.has(id)) {
+      if (reservation.started) reservations.delete(decisionId);
+      continue;
+    }
+    if (id && reservation.started && snapshot.notRunning.has(id)) {
+      reservations.delete(decisionId);
+      continue;
+    }
     load[reservation.provider] = (load[reservation.provider] ?? 0) + 1;
   }
   return load;
 }
 
-/** How many reservations are held, and the oldest one's age, for a decision's record. Never dropped by age. */
-export function reservationSummary(now = Date.now()): { held: number; oldestAgeMs?: number } {
-  const held = [...reservations.values()].filter((r) => !r.started);
-  return { held: held.length, ...(held.length > 0 && { oldestAgeMs: now - Math.min(...held.map((r) => r.at)) }) };
+/** Reservations held, those started and not yet reconciled, and the oldest one's age, for a decision's record. Never dropped by age. */
+export function reservationSummary(now = Date.now()): { held: number; startedPending: number; oldestAgeMs?: number } {
+  const held = [...reservations.values()];
+  return {
+    held: held.length,
+    startedPending: held.filter((r) => r.started).length,
+    ...(held.length > 0 && { oldestAgeMs: now - Math.min(...held.map((r) => r.at)) }),
+  };
 }
 
 /** For testing. */

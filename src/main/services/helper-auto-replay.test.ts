@@ -158,7 +158,32 @@ describe('Auto replay', () => {
     expect(r.sequence).toEqual([]);
   });
 
-  it('a restart that kept the rotation continues it; one that lost it repeats at most one turn', () => {
+  it('restarts that lost the rotation, whatever they restored, leave ties within R + 1', () => {
+    const C = 'claude-code:work';
+    const three = [
+      { key: A, provider: 'claude-code', capacity: 100, resetsAt: T0 + 7 * DAY, unreadable: true },
+      { key: B, provider: 'codex-cli', capacity: 100, resetsAt: T0 + 7 * DAY, unreadable: true },
+      { key: C, provider: 'claude-code', capacity: 100, resetsAt: T0 + 7 * DAY, unreadable: true },
+    ];
+    const setKey = tieSetKey([A, B, C]);
+    // What each restart found on disk: nothing, a stale cursor, the same stale one again, an evicted set.
+    const restored: Array<Record<string, string> | undefined> = [undefined, { [setKey]: B }, { [setKey]: B }, {}, { [setKey]: C }];
+    const lengths = [4, 5, 2, 7, 3];
+    const totals: Record<string, number> = { [A]: 0, [B]: 0, [C]: 0 };
+    let start = T0;
+    restored.forEach((cursors, run) => {
+      const r = runReplay(base({ subscriptions: three, start, end: start + lengths[run] * HOUR, ...(cursors && { cursors }) }));
+      const counts = Object.values(r.picks);
+      // Within a run: a round robin from wherever it started.
+      expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
+      for (const [key, n] of Object.entries(r.picks)) totals[key] += n;
+      const all = Object.values(totals);
+      expect(Math.max(...all) - Math.min(...all)).toBeLessThanOrEqual(run + 1);
+      start += lengths[run] * HOUR;
+    });
+  });
+
+  it('with two tied, a restart that kept the rotation continues it, and one that lost it starts from the first', () => {
     const kept = runReplay(base({ end: T0 + 2 * HOUR, cursors: { [tieSetKey([A, B])]: A } }));
     expect(kept.sequence).toEqual([B, A]);
     const lost = runReplay(base({ end: T0 + 2 * HOUR }));

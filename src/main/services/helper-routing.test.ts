@@ -93,6 +93,7 @@ import {
   planHelperStart,
   readHelperAuto,
   readHelperRouting,
+  startDecisionRecord,
   updateHelperPresets,
 } from './helper-routing';
 import { commitAutoDecision, reservedLoad, rotationCursors, settleAutoDecision } from './helper-auto-state';
@@ -147,7 +148,7 @@ describe('planHelperStart: precedence', () => {
     const result = await plan({ difficulty: 'hard', orchestratorCli: 'codex-cli' });
     expect(result).toMatchObject({ provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', keep: [] });
     expect(result!.routing).toMatchObject({
-      mode: 'preset', balanced: false, policyVersion: 1, reason: 'preset_on_cli', fallback: 'none',
+      mode: 'preset', balanced: false, policyVersion: 2, reason: 'preset_on_cli', fallback: 'none',
       requested: { provider: null, model: null, effort: null, difficulty: 'hard' },
       resolved: { provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', difficulty: 'hard' },
       source: { provider: 'orchestrator', model: 'builtin_mapping', effort: 'builtin_mapping' },
@@ -729,6 +730,17 @@ describe('Auto (#2671)', () => {
     expect(plan.routing).toMatchObject({ fallback: 'builtin_preset', resolved: { model: 'gpt-6.1-sol' } });
   });
 
+  it('a start Auto didn\'t decide gets a record of what it resolved, and compares nothing', async () => {
+    const preset = await plan({ difficulty: 'hard' });
+    expect(startDecisionRecord(preset!.routing, {}, 1_000)).toMatchObject({
+      decidedAtMs: 1_000, mode: 'preset', outcome: 'chosen', reason: 'preset_on_cli', candidates: [],
+      resolved: { provider: 'claude-code', model: 'opus', effort: 'high', difficulty: 'hard' },
+    });
+    const bare = startDecisionRecord(undefined, { provider: 'codex-cli' });
+    expect(bare).toMatchObject({ mode: 'explicit', source: { provider: 'orchestrator' }, resolved: { provider: 'codex-cli', model: null, effort: null, difficulty: null }, candidates: [] });
+    expect(bare.reason).toBeUndefined();
+  });
+
   describe('no anchor', () => {
     it('who asks, and from which CLI, changes nothing', async () => {
       const a = await decided({}, { orchestratorId: 'one', orchestratorCli: 'codex-cli' });
@@ -759,9 +771,9 @@ describe('Auto (#2671)', () => {
   describe('reservations', () => {
     it('a decision holds its provider until it settles', async () => {
       const plan = await decided();
-      expect(reservedLoad(new Set())).toEqual({ [plan.provider!]: 1 });
+      expect(reservedLoad({ live: new Set(), notRunning: new Set() })).toEqual({ [plan.provider!]: 1 });
       settleAutoDecision(plan.routing.decisionId!, 'creation_refused');
-      expect(reservedLoad(new Set())).toEqual({});
+      expect(reservedLoad({ live: new Set(), notRunning: new Set() })).toEqual({});
     });
 
     it('a refusal holds nothing, and has a record', async () => {
@@ -773,7 +785,7 @@ describe('Auto (#2671)', () => {
         expect(result.decision!.reason).toBeUndefined();
         expect(result.decision!.candidates.find((c) => c.provider === 'codex-cli')).toMatchObject({ eligible: false, excluded: 'quota_near_limit' });
       }
-      expect(reservedLoad(new Set())).toEqual({});
+      expect(reservedLoad({ live: new Set(), notRunning: new Set() })).toEqual({});
     });
   });
 
