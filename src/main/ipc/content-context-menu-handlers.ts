@@ -15,7 +15,13 @@ export function contentMenuItems(context: ContentContextMenu, contents: Electron
     const point = image.point;
     if (point) items.push({ label: 'Copy image', click: () => {
       if (contents.isDestroyed()) return;
-      try { contents.copyImageAt(point.x, point.y); } catch { failed(); }
+      try {
+        // DOM hit tests use CSS client coordinates; CopyImageAt takes DIPs.
+        // Chromium converts DIPs to Blink space itself: do not apply device scale.
+        const zoom = contents.getZoomFactor();
+        if (!Number.isFinite(zoom) || zoom <= 0) { failed(); return; }
+        contents.copyImageAt(Math.round(point.x * zoom), Math.round(point.y * zoom));
+      } catch { failed(); }
     } });
     if (image.address) items.push({ label: 'Copy image address', click: () => write(image.address!) });
   }

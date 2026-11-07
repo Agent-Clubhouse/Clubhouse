@@ -33,7 +33,7 @@ export function contentContext(event: MouseEvent, doc: Document): ContentContext
       const keyboard = event.clientX === 0 && event.clientY === 0;
       const x = Math.round(keyboard ? (left + right) / 2 : event.clientX);
       const y = Math.round(keyboard ? (top + bottom) / 2 : event.clientY);
-      // Hit-test the exact integer point sent to Electron. Clipping, overlays,
+      // Verify the CSS point before main converts it to Electron's DIP units. Clipping, overlays,
       // zero size and offscreen images must not copy some other image's pixels.
       if (rect.width > 0 && rect.height > 0 && x >= left && x < right && y >= top && y < bottom
         && doc.elementFromPoint(x, y) === img) point = { x, y };

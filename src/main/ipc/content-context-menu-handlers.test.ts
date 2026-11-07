@@ -5,10 +5,10 @@ import { contentMenuItems, registerContentContextMenu } from './content-context-
 import { isContentContextMenu } from '../../shared/content-context-menu';
 import { IPC } from '../../shared/ipc-channels';
 const frame = {};
-const contents = { mainFrame: frame, isDestroyed: vi.fn(() => false), copyImageAt: vi.fn() };
+const contents = { mainFrame: frame, isDestroyed: vi.fn(() => false), getZoomFactor: vi.fn(() => 1), copyImageAt: vi.fn() };
 const wc = contents as unknown as Electron.WebContents;
 function click(item: Electron.MenuItemConstructorOptions) { item.click?.({} as Electron.MenuItem, {} as Electron.BaseWindow, {} as Electron.KeyboardEvent); }
-beforeEach(() => { mock.owner.mockReturnValue({}); mock.build.mockReturnValue({ popup: mock.popup }); contents.isDestroyed.mockReturnValue(false); });
+beforeEach(() => { mock.owner.mockReturnValue({}); mock.build.mockReturnValue({ popup: mock.popup }); contents.isDestroyed.mockReturnValue(false); contents.getZoomFactor.mockReturnValue(1); });
 describe('native copy content menu', () => {
   it('copies the requested address and selected text separately without opening anything', async () => {
     const items = contentMenuItems({ link: 'https://example.com/real', selection: 'visible\ntext', editable: false }, wc);
@@ -21,6 +21,17 @@ describe('native copy content menu', () => {
     click(items[0]); expect(contents.copyImageAt).toHaveBeenCalledWith(10, 23); expect(mock.write).not.toHaveBeenCalled();
     click(items[1]); expect(mock.write).toHaveBeenCalledWith('https://example.com/a.png');
     contents.isDestroyed.mockReturnValue(true); click(items[0]); expect(contents.copyImageAt).toHaveBeenCalledOnce();
+  });
+  it.each([[1.25, 13, 29], [0.8, 8, 18], [1.1, 11, 25]])('converts CSS image points to DIPs at zoom %s', (zoom, x, y) => {
+    contents.getZoomFactor.mockReturnValue(zoom);
+    click(contentMenuItems({ editable: false, image: { point: { x: 10.2, y: 22.8 } } }, wc)[0]);
+    expect(contents.copyImageAt).toHaveBeenCalledExactlyOnceWith(x, y);
+  });
+  it.each([0, -1, NaN, Infinity])('refuses invalid zoom %s without losing image address copy', zoom => {
+    contents.getZoomFactor.mockReturnValue(zoom);
+    const items = contentMenuItems({ editable: false, image: { point: { x: 10, y: 23 }, address: 'https://example.com/a.png' } }, wc);
+    click(items[0]); expect(contents.copyImageAt).not.toHaveBeenCalled(); expect(mock.error).toHaveBeenCalledOnce();
+    click(items[1]); expect(mock.write).toHaveBeenCalledWith('https://example.com/a.png');
   });
   it('keeps image addresses available without a verified pixel target', () => {
     const items = contentMenuItems({ editable: false, image: { address: 'https://example.com/a.png' } }, wc);

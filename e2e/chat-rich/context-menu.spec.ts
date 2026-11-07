@@ -10,6 +10,9 @@ interface MenuProbe {
   calls: number;
   externalAttempts: number;
   originalExternal: (url: string, options?: Electron.OpenExternalOptions) => Promise<void>;
+  originalCopyImageAt: Electron.WebContents['copyImageAt'];
+  copyContents: Electron.WebContents;
+  imageCopies: Array<{ x: number; y: number; zoom: number }>;
 }
 type ProbeGlobal = typeof globalThis & { __copyMenuProbe?: MenuProbe };
 
@@ -34,9 +37,15 @@ test('native copy menu preserves rich link, image and selection content', async 
   try {
     await chat.send('Show the copy fixtures.');
     await expect(dom.turnFooters).toHaveCount(1, { timeout: TURN_TIMEOUT });
-    await app.evaluate(({ Menu, shell }) => {
-      const state: MenuProbe = { original: Menu.prototype.popup, calls: 0, externalAttempts: 0, originalExternal: shell.openExternal };
+    await app.evaluate(({ Menu, shell, BrowserWindow }) => {
+      const copyContents = BrowserWindow.getAllWindows().find(w => !w.webContents.getURL().startsWith('devtools://'))!.webContents;
+      const state: MenuProbe = { original: Menu.prototype.popup, calls: 0, externalAttempts: 0, originalExternal: shell.openExternal,
+        originalCopyImageAt: copyContents.copyImageAt, copyContents, imageCopies: [] };
       (globalThis as ProbeGlobal).__copyMenuProbe = state;
+      copyContents.copyImageAt = function (x: number, y: number) {
+        state.imageCopies.push({ x, y, zoom: this.getZoomFactor() });
+        return state.originalCopyImageAt.call(this, x, y);
+      };
       Menu.prototype.popup = function (this: Menu, options?: PopupOptions) {
         state.menu = this; state.calls++;
         // Observe the actual production popup; do not replace routing or menu construction.
@@ -91,17 +100,22 @@ test('native copy menu preserves rich link, image and selection content', async 
       const image = nativeImage.createFromPath(filename);
       return { size: image.getSize(), pixels: image.toBitmap().toString('base64') };
     }, path.join(chat.projectDir, 'copy-image.png'));
+    await test.info().attach('image-target.json', { contentType: 'application/json', body: JSON.stringify(await image.evaluate(el => {
+      const rect = el.getBoundingClientRect();
+      return { rect: rect.toJSON(), devicePixelRatio, viewport: { width: innerWidth, height: innerHeight } };
+    })) });
     expect(await menu(image)).toContain('Copy image');
     await choose('Copy image');
     await expect.poll(() => app.evaluate(async ({ clipboard, nativeImage }) => {
       const items = await clipboard.read();
+      const formats = items.map(item => item.types);
       const type = ['image/png', 'image/jpeg'].find(mime => items.some(item => item.types.includes(mime)));
-      if (!type) return null;
+      if (!type) return { formats, image: null };
       const blob = await items.find(item => item.types.includes(type))!.getType(type);
       if (!('arrayBuffer' in blob)) throw new Error('Expected clipboard image bytes');
       const image = nativeImage.createFromBuffer(Buffer.from(await blob.arrayBuffer()));
-      return { size: image.getSize(), pixels: image.toBitmap().toString('base64') };
-    })).toEqual(expected);
+      return { formats, image: { size: image.getSize(), pixels: image.toBitmap().toString('base64') } };
+    })).toEqual(expect.objectContaining({ image: expected }));
 
     // Production CSP does not load arbitrary HTTP images. An address is
     // still copyable independently, without weakening CSP or fetching bytes.
@@ -150,13 +164,22 @@ test('native copy menu preserves rich link, image and selection content', async 
     await chat.expectScriptComplete();
     await page.screenshot({ path: test.info().outputPath('copy-content.png') });
   } finally {
+    // Preserve actual native coordinates/zoom and returned format names on failure too.
+    try {
+      const evidence = await app.evaluate(async ({ clipboard }) => ({
+        imageCopies: (globalThis as ProbeGlobal).__copyMenuProbe?.imageCopies,
+        formats: (await clipboard.read()).map(item => item.types),
+      }));
+      await test.info().attach('native-copy-evidence.json', { contentType: 'application/json', body: JSON.stringify(evidence) });
+    } catch (error) { cleanupFailed = true; cleanupError = error; }
     // Clear only the disposable runner's clipboard, never a user's clipboard.
     // Keep close in finally even if observer cleanup fails.
     try {
       try {
       await app.evaluate(async ({ Menu, shell, clipboard }) => {
         const state = (globalThis as ProbeGlobal).__copyMenuProbe;
-        if (state) { state.menu?.closePopup(); Menu.prototype.popup = state.original; shell.openExternal = state.originalExternal; }
+        if (state) { state.menu?.closePopup(); Menu.prototype.popup = state.original; shell.openExternal = state.originalExternal;
+          if (!state.copyContents.isDestroyed()) state.copyContents.copyImageAt = state.originalCopyImageAt; }
         delete (globalThis as ProbeGlobal).__copyMenuProbe;
         await clipboard.clear();
       });
