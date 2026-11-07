@@ -58,3 +58,18 @@ it('invalidates approval on block selection and sends selected block IDs only on
   await screen.findByLabelText('Reviewed composition');
   expect(window.clubhouse.agent.previewNewComposition).toHaveBeenLastCalledWith('p1', 'builtin-builder-custom', [], ['block-1']);
 });
+it('does not publish a late block preview after the project changes', async () => {
+  let resolve!: (value: NewAgentCompositionPreview) => void;
+  const pending = new Promise<NewAgentCompositionPreview>((done) => { resolve = done; });
+  window.clubhouse.agent.previewNewComposition = vi.fn(() => pending);
+  const changed = vi.fn();
+  const view = render(<NewAgentCompositionPicker projectId="p1" disabled={false} onChange={changed} />);
+  fireEvent.change(screen.getByLabelText('New agent composition'), { target: { value: 'builtin-builder-custom' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Preview saved composition' }));
+  view.rerender(<NewAgentCompositionPicker projectId="p2" disabled={false} onChange={changed} />);
+  await act(async () => { resolve({ ...preview, availableBlocks: [{ id: 'p1-block', name: 'Wrong project instructions' }] }); await pending; });
+  expect(screen.queryByLabelText('Reviewed composition')).toBeNull();
+  expect(screen.queryByRole('checkbox', { name: 'Wrong project instructions' })).toBeNull();
+  expect(window.clubhouse.agent.discardNewComposition).toHaveBeenCalledWith('reviewed');
+  expect(changed).toHaveBeenLastCalledWith({ projectId: 'p2', enabled: true, preview: null });
+});

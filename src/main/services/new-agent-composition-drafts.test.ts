@@ -6,6 +6,8 @@ const state = vi.hoisted(() => ({ root: '', generation: 0, pending: false }));
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => state.root } }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => state.root }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+vi.mock('./agent-settings-service', () => ({ readProjectAgentDefaults: async () => ({}), applyAgentDefaults: async () => {}, readSourcePersonaContent: async () => '' }));
+vi.mock('./agent-system', () => ({ resolveOrchestrator: async () => ({ conventions: {}, writeInstructions: async () => {} }) }));
 vi.mock('./project-store', () => ({
   peekProjects: async () => [{ id: 'project-1', path: path.join(state.root, 'project') }],
   projectRegistryMutationState: () => ({ generation: state.generation, pending: state.pending }),
@@ -15,6 +17,9 @@ import { createAssetCatalogStore, assetCatalogDir } from './asset-catalog/store'
 import { withSettingsSurface, _resetSettingsAuditForTesting } from './settings-audit';
 import { previewNewAgentComposition, consumeNewAgentComposition, discardNewAgentComposition } from './new-agent-composition-drafts';
 
+import { startDurableCreation } from './agent-creation';
+import { clearAgentConfigCache, flushAgentConfig } from './agent-config';
+const owned: Promise<unknown>[] = [];
 const params = { name: 'new-agent', color: 'blue', useWorktree: false };
 const tokens: string[] = [];
 const ui = <T,>(fn: () => T): T => withSettingsSurface('ui', undefined, fn);
@@ -24,11 +29,15 @@ async function preview(sender = 1) {
 }
 beforeEach(async () => {
   state.root = fs.mkdtempSync(path.join(os.tmpdir(), 'new-composition-drafts-'));
+  fs.mkdirSync(path.join(state.root, 'project'));
+  clearAgentConfigCache();
   state.generation = 0; state.pending = false;
   _resetSettingsAuditForTesting(false);
   await withSettingsSurface('system', undefined, () => seedBuilderTemplates(createAssetCatalogStore({ dir: assetCatalogDir() })));
 });
-afterEach(() => {
+afterEach(async () => {
+  await Promise.all(owned.splice(0));
+  await flushAgentConfig(path.join(state.root, 'project')); clearAgentConfigCache();
   vi.restoreAllMocks();
   for (const token of tokens.splice(0)) for (const sender of [1, 2]) ui(() => discardNewAgentComposition(sender, token));
   _resetSettingsAuditForTesting(false);
@@ -95,4 +104,30 @@ it('refuses duplicate, foreign-project, agent-owned and non-block selections bef
     await expect(ui(() => previewNewAgentComposition(1, 'project-1', 'builtin-builder-custom', [], ids))).rejects.toThrow('Selected block is unavailable');
   }
   expect(await store.read()).toEqual(before);
+});
+
+it.each([false, true])('binds selected block revisions through real creation (source changed: %s)', async (changed) => {
+  const store = createAssetCatalogStore({ dir: assetCatalogDir() });
+  const block = await store.createAsset({ kind: 'block', name: 'Shared creation input', owner: { kind: 'library' }, payload: { content: 'REVIEWED_CONTENT' } });
+  const result = await ui(() => previewNewAgentComposition(1, 'project-1', 'builtin-builder-custom', [], [block.id]));
+  tokens.push(result.token);
+  if (changed) await store.saveRevision({ assetId: block.id, expectedRevision: 1, payload: { content: 'NEWER_CONTENT' } });
+  const before = await store.read();
+  const consumed = ui(() => consumeNewAgentComposition(1, result.token, path.join(state.root, 'project'), params));
+  try {
+    const run = await startDurableCreation(path.join(state.root, 'project'), params, consumed.options);
+    const observed = run.done.then((value) => ({ value }), (error: unknown) => ({ error }));
+    owned.push(observed);
+    expect(await run.done).toBe(changed ? 'failed' : 'ready');
+    const after = await store.read();
+    expect(after.assets).toEqual(before.assets);
+    const records = JSON.parse(fs.readFileSync(path.join(state.root, 'project', '.clubhouse', 'agents.json'), 'utf8'));
+    if (changed) {
+      expect(after.compositions[run.agentId]).toBeUndefined();
+      expect(records.find((row: { id: string }) => row.id === run.agentId).creation.state).toBe('failed');
+    } else {
+      expect(after.compositions[run.agentId].entries.at(-1)?.source).toEqual({ kind: 'follow', blockId: block.id });
+      expect(records.find((row: { id: string }) => row.id === run.agentId).creation).toBeUndefined();
+    }
+  } finally { consumed.release(); }
 });

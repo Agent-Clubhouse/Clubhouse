@@ -8,8 +8,10 @@ import { registerAgentBuilderHandlers } from './agent-builder-handlers';
 import { createAssetCatalogStore } from '../services/asset-catalog/store';
 import { composeInstructions } from '../services/asset-catalog/composer';
 import type { BuilderResult } from '../../shared/agent-builder-types';
+import { previewNewAgentComposition } from '../services/new-agent-composition-drafts';
 import { currentSettingsOrigin } from '../services/settings-audit';
 
+vi.mock('../services/new-agent-composition-drafts', () => ({ previewNewAgentComposition: vi.fn(async () => ({ token: 'preview-token' })), discardNewAgentComposition: vi.fn() }));
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => '/synthetic/home' }, ipcMain: { handle: vi.fn() } }));
 vi.mock('../services/log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../services/agent-config', () => ({ agentConfigGeneration: () => 0, peekDurableConfigs: vi.fn(async () => [{ id: 'agent-1' }, { id: 'dispatcher-agent', persona: 'dispatcher' }]) }));
@@ -57,4 +59,17 @@ it('saves via the UI surface and returns a plain stale result', async () => {
   expect(await command(1, { type: 'append', name: 'Local', content: 'private instructions' })).toEqual({ ok: false, code: 'failed' });
   expect(await read()).toMatchObject({ ok: true, view: { revision: 1 } });
   expect(await command(0, { type: 'baseOrder' })).toEqual({ ok: false, code: 'stale' });
+});
+
+it('forwards optional shared blocks with the actual IPC sender and rejects malformed IDs', async () => {
+  const handler = handlers.get(IPC.AGENT.NEW_COMPOSITION_PREVIEW)!;
+  await handler({ sender: { id: 37 } }, 'project-1', 'builtin-builder-custom', ['skill-a'], ['block-b', 'block-a']);
+  expect(previewNewAgentComposition).toHaveBeenLastCalledWith(37, 'project-1', 'builtin-builder-custom', ['skill-a'], ['block-b', 'block-a']);
+  await handler({ sender: { id: 37 } }, 'project-1', 'builtin-builder-custom', []);
+  expect(previewNewAgentComposition).toHaveBeenLastCalledWith(37, 'project-1', 'builtin-builder-custom', [], undefined);
+  vi.mocked(previewNewAgentComposition).mockClear();
+  for (const bad of ['not-array', [3], Array(257).fill('block')]) {
+    expect(() => handler({ sender: { id: 37 } }, 'project-1', 'builtin-builder-custom', [], bad)).toThrow();
+  }
+  expect(previewNewAgentComposition).not.toHaveBeenCalled();
 });
