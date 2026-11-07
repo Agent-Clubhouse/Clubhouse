@@ -1,3 +1,4 @@
+import { FilePreviewHost } from './components/FilePreviewHost';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { TitleBar } from './components/TitleBar';
 import { RailSection } from './components/RailSection';
@@ -296,6 +297,7 @@ export function App() {
         <OnboardingModal />
         <ConfigChangesDialog />
         <FeedbackDialogHost />
+        <FilePreviewHost />
         <ToastContainer />
       </div>
     );
@@ -330,6 +332,7 @@ export function App() {
         <OnboardingModal />
         <ConfigChangesDialog />
         <FeedbackDialogHost />
+        <FilePreviewHost />
         <ToastContainer />
       </div>
     );
@@ -383,6 +386,7 @@ export function App() {
         <OnboardingModal />
         <ConfigChangesDialog />
         <FeedbackDialogHost />
+        <FilePreviewHost />
         <ToastContainer />
       </div>
     );
@@ -415,6 +419,7 @@ export function App() {
         <OnboardingModal />
         <ConfigChangesDialog />
         <FeedbackDialogHost />
+        <FilePreviewHost />
         <ToastContainer />
       </div>
     );
@@ -447,6 +452,7 @@ export function App() {
       <OnboardingModal />
       <ConfigChangesDialog />
       <FeedbackDialogHost />
+      <FilePreviewHost />
       <ToastContainer />
     </div>
   );

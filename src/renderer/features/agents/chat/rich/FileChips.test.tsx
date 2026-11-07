@@ -1,3 +1,4 @@
+import { useFilePreviewStore } from '../../../../stores/filePreviewStore';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ChatFileInfo, ChatFilePreview } from '../../../../../shared/chat';
@@ -9,7 +10,7 @@ import type { ToolCallItem } from '../../../../stores/chatStore';
 import { RichLinkProvider } from './RichLinks';
 import { DISPATCHER_OFF, DISPATCHER_PROJECT_ID } from '../../../../../shared/dispatcher-types';
 import { useDispatcherStore } from '../../../dispatcher/dispatcherStore';
-import { FileChipProvider, clearFileChipCache, inDispatcherFolder } from './FileChips';
+import { FileChipProvider, clearFileChipCache } from './FileChips';
 import { resetRichChatContentFlag } from './rich-flag';
 
 vi.mock('../../../../plugins/builtin/canvas/ReadOnlyMonacoEditor', () => ({
@@ -339,6 +340,23 @@ describe('PDF previews (#2478)', () => {
   });
 });
 
+it.each(['C:/scratch/notes.md', 'file:///tmp/notes%20%23caf%C3%A9.md'])('opens a preserved local Markdown anchor %s through rich click handling', async (href) => {
+  useFilePreviewStore.getState().close();
+  const { container } = await renderRich(<Markdown text={`[notes](${href})`} />);
+  expect(useFilePreviewStore.getState().target).toBeNull();
+  fireEvent.click(container.querySelector('a')!);
+  expect(useFilePreviewStore.getState().target?.path).toBe(href);
+  useFilePreviewStore.getState().close();
+});
+
+it('opens an absolute markdown link as a local readonly view, without requiring a project match', async () => {
+  useFilePreviewStore.getState().close();
+  const { container } = await renderRich(<Markdown text={'[scratch](/tmp/scratch.md:12:5)'} />);
+  fireEvent.click(container.querySelector('a')!);
+  expect(useFilePreviewStore.getState().target).toEqual({ path: '/tmp/scratch.md', line: 12, col: 5 });
+  useFilePreviewStore.getState().close();
+});
+
 describe("the Dispatcher's notes (#2557)", () => {
   const FOLDER = 'C:\\Users\\me\\.clubhouse\\dispatcher';
   beforeEach(() => {
@@ -347,29 +365,18 @@ describe("the Dispatcher's notes (#2557)", () => {
   });
   afterEach(() => useDispatcherStore.getState().setState(DISPATCHER_OFF));
 
-  it('tells files in its folder apart from files elsewhere', () => {
-    expect(inDispatcherFolder('disp', 'notes/plan.md')).toBe(true);
-    expect(inDispatcherFolder('a1', 'notes/plan.md')).toBe(false);
-    expect(inDispatcherFolder('a1', `${FOLDER}\\notes\\plan.md`)).toBe(true);
-    expect(inDispatcherFolder('disp', `${FOLDER}-old\\plan.md`)).toBe(false);
-    expect(inDispatcherFolder('disp', 'D:\\repo\\src\\main.ts')).toBe(false);
-    useDispatcherStore.getState().setState({ ...DISPATCHER_OFF, agentId: 'disp' });
-    expect(inDispatcherFolder('disp', 'notes/plan.md')).toBe(false);
-  });
-
-  it('previews and reveals a notes file, and says why Open in Files is off', async () => {
+  it('previews and opens Dispatcher notes without registering its folder as a project', async () => {
     const { container } = await renderRich(<Markdown text={'Plan in `notes/plan.md`.'} />, 'disp');
     const chip = await waitFor(() => { const el = container.querySelector('code[data-chat-file]'); expect(el).not.toBeNull(); return el!; });
     fireEvent.click(chip);
     expect(await screen.findByTestId('monaco')).toBeTruthy();
     expect(readFilePreview).toHaveBeenCalledWith('disp', 'notes/plan.md');
     const open = screen.getByRole('button', { name: 'Open in Files' }) as HTMLButtonElement;
-    expect(open.disabled).toBe(true);
-    const note = screen.getByTestId('chat-file-no-open');
-    expect(open.getAttribute('aria-describedby')).toBe(note.id);
-    expect(note.textContent).toBe('The Dispatcher’s folder isn’t a project, so this doesn’t open in Files.');
+    expect(open.disabled).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: /Show in|Open in Finder/ }));
     await waitFor(() => expect(fileAction).toHaveBeenCalledWith('disp', 'notes/plan.md', 'reveal'));
-    expect(fileAction).not.toHaveBeenCalledWith('disp', 'notes/plan.md', 'open');
+    fileAction.mockResolvedValueOnce({ kind: 'open-file-not-found', filePath: `${FOLDER}\\notes\\plan.md` });
+    fireEvent.click(open);
+    await waitFor(() => expect(bridge.handleProtocolAction).toHaveBeenCalledWith({ kind: 'open-file-not-found', filePath: `${FOLDER}\\notes\\plan.md` }));
   });
 });

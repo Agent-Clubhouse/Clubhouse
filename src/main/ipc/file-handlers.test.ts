@@ -3,6 +3,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
   shell: { showItemInFolder: vi.fn() },
+  BrowserWindow: { fromWebContents: vi.fn(() => ({})) },
+}));
+
+vi.mock('../services/agent-runtime/chat-files', () => ({
+  resolveChatFile: vi.fn(async (_agent: string, candidate: string) => candidate),
+  readChatFilePreview: vi.fn(async () => ({ kind: 'text', name: 'scratch.md', size: 7, text: '# Notes' })),
 }));
 
 vi.mock('../services/file-service', () => ({
@@ -45,7 +51,8 @@ vi.mock('child_process', () => ({
 }));
 
 import { execFile } from 'child_process';
-import { ipcMain, shell } from 'electron';
+import { resolveChatFile, readChatFilePreview } from '../services/agent-runtime/chat-files';
+import { ipcMain, shell, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerFileHandlers } from './file-handlers';
 import * as fileService from '../services/file-service';
@@ -75,6 +82,33 @@ describe('file-handlers', () => {
     for (const channel of expectedChannels) {
       expect(handlers.has(channel)).toBe(true);
     }
+  });
+
+  it('PREVIEW opens scratch files read-only from the local top frame without changing file scopes', async () => {
+    const mainFrame = {};
+    const event = { sender: { mainFrame }, senderFrame: mainFrame };
+    const result = await handlers.get(IPC.FILE.PREVIEW)!(event, '/scratch/notes.md');
+    expect(resolveChatFile).toHaveBeenCalledWith('', '/scratch/notes.md');
+    expect(readChatFilePreview).toHaveBeenCalledWith('', '/scratch/notes.md');
+    expect(result).toMatchObject({ path: '/scratch/notes.md', preview: { text: '# Notes' } });
+    expect(assertAllowedPath).not.toHaveBeenCalled();
+    expect(fileService.writeFile).not.toHaveBeenCalled();
+  });
+
+  it('PREVIEW refuses detached callers, subframes and relative paths before resolving files', async () => {
+    const mainFrame = {};
+    const event = { sender: { mainFrame }, senderFrame: mainFrame };
+    vi.mocked(BrowserWindow.fromWebContents).mockReturnValueOnce(null);
+    await expect(handlers.get(IPC.FILE.PREVIEW)!(event, '/scratch/a')).rejects.toThrow('local Clubhouse window');
+    await expect(handlers.get(IPC.FILE.PREVIEW)!({ ...event, senderFrame: {} }, '/scratch/a')).rejects.toThrow('local Clubhouse window');
+    await expect(handlers.get(IPC.FILE.PREVIEW)!(event, 'relative.txt')).rejects.toThrow('absolute local file');
+    expect(resolveChatFile).not.toHaveBeenCalled();
+  });
+
+  it('PREVIEW preserves read failures rather than pretending the file opened', async () => {
+    const mainFrame = {};
+    vi.mocked(readChatFilePreview).mockRejectedValueOnce(new Error('That file is not available'));
+    await expect(handlers.get(IPC.FILE.PREVIEW)!({ sender: { mainFrame }, senderFrame: mainFrame }, '/scratch/unreadable')).rejects.toThrow('not available');
   });
 
   it('READ_TREE delegates to fileService.readTree with options', async () => {

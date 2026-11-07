@@ -7,6 +7,7 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { PopoutAgentView } from './PopoutAgentView';
 import { PopoutCanvasView } from './PopoutCanvasView';
 import { PopoutAgentActions } from './PopoutAgentActions';
+import { FilePreviewHost } from '../../components/FilePreviewHost';
 import { ToastContainer } from '../../components/ToastContainer';
 import { isNewChromeEnabled } from '../../chrome/chromeFlag';
 import { PopoutTitleBar } from '../../chrome/titlebar/PopoutTitleBar';
@@ -211,6 +212,7 @@ export function PopoutWindow() {
           </div>
         )}
       </div>
+      <FilePreviewHost />
       <ToastContainer />
     </div>
   );

@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import type { ChatFileInfo, ChatFileKind, ChatFilePreview, ChatFileUnavailable, ChatLocalImageResult } from '../../../shared/chat';
 import { CHAT_FILE_PREVIEW_MEDIA_MAX_BYTES, CHAT_FILE_PREVIEW_PDF_MAX_BYTES, CHAT_FILE_PREVIEW_TEXT_MAX_BYTES, CHAT_MEDIA_MAX_BYTES, CHAT_MEDIA_MAX_PIXELS, mediaDimensions, sniffMediaType } from '../../../shared/chat';
 import { agentRegistry } from '../agent-registry';
@@ -100,12 +101,13 @@ function cleanCandidate(raw: string): string {
   let p = raw.trim();
   if (/^file:\/\//i.test(p)) {
     try {
-      p = decodeURIComponent(new URL(p).pathname);
+      const url = new URL(p);
+      if (url.hostname && url.hostname.toLowerCase() !== 'localhost') return '';
+      p = fileURLToPath(url);
     } catch {
       // telemetry-exempt: a malformed file: URL just isn't a path.
       return '';
     }
-    if (/^\/[A-Za-z]:\//.test(p)) p = p.slice(1);
   }
   p = p.replace(/:(\d+)(:\d+)?$/, '');
   // `~/x`: the user's home.

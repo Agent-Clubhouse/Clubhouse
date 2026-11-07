@@ -1,3 +1,6 @@
+import { localMarkdownTarget } from '../../../../utils/local-markdown-links';
+import { isRemoteProjectId } from '../../../../stores/remoteProjectStore';
+import { openLocalFileLink } from '../../../../utils/file-preview';
 import {
   createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode,
 } from 'react';
@@ -206,6 +209,7 @@ export function useTokenHandlers(rich: RichLinkContextValue | null) {
 
 /** Open a link: the project's own issues in the Issues view when it's installed there, else the browser. */
 export function openLink(href: string, rich: Pick<RichLinkContextValue, 'projectId' | 'repo'> | null, ambiguous = false): void {
+  if (!isRemoteProjectId(rich?.projectId || '') && openLocalFileLink(href)) return;
   if (!/^https?:\/\//i.test(href) && !href.startsWith('mailto:')) return;
   const ref = parseGithubUrl(href);
   if (ref && rich?.projectId && rich.repo && ref.repo.toLowerCase() === rich.repo.toLowerCase() && !window.clubhouse.window?.isPopout?.()) {
@@ -226,7 +230,7 @@ function useRichLinkClick(rich: RichLinkContextValue | null) {
     const a = (e.target as HTMLElement).closest('a');
     if (!a) return;
     e.preventDefault();
-    const href = a.getAttribute('href');
+    const href = localMarkdownTarget(a) ?? a.getAttribute('href');
     if (!href) return;
     rich?.hideCard();
     openLink(href, rich, a.dataset.ghAmbiguous === 'true');

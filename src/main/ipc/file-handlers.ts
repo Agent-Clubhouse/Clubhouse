@@ -1,5 +1,6 @@
+import * as path from 'path';
 import { execFile } from 'child_process';
-import { ipcMain, shell } from 'electron';
+import { BrowserWindow, ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import * as fileService from '../services/file-service';
 import * as searchService from '../services/search-service';
@@ -39,6 +40,21 @@ async function fileOp<T>(op: FileOp, fn: () => Promise<T>): Promise<T> {
 }
 
 export function registerFileHandlers(): void {
+  // Explicit desktop viewing only. Plugin FilesAPI, agent and Annex file APIs
+  // keep their existing scopes; this never authorizes editing or shell actions.
+  ipcMain.handle(IPC.FILE.PREVIEW, withValidatedArgs([stringArg({ maxLength: 1024 })], async (event, candidate: string) => {
+    if (!BrowserWindow.fromWebContents(event.sender) || !event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
+      throw new Error('File previews can only be opened from a local Clubhouse window');
+    }
+    if (!path.isAbsolute(candidate) && !/^~[\\/]/.test(candidate) && !/^file:\/\//i.test(candidate)) {
+      throw new Error('An absolute local file path is required');
+    }
+    const { resolveChatFile, readChatFilePreview } = await import('../services/agent-runtime/chat-files');
+    // No agent base: relative paths cannot silently resolve against main's cwd.
+    const real = await resolveChatFile('', candidate);
+    return { path: real, preview: await readChatFilePreview('', real) };
+  }));
+
   ipcMain.handle(IPC.FILE.READ_TREE, withValidatedArgs(
     [
       stringArg(),

@@ -90,7 +90,20 @@ describe('FileViewerCanvasWidget — stale reads', () => {
 
     await act(async () => { reads.get('a.ts')!.reject(new Error('EIO')); });
     expect(screen.queryByTestId('editor')).toBeNull();
-    expect(screen.getByText('Error reading file')).toBeInTheDocument();
+    expect(screen.getByText('EIO')).toBeInTheDocument();
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  it('opens an out-of-project worktree file readonly after a scope denial and prevents saving', async () => {
+    const { reads, writeFile, props } = setup();
+    window.clubhouse.file.preview = vi.fn(async () => ({ path: '/scratch/a.ts', preview: { kind: 'text', name: 'a.ts', size: 7, text: 'outside' } }));
+    render(<FileViewerCanvasWidget {...props('a.ts')} />);
+    await waitFor(() => expect(reads.has('a.ts')).toBe(true));
+    await act(async () => { reads.get('a.ts')!.reject(new Error('Access denied: path "/p/a.ts" is outside allowed project directories')); });
+    expect(await screen.findByTestId('editor')).toHaveTextContent('outside');
+    expect(window.clubhouse.file.preview).toHaveBeenCalledWith('/p/a.ts');
+    expect(editorProps.current!.onSave).toBeUndefined();
+    expect(screen.getByText('Read-only')).toBeInTheDocument();
     expect(writeFile).not.toHaveBeenCalled();
   });
 

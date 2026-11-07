@@ -4,6 +4,9 @@
 // so 1p widgets go through the same registration/validation path as 3p.
 
 import React, { useState, useEffect, useMemo, useCallback, useId } from 'react';
+import type { ChatFilePreview } from '../../../../shared/chat';
+import { PreviewBody } from '../../../features/agents/chat/rich/FileChips';
+import { absoluteViewPath, isFileScopeDenied } from '../../../utils/file-preview';
 import type { CanvasWidgetComponentProps, PluginAPI } from '../../../../shared/plugin-types';
 import type { GitWorktreeEntry, FileNode } from '../../../../shared/types';
 import { useEditorSettingsStore } from '../../../../renderer/stores/editorSettingsStore';
@@ -45,7 +48,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
 
   // Loaded content is tagged with the file it was read from, so a late response
   // for a previously selected file can never be shown, edited or saved as another.
-  const [loadedFile, setLoadedFile] = useState<{ key: string; content: string; error?: boolean } | null>(null);
+  const [loadedFile, setLoadedFile] = useState<{ key: string; content: string; error?: boolean; preview?: ChatFilePreview } | null>(null);
   const [showHidden, setShowHidden] = useState(() => api.settings.get<boolean>('showHiddenFiles') ?? true);
   const [readOnly, setReadOnly] = useState(true);
   const editLabelId = useId();
@@ -104,7 +107,19 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
       : readProjectFile(api, isAppMode, rootPath, filePath);
     read
       .then((content) => { if (!cancelled) setLoadedFile({ key: fileKey, content }); })
-      .catch(() => { if (!cancelled) setLoadedFile({ key: fileKey, content: 'Error reading file', error: true }); });
+      .catch(async (err: unknown) => {
+        if (cancelled) return;
+        if (!remote.isRemote && isFileScopeDenied(err)) {
+          try {
+            const { preview } = await window.clubhouse.file.preview(absoluteViewPath(rootPath, filePath));
+            if (!cancelled) setLoadedFile({ key: fileKey, content: '', preview });
+            return;
+          } catch (previewError) {
+            err = previewError;
+          }
+        }
+        if (!cancelled) setLoadedFile({ key: fileKey, content: err instanceof Error ? err.message : 'Error reading file', error: true });
+      });
     return () => { cancelled = true; };
   }, [api, filePath, fileKey, activeProject, isAppMode, rootPath, remote]);
 
@@ -139,7 +154,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
 
   const handleSave = useCallback(async (content: string) => {
     // Only save over the file whose content is actually loaded
-    if (!filePath || !fileKey || !activeProject || remote.isRemote || !currentFile || currentFile.error) return;
+    if (!filePath || !fileKey || !activeProject || remote.isRemote || !currentFile || currentFile.error || currentFile.preview) return;
     try {
       if (isAppMode) {
         await window.clubhouse.file.write(`${rootPath}/${filePath}`, content);
@@ -221,7 +236,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
           </Tooltip>
         )}
         <span className="flex-1" />
-        {fullFilePath && !remote.isRemote && (
+        {fullFilePath && !remote.isRemote && !currentFile?.preview && (
           <>
             <Tooltip content="Reveal in Finder">
               <Button kind="quiet" aria-label="Reveal in Finder" icon={<ToolbarIcon d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />} onClick={handleShowInFolder} />
@@ -231,7 +246,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
             </Tooltip>
           </>
         )}
-        {filePath && isMarkdownFile(filePath) && fileContent !== null && (
+        {filePath && isMarkdownFile(filePath) && fileContent !== null && !currentFile?.preview && (
           <span className="flex items-center gap-0.5 flex-shrink-0" role="group" aria-label="Markdown view">
             {(['preview', 'source'] as const).map((mode) => (
               <button
@@ -245,7 +260,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
             ))}
           </span>
         )}
-        {remote.isRemote ? (
+        {remote.isRemote || currentFile?.preview ? (
           <span className="text-xs text-ctp-overlay1 flex-shrink-0 pl-1.5">Read-only</span>
         ) : (
           <span className="flex items-center gap-2 flex-shrink-0 pl-1.5">
@@ -270,8 +285,10 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
         </ResizableSidebar>
 
         <div className="flex-1 min-w-0 flex flex-col">
-          {filePath && fileContent !== null && isMarkdownFile(filePath) && previewMode === 'preview' ? (
-            <MarkdownPreview content={fileContent} />
+          {filePath && currentFile?.preview ? (
+            <PreviewBody preview={currentFile.preview} target={{ path: filePath }} showOpenHint={false} />
+          ) : filePath && fileContent !== null && isMarkdownFile(filePath) && previewMode === 'preview' ? (
+            <MarkdownPreview content={fileContent} allowLocalFiles={!remote.isRemote} />
           ) : filePath && fileContent !== null ? (
             <ReadOnlyMonacoEditor
               value={fileContent}
