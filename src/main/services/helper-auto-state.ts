@@ -11,8 +11,10 @@
  * Reservations are in memory and don't expire. One counts as load until it is
  * reconciled: its helper seen live in a count, after which the row counts it, or
  * an outcome confirming it isn't running (refused, cancelled, failed, left
- * asleep, seen not running, or disposed). A count that doesn't see the helper's
- * row at all keeps counting the reservation. A restart loses them, which is safe:
+ * asleep, seen not running), or agent-config writing a change that ends it as a
+ * helper (disposed, deleted, removed from the list, released), whichever surface
+ * asked. A count that doesn't see the helper's row at all keeps counting the
+ * reservation: a missing row proves nothing. A restart loses them, which is safe:
  * a quit interrupts every creation and start, live helpers are counted again
  * from their rows, and an interrupted creation is marked failed at launch
  * (agent-config's recovery), so nothing is counted twice.
@@ -118,7 +120,7 @@ export function autoDecisionFor(helperId: string): string | undefined {
   return undefined;
 }
 
-/** A helper that is gone for good (disposed): whatever it held is released. */
+/** A helper agent-config has just written as no longer a live helper: whatever it held is released. */
 export function forgetAutoHelper(helperId: string): void {
   for (const [decisionId, reservation] of reservations) if (reservation.helperId === helperId) reservations.delete(decisionId);
 }

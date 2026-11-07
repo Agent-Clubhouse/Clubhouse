@@ -10,6 +10,7 @@ import { DurableAgentConfig, DurableConfigUpdates, OrchestratorId, SessionInfo, 
 import type { DurableAgentCreation, DurableCreationEvent, DurableCreationStage, DurableWorktreeOptions, StartDurableCreationParams } from '../../shared/types';
 import { isDisposedAgent, parentLinkError } from '../../shared/agent-helpers';
 import { appLog } from './log-service';
+import { forgetAutoHelper } from './helper-auto-state';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
 import { tagError } from '../telemetry/types';
 import { resolveOrchestrator } from './agent-system';
@@ -2519,7 +2520,9 @@ async function deleteDurableGuardedInner(projectPath: string, agentId: string): 
 
   // Re-read: the cache may have been replaced while git ran.
   const agents = await readAgents(projectPath);
-  await writeAgents(projectPath, releaseHelpersOf(agents.filter((a) => a.id !== agentId), agentId));
+  const released: string[] = [];
+  await writeAgents(projectPath, releaseHelpersOf(agents.filter((a) => a.id !== agentId), agentId, released));
+  helpersEnded([agentId, ...released]);
   await releaseForeignHelpersOf(projectPath, agentId);
 }
 
@@ -2878,7 +2881,9 @@ async function deleteUnregisterGuardedInner(projectPath: string, agentId: string
   if (creating) return creating;
   const agents = await readAgents(projectPath);
   const filtered = agents.filter((a) => a.id !== agentId);
-  await writeAgents(projectPath, releaseHelpersOf(filtered, agentId));
+  const released: string[] = [];
+  await writeAgents(projectPath, releaseHelpersOf(filtered, agentId, released));
+  helpersEnded([agentId, ...released]);
   await releaseForeignHelpersOf(projectPath, agentId);
   return { ok: true, message: 'Removed from agents list (files left on disk)' };
 }
@@ -2899,8 +2904,8 @@ async function deleteUnregisterGuardedInner(projectPath: string, agentId: string
  * other delete path (remote, plugins). Returns `agents` with copies where
  * something changed.
  */
-function releaseHelpersOf(agents: DurableAgentConfig[], deletedId: string): DurableAgentConfig[] {
-  return releaseHelpers(agents, deletedId, (agent) => isLocalHelperOf(agent, deletedId));
+function releaseHelpersOf(agents: DurableAgentConfig[], deletedId: string, released?: string[]): DurableAgentConfig[] {
+  return releaseHelpers(agents, deletedId, (agent) => isLocalHelperOf(agent, deletedId), released);
 }
 
 /** A live helper of `parentId` whose parent is in the same project. */
@@ -2908,12 +2913,13 @@ function isLocalHelperOf(agent: DurableAgentConfig, parentId: string): boolean {
   return agent.parentAgentId === parentId && !agent.parentProjectPath;
 }
 
+/** `released` collects the ids let go, for {@link helpersEnded} once the result is written. */
 function releaseHelpers(
   agents: DurableAgentConfig[],
   deletedId: string,
   isHelper: (agent: DurableAgentConfig) => boolean,
+  released: string[] = [],
 ): DurableAgentConfig[] {
-  const released: string[] = [];
   const result = agents.map((agent) => {
     if (!isHelper(agent) || isDisposedAgent(agent)) return agent;
     released.push(agent.id);
@@ -2946,7 +2952,9 @@ async function releaseForeignHelpersOf(projectPath: string, deletedId: string): 
   }
   for (const [helperPath, ids] of byProject) {
     try {
-      await writeAgents(helperPath, releaseHelpers(await readAgents(helperPath), deletedId, (agent) => ids.has(agent.id)));
+      const released: string[] = [];
+      await writeAgents(helperPath, releaseHelpers(await readAgents(helperPath), deletedId, (agent) => ids.has(agent.id), released));
+      helpersEnded(released);
     } catch (err) {
       // telemetry-exempt: logged; the helper stays linked to a parent that is gone and can be released by hand.
       appLog('core:agent-config', 'warn', 'Failed to release helpers in another project', {
@@ -3002,6 +3010,7 @@ async function setParentAgentGuardedInner(
   const agent = agentsById.get(agentId);
   if (!agent) throw new Error('Agent not found');
   if (isDisposedAgent(agent)) throw new Error('A disposed agent cannot change parent');
+  const releasing = parentAgentId === null && !!agent.parentAgentId;
   if (parentAgentId === null) {
     clearHelperLink(agent);
   } else {
@@ -3016,6 +3025,7 @@ async function setParentAgentGuardedInner(
     }
   }
   await writeAgents(projectPath, agents);
+  if (releasing) helpersEnded([agentId]);
 }
 
 /**
@@ -3090,6 +3100,16 @@ async function setHelperStartFieldsInner(projectPath: string, agentId: string, f
 }
 
 /** A released helper is an ordinary agent: drop its link and every start_helper field. */
+/**
+ * Rows just written as no longer live helpers: disposed, deleted, removed from
+ * the list or released to ordinary agents. Auto stops holding a provider for
+ * them (#2887). Called only after the write, and only for these changes: a row
+ * missing from a listing proves nothing, so that never releases anything.
+ */
+function helpersEnded(ids: readonly string[]): void {
+  for (const id of ids) forgetAutoHelper(id);
+}
+
 function clearHelperLink(agent: DurableAgentConfig): void {
   delete agent.parentAgentId;
   delete agent.parentProjectPath;
@@ -3348,6 +3368,7 @@ async function disposeAgent(projectPath: string, agentId: string, options: { exp
   row.disposedAt = new Date().toISOString();
   delete row.worktreePath;
   await writeAgents(projectPath, agents);
+  helpersEnded([agentId]);
 }
 
 /**
@@ -3433,7 +3454,9 @@ export async function resolveHelpersForDelete(
     const ids = released.map(({ config }) => config.id);
     if (released.length === 0) return { ok: true, message: 'No helpers', helperIds: [] };
     if (options.dryRun) return { ok: true, message: `Would keep ${released.length} helper(s)`, helperIds: ids };
-    await writeAgents(projectPath, releaseHelpersOf(await readAgents(projectPath), agentId));
+    const kept: string[] = [];
+    await writeAgents(projectPath, releaseHelpersOf(await readAgents(projectPath), agentId, kept));
+    helpersEnded(kept);
     await releaseForeignHelpersOf(projectPath, agentId);
     return { ok: true, message: `Kept ${released.length} helper(s)`, helperIds: ids };
   }
