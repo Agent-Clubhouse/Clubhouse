@@ -7,8 +7,16 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as agentConfig from '../agent-config';
-import { setOrchestrationPolicy } from '../orchestration-policy';
+import {
+  carryPersonaOrchestration,
+  reconcileAfterPersonaChange,
+  restorePersonaOrchestration,
+  setOrchestrationPolicy,
+  type CarriedPersonaOrchestration,
+} from '../orchestration-policy';
 import { resolveOrchestrator } from '../agent-system';
+import { isClubhouseModeEnabled } from '../clubhouse-mode-settings';
+import { materializedInstructions } from '../materialization-service';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type {
   ManagedAgentSetup,
@@ -26,7 +34,7 @@ import { CLUBHOUSE_MCP_PART_ID } from '../../../shared/managed-agents-types';
 import { managedAgents } from './index';
 import { BUILTIN_BLOCK_IDS } from './builtins';
 import { ManagedError } from './service';
-import { managedStateDir } from './state-store';
+import { backupInstructions, clearAwaitingFirstStart, markAwaitingFirstStart } from './before-managed';
 import { backupMcpFile, hasMcpFileToKeep, MCP_BACKUP_DIR, mcpBackupPath } from './mcp-backup';
 import { appLog } from '../log-service';
 
@@ -82,8 +90,10 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
 // ── Switching an existing agent to managed ─────────────────────────────
 
 interface ConvertPlan {
-  /** The instructions file as it is now; empty when there is none. */
+  /** What the block holds: the instructions file, or for a Clubhouse Mode agent what Clubhouse Mode would write. Empty when there is none. */
   instructions: string;
+  /** The instructions file in the agent's folder as it is now, for the backup. */
+  onDisk: string;
   /** Whether the instructions become a block. False when there are none, or the catalog would refuse them. */
   keepInstructions: boolean;
   /** The block the instructions become. */
@@ -159,10 +169,42 @@ async function readInstructionsOf(provider: OrchestratorProvider, worktreePath: 
   }
 }
 
-async function planConvert(agent: DurableAgentConfig, worktreePath: string, provider: OrchestratorProvider): Promise<ConvertPlan> {
+/** Whether Clubhouse Mode writes this agent's files at each wake. */
+function usesClubhouseMode(projectPath: string, agent: DurableAgentConfig): boolean {
+  return !agent.managed && !agent.clubhouseModeOverride && isClubhouseModeEnabled(projectPath);
+}
+
+/** The wildcards a managed start fills in; any other `@@` token stays as written (#2901). */
+const MANAGED_WILDCARDS = new Set(['AgentName', 'StandbyBranch', 'Path', 'SourceControlProvider', 'BuildCommand', 'TestCommand', 'LintCommand']);
+
+/** `@@` tokens in a block that a managed start leaves as they are, such as @@Persona, @@Mission and @@If. */
+export function leftoverWildcards(text: string): string[] {
+  const found = new Set<string>();
+  for (const m of text.matchAll(/@@([A-Za-z]+)/g)) if (!MANAGED_WILDCARDS.has(m[1])) found.add(`@@${m[1]}`);
+  return [...found];
+}
+
+/**
+ * The instructions the block keeps. For a Clubhouse Mode agent, what Clubhouse
+ * Mode would write at its next wake, wildcards and @@If resolved, so one that
+ * never woke doesn't bring over the raw project template. Else the file.
+ */
+async function instructionsToKeep(projectPath: string, agent: DurableAgentConfig, onDisk: string): Promise<string> {
+  if (!usesClubhouseMode(projectPath, agent)) return onDisk;
+  try {
+    return (await materializedInstructions(projectPath, agent)) ?? onDisk;
+  } catch (err) {
+    // telemetry-exempt: falls back to the file in its folder, and the preview lists any wildcards left in it.
+    appLog('core:managed', 'warn', 'Could not resolve the Clubhouse Mode instructions for the switch to managed', { meta: { agentId: agent.id, error: err instanceof Error ? err.message : String(err) } });
+    return onDisk;
+  }
+}
+
+async function planConvert(projectPath: string, agent: DurableAgentConfig, worktreePath: string, provider: OrchestratorProvider): Promise<ConvertPlan> {
   const conv = provider.conventions;
   const notes: string[] = [];
-  const instructions = await readInstructionsOf(provider, worktreePath);
+  const onDisk = await readInstructionsOf(provider, worktreePath);
+  const instructions = await instructionsToKeep(projectPath, agent, onDisk);
   // The same checks createPart runs, so the preview and Keep agree.
   let keepInstructions = !!instructions.trim();
   if (keepInstructions) {
@@ -171,6 +213,10 @@ async function planConvert(agent: DurableAgentConfig, worktreePath: string, prov
       keepInstructions = false;
       notes.push(`${conv.legacyInstructionsFile || 'The instructions file'} isn't brought over as a block because ${refusal(checked.issues)}. Clubhouse keeps a copy in its app data.`);
     }
+  }
+  const leftover = keepInstructions ? leftoverWildcards(instructions) : [];
+  if (leftover.length > 0) {
+    notes.push(`Its instructions still have ${joinAnd(leftover)}, which a managed agent doesn't fill in. Edit the block after the switch.`);
   }
 
   const skills: ConvertPlan['skills'] = [];
@@ -235,7 +281,11 @@ async function planConvert(agent: DurableAgentConfig, worktreePath: string, prov
   if (await hasMcpFileToKeep(worktreePath, conv)) {
     notes.push(`Its ${conv.mcpConfigFile} is copied to ${mcpBackupPath(conv)} in its folder before Clubhouse writes its own. The copy stays out of commits.`);
   }
-  return { instructions, keepInstructions, blockName: `${agent.name} notes`, skills, mcps, notes };
+  return { instructions, onDisk, keepInstructions, blockName: `${agent.name} notes`, skills, mcps, notes };
+}
+
+function joinAnd(items: string[]): string {
+  return items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
 /**
@@ -268,7 +318,7 @@ export async function previewConvert(projectPath: string, agentId: string): Prom
   const agent = await agentForConvert(projectPath, agentId);
   if (agent.managed) throw new ManagedError('invalid', 'This agent is already Clubhouse managed.');
   const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
-  const plan = await planConvert(agent, agent.worktreePath, provider);
+  const plan = await planConvert(projectPath, agent, agent.worktreePath, provider);
   return {
     blocks: plan.keepInstructions ? [plan.blockName] : [],
     skills: plan.skills.map((s) => s.folder),
@@ -298,6 +348,12 @@ async function createAgentPart(name: string, description: string, content: Manag
  * by previewConvert first. Nothing on disk is deleted: the next start
  * overwrites the instructions file it manages, and skill folders it replaces
  * are moved to app data (D15).
+ *
+ * A managed agent has no persona layer, so what its persona gave its
+ * orchestration policy becomes its own first, and a persona change's
+ * reconcile runs after (#2901). The setup is checked before any part is made,
+ * and a switch that fails after that removes the parts it made and puts the
+ * policy back.
  */
 export async function convertToManaged(projectPath: string, agentId: string, options: { keep: boolean; templateId?: string }): Promise<ManagedAgentSetup> {
   const service = managedAgents();
@@ -306,29 +362,90 @@ export async function convertToManaged(projectPath: string, agentId: string, opt
   if (!options.keep && !options.templateId) throw new ManagedError('invalid', 'Choose a template, or keep what the agent has now.');
   const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
   if (!options.keep && options.templateId) {
-    await backupInstructions(agent, provider.conventions.legacyInstructionsFile, await readInstructionsOf(provider, agent.worktreePath));
-    await keepMcpFile(projectPath, agent.worktreePath, provider);
     const { setup, settings } = await service.setupFromTemplate(options.templateId);
-    const saved = await service.saveSetup(projectPath, agentId, setup);
-    await applyManagedSettings(projectPath, agentId, settingsForConvert(provider.id, settings));
-    return saved;
+    await service.checkSetup(setup);
+    await backupInstructions(agent.id, provider.conventions.legacyInstructionsFile, await readInstructionsOf(provider, agent.worktreePath));
+    await keepMcpFile(projectPath, agent.worktreePath, provider);
+    return switchWith(projectPath, agent, [], () => service.saveSetup(projectPath, agentId, setup), () => applyManagedSettings(projectPath, agentId, settingsForConvert(provider.id, settings)));
   }
-  const plan = await planConvert(agent, agent.worktreePath, provider);
-  await backupInstructions(agent, provider.conventions.legacyInstructionsFile, plan.instructions);
+  const plan = await planConvert(projectPath, agent, agent.worktreePath, provider);
+  const bridge = agent.mcpOverride === false ? [] : [CLUBHOUSE_MCP_PART_ID];
+  // Before any part is made, so a setup that can't be saved leaves nothing behind.
+  await service.checkSetup({ blocks: [], skills: [], mcps: bridge }, { skillFolders: plan.skills.map((s) => s.content.skillName) });
+  await backupInstructions(agent.id, provider.conventions.legacyInstructionsFile, plan.onDisk);
   await keepMcpFile(projectPath, agent.worktreePath, provider);
-  const blocks: string[] = [];
-  if (plan.keepInstructions) {
-    blocks.push(await createAgentPart(plan.blockName, `What ${agent.name} had before it was managed.`, { kind: 'block', content: plan.instructions }));
+  const made: string[] = [];
+  const make = async (name: string, description: string, content: ManagedPartContent) => {
+    const id = await createAgentPart(name, description, content);
+    made.push(id);
+    return id;
+  };
+  return switchWith(projectPath, agent, made, async () => {
+    const blocks: string[] = [];
+    if (plan.keepInstructions) {
+      blocks.push(await make(plan.blockName, `What ${agent.name} had before it was managed.`, { kind: 'block', content: plan.instructions }));
+    }
+    const skills: string[] = [];
+    for (const skill of plan.skills) {
+      skills.push(await make(`${skill.folder}, ${agent.name}`, `The ${skill.folder} skill ${agent.name} had before it was managed.`, skill.content));
+    }
+    const mcps: string[] = [...bridge];
+    for (const mcp of plan.mcps) {
+      mcps.push(await make(`${mcp.serverKey}, ${agent.name}`, `The ${mcp.serverKey} MCP server ${agent.name} had before it was managed.`, mcp.content));
+    }
+    return service.saveSetup(projectPath, agentId, { blocks, skills, mcps });
+  });
+}
+
+/**
+ * The switch itself: keep the persona's orchestration defaults on the agent,
+ * save the setup, then settle as a persona change does. On a failure before
+ * the setup is saved, the parts in `made` are removed and the policy put back.
+ */
+async function switchWith(
+  projectPath: string,
+  agent: DurableAgentConfig,
+  made: string[],
+  save: () => Promise<ManagedAgentSetup>,
+  after?: () => Promise<void>,
+): Promise<ManagedAgentSetup> {
+  let carry: CarriedPersonaOrchestration | null = null;
+  let saved: ManagedAgentSetup;
+  try {
+    carry = await carryPersonaOrchestration(projectPath, agent.id);
+    saved = await save();
+  } catch (err) {
+    await undoSwitch(projectPath, agent, made, carry);
+    throw err;
   }
-  const skills: string[] = [];
-  for (const skill of plan.skills) {
-    skills.push(await createAgentPart(`${skill.folder}, ${agent.name}`, `The ${skill.folder} skill ${agent.name} had before it was managed.`, skill.content));
+  await markAwaitingFirstStart(agent.id).catch((err) => {
+    // telemetry-exempt: the switch stands; the first start just doesn't check the file again.
+    appLog('core:managed', 'warn', 'Could not mark the agent for a last instructions check at its first managed start', { meta: { agentId: agent.id, error: err instanceof Error ? err.message : String(err) } });
+  });
+  // As after a persona change: with live helpers, orchestration stays on.
+  await reconcileAfterPersonaChange(projectPath, agent.id, carry?.previousPersona);
+  if (after) await after();
+  return saved;
+}
+
+async function undoSwitch(projectPath: string, agent: DurableAgentConfig, made: string[], carry: CarriedPersonaOrchestration | null): Promise<void> {
+  const service = managedAgents();
+  for (const id of made) {
+    try {
+      const part = await service.getPart(id);
+      await service.deletePart({ id, expectedRevision: part.revision, mode: 'remove' });
+    } catch (err) {
+      // telemetry-exempt: logged; the part stays in the library, unused, where it can be deleted.
+      appLog('core:managed', 'warn', 'Could not remove a part a failed switch to managed made', { meta: { agentId: agent.id, partId: id, error: err instanceof Error ? err.message : String(err) } });
+    }
   }
-  const mcps: string[] = agent.mcpOverride === false ? [] : [CLUBHOUSE_MCP_PART_ID];
-  for (const mcp of plan.mcps) {
-    mcps.push(await createAgentPart(`${mcp.serverKey}, ${agent.name}`, `The ${mcp.serverKey} MCP server ${agent.name} had before it was managed.`, mcp.content));
+  if (carry) {
+    await restorePersonaOrchestration(projectPath, agent.id, carry).catch((err) => {
+      // telemetry-exempt: logged; the fields it kept give the same policy as the persona did.
+      appLog('core:managed', 'warn', 'Could not put the orchestration policy back after a failed switch to managed', { meta: { agentId: agent.id, error: err instanceof Error ? err.message : String(err) } });
+    });
   }
-  return service.saveSetup(projectPath, agentId, { blocks, skills, mcps });
+  await clearAwaitingFirstStart(agent.id).catch(() => { /* telemetry-exempt: nothing was marked */ });
 }
 
 /**
@@ -353,12 +470,4 @@ async function keepMcpFile(projectPath: string, worktree: string, provider: Orch
     // telemetry-exempt: not a git project, or the exclude file is read-only; the copy is kept either way.
     appLog('core:managed', 'warn', 'Could not add the kept MCP file to git excludes', { meta: { error: err instanceof Error ? err.message : String(err) } });
   }
-}
-
-/** Keep a copy of the instructions file before Clubhouse takes it over, so nothing is lost. */
-async function backupInstructions(agent: DurableAgentConfig, file: string, existing: string): Promise<void> {
-  if (!existing) return;
-  const backup = path.join(managedStateDir(), 'before-managed', agent.id);
-  await fsp.mkdir(backup, { recursive: true });
-  await fsp.writeFile(path.join(backup, path.basename(file || 'instructions.md')), existing, 'utf-8');
 }

@@ -237,16 +237,32 @@ export const CHROME_HELP_SECTIONS: HelpSection[] = [
 /** Annex lives in Settings only on builds that show the Annex pages (preview-eligible). */
 const ANNEX_TOPIC: HelpTopic = { id: 'settings-annex', title: 'Annex', content: settingsAnnexChrome };
 
+/** A find-and-replace on one article's text, for Clubhouse-managed agents (#2901). */
+export type HelpEdit = { from: string; to: string };
+
+/** Shared by both shells: the article is the same file in each. */
+const ORCHESTRATED_HELPERS_EDITS: ReadonlyArray<HelpEdit> = [
+  {
+    from: 'Agents using the **Orchestrator** persona start with the switch on.',
+    to: 'A Clubhouse managed agent gets it from **Can start helpers** in its setup. An agent that uses the **Orchestrator** persona has the switch on, and keeps it on when it switches to managed.',
+  },
+  {
+    from: 'Policy for an agent comes from its own settings first, then its persona\'s front-matter, then the **Orchestrator** persona, then the built-in defaults.',
+    to: 'For an unmanaged agent, policy comes from its own settings first, then its persona\'s front-matter, then the **Orchestrator** persona, then the built-in defaults. A Clubhouse managed agent has no persona layer: its own settings, then the built-in defaults. Switching to managed copies what the persona layer gave it into its own settings, so its policy stays the same.',
+  },
+];
+
 /**
- * Text that changes with Clubhouse-managed agents on (#2901): the persona
- * row, Apply and Extract persona, "Agent from a template…" and the Clubhouse
- * Mode setting aren't offered then. Each `from` must be in its article.
+ * Text that changes with Clubhouse-managed agents on (#2901), in the new
+ * shell: the persona row, Apply and Extract persona, "Agent from a
+ * template…" and the Clubhouse Mode setting aren't offered then. Each `from`
+ * must be in its article.
  */
-export const MANAGED_HELP_EDITS: Record<string, ReadonlyArray<{ from: string; to: string }>> = {
+export const MANAGED_HELP_EDITS: Record<string, ReadonlyArray<HelpEdit>> = {
   'agents-durable': [
     {
       from: '2. Set the **Name**, **Color**, **Runs on** and **Model**. Optionally pick a **Persona**, **MCPs** and **Free Agent Mode**.',
-      to: '2. Set the **Name** and **Color**. With **Clubhouse managed** on, choose **Start with template** or **Build from scratch** to pick its instructions, skills and MCP servers. Turn it off for a plain agent that keeps its own files.',
+      to: '2. Set the **Name** and **Color**. With **Clubhouse managed** on, choose **Start with template** or **Build from scratch** to pick its instructions, skills and MCP servers. Turn it off for a plain agent: set its **Runs on** and **Model**, and optionally its **MCP servers** and **Free Agent Mode**. A plain agent keeps its own files, so Clubhouse Mode is off for it.',
     },
     {
       from: 'To start from a saved setup, choose **Agent from a template…** under **New**.',
@@ -255,7 +271,7 @@ export const MANAGED_HELP_EDITS: Record<string, ReadonlyArray<{ from: string; to
     { from: '| **Persona** | A role the agent takes on, such as reviewer or researcher |\n', to: '' },
     {
       from: 'With **Clubhouse mode** on, project defaults sync to the agent when it wakes. See **Clubhouse mode**.',
-      to: 'An agent made before Clubhouse-managed agents can switch in its settings, under **General > Setup**, or with others in **Settings > Managed agents > Switch agents**. Switching keeps what it has now.',
+      to: 'An agent made before Clubhouse-managed agents can switch in its settings, under **General > Setup**, or with others in **Settings > Managed agents > Switch agents**. Switching keeps what it has now. An agent that still uses Clubhouse Mode can turn it off there too, and keep its own files without switching.',
     },
   ],
   'agents-overview': [
@@ -264,10 +280,36 @@ export const MANAGED_HELP_EDITS: Record<string, ReadonlyArray<{ from: string; to
   'projects-settings': [
     { from: '- **Clubhouse Mode**, which keeps durable agents in sync with project defaults. See **Clubhouse mode**.\n', to: '' },
   ],
+  'agents-orchestrated-helpers': ORCHESTRATED_HELPERS_EDITS,
 };
 
-/** The sections without Clubhouse Mode and personas, for Clubhouse-managed agents (#2901). */
-export function managedHelpSections(sections: HelpSection[], editText: boolean): HelpSection[] {
+/** The same for the classic shell's articles. */
+export const MANAGED_CLASSIC_HELP_EDITS: Record<string, ReadonlyArray<HelpEdit>> = {
+  'agents-durable': [
+    { from: '> **Tip:** Use templates to pre-fill configuration for recurring agent types.', to: '> **Tip:** Templates for Clubhouse managed agents are in **Settings > Managed agents > Templates**.' },
+    { from: '| **Templates** | Save an agent\'s full config as a reusable starting point for new agents |\n', to: '' },
+  ],
+  'projects-settings': [
+    {
+      from: '## Clubhouse Mode\n\nWhen enabled, project-level agent defaults (instructions, permissions, MCP config, skills) are automatically synced to durable agents on wake. See the **Clubhouse Mode** help topic for details.\n\n',
+      to: '',
+    },
+  ],
+  'agents-orchestrated-helpers': ORCHESTRATED_HELPERS_EDITS,
+};
+
+/** Article text with Windows line endings made plain, so edits match a CRLF checkout too. */
+export function normalizeNewlines(text: string): string {
+  return text.replace(/\r\n/g, '\n');
+}
+
+/** Apply edits to an article. */
+export function applyHelpEdits(content: string, edits: ReadonlyArray<HelpEdit>): string {
+  return edits.reduce((text, e) => text.replace(e.from, e.to), normalizeNewlines(content));
+}
+
+/** The sections without Clubhouse Mode and personas, for Clubhouse-managed agents (#2901), with `edits` applied. */
+export function managedHelpSections(sections: HelpSection[], edits: Record<string, ReadonlyArray<HelpEdit>>): HelpSection[] {
   return sections
     .filter((s) => s.id !== 'personas')
     .map((s) => ({
@@ -275,16 +317,16 @@ export function managedHelpSections(sections: HelpSection[], editText: boolean):
       topics: s.topics
         .filter((t) => t.id !== 'agents-clubhouse-mode')
         .map((t) => {
-          const edits = editText ? MANAGED_HELP_EDITS[t.id] : undefined;
-          return edits ? { ...t, content: edits.reduce((text, e) => text.replace(e.from, e.to), t.content) } : t;
+          const forTopic = edits[t.id];
+          return forTopic ? { ...t, content: applyHelpEdits(t.content, forTopic) } : t;
         }),
     }));
 }
 
 /** The active shell's built-in sections. */
 export function getHelpSections(opts: { annex?: boolean; managed?: boolean } = {}): HelpSection[] {
-  if (!isNewChromeEnabled()) return opts.managed ? managedHelpSections(HELP_SECTIONS, false) : HELP_SECTIONS;
-  const chrome = opts.managed ? managedHelpSections(CHROME_HELP_SECTIONS, true) : CHROME_HELP_SECTIONS;
+  if (!isNewChromeEnabled()) return opts.managed ? managedHelpSections(HELP_SECTIONS, MANAGED_CLASSIC_HELP_EDITS) : HELP_SECTIONS;
+  const chrome = opts.managed ? managedHelpSections(CHROME_HELP_SECTIONS, MANAGED_HELP_EDITS) : CHROME_HELP_SECTIONS;
   if (!opts.annex) return chrome;
   return chrome.map((s) => (s.id === 'settings'
     ? { ...s, topics: [...s.topics.slice(0, 3), ANNEX_TOPIC, ...s.topics.slice(3)] }

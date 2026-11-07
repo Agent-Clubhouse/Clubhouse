@@ -6,7 +6,7 @@ import { CommandPaletteList, optionId } from './CommandPaletteList';
 import { useCommandSource } from './use-command-source';
 import { fuzzyFilter, FuzzyFilterItem } from './fuzzy-match';
 import { CATEGORY, CommandItem } from './command-registry';
-import { HELP_SECTIONS, managedHelpSections, type HelpSection } from '../help/help-content';
+import { HELP_SECTIONS, MANAGED_CLASSIC_HELP_EDITS, managedHelpSections, type HelpSection } from '../help/help-content';
 import { useManagedFlag } from '../managed/managed-flag';
 import { searchHelpTopics } from '../help/help-search';
 import { pushModal, removeModal } from '../../components/layers';
@@ -30,7 +30,7 @@ function stripPrefix(query: string): string {
 }
 
 // With Clubhouse-managed agents on, Clubhouse Mode and personas leave Help (#2901).
-const MANAGED_HELP_SECTIONS = managedHelpSections(HELP_SECTIONS, false);
+const MANAGED_HELP_SECTIONS = managedHelpSections(HELP_SECTIONS, MANAGED_CLASSIC_HELP_EDITS);
 
 function helpItems(sections: HelpSection[], query: string): FuzzyFilterItem<CommandItem>[] {
   return searchHelpTopics(sections, query).slice(0, HELP_RESULTS).map((r) => ({

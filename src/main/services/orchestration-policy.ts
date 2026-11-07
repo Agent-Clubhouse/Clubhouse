@@ -637,6 +637,66 @@ export async function reconcileAfterPersonaChange(
   });
 }
 
+/** What carryPersonaOrchestration found and wrote, so a failed switch can put it back. */
+export interface CarriedPersonaOrchestration {
+  /** The persona the agent resolved to: its own, else the project default. */
+  previousPersona: string | undefined;
+  /** The agent's own fields before the carry. */
+  before: OrchestrationPolicyConfig | undefined;
+  /** The fields the persona layer decided, now the agent's own. */
+  carried: OrchestrationPolicyConfig | undefined;
+}
+
+/**
+ * Before an unmanaged agent switches to managed (#2901): a managed agent has
+ * no persona layer, so every field its persona or the project's Orchestrator
+ * persona decided is written to its own fields, and the policy resolves the
+ * same after the switch. A managed agent, or one whose persona layer decides
+ * nothing, is left as it is. The gate isn't touched: the outcome doesn't change.
+ * Saved as is, without the MCP check: MCP off masks it the same either way.
+ */
+export async function carryPersonaOrchestration(projectPath: string, agentId: string): Promise<CarriedPersonaOrchestration | null> {
+  return withAgentLock(projectPath, agentId, async () => {
+    const agent = await agentConfig.getDurableConfig(projectPath, agentId);
+    if (!agent || agent.managed) return null;
+    const previousPersona = await effectivePersonaId(projectPath, agent);
+    const layer = await personaDefaultsFor(projectPath, previousPersona);
+    const resolved = resolveOrchestrationPolicy(agent.orchestration, layer);
+    const carried: OrchestrationPolicyConfig = {};
+    for (const key of Object.keys(ORCHESTRATION_DEFAULTS) as Array<keyof OrchestrationPolicy>) {
+      if (resolved.sources[key] === 'persona') (carried as Record<string, unknown>)[key] = resolved[key];
+    }
+    const before = agent.orchestration && { ...agent.orchestration };
+    if (Object.keys(carried).length === 0) return { previousPersona, before, carried: undefined };
+    const stored = normalizeOrchestrationConfig({ ...before, ...carried });
+    await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
+    for (const [key, value] of Object.entries(carried)) {
+      await appendSettingsAudit({ surface: 'persona', targetId: agentId, scope: 'agent', key: `orchestration.${key}`, before: null, after: value as boolean | number | string, outcome: 'ok', code: 'carried_to_managed' });
+    }
+    appLog('core:orchestration', 'info', 'Orchestration defaults from the persona kept on the agent before it switched to managed', {
+      meta: { agentId, fields: Object.keys(carried) },
+    });
+    return { previousPersona, before, carried };
+  });
+}
+
+/** Put back what carryPersonaOrchestration wrote, when the switch it was for failed. Fields changed since are left alone. */
+export async function restorePersonaOrchestration(projectPath: string, agentId: string, carry: CarriedPersonaOrchestration): Promise<void> {
+  if (!carry.carried) return;
+  await withAgentLock(projectPath, agentId, async () => {
+    const agent = await agentConfig.getDurableConfig(projectPath, agentId);
+    if (!agent) return;
+    const next: Record<string, unknown> = { ...(agent.orchestration ?? {}) };
+    for (const [key, value] of Object.entries(carry.carried!)) {
+      if (next[key] !== value) continue;
+      const was = carry.before?.[key as keyof OrchestrationPolicy];
+      if (was === undefined) delete next[key];
+      else next[key] = was;
+    }
+    await agentConfig.setOrchestrationConfig(projectPath, agentId, normalizeOrchestrationConfig(next));
+  });
+}
+
 /** Route a persona change to the agents it affects. */
 async function onPersonaChange(change: PersonaChange): Promise<void> {
   // A persona can turn Auto off (#2671).

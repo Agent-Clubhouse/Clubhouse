@@ -374,6 +374,21 @@ describe('AgentSettingsView', () => {
       expect(screen.queryByText('Copy as template')).not.toBeInTheDocument();
     });
 
+    it('flag on: turns Clubhouse Mode off for this agent from General > Setup, without switching', async () => {
+      flagOn();
+      useClubhouseModeStore.setState({ enabled: true, isEnabledForProject: () => true });
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({});
+      const update = vi.fn().mockResolvedValue(undefined);
+      (window.clubhouse.agent as any).updateDurableConfig = update;
+      renderSettings();
+      const toggle = await screen.findByRole('switch', { name: 'Clubhouse Mode for this agent' });
+      expect(screen.getByTestId('managed-clubhouse-mode')).toHaveTextContent('Turn it off to keep its own files.');
+      fireEvent.click(toggle);
+      await waitFor(() => expect(update).toHaveBeenCalledWith(expect.any(String), expect.any(String), { clubhouseModeOverride: true }));
+      await waitFor(() => expect(screen.queryByTestId('managed-clubhouse-mode')).not.toBeInTheDocument());
+      expect(screen.queryByTestId('managed-general-legacy')).not.toBeInTheDocument();
+    });
+
     it('flag on: names the persona of an agent outside Clubhouse Mode, and keeps its file editors', async () => {
       flagOn();
       (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'qa' });

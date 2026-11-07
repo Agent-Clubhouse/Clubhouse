@@ -150,6 +150,7 @@ vi.mock('./mcp-settings', () => ({
 }));
 
 import {
+  carryPersonaOrchestration,
   checkHelperLimitFor,
   getHelperSummary,
   getOrchestrationPolicy,
@@ -157,6 +158,7 @@ import {
   reconcileAfterPersonaChange,
   resolveHelperLaunchSettings,
   resolveOrchestrationPolicies,
+  restorePersonaOrchestration,
   setOrchestrationPolicy,
   syncOrchestrationGate,
   turnOffOrchestration,
@@ -463,6 +465,62 @@ describe('setOrchestrationPolicy for a managed agent (#2819)', () => {
     vi.mocked(broadcastToAllWindows).mockClear();
     await setOrchestrationPolicy(PROJECT, 'plain-orch', { maxHelpers: 7 });
     expect(vi.mocked(broadcastToAllWindows).mock.calls.filter((c) => c[0] === IPC.MANAGED.CHANGED)).toHaveLength(0);
+  });
+});
+
+describe('switching to managed keeps the persona\'s policy (#2901)', () => {
+  const managed = { version: 1 as const, blocks: [], skills: [], mcps: [] };
+  /** What setManagedSetup does to the agent's record. */
+  const switchToManaged = (id: string) => {
+    const a = find(id) as DurableAgentConfig;
+    a.managed = managed;
+    delete a.persona;
+  };
+
+  it('an Orchestrator-persona agent with no own orchestration still orchestrates after the switch', async () => {
+    state.personas.set('orchestrator', persona({ orchestrate: true, control: 'ask-before-start' }));
+    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator' })]);
+    const carry = await carryPersonaOrchestration(PROJECT, 'orch');
+    expect(carry).toMatchObject({ previousPersona: 'orchestrator', before: undefined, carried: { orchestrate: true, control: 'ask-before-start' } });
+    switchToManaged('orch');
+    const policy = await getOrchestrationPolicy(PROJECT, 'orch');
+    expect(policy).toMatchObject({ orchestrate: true, control: 'ask-before-start' });
+    expect(policy?.sources.orchestrate).toBe('agent');
+    expect(auditRows.filter((r) => r.code === 'carried_to_managed').map((r) => r.key)).toEqual(['orchestration.orchestrate', 'orchestration.control']);
+  });
+
+  it('keeps the project orchestrator.md layer for another persona, and the agent\'s own fields win', async () => {
+    state.personas.set('orchestrator', persona({ orchestrate: true, maxHelpers: 2, access: 'standard' }));
+    setAgents(PROJECT, [agent('dev', { persona: 'developer', orchestration: { access: 'same' } })]);
+    const before = await getOrchestrationPolicy(PROJECT, 'dev');
+    await carryPersonaOrchestration(PROJECT, 'dev');
+    expect(find('dev').orchestration).toEqual({ access: 'same', maxHelpers: 2 });
+    switchToManaged('dev');
+    const after = await getOrchestrationPolicy(PROJECT, 'dev');
+    for (const key of ['orchestrate', 'access', 'control', 'maxHelpers', 'crossProjectHelpers', 'connectToDispatcher', 'autoHelpers'] as const) {
+      expect(after?.[key]).toEqual(before?.[key]);
+    }
+  });
+
+  it('uses the project default persona, writes nothing when the persona decides nothing, and skips a managed agent', async () => {
+    state.projectDefaults = { persona: 'orchestrator' };
+    state.personas.set('orchestrator', persona({ orchestrate: true }));
+    setAgents(PROJECT, [agent('a'), agent('b', { persona: 'plain' }), agent('m', { managed })]);
+    expect((await carryPersonaOrchestration(PROJECT, 'a'))?.previousPersona).toBe('orchestrator');
+    expect(find('a').orchestration).toEqual({ orchestrate: true });
+    state.personas.clear();
+    expect(await carryPersonaOrchestration(PROJECT, 'b')).toMatchObject({ carried: undefined });
+    expect(find('b').orchestration).toBeUndefined();
+    expect(await carryPersonaOrchestration(PROJECT, 'm')).toBeNull();
+  });
+
+  it('puts the fields back when the switch fails, leaving fields changed since', async () => {
+    state.personas.set('orchestrator', persona({ orchestrate: true, maxHelpers: 3 }));
+    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator', orchestration: { access: 'same' } })]);
+    const carry = (await carryPersonaOrchestration(PROJECT, 'orch'))!;
+    find('orch').orchestration = { ...find('orch').orchestration, maxHelpers: 4 };
+    await restorePersonaOrchestration(PROJECT, 'orch', carry);
+    expect(find('orch').orchestration).toEqual({ access: 'same', maxHelpers: 4 });
   });
 });
 

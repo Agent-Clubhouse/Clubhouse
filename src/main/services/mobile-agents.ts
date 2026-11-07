@@ -284,8 +284,10 @@ export async function buildAgentSettings(
   const appMinutes = chatIdleSettings.getSettings().idleTimeoutMinutes;
   const idle = normalizeIdleSleep(config.idleSleep);
   const resolved = resolveIdleSleep(idle, appMinutes);
-  // A Clubhouse-managed agent never takes the Clubhouse Mode path (#2896), so it has no switch for it.
-  const clubhouseProject = !dispatcher && !config.managed && isClubhouseModeEnabled(project.path);
+  const clubhouseProject = !dispatcher && isClubhouseModeEnabled(project.path);
+  // A Clubhouse-managed agent never takes the Clubhouse Mode path (#2896) and has no persona, so neither is
+  // editable for it (#2901). projectEnabled stays the project's setting.
+  const managed = !!config.managed;
   // The Dispatcher's orchestration settings are locked (#2533), so it has none to show.
   const orchestration = dispatcher ? null : await orchestrationOf(project.path, config);
   const routing = mobileHelperRoutingDetail(config.routing);
@@ -308,8 +310,11 @@ export async function buildAgentSettings(
       orchestrator: { ...field(config.orchestrator ?? null, spawn), resolved: orchestrator, changeStartsNewSession: !!config.lastSessionId },
       model: field(config.model ?? 'default', spawn),
       runtime: { ...field(config.runtimeMode ?? 'default', runtimeEditable), resolved: runtime },
-      persona: field(config.persona ?? null, identity),
-      clubhouseMode: { ...field(clubhouseProject ? !config.clubhouseModeOverride : null, clubhouseProject ? 'sleeping' : 'never'), projectEnabled: clubhouseProject },
+      persona: field(managed ? null : config.persona ?? null, managed ? 'never' : identity),
+      clubhouseMode: {
+        ...field(clubhouseProject ? !managed && !config.clubhouseModeOverride : null, clubhouseProject && !managed ? 'sleeping' : 'never'),
+        projectEnabled: clubhouseProject,
+      },
       freeAgentMode: field(!!config.freeAgentMode, permissionsSupported(orchestrator) ? spawn : 'never'),
       // Only chat agents idle-sleep; the value is kept either way.
       idleSleep: { ...field(idle, 'always'), minutes: resolved.minutes, source: resolved.source, applies: runtime === 'chat' },
@@ -499,6 +504,12 @@ export async function updateMobileAgent(
   if (command.runtime !== undefined) {
     if (command.runtime !== 'default' && !chatAvailable(orchestrator)) throw new MobileControlError('runtime_unavailable');
     updates.runtimeMode = command.runtime === 'default' ? null : command.runtime;
+  }
+  // Its setup replaces both (#2901), as the desktop's settings say.
+  if (config.managed && (command.persona !== undefined || command.clubhouseMode !== undefined)) {
+    const which = command.persona !== undefined && command.clubhouseMode !== undefined ? 'persona and Clubhouse mode'
+      : command.persona !== undefined ? 'persona' : 'Clubhouse mode';
+    throw new MobileControlError('managed_agent', 409, 'rejected', `${config.name} is Clubhouse managed, so its ${which} can't be changed. Its setup decides its instructions, skills and MCP servers.`);
   }
   if (command.persona !== undefined) {
     if (command.persona !== null) await assertPersona(project.path, command.persona);

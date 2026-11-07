@@ -15,6 +15,7 @@ import type { ManagedAgentStatus } from '../../../shared/managed-agents-types';
 import { createManagedAgentsService, ManagedError, type ManagedAgentsService } from './service';
 import { createManagedStateStore, managedStateDir } from './state-store';
 import { MCP_BACKUP_DIR } from './mcp-backup';
+import { keepInstructionsAtFirstStart } from './before-managed';
 import * as path from 'path';
 import {
   deliverManagedSetup,
@@ -84,6 +85,8 @@ export async function deliverForSpawn(projectPath: string, agent: DurableAgentCo
   delivered.delete(agent.id);
   let record: DeliveryRecord | null;
   try {
+    // A session still on the old files may have changed them after the switch (#2901).
+    await keepInstructionsAtFirstStart(agent, provider);
     record = await deliverManagedSetup({
       service: managedAgents(), projectPath, agent, provider,
       backupRoot: path.join(managedStateDir(), 'replaced-skills', agent.id),

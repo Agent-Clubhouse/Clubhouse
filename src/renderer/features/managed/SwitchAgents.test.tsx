@@ -5,7 +5,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentRowActions } from '../agents/useAgentRowActions';
-import { CHROME_HELP_SECTIONS, HELP_SECTIONS, MANAGED_HELP_EDITS, managedHelpSections } from '../help/help-content';
+import { CHROME_HELP_SECTIONS, HELP_SECTIONS, MANAGED_CLASSIC_HELP_EDITS, MANAGED_HELP_EDITS, applyHelpEdits, managedHelpSections, normalizeNewlines } from '../help/help-content';
 import { legacyLabel, legacyLine, legacyUse } from './legacy';
 import { loadManagedFlag, resetManagedFlag } from './managed-flag';
 import { SwitchAgentsSettingsView } from './SwitchAgentsSettingsView';
@@ -78,26 +78,46 @@ describe('Apply and Extract persona in the agent menu', () => {
 
 describe('Help with the flag on', () => {
   it('drops Clubhouse Mode and personas from both shells', () => {
-    for (const sections of [managedHelpSections(HELP_SECTIONS, false), managedHelpSections(CHROME_HELP_SECTIONS, true)]) {
+    for (const sections of [managedHelpSections(HELP_SECTIONS, MANAGED_CLASSIC_HELP_EDITS), managedHelpSections(CHROME_HELP_SECTIONS, MANAGED_HELP_EDITS)]) {
       expect(sections.find((s) => s.id === 'personas')).toBeUndefined();
       expect(sections.flatMap((s) => s.topics).find((t) => t.id === 'agents-clubhouse-mode')).toBeUndefined();
     }
     expect(HELP_SECTIONS.find((s) => s.id === 'personas')).toBeDefined();
   });
 
-  it('rewrites each article it names, and every edit still matches its article', () => {
-    const chrome = CHROME_HELP_SECTIONS.flatMap((s) => s.topics);
-    const edited = managedHelpSections(CHROME_HELP_SECTIONS, true).flatMap((s) => s.topics);
-    for (const [id, edits] of Object.entries(MANAGED_HELP_EDITS)) {
-      const before = chrome.find((t) => t.id === id)!.content;
-      const after = edited.find((t) => t.id === id)!.content;
-      for (const e of edits) {
-        expect(before).toContain(e.from);
-        expect(after).not.toContain(e.from);
+  it('rewrites each article it names in both shells, and every edit still matches its article', () => {
+    for (const [sections, all] of [[CHROME_HELP_SECTIONS, MANAGED_HELP_EDITS], [HELP_SECTIONS, MANAGED_CLASSIC_HELP_EDITS]] as const) {
+      const original = sections.flatMap((s) => s.topics);
+      const edited = managedHelpSections(sections, all).flatMap((s) => s.topics);
+      for (const [id, edits] of Object.entries(all)) {
+        // A Windows checkout has CRLF articles; the edits match either way.
+        const before = normalizeNewlines(original.find((t) => t.id === id)!.content);
+        const after = edited.find((t) => t.id === id)!.content;
+        for (const e of edits) {
+          expect(before).toContain(e.from);
+          expect(after).not.toContain(e.from);
+          expect(e.to).not.toContain('—');
+        }
+        // Folder contents like "personas" in Reset project stay: they describe what's on disk.
+        expect(after).not.toMatch(/\*\*Persona|persona…|\*\*Clubhouse mode\*\*|\bSee the \*\*Clubhouse Mode/i);
       }
-      // Folder contents like "personas" in Reset project stay: they describe what's on disk.
-      expect(after).not.toMatch(/\*\*Persona|persona…|Clubhouse mode/i);
     }
+  });
+
+  it('matches an article checked out with CRLF line endings', () => {
+    const article = CHROME_HELP_SECTIONS.flatMap((s) => s.topics).find((t) => t.id === 'agents-durable')!.content;
+    const crlf = normalizeNewlines(article).replace(/\n/g, '\r\n');
+    expect(applyHelpEdits(crlf, MANAGED_HELP_EDITS['agents-durable'])).toBe(applyHelpEdits(article, MANAGED_HELP_EDITS['agents-durable']));
+    expect(applyHelpEdits(crlf, MANAGED_HELP_EDITS['agents-durable'])).not.toContain('| **Persona** |');
+  });
+
+  it('tells a plain agent what it still sets, and that Orchestrator agents keep orchestrating when switched', () => {
+    const topics = managedHelpSections(CHROME_HELP_SECTIONS, MANAGED_HELP_EDITS).flatMap((s) => s.topics);
+    const durable = topics.find((t) => t.id === 'agents-durable')!.content;
+    expect(durable).toContain('set its **Runs on** and **Model**, and optionally its **MCP servers** and **Free Agent Mode**');
+    const helpers = topics.find((t) => t.id === 'agents-orchestrated-helpers')!.content;
+    expect(helpers).not.toContain('persona start with the switch on');
+    expect(helpers).toContain('keeps it on when it switches to managed');
   });
 });
 
@@ -108,6 +128,10 @@ describe('Settings, Switch agents', () => {
       config('bea', { persona: 'qa' }),
       config('cal', { clubhouseModeOverride: true }),
       config('dot', { managed: { version: 1, blocks: [], skills: [], mcps: [] } }),
+      // Never offered: a helper, a disposed agent and one still being created.
+      config('hal', { persona: 'qa', parentAgentId: 'ada' }),
+      config('ivy', { persona: 'qa', disposedAt: '2026-11-07T01:00:00.000Z' }),
+      config('jo', { persona: 'qa', creation: { status: 'creating' } as never }),
     ],
     beta: [config('eve', { worktreePath: undefined, persona: 'qa' }), config('fay')],
   };
@@ -123,19 +147,32 @@ describe('Settings, Switch agents', () => {
   const row = (name: string) => screen.getAllByTestId('managed-switch-row').find((r) => within(r).queryByText(name, { selector: 'span' }))!;
   const box = (name: string) => within(row(name)).getByRole('checkbox') as HTMLInputElement;
 
-  it('lists unmanaged agents across projects with what they use, and ticks the legacy ones', async () => {
+  it('lists unmanaged agents across projects with what they use, and ticks the legacy ones that are asleep', async () => {
     render(<SwitchAgentsSettingsView />);
     await waitFor(() => expect(screen.getAllByTestId('managed-switch-row')).toHaveLength(5));
-    expect(screen.queryByText('dot')).toBeNull();
+    for (const name of ['dot', 'hal', 'ivy', 'jo']) expect(screen.queryByText(name)).toBeNull();
     expect(row('ada')).toHaveTextContent('alpha · Clubhouse Mode');
-    expect(row('bea')).toHaveTextContent('alpha · Clubhouse Mode, Quality Assurance persona · Running');
+    expect(row('bea')).toHaveTextContent('alpha · Clubhouse Mode, Quality Assurance persona');
+    expect(row('bea')).toHaveTextContent('Running: the switch applies at its next start.');
     expect(row('cal')).toHaveTextContent('alpha · Plain');
     expect(row('eve')).toHaveTextContent("Beta · Quality Assurance persona");
     expect(row('eve')).toHaveTextContent("Works in the project folder, so it can't be managed.");
-    expect([box('ada').checked, box('bea').checked, box('cal').checked, box('eve').checked, box('fay').checked]).toEqual([true, true, false, false, false]);
+    // bea is running, so it starts unticked; it can still be ticked.
+    expect([box('ada').checked, box('bea').checked, box('cal').checked, box('eve').checked, box('fay').checked]).toEqual([true, false, false, false, false]);
+    expect(box('bea').disabled).toBe(false);
     expect(box('eve').disabled).toBe(true);
-    expect(screen.getByTestId('managed-switch-run')).toHaveTextContent('Switch 2 to managed');
+    expect(screen.getByTestId('managed-switch-run')).toHaveTextContent('Switch 1 to managed');
     expect(screen.getByText(/A running agent gets the change at its next start\./)).toBeTruthy();
+  });
+
+  it('disables an agent that is waking, and drops its tick', async () => {
+    useAgentStore.setState({ agents: { ada: { id: 'ada', status: 'waking' } as Agent } });
+    render(<SwitchAgentsSettingsView />);
+    await waitFor(() => expect(screen.getAllByTestId('managed-switch-row')).toHaveLength(5));
+    expect(box('ada').disabled).toBe(true);
+    expect(box('ada').checked).toBe(false);
+    expect(row('ada')).toHaveTextContent('Waking. Switch it once it has started.');
+    expect(within(row('ada')).getByRole('button', { name: 'Preview' })).toBeTruthy();
   });
 
   it('previews a row from previewConvert', async () => {
@@ -157,6 +194,7 @@ describe('Settings, Switch agents', () => {
     });
     render(<SwitchAgentsSettingsView />);
     await waitFor(() => expect(screen.getAllByTestId('managed-switch-row')).toHaveLength(5));
+    fireEvent.click(box('bea'));
     fireEvent.click(box('fay'));
     expect(screen.getByTestId('managed-switch-run')).toHaveTextContent('Switch 3 to managed');
     fireEvent.click(screen.getByTestId('managed-switch-run'));
@@ -176,7 +214,6 @@ describe('Settings, Switch agents', () => {
     render(<SwitchAgentsSettingsView />);
     await waitFor(() => expect(screen.getAllByTestId('managed-switch-row')).toHaveLength(5));
     fireEvent.click(box('ada'));
-    fireEvent.click(box('bea'));
     expect(screen.getByTestId('managed-switch-run')).toBeDisabled();
     expect(convert).not.toHaveBeenCalled();
   });

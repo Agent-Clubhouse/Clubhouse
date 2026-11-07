@@ -197,6 +197,20 @@ describe('Free Agent Mode from a phone (#2462)', () => {
   it('reads as never editable on a CLI without permission support', async () => {
     expect((await buildAgentSettings(project, agent({ orchestrator: 'codex-cli' }), undefined)).settings.freeAgentMode).toEqual({ value: false, editable: 'never' });
   });
+  it('refuses persona and Clubhouse mode for a Clubhouse-managed agent, with words, and writes nothing (#2901)', async () => {
+    vi.mocked(isClubhouseModeEnabled).mockReturnValue(true);
+    const managed = agent({ managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+    for (const change of [{ persona: 'qa' }, { persona: null }, { clubhouseMode: true }, { clubhouseMode: false }]) {
+      expect(await refusal(updateMobileAgent(project, managed, { agentId: 'durable_1', freeAgentMode: true, ...change }, live))).toMatchObject({
+        code: 'managed_agent', statusCode: 409, detail: expect.stringContaining('is Clubhouse managed'),
+      });
+    }
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+    // Its other settings still change.
+    await updateMobileAgent(project, managed, { agentId: 'durable_1', freeAgentMode: true }, live);
+    expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith(project.path, 'durable_1', { freeAgentMode: true });
+    vi.mocked(isClubhouseModeEnabled).mockReturnValue(false);
+  });
 });
 
 describe('agent settings', () => {
@@ -233,7 +247,8 @@ describe('agent settings', () => {
   it('has no Clubhouse Mode switch for a Clubhouse-managed agent, even in a Clubhouse Mode project (#2901)', async () => {
     vi.mocked(isClubhouseModeEnabled).mockReturnValue(true);
     const result = await buildAgentSettings(project, agent({ managed: { version: 1, blocks: [], skills: [], mcps: [] } }), 'sleeping');
-    expect(result.settings.clubhouseMode).toEqual({ value: null, editable: 'never', projectEnabled: false });
+    expect(result.settings.clubhouseMode).toEqual({ value: false, editable: 'never', projectEnabled: true });
+    expect(result.settings.persona).toEqual({ value: null, editable: 'never' });
     vi.mocked(isClubhouseModeEnabled).mockReturnValue(false);
   });
   it('resolves inherited auto-sleep from the app setting, and runtime from the live agent', async () => {

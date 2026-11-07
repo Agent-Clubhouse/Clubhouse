@@ -211,6 +211,12 @@ describe('the dialog copy', () => {
     );
   });
 
+  it('with Clubhouse-managed agents on, does not send people to the Clubhouse mode setting it hides (#2901)', () => {
+    const lead = mcpOffLead({ ...IMPACT, turnsOff: false, appLoses: false, appKeptByClubhouseMode: true, dispatcherGoesOff: false }, undefined, { managed: true });
+    expect(lead).toBe('Clubhouse mode, which agents made before Clubhouse-managed agents still use, keeps Clubhouse MCP on at app level, so nothing stops working yet.');
+    expect(lead).not.toMatch(/Turning off Clubhouse mode/);
+  });
+
   it('narrows to the project, with no Dispatcher line', () => {
     const impact = { ...IMPACT, appLoses: false, dispatcherGoesOff: false };
     expect(mcpOffLead(impact, 'site')).toBe('In site, helpers, orchestration and connections to the Dispatcher stop working.');

@@ -4,6 +4,7 @@ import { useToastStore } from '../../stores/toastStore';
 import { isRemoteProjectId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import type { TemplateConfig } from './TemplateConfigDialog';
 import { ATTR, tel } from '../../telemetry';
+import { loadManagedFlag } from '../managed/managed-flag';
 
 /**
  * Durable-agent creation shared by the legacy agent list and the new chrome's
@@ -30,6 +31,17 @@ export interface DurableAgentInput {
    * (#2893), set before the first session starts so it never gets them.
    */
   clubhouseFeatures?: false;
+}
+
+/**
+ * With Clubhouse-managed agents on (#2901), a plain agent keeps its own files:
+ * in a project with Clubhouse Mode on, Clubhouse Mode is turned off for it
+ * before its first start. With the flag off, nothing changes.
+ */
+async function plainAgentSkipsClubhouseMode(projectPath: string): Promise<boolean> {
+  if (!await loadManagedFlag()) return false;
+  const settings = await window.clubhouse.app.getClubhouseModeSettings();
+  return !!(settings?.projectOverrides?.[projectPath] ?? settings?.enabled);
 }
 
 /** Delete an agent that was created but never started. A failure is logged; the caller reports its own error. */
@@ -94,6 +106,15 @@ export async function createDurableAgent(
       project.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds, undefined, persona,
     );
     if (tempId) removeAgent(tempId);
+    if (await plainAgentSkipsClubhouseMode(project.path)) {
+      try {
+        await window.clubhouse.agent.updateDurableConfig(project.path, config.id, { clubhouseModeOverride: true });
+      } catch (err) {
+        // Leave no agent that would start under Clubhouse Mode: it never started, so remove it before saying why.
+        await removeUnstartedAgent(project.path, config.id);
+        throw new Error(`Couldn't turn Clubhouse Mode off for it: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
     if (clubhouseFeatures === false) {
       const off = await window.clubhouse.managed.setClubhouseFeatures(project.path, config.id, false);
       if (off.ok === false) {

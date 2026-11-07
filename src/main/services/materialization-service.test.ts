@@ -66,6 +66,7 @@ import {
   buildWildcardContext,
   cleanupStaleJsonInTomlConfigs,
   materializeAgent,
+  materializedInstructions,
   previewMaterialization,
   ensureDefaultTemplates,
   ensureDefaultSkills,
@@ -1107,6 +1108,30 @@ describe('materialization-service', () => {
 
       expect(preview.instructions).toContain('Agent bold-falcon');
       expect(preview.instructions).toContain('Quality Auditor');
+    });
+  });
+
+  describe('materializedInstructions (#2901)', () => {
+    const template = 'Agent @@AgentName\n@@If(github)\nOpen a PR.\n@@EndIf\n@@If(azure-devops)\nOpen an ADO PR.\n@@EndIf\n@@Persona';
+
+    it('resolves wildcards, @@If and @@Persona as materializeAgent writes them, without writing', async () => {
+      const agent = { ...testAgent, persona: 'quality-auditor' };
+      mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {}, agentDefaults: { instructions: template } }));
+      const text = await materializedInstructions('/project', agent);
+      expect(text).toContain('Agent bold-falcon');
+      expect(text).toContain('Open a PR.');
+      expect(text).not.toContain('Open an ADO PR.');
+      expect(text).toContain('Quality Auditor');
+      expect(text).not.toMatch(/@@/);
+      expect(mockProvider.writeInstructions).not.toHaveBeenCalled();
+
+      await materializeAgent({ projectPath: '/project', agent, provider: mockProvider });
+      expect(mockProvider.writeInstructions).toHaveBeenCalledWith(agent.worktreePath, text);
+    });
+
+    it('is null when Clubhouse Mode would write no instructions', async () => {
+      mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {} }));
+      await expect(materializedInstructions('/project', testAgent)).resolves.toBeNull();
     });
   });
 

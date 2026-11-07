@@ -1291,6 +1291,10 @@ export function AgentSettingsView({ agent }: Props) {
           onClubhouseFeaturesChange={setClubhouseFeatures}
           isRunning={isRunning}
           legacy={isDispatcherAgent(agent) ? null : legacyUse({ managed: managedSetup ?? undefined, clubhouseModeOverride, persona: agentPersona }, clubhouseActive)}
+          onClubhouseModeOff={async () => {
+            await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { clubhouseModeOverride: true });
+            setClubhouseModeOverride(true);
+          }}
         />
       )}
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { DurableAgentConfig } from '../../../shared/types';
+import { isDisposedAgent } from '../../../shared/agent-helpers';
 import type { ManagedConvertPreview } from '../../../shared/managed-agents-types';
 import { Button } from '../../components/Button';
 import { useProjectStore } from '../../stores/projectStore';
@@ -26,7 +27,10 @@ const keyOf = (projectPath: string, agentId: string) => `${projectPath}\n${agent
  * Settings › Managed agents › Switch agents (#2901): every unmanaged agent in
  * every local project, with what it uses. Agents that use Clubhouse Mode or a
  * persona are ticked; Switch converts the ticked ones one at a time, keeping
- * what each has now. Nothing is switched without the person asking.
+ * what each has now. Nothing is switched without the person asking. Helpers,
+ * disposed agents and agents still being created aren't listed. A running
+ * agent starts unticked, since its session keeps the old files until its next
+ * start, and one that is waking can't be ticked until it has started.
  */
 export function SwitchAgentsSettingsView() {
   const projects = useProjectStore((s) => s.projects);
@@ -64,7 +68,7 @@ export function SwitchAgentsSettingsView() {
   // As the store's isEnabledForProject decides it, read here so the list follows a change.
   const clubhouseOn = (projectPath: string) => clubhouseOverrides[projectPath] ?? clubhouseEnabled;
   const candidates: Candidate[] = (configs ?? []).flatMap((p) => p.agents
-    .filter((a) => !a.managed)
+    .filter((a) => !a.managed && !isDisposedAgent(a) && !a.creation && !a.parentAgentId)
     .map((agent) => ({
       key: keyOf(p.projectPath, agent.id),
       projectPath: p.projectPath,
@@ -72,13 +76,15 @@ export function SwitchAgentsSettingsView() {
       agent,
       legacy: legacyUse(agent, clubhouseOn(p.projectPath)),
     })));
-  const canSwitch = (c: Candidate) => !!c.agent.worktreePath;
-  const isTicked = (c: Candidate) => canSwitch(c) && (ticks[c.key] ?? !!c.legacy);
-  const ticked = candidates.filter(isTicked);
-  const isRunning = (c: Candidate) => {
-    const status = statuses[c.agent.id]?.status;
-    return !!status && status !== 'sleeping' && status !== 'error';
+  const statusOf = (c: Candidate) => statuses[c.agent.id]?.status;
+  const isRunning = (c: Candidate) => statusOf(c) === 'running';
+  const isStarting = (c: Candidate) => {
+    const status = statusOf(c);
+    return status === 'waking' || status === 'spawning' || status === 'creating';
   };
+  const canSwitch = (c: Candidate) => !!c.agent.worktreePath && !isStarting(c);
+  const isTicked = (c: Candidate) => canSwitch(c) && (ticks[c.key] ?? (!!c.legacy && !isRunning(c)));
+  const ticked = candidates.filter(isTicked);
 
   const switchTicked = async () => {
     setBusy(true);
@@ -143,11 +149,13 @@ export function SwitchAgentsSettingsView() {
                 <span className="flex-1 min-w-0">
                   <span className="block text-[13px] text-ctp-text truncate">{c.agent.name}</span>
                   <span className="block text-xs text-ctp-overlay1 truncate">
-                    {c.projectName} · {legacyLabel(c.legacy)}{isRunning(c) ? ' · Running' : ''}
+                    {c.projectName} · {legacyLabel(c.legacy)}
                   </span>
-                  {!canSwitch(c) && <span className="block text-xs text-ctp-overlay1">Works in the project folder, so it can't be managed.</span>}
+                  {!c.agent.worktreePath && <span className="block text-xs text-ctp-overlay1">Works in the project folder, so it can't be managed.</span>}
+                  {c.agent.worktreePath && isStarting(c) && <span className="block text-xs text-ctp-overlay1" data-testid="managed-switch-waking">Waking. Switch it once it has started.</span>}
+                  {c.agent.worktreePath && isRunning(c) && <span className="block text-xs text-ctp-overlay1" data-testid="managed-switch-running">Running: the switch applies at its next start.</span>}
                 </span>
-                {canSwitch(c) && (
+                {!!c.agent.worktreePath && (
                   <Button kind="quiet" aria-expanded={open === c.key} onClick={() => setOpen(open === c.key ? null : c.key)}>
                     {open === c.key ? 'Hide preview' : 'Preview'}
                   </Button>
