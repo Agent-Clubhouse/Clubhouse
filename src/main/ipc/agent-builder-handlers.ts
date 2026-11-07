@@ -71,10 +71,10 @@ export function registerAgentBuilderHandlers(injectedStore?: AssetCatalogStore):
     }
   }
   ipcMain.handle(IPC.AGENT.NEW_COMPOSITION_PREVIEW, withValidatedArgs(
-    [stringArg(), stringArg(), arrayArg(stringArg({ maxLength: 256 }), { maxLength: 256 })],
-    async (event, projectId, templateId, skillIds) => {
+    [stringArg(), stringArg(), arrayArg(stringArg({ maxLength: 256 }), { maxLength: 256 }), arrayArg(stringArg({ maxLength: 256 }), { optional: true, maxLength: 256 })],
+    async (event, projectId, templateId, skillIds, blockIds) => {
       if (!await ready) throw new Error('Builder templates are unavailable.');
-      return previewNewAgentComposition(event.sender.id, projectId, templateId, skillIds);
+      return previewNewAgentComposition(event.sender.id, projectId, templateId, skillIds, blockIds);
     },
   ));
   ipcMain.handle(IPC.AGENT.NEW_COMPOSITION_DISCARD, withValidatedArgs(

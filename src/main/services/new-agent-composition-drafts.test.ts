@@ -73,3 +73,26 @@ it('refuses legacy persona and MCP combinations without any composition write', 
   }
   expect(Object.keys((await createAssetCatalogStore({ dir: assetCatalogDir() }).read()).compositions)).toEqual([]);
 });
+it('previews shared blocks in selection order without writing assets or composition', async () => {
+  const store = createAssetCatalogStore({ dir: assetCatalogDir() });
+  const first = await store.createAsset({ kind: 'block', name: 'First shared block', owner: { kind: 'library' }, payload: { content: 'FIRST_SHARED' } });
+  const second = await store.createAsset({ kind: 'block', name: 'Second project block', owner: { kind: 'project', projectId: 'project-1' }, payload: { content: 'SECOND_SHARED' } });
+  const before = await store.read();
+  const result = await ui(() => previewNewAgentComposition(1, 'project-1', 'builtin-builder-custom', [], [second.id, first.id]));
+  tokens.push(result.token);
+  expect(result.availableBlocks).toEqual(expect.arrayContaining([{ id: first.id, name: first.name }, { id: second.id, name: second.name }]));
+  expect(result.text).toContain('FIRST_SHARED');
+  expect(result.text.indexOf('SECOND_SHARED')).toBeLessThan(result.text.indexOf('FIRST_SHARED'));
+  expect(await store.read()).toEqual(before);
+});
+it('refuses duplicate, foreign-project, agent-owned and non-block selections before writes', async () => {
+  const store = createAssetCatalogStore({ dir: assetCatalogDir() });
+  const shared = await store.createAsset({ kind: 'block', name: 'Shared', owner: { kind: 'library' }, payload: { content: 'shared' } });
+  const foreign = await store.createAsset({ kind: 'block', name: 'Foreign', owner: { kind: 'project', projectId: 'elsewhere' }, payload: { content: 'foreign' } });
+  const privateBlock = await store.createAsset({ kind: 'block', name: 'Private', owner: { kind: 'agent', agentId: 'another-agent' }, payload: { content: 'private' } });
+  const before = await store.read();
+  for (const ids of [[shared.id, shared.id], [foreign.id], [privateBlock.id], ['builtin-builder-custom'], ['missing']]) {
+    await expect(ui(() => previewNewAgentComposition(1, 'project-1', 'builtin-builder-custom', [], ids))).rejects.toThrow('Selected block is unavailable');
+  }
+  expect(await store.read()).toEqual(before);
+});

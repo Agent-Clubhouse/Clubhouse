@@ -42,3 +42,19 @@ it('shows a visible refusal and leaves confirmation unavailable', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('Source changed');
   expect(changed).toHaveBeenLastCalledWith({ projectId: 'p1', enabled: true, preview: null });
 });
+it('invalidates approval on block selection and sends selected block IDs only on explicit preview', async () => {
+  window.clubhouse.agent.previewNewComposition = vi.fn(async () => ({ ...preview, availableBlocks: [{ id: 'block-1', name: 'Shared instructions' }] }));
+  const changed = vi.fn();
+  render(<NewAgentCompositionPicker projectId="p1" disabled={false} onChange={changed} />);
+  fireEvent.change(screen.getByLabelText('New agent composition'), { target: { value: 'builtin-builder-custom' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Preview saved composition' }));
+  await screen.findByLabelText('Reviewed composition');
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Shared instructions' }));
+  expect(screen.queryByLabelText('Reviewed composition')).toBeNull();
+  expect(window.clubhouse.agent.discardNewComposition).toHaveBeenCalledWith('reviewed');
+  expect(changed).toHaveBeenLastCalledWith({ projectId: 'p1', enabled: true, preview: null });
+  expect(window.clubhouse.agent.previewNewComposition).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Preview saved composition' }));
+  await screen.findByLabelText('Reviewed composition');
+  expect(window.clubhouse.agent.previewNewComposition).toHaveBeenLastCalledWith('p1', 'builtin-builder-custom', [], ['block-1']);
+});

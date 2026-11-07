@@ -39,7 +39,7 @@ export function discardNewAgentComposition(sender: number, token: string): void 
 
 /** Preview is read-only after startup seeding; no provisional catalog asset is created. */
 export async function previewNewAgentComposition(
-  sender: number, projectId: string, templateId: string, skillIds: string[],
+  sender: number, projectId: string, templateId: string, skillIds: string[], blockIds: string[] = [],
 ): Promise<NewAgentCompositionPreview> {
   assertUser(); expire();
   const request = (requests.get(sender) ?? 0) + 1;
@@ -64,11 +64,18 @@ export async function previewNewAgentComposition(
     if (!template || projection?.kind !== 'template') throw new Error('Builder base is unavailable.');
     const available = Object.values(index.assets).filter((asset) => !asset.deletedAt && asset.kind === 'skill'
       && (asset.owner.kind === 'library' || (asset.owner.kind === 'project' && asset.owner.projectId === projectId)));
+    const availableBlocks = Object.values(index.assets).filter((asset) => !asset.deletedAt && asset.kind === 'block'
+      && (asset.owner.kind === 'library' || (asset.owner.kind === 'project' && asset.owner.projectId === projectId)));
+    if (blockIds.length > 256 || new Set(blockIds).size !== blockIds.length
+      || blockIds.some((id) => !availableBlocks.some((asset) => asset.id === id))) throw new Error('Selected block is unavailable.');
     const unique = [...new Set(skillIds)];
     if (unique.length !== skillIds.length || unique.some((id) => !available.some((a) => a.id === id))) throw new Error('Selected skill is unavailable.');
     const composition = {
       ...emptyComposition(), template: { templateId, acceptedRevision: template.headRevision },
-      entries: projection.entries.map((ref) => ({ baseEntryId: ref.entryId, source: { kind: 'follow' as const } })),
+      entries: [
+        ...projection.entries.map((ref) => ({ baseEntryId: ref.entryId, source: { kind: 'follow' as const } })),
+        ...blockIds.map((blockId) => ({ localId: randomUUID(), source: { kind: 'follow' as const, blockId } })),
+      ],
       additions: unique,
     };
     const adoption = await builderSnapshotAdoption(store, composition);
@@ -88,6 +95,7 @@ export async function previewNewAgentComposition(
     return {
       token, expiresAt: reservation.expiresAt, text: preview.composed.text,
       skills: preview.plan.skills.map((skill) => ({ id: skill.assetId, name: index.assets[skill.assetId].name, revision: skill.revision })),
+      availableBlocks: availableBlocks.map((asset) => ({ id: asset.id, name: asset.name })),
       availableSkills: available.map((asset) => ({ id: asset.id, name: asset.name })),
     };
   } catch (error) { releaseDurableCreationId(reservation); throw error; }
