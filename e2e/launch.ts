@@ -9,6 +9,7 @@ import {
 } from './app-profile';
 import { recordElectronApp, trackOpenApp, untrackOpenApp } from './e2e-cleanup';
 import { installFrameMonitor, reportActionFailure } from './renderer-diagnostics';
+import { observeOwnedProcess } from './owned-process-receipts';
 
 const APP_PATH = path.resolve(__dirname, '..');
 const MAIN_ENTRY = path.join(APP_PATH, '.webpack', process.arch, 'main');
@@ -114,6 +115,8 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
     throw err;
   }
 
+  const ownedProcess = observeOwnedProcess(() => electronApp.process());
+
   // Register for cleanup before doing anything else that can throw — a launch
   // that dies during window discovery must still be reapable.
   recordElectronApp(electronApp.process().pid, profile.userDataDir);
@@ -142,8 +145,17 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
     return { electronApp, window: rendererWindow, userDataDir: profile.userDataDir, profile };
   } catch (err) {
     untrackOpenApp(electronApp);
-    await electronApp.close().catch(() => {});
-    if (ownsProfile) profile.dispose();
+    ownedProcess.emit('setup-failed');
+    try {
+      await electronApp.close();
+      ownedProcess.emit('setup-close-attempt', { outcome: 'fulfilled' });
+    } catch {
+      ownedProcess.emit('setup-close-attempt', { outcome: 'rejected' });
+    }
+    if (ownsProfile) {
+      try { profile.dispose(); }
+      catch { ownedProcess.emit('setup-profile-dispose', { outcome: 'rejected' }); }
+    }
     throw err;
   }
 }
