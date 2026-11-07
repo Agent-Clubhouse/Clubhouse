@@ -125,12 +125,30 @@ describe('parts by reference', () => {
     expect(agents.get('a')!.managed!.blocks).toEqual([part.id]);
   });
 
-  it('keeps an MCP part\'s literal env through an edit', async () => {
-    const mcp = await user(() => service.createPart({ name: 'Svc', content: { kind: 'mcp', serverKey: 'svc', transport: 'stdio', command: 'svc', env: { MODE: 'fast' } } }));
-    const full = await user(() => service.getPart(mcp.id));
-    expect(full.content).toMatchObject({ env: { MODE: 'fast' } });
-    await user(() => service.updatePart({ id: mcp.id, expectedRevision: mcp.revision, content: { ...full.content, command: 'svc2' } as never }));
-    expect((await user(() => service.getPart(mcp.id))).content).toMatchObject({ command: 'svc2', env: { MODE: 'fast' } });
+  it('refuses literal env values on create and edit: MCP parts keep names only (D46)', async () => {
+    const err = await user(() => service.createPart({ name: 'Svc', content: { kind: 'mcp', serverKey: 'svc', transport: 'stdio', command: 'svc', env: { MODE: 'fast' } } })).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ManagedError);
+    expect((err as ManagedError).code).toBe('invalid');
+    expect((err as ManagedError).message).toMatch(/variable names only.*MODE/);
+    const mcp = await user(() => service.createPart({ name: 'Svc', content: { kind: 'mcp', serverKey: 'svc', transport: 'stdio', command: 'svc', envVars: ['MODE'] } }));
+    await expectCode(user(() => service.updatePart({ id: mcp.id, expectedRevision: mcp.revision, content: { kind: 'mcp', serverKey: 'svc', transport: 'stdio', command: 'svc', env: { MODE: 'fast' } } })), 'invalid');
+  });
+
+  it('never returns a stored part\'s literal env values: they read, fork and copy as names (D46)', async () => {
+    // A part saved before D46 still holds literal values in the catalog.
+    const catalog = createAssetCatalogStore({ dir: path.join(root, 'catalog') });
+    const entry = await user(() => catalog.createAsset({ kind: 'mcp', name: 'Old', payload: { serverKey: 'old', transport: 'stdio', command: 'old', env: { MODE: 'fast' }, envVars: ['HOME_DIR'] } }));
+    const full = await user(() => service.getPart(entry.id));
+    expect(full.content).toEqual({ kind: 'mcp', serverKey: 'old', transport: 'stdio', command: 'old', envVars: ['HOME_DIR', 'MODE'] });
+    expect(JSON.stringify(full)).not.toContain('fast');
+    const head = await user(() => service.headContent(entry.id));
+    expect(JSON.stringify(head!.content)).not.toContain('fast');
+    const fork = await user(() => service.forkPart({ id: entry.id }));
+    expect(JSON.stringify(await catalog.readRevision(fork.id, fork.revision))).not.toContain('fast');
+    // An edit saves names only.
+    await user(() => service.updatePart({ id: entry.id, expectedRevision: entry.headRevision, content: { ...full.content, command: 'old2' } as never }));
+    const saved = await catalog.readRevision(entry.id, entry.headRevision + 1);
+    expect(saved).toEqual({ serverKey: 'old', transport: 'stdio', command: 'old2', envVars: ['HOME_DIR', 'MODE'] });
   });
 
   it('refuses a setup for an agent without its own folder', async () => {

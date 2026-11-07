@@ -129,6 +129,8 @@ export interface ManagedAgentStatus {
   deliveredAt?: string;
   /** True when the CLI changed since the session started, so a restart can't resume it. */
   cliChanged: boolean;
+  /** Set when this session's setup couldn't be written: the reason. The session runs on whatever files were there. */
+  deliveryFailed?: string;
 }
 
 /** The exact result an agent gets at its next start. */
@@ -138,6 +140,14 @@ export interface ManagedPreview {
   skills: Array<{ id: string; name: string; skillName: string; files: number; folder: string }>;
   mcps: Array<{ id: string; name: string; serverKey: string; builtin: boolean }>;
   missing: string[];
+  /** Skill folders git tracks in the agent's folder. Clubhouse can't move them, so the CLI loads them too. */
+  repoSkills?: string[];
+  /** Instruction files above the agent's folder that the CLI is told not to read. */
+  notRead?: string[];
+  /** Instruction files the CLI reads besides the setup, which Clubhouse can't turn off. */
+  alsoRead?: string[];
+  /** The CLI's name, for "Also read by …". */
+  cliName?: string;
 }
 
 /**

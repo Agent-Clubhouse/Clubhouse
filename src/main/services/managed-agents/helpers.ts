@@ -4,7 +4,7 @@
  * parts added or left out for that helper only. Nothing is saved back.
  */
 import type { HelperStartArgs } from '../../../shared/types';
-import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
 import type { ManagedAgentsService } from './service';
 
 export const HELPER_KEEPS_CLUBHOUSE_PART = 'Helpers always keep the Clubhouse MCP part so they can reach their orchestrator.';
@@ -24,7 +24,7 @@ export const HELPER_TEMPLATE_CHOICE_OFF =
 export async function managedHelperSetup(
   service: ManagedAgentsService,
   args: Pick<HelperStartArgs, 'template' | 'addParts' | 'removeParts'>,
-): Promise<ManagedAgentSetup & { templateId: string }> {
+): Promise<ManagedAgentSetup & { templateId: string; settings: ManagedTemplateSettings }> {
   const defaultId = await service.defaultHelperTemplateId();
   // Off (the default), only the default helper template is used. Naming it is no choice, so that passes.
   const choosing = (args.template !== undefined && args.template !== defaultId) || !!args.addParts?.length || !!args.removeParts?.length;
@@ -60,5 +60,24 @@ export async function managedHelperSetup(
   if (!setup.mcps.includes(CLUBHOUSE_MCP_PART_ID)) setup.mcps.unshift(CLUBHOUSE_MCP_PART_ID);
   // The same checks a saved setup runs, so a helper is never created with a setup that can't be saved.
   const checked = await service.checkSetup({ ...setup, templateId });
-  return { ...checked, templateId };
+  return { ...checked, templateId, settings: base.settings };
+}
+
+/**
+ * The model a managed helper starts on when start_helper leaves it out: the
+ * helper template's (D52). Only when the template's model is for the CLI the
+ * helper runs on: no CLI asked for and none in the template, or the same one
+ * asked for, or none asked for and the template's CLI is the orchestrator's.
+ * `default` means the CLI's default, so it sets nothing.
+ */
+export function helperTemplateModel(
+  settings: ManagedTemplateSettings,
+  asked: { cli?: string; model?: string },
+  orchestratorCli: string | undefined,
+): string | undefined {
+  if (asked.model || !settings.model || settings.model === 'default') return undefined;
+  const templateCli = settings.orchestrator;
+  if (!templateCli) return asked.cli ? undefined : settings.model;
+  if (asked.cli) return asked.cli === templateCli ? settings.model : undefined;
+  return orchestratorCli === templateCli ? settings.model : undefined;
 }

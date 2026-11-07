@@ -55,7 +55,7 @@ const managed = {
   applySettings: (projectPath: string, agentId: string, settings: ManagedTemplateSettings) => call<void>(IPC.MANAGED.APPLY_SETTINGS, projectPath, agentId, settings),
   status: (projectPath: string, agentId: string) => call<ManagedAgentStatus>(IPC.MANAGED.STATUS, projectPath, agentId),
   isWorking: (agentId: string) => call<boolean>(IPC.MANAGED.IS_WORKING, agentId),
-  restart: (projectPath: string, agentId: string, options?: { fresh?: boolean; whenTurnEnds?: boolean }) => call<{ resumed: boolean }>(IPC.MANAGED.RESTART, projectPath, agentId, options),
+  restart: (projectPath: string, agentId: string, options?: { fresh?: boolean; whenTurnEnds?: boolean }) => call<{ resumed: boolean; noSession?: boolean }>(IPC.MANAGED.RESTART, projectPath, agentId, options),
   setClubhouseFeatures: (projectPath: string, agentId: string, on: boolean) => call<void>(IPC.MANAGED.SET_CLUBHOUSE_FEATURES, projectPath, agentId, on),
   /** Parts, templates or setups changed somewhere. Returns an unsubscribe function. */
   onChanged: (listener: () => void): (() => void) => {

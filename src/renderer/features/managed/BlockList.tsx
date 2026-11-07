@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/Button';
 import { textareaClass } from '../agents/agentSettingsUi';
 import type { ManagedPartConsumer, ManagedPartSummary } from '../../../shared/managed-agents-types';
@@ -18,7 +18,7 @@ export interface BuilderAgent {
  * handle and use the arrow keys, to reorder. Editing a block edits it for
  * every agent that uses it; Save, Discard and Fork-instead sit in the block.
  */
-export function BlockList({ blocks, parts, agent, onChange, onFork, onBackToShared, onWrite, wildcardValues, disabled }: {
+export function BlockList({ blocks, parts, agent, onChange, onFork, onBackToShared, onWrite, wildcardValues, disabled, notice }: {
   blocks: string[];
   parts: ManagedPartSummary[];
   agent?: BuilderAgent;
@@ -30,12 +30,29 @@ export function BlockList({ blocks, parts, agent, onChange, onFork, onBackToShar
   onWrite: () => void;
   wildcardValues?: Partial<Record<string, string>>;
   disabled?: boolean;
+  /** Said in the list's live region, such as "Identity added." from the library. `seq` makes a repeat count. */
+  notice?: { text: string; seq: number };
 }) {
   const byId = new Map(parts.map((p) => [p.id, p]));
   const [dragging, setDragging] = useState<number | null>(null);
   const [over, setOver] = useState<number | null>(null);
   const [announce, setAnnounce] = useState('');
   const handles = useRef<Array<HTMLButtonElement | null>>([]);
+  const writeButton = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => { if (notice) setAnnounce(notice.text); }, [notice]);
+
+  /** Take a block out, and put focus on the block that took its place, the one before, or Write a block. */
+  const remove = (index: number) => {
+    const id = blocks[index];
+    const next = blocks.filter((b) => b !== id);
+    onChange(next);
+    setAnnounce(`${byId.get(id)?.name ?? 'Block'} removed.`);
+    requestAnimationFrame(() => {
+      const target = next.length === 0 ? null : handles.current[Math.min(index, next.length - 1)];
+      if (target && !target.disabled) target.focus();
+      else writeButton.current?.focus();
+    });
+  };
 
   const move = (from: number, to: number) => {
     if (to < 0 || to >= blocks.length || from === to) return;
@@ -75,7 +92,7 @@ export function BlockList({ blocks, parts, agent, onChange, onFork, onBackToShar
                 onDragStart={() => setDragging(index)}
                 onDragEnd={() => { setDragging(null); setOver(null); }}
                 onMove={(delta) => move(index, index + delta)}
-                onRemove={() => onChange(blocks.filter((b) => b !== id))}
+                onRemove={() => remove(index)}
                 onFork={() => onFork(id)}
                 onBackToShared={onBackToShared && part?.forkedFrom ? () => onBackToShared(id) : undefined}
                 wildcardValues={wildcardValues}
@@ -86,6 +103,7 @@ export function BlockList({ blocks, parts, agent, onChange, onFork, onBackToShar
       </ol>
       <button
         type="button"
+        ref={writeButton}
         onClick={onWrite}
         disabled={disabled}
         data-testid="managed-write-block"

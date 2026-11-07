@@ -241,7 +241,7 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
                         <span className="font-mono text-xs text-ctp-text truncate">{f.path}</span>
                         {f.encoding === 'base64' && <span className="text-xs text-ctp-overlay1">binary</span>}
                         <label className="ml-auto flex items-center gap-1 text-xs text-ctp-overlay1">
-                          <input type="checkbox" checked={!!f.executable} onChange={(e) => setContent({ ...content, files: content.files.map((x) => (x.path === f.path ? { ...x, executable: e.target.checked } : x)) })} />
+                          <input type="checkbox" aria-label={`Executable: ${f.path}`} checked={!!f.executable} onChange={(e) => setContent({ ...content, files: content.files.map((x) => (x.path === f.path ? { ...x, executable: e.target.checked } : x)) })} />
                           executable
                         </label>
                         <Button kind="quiet" aria-label={`Remove ${f.path}`} onClick={() => setContent({ ...content, files: content.files.filter((x) => x.path !== f.path) })}>Remove</Button>

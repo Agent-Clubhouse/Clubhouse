@@ -633,6 +633,18 @@ describe('start_helper with Clubhouse-managed agents (#2899)', () => {
     expect(mockStartDurableCreation).not.toHaveBeenCalled();
   });
 
+  it('starts on the helper template\'s model when start_helper leaves model out (D52)', async () => {
+    controllableCreation();
+    const svc = managedAgents();
+    const t = await withSettingsSurface('ui', undefined, () => svc.saveTemplate({ name: 'Haiku helper', description: '', setup: { blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, settings: { model: 'haiku' } }));
+    const result = await callTool('orch', 'start_helper', { name: 'quick', task: 't', template: t.id });
+    expect(result.isError).toBeFalsy();
+    expect(mockStartDurableCreation.mock.calls[0][1]).toMatchObject({ model: 'haiku' });
+    // The start's own model wins.
+    await callTool('orch', 'start_helper', { name: 'quick2', task: 't', template: t.id, model: 'opus' });
+    expect(mockStartDurableCreation.mock.calls[1][1]).toMatchObject({ model: 'opus' });
+  });
+
   it('refuses the template arguments while managed agents are off', async () => {
     managedFlags.value = {};
     for (const args of [{ template: 'builtin-template-helper' }, { addParts: ['x'] }, { removeParts: ['x'] }]) {

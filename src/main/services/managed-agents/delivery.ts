@@ -9,7 +9,9 @@
  * file) and hands the MCP servers to the existing launch merge points.
  */
 import * as fsp from 'fs/promises';
+import * as os from 'os';
 import * as path from 'path';
+import { execFile } from 'child_process';
 import { composeInstructions } from '../asset-catalog/composer';
 import { canonicalHash } from '../asset-catalog/planner';
 import { replaceWildcards } from '../../../shared/wildcard-replacer';
@@ -80,8 +82,8 @@ export function mcpServersOf(resolved: Resolved): Record<string, McpServerDef> {
     const def: McpServerDef = c.transport === 'stdio'
       ? { command: c.command, ...(c.args && c.args.length > 0 && { args: [...c.args] }) }
       : { type: c.transport, url: c.url };
+    // Names only: values come from the signed-in environment, never from Clubhouse (D46).
     if (c.envVars && c.envVars.length > 0) def.env_vars = [...c.envVars];
-    if (c.env && Object.keys(c.env).length > 0) def.env = { ...c.env };
     servers[c.serverKey] = def;
   }
   return servers;
@@ -109,6 +111,41 @@ async function moveAside(dir: string, backupRoot: string | undefined): Promise<v
   await fsp.cp(dir, target, { recursive: true });
   await fsp.rm(dir, { recursive: true, force: true });
   appLog('core:managed', 'info', 'Moved a skill folder Clubhouse did not write out of the way', { meta: { folder: path.basename(dir) } });
+}
+
+/** Files git tracks under `rels` in `cwd`, relative with forward slashes. Empty when `cwd` isn't a git checkout. */
+export function trackedFiles(cwd: string, rels: string[]): Promise<string[]> {
+  if (rels.length === 0) return Promise.resolve([]);
+  return new Promise((resolve) => {
+    execFile('git', ['--literal-pathspecs', 'ls-files', '-z', '--', ...rels], { cwd, timeout: 10_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true }, (err, stdout) => {
+      // telemetry-exempt: not a git checkout (or git is missing), so nothing is tracked.
+      if (err) { resolve([]); return; }
+      resolve(String(stdout).split('\0').filter(Boolean).map((f) => f.replace(/\\/g, '/')));
+    });
+  });
+}
+
+/**
+ * The folders in the managed skills directory that aren't the setup's skills.
+ * The CLI would load them too, so delivery moves the untracked ones out
+ * (D48). Folders git tracks can't move without dirtying the worktree, so
+ * they stay and Preview lists them.
+ */
+async function otherSkillFolders(worktree: string, provider: OrchestratorProvider, current: string[]): Promise<{ tracked: string[]; untracked: string[] }> {
+  const conv = provider.conventions;
+  const root = path.join(worktree, conv.configDir, conv.skillsDir);
+  let names: string[] = [];
+  try {
+    names = (await fsp.readdir(root, { withFileTypes: true }))
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && !current.includes(e.name))
+      .map((e) => e.name)
+      .sort((a, b) => a.localeCompare(b));
+  } catch { /* telemetry-exempt: no skills folder yet, so nothing else is loaded from it */ }
+  if (names.length === 0) return { tracked: [], untracked: [] };
+  const rel = path.join(conv.configDir, conv.skillsDir).replace(/\\/g, '/');
+  const files = await trackedFiles(worktree, names.map((n) => `${rel}/${n}`));
+  const tracked = names.filter((n) => files.some((f) => f.startsWith(`${rel}/${n}/`)));
+  return { tracked, untracked: names.filter((n) => !tracked.includes(n)) };
 }
 
 async function writeSkills(worktree: string, provider: OrchestratorProvider, skills: Resolved['skills'], backupRoot?: string): Promise<void> {
@@ -142,6 +179,150 @@ async function writeSkills(worktree: string, provider: OrchestratorProvider, ski
     }
   }
   await fsp.writeFile(path.join(root, SKILLS_MANIFEST), JSON.stringify({ skills: current }, null, 2), 'utf-8');
+  // Exactly its skills: anything else here would load too, so it moves to app data (D48).
+  if (backupRoot) {
+    const { untracked } = await otherSkillFolders(worktree, provider, current);
+    for (const name of untracked) await moveAside(insideDir(root, name), backupRoot);
+  }
+}
+
+// ── Instruction files the CLI reads besides Clubhouse's ────────────────
+
+const CLAUDE_CODE_ID = 'claude-code';
+const COPILOT_ID = 'copilot-cli';
+
+function forwardSlashes(p: string): string {
+  return p.replace(/\\/g, '/');
+}
+
+/** An absolute path as a picomatch pattern that matches only itself. */
+function literalPattern(abs: string): string | null {
+  const p = forwardSlashes(abs);
+  if (!/[*?[\]{}()!+@]/.test(p)) return p;
+  // A backslash escape means a path separator on Windows: leave such a file out rather than guess.
+  if (process.platform === 'win32') return null;
+  return p.replace(/[*?[\]{}()!+@]/g, '\\$&');
+}
+
+export interface ParentInstructionFile {
+  /** Absolute path. */
+  path: string;
+  /** The same path with symlinks resolved, when it differs: the CLI may see either. */
+  realPath?: string;
+  /** A `.claude/rules` folder rather than a file. */
+  folder: boolean;
+}
+
+/**
+ * The instruction files above the agent's folder that Claude Code reads as
+ * project memory: CLAUDE.md, CLAUDE.local.md, .claude/CLAUDE.md and
+ * .claude/rules in every parent folder up to the root. The home folder's
+ * .claude is the person's user memory and is left out (D49).
+ */
+export async function parentInstructionFiles(worktree: string): Promise<ParentInstructionFile[]> {
+  const out: ParentInstructionFile[] = [];
+  const home = path.resolve(os.homedir());
+  let dir = path.dirname(path.resolve(worktree));
+  for (;;) {
+    const candidates: ParentInstructionFile[] = [
+      { path: path.join(dir, 'CLAUDE.md'), folder: false },
+      { path: path.join(dir, 'CLAUDE.local.md'), folder: false },
+      ...(dir === home ? [] : [
+        { path: path.join(dir, '.claude', 'CLAUDE.md'), folder: false },
+        { path: path.join(dir, '.claude', 'rules'), folder: true },
+      ]),
+    ];
+    for (const c of candidates) {
+      try {
+        const st = await fsp.stat(c.path);
+        if (!(c.folder ? st.isDirectory() : st.isFile())) continue;
+        const real = await fsp.realpath(c.path).catch((): string => c.path);
+        out.push(real !== c.path ? { ...c, realPath: real } : c);
+      } catch { /* telemetry-exempt: not there, so not read */ }
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return out;
+}
+
+function excludePatterns(files: ParentInstructionFile[]): { patterns: string[]; unmatched: ParentInstructionFile[] } {
+  const patterns: string[] = [];
+  const unmatched: ParentInstructionFile[] = [];
+  for (const f of files) {
+    const each = [f.path, ...(f.realPath ? [f.realPath] : [])].map(literalPattern);
+    if (each.some((p) => p === null)) { unmatched.push(f); continue; }
+    for (const p of each as string[]) patterns.push(f.folder ? `${p}/**` : p);
+  }
+  return { patterns, unmatched };
+}
+
+function localSettingsPath(worktree: string, provider: OrchestratorProvider): string {
+  const conv = provider.conventions;
+  return path.join(worktree, conv.configDir, conv.localSettingsFile || 'settings.local.json');
+}
+
+/** The local settings file as an object; null when it exists but isn't a JSON object Clubhouse can safely add to. */
+async function readLocalSettings(file: string): Promise<{ settings: Record<string, unknown>; exists: boolean } | null> {
+  let raw: string;
+  try {
+    raw = await fsp.readFile(file, 'utf-8');
+  } catch {
+    // telemetry-exempt: no local settings yet
+    return { settings: {}, exists: false };
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const settings = parsed as Record<string, unknown>;
+    if (settings.claudeMdExcludes !== undefined && (!Array.isArray(settings.claudeMdExcludes) || settings.claudeMdExcludes.some((x) => typeof x !== 'string'))) return null;
+    return { settings, exists: true };
+  } catch {
+    // telemetry-exempt: the person's file doesn't parse; it is left alone and Preview says the files are read.
+    return null;
+  }
+}
+
+/**
+ * Claude Code reads CLAUDE.md files in parent folders, so the project's own
+ * reaches an agent in `<project>/.clubhouse/agents/<name>`. Its
+ * `claudeMdExcludes` setting turns them off (D49): the paths go into the
+ * worktree's local settings, merged with what is there. Returns the files
+ * still read.
+ */
+async function writeClaudeExcludes(worktree: string, provider: OrchestratorProvider): Promise<ParentInstructionFile[]> {
+  const files = await parentInstructionFiles(worktree);
+  const { patterns, unmatched } = excludePatterns(files);
+  const file = localSettingsPath(worktree, provider);
+  const current = await readLocalSettings(file);
+  if (!current) {
+    appLog('core:managed', 'warn', 'Local settings are not a JSON object; parent CLAUDE.md files are not excluded', { meta: { files: files.length } });
+    return files;
+  }
+  const before = (current.settings.claudeMdExcludes as string[] | undefined) ?? [];
+  const next = [...new Set([...before, ...patterns])];
+  if (next.length === before.length) return unmatched;
+  await fsp.mkdir(path.dirname(file), { recursive: true });
+  await fsp.writeFile(file, JSON.stringify({ ...current.settings, claudeMdExcludes: next }, null, 2), 'utf-8');
+  return unmatched;
+}
+
+/** Instruction files in the worktree, other than the one Clubhouse writes, that Copilot also reads. Only the ones git tracks: Clubhouse wrote none of them. */
+async function copilotRepoInstructions(worktree: string, provider: OrchestratorProvider): Promise<string[]> {
+  const conv = provider.conventions;
+  const own = forwardSlashes(path.join(conv.configDir, conv.legacyInstructionsFile));
+  const tracked = await trackedFiles(worktree, ['CLAUDE.md', 'AGENTS.md', '.claude/rules']);
+  return tracked.filter((f) => f !== own).sort((a, b) => a.localeCompare(b));
+}
+
+/** A parent file for showing: relative to the project when inside it, else with the home folder as ~. */
+function displayPath(projectPath: string, abs: string, folder: boolean): string {
+  const rel = path.relative(projectPath, abs);
+  const shown = rel && !rel.startsWith('..') && !path.isAbsolute(rel)
+    ? rel
+    : abs.startsWith(os.homedir() + path.sep) ? `~${abs.slice(os.homedir().length)}` : abs;
+  return forwardSlashes(shown) + (folder ? '/' : '');
 }
 
 /** JSON-format CLIs read MCP from a file in the worktree. TOML (Codex) gets its servers as launch flags instead. */
@@ -200,6 +381,7 @@ export async function deliverManagedSetup(params: {
   await provider.writeInstructions(agent.worktreePath, instructions);
   await writeSkills(agent.worktreePath, provider, resolved.skills, params.backupRoot);
   await writeMcpFile(agent.worktreePath, provider, mcpServersOf(resolved));
+  if (provider.id === CLAUDE_CODE_ID) await writeClaudeExcludes(agent.worktreePath, provider);
   return { ...setupFingerprint(agent, resolved), ...(resolved.missing.length > 0 && { missing: resolved.missing.length }) };
 }
 
@@ -286,13 +468,43 @@ export async function previewManagedSetup(params: {
   });
   const conv = params.provider?.conventions;
   const folderRoot = conv ? path.join(conv.configDir, conv.skillsDir) : 'skills';
+  const extra = await outsideTheSetup(params.projectPath, params.agent, params.provider, resolved.skills.map((s) => s.content.skillName));
   return {
+    ...extra,
     instructions,
     blocks,
     skills: resolved.skills.map((s) => ({ id: s.id, name: s.name, skillName: s.content.skillName, files: s.content.files.length, folder: `${folderRoot}/${s.content.skillName}`.replace(/\\/g, '/') })),
     mcps: resolved.mcps.map((m) => ({ id: m.id, name: m.name, serverKey: m.content.serverKey, builtin: m.builtin })),
     missing: resolved.missing,
   };
+}
+
+/**
+ * What the CLI reads besides the setup, for Preview: skill folders git tracks
+ * (Clubhouse can't move them), parent CLAUDE.md files Claude Code is told
+ * not to read, and other instruction files the CLI reads anyway.
+ */
+async function outsideTheSetup(projectPath: string, agent: DurableAgentConfig, provider: OrchestratorProvider | undefined, skillNames: string[]): Promise<Pick<ManagedPreview, 'repoSkills' | 'notRead' | 'alsoRead' | 'cliName'>> {
+  const worktree = agent.worktreePath;
+  if (!worktree || !provider) return {};
+  const conv = provider.conventions;
+  const folderRoot = forwardSlashes(path.join(conv.configDir, conv.skillsDir));
+  const { tracked } = await otherSkillFolders(worktree, provider, skillNames);
+  const out: Pick<ManagedPreview, 'repoSkills' | 'notRead' | 'alsoRead' | 'cliName'> = { cliName: provider.displayName };
+  if (tracked.length > 0) out.repoSkills = tracked.map((n) => `${folderRoot}/${n}`);
+  if (provider.id === CLAUDE_CODE_ID) {
+    const files = await parentInstructionFiles(worktree);
+    const settings = await readLocalSettings(localSettingsPath(worktree, provider));
+    const { unmatched } = excludePatterns(files);
+    const read = settings ? unmatched : files;
+    const excluded = files.filter((f) => !read.includes(f));
+    if (excluded.length > 0) out.notRead = excluded.map((f) => displayPath(projectPath, f.path, f.folder));
+    if (read.length > 0) out.alsoRead = read.map((f) => displayPath(projectPath, f.path, f.folder));
+  } else if (provider.id === COPILOT_ID) {
+    const read = await copilotRepoInstructions(worktree, provider);
+    if (read.length > 0) out.alsoRead = read;
+  }
+  return out;
 }
 
 export type { Resolved as ResolvedManagedSetup };

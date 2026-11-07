@@ -1,4 +1,7 @@
 /** Layout pieces shared by the New agent page and its managed steps (#2031, #2893). */
+import { TabList } from '../../components/TabList';
+
+export { tabPanelProps } from '../../components/TabList';
 
 export const IS_MAC = typeof window !== 'undefined' && window.clubhouse?.platform === 'darwin';
 
@@ -22,29 +25,29 @@ export function Row({ label, htmlFor, help, top, children }: { label: string; ht
 
 export const Rule = () => <div className="h-px bg-surface-0 my-2" />;
 
-/** A segmented control like Kind's Durable | Quick, as a radio group. */
-export function Segmented<T extends string>({ label, value, options, onChange, testIdPrefix }: {
+/**
+ * A segmented control that switches sections, as WAI-ARIA tabs (see
+ * TabList). Draw the section under it with `tabPanelProps(idPrefix, value)`.
+ */
+export function Segmented<T extends string>({ label, idPrefix, value, options, onChange, testIdPrefix }: {
   label: string;
+  /** Unique on the page; from useId. */
+  idPrefix: string;
   value: T;
   options: ReadonlyArray<{ id: T; label: string }>;
   onChange: (next: T) => void;
   testIdPrefix?: string;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex p-0.5 gap-0.5 rounded-[7px] bg-ctp-crust">
-      {options.map((o) => (
-        <button
-          key={o.id}
-          type="button"
-          role="radio"
-          aria-checked={value === o.id}
-          data-testid={testIdPrefix ? `${testIdPrefix}-${o.id}` : undefined}
-          onClick={() => onChange(o.id)}
-          className={`h-6 px-3 rounded-[5px] text-xs cursor-pointer focus-ring ${value === o.id ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext0 hover:text-ctp-text'}`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
+    <TabList
+      label={label}
+      idPrefix={idPrefix}
+      value={value}
+      options={options}
+      onChange={onChange}
+      testIdPrefix={testIdPrefix}
+      className="inline-flex p-0.5 gap-0.5 rounded-[7px] bg-ctp-crust"
+      tabClassName={(selected) => `h-6 px-3 rounded-[5px] text-xs cursor-pointer focus-ring ${selected ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext0 hover:text-ctp-text'}`}
+    />
   );
 }

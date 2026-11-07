@@ -168,6 +168,13 @@ function isSecretFlag(name: string): boolean {
   return isSecretKey(name) || SECRET_FLAG_NAME_RE.test(name);
 }
 
+/** Env names that hold secrets: the secret flag names, plus `OPENAI_KEY`, `DB_PASS`, `DB_PWD`, `GH_PAT`, `X_TOKEN`. */
+const SECRET_ENV_SUFFIX_RE = /_(?:key|pass|pwd|pat|token)$/i;
+
+export function isSecretEnvName(name: string): boolean {
+  return isSecretFlag(name) || SECRET_ENV_SUFFIX_RE.test(name);
+}
+
 /**
  * Which arguments give a secret away. A secret flag's next argument counts even
  * if it starts with a dash: a password can. Whole-number values pass, for
@@ -249,7 +256,7 @@ function validateMcp(raw: Record<string, unknown>, issues: Issues, reservedAllow
       issues.add('invalid_shape', at);
       continue;
     }
-    if (isSecretLiteral(name, value) || hasSecretValue(value)) issues.add('secret_value', at);
+    if ((isSecretEnvName(name) && !/^\d{1,9}$/.test(value)) || hasSecretValue(value)) issues.add('secret_value', at);
     env[name] = value;
   }
 

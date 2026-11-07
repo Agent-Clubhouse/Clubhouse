@@ -27,6 +27,8 @@ import { managedAgents } from './index';
 import { BUILTIN_BLOCK_IDS } from './builtins';
 import { ManagedError } from './service';
 import { managedStateDir } from './state-store';
+import { backupMcpFile, hasMcpFileToKeep, MCP_BACKUP_DIR, mcpBackupPath } from './mcp-backup';
+import { appLog } from '../log-service';
 
 export interface CreateManagedAgentInput {
   name: string;
@@ -82,6 +84,8 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
 interface ConvertPlan {
   /** The instructions file as it is now; empty when there is none. */
   instructions: string;
+  /** Whether the instructions become a block. False when there are none, or the catalog would refuse them. */
+  keepInstructions: boolean;
   /** The block the instructions become. */
   blockName: string;
   skills: Array<{ folder: string; content: ManagedSkillContent }>;
@@ -93,6 +97,8 @@ interface ConvertPlan {
 function refusal(issues: ValidationIssue[]): string {
   const codes = new Set(issues.map((i) => i.code));
   if (codes.has('secret_value')) return 'it holds a secret value, and Clubhouse stores no secrets';
+  if (codes.has('credential_file')) return 'it contains a credentials file (such as .env or a key file), and Clubhouse stores no secrets';
+  if (codes.has('launch_settings_in_instruction')) return 'its front matter sets a model or CLI, which belong in the agent\'s settings';
   if (codes.has('missing_skill_entrypoint')) return 'it has no SKILL.md';
   if (codes.has('too_large')) return 'it is too large';
   if (codes.has('reserved_namespace')) return 'its name is reserved for Clubhouse';
@@ -157,6 +163,15 @@ async function planConvert(agent: DurableAgentConfig, worktreePath: string, prov
   const conv = provider.conventions;
   const notes: string[] = [];
   const instructions = await readInstructionsOf(provider, worktreePath);
+  // The same checks createPart runs, so the preview and Keep agree.
+  let keepInstructions = !!instructions.trim();
+  if (keepInstructions) {
+    const checked = validatePayload('block', { content: instructions });
+    if (checked.ok === false) {
+      keepInstructions = false;
+      notes.push(`${conv.legacyInstructionsFile || 'The instructions file'} isn't brought over as a block because ${refusal(checked.issues)}. Clubhouse keeps a copy in its app data.`);
+    }
+  }
 
   const skills: ConvertPlan['skills'] = [];
   const skillsRoot = path.join(worktreePath, conv.configDir, conv.skillsDir);
@@ -194,9 +209,12 @@ async function planConvert(agent: DurableAgentConfig, worktreePath: string, prov
       // telemetry-exempt: the file becomes a note in the preview.
       notes.push(`MCP servers in ${conv.mcpConfigFile} aren't brought over because the file isn't valid JSON.`);
     }
-    for (const [serverKey, def] of Object.entries(servers)) {
+    for (const [serverKey, rawDef] of Object.entries(servers)) {
       // Clubhouse's own bridge is the built-in Clubhouse part, added below.
       if (serverKey === 'clubhouse') continue;
+      // Managed MCP parts keep env names only (D46): literal values are dropped here, and said so.
+      const { def, dropped } = envAsNames(rawDef);
+      if (dropped.length > 0) notes.push(`${serverKey}: values for ${dropped.join(', ')} aren't kept. Set them in your environment.`);
       const adopted = adoptNativeMcpServer(serverKey, def);
       if (adopted.ok === false) { notes.push(`The ${serverKey} MCP server isn't brought over because ${refusal(adopted.issues)}.`); continue; }
       const p = adopted.payload;
@@ -210,12 +228,32 @@ async function planConvert(agent: DurableAgentConfig, worktreePath: string, prov
           ...(p.args && { args: [...p.args] }),
           ...(p.url !== undefined && { url: p.url }),
           ...(p.envVars && { envVars: [...p.envVars] }),
-          ...(p.env && Object.keys(p.env).length > 0 && { env: { ...p.env } }),
         },
       });
     }
   }
-  return { instructions, blockName: `${agent.name} notes`, skills, mcps, notes };
+  if (await hasMcpFileToKeep(worktreePath, conv)) {
+    notes.push(`Its ${conv.mcpConfigFile} is copied to ${mcpBackupPath(conv)} in its folder before Clubhouse writes its own. The copy stays out of commits.`);
+  }
+  return { instructions, keepInstructions, blockName: `${agent.name} notes`, skills, mcps, notes };
+}
+
+/**
+ * A native MCP server definition with its env as names only: every env entry
+ * becomes an env_vars name, and the names whose values were literal (not a
+ * `${NAME}` reference to themselves) are returned so the preview can say so.
+ */
+function envAsNames(raw: unknown): { def: unknown; dropped: string[] } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { def: raw, dropped: [] };
+  const def = raw as Record<string, unknown>;
+  const env = def.env;
+  if (!env || typeof env !== 'object' || Array.isArray(env)) return { def: raw, dropped: [] };
+  const names = Object.keys(env);
+  if (names.length === 0) return { def: raw, dropped: [] };
+  const dropped = names.filter((name) => (env as Record<string, unknown>)[name] !== `\${${name}}`);
+  const existing = Array.isArray(def.env_vars) ? def.env_vars.filter((x): x is string => typeof x === 'string') : [];
+  const { env: _values, ...rest } = def;
+  return { def: { ...rest, env_vars: [...new Set([...existing, ...names])] }, dropped };
 }
 
 async function agentForConvert(projectPath: string, agentId: string): Promise<DurableAgentConfig & { worktreePath: string }> {
@@ -232,7 +270,7 @@ export async function previewConvert(projectPath: string, agentId: string): Prom
   const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
   const plan = await planConvert(agent, agent.worktreePath, provider);
   return {
-    blocks: plan.instructions.trim() ? [plan.blockName] : [],
+    blocks: plan.keepInstructions ? [plan.blockName] : [],
     skills: plan.skills.map((s) => s.folder),
     mcps: plan.mcps.map((m) => m.serverKey),
     notes: plan.notes,
@@ -269,15 +307,17 @@ export async function convertToManaged(projectPath: string, agentId: string, opt
   const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
   if (!options.keep && options.templateId) {
     await backupInstructions(agent, provider.conventions.legacyInstructionsFile, await readInstructionsOf(provider, agent.worktreePath));
+    await keepMcpFile(projectPath, agent.worktreePath, provider);
     const { setup, settings } = await service.setupFromTemplate(options.templateId);
     const saved = await service.saveSetup(projectPath, agentId, setup);
-    await applyManagedSettings(projectPath, agentId, settings);
+    await applyManagedSettings(projectPath, agentId, settingsForConvert(provider.id, settings));
     return saved;
   }
   const plan = await planConvert(agent, agent.worktreePath, provider);
   await backupInstructions(agent, provider.conventions.legacyInstructionsFile, plan.instructions);
+  await keepMcpFile(projectPath, agent.worktreePath, provider);
   const blocks: string[] = [];
-  if (plan.instructions.trim()) {
+  if (plan.keepInstructions) {
     blocks.push(await createAgentPart(plan.blockName, `What ${agent.name} had before it was managed.`, { kind: 'block', content: plan.instructions }));
   }
   const skills: string[] = [];
@@ -289,6 +329,30 @@ export async function convertToManaged(projectPath: string, agentId: string, opt
     mcps.push(await createAgentPart(`${mcp.serverKey}, ${agent.name}`, `The ${mcp.serverKey} MCP server ${agent.name} had before it was managed.`, mcp.content));
   }
   return service.saveSetup(projectPath, agentId, { blocks, skills, mcps });
+}
+
+/**
+ * A template's settings for an agent switching to managed. The agent keeps
+ * its CLI, so it keeps its conversation (D51): the template's CLI isn't
+ * applied, and neither is its model when the template is for another CLI.
+ */
+export function settingsForConvert(currentCli: string, settings: ManagedTemplateSettings): ManagedTemplateSettings {
+  const { orchestrator, model, ...rest } = settings;
+  const sameCli = !orchestrator || orchestrator === currentCli;
+  return { ...rest, ...(model !== undefined && sameCli && { model }) };
+}
+
+/** Copy the agent's MCP file aside in its folder before the first managed start overwrites it (D54). */
+async function keepMcpFile(projectPath: string, worktree: string, provider: OrchestratorProvider): Promise<void> {
+  const kept = await backupMcpFile(worktree, provider.conventions);
+  if (!kept) return;
+  try {
+    const gitExclude = await import('../git-exclude-manager');
+    await gitExclude.addExclusions(projectPath, 'clubhouse-managed-backup', [`${MCP_BACKUP_DIR}/`]);
+  } catch (err) {
+    // telemetry-exempt: not a git project, or the exclude file is read-only; the copy is kept either way.
+    appLog('core:managed', 'warn', 'Could not add the kept MCP file to git excludes', { meta: { error: err instanceof Error ? err.message : String(err) } });
+  }
 }
 
 /** Keep a copy of the instructions file before Clubhouse takes it over, so nothing is lost. */

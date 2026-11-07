@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
+import { TabList, tabPanelProps } from '../../components/TabList';
 import type { ManagedTemplate, ManagedTemplateChange, ManagedTemplatePushTarget } from '../../../shared/managed-agents-types';
 import { DEFAULT_MAX_HELPERS, MAX_HELPER_LIMIT } from '../../../shared/orchestration-policy';
 import { Button } from '../../components/Button';
@@ -53,6 +54,7 @@ const MoreIcon = () => (
 function TemplateEditor({ initial, onDone }: { initial: TemplateDraft; onDone: (notice?: string) => void }) {
   const [draft, setDraft] = useState<TemplateDraft>(initial);
   const [tab, setTab] = useState<EditorTab>('instructions');
+  const tabsId = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [push, setPush] = useState<{ changes: ManagedTemplateChange[]; targets: ManagedTemplatePushTarget[] } | null>(null);
@@ -140,21 +142,16 @@ function TemplateEditor({ initial, onDone }: { initial: TemplateDraft; onDone: (
       </SettingsSection>
 
       <SettingsSection title="Parts">
-        <div role="tablist" aria-label="Template parts" className="flex items-center gap-0.5 mb-2 border-b border-surface-0">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => setTab(t.id)}
-              className={`h-8 px-2.5 -mb-px border-b-2 text-xs cursor-pointer ${tab === t.id ? 'border-ctp-text text-ctp-text' : 'border-transparent text-ctp-subtext0 hover:text-ctp-text'}`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <div role="tabpanel">
+        <TabList<EditorTab>
+          label="Template parts"
+          idPrefix={tabsId}
+          value={tab}
+          options={TABS}
+          onChange={setTab}
+          className="flex items-center gap-0.5 mb-2 border-b border-surface-0"
+          tabClassName={(selected) => `h-8 px-2.5 -mb-px border-b-2 text-xs cursor-pointer focus-ring ${selected ? 'border-ctp-text text-ctp-text' : 'border-transparent text-ctp-subtext0 hover:text-ctp-text'}`}
+        />
+        <div {...tabPanelProps(tabsId, tab)}>
           <ManagedBuilder target={{ kind: 'draft', value: draft.setup, onChange: setSetup, agentName: draft.name || 'the agent' }} tab={tab} />
         </div>
       </SettingsSection>

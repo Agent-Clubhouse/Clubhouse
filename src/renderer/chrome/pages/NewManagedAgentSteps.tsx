@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Agent, Project } from '../../../shared/types';
 import { CLUBHOUSE_MCP_PART_ID, type ManagedTemplate, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
 import { DEFAULT_MAX_HELPERS, MAX_HELPER_LIMIT, type OrchestrationPolicyConfig } from '../../../shared/orchestration-policy';
@@ -13,7 +13,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { isRemoteProjectId } from '../../stores/remoteProjectStore';
-import { IS_MAC, Row, Rule, Segmented, footerLinkClass, inputClass, selectClass } from './newAgentUi';
+import { IS_MAC, Row, Rule, Segmented, footerLinkClass, inputClass, selectClass, tabPanelProps } from './newAgentUi';
 
 /**
  * The managed steps of New agent (#2893): Start with template, the builder
@@ -301,6 +301,7 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
   const { tab, setup, orchestrator, model, freeAgentMode, orchestrate, helperLimit } = draft;
   const change = (patch: Partial<BuilderDraft>) => onDraftChange({ ...draft, ...patch });
   const setTab = (next: NewBuilderTab) => change({ tab: next });
+  const tabsId = useId();
   const setSetup = (next: SetupDraft) => change({ setup: next });
 
   // Settings, prefilled from the template or the copied agent.
@@ -351,71 +352,73 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
     <div className="w-[960px] max-w-full mx-auto px-6 pt-12 pb-10 flex flex-col" data-testid="new-agent-builder" onKeyDown={onKeyDown}>
       <StepHeader id="new-agent-step-title" title={`Build ${name}`} subtitle={`${projectName} · ${seed.origin} · nothing runs until you create it`} />
       <div className="mb-3">
-        <Segmented<NewBuilderTab> label="Builder section" value={tab} options={TABS} onChange={setTab} testIdPrefix="new-agent-builder-tab" />
+        <Segmented<NewBuilderTab> label="Builder section" idPrefix={tabsId} value={tab} options={TABS} onChange={setTab} testIdPrefix="new-agent-builder-tab" />
       </div>
-      {tab !== 'settings' && <ManagedBuilder target={{ kind: 'draft', value: setup, onChange: setSetup, agentName: name }} tab={tab} />}
-      {tab === 'settings' && (
-        <div data-testid="new-agent-builder-settings" className="w-[600px] max-w-full">
-          <Row
-            label="Runs on"
-            htmlFor="new-agent-builder-orchestrator"
-            help={avail && !avail.available
-              ? <span className="text-ctp-warning">{avail.error || 'CLI not found. The agent may fail to start.'}</span>
-              : 'The model list follows the CLI.'}
-          >
-            <select
-              id="new-agent-builder-orchestrator"
-              value={resolvedOrchestrator}
-              onChange={(e) => change({ orchestrator: e.target.value, model: 'default' })}
-              className={`${selectClass} w-40`}
-            >
-              {cliChoices.map((o) => {
-                const a = availability[o.id];
-                return <option key={o.id} value={o.id}>{o.displayName}{a && !a.available ? ' (not found)' : ''}</option>;
-              })}
-            </select>
-            <select aria-label="Model" value={model} disabled={modelsLoading} onChange={(e) => change({ model: e.target.value })} className={`${selectClass} w-[120px]`}>
-              {modelsLoading ? <option value={model}>Loading…</option> : modelChoices.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-            </select>
-          </Row>
-          <Row
-            label="Permissions"
-            help={supportsPermissions
-              ? 'Uses the configured Free agent permission mode. Enable only if you trust this agent with the project.'
-              : `${selectedOrch?.displayName ?? 'This CLI'} doesn't support it.`}
-          >
-            <Toggle checked={supportsPermissions && freeAgentMode} onChange={(on) => change({ freeAgentMode: on })} disabled={!supportsPermissions} aria-label="Free Agent Mode" />
-            <span className={`text-[13px] ${supportsPermissions ? 'text-ctp-text' : 'text-ctp-overlay1'}`}>Free Agent Mode</span>
-          </Row>
-          <Rule />
-          <Row label="Orchestration" help={!hasClubhouseMcp ? NEEDS_CLUBHOUSE_MCP : orchestrating ? 'It can start helpers and give them work.' : 'It works alone.'}>
-            <Toggle checked={orchestrating} onChange={(on) => change({ orchestrate: on })} disabled={!hasClubhouseMcp} aria-label="Can start helpers" />
-            <span className={`text-[13px] ${hasClubhouseMcp ? 'text-ctp-text' : 'text-ctp-overlay1'}`}>Can start helpers</span>
-          </Row>
-          {orchestrating && (
+      <div {...tabPanelProps(tabsId, tab)}>
+        {tab !== 'settings' && <ManagedBuilder target={{ kind: 'draft', value: setup, onChange: setSetup, agentName: name }} tab={tab} />}
+        {tab === 'settings' && (
+          <div data-testid="new-agent-builder-settings" className="w-[600px] max-w-full">
             <Row
-              label="Helper limit"
-              htmlFor="new-agent-builder-helper-limit"
-              help={limitProblem
-                ? <span id="new-agent-builder-helper-limit-error" className="text-ctp-error">{limitProblem}</span>
-                : 'The most helpers it can have at once.'}
+              label="Runs on"
+              htmlFor="new-agent-builder-orchestrator"
+              help={avail && !avail.available
+                ? <span className="text-ctp-warning">{avail.error || 'CLI not found. The agent may fail to start.'}</span>
+                : 'The model list follows the CLI.'}
             >
-              <input
-                id="new-agent-builder-helper-limit"
-                type="number"
-                min={1}
-                max={MAX_HELPER_LIMIT}
-                value={helperLimit}
-                onChange={(e) => change({ helperLimit: e.target.value })}
-                aria-invalid={limitProblem ? true : undefined}
-                aria-describedby={limitProblem ? 'new-agent-builder-helper-limit-error' : undefined}
-                className={`${inputClass} w-20`}
-              />
+              <select
+                id="new-agent-builder-orchestrator"
+                value={resolvedOrchestrator}
+                onChange={(e) => change({ orchestrator: e.target.value, model: 'default' })}
+                className={`${selectClass} w-40`}
+              >
+                {cliChoices.map((o) => {
+                  const a = availability[o.id];
+                  return <option key={o.id} value={o.id}>{o.displayName}{a && !a.available ? ' (not found)' : ''}</option>;
+                })}
+              </select>
+              <select aria-label="Model" value={model} disabled={modelsLoading} onChange={(e) => change({ model: e.target.value })} className={`${selectClass} w-[120px]`}>
+                {modelsLoading ? <option value={model}>Loading…</option> : modelChoices.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+              </select>
             </Row>
-          )}
-          <p className="mt-2 pl-32 text-xs leading-normal text-ctp-overlay1">Instructions don't grant access. These settings do.</p>
-        </div>
-      )}
+            <Row
+              label="Permissions"
+              help={supportsPermissions
+                ? 'Uses the configured Free agent permission mode. Enable only if you trust this agent with the project.'
+                : `${selectedOrch?.displayName ?? 'This CLI'} doesn't support it.`}
+            >
+              <Toggle checked={supportsPermissions && freeAgentMode} onChange={(on) => change({ freeAgentMode: on })} disabled={!supportsPermissions} aria-label="Free Agent Mode" />
+              <span className={`text-[13px] ${supportsPermissions ? 'text-ctp-text' : 'text-ctp-overlay1'}`}>Free Agent Mode</span>
+            </Row>
+            <Rule />
+            <Row label="Orchestration" help={!hasClubhouseMcp ? NEEDS_CLUBHOUSE_MCP : orchestrating ? 'It can start helpers and give them work.' : 'It works alone.'}>
+              <Toggle checked={orchestrating} onChange={(on) => change({ orchestrate: on })} disabled={!hasClubhouseMcp} aria-label="Can start helpers" />
+              <span className={`text-[13px] ${hasClubhouseMcp ? 'text-ctp-text' : 'text-ctp-overlay1'}`}>Can start helpers</span>
+            </Row>
+            {orchestrating && (
+              <Row
+                label="Helper limit"
+                htmlFor="new-agent-builder-helper-limit"
+                help={limitProblem
+                  ? <span id="new-agent-builder-helper-limit-error" className="text-ctp-error">{limitProblem}</span>
+                  : 'The most helpers it can have at once.'}
+              >
+                <input
+                  id="new-agent-builder-helper-limit"
+                  type="number"
+                  min={1}
+                  max={MAX_HELPER_LIMIT}
+                  value={helperLimit}
+                  onChange={(e) => change({ helperLimit: e.target.value })}
+                  aria-invalid={limitProblem ? true : undefined}
+                  aria-describedby={limitProblem ? 'new-agent-builder-helper-limit-error' : undefined}
+                  className={`${inputClass} w-20`}
+                />
+              </Row>
+            )}
+            <p className="mt-2 pl-32 text-xs leading-normal text-ctp-overlay1">Instructions don't grant access. These settings do.</p>
+          </div>
+        )}
+      </div>
       <ErrorLine error={error} />
       <div className="mt-[18px] flex items-center gap-2">
         <button type="button" onClick={onBack} disabled={busy} className={footerLinkClass}>Back</button>

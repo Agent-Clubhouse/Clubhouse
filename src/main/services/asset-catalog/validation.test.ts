@@ -87,6 +87,18 @@ describe('MCP definitions', () => {
       expect(JSON.stringify(result)).not.toContain(FAKE_JWT);
     });
 
+    it.each(['OPENAI_KEY', 'DB_PASS', 'db_pwd', 'GH_PAT', 'SLACK_TOKEN', 'PAT', 'creds', 'Pass'])('rejects a literal under the secret env name %s (D47)', (name) => {
+      expect(issuesOf(validatePayload('mcp', { ...stdio, env: { [name]: 'abc' } }))).toContainEqual({ code: 'secret_value', path: `env.${name}` });
+    });
+
+    it.each(['MONKEY', 'KEYBOARD_LAYOUT', 'PATH_PREFIX', 'PASSIVE_MODE', 'MODE'])('accepts a literal under the ordinary env name %s', (name) => {
+      expect(validatePayload('mcp', { ...stdio, env: { [name]: 'abc' } }).ok).toBe(true);
+    });
+
+    it('accepts a whole number under a secret env name, as it does for flags', () => {
+      expect(validatePayload('mcp', { ...stdio, env: { MAX_TOKEN: '4000' } }).ok).toBe(true);
+    });
+
     it.each([
       ['--token plain', ['--token', 'plain']],
       ['--password -x, whose value starts with a dash', ['--password', '-x']],

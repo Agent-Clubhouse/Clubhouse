@@ -62,17 +62,19 @@ export function SetupChangedBar({ agent, variant }: {
   const { restart, busy, pending, error, dialog } = useManagedRestart(target);
 
   const showing = !!status && status.managed && status.running && status.waiting && dismissed !== dismissKey(status);
-  if (!status || !showing) return dialog ? <>{dialog}</> : null;
+  const text = !status || !showing ? '' : status.deliveryFailed ? `Setup couldn't be written: ${status.deliveryFailed}` : setupChangedText(status.changes);
+  // Always mounted, so a screen reader hears the bar appear and change.
+  const live = <span role="status" className="sr-only" data-testid="setup-changed-live">{text}</span>;
+  if (!status || !showing) return <>{live}{dialog}</>;
 
-  const text = setupChangedText(status.changes);
   const note = pending ? PENDING_RESTART_NOTE : status.cliChanged ? CLI_CHANGED_NOTE : RESUME_NOTE;
   const dismiss = () => useDismissed.setState((s) => ({ byAgent: { ...s.byAgent, [agent.id]: dismissKey(status) } }));
   const frame = variant === 'dock'
     ? 'border border-surface-0 rounded-lg bg-ctp-mantle px-3 py-2 text-[12.5px]'
     : 'flex-shrink-0 pl-3.5 pr-3 py-1 border-b border-surface-0 bg-ctp-base text-xs';
 
-  return (
-    <div className={`flex flex-col gap-1 min-w-0 ${frame}`} role="status" data-testid="setup-changed-bar" data-variant={variant}>
+  return (<>{live}
+    <div className={`flex flex-col gap-1 min-w-0 ${frame}`} data-testid="setup-changed-bar" data-variant={variant}>
       <div className="flex items-center gap-x-2.5 gap-y-1 flex-wrap min-w-0">
         <span className="flex-1 min-w-[180px] text-ctp-text" data-testid="setup-changed-text">{text}</span>
         <span className="flex items-center gap-1.5 flex-wrap ml-auto">
@@ -87,5 +89,5 @@ export function SetupChangedBar({ agent, variant }: {
       {error && <span className="text-ctp-error" role="alert" data-testid="setup-changed-error">{error}</span>}
       {dialog}
     </div>
-  );
+  </>);
 }

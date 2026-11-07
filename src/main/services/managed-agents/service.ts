@@ -84,6 +84,9 @@ function payloadToContent(kind: ManagedPartKind, payload: AssetPayload): Managed
     return { kind, skillName: p.skillName, files: p.files.map((f) => ({ ...f })) };
   }
   const p = payload as McpAssetPayload;
+  // Env values never leave the catalog (D46): a part saved with literal values
+  // reads, forks and delivers as their names, taken from the signed-in environment.
+  const envVars = [...new Set([...(p.envVars ?? []), ...Object.keys(p.env ?? {})])];
   return {
     kind,
     serverKey: p.serverKey,
@@ -91,9 +94,16 @@ function payloadToContent(kind: ManagedPartKind, payload: AssetPayload): Managed
     ...(p.command !== undefined && { command: p.command }),
     ...(p.args && { args: [...p.args] }),
     ...(p.url !== undefined && { url: p.url }),
-    ...(p.envVars && { envVars: [...p.envVars] }),
-    ...(p.env && Object.keys(p.env).length > 0 && { env: { ...p.env } }),
+    ...((p.envVars || envVars.length > 0) && { envVars }),
   };
+}
+
+/** Managed MCP parts keep env names only. Values come from the person's signed-in environment. */
+function refuseEnvValues(content: ManagedPartContent | undefined): void {
+  if (content?.kind !== 'mcp' || !content.env) return;
+  const names = Object.keys(content.env);
+  if (names.length === 0) return;
+  throw new ManagedError('invalid', `MCP servers keep variable names only, never values. List ${names.join(', ')} under Environment (envVars) and set the values in your environment.`);
 }
 
 function contentToPayload(content: ManagedPartContent): AssetPayload {
@@ -295,6 +305,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       const kind = input.content.kind;
       const name = input.name.trim();
       if (!name) throw new ManagedError('invalid', 'Give it a name.');
+      refuseEnvValues(input.content);
       const taken = (await liveEntries());
       if (Object.values(taken).some((e) => e.kind === kind && e.name.toLowerCase() === name.toLowerCase())) {
         throw new ManagedError('name_taken', `${name} already exists. Use it, or pick another name.`);
@@ -319,6 +330,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       let entry = await entryOf(input.id);
       if (entry.source.kind === 'builtin') throw new ManagedError('builtin_read_only', 'Built-in parts can\'t be edited. Make your copy instead.');
       if (entry.headRevision !== input.expectedRevision) throw new ManagedError('stale', 'It changed since you opened it.');
+      refuseEnvValues(input.content);
       try {
         if (input.content) {
           if (input.content.kind !== entry.kind) throw new ManagedError('invalid');

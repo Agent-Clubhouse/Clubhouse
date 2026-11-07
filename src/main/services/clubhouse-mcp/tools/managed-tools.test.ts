@@ -119,6 +119,15 @@ describe('builder tools for the Dispatcher (#2900)', () => {
     expect(state.agents.get('a')!.managed!.blocks).toEqual(['builtin-block-identity']);
   });
 
+  it('refuses literal env values, so a part only ever holds names (D46)', async () => {
+    const refused = await call('create_agent_part', { kind: 'mcp', name: 'Env svc', content: { kind: 'mcp', serverKey: 'envsvc', transport: 'stdio', command: 'svc', env: { MODE: 'fast' } } });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0].text).toMatch(/invalid: MCP servers keep variable names only/);
+    const created = await call('create_agent_part', { kind: 'mcp', name: 'Env svc', content: { kind: 'mcp', serverKey: 'envsvc', transport: 'stdio', command: 'svc', envVars: ['MODE'] } });
+    const read = await call('get_agent_part', { id: created.json.id });
+    expect(read.json.content).toEqual({ kind: 'mcp', serverKey: 'envsvc', transport: 'stdio', command: 'svc', envVars: ['MODE'] });
+  });
+
   it('says plainly when the project or agent is unknown', async () => {
     const r = await call('get_agent_setup', { project: 'Nope', agent: 'x' });
     expect(r.isError).toBe(true);
@@ -302,5 +311,14 @@ describe('restart_agent', () => {
     await call('restart_agent', { project: 'Clubhouse', agent: 'worker', now: true, fresh: true });
     expect(restartManagedAgent).toHaveBeenLastCalledWith('/proj', 'worker', { fresh: true, whenTurnEnds: false });
     expect(state.restartOrigins).toEqual(['mcp', 'mcp']);
+  });
+
+  it('says when there was no conversation to resume', async () => {
+    managedAgent('newbie');
+    state.running.add('newbie');
+    vi.mocked(restartManagedAgent).mockResolvedValueOnce({ resumed: false, noSession: true });
+    expect((await call('restart_agent', { project: 'Clubhouse', agent: 'newbie', now: true })).json).toEqual({
+      status: 'restarted', resumed: false, note: 'There was no conversation to resume, so it started a new one.',
+    });
   });
 });
