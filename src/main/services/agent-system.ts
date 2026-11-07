@@ -435,7 +435,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     if (facts.clubhouseMode && !managed && !managedSetup) {
       try {
         const config = await getDurableConfig(params.projectPath, params.agentId);
-        if (config && !config.clubhouseModeOverride && config.worktreePath) {
+        // Never on a managed agent, even one a switch made managed after this spawn read its config.
+        if (config && !config.managed && !config.clubhouseModeOverride && config.worktreePath) {
           await tel.step('clubhouse.agent.materialize', () =>
             withErrorType('materialize_failed', () => materializeAgent({ projectPath: params.projectPath, agent: config, provider })),
           );

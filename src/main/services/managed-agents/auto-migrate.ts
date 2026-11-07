@@ -14,7 +14,8 @@
  *
  * A failed switch is logged with codes only and recorded on the agent, which
  * keeps starting on its old setup. It isn't tried again at its spawns until
- * the app restarts, or it is switched by hand.
+ * the app restarts, or it is switched by hand. An agent switched once, by
+ * hand or on its own, is never switched on its own again.
  */
 import * as os from 'os';
 import * as path from 'path';
@@ -30,7 +31,8 @@ import { IPC } from '../../../shared/ipc-channels';
 import { isDisposedAgent } from '../../../shared/agent-helpers';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { ManagedMigrationFrom } from '../../../shared/managed-agents-types';
-import { beforeManagedDir } from './before-managed';
+import { beforeManagedDir, clearPendingSwitch, readPendingSwitch, switchedBefore } from './before-managed';
+import { codeOf } from './log-code';
 import { ManagedError } from './service';
 
 async function flagOn(): Promise<boolean> {
@@ -53,14 +55,27 @@ export function legacyConfiguredFrom(projectPath: string, agent: DurableAgentCon
  * Whether Clubhouse may switch this agent on its own, and from what. The
  * Switch agents page's filters (no helpers, disposed agents or agents still
  * being created, and an agent needs its own folder), plus never the
- * Dispatcher, and never twice: an agent with the marker stays as it is, even
- * after Stop managing.
+ * Dispatcher, never a plain CLI (Clubhouse features off), and never twice:
+ * an agent switched once, by hand or on its own, stays as it is, even after
+ * Stop managing. switchedBefore covers agents switched before the marker.
  */
 export function autoMigrateFrom(projectPath: string, agent: DurableAgentConfig): ManagedMigrationFrom | null {
-  if (agent.managed || agent.managedMigration) return null;
+  if (agent.managed || agent.managedMigration || agent.switchedToManagedAt) return null;
+  // A plain CLI with Clubhouse's features turned off stays as the person set it.
+  if (agent.clubhouseFeatures === false) return null;
   if (isDispatcherPath(projectPath)) return null;
   if (agent.parentAgentId || isDisposedAgent(agent) || agent.creation || !agent.worktreePath) return null;
   return legacyConfiguredFrom(projectPath, agent);
+}
+
+/**
+ * Switched to managed before the switched-once marker was kept: its
+ * before-managed folder is there with no switch in progress. An agent whose
+ * automatic switch failed is tried again, since a failed switch leaves no copy.
+ */
+async function switchedEarlier(agent: DurableAgentConfig): Promise<boolean> {
+  if (agent.managedMigrationFailure) return false;
+  return switchedBefore(agent.id);
 }
 
 /** Only projects registered on this machine. An agent on another machine is that machine's to switch. */
@@ -76,12 +91,6 @@ export function backupLocation(agentId: string, home: string = os.homedir()): st
   return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? path.join('~', rel) : dir;
 }
 
-/** An error code fit for the log: never a message, a path or a name. */
-function codeOf(err: unknown): string {
-  const code = (err as { code?: unknown } | null)?.code;
-  return typeof code === 'string' && /^[\w.-]{1,64}$/.test(code) ? code : 'failed';
-}
-
 /** The reason in words, for the switch offer. */
 function reasonOf(err: unknown): string {
   if (err instanceof ManagedError && err.message && err.message !== err.code) return err.message;
@@ -91,8 +100,36 @@ function reasonOf(err: unknown): string {
 
 /** Agents whose automatic switch failed since the app started. Not tried again at spawn until a restart. */
 const failedThisRun = new Set<string>();
-/** Switches in progress, so a spawn during the startup pass waits for that agent's instead of starting another. */
+/** Automatic switches in progress, so a spawn during the startup pass waits for that agent's instead of starting another. */
 const inflight = new Map<string, Promise<boolean>>();
+/** Every switch of an agent, automatic or by hand, one after another (the tail of each agent's queue). */
+const switching = new Map<string, Promise<unknown>>();
+
+/**
+ * Run a switch of this agent after any other switch of it, automatic or by
+ * hand, has finished. The hand switch (IPC convert, and so the Switch agents
+ * page) and the automatic one both go through here, so they never make the
+ * same parts twice: the second finds the agent managed.
+ */
+export function withSwitchLock<T>(agentId: string, run: () => Promise<T>): Promise<T> {
+  const previous = switching.get(agentId) ?? Promise.resolve();
+  const next = previous.then(run, run);
+  const tail: Promise<void> = next.then((): void => undefined, (): void => undefined);
+  switching.set(agentId, tail);
+  void tail.then(() => { if (switching.get(agentId) === tail) switching.delete(agentId); });
+  return next;
+}
+
+/** A switch of this agent is running or queued. */
+function switchInProgress(agentId: string): boolean {
+  return inflight.has(agentId) || switching.has(agentId);
+}
+
+/** The agent's config when it is managed now, else null. */
+async function managedNow(projectPath: string, agentId: string): Promise<DurableAgentConfig | null> {
+  const config = await agentConfig.getDurableConfig(projectPath, agentId);
+  return config?.managed ? config : null;
+}
 
 /**
  * Switch one agent with Keep and record the outcome on it. True when it is
@@ -101,7 +138,12 @@ const inflight = new Map<string, Promise<boolean>>();
 function migrate(projectPath: string, agent: DurableAgentConfig, from: ManagedMigrationFrom): Promise<boolean> {
   const running = inflight.get(agent.id);
   if (running) return running;
-  const run = (async () => {
+  const run = withSwitchLock(agent.id, async () => {
+    // A switch by hand may have finished while this one waited: nothing to do, and no notice.
+    const current = await agentConfig.getDurableConfig(projectPath, agent.id);
+    if (!current) return false;
+    if (current.managed) return true;
+    if (!autoMigrateFrom(projectPath, current)) return false;
     try {
       // The switch adds the built-in Clubhouse part, so the built-ins come first.
       const { ensureBuiltinsOnce } = await import('./index');
@@ -109,15 +151,19 @@ function migrate(projectPath: string, agent: DurableAgentConfig, from: ManagedMi
       const { convertToManaged } = await import('./agents');
       await withSettingsSurface('system', undefined, () => convertToManaged(projectPath, agent.id, { keep: true }));
     } catch (err) {
-      failedThisRun.add(agent.id);
       const code = codeOf(err);
-      appLog('core:managed', 'warn', 'Automatic switch to managed failed; the agent keeps its current setup', { meta: { agentId: agent.id, from, code } });
-      await agentConfig.setManagedMigration(projectPath, agent.id, { failed: { at: new Date().toISOString(), code, message: reasonOf(err) } }).catch((recordErr) => {
-        // telemetry-exempt: logged; the agent still isn't tried again until the app restarts.
-        appLog('core:managed', 'warn', 'Could not record the failed automatic switch to managed', { meta: { agentId: agent.id, code: codeOf(recordErr) } });
-      });
-      broadcastToAllWindows(IPC.MANAGED.CHANGED);
-      return false;
+      // A failure after the setup was saved (the reconcile, say): the agent is managed, so the switch stands.
+      if (!(await managedNow(projectPath, agent.id).catch((): null => null))) {
+        failedThisRun.add(agent.id);
+        appLog('core:managed', 'warn', 'Automatic switch to managed failed; the agent keeps its current setup', { meta: { agentId: agent.id, from, code } });
+        await agentConfig.setManagedMigration(projectPath, agent.id, { failed: { at: new Date().toISOString(), code, message: reasonOf(err) } }).catch((recordErr) => {
+          // telemetry-exempt: logged; the agent still isn't tried again until the app restarts.
+          appLog('core:managed', 'warn', 'Could not record the failed automatic switch to managed', { meta: { agentId: agent.id, code: codeOf(recordErr) } });
+        });
+        broadcastToAllWindows(IPC.MANAGED.CHANGED);
+        return false;
+      }
+      appLog('core:managed', 'warn', 'Automatic switch to managed was saved, then a later step failed', { meta: { agentId: agent.id, from, code } });
     }
     failedThisRun.delete(agent.id);
     await agentConfig.setManagedMigration(projectPath, agent.id, { migrated: { at: new Date().toISOString(), from, backup: backupLocation(agent.id) } }).catch((err) => {
@@ -127,14 +173,19 @@ function migrate(projectPath: string, agent: DurableAgentConfig, from: ManagedMi
     appLog('core:managed', 'info', 'Switched agent to managed automatically', { meta: { agentId: agent.id, from } });
     broadcastToAllWindows(IPC.MANAGED.CHANGED);
     return true;
-  })().finally(() => inflight.delete(agent.id));
+  }).catch((err) => {
+    // telemetry-exempt: logged; the agent starts as it is.
+    appLog('core:managed', 'warn', 'Could not switch the agent to managed automatically', { meta: { agentId: agent.id, code: codeOf(err) } });
+    return false;
+  }).finally(() => inflight.delete(agent.id));
   inflight.set(agent.id, run);
   return run;
 }
 
 /**
  * Spawn path, before Clubhouse Mode would materialize: switch a
- * legacy-configured agent first. Returns its config as managed, or null to
+ * legacy-configured agent first. Returns its config whenever it is managed
+ * now (even when the switch reported a failure after its save), or null to
  * start it as it is (flag off, nothing to switch, the switch failed, or it
  * failed earlier since the app started).
  */
@@ -144,15 +195,19 @@ export async function migrateAtSpawn(projectPath: string, agent: DurableAgentCon
     if (!autoMigrateFrom(projectPath, agent)) return null;
     // A startup pass may be switching it right now.
     const pending = inflight.get(agent.id);
-    if (pending) return (await pending) ? await agentConfig.getDurableConfig(projectPath, agent.id) : null;
+    if (pending) {
+      await pending;
+      return await managedNow(projectPath, agent.id);
+    }
     if (failedThisRun.has(agent.id)) return null;
     if (!(await isLocalProject(projectPath))) return null;
     const fresh = await agentConfig.getDurableConfig(projectPath, agent.id);
     if (!fresh) return null;
     if (fresh.managed) return fresh;
     const from = autoMigrateFrom(projectPath, fresh);
-    if (!from) return null;
-    return (await migrate(projectPath, fresh, from)) ? await agentConfig.getDurableConfig(projectPath, agent.id) : null;
+    if (!from || await switchedEarlier(fresh)) return null;
+    await migrate(projectPath, fresh, from);
+    return await managedNow(projectPath, agent.id);
   } catch (err) {
     // telemetry-exempt: logged; the spawn goes on as it would have.
     appLog('core:managed', 'warn', 'Could not check whether to switch the agent to managed', { meta: { agentId: agent.id, code: codeOf(err) } });
@@ -192,6 +247,20 @@ async function carryPersonaLayer(projectPath: string, agent: DurableAgentConfig)
   }
 }
 
+/**
+ * A managed agent whose switch was saved and then cut short still has its
+ * switch-in-progress record. Its parts are its setup, so the record goes,
+ * and a later switch (after Stop managing) never removes them.
+ */
+async function clearSavedSwitchRecord(agentId: string): Promise<void> {
+  try {
+    if (await readPendingSwitch(agentId)) await clearPendingSwitch(agentId);
+  } catch (err) {
+    // telemetry-exempt: logged; a later switch sees from the agent that this one was saved.
+    appLog('core:managed', 'warn', 'Could not clear a saved switch\'s in-progress record', { meta: { agentId, code: codeOf(err) } });
+  }
+}
+
 let startupPass: Promise<StartupMigrationResult> | null = null;
 
 /**
@@ -221,13 +290,18 @@ async function startupMigration(): Promise<StartupMigrationResult> {
       continue;
     }
     for (const agent of agents) {
+      if (agent.managed) {
+        await clearSavedSwitchRecord(agent.id);
+        continue;
+      }
       const from = autoMigrateFrom(project.path, agent);
       if (!from) {
         if (await carryPersonaLayer(project.path, agent)) result.carried++;
         continue;
       }
+      if (await switchedEarlier(agent).catch(() => true)) continue;
       // Running, waking or mid-change: never under a session. Its next spawn switches it.
-      if (isAgentRunning(agent.id) || agentTransitionBusy(agent.id) || inflight.has(agent.id)) {
+      if (isAgentRunning(agent.id) || agentTransitionBusy(agent.id) || switchInProgress(agent.id)) {
         result.deferred++;
         continue;
       }
@@ -245,5 +319,6 @@ async function startupMigration(): Promise<StartupMigrationResult> {
 export function _resetAutoMigrateForTesting(): void {
   failedThisRun.clear();
   inflight.clear();
+  switching.clear();
   startupPass = null;
 }

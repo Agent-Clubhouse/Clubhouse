@@ -2765,6 +2765,23 @@ describe('agent-system', () => {
       expect(mockDeliverForSpawn).not.toHaveBeenCalled();
     });
 
+    it('never runs Clubhouse Mode on an agent a switch made managed, even when the switch reported a failure', async () => {
+      mockIsClubhouseModeEnabled.mockReturnValue(true);
+      mockMaterializeAgent.mockClear();
+      mockMigrateAtSpawn.mockClear();
+      const legacy = { id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1' };
+      mockGetDurableConfig.mockReturnValue(legacy);
+      mockMigrateAtSpawn.mockImplementationOnce(async () => {
+        // Saved, then a later step failed: the agent is managed, but the spawn heard nothing back.
+        mockGetDurableConfig.mockReturnValue({ ...legacy, managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+        return null;
+      });
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockMigrateAtSpawn).toHaveBeenCalledTimes(1);
+      expect(mockMaterializeAgent).not.toHaveBeenCalled();
+      mockGetDurableConfig.mockReturnValue(legacy);
+    });
+
     it('never asks to switch a quick agent', async () => {
       mockMigrateAtSpawn.mockClear();
       await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'quick' });

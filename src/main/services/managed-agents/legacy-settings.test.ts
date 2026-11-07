@@ -76,17 +76,31 @@ describe('MCP settings without the Clubhouse Mode fallback (D63)', () => {
 });
 
 describe('migrateLegacySettings', () => {
-  it('turns MCP on where Clubhouse Mode does, once, and leaves a later MCP change alone', async () => {
+  it('turns MCP on where Clubhouse Mode does, and a second start with nothing new changes nothing', async () => {
     h.mode = { enabled: true, projectOverrides: { a: false } };
     expect(await migrateLegacySettings(state)).toEqual({ mcp: true, sourceControl: false });
     expect(h.mcp).toEqual({ enabled: true, projectOverrides: { a: false } });
     expect(mcpSettings.notifyMcpEnablementChanged).toHaveBeenCalled();
     expect((await state.read()).migrations?.[MCP_FROM_CLUBHOUSE_MODE]).toEqual(expect.any(String));
 
-    // The person turns MCP off afterwards: a later start doesn't turn it back on.
-    h.mcp = { enabled: false };
+    vi.mocked(mcpSettings.saveSettings).mockClear();
     expect(await migrateLegacySettings(state)).toEqual({ mcp: false, sourceControl: false });
-    expect(h.mcp).toEqual({ enabled: false });
+    expect(mcpSettings.saveSettings).not.toHaveBeenCalled();
+    expect(h.mcp).toEqual({ enabled: true, projectOverrides: { a: false } });
+  });
+
+  it('runs at every start: Clubhouse Mode turned on for a project after the first run is made explicit at the next', async () => {
+    // First run: nothing to make explicit.
+    expect(await migrateLegacySettings(state)).toEqual({ mcp: false, sourceControl: false });
+    expect(mcpSettings.saveSettings).not.toHaveBeenCalled();
+
+    // Later, Clubhouse Mode is turned on for project b only.
+    h.mode = { enabled: false, projectOverrides: { b: true } };
+    expect((await migrateLegacySettings(state)).mcp).toBe(true);
+    expect(h.mcp).toEqual({ enabled: false, projectOverrides: { b: true } });
+    for (const project of ['a', 'b']) {
+      expect(resolve(h.mcp, h.mode, project, false), project).toBe(resolve(h.mcp, h.mode, project, true));
+    }
   });
 
   it('records nothing when the save fails, so the next start tries again', async () => {
@@ -116,6 +130,7 @@ describe('migrateLegacySettings', () => {
     await migrateLegacySettings(state);
     const read = await state.read();
     expect(read.defaultHelperTemplateId).toBe('builtin-template-helper');
-    expect(Object.keys(read.migrations ?? {}).sort()).toEqual([MCP_FROM_CLUBHOUSE_MODE, SOURCE_CONTROL_PROVIDER]);
+    // The source control move is once-only; the MCP one runs every start and records only when it changed something.
+    expect(Object.keys(read.migrations ?? {}).sort()).toEqual([SOURCE_CONTROL_PROVIDER]);
   });
 });

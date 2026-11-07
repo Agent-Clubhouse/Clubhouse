@@ -159,7 +159,7 @@ export function SwitchAgentsSettingsView() {
                   {c.agent.managedMigrationFailure && <span className="block text-xs text-ctp-warning" data-testid="managed-switch-failed">{migrationFailedLine(c.agent.managedMigrationFailure.message)}</span>}
                   {c.agent.worktreePath && isRunning(c) && (
                     <span className="block text-xs text-ctp-overlay1" data-testid="managed-switch-running">
-                      {c.legacy && !c.agent.managedMigrationFailure && !c.agent.managedMigration ? 'Running. It switches on its own at its next start.' : 'Running: the switch applies at its next start.'}
+                      {c.legacy && !c.agent.managedMigrationFailure && !c.agent.managedMigration && !c.agent.switchedToManagedAt && c.agent.clubhouseFeatures !== false ? 'Running. It switches on its own at its next start.' : 'Running: the switch applies at its next start.'}
                     </span>
                   )}
                 </span>

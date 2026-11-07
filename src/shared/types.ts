@@ -407,6 +407,12 @@ export interface DurableAgentConfig {
    * again. Written only through services/managed-agents.
    */
   managedMigration?: import('./managed-agents-types').ManagedMigration;
+  /**
+   * When this agent first went from unmanaged to managed, by hand or on its
+   * own (D59). Written in the same save as its first setup, and kept after
+   * Stop managing, so Clubhouse never switches it on its own again.
+   */
+  switchedToManagedAt?: string;
   /** The last automatic switch to managed failed (D59). Cleared when it switches. */
   managedMigrationFailure?: import('./managed-agents-types').ManagedMigrationFailure;
   /**

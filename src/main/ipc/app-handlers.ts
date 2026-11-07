@@ -516,9 +516,10 @@ export function registerAppHandlers(): void {
         ? clubhouseModeSettings.isClubhouseModeEnabled(projectPath)
         : clubhouseModeSettings.getSettings().enabled;
 
-      await clubhouseModeSettings.saveSettings(settings);
       // The app-level source control provider has its own home now (D61): keep it the same there.
+      // That one first: it is what resolveSourceControlProvider reads, so a failed write here leaves both as they were.
       if (settings.sourceControlProvider) await setAppSourceControlProvider(settings.sourceControlProvider);
+      await clubhouseModeSettings.saveSettings(settings);
       settingsChanged('clubhouse_mode');
 
       const nowEnabled = projectPath

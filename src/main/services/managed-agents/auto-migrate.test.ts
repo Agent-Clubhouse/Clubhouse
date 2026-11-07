@@ -25,6 +25,10 @@ const h = vi.hoisted(() => ({
   /** What a project or user orchestrator.md gives an agent with no persona. */
   projectLayer: {} as Record<string, unknown>,
   policyCalls: [] as string[],
+  /** Projects with MCP off. */
+  mcpOff: new Set<string>(),
+  /** Make the reconcile after the save fail once. */
+  failReconcile: false,
 }));
 
 const agentsOf = (projectPath: string) => {
@@ -77,8 +81,12 @@ vi.mock('../orchestration-policy', () => ({
     const a = find(id)!;
     if (carry.before) a.orchestration = carry.before; else delete a.orchestration;
   }),
-  reconcileAfterPersonaChange: vi.fn(async () => { h.policyCalls.push('reconcile'); }),
+  reconcileAfterPersonaChange: vi.fn(async () => {
+    h.policyCalls.push('reconcile');
+    if (h.failReconcile) { h.failReconcile = false; throw Object.assign(new Error('reconcile broke'), { code: 'reconcile_failed' }); }
+  }),
 }));
+vi.mock('../mcp-settings', () => ({ isMcpEnabled: (p: string, agentOverride?: boolean) => agentOverride ?? !h.mcpOff.has(p) }));
 vi.mock('../materialization-service', () => ({
   materializedInstructions: vi.fn(async () => 'What Clubhouse Mode writes.'),
   materializedDefaults: vi.fn(async () => ({ skills: [], mcpJson: null, resolveText: (t: string) => t })),
@@ -116,6 +124,7 @@ import {
   legacyConfiguredFrom,
   migrateAtSpawn,
   runStartupMigration,
+  withSwitchLock,
 } from './auto-migrate';
 
 let root: string;
@@ -147,6 +156,8 @@ beforeEach(async () => {
   h.personaPolicy = {};
   h.projectLayer = {};
   h.policyCalls = [];
+  h.mcpOff = new Set();
+  h.failReconcile = false;
   service = createManagedAgentsService({
     catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
     state: createManagedStateStore(h.stateDir),
@@ -158,6 +169,7 @@ beforeEach(async () => {
       const a = h.projects.get(p)!.get(id)!;
       h.policyCalls.push('save');
       if (setup) {
+        if (!a.managed && !a.switchedToManagedAt) a.switchedToManagedAt = new Date().toISOString();
         a.managed = setup;
         a.mcpOverride = setup.mcps.includes(CLUBHOUSE_MCP_PART_ID);
         delete a.clubhouseFeatures;
@@ -192,6 +204,15 @@ describe('which agents are legacy-configured (D59)', () => {
     expect(autoMigrateFrom(p, agent(p, 'jo', { persona: 'qa', creation: { state: 'creating' } as never }))).toBeNull();
     expect(autoMigrateFrom(p, agent(p, 'kit', { persona: 'qa', worktreePath: undefined }))).toBeNull();
     expect(autoMigrateFrom(p, agent(p, 'lu', { persona: 'qa', managedMigration: { at: 'x', from: 'persona', backup: 'b' } }))).toBeNull();
+    // Switched by hand once, then Stop managing.
+    expect(autoMigrateFrom(p, agent(p, 'mo', { persona: 'qa', switchedToManagedAt: '2026-11-01T00:00:00.000Z' }))).toBeNull();
+  });
+
+  it('never a plain CLI with Clubhouse features off, even in a Clubhouse Mode project', () => {
+    h.clubhouseMode.add('alpha');
+    expect(autoMigrateFrom('alpha', agent('alpha', 'cli', { clubhouseFeatures: false }))).toBeNull();
+    expect(autoMigrateFrom('alpha', agent('alpha', 'cli-persona', { clubhouseFeatures: false, persona: 'qa' }))).toBeNull();
+    expect(autoMigrateFrom('alpha', agent('alpha', 'ada'))).toBe('clubhouse-mode');
   });
 
   it('names the backup from the home folder', () => {
@@ -408,5 +429,129 @@ describe('the startup pass (D59)', () => {
     expect(get('beta', 'plain').orchestration).toBeUndefined();
     expect(agentConfig.setManagedMigration).not.toHaveBeenCalled();
     expect(legacySettings.migrateLegacySettings).not.toHaveBeenCalled();
+  });
+});
+
+describe('switched once, by hand or on its own (#2901)', () => {
+  const dir = (id: string) => path.join(h.stateDir, 'before-managed', id);
+
+  it('an agent switched by hand and then Stop managing is never switched on its own, and its backup stays', async () => {
+    h.clubhouseMode.add('alpha');
+    agent('alpha', 'ada');
+    await service.ensureBuiltins();
+    const { convertToManaged } = await import('./agents');
+    await withSettingsSurface('ui', undefined, () => convertToManaged('alpha', 'ada', { keep: true }));
+    await withSettingsSurface('ui', undefined, () => service.unmanage('alpha', 'ada'));
+    const backup = fs.readFileSync(path.join(dir('ada'), 'CLAUDE.md'), 'utf-8');
+    const save = vi.spyOn(service, 'saveSetup');
+
+    expect(await migrateAtSpawn('alpha', structuredClone(get('alpha', 'ada')))).toBeNull();
+    expect(await runStartupMigration()).toEqual({ switched: 0, failed: 0, deferred: 0, carried: 0 });
+
+    expect(save).not.toHaveBeenCalled();
+    expect(get('alpha', 'ada').managed).toBeUndefined();
+    expect(get('alpha', 'ada').managedMigration).toBeUndefined();
+    expect(fs.readdirSync(dir('ada')).filter((f) => f.startsWith('CLAUDE'))).toEqual(['CLAUDE.md']);
+    expect(fs.readFileSync(path.join(dir('ada'), 'CLAUDE.md'), 'utf-8')).toBe(backup);
+  });
+
+  it('an agent with a before-managed folder from before the marker counts as switched once', async () => {
+    h.clubhouseMode.add('alpha');
+    const ada = agent('alpha', 'ada');
+    fs.mkdirSync(dir('ada'), { recursive: true });
+    fs.writeFileSync(path.join(dir('ada'), 'CLAUDE.md'), 'From a switch long ago.');
+    expect(await migrateAtSpawn('alpha', ada)).toBeNull();
+    expect((await runStartupMigration()).switched).toBe(0);
+    expect(get('alpha', 'ada').managed).toBeUndefined();
+    expect(fs.readFileSync(path.join(dir('ada'), 'CLAUDE.md'), 'utf-8')).toBe('From a switch long ago.');
+  });
+
+  it('but one with a switch in progress in it (cut short) is switched, and the leftover parts go', async () => {
+    h.clubhouseMode.add('alpha');
+    const ada = agent('alpha', 'ada');
+    const leftover = await withSettingsSurface('ui', undefined, () => service.createPart({ name: 'ada notes', content: { kind: 'block', content: 'x' } }));
+    fs.mkdirSync(dir('ada'), { recursive: true });
+    fs.writeFileSync(path.join(dir('ada'), '.switch-pending.json'), JSON.stringify({ startedAt: new Date().toISOString(), parts: [leftover.id] }));
+
+    const managed = await migrateAtSpawn('alpha', ada);
+
+    expect(managed?.managed).toBeDefined();
+    const blocks = await parts('block');
+    expect(blocks.map((b) => b.id)).toEqual(managed!.managed!.blocks);
+    expect(fs.existsSync(path.join(dir('ada'), '.switch-pending.json'))).toBe(false);
+  });
+
+  it('the startup pass clears the in-progress record of a switch that was saved before the app quit', async () => {
+    agent('beta', 'ada', { managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+    fs.mkdirSync(dir('ada'), { recursive: true });
+    fs.writeFileSync(path.join(dir('ada'), 'CLAUDE.md'), 'kept');
+    fs.writeFileSync(path.join(dir('ada'), '.switch-pending.json'), JSON.stringify({ startedAt: 'x', parts: [] }));
+    await runStartupMigration();
+    expect(fs.readdirSync(dir('ada'))).toEqual(['CLAUDE.md']);
+  });
+});
+
+describe('the bridge at the automatic switch (#2901)', () => {
+  it('a Clubhouse Mode agent in a project with MCP off gets no Clubhouse part', async () => {
+    h.clubhouseMode.add('alpha');
+    h.mcpOff.add('alpha');
+    const managed = await migrateAtSpawn('alpha', agent('alpha', 'ada'));
+    expect(managed!.managed!.mcps).toEqual([]);
+    expect(get('alpha', 'ada').mcpOverride).toBe(false);
+  });
+});
+
+describe('a switch that fails after its save (#2901)', () => {
+  it('counts as switched: the spawn gets the managed config and the agent is marked, not recorded as failed', async () => {
+    h.clubhouseMode.add('alpha');
+    h.failReconcile = true;
+
+    const managed = await migrateAtSpawn('alpha', agent('alpha', 'ada'));
+
+    expect(managed?.managed).toBeDefined();
+    expect(get('alpha', 'ada').managedMigrationFailure).toBeUndefined();
+    expect(get('alpha', 'ada').managedMigration).toEqual({ at: expect.any(String), from: 'clubhouse-mode', backup: backupLocation('ada') });
+    expect(get('alpha', 'ada').switchedToManagedAt).toEqual(expect.any(String));
+    const warn = vi.mocked(appLog).mock.calls.find((c) => c[2].startsWith('Automatic switch to managed was saved'))!;
+    expect(warn[3]).toEqual({ meta: { agentId: 'ada', from: 'clubhouse-mode', code: 'reconcile_failed' } });
+  });
+});
+
+describe('a switch by hand during the automatic one (#2901)', () => {
+  it('waits for it and finds the agent managed, so no part is made twice', async () => {
+    h.clubhouseMode.add('alpha');
+    const ada = agent('alpha', 'ada');
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const saveSetup = service.saveSetup.bind(service);
+    const spy = vi.spyOn(service, 'saveSetup').mockImplementation(async (p, id, setup) => { await gate; return saveSetup(p, id, setup); });
+    const { convertToManaged } = await import('./agents');
+
+    const auto = migrateAtSpawn('alpha', ada);
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    // As the IPC convert (and so the Switch agents page) calls it.
+    const byHand = withSwitchLock('ada', () => withSettingsSurface('ui', undefined, () => convertToManaged('alpha', 'ada', { keep: true })));
+    release();
+    const [managed, handSetup] = await Promise.all([auto, byHand]);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(handSetup).toEqual(managed!.managed);
+    expect(await parts('block')).toHaveLength(1);
+  });
+
+  it('an automatic switch queued behind a hand switch does nothing and shows no notice', async () => {
+    h.clubhouseMode.add('alpha');
+    const ada = agent('alpha', 'ada');
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    await service.ensureBuiltins();
+    const { convertToManaged } = await import('./agents');
+    const byHand = withSwitchLock('ada', async () => { await gate; return withSettingsSurface('ui', undefined, () => convertToManaged('alpha', 'ada', { keep: true })); });
+    const auto = migrateAtSpawn('alpha', ada);
+    release();
+    const [, managed] = await Promise.all([byHand, auto]);
+    expect(managed?.managed).toBeDefined();
+    expect(get('alpha', 'ada').managedMigration).toBeUndefined();
+    expect(await parts('block')).toHaveLength(1);
   });
 });

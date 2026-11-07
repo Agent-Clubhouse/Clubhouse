@@ -60,6 +60,7 @@ import { isPreviewEligible } from './services/preview-eligible';
 import { isChatEnabled } from './services/chat-runtime-settings';
 import { shutdownFeedback, startFeedback } from './services/framebriar';
 import { installHelperDeliverySeam } from './services/clubhouse-mcp/tools/helper-delivery-seam';
+import { codeOf } from './services/managed-agents/log-code';
 
 // On macOS, Electron's readable PTY handles can occupy the default four libuv
 // workers indefinitely, starving every fs.promises operation after an agent
@@ -279,7 +280,7 @@ app.on('ready', () => {
   // Then, with Clubhouse-managed agents on, switch sleeping legacy-configured agents once (D59).
   void import('./services/managed-agents').then(({ ensureBuiltinsOnce }) => ensureBuiltinsOnce()).then(
     () => import('./services/managed-agents/auto-migrate').then(({ runStartupMigration }) => runStartupMigration()).catch((err) => {
-      appLog('core:managed', 'warn', 'The automatic switch to managed at startup stopped', { meta: { code: (err as { code?: unknown })?.code ?? 'failed' } });
+      appLog('core:managed', 'warn', 'The automatic switch to managed at startup stopped', { meta: { code: codeOf(err) } });
     }),
     (err) => {
       appLog('core:managed', 'warn', 'Could not install built-in agent parts', { meta: { error: err instanceof Error ? err.message : String(err) } });

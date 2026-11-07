@@ -1,12 +1,15 @@
 /**
- * One-time settings migrations for the move away from Clubhouse Mode (#2901),
- * run by the startup pass with the `managedAgents` flag on. Each makes
- * explicit something that today only follows from Clubhouse Mode, so that
- * removing Clubhouse Mode later changes nothing for the person. Nothing is
- * removed here: the old fallbacks stay until the legacy runtime goes.
+ * Settings migrations for the move away from Clubhouse Mode (#2901), run by
+ * the startup pass with the `managedAgents` flag on. Each makes explicit
+ * something that today only follows from Clubhouse Mode, so that removing
+ * Clubhouse Mode later changes nothing for the person. Nothing is removed
+ * here: the old fallbacks stay until the legacy runtime goes.
  *
- * Each is done once, recorded in `managed-agents/state.json`, and recorded
- * only after its write succeeded, so a failure is tried again at the next start.
+ * The MCP one runs at every start, since Clubhouse Mode can be turned on for
+ * a project after the first run. It never changes what a project resolves
+ * to, so running it again is safe. The source control one is done once,
+ * recorded in `managed-agents/state.json` only after its write succeeded:
+ * saving the Clubhouse Mode settings keeps the new store in step after that.
  */
 import * as clubhouseModeSettings from '../clubhouse-mode-settings';
 import * as mcpSettings from '../mcp-settings';
@@ -14,6 +17,7 @@ import * as sourceControlSettings from '../source-control-settings';
 import type { McpSettings } from '../../../shared/types';
 import { appLog } from '../log-service';
 import { createManagedStateStore, type ManagedStateStore } from './state-store';
+import { codeOf } from './log-code';
 
 export const MCP_FROM_CLUBHOUSE_MODE = 'mcp-from-clubhouse-mode';
 export const SOURCE_CONTROL_PROVIDER = 'source-control-provider';
@@ -58,17 +62,19 @@ async function once(state: ManagedStateStore, id: string, run: () => Promise<boo
   return changed;
 }
 
-/** Run each migration not done yet. Returns which ones changed a setting. Never throws. */
+/** Run the MCP migration, and each one-time migration not done yet. Returns which ones changed a setting. Never throws. */
 export async function migrateLegacySettings(state: ManagedStateStore = createManagedStateStore()): Promise<{ mcp: boolean; sourceControl: boolean }> {
   const result = { mcp: false, sourceControl: false };
   try {
-    result.mcp = await once(state, MCP_FROM_CLUBHOUSE_MODE, async () => {
-      const next = mcpSettingsWithoutClubhouseMode(mcpSettings.getSettings(), clubhouseModeSettings.getSettings());
-      if (!next) return false;
+    // Every start, not once: Clubhouse Mode turned on for a project since the last start is made explicit too.
+    const next = mcpSettingsWithoutClubhouseMode(mcpSettings.getSettings(), clubhouseModeSettings.getSettings());
+    if (next) {
       await mcpSettings.saveSettings(next);
       mcpSettings.notifyMcpEnablementChanged();
-      return true;
-    });
+      result.mcp = true;
+      // Informational only: when it last changed something. Never read to skip it.
+      await state.update((s) => { s.migrations = { ...(s.migrations ?? {}), [MCP_FROM_CLUBHOUSE_MODE]: new Date().toISOString() }; });
+    }
   } catch (err) {
     // telemetry-exempt: logged; the Clubhouse Mode fallback still turns MCP on, and the next start tries again.
     appLog('core:managed', 'warn', 'Could not make the MCP settings explicit', { meta: { code: codeOf(err) } });
@@ -85,9 +91,4 @@ export async function migrateLegacySettings(state: ManagedStateStore = createMan
     appLog('core:managed', 'warn', 'Could not move the source control provider setting', { meta: { code: codeOf(err) } });
   }
   return result;
-}
-
-function codeOf(err: unknown): string {
-  const code = (err as { code?: unknown } | null)?.code;
-  return typeof code === 'string' && /^[\w.-]{1,64}$/.test(code) ? code : 'failed';
 }

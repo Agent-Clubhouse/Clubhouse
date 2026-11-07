@@ -940,6 +940,18 @@ describe('app-handlers', () => {
     expect(mockSetAppScp).toHaveBeenCalledWith('azure-devops');
   });
 
+  it('SAVE_CLUBHOUSE_MODE_SETTINGS writes the provider to its own store first, so a failed write leaves the old setting as it was (D61)', async () => {
+    mockSetAppScp.mockClear();
+    vi.mocked(clubhouseModeSettings.saveSettings).mockClear();
+    mockSetAppScp.mockRejectedValueOnce(Object.assign(new Error('disk full'), { code: 'ENOSPC' }));
+    const handler = handleHandlers.get(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS)!;
+    await expect(handler({}, { enabled: false, sourceControlProvider: 'github' })).rejects.toThrow('disk full');
+    expect(clubhouseModeSettings.saveSettings).not.toHaveBeenCalled();
+
+    await handler({}, { enabled: false, sourceControlProvider: 'github' });
+    expect(mockSetAppScp.mock.invocationCallOrder[1]).toBeLessThan(vi.mocked(clubhouseModeSettings.saveSettings).mock.invocationCallOrder[0]);
+  });
+
   it('SAVE_CLUBHOUSE_MODE_SETTINGS removes exclusions on disable', async () => {
     vi.mocked(clubhouseModeSettings.isClubhouseModeEnabled).mockReturnValueOnce(true);
     vi.mocked(clubhouseModeSettings.isClubhouseModeEnabled).mockReturnValueOnce(false);

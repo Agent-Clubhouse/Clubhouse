@@ -3085,6 +3085,8 @@ async function setManagedSetupInner(projectPath: string, agentId: string, setup:
   if (!agent) throw new Error('Agent not found');
   const managedBefore = managedAuditFields(agent);
   if (setup) {
+    // Switched once, by hand or on its own: never switched automatically again, even after Stop managing (D59).
+    if (!agent.managed && !agent.switchedToManagedAt) agent.switchedToManagedAt = new Date().toISOString();
     agent.managed = { version: 1, blocks: [...setup.blocks], skills: [...setup.skills], mcps: [...setup.mcps], ...(setup.templateId ? { templateId: setup.templateId } : {}) };
     // A managed agent's Clubhouse MCP bridge follows its Clubhouse MCP part.
     agent.mcpOverride = setup.mcps.includes(CLUBHOUSE_MCP_PART_ID);
