@@ -198,6 +198,7 @@ export function HelpersSettingsView() {
         <HelperPresetsSection
           title="Smart helper selection"
           autoLabel="Smart helper selection"
+          toggleText="Let orchestrators use it"
           footer="Smart helper selection balances load across your providers. Built-in templates ask orchestrators to use it."
         />
       ) : <HelperPresetsSection />}

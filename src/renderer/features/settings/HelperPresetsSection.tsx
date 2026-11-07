@@ -116,9 +116,11 @@ function PresetRow({ provider, difficulty, view, labels, busy, onSave, onReset }
  * `title`, `autoLabel` and `footer` let the managed-agents Helpers page (#2899)
  * call this Smart helper selection. Unset, it reads as it always has.
  */
-export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabel = 'Auto provider', footer }: {
+export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabel = 'Auto provider', toggleText, footer }: {
   title?: string;
   autoLabel?: string;
+  /** Visible text beside the switch, when the section title already names it. Defaults to `autoLabel`. */
+  toggleText?: string;
   footer?: ReactNode;
 } = {}) {
   const [settings, setSettings] = useState<HelperRoutingSettings | null>(null);
@@ -196,7 +198,7 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
               aria-label={`Let orchestrators use ${autoLabel}`}
               data-testid="helper-presets-auto"
             />
-            <span>{autoLabel}</span>
+            <span>{toggleText ?? autoLabel}</span>
           </label>
         )}
         {settings && (
