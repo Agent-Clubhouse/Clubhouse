@@ -89,7 +89,7 @@ export async function assertNotBlankScreen(window: Page) {
   const childCount = await root.evaluate((el) => el.children.length);
   expect(childCount).toBeGreaterThan(0);
 
-  const bodyText = await root.evaluate((el) => el.innerText.trim());
+  const bodyText = await root.evaluate((el: HTMLElement) => el.innerText.trim());
   expect(bodyText.length).toBeGreaterThan(0);
 }
 
