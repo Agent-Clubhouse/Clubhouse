@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../shared/types';
-import type { BaseAdoption } from '../../shared/asset-catalog-types';
+import type { BaseAdoption, CompositionInput } from '../../shared/asset-catalog-types';
 
 const state = vi.hoisted(() => ({ root: '', beforeRename: undefined as undefined | (() => void), beforeReadyRename: undefined as undefined | (() => void) }));
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => state.root } }));
@@ -108,9 +108,16 @@ it('retains the real saved composition on postcommit cancellation and persisted 
   expect((await cancellation)?.ok).toBe(false);
   const store = createAssetCatalogStore({ dir: assetCatalogDir() });
   const saved = (await store.read()).compositions[started.agentId];
-  const plan = await store.plan({ agentId: started.agentId, projectId: 'project-1', adoption, draft: saved });
+  // Saved records carry store metadata; draft/save input accepts only composition fields.
+  const composition: CompositionInput = {
+    template: saved.template, entries: saved.entries, excludedEntryIds: saved.excludedEntryIds,
+    subagents: saved.subagents, excludedSubagentEntryIds: saved.excludedSubagentEntryIds,
+    additions: saved.additions, removals: saved.removals, floors: saved.floors,
+    keepMarkers: saved.keepMarkers, authorityApprovals: saved.authorityApprovals,
+  };
+  const plan = await store.plan({ agentId: started.agentId, projectId: 'project-1', adoption, draft: composition });
   await store.saveComposition({ agentId: started.agentId, projectId: 'project-1', expectedRevision: 1,
-    composition: saved, adoption, previewFingerprint: plan.fingerprint });
+    composition, adoption, previewFingerprint: plan.fingerprint });
   const bytes = fs.readFileSync(indexPath());
   const disk = records();
   disk[0].creation = { ...disk[0].creation!, state: 'creating', owner: undefined, heartbeatAt: undefined };
