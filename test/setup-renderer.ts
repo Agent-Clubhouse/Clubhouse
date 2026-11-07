@@ -529,6 +529,7 @@ vi.stubGlobal('clubhouse', {
     dismissMigrationNotice: async () => ({ ok: true, value: undefined }),
     restart: async () => ({ ok: true, value: { resumed: true } }),
     setClubhouseFeatures: async () => ({ ok: true, value: undefined }),
+    executableBits: async (files: unknown[]) => ({ ok: true, value: files.map(() => null) }),
     onChanged: () => noop,
   },
   dispatcher: {

@@ -11,6 +11,7 @@ import { applyManagedSettings, convertToManaged, createManagedAgent, previewConv
 import { withSwitchLock } from '../services/managed-agents/auto-migrate';
 import { previewManagedSetup } from '../services/managed-agents/delivery';
 import { ManagedError } from '../services/managed-agents/service';
+import { executableBits } from '../services/managed-agents/file-modes';
 import * as agentConfig from '../services/agent-config';
 import { resolveOrchestrator } from '../services/agent-system';
 import { appLog } from '../services/log-service';
@@ -153,6 +154,11 @@ export function registerManagedAgentsHandlers(): void {
     [stringArg(), idArg(), objectArg<{ fresh?: boolean; whenTurnEnds?: boolean }>({ optional: true })],
     (_e, projectPath, agentId, options) => result(() => restartManagedAgent(projectPath, agentId, options ?? {})),
   ));
+  // Reached only through the preload's executableBits(File[]): the paths come from
+  // webUtils.getPathForFile, so they are files the person dropped or picked.
+  // Only each file's mode is read, as true, false or null (D92).
+  ipcMain.handle(IPC.MANAGED.EXECUTABLE_BITS, withValidatedArgs([arrayArg(stringArg({ minLength: 0, maxLength: 4096 }), { maxLength: 2000 })],
+    (_e, paths) => result(() => executableBits(paths))));
   ipcMain.handle(IPC.MANAGED.SET_CLUBHOUSE_FEATURES, withValidatedArgs([stringArg(), idArg(), booleanArg()],
     (_e, projectPath, agentId, on) => result(async () => {
       await agentConfig.setClubhouseFeatures(projectPath, agentId, on);

@@ -1,4 +1,4 @@
-import { ipcRenderer } from 'electron';
+import { ipcRenderer, webUtils } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type {
   ManagedAgentSetup,
@@ -59,6 +59,15 @@ const managed = {
   isWorking: (agentId: string) => call<boolean>(IPC.MANAGED.IS_WORKING, agentId),
   restart: (projectPath: string, agentId: string, options?: { fresh?: boolean; whenTurnEnds?: boolean }) => call<{ resumed: boolean; noSession?: boolean }>(IPC.MANAGED.RESTART, projectPath, agentId, options),
   setClubhouseFeatures: (projectPath: string, agentId: string, on: boolean) => call<void>(IPC.MANAGED.SET_CLUBHOUSE_FEATURES, projectPath, agentId, on),
+  /**
+   * Skill import (#2894): each file's real executable bit, or null when it
+   * can't be told (Windows, or a file that isn't on disk). The paths never
+   * reach page code: they are resolved here from the File objects.
+   */
+  executableBits: (files: File[]) => {
+    const paths = files.map((f) => { try { return webUtils.getPathForFile(f); } catch { return ''; } });
+    return call<Array<boolean | null>>(IPC.MANAGED.EXECUTABLE_BITS, paths);
+  },
   /** Parts, templates or setups changed somewhere. Returns an unsubscribe function. */
   onChanged: (listener: () => void): (() => void) => {
     const handler = () => listener();

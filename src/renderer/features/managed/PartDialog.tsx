@@ -13,16 +13,36 @@ type SkillFile = ManagedSkillContent['files'][number];
 
 const TEXT_EXT = /\.(md|markdown|txt|json|ya?ml|toml|sh|zsh|bash|py|js|mjs|cjs|ts|tsx|jsx|rb|go|rs|java|kt|swift|c|h|cpp|css|html|xml|csv|ini|cfg|env\.example)$/i;
 
-async function readFileAsSkillFile(file: File, relPath: string): Promise<SkillFile> {
+/** Only when main can't read the file's mode (Windows, or no path): a script is guessed by its name. */
+const SCRIPT_EXT = /\.(sh|zsh|bash|py)$/i;
+
+/**
+ * A dropped or picked file as a skill file. `executable` is the file's real
+ * executable bit, read by main from its mode (D92); null means it can't be
+ * told, and then a script name is the guess.
+ */
+export async function readFileAsSkillFile(file: File, relPath: string, executable: boolean | null): Promise<SkillFile> {
   const buf = new Uint8Array(await file.arrayBuffer());
   const looksText = TEXT_EXT.test(relPath) || !buf.subarray(0, 4096).includes(0);
+  const exec = executable ?? (looksText && SCRIPT_EXT.test(relPath));
   if (looksText) {
     const content = new TextDecoder('utf-8', { fatal: false }).decode(buf);
-    return { path: relPath, content, ...(/\.(sh|zsh|bash|py)$/i.test(relPath) && { executable: true }) };
+    return { path: relPath, content, ...(exec && { executable: true }) };
   }
   let binary = '';
   for (let i = 0; i < buf.length; i++) binary += String.fromCharCode(buf[i]);
-  return { path: relPath, content: btoa(binary), encoding: 'base64' };
+  return { path: relPath, content: btoa(binary), encoding: 'base64', ...(exec && { executable: true }) };
+}
+
+/** Each file's executable bit from main, or null for all when it can't be read. */
+async function executableBitsOf(files: File[]): Promise<Array<boolean | null>> {
+  try {
+    const bits = await unwrap(managed().executableBits(files));
+    return files.map((_f, i): boolean | null => bits[i] ?? null);
+  } catch {
+    // telemetry-exempt: falls back to the name guess for every file
+    return files.map((): null => null);
+  }
 }
 
 /** Walk a dropped folder (webkitGetAsEntry) into relative file paths. */
@@ -117,9 +137,10 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
     const roots = new Set(items.map((i) => i.path.split('/')[0]));
     const singleRoot = items.length > 0 && items.every((i) => i.path.includes('/')) && roots.size === 1 ? [...roots][0] : null;
     const files: SkillFile[] = [...content.files.filter((f) => !(f.path === 'SKILL.md' && !f.content))];
-    for (const item of items) {
+    const bits = await executableBitsOf(items.map((i) => i.file));
+    for (const [index, item] of items.entries()) {
       const rel = singleRoot ? item.path.slice(singleRoot.length + 1) : item.path;
-      const next = await readFileAsSkillFile(item.file, rel);
+      const next = await readFileAsSkillFile(item.file, rel, bits[index]);
       const at = files.findIndex((f) => f.path === rel);
       if (at >= 0) files[at] = next; else files.push(next);
     }
