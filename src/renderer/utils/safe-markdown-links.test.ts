@@ -1,5 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { renderMarkdownSafe } from './safe-markdown';
 import { useFilePreviewStore } from '../stores/filePreviewStore';
 import { useSafeMarkdownLinks } from './safe-markdown-links';
 
@@ -110,6 +111,25 @@ describe('useSafeMarkdownLinks', () => {
     result.current(event);
     expect(event.preventDefault).toHaveBeenCalled();
     expect(useFilePreviewStore.getState().target).toEqual({ path: href.replace(':12:5', ''), line: 12, col: 5 });
+    expect(mockOpenExternalUrl).not.toHaveBeenCalled();
+  });
+
+  it.each(['C:/scratch/notes.md', 'file:///tmp/notes%20%23caf%C3%A9.md'])('opens a preserved Markdown anchor %s only on explicit click', (href) => {
+    const template = document.createElement('template');
+    template.innerHTML = renderMarkdownSafe(`[notes](${href})`);
+    expect(useFilePreviewStore.getState().target).toBeNull();
+    const { result } = renderHook(() => useSafeMarkdownLinks());
+    result.current({ target: template.content.querySelector('a'), preventDefault: vi.fn() } as unknown as React.MouseEvent<HTMLDivElement>);
+    expect(useFilePreviewStore.getState().target?.path).toBe(href);
+    expect(mockOpenExternalUrl).not.toHaveBeenCalled();
+  });
+
+  it('refuses local resolution for preserved anchors in a remote document', () => {
+    const template = document.createElement('template');
+    template.innerHTML = renderMarkdownSafe('[notes](C:/remote/notes.md)');
+    const { result } = renderHook(() => useSafeMarkdownLinks(false));
+    result.current({ target: template.content.querySelector('a'), preventDefault: vi.fn() } as unknown as React.MouseEvent<HTMLDivElement>);
+    expect(useFilePreviewStore.getState().target).toBeNull();
     expect(mockOpenExternalUrl).not.toHaveBeenCalled();
   });
 

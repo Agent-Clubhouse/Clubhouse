@@ -1,3 +1,4 @@
+import { localMarkdownTarget } from './local-markdown-links';
 import { openLocalFileLink } from './file-preview';
 import React, { useCallback } from 'react';
 
@@ -15,7 +16,7 @@ export function useSafeMarkdownLinks(allowLocalFiles = true): React.MouseEventHa
 
     e.preventDefault();
 
-    const href = target.getAttribute('href');
+    const href = localMarkdownTarget(target) ?? target.getAttribute('href');
     if (!href) return;
 
     if (allowLocalFiles && openLocalFileLink(href)) return;

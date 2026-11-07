@@ -340,6 +340,15 @@ describe('PDF previews (#2478)', () => {
   });
 });
 
+it.each(['C:/scratch/notes.md', 'file:///tmp/notes%20%23caf%C3%A9.md'])('opens a preserved local Markdown anchor %s through rich click handling', async (href) => {
+  useFilePreviewStore.getState().close();
+  const { container } = await renderRich(<Markdown text={`[notes](${href})`} />);
+  expect(useFilePreviewStore.getState().target).toBeNull();
+  fireEvent.click(container.querySelector('a')!);
+  expect(useFilePreviewStore.getState().target?.path).toBe(href);
+  useFilePreviewStore.getState().close();
+});
+
 it('opens an absolute markdown link as a local readonly view, without requiring a project match', async () => {
   useFilePreviewStore.getState().close();
   const { container } = await renderRich(<Markdown text={'[scratch](/tmp/scratch.md:12:5)'} />);

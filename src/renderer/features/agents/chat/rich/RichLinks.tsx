@@ -1,3 +1,4 @@
+import { localMarkdownTarget } from '../../../../utils/local-markdown-links';
 import { isRemoteProjectId } from '../../../../stores/remoteProjectStore';
 import { openLocalFileLink } from '../../../../utils/file-preview';
 import {
@@ -229,7 +230,7 @@ function useRichLinkClick(rich: RichLinkContextValue | null) {
     const a = (e.target as HTMLElement).closest('a');
     if (!a) return;
     e.preventDefault();
-    const href = a.getAttribute('href');
+    const href = localMarkdownTarget(a) ?? a.getAttribute('href');
     if (!href) return;
     rich?.hideCard();
     openLink(href, rich, a.dataset.ghAmbiguous === 'true');
