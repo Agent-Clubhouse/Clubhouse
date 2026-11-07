@@ -46,6 +46,18 @@ function tomlValue(s: string): string {
 }
 
 /**
+ * Whether an MCP server env key can go in a `-c mcp_servers.<name>.env.<key>=…`
+ * override (#2932). Codex 0.163 splits the left side on every `.` (quotes don't
+ * help), so a dotted key nests a table and fails the whole launch, and it splits
+ * at the first `=`, so `K=X` silently sets `K`. Any other key, spaces, dashes,
+ * quotes and a leading digit included, arrives as written. An empty key names no
+ * variable.
+ */
+function isCodexEnvKey(key: string): boolean {
+  return key !== '' && !key.includes('.') && !key.includes('=');
+}
+
+/**
  * Codex rollout filename: `rollout-<YYYY-MM-DDTHH-MM-SS>-<uuid>.jsonl`.
  * Capture 1 is the local-time start stamp, capture 2 the session id.
  */
@@ -438,8 +450,9 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
    *
    * `-c key=value` takes dot-notation with TOML-typed values.
    */
-  buildMcpArgs(servers: Record<string, McpServerDef>): string[] {
+  buildMcpArgs(servers: Record<string, McpServerDef>, onNotice?: (message: string) => void): string[] {
     const args: string[] = [];
+    const skippedEnv: string[] = [];
 
     for (const [name, def] of Object.entries(servers)) {
       // A server name lands in a dotted config key, so anything outside this
@@ -465,8 +478,19 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
         args.push('-c', `mcp_servers.${name}.url=${tomlValue(def.url)}`);
       }
       if (def.env) {
+        const skipped: string[] = [];
         for (const [key, val] of Object.entries(def.env)) {
+          if (!isCodexEnvKey(key)) {
+            skipped.push(key);
+            continue;
+          }
           args.push('-c', `mcp_servers.${name}.env.${key}=${tomlValue(val)}`);
+        }
+        if (skipped.length > 0) {
+          appLog('core:orchestrator', 'warn', 'Skipping MCP server env variables Codex cannot take in a launch flag', {
+            meta: { server: name, keys: skipped },
+          });
+          skippedEnv.push(`${name} (${skipped.map((key) => JSON.stringify(key)).join(', ')})`);
         }
       }
       // Codex gives stdio servers a minimal env; these names are forwarded
@@ -476,6 +500,9 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
       }
     }
 
+    if (skippedEnv.length > 0) {
+      onNotice?.(`Left out MCP server environment variables Codex can't take at launch, because a name is empty or has "." or "=": ${skippedEnv.join('; ')}. Rename them in the MCP configuration.`);
+    }
     return args;
   }
 

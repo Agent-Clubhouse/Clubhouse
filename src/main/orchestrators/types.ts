@@ -471,6 +471,8 @@ export interface OrchestratorProvider {
    *
    * Receives the full set of servers keyed by name — the Clubhouse bridge plus
    * whatever the project configured — to avoid transitive electron imports.
+   * `onNotice` gets a message for the person when part of a server can't be
+   * passed this way and was left out.
    */
-  buildMcpArgs?(servers: Record<string, McpServerDef>): string[];
+  buildMcpArgs?(servers: Record<string, McpServerDef>, onNotice?: (message: string) => void): string[];
 }

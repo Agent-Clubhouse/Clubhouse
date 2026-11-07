@@ -4,30 +4,32 @@ Agent MCP editors resolve the agent's provider override, then the project provid
 then the app default. The IPC checks the project, agent id and worktree binding;
 a shared folder requires an explicit agent id. Agents sharing a folder also share
 that provider's local file. Agent saves use the existing transition reservation,
-then recheck the provider, folder and managed setting immediately before writing.
+then recheck the provider and folder immediately before writing.
 The editor ignores read/save replies from a previous target or reload request.
 
-The existing **Local overrides** choice determines the source for the next chat:
+The servers passed to the driver for the next chat come from
+`resolveAgentMcpServers` (`src/main/services/agent-mcp-servers.ts`), the same
+resolution the terminal launch uses:
 
-| Mode / source | Desired servers passed to the driver |
+| Agent / source | Configured servers passed to the driver |
 | --- | --- |
-| Clubhouse Mode managed agent | Project `agentDefaults.mcpJson`, with agent wildcards |
-| Unmanaged agent or Local overrides, local JSON file present | Entire effective-provider local `mcpServers` map |
-| Unmanaged agent or Local overrides, local JSON file missing | Project `agentDefaults.mcpJson`, with agent wildcards |
+| Clubhouse-managed agent | Exactly the MCP server parts in its setup. Never the project defaults or a local file |
+| Unmanaged agent, local JSON file present | Entire effective-provider local `mcpServers` map |
+| Unmanaged agent, local JSON file missing | Project `agentDefaults.mcpJson`, with agent wildcards |
 | Local JSON explicitly contains `"mcpServers": {}` | No configured servers; inherited entries stay removed |
-| Invalid local or inherited desired JSON | Actionable failure, without overwriting the invalid file or substituting an empty map |
+| Project MCP JSON that isn't JSON (for example, it still has `@@If` blocks) | No project servers, with an `mcp_configuration` notice; the start goes ahead (D10 in `managed-agents.md`) |
+| Invalid local JSON, or JSON that isn't a valid MCP configuration | Actionable failure, without overwriting the invalid file or substituting an empty map |
 
-The agent editor never updates project defaults or silently changes Local
-overrides. Managed agents must explicitly turn on Local overrides in General
-before saving agent-specific MCP configuration. Materialization preserves their
-local MCP map, including during an explicit persona/instruction Apply.
-Malformed local JSON remains visible for deliberate valid repair in the editor.
+A managed agent's MCP servers are edited in the builder's MCP tab, not in the
+JSON editor. The agent editor never updates project defaults. Malformed local
+JSON remains visible for deliberate valid repair in the editor.
 
 Chat reads its configured source before bridge injection. `clubhouse` is reserved
-for the separately controlled live bridge; a configured entry cannot replace it.
-The existing agent/project/global MCP enablement gates remain in force. A helper's
-mandatory bridge does not grant it configured project or local servers while MCP
-is off for that agent.
+for the live bridge; a configured entry cannot replace it. One in the agent's own
+file is dropped with a notice. The Clubhouse MCP always runs: every agent gets the bridge,
+managed or not, helpers and quick agents included, and no app, project or agent
+setting turns it off (D69 in `managed-agents.md`). Clubhouse Mode is gone (D68),
+so nothing else decides which servers an agent gets.
 
 The sidebar's **configured** count summarizes configuration files and launch-wrapper
 selections. It is not proof of delivery, transport support, authentication or a

@@ -1129,6 +1129,18 @@ describe('agent-system', () => {
       expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, 'agent-1', 'left out');
     });
 
+    it('tells the person through the setup notice when Codex launch flags left MCP env variables out (#2932)', async () => {
+      withConfig({});
+      const build = mockCodexProvider.buildMcpArgs as ReturnType<typeof vi.fn>;
+      build.mockImplementationOnce((_servers: unknown, onNotice?: (m: string) => void) => {
+        onNotice?.('env left out');
+        return [];
+      });
+      mockBroadcastToAllWindows.mockClear();
+      await spawn();
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, 'agent-1', 'env left out');
+    });
+
     it('gives a managed agent its own MCP servers and the bridge, a saved mcpOverride from before ignored (#2896)', async () => {
       withConfig({ mcpOverride: false, worktreePath: '/project/wt', managed: { version: 1, blocks: [], skills: [], mcps: ['part-github'] } });
       await spawn();
