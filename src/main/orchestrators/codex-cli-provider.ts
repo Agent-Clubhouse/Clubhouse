@@ -45,6 +45,9 @@ function tomlValue(s: string): string {
   return `"${escaped}"`;
 }
 
+/** An environment variable name safe to use as a bare TOML key in `-c` dot-notation (#2709). */
+const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 /**
  * Codex rollout filename: `rollout-<YYYY-MM-DDTHH-MM-SS>-<uuid>.jsonl`.
  * Capture 1 is the local-time start stamp, capture 2 the session id.
@@ -466,6 +469,14 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
       }
       if (def.env) {
         for (const [key, val] of Object.entries(def.env)) {
+          // An env key lands in a dotted config key too: a dot would nest it
+          // (`env.A.B` is table A, key B), and other characters would not parse.
+          if (!ENV_KEY_PATTERN.test(key)) {
+            appLog('core:orchestrator', 'warn', 'Skipping an MCP server env variable whose name is not a valid environment variable name', {
+              meta: { server: name, key },
+            });
+            continue;
+          }
           args.push('-c', `mcp_servers.${name}.env.${key}=${tomlValue(val)}`);
         }
       }

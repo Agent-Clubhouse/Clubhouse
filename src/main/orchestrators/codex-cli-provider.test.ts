@@ -48,6 +48,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as childProcess from 'child_process';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
+import { appLog } from '../services/log-service';
 import { CodexCliProvider, parseCodexDebugModels } from './codex-cli-provider';
 
 /** Match any path whose basename is 'codex' (with or without .exe/.cmd) */
@@ -856,6 +857,34 @@ describe('CodexCliProvider', () => {
         good: { command: 'node' },
       });
       expect(args.filter(a => a.startsWith('mcp_servers.')).every(a => a.startsWith('mcp_servers.good.'))).toBe(true);
+    });
+
+    it('skips an env key that would nest or not parse, and keeps the rest (#2709)', () => {
+      vi.mocked(appLog).mockClear();
+      const args = provider.buildMcpArgs({
+        linear: {
+          command: 'npx',
+          env: { 'A.B': 'nested', 'has space': 'x', '1LEADING_DIGIT': 'x', 'has"quote': 'x', '': 'x', GOOD_KEY: 'kept', _ALSO_OK2: 'kept' },
+        },
+      });
+      const envArgs = args.filter(a => a.includes('.env.'));
+      expect(envArgs).toEqual([
+        'mcp_servers.linear.env.GOOD_KEY="kept"',
+        'mcp_servers.linear.env._ALSO_OK2="kept"',
+      ]);
+      // The server itself still starts.
+      expect(args).toContain('mcp_servers.linear.command="npx"');
+      // Each skipped key is named in the log, with its server.
+      const skipped = vi.mocked(appLog).mock.calls
+        .filter(c => String(c[2]).startsWith('Skipping an MCP server env variable'))
+        .map(c => (c[3] as { meta: { server: string; key: string } }).meta);
+      expect(skipped).toEqual([
+        { server: 'linear', key: 'A.B' },
+        { server: 'linear', key: 'has space' },
+        { server: 'linear', key: '1LEADING_DIGIT' },
+        { server: 'linear', key: 'has"quote' },
+        { server: 'linear', key: '' },
+      ]);
     });
 
     it('returns no args for an empty server set', () => {
