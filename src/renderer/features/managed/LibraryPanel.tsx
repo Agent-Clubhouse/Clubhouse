@@ -121,7 +121,7 @@ export function PartToggleList({ kind, parts, selected, agent, onToggle, onFork,
               <div className="flex items-center gap-1">
                 {!p.builtin && <Button kind="quiet" aria-label={`Edit ${p.name}`} onClick={() => onEdit(p.id)} disabled={disabled}>Edit</Button>}
                 <Button kind="quiet" aria-label={p.builtin ? `Make your copy of ${p.name}` : `Fork ${p.name}`} onClick={() => onFork(p.id)} disabled={disabled}>{p.builtin ? 'Make your copy' : 'Fork'}</Button>
-                <Toggle checked={on} onChange={(v) => onToggle(p.id, v)} disabled={disabled} aria-label={`${on ? 'Remove' : 'Add'} ${p.name}`} />
+                <Toggle checked={on} onChange={(v) => onToggle(p.id, v)} disabled={disabled} aria-label={`${on ? 'Remove' : 'Add'} ${p.name}`} data-testid={`managed-part-toggle-${p.id}`} />
               </div>
             </li>
           );
