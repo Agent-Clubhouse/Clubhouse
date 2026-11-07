@@ -127,18 +127,50 @@ describe('agents.json watcher (#2729)', () => {
     }
   });
 
-  it('starts a new watcher after the old one fails', async () => {
+  it('keeps checking an idle project after the watcher fails, and the next read opens a new one', async () => {
     expect(await shownName()).toBe('first');
+    await settle(); // the first look at the file
     watchers[0].emitter.emit('error', new Error('watch failed'));
     expect(watchers[0].close).toHaveBeenCalledOnce();
 
-    // The next write arms a new one, and that one reports edits.
-    await renameDurable(projectPath, 'durable_watch_1', 'renamed-in-app');
-    await flushAgentConfig(projectPath);
+    const changed = vi.fn();
+    const off = onAgentConfigChanged(changed);
+    try {
+      // Nothing reads or writes, and the hand edit is still seen.
+      saveByHand('edited-while-idle');
+      vi.advanceTimersByTime(AGENTS_FILE_CHECK_INTERVAL_MS);
+      await settle();
+      expect(changed).toHaveBeenCalledWith(projectPath);
+    } finally {
+      off();
+    }
+
+    // The next read opens a new watcher, and that one reports edits.
+    expect(await shownName()).toBe('edited-while-idle');
     expect(watchers).toHaveLength(2);
     saveByHand('after-error');
     watchers[1].fire('change', 'agents.json');
     expect(await shownName()).toBe('after-error');
+  });
+
+  it('opens a new watcher on the next read after a failure, even with no edit', async () => {
+    expect(await shownName()).toBe('first');
+    watchers[0].emitter.emit('error', new Error('watch failed'));
+    // The clean cache entry was dropped, so this read reloads and re-arms.
+    expect(await shownName()).toBe('first');
+    expect(watchers).toHaveLength(2);
+    expect(watchers[1].close).not.toHaveBeenCalled();
+  });
+
+  it('opens a new watcher on the next write after a failure', async () => {
+    expect(await shownName()).toBe('first');
+    watchers[0].emitter.emit('error', new Error('watch failed'));
+    await renameDurable(projectPath, 'durable_watch_1', 'renamed-in-app');
+    await flushAgentConfig(projectPath);
+    expect(watchers).toHaveLength(2);
+    saveByHand('after-write');
+    watchers[1].fire('change', 'agents.json');
+    expect(await shownName()).toBe('after-write');
   });
 
   it('closes the watcher and its check when the cache is cleared', async () => {

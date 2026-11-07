@@ -859,32 +859,45 @@ describe('CodexCliProvider', () => {
       expect(args.filter(a => a.startsWith('mcp_servers.')).every(a => a.startsWith('mcp_servers.good.'))).toBe(true);
     });
 
-    it('skips an env key that would nest or not parse, and keeps the rest (#2709)', () => {
+    it('skips only env keys that are empty or have "." or "=", and says so (#2932)', () => {
       vi.mocked(appLog).mockClear();
+      const onNotice = vi.fn();
       const args = provider.buildMcpArgs({
         linear: {
           command: 'npx',
-          env: { 'A.B': 'nested', 'has space': 'x', '1LEADING_DIGIT': 'x', 'has"quote': 'x', '': 'x', GOOD_KEY: 'kept', _ALSO_OK2: 'kept' },
+          env: { 'A.B': 'nested', 'K=X': 'split', '': 'unnamed', GOOD_KEY: 'kept', 'MY-KEY': 'kept', '1LEAD': 'kept', 'has space': 'kept', 'has"quote': 'kept' },
         },
-      });
-      const envArgs = args.filter(a => a.includes('.env.'));
-      expect(envArgs).toEqual([
+        docs: { command: 'node', env: { 'x.y': 'nested' } },
+        clean: { command: 'node', env: { FINE: 'kept' } },
+      }, onNotice);
+      // Codex 0.163 takes these as written: only a "." (fails the launch) or "=" (sets the wrong key) breaks the override.
+      expect(args.filter(a => a.includes('.env.'))).toEqual([
         'mcp_servers.linear.env.GOOD_KEY="kept"',
-        'mcp_servers.linear.env._ALSO_OK2="kept"',
+        'mcp_servers.linear.env.MY-KEY="kept"',
+        'mcp_servers.linear.env.1LEAD="kept"',
+        'mcp_servers.linear.env.has space="kept"',
+        'mcp_servers.linear.env.has"quote="kept"',
+        'mcp_servers.clean.env.FINE="kept"',
       ]);
-      // The server itself still starts.
+      // The servers themselves still start.
       expect(args).toContain('mcp_servers.linear.command="npx"');
-      // Each skipped key is named in the log, with its server.
-      const skipped = vi.mocked(appLog).mock.calls
-        .filter(c => String(c[2]).startsWith('Skipping an MCP server env variable'))
-        .map(c => (c[3] as { meta: { server: string; key: string } }).meta);
-      expect(skipped).toEqual([
-        { server: 'linear', key: 'A.B' },
-        { server: 'linear', key: 'has space' },
-        { server: 'linear', key: '1LEADING_DIGIT' },
-        { server: 'linear', key: 'has"quote' },
-        { server: 'linear', key: '' },
-      ]);
+      expect(args).toContain('mcp_servers.docs.command="node"');
+      // One notice for the person, naming each server and its skipped keys.
+      expect(onNotice).toHaveBeenCalledOnce();
+      expect(onNotice.mock.calls[0][0]).toContain('linear ("A.B", "K=X", "")');
+      expect(onNotice.mock.calls[0][0]).toContain('docs ("x.y")');
+      expect(onNotice.mock.calls[0][0]).not.toContain('clean');
+      // And a log line per server.
+      const logged = vi.mocked(appLog).mock.calls
+        .filter(c => String(c[2]).startsWith('Skipping MCP server env variables'))
+        .map(c => (c[3] as { meta: unknown }).meta);
+      expect(logged).toEqual([{ server: 'linear', keys: ['A.B', 'K=X', ''] }, { server: 'docs', keys: ['x.y'] }]);
+    });
+
+    it('sends no notice when every env key can be passed', () => {
+      const onNotice = vi.fn();
+      provider.buildMcpArgs({ clubhouse: mockServerDef }, onNotice);
+      expect(onNotice).not.toHaveBeenCalled();
     });
 
     it('returns no args for an empty server set', () => {

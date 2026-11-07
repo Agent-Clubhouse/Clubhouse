@@ -653,7 +653,11 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
             // The bridge is last so a template server of the same name can't shadow it.
             ...(mcpPort > 0 ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId) } : {}),
           };
-          if (Object.keys(servers).length > 0) headlessArgs = [...headlessArgs, ...provider.buildMcpArgs(servers)];
+          if (Object.keys(servers).length > 0) {
+            headlessArgs = [...headlessArgs, ...provider.buildMcpArgs(servers, (message) => {
+              broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, message);
+            })];
+          }
         }
         let wrapperApplied = false;
         if (wrapperConfig) {
@@ -837,7 +841,11 @@ async function spawnPtyAgent(
       // The bridge is last so a project server of the same name can't shadow it.
       ...(bridgeOn ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId) } : {}),
     };
-    if (Object.keys(servers).length > 0) args = [...args, ...provider.buildMcpArgs(servers)];
+    if (Object.keys(servers).length > 0) {
+      args = [...args, ...provider.buildMcpArgs(servers, (message) => {
+        broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, message);
+      })];
+    }
   }
   // trailingArgs (e.g. Codex's bare mission prompt) must come after any
   // dynamically-injected flags above, not before — see SpawnCommandResult.
