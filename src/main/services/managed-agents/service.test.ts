@@ -538,6 +538,16 @@ describe('managed helpers (#2899)', () => {
     expect(setup.mcps).toEqual([CLUBHOUSE_MCP_PART_ID, pw.id]);
     const template = await user(() => service.getTemplate('builtin-template-helper'));
     expect(template.setup.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+    // Kept for the helper's Details: "Helper template, plus Playwright, minus Clubhouse basics" (D87).
+    expect(setup.helperChanges).toEqual({ added: [pw.id], removed: [BUILTIN_BLOCK_IDS.basics] });
+  });
+
+  it('records no change for a part the template already has, or one removed and added back', async () => {
+    const { managedHelperSetup } = await import('./helpers');
+    const same = await user(() => managedHelperSetup(service, { addParts: [BUILTIN_BLOCK_IDS.identity] }));
+    expect(same.helperChanges).toEqual({ added: [], removed: [] });
+    const back = await user(() => managedHelperSetup(service, { removeParts: [BUILTIN_BLOCK_IDS.basics], addParts: [BUILTIN_BLOCK_IDS.basics] }));
+    expect(back.helperChanges).toEqual({ added: [], removed: [] });
   });
 
   it('names a template, and refuses an unknown template or part', async () => {
@@ -685,5 +695,56 @@ describe('the Clubhouse MCP part is in every setup and template (D69)', () => {
 
   it('refuses to copy it', async () => {
     await expectCode(user(() => service.forkPart({ id: CLUBHOUSE_MCP_PART_ID })), 'invalid');
+  });
+});
+
+describe('attribution and helper changes (#2899, #2900)', () => {
+  const asDispatcher = <T>(fn: () => T) => withSettingsSurface('dispatcher', 'dispatcher-1', fn);
+
+  it('records the Dispatcher on a setup it saves, and clears it when the person saves', async () => {
+    agent('a', { blocks: [BUILTIN_BLOCK_IDS.identity] });
+    const saved = await asDispatcher(() => service.saveSetup('/p', 'a', { blocks: [], skills: [], mcps: [] }));
+    expect(saved.updatedBy).toBe('Dispatcher');
+    expect(agents.get('a')!.managed!.updatedBy).toBe('Dispatcher');
+    expect(Date.parse(agents.get('a')!.managed!.updatedAt!)).not.toBeNaN();
+    await user(() => service.saveSetup('/p', 'a', { blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [] }));
+    expect(agents.get('a')!.managed!.updatedBy).toBeUndefined();
+    expect(agents.get('a')!.managed!.updatedAt).toBeDefined();
+  });
+
+  it('ignores bookkeeping a caller passes inside the setup', async () => {
+    agent('a', { blocks: [] });
+    await user(() => service.saveSetup('/p', 'a', { blocks: [], skills: [], mcps: [], updatedBy: 'Someone', helperChanges: { added: ['x'], removed: [] } }));
+    expect(agents.get('a')!.managed!.updatedBy).toBeUndefined();
+    expect(agents.get('a')!.managed!.helperChanges).toBeUndefined();
+  });
+
+  it('records the Dispatcher on a template it saves and on a push', async () => {
+    const t = await asDispatcher(() => service.saveTemplate({ name: 'Reviewer', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: {} }));
+    expect(t.updatedBy).toBe('Dispatcher');
+    const again = await user(() => service.saveTemplate({ id: t.id, name: 'Reviewer', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: {} }));
+    expect(again.updatedBy).toBeUndefined();
+    await asDispatcher(() => service.pushTemplate(t.id, { setup: { blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [] }, settings: {} }, []));
+    expect((await service.getTemplate(t.id)).updatedBy).toBe('Dispatcher');
+  });
+
+  it('keeps start_helper changes while the parts stay, and drops them once they change', async () => {
+    agent('h', { blocks: [] });
+    const changes = { added: [BUILTIN_BLOCK_IDS.identity], removed: [] };
+    await user(() => service.saveSetup('/p', 'h', { blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [] }, { helperChanges: changes }));
+    expect(agents.get('h')!.managed!.helperChanges).toEqual(changes);
+    // The same parts saved again (a push that changed nothing, say): still true.
+    await user(() => service.saveSetup('/p', 'h', { blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [] }));
+    expect(agents.get('h')!.managed!.helperChanges).toEqual(changes);
+    await user(() => service.saveSetup('/p', 'h', { blocks: [], skills: [], mcps: [] }));
+    expect(agents.get('h')!.managed!.helperChanges).toBeUndefined();
+  });
+
+  it('lists the agents made from a template', async () => {
+    const t = await user(() => service.saveTemplate({ name: 'Mine', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: {} }));
+    agent('a', { templateId: t.id });
+    agent('b', {});
+    running.add('a');
+    expect(await service.templateConsumers(t.id)).toEqual([expect.objectContaining({ agentId: 'a', running: true, projectName: 'Project' })]);
   });
 });

@@ -814,9 +814,10 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
         freeAgentMode: launch.freeAgentMode,
       };
       // A managed helper's setup is required: if it can't be saved, the creation fails rather than start a helper without it.
-      const { settings: _templateSettings, ...setup } = managedHelper;
+      // What start_helper changed from the template is kept for the helper's Details (D87).
+      const { settings: _templateSettings, helperChanges, ...setup } = managedHelper;
       started = await startDurableCreation(target.path, params,
-        { inject: async (created) => { await managedAgents().saveSetup(target.path, created.id, setup); }, injectRequired: true });
+        { inject: async (created) => { await managedAgents().saveSetup(target.path, created.id, setup, { helperChanges }); }, injectRequired: true });
     } catch (err) {
       // telemetry-exempt: the refusal reaches the calling agent as the tool result
       // Refused up front: a bad or taken name, folder, branch or base.
