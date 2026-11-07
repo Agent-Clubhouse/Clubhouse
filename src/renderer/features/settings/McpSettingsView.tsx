@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
 import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import { SettingsPage, SettingsSection, SettingsField } from './SettingsLayout';
@@ -11,8 +11,23 @@ export function McpSettingsView() {
   const loadSettings = useMcpSettingsStore((s) => s.loadSettings);
   const saveSettings = useMcpSettingsStore((s) => s.saveSettings);
   const { requestMcpChange, mcpOffDialog } = useMcpOffConfirm();
+  // MCP's own switch can be off while agents that still use Clubhouse Mode keep it on (D63).
+  const [keptByClubhouseMode, setKeptByClubhouseMode] = useState(false);
 
   useEffect(() => { loadSettings(); }, [loadSettings]);
+
+  useEffect(() => {
+    if (!loaded || enabled) {
+      setKeptByClubhouseMode(false);
+      return;
+    }
+    let live = true;
+    window.clubhouse.app.getMcpOffImpact({}).then(
+      (impact) => { if (live) setKeptByClubhouseMode(impact.appKeptByClubhouseMode); },
+      () => { if (live) setKeptByClubhouseMode(false); },
+    );
+    return () => { live = false; };
+  }, [loaded, enabled]);
 
   if (!loaded) return null;
 
@@ -39,6 +54,7 @@ export function McpSettingsView() {
             <>
               Helpers, orchestration and the Dispatcher need this. A project or agent can have its own setting.
               Turning it off keeps your saved settings. Turning it back on restores them and doesn’t start any session.
+              {keptByClubhouseMode && <span className="block mt-px" data-testid="mcp-kept-by-clubhouse-mode">Clubhouse keeps MCP on for agents that still use Clubhouse Mode.</span>}
             </>
           )}
         >

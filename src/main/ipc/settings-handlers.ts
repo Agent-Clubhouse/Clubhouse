@@ -30,7 +30,7 @@ import { onMcpSettingsChanged } from './mcp-binding-handlers';
 import { mcpSettingsStore } from '../services/mcp-settings';
 import { goobersService } from '../services/goobers-service';
 import { chatIdleSettings } from '../services/chat-idle-settings';
-import { sourceControlSettingsStore } from '../services/source-control-settings';
+import { effectiveAppSourceControlProvider, sourceControlSettingsStore } from '../services/source-control-settings';
 
 export { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, MCP_SETTINGS, SECURITY_SETTINGS };
 
@@ -52,8 +52,14 @@ export const mcpSettings = createManagedSettings(MCP_SETTINGS, {
 
 export const securitySettings = createManagedSettings(SECURITY_SETTINGS);
 
-/** The app-level source control provider (D61): the store resolveSourceControlProvider reads. */
-export const sourceControlSettings = createManagedSettings(SOURCE_CONTROL_SETTINGS, { store: sourceControlSettingsStore });
+/**
+ * The app-level source control provider (D61): the store resolveSourceControlProvider reads. Its row
+ * shows what the app level resolves to, so the old Clubhouse Mode value shows until the startup pass copies it.
+ */
+export const sourceControlSettings = createManagedSettings(SOURCE_CONTROL_SETTINGS, {
+  store: sourceControlSettingsStore,
+  read: () => ({ ...sourceControlSettingsStore.get(), provider: effectiveAppSourceControlProvider() }),
+});
 
 // ---------------------------------------------------------------------------
 // To migrate more settings, add them here following the same pattern.

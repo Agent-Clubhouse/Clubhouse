@@ -228,7 +228,8 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
   const [mcpJson, setMcpJson] = useState('');
   const [freeAgentMode, setFreeAgentMode] = useState(false);
   const [helperAutoOff, setHelperAutoOff] = useState(false);
-  const [sourceControlProvider, setSourceControlProvider] = useState<SourceControlProvider>('github');
+  // Empty: the project uses the app setting.
+  const [sourceControlProvider, setSourceControlProvider] = useState<SourceControlProvider | ''>('');
   const [buildCommand, setBuildCommand] = useState('');
   const [testCommand, setTestCommand] = useState('');
   const [lintCommand, setLintCommand] = useState('');
@@ -267,7 +268,7 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
       setMcpJson(d.mcpJson || '');
       setFreeAgentMode(d.freeAgentMode ?? false);
       setHelperAutoOff(d.helperAuto === 'off');
-      setSourceControlProvider(d.sourceControlProvider ?? 'github');
+      setSourceControlProvider(d.sourceControlProvider ?? '');
       setBuildCommand(d.buildCommand || '');
       setTestCommand(d.testCommand || '');
       setLintCommand(d.lintCommand || '');
@@ -344,7 +345,7 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
     if (mcpJson.trim()) newDefaults.mcpJson = mcpJson;
     if (freeAgentMode) newDefaults.freeAgentMode = true;
     if (helperAutoOff) newDefaults.helperAuto = 'off';
-    if (sourceControlProvider !== 'github') newDefaults.sourceControlProvider = sourceControlProvider;
+    if (sourceControlProvider) newDefaults.sourceControlProvider = sourceControlProvider;
     if (buildCommand.trim()) newDefaults.buildCommand = buildCommand.trim();
     if (testCommand.trim()) newDefaults.testCommand = testCommand.trim();
     if (lintCommand.trim()) newDefaults.lintCommand = lintCommand.trim();
@@ -475,9 +476,10 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
           <select
             id={`${idBase}-scp`}
             value={sourceControlProvider}
-            onChange={(e) => { setSourceControlProvider(e.target.value as SourceControlProvider); markDirty(); }}
+            onChange={(e) => { setSourceControlProvider(e.target.value as SourceControlProvider | ''); markDirty(); }}
             className={SELECT_CLASS}
           >
+            <option value="">Use app setting</option>
             <option value="github">GitHub (gh CLI)</option>
             <option value="azure-devops">Azure DevOps (az CLI)</option>
           </select>

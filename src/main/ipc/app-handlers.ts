@@ -12,7 +12,6 @@ import * as freeAgentSettings from '../services/free-agent-settings';
 import * as orchestrationSettings from '../services/orchestration-settings';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
-import { setAppSourceControlProvider } from '../services/source-control-settings';
 import * as badgeSettings from '../services/badge-settings';
 import { clipboardSettings } from './settings-handlers';
 import * as autoUpdateService from '../services/auto-update-service';
@@ -516,9 +515,6 @@ export function registerAppHandlers(): void {
         ? clubhouseModeSettings.isClubhouseModeEnabled(projectPath)
         : clubhouseModeSettings.getSettings().enabled;
 
-      // The app-level source control provider has its own home now (D61): keep it the same there.
-      // That one first: it is what resolveSourceControlProvider reads, so a failed write here leaves both as they were.
-      if (settings.sourceControlProvider) await setAppSourceControlProvider(settings.sourceControlProvider);
       await clubhouseModeSettings.saveSettings(settings);
       settingsChanged('clubhouse_mode');
 

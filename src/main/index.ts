@@ -276,16 +276,13 @@ app.on('ready', () => {
   markStartup('register_ipc_end');
   // E2E only: a no-op unless unpackaged and asked for (#2490).
   installHelperDeliverySeam();
-  // Built-in agent parts (#2902): install or update them in the background. Never blocks startup.
-  // Then switch sleeping legacy-configured agents to managed once (D59).
-  void import('./services/managed-agents').then(({ ensureBuiltinsOnce }) => ensureBuiltinsOnce()).then(
-    () => import('./services/managed-agents/auto-migrate').then(({ runStartupMigration }) => runStartupMigration()).catch((err) => {
-      appLog('core:managed', 'warn', 'The automatic switch to managed at startup stopped', { meta: { code: codeOf(err) } });
-    }),
-    (err) => {
-      appLog('core:managed', 'warn', 'Could not install built-in agent parts', { meta: { error: err instanceof Error ? err.message : String(err) } });
-    },
-  );
+  // In the background, never blocking startup: the settings migration (D61, D63), and the built-in
+  // agent parts (#2902) install or update, then sleeping legacy-configured agents switch to managed once (D59).
+  void import('./services/managed-agents/auto-migrate').then(({ startManagedAtAppStart }) => startManagedAtAppStart(
+    () => import('./services/managed-agents').then(({ ensureBuiltinsOnce }) => ensureBuiltinsOnce()),
+  )).catch((err) => {
+    appLog('core:managed', 'warn', 'The managed agents startup work stopped', { meta: { code: codeOf(err) } });
+  });
   buildMenu();
 
   // Resume satellite connections when the machine wakes from sleep

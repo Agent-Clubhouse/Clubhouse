@@ -204,12 +204,16 @@ describe('ProjectAgentDefaultsSection', () => {
       expect(await screen.findByText('Source control provider')).toBeInTheDocument();
     });
 
-    it('defaults to GitHub', async () => {
+    it('shows Use app setting when the project has no value', async () => {
       renderSection();
       await screen.findByText('Source control provider');
+      expect(screen.getByDisplayValue('Use app setting')).toBeInTheDocument();
+    });
 
-      const select = screen.getByDisplayValue('GitHub (gh CLI)');
-      expect(select).toBeInTheDocument();
+    it('loads a saved GitHub value as GitHub, not the app setting', async () => {
+      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({ sourceControlProvider: 'github' });
+      renderSection();
+      await waitFor(() => expect(screen.getByDisplayValue('GitHub (gh CLI)')).toBeInTheDocument());
     });
 
     it('loads azure-devops from saved defaults', async () => {
@@ -237,7 +241,7 @@ describe('ProjectAgentDefaultsSection', () => {
       renderSection();
       await screen.findByText('Source control provider');
 
-      const select = screen.getByDisplayValue('GitHub (gh CLI)');
+      const select = screen.getByDisplayValue('Use app setting');
       fireEvent.change(select, { target: { value: 'azure-devops' } });
 
       expect(screen.getByText('Save defaults')).not.toBeDisabled();
@@ -247,7 +251,7 @@ describe('ProjectAgentDefaultsSection', () => {
       renderSection();
       await screen.findByText('Source control provider');
 
-      const select = screen.getByDisplayValue('GitHub (gh CLI)');
+      const select = screen.getByDisplayValue('Use app setting');
       fireEvent.change(select, { target: { value: 'azure-devops' } });
       fireEvent.click(screen.getByText('Save defaults'));
 
@@ -261,7 +265,27 @@ describe('ProjectAgentDefaultsSection', () => {
       });
     });
 
-    it('omits sourceControlProvider when set to github (default)', async () => {
+    it('saves GitHub explicitly when picked, so it wins over an app setting of Azure DevOps', async () => {
+      renderSection();
+      await screen.findByText('Source control provider');
+      fireEvent.change(screen.getByDisplayValue('Use app setting'), { target: { value: 'github' } });
+      fireEvent.click(screen.getByText('Save defaults'));
+      await waitFor(() => {
+        expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith('/project', expect.objectContaining({ sourceControlProvider: 'github' }));
+      });
+    });
+
+    it('keeps a saved GitHub value on an unrelated save', async () => {
+      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({ instructions: 'Default instructions', sourceControlProvider: 'github' });
+      renderSection();
+      fireEvent.change(await screen.findByDisplayValue('Default instructions'), { target: { value: 'Changed' } });
+      fireEvent.click(screen.getByText('Save defaults'));
+      await waitFor(() => {
+        expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith('/project', expect.objectContaining({ sourceControlProvider: 'github' }));
+      });
+    });
+
+    it('omits sourceControlProvider when left on Use app setting', async () => {
       renderSection();
       await screen.findByRole('heading', { name: 'Default instructions' });
 
@@ -272,6 +296,17 @@ describe('ProjectAgentDefaultsSection', () => {
 
       await waitFor(() => {
         const call = (window.clubhouse.agentSettings.writeProjectAgentDefaults as ReturnType<typeof vi.fn>).mock.calls[0];
+        expect(call[1].sourceControlProvider).toBeUndefined();
+      });
+    });
+
+    it('saves Use app setting as no value, after a project value', async () => {
+      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({ sourceControlProvider: 'azure-devops' });
+      renderSection();
+      fireEvent.change(await screen.findByDisplayValue('Azure DevOps (az CLI)'), { target: { value: '' } });
+      fireEvent.click(screen.getByText('Save defaults'));
+      await waitFor(() => {
+        const call = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0];
         expect(call[1].sourceControlProvider).toBeUndefined();
       });
     });

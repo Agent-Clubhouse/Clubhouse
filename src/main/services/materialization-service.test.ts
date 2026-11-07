@@ -54,7 +54,11 @@ const mockManagedMcp = vi.fn(async () => ({ workiq: { command: 'npx' } }));
 vi.mock('./managed-agents', () => ({ managedMcpServersFor: (...args: unknown[]) => mockManagedMcp(...(args as [])) }));
 
 const appScp = vi.hoisted(() => ({ value: undefined as 'github' | 'azure-devops' | undefined }));
-vi.mock('./source-control-settings', () => ({ getAppSourceControlProvider: () => appScp.value }));
+// The app level as source-control-settings.test.ts pins it: its own setting, then the old Clubhouse Mode one, then GitHub.
+vi.mock('./source-control-settings', async () => {
+  const mode = await import('./clubhouse-mode-settings');
+  return { effectiveAppSourceControlProvider: () => appScp.value ?? mode.getSettings().sourceControlProvider ?? 'github' };
+});
 
 vi.mock('./clubhouse-mode-settings', () => ({
   getSettings: vi.fn(() => ({ enabled: false })),
@@ -334,6 +338,16 @@ describe('materialization-service', () => {
       vi.mocked(clubhouseModeSettings.getSettings).mockReturnValue({ enabled: false });
 
       expect(await resolveSourceControlProvider('/project')).toBe('github');
+    });
+
+    it('treats a project set to GitHub as explicit, over an app level of Azure DevOps', async () => {
+      mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {}, agentDefaults: { sourceControlProvider: 'github' } }));
+      appScp.value = 'azure-devops';
+      try {
+        expect(await resolveSourceControlProvider('/project')).toBe('github');
+      } finally {
+        appScp.value = undefined;
+      }
     });
 
     it('honors a per-agent override over project/app settings', async () => {

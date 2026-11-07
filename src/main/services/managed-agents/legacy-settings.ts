@@ -9,7 +9,9 @@
  * a project after the first run. It never changes what a project resolves
  * to, so running it again is safe. The source control one is done once,
  * recorded in `managed-agents/state.json` only after its write succeeded:
- * saving the Clubhouse Mode settings keeps the new store in step after that.
+ * after that only the Agents & providers row sets the new store.
+ *
+ * Both run at app start whether or not the built-in parts installed.
  */
 import * as clubhouseModeSettings from '../clubhouse-mode-settings';
 import * as mcpSettings from '../mcp-settings';

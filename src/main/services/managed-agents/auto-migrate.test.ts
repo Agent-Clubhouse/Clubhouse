@@ -122,6 +122,7 @@ import {
   legacyConfiguredFrom,
   migrateAtSpawn,
   runStartupMigration,
+  startManagedAtAppStart,
   withSwitchLock,
 } from './auto-migrate';
 
@@ -411,6 +412,25 @@ describe('the startup pass (D59)', () => {
     expect((await runStartupMigration()).carried).toBe(0);
     expect(h.policyCalls).toEqual([]);
     expect(get('beta', 'plain').orchestration).toEqual({ maxHelpers: 3, helperAccess: 'standard' });
+  });
+
+  describe('managed agents work at app start (D61, D63)', () => {
+    it('runs the settings migration even when the built-in parts fail to install, and switches no agents', async () => {
+      seed();
+      const save = vi.spyOn(service, 'saveSetup');
+      await startManagedAtAppStart(async () => { throw new Error('catalog unreadable'); });
+      expect(legacySettings.migrateLegacySettings).toHaveBeenCalledTimes(1);
+      expect(save).not.toHaveBeenCalled();
+      expect(appLog).toHaveBeenCalledWith('core:managed', 'warn', 'Could not install built-in agent parts', expect.anything());
+    });
+
+    it('runs the settings migration once per start, with the startup pass sharing it', async () => {
+      seed();
+      await startManagedAtAppStart(async () => {});
+      await runStartupMigration();
+      expect(legacySettings.migrateLegacySettings).toHaveBeenCalledTimes(1);
+      expect(get('alpha', 'sleepy').managedMigration?.from).toBe('clubhouse-mode');
+    });
   });
 });
 

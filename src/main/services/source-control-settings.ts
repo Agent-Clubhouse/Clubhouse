@@ -2,11 +2,12 @@
  * The app-level source control provider (D61): what @@SourceControlProvider
  * becomes for an agent whose project and own settings don't set one. It used
  * to live in the Clubhouse Mode settings, which go away with Clubhouse Mode
- * (#2901). The value there is copied here once, and a save of the Clubhouse
- * Mode settings that carries one is kept here too, so both say the same until
- * the old place is removed. Agents & providers sets it directly.
+ * (#2901). The startup pass copies the value there once; after that only
+ * Agents & providers sets it. Saving the Clubhouse Mode settings never writes
+ * here, so it can't undo a choice made in that row.
  */
 import { createSettingsStore } from './settings-store';
+import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import type { SourceControlProvider, SourceControlSettings } from '../../shared/types';
 import { SOURCE_CONTROL_SETTINGS } from '../../shared/settings-definitions';
 
@@ -27,6 +28,14 @@ export const saveSettings = sourceControlSettingsStore.save;
 
 export function getAppSourceControlProvider(): SourceControlProvider | undefined {
   return getSettings().provider;
+}
+
+/**
+ * What the app level resolves to: this setting, then where Clubhouse Mode kept
+ * it before (until the startup pass copies it), then GitHub.
+ */
+export function effectiveAppSourceControlProvider(): SourceControlProvider {
+  return getAppSourceControlProvider() ?? clubhouseModeSettings.getSettings().sourceControlProvider ?? 'github';
 }
 
 export async function setAppSourceControlProvider(provider: SourceControlProvider): Promise<void> {

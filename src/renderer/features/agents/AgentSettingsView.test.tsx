@@ -892,16 +892,6 @@ describe('AgentSettingsView', () => {
       expect(wrapper).toHaveTextContent('Filesystem');
       expect(wrapper.querySelector('.uppercase')).toBeNull();
     });
-
-    it('takes sidebar counts from the sections', async () => {
-      renderSettings();
-      await screen.findByTestId('skills-section');
-      act(() => {
-        skillsProps.onCountChange(2);
-        mcpProps.onCountChange(3);
-      });
-      expect(useAgentSettingsPages.getState().counts).toEqual({ skills: 2, mcp: 3 });
-    });
   });
 
   describe('new chrome pages', () => {
@@ -914,6 +904,19 @@ describe('AgentSettingsView', () => {
     });
 
     const visiblePage = () => screen.getAllByTestId(/^agent-settings-page-/).filter((el) => !el.hidden);
+
+    it('takes sidebar counts from the sections for an agent on another machine, the one that has those pages', async () => {
+      const remoteProject = 'remote||sat-1||proj-1';
+      useProjectStore.setState({ projects: [{ id: remoteProject, name: 'far-app', path: '/remote/project' }], activeProjectId: remoteProject });
+      renderSettings({ projectId: remoteProject });
+      expect(screen.getByTestId('agent-settings-page-skills')).toContainElement(await screen.findByTestId('skills-section'));
+      expect(screen.getByTestId('agent-settings-page-mcp')).toContainElement(screen.getByTestId('mcp-json-section'));
+      act(() => {
+        skillsProps.onCountChange(2);
+        mcpProps.onCountChange(3);
+      });
+      expect(useAgentSettingsPages.getState().counts).toEqual({ skills: 2, mcp: 3 });
+    });
 
     it('has no header and opens on General', () => {
       renderSettings();

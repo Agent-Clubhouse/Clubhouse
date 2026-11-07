@@ -59,7 +59,9 @@ describe('McpSettingsView', () => {
     render(<McpSettingsView />);
     await act(async () => { fireEvent.click(toggle()); });
     expect(saveSettings).toHaveBeenCalledWith({ enabled: true });
-    expect(window.clubhouse.app.getMcpOffImpact).not.toHaveBeenCalled();
+    // Only the note's read of where things stand, never a proposal to confirm.
+    expect(vi.mocked(window.clubhouse.app.getMcpOffImpact).mock.calls.every(([proposal]) => Object.keys(proposal).length === 0)).toBe(true);
+    expect(screen.queryByTestId('mcp-off-dialog')).toBeNull();
   });
 
   it('says what restart does and what a running agent keeps, truthfully', () => {
@@ -70,11 +72,26 @@ describe('McpSettingsView', () => {
     expect(screen.queryByText(/Start the bridge server for every project/)).toBeNull();
   });
 
-  it('no longer points at the hidden Clubhouse mode setting (#2901)', () => {
+  it('says Clubhouse keeps MCP on while its own switch is off and Clubhouse Mode keeps it on (D63)', async () => {
     useMcpSettingsStore.setState({ enabled: false } as never);
+    window.clubhouse.app.getMcpOffImpact = vi.fn(async () => ({ ...IMPACT, appKeptByClubhouseMode: true }));
     render(<McpSettingsView />);
-    expect(screen.queryByTestId('mcp-kept-by-clubhouse-mode')).toBeNull();
-    expect(screen.queryByText(/Clubhouse mode also keeps MCP on/)).toBeNull();
+    expect(await screen.findByText('Clubhouse keeps MCP on for agents that still use Clubhouse Mode.')).toBeInTheDocument();
+    expect(window.clubhouse.app.getMcpOffImpact).toHaveBeenCalledWith({});
+  });
+
+  it('shows no note when Clubhouse Mode keeps nothing on, or the switch is on', async () => {
+    useMcpSettingsStore.setState({ enabled: false } as never);
+    const { unmount } = render(<McpSettingsView />);
+    await waitFor(() => expect(window.clubhouse.app.getMcpOffImpact).toHaveBeenCalledWith({}));
+    expect(screen.queryByText(/Clubhouse keeps MCP on/)).toBeNull();
+    unmount();
+
+    useMcpSettingsStore.setState({ enabled: true } as never);
+    vi.mocked(window.clubhouse.app.getMcpOffImpact).mockClear();
+    render(<McpSettingsView />);
+    expect(screen.queryByText(/Clubhouse keeps MCP on/)).toBeNull();
+    expect(window.clubhouse.app.getMcpOffImpact).not.toHaveBeenCalled();
   });
 
   it('asks before saving, with counts, what keeps MCP, and that MCP back starts nothing', async () => {
