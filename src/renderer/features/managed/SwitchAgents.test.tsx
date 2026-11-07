@@ -86,7 +86,7 @@ describe('Help without Clubhouse Mode and personas (#2901)', () => {
     expect(durable).toContain('set its **Runs on** and **Model**, and optionally its **MCP servers** and **Free Agent Mode**');
     const helpers = topics.find((t) => t.id === 'agents-orchestrated-helpers')!.content;
     expect(helpers).not.toContain('persona start with the switch on');
-    expect(helpers).toContain('keeps it on when it switches to managed');
+    expect(helpers).toContain('keeps the switch on when it switches to managed');
   });
 });
 
