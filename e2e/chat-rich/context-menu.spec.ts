@@ -1,6 +1,7 @@
 import { test, expect, type Locator } from '@playwright/test';
 import type { Menu, PopupOptions } from 'electron';
 import * as path from 'node:path';
+import { writeFile } from 'node:fs/promises';
 import { CHAT_MEDIA, md } from '../../src/main/orchestrators/adapters/testing/chat-script';
 import { chatDom, expectImageLoaded, openRichChat, TURN_TIMEOUT } from './harness';
 
@@ -34,6 +35,11 @@ test('native copy menu preserves rich link, image and selection content', async 
   const dom = chatDom(page);
   let cleanupFailed = false;
   let cleanupError: unknown;
+  async function retainEvidence(name: string, value: unknown) {
+    const filename = test.info().outputPath(name);
+    await writeFile(filename, JSON.stringify(value), { flag: 'wx' });
+    await test.info().attach(name, { contentType: 'application/json', path: filename });
+  }
   try {
     await chat.send('Show the copy fixtures.');
     await expect(dom.turnFooters).toHaveCount(1, { timeout: TURN_TIMEOUT });
@@ -100,10 +106,10 @@ test('native copy menu preserves rich link, image and selection content', async 
       const image = nativeImage.createFromPath(filename);
       return { size: image.getSize(), pixels: image.toBitmap().toString('base64') };
     }, path.join(chat.projectDir, 'copy-image.png'));
-    await test.info().attach('image-target.json', { contentType: 'application/json', body: JSON.stringify(await image.evaluate(el => {
+    await retainEvidence('image-target.json', await image.evaluate(el => {
       const rect = el.getBoundingClientRect();
       return { rect: rect.toJSON(), devicePixelRatio, viewport: { width: innerWidth, height: innerHeight } };
-    })) });
+    }));
     expect(await menu(image)).toContain('Copy image');
     await choose('Copy image');
     await expect.poll(() => app.evaluate(async ({ clipboard, nativeImage }) => {
@@ -170,7 +176,7 @@ test('native copy menu preserves rich link, image and selection content', async 
         imageCopies: (globalThis as ProbeGlobal).__copyMenuProbe?.imageCopies,
         formats: (await clipboard.read()).map(item => item.types),
       }));
-      await test.info().attach('native-copy-evidence.json', { contentType: 'application/json', body: JSON.stringify(evidence) });
+      await retainEvidence('native-copy-evidence.json', evidence);
     } catch (error) { cleanupFailed = true; cleanupError = error; }
     // Clear only the disposable runner's clipboard, never a user's clipboard.
     // Keep close in finally even if observer cleanup fails.
