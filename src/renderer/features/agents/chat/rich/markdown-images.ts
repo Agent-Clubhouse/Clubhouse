@@ -23,6 +23,7 @@
 
 import { marked, type Token } from 'marked';
 import type { ChatLocalImageDenial, ChatLocalImageResult } from '../../../../../shared/chat';
+import { localMarkdownLinks } from '../../../../utils/local-markdown-links';
 import { sanitizeMarkdownHtml } from '../../../../utils/safe-markdown';
 import { dataUrlOf, loadThumbnail } from './media';
 
@@ -82,15 +83,17 @@ const NOT_SHOWN: Record<ChatLocalImageDenial | 'error' | 'scheme', string> = {
 export function renderChatMarkdown(content: string): string {
   const nonce = Math.random().toString(36).slice(2, 10);
   const local: string[] = [];
+  const links = localMarkdownLinks(content);
   const raw = marked.parse(content, {
     async: false,
     walkTokens: (token: Token) => {
+      links.walkToken(token);
       if (token.type !== 'image' || !isLocalImageSrc(token.href)) return;
       local.push(token.href);
       token.href = `${MARKER}${nonce}-${local.length - 1}`;
     },
   }) as string;
-  return rewriteMarkdownImages(sanitizeMarkdownHtml(raw), { nonce, local });
+  return links.restore(rewriteMarkdownImages(sanitizeMarkdownHtml(raw), { nonce, local }));
 }
 
 function hostOf(src: string): string {

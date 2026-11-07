@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { ChildProcess } from 'node:child_process';
 
 const launchMock = vi.hoisted(() => vi.fn());
 vi.mock('@playwright/test', () => ({ _electron: { launch: launchMock } }));
@@ -217,9 +218,10 @@ function fakePage(url = RENDERER_URL) {
 
 function fakeApp(pages: ReturnType<typeof fakePage>[]) {
   const context = { addInitScript: vi.fn(async (_script: () => void) => {}) };
+  const child = new ChildProcess(); // Event emitter only; never spawned.
   return {
     context: () => context,
-    process: () => ({ pid: undefined as number | undefined }),
+    process: () => child,
     windows: () => pages,
     waitForEvent: vi.fn(async () => { throw new Error('no more windows'); }),
     close: vi.fn(async () => {}),
@@ -314,6 +316,37 @@ describe('launchApp', () => {
 
     expect(app.close).toHaveBeenCalled();
     expect(fs.existsSync(launchedUserData())).toBe(false);
+  });
+
+  it('records ownership before setup and preserves thrown undefined when setup close rejects', async () => {
+    const app = fakeApp([]);
+    const child = new ChildProcess();
+    Object.defineProperty(child, 'pid', { value: 12345 });
+    app.process = () => child;
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const receipts = () => output.mock.calls
+      .filter(call => call[0] === '[e2e owned-process]')
+      .map(call => JSON.parse(String(call[1])));
+    app.context().addInitScript.mockImplementation(async () => {
+      expect(receipts()[0]).toMatchObject({ phase: 'launch-returned', pid: 12345 });
+      throw undefined;
+    });
+    app.close.mockImplementation(async () => {
+      child.emit('exit', 1, null);
+      child.emit('close', 1, null);
+      throw new Error('close failed');
+    });
+    launchMock.mockResolvedValue(app);
+    try {
+      await expect(launchApp()).rejects.toBeUndefined();
+      expect(app.close).toHaveBeenCalledOnce();
+      expect(receipts()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ phase: 'exit', closeObserved: false }),
+        expect.objectContaining({ phase: 'close', closeObserved: true }),
+        expect.objectContaining({ phase: 'setup-close-attempt', outcome: 'rejected' }),
+      ]));
+      expect(fs.existsSync(launchedUserData())).toBe(false);
+    } finally { output.mockRestore(); }
   });
 
   it('leaves a test-owned profile in place when the launch fails', async () => {

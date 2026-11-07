@@ -1,6 +1,7 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { useFilePreviewStore } from '../../../stores/filePreviewStore';
 import { MarkdownPreview, splitMermaidSegments } from './MarkdownPreview';
 
 const mermaidParse = vi.fn();
@@ -15,6 +16,7 @@ vi.mock('mermaid', () => ({
 }));
 
 beforeEach(() => {
+  useFilePreviewStore.getState().close();
   mermaidParse.mockReset();
   mermaidRender.mockReset();
   mermaidParse.mockResolvedValue({});
@@ -144,4 +146,20 @@ describe('splitMermaidSegments', () => {
     expect((segments[0] as { code: string }).code).toBe('one');
     expect((segments[2] as { code: string }).code).toBe('two');
   });
+});
+
+it('preserves a drive Markdown link through builtin rendering and opens it only on click', () => {
+  render(<MarkdownPreview content="[scratch](C:/scratch/notes.md)" />);
+  expect(useFilePreviewStore.getState().target).toBeNull();
+  const link = screen.getByRole('link', { name: 'scratch' });
+  expect(link.getAttribute('href')).toMatch(/^#clubhouse-local-file-/);
+  fireEvent.click(link);
+  expect(useFilePreviewStore.getState().target?.path).toBe('C:/scratch/notes.md');
+  useFilePreviewStore.getState().close();
+});
+
+it('keeps preserved local links in a remote builtin document from opening the local desktop', () => {
+  render(<MarkdownPreview content="[scratch](file:///remote/notes.md)" allowLocalFiles={false} />);
+  fireEvent.click(screen.getByRole('link', { name: 'scratch' }));
+  expect(useFilePreviewStore.getState().target).toBeNull();
 });

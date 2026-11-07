@@ -17,6 +17,7 @@ import { useUIStore } from './stores/uiStore';
 import { useNotificationStore } from './stores/notificationStore';
 import { useHelperDisposeRequestStore, describeHelperDispose } from './stores/helperDisposeRequestStore';
 import { useHelperStartRequestStore } from './stores/helperStartRequestStore';
+import { useFilePreviewStore } from './stores/filePreviewStore';
 import { useToastStore } from './stores/toastStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
 import { useClubhouseModeStore } from './stores/clubhouseModeStore';
@@ -773,7 +774,7 @@ let previousCleanup: (() => void) | null = null;
  *     to that line (and column).
  *   - open-folder: add the folder as a new project (which activates it) and
  *     switch to its file browser.
- *   - open-file-not-found: surface an error toast.
+ *   - open-file-not-found: preview the file read-only without a project.
  */
 export function handleProtocolAction(action: ResolvedProtocolAction): void {
   switch (action.kind) {
@@ -803,10 +804,7 @@ export function handleProtocolAction(action: ResolvedProtocolAction): void {
       break;
     }
     case 'open-file-not-found': {
-      useToastStore.getState().addToast(
-        `No open project contains ${action.filePath}`,
-        'error',
-      );
+      useFilePreviewStore.getState().open(action.filePath, action.line, action.column);
       break;
     }
   }

@@ -1,9 +1,11 @@
 import { ipcRenderer } from 'electron';
+import type { ChatFilePreview } from '../shared/chat';
 import { IPC } from '../shared/ipc-channels';
 
 export const file = {
   file: {
   readTree: (dirPath: string, options?: { includeHidden?: boolean; depth?: number }) => ipcRenderer.invoke(IPC.FILE.READ_TREE, dirPath, options),
+  preview: (filePath: string): Promise<{ path: string; preview: ChatFilePreview }> => ipcRenderer.invoke(IPC.FILE.PREVIEW, filePath),
   read: (filePath: string) => ipcRenderer.invoke(IPC.FILE.READ, filePath),
   readBinary: (filePath: string) => ipcRenderer.invoke(IPC.FILE.READ_BINARY, filePath),
   write: (filePath: string, content: string) =>

@@ -1,6 +1,7 @@
 import { test, expect, type Locator } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
+import { readReviewEntry } from '../review-entry';
 import { CHAT_MEDIA, md } from '../../src/main/orchestrators/adapters/testing/chat-script';
 import { chatDom, expectCanvasPainted, openRichChat, TURN_TIMEOUT, type RichChat } from './harness';
 
@@ -70,10 +71,11 @@ test.describe('claude: file chips in one reply', () => {
   test.describe.configure({ mode: 'serial' });
 
   let chat: RichChat;
-  let p: Record<'app' | 'util' | 'todo' | 'bigLog' | 'plan' | 'report' | 'bigPdf' | 'scan' | 'broken' | 'gone', string>;
+  let p: Record<'app' | 'util' | 'todo' | 'bigLog' | 'plan' | 'report' | 'bigPdf' | 'scan' | 'broken' | 'gone' | 'scratch', string>;
 
   test.beforeAll(async () => {
     chat = await openRichChat({
+      reviewEntry: readReviewEntry(process.env.CLUBHOUSE_E2E_REVIEW_ENTRY),
       cli: 'claude',
       projectFiles: {
         [path.join('src', 'app.ts')]: APP_TS,
@@ -84,6 +86,7 @@ test.describe('claude: file chips in one reply', () => {
       outsideFiles: {
         [path.join('My Docs', 'plan one.txt')]: 'PLAN_MARKER\n',
         'report.pdf': { copy: CHAT_MEDIA.pdf },
+        'scratch.txt': 'SCRATCH_MARKER\n',
         'big.pdf': '%PDF-1.4\n',
         'scan.pdf': SCAN_PDF,
         'broken.pdf': BROKEN_PDF,
@@ -96,6 +99,7 @@ test.describe('claude: file chips in one reply', () => {
           bigLog: path.join(projectDir, 'src', 'big.log'),
           plan: path.join(outsideDir, 'My Docs', 'plan one.txt'),
           report: path.join(outsideDir, 'report.pdf'),
+          scratch: path.join(outsideDir, 'scratch.txt'),
           bigPdf: path.join(outsideDir, 'big.pdf'),
           scan: path.join(outsideDir, 'scan.pdf'),
           broken: path.join(outsideDir, 'broken.pdf'),
@@ -116,6 +120,7 @@ test.describe('claude: file chips in one reply', () => {
                   `- The report is ${md.path(p.report)}, the full export is ${md.path(p.bigPdf)} and the log is ${md.path(p.bigLog)}.`,
                   `- The scans are ${md.path(p.scan)} and ${md.path(p.broken)}.`,
                   `- I couldn't find ${md.path(p.gone)}.`,
+                  `[Scratch text link](${p.scratch.split(path.sep).join('/')}) and [Scratch PDF link](${p.report.split(path.sep).join('/')}).`,
                 ].join('\n'),
               },
             ],
@@ -130,7 +135,10 @@ test.describe('claude: file chips in one reply', () => {
   });
 
   test.afterAll(async () => {
-    await chat?.close();
+    if (!chat) return;
+    const owned = chat.electronApp.process();
+    await chat.close();
+    console.log('[file-preview owned-process-closed]', JSON.stringify({ mainPid: owned.pid, exitCode: owned.exitCode, signalCode: owned.signalCode }));
   });
 
   test('a path with spaces chips whole, as a code span and quoted in prose', async () => {
@@ -140,18 +148,99 @@ test.describe('claude: file chips in one reply', () => {
     await expect(dom.fileChip(p.todo)).toHaveText(p.todo);
   });
 
-  test('a text file outside the project previews, and Open in Files says it is in no project', async () => {
+  test('scratch files open in-app through Open in Files and supported Markdown links', async () => {
+    const testInfo = test.info();
+    const owned = chat.electronApp.process();
+    const receipt = {
+      mainPid: owned.pid,
+      metrics: await chat.electronApp.evaluate(({ app }) => app.getAppMetrics().map(({ pid, type }) => ({ pid, type }))),
+    };
+    console.log('[file-preview owned-process]', JSON.stringify(receipt));
+    await testInfo.attach('owned-electron-processes', { body: JSON.stringify(receipt, null, 2), contentType: 'application/json' });
     const dom = chatDom(chat.window);
+    const view = chat.window.getByTestId('local-file-preview');
+    const filesBefore = await Promise.all([p.plan, p.report, p.scratch].map((file) => fs.promises.readFile(file)));
+    const projectsBefore = await chat.window.evaluate(() => window.clubhouse.project.list());
+    const capture = async (name: string) => {
+      const screenshotPath = testInfo.outputPath(`${name}.png`);
+      await chat.window.screenshot({ path: screenshotPath });
+      await testInfo.attach(name, { path: screenshotPath, contentType: 'image/png' });
+    };
+    const close = async () => {
+      await view.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect(view).toHaveCount(0);
+    };
+    const textShown = async (marker: string, file: string) => {
+      await expect(view).toBeVisible();
+      await expect(view).toContainText(file);
+      await expect(view).toContainText('(Read-only)');
+      await expect(view.locator('.view-lines')).toContainText(marker, { timeout: TURN_TIMEOUT });
+      // Monaco 0.55 uses a native EditContext div when available, and a
+      // textarea otherwise. Both derive this semantic attribute from readOnly.
+      const editor = view.getByRole('textbox');
+      await expect(editor).toHaveAttribute('aria-autocomplete', 'none');
+      await editor.focus();
+      await expect(editor).toBeFocused();
+      const diskBefore = await fs.promises.readFile(file);
+      const lines = view.locator('.view-lines .view-line');
+      const renderedBefore = await lines.allTextContents();
+      // These tiny fixtures fit entirely in the viewport: no unseen model
+      // lines can hide a mutation behind Monaco's virtualized rendering.
+      expect(renderedBefore).toHaveLength(diskBefore.toString('utf8').split('\n').length);
+      const assertUnchanged = async () => {
+        // Key handling updates the model synchronously; let its scheduled
+        // view render finish before comparing the complete rendered fixture.
+        await editor.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+        expect(await lines.allTextContents()).toEqual(renderedBefore);
+        expect(await fs.promises.readFile(file)).toEqual(diskBefore);
+      };
+      await editor.pressSequentially('READONLY_EDIT_PROBE');
+      await assertUnchanged();
+      await editor.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s');
+      await assertUnchanged();
+    };
+    const pdfShown = async () => {
+      await expect(view).toBeVisible();
+      const canvas = view.getByTestId('chat-file-preview-pdf').getByLabel('Page 1 of 2');
+      await expect(canvas).toBeVisible({ timeout: TURN_TIMEOUT });
+      await expectCanvasPainted(canvas);
+    };
+
     const chip = dom.fileChip(p.plan);
     await expect(chip).toHaveAttribute('data-chat-file', 'text', { timeout: TURN_TIMEOUT });
     await chip.click();
-    const text = dom.filePreview.getByTestId('chat-file-preview-text');
-    await expect(text.locator('.view-lines')).toContainText('PLAN_MARKER', { timeout: TURN_TIMEOUT });
-
+    await expect(dom.filePreview.getByTestId('chat-file-preview-text').locator('.view-lines')).toContainText('PLAN_MARKER', { timeout: TURN_TIMEOUT });
     await dom.filePreview.getByRole('button', { name: 'Open in Files' }).click();
-    await expect(dom.filePreview.getByRole('alert')).toHaveText('That file is not in an open project');
-    await chat.window.keyboard.press('Escape');
     await expect(dom.filePreview).toHaveCount(0);
+    await textShown('PLAN_MARKER', p.plan);
+    await capture('outside-text-open-in-files');
+    await close();
+
+    await dom.fileChip(p.report).click();
+    await dom.filePreview.getByRole('button', { name: 'Open in Files' }).click();
+    await expect(dom.filePreview).toHaveCount(0);
+    await pdfShown();
+    await capture('outside-pdf-open-in-files');
+    await close();
+
+    // Existing sanitization preserves POSIX hrefs. Drive/fileURL Markdown is
+    // a separate product boundary; this acceptance never claims it on Windows.
+    if (process.platform !== 'win32') {
+      await chat.chat.getByRole('link', { name: 'Scratch text link', exact: true }).click();
+      await textShown('SCRATCH_MARKER', p.scratch);
+      await capture('outside-text-markdown');
+      await close();
+      await chat.chat.getByRole('link', { name: 'Scratch PDF link', exact: true }).click();
+      await pdfShown();
+      await capture('outside-pdf-markdown');
+      await close();
+    } else {
+      await testInfo.attach('markdown-platform-limit', { body: 'POSIX Markdown acceptance is not a Windows drive/fileURL assertion.', contentType: 'text/plain' });
+    }
+    const filesAfter = await Promise.all([p.plan, p.report, p.scratch].map((file) => fs.promises.readFile(file)));
+    expect(filesAfter).toEqual(filesBefore);
+    expect(await chat.window.evaluate(() => window.clubhouse.project.list())).toEqual(projectsBefore);
+    await chat.expectScriptComplete();
   });
 
   test('a PDF pages with Next and Previous', async () => {

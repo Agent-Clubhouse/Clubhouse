@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { marked, type Token, type TokensList } from 'marked';
 import { useSafeMarkdownLinks } from '../../../utils/safe-markdown-links';
+import { localMarkdownLinks } from '../../../utils/local-markdown-links';
 import { sanitizeMarkdownHtml } from '../../../utils/safe-markdown';
 import { MermaidDiagram } from './MermaidDiagram';
 import hljs from 'highlight.js/lib/core';
@@ -106,6 +107,8 @@ type Segment =
  *  Nested blocks (inside lists/blockquotes) fall through to normal code-block rendering. */
 export function splitMermaidSegments(content: string): Segment[] {
   const tokens = marked.lexer(content) as TokensList;
+  const links = localMarkdownLinks(content);
+  marked.walkTokens(tokens, links.walkToken);
   const segments: Segment[] = [];
   let buffer: Token[] = [];
 
@@ -127,12 +130,14 @@ export function splitMermaidSegments(content: string): Segment[] {
     }
   }
   flush();
-  return segments;
+  const html = links.restoreAll(segments.filter((s) => s.kind === 'html').map((s) => sanitizeMarkdownHtml(s.html)));
+  let index = 0;
+  return segments.map((s) => s.kind === 'html' ? { ...s, html: html[index++] } : s);
 }
 
-export function MarkdownPreview({ content }: { content: string }) {
+export function MarkdownPreview({ content, allowLocalFiles = true }: { content: string; allowLocalFiles?: boolean }) {
   injectHljsStyle();
-  const handleClick = useSafeMarkdownLinks();
+  const handleClick = useSafeMarkdownLinks(allowLocalFiles);
 
   const segments = useMemo(() => splitMermaidSegments(content), [content]);
 
@@ -149,7 +154,7 @@ export function MarkdownPreview({ content }: { content: string }) {
       }
       return React.createElement('div', {
         key: `h-${i}`,
-        dangerouslySetInnerHTML: { __html: sanitizeMarkdownHtml(segment.html) },
+        dangerouslySetInnerHTML: { __html: segment.html },
       });
     }),
   );

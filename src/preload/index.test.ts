@@ -171,6 +171,11 @@ describe('preload IPC bridge', () => {
     });
   });
 
+  it('marshals explicit readonly previews without requesting a file write', async () => {
+    await expect(api.file.preview('~/scratch notes.md')).resolves.toBe('bridge-result');
+    expect(invoke).toHaveBeenCalledWith('file:preview', '~/scratch notes.md');
+  });
+
   describe('plugin storage', () => {
     it('passes storage read requests as one request object', async () => {
       const request = { pluginId: 'plugin-1', scope: 'project', key: 'token', projectPath: '/demo' };

@@ -24,6 +24,10 @@ vi.mock('./MonacoEditor', () => ({
   getOrCreateModel: vi.fn(),
 }));
 
+vi.mock('../../../features/agents/chat/rich/FileChips', () => ({
+  PreviewBody: ({ preview }: { preview: { text?: string } }) => <div data-testid="readonly-preview">{preview.text}</div>,
+}));
+
 vi.mock('./MarkdownPreview', () => ({
   MarkdownPreview: ({ content }: { content: string }) =>
     React.createElement('div', { 'data-testid': 'markdown-preview' }, content),
@@ -90,6 +94,51 @@ describe('FileViewer', () => {
     await waitFor(() => {
       expect(api.files.readFile).toHaveBeenCalledWith('hello.ts');
     });
+  });
+
+  it('opens a tree symlink through the readonly route only after a scope denial', async () => {
+    const api = createViewerAPI();
+    vi.mocked(api.files.stat).mockRejectedValueOnce(new Error('Error invoking remote method: Error: Access denied: path "/project/link.ts" is outside allowed project directories'));
+    window.clubhouse.file.preview = vi.fn(async () => ({ path: '/scratch/target.ts', preview: { kind: 'text', name: 'target.ts', size: 7, text: 'outside' } }));
+    render(<FileViewer api={api} />);
+    selectFile('link.ts');
+    expect(await screen.findByTestId('readonly-preview')).toHaveTextContent('outside');
+    expect(window.clubhouse.file.preview).toHaveBeenCalledWith('/project/link.ts');
+    expect(screen.queryByTestId('monaco-editor')).toBeNull();
+    expect(lastOnSave).toBeNull();
+    expect(api.files.writeFile).not.toHaveBeenCalled();
+  });
+
+  it('keeps OS read errors visible without retrying them through the broad preview route', async () => {
+    const api = createViewerAPI();
+    vi.mocked(api.files.stat).mockRejectedValueOnce(new Error('EACCES: permission denied'));
+    window.clubhouse.file.preview = vi.fn();
+    render(<FileViewer api={api} />);
+    selectFile('unreadable.ts');
+    expect(await screen.findByRole('alert')).toHaveTextContent('EACCES: permission denied');
+    expect(window.clubhouse.file.preview).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('monaco-editor')).toBeNull();
+  });
+
+  it('never retries a remote project scope denial on the local desktop', async () => {
+    const api = createViewerAPI();
+    api.context.projectId = 'remote||satellite||p1';
+    vi.mocked(api.files.stat).mockRejectedValueOnce(new Error('Path traversal is not allowed'));
+    window.clubhouse.file.preview = vi.fn();
+    render(<FileViewer api={api} />);
+    selectFile('remote.ts');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Path traversal is not allowed');
+    expect(window.clubhouse.file.preview).not.toHaveBeenCalled();
+  });
+
+  it('surfaces preview refusal after a scope denial without enabling an editor', async () => {
+    const api = createViewerAPI();
+    vi.mocked(api.files.stat).mockRejectedValueOnce(new Error('Path traversal is not allowed'));
+    window.clubhouse.file.preview = vi.fn(async () => { throw new Error('That file is not available'); });
+    render(<FileViewer api={api} />);
+    selectFile('/scratch/gone.ts');
+    expect(await screen.findByRole('alert')).toHaveTextContent('That file is not available');
+    expect(screen.queryByTestId('monaco-editor')).toBeNull();
   });
 
   it('shows markdown preview for .md files', async () => {

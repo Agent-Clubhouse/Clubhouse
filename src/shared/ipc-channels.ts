@@ -250,6 +250,7 @@ export const IPC = {
     READ_TREE: 'file:read-tree',
     READ: 'file:read',
     READ_BINARY: 'file:read-binary',
+    PREVIEW: 'file:preview',
     WRITE: 'file:write',
     SHOW_IN_FOLDER: 'file:show-in-folder',
     MKDIR: 'file:mkdir',

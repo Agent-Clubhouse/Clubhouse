@@ -1,3 +1,4 @@
+import { localMarkdownLinks } from './local-markdown-links';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 
@@ -47,8 +48,9 @@ export function sanitizeMarkdownHtml(html: string): string {
  * Uses DOMPurify to prevent XSS from untrusted markdown content.
  */
 export function renderMarkdownSafe(content: string): string {
-  const raw = marked.parse(content, { async: false }) as string;
-  return sanitizeMarkdownHtml(raw);
+  const links = localMarkdownLinks(content);
+  const raw = marked.parse(content, { async: false, walkTokens: links.walkToken }) as string;
+  return links.restore(sanitizeMarkdownHtml(raw));
 }
 
 const plainTextCache = new Map<string, string>();
