@@ -495,6 +495,15 @@ export interface HelperStartArgs {
    * orchestrator's own project.
    */
   project?: string;
+  /**
+   * Clubhouse-managed helpers (#2899): the template to build the helper from.
+   * Unset means the app's default helper template.
+   */
+  template?: string;
+  /** Agent part ids to add for this helper only (#2899). Nothing is saved to the template. */
+  addParts?: string[];
+  /** Agent part ids to leave out for this helper only (#2899). */
+  removeParts?: string[];
 }
 
 /**

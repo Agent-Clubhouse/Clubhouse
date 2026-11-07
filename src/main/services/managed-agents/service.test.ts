@@ -238,3 +238,24 @@ describe('templates', () => {
     expect(await service.defaultHelperTemplateId()).toBe('builtin-template-helper');
   });
 });
+
+describe('managed helpers (#2899)', () => {
+  it('builds a helper from the default template with parts added and removed for it only', async () => {
+    const { managedHelperSetup } = await import('./helpers');
+    const pw = await user(() => service.createPart({ name: 'Playwright', content: { kind: 'mcp', serverKey: 'playwright', transport: 'stdio', command: 'npx' } }));
+    const setup = await user(() => managedHelperSetup(service, { addParts: [pw.id], removeParts: [BUILTIN_BLOCK_IDS.basics] }));
+    expect(setup.templateId).toBe('builtin-template-helper');
+    expect(setup.blocks).toEqual([BUILTIN_BLOCK_IDS.identity, BUILTIN_BLOCK_IDS.helper]);
+    expect(setup.mcps).toEqual([CLUBHOUSE_MCP_PART_ID, pw.id]);
+    const template = await user(() => service.getTemplate('builtin-template-helper'));
+    expect(template.setup.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+  });
+
+  it('names a template, and refuses an unknown template or part', async () => {
+    const { managedHelperSetup } = await import('./helpers');
+    const qa = await user(() => managedHelperSetup(service, { template: 'builtin-template-quality-assurance' }));
+    expect(qa.blocks).toContain(BUILTIN_BLOCK_IDS.qa);
+    await expect(user(() => managedHelperSetup(service, { template: 'nope' }))).rejects.toThrow(/no template "nope"/);
+    await expect(user(() => managedHelperSetup(service, { addParts: ['nope'] }))).rejects.toThrow(/no agent part "nope"/);
+  });
+});

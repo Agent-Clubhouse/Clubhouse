@@ -74,6 +74,10 @@ vi.mock('../services/clubhouse-mcp/tools/dispatcher-control-tools', () => ({
   registerDispatcherControlTools: vi.fn(),
 }));
 
+vi.mock('../services/clubhouse-mcp/tools/managed-tools', () => ({
+  registerManagedTools: vi.fn(),
+}));
+
 vi.mock('../services/persisted-bindings', () => ({
   registerPersistedBindingSource: vi.fn(),
   rebuildPersistedBindings: vi.fn(async () => ({ sources: [] })),

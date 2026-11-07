@@ -103,6 +103,9 @@ import type { HelperSpawnResult } from '../../../../shared/telemetry/helper-usag
 import { classifyStartFailure, noteProviderFailure, providerStartWarning } from '../../provider-quota';
 import { contextWindowCheck } from '../../context-window';
 import { helperAutoRefused, helperRouted } from '../../../telemetry/feature-events';
+import { getSettings as getExperimentalSettings } from '../../experimental-settings';
+import { managedAgents } from '../../managed-agents';
+import { managedHelperSetup } from '../../managed-agents/helpers';
 
 // ── Results ──────────────────────────────────────────────────────────────
 
@@ -557,9 +560,15 @@ function validateStartArgs(args: HelperStartArgs): void {
 
 function parseStartArgs(args: Record<string, unknown>): HelperStartArgs {
   const parsed: HelperStartArgs = { name: requireText(args, 'name'), task: requireText(args, 'task') };
-  for (const key of ['persona', 'cli', 'model', 'effort', 'difficulty', 'access', 'branchFrom', 'folder', 'project'] as const) {
+  for (const key of ['persona', 'cli', 'model', 'effort', 'difficulty', 'access', 'branchFrom', 'folder', 'project', 'template'] as const) {
     const value = optionalText(args, key);
     if (value) parsed[key] = value;
+  }
+  for (const key of ['addParts', 'removeParts'] as const) {
+    const value = args[key];
+    if (value === undefined) continue;
+    if (!Array.isArray(value) || value.some((x) => typeof x !== 'string')) throw new McpArgError(`${key} must be a list of agent part ids`);
+    if (value.length > 0) parsed[key] = value as string[];
   }
   validateStartArgs(parsed);
   return parsed;
@@ -593,6 +602,7 @@ function noticeApprovalNeeded(orchestrator: DurableAgentConfig, args: HelperStar
     message: `Helper "${args.name}": ${args.task}`.slice(0, 240),
   });
 }
+
 
 /**
  * The start path, for start_helper and for a start the user approved
@@ -772,8 +782,13 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
         ...(helperProvider && { orchestrator: helperProvider as OrchestratorId }),
         freeAgentMode: launch.freeAgentMode,
       };
+      // Clubhouse-managed helpers (#2899): built from a template, never a persona.
+      const managedHelper = getExperimentalSettings().managedAgents === true ? await managedHelperSetup(managedAgents(), args) : null;
+      if (managedHelper) delete params.persona;
       // What the start named stays: a persona's pin only fills what it left open (#2671).
-      started = await startDurableCreation(target.path, params, personaInjection(target.path, params, plan?.keep));
+      started = await startDurableCreation(target.path, params, managedHelper
+        ? { inject: async (created) => { if (created.worktreePath) await managedAgents().saveSetup(target.path, created.id, managedHelper); } }
+        : personaInjection(target.path, params, plan?.keep));
     } catch (err) {
       // telemetry-exempt: the refusal reaches the calling agent as the tool result
       // Refused up front: a bad or taken name, folder, branch or base, or an unknown persona.
@@ -1300,7 +1315,10 @@ export function registerHelperTools(): void {
         properties: {
           name: { type: 'string', description: 'The helper\'s name (also its default folder).' },
           task: { type: 'string', description: 'The task, sent as the helper\'s first message.' },
-          persona: { type: 'string', description: 'Optional persona id to apply, from the project the helper is created in.' },
+          persona: { type: 'string', description: 'Optional persona id to apply, from the project the helper is created in. Ignored when Clubhouse-managed agents are on: use template.' },
+          template: { type: 'string', description: 'With Clubhouse-managed agents on: the template to build the helper from (list_agent_templates). Leave out for the default helper template.' },
+          addParts: { type: 'array', items: { type: 'string' }, description: 'With Clubhouse-managed agents on: agent part ids (list_agent_parts) to add for this helper only.' },
+          removeParts: { type: 'array', items: { type: 'string' }, description: 'With Clubhouse-managed agents on: agent part ids from the template to leave out for this helper only. To swap a part, remove one and add another.' },
           cli: {
             type: 'string',
             description: 'Optional CLI provider id (e.g. claude-code, codex-cli, copilot-cli). Defaults to yours. Or "auto", with difficulty, if Auto provider is on for you: Clubhouse picks Claude or Codex from helper counts and plan limits, and refuses if it is off.',

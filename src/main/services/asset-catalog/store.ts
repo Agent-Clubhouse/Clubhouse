@@ -65,7 +65,8 @@ import { persist } from '../../telemetry/persist';
 import { getBaseDirPath } from '../base-dir';
 import { pathExists } from '../fs-utils';
 import { appLog } from '../log-service';
-import { appendSettingsAudit, auditChanged, currentSettingsOrigin } from '../settings-audit';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { appendSettingsAudit, auditChanged, currentSettingsOrigin, withSettingsSurface } from '../settings-audit';
 import {
   acceptedRefsOf,
   canonicalHash,
@@ -174,8 +175,21 @@ function isCompositionShape(composition: unknown): boolean {
 /** Agent-facing ways in. A user's are `ui` and `mobile`; `persona` and `system` are Clubhouse acting for one. */
 const AGENT_SURFACES = new Set(['mcp', 'cli', 'dispatcher']);
 
+/**
+ * The one agent write path (#2900): the Dispatcher's builder tools, which the
+ * maintainer gave full control of agent parts. Granted per call, for one
+ * agent id, and only on the Dispatcher surface; every other agent write is
+ * still refused. Writes stay attributed to the Dispatcher in the audit.
+ */
+const dispatcherGrant = new AsyncLocalStorage<string>();
+
+export function withDispatcherCatalogWrites<T>(dispatcherId: string, fn: () => T): T {
+  return dispatcherGrant.run(dispatcherId, () => withSettingsSurface('dispatcher', dispatcherId, fn));
+}
+
 function isUserWritePermitted(): boolean {
   const { surface, actorId } = currentSettingsOrigin();
+  if (surface === 'dispatcher' && actorId && dispatcherGrant.getStore() === actorId) return true;
   return !actorId && !AGENT_SURFACES.has(surface);
 }
 

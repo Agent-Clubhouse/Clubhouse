@@ -1375,6 +1375,22 @@ describe('copies', () => {
   });
 });
 
+describe('the Dispatcher builder grant (#2900)', () => {
+  it('lets the granted Dispatcher write, and nobody else on any surface', async () => {
+    const { withDispatcherCatalogWrites } = await import('./store');
+    const made = await withDispatcherCatalogWrites('dispatcher-1', () => store.createAsset({ kind: 'block', name: 'From the Dispatcher', payload: doc() }));
+    expect(made.name).toBe('From the Dispatcher');
+    // Same surface and actor without the grant: refused.
+    await withSettingsSurface('dispatcher', 'dispatcher-1', async () => {
+      expect(await code(store.createAsset({ kind: 'block', name: 'x', payload: doc() }))).toBe('agent_not_permitted');
+    });
+    // The grant names one agent: another actor inside it is refused.
+    await withDispatcherCatalogWrites('dispatcher-1', () => withSettingsSurface('mcp', 'agent-9', async () => {
+      expect(await code(store.createAsset({ kind: 'block', name: 'y', payload: doc() }))).toBe('agent_not_permitted');
+    }));
+  });
+});
+
 describe('agents can only read', () => {
   it.each([
     ['the MCP surface', 'mcp', 'agent-9'],
