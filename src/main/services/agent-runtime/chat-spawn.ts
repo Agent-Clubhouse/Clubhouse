@@ -544,7 +544,8 @@ async function runChatStart(
     const projectServersEnabled = isMcpEnabled(params.projectPath, durableConfig?.mcpOverride);
     // Resolve before bridge injection or any write, including on a missing local file.
     const mcpNotices: ChatRuntimeNotice[] = [];
-    const configuredServers = projectServersEnabled
+    // A managed agent's MCP parts reach it even with the Clubhouse bridge off (#2896).
+    const configuredServers = projectServersEnabled || !!durableConfig?.managed
       ? await resolveAgentMcpServers(params.projectPath, durableConfig ?? undefined, { cwd: params.cwd, conventions: provider.conventions, onNotice: (message) => mcpNotices.push({ level: 'warn', code: 'mcp_configuration', message }) })
       : {};
     checkpoint();

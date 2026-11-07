@@ -275,6 +275,10 @@ app.on('ready', () => {
   markStartup('register_ipc_end');
   // E2E only: a no-op unless unpackaged and asked for (#2490).
   installHelperDeliverySeam();
+  // Built-in agent parts (#2902): install or update them in the background. Never blocks startup.
+  void import('./services/managed-agents').then(({ managedAgents }) => managedAgents().ensureBuiltins()).catch((err) => {
+    appLog('core:managed', 'warn', 'Could not install built-in agent parts', { meta: { error: err instanceof Error ? err.message : String(err) } });
+  });
   buildMenu();
 
   // Resume satellite connections when the machine wakes from sleep

@@ -50,6 +50,9 @@ vi.mock('./git-exclude-manager', () => ({
   removeExclusions: vi.fn(),
 }));
 
+const mockManagedMcp = vi.fn(async () => ({ workiq: { command: 'npx' } }));
+vi.mock('./managed-agents', () => ({ managedMcpServersFor: (...args: unknown[]) => mockManagedMcp(...(args as [])) }));
+
 vi.mock('./clubhouse-mode-settings', () => ({
   getSettings: vi.fn(() => ({ enabled: false })),
   saveSettings: vi.fn(),
@@ -78,6 +81,8 @@ import {
   extractAgentPersona,
   writeResolvedPersonaInstructions,
   resolveAgentCommands,
+  resolveProjectMcpServers,
+  resolveAgentMcpServers,
   listAvailablePersonas,
   getAgentWildcards,
   getDefaultAgentTemplates,
@@ -149,6 +154,15 @@ function mockSettingsFile(settingsJson: string): void {
     throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
   });
 }
+
+describe('managed agents MCP (#2896)', () => {
+  it('a managed agent gets its own MCP parts, never project defaults, in terminal and chat', async () => {
+    const agent = { id: 'a', name: 'a', color: 'indigo', createdAt: '', managed: { version: 1, blocks: [], skills: [], mcps: ['p'] } } as DurableAgentConfig;
+    await expect(resolveProjectMcpServers('/project', agent)).resolves.toEqual({ workiq: { command: 'npx' } });
+    await expect(resolveAgentMcpServers('/project', agent, { cwd: '/wt', conventions: { mcpConfigFile: '.mcp.json' } as never })).resolves.toEqual({ workiq: { command: 'npx' } });
+    expect(mockManagedMcp).toHaveBeenCalledWith(agent);
+  });
+});
 
 describe('materialization-service', () => {
   beforeEach(() => {

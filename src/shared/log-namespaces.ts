@@ -37,6 +37,7 @@ export const KNOWN_LOG_NAMESPACES: readonly string[] = [
   'core:hook-server',
   'core:hook-server-toggle',
   'core:ipc',
+  'core:managed',
   'core:materialization',
   'core:mcp',
   'core:cli',

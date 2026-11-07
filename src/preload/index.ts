@@ -6,6 +6,7 @@ import { agent } from './agent';
 import { git } from './git';
 import { agentSettings } from './agentSettings';
 import { skillBundle } from './skillBundle';
+import { managedAgents } from './managedAgents';
 import { file } from './file';
 import { blueprint } from './blueprint';
 import { plugin } from './plugin';
@@ -59,6 +60,7 @@ export const api = {
   ...git,
   ...agentSettings,
   ...skillBundle,
+  ...managedAgents,
   ...file,
   ...blueprint,
   ...plugin,

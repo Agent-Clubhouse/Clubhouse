@@ -7,6 +7,7 @@ import { registerAgentHandlers } from './agent-handlers';
 import { registerChatHandlers } from './chat-handlers';
 import { registerAgentSettingsHandlers } from './agent-settings-handlers';
 import { registerSkillBundleHandlers } from './skill-bundle-handlers';
+import { registerManagedAgentsHandlers } from './managed-agents-handlers';
 import { registerAppHandlers } from './app-handlers';
 import { registerPluginHandlers } from './plugin-handlers';
 import { registerPluginMcpHandlers } from './plugin-mcp-handlers';
@@ -70,6 +71,7 @@ export function registerAllHandlers(): void {
   registerChatHandlers();
   registerAgentSettingsHandlers();
   registerSkillBundleHandlers();
+  registerManagedAgentsHandlers();
   registerAppHandlers();
   registerPluginHandlers();
   registerPluginMcpHandlers();

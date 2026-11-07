@@ -114,6 +114,11 @@ vi.mock('./agent-runtime/chat-spawn', async (importOriginal) => {
 // Mock materialization-service
 const mockMaterializeAgent = vi.fn();
 const mockCleanupStaleJsonInTomlConfigs = vi.fn();
+const mockDeliverForSpawn = vi.fn(async () => {});
+vi.mock('./managed-agents', () => ({
+  deliverForSpawn: (...args: unknown[]) => mockDeliverForSpawn(...(args as [])),
+}));
+
 vi.mock('./materialization-service', () => ({
   resolveProjectMcpServers: vi.fn(async () => ({})),
   materializeAgent: (...args: unknown[]) => mockMaterializeAgent(...args),
@@ -1111,6 +1116,12 @@ describe('agent-system', () => {
       expect(mockEnsureMcpBridge).toHaveBeenCalled();
       expect(mockInjectClubhouseMcp.mock.calls[0][4]).toEqual({ projectPath: '/project', agentOverride: true });
       expect(Object.keys(flagsFromBuild()!)).toEqual(['clubhouse']);
+    });
+
+    it('gives a managed agent without the Clubhouse part its own MCP servers and no bridge (#2896)', async () => {
+      withConfig({ mcpOverride: false, worktreePath: '/project/wt', managed: { version: 1, blocks: [], skills: [], mcps: ['part-github'] } });
+      await spawn();
+      expect(Object.keys(flagsFromBuild()!)).toEqual(['github']);
     });
 
     it('gives a helper its project servers too where MCP is on for them', async () => {
@@ -2573,6 +2584,41 @@ describe('agent-system', () => {
           freeAgentMode: true,
         }),
       );
+    });
+  });
+
+  describe('managed agent delivery (#2896)', () => {
+    it('delivers a managed setup before the start and never takes the Clubhouse Mode path', async () => {
+      mockIsClubhouseModeEnabled.mockReturnValue(true);
+      mockDeliverForSpawn.mockClear();
+      mockMaterializeAgent.mockClear();
+      const config = {
+        id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1',
+        managed: { version: 1, blocks: ['builtin-block-identity'], skills: [], mcps: [] },
+      };
+      mockGetDurableConfig.mockReturnValue(config);
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockDeliverForSpawn).toHaveBeenCalledWith('/project', expect.objectContaining({ id: 'agent-1' }), expect.objectContaining({ id: 'claude-code' }));
+      expect(mockMaterializeAgent).not.toHaveBeenCalled();
+    });
+
+    it('keeps starting when delivery fails, and says why', async () => {
+      mockIsClubhouseModeEnabled.mockReturnValue(false);
+      mockDeliverForSpawn.mockRejectedValueOnce(new Error('disk full'));
+      mockGetDurableConfig.mockReturnValue({
+        id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1',
+        managed: { version: 1, blocks: [], skills: [], mcps: [] },
+      });
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, 'agent-1', 'disk full');
+    });
+
+    it('does nothing for an agent that is not managed', async () => {
+      mockIsClubhouseModeEnabled.mockReturnValue(false);
+      mockDeliverForSpawn.mockClear();
+      mockGetDurableConfig.mockReturnValue({ id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1' });
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockDeliverForSpawn).not.toHaveBeenCalled();
     });
   });
 

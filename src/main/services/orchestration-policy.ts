@@ -196,6 +196,8 @@ export async function readPersonaOrchestrationDefaults(
   projectPath: string,
   agent: DurableAgentConfig,
 ): Promise<OrchestrationPolicyConfig | undefined> {
+  // Managed agents (#2899): no persona layer. Their own settings decide.
+  if (agent.managed) return undefined;
   return personaDefaultsFor(projectPath, await effectivePersonaId(projectPath, agent));
 }
 
@@ -327,7 +329,7 @@ export async function resolveOrchestrationPolicies(
     }
     if (!personas.has(personaId)) personas.set(personaId, personaDefaultsFor(projectPath, personaId));
     out.set(agent.id, withAutoEffective(
-      resolveOrchestrationPolicy(agent.orchestration, await personas.get(personaId), resolveOptions(projectPath, agent)),
+      resolveOrchestrationPolicy(agent.orchestration, agent.managed ? undefined : await personas.get(personaId), resolveOptions(projectPath, agent)),
       defaults?.helperAuto === 'off',
     ));
   }));
