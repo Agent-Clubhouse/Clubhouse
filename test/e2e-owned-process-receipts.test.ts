@@ -14,13 +14,13 @@ describe('owned process receipts without spawning', () => {
     expect(records[0]).toMatchObject({ phase: 'launch-returned', pid: 12345, exitObserved: false, closeObserved: false });
     stderr.emit('data', Buffer.from('x'.repeat(5000) + 'tail'));
     child.emit('exit', 7, null);
-    expect(records.at(-1)).toMatchObject({ phase: 'exit', eventExitCode: 7, closeObserved: false });
-    expect(String(records.at(-1)?.stderrTail)).toHaveLength(4096);
+    expect(records[records.length - 1]).toMatchObject({ phase: 'exit', eventExitCode: 7, closeObserved: false });
+    expect(String(records[records.length - 1]?.stderrTail)).toHaveLength(4096);
     child.emit('close', 7, null);
-    expect(records.at(-1)).toMatchObject({ phase: 'close', exitObserved: true, closeObserved: true });
+    expect(records[records.length - 1]).toMatchObject({ phase: 'close', exitObserved: true, closeObserved: true });
     expect(stderr.listenerCount('data')).toBe(0);
     observer.emit('setup-close-attempt', { outcome: 'fulfilled' });
-    expect(records.at(-1)).toMatchObject({ outcome: 'fulfilled', closeObserved: true });
+    expect(records[records.length - 1]).toMatchObject({ outcome: 'fulfilled', closeObserved: true });
     stderr.destroy();
   });
 
@@ -35,7 +35,7 @@ describe('owned process receipts without spawning', () => {
 
   it('reports already-exited status without retroactively claiming an observed close', () => {
     const child = new ChildProcess();
-    child.exitCode = 1;
+    Object.defineProperty(child, 'exitCode', { value: 1 });
     const records: Record<string, unknown>[] = [];
     observeOwnedProcess(() => child, row => records.push(row));
     expect(records[0]).toMatchObject({ exitCode: 1, exitObserved: false, closeObserved: false });
