@@ -1032,10 +1032,10 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         const context = this.lastContext && size ? { used: this.lastContext.used, size } : undefined;
         this.push({
           type: 'usage',
-          data: { scope: 'turn', tokens: t, costUsd: turnCost, costIsEstimate: turnCost !== undefined ? costIsEstimate : undefined, ...(context && { context }) },
+          data: { scope: 'turn', coverage: 'main', tokens: t, costUsd: turnCost, costIsEstimate: turnCost !== undefined ? costIsEstimate : undefined, ...(context && { context }) },
         }, true);
         if (ev.totalCostUsd !== undefined || ev.modelUsage) {
-          this.push({ type: 'usage', data: { scope: 'session', tokens: sessionTokens(ev.modelUsage), costUsd: ev.totalCostUsd, costIsEstimate } }, true);
+          this.push({ type: 'usage', data: { scope: 'session', coverage: 'inclusive', tokens: sessionTokens(ev.modelUsage), costUsd: ev.totalCostUsd, costIsEstimate } }, true);
         }
         this.push({ type: 'turn_ended', data: { stopReason, durationMs: ev.durationMs, usage: t, costUsd: turnCost } }, true);
         this.turnRunning = false;

@@ -801,8 +801,8 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   private endTurn(stopReason: 'end_turn' | 'cancelled' | 'error'): void {
     if (!this.turnRunning) return;
     const usage = this.turnTokens;
-    if (usage || this.context) this.push({ type: 'usage', data: { scope: 'turn', ...(usage && { tokens: usage }), ...(this.context && { context: this.context }) } }, true);
-    if (this.sessionTokens) this.push({ type: 'usage', data: { scope: 'session', tokens: this.sessionTokens } }, true);
+    if (usage || this.context) this.push({ type: 'usage', data: { scope: 'turn', ...(usage && { coverage: 'inclusive' as const, tokens: usage }), ...(this.context && { context: this.context }) } }, true);
+    if (this.sessionTokens) this.push({ type: 'usage', data: { scope: 'session', coverage: 'inclusive', tokens: this.sessionTokens } }, true);
     this.push({ type: 'turn_ended', data: { stopReason, ...(usage && { usage }) } }, true);
     this.turnRunning = false;
     this.interrupting = false;

@@ -93,6 +93,24 @@ describe('telemetry facade', () => {
     expect(rt.count).toHaveBeenCalledTimes(PENDING_BUFFER_CAP);
   });
 
+  it('hands a local-only event to the local sink and never to an export runtime, buffered or live', () => {
+    const local: Array<[string, unknown]> = [];
+    setLocalSink({ ...passThroughSink('standard'), event: (name, _attrs, opts) => local.push([name, opts]) });
+    beginPending();
+    tel.event('clubhouse.helper.reuse', [], { localOnly: true });
+    const rt = fakeRuntime();
+    setRuntime(rt);
+    tel.event('clubhouse.helper.reuse', [], { localOnly: true });
+    tel.event('clubhouse.helper.reuse', []);
+    expect(local).toEqual([
+      ['clubhouse.helper.reuse', { localOnly: true }],
+      ['clubhouse.helper.reuse', { localOnly: true }],
+      ['clubhouse.helper.reuse', undefined],
+    ]);
+    // Only the event that was not local-only was exported.
+    expect(rt.event).toHaveBeenCalledTimes(1);
+  });
+
   it('discards the buffer when startup is aborted', () => {
     beginPending();
     // Export only receives what local recording produces (spec §6.12).

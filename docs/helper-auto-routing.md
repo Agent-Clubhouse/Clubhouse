@@ -205,6 +205,107 @@ Stage 2 lists only `explicit` and `preset`, its three reasons and its fallbacks.
 - `clubhouse.helper_routing.changed`: action (`set`, `toggle`, `reset_cell`, `reset_provider`, `reset_all`), surface and outcome.
 - Add `orchestration` to `SETTINGS_KEYS`. `SAVE_ORCHESTRATION_SETTINGS` emits nothing today.
 
+### Decision, outcome and usage records (#2747)
+
+Seven events, all `localOnly`: they go to the local recording (`~/.clubhouse/logs/telemetry-*.jsonl`) at the default level and are never handed to an export destination, whatever its level or preset. Exporting any of it later is a separate decision. `clubhouse.helper.routed` stays the one exportable summary. Nothing here reads a prompt, task text, path, account name or credential, changes routing, probes a provider or spends tokens.
+
+| Event | Written when | Carries |
+| --- | --- | --- |
+| `clubhouse.helper.decision` | A routing decision, accepted or refused. A refusal has no helper | Decision id, mode, outcome, policy version, requested and resolved provider, model (hash plus family), effort, difficulty, task profile, mapping revision and fingerprint (hashes), mapping kind, counts of candidates and eligible ones, thresholds in force, cooldown counts, tie inputs |
+| `clubhouse.helper.decision.candidate` | One per registered provider of a decision, at most 8 | Eligibility and exclusion code, mapped model and effort and whether verified, load split into `live` and `reserved`, quota state, source, reading time and freshness, unknown reason, weekly and 5-hour used basis points and reset times, policy score inputs, rank, chosen |
+| `clubhouse.helper.spawn_result` | The decision became a helper or didn't | `started`, `left_asleep`, `spawn_failed` (with cooldown kind), `creation_refused`, `cancelled`; whether the provider and model that launched differ from the decision; decision age |
+| `clubhouse.helper.reuse` | A wake or resume | The earlier decision's id and age. It is never a new decision; `decision_known=false` when the ledger has none |
+| `clubhouse.helper.usage.sample` | After each finished turn of a helper run, and once or twice at its end | Token figures with source, scope, dedup rule and completeness |
+| `clubhouse.helper.outcome` | The run ended, or the helper was disposed | Outcome, duration, turns, turns with no usage, auth, rate limit and exceeded-quota errors seen, samples dropped |
+| `clubhouse.helper_quota.sample` | A token-free plan-limit read finished | See below |
+
+Conventions that hold for every field:
+
+- **Absent is unavailable. Zero is a reported zero.** A quota with no reading has no percent attribute, not `0`. A provider that reports no reasoning tokens has no `reasoning_tokens`.
+- Percentages are basis points of the provider's own plan window (4200 is 42.00%), times are epoch milliseconds, ids are hashed by the facade with the install's secret salt. A model is `model_hash` (different mapped models stay distinguishable, the id is not recoverable) plus the closed `clubhouse.model.family`. The same applies to the mapping revision and fingerprint, so two decisions on the same mapping compare equal.
+- Tokens are never turned into a subscription percentage, and neither are dollars. Used percent is only the provider's reading.
+- The contract routing fills in is `src/shared/telemetry/helper-usage-contract.ts`. Anything policy-specific is optional, so a policy that has no score, tie band or reservation expiry leaves them out.
+
+#### Local and export policy, per field
+
+Today every field of these seven events is local-only: written when local recording is on at the standard level or above (the default), never exported, and not tied to any destination's level or preset. They follow the same consent gate as every other signal: local recording off, nothing is produced (and the ledger is not written). The `localOnly` option on `tel.event` is what enforces it; it is tested against both the live and the start-up-buffered export paths.
+
+If a field is ever exported, it is a deliberate per-field change, not a default. Closed-enum fields (mode, outcome, reason, exclusion code, spawn result, outcome class, completeness, dedup rule, scope) are the only candidates. These stay local: used percentages and reset times, the model hash, mapping revision and fingerprint, token counts, ids and their hashes, anything with a time, and every number a quota reading carries.
+
+#### Joining
+
+The base folder (`~/.clubhouse`, or `~/.clubhouse-dev` in development) keeps `helper-decisions.json`, a small ledger that maps a helper id to the decision that started it. It holds ids and the resolved provider, model and effort, nothing else. While the app runs, an entry whose helper has a run open, or whose start has no result yet, is never evicted. A start with no result is kept until routing reports one or a run begins (which proves it started); past 200 such starts the oldest are marked `orphaned`, which is an explicit unknown that still joins. Entries of helpers that are not running are kept 30 days, at most 500, oldest first. After a restart no run survives, so every entry is inactive and a start the previous run never resolved is `orphaned`. A helper missing from the ledger (evicted, started while telemetry was off, or the file lost) is an explicit unknown: its events say `helper_decision.known=false`. Writes are atomic, coalesced and serialized, a failed write is reported once without affecting anything, and a persisted entry with any field off its closed set is dropped on read.
+
+Join on the hashes:
+
+- `clubhouse.helper_decision.id_hash`: decision, candidates, spawn result, reuse, usage samples and the outcome.
+- `clubhouse.agent.id_hash`: the helper (its agent id), the same value other agent events carry.
+- `clubhouse.helper_run.id_hash`: one actual run. A wake starts a new run on the same decision. It is not the provider's session id, which a resume can reuse. `native_resumed` only says whether the provider continued an earlier session.
+
+Disposal waits for the session to end before the run is closed, so the last turn's usage is still joined, and the ledger entry is kept after disposal.
+
+#### Usage samples
+
+One sample per finished turn, deduplicated by the turn id, and a closing sample from the provider's running total. **Use one kind, not both: turn samples and the closing sample are separate readings of the same run.** A run is capped at 200 turn samples; anything past that is counted in `usage_samples_dropped`.
+
+| Field | Meaning |
+| --- | --- |
+| `source` | `provider_turn` (the provider's total for one turn) or `provider_session_cumulative` (its running total as last reported) |
+| `scope` | `main` is the helper alone, `inclusive` also counts its subagents, `unscoped` means the driver did not say. Never add samples of different scope |
+| `dedup` | `turn_id`, `thread_cumulative`, `content_equal` (an identical report right after another is dropped), or `none` when repeats could not be told apart |
+| `completeness` | `complete` (input and output reported), `partial`, `none` |
+| `reset` | A running total went down (a reset or compaction). No delta is claimed |
+
+What each provider gives, as of this source:
+
+| Provider | Turn | Running total | Notes |
+| --- | --- | --- | --- |
+| Claude (stream-json and SDK) | Main loop of the turn (`main`) | Sum of per-model totals, subagents and compaction included (`inclusive`) | `input` includes cache reads and writes. No reasoning figure, so it is absent |
+| Codex | Difference of the thread's running totals | One total per thread (`main`); a subagent thread is flagged and reported apart. The closing samples are the helper's own thread (`subagent_excluded`) and, when subagents ran, the sum of every thread (`inclusive`) | A total that goes down leaves that figure out of the turn instead of showing zero |
+| Copilot SDK | Sum of the turn's `assistant.usage` calls, subagents included (`inclusive`) | Our sum over the session (`inclusive`) | A figure no call reported is absent. No per-call id, so calls cannot be deduplicated |
+| Copilot ACP and other ACP agents | The prompt's usage; an exact repeat of the previous report is dropped (`content_equal`) | Context and cost only, no tokens | Scope is `unscoped` |
+
+Parent and helper are never added: a helper's usage is its own run. The session transcript reader (`getSessionSummary`) counts each message once even though Claude writes one record per content block, keeps the usage of tool-only and thinking-only messages, and marks `tokenUsage` as `partial` when a message has none or repeated records disagree. A conflicting message keeps the highest figure per field, which may match no actual record, so it is flagged and must not be used as a measured sample.
+
+#### Plan-limit samples
+
+`clubhouse.helper_quota.sample` is written when a token-free read has finished, on the provider's first reading, when its state changes, when a window moved by one point or its reset time changed (at least 5 minutes after the last sample), and otherwise at most every 15 minutes. At most 12 an hour per provider. There is no timer: only reads that demand already causes are sampled.
+
+`weekly_delta_bp` and `five_hour_delta_bp` are the change since the previous sample, labelled `observed`: they appear only when both readings are in the same reset window, and `reset_between=true` marks a window that reset in between, with no delta claimed. They cover the whole login. Use outside Clubhouse is in them and cannot be told apart from helper use, so per-helper burn is attributable only from usage samples.
+
+#### Limits
+
+At most 2000 helper events an hour in total, so a burst of starts cannot crowd out other signals (the recorder allows 10,000 log records an hour in all). Past it they are dropped and counted in memory. Per decision: 1 event plus at most 8 candidates. Per provider: 12 quota samples an hour. Per run: 200 turn samples plus at most 3 closing ones.
+
+#### Reading the logs
+
+Fairness is measured against eligibility, load and quota; round robin is not assumed. Examples with `jq`, over `telemetry-*.jsonl`:
+
+```sh
+cd ~/.clubhouse/logs   # or ~/.clubhouse-dev/logs
+
+# Choices by provider
+jq -r 'select(.t=="event" and .name=="clubhouse.helper.decision" and .attrs["clubhouse.helper_decision.outcome"]=="chosen" and .attrs["clubhouse.helper_routing.mode"]=="auto") | .attrs["clubhouse.orchestrator"]' telemetry-*.jsonl | sort | uniq -c
+
+# How often each limit excluded a provider
+jq -r 'select(.name=="clubhouse.helper.decision.candidate" and .attrs["clubhouse.helper_candidate.excluded"]!="none") | .attrs["clubhouse.helper_candidate.excluded"]' telemetry-*.jsonl | sort | uniq -c
+
+# Per decision: who was eligible, their load and quota, and who was chosen
+jq -c 'select(.name=="clubhouse.helper.decision.candidate") | [.attrs["clubhouse.helper_decision.id_hash"], .attrs["clubhouse.orchestrator"], .attrs["clubhouse.helper_candidate.eligible"], .attrs["clubhouse.helper_candidate.load_live"], .attrs["clubhouse.helper_candidate.load_reserved"], .attrs["clubhouse.helper_quota.state"], .attrs["clubhouse.helper_quota.weekly_used_bp"], .attrs["clubhouse.helper_candidate.chosen"]]' telemetry-*.jsonl
+
+# Chosen with an unknown quota
+jq -r 'select(.name=="clubhouse.helper.decision.candidate" and .attrs["clubhouse.helper_candidate.chosen"]==true and .attrs["clubhouse.helper_quota.state"]=="unknown") | .attrs["clubhouse.orchestrator"]' telemetry-*.jsonl | sort | uniq -c
+
+# Whether the anchor held (tie reason)
+jq -r 'select(.name=="clubhouse.helper.decision") | .attrs["clubhouse.helper_routing.reason"]' telemetry-*.jsonl | sort | uniq -c
+
+# Failure rate by chosen provider and model: join spawn results to decisions
+jq -s 'map(select(.t=="event")) as $e
+  | ($e | map(select(.name=="clubhouse.helper.decision")) | map({key: .attrs["clubhouse.helper_decision.id_hash"], value: [.attrs["clubhouse.orchestrator"], .attrs["clubhouse.helper_decision.model_hash"]]}) | from_entries) as $d
+  | $e | map(select(.name=="clubhouse.helper.spawn_result")) | group_by($d[.attrs["clubhouse.helper_decision.id_hash"]])
+  | map({chosen: $d[.[0].attrs["clubhouse.helper_decision.id_hash"]], total: length, failed: map(select(.attrs["clubhouse.helper_spawn.result"]=="spawn_failed")) | length})' telemetry-*.jsonl
+```
+
 ## Auditing settings changes
 
 `settings-audit.jsonl` under the Clubhouse base dir: one JSON line per change or refusal, 1 MB, then one rotated file. It shares `bounded-audit-log.ts` with `dispatcher-audit.ts`. It's local and isn't sent anywhere. Reading it is by the file for now: nothing in the app shows it.

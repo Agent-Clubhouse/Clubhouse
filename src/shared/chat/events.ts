@@ -502,6 +502,16 @@ export interface ChatEventDataMap {
 
   usage: {
     scope: 'turn' | 'session';
+    /**
+     * What the token figures cover, when the driver can say: `main` is the main
+     * agent alone, `inclusive` also counts its subagents and background calls.
+     * Absent: not established. Never add figures of different coverage.
+     */
+    coverage?: 'main' | 'inclusive';
+    /** The provider's thread these cumulative figures belong to (Codex runs a thread per subagent). */
+    threadId?: string;
+    /** Set when the figures are one subagent's own, so they are not the session's. */
+    subagentId?: string;
     tokens?: TokenUsage;
     costUsd?: number;
     /** True when the cost is an API-price estimate (e.g. Claude on a subscription). */

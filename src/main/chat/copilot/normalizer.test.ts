@@ -92,4 +92,18 @@ describe('copilot normalizer', () => {
     expect(addTokens(a, copilotTokens({ inputTokens: 1, outputTokens: 1 }))).toMatchObject({ input: 4, output: 3, cachedInput: 1, total: 7 });
     expect(addTokens(undefined, a)).toBe(a);
   });
+
+  it('keeps a reported zero as zero and a missing figure missing', () => {
+    expect(copilotTokens({ inputTokens: 5, outputTokens: 0, cacheReadTokens: 0 })).toEqual({ input: 5, output: 0, cachedInput: 0, total: 5 });
+    // Nothing reported is nothing, not 0, and half of the figures make no total.
+    expect(copilotTokens({})).toEqual({});
+    expect(copilotTokens({ outputTokens: 4 })).toEqual({ output: 4 });
+  });
+
+  it('sums zeros as zero and leaves a figure no call reported absent', () => {
+    const sum = addTokens(copilotTokens({ inputTokens: 0, outputTokens: 0 }), copilotTokens({ inputTokens: 0, outputTokens: 0 }));
+    expect(sum).toMatchObject({ input: 0, output: 0, total: 0 });
+    expect(sum.reasoning).toBeUndefined();
+    expect(sum.cachedInput).toBeUndefined();
+  });
 });
