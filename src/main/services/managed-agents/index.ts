@@ -12,7 +12,7 @@ import { appLog } from '../log-service';
 import type { OrchestratorProvider } from '../../orchestrators/types';
 import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
 import type { ManagedAgentStatus } from '../../../shared/managed-agents-types';
-import { createManagedAgentsService, type ManagedAgentsService } from './service';
+import { createManagedAgentsService, ManagedError, type ManagedAgentsService } from './service';
 import { createManagedStateStore, managedStateDir } from './state-store';
 import * as path from 'path';
 import {
@@ -158,12 +158,19 @@ export async function isAgentWorking(agentId: string): Promise<boolean> {
  * Stop the agent and start it again on its current setup. It resumes the same
  * conversation unless `fresh`, or unless the CLI changed (a session can't move
  * between CLIs). With `whenTurnEnds`, waits for the current turn first.
+ *
+ * Only a running managed agent: a sleeping one picks its setup up at its next
+ * start, and starting it here would wake it outside the wake rules.
  */
 export async function restartManagedAgent(projectPath: string, agentId: string, options: { fresh?: boolean; whenTurnEnds?: boolean } = {}): Promise<{ resumed: boolean }> {
+  const target = await agentConfig.getDurableConfig(projectPath, agentId);
+  if (!target) throw new ManagedError('not_found', 'agent not found');
+  if (!target.managed) throw new ManagedError('not_managed', `${target.name} isn't Clubhouse managed, so there is no setup to restart into.`);
+  const agentSystem = await import('../agent-system');
+  if (!agentSystem.isAgentRunning(agentId)) throw new ManagedError('invalid', `${target.name} isn't running. It gets its setup when it next starts.`);
   if (restarting.has(agentId)) throw new Error('already restarting');
   restarting.add(agentId);
   try {
-    const agentSystem = await import('../agent-system');
     if (options.whenTurnEnds && !(await waitForTurnEnd(agentId))) {
       // Stopped by someone else, or still working after the wait: don't restart behind their back.
       throw new Error(isRunning(agentId) ? 'The agent is still working. Try Restart again later.' : 'The agent stopped before its turn ended.');

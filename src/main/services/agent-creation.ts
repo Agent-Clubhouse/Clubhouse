@@ -30,6 +30,8 @@ export type { DurableCreationListener } from './agent-config';
 export interface StartDurableCreationOptions {
   /** Extra injection into the new worktree after the project defaults (e.g. a persona). */
   inject?: (config: DurableAgentConfig) => Promise<void>;
+  /** An inject failure fails the creation instead of being logged (a managed helper's setup, #2899). */
+  injectRequired?: boolean;
 }
 
 export type DurableCreationOutcome = 'ready' | 'failed' | 'cancelled';
@@ -69,7 +71,7 @@ export function startDurableCreation(
     async () => {
       let handle: DurableCreationHandle;
       try {
-        handle = await beginDurableCreation(projectPath, params, { emitEvents: true, keepFailedRecord: true, inject: options.inject });
+        handle = await beginDurableCreation(projectPath, params, { emitEvents: true, keepFailedRecord: true, inject: options.inject, injectRequired: options.injectRequired });
       } catch (err) {
         refused(err);
         // validation is tagged at its throw site; anything else is a write failure.

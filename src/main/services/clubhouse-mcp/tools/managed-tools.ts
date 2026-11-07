@@ -1,17 +1,19 @@
 /**
- * Builder tools (#2900), in the `dispatcher` tool group: every builder action
- * as a Clubhouse MCP tool, so the Dispatcher can manage agent parts,
- * templates and managed agents for the person. They call the same service
- * the UI does. Shared edits and template pushes are preview-then-commit: the
- * first call returns who it reaches and a confirm token, the second commits.
+ * Builder tools (#2900), in the `dispatcher` tool group and behind the
+ * `managedAgents` flag: every builder action as a Clubhouse MCP tool, so the
+ * Dispatcher can manage agent parts, templates and managed agents for the
+ * person. They call the same service the UI does. Shared edits, deleting a
+ * part in use and template pushes are preview-then-commit: the first call
+ * returns who it reaches and a confirm token, the second commits with it.
  */
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { registerGlobalTool } from '../tool-registry';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
 import * as projectStore from '../../project-store';
 import * as agentConfig from '../../agent-config';
 import { withDispatcherCatalogWrites } from '../../asset-catalog/store';
+import { getSettings as getExperimentalSettings } from '../../experimental-settings';
 import { managedAgents, restartManagedAgent, statusFor } from '../../managed-agents';
 import { applyManagedSettings, createManagedAgent } from '../../managed-agents/agents';
 import { previewManagedSetup } from '../../managed-agents/delivery';
@@ -23,6 +25,11 @@ import type { Project } from '../../../../shared/types';
 
 const ACTOR = 'Dispatcher';
 const KINDS: ManagedPartKind[] = ['block', 'skill', 'mcp'];
+
+export const MANAGED_TOOLS_OFF_MESSAGE =
+  'Clubhouse-managed agents are off. Ask the person to turn them on in Settings > Experimental to use the builder tools.';
+
+const managedOn = (): boolean => getExperimentalSettings().managedAgents === true;
 
 function json(value: unknown): McpToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
@@ -48,6 +55,10 @@ function idList(args: Record<string, unknown>, key: string): string[] {
   if (v === undefined) return [];
   if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) throw new ArgError(`${key} must be a list of part ids`);
   return v as string[];
+}
+/** A list argument, or `fallback` when the call left it out. */
+function idListOr(args: Record<string, unknown>, key: string, fallback: string[]): string[] {
+  return args[key] === undefined ? [...fallback] : idList(args, key);
 }
 function objectArg<T>(args: Record<string, unknown>, key: string): T | undefined {
   const v = args[key];
@@ -83,18 +94,65 @@ async function resolveAgent(args: Record<string, unknown>): Promise<{ project: P
   return { project, agentId: agent.id, agentName: agent.name };
 }
 
-/** Binds a confirmation to exactly what was previewed. */
-function token(...parts: unknown[]): string {
-  return createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0, 16);
+// ── Confirm tokens ──────────────────────────────────────────────────────
+//
+// A preview issues a random token, kept here for the calling agent only. It
+// is bound to a digest of what the preview showed (the part's revision and
+// content, or the template's saved setup, settings and updatedAt, plus the
+// edit and the agents chosen), expires after ten minutes, and is used up by
+// the first call that presents it. A commit recomputes the digest from the
+// current state: anything changed since the preview refuses it.
+
+export const CONFIRM_TTL_MS = 10 * 60_000;
+/** Tokens kept per caller; the oldest goes first past this. */
+const MAX_TOKENS_PER_CALLER = 50;
+
+const issuedTokens = new Map<string, Map<string, { digest: string; expiresAt: number }>>();
+
+function digestOf(...parts: unknown[]): string {
+  return createHash('sha256').update(JSON.stringify(parts)).digest('hex');
+}
+
+function issueConfirm(callerId: string, digest: string): string {
+  const now = Date.now();
+  const mine = issuedTokens.get(callerId) ?? new Map<string, { digest: string; expiresAt: number }>();
+  for (const [t, v] of mine) if (v.expiresAt <= now) mine.delete(t);
+  while (mine.size >= MAX_TOKENS_PER_CALLER) mine.delete(mine.keys().next().value as string);
+  const token = randomBytes(16).toString('hex');
+  mine.set(token, { digest, expiresAt: now + CONFIRM_TTL_MS });
+  issuedTokens.set(callerId, mine);
+  return token;
+}
+
+/** Use up a token. Throws ArgError unless it was issued to this caller, is unexpired, and matches what is there now. */
+function redeemConfirm(callerId: string, token: string, digest: string): void {
+  const mine = issuedTokens.get(callerId);
+  const entry = mine?.get(token);
+  if (!entry) throw new ArgError('That confirm token wasn\'t issued to you, or was already used. Call again without confirm for a new preview.');
+  mine!.delete(token);
+  if (entry.expiresAt <= Date.now()) throw new ArgError('That confirm token expired. Call again without confirm for a new preview.');
+  if (entry.digest !== digest) throw new ArgError('stale: it changed since the preview, or the arguments differ from it. Call again without confirm for a new preview.');
+}
+
+/** Tests only. */
+export function _resetConfirmTokensForTesting(): void {
+  issuedTokens.clear();
+}
+
+/** Run service writes under the calling Dispatcher's catalog write grant, and nothing else (#2900). */
+function asDispatcher<T>(callerId: string, fn: () => Promise<T>): Promise<T> {
+  return withDispatcherCatalogWrites(callerId, fn);
 }
 
 type Handler = (callerId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
 
 function tool(name: string, description: string, properties: Record<string, unknown>, required: string[], handler: Handler): void {
   registerGlobalTool(name, { description, inputSchema: { type: 'object', properties, required } }, async (callerId, args) => {
+    // The registry refuses these while the flag is off; checked here too, so no handler runs without it.
+    if (!managedOn()) return fail(MANAGED_TOOLS_OFF_MESSAGE);
     try {
-      // Every write here is attributed to the calling Dispatcher (#2900).
-      return await withDispatcherCatalogWrites(callerId, () => handler(callerId, args));
+      // Writes run under asDispatcher, which attributes them to the calling Dispatcher (#2900).
+      return await handler(callerId, args);
     } catch (err) {
       // telemetry-exempt: the error reaches the Dispatcher as the tool result
       if (err instanceof ArgError) return fail(err.message);
@@ -102,7 +160,7 @@ function tool(name: string, description: string, properties: Record<string, unkn
       appLog('core:mcp', 'warn', `${name} failed`, { meta: { callerId, error: err instanceof Error ? err.message : String(err) } });
       return fail(err instanceof Error ? err.message : String(err));
     }
-  }, { group: 'dispatcher' });
+  }, { group: 'dispatcher', when: { isOn: managedOn, refusal: MANAGED_TOOLS_OFF_MESSAGE } });
 }
 
 const S = { type: 'string' } as const;
@@ -126,48 +184,69 @@ export function registerManagedTools(): void {
   tool('create_agent_part',
     'Create a custom agent part in the library. It is not added to any agent; use set_agent_setup for that. content: block {content}, skill {skillName, files: [{path, content, encoding?, executable?}]}, mcp {serverKey, transport: stdio|http|sse, command?, args?, url?, envVars?: names only}. Never put secret values in parts.',
     { kind: S, name: S, description: S, content: OBJ }, ['kind', 'name', 'content'],
-    async (_c, args) => {
+    async (callerId, args) => {
       const kind = kindArg(args);
       const content = contentArg(args, kind);
       if (!content || content.kind !== kind) throw new ArgError('content must match kind');
-      return json(await svc().createPart({ name: requireString(args, 'name'), description: optionalString(args, 'description'), content, actor: ACTOR }));
+      const input = { name: requireString(args, 'name'), description: optionalString(args, 'description'), content, actor: ACTOR };
+      return json(await asDispatcher(callerId, () => svc().createPart(input)));
     });
 
   tool('update_agent_part',
-    'Edit or rename a custom part for every agent that uses it. Built-ins are read-only: fork them. Call once without confirm to see the agents it reaches and get a confirm token, then again with confirm to save. Running agents keep their current setup until restarted.',
+    'Edit or rename a custom part for every agent that uses it. Built-ins are read-only: fork them. When more than one agent uses it, the first call returns the agents and templates it reaches and a confirm token; call again with the same arguments and confirm to save. A token is yours only, works once, and expires after 10 minutes. Running agents keep their current setup until restarted.',
     { id: S, expectedRevision: { type: 'number' }, name: S, description: S, content: OBJ, confirm: S }, ['id', 'expectedRevision'],
-    async (_c, args) => {
+    async (callerId, args) => {
       const id = requireString(args, 'id');
       const expectedRevision = numberArg(args, 'expectedRevision');
       const content = contentArg(args);
       const name = optionalString(args, 'name');
       const description = optionalString(args, 'description');
-      const consumers = await svc().consumers(id);
-      const expected = token(id, expectedRevision, content ?? null, name ?? null, description ?? null, consumers.map((c) => c.agentId).sort());
+      const part = await svc().getPart(id);
+      if (part.builtin) throw new ManagedError('builtin_read_only', 'Built-in parts can\'t be edited. Fork it with fork_agent_part instead.');
+      const digest = digestOf('update_agent_part', id, part.revision, part.content, expectedRevision, content ?? null, name ?? null, description ?? null,
+        part.usedBy.map((c) => c.agentId).sort(), part.templates.map((t) => t.id).sort());
       const given = optionalString(args, 'confirm');
-      if (consumers.length > 1 && given !== expected) {
-        return json({ status: 'needs_confirmation', confirm: expected, reaches: consumers.map((c) => ({ agent: c.agentName, project: c.projectName, running: c.running })),
-          note: 'Call again with this confirm token to save. Each agent gets the change at its next start; running ones keep their setup until restarted.' });
+      if (given) redeemConfirm(callerId, given, digest);
+      else if (part.usedBy.length > 1) {
+        return json({ status: 'needs_confirmation', confirm: issueConfirm(callerId, digest),
+          reaches: part.usedBy.map((c) => ({ agent: c.agentName, project: c.projectName, running: c.running })),
+          templates: part.templates.map((t) => t.name),
+          note: 'Call again with the same arguments and this confirm token to save. Each agent gets the change at its next start; running ones keep their setup until restarted. Agents made from these templates later get it too.' });
       }
-      return json(await svc().updatePart({ id, expectedRevision, name, description, content, actor: ACTOR }));
+      return json(await asDispatcher(callerId, () => svc().updatePart({ id, expectedRevision, name, description, content, actor: ACTOR })));
     });
 
   tool('fork_agent_part',
     'Make a custom copy of a part in the library (forking a built-in is how to change one). With project and agent, that agent switches to the copy and the others keep the original.',
     { id: S, project: PROJECT, agent: AGENT, name: S }, ['id'],
-    async (_c, args) => {
+    async (callerId, args) => {
       const id = requireString(args, 'id');
       const target = args.agent !== undefined ? await resolveAgent(args) : null;
-      return json(await svc().forkPart({ id, ...(target && { agent: { projectPath: target.project.path, agentId: target.agentId } }), name: optionalString(args, 'name'), actor: ACTOR }));
+      const input = { id, ...(target && { agent: { projectPath: target.project.path, agentId: target.agentId } }), name: optionalString(args, 'name'), actor: ACTOR };
+      return json(await asDispatcher(callerId, () => svc().forkPart(input)));
     });
 
   tool('delete_agent_part',
-    'Delete a custom part. mode "copy" gives each agent that uses it its own copy; "remove" takes it out of those agents. Templates drop it either way.',
-    { id: S, expectedRevision: { type: 'number' }, mode: { ...S, description: 'copy or remove' } }, ['id', 'expectedRevision', 'mode'],
-    async (_c, args) => {
+    'Delete a custom part. mode "copy" gives each agent that uses it its own copy; "remove" takes it out of those agents. Templates drop it either way. When agents or templates use it, the first call returns them and a confirm token; call again with the same arguments and confirm to delete.',
+    { id: S, expectedRevision: { type: 'number' }, mode: { ...S, description: 'copy or remove' }, confirm: S }, ['id', 'expectedRevision', 'mode'],
+    async (callerId, args) => {
+      const id = requireString(args, 'id');
+      const expectedRevision = numberArg(args, 'expectedRevision');
       const mode = requireString(args, 'mode');
       if (mode !== 'copy' && mode !== 'remove') throw new ArgError('mode must be copy or remove');
-      await svc().deletePart({ id: requireString(args, 'id'), expectedRevision: numberArg(args, 'expectedRevision'), mode });
+      const part = await svc().getPart(id);
+      if (part.builtin) throw new ManagedError('builtin_read_only', 'Built-in parts can\'t be deleted.');
+      const digest = digestOf('delete_agent_part', id, part.revision, part.content, expectedRevision, mode,
+        part.usedBy.map((c) => c.agentId).sort(), part.templates.map((t) => t.id).sort());
+      const given = optionalString(args, 'confirm');
+      if (given) redeemConfirm(callerId, given, digest);
+      else if (part.usedBy.length > 0 || part.templates.length > 0) {
+        return json({ status: 'needs_confirmation', confirm: issueConfirm(callerId, digest),
+          reaches: part.usedBy.map((c) => ({ agent: c.agentName, project: c.projectName, running: c.running })),
+          templates: part.templates.map((t) => t.name),
+          note: `${mode === 'copy' ? 'Each agent gets its own copy of the part.' : 'The part is taken out of each agent.'} The templates drop it. Call again with the same arguments and this confirm token to delete.` });
+      }
+      await asDispatcher(callerId, () => svc().deletePart({ id, expectedRevision, mode }));
       return json({ status: 'deleted' });
     });
 
@@ -182,11 +261,12 @@ export function registerManagedTools(): void {
   tool('set_agent_setup',
     'Replace a managed agent\'s parts: blocks in the order it reads them, skills and MCP servers. Applies at its next start; use restart_agent for a running one.',
     { project: PROJECT, agent: AGENT, blocks: IDS, skills: IDS, mcps: IDS }, ['project', 'agent', 'blocks', 'skills', 'mcps'],
-    async (_c, args) => {
+    async (callerId, args) => {
       const t = await resolveAgent(args);
       const current = await svc().getSetup(t.project.path, t.agentId);
       if (!current) throw new ArgError(`${t.agentName} isn't Clubhouse managed.`);
-      return json(await svc().saveSetup(t.project.path, t.agentId, { ...current, blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') }));
+      const next = { ...current, blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') };
+      return json(await asDispatcher(callerId, () => svc().saveSetup(t.project.path, t.agentId, next)));
     });
 
   tool('preview_agent_setup',
@@ -205,60 +285,127 @@ export function registerManagedTools(): void {
     async () => json(await svc().listTemplates()));
 
   tool('save_agent_template',
-    'Create a custom template, or edit one by id. Editing changes future agents only; use push_agent_template to apply it to agents made from it. settings: orchestrator, model, freeAgentMode, orchestration {...}.',
-    { id: S, name: S, description: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, ['name'],
-    async (_c, args) => json(await svc().saveTemplate({
-      ...(optionalString(args, 'id') && { id: optionalString(args, 'id') }),
-      name: requireString(args, 'name'), description: optionalString(args, 'description') ?? '',
-      setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') },
-      settings: objectArg<ManagedTemplateSettings>(args, 'settings') ?? {},
-    })));
+    'Create a custom template (name required), or edit one by id. Editing an id keeps every field you leave out as saved; settings, when given, replaces the template\'s settings as a whole. Editing changes future agents only; use push_agent_template to apply it to agents made from it. settings: orchestrator, model, freeAgentMode, orchestration {...}.',
+    { id: S, name: S, description: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, [],
+    async (callerId, args) => {
+      const id = optionalString(args, 'id');
+      const settings = objectArg<ManagedTemplateSettings>(args, 'settings');
+      if (!id) {
+        const input = {
+          name: requireString(args, 'name'), description: optionalString(args, 'description') ?? '',
+          setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') },
+          settings: settings ?? {},
+        };
+        return json(await asDispatcher(callerId, () => svc().saveTemplate(input)));
+      }
+      // An edit merges what the call gave into the saved template.
+      const current = await svc().getTemplate(id);
+      const input = {
+        id,
+        name: optionalString(args, 'name') ?? current.name,
+        description: optionalString(args, 'description') ?? current.description,
+        setup: {
+          blocks: idListOr(args, 'blocks', current.setup.blocks),
+          skills: idListOr(args, 'skills', current.setup.skills),
+          mcps: idListOr(args, 'mcps', current.setup.mcps),
+        },
+        settings: settings ?? current.settings,
+      };
+      return json(await asDispatcher(callerId, () => svc().saveTemplate(input)));
+    });
 
   tool('push_agent_template',
-    'Save a template edit and apply its changes to agents made from it. Call once without confirm to see the changes and agents with how many changes apply to each, then again with confirm and the agent ids to apply to.',
+    'Save a template edit and apply its changes to agents made from it. Call once without confirm, naming in agents the agent ids to apply to: it returns the changes, every agent made from the template with how many changes apply to each, and a confirm token for that choice. Then call again with the same arguments and confirm. Settings left out stay as the template has them. A token is yours only, works once, expires after 10 minutes, and is refused if the template changed since the preview.',
     { id: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ, agents: IDS, confirm: S }, ['id', 'blocks', 'skills', 'mcps'],
-    async (_c, args) => {
+    async (callerId, args) => {
       const id = requireString(args, 'id');
-      const next = { setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') }, settings: objectArg<ManagedTemplateSettings>(args, 'settings') ?? {} };
+      const current = await svc().getTemplate(id);
+      const next = {
+        setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') },
+        settings: objectArg<ManagedTemplateSettings>(args, 'settings') ?? current.settings,
+      };
       const preview = await svc().previewTemplatePush(id, next);
-      const chosen = idList(args, 'agents');
-      const expected = token(id, next, chosen.slice().sort());
-      if (optionalString(args, 'confirm') !== expected) {
-        return json({ status: 'needs_confirmation', confirm: expected, changes: preview.changes, agents: preview.targets,
-          note: 'Call again with the same arguments, the agent ids to apply to in agents, and this confirm token.' });
+      const chosen = [...new Set(idList(args, 'agents'))].sort();
+      const unknown = chosen.filter((a) => !preview.targets.some((t) => t.agentId === a));
+      if (unknown.length > 0) throw new ArgError(`Not made from this template: ${unknown.join(', ')}. Pick agent ids from the preview's agents.`);
+      const digest = digestOf('push_agent_template', id, current.setup, current.settings, current.updatedAt ?? null, next, chosen);
+      const given = optionalString(args, 'confirm');
+      if (!given) {
+        return json({ status: 'needs_confirmation', confirm: issueConfirm(callerId, digest), changes: preview.changes, agents: preview.targets, applyTo: chosen,
+          note: 'Call again with the same arguments and this confirm token. To apply to other agents, preview again with them in agents.' });
       }
+      redeemConfirm(callerId, given, digest);
       const targets = preview.targets.filter((t) => chosen.includes(t.agentId)).map((t) => ({ projectPath: t.projectPath, agentId: t.agentId }));
-      const results = await svc().pushTemplate(id, next, targets);
+      const results = await asDispatcher(callerId, () => svc().pushTemplate(id, next, targets));
       const failed: Array<{ agentId: string; message: string }> = [];
+      let applied = 0;
       for (const r of results) {
         if (r.failed) { failed.push({ agentId: r.agentId, message: r.failed }); continue; }
-        await applyManagedSettings(r.projectPath, r.agentId, r.settings).catch((err) => failed.push({ agentId: r.agentId, message: err instanceof Error ? err.message : String(err) }));
+        if (!r.changed) continue;
+        try {
+          await asDispatcher(callerId, () => applyManagedSettings(r.projectPath, r.agentId, r.settings));
+          applied++;
+        } catch (err) {
+          // telemetry-exempt: reported to the Dispatcher per agent in the result
+          failed.push({ agentId: r.agentId, message: err instanceof Error ? err.message : String(err) });
+        }
       }
-      return json({ status: 'pushed', applied: targets.length - failed.length, failed });
+      const skipped = results.filter((r) => !r.failed && !r.changed).map((r) => r.agentId);
+      return json({ status: 'pushed', applied, ...(skipped.length > 0 && { skipped }), failed });
     });
 
   tool('create_managed_agent',
     'Create a Clubhouse-managed durable agent, from a template or a full setup. It gets its own worktree (or folder) and is created asleep; wake it with wake_agent.',
     { project: PROJECT, name: S, color: S, templateId: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, ['project', 'name'],
-    async (_c, args) => {
+    async (callerId, args) => {
       const project = await resolveProject(requireString(args, 'project'));
       const hasSetup = ['blocks', 'skills', 'mcps'].some((k) => args[k] !== undefined);
-      const config = await createManagedAgent(project.path, {
+      const input = {
         name: requireString(args, 'name'),
         color: optionalString(args, 'color') ?? 'indigo',
         templateId: optionalString(args, 'templateId'),
         ...(hasSetup && { setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') } }),
         settings: objectArg<ManagedTemplateSettings>(args, 'settings'),
-      });
+      };
+      // Created asleep: nothing here spawns, so the whole creation can run under the grant.
+      const config = await asDispatcher(callerId, () => createManagedAgent(project.path, input));
       return json({ id: config.id, name: config.name, project: project.name, status: 'sleeping' });
     });
 
   tool('restart_agent',
-    'Restart a running managed agent so it picks up its setup. It resumes the same conversation unless fresh is true, or the CLI changed. With whenTurnEnds, waits for its current turn first.',
-    { project: PROJECT, agent: AGENT, fresh: { type: 'boolean' }, whenTurnEnds: { type: 'boolean' } }, ['project', 'agent'],
-    async (_c, args) => {
+    'Restart a running managed agent so it picks up its setup. By default it waits for the agent\'s current turn to end first; now: true restarts it at once, cutting the turn off. It resumes the same conversation unless fresh is true, or the CLI changed. Only running managed agents, and never yourself: a sleeping agent gets its setup when it next starts (wake_agent).',
+    { project: PROJECT, agent: AGENT, fresh: { type: 'boolean' }, now: { type: 'boolean', description: 'Restart at once instead of after the current turn.' } }, ['project', 'agent'],
+    async (callerId, args) => {
       const t = await resolveAgent(args);
-      const result = await restartManagedAgent(t.project.path, t.agentId, { fresh: optionalBoolean(args, 'fresh'), whenTurnEnds: optionalBoolean(args, 'whenTurnEnds') });
-      return json({ status: 'restarted', resumed: result.resumed });
+      if (t.agentId === callerId) throw new ArgError('You can\'t restart yourself.');
+      const status = await statusFor(t.project.path, t.agentId);
+      if (!status.managed) throw new ArgError(`${t.agentName} isn't Clubhouse managed. restart_agent only restarts managed agents.`);
+      if (!status.running) throw new ArgError(`${t.agentName} isn't running. It gets its setup when it next starts; restart_agent never wakes an agent.`);
+      const now = optionalBoolean(args, 'now') === true;
+      // No catalog grant: a restart writes no parts, and the spawn must not inherit one.
+      const restart = restartManagedAgent(t.project.path, t.agentId, { fresh: optionalBoolean(args, 'fresh'), whenTurnEnds: !now });
+      if (now) return json({ status: 'restarted', resumed: (await restart).resumed });
+      // Waiting for a turn can take long: answer after a short wait, and let the restart finish behind it.
+      const done = await settleWithin(restart, RESTART_ANSWER_MS);
+      if (done) return json({ status: 'restarted', resumed: done.resumed });
+      restart.catch((err: unknown) => {
+        // telemetry-exempt: the Dispatcher already has its answer; the failure is logged
+        appLog('core:mcp', 'warn', 'restart_agent: restart after the turn failed', { meta: { callerId, agentId: t.agentId, error: err instanceof Error ? err.message : String(err) } });
+      });
+      return json({ status: 'waiting_for_turn_end', note: `${t.agentName} is mid-turn. It restarts when the turn ends, or not at all if it is still working after 30 minutes. Check with get_agent_setup.` });
     });
+}
+
+/** How long restart_agent waits for a restart after the turn before it answers. */
+const RESTART_ANSWER_MS = 10_000;
+
+/** The promise's value if it settles within `ms`, or null. Rejects if it rejects within `ms`. */
+async function settleWithin<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), ms); });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }

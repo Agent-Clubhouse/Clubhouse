@@ -1746,8 +1746,10 @@ export interface DurableCreationRunOptions {
    * createDurable removes it because its caller gets the error instead.
    */
   keepFailedRecord?: boolean;
-  /** Extra injection into the new worktree after the project defaults (e.g. a persona). Failures are logged, not fatal. */
+  /** Extra injection into the new worktree after the project defaults (e.g. a persona). Failures are logged, not fatal, unless `injectRequired`. */
   inject?: (config: DurableAgentConfig) => Promise<void>;
+  /** An inject failure fails the creation: the agent can't work without it (a managed helper's setup, #2899). */
+  injectRequired?: boolean;
 }
 
 export interface DurableCreationHandle {
@@ -2263,10 +2265,11 @@ async function runDurableCreation(
       try {
         await options.inject(cloneAgent(initial));
       } catch (err) {
-        // telemetry-exempt: injection is best effort, like the project defaults above; logged.
+        // telemetry-exempt: injection is best effort, like the project defaults above; logged. A required one fails the creation below.
         appLog('core:agent-config', 'warn', 'Failed to inject config into the new agent', {
-          meta: { agentName: initial.name, error: errorMessage(err) },
+          meta: { agentName: initial.name, error: errorMessage(err), required: options.injectRequired === true },
         });
+        if (options.injectRequired) throw tagError(new Error(`Could not set up the new agent: ${errorMessage(err)}`), 'write_failed');
       }
     }
     checkCancelled();

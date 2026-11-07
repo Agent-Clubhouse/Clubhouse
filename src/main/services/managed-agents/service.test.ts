@@ -201,7 +201,7 @@ describe('templates', () => {
     expect(agents.get('a')!.managed!.skills).toEqual([skill.id]);
     expect(agents.get('a')!.managed!.mcps).toEqual([]);
     expect(agents.get('c')!.managed!.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
-    expect(settings.map((x) => x.agentId)).toEqual(['a', 'b']);
+    expect(settings.map((x) => [x.agentId, x.changed])).toEqual([['a', true], ['b', true]]);
     expect((await user(() => service.getTemplate(t.id))).setup.skills).toEqual([skill.id]);
   });
 
@@ -218,6 +218,16 @@ describe('templates', () => {
     expect(results.find((r) => r.agentId === 'b')!.failed).toMatch(/folder name deploy/);
     expect(agents.get('b')!.managed!.skills).toEqual([one.id]);
     await expectCode(user(() => service.pushTemplate(t.id, { setup: { blocks: ['gone'], skills: [], mcps: [] }, settings: {} }, [])), 'not_found');
+  });
+
+  it('reports an agent the push did not change, and leaves it as it was', async () => {
+    const t = await user(() => service.saveTemplate({ name: 'Already', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: {} }));
+    agent('a', { templateId: t.id });
+    agent('b', { blocks: [BUILTIN_BLOCK_IDS.identity], templateId: t.id });
+    const next = { setup: { blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [] }, settings: {} };
+    const results = await user(() => service.pushTemplate(t.id, next, [{ projectPath: '/p', agentId: 'a' }, { projectPath: '/p', agentId: 'b' }]));
+    expect(results.map((r) => [r.agentId, r.changed])).toEqual([['a', true], ['b', false]]);
+    expect(agents.get('a')!.managed!.blocks).toEqual([BUILTIN_BLOCK_IDS.identity]);
   });
 
   it('diffs reorder of shared blocks as one change', () => {
@@ -257,5 +267,31 @@ describe('managed helpers (#2899)', () => {
     expect(qa.blocks).toContain(BUILTIN_BLOCK_IDS.qa);
     await expect(user(() => managedHelperSetup(service, { template: 'nope' }))).rejects.toThrow(/no template "nope"/);
     await expect(user(() => managedHelperSetup(service, { addParts: ['nope'] }))).rejects.toThrow(/no agent part "nope"/);
+    await expect(user(() => managedHelperSetup(service, { removeParts: ['nope'] }))).rejects.toThrow(/no agent part "nope"/);
+    await expect(user(() => managedHelperSetup(service, { removeParts: [BUILTIN_BLOCK_IDS.qa] }))).rejects.toThrow(/isn't in template "builtin-template-helper"/);
+  });
+
+  it('never removes the Clubhouse MCP part, and adds it to a template without it', async () => {
+    const { managedHelperSetup, HELPER_KEEPS_CLUBHOUSE_PART } = await import('./helpers');
+    await expect(user(() => managedHelperSetup(service, { removeParts: [CLUBHOUSE_MCP_PART_ID] }))).rejects.toThrow(HELPER_KEEPS_CLUBHOUSE_PART);
+    const bare = await user(() => service.saveTemplate({ name: 'No bridge', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: {} }));
+    expect((await user(() => managedHelperSetup(service, { template: bare.id }))).mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+  });
+
+  it('refuses a setup saving would refuse, such as two skills with one folder', async () => {
+    const { managedHelperSetup } = await import('./helpers');
+    const one = await user(() => service.createPart({ name: 'Ship one', content: { kind: 'skill', skillName: 'ship', files: [{ path: 'SKILL.md', content: '# 1' }] } }));
+    const two = await user(() => service.createPart({ name: 'Ship two', content: { kind: 'skill', skillName: 'ship', files: [{ path: 'SKILL.md', content: '# 2' }] } }));
+    await expectCode(user(() => managedHelperSetup(service, { addParts: [one.id, two.id] })), 'invalid');
+  });
+});
+
+describe('checkSetup', () => {
+  it('runs saveSetup\'s checks without saving anything', async () => {
+    agent('a', {});
+    const checked = await user(() => service.checkSetup({ blocks: [BUILTIN_BLOCK_IDS.identity, BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [] }));
+    expect(checked).toEqual({ version: 1, blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [] });
+    expect(agents.get('a')!.managed!.blocks).toEqual([]);
+    await expectCode(user(() => service.checkSetup({ blocks: ['no-such-part'], skills: [], mcps: [] })), 'not_found');
   });
 });

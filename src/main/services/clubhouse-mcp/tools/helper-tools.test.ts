@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
 
 // What the gate decides is covered in mcp-call-gate.test.ts and test/mcp-off.
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
@@ -52,6 +52,45 @@ vi.mock('../../agent-config', () => ({
     agents.set(id, next as unknown as DurableAgentConfig);
   }),
 }));
+
+// Clubhouse-managed helpers (#2899): the flag, and a real managed-agents service on a temp folder.
+const managedFlags = vi.hoisted(() => ({ value: {} as Record<string, boolean> }));
+vi.mock('../../experimental-settings', async (original) => ({
+  ...await original<typeof import('../../experimental-settings')>(),
+  getSettings: () => managedFlags.value,
+}));
+vi.mock('../../managed-agents', async (original) => {
+  const actual = await original<typeof import('../../managed-agents')>();
+  const fs = await import('fs');
+  const os = await import('os');
+  const nodePath = await import('path');
+  const { createManagedAgentsService } = await import('../../managed-agents/service');
+  const { createAssetCatalogStore } = await import('../../asset-catalog/store');
+  const { createManagedStateStore } = await import('../../managed-agents/state-store');
+  let svc: ReturnType<typeof createManagedAgentsService> | null = null;
+  return {
+    ...actual,
+    managedAgents: () => {
+      if (!svc) {
+        const base = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'helper-managed-'));
+        svc = createManagedAgentsService({
+          catalog: createAssetCatalogStore({ dir: nodePath.join(base, 'catalog') }),
+          state: createManagedStateStore(nodePath.join(base, 'managed')),
+          listProjects: async () => [],
+          listAgents: async () => [...agents.values()],
+          getAgent: async (_p, id) => agents.get(id) ?? null,
+          setManagedSetup: async (_p, id, setup) => {
+            const a = agents.get(id);
+            if (!a) throw new Error('missing');
+            if (setup) a.managed = setup; else delete a.managed;
+          },
+          isRunning: () => false,
+        });
+      }
+      return svc;
+    },
+  };
+});
 
 const mockStartDurableCreation = vi.fn();
 
@@ -213,6 +252,10 @@ import { _resetProviderQuotaForTesting, noteProviderFailure } from '../../provid
 import { _resetHelperRoutingForTesting } from '../../helper-routing';
 import { reservationSummary } from '../../helper-auto-state';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
+import { managedAgents } from '../../managed-agents';
+import { HELPER_KEEPS_CLUBHOUSE_PART } from '../../managed-agents/helpers';
+import { withSettingsSurface } from '../../settings-audit';
+import { CLUBHOUSE_MCP_PART_ID } from '../../../../shared/managed-agents-types';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -507,6 +550,70 @@ describe('start_helper', () => {
     expect(mockPersonaInjection).toHaveBeenCalledWith(PROJECT, params);
     await options.inject(agents.get('helper_h'));
     expect(mockApplyPersona).toHaveBeenCalledWith(PROJECT, 'helper_h', 'workhorse');
+  });
+});
+
+describe('start_helper with Clubhouse-managed agents (#2899)', () => {
+  beforeAll(async () => { await managedAgents().ensureBuiltins(); });
+  beforeEach(() => { managedFlags.value = { managedAgents: true }; });
+  afterEach(() => { managedFlags.value = {}; });
+
+  it('builds the helper from the default template in a required inject step, with no persona anywhere', async () => {
+    controllableCreation();
+    const result = await callTool('orch', 'start_helper', { name: 'm', task: 't', persona: 'workhorse' });
+    expect(result.isError).toBeFalsy();
+    const [, params, options] = mockStartDurableCreation.mock.calls[0];
+    expect(params.persona).toBeUndefined();
+    expect(mockPersonaInjection).not.toHaveBeenCalled();
+    expect(options.injectRequired).toBe(true);
+    await options.inject(agents.get('helper_m'));
+    expect(agents.get('helper_m')!.managed).toMatchObject({ templateId: 'builtin-template-helper', mcps: [CLUBHOUSE_MCP_PART_ID] });
+    expect(mockApplyPersona).not.toHaveBeenCalled();
+  });
+
+  it('checks and holds a start for approval without its persona', async () => {
+    mockGetPolicy.mockResolvedValue({ orchestrate: true, access: 'same', control: 'ask-before-start', maxHelpers: 5 });
+    await callTool('orch', 'start_helper', { name: 'held', task: 't', persona: 'workhorse' });
+    expect(mockCheckDurableCreation).toHaveBeenCalledTimes(1);
+    expect(mockCheckDurableCreation.mock.calls[0][1]).not.toHaveProperty('persona');
+    expect(listStartRequests()[0].args).not.toHaveProperty('persona');
+  });
+
+  it('refuses removing the Clubhouse MCP part, creating nothing', async () => {
+    const result = await callTool('orch', 'start_helper', { name: 'cut', task: 't', removeParts: [CLUBHOUSE_MCP_PART_ID] });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toBe(`Could not start helper "cut": ${HELPER_KEEPS_CLUBHOUSE_PART}`);
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unknown part id to add or remove, creating nothing', async () => {
+    for (const args of [{ addParts: ['no-such-part'] }, { removeParts: ['no-such-part'] }]) {
+      const result = await callTool('orch', 'start_helper', { name: 'x', task: 't', ...args });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toMatch(/no agent part "no-such-part"/);
+    }
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('refuses two skills with one folder name before anything is created', async () => {
+    const svc = managedAgents();
+    const make = (name: string) => withSettingsSurface('ui', undefined, () => svc.createPart({ name, content: { kind: 'skill', skillName: 'release', files: [{ path: 'SKILL.md', content: `# ${name}` }] } }));
+    const one = await make('Release one');
+    const two = await make('Release two');
+    const result = await callTool('orch', 'start_helper', { name: 'dup', task: 't', addParts: [one.id, two.id] });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/Two skills use the folder name release/);
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('refuses the template arguments while managed agents are off', async () => {
+    managedFlags.value = {};
+    for (const args of [{ template: 'builtin-template-helper' }, { addParts: ['x'] }, { removeParts: ['x'] }]) {
+      const result = await callTool('orch', 'start_helper', { name: 'off', task: 't', ...args });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toMatch(/need Clubhouse-managed agents, which are off/);
+    }
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
   });
 });
 

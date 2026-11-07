@@ -429,11 +429,12 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       return agent.managed ?? null;
     },
 
-    /** Save what an agent is built from. Unknown or deleted part ids are refused. */
-    async saveSetup(projectPath: string, agentId: string, setup: Omit<ManagedAgentSetup, 'version'>): Promise<ManagedAgentSetup> {
-      const agent = await deps.getAgent(projectPath, agentId);
-      if (!agent) throw new ManagedError('not_found');
-      if (!agent.worktreePath) throw new ManagedError('invalid', `${agent.name} works in the project folder. Managed agents need their own folder.`);
+    /**
+     * The checks a setup must pass to be saved, without saving it: unknown or
+     * deleted part ids are refused, and two skills can't share a folder.
+     * Returns the setup as it would be saved (duplicates dropped).
+     */
+    async checkSetup(setup: Omit<ManagedAgentSetup, 'version'>): Promise<ManagedAgentSetup> {
       const live = await liveEntries();
       const clean = (ids: string[], kind: ManagedPartKind) => {
         const out: string[] = [];
@@ -459,6 +460,15 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         if (folders.has(folder)) throw new ManagedError('invalid', `Two skills use the folder name ${folder}. Remove one, or rename a copy.`);
         folders.add(folder);
       }
+      return next;
+    },
+
+    /** Save what an agent is built from, after checkSetup's checks. */
+    async saveSetup(projectPath: string, agentId: string, setup: Omit<ManagedAgentSetup, 'version'>): Promise<ManagedAgentSetup> {
+      const agent = await deps.getAgent(projectPath, agentId);
+      if (!agent) throw new ManagedError('not_found');
+      if (!agent.worktreePath) throw new ManagedError('invalid', `${agent.name} works in the project folder. Managed agents need their own folder.`);
+      const next = await api.checkSetup(setup);
       await writeAgentSetup(projectPath, agentId, next);
       changed();
       return next;
@@ -547,8 +557,13 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       return { changes, targets };
     },
 
-    /** Apply a template edit's changes to the agents named. Settings changes are returned for the caller to apply. */
-    async pushTemplate(id: string, next: Pick<ManagedTemplate, 'setup' | 'settings'>, agents: Array<{ projectPath: string; agentId: string }>): Promise<Array<{ projectPath: string; agentId: string; settings: ManagedTemplateSettings; failed?: string }>> {
+    /**
+     * Apply a template edit's changes to the agents named. Settings changes are
+     * returned for the caller to apply. Each agent the push reached is in the
+     * result, with `changed` false when none of the changes applied to it.
+     * Agents not made from the template are left out.
+     */
+    async pushTemplate(id: string, next: Pick<ManagedTemplate, 'setup' | 'settings'>, agents: Array<{ projectPath: string; agentId: string }>): Promise<TemplatePushResult[]> {
       const current = await api.getTemplate(id);
       const live = await liveEntries();
       // Every part the edit names must still exist, as its kind.
@@ -558,10 +573,15 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         }
       }
       const changes = diffTemplates(current, next, (pid) => live[pid]?.name ?? pid);
-      const settingsOut: Array<{ projectPath: string; agentId: string; settings: ManagedTemplateSettings; failed?: string }> = [];
+      const settingsOut: TemplatePushResult[] = [];
       for (const target of agents) {
         const agent = await deps.getAgent(target.projectPath, target.agentId);
         if (!agent?.managed || agent.managed.templateId !== id) continue;
+        // Nothing applies (it already has every change): skipped, and not saved again.
+        if (!changes.some((c) => applies(c, agent))) {
+          settingsOut.push({ ...target, settings: {}, changed: false });
+          continue;
+        }
         let setup: ManagedAgentSetup = { ...agent.managed, blocks: [...agent.managed.blocks], skills: [...agent.managed.skills], mcps: [...agent.managed.mcps] };
         const settings: ManagedTemplateSettings = {};
         for (const change of changes) {
@@ -577,10 +597,10 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         try {
           // Through saveSetup, so each agent's result is checked (skill folders, missing parts).
           await api.saveSetup(target.projectPath, target.agentId, setup);
-          if (Object.keys(settings).length > 0) settingsOut.push({ ...target, settings });
+          settingsOut.push({ ...target, settings, changed: true });
         } catch (err) {
           // telemetry-exempt: reported to the caller per agent, and shown in the push dialog.
-          settingsOut.push({ ...target, settings: {}, failed: err instanceof Error ? err.message : String(err) });
+          settingsOut.push({ ...target, settings: {}, changed: false, failed: err instanceof Error ? err.message : String(err) });
         }
       }
       if (!BUILTIN_TEMPLATES.has(id)) {
@@ -636,6 +656,17 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
 }
 
 export type ManagedAgentsService = ReturnType<typeof createManagedAgentsService>;
+
+/** One agent a template push reached. */
+export interface TemplatePushResult {
+  projectPath: string;
+  agentId: string;
+  /** The settings changes for the caller to apply. */
+  settings: ManagedTemplateSettings;
+  /** Whether the push changed this agent. False when nothing applied, or it failed. */
+  changed: boolean;
+  failed?: string;
+}
 
 export function settingsOf(agent: DurableAgentConfig): ManagedTemplateSettings {
   return {
