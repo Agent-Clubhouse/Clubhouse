@@ -10,9 +10,10 @@ import { composeInstructions } from '../services/asset-catalog/composer';
 import type { BuilderResult } from '../../shared/agent-builder-types';
 import { currentSettingsOrigin } from '../services/settings-audit';
 
-vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() } }));
+vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => '/synthetic/home' }, ipcMain: { handle: vi.fn() } }));
 vi.mock('../services/log-service', () => ({ appLog: vi.fn() }));
-vi.mock('../services/agent-config', () => ({ peekDurableConfigs: vi.fn(async () => [{ id: 'agent-1' }, { id: 'dispatcher-agent', persona: 'dispatcher' }]) }));
+vi.mock('../services/agent-config', () => ({ agentConfigGeneration: () => 0, peekDurableConfigs: vi.fn(async () => [{ id: 'agent-1' }, { id: 'dispatcher-agent', persona: 'dispatcher' }]) }));
+vi.mock('../services/project-store', () => ({ peekProjects: async () => [{ id: 'project-1', path: '/project' }], projectRegistryMutationState: () => ({ generation: 0, pending: false }) }));
 let root: string;
 let handlers: Map<string, (...args: unknown[]) => Promise<BuilderResult>>;
 beforeEach(() => {

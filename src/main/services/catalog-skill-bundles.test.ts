@@ -134,3 +134,47 @@ it.each(['creating', 'failed'])('refuses an agent with partial creation state %s
   state.agents[0].creation = { state: creation };
   expect(await user(() => editor.list({ ...context, agentId: 'agent-1' }))).toEqual({ ok: false, code: 'target_changed' });
 });
+
+it('creates a complete explicitly scoped unassigned bundle and copies all bytes with independent provenance', async () => {
+  const target = { ...context, agentId: 'agent-1' };
+  const created = value(await user(() => editor.create({ context: target, name: 'Created', scope: 'project', payload: initial })));
+  expect(created.owner).toEqual({ kind: 'project', projectId: context.projectId });
+  expect(created.payload).toEqual(savedInitial);
+  const copied = value(await user(() => editor.copy({ context: target, assetId: created.assetId, expectedRevision: 1 })));
+  expect(copied.owner).toEqual({ kind: 'agent', agentId: 'agent-1' });
+  expect(copied.source).toEqual({ kind: 'copy', originAssetId: created.assetId, originRevision: 1 });
+  expect(copied.payload).toEqual(created.payload);
+  expect((await store.read()).compositions).toEqual({});
+  const edit = value(await user(() => editor.preview({ context: target, assetId: copied.assetId, expectedRevision: 1,
+    payload: { ...copied.payload, files: copied.payload.files.map((f) => f.path === 'SKILL.md' ? { ...f, content: 'Independent' } : f) } })));
+  value(await user(() => editor.save({ context: target, assetId: copied.assetId, expectedRevision: 1, token: edit.token })));
+  expect(value(await user(() => editor.read(target, created.assetId))).payload).toEqual(created.payload);
+});
+it('refuses create scope without an agent, invalid full payload, nonlocal writes and stale copies', async () => {
+  expect(await user(() => editor.create({ context, name: 'Invalid', scope: 'agent', payload: initial }))).toEqual({ ok: false, code: 'invalid_request' });
+  expect(await user(() => editor.create({ context, name: 'Invalid', scope: 'library', payload: { ...initial, files: [] } }))).toEqual({ ok: false, code: 'invalid_payload' });
+  expect(await withSettingsSurface('mcp', 'agent-1', () => editor.create({ context, name: 'Denied', scope: 'library', payload: initial }))).toEqual({ ok: false, code: 'local_user_only' });
+  expect(await user(() => editor.copy({ context: { ...context, agentId: 'agent-1' }, assetId: asset.id, expectedRevision: 2 }))).toEqual({ ok: false, code: 'stale_revision' });
+  expect((await store.read()).compositions).toEqual({});
+});
+it('checks source head inside serialized copy and keeps shared consumers protected', async () => {
+  const target = { ...context, agentId: 'agent-1' };
+  const raced = createCatalogSkillBundleEditor({ store: () => {
+    const guarded = createAssetCatalogStore({ dir });
+    const copy = guarded.copyAsset;
+    guarded.copyAsset = async (input) => {
+      await store.saveRevision({ assetId: asset.id, expectedRevision: 1, payload: initial });
+      return copy(input);
+    };
+    return guarded;
+  } });
+  expect(await user(() => raced.copy({ context: target, assetId: asset.id, expectedRevision: 1 }))).toEqual({ ok: false, code: 'stale_revision' });
+  expect(Object.values((await store.read()).assets).filter((entry) => entry.source.kind === 'copy')).toEqual([]);
+});
+it('rechecks create target immediately before catalog commit without assignment', async () => {
+  const before = Object.keys((await store.read()).assets);
+  beforeRename = (to) => { if (to.endsWith('catalog.json')) state.pending = true; };
+  expect(await user(() => editor.create({ context, name: 'Blocked', scope: 'project', payload: initial }))).toEqual({ ok: false, code: 'target_changed' });
+  expect(Object.keys((await store.read()).assets)).toEqual(before);
+  expect((await store.read()).compositions).toEqual({});
+});

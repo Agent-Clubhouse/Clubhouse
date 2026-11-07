@@ -184,3 +184,78 @@ it('surfaces operational increases from the latest template and requires a perso
   expect((await read()).revision).toBe(0);
   expect((await command({ ...confirm, acknowledgeOperationalIncreases: true })).revision).toBe(1);
 });
+
+it('previews exact complete shared skills without writes, requires fingerprint confirmation and removes references only', async () => {
+  await choose('custom');
+  const payload = { skillName: 'complete', files: [{ path: 'SKILL.md', content: 'Read supporting files' },
+    { path: 'scripts/check.sh', content: 'exit 7', executable: true },
+    { path: 'assets/a.bin', content: 'AAH+/w==', encoding: 'base64' as const, executable: true }] };
+  const asset = await store.createAsset({ kind: 'skill', name: 'Complete', payload });
+  const before = await store.read();
+  const select = { type: 'skill' as const, assetId: asset.id, expectedRevision: 1, confirm: false };
+  const preview = await command(select);
+  expect(await store.read()).toEqual(before);
+  expect(preview.skills![0]).toMatchObject({ assetId: asset.id, revision: 1, payload: await store.readRevision(asset.id, 1) });
+  await expect(command({ ...select, confirm: true, fingerprint: 'wrong' })).rejects.toMatchObject({ code: 'stale_preview' });
+  let saved = await command({ ...select, confirm: true, fingerprint: preview.skillFingerprint });
+  expect(saved.skills).toHaveLength(1);
+  const removal = await command({ type: 'removeSkill', assetId: asset.id, confirm: false });
+  expect((await read()).skills).toHaveLength(1);
+  saved = await command({ type: 'removeSkill', assetId: asset.id, confirm: true, fingerprint: removal.skillFingerprint });
+  expect(saved.skills).toEqual([]);
+  expect((await store.read()).assets[asset.id].deletedAt).toBeUndefined();
+  expect(await store.readRevision(asset.id, 1)).toEqual(preview.skills![0].payload);
+});
+it('refuses stale source revisions, foreign ownership and skill destination collisions without changing composition', async () => {
+  await choose('custom');
+  const skill = (owner?: { kind: 'agent'; agentId: string }) => store.createAsset({ kind: 'skill', name: 'Same name', owner,
+    payload: { skillName: 'same', files: [{ path: 'SKILL.md', content: 'test' }] } });
+  const first = await skill();
+  const preview = await command({ type: 'skill', assetId: first.id, expectedRevision: 1, confirm: false });
+  await store.saveRevision({ assetId: first.id, expectedRevision: 1, payload: { skillName: 'same', files: [{ path: 'SKILL.md', content: 'new' }] } });
+  await expect(command({ type: 'skill', assetId: first.id, expectedRevision: 1, confirm: true, fingerprint: preview.skillFingerprint })).rejects.toMatchObject({ code: 'stale_revision' });
+  const foreign = await skill({ kind: 'agent', agentId: 'other' });
+  await expect(command({ type: 'skill', assetId: foreign.id, expectedRevision: 1, confirm: false })).rejects.toThrow();
+  const current = await command({ type: 'skill', assetId: first.id, expectedRevision: 2, confirm: false });
+  await command({ type: 'skill', assetId: first.id, expectedRevision: 2, confirm: true, fingerprint: current.skillFingerprint });
+  const before = await builder.compositionOf(agentId);
+  const second = await skill();
+  await expect(command({ type: 'skill', assetId: second.id, expectedRevision: 1, confirm: false })).rejects.toThrow();
+  expect(await builder.compositionOf(agentId)).toEqual(before);
+});
+it('excludes and restores template skill references while preserving other consumers', async () => {
+  const skill = await store.createAsset({ kind: 'skill', name: 'Template skill', payload: { skillName: 'base-skill', files: [{ path: 'SKILL.md', content: 'base' }] } });
+  const templateId = 'builtin-builder-custom';
+  const payload = await store.readRevision(templateId, 1);
+  await installBuiltinAsset(store, { assetId: templateId, kind: 'template', name: 'Custom', builtinId: templateId, expectedRevision: 1,
+    payload: { ...payload, skills: [skill.id] } });
+  await choose('custom');
+  const otherComposition = { ...await builder.compositionOf('other-agent'), additions: [skill.id], floors: { [skill.id]: 1 } };
+  const otherAdoption = await builderSnapshotAdoption(store, otherComposition);
+  const otherPlan = await store.plan({ agentId: 'other-agent', draft: otherComposition, adoption: otherAdoption });
+  await store.saveComposition({ agentId: 'other-agent', expectedRevision: 0, composition: otherComposition, adoption: otherAdoption, previewFingerprint: otherPlan.fingerprint });
+  const otherBefore = (await store.read()).compositions['other-agent'];
+  const remove = await command({ type: 'removeSkill', assetId: skill.id, confirm: false });
+  expect(remove.skills).toEqual([]); expect(remove.excludedSkills).toEqual([{ assetId: skill.id, name: 'Template skill' }]);
+  await command({ type: 'removeSkill', assetId: skill.id, confirm: true, fingerprint: remove.skillFingerprint });
+  expect((await builder.compositionOf(agentId)).removals).toEqual([skill.id]);
+  const restore = await command({ type: 'skill', assetId: skill.id, expectedRevision: 1, confirm: false });
+  const saved = await command({ type: 'skill', assetId: skill.id, expectedRevision: 1, confirm: true, fingerprint: restore.skillFingerprint });
+  expect(saved.skills![0].provenance[0].via).toBe('base');
+  expect((await builder.compositionOf(agentId)).removals).toEqual([]);
+  expect((await store.read()).compositions['other-agent']).toEqual(otherBefore);
+  expect((await store.read()).assets[skill.id].headRevision).toBe(1);
+  expect((await store.readRevision(templateId, 2) as { skills: string[] }).skills).toEqual([skill.id]);
+});
+it('refuses a source change between confirmation planning and serialized composition commit', async () => {
+  await choose('custom');
+  const asset = await store.createAsset({ kind: 'skill', name: 'Race', payload: { skillName: 'race', files: [{ path: 'SKILL.md', content: 'reviewed' }] } });
+  const preview = await command({ type: 'skill', assetId: asset.id, expectedRevision: 1, confirm: false });
+  const save = store.saveComposition;
+  vi.spyOn(store, 'saveComposition').mockImplementationOnce(async (input) => {
+    await store.saveRevision({ assetId: asset.id, expectedRevision: 1, payload: { skillName: 'race', files: [{ path: 'SKILL.md', content: 'changed' }] } });
+    return save(input);
+  });
+  await expect(command({ type: 'skill', assetId: asset.id, expectedRevision: 1, confirm: true, fingerprint: preview.skillFingerprint })).rejects.toMatchObject({ code: 'stale_revision' });
+  expect((await read()).skills).toEqual([]);
+});

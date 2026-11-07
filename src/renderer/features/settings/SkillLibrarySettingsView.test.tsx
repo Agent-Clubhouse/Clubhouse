@@ -43,7 +43,7 @@ let documents: Record<string, SkillBundleDocument>, bridge: SkillBundleEditorBri
 beforeEach(() => {
   documents = { one: doc('one', 'First bundle'), two: doc('two', 'Second bundle'), builtin: { ...doc('builtin', 'Built-in bundle'), source: { kind: 'builtin', builtinId: 'fixture' }, readOnly: true } };
   const pending = new Map<string, Parameters<SkillBundleEditorBridge['preview']>[0]>();
-  bridge = {
+  bridge = { create: vi.fn(), copy: vi.fn(),
     list: vi.fn(async () => ({ ok: true, value: Object.values(documents).map(({ payload: _payload, ...summary }) => summary) })),
     read: vi.fn(async (_context, assetId) => ({ ok: true, value: structuredClone(documents[assetId]) })),
     preview: vi.fn(async (request) => { pending.set('fixture-token', structuredClone(request)); return { ok: true, value: { token: 'fixture-token', impact, blocked: false } }; }),

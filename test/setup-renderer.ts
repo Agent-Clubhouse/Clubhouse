@@ -27,6 +27,14 @@ const asyncNoop = async () => {};
 vi.stubGlobal('clubhouse', {
   platform: process.platform,
   getPathForFile: (_file: File) => '',
+  catalogSkillBundles: {
+    list: async () => ({ ok: true, value: [] }),
+    read: async () => ({ ok: false, code: 'not_found' }),
+    create: async () => ({ ok: false, code: 'save_failed' }),
+    copy: async () => ({ ok: false, code: 'save_failed' }),
+    preview: async () => ({ ok: false, code: 'save_failed' }),
+    save: async () => ({ ok: false, code: 'save_failed' }),
+  },
   settings: {
     get: async () => null,
     save: asyncNoop,

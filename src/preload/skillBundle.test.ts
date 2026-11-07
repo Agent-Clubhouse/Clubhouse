@@ -5,12 +5,17 @@ import { skillBundle } from './skillBundle';
 vi.mock('electron', () => ({ ipcRenderer: { invoke: vi.fn(async () => ({ ok: true, value: [] })) } }));
 it('forwards only the typed catalog context, asset/revision and preview/save DTOs', async () => {
   const context = { projectId: 'project-1' };
+  const create = { context, name: 'New', scope: 'library' as const, payload: { skillName: 'new', files: [{ path: 'SKILL.md', content: 'complete' }] } };
+  const copy = { context: { ...context, agentId: 'agent-1' }, assetId: 'asset-1', expectedRevision: 2 };
+  await skillBundle.catalogSkillBundles.create(create);
+  await skillBundle.catalogSkillBundles.copy(copy);
   await skillBundle.catalogSkillBundles.list(context);
   await skillBundle.catalogSkillBundles.read(context, 'asset-1');
   const request = { context, assetId: 'asset-1', expectedRevision: 2, payload: { skillName: 'bundle', files: [{ path: 'SKILL.md', content: 'synthetic' }] } };
   await skillBundle.catalogSkillBundles.preview(request);
   await skillBundle.catalogSkillBundles.save({ context, assetId: 'asset-1', expectedRevision: 2, token: 'preview-token' });
   expect(vi.mocked(ipcRenderer.invoke).mock.calls).toEqual([
+    [IPC.CATALOG_SKILL_BUNDLE.CREATE, create], [IPC.CATALOG_SKILL_BUNDLE.COPY, copy],
     [IPC.CATALOG_SKILL_BUNDLE.LIST, context], [IPC.CATALOG_SKILL_BUNDLE.READ, context, 'asset-1'],
     [IPC.CATALOG_SKILL_BUNDLE.PREVIEW, request], [IPC.CATALOG_SKILL_BUNDLE.SAVE, { context, assetId: 'asset-1', expectedRevision: 2, token: 'preview-token' }],
   ]);

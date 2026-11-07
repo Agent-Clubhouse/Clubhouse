@@ -22,7 +22,7 @@ const document: SkillBundleDocument = { assetId: 'asset-1', name: 'Fixture bundl
 const impact: AssetImpact = { assetId: 'asset-1', fromRevision: 1, toRevision: 2, agents: [], templates: [], subagents: [], copies: [], sharedDestinations: [], blocked: false, fingerprint: 'fixture' };
 const success = <T,>(value: T): SkillBundleResult<T> => ({ ok: true, value });
 let bridge: SkillBundleEditorBridge;
-beforeEach(() => { bridge = { read: vi.fn(async () => success(document)), list: vi.fn(),
+beforeEach(() => { bridge = { create: vi.fn(), copy: vi.fn(), read: vi.fn(async () => success(document)), list: vi.fn(),
   preview: vi.fn(async () => success({ token: 'token', impact, blocked: false })),
   save: vi.fn(async () => success({ ...document, revision: 2, payload: { ...document.payload, files: [{ ...document.payload.files[0], content: 'edited' }, document.payload.files[1]] } })) }; });
 const renderEditor = () => render(<CatalogSkillBundleEditor context={context} assetId="asset-1" bridge={bridge} />);
