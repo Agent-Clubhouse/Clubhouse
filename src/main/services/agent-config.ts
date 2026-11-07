@@ -2369,7 +2369,7 @@ async function runDurableCreation(
       emit('cancelled');
       throw new DurableCreationCancelledError();
     }
-    const reason = compositionAttempted && cancelled ? new CreationCompositionRetainedError().message : errorMessage(err);
+    const reason = compositionAttempted && err instanceof DurableCreationCancelledError ? new CreationCompositionRetainedError().message : errorMessage(err);
     if (options.keepFailedRecord || compositionAttempted) {
       const failed = await mutateAgentRecord(projectPath, id, (agent) => {
         // The worktree and any branch Clubhouse made are gone; a later delete must not touch anything.
@@ -2385,7 +2385,7 @@ async function runDurableCreation(
       await removeAgentRecord(projectPath, id);
       emit('failed', undefined, reason);
     }
-    if (compositionAttempted && cancelled) throw new CreationCompositionRetainedError();
+    if (compositionAttempted && err instanceof DurableCreationCancelledError) throw new CreationCompositionRetainedError();
     throw err;
   } finally {
     clearInterval(heartbeat);
