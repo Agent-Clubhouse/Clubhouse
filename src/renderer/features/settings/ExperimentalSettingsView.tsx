@@ -17,6 +17,11 @@ export const EXPERIMENTAL_FEATURES: Array<{
     description: 'Monitor and control a local Goobers instance from an app-level panel. Not available on Windows. Requires app restart.',
   },
   {
+    id: 'managedAgents',
+    label: 'Clubhouse-managed agents',
+    description: 'Build agents from instruction blocks, skills and MCP servers you keep in one library, start them from templates, and let changes reach every agent that uses a part. Changes apply when an agent next starts or restarts.',
+  },
+  {
     id: LEGACY_COPILOT_ACP_FLAG,
     label: 'Use legacy Copilot ACP',
     description: 'Copilot SDK is now the standard chat driver. Turn this on to use legacy ACP at the next start. Previous SDK settings do not enable legacy ACP. Running sessions keep their current driver. SDK failures never automatically select ACP. Details > Session > Runs on shows the actual driver.',
