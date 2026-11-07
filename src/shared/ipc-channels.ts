@@ -323,6 +323,8 @@ export const IPC = {
     SET_ORCHESTRATOR_HOOK_SERVER: 'app:set-orchestrator-hook-server',
     GET_VERSION: 'app:get-version',
     IS_PREVIEW_ELIGIBLE: 'app:is-preview-eligible',
+    /** The one-time notice that provider profiles were removed (#2749); null once shown or when there were none. */
+    TAKE_REMOVED_PROFILES_NOTICE: 'app:take-removed-profiles-notice',
     GET_ARCH_INFO: 'app:get-arch-info',
     GET_CLI_INSTALL_STATUS: 'app:get-cli-install-status',
     INSTALL_CLI: 'app:install-cli',
@@ -454,12 +456,6 @@ export const IPC = {
     FETCH_CUSTOM_REGISTRIES: 'marketplace:fetch-custom-registries',
     GET_SETTINGS: 'marketplace:get-settings',
     SAVE_SETTINGS: 'marketplace:save-settings',
-  },
-  PROFILE: {
-    GET_SETTINGS: 'profile:get-settings',
-    SAVE_PROFILE: 'profile:save-profile',
-    DELETE_PROFILE: 'profile:delete-profile',
-    GET_PROFILE_ENV_KEYS: 'profile:get-profile-env-keys',
   },
   ANNEX: {
     GET_SETTINGS: 'annex:get-settings',

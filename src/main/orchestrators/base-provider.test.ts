@@ -81,7 +81,6 @@ class TestProvider extends BaseProvider {
     { id: 'model-a', label: 'Model A' },
     { id: 'model-b', label: 'Model B' },
   ];
-  protected readonly configEnvKeys = ['TEST_CONFIG_DIR'];
 
   getCapabilities(): ProviderCapabilities {
     return {
@@ -359,19 +358,6 @@ describe('BaseProvider', () => {
       expect(provider.toolVerb('unknown')).toBeUndefined();
     });
   });
-
-  describe('getProfileEnvKeys', () => {
-    it('returns configured env keys', () => {
-      expect(provider.getProfileEnvKeys()).toEqual(['TEST_CONFIG_DIR']);
-    });
-
-    it('returns a new array each call (defensive copy)', () => {
-      const a = provider.getProfileEnvKeys();
-      const b = provider.getProfileEnvKeys();
-      expect(a).not.toBe(b);
-      expect(a).toEqual(b);
-    });
-  });
 });
 
 // ── listModels (#2569) ────────────────────────────────────────────────────
@@ -468,7 +454,7 @@ describe('BaseProvider.listModels', () => {
     expect(list.liveError).toBeUndefined();
   });
 
-  it('caches per profile env, and refresh probes again', async () => {
+  it('caches per env, and refresh probes again', async () => {
     await provider.listModels();
     await provider.listModels();
     expect(provider.probe).toHaveBeenCalledTimes(1);
@@ -478,7 +464,7 @@ describe('BaseProvider.listModels', () => {
     expect(provider.probe).toHaveBeenCalledTimes(3);
   });
 
-  it('passes the profile env to the probe', async () => {
+  it('passes the env override to the probe', async () => {
     await provider.listModels({ env: { TEST_CONFIG_DIR: 'profile-dir' } });
     expect(provider.probe).toHaveBeenCalledWith(expect.objectContaining({ env: { TEST_CONFIG_DIR: 'profile-dir' } }));
   });

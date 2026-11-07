@@ -69,7 +69,7 @@ async function agentUse(agentId: string, info: AgentLookup): Promise<HelperRouti
 /**
  * The route's body. No `agentId` or `projectId` reads app-wide. Either way every
  * label family comes back, so a client can cache them once per revision.
- * `projectId` or `agentId` reads the model lists under that project's profile.
+ * `projectId` or `agentId` adds that project's Auto setting; model lists are the CLI's own.
  */
 export async function mobileHelperRouting(options: { projectPath?: string; agentId?: string; agent?: AgentLookup }): Promise<HelperRoutingSettings> {
   const dispatcher = !!options.agentId && (!!activeDispatcher(options.agentId) || isDisabledDispatcherId(options.agentId));

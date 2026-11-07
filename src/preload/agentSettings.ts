@@ -62,7 +62,6 @@ export const agentSettings = {
     lintCommand?: string;
     mission?: string;
     persona?: string;
-    profileId?: string;
     commandPrefix?: string;
   }> =>
     ipcRenderer.invoke(IPC.AGENT.READ_PROJECT_AGENT_DEFAULTS, projectPath),
@@ -78,7 +77,6 @@ export const agentSettings = {
     lintCommand?: string;
     mission?: string;
     persona?: string;
-    profileId?: string;
     commandPrefix?: string;
   }) =>
     ipcRenderer.invoke(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, projectPath, defaults),

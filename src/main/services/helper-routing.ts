@@ -77,16 +77,16 @@ interface CellCheck {
   message?: string;
 }
 
-/** Check a model and effort against the CLI's list, under a project's profile. Never throws. */
-async function checkCell(provider: string, cell: PresetCell, projectPath: string | undefined): Promise<CellCheck> {
+/** Check a model and effort against the CLI's list. Never throws. */
+async function checkCell(provider: string, cell: PresetCell): Promise<CellCheck> {
   // A difficulty must not run on whatever the CLI happens to default to.
   if (cell.model === CLI_DEFAULT_MODEL) {
     return { state: 'stale', staleReason: 'model_unavailable', message: 'A preset has to name a model, not the CLI\'s default.' };
   }
-  const model = await checkHelperModel(provider, cell.model, projectPath);
+  const model = await checkHelperModel(provider, cell.model);
   if (model.ok === false) return { state: 'stale', staleReason: 'model_unavailable', message: model.message };
   if (!cell.effort) return model.warning ? { state: 'unverified', message: model.warning } : { state: 'valid' };
-  const effort = await checkHelperEffort(provider, cell.model, cell.effort, projectPath);
+  const effort = await checkHelperEffort(provider, cell.model, cell.effort);
   if (effort.ok === false) return { state: 'stale', staleReason: 'effort_unavailable', message: effort.message };
   const warning = model.warning ?? effort.warning;
   return warning ? { state: 'unverified', message: warning } : { state: 'valid' };
@@ -106,13 +106,12 @@ interface ResolvedCell {
 async function resolveCell(
   provider: PresetProvider,
   difficulty: HelperDifficulty,
-  projectPath: string | undefined,
 ): Promise<{ resolved: ResolvedCell | null; problems: string[] }> {
   const custom = orchestrationSettings.getPresets()[provider]?.[difficulty];
   const builtin = BUILTIN_PRESETS[provider][difficulty];
   const problems: string[] = [];
   if (custom) {
-    const check = await checkCell(provider, custom, projectPath);
+    const check = await checkCell(provider, custom);
     if (check.state !== 'stale') {
       return {
         resolved: {
@@ -125,7 +124,7 @@ async function resolveCell(
     }
     problems.push(`your saved choice (${check.message})`);
   }
-  const check = await checkCell(provider, builtin, projectPath);
+  const check = await checkCell(provider, builtin);
   if (check.state === 'stale') {
     problems.push(`the default (${check.message})`);
     return { resolved: null, problems };
@@ -156,7 +155,7 @@ export interface StartPlanRequest {
   difficulty?: string;
   /** The CLI the helper gets when nothing else names one. */
   orchestratorCli?: string;
-  /** The project the helper is created in: the profile whose login the lists follow. */
+  /** The project the helper is created in: Auto checks its CLIs there. */
   projectPath: string;
 }
 
@@ -165,7 +164,7 @@ interface AutoOption {
   provider: PresetProvider;
   cell: ResolvedCell;
   quota: QuotaView;
-  /** Provider and profile: see candidateKey. */
+  /** Provider: see candidateKey. */
   key: string;
 }
 
@@ -195,7 +194,7 @@ export type StartPlanResult =
  * it records nothing.
  */
 export async function planHelperStart(request: StartPlanRequest): Promise<StartPlanResult> {
-  const { cli, model, effort, difficulty, orchestratorCli, projectPath } = request;
+  const { cli, model, effort, difficulty, orchestratorCli } = request;
   if (!cli && !model && !effort && !difficulty) return { ok: true, plan: null };
 
   if (cli === AUTO_CLI) {
@@ -223,7 +222,7 @@ export async function planHelperStart(request: StartPlanRequest): Promise<StartP
       };
     }
     if (!resolvedModel) {
-      const { resolved, problems } = await resolveCell(provider, validDifficulty, projectPath);
+      const { resolved, problems } = await resolveCell(provider, validDifficulty);
       if (!resolved) {
         return {
           ok: false,
@@ -294,13 +293,12 @@ async function providerUsable(provider: string, projectPath: string): Promise<bo
 }
 
 /**
- * What a candidate runs under: its provider and the project's profile. A proxy
- * for a subscription, never more: two profiles on one account can't be told
- * apart without reading credentials, which this never does.
+ * What a candidate runs under: its provider, on the one login the local
+ * environment has. A proxy for a subscription, never more. `:default` is the
+ * suffix Auto's saved tie history used before profiles were removed (#2749).
  */
-async function candidateKey(provider: string, projectPath: string): Promise<string> {
-  const profileId = await readProjectAgentDefaults(projectPath).then((d) => d?.profileId, (): undefined => undefined);
-  return `${provider}:${profileId ?? 'default'}`;
+function candidateKey(provider: string): string {
+  return `${provider}:default`;
 }
 
 /**
@@ -320,11 +318,11 @@ async function prepareAuto(request: StartPlanRequest): Promise<StartPlanResult> 
   await Promise.all(PRESET_PROVIDERS.map(async (provider) => {
     if (enabled.length > 0 && !enabled.includes(provider)) { skipped[provider] = 'cli_disabled'; return; }
     if (!(await providerUsable(provider, projectPath))) { skipped[provider] = 'cli_unavailable'; return; }
-    if (await isProviderCoolingDown(provider, projectPath)) { skipped[provider] = 'cooling_down'; return; }
-    const { resolved } = await resolveCell(provider, difficulty, projectPath);
+    if (await isProviderCoolingDown(provider)) { skipped[provider] = 'cooling_down'; return; }
+    const { resolved } = await resolveCell(provider, difficulty);
     if (!resolved) { skipped[provider] = 'no_valid_mapping'; return; }
-    const quota = await readProviderQuota(provider, projectPath, { model: resolved.cell.model });
-    options.push({ provider, cell: resolved, quota, key: await candidateKey(provider, projectPath) });
+    const quota = await readProviderQuota(provider, { model: resolved.cell.model });
+    options.push({ provider, cell: resolved, quota, key: candidateKey(provider) });
   }));
   // A stable order for what's shown. The choice doesn't depend on it.
   options.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
@@ -655,11 +653,11 @@ function savedPartOf(revision: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
-async function viewCell(provider: PresetProvider, difficulty: HelperDifficulty, projectPath: string | undefined): Promise<PresetCellView> {
+async function viewCell(provider: PresetProvider, difficulty: HelperDifficulty): Promise<PresetCellView> {
   const custom = orchestrationSettings.getPresets()[provider]?.[difficulty] ?? null;
   const builtin = BUILTIN_PRESETS[provider][difficulty];
-  const shown = await checkCell(provider, custom ?? builtin, projectPath);
-  const { resolved } = await resolveCell(provider, difficulty, projectPath);
+  const shown = await checkCell(provider, custom ?? builtin);
+  const { resolved } = await resolveCell(provider, difficulty);
   const fallback = resolved?.fallback;
   return {
     effective: resolved?.cell ?? null,
@@ -673,18 +671,18 @@ async function viewCell(provider: PresetProvider, difficulty: HelperDifficulty, 
   };
 }
 
-async function viewProvider(provider: PresetProvider, projectPath: string | undefined, refresh: boolean): Promise<ProviderRoutingView> {
+async function viewProvider(provider: PresetProvider, refresh: boolean): Promise<ProviderRoutingView> {
   const instance = getProvider(provider as OrchestratorId);
   let choices: Extract<ProviderRoutingView, { autoEligible: true }>['choices'] = { source: 'fallback', asOf: null, models: [] };
-  const forcedQuota = refresh ? forceProviderQuota(provider, projectPath) : null;
+  const forcedQuota = refresh ? forceProviderQuota(provider) : null;
   let listSource = 'none';
   let modelCount = 0;
   let listFailed = false;
   if (instance) {
     try {
-      // App-wide, whatever profile the cells are read under: presets are app-wide, so this is what a write takes.
+      // App-wide: presets are app-wide, so this is what a write takes.
       // Forced first, so the cells below read the new list from the cache.
-      const list = await modelListFor(instance, undefined, refresh);
+      const list = await modelListFor(instance, refresh);
       if (list) {
         listSource = list.source;
         modelCount = list.models.length;
@@ -698,8 +696,8 @@ async function viewProvider(provider: PresetProvider, projectPath: string | unde
     }
   }
   const [cells, quota] = await Promise.all([
-    Promise.all(HELPER_DIFFICULTIES.map((d) => viewCell(provider, d, projectPath))),
-    forcedQuota ? forcedQuota.then((forced) => forced.quota) : readProviderQuota(provider, projectPath),
+    Promise.all(HELPER_DIFFICULTIES.map((d) => viewCell(provider, d))),
+    forcedQuota ? forcedQuota.then((forced) => forced.quota) : readProviderQuota(provider),
   ]);
   if (forcedQuota) {
     const quotaOutcome = (await forcedQuota).outcome;
@@ -717,18 +715,17 @@ async function viewProvider(provider: PresetProvider, projectPath: string | unde
 
 /**
  * The page's data. A CLI's list can take a handshake, cached for about ten
- * minutes. `projectPath` reads cells under that project's profile, so their state
- * says what a start there would do; `choices` stay app-wide, since a write is.
- * Reads made without one also notice a cell whose state changed, and move the
+ * minutes. Cells and `choices` are app-wide, since a write is; `projectPath`
+ * adds that project's Auto setting. Reads made without one also notice a cell whose state changed, and move the
  * revision. `refresh` asks each preset CLI again first, for its app-wide list and
  * its limits, for someone who just signed in. A project's own list isn't forced.
  */
 export async function readHelperRouting(options: { projectPath?: string; autoContext?: Parameters<typeof readHelperAuto>[0]; refresh?: boolean } = {}): Promise<HelperRoutingSettings> {
   const providers: Record<string, ProviderRoutingView> = {};
-  await Promise.all(PRESET_PROVIDERS.map(async (p) => { providers[p] = await viewProvider(p, options.projectPath, options.refresh === true); }));
+  await Promise.all(PRESET_PROVIDERS.map(async (p) => { providers[p] = await viewProvider(p, options.refresh === true); }));
   for (const other of getAllProviders()) {
     if (!isPresetProvider(other.id)) {
-      providers[other.id] = { autoEligible: false, reason: 'auto_not_supported', quota: await readProviderQuota(other.id, options.projectPath), cells: null };
+      providers[other.id] = { autoEligible: false, reason: 'auto_not_supported', quota: await readProviderQuota(other.id), cells: null };
     }
   }
   if (!options.projectPath) {
@@ -869,7 +866,7 @@ async function writePresets(update: HelperRoutingUpdate, { surface, projectPath 
   if (savedPartOf(update.revision) !== orchestrationSettings.getPresetsRevision()) return stale();
 
   for (const { provider, model, effort } of update.cells ?? []) {
-    const check = await checkCell(provider, { model, effort }, undefined);
+    const check = await checkCell(provider, { model, effort });
     if (check.state === 'stale') {
       return refuse(new HelperRoutingError(check.staleReason as HelperRoutingErrorCode, check.message ?? 'That choice isn\'t offered.'));
     }

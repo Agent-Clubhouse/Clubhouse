@@ -15,7 +15,6 @@ import { pluginMcp } from './pluginMcp';
 import { log } from './log';
 import { process as processApi } from './process';
 import { app } from './app';
-import { profile } from './profile';
 import { annex } from './annex';
 import { annexClient } from './annexClient';
 import { window } from './window';
@@ -69,7 +68,6 @@ export const api = {
   ...log,
   ...processApi,
   ...app,
-  ...profile,
   ...annex,
   ...annexClient,
   ...window,

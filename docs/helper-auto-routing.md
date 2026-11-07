@@ -64,16 +64,16 @@ Per provider, difficulty to model and effort, stored in `orchestration-settings`
 
 Cells are app-scope in v1. Reset removes overrides per cell, per provider or for all.
 
-**Validation.** Both model and effort are checked at write and again at resolve, against the list for the target project's profile, since a profile can be a different login. The effort check is `checkHelperEffort`.
+**Validation.** Both model and effort are checked at write and again at resolve, against the CLI's list for its one local login. The effort check is `checkHelperEffort`.
 
 - Live list: a missing model, or an effort that model lacks, makes the cell `stale` (`model_unavailable`, `effort_unavailable`). A good model with a bad effort is still stale, and never runs at a default effort.
 - Fallback or unreadable list: the cell is `unverified` and usable, with fallback code `model_unverified`. Verified candidates rank ahead within a tier.
 - A cell can have `effort: null` for a model that takes no levels.
 - A cell has to name a model. `default` is refused on write and treated as stale if it's saved, because a `hard` task on an unknown default is a silent substitute.
 
-**Which list.** A write is checked against the app-wide list, because presets are app-wide, and `choices` are that same list, so a value picked from them is accepted. Cells read with `projectId` or `agentId` are checked under that project's profile, so their state says what a start there would do. A model only a project's profile offers can't be saved as a preset. Name it on the start instead.
+**Which list.** Each CLI has one login, from the environment Clubhouse starts in (provider profiles were removed in #2749), so there is one list per CLI. A write is checked against it, and `choices` are that same list, so a value picked from them is accepted. Cells read with `projectId` or `agentId` use it too.
 
-**Check again.** Settings > Helpers has a Check again action, for after signing in to a CLI, because nothing notices a login change. It forces each preset provider's app-wide model list once, before cells are built, and forces a quota read, then shows the result. A probe that fails doesn't fail the page. It writes nothing, so there's no audit row, and the revision moves only as for any app-wide read that finds a cell's state changed. It's desktop only, and doesn't force a list or read kept under a project's profile. Each provider logs one `core:mcp` line with its list source, model count and outcome.
+**Check again.** Settings > Helpers has a Check again action, for after signing in to a CLI, because nothing notices a login change. It forces each preset provider's app-wide model list once, before cells are built, and forces a quota read, then shows the result. A probe that fails doesn't fail the page. It writes nothing, so there's no audit row, and the revision moves only as for any app-wide read that finds a cell's state changed. It's desktop only. Each provider logs one `core:mcp` line with its list source, model count and outcome.
 
 **Fallback.** Custom cell, then the built-in cell if valid (`builtin_preset`), then the next provider (Auto only, `candidate_skipped`), then a refusal with `no_valid_mapping` naming each cell and reason. Neither mode falls back to the CLI's default model, because a `hard` task on an unknown default is a silent substitute. Saved values are never rewritten. Settings and the phone show a stale cell with Reset.
 
@@ -88,7 +88,7 @@ Read token-free, with no prompt. Checked on one login on Claude Code 2.1.312 and
 - **Codex:** `account/rateLimits/read` on `app-server`, plus `account/rateLimits/updated` from running chat sessions. `primary` can be the weekly window, so windows are classified by duration. `accountId` and `planType` are dropped and never stored.
 - **Claude:** the `get_usage` control request with `skip_behaviors`, plus `rate_limit_event` from running chat sessions. The SDK labels it experimental, so shape drift reads as `unknown` and never throws, and a fixture schema check guards the fields we read. Fields are picked by name, because the reply holds many unrelated keys.
 - **No plan:** a login with no plan limits is `not_applicable`. Claude says so with `rate_limits_available: false`. Codex says so only as an error, `authentication required to read rate limits`, seen on 0.163.0 with no login and with an API key, so it is matched by its words and a new wording reads as `read_failed`.
-- **Reads** run only when Auto routes or Settings is open, with no background polling. Shared in flight, cached 5 minutes, 1 minute backoff after a failure, 3 second budget at route time, keyed by provider and profile. Check again skips the cache and the backoff and waits up to 12 seconds, still sharing a read already in flight.
+- **Reads** run only when Auto routes or Settings is open, with no background polling. Shared in flight, cached 5 minutes, 1 minute backoff after a failure, 3 second budget at route time, keyed by provider. Check again skips the cache and the backoff and waits up to 12 seconds, still sharing a read already in flight.
 - **Model-scoped caps** apply only on an exact name match, and only to a choice of that model. A provider's own state leaves them out, since they apply to one model. So a model-scoped cap can be missed, and the UI says so.
 - **Claude's other keys** aren't read: `locked_reason` isn't in the SDK's types, so a reported limit on Claude comes from `rate_limit_event` in a running chat session. A terminal session or an idle provider shows `near_limit` at most, never `exhausted`.
 
@@ -126,9 +126,9 @@ Policy 2 (#2887) balances plan consumption. Nothing in it knows who asked, which
 4. **Pressure:** the weekly percent used, in basis points. Lowest wins. An `unmeasured` tier has no pressure: all of it ties.
 5. **Ties:** pressures within the tie band, 0 by default, so only equal readings. Among them the lowest load wins, then the rotation.
 
-**Rotation.** Keyed by the sorted set of tied candidates, each a provider plus the project's profile. The next one after the key this same set chose last, in sorted order. Saved in `helper-auto-rotation.json`, so a restart doesn't hand the next tie to the first provider. It moves only when a decision commits, once the helper exists, so a refused start doesn't take a turn. Within a run it is exact, from memory: decisions the rotation alone settled for one set differ by at most one. Across restarts the saved file is best-effort history, since a failed or unflushed write, an evicted set or an unreadable file brings back an older cursor or none. Each run is still a round robin, so after R restarts the counts differ by at most R + 1, whatever was lost.
+**Rotation.** Keyed by the sorted set of tied candidates, each a provider (`<provider>:default`, the key used before profiles were removed). The next one after the key this same set chose last, in sorted order. Saved in `helper-auto-rotation.json`, so a restart doesn't hand the next tie to the first provider. It moves only when a decision commits, once the helper exists, so a refused start doesn't take a turn. Within a run it is exact, from memory: decisions the rotation alone settled for one set differ by at most one. Across restarts the saved file is best-effort history, since a failed or unflushed write, an evicted set or an unreadable file brings back an older cursor or none. Each run is still a round robin, so after R restarts the counts differ by at most R + 1, whatever was lost.
 
-**Profiles, not accounts.** A candidate's key is its provider and the project's profile. That's a proxy for a subscription: two profiles signed in to one account can't be told apart without reading credentials, which this never does, so the record says `accountKnown: false` and claims no per-account accounting.
+**Providers, not accounts.** A candidate's key is its provider, on the one login the local environment has. That's a proxy for a subscription, never more: Auto doesn't tell accounts apart, and never reads credentials, so the record says `accountKnown: false` and claims no per-account accounting. Starting Clubhouse under another login (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`) changes the account for the whole app.
 
 **Reset-relative scoring** (`reset_schedule`) is built but off. It subtracts the share of the week gone from the percent used, so a plan that resets sooner is used first. It needs every measured candidate to have a provider-declared seven-day window (Claude's `seven_day`, Codex's 10080 minutes) with a reset inside the coming week, and falls back to weekly use otherwise. The replay tests compare it with the default; it isn't on until that comparison is reviewed.
 
@@ -144,7 +144,7 @@ A burst on equal readings spreads by load; a burst on unequal readings goes to t
 
 Classified from existing signals: `auth_required`, `account_issue`, `rate_limited`, `isLoginRequiredError` and spawn failures.
 
-| Class | Signal | Cooldown (Auto only, per provider and profile) | Retry |
+| Class | Signal | Cooldown (Auto only, per provider) | Retry |
 |---|---|---|---|
 | `auth` | Login required, account issue | 10 minutes | Allowed before delivery |
 | `quota` | `rate_limited` | Until `resetsAt`, else 30 minutes. The provider said so, so the state becomes `exhausted`. | Allowed before delivery |
@@ -154,7 +154,7 @@ Classified from existing signals: `auth_required`, `account_issue`, `rate_limite
 - A failed start can exclude a provider whose quota is unknown, but only for `auth`, `quota` or `availability`, and only for that cooldown. Unknown quota alone never excludes.
 - A `quota` or `auth` error after delivery sets the cooldown for future starts. That helper isn't moved or retried.
 - Cooldowns are fixed and in memory, and kept per class, so a later failure never shortens another class's cooldown.
-- A successful read from Check again ends an `auth` cooldown older than that read, for the same provider and profile. It takes a reading with windows, since Codex also answers `not_applicable` when logged out, so an API-key login waits out its cooldown. `quota` and `availability` cooldowns stay, and a failed read clears nothing.
+- A successful read from Check again ends an `auth` cooldown older than that read, for the same provider. It takes a reading with windows, since Codex also answers `not_applicable` when logged out, so an API-key login waits out its cooldown. `quota` and `availability` cooldowns stay, and a failed read clears nothing.
 - **No retry on another provider.** A worktree is set up for one CLI when it's created: its instructions file, skills and config follow that CLI's conventions. So a failed spawn isn't moved. It fails as any helper does, with its task saved for `wake_helper`, and the cooldown keeps the next start off that provider. `retried_after_spawn_failure` is not used.
 
 ## Context window

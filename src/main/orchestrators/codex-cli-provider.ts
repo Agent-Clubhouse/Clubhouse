@@ -26,7 +26,7 @@ import { codexContextWindowOptions, parseCodexContextCatalog, type ContextWindow
 import { probeCodexModels, type ModelProbeContext } from './model-probes';
 import { cwdKey } from './copilot-session-store';
 import { createCodexHeadlessNormalizer } from './codex-headless-events';
-import { homePath, testModelProbesDisabled, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
+import { cliStateDir, homePath, testModelProbesDisabled, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
@@ -287,10 +287,6 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
   protected readonly durablePermissions = DEFAULT_DURABLE_PERMISSIONS;
   protected readonly quickPermissions = DEFAULT_QUICK_PERMISSIONS;
   protected readonly fallbackModelOptions = FALLBACK_MODEL_OPTIONS;
-  // CODEX_HOME is Codex's config/state root — the analogue of Claude Code's
-  // CLAUDE_CONFIG_DIR. Declaring it lets a Clubhouse profile give an agent an
-  // isolated session store, config.toml and auth.
-  protected readonly configEnvKeys = ['CODEX_HOME', 'OPENAI_API_KEY', 'OPENAI_BASE_URL'];
 
   /** Fallback when app-server's model/list is unavailable. */
   protected readonly modelFetchConfig = {
@@ -379,7 +375,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
 
     // Don't hard-block on OPENAI_API_KEY here — the key may be available in the
     // user's shell profile (.zshrc etc.) which the PTY login shell will source,
-    // or it may be injected via a Clubhouse Profile.  Blocking here produces
+    // or it may come from the environment Clubhouse was started in.  Blocking here produces
     // false negatives when getShellEnvironment() can't capture the full env
     // (e.g. Electron launched from Dock, env set by direnv/1Password/mise).
     // The Codex binary will report a clear auth error if the key is truly absent.
@@ -538,12 +534,11 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
   /**
    * Root of Codex's own state directory.
    *
-   * Codex honours `CODEX_HOME`; a Clubhouse profile can set it to give an agent
-   * an isolated session store, config and auth (the equivalent of Claude Code's
-   * `CLAUDE_CONFIG_DIR`).
+   * Codex honours `CODEX_HOME` (the equivalent of Claude Code's
+   * `CLAUDE_CONFIG_DIR`), read from the launch environment, else ~/.codex.
    */
-  private resolveCodexHome(profileEnv?: Record<string, string>): string {
-    return profileEnv?.CODEX_HOME || homePath('.codex');
+  private resolveCodexHome(): string {
+    return cliStateDir('CODEX_HOME', '.codex');
   }
 
   /**
@@ -635,8 +630,8 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
    * - otherwise the run's own new session, which can't predate the run: the
    *   earliest rollout for this cwd that started inside the run window.
    */
-  async findRunSession(run: { cwd: string; startedAt: number; endedAt: number; resumedId?: string; profileEnv?: Record<string, string> }): Promise<string | null> {
-    const sessions = await this.listSessions(run.cwd, run.profileEnv);
+  async findRunSession(run: { cwd: string; startedAt: number; endedAt: number; resumedId?: string }): Promise<string | null> {
+    const sessions = await this.listSessions(run.cwd);
     const from = run.startedAt - RUN_WINDOW_SLACK_MS;
     const to = run.endedAt + RUN_WINDOW_SLACK_MS;
     if (run.resumedId) {
@@ -655,8 +650,13 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
    * (by name only, no reads), so an old session isn't missed the way the
    * capped listing could miss it. undefined when the store can't be read.
    */
-  async hasSession(sessionId: string, profileEnv?: Record<string, string>): Promise<boolean | undefined> {
-    const sessionsDir = path.join(this.resolveCodexHome(profileEnv), 'sessions');
+  async hasSession(sessionId: string): Promise<boolean | undefined> {
+    return this.hasSessionInStore(sessionId, this.resolveCodexHome());
+  }
+
+  /** hasSession, for the store under another CODEX_HOME (#2749). */
+  async hasSessionInStore(sessionId: string, codexHome: string): Promise<boolean | undefined> {
+    const sessionsDir = path.join(codexHome, 'sessions');
     let unreadable = false;
     const walk = async (dir: string, depth: number): Promise<boolean> => {
       if (depth > CODEX_SESSION_WALK_MAX_DEPTH) return false;
@@ -689,8 +689,8 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
    * regex.  The only entry at that level is the year directory, so the filter
    * never matched and the picker was always empty.
    */
-  async listSessions(cwd: string, profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
-    const sessionsDir = path.join(this.resolveCodexHome(profileEnv), 'sessions');
+  async listSessions(cwd: string): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
+    const sessionsDir = path.join(this.resolveCodexHome(), 'sessions');
     const targetCwd = cwdKey(cwd);
 
     let files: string[];
@@ -747,10 +747,9 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
   async readSessionTranscript(
     sessionId: string,
     _cwd: string,
-    profileEnv?: Record<string, string>,
     opts?: TranscriptReadOptions,
   ): Promise<StreamJsonEvent[] | null> {
-    const sessionsDir = path.join(this.resolveCodexHome(profileEnv), 'sessions');
+    const sessionsDir = path.join(this.resolveCodexHome(), 'sessions');
 
     let files: string[];
     try {

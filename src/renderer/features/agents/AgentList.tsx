@@ -120,7 +120,7 @@ function AgentListInner() {
     }
     return projects.find((p) => p.id === activeProjectId);
   }, [activeProjectId, isRemote, projects, satelliteProjects]);
-  const { effectiveOrchestrators: enabledOrchestrators, activeProfile, isOrchestratorInProfile } = useEffectiveOrchestrators(activeProject?.path);
+  const { effectiveOrchestrators: enabledOrchestrators } = useEffectiveOrchestrators();
   const allCompleted = useQuickAgentStore((s) => s.completedAgents);
   const completedAgents = useMemo(
     () => (activeProjectId ? allCompleted[activeProjectId] ?? EMPTY_COMPLETED : EMPTY_COMPLETED),
@@ -640,14 +640,6 @@ function AgentListInner() {
                 onSpawnQuickChild={handleSpawnQuickChild}
                 {...(depth > 0 && { indent })}
               />
-            )}
-            {activeProfile && durable.orchestrator && !isOrchestratorInProfile(durable.orchestrator) && (
-              <span
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-yellow-500"
-                title={`${durable.orchestrator} is not configured in the "${activeProfile.name}" profile`}
-              >
-                ⚠
-              </span>
             )}
           </div>
           {durable.parentProjectPath && (

@@ -6,7 +6,7 @@
         "agentId": "durable_term",
         "commandId": "cmd_176",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "expectedState": "52cb5597a48445ec1ae91f4c590eb2d6468adaa7cbe0da6d0529cb3143c7bb9c",
+        "expectedState": "562ec960cc5c5aec8dd2f047742cf3c512d2559c38227cd861da9312a279ec59",
         "provider": "codex-cli",
         "type": "agent.providerChange",
         "version": 1
@@ -52,7 +52,7 @@
         "agentId": "durable_term",
         "commandId": "cmd_177",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "expectedState": "52cb5597a48445ec1ae91f4c590eb2d6468adaa7cbe0da6d0529cb3143c7bb9c",
+        "expectedState": "562ec960cc5c5aec8dd2f047742cf3c512d2559c38227cd861da9312a279ec59",
         "provider": "codex-cli",
         "type": "agent.providerChange",
         "version": 1
@@ -77,7 +77,7 @@
         "agentId": "durable_term",
         "commandId": "cmd_183",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "expectedState": "109bea6012b5f4334461e7453beb3589d9537efc54dcc7d29729f78953b90b5e",
+        "expectedState": "e7c1d49172ad8e733e624ab7740368da9ccfe6567e0ffff84ef6ceb7659ec305",
         "provider": "codex-cli",
         "type": "agent.providerChange",
         "version": 1

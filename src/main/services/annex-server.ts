@@ -75,7 +75,7 @@ import { chatDetailedStatus } from '../../shared/chat-agent-status';
 import { CHAT_IMAGE_MAX_BYTES, type ChatEvent, type ChatSessionState } from '../../shared/chat';
 import { injectPtyText } from './agent-runtime/pty-input';
 import { AgentStoppingError } from './agent-runtime/agent-stopping';
-import { spawnAgent, killAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
+import { spawnAgent, killAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator } from './agent-system';
 import { appLog } from './log-service';
 import { buildChatPage } from './annex-chat-pages';
 import { forgetAppendedNotes, MOBILE_PERSISTENT_APPROVALS, OUTER_TOOL_INPUT_MAX_BYTES, PERMISSION_INPUT_MAX_BYTES, boundChatEvent, boundToolInput, toolInputSizeBucket } from './annex-chat-bounds';
@@ -2649,7 +2649,7 @@ async function handleSessionListRoute(ctx: AnnexRouteContext, match: RegExpMatch
   try {
     const config = await agentConfig.getDurableConfig(project.path, agentId);
     const provider = await resolveOrchestrator(project.path, orchestrator || config?.orchestrator);
-    const sessions = isSessionCapable(provider) ? await provider.listSessions(config?.worktreePath || project.path, await resolveProfileEnv(project.path, provider.id)) : [];
+    const sessions = isSessionCapable(provider) ? await provider.listSessions(config?.worktreePath || project.path) : [];
     sendJson(ctx.res, 200, sessions);
   } catch (err) {
     sendJson(ctx.res, 500, { error: err instanceof Error ? err.message : 'list_sessions_failed' });
@@ -2672,8 +2672,7 @@ async function handleSessionTranscriptRoute(ctx: AnnexRouteContext, match: RegEx
     const provider = await resolveOrchestrator(project.path, orchestrator || config?.orchestrator);
     if (!isSessionCapable(provider)) { sendJson(ctx.res, 200, null); return; }
     const cwd = config?.worktreePath || project.path;
-    const profileEnv = await resolveProfileEnv(project.path, provider.id);
-    const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv);
+    const rawEvents = await provider.readSessionTranscript(sessionId, cwd);
     if (!rawEvents) { sendJson(ctx.res, 200, null); return; }
     const events = normalizeSessionEvents(rawEvents);
     sendJson(ctx.res, 200, paginateEvents(events, offset, limit));
@@ -2696,8 +2695,7 @@ async function handleSessionSummaryRoute(ctx: AnnexRouteContext, match: RegExpMa
     const provider = await resolveOrchestrator(project.path, orchestrator || config?.orchestrator);
     if (!isSessionCapable(provider)) { sendJson(ctx.res, 200, null); return; }
     const cwd = config?.worktreePath || project.path;
-    const profileEnv = await resolveProfileEnv(project.path, provider.id);
-    const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv, { maxBytes: SUMMARY_TRANSCRIPT_MAX_BYTES });
+    const rawEvents = await provider.readSessionTranscript(sessionId, cwd, { maxBytes: SUMMARY_TRANSCRIPT_MAX_BYTES });
     if (!rawEvents) { sendJson(ctx.res, 200, null); return; }
     const events = normalizeSessionEvents(rawEvents);
     sendJson(ctx.res, 200, buildSessionSummary(events, provider.id));
@@ -3374,7 +3372,7 @@ async function handleMobileAgentSettingsRoute(ctx: AnnexRouteContext, match: Reg
   }
 }
 
-/** Helper presets, app-wide or under an agent's or project's profile (#2671). No filter returns every label family too. */
+/** Helper presets, app-wide or for an agent's or project's Auto setting (#2671). No filter returns every label family too. */
 async function handleMobileHelperRoutingRoute(ctx: AnnexRouteContext): Promise<void> {
   try {
     const query = new URL(ctx.req.url ?? '', 'http://annex').searchParams;
@@ -3384,9 +3382,9 @@ async function handleMobileHelperRoutingRoute(ctx: AnnexRouteContext): Promise<v
     if (agentId && !agent && !isDisabledDispatcherId(agentId)) { sendJson(ctx.res, 404, { error: 'agent_not_found' }); return; }
     const project = projectId && !isDispatcherProjectId(projectId) ? await findProjectById(projectId) : undefined;
     if (projectId && !project) { sendJson(ctx.res, 404, { error: 'project_not_found' }); return; }
-    // The Dispatcher's folder has no CLI profile of its own, and it can't use presets.
-    const profileProject = project ?? (agentId && activeDispatcher(agentId) ? undefined : agent?.project);
-    const settings = await mobileHelperRouting({ projectPath: profileProject?.path, agentId, agent });
+    // The Dispatcher's folder has no project of its own, and it can't use presets.
+    const routingProject = project ?? (agentId && activeDispatcher(agentId) ? undefined : agent?.project);
+    const settings = await mobileHelperRouting({ projectPath: routingProject?.path, agentId, agent });
     sendJson(ctx.res, 200, { version: 1, epoch: mobileCommands.epoch, ...settings });
   } catch (err) {
     // telemetry-exempt: read errors are bounded in the API response, and logged here.

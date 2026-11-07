@@ -23,7 +23,7 @@ import {
 import type { McpServerDef } from '../../shared/types';
 import { BaseProvider } from './base-provider';
 import { probeCopilotModels, type ModelProbeContext } from './model-probes';
-import { homePath, parseModelChoicesFromHelp, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
+import { homePath, launchEnvValue, parseModelChoicesFromHelp, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
 import { isCopilotClubhouseHookEntry } from './copilot-hooks-document';
 import { appLog } from '../services/log-service';
 import { buildCliSpawnEnv, getShellEnvironment } from '../util/shell';
@@ -36,19 +36,11 @@ const execFileAsync = promisify(execFile);
 
 /**
  * Copilot's state directory: `COPILOT_HOME` (per `copilot help environment`)
- * from the agent's profile, then the environment the PTY inherits (the login
- * shell's, then Clubhouse's own), else `~/.copilot`.
+ * from the environment the PTY inherits (the login shell's, then Clubhouse's
+ * own), else `~/.copilot`.
  */
-export function resolveCopilotHome(profileEnv?: Record<string, string>): string {
-  let shellEnv: Record<string, string> | undefined;
-  try {
-    shellEnv = getShellEnvironment();
-  } catch {
-    // telemetry-exempt: the shell env can't be read; process.env still applies
-  }
-  const home = [profileEnv?.COPILOT_HOME, shellEnv?.COPILOT_HOME, process.env.COPILOT_HOME]
-    .map((v) => v?.trim())
-    .find((v): v is string => !!v);
+export function resolveCopilotHome(): string {
+  const home = launchEnvValue('COPILOT_HOME');
   if (!home) return homePath('.copilot');
   if (home === '~') return homePath();
   if (home.startsWith('~/') || home.startsWith('~\\')) return homePath(home.slice(2));
@@ -133,7 +125,6 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
   protected readonly durablePermissions = DEFAULT_DURABLE_PERMISSIONS;
   protected readonly quickPermissions = DEFAULT_QUICK_PERMISSIONS;
   protected readonly fallbackModelOptions = FALLBACK_MODEL_OPTIONS;
-  protected readonly configEnvKeys = ['GH_HOST', 'GH_TOKEN'];
 
   /** ACP `session/new` lists the models this login can use, with cost multipliers. No prompt is sent. */
   protected probeLiveModels(ctx: ModelProbeContext) {
@@ -380,8 +371,8 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
   // ── SessionCapable ──────────────────────────────────────────────────────
 
   /** `<COPILOT_HOME>/session-state`, where Copilot keeps one directory per session. */
-  private sessionStateDir(profileEnv?: Record<string, string>): string {
-    return path.join(resolveCopilotHome(profileEnv), 'session-state');
+  private sessionStateDir(): string {
+    return path.join(resolveCopilotHome(), 'session-state');
   }
 
   /**
@@ -389,9 +380,9 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
    * workspace.yaml (#2156). The old scan looked for flat `<id>.json(l)` files,
    * a layout current Copilot no longer writes, and didn't filter by cwd.
    */
-  async listSessions(cwd: string, profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
+  async listSessions(cwd: string): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
     try {
-      return await listCopilotSessions(this.sessionStateDir(profileEnv), cwd);
+      return await listCopilotSessions(this.sessionStateDir(), cwd);
     } catch (err) {
       appLog('core:orchestrator', 'warn', 'Failed to read GHCP session store', {
         meta: { error: err instanceof Error ? err.message : String(err) },
@@ -404,18 +395,30 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
    * The session a terminal run used, from Copilot's own store (#2156): its TUI
    * doesn't print the id, so the PTY scrape rarely finds it.
    */
-  async findRunSession(run: { cwd: string; startedAt: number; endedAt: number; resumedId?: string; profileEnv?: Record<string, string> }): Promise<string | null> {
-    return findCopilotRunSession(this.sessionStateDir(run.profileEnv), run);
+  async findRunSession(run: { cwd: string; startedAt: number; endedAt: number; resumedId?: string }): Promise<string | null> {
+    return findCopilotRunSession(this.sessionStateDir(), run);
   }
 
   /** Whether Copilot still has `sessionId`; undefined when there's no store or it can't be read. */
-  async hasSession(sessionId: string, profileEnv?: Record<string, string>): Promise<boolean | undefined> {
-    return hasCopilotSession(this.sessionStateDir(profileEnv), sessionId);
+  async hasSession(sessionId: string): Promise<boolean | undefined> {
+    return hasCopilotSession(this.sessionStateDir(), sessionId);
+  }
+
+  /** hasSession, for the store under another COPILOT_HOME (#2749). */
+  async hasSessionInStore(sessionId: string, copilotHome: string): Promise<boolean | undefined> {
+    const stateDir = path.join(copilotHome, 'session-state');
+    try {
+      await fsp.access(stateDir);
+    } catch (err) {
+      // A folder that's gone holds no sessions; anything else means we can't tell.
+      return (err as NodeJS.ErrnoException).code === 'ENOENT' ? false : undefined;
+    }
+    return hasCopilotSession(stateDir, sessionId);
   }
 
   /** Whether `sessionId` is a Copilot session for `cwd`; undefined when the store can't tell. */
-  async hasSessionForCwd(sessionId: string, cwd: string, profileEnv?: Record<string, string>): Promise<boolean | undefined> {
-    return copilotSessionInCwd(this.sessionStateDir(profileEnv), sessionId, cwd);
+  async hasSessionForCwd(sessionId: string, cwd: string): Promise<boolean | undefined> {
+    return copilotSessionInCwd(this.sessionStateDir(), sessionId, cwd);
   }
 
   /**
@@ -428,13 +431,12 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
   async readSessionTranscript(
     sessionId: string,
     cwd: string,
-    profileEnv?: Record<string, string>,
     opts: TranscriptReadOptions = {},
   ): Promise<import('../services/jsonl-parser').StreamJsonEvent[] | null> {
     const { stats } = opts;
     const lookupStart = performance.now();
     const counter = { probes: 0 };
-    const filePath = await findCopilotTranscript(this.sessionStateDir(profileEnv), sessionId, cwd, counter);
+    const filePath = await findCopilotTranscript(this.sessionStateDir(), sessionId, cwd, counter);
     if (stats) {
       stats.lookupMs = performance.now() - lookupStart;
       stats.probes = counter.probes;
