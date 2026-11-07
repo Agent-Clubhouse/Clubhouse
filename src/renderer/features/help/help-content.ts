@@ -187,14 +187,13 @@ export const CHROME_HELP_SECTIONS: HelpSection[] = [
   },
 ];
 
-/** Annex lives in Settings only on builds that show the Annex pages (preview-eligible). */
+/** Annex has no classic article, so the new shell adds it to Settings. Annex is stable, so every build lists it (#2811). */
 const ANNEX_TOPIC: HelpTopic = { id: 'settings-annex', title: 'Annex', content: settingsAnnexChrome };
+const CHROME_SECTIONS_WITH_ANNEX: HelpSection[] = CHROME_HELP_SECTIONS.map((s) => (s.id === 'settings'
+  ? { ...s, topics: [...s.topics.slice(0, 3), ANNEX_TOPIC, ...s.topics.slice(3)] }
+  : s));
 
 /** The active shell's built-in sections. */
-export function getHelpSections(opts: { annex?: boolean } = {}): HelpSection[] {
-  if (!isNewChromeEnabled()) return HELP_SECTIONS;
-  if (!opts.annex) return CHROME_HELP_SECTIONS;
-  return CHROME_HELP_SECTIONS.map((s) => (s.id === 'settings'
-    ? { ...s, topics: [...s.topics.slice(0, 3), ANNEX_TOPIC, ...s.topics.slice(3)] }
-    : s));
+export function getHelpSections(): HelpSection[] {
+  return isNewChromeEnabled() ? CHROME_SECTIONS_WITH_ANNEX : HELP_SECTIONS;
 }

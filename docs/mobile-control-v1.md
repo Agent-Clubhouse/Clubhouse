@@ -117,7 +117,7 @@ Desktops that support them advertise `attachments: {version:1, imageTypes, maxIm
 | 404 | `agent_not_found` | unknown or disposed agent |
 | 409 | `not_chat` | the agent isn't a running chat agent (start it first) |
 | 409 | `images_not_supported` | the agent's `capabilities.images` isn't `true` |
-| 413 | `too_large` | over `maxImageBytes` (3.75 MB; checked from Content-Length before reading, the connection then closes) |
+| 413 | `too_large` | over `maxImageBytes` (3.75 MB; checked from Content-Length before reading). The answer goes out at once, and the desktop drains the rest of the upload within the same bounds as [an oversized command](#oversized-commands), then closes the connection |
 | 415 | `unsupported_media_type` / `unsupported_image` | wrong Content-Type / bytes aren't PNG, JPEG, GIF or WebP |
 | 429 | `rate_limited` / `quota_exceeded` | per-peer limits below; honor `Retry-After` (seconds) |
 
@@ -168,7 +168,7 @@ A phone that opts in gets image references in its snapshots and fetches images s
 
 - `version` is the lowercase SHA-256 of the bytes the route serves. Compare it for equality only. Don't rely on it staying the same for the same picture: a file sent as it is keeps its version, but a generated thumbnail comes from the desktop's image code, so an app or OS update can change its bytes, and a restart isn't promised to keep them. A new `version` just means one refetch.
 - `type` is `image/png`, `image/jpeg`, `image/gif` or `image/webp`, read from the bytes. Never SVG. `bytes`, `width` and `height` describe the served image too.
-- **`iconRefs` has three states.** Absent means unknown, so keep what you have: a snapshot over its limit leaves it out and `snapshotTruncated.omitted` says so, and so does a snapshot built while an icon can't be read for a reason that can pass, with no `snapshotTruncated`. Present means complete, so replace. No entry for an id in a present map means no image, so drop what you cached. A different `version` means fetch. `icon` set with no entry is normal, and draws initials until a later snapshot gives a `version`.
+- **`iconRefs` has three states.** Absent means unknown, so keep what you have: a snapshot over its limit leaves it out and `snapshotTruncated.omitted` says so, and so does a snapshot built while an icon can't be read for a reason that can pass, with no `snapshotTruncated`. The desktop sends a fresh snapshot once that icon can be tried again (about 30 seconds), up to 3 in a row, and an icon that fails 3 tries in a row with no change to its file counts as no image. Present means complete, so replace. No entry for an id in a present map means no image, so drop what you cached. A different `version` means fetch. `icon` set with no entry is normal, and draws initials until a later snapshot gives a `version`.
 - Projects are in `iconRefs.projects`. Durable agents **and the Dispatcher** are in `iconRefs.agents`. That isn't the snapshot's own `agents` map, which doesn't list the Dispatcher. A quick agent never has an entry, and draws its lightning bolt. An emoji still comes before an image.
 - REST catalogs don't carry `iconRefs`, so a catalog response must not clear them. Only a snapshot on the socket changes them.
 - A snapshot follows a change to an agent's or project's image and the Dispatcher turning on or off, as soon as the change is noticed. An image file replaced directly on disk under the same name has nothing to notice it: the next snapshot picks it up, whatever causes that.

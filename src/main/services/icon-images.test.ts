@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'crypto';
 import { CHAT_MEDIA_MAX_PIXELS } from '../../shared/chat';
 import { ICON_SERVED_MAX_BYTES } from '../../shared/icon-limits';
-import { ICON_TEMPORARILY_UNAVAILABLE, jpegOrientation, readIconImage, resizeIcon } from './icon-images';
+import { ICON_TEMPORARILY_UNAVAILABLE, TEMPORARY_FAILURES_BEFORE_REFUSAL, TEMPORARY_FAILURE_RETRY_MS, jpegOrientation, readIconImage, resizeIcon } from './icon-images';
+import { appLog } from './log-service';
 
 const native = vi.hoisted(() => ({ createFromBuffer: vi.fn(), createFromBitmap: vi.fn(), createThumbnailFromPath: undefined as unknown }));
 vi.mock('electron', () => ({ nativeImage: native }));
@@ -298,6 +299,46 @@ describe('readIconImage', () => {
 
       vi.setSystemTime(Date.now() + 30_001);
       expect(await readIconImage(file)).toMatchObject({ width: 64 });
+    });
+
+    describe('an icon that keeps failing (#2723)', () => {
+      /** One try whose read fails for a reason that can pass, then the wait for the next. */
+      const failedTry = async (file: string) => {
+        failNext.readFile = 'EIO';
+        const result = await readIconImage(file);
+        vi.setSystemTime(Date.now() + TEMPORARY_FAILURE_RETRY_MS + 1);
+        return result;
+      };
+
+      it('counts as no image after a few tries, and stays that way until the file changes', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        const file = path.join(dir, 'a.png');
+        fs.writeFileSync(file, png(64, 64));
+        for (let i = 1; i < TEMPORARY_FAILURES_BEFORE_REFUSAL; i++) expect(await failedTry(file)).toBe(ICON_TEMPORARILY_UNAVAILABLE);
+        expect(await failedTry(file)).toBeNull();
+        expect(appLog).toHaveBeenCalledWith('core:annex', 'warn', expect.stringContaining('Gave up on an icon'),
+          { meta: { file: 'a.png', failures: TEMPORARY_FAILURES_BEFORE_REFUSAL } });
+
+        // Kept like any other answer: not read again, however long it's been.
+        failNext.reads = 0;
+        vi.setSystemTime(Date.now() + 10 * TEMPORARY_FAILURE_RETRY_MS);
+        expect(await readIconImage(file)).toBeNull();
+        expect(failNext.reads).toBe(0);
+
+        // A change to the file is a new image, read afresh.
+        fs.writeFileSync(file, png(64, 64, 16));
+        expect(await readIconImage(file)).toMatchObject({ width: 64 });
+      });
+
+      it('starts the count over when the file changes between tries', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        const file = path.join(dir, 'a.png');
+        fs.writeFileSync(file, png(64, 64));
+        for (let i = 1; i < TEMPORARY_FAILURES_BEFORE_REFUSAL; i++) expect(await failedTry(file)).toBe(ICON_TEMPORARILY_UNAVAILABLE);
+        fs.writeFileSync(file, png(64, 64, 16));
+        for (let i = 1; i < TEMPORARY_FAILURES_BEFORE_REFUSAL; i++) expect(await failedTry(file)).toBe(ICON_TEMPORARILY_UNAVAILABLE);
+        expect(await readIconImage(file)).toMatchObject({ width: 64 });
+      });
     });
 
     it('does the same for a stat that fails for any reason but a missing file', async () => {

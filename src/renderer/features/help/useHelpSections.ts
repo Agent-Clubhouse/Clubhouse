@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import { getHelpSections, HelpSection, HelpTopic } from './help-content';
@@ -20,17 +20,6 @@ export function useHelpSections(): HelpSections {
   const appEnabled = usePluginStore((s) => s.appEnabled);
   const plugins = usePluginStore((s) => s.plugins);
 
-  // The new shell lists Annex wherever Settings shows the Annex pages (preview-eligible builds).
-  const [annex, setAnnex] = useState(false);
-  useEffect(() => {
-    if (!newChrome) return;
-    let live = true;
-    window.clubhouse.app.isPreviewEligible?.()
-      .then((eligible) => { if (live) setAnnex(eligible); })
-      .catch(() => { /* telemetry-exempt: without the answer, Help just leaves Annex out */ });
-    return () => { live = false; };
-  }, [newChrome]);
-
   const pluginSections = useMemo<HelpSection[]>(() => {
     const allProjectIds = Object.values(projectEnabled).flat();
     const enabledIds = [...new Set([...appEnabled, ...allProjectIds])];
@@ -45,7 +34,7 @@ export function useHelpSections(): HelpSections {
   }, [projectEnabled, appEnabled, plugins]);
 
   // getHelpSections reads the shell flag itself; newChrome is listed so the memo follows it.
-  const builtIn = useMemo(() => getHelpSections({ annex }), [annex, newChrome]);
+  const builtIn = useMemo(() => getHelpSections(), [newChrome]);
   const all = useMemo(() => [...builtIn, ...pluginSections], [builtIn, pluginSections]);
   return { builtIn, plugins: pluginSections, all };
 }

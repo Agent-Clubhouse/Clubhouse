@@ -45,7 +45,8 @@ export interface MobileUploadResult {
  * The request body, refusing more than `max` bytes. A declared
  * Content-Length over the cap is refused before anything is read; a body
  * that streams past it stops being read. Either way the caller answers 413
- * and closes the connection (`Connection: close`), so the rest is never read.
+ * with `Connection: close` and drains the rest, up to a bound, so the client
+ * reads the answer instead of a reset.
  */
 export function readCappedBody(req: http.IncomingMessage, max: number): Promise<Buffer> {
   const declared = Number(req.headers['content-length']);
