@@ -1,5 +1,16 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
-import { CLUBHOUSE_MCP_PART_ID, findSkillFolderClash, skillFolderClashMessage, type ManagedAgentSetup, type ManagedPartKind, type ManagedPreview, type ManagedPartSummary } from '../../../shared/managed-agents-types';
+import {
+  CLUBHOUSE_MCP_PART_ID,
+  findSkillFolderClash,
+  skillFolderClashMessage,
+  type ManagedAgentSetup,
+  type ManagedPartKind,
+  type ManagedPartSummary,
+  type ManagedPreview,
+  type ManagedSettingsRow,
+  type ManagedTemplateSettings,
+} from '../../../shared/managed-agents-types';
+import { Toggle } from '../../components/Toggle';
 import { BlockList, type BuilderAgent } from './BlockList';
 import { LibraryPanel, PartToggleList } from './LibraryPanel';
 import { PartDialog } from './PartDialog';
@@ -11,7 +22,14 @@ export type SetupDraft = Omit<ManagedAgentSetup, 'version'>;
 
 export type BuilderTarget =
   | { kind: 'agent'; agent: BuilderAgent }
-  | { kind: 'draft'; value: SetupDraft; onChange: (next: SetupDraft) => void; agentName?: string };
+  | {
+    kind: 'draft';
+    value: SetupDraft;
+    onChange: (next: SetupDraft) => void;
+    agentName?: string;
+    /** New agent: the project and settings Preview renders the draft with. */
+    preview?: { projectPath: string; settings: ManagedTemplateSettings };
+  };
 
 /**
  * The agent's setup, loaded and saved per change, or a draft held by the caller.
@@ -204,7 +222,10 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
         />
       )}
       {tab === 'preview' && agent && <PreviewPane agent={agent} setup={target.kind === 'draft' ? setup : undefined} />}
-      {tab === 'preview' && !agent && <p className="text-[13px] text-ctp-overlay1">The preview appears once the agent exists.</p>}
+      {tab === 'preview' && !agent && target.kind === 'draft' && target.preview && (
+        <PreviewPane draft={{ projectPath: target.preview.projectPath, name: agentName ?? '', setup, settings: target.preview.settings }} />
+      )}
+      {tab === 'preview' && !agent && !(target.kind === 'draft' && target.preview) && <p className="text-[13px] text-ctp-overlay1">The preview appears once the agent exists.</p>}
       {dialog && (
         <PartDialog open kind={dialog.kind} editId={dialog.editId} agentName={agentName} onClose={() => setDialog(null)} onCreated={dialog.editId ? undefined : onCreated} />
       )}
@@ -212,30 +233,58 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
   );
 }
 
-/** What the agent gets at its next start (#2895): exact text, block boundaries, skills, MCP servers. */
-export function PreviewPane({ agent, setup }: { agent: BuilderAgent; setup?: SetupDraft }) {
+/** A New agent that doesn't exist yet: the project it goes in, the name typed, its setup and settings. */
+export interface PreviewDraft {
+  projectPath: string;
+  name: string;
+  setup: SetupDraft;
+  settings: ManagedTemplateSettings;
+}
+
+/**
+ * What the agent gets at its next start (#2895): exact text, block
+ * boundaries, skills, MCP servers and a settings summary. A New agent draft
+ * renders the same way delivery does, with the name typed and the folder
+ * Clubhouse would give it. While a running agent waits on changes, "Running
+ * now" shows what its session started with.
+ */
+export function PreviewPane({ agent, setup, draft }: { agent?: BuilderAgent; setup?: SetupDraft; draft?: PreviewDraft }) {
   const [preview, setPreview] = useState<ManagedPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const key = JSON.stringify(setup ?? null);
+  const [showWildcards, setShowWildcards] = useState(false);
+  const key = JSON.stringify(draft ?? setup ?? null);
   useEffect(() => {
     let cancelled = false;
     const load = () => {
-      void unwrap(managed().preview(agent.projectPath, agent.agentId, setup))
+      const request = draft
+        ? managed().previewDraft(draft.projectPath, { name: draft.name, setup: { blocks: draft.setup.blocks, skills: draft.setup.skills, mcps: draft.setup.mcps }, settings: draft.settings })
+        : agent ? managed().preview(agent.projectPath, agent.agentId, setup) : null;
+      if (!request) return;
+      void unwrap(request)
         .then((p) => { if (!cancelled) { setPreview(p); setError(null); } })
         .catch((err) => { /* telemetry-exempt: shown to the person */ if (!cancelled) setError(errorText(err)); });
     };
     load();
     const off = managed().onChanged(load);
     return () => { cancelled = true; off(); };
-  }, [agent.projectPath, agent.agentId, key]);
+  }, [agent?.projectPath, agent?.agentId, key]);
   if (error) return <p role="alert" className="text-xs text-ctp-error">{error}</p>;
   if (!preview) return <p className="text-[13px] text-ctp-overlay1">Loading…</p>;
+  const text = showWildcards ? preview.rawInstructions ?? preview.instructions : preview.instructions;
   const lines = preview.instructions.split('\n');
+  const running = preview.running;
+  const runningText = running ? (showWildcards ? running.rawInstructions : running.instructions) : '';
   return (
     <div className="flex flex-col gap-4" data-testid="managed-preview">
       <section>
-        <h3 className="text-[13px] font-semibold text-ctp-text mb-1">Instructions <span className="font-normal text-xs text-ctp-overlay1">{preview.blocks.length} blocks, {preview.instructions ? lines.length : 0} lines</span></h3>
-        <div className="grid grid-cols-[168px_minmax(0,1fr)] border border-surface-0 rounded-md overflow-hidden">
+        <div className="flex items-center gap-2 mb-1">
+          <h3 className="text-[13px] font-semibold text-ctp-text">Instructions <span className="font-normal text-xs text-ctp-overlay1">{preview.blocks.length} blocks, {preview.instructions ? lines.length : 0} lines</span></h3>
+          <label className="ml-auto flex items-center gap-2 text-xs text-ctp-subtext1">
+            <Toggle checked={showWildcards} onChange={setShowWildcards} aria-label="Show wildcards" data-testid="managed-preview-show-wildcards" />
+            Show wildcards
+          </label>
+        </div>
+        <div className={`grid ${running ? 'grid-cols-[168px_minmax(0,1fr)_minmax(0,1fr)]' : 'grid-cols-[168px_minmax(0,1fr)]'} border border-surface-0 rounded-md overflow-hidden`}>
           <ol className="bg-ctp-mantle border-r border-surface-0 text-[11.5px] text-ctp-overlay1">
             {preview.blocks.map((b, i) => (
               <li key={`${b.id}-${i}`} className="px-2.5 py-2 border-b border-surface-0">
@@ -244,9 +293,28 @@ export function PreviewPane({ agent, setup }: { agent: BuilderAgent; setup?: Set
               </li>
             ))}
           </ol>
-          <pre className="px-3 py-2 font-mono text-[11.5px] leading-[1.6] text-ctp-text whitespace-pre-wrap break-words min-w-0" data-testid="managed-preview-text">{preview.instructions || 'No instructions.'}</pre>
+          <div className="min-w-0">
+            {running && <div className="px-3 pt-2 text-xs font-medium text-ctp-subtext1">Next start</div>}
+            <pre className="px-3 py-2 font-mono text-[11.5px] leading-[1.6] text-ctp-text whitespace-pre-wrap break-words min-w-0" data-testid="managed-preview-text">{text || 'No instructions.'}</pre>
+          </div>
+          {running && (
+            <div className="min-w-0 border-l border-surface-0" data-testid="managed-preview-running">
+              <div className="px-3 pt-2 text-xs font-medium text-ctp-subtext1">Running now</div>
+              <pre className="px-3 py-2 font-mono text-[11.5px] leading-[1.6] text-ctp-subtext0 whitespace-pre-wrap break-words min-w-0" data-testid="managed-preview-running-text">{runningText || 'No instructions.'}</pre>
+            </div>
+          )}
         </div>
+        {running && (
+          <div className="mt-2 text-xs text-ctp-overlay1" data-testid="managed-preview-running-changes">
+            <p>Its session started on the setup on the right. What differs:</p>
+            <ul className="mt-0.5 list-disc pl-5 text-ctp-text">
+              {running.changes.map((c) => <li key={c}>{c}</li>)}
+            </ul>
+            <p className="mt-0.5">Restart it to use the next start.</p>
+          </div>
+        )}
       </section>
+      {preview.settings && preview.settings.length > 0 && <SettingsSummary rows={preview.settings} running={running?.settings} />}
       <div className="grid grid-cols-2 gap-6">
         <section>
           <h3 className="text-[13px] font-semibold text-ctp-text mb-1">Skills</h3>
@@ -283,6 +351,31 @@ export function PreviewPane({ agent, setup }: { agent: BuilderAgent; setup?: Set
       {preview.missing.length > 0 && <p className="text-xs text-ctp-warning">{preview.missing.length} part{preview.missing.length === 1 ? '' : 's'} in this setup no longer exist and are skipped.</p>}
       <OutsideTheSetup preview={preview} />
     </div>
+  );
+}
+
+/** The settings that aren't parts. With "Running now", rows that differ show both values. */
+function SettingsSummary({ rows, running }: { rows: ManagedSettingsRow[]; running?: ManagedSettingsRow[] }) {
+  const was = new Map((running ?? []).map((r) => [r.key, r.value]));
+  return (
+    <section>
+      <h3 className="text-[13px] font-semibold text-ctp-text mb-1">Settings</h3>
+      <dl className="grid grid-cols-[140px_minmax(0,1fr)] gap-x-3.5 gap-y-1 text-xs" data-testid="managed-preview-settings">
+        {rows.map((r) => {
+          const before = running ? was.get(r.key) : undefined;
+          const differs = running !== undefined && before !== r.value;
+          return (
+            <Fragment key={r.key}>
+              <dt className="text-ctp-overlay1">{r.label}</dt>
+              <dd className="text-ctp-text" data-testid={`managed-preview-setting-${r.key}`}>
+                {r.value}
+                {differs && <span className="text-ctp-overlay1">{` (running now: ${before ?? 'not shown'})`}</span>}
+              </dd>
+            </Fragment>
+          );
+        })}
+      </dl>
+    </section>
   );
 }
 

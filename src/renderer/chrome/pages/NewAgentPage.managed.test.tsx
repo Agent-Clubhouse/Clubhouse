@@ -180,6 +180,83 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     await waitFor(() => expect(useChromeStore.getState().newAgent).toBeNull());
   });
 
+  it('the Settings tab holds effort, helper selection, helper template, approvals, access and auto-sleep, and Create sends them (#2895)', async () => {
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [builtinTemplate, customTemplate] } as never);
+    vi.spyOn(m(), 'modelEfforts').mockResolvedValue({ ok: true, value: { default: ['low', 'high'], opus: ['low', 'medium', 'high', 'xhigh'] } } as never);
+    const create = vi.spyOn(m(), 'createAgent').mockResolvedValue({ ok: true, value: { id: 'm-new' } } as never);
+    openWith();
+    await managedSwitch();
+    fireEvent.change(screen.getByTestId('new-agent-name'), { target: { value: 'keen-heron' } });
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Customize Orchestrator' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
+
+    const effort = screen.getByLabelText('Effort') as HTMLSelectElement;
+    await waitFor(() => expect([...effort.options].map((o) => o.textContent)).toEqual(['CLI default', 'Low', 'Medium', 'High', 'Extra high']));
+    fireEvent.change(effort, { target: { value: 'xhigh' } });
+    expect(screen.getByText('Its own worktree and branch')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Helper selection'), { target: { value: 'smart' } });
+    const helperTemplate = screen.getByLabelText('Helper template') as HTMLSelectElement;
+    await waitFor(() => expect([...helperTemplate.options].map((o) => o.textContent)).toContain('Release lead'));
+    fireEvent.change(helperTemplate, { target: { value: 'custom-release' } });
+    fireEvent.change(screen.getByLabelText('Approvals'), { target: { value: 'ask-before-start' } });
+    fireEvent.change(screen.getByLabelText('Auto-sleep'), { target: { value: 'never' } });
+
+    fireEvent.click(screen.getByTestId('new-agent-builder-create'));
+    await waitFor(() => expect(create).toHaveBeenCalledWith('/tmp/ch', expect.objectContaining({
+      settings: {
+        orchestrator: 'claude-code',
+        model: 'opus',
+        effort: 'xhigh',
+        freeAgentMode: false,
+        orchestration: { orchestrate: true, maxHelpers: 3, access: 'same', autoHelpers: true, control: 'ask-before-start' },
+        idleSleep: 'never',
+        helperTemplateId: 'custom-release',
+      },
+    })));
+  });
+
+  it('a new model goes back to the CLI default effort', async () => {
+    vi.spyOn(m(), 'modelEfforts').mockResolvedValue({ ok: true, value: { default: ['low', 'high'], opus: ['high'] } } as never);
+    openWith();
+    await managedSwitch();
+    fireEvent.click(screen.getByTestId('new-agent-scratch'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
+    const effort = screen.getByLabelText('Effort') as HTMLSelectElement;
+    await waitFor(() => expect(effort.disabled).toBe(false));
+    fireEvent.change(effort, { target: { value: 'low' } });
+    expect(effort.value).toBe('low');
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'opus' } });
+    expect((screen.getByLabelText('Effort') as HTMLSelectElement).value).toBe('');
+  });
+
+  it('Preview renders the unsaved draft as delivery would, with the name typed and its settings (#2895)', async () => {
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [builtinTemplate] } as never);
+    const previewDraft = vi.spyOn(m(), 'previewDraft').mockResolvedValue({ ok: true, value: {
+      instructions: 'You are keen-heron.', rawInstructions: 'You are @@AgentName.',
+      blocks: [{ id: 'b-identity', name: 'Identity', builtin: true, usedBy: 0, startLine: 1, endLine: 1 }],
+      skills: [], mcps: [], missing: [],
+      settings: [{ key: 'model', label: 'Model', value: 'opus' }],
+    } } as never);
+    openWith();
+    await managedSwitch();
+    fireEvent.change(screen.getByTestId('new-agent-name'), { target: { value: 'keen-heron' } });
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Customize Orchestrator' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Preview' }));
+
+    expect((await screen.findByTestId('managed-preview-text')).textContent).toBe('You are keen-heron.');
+    expect(screen.queryByText('The preview appears once the agent exists.')).toBeNull();
+    expect(previewDraft).toHaveBeenCalledWith('/tmp/ch', {
+      name: 'keen-heron',
+      setup: { blocks: ['b-identity', 'b-orch'], skills: ['s-notes'], mcps: ['builtin-mcp-clubhouse'] },
+      settings: expect.objectContaining({ orchestrator: 'claude-code', model: 'opus', orchestration: { orchestrate: true, maxHelpers: 3, access: 'same' } }),
+    });
+    expect(screen.getByTestId('managed-preview-setting-model').textContent).toBe('opus');
+    fireEvent.click(screen.getByRole('switch', { name: 'Show wildcards' }));
+    expect(screen.getByTestId('managed-preview-text').textContent).toBe('You are @@AgentName.');
+  });
+
   it('Build from scratch starts the builder with the identity block and the Clubhouse MCP server', async () => {
     const create = vi.spyOn(m(), 'createAgent').mockResolvedValue({ ok: true, value: { id: 'm-new' } } as never);
     openWith();
@@ -240,7 +317,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     vi.spyOn(m(), 'getSetup').mockImplementation(async (_path: string, id: string) => ({
       ok: true, value: id === 'a1' ? { version: 1, blocks: ['b-identity'], skills: [], mcps: ['builtin-mcp-clubhouse'] } : null,
     }) as never);
-    const config = vi.spyOn(window.clubhouse.agent, 'getDurableConfig').mockResolvedValue({ id: 'a1', orchestration: { orchestrate: true, maxHelpers: 2, access: 'same' } } as never);
+    const config = vi.spyOn(window.clubhouse.agent, 'getDurableConfig').mockResolvedValue({ id: 'a1', orchestration: { orchestrate: true, maxHelpers: 2, access: 'same' }, effort: 'high', idleSleep: 60, helperTemplateId: 'custom-release' } as never);
     const create = vi.spyOn(m(), 'createAgent').mockResolvedValue({ ok: true, value: { id: 'm-new' } } as never);
     openWith();
     await managedSwitch();
@@ -253,7 +330,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     expect((screen.getByLabelText('Helper limit') as HTMLInputElement).value).toBe('2');
     fireEvent.click(screen.getByTestId('new-agent-builder-create'));
     await waitFor(() => expect(create).toHaveBeenCalledWith('/tmp/ch', expect.objectContaining({
-      settings: expect.objectContaining({ orchestration: { orchestrate: true, maxHelpers: 2, access: 'same' } }),
+      settings: expect.objectContaining({ orchestration: { orchestrate: true, maxHelpers: 2, access: 'same' }, effort: 'high', idleSleep: 60, helperTemplateId: 'custom-release' }),
     })));
   });
 

@@ -510,6 +510,8 @@ vi.stubGlobal('clubhouse', {
     saveSetup: async () => ({ ok: false, code: 'failed' }),
     unmanage: async () => ({ ok: true, value: undefined }),
     preview: async () => ({ ok: true, value: { instructions: '', blocks: [], skills: [], mcps: [], missing: [] } }),
+    previewDraft: async () => ({ ok: true, value: { instructions: '', blocks: [], skills: [], mcps: [], missing: [] } }),
+    modelEfforts: async () => ({ ok: true, value: {} }),
     listTemplates: async () => ({ ok: true, value: [] }),
     getTemplate: async () => ({ ok: false, code: 'not_found' }),
     saveTemplate: async () => ({ ok: false, code: 'failed' }),

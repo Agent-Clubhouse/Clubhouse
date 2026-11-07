@@ -616,6 +616,134 @@ describe('managed helpers (#2899)', () => {
   });
 });
 
+describe('template settings beyond parts (#2898)', () => {
+  it('Save as template captures effort, auto-sleep and the helper template', async () => {
+    const a = agent('a', { blocks: [BUILTIN_BLOCK_IDS.identity] });
+    Object.assign(a, { orchestrator: 'claude-code', model: 'opus', effort: 'high', idleSleep: 30, helperTemplateId: 'builtin-template-quality-assurance', orchestration: { orchestrate: true, maxHelpers: 4 } });
+    const saved = await user(() => service.templateFromAgent('/p', 'a', 'Lead'));
+    expect(saved.settings).toEqual({
+      orchestrator: 'claude-code', model: 'opus', effort: 'high', idleSleep: 30,
+      helperTemplateId: 'builtin-template-quality-assurance', orchestration: { orchestrate: true, maxHelpers: 4 },
+    });
+  });
+
+  it('keeps only settings a template can hold: no null and no bad values', async () => {
+    const t = await user(() => service.saveTemplate({
+      name: 'Loose', description: '', setup: { blocks: [], skills: [], mcps: [] },
+      settings: { effort: null, idleSleep: null, helperTemplateId: null, model: 'opus' },
+    }));
+    expect(t.settings).toEqual({ model: 'opus' });
+    const bad = await user(() => service.saveTemplate({
+      name: 'Bad', description: '', setup: { blocks: [], skills: [], mcps: [] },
+      settings: { effort: 'NOT A LEVEL', idleSleep: -5 as number, helperTemplateId: '' },
+    }));
+    expect(bad.settings).toEqual({});
+    const ok = await user(() => service.saveTemplate({
+      name: 'Kept', description: '', setup: { blocks: [], skills: [], mcps: [] },
+      settings: { effort: 'low', idleSleep: 'never', helperTemplateId: 'builtin-template-helper' },
+    }));
+    expect(ok.settings).toEqual({ effort: 'low', idleSleep: 'never', helperTemplateId: 'builtin-template-helper' });
+  });
+
+  it('lists setting changes for the push dialog, with helper templates by name, and counts what still applies', async () => {
+    const t = await user(() => service.saveTemplate({
+      name: 'Lead', description: '', setup: { blocks: [], skills: [], mcps: [] },
+      settings: { orchestration: { orchestrate: true, maxHelpers: 5 }, effort: 'high' },
+    }));
+    const a = agent('a', { templateId: t.id });
+    Object.assign(a, { orchestration: { orchestrate: true, maxHelpers: 5 }, effort: 'high' });
+    const b = agent('b', { templateId: t.id });
+    Object.assign(b, { orchestration: { orchestrate: true, maxHelpers: 3 }, helperTemplateId: 'builtin-template-quality-assurance', idleSleep: 15 });
+    const next = {
+      setup: { blocks: [], skills: [], mcps: [] },
+      settings: { orchestration: { orchestrate: true, maxHelpers: 3 }, helperTemplateId: 'builtin-template-quality-assurance', idleSleep: 15 },
+    };
+    const preview = await user(() => service.previewTemplatePush(t.id, next));
+    expect(preview.changes).toEqual([
+      { kind: 'setting', key: 'effort', from: 'high', to: 'CLI default' },
+      { kind: 'setting', key: 'orchestration.maxHelpers', from: '5', to: '3' },
+      { kind: 'setting', key: 'idleSleep', from: 'app default', to: '15 min' },
+      { kind: 'setting', key: 'helperTemplateId', from: 'app default', to: 'Quality Assurance (pull request)' },
+    ]);
+    // b already has three of the four; a has none of them.
+    expect(preview.targets.find((x) => x.agentId === 'a')).toMatchObject({ applicable: 4, total: 4 });
+    expect(preview.targets.find((x) => x.agentId === 'b')).toMatchObject({ applicable: 0, total: 4 });
+
+    const results = await user(() => service.pushTemplate(t.id, next, [{ projectPath: '/p', agentId: 'a' }, { projectPath: '/p', agentId: 'b' }]));
+    // What a template no longer sets goes back to the default: null clears it.
+    expect(results.find((r) => r.agentId === 'a')!.settings).toEqual({
+      effort: null, orchestration: { maxHelpers: 3 }, idleSleep: 15, helperTemplateId: 'builtin-template-quality-assurance',
+    });
+    expect(results.find((r) => r.agentId === 'b')!.changed).toBe(false);
+    expect((await user(() => service.getTemplate(t.id))).settings).toEqual(next.settings);
+  });
+});
+
+describe('an effort goes only with the model it is for (D81)', () => {
+  const empty = { blocks: [], skills: [], mcps: [] };
+
+  it('a model-only push sends the template\'s effort with the new model, and the preview says so', async () => {
+    const t = await user(() => service.saveTemplate({ name: 'Lead', description: '', setup: empty, settings: { orchestrator: 'claude-code', model: 'opus', effort: 'high' } }));
+    const a = agent('a', { templateId: t.id });
+    Object.assign(a, { orchestrator: 'claude-code', model: 'opus', effort: 'high' });
+    const next = { setup: empty, settings: { orchestrator: 'claude-code', model: 'sonnet', effort: 'high' } };
+    const preview = await user(() => service.previewTemplatePush(t.id, next));
+    expect(preview.changes).toEqual([
+      { kind: 'setting', key: 'model', from: 'opus', to: 'sonnet' },
+      { kind: 'setting', key: 'effort', from: 'reset by the new model', to: 'high', followsModel: true },
+    ]);
+    expect(preview.targets[0]).toMatchObject({ applicable: 2, total: 2 });
+    const [result] = await user(() => service.pushTemplate(t.id, next, [{ projectPath: '/p', agentId: 'a' }]));
+    // Applied in one write after the model, so updateDurableConfig doesn't clear it.
+    expect(result.settings).toEqual({ model: 'sonnet', effort: 'high' });
+  });
+
+  it('a model-only push with no template effort lists the reset, and sends no effort', async () => {
+    const t = await user(() => service.saveTemplate({ name: 'Plain', description: '', setup: empty, settings: { model: 'opus' } }));
+    const a = agent('a', { templateId: t.id });
+    Object.assign(a, { model: 'opus', effort: 'high' });
+    const b = agent('b', { templateId: t.id });
+    Object.assign(b, { model: 'opus' });
+    const next = { setup: empty, settings: { model: 'sonnet' } };
+    const preview = await user(() => service.previewTemplatePush(t.id, next));
+    expect(preview.changes[1]).toEqual({ kind: 'setting', key: 'effort', from: 'reset by the new model', to: 'CLI default', followsModel: true });
+    // Only an agent with an effort loses one.
+    expect(preview.targets.find((x) => x.agentId === 'a')).toMatchObject({ applicable: 2, total: 2 });
+    expect(preview.targets.find((x) => x.agentId === 'b')).toMatchObject({ applicable: 1, total: 2 });
+    const results = await user(() => service.pushTemplate(t.id, next, [{ projectPath: '/p', agentId: 'a' }]));
+    expect(results[0].settings).toEqual({ model: 'sonnet' });
+  });
+
+  it('an effort-only push skips an agent that runs its own model, and says why', async () => {
+    const t = await user(() => service.saveTemplate({ name: 'Lead', description: '', setup: empty, settings: { model: 'opus' } }));
+    const same = agent('same', { templateId: t.id });
+    Object.assign(same, { model: 'opus' });
+    const own = agent('own', { templateId: t.id });
+    Object.assign(own, { model: 'sonnet', effort: 'low' });
+    const next = { setup: empty, settings: { model: 'opus', effort: 'high' } };
+    const preview = await user(() => service.previewTemplatePush(t.id, next));
+    expect(preview.changes).toEqual([{ kind: 'setting', key: 'effort', from: 'CLI default', to: 'high' }]);
+    expect(preview.targets.find((x) => x.agentId === 'same')).toMatchObject({ applicable: 1, total: 1 });
+    expect(preview.targets.find((x) => x.agentId === 'own')).toMatchObject({ applicable: 0, total: 1, note: 'effort not applied: it runs another model' });
+    const results = await user(() => service.pushTemplate(t.id, next, [{ projectPath: '/p', agentId: 'same' }, { projectPath: '/p', agentId: 'own' }]));
+    expect(results.find((r) => r.agentId === 'same')!.settings).toEqual({ effort: 'high' });
+    expect(results.find((r) => r.agentId === 'own')!.changed).toBe(false);
+  });
+
+  it('refuses a push whose settings a setting doesn\'t take before any agent is written', async () => {
+    const skill = await user(() => service.createPart({ name: 'Notes', content: { kind: 'skill', skillName: 'notes', files: [{ path: 'SKILL.md', content: '# n' }] } }));
+    const t = await user(() => service.saveTemplate({ name: 'Team', description: '', setup: empty, settings: {} }));
+    agent('a', { templateId: t.id });
+    for (const settings of [{ effort: 'High; rm -rf' }, { idleSleep: -1 }, { orchestration: { maxHelpers: 0 } }, { helperTemplateId: 7 }, { orchestrator: '../x' }]) {
+      const next = { setup: { blocks: [], skills: [skill.id], mcps: [] }, settings: settings as never };
+      await expectCode(user(() => service.pushTemplate(t.id, next, [{ projectPath: '/p', agentId: 'a' }])), 'invalid');
+      await expectCode(user(() => service.previewTemplatePush(t.id, next)), 'invalid');
+    }
+    expect(agents.get('a')!.managed!.skills).toEqual([]);
+    expect((await user(() => service.getTemplate(t.id))).setup.skills).toEqual([]);
+  });
+});
+
 describe('letting orchestrators choose helper templates (D31)', () => {
   it('is off by default and kept in managed state', async () => {
     expect(await service.helperTemplateChoice()).toBe(false);
@@ -637,6 +765,20 @@ describe('letting orchestrators choose helper templates (D31)', () => {
       await expect(user(() => managedHelperSetup(service, args))).rejects.toThrow(HELPER_TEMPLATE_CHOICE_OFF);
     }
     expect(HELPER_TEMPLATE_CHOICE_OFF).toContain('Settings › Managed agents › Helpers');
+  });
+
+  it('uses the orchestrator\'s own helper template, falling back to the app default when it is gone (#2895)', async () => {
+    const { managedHelperSetup, helperTemplateFor, HELPER_TEMPLATE_CHOICE_OFF } = await import('./helpers');
+    // Choice off: the person set it, so it is no choice, and naming it or the app default passes.
+    expect((await user(() => managedHelperSetup(service, {}, 'builtin-template-quality-assurance'))).templateId).toBe('builtin-template-quality-assurance');
+    expect((await user(() => managedHelperSetup(service, { template: 'builtin-template-quality-assurance' }, 'builtin-template-quality-assurance'))).templateId).toBe('builtin-template-quality-assurance');
+    expect((await user(() => managedHelperSetup(service, { template: 'builtin-template-helper' }, 'builtin-template-quality-assurance'))).templateId).toBe('builtin-template-helper');
+    await expect(user(() => managedHelperSetup(service, { template: 'builtin-template-orchestrator' }, 'builtin-template-quality-assurance'))).rejects.toThrow(HELPER_TEMPLATE_CHOICE_OFF);
+    const t = await user(() => service.saveTemplate({ name: 'Gone soon', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: {} }));
+    expect(await helperTemplateFor(service, t.id)).toEqual({ templateId: t.id, appDefault: 'builtin-template-helper' });
+    await user(() => service.deleteTemplate(t.id));
+    expect(await helperTemplateFor(service, t.id)).toEqual({ templateId: 'builtin-template-helper', appDefault: 'builtin-template-helper' });
+    expect((await user(() => managedHelperSetup(service, {}, t.id))).templateId).toBe('builtin-template-helper');
   });
 
   it('off, follows the default the person picked', async () => {
