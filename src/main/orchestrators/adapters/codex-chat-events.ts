@@ -172,8 +172,9 @@ export class CodexChatEventMapper {
           type: 'usage',
           data: {
             scope: 'session',
-            // A thread's cumulative total, so a subagent's never reads as the session's.
-            coverage: 'main',
+            // A thread's cumulative total, by thread id, so a subagent's never reads as the session's.
+            // No `coverage`: the pinned protocol types (generated ThreadTokenUsage) don't say whether
+            // one thread's total excludes the threads it spawned, so none is claimed.
             threadId,
             ...(this.subagentThreads.has(threadId) && { subagentId: threadId }),
             tokens: {

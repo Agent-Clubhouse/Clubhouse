@@ -824,7 +824,9 @@ describe('per-turn token usage (#2161)', () => {
   it('names the thread on each running total, and flags a subagent thread a collab call named', () => {
     const mapper = new CodexChatEventMapper();
     const main = mapper.mapNotification(tokenUpdate('t1', breakdown(1000, 0, 100), breakdown(1000, 0, 100)));
-    expect(main[0]).toMatchObject({ data: { scope: 'session', coverage: 'main', threadId: fx.THREAD_ID } });
+    expect(main[0]).toMatchObject({ data: { scope: 'session', threadId: fx.THREAD_ID } });
+    // The protocol doesn't say what a thread's total covers, so none is claimed.
+    expect(main[0].data).not.toHaveProperty('coverage');
     expect((main[0].data as { subagentId?: string }).subagentId).toBeUndefined();
 
     mapper.mapNotification({
@@ -841,7 +843,8 @@ describe('per-turn token usage (#2161)', () => {
       method: 'thread/tokenUsage/updated',
       params: { threadId: 'sub-a', turnId: 's1', tokenUsage: { total: breakdown(10, 0, 1), last: breakdown(10, 0, 1), modelContextWindow: 272_000 } },
     });
-    expect(sub[0]).toMatchObject({ data: { scope: 'session', coverage: 'main', threadId: 'sub-a', subagentId: 'sub-a' } });
+    expect(sub[0]).toMatchObject({ data: { scope: 'session', threadId: 'sub-a', subagentId: 'sub-a' } });
+    expect(sub[0].data).not.toHaveProperty('coverage');
   });
 
   it('still reports the session total and context on each update', () => {

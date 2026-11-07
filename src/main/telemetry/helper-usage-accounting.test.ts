@@ -123,25 +123,24 @@ describe('closing samples', () => {
 
   it('a running total that goes down is flagged as a reset, not differenced', () => {
     const t = new RunUsageTracker('codex_app_server');
-    t.usage({ scope: 'session', coverage: 'main', threadId: 'th', tokens: { input: 100, output: 20 } }, undefined);
-    t.usage({ scope: 'session', coverage: 'main', threadId: 'th', tokens: { input: 30, output: 5 } }, undefined);
+    t.usage({ scope: 'session', threadId: 'th', tokens: { input: 100, output: 20 } }, undefined);
+    t.usage({ scope: 'session', threadId: 'th', tokens: { input: 30, output: 5 } }, undefined);
     expect(t.finalSamples(1)[0]).toMatchObject({ reset: true, figures: { input: 30, output: 5 } });
   });
 
-  it('Codex: a subagent thread never overwrites the main thread, and inclusive is the thread sum', () => {
+  it('Codex: a subagent thread never overwrites the main thread, and with no documented coverage no inclusive total is made', () => {
     const t = new RunUsageTracker('codex_app_server');
-    t.usage({ scope: 'session', coverage: 'main', threadId: 'main', tokens: { input: 100, output: 10, reasoning: 4 } }, undefined);
-    t.usage({ scope: 'session', coverage: 'main', threadId: 'sub', subagentId: 'sub', tokens: { input: 50, output: 5, reasoning: 1 } }, undefined);
+    t.usage({ scope: 'session', threadId: 'main', tokens: { input: 100, output: 10, reasoning: 4 } }, undefined);
+    t.usage({ scope: 'session', threadId: 'sub', subagentId: 'sub', tokens: { input: 50, output: 5, reasoning: 1 } }, undefined);
     // Main grows after the subagent reported: still its own.
-    t.usage({ scope: 'session', coverage: 'main', threadId: 'main', tokens: { input: 120, output: 12, reasoning: 5 } }, undefined);
+    t.usage({ scope: 'session', threadId: 'main', tokens: { input: 120, output: 12, reasoning: 5 } }, undefined);
     const samples = t.finalSamples(7);
-    expect(samples).toHaveLength(2);
-    expect(samples[0]).toMatchObject({ scope: 'main', dedup: 'thread_cumulative', subagentExcluded: true, figures: { input: 120, output: 12, reasoning: 5 } });
-    expect(samples[1]).toMatchObject({ scope: 'inclusive', dedup: 'thread_cumulative', figures: { input: 170, output: 17, reasoning: 6 } });
+    expect(samples).toHaveLength(1);
+    expect(samples[0]).toMatchObject({ scope: 'unscoped', dedup: 'thread_cumulative', subagentExcluded: true, figures: { input: 120, output: 12, reasoning: 5 } });
   });
 
-  it('claims no inclusive total across a reset', () => {
-    const t = new RunUsageTracker('codex_app_server');
+  it('claims no inclusive total across a reset, even where a driver documents thread-only coverage', () => {
+    const t = new RunUsageTracker('acp');
     t.usage({ scope: 'session', coverage: 'main', threadId: 'main', tokens: { input: 100, output: 10 } }, undefined);
     t.usage({ scope: 'session', coverage: 'main', threadId: 'sub', subagentId: 'sub', tokens: { input: 5, output: 1 } }, undefined);
     t.usage({ scope: 'session', coverage: 'main', threadId: 'main', tokens: { input: 10, output: 1 } }, undefined);
@@ -222,19 +221,20 @@ describe('what a running total covers', () => {
 
   it('a reset on a fresh run is after_reset too, not the run\'s whole use', () => {
     const t = new RunUsageTracker('codex_app_server');
-    t.usage({ scope: 'session', coverage: 'main', threadId: 'th', tokens: { input: 100, output: 20 } }, undefined);
-    t.usage({ scope: 'session', coverage: 'main', threadId: 'th', tokens: { input: 10, output: 2 } }, undefined);
+    t.usage({ scope: 'session', threadId: 'th', tokens: { input: 100, output: 20 } }, undefined);
+    t.usage({ scope: 'session', threadId: 'th', tokens: { input: 10, output: 2 } }, undefined);
     expect(t.finalSamples(1)[0].baseline).toBe('after_reset');
   });
 });
 
+/** A sum is only possible for a driver that documents thread-only coverage (none does today; Codex's protocol does not). */
 describe('synthesized inclusive totals', () => {
   const thread = (t: RunUsageTracker, threadId: string, tokens: ChatEventDataMap['usage']['tokens'], over: Partial<Usage> = {}) =>
     t.usage({ scope: 'session', coverage: 'main', threadId, tokens, ...over }, undefined);
   const scopes = (t: RunUsageTracker) => t.finalSamples(1).map((s) => s.scope);
 
   it('is made from proven-disjoint threads that all report the same figures', () => {
-    const t = new RunUsageTracker('codex_app_server');
+    const t = new RunUsageTracker('acp');
     t.subagentDeclared('sub');
     thread(t, 'main', { input: 100, output: 10 });
     thread(t, 'sub', { input: 5, output: 1 }, { subagentId: 'sub' });
@@ -243,7 +243,7 @@ describe('synthesized inclusive totals', () => {
 
   it('is left out when the parent is already inclusive or its coverage unknown', () => {
     for (const coverage of ['inclusive', undefined] as const) {
-      const t = new RunUsageTracker('codex_app_server');
+      const t = new RunUsageTracker('acp');
       thread(t, 'main', { input: 100, output: 10 }, { coverage });
       thread(t, 'sub', { input: 5, output: 1 }, { subagentId: 'sub' });
       expect(scopes(t)).not.toContain('inclusive');
@@ -251,28 +251,28 @@ describe('synthesized inclusive totals', () => {
   });
 
   it('is left out when a child\'s coverage is unknown', () => {
-    const t = new RunUsageTracker('codex_app_server');
+    const t = new RunUsageTracker('acp');
     thread(t, 'main', { input: 100, output: 10 });
     thread(t, 'sub', { input: 5, output: 1 }, { subagentId: 'sub', coverage: undefined });
     expect(scopes(t)).toEqual(['main']);
   });
 
   it('is left out when a child leaves out a figure the parent reports: no sum may hide a partial contributor', () => {
-    const t = new RunUsageTracker('codex_app_server');
+    const t = new RunUsageTracker('acp');
     thread(t, 'main', { input: 100, output: 10, reasoning: 4 });
     thread(t, 'sub', { input: 5, output: 1 }, { subagentId: 'sub' });
     expect(scopes(t)).toEqual(['main']);
   });
 
   it('is left out when a child reports only half the figures', () => {
-    const t = new RunUsageTracker('codex_app_server');
+    const t = new RunUsageTracker('acp');
     thread(t, 'main', { input: 100, output: 10 });
     thread(t, 'sub', { output: 1 }, { subagentId: 'sub' });
     expect(scopes(t)).toEqual(['main']);
   });
 
   it('is left out when a declared subagent never reported', () => {
-    const t = new RunUsageTracker('codex_app_server');
+    const t = new RunUsageTracker('acp');
     t.subagentDeclared('quiet');
     thread(t, 'main', { input: 100, output: 10 });
     thread(t, 'sub', { input: 5, output: 1 }, { subagentId: 'sub' });
@@ -280,9 +280,20 @@ describe('synthesized inclusive totals', () => {
   });
 
   it('is left out with no thread names, since they cannot be told apart', () => {
-    const t = new RunUsageTracker('codex_app_server');
+    const t = new RunUsageTracker('acp');
     t.usage({ scope: 'session', coverage: 'main', tokens: { input: 100, output: 10 } }, undefined);
     t.usage({ scope: 'session', coverage: 'main', subagentId: 'sub', tokens: { input: 5, output: 1 } }, undefined);
     expect(scopes(t)).not.toContain('inclusive');
+  });
+});
+
+describe('Codex thread figures', () => {
+  it('keep thread identity and cumulative provenance but claim no coverage and never sum', () => {
+    const t = new RunUsageTracker('codex_app_server');
+    t.subagentDeclared('sub');
+    t.usage({ scope: 'session', threadId: 'main', tokens: { input: 100, output: 10 } }, undefined);
+    t.usage({ scope: 'session', threadId: 'sub', subagentId: 'sub', tokens: { input: 5, output: 1 } }, undefined);
+    const samples = t.finalSamples(1);
+    expect(samples.map((s) => [s.scope, s.source, s.dedup])).toEqual([['unscoped', 'provider_session_cumulative', 'thread_cumulative']]);
   });
 });
