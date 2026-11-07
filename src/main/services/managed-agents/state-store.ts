@@ -23,6 +23,8 @@ export interface ManagedState {
   defaultHelperTemplateId?: string;
   /** Orchestrators may name a template or add and remove parts for a helper (#2899). Off unless the person turns it on. */
   helperTemplateChoice?: boolean;
+  /** One-time settings migrations done for the switch away from Clubhouse Mode (D61, D63): id to when. */
+  migrations?: Record<string, string>;
 }
 
 const EMPTY: ManagedState = { version: 1, parts: {}, templates: {} };
@@ -56,6 +58,9 @@ export function createManagedStateStore(dir: string = managedStateDir()): Manage
       templates: parsed.templates && typeof parsed.templates === 'object' ? parsed.templates : {},
       ...(typeof parsed.defaultHelperTemplateId === 'string' ? { defaultHelperTemplateId: parsed.defaultHelperTemplateId } : {}),
       ...(parsed.helperTemplateChoice === true ? { helperTemplateChoice: true } : {}),
+      ...(parsed.migrations && typeof parsed.migrations === 'object' && !Array.isArray(parsed.migrations)
+        ? { migrations: Object.fromEntries(Object.entries(parsed.migrations).filter((e): e is [string, string] => typeof e[1] === 'string')) }
+        : {}),
     };
   }
 

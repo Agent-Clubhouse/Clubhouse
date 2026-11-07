@@ -41,8 +41,8 @@ import { useDurableConfig } from './useDurableConfig';
 import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
 import { openDispatcherSettings } from '../../dispatcher/dispatcherNav';
 import { useManagedFlag } from '../../managed/managed-flag';
-import { useManagedSetup } from '../../managed/managedApi';
-import { legacyLine, legacyUse } from '../../managed/legacy';
+import { useManagedSetup, useManagedStatus } from '../../managed/managedApi';
+import { legacyLine, legacyUse, migrationFailedLine } from '../../managed/legacy';
 import { SetupCard } from './SetupCard';
 
 /**
@@ -213,6 +213,8 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
   // still uses it or a persona is offered the switch instead (#2901).
   const managedFlag = useManagedFlag();
   const legacy = managedFlag && local && loaded && config && !isDispatcherAgent(agent) ? legacyUse(config, clubhouseOn) : null;
+  // Why the automatic switch didn't happen, if it was tried (D59).
+  const { value: managedStatus } = useManagedStatus(legacy ? projectPath : undefined, agent.id);
   const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
   const host = remote ? Object.values(satelliteProjects).flat().find((p) => p.id === agent.projectId)?.satelliteName : undefined;
 
@@ -441,7 +443,10 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
       )}
       {legacy && (
         <div className="pr-3.5 pl-[33px] pt-1 pb-1.5 flex items-center gap-2" data-testid="details-settings-legacy">
-          <span className="flex-1 min-w-0 text-xs leading-normal text-ctp-subtext1">{legacyLine(agent.name, legacy)}</span>
+          <span className="flex-1 min-w-0 text-xs leading-normal text-ctp-subtext1">
+            {legacyLine(agent.name, legacy)}
+            {managedStatus?.migrationFailed && <span className="block" data-testid="details-settings-migration-failed">{migrationFailedLine(managedStatus.migrationFailed)}</span>}
+          </span>
           <Button kind="ghost" onClick={() => openAllSettings(agent.id)} data-testid="details-settings-switch">Switch to managed…</Button>
         </div>
       )}

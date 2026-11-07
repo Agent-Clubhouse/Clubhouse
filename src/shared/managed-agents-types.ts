@@ -123,6 +123,33 @@ export interface ManagedTemplatePushTarget {
   note?: string;
 }
 
+/** What an agent used before Clubhouse switched it to managed on its own (D59). */
+export type ManagedMigrationFrom = 'clubhouse-mode' | 'persona';
+
+/**
+ * Kept on the agent once Clubhouse has switched it to managed on its own
+ * (D59). It stays after the notice is dismissed, so the agent is never
+ * switched automatically again, for example after Stop managing.
+ */
+export interface ManagedMigration {
+  /** When it was switched (ISO time). */
+  at: string;
+  from: ManagedMigrationFrom;
+  /** Where its earlier instructions file is kept, shortened to start at `~` when under the home folder. */
+  backup: string;
+  /** The person dismissed the notice. */
+  dismissed?: true;
+}
+
+/** The last automatic switch to managed failed (D59). Cleared by any switch. */
+export interface ManagedMigrationFailure {
+  at: string;
+  /** An error code only, as the log has it. */
+  code: string;
+  /** The reason, in words, for the switch offer. */
+  message: string;
+}
+
 /** What a running managed agent is waiting on. */
 export interface ManagedAgentStatus {
   managed: boolean;
@@ -136,6 +163,10 @@ export interface ManagedAgentStatus {
   cliChanged: boolean;
   /** Set when this session's setup couldn't be written: the reason. The session runs on whatever files were there. */
   deliveryFailed?: string;
+  /** A managed agent Clubhouse switched on its own, until the notice is dismissed (D59). */
+  migrated?: { from: ManagedMigrationFrom; backup: string };
+  /** An unmanaged agent whose automatic switch failed: the reason (D59). */
+  migrationFailed?: string;
 }
 
 /** The exact result an agent gets at its next start. */

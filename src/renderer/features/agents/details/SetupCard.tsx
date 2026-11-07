@@ -4,12 +4,15 @@
  * instruction blocks, skills, MCP servers, CLI and model) and, for a running
  * agent whose setup changed after its session started, what is waiting.
  * Open builder goes to the agent's Instructions page; Restart applies what
- * is waiting.
+ * is waiting. An agent Clubhouse switched on its own says so until the
+ * notice is dismissed (D59).
  */
+import { useState } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { ManagedAgentSetup, ManagedPartSummary } from '../../../../shared/managed-agents-types';
 import { Button } from '../../../components/Button';
-import { useManagedParts, useManagedStatus, useManagedTemplates } from '../../managed/managedApi';
+import { errorText, managed, unwrap, useManagedParts, useManagedStatus, useManagedTemplates } from '../../managed/managedApi';
+import { migratedLine } from '../../managed/legacy';
 import { PENDING_RESTART_NOTE, useManagedRestart } from '../../managed/restart';
 import { openAgentSettingsOn } from '../agentSettingsPages';
 import { CardNote, CardRow, DetailsCard } from './DetailsCard';
@@ -84,6 +87,20 @@ export function SetupCard({ agent, projectPath, setup, runsOn }: {
   const templates = useManagedTemplates();
   const { value: status } = useManagedStatus(projectPath, agent.id);
   const { restart, busy, pending, error, dialog } = useManagedRestart({ projectPath, agentId: agent.id, agentName: agent.name });
+  const [dismissing, setDismissing] = useState(false);
+  const [dismissError, setDismissError] = useState<string | null>(null);
+  const dismiss = async () => {
+    setDismissing(true);
+    setDismissError(null);
+    try {
+      await unwrap(managed().dismissMigrationNotice(projectPath, agent.id));
+    } catch (err) {
+      // telemetry-exempt: shown in the card.
+      setDismissError(errorText(err));
+    } finally {
+      setDismissing(false);
+    }
+  };
 
   const templateName = setup.templateId ? templates.value?.find((t) => t.id === setup.templateId)?.name ?? null : null;
   const changes = status?.waiting && status.running ? status.changes : null;
@@ -96,6 +113,13 @@ export function SetupCard({ agent, projectPath, setup, runsOn }: {
       <span role="status" className="sr-only" data-testid="details-setup-live">{pending ? PENDING_RESTART_NOTE : waiting ? SETUP_WAITING_NOTE : ''}</span>
       {(waiting || pending) && <CardNote><span data-testid="details-setup-note">{pending ? PENDING_RESTART_NOTE : SETUP_WAITING_NOTE}</span></CardNote>}
       {error && <CardNote><span className="text-ctp-error" role="alert" data-testid="details-setup-error">{error}</span></CardNote>}
+      {status?.migrated && (
+        <div className="pr-3.5 pl-[33px] pt-1 pb-1.5 flex items-center gap-2" data-testid="details-setup-migrated">
+          <span className="flex-1 min-w-0 text-xs leading-normal text-ctp-subtext1">{migratedLine(status.migrated.backup)}</span>
+          <Button kind="ghost" onClick={() => void dismiss()} disabled={dismissing} data-testid="details-setup-migrated-dismiss">Dismiss</Button>
+        </div>
+      )}
+      {dismissError && <CardNote><span className="text-ctp-error" role="alert">{dismissError}</span></CardNote>}
       <div className="pr-3.5 pl-[33px] pt-1 flex items-center gap-1.5">
         <Button kind="ghost" onClick={() => openAgentSettingsOn(agent.id, 'instructions')} data-testid="details-setup-open-builder">Open builder</Button>
         {waiting && (

@@ -54,6 +54,8 @@ const managed = {
   previewConvert: (projectPath: string, agentId: string) => call<ManagedConvertPreview>(IPC.MANAGED.PREVIEW_CONVERT, projectPath, agentId),
   applySettings: (projectPath: string, agentId: string, settings: ManagedTemplateSettings) => call<void>(IPC.MANAGED.APPLY_SETTINGS, projectPath, agentId, settings),
   status: (projectPath: string, agentId: string) => call<ManagedAgentStatus>(IPC.MANAGED.STATUS, projectPath, agentId),
+  /** Hide "Switched to managed when Clubhouse updated" for this agent (D59). */
+  dismissMigrationNotice: (projectPath: string, agentId: string) => call<void>(IPC.MANAGED.DISMISS_MIGRATION_NOTICE, projectPath, agentId),
   isWorking: (agentId: string) => call<boolean>(IPC.MANAGED.IS_WORKING, agentId),
   restart: (projectPath: string, agentId: string, options?: { fresh?: boolean; whenTurnEnds?: boolean }) => call<{ resumed: boolean; noSession?: boolean }>(IPC.MANAGED.RESTART, projectPath, agentId, options),
   setClubhouseFeatures: (projectPath: string, agentId: string, on: boolean) => call<void>(IPC.MANAGED.SET_CLUBHOUSE_FEATURES, projectPath, agentId, on),

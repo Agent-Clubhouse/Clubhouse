@@ -27,6 +27,8 @@ const h = vi.hoisted(() => ({
   personaPolicy: {} as Record<string, Record<string, unknown>>,
   /** Calls into orchestration-policy, in order. */
   policyCalls: [] as string[],
+  /** The MCP settings isMcpEnabled reads. */
+  mcp: { enabled: true, projectOverrides: {} as Record<string, boolean> },
 }));
 
 vi.mock('../agent-config', () => ({
@@ -55,6 +57,10 @@ vi.mock('../orchestration-policy', () => ({
   reconcileAfterPersonaChange: vi.fn(async () => { h.policyCalls.push('reconcile'); }),
 }));
 vi.mock('../clubhouse-mode-settings', () => ({ isClubhouseModeEnabled: () => h.clubhouseMode }));
+/** isMcpEnabled's chain: the agent's override, then the project's, then the app switch. */
+vi.mock('../mcp-settings', () => ({
+  isMcpEnabled: vi.fn((projectPath?: string, agentOverride?: boolean) => agentOverride ?? (projectPath ? h.mcp.projectOverrides[projectPath] : undefined) ?? h.mcp.enabled),
+}));
 vi.mock('../materialization-service', () => ({
   materializedInstructions: vi.fn(async () => h.materialized),
   materializedDefaults: vi.fn(async () => h.modeDefaults),
@@ -111,6 +117,7 @@ beforeEach(async () => {
   h.personaPolicy = {};
   h.policyCalls = [];
   h.conventions = { configDir: '.claude', skillsDir: 'skills', mcpConfigFile: '.mcp.json', legacyInstructionsFile: 'CLAUDE.md', settingsFormat: 'json' };
+  h.mcp = { enabled: true, projectOverrides: {} };
   h.agents.clear();
   h.agents.set('ada', { id: 'ada', name: 'ada', color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: wt });
   service = createManagedAgentsService({
@@ -124,6 +131,7 @@ beforeEach(async () => {
       const a = h.agents.get(id)!;
       h.policyCalls.push('save');
       if (setup) {
+        if (!a.managed && !a.switchedToManagedAt) a.switchedToManagedAt = new Date().toISOString();
         a.managed = setup;
         a.mcpOverride = setup.mcps.includes(CLUBHOUSE_MCP_PART_ID);
         delete a.clubhouseFeatures;
@@ -238,6 +246,140 @@ describe('convertToManaged with keep', () => {
     h.agents.get('ada')!.mcpOverride = false;
     const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
     expect(setup).toMatchObject({ blocks: [], skills: [], mcps: [] });
+  });
+
+  it('adds the Clubhouse part only where MCP is on for the agent today: not with MCP off for the app', async () => {
+    h.mcp = { enabled: false, projectOverrides: {} };
+    const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    expect(setup.mcps).toEqual([]);
+    expect(h.agents.get('ada')!.mcpOverride).toBe(false);
+  });
+
+  it('nor with an MCP project override of false, even with MCP on for the app', async () => {
+    h.mcp = { enabled: true, projectOverrides: { '/p': false } };
+    expect((await user(() => convertToManaged('/p', 'ada', { keep: true }))).mcps).toEqual([]);
+  });
+
+  it('an agent turned on for MCP keeps the bridge where its project has MCP off', async () => {
+    h.mcp = { enabled: false, projectOverrides: { '/p': false } };
+    h.agents.get('ada')!.mcpOverride = true;
+    expect((await user(() => convertToManaged('/p', 'ada', { keep: true }))).mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+  });
+});
+
+describe('switched once, and backups that are never overwritten (#2901)', () => {
+  const dir = () => path.join(h.stateDir, 'before-managed', 'ada');
+
+  it('marks every switch from unmanaged to managed, and the mark stays after Stop managing', async () => {
+    await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    const at = h.agents.get('ada')!.switchedToManagedAt;
+    expect(at).toEqual(expect.any(String));
+    await user(() => service.unmanage('/p', 'ada'));
+    expect(h.agents.get('ada')!.managed).toBeUndefined();
+    expect(h.agents.get('ada')!.switchedToManagedAt).toBe(at);
+  });
+
+  it('a second switch keeps a new copy beside the first, never over it', async () => {
+    h.instructions = 'Before the first switch.';
+    await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    await user(() => service.unmanage('/p', 'ada'));
+    h.instructions = 'Before the second switch.';
+    await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    const files = fs.readdirSync(dir()).filter((f) => f.startsWith('CLAUDE.md'));
+    expect(files).toHaveLength(2);
+    expect(fs.readFileSync(path.join(dir(), 'CLAUDE.md'), 'utf-8')).toBe('Before the first switch.');
+    const second = files.find((f) => f !== 'CLAUDE.md')!;
+    expect(second).toMatch(/^CLAUDE\.md\.\d+$/);
+    expect(fs.readFileSync(path.join(dir(), second), 'utf-8')).toBe('Before the second switch.');
+  });
+
+  it('the first managed start compares against the copy its own switch made', async () => {
+    h.instructionsFromDisk = true;
+    write('CLAUDE.md', 'First.');
+    await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    await user(() => service.unmanage('/p', 'ada'));
+    write('CLAUDE.md', 'Second.');
+    await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    const provider = { id: 'claude-code', conventions: h.conventions, readInstructions: async (w: string) => fs.readFileSync(path.join(w, 'CLAUDE.md'), 'utf-8') } as never;
+    // Unchanged since this switch: nothing more is kept, though it differs from the first copy.
+    await keepInstructionsAtFirstStart(h.agents.get('ada')!, provider);
+    expect(fs.readdirSync(dir()).filter((f) => f.includes('first-start'))).toEqual([]);
+  });
+
+  it('a failed switch leaves no copy and no folder behind', async () => {
+    h.instructions = 'Ship small PRs.';
+    const saveSetup = service.saveSetup;
+    service.saveSetup = vi.fn(async () => { throw new Error('disk full'); });
+    try {
+      await expect(user(() => convertToManaged('/p', 'ada', { keep: true }))).rejects.toThrow('disk full');
+    } finally {
+      service.saveSetup = saveSetup;
+    }
+    expect(fs.existsSync(dir())).toBe(false);
+    expect(h.agents.get('ada')!.switchedToManagedAt).toBeUndefined();
+  });
+});
+
+describe('a switch cut short (#2901)', () => {
+  const pendingFile = () => path.join(h.stateDir, 'before-managed', 'ada', '.switch-pending.json');
+  const custom = async (kind: 'block' | 'skill' | 'mcp') => (await user(() => service.listParts(kind))).filter((p) => !p.builtin);
+
+  it('lists the parts in a pending file as they are made, and removes the file once saved', async () => {
+    seedAgentFiles();
+    const listed: string[][] = [];
+    const saveSetup = service.saveSetup.bind(service);
+    service.saveSetup = vi.fn(async (p, id, setup) => {
+      listed.push((JSON.parse(fs.readFileSync(pendingFile(), 'utf-8')) as { parts: string[] }).parts);
+      return saveSetup(p, id, setup);
+    });
+    const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    expect(listed).toEqual([[...setup.blocks, ...setup.skills, ...setup.mcps.filter((id) => id !== CLUBHOUSE_MCP_PART_ID)]]);
+    expect(fs.existsSync(pendingFile())).toBe(false);
+  });
+
+  it('the next switch removes the parts an interrupted one made, then makes its own once', async () => {
+    h.instructions = 'Ship small PRs.';
+    // As a switch the app quit during leaves it: a part made, the pending file, no save.
+    const leftover = await user(() => service.createPart({ name: 'ada notes', content: { kind: 'block', content: 'Ship small PRs.' } }));
+    fs.mkdirSync(path.dirname(pendingFile()), { recursive: true });
+    fs.writeFileSync(pendingFile(), JSON.stringify({ startedAt: new Date().toISOString(), parts: [leftover.id] }));
+
+    const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
+
+    const blocks = await custom('block');
+    expect(blocks.map((b) => b.id)).toEqual(setup.blocks);
+    expect(blocks.map((b) => b.name)).toEqual(['ada notes']);
+    expect(blocks[0].id).not.toBe(leftover.id);
+    expect(fs.existsSync(pendingFile())).toBe(false);
+  });
+
+  it('keeps the parts of a switch that was saved before it was cut short', async () => {
+    h.instructions = 'Ship small PRs.';
+    const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    // The app quit right after the save: the pending file is still there.
+    fs.mkdirSync(path.dirname(pendingFile()), { recursive: true });
+    fs.writeFileSync(pendingFile(), JSON.stringify({ startedAt: '2026-01-01T00:00:00.000Z', parts: setup.blocks }));
+    await user(() => service.unmanage('/p', 'ada'));
+    await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    expect((await custom('block')).map((b) => b.id)).toContain(setup.blocks[0]);
+  });
+
+  it('a switch that finds the agent managed right before its save removes its own parts and stops', async () => {
+    seedAgentFiles();
+    const createPart = service.createPart.bind(service);
+    let first = true;
+    service.createPart = vi.fn(async (input) => {
+      const part = await createPart(input);
+      if (first) {
+        first = false;
+        // Another switch of this agent finishes meanwhile.
+        h.agents.set('ada', { ...h.agents.get('ada')!, managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+      }
+      return part;
+    });
+    await expect(user(() => convertToManaged('/p', 'ada', { keep: true }))).rejects.toThrow('already Clubhouse managed');
+    for (const kind of ['block', 'skill', 'mcp'] as const) expect(await custom(kind)).toEqual([]);
+    expect(h.agents.get('ada')!.managed).toEqual({ version: 1, blocks: [], skills: [], mcps: [] });
   });
 });
 

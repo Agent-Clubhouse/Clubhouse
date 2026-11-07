@@ -32,6 +32,7 @@ export const IPC = {
     IS_WORKING: 'managed:is-working',
     RESTART: 'managed:restart',
     SET_CLUBHOUSE_FEATURES: 'managed:set-clubhouse-features',
+    DISMISS_MIGRATION_NOTICE: 'managed:dismiss-migration-notice',
     /** Main to renderer: parts, templates or setups changed; refetch what's shown. */
     CHANGED: 'managed:changed',
   },

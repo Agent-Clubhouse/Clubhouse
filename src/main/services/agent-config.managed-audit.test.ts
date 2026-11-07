@@ -45,7 +45,7 @@ vi.mock('./settings-audit', async (original) => ({
   auditChanges: vi.fn(async (...args: unknown[]) => { audited.calls.push(args); }),
 }));
 
-import { clearAgentConfigCache, setClubhouseFeatures, setManagedSetup } from './agent-config';
+import { clearAgentConfigCache, flushAgentConfig, getDurableConfig, setClubhouseFeatures, setManagedMigration, setManagedSetup } from './agent-config';
 import { CLUBHOUSE_MCP_PART_ID } from '../../shared/managed-agents-types';
 
 const PROJECT_PATH = path.resolve('managed-audit-project');
@@ -92,5 +92,45 @@ describe('managed setup audit (D13)', () => {
       targetId: 'a1', before: { clubhouseFeatures: undefined, mcpOverride: undefined }, after: { clubhouseFeatures: false, mcpOverride: false },
       catalog: { clubhouseFeatures: 'value', mcpOverride: 'value' },
     });
+  });
+});
+
+describe('the automatic switch marker (D59)', () => {
+  it('records a failure, which a switch clears, then the switch, and a dismissal that keeps the marker; none of it is a settings row', async () => {
+    await setManagedMigration(PROJECT_PATH, 'a1', { failed: { at: 't0', code: 'invalid', message: 'No.' } });
+    expect((await getDurableConfig(PROJECT_PATH, 'a1'))?.managedMigrationFailure).toEqual({ at: 't0', code: 'invalid', message: 'No.' });
+    expect(audited.calls).toEqual([]);
+
+    await setManagedSetup(PROJECT_PATH, 'a1', { version: 1, blocks: [], skills: [], mcps: [] });
+    expect((await getDurableConfig(PROJECT_PATH, 'a1'))?.managedMigrationFailure).toBeUndefined();
+
+    audited.calls = [];
+    await setManagedMigration(PROJECT_PATH, 'a1', { migrated: { at: 't1', from: 'persona', backup: 'b' } });
+    await setManagedMigration(PROJECT_PATH, 'a1', { dismissed: true });
+    await setManagedMigration(PROJECT_PATH, 'a1', { layerCarriedAt: 't2' });
+    const after = await getDurableConfig(PROJECT_PATH, 'a1');
+    expect(after?.managedMigration).toEqual({ at: 't1', from: 'persona', backup: 'b', dismissed: true });
+    expect(after?.personaLayerCarriedAt).toBe('t2');
+    expect(audited.calls).toEqual([]);
+    // A missing agent is a no-op.
+    await expect(setManagedMigration(PROJECT_PATH, 'nobody', { dismissed: true })).resolves.toBeUndefined();
+  });
+
+  it('marks the first switch from unmanaged to managed in the same write as the setup, and keeps it through setup changes and Stop managing', async () => {
+    await setManagedSetup(PROJECT_PATH, 'a1', { version: 1, blocks: [], skills: [], mcps: [] });
+    await flushAgentConfig(PROJECT_PATH);
+    // In agents.json itself, beside the setup: one write.
+    const written = (JSON.parse(files.get(CONFIG_PATH)!) as Array<Record<string, unknown>>)[0];
+    expect(written.managed).toBeDefined();
+    const at = written.switchedToManagedAt;
+    expect(at).toEqual(expect.any(String));
+
+    await setManagedSetup(PROJECT_PATH, 'a1', { version: 1, blocks: ['b1'], skills: [], mcps: [] });
+    await setManagedSetup(PROJECT_PATH, 'a1', null);
+    const after = await getDurableConfig(PROJECT_PATH, 'a1');
+    expect(after?.managed).toBeUndefined();
+    expect(after?.switchedToManagedAt).toBe(at);
+    // Bookkeeping, not a setting: not in the audit rows.
+    expect(audited.calls.every((c) => !Object.keys(c[4] as object).includes('switchedToManagedAt'))).toBe(true);
   });
 });

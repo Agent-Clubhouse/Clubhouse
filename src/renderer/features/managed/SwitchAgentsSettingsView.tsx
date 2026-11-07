@@ -10,7 +10,7 @@ import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { SettingsPage, SettingsSection, settingsError, settingsHelp } from '../settings/SettingsLayout';
 import { convertSummary } from './ManagedGeneralSection';
 import { errorText, managed, unwrap } from './managedApi';
-import { legacyLabel, legacyUse, type LegacyUse } from './legacy';
+import { legacyLabel, legacyUse, migrationFailedLine, type LegacyUse } from './legacy';
 
 /** An unmanaged agent the page can offer to switch. */
 interface Candidate {
@@ -26,11 +26,14 @@ const keyOf = (projectPath: string, agentId: string) => `${projectPath}\n${agent
 /**
  * Settings › Managed agents › Switch agents (#2901): every unmanaged agent in
  * every local project, with what it uses. Agents that use Clubhouse Mode or a
- * persona are ticked; Switch converts the ticked ones one at a time, keeping
- * what each has now. Nothing is switched without the person asking. Helpers,
- * disposed agents and agents still being created aren't listed. A running
- * agent starts unticked, since its session keeps the old files until its next
- * start, and one that is waking can't be ticked until it has started.
+ * persona switch on their own (D59), so the list is mostly plain agents,
+ * agents whose automatic switch failed (with the reason), and running ones
+ * waiting for their next start. Legacy-configured agents are ticked; Switch
+ * converts the ticked ones one at a time, keeping what each has now. Plain
+ * agents are switched only when the person ticks them. Helpers, disposed
+ * agents and agents still being created aren't listed. A running agent starts
+ * unticked, since its session keeps the old files until its next start, and
+ * one that is waking can't be ticked until it has started.
  */
 export function SwitchAgentsSettingsView() {
   const projects = useProjectStore((s) => s.projects);
@@ -110,7 +113,7 @@ export function SwitchAgentsSettingsView() {
   return (
     <SettingsPage
       title="Switch agents"
-      description="Agents that Clubhouse doesn't manage yet. Switching keeps what each one has now: its instructions file becomes a block for that agent only, and its skills and MCP servers become parts. A running agent gets the change at its next start."
+      description="Agents that Clubhouse doesn't manage. Agents that used Clubhouse Mode or a persona switch on their own at their next start, so most agents here are plain ones, plus any that couldn't switch. Switching keeps what each one has now: its instructions file becomes a block for that agent only, and its skills and MCP servers become parts."
       actions={
         <Button kind="primary" disabled={busy || n === 0} onClick={() => void switchTicked()} data-testid="managed-switch-run">
           {busy ? 'Switching…' : `Switch ${n} to managed`}
@@ -153,7 +156,12 @@ export function SwitchAgentsSettingsView() {
                   </span>
                   {!c.agent.worktreePath && <span className="block text-xs text-ctp-overlay1">Works in the project folder, so it can't be managed.</span>}
                   {c.agent.worktreePath && isStarting(c) && <span className="block text-xs text-ctp-overlay1" data-testid="managed-switch-waking">Waking. Switch it once it has started.</span>}
-                  {c.agent.worktreePath && isRunning(c) && <span className="block text-xs text-ctp-overlay1" data-testid="managed-switch-running">Running: the switch applies at its next start.</span>}
+                  {c.agent.managedMigrationFailure && <span className="block text-xs text-ctp-warning" data-testid="managed-switch-failed">{migrationFailedLine(c.agent.managedMigrationFailure.message)}</span>}
+                  {c.agent.worktreePath && isRunning(c) && (
+                    <span className="block text-xs text-ctp-overlay1" data-testid="managed-switch-running">
+                      {c.legacy && !c.agent.managedMigrationFailure && !c.agent.managedMigration && !c.agent.switchedToManagedAt && c.agent.clubhouseFeatures !== false ? 'Running. It switches on its own at its next start.' : 'Running: the switch applies at its next start.'}
+                    </span>
+                  )}
                 </span>
                 {!!c.agent.worktreePath && (
                   <Button kind="quiet" aria-expanded={open === c.key} onClick={() => setOpen(open === c.key ? null : c.key)}>

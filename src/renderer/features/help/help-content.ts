@@ -271,7 +271,7 @@ export const MANAGED_HELP_EDITS: Record<string, ReadonlyArray<HelpEdit>> = {
     { from: '| **Persona** | A role the agent takes on, such as reviewer or researcher |\n', to: '' },
     {
       from: 'With **Clubhouse mode** on, project defaults sync to the agent when it wakes. See **Clubhouse mode**.',
-      to: 'An agent made before Clubhouse-managed agents can switch in its settings, under **General > Setup**, or with others in **Settings > Managed agents > Switch agents**. Switching keeps what it has now. An agent that still uses Clubhouse Mode can turn it off there too, and keep its own files without switching.',
+      to: 'An agent that used Clubhouse Mode or a persona switches to managed on its own at its next start, keeping what it has now, and says so in its settings under **General > Setup**. Any other agent made before Clubhouse-managed agents can switch there, or with others in **Settings > Managed agents > Switch agents**.',
     },
   ],
   'agents-overview': [

@@ -380,6 +380,14 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // managed keeps getting its setup with the flag off, or it would start
     // half-configured (D56).
     let managedSetup = false;
+    // With Clubhouse-managed agents on, an agent that uses Clubhouse Mode or a
+    // persona switches to managed first, keeping what it has, and this start is
+    // its first managed one (D59). A failed switch starts it as it is.
+    if (params.kind === 'durable' && !managed && firstConfig && !firstConfig.managed) {
+      const { migrateAtSpawn } = await import('./managed-agents/auto-migrate');
+      const migrated = await migrateAtSpawn(params.projectPath, firstConfig);
+      if (migrated) firstConfig = migrated;
+    }
     if (params.kind === 'durable' && !managed) {
       const config = firstConfig;
       if (config?.managed) {
@@ -427,7 +435,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     if (facts.clubhouseMode && !managed && !managedSetup) {
       try {
         const config = await getDurableConfig(params.projectPath, params.agentId);
-        if (config && !config.clubhouseModeOverride && config.worktreePath) {
+        // Never on a managed agent, even one a switch made managed after this spawn read its config.
+        if (config && !config.managed && !config.clubhouseModeOverride && config.worktreePath) {
           await tel.step('clubhouse.agent.materialize', () =>
             withErrorType('materialize_failed', () => materializeAgent({ projectPath: params.projectPath, agent: config, provider })),
           );
