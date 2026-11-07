@@ -2701,6 +2701,24 @@ describe('agent-system', () => {
       expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, 'agent-1', 'disk full');
     });
 
+    it('stops Clubhouse Mode for an agent at the start after it switches to managed (#2901)', async () => {
+      mockIsClubhouseModeEnabled.mockReturnValue(true);
+      mockDeliverForSpawn.mockClear();
+      mockMaterializeAgent.mockClear();
+      const legacy = { id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1', persona: 'qa' };
+      mockGetDurableConfig.mockReturnValue(legacy);
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockMaterializeAgent).toHaveBeenCalledTimes(1);
+      expect(mockDeliverForSpawn).not.toHaveBeenCalled();
+
+      // Switch to managed saves a setup on the config and leaves the rest as it was.
+      mockMaterializeAgent.mockClear();
+      mockGetDurableConfig.mockReturnValue({ ...legacy, managed: { version: 1, blocks: ['agent-1-notes'], skills: [], mcps: [] } });
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockMaterializeAgent).not.toHaveBeenCalled();
+      expect(mockDeliverForSpawn).toHaveBeenCalledTimes(1);
+    });
+
     it('does nothing for an agent that is not managed', async () => {
       mockIsClubhouseModeEnabled.mockReturnValue(false);
       mockDeliverForSpawn.mockClear();

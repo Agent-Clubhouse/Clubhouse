@@ -14,6 +14,7 @@ import {
   accessLabel, instructionsLabel, isRowLocked, LOCKED_HINT, modelLabel, settingsSummary,
 } from './SettingsCard';
 import { useAgentDetailsStore } from './detailsStore';
+import { loadManagedFlag, resetManagedFlag } from '../../managed/managed-flag';
 
 const agent: Agent = {
   id: 'a1', projectId: 'p1', name: 'faithful-urchin', kind: 'durable', status: 'running', color: 'teal',
@@ -130,6 +131,8 @@ describe('Settings card (#2280)', () => {
     expect(card.getByTestId('details-setting-effort')).toHaveTextContent('High');
     expect(card.getByTestId('details-setting-access')).toHaveTextContent('Full access');
     expect(card.getByTestId('details-setting-clubhouse-mode')).toHaveTextContent('On');
+    // With Clubhouse-managed agents off, nothing offers the switch (#2901).
+    expect(card.queryByTestId('details-settings-legacy')).not.toBeInTheDocument();
     // github from the wrapper (the agent's own pick) plus playwright from .mcp.json.
     await waitFor(() => expect(card.getByTestId('details-setting-mcp')).toHaveTextContent('2 configured'));
     expect(window.clubhouse.project.readDefaultMcps).not.toHaveBeenCalled();
@@ -285,6 +288,53 @@ describe('Settings card edge cases', () => {
     expect(screen.getByTestId('details-card-settings-summary')).not.toHaveTextContent('from-a1');
     await act(async () => { pending.a2({ id: 'a2', model: 'from-a2' }); });
     expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent('from-a2');
+  });
+});
+
+describe('Settings card with Clubhouse-managed agents on (#2901)', () => {
+  let flag: ReturnType<typeof vi.spyOn>;
+  beforeEach(async () => {
+    flag = vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
+    resetManagedFlag();
+    await loadManagedFlag();
+  });
+  afterEach(() => {
+    flag.mockRestore();
+    resetManagedFlag();
+    useAgentSettingsPages.getState().reset();
+  });
+
+  it('has no Clubhouse mode row, and offers the switch to an agent that uses it', async () => {
+    const open = vi.fn();
+    const real = useAgentStore.getState().openAgentSettings;
+    useAgentStore.setState({ openAgentSettings: open });
+    try {
+      render(<AgentDetails agent={agent} chat={chatState()} />);
+      const card = openSettings();
+      expect(await card.findByTestId('details-settings-legacy')).toHaveTextContent('faithful-urchin uses Clubhouse Mode.');
+      expect(card.queryByTestId('details-setting-clubhouse-mode')).not.toBeInTheDocument();
+      useAgentSettingsPages.getState().setPage('helpers');
+      fireEvent.click(card.getByRole('button', { name: 'Switch to managed…' }));
+      expect(open).toHaveBeenCalledWith('a1');
+      expect(useAgentSettingsPages.getState().page).toBe('general');
+    } finally {
+      useAgentStore.setState({ openAgentSettings: real });
+    }
+  });
+
+  it('names the persona, and says nothing for an agent that uses neither', async () => {
+    useClubhouseModeStore.setState({ enabled: false } as never);
+    saved = { idleSleep: 30, persona: 'qa' };
+    const { unmount } = render(<AgentDetails agent={agent} chat={chatState()} />);
+    expect(await openSettings().findByTestId('details-settings-legacy')).toHaveTextContent('faithful-urchin uses the Quality Assurance persona.');
+    unmount();
+
+    saved = { idleSleep: 30 };
+    render(<AgentDetails agent={agent} chat={chatState()} />);
+    // The card stays open from before.
+    const card = within(screen.getByTestId('details-card-settings'));
+    await waitFor(() => expect(card.getByTestId('details-setting-instructions')).toHaveTextContent('Custom, 3 lines'));
+    expect(card.queryByTestId('details-settings-legacy')).not.toBeInTheDocument();
   });
 });
 

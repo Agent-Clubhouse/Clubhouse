@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDurableAgent } from './create-agent';
 import { useAgentStore } from '../../stores/agentStore';
+import { loadManagedFlag, resetManagedFlag } from '../managed/managed-flag';
 
 const input = { name: 'plain-otter', color: 'emerald', model: 'default', useWorktree: false, orchestrator: 'claude-code' };
 const project = { id: 'p1', path: '/tmp/ch' };
@@ -48,5 +49,53 @@ describe('createDurableAgent with Clubhouse features off (#2893)', () => {
     await expect(createDurableAgent(project, { ...input, clubhouseFeatures: false }, { onError })).resolves.toBeNull();
     expect(onError).toHaveBeenCalledWith('nope');
     expect(order).toEqual(['create']);
+  });
+});
+
+describe('createDurableAgent in a Clubhouse Mode project (#2901)', () => {
+  let order: string[];
+  const setFlag = async (on: boolean) => {
+    vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: on } as never);
+    resetManagedFlag();
+    await loadManagedFlag();
+  };
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    order = [];
+    vi.spyOn(window.clubhouse.agent, 'createDurable').mockImplementation(async () => { order.push('create'); return { id: 'a-new', name: 'plain-otter', color: 'emerald' } as never; });
+    vi.spyOn(window.clubhouse.agent, 'updateDurableConfig').mockImplementation(async () => { order.push('override'); });
+    vi.spyOn(window.clubhouse.app, 'getClubhouseModeSettings').mockResolvedValue({ enabled: false, projectOverrides: { '/tmp/ch': true } } as never);
+    useAgentStore.setState({ spawnDurableAgent: vi.fn(async () => { order.push('spawn'); return 'a-new'; }) } as never);
+  });
+
+  it('with the flag on, turns Clubhouse Mode off for the plain agent before its first start', async () => {
+    await setFlag(true);
+    await expect(createDurableAgent(project, input)).resolves.toBe('a-new');
+    expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/tmp/ch', 'a-new', { clubhouseModeOverride: true });
+    expect(order).toEqual(['create', 'override', 'spawn']);
+    resetManagedFlag();
+  });
+
+  it('leaves it alone in a project without Clubhouse Mode, and with the flag off', async () => {
+    await setFlag(true);
+    await createDurableAgent({ id: 'p2', path: '/tmp/other' }, input);
+    await setFlag(false);
+    await createDurableAgent(project, input);
+    expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+    expect(order).toEqual(['create', 'spawn', 'create', 'spawn']);
+    resetManagedFlag();
+  });
+
+  it('removes the agent unstarted when the override can\'t be saved', async () => {
+    await setFlag(true);
+    vi.mocked(window.clubhouse.agent.updateDurableConfig).mockRejectedValue(new Error('disk full'));
+    const del = vi.spyOn(window.clubhouse.agent, 'deleteDurable').mockImplementation(async () => { order.push('delete'); });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onError = vi.fn();
+    await expect(createDurableAgent(project, input, { onError })).resolves.toBeNull();
+    expect(del).toHaveBeenCalledWith('/tmp/ch', 'a-new');
+    expect(onError).toHaveBeenCalledWith("Couldn't turn Clubhouse Mode off for it: disk full");
+    expect(order).toEqual(['create', 'delete']);
+    resetManagedFlag();
   });
 });

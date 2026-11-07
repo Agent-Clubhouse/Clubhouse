@@ -410,20 +410,8 @@ export async function materializeAgent(params: {
   }
 
   // 1. Instructions (project defaults + persona layer)
-  if (defaults.instructions) {
-    const resolved = replaceWildcards(defaults.instructions, ctx);
-    // Auto-append persona only when the template doesn't already use @@Persona,
-    // so users who opt into the wildcard don't get the persona injected twice.
-    const templateUsesPersonaToken = defaults.instructions.includes('@@Persona');
-    if (personaContent && !templateUsesPersonaToken) {
-      await provider.writeInstructions(worktreePath, `${resolved}\n\n${resolvedPersonaContent}`);
-    } else {
-      await provider.writeInstructions(worktreePath, resolved);
-    }
-  } else if (personaContent) {
-    // No project defaults but agent has a persona — write persona instructions alone
-    await provider.writeInstructions(worktreePath, resolvedPersonaContent!);
-  }
+  const instructions = instructionsToWrite(defaults.instructions, personaContent, resolvedPersonaContent, ctx);
+  if (instructions !== null) await provider.writeInstructions(worktreePath, instructions);
 
   // 3. Local overrides own their entire MCP map, even during explicit persona materialization.
   if (defaults.mcpJson && !agent.clubhouseModeOverride) {
@@ -492,6 +480,46 @@ export async function materializeAgent(params: {
   appLog('core:materialization', 'info', `Materialized settings for agent ${agent.name}`, {
     meta: { agentName: agent.name, projectPath },
   });
+}
+
+/**
+ * Step 1 of materializeAgent: the instructions file it writes, or null when it
+ * writes none and leaves the file as it is.
+ */
+function instructionsToWrite(
+  template: string | undefined,
+  personaContent: string | undefined,
+  resolvedPersonaContent: string | undefined,
+  ctx: WildcardContext,
+): string | null {
+  if (template) {
+    const resolved = replaceWildcards(template, ctx);
+    // Auto-append persona only when the template doesn't already use @@Persona,
+    // so users who opt into the wildcard don't get the persona injected twice.
+    const templateUsesPersonaToken = template.includes('@@Persona');
+    return personaContent && !templateUsesPersonaToken ? `${resolved}\n\n${resolvedPersonaContent}` : resolved;
+  }
+  // No project defaults but agent has a persona — write persona instructions alone
+  return personaContent ? resolvedPersonaContent! : null;
+}
+
+/**
+ * The instructions file Clubhouse Mode would write for this agent at its next
+ * wake, wildcards and @@If blocks resolved, or null when it writes none (#2901).
+ * Reads only. Switching a Clubhouse Mode agent to managed keeps this, so one
+ * that never woke doesn't bring over the raw project template.
+ */
+export async function materializedInstructions(projectPath: string, agent: DurableAgentConfig): Promise<string | null> {
+  const defaults = await readProjectAgentDefaults(projectPath);
+  const missionId = resolveMissionId(agent, defaults);
+  const personaId = resolvePersonaId(agent, defaults);
+  const scp = await resolveSourceControlProvider(projectPath, agent);
+  const commands = resolveAgentCommands(agent, defaults);
+  const missionContent = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
+  const personaContent = await resolvePersonaContent(projectPath, personaId);
+  const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
+  const resolvedPersonaContent = personaContent ? replaceWildcards(personaContent, ctx) : undefined;
+  return instructionsToWrite(defaults.instructions, personaContent, resolvedPersonaContent, ctx);
 }
 
 /**

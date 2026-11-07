@@ -28,6 +28,7 @@ import { OtherProjectParentLine } from './helpers/OtherProjectParentLine';
 import { useAgentStatuses } from './agent-status-store';
 import { useChromeStore, syncCollapsedAgentsWithAgents, ensureChromeStateLoaded } from '../../chrome/chromeStore';
 import { ManagedRestartHost } from '../managed/restart';
+import { useManagedFlag } from '../managed/managed-flag';
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
 const EMPTY_AGENTS: Agent[] = [];
@@ -138,6 +139,8 @@ function AgentListInner() {
   const selectCompleted = useQuickAgentStore((s) => s.selectCompleted);
   const [showDialog, setShowDialog] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
+  // With Clubhouse-managed agents on, persona templates aren't offered (#2901).
+  const managedFlag = useManagedFlag();
   const [pendingTemplate, setPendingTemplate] = useState<{ persona: PersonaTemplate; color: string } | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showMissionInput, setShowMissionInput] = useState(false);
@@ -752,8 +755,8 @@ function AgentListInner() {
                   </svg>
                   Quick Agent
                 </button>
-                <div className="border-t border-surface-0/50 my-1" />
-                <button
+                {!managedFlag && <div className="border-t border-surface-0/50 my-1" />}
+                {!managedFlag && <button
                   onClick={() => { setShowDropdown(false); setShowGallery(true); }}
                   className="w-full px-3 py-1.5 text-xs text-left text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer flex items-center gap-2 whitespace-nowrap"
                 >
@@ -764,7 +767,7 @@ function AgentListInner() {
                     <rect x="14" y="14" width="7" height="7" rx="1" />
                   </svg>
                   From Template
-                </button>
+                </button>}
               </div>
             );
           })()}

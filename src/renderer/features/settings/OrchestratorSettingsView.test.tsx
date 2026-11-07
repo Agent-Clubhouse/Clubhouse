@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore } from '../../stores/headlessStore';
@@ -10,6 +10,7 @@ import { OrchestratorSettingsView } from './OrchestratorSettingsView';
 import { loadChatFlag, resetChatFlag } from '../agents/chat/chat-flag';
 import { loadRichChatContentFlag, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
 import { useUIStore } from '../../stores/uiStore';
+import { loadManagedFlag, resetManagedFlag } from '../managed/managed-flag';
 
 // Mock ProjectAgentDefaultsSection to avoid deep component tree
 vi.mock('./ProjectAgentDefaultsSection', () => ({
@@ -823,6 +824,40 @@ describe('OrchestratorSettingsView', () => {
         fireEvent.change(select, { target: { value: 'on' } });
         await waitFor(() => expect(setProjectOverride).toHaveBeenCalledWith('/home/user/my-app', true));
       });
+    });
+  });
+
+  describe('with Clubhouse-managed agents on (#2901)', () => {
+    let flag: ReturnType<typeof vi.spyOn>;
+    beforeEach(async () => {
+      flag = vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
+      resetManagedFlag();
+      await loadManagedFlag();
+      useProjectStore.setState({
+        projects: [{ id: 'proj-1', name: 'my-app', path: '/home/user/my-app' }],
+        updateProject: vi.fn(),
+      });
+    });
+    afterEach(() => {
+      flag.mockRestore();
+      resetManagedFlag();
+    });
+
+    it('offers no Clubhouse Mode switch, wildcards or its source control default app-wide, even with it on', () => {
+      useClubhouseModeStore.setState({ enabled: true });
+      render(<OrchestratorSettingsView />);
+      expect(screen.getByText('Prompt for session name on quit')).toBeInTheDocument();
+      expect(screen.queryByRole('switch', { name: 'Clubhouse Mode' })).not.toBeInTheDocument();
+      expect(screen.queryByText('.clubhouse/clubhouse-mode.md')).not.toBeInTheDocument();
+      expect(screen.queryByText('Default source control provider')).not.toBeInTheDocument();
+    });
+
+    it('offers no Clubhouse Mode choice for a project, and still passes what it is to the defaults', () => {
+      useClubhouseModeStore.setState({ enabled: true });
+      render(<OrchestratorSettingsView projectId="proj-1" />);
+      expect(screen.getByText('Quick agent mode')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Clubhouse Mode')).not.toBeInTheDocument();
+      expect(screen.getByTestId('project-agent-defaults').getAttribute('data-clubhouse-mode')).toBe('true');
     });
   });
 });

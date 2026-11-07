@@ -42,6 +42,7 @@ import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
 import { openDispatcherSettings } from '../../dispatcher/dispatcherNav';
 import { useManagedFlag } from '../../managed/managed-flag';
 import { useManagedSetup } from '../../managed/managedApi';
+import { legacyLine, legacyUse } from '../../managed/legacy';
 import { SetupCard } from './SetupCard';
 
 /**
@@ -208,6 +209,10 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
   const clubhouseOn = useClubhouseModeStore((s) => (projectPath ? s.isEnabledForProject(projectPath) : false));
   const loadClubhouse = useClubhouseModeStore((s) => s.loadSettings);
   useEffect(() => { if (local) void loadClubhouse(); }, [local, loadClubhouse]);
+  // With Clubhouse-managed agents on, Clubhouse Mode isn't offered, and an agent that
+  // still uses it or a persona is offered the switch instead (#2901).
+  const managedFlag = useManagedFlag();
+  const legacy = managedFlag && local && loaded && config && !isDispatcherAgent(agent) ? legacyUse(config, clubhouseOn) : null;
   const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
   const host = remote ? Object.values(satelliteProjects).flat().find((p) => p.id === agent.projectId)?.satelliteName : undefined;
 
@@ -386,7 +391,7 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
       id: 'auto-sleep', label: 'Auto-sleep', editable: 'always' as const,
       render: () => <AutoSleepRow key="auto-sleep" idle={idle} onChange={(next) => update({ idleSleep: next === 'inherit' ? null : next })} />,
     }] : []),
-    ...(local ? [
+    ...(local && !managedFlag ? [
       {
         id: 'clubhouse-mode', label: 'Clubhouse mode', editable: 'sleeping' as const,
         value: !clubhouseOn ? 'Off' : config?.clubhouseModeOverride ? 'Off for this agent' : 'On',
@@ -401,6 +406,8 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
           />
         ) : undefined,
       },
+    ] : []),
+    ...(local ? [
       { id: 'mcp', label: 'MCP servers', editable: 'never' as const, value: readText(mcp, (names) => (names.length === 0 ? 'None' : `${names.length} configured`)) },
       { id: 'instructions', label: 'Instructions', editable: 'never' as const, value: readText(instructions, (text) => instructionsLabel(config?.persona, typeof text === 'string' ? text : null) ?? 'None') },
     ] : []),
@@ -431,6 +438,12 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
       {anyControl && <CardNote><span data-testid="details-settings-next-wake">{NEXT_WAKE_NOTE}</span></CardNote>}
       {remote && agent.kind === 'durable' && (
         <CardNote><span data-testid="details-settings-remote">Change on {host ?? 'the other machine'}</span></CardNote>
+      )}
+      {legacy && (
+        <div className="pr-3.5 pl-[33px] pt-1 pb-1.5 flex items-center gap-2" data-testid="details-settings-legacy">
+          <span className="flex-1 min-w-0 text-xs leading-normal text-ctp-subtext1">{legacyLine(agent.name, legacy)}</span>
+          <Button kind="ghost" onClick={() => openAllSettings(agent.id)} data-testid="details-settings-switch">Switch to managed…</Button>
+        </div>
       )}
       {local && (
         <div className="pr-3.5 pl-[33px] pt-1">

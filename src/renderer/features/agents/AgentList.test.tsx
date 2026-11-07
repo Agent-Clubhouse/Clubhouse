@@ -8,6 +8,7 @@ import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useChromeStore, ensureChromeStateLoaded } from '../../chrome/chromeStore';
 import { AgentList, useProjectAgentBuckets, activityTimestamps } from './AgentList';
+import { loadManagedFlag, resetManagedFlag } from '../managed/managed-flag';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 
 // Mock child components
@@ -187,6 +188,22 @@ describe('AgentList dropdown', () => {
     fireEvent.click(dropdownBtn!);
 
     expect(screen.getByText('From Template')).toBeInTheDocument();
+  });
+
+  it('has no "From Template" with Clubhouse-managed agents on (#2901)', async () => {
+    const spy = vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
+    resetManagedFlag();
+    try {
+      await loadManagedFlag();
+      render(<AgentList />);
+      const dropdownBtn = screen.getAllByRole('button').find((b) => b.textContent === '\u25BE');
+      fireEvent.click(dropdownBtn!);
+      expect(screen.getByText('Quick Agent')).toBeInTheDocument();
+      expect(screen.queryByText('From Template')).not.toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+      resetManagedFlag();
+    }
   });
 
   it('opens AgentGalleryDialog when "From Template" is clicked', () => {

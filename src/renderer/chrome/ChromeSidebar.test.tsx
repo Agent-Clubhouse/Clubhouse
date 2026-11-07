@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
-import { render, screen, fireEvent, within, act, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, within, act, waitFor, cleanup as cleanupRender } from '@testing-library/react';
 
 vi.mock('../panels/AccessoryPanel', async (orig) => ({
   ...(await orig<typeof import('../panels/AccessoryPanel')>()),
@@ -42,6 +42,7 @@ import { useDispatcherSync } from '../features/dispatcher/useDispatcherSync';
 import { DispatcherView } from '../features/dispatcher/DispatcherView';
 import { DISPATCHER_PROJECT_ID, DISPATCHER_OFF, type DispatcherState } from '../../shared/dispatcher-types';
 import type { DurableAgentConfig } from '../../shared/types';
+import { loadManagedFlag, resetManagedFlag } from '../features/managed/managed-flag';
 
 function registerAppPlugin(id: string, label: string, position: 'top' | 'bottom' = 'top') {
   usePluginStore.getState().registerPlugin(
@@ -218,6 +219,26 @@ describe('ChromeSidebar', () => {
       fireEvent.click(screen.getByTestId('chrome-new'));
       fireEvent.click(screen.getByRole('menuitem', { name: /Durable agent/ }));
       expect(useChromeStore.getState().newAgent).toMatchObject({ kind: 'durable' });
+    });
+
+    it('offers Agent from a template only with Clubhouse-managed agents off (#2901)', async () => {
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId('chrome-new'));
+      expect(screen.getByRole('menuitem', { name: /Agent from a template/ })).toBeTruthy();
+      cleanupRender();
+
+      const flag = vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
+      resetManagedFlag();
+      try {
+        await loadManagedFlag();
+        render(<ChromeSidebar />);
+        fireEvent.click(screen.getByTestId('chrome-new'));
+        expect(screen.getByRole('menuitem', { name: /Durable agent/ })).toBeTruthy();
+        expect(screen.queryByRole('menuitem', { name: /Agent from a template/ })).toBeNull();
+      } finally {
+        flag.mockRestore();
+        resetManagedFlag();
+      }
     });
 
     it("shows the New agent shortcut the platform's way", () => {

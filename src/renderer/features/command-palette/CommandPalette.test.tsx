@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, act, createEvent } from '@testing-library/react';
 import { Modal } from '../../components/Modal';
 import { CommandPalette } from './CommandPalette';
 import { useCommandPaletteStore } from '../../stores/commandPaletteStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
+import { loadManagedFlag, resetManagedFlag } from '../managed/managed-flag';
 
 // Ensure platform is available
 if (!(window as any).clubhouse) (window as any).clubhouse = {};
@@ -167,6 +168,30 @@ describe('CommandPalette', () => {
     render(<CommandPalette />);
     const groups = screen.getAllByTestId('command-palette-group').map((g) => g.textContent);
     expect(groups).toContain('Help');
+  });
+
+  it('finds the Clubhouse Mode and persona articles only with Clubhouse-managed agents off (#2901)', async () => {
+    const titles = () => screen.queryAllByRole('option').map((o) => o.textContent ?? '');
+    useCommandPaletteStore.setState({ isOpen: true, query: 'clubhouse mode', mode: 'all' });
+    const { unmount } = render(<CommandPalette />);
+    expect(titles().some((t) => t.includes('Clubhouse Mode'))).toBe(true);
+    act(() => { useCommandPaletteStore.setState({ query: 'researcher' }); });
+    expect(titles().some((t) => t.includes('Agent Personas'))).toBe(true);
+    unmount();
+    act(() => { useCommandPaletteStore.setState({ query: 'clubhouse mode' }); });
+
+    const flag = vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
+    resetManagedFlag();
+    try {
+      await loadManagedFlag();
+      render(<CommandPalette />);
+      expect(titles().some((t) => t.includes('Clubhouse Mode'))).toBe(false);
+      act(() => { useCommandPaletteStore.setState({ query: 'researcher' }); });
+      expect(titles().some((t) => t.includes('Agent Personas'))).toBe(false);
+    } finally {
+      flag.mockRestore();
+      resetManagedFlag();
+    }
   });
 
   it('shows the mode as a label when a prefix is typed', () => {

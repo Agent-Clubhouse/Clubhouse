@@ -492,8 +492,10 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
      * The checks a setup must pass to be saved, without saving it: unknown or
      * deleted part ids are refused, and two skills can't share a folder.
      * Returns the setup as it would be saved (duplicates dropped).
+     * `planned.skillFolders` are skills about to be made for it (a switch to
+     * managed), checked for a folder clash before any is made.
      */
-    async checkSetup(setup: Omit<ManagedAgentSetup, 'version'>): Promise<ManagedAgentSetup> {
+    async checkSetup(setup: Omit<ManagedAgentSetup, 'version'>, planned: { skillFolders?: string[] } = {}): Promise<ManagedAgentSetup> {
       const live = await liveEntries();
       const clean = (ids: string[], kind: ManagedPartKind) => {
         const out: string[] = [];
@@ -516,6 +518,11 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       for (const id of next.skills) {
         const content = await contentOf(live[id]);
         const folder = content.kind === 'skill' ? content.skillName.toLowerCase() : id;
+        if (folders.has(folder)) throw new ManagedError('invalid', `Two skills use the folder name ${folder}. Remove one, or rename a copy.`);
+        folders.add(folder);
+      }
+      for (const name of planned.skillFolders ?? []) {
+        const folder = name.toLowerCase();
         if (folders.has(folder)) throw new ManagedError('invalid', `Two skills use the folder name ${folder}. Remove one, or rename a copy.`);
         folders.add(folder);
       }

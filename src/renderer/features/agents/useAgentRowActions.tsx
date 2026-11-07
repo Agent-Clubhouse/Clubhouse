@@ -317,7 +317,8 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
 
     // Priority 4b: Apply persona / Extract pattern (local durable agents).
     // The Dispatcher's persona is built in and can't be changed (#2533).
-    if (isDurable && !isRemote && !isDispatcher) {
+    // With Clubhouse-managed agents on, personas aren't offered (#2901).
+    if (isDurable && !isRemote && !isDispatcher && !managedFlag) {
       list.push({
         id: 'apply-persona',
         label: 'Apply persona…',
@@ -372,7 +373,7 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
     }
 
     return list;
-  }, [agent.status, agent.kind, isDurable, isRemote, isDispatcher, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeNewSession, handlePopOut, handleSpawnChild, handleSettings, canRestartManaged, handleRestart, handleRestartFresh, handleDelete, handleApplyPersona, handleExtractPersona]);
+  }, [agent.status, agent.kind, isDurable, isRemote, isDispatcher, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeNewSession, handlePopOut, handleSpawnChild, handleSettings, canRestartManaged, handleRestart, handleRestartFresh, handleDelete, handleApplyPersona, handleExtractPersona, managedFlag]);
 
   return actions;
 }

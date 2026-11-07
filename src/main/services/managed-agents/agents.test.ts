@@ -14,7 +14,17 @@ const h = vi.hoisted(() => ({
   service: null as unknown,
   stateDir: '',
   instructions: '',
+  /** Read the instructions file from the worktree, as a real provider does. */
+  instructionsFromDisk: false,
   conventions: { configDir: '.claude', skillsDir: 'skills', mcpConfigFile: '.mcp.json', legacyInstructionsFile: 'CLAUDE.md', settingsFormat: 'json' } as Record<string, string>,
+  /** Clubhouse Mode on for the project. */
+  clubhouseMode: false,
+  /** What Clubhouse Mode would write at the next wake; null when nothing. */
+  materialized: null as string | null,
+  /** The orchestration fields each persona decides, as the persona layer resolves them. */
+  personaPolicy: {} as Record<string, Record<string, unknown>>,
+  /** Calls into orchestration-policy, in order. */
+  policyCalls: [] as string[],
 }));
 
 vi.mock('../agent-config', () => ({
@@ -23,12 +33,32 @@ vi.mock('../agent-config', () => ({
   createDurable: vi.fn(),
   deleteUnregister: vi.fn(),
 }));
-vi.mock('../orchestration-policy', () => ({ setOrchestrationPolicy: vi.fn(async () => ({ ok: true })) }));
+/** A stand-in for the persona layer; orchestration-policy.test covers the real carry. */
+vi.mock('../orchestration-policy', () => ({
+  setOrchestrationPolicy: vi.fn(async () => ({ ok: true })),
+  carryPersonaOrchestration: vi.fn(async (_p: string, id: string) => {
+    h.policyCalls.push('carry');
+    const a = h.agents.get(id)!;
+    const layer = (a.persona && h.personaPolicy[a.persona]) || {};
+    const carried = Object.fromEntries(Object.entries(layer).filter(([k]) => (a.orchestration as Record<string, unknown> | undefined)?.[k] === undefined));
+    const before = a.orchestration && { ...a.orchestration };
+    if (Object.keys(carried).length > 0) a.orchestration = { ...before, ...carried };
+    return { previousPersona: a.persona, before, carried: Object.keys(carried).length > 0 ? carried : undefined };
+  }),
+  restorePersonaOrchestration: vi.fn(async (_p: string, id: string, carry: { before?: DurableAgentConfig['orchestration'] }) => {
+    h.policyCalls.push('restore');
+    const a = h.agents.get(id)!;
+    if (carry.before) a.orchestration = carry.before; else delete a.orchestration;
+  }),
+  reconcileAfterPersonaChange: vi.fn(async () => { h.policyCalls.push('reconcile'); }),
+}));
+vi.mock('../clubhouse-mode-settings', () => ({ isClubhouseModeEnabled: () => h.clubhouseMode }));
+vi.mock('../materialization-service', () => ({ materializedInstructions: vi.fn(async () => h.materialized) }));
 vi.mock('../agent-system', () => ({
   resolveOrchestrator: async () => ({
     id: 'claude-code',
     conventions: h.conventions,
-    readInstructions: async () => h.instructions,
+    readInstructions: async (worktree: string) => (h.instructionsFromDisk ? fs.readFileSync(path.join(worktree, 'CLAUDE.md'), 'utf-8') : h.instructions),
   }),
 }));
 vi.mock('./index', () => ({ managedAgents: () => h.service }));
@@ -43,7 +73,9 @@ import { withSettingsSurface, _resetSettingsAuditForTesting } from '../settings-
 import { createManagedStateStore } from './state-store';
 import { createManagedAgentsService, type ManagedAgentsService } from './service';
 import * as agentConfig from '../agent-config';
-import { convertToManaged, previewConvert, settingsForConvert } from './agents';
+import * as orchestrationPolicy from '../orchestration-policy';
+import { convertToManaged, leftoverWildcards, previewConvert, settingsForConvert } from './agents';
+import { keepInstructionsAtFirstStart } from './before-managed';
 
 const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
 
@@ -65,6 +97,11 @@ beforeEach(async () => {
   _resetSettingsAuditForTesting(false);
   h.stateDir = path.join(root, 'managed');
   h.instructions = '';
+  h.instructionsFromDisk = false;
+  h.clubhouseMode = false;
+  h.materialized = null;
+  h.personaPolicy = {};
+  h.policyCalls = [];
   h.conventions = { configDir: '.claude', skillsDir: 'skills', mcpConfigFile: '.mcp.json', legacyInstructionsFile: 'CLAUDE.md', settingsFormat: 'json' };
   h.agents.clear();
   h.agents.set('ada', { id: 'ada', name: 'ada', color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: wt });
@@ -74,9 +111,16 @@ beforeEach(async () => {
     listProjects: async () => [{ path: '/p', name: 'Project' }],
     listAgents: async () => [...h.agents.values()],
     getAgent: async (_p, id) => h.agents.get(id) ?? null,
+    // As agent-config's setManagedSetup does: a managed agent has no persona or Clubhouse features switch.
     setManagedSetup: async (_p, id, setup: ManagedAgentSetup | null) => {
       const a = h.agents.get(id)!;
-      if (setup) a.managed = setup; else delete a.managed;
+      h.policyCalls.push('save');
+      if (setup) {
+        a.managed = setup;
+        a.mcpOverride = setup.mcps.includes(CLUBHOUSE_MCP_PART_ID);
+        delete a.clubhouseFeatures;
+        delete a.persona;
+      } else delete a.managed;
     },
     isRunning: () => false,
   });
@@ -186,6 +230,154 @@ describe('convertToManaged with keep', () => {
     h.agents.get('ada')!.mcpOverride = false;
     const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
     expect(setup).toMatchObject({ blocks: [], skills: [], mcps: [] });
+  });
+});
+
+describe('convertToManaged for an agent with a persona or Clubhouse Mode (#2901)', () => {
+  it('keeps the instructions in its folder when Clubhouse Mode is off, and drops the persona as setManagedSetup does', async () => {
+    h.instructionsFromDisk = true;
+    write('CLAUDE.md', 'You are ada. Build with npm run build.');
+    write('.claude/skills/ship/SKILL.md', '# Ship\nOpen a PR.');
+    h.agents.set('ada', { ...h.agents.get('ada')!, persona: 'qa' });
+
+    const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
+
+    const block = await user(() => service.getPart(setup.blocks[0]));
+    expect(block.content).toEqual({ kind: 'block', content: 'You are ada. Build with npm run build.' });
+    const skill = await user(() => service.getPart(setup.skills[0]));
+    expect(skill.content).toMatchObject({ kind: 'skill', skillName: 'ship' });
+    expect(h.agents.get('ada')!.managed).toEqual(setup);
+    // Nothing on disk changes until its next start.
+    expect(fs.readFileSync(path.join(wt, 'CLAUDE.md'), 'utf-8')).toBe('You are ada. Build with npm run build.');
+    expect(h.agents.get('ada')!.persona).toBeUndefined();
+    expect(vi.mocked(agentConfig.updateDurableConfig)).not.toHaveBeenCalledWith('/p', 'ada', expect.objectContaining({ clubhouseModeOverride: expect.anything() }));
+  });
+
+  it('an Orchestrator-persona agent with no own orchestration keeps orchestrate: true, and the reconcile runs after the save', async () => {
+    h.personaPolicy = { orchestrator: { orchestrate: true } };
+    h.agents.set('ada', { ...h.agents.get('ada')!, persona: 'orchestrator' });
+    await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    expect(h.agents.get('ada')!.persona).toBeUndefined();
+    expect(h.agents.get('ada')!.orchestration).toEqual({ orchestrate: true });
+    expect(h.policyCalls).toEqual(['carry', 'save', 'reconcile']);
+    expect(orchestrationPolicy.reconcileAfterPersonaChange).toHaveBeenCalledWith('/p', 'ada', 'orchestrator');
+  });
+
+  it('does the same with a template', async () => {
+    h.personaPolicy = { orchestrator: { orchestrate: true } };
+    h.agents.set('ada', { ...h.agents.get('ada')!, persona: 'orchestrator' });
+    const t = await user(() => service.saveTemplate({ name: 'Plain', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: {} }));
+    await user(() => convertToManaged('/p', 'ada', { keep: false, templateId: t.id }));
+    expect(h.agents.get('ada')!.orchestration).toEqual({ orchestrate: true });
+    expect(h.policyCalls).toEqual(['carry', 'save', 'reconcile']);
+  });
+
+  it('builds the block from what Clubhouse Mode would write, for one that never woke, and backs up the raw file', async () => {
+    h.clubhouseMode = true;
+    h.instructionsFromDisk = true;
+    // Never woke: its folder still has the project template.
+    write('CLAUDE.md', 'You are @@AgentName.\n@@If(github)\nOpen a PR.\n@@EndIf\n@@Persona');
+    h.materialized = 'You are ada.\nOpen a PR.\n# QA\nTest everything.';
+    const preview = await user(() => previewConvert('/p', 'ada'));
+    expect(preview.notes).toEqual([]);
+    const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    const block = await user(() => service.getPart(setup.blocks[0]));
+    expect(block.content).toEqual({ kind: 'block', content: 'You are ada.\nOpen a PR.\n# QA\nTest everything.' });
+    expect(fs.readFileSync(path.join(h.stateDir, 'before-managed', 'ada', 'CLAUDE.md'), 'utf-8')).toContain('@@If(github)');
+  });
+
+  it('uses the file for an agent with Clubhouse Mode off for it, or when Clubhouse Mode writes none', async () => {
+    h.clubhouseMode = true;
+    h.instructions = 'Mine.';
+    h.materialized = 'From the project.';
+    h.agents.set('ada', { ...h.agents.get('ada')!, clubhouseModeOverride: true });
+    expect((await user(() => previewConvert('/p', 'ada'))).blocks).toEqual(['ada notes']);
+    let setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    expect((await user(() => service.getPart(setup.blocks[0]))).content).toEqual({ kind: 'block', content: 'Mine.' });
+
+    h.agents.set('bo', { id: 'bo', name: 'bo', color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: wt });
+    h.materialized = null;
+    setup = await user(() => convertToManaged('/p', 'bo', { keep: true }));
+    expect((await user(() => service.getPart(setup.blocks[0]))).content).toEqual({ kind: 'block', content: 'Mine.' });
+  });
+
+  it('lists @@ tokens a managed agent leaves as written', async () => {
+    h.instructions = 'You are @@AgentName on @@StandbyBranch.\n@@If(github)\nPR\n@@EndIf\n@@Mission';
+    const preview = await user(() => previewConvert('/p', 'ada'));
+    expect(preview.notes).toEqual(["Its instructions still have @@If, @@EndIf and @@Mission, which a managed agent doesn't fill in. Edit the block after the switch."]);
+    expect(leftoverWildcards('@@Path @@BuildCommand')).toEqual([]);
+  });
+});
+
+describe('a switch that fails (#2901)', () => {
+  it('checks the setup before making any part, so a skill folder clash leaves nothing behind', async () => {
+    write('.claude/skills/Ship/SKILL.md', '# Ship');
+    write('.claude/skills/ship/SKILL.md', '# ship');
+    // A case-insensitive file system has only one of the two.
+    if (fs.readdirSync(path.join(wt, '.claude', 'skills')).length < 2) return;
+    h.instructions = 'Ship small PRs.';
+    await expect(user(() => convertToManaged('/p', 'ada', { keep: true }))).rejects.toThrow('Two skills use the folder name ship');
+    expect((await user(() => service.listParts('block'))).filter((p) => !p.builtin)).toEqual([]);
+    expect((await user(() => service.listParts('skill'))).filter((p) => !p.builtin)).toEqual([]);
+    expect(h.policyCalls).toEqual([]);
+  });
+
+  it('checkSetup counts the planned skill folders, ignoring case', async () => {
+    await expect(user(() => service.checkSetup({ blocks: [], skills: [], mcps: [] }, { skillFolders: ['Ship', 'ship'] }))).rejects.toThrow('Two skills use the folder name ship');
+    await expect(user(() => service.checkSetup({ blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, { skillFolders: ['ship', 'review'] }))).resolves.toMatchObject({ mcps: [CLUBHOUSE_MCP_PART_ID] });
+  });
+
+  it('removes the parts it made and puts the policy back when the save fails', async () => {
+    seedAgentFiles();
+    h.personaPolicy = { orchestrator: { orchestrate: true } };
+    h.agents.set('ada', { ...h.agents.get('ada')!, persona: 'orchestrator' });
+    const saveSetup = service.saveSetup;
+    service.saveSetup = vi.fn(async () => { throw new Error('disk full'); });
+    try {
+      await expect(user(() => convertToManaged('/p', 'ada', { keep: true }))).rejects.toThrow('disk full');
+    } finally {
+      service.saveSetup = saveSetup;
+    }
+    for (const kind of ['block', 'skill', 'mcp'] as const) {
+      expect((await user(() => service.listParts(kind))).filter((p) => !p.builtin)).toEqual([]);
+    }
+    expect(h.agents.get('ada')!.orchestration).toBeUndefined();
+    expect(h.agents.get('ada')!.managed).toBeUndefined();
+    expect(h.policyCalls).toEqual(['carry', 'restore']);
+    expect(fs.existsSync(path.join(h.stateDir, 'before-managed', 'ada', '.awaiting-first-start'))).toBe(false);
+  });
+});
+
+describe('the first managed start after a switch (#2901)', () => {
+  const provider = () => ({
+    id: 'claude-code',
+    conventions: h.conventions,
+    readInstructions: async (worktree: string) => fs.readFileSync(path.join(worktree, 'CLAUDE.md'), 'utf-8'),
+  }) as never;
+  const dir = () => path.join(h.stateDir, 'before-managed', 'ada');
+
+  it('keeps the instructions a running session changed after the switch, once', async () => {
+    h.instructionsFromDisk = true;
+    write('CLAUDE.md', 'Ship small PRs.');
+    await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    // The session that was running edits the file before it stops.
+    write('CLAUDE.md', 'Ship small PRs. Also: run the linter.');
+    await keepInstructionsAtFirstStart(h.agents.get('ada')!, provider());
+    expect(fs.readFileSync(path.join(dir(), 'CLAUDE.md'), 'utf-8')).toBe('Ship small PRs.');
+    expect(fs.readFileSync(path.join(dir(), 'CLAUDE.first-start.md'), 'utf-8')).toBe('Ship small PRs. Also: run the linter.');
+
+    // Later starts write the managed file and keep nothing more.
+    write('CLAUDE.md', 'Managed.');
+    await keepInstructionsAtFirstStart(h.agents.get('ada')!, provider());
+    expect(fs.readFileSync(path.join(dir(), 'CLAUDE.first-start.md'), 'utf-8')).toBe('Ship small PRs. Also: run the linter.');
+  });
+
+  it('keeps nothing more when the file is as it was at the switch', async () => {
+    h.instructionsFromDisk = true;
+    write('CLAUDE.md', 'Ship small PRs.');
+    await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    await keepInstructionsAtFirstStart(h.agents.get('ada')!, provider());
+    expect(fs.readdirSync(dir())).toEqual(['CLAUDE.md']);
   });
 });
 

@@ -343,6 +343,69 @@ describe('AgentSettingsView', () => {
     });
   });
 
+  describe('legacy configuration with Clubhouse-managed agents (#2901)', () => {
+    const flagOn = () => {
+      resetManagedFlag();
+      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ managedAgents: true });
+    };
+    afterEach(() => resetManagedFlag());
+
+    it('flag off: keeps the persona picker, agent definitions and Clubhouse Mode as today', async () => {
+      useClubhouseModeStore.setState({ enabled: true, isEnabledForProject: () => true });
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ clubhouseModeOverride: true, persona: 'qa' });
+      renderSettings();
+      expect(await screen.findByLabelText('Persona')).toBeInTheDocument();
+      expect(await screen.findByTestId('agent-templates-section')).toBeInTheDocument();
+      expect(screen.getByRole('switch', { name: 'Local overrides' })).toBeInTheDocument();
+      expect(screen.queryByTestId('managed-general-legacy')).not.toBeInTheDocument();
+    });
+
+    it('flag on: hides them, and says the agent uses Clubhouse Mode with the offer to switch', async () => {
+      flagOn();
+      useClubhouseModeStore.setState({ enabled: true, isEnabledForProject: () => true });
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({});
+      renderSettings();
+      expect(await screen.findByTestId('managed-general-legacy')).toHaveTextContent('bold-falcon uses Clubhouse Mode. Switch to managed keeps what it has now.');
+      expect(screen.getByRole('button', { name: 'Switch to managed…' })).toBeInTheDocument();
+      expect(screen.queryByLabelText('Persona')).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Clubhouse Mode' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('switch', { name: 'Local overrides' })).not.toBeInTheDocument();
+      expect(screen.queryByTestId('agent-templates-section')).not.toBeInTheDocument();
+      expect(screen.queryByText('Copy as template')).not.toBeInTheDocument();
+    });
+
+    it('flag on: turns Clubhouse Mode off for this agent from General > Setup, without switching', async () => {
+      flagOn();
+      useClubhouseModeStore.setState({ enabled: true, isEnabledForProject: () => true });
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({});
+      const update = vi.fn().mockResolvedValue(undefined);
+      (window.clubhouse.agent as any).updateDurableConfig = update;
+      renderSettings();
+      const toggle = await screen.findByRole('switch', { name: 'Clubhouse Mode for this agent' });
+      expect(screen.getByTestId('managed-clubhouse-mode')).toHaveTextContent('Turn it off to keep its own files.');
+      fireEvent.click(toggle);
+      await waitFor(() => expect(update).toHaveBeenCalledWith(expect.any(String), expect.any(String), { clubhouseModeOverride: true }));
+      await waitFor(() => expect(screen.queryByTestId('managed-clubhouse-mode')).not.toBeInTheDocument());
+      expect(screen.queryByTestId('managed-general-legacy')).not.toBeInTheDocument();
+    });
+
+    it('flag on: names the persona of an agent outside Clubhouse Mode, and keeps its file editors', async () => {
+      flagOn();
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'qa' });
+      renderSettings();
+      expect(await screen.findByTestId('managed-general-legacy')).toHaveTextContent('bold-falcon uses the Quality Assurance persona.');
+      expect(await screen.findByTestId('skills-section')).toBeInTheDocument();
+      expect(screen.queryByTestId('agent-templates-section')).not.toBeInTheDocument();
+    });
+
+    it('flag on: a plain agent gets the usual Setup text', async () => {
+      flagOn();
+      renderSettings();
+      expect(await screen.findByTestId('managed-general-off')).toHaveTextContent("uses the instructions, skills and MCP config in its folder");
+      expect(screen.queryByTestId('managed-general-legacy')).not.toBeInTheDocument();
+    });
+  });
+
   describe('main agent tab - editable mode', () => {
     it('renders instructions section', async () => {
       renderSettings();
