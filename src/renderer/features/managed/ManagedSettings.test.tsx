@@ -217,10 +217,41 @@ describe('Helpers page with managed agents', () => {
     expect(screen.getByTestId('helper-presets-footer').textContent).toBe('Smart helper selection balances load across your providers. Built-in templates ask orchestrators to use it.');
   });
 
+  it('lets orchestrators choose helper templates only when turned on, off by default (D31)', async () => {
+    vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [template('builtin-template-helper', { name: 'Helper', builtin: true })] });
+    const set = vi.spyOn(m(), 'setHelperTemplateChoice').mockResolvedValue({ ok: true, value: undefined });
+    render(<HelpersSettingsView />);
+    const toggle = await screen.findByRole('switch', { name: 'Let orchestrators choose helper templates' });
+    await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByText('Every helper gets the default helper template. An orchestrator that names another template or changes parts is told to ask you.')).toBeTruthy();
+    // Under the Default helper template select, in the Template section.
+    const select = screen.getByTestId('helpers-default-template');
+    expect(select.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(set).toHaveBeenCalledWith(true));
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByText('An orchestrator can name any template, and add or leave out parts, for one helper. Nothing it picks is saved.')).toBeTruthy();
+  });
+
+  it('puts the toggle back and says why when saving it fails', async () => {
+    vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
+    vi.spyOn(m(), 'getHelperTemplateChoice').mockResolvedValue({ ok: true, value: true });
+    vi.spyOn(m(), 'setHelperTemplateChoice').mockResolvedValue({ ok: false, code: 'failed', message: 'disk full' });
+    render(<HelpersSettingsView />);
+    const toggle = await screen.findByRole('switch', { name: 'Let orchestrators choose helper templates' });
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
+    fireEvent.click(toggle);
+    expect(await screen.findByTestId('helpers-template-choice-error')).toBeTruthy();
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+  });
+
   it('looks as before with the flag off', async () => {
     render(<HelpersSettingsView />);
     expect(await screen.findByRole('heading', { name: 'Presets by difficulty' })).toBeTruthy();
     expect(screen.queryByTestId('helpers-default-template')).toBeNull();
+    expect(screen.queryByRole('switch', { name: 'Let orchestrators choose helper templates' })).toBeNull();
     expect(screen.queryByTestId('helper-presets-footer')).toBeNull();
   });
 });

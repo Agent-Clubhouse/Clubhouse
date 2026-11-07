@@ -126,6 +126,8 @@ export function registerManagedAgentsHandlers(): void {
   ));
   ipcMain.handle(IPC.MANAGED.GET_DEFAULT_HELPER_TEMPLATE, withValidatedArgs([], () => result(() => s().defaultHelperTemplateId())));
   ipcMain.handle(IPC.MANAGED.SET_DEFAULT_HELPER_TEMPLATE, withValidatedArgs([idArg()], (_e, id) => result(() => s().setDefaultHelperTemplateId(id))));
+  ipcMain.handle(IPC.MANAGED.GET_HELPER_TEMPLATE_CHOICE, withValidatedArgs([], () => result(() => s().helperTemplateChoice())));
+  ipcMain.handle(IPC.MANAGED.SET_HELPER_TEMPLATE_CHOICE, withValidatedArgs([booleanArg()], (_e, on) => result(() => s().setHelperTemplateChoice(on))));
 
   ipcMain.handle(IPC.MANAGED.CREATE_AGENT, withValidatedArgs(
     [stringArg(), objectArg<{ name: string; color: string; templateId?: string; setup?: { blocks: string[]; skills: string[]; mcps: string[] }; settings?: ManagedTemplateSettings }>({ validate: (v) => {

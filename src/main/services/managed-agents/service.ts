@@ -10,7 +10,8 @@
  */
 import { canonicalHash } from '../asset-catalog/planner';
 import { AssetCatalogError, installBuiltinAsset, type AssetCatalogStore } from '../asset-catalog/store';
-import { withSettingsSurface } from '../settings-audit';
+import { auditChanged, auditChanges, withSettingsSurface } from '../settings-audit';
+import { appLog } from '../log-service';
 import type { AssetPayload, BlockAssetPayload, CatalogEntry, McpAssetPayload, SkillAssetPayload } from '../../../shared/asset-catalog-types';
 import type { DurableAgentConfig } from '../../../shared/types';
 import {
@@ -127,6 +128,31 @@ function mapCatalogError(err: unknown): never {
     if (code === 'asset_in_use') throw new ManagedError('in_use');
   }
   throw err;
+}
+
+/**
+ * A settings-audit row for a library write (#2671, D13). Only the key and the
+ * id: never a name, description, instruction text or MCP value. Who asked comes
+ * from the surface the call runs under. The write has happened by now, so a
+ * record that can't be written is logged and never fails it.
+ */
+async function auditManaged(key: string, targetId?: string): Promise<void> {
+  try {
+    await auditChanged('app', key, targetId);
+  } catch (err) {
+    // telemetry-exempt: the change it describes has happened, and the log says the record is missing
+    appLog('core:managed', 'warn', 'Could not record a managed agents write', { meta: { key, error: err instanceof Error ? err.message : String(err) } });
+  }
+}
+
+/** An app-wide managed setting, with its old and new value when the value is one to keep. */
+async function auditManagedSetting(key: string, before: unknown, after: unknown): Promise<void> {
+  try {
+    await auditChanges('app', 'managed', undefined, { [key]: before }, { [key]: after }, { [key]: 'value' });
+  } catch (err) {
+    // telemetry-exempt: the change it describes has happened, and the log says the record is missing
+    appLog('core:managed', 'warn', 'Could not record a managed setting change', { meta: { key, error: err instanceof Error ? err.message : String(err) } });
+  }
 }
 
 export function createManagedAgentsService(deps: ManagedAgentsDeps) {
@@ -283,6 +309,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       await state.update((s) => {
         s.parts[entry.id] = { ...(input.description?.trim() && { description: input.description.trim() }), ...(input.actor && { updatedBy: input.actor }) };
       });
+      await auditManaged('managed.part.created', entry.id);
       changed();
       return summarize(entry);
     },
@@ -324,6 +351,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         else delete meta.updatedBy;
         s.parts[entry.id] = meta;
       });
+      await auditManaged('managed.part.updated', entry.id);
       changed();
       return summarize(entry);
     },
@@ -359,6 +387,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       await state.update((s) => {
         s.parts[copy.id] = { ...(description && { description }), forkedFrom: entry.id, ...(input.actor && { updatedBy: input.actor }) };
       });
+      await auditManaged('managed.part.created', copy.id);
       if (agent && input.agent) {
         await writeAgentSetup(input.agent.projectPath, input.agent.agentId, replaceIn(agent.managed!, entry.id, copy.id));
       }
@@ -407,6 +436,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
           const name = await uniqueName(entry.kind as ManagedPartKind, `${entry.name}, ${agent.name}`);
           const copy = await catalog.createAsset({ kind: entry.kind, name, payload: contentToPayload(content) });
           await state.update((s) => { s.parts[copy.id] = { ...(description && { description }) }; });
+          await auditManaged('managed.part.created', copy.id);
           await writeAgentSetup(projectPath, agent.id, replaceIn(setup, entry.id, copy.id));
         } else {
           await writeAgentSetup(projectPath, agent.id, replaceIn(setup, entry.id, null));
@@ -418,6 +448,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         }
         delete s.parts[entry.id];
       });
+      await auditManaged('managed.part.deleted', entry.id);
       changed();
     },
 
@@ -514,6 +545,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         s.templates[id] = t;
         return t;
       });
+      await auditManaged('managed.template.saved', template.id);
       changed();
       return template;
     },
@@ -525,6 +557,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         delete s.templates[id];
         if (s.defaultHelperTemplateId === id) delete s.defaultHelperTemplateId;
       });
+      await auditManaged('managed.template.deleted', id);
       changed();
     },
 
@@ -609,6 +642,8 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
           if (t) s.templates[id] = { ...t, setup: { ...next.setup }, settings: { ...next.settings }, updatedAt: new Date().toISOString() };
         });
       }
+      // Each agent's own setup change is recorded where agent configs are written.
+      await auditManaged('managed.template.pushed', id);
       changed();
       return settingsOut;
     },
@@ -622,10 +657,28 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
 
     async setDefaultHelperTemplateId(id: string): Promise<void> {
       await api.getTemplate(id);
+      const before = await api.defaultHelperTemplateId();
       await state.update((s) => {
         if (id === DEFAULT_HELPER_TEMPLATE_ID) delete s.defaultHelperTemplateId;
         else s.defaultHelperTemplateId = id;
       });
+      await auditManagedSetting('defaultHelperTemplate', before, id);
+      changed();
+    },
+
+    /** Whether orchestrators may name a template, or add and remove parts, for a helper (#2899). Off by default. */
+    async helperTemplateChoice(): Promise<boolean> {
+      return (await state.read()).helperTemplateChoice === true;
+    },
+
+    async setHelperTemplateChoice(on: boolean): Promise<void> {
+      const before = await state.update((s) => {
+        const was = s.helperTemplateChoice === true;
+        if (on) s.helperTemplateChoice = true;
+        else delete s.helperTemplateChoice;
+        return was;
+      });
+      await auditManagedSetting('helperTemplateChoice', before, on);
       changed();
     },
 

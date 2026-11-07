@@ -3080,6 +3080,7 @@ async function setManagedSetupInner(projectPath: string, agentId: string, setup:
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) throw new Error('Agent not found');
+  const managedBefore = managedAuditFields(agent);
   if (setup) {
     agent.managed = { version: 1, blocks: [...setup.blocks], skills: [...setup.skills], mcps: [...setup.mcps], ...(setup.templateId ? { templateId: setup.templateId } : {}) };
     // A managed agent's Clubhouse MCP bridge follows its Clubhouse MCP part.
@@ -3090,6 +3091,37 @@ async function setManagedSetupInner(projectPath: string, agentId: string, setup:
     delete agent.managed;
   }
   await writeAgents(projectPath, agents);
+  await auditChanges('agent', 'agent', agentId, managedBefore, managedAuditFields(agent), MANAGED_AUDIT_CATALOG);
+}
+
+/**
+ * A managed setup in the settings audit (D13): whether the agent is managed,
+ * the template it came from and its bridge switch as values; the part lists
+ * only as changed. Part ids say nothing secret, but a list isn't a value to keep.
+ */
+const MANAGED_AUDIT_CATALOG: Readonly<Record<string, AuditKeyFormat>> = {
+  managed: 'value',
+  'managed.templateId': 'value',
+  'managed.blocks': 'changed',
+  'managed.skills': 'changed',
+  'managed.mcps': 'changed',
+  // Managing an agent sets its bridge switch and clears these two.
+  mcpOverride: 'value',
+  clubhouseFeatures: 'value',
+  persona: 'value',
+};
+
+function managedAuditFields(agent: DurableAgentConfig): Record<string, unknown> {
+  return {
+    managed: !!agent.managed,
+    'managed.templateId': agent.managed?.templateId,
+    'managed.blocks': agent.managed?.blocks,
+    'managed.skills': agent.managed?.skills,
+    'managed.mcps': agent.managed?.mcps,
+    mcpOverride: agent.mcpOverride,
+    clubhouseFeatures: agent.clubhouseFeatures,
+    persona: agent.persona,
+  };
 }
 
 /** Unmanaged agents (#2893): false turns off Clubhouse hooks and the MCP bridge. */
@@ -3099,6 +3131,7 @@ async function setClubhouseFeaturesInner(projectPath: string, agentId: string, o
   if (!agent) throw new Error('Agent not found');
   // A managed agent's bridge follows its Clubhouse MCP part instead.
   if (agent.managed) throw new Error('Clubhouse features are part of a managed agent\'s setup');
+  const before = { clubhouseFeatures: agent.clubhouseFeatures, mcpOverride: agent.mcpOverride };
   if (on) {
     delete agent.clubhouseFeatures;
     if (agent.mcpOverride === false) delete agent.mcpOverride;
@@ -3107,6 +3140,7 @@ async function setClubhouseFeaturesInner(projectPath: string, agentId: string, o
     agent.mcpOverride = false;
   }
   await writeAgents(projectPath, agents);
+  await auditChanges('agent', 'agent', agentId, before, { clubhouseFeatures: agent.clubhouseFeatures, mcpOverride: agent.mcpOverride }, { clubhouseFeatures: 'value', mcpOverride: 'value' });
 }
 
 /** What start_helper keeps on a helper (#2227). null clears a field; undefined leaves it. */

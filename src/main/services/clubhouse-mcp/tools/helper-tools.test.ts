@@ -253,7 +253,7 @@ import { _resetHelperRoutingForTesting } from '../../helper-routing';
 import { reservationSummary } from '../../helper-auto-state';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
 import { managedAgents } from '../../managed-agents';
-import { HELPER_KEEPS_CLUBHOUSE_PART } from '../../managed-agents/helpers';
+import { HELPER_KEEPS_CLUBHOUSE_PART, HELPER_TEMPLATE_CHOICE_OFF } from '../../managed-agents/helpers';
 import { withSettingsSurface } from '../../settings-audit';
 import { CLUBHOUSE_MCP_PART_ID } from '../../../../shared/managed-agents-types';
 
@@ -555,8 +555,35 @@ describe('start_helper', () => {
 
 describe('start_helper with Clubhouse-managed agents (#2899)', () => {
   beforeAll(async () => { await managedAgents().ensureBuiltins(); });
-  beforeEach(() => { managedFlags.value = { managedAgents: true }; });
-  afterEach(() => { managedFlags.value = {}; });
+  // The template arguments below need "Let orchestrators choose helper templates" (D31); off is tested on its own.
+  beforeEach(async () => {
+    managedFlags.value = { managedAgents: true };
+    await withSettingsSurface('ui', undefined, () => managedAgents().setHelperTemplateChoice(true));
+  });
+  afterEach(async () => {
+    managedFlags.value = {};
+    await withSettingsSurface('ui', undefined, () => managedAgents().setHelperTemplateChoice(false));
+  });
+
+  it('with the choice off, refuses another template or part changes and points to Settings, creating nothing', async () => {
+    await withSettingsSurface('ui', undefined, () => managedAgents().setHelperTemplateChoice(false));
+    for (const args of [{ template: 'builtin-template-quality-assurance' }, { addParts: [CLUBHOUSE_MCP_PART_ID] }, { removeParts: ['builtin-block-clubhouse-basics'] }]) {
+      const result = await callTool('orch', 'start_helper', { name: 'off', task: 't', ...args });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toBe(`Could not start helper "off": ${HELPER_TEMPLATE_CHOICE_OFF}`);
+    }
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('with the choice off, still starts a helper from the default template', async () => {
+    await withSettingsSurface('ui', undefined, () => managedAgents().setHelperTemplateChoice(false));
+    controllableCreation();
+    const result = await callTool('orch', 'start_helper', { name: 'plain', task: 't' });
+    expect(result.isError).toBeFalsy();
+    const [, , options] = mockStartDurableCreation.mock.calls[0];
+    await options.inject(agents.get('helper_plain'));
+    expect(agents.get('helper_plain')!.managed).toMatchObject({ templateId: 'builtin-template-helper' });
+  });
 
   it('builds the helper from the default template in a required inject step, with no persona anywhere', async () => {
     controllableCreation();
