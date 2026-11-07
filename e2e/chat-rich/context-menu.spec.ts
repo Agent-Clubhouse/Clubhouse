@@ -29,7 +29,8 @@ test('native copy menu preserves rich link, image and selection content', async 
   const app = chat.electronApp;
   const page = chat.window;
   const dom = chatDom(page);
-  let primaryFailed = false;
+  let cleanupFailed = false;
+  let cleanupError: unknown;
   try {
     await chat.send('Show the copy fixtures.');
     await expect(dom.turnFooters).toHaveCount(1, { timeout: TURN_TIMEOUT });
@@ -148,8 +149,6 @@ test('native copy menu preserves rich link, image and selection content', async 
     expect(await app.evaluate(() => (globalThis as ProbeGlobal).__copyMenuProbe!.externalAttempts)).toBe(0);
     await chat.expectScriptComplete();
     await page.screenshot({ path: test.info().outputPath('copy-content.png') });
-  } catch (error) {
-    primaryFailed = true; throw error;
   } finally {
     // Clear only the disposable runner's clipboard, never a user's clipboard.
     // Keep close in finally even if observer cleanup fails.
@@ -162,6 +161,9 @@ test('native copy menu preserves rich link, image and selection content', async 
         await clipboard.clear();
       });
       } finally { await chat.close(); }
-    } catch (cleanupError) { if (!primaryFailed) throw cleanupError; }
+    } catch (error) { cleanupFailed = true; cleanupError = error; }
   }
+  // A body failure propagates through finally unchanged. Only a successful
+  // body reaches this point, where a cleanup failure must still fail the test.
+  if (cleanupFailed) throw cleanupError;
 });
