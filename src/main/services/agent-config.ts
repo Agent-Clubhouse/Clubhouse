@@ -8,7 +8,7 @@ import { createHash, randomUUID } from 'crypto';
 import { app } from 'electron';
 import { DurableAgentConfig, DurableConfigUpdates, OrchestratorId, SessionInfo, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry, HelperCascadeResult, HelperDeleteChoice, HelperDisposeBlock, HelperDisposeChecks, HelperHandoff, HelperHandoffHow, HELPER_HANDOFF_HOWS } from '../../shared/types';
 import type { DurableAgentCreation, DurableCreationEvent, DurableCreationStage, DurableWorktreeOptions, StartDurableCreationParams } from '../../shared/types';
-import { isDisposedAgent, parentLinkError } from '../../shared/agent-helpers';
+import { isDisposedAgent, isEffortValue, parentLinkError } from '../../shared/agent-helpers';
 import { appLog } from './log-service';
 import { forgetAutoHelper } from './helper-auto-state';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
@@ -1235,6 +1235,8 @@ const AGENT_AUDIT_KEYS: Record<keyof DurableConfigUpdates, AuditKeyFormat | 'boo
   freeAgentMode: 'value',
   runtimeMode: 'value',
   idleSleep: 'value',
+  effort: 'value',
+  helperTemplateId: 'value',
   mission: 'value',
   sourceControlProvider: 'value',
   // These can hold commands, env or credentials, so never their values.
@@ -1250,8 +1252,6 @@ const AGENT_AUDIT_KEYS: Record<keyof DurableConfigUpdates, AuditKeyFormat | 'boo
 
 const AGENT_AUDIT_CATALOG: Readonly<Record<string, AuditKeyFormat>> = {
   ...Object.fromEntries(Object.entries(AGENT_AUDIT_KEYS).filter((e): e is [string, AuditKeyFormat] => e[1] !== 'bookkeeping')),
-  // Cleared by a change of model or CLI, not set through here.
-  effort: 'value',
 };
 
 /** updateDurable's fields: a name or an emoji says nothing about behaviour, and a name is free text. */
@@ -1268,6 +1268,14 @@ async function updateDurableConfigInner(
   updates: DurableConfigUpdates,
   beforeCommit?: () => void | Promise<void>,
 ): Promise<void> {
+  // Checked before anything changes, so a bad value never half-applies.
+  if (updates.effort !== undefined && updates.effort !== null && !isEffortValue(updates.effort)) {
+    throw new Error('effort must be an effort level such as low, medium or high');
+  }
+  if (updates.helperTemplateId !== undefined && updates.helperTemplateId !== null
+    && (typeof updates.helperTemplateId !== 'string' || updates.helperTemplateId.length > 128)) {
+    throw new Error('helperTemplateId must be a template id');
+  }
   const preflight = await preflightContextWindow(projectPath, agentId, updates);
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
@@ -1312,6 +1320,17 @@ async function updateDurableConfigInner(
       delete agent.effort;
       delete agent.routing;
     }
+  }
+  // After the CLI and model, which clear it: a level set with a new model is for that model.
+  if (updates.effort === null) {
+    delete agent.effort;
+  } else if (updates.effort !== undefined) {
+    agent.effort = updates.effort;
+  }
+  if (updates.helperTemplateId === null || updates.helperTemplateId === '') {
+    delete agent.helperTemplateId;
+  } else if (updates.helperTemplateId !== undefined) {
+    agent.helperTemplateId = updates.helperTemplateId;
   }
   if (updates.contextWindow === null) {
     delete agent.contextWindow;
@@ -1427,7 +1446,7 @@ async function updateDurableConfigInner(
   }
   if (updates.orchestrator !== undefined) noteProviderSelection(agentId, updates.orchestrator);
   // A managed agent's setup-changed bar compares these with what its session started on.
-  if (agent.managed && (updates.orchestrator !== undefined || updates.model !== undefined || updates.freeAgentMode !== undefined)) noteManagedSettingsChanged();
+  if (agent.managed && (updates.orchestrator !== undefined || updates.model !== undefined || updates.freeAgentMode !== undefined || updates.effort !== undefined)) noteManagedSettingsChanged();
   await auditChanges('agent', 'agent', agentId, auditBefore, pickAudited(agent, AGENT_AUDIT_CATALOG), AGENT_AUDIT_CATALOG);
   // A running chat session picks the new timeout up now.
   if (updates.idleSleep !== undefined) setAgentIdleSleep(agentId, agent.idleSleep);

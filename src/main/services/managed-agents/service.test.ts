@@ -616,6 +616,69 @@ describe('managed helpers (#2899)', () => {
   });
 });
 
+describe('template settings beyond parts (#2898)', () => {
+  it('Save as template captures effort, auto-sleep and the helper template', async () => {
+    const a = agent('a', { blocks: [BUILTIN_BLOCK_IDS.identity] });
+    Object.assign(a, { orchestrator: 'claude-code', model: 'opus', effort: 'high', idleSleep: 30, helperTemplateId: 'builtin-template-quality-assurance', orchestration: { orchestrate: true, maxHelpers: 4 } });
+    const saved = await user(() => service.templateFromAgent('/p', 'a', 'Lead'));
+    expect(saved.settings).toEqual({
+      orchestrator: 'claude-code', model: 'opus', effort: 'high', idleSleep: 30,
+      helperTemplateId: 'builtin-template-quality-assurance', orchestration: { orchestrate: true, maxHelpers: 4 },
+    });
+  });
+
+  it('keeps only settings a template can hold: no null and no bad values', async () => {
+    const t = await user(() => service.saveTemplate({
+      name: 'Loose', description: '', setup: { blocks: [], skills: [], mcps: [] },
+      settings: { effort: null, idleSleep: null, helperTemplateId: null, model: 'opus' },
+    }));
+    expect(t.settings).toEqual({ model: 'opus' });
+    const bad = await user(() => service.saveTemplate({
+      name: 'Bad', description: '', setup: { blocks: [], skills: [], mcps: [] },
+      settings: { effort: 'NOT A LEVEL', idleSleep: -5 as number, helperTemplateId: '' },
+    }));
+    expect(bad.settings).toEqual({});
+    const ok = await user(() => service.saveTemplate({
+      name: 'Kept', description: '', setup: { blocks: [], skills: [], mcps: [] },
+      settings: { effort: 'low', idleSleep: 'never', helperTemplateId: 'builtin-template-helper' },
+    }));
+    expect(ok.settings).toEqual({ effort: 'low', idleSleep: 'never', helperTemplateId: 'builtin-template-helper' });
+  });
+
+  it('lists setting changes for the push dialog, with helper templates by name, and counts what still applies', async () => {
+    const t = await user(() => service.saveTemplate({
+      name: 'Lead', description: '', setup: { blocks: [], skills: [], mcps: [] },
+      settings: { orchestration: { orchestrate: true, maxHelpers: 5 }, effort: 'high' },
+    }));
+    const a = agent('a', { templateId: t.id });
+    Object.assign(a, { orchestration: { orchestrate: true, maxHelpers: 5 }, effort: 'high' });
+    const b = agent('b', { templateId: t.id });
+    Object.assign(b, { orchestration: { orchestrate: true, maxHelpers: 3 }, helperTemplateId: 'builtin-template-quality-assurance', idleSleep: 15 });
+    const next = {
+      setup: { blocks: [], skills: [], mcps: [] },
+      settings: { orchestration: { orchestrate: true, maxHelpers: 3 }, helperTemplateId: 'builtin-template-quality-assurance', idleSleep: 15 },
+    };
+    const preview = await user(() => service.previewTemplatePush(t.id, next));
+    expect(preview.changes).toEqual([
+      { kind: 'setting', key: 'effort', from: 'high', to: 'CLI default' },
+      { kind: 'setting', key: 'orchestration.maxHelpers', from: '5', to: '3' },
+      { kind: 'setting', key: 'idleSleep', from: 'app default', to: '15 min' },
+      { kind: 'setting', key: 'helperTemplateId', from: 'app default', to: 'Quality Assurance' },
+    ]);
+    // b already has three of the four; a has none of them.
+    expect(preview.targets.find((x) => x.agentId === 'a')).toMatchObject({ applicable: 4, total: 4 });
+    expect(preview.targets.find((x) => x.agentId === 'b')).toMatchObject({ applicable: 0, total: 4 });
+
+    const results = await user(() => service.pushTemplate(t.id, next, [{ projectPath: '/p', agentId: 'a' }, { projectPath: '/p', agentId: 'b' }]));
+    // What a template no longer sets goes back to the default: null clears it.
+    expect(results.find((r) => r.agentId === 'a')!.settings).toEqual({
+      effort: null, orchestration: { maxHelpers: 3 }, idleSleep: 15, helperTemplateId: 'builtin-template-quality-assurance',
+    });
+    expect(results.find((r) => r.agentId === 'b')!.changed).toBe(false);
+    expect((await user(() => service.getTemplate(t.id))).settings).toEqual(next.settings);
+  });
+});
+
 describe('letting orchestrators choose helper templates (D31)', () => {
   it('is off by default and kept in managed state', async () => {
     expect(await service.helperTemplateChoice()).toBe(false);
@@ -637,6 +700,20 @@ describe('letting orchestrators choose helper templates (D31)', () => {
       await expect(user(() => managedHelperSetup(service, args))).rejects.toThrow(HELPER_TEMPLATE_CHOICE_OFF);
     }
     expect(HELPER_TEMPLATE_CHOICE_OFF).toContain('Settings › Managed agents › Helpers');
+  });
+
+  it('uses the orchestrator\'s own helper template, falling back to the app default when it is gone (#2895)', async () => {
+    const { managedHelperSetup, helperTemplateFor, HELPER_TEMPLATE_CHOICE_OFF } = await import('./helpers');
+    // Choice off: the person set it, so it is no choice, and naming it or the app default passes.
+    expect((await user(() => managedHelperSetup(service, {}, 'builtin-template-quality-assurance'))).templateId).toBe('builtin-template-quality-assurance');
+    expect((await user(() => managedHelperSetup(service, { template: 'builtin-template-quality-assurance' }, 'builtin-template-quality-assurance'))).templateId).toBe('builtin-template-quality-assurance');
+    expect((await user(() => managedHelperSetup(service, { template: 'builtin-template-helper' }, 'builtin-template-quality-assurance'))).templateId).toBe('builtin-template-helper');
+    await expect(user(() => managedHelperSetup(service, { template: 'builtin-template-orchestrator' }, 'builtin-template-quality-assurance'))).rejects.toThrow(HELPER_TEMPLATE_CHOICE_OFF);
+    const t = await user(() => service.saveTemplate({ name: 'Gone soon', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: {} }));
+    expect(await helperTemplateFor(service, t.id)).toEqual({ templateId: t.id, appDefault: 'builtin-template-helper' });
+    await user(() => service.deleteTemplate(t.id));
+    expect(await helperTemplateFor(service, t.id)).toEqual({ templateId: 'builtin-template-helper', appDefault: 'builtin-template-helper' });
+    expect((await user(() => managedHelperSetup(service, {}, t.id))).templateId).toBe('builtin-template-helper');
   });
 
   it('off, follows the default the person picked', async () => {

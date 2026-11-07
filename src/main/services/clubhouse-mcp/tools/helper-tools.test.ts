@@ -548,6 +548,37 @@ describe('start_helper with Clubhouse-managed agents (#2899)', () => {
     expect(agents.get('helper_plain')!.managed).toMatchObject({ templateId: 'builtin-template-helper' });
   });
 
+  it('with no template named, uses the orchestrator\'s own helper template, even with the choice off (#2895)', async () => {
+    await withSettingsSurface('ui', undefined, () => managedAgents().setHelperTemplateChoice(false));
+    agents.set('orch', { ...agents.get('orch')!, helperTemplateId: 'builtin-template-quality-assurance' });
+    controllableCreation();
+    const result = await callTool('orch', 'start_helper', { name: 'own', task: 't' });
+    expect(result.isError).toBeFalsy();
+    const [, , options] = mockStartDurableCreation.mock.calls[0];
+    await options.inject(agents.get('helper_own'));
+    expect(agents.get('helper_own')!.managed).toMatchObject({ templateId: 'builtin-template-quality-assurance' });
+  });
+
+  it('falls back to the app\'s default helper template when the orchestrator\'s is gone (#2895)', async () => {
+    agents.set('orch', { ...agents.get('orch')!, helperTemplateId: 'template-deleted' });
+    controllableCreation();
+    const result = await callTool('orch', 'start_helper', { name: 'fallback', task: 't' });
+    expect(result.isError).toBeFalsy();
+    const [, , options] = mockStartDurableCreation.mock.calls[0];
+    await options.inject(agents.get('helper_fallback'));
+    expect(agents.get('helper_fallback')!.managed).toMatchObject({ templateId: 'builtin-template-helper' });
+  });
+
+  it('a template start_helper names wins over the orchestrator\'s own (#2895)', async () => {
+    agents.set('orch', { ...agents.get('orch')!, helperTemplateId: 'builtin-template-quality-assurance' });
+    controllableCreation();
+    const result = await callTool('orch', 'start_helper', { name: 'named', task: 't', template: 'builtin-template-developer-no-merge' });
+    expect(result.isError).toBeFalsy();
+    const [, , options] = mockStartDurableCreation.mock.calls[0];
+    await options.inject(agents.get('helper_named'));
+    expect(agents.get('helper_named')!.managed).toMatchObject({ templateId: 'builtin-template-developer-no-merge' });
+  });
+
   it('builds the helper from the default template in a required inject step, with no persona anywhere', async () => {
     controllableCreation();
     const result = await callTool('orch', 'start_helper', { name: 'm', task: 't', persona: 'workhorse' });
