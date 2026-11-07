@@ -65,15 +65,15 @@ Only the keys below ever come out. Each is read by name from its source, never b
 | --- | --- |
 | `agent.identity` | `name`, `color`, `emoji`, `has_image` |
 | `agent.cli` | `orchestrator`, `model`, `runtime` |
-| `agent.persona` | `persona` (always null), `mission` (id) |
+| `agent.persona` | `persona` (always null), `mission` (always null) |
 | `agent.access` | `free_agent_mode`, `permission_mode` |
-| `agent.mcp` | `clubhouse_mcp`, `clubhouse_bridge`, `clubhouse_mode`, `mcp_ids` (ids) |
+| `agent.mcp` | `clubhouse_mcp`, `clubhouse_bridge`, `clubhouse_mode` (always null), `mcp_ids` (ids) |
 | `agent.idle` | `idle_sleep` |
 | `agent.orchestration` | `orchestrate`, `access`, `control`, `max_helpers`, `cross_project_helpers`, `connect_to_dispatcher`, `auto_helpers` |
 | `project.identity` | `name`, `display_name`, `color`, `emoji`, `has_image` |
-| `project.defaults` | `orchestrator`, `persona` (always null), `mission`, `free_agent_mode`, `profile_id`, `source_control_provider`, `default_mcps` |
-| `project.modes` | `clubhouse_mode`, `mcp`, `permission_mode` |
-| `app.defaults` | `idle_timeout_minutes`, `chat_enabled`, `provider_runtime`, `mcp_enabled`, `clubhouse_mode_enabled`, `permission_mode`, `global_helper_cap`, `enabled_orchestrators` |
+| `project.defaults` | `orchestrator`, `persona` (always null), `mission` (always null), `free_agent_mode`, `profile_id`, `source_control_provider`, `default_mcps` |
+| `project.modes` | `clubhouse_mode` (always null), `mcp`, `permission_mode` |
+| `app.defaults` | `idle_timeout_minutes`, `chat_enabled`, `provider_runtime`, `mcp_enabled`, `clubhouse_mode_enabled` (always null), `permission_mode`, `global_helper_cap`, `enabled_orchestrators` |
 | `app.system` | `dispatcher_enabled`, `experimental_chat`, `experimental_copilot_sdk`, `experimental_copilot_legacy_acp`, `annex_server_enabled`, `annex_client_enabled` |
 
 `app.defaults` is open to every agent because those values feed its own effective settings.
@@ -85,15 +85,15 @@ Only the keys below ever come out. Each is read by name from its source, never b
 - **Session and work data:** session ids and history, `pendingTask`, handoff notes.
 - **Editor, Goobers and security settings.** Nothing an agent needs to explain its own behavior. `allowLocalFileWebviews` lives behind the IPC layer, which this service shouldn't import.
 
-`mission` is an id, the basename of `.clubhouse/missions/<id>.md`, and its text is never read. It isn't validated when written, so a hand-edited `agents.json` could put any string there.
-
 Personas were retired (#2901). `agent.persona.persona` and `project.defaults.persona` stay in the allowlist so a reader's keys don't vanish, but they always read `stored: null`, `effective: null`, `source: default`, whatever an old config still holds. Only the switch to managed reads a saved persona id.
+
+Clubhouse Mode was retired too, in step 4 of #2901, and with it missions, which only Clubhouse Mode filled `@@Mission` with. `agent.mcp.clubhouse_mode`, `project.modes.clubhouse_mode`, `app.defaults.clubhouse_mode_enabled`, `agent.persona.mission` and `project.defaults.mission` read the same way. Only the switch to managed reads the saved Clubhouse Mode settings and mission id. Clubhouse Mode no longer turns MCP on: the startup pass made the MCP settings explicit where it did (D63), so `mcp_enabled` and the MCP keys follow the MCP settings alone.
 
 ## Values and sources
 
 Each value has `effective` and `source`, and `stored` with `detail`.
 
-- `effective` comes from the resolvers the app itself uses: `buildAgentSettings`, `resolveOrchestrationPolicies`, `resolveMcpEnabled`, `resolveMissionId` and so on. For an awake agent it's what the agent runs with now, and for a sleeping one it's what the next start uses.
+- `effective` comes from the resolvers the app itself uses: `buildAgentSettings`, `resolveOrchestrationPolicies`, `resolveMcpEnabled` and so on. For an awake agent it's what the agent runs with now, and for a sleeping one it's what the next start uses.
 - `stored` is what is saved at the level the key belongs to, or `null`.
 - `applies: false` marks a setting with no effect on this target. Only chat agents idle-sleep, so `idle_sleep` on a terminal agent has it.
 - `reason` is there when a value is derived off, and `stored` is what comes back when that clears. See [Derived off](#derived-off).
@@ -129,7 +129,7 @@ Turning something off never rewrites what depends on it. The dependent value rea
 | `orchestrate`, `cross_project_helpers`, `connect_to_dispatcher`, `auto_helpers` | `mcp_off` | Clubhouse MCP is off for this agent. `source` is the level that turned it off. |
 | `connect_to_dispatcher` | `dispatcher_off` | MCP is on for this agent, and the Dispatcher's own switch is off. |
 | `connect_to_dispatcher` | `mcp_off` | MCP is on for this agent through its own setting, and off at app level, so there's no Dispatcher to connect to. |
-| `dispatcher_enabled` | `mcp_off` | Clubhouse MCP is off at app level: `mcp_enabled` false and the global Clubhouse mode off. A project or agent override doesn't keep it on. |
+| `dispatcher_enabled` | `mcp_off` | Clubhouse MCP is off at app level: `mcp_enabled` false. A project or agent override doesn't keep it on. |
 | `dispatcher_enabled` | `switch_off` | Its switch is saved off. |
 | `dispatcher_enabled` | `classic_layout` | Nothing is saved and this session runs the classic layout. `source` is `default`. A saved `true` stays on there. |
 | `dispatcher_enabled` | `experimental_off` | Nothing is saved on its switch, and `experimental-settings.json` has `dispatcher: false` from before the flag was removed. |
@@ -146,7 +146,7 @@ Turning MCP off stops no agent, and the bridge keeps running until a restart. It
 
 | Caller | Tool list | New calls |
 | --- | --- | --- |
-| MCP on: its own override, its project's, the app's or Clubhouse mode | Everything it had | Everything it had |
+| MCP on: its own override, its project's or the app's | Everything it had | Everything it had |
 | MCP off | Empty | All refused with `mcp_off`: orchestration, cross-project, Dispatcher, wires of every kind, group projects, browser, plugin, `call_wire_tool` and global tools |
 | A helper with MCP off | `message_parent` | `message_parent` only |
 | The Dispatcher with MCP off at app level | Empty | All refused. Its own override and project overrides don't count. It stays running and stoppable. |

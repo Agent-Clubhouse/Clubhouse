@@ -38,7 +38,7 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 - `agent.stop`: `{agentId}`; stops agent process, including a start in progress.
 - `agent.spawn`: `{projectId, prompt, model?, orchestrator?}`; quick agent under registered project with ask-first permission mode.
 - `agent.create`: `{projectId, name, color, orchestrator?, model?, persona? (a value is refused), freeAgentMode?, useWorktree?, mcpIds?, branchName?, branchFrom?, folderName?, orchestration?}`; durable agent, as the desktop New agent page makes one. See [Durable agents](#durable-agents).
-- `agent.update`: `{agentId, name?, color?, emoji?, orchestrator?, model?, runtime?, persona? (a value is refused, `null` is a no-op), clubhouseMode?, freeAgentMode?, idleSleep?, contextWindow?, orchestration?}`; at least one setting. See [Durable agents](#durable-agents).
+- `agent.update`: `{agentId, name?, color?, emoji?, orchestrator?, model?, runtime?, persona? (a value is refused, `null` is a no-op), clubhouseMode? (refused), freeAgentMode?, idleSleep?, contextWindow?, orchestration?}`; at least one setting. See [Durable agents](#durable-agents).
 - `project.setPinned`: `{projectId, pinned}`; pin or unpin a project in the desktop sidebar. See [Project state](#project-state).
 - `project.setInactive`: `{projectId, inactive}`; mark a project inactive (idle until marked active) or active. See [Project state](#project-state).
 - `quick.dismiss`: `{projectId, agentId}`; dismiss one finished quick agent. See [Finished quick agents](#finished-quick-agents).
@@ -620,7 +620,7 @@ The snapshot (via `snapshot:refresh`) shows the agent, then its creation ending 
 
 ### Settings
 
-We chose a route rather than snapshot fields. The settings need disk and CLI reads: model lists, CLI availability, the Clubhouse mode state. The snapshot is rebuilt on every refresh for every client, and an agent's settings change rarely.
+We chose a route rather than snapshot fields. The settings need disk and CLI reads: model lists and CLI availability. The snapshot is rebuilt on every refresh for every client, and an agent's settings change rarely.
 
 `GET /api/v1/mobile/agents/:agentId/settings` (404 `agent_not_found`; durable agents only):
 
@@ -636,7 +636,7 @@ We chose a route rather than snapshot fields. The settings need disk and CLI rea
   "model":{"value":"default","editable":"sleeping"},
   "runtime":{"value":"default"|"chat"|"terminal","resolved":"chat"|"terminal","editable":"sleeping"|"never"},
   "persona":{"value":null,"editable":"never"},
-  "clubhouseMode":{"value":true|false|null,"projectEnabled":true,"editable":"sleeping"|"never"},
+  "clubhouseMode":{"value":null,"projectEnabled":false,"editable":"never"},
   "freeAgentMode":{"value":false,"editable":"sleeping"|"never"},
   "idleSleep":{"value":"inherit"|"never"|30,"minutes":30,"source":"agent"|"app","applies":true,"editable":"always"}},
  "orchestration":{…},
@@ -664,7 +664,7 @@ Field notes:
 
 - **orchestrator**: `value` null means the project default. `resolved` is what it runs on. `changeStartsNewSession` is true when the agent has a saved session that a new CLI can't resume. Warn before sending the change, as the desktop does: "<Agent> starts a new session on <CLI> the next time it wakes. Its current conversation can't move to another CLI." Older desktops omit the field.
 - **runtime**: `resolved` is the runtime the agent runs in now (awake), or the one its next wake uses (asleep). It is `never` when chat isn't available for the agent's CLI.
-- **clubhouseMode**: `true` means Clubhouse mode manages the agent. `false` means it keeps local overrides. `null` with `never` means the project isn't in Clubhouse mode. `projectEnabled` is always the project's setting. A Clubhouse-managed agent never uses Clubhouse mode, so it reads `false` with `never` in a Clubhouse mode project.
+- **clubhouseMode**: always `null` with `never`, and `projectEnabled` always `false`. Clubhouse Mode was retired (#2901); the keys stay for phones that read them.
 - **persona**: always `null` with `never`. Personas were retired (#2901); the key stays for phones that read it.
 - **idleSleep**: `minutes` and `source` are the resolved timeout, where 0 means never. An inherited value follows the app's chat idle timeout (`options.idleSleep.appMinutes`). Desktop copy: "After 30 min idle" / "Never", summary "Sleeps after 30 min" / "Never sleeps". Only chat agents idle-sleep (`applies`), but the value is kept either way.
 - **freeAgentMode**: `sleeping` when the agent's orchestrator has permission support, else `never` (the Settings card's Access row: "Free agent" / "Ask before edits").
@@ -681,8 +681,7 @@ Send only what changed:
 - **model**: `"default"` clears it.
 - **contextWindow**: a `choices[].id`, or `null` to clear it. See [Context choice](#context-choice).
 - **runtime**: `default`, `chat` or `terminal`. `chat` and `terminal` need chat to be available (409 `runtime_unavailable`).
-- **clubhouseMode**: boolean. Needs a Clubhouse mode project (409 `clubhouse_mode_unavailable`).
-- Every agent refuses a **persona** value, and a Clubhouse-managed agent refuses **clubhouseMode**, with 409 `managed_agent` and a sentence in the receipt's message. Nothing in the command is saved. `persona: null` changes nothing, so it is accepted, also while the agent runs, and the rest of the command applies.
+- Every agent refuses a **persona** value and any **clubhouseMode**, with 409 `managed_agent` and a sentence in the receipt's message. Nothing in the command is saved. `persona: null` changes nothing, so it is accepted, also while the agent runs, and the rest of the command applies.
 - **freeAgentMode**: boolean. `true` needs an orchestrator with permission support (409 `free_agent_mode_unavailable`).
 - **idleSleep**: `"inherit"`, `"never"`, or one of `options.idleSleep.minutes`.
 - **orchestration**: a partial policy, or `null` to clear every override ([Orchestration](#orchestration)). It changes at any time, also while the agent runs, and is written first: a refused policy change saves nothing else.

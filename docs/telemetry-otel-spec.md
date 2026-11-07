@@ -275,7 +275,7 @@ c.agent.create            (durable only; root)
 c.agent.spawn             (root; ends when process launched)
   ├─ c.provider.resolve
   ├─ c.provider.check_availability   [binary lookup tier, cache hit]
-  ├─ c.agent.materialize             (durable + Clubhouse Mode)
+  ├─ c.agent.materialize             (managed setup or quick-agent template)
   ├─ c.agent.prepare_pty             (PTY only; 3 parallel children)
   │    ├─ c.hooks.configure
   │    ├─ c.mcp.inject
@@ -301,7 +301,7 @@ Quick agents have no main-process create step. The renderer `spawnQuickAgent` (`
 #### Spawn (`agent-system.ts:98`)
 
 - **Boundaries:** `spawnAgent` entry to the process launched (after `AGENT_AWOKE`), or the throw. Recorded with `tel.flow` around the whole function; the children are `tel.step`s.
-- **Children:** `c.provider.resolve`, `c.provider.check_availability`, `c.agent.materialize` (Clubhouse Mode, non-fatal), then for PTY `c.agent.prepare_pty` with its three parallel children (`c.hooks.configure`, `c.mcp.inject`, `c.provider.build_command`) and `c.pty.spawn`, or `c.headless.spawn` for headless. `c.chat.start` covers a chat start from the moment a driver and CLI are found (`tryStartChatAgent`'s `onStarting`) to started, fallen back or cancelled; a fallback to the terminal is `error.type = chat_start_failed`, a cancel is outcome `cancelled`, and spawns that were never chat record no chat span. Its attributes (#2304): `c.chat.start.result` (`chat`, `fallback` for chat on a lower driver, `terminal`, `cancelled`, `failed`), `c.chat.start.reason` (a closed set), the driver it ended on, `c.chat.drivers_tried`, `c.chat.check_ms`, `c.chat.session_start_ms`, `c.chat.cli_version.status`, `c.agent.resume`, `c.chat.resume_honored` and, for ACP, `c.chat.resume.load_ms` / `.first_reply_ms`. Each driver a start leaves, and a chat agent sent to the terminal before any driver was checked (no driver, binary missing), is a `c.chat.fallback` event (Standard) with the driver, `c.chat.fallback.to` (`driver` or `terminal`), the reason and a registered `error.type`; the reason's text stays in the local log. Turns and the rest of chat come from the chat event bus (§9.1). `provider.check_availability` matters most: it can run a **synchronous `execFileSync(shell -ilc which)` for up to 5 s on the main thread** (`orchestrators/shared.ts:100`), and Codex also runs `codex --version` on every spawn. The lookup tier is recorded on every lookup as `c.provider.binary_lookup.duration` (§4.4 metrics), not on the span.
+- **Children:** `c.provider.resolve`, `c.provider.check_availability`, `c.agent.materialize` (a managed agent's setup delivery, non-fatal; a quick agent's template, which fails the start), then for PTY `c.agent.prepare_pty` with its three parallel children (`c.hooks.configure`, `c.mcp.inject`, `c.provider.build_command`) and `c.pty.spawn`, or `c.headless.spawn` for headless. `c.chat.start` covers a chat start from the moment a driver and CLI are found (`tryStartChatAgent`'s `onStarting`) to started, fallen back or cancelled; a fallback to the terminal is `error.type = chat_start_failed`, a cancel is outcome `cancelled`, and spawns that were never chat record no chat span. Its attributes (#2304): `c.chat.start.result` (`chat`, `fallback` for chat on a lower driver, `terminal`, `cancelled`, `failed`), `c.chat.start.reason` (a closed set), the driver it ended on, `c.chat.drivers_tried`, `c.chat.check_ms`, `c.chat.session_start_ms`, `c.chat.cli_version.status`, `c.agent.resume`, `c.chat.resume_honored` and, for ACP, `c.chat.resume.load_ms` / `.first_reply_ms`. Each driver a start leaves, and a chat agent sent to the terminal before any driver was checked (no driver, binary missing), is a `c.chat.fallback` event (Standard) with the driver, `c.chat.fallback.to` (`driver` or `terminal`), the reason and a registered `error.type`; the reason's text stays in the local log. Turns and the rest of chat come from the chat event bus (§9.1). `provider.check_availability` matters most: it can run a **synchronous `execFileSync(shell -ilc which)` for up to 5 s on the main thread** (`orchestrators/shared.ts:100`), and Codex also runs `codex --version` on every spawn. The lookup tier is recorded on every lookup as `c.provider.binary_lookup.duration` (§4.4 metrics), not on the span.
 - **Attributes:**
   - `c.agent.kind` (`durable`/`quick`/`companion`)
   - `c.orchestrator` (`claude-code`/`codex-cli`/`copilot-cli`/`other`)
@@ -309,7 +309,7 @@ Quick agents have no main-process create step. The renderer `spawnQuickAgent` (`
   - `c.chat.driver` (`claude_agent_sdk`/`claude_stream_json`/`codex_app_server`/`copilot_acp`/`acp` for other ACP agents, later `copilot_sdk`), from chat's capability record, added by the chat telemetry work (§9.1). Claude chat is designed to default to the Agent SDK, with raw `-p` stream-json as a second mode.
   - `c.agent.resume` (bool)
   - `c.model.family` (bucketed from the model string: `opus`/`sonnet`/`haiku`/`gpt-5`/`default`/`other`; the raw model is never sent)
-  - `c.clubhouse_mode`, `c.mcp.enabled`, `c.hooks.enabled`, `c.profile.active`, `c.wrapper.applied` (all bool; each only once the spawn reached the step that decides it)
+  - `c.mcp.enabled`, `c.hooks.enabled`, `c.profile.active`, `c.wrapper.applied` (all bool; each only once the spawn reached the step that decides it)
   - Not recorded: `c.agent.runtime.reason` (the fallback decision is implicit in the runtime) and per-agent hashed IDs on spawn spans.
 - **`error.type`:** `orchestrator_unknown`, `preflight_failed` (CLI missing or unauthenticated), `cwd_invalid`, `pty_spawn_failed` (or, when the spawn error names one, its errno: `ENOENT`, `EACCES`, `EPERM`, `ENOTDIR`, `EISDIR`, `EMFILE`, `ENOSPC`; #2306), `headless_no_pid` (the span ends `error` though the call returns), `chat_start_failed`; `materialize_failed` on the non-fatal child only. Errors are typed with `tagError` / `withErrorType` at the throw site (§6.5); anything untagged is `unknown`.
 - **Metrics:** `c.agent.spawns` (counter: kind, orchestrator, runtime, outcome, `error.type`) and `c.agent.spawn.duration` (histogram, s, successful spawns only).
@@ -761,7 +761,7 @@ Explicitly **not set**: `host.name`, `os.description`, `process.command_args`, `
 | Counts | `c.projects.count`, `c.projects.git.count`, `c.projects.remote.count`, `c.agents.durable.count`, `c.profiles.count` |
 | Orchestrators | `c.orchestrators.used` (sorted CSV from the enum) |
 | Theme | `c.theme.kind`, `c.theme.builtin_id` |
-| Feature flags | `c.clubhouse_mode`, `c.headless.enabled`, `c.mcp.enabled`, `c.annex.server`, `c.annex.client`, `c.annex.satellites.count` |
+| Feature flags | `c.headless.enabled`, `c.mcp.enabled`, `c.annex.server`, `c.annex.client`, `c.annex.satellites.count` |
 | Experimental | `c.experimental.*` (known keys only: `goobers`, `themeGradients`, plus chat's flag once it exists) |
 | Plugins | `c.plugins.builtin_enabled` (CSV of built-in IDs), `c.plugins.community.count`, `c.marketplace.custom.count`, `c.plugins.external_enabled` |
 | Logging | `c.logging.enabled`, `c.logging.min_level` |
