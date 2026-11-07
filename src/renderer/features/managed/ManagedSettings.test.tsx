@@ -83,6 +83,17 @@ describe('Agent parts library page', () => {
     expect(within(detail).getByRole('button', { name: 'Make your copy of Core' })).toBeTruthy();
   });
 
+  it('says to set env values a part was stored with in the environment (D46)', async () => {
+    const mcp = part('old', { kind: 'mcp', name: 'Old server', usedBy: [consumer('ada'), consumer('scout')], droppedEnvValues: ['MODE'] });
+    vi.spyOn(m(), 'listParts').mockResolvedValue({ ok: true, value: [mcp] });
+    vi.spyOn(m(), 'getPart').mockResolvedValue({ ok: true, value: { ...mcp, content: { kind: 'mcp', serverKey: 'old', transport: 'stdio', command: 'old', envVars: ['MODE'] } } });
+    render(<PartLibraryView kind="mcp" />);
+    const [row] = await screen.findAllByTestId('managed-library-row');
+    fireEvent.click(within(row).getByRole('button', { expanded: false }));
+    const detail = screen.getByTestId('managed-part-detail');
+    expect(within(detail).getByTestId('managed-part-dropped-env').textContent).toBe('Set MODE in your environment. Clubhouse no longer stores this value.');
+  });
+
   it('deletes a part in use with the chosen outcome', async () => {
     vi.spyOn(m(), 'listParts').mockResolvedValue({ ok: true, value: parts });
     vi.spyOn(m(), 'getPart').mockResolvedValue({ ok: true, value: { ...parts[0], content: { kind: 'block', content: 'x' } } });

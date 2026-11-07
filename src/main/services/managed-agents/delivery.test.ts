@@ -14,7 +14,17 @@ import { withSettingsSurface, _resetSettingsAuditForTesting } from '../settings-
 import { createManagedStateStore } from './state-store';
 import { createManagedAgentsService, type ManagedAgentsService } from './service';
 import { BUILTIN_BLOCK_IDS } from './builtins';
-import { deliverManagedSetup, parentInstructionFiles, previewManagedSetup, quickManagedLaunch, resolveManagedMcpServers } from './delivery';
+import { appLog } from '../log-service';
+import {
+  deliverManagedSetup,
+  EXCLUDES_MANIFEST,
+  isSameFolder,
+  parentInstructionFiles,
+  previewManagedSetup,
+  quickManagedLaunch,
+  removeManagedClaudeExcludes,
+  resolveManagedMcpServers,
+} from './delivery';
 import type { OrchestratorProvider } from '../../orchestrators/types';
 
 const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
@@ -259,6 +269,23 @@ describe('exactly its parts (#2819)', () => {
     expect(json).toEqual({ mcpServers: { old: { command: 'old', env_vars: ['MODE'] } } });
   });
 
+  it('says which stored env values are no longer used, in Preview and once in the log, by name only (D46)', async () => {
+    const catalog = createAssetCatalogStore({ dir: path.join(root, 'catalog') });
+    const old = await user(() => catalog.createAsset({ kind: 'mcp', name: 'Old', payload: { serverKey: 'old', transport: 'stdio', command: 'old', env: { MODE: 'fast-secretish' } } }));
+    const clean = await user(() => service.createPart({ name: 'Clean', content: { kind: 'mcp', serverKey: 'clean', transport: 'stdio', command: 'c', envVars: ['REGION'] } }));
+    agent.managed = { version: 1, blocks: [], skills: [], mcps: [old.id, clean.id] };
+    vi.mocked(appLog).mockClear();
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    const logged = vi.mocked(appLog).mock.calls.filter(([, , msg]) => /no longer uses/.test(String(msg)));
+    expect(logged).toHaveLength(1);
+    expect(logged[0][3]).toEqual({ meta: { agentId: 'a1', names: ['MODE'] } });
+    expect(JSON.stringify(vi.mocked(appLog).mock.calls)).not.toContain('fast-secretish');
+    const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(preview.mcps.find((m) => m.id === old.id)!.droppedEnvValues).toEqual(['MODE']);
+    expect(preview.mcps.find((m) => m.id === clean.id)!.droppedEnvValues).toBeUndefined();
+    expect(JSON.stringify(preview)).not.toContain('fast-secretish');
+  });
+
   it('tells Claude Code not to read CLAUDE.md files above the worktree, keeping the local settings it has (D49)', async () => {
     const wt = agent.worktreePath!;
     fs.writeFileSync(path.join(project, 'CLAUDE.md'), '# project');
@@ -320,5 +347,207 @@ describe('exactly its parts (#2819)', () => {
     const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: copilot }));
     expect(preview.alsoRead).toEqual(['.claude/rules/style.md', 'AGENTS.md']);
     expect(preview.notRead).toBeUndefined();
+  });
+});
+
+/** A folder link that works without admin rights on Windows too. */
+function linkDir(target: string, link: string) {
+  fs.symlinkSync(target, link, 'junction');
+}
+
+describe('skill folders Clubhouse must not move (D48)', () => {
+  const backupRoot = () => path.join(root, 'backup');
+  const backedUp = () => (fs.existsSync(backupRoot()) ? fs.readdirSync(backupRoot()) : []);
+  async function mineSkill() {
+    const mine = await user(() => service.createPart({ name: 'Mine', content: { kind: 'skill', skillName: 'mine', files: [{ path: 'SKILL.md', content: '# mine' }] } }));
+    agent.managed = { version: 1, blocks: [], skills: [mine.id], mcps: [] };
+  }
+
+  it('moves nothing when the skills folder is a link to somewhere outside, and Preview lists the folders', async () => {
+    const outside = path.join(root, 'shared-skills');
+    fs.mkdirSync(path.join(outside, 'theirs'), { recursive: true });
+    fs.writeFileSync(path.join(outside, 'theirs', 'SKILL.md'), '# theirs');
+    fs.mkdirSync(path.join(agent.worktreePath!, '.claude'), { recursive: true });
+    linkDir(outside, path.join(agent.worktreePath!, '.claude', 'skills'));
+    await mineSkill();
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot: backupRoot() }));
+    expect(fs.readFileSync(path.join(outside, 'theirs', 'SKILL.md'), 'utf-8')).toBe('# theirs');
+    expect(backedUp()).toEqual([]);
+    const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(preview.keptSkills).toEqual(['.claude/skills/theirs']);
+    expect(preview.keptSkillsReason).toBe('link');
+    expect(preview.repoSkills).toBeUndefined();
+  });
+
+  it('moves nothing when .claude itself is a link, and refuses to move a clashing folder out of it', async () => {
+    const outside = path.join(root, 'shared-claude');
+    fs.mkdirSync(path.join(outside, 'skills', 'theirs'), { recursive: true });
+    fs.writeFileSync(path.join(outside, 'skills', 'theirs', 'SKILL.md'), '# theirs');
+    linkDir(outside, path.join(agent.worktreePath!, '.claude'));
+    await mineSkill();
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot: backupRoot() }));
+    expect(fs.readFileSync(path.join(outside, 'skills', 'theirs', 'SKILL.md'), 'utf-8')).toBe('# theirs');
+    expect(backedUp()).toEqual([]);
+    const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(preview.keptSkills).toEqual(['.claude/skills/theirs']);
+    // A folder in the way of a managed skill isn't moved out of a linked folder either.
+    const clash = await user(() => service.createPart({ name: 'Theirs', content: { kind: 'skill', skillName: 'theirs', files: [{ path: 'SKILL.md', content: '# managed' }] } }));
+    agent.managed = { version: 1, blocks: [], skills: [clash.id], mcps: [] };
+    await expect(user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot: backupRoot() }))).rejects.toThrow(/link/);
+    expect(fs.readFileSync(path.join(outside, 'skills', 'theirs', 'SKILL.md'), 'utf-8')).toBe('# theirs');
+  });
+
+  it('treats a submodule folder as tracked: git lists it with no trailing slash', async () => {
+    const wt = agent.worktreePath!;
+    git(wt, 'init', '-q');
+    fs.mkdirSync(path.join(wt, '.claude', 'skills', 'vendored'), { recursive: true });
+    fs.writeFileSync(path.join(wt, '.claude', 'skills', 'vendored', 'SKILL.md'), '# vendored');
+    // A gitlink entry, as `git submodule add` records it.
+    git(wt, 'update-index', '--add', '--cacheinfo', '160000,0123456789abcdef0123456789abcdef01234567,.claude/skills/vendored');
+    await mineSkill();
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot: backupRoot() }));
+    expect(fs.existsSync(path.join(wt, '.claude', 'skills', 'vendored', 'SKILL.md'))).toBe(true);
+    expect(backedUp()).toEqual([]);
+    const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(preview.repoSkills).toEqual(['.claude/skills/vendored']);
+  });
+
+  it('moves nothing when git fails for a reason other than "not a git repository", logging the code only', async () => {
+    const wt = agent.worktreePath!;
+    fs.writeFileSync(path.join(wt, '.git'), 'not a gitfile');
+    fs.mkdirSync(path.join(wt, '.claude', 'skills', 'maybe-tracked'), { recursive: true });
+    await mineSkill();
+    vi.mocked(appLog).mockClear();
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot: backupRoot() }));
+    expect(fs.existsSync(path.join(wt, '.claude', 'skills', 'maybe-tracked'))).toBe(true);
+    expect(backedUp()).toEqual([]);
+    const warned = vi.mocked(appLog).mock.calls.find(([, level, msg]) => level === 'warn' && /git could not list/.test(String(msg)));
+    expect(warned?.[3]).toEqual({ meta: { code: '128' } });
+    const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(preview.keptSkills).toEqual(['.claude/skills/maybe-tracked']);
+    expect(preview.keptSkillsReason).toBe('git');
+  });
+
+  it('moves nothing when git is missing', async () => {
+    fs.mkdirSync(path.join(agent.worktreePath!, '.claude', 'skills', 'maybe-tracked'), { recursive: true });
+    await mineSkill();
+    const savedPath = process.env.PATH;
+    process.env.PATH = '';
+    try {
+      await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot: backupRoot() }));
+    } finally {
+      process.env.PATH = savedPath;
+    }
+    expect(fs.existsSync(path.join(agent.worktreePath!, '.claude', 'skills', 'maybe-tracked'))).toBe(true);
+    expect(backedUp()).toEqual([]);
+  });
+
+  it('still moves untracked folders out when the agent folder is not a git checkout', async () => {
+    fs.mkdirSync(path.join(agent.worktreePath!, '.claude', 'skills', 'stray'), { recursive: true });
+    await mineSkill();
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot: backupRoot() }));
+    expect(fs.existsSync(path.join(agent.worktreePath!, '.claude', 'skills', 'stray'))).toBe(false);
+    expect(backedUp().some((n) => n.startsWith('stray-'))).toBe(true);
+  });
+});
+
+describe('the claudeMdExcludes entries Clubhouse adds (D49)', () => {
+  const fwd = (p: string) => p.replace(/\\/g, '/');
+  const settingsFile = () => path.join(agent.worktreePath!, '.claude', 'settings.local.json');
+  const readSettings = () => JSON.parse(fs.readFileSync(settingsFile(), 'utf-8'));
+  const manifestFile = () => path.join(agent.worktreePath!, EXCLUDES_MANIFEST);
+  const deliver = (p = provider()) => user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: p }));
+  /** Clubhouse's entries inside this test's folder; the machine may have CLAUDE.md files above it too. */
+  const ours = (entries: string[]) => entries.filter((e) => e.startsWith(fwd(root)));
+
+  beforeEach(() => {
+    agent.managed = { version: 1, blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [] };
+  });
+
+  it('replaces exactly the entries it added at each start and never touches the person\'s', async () => {
+    const projectMd = fwd(path.join(project, 'CLAUDE.md'));
+    const localMd = fwd(path.join(project, '.clubhouse', 'CLAUDE.local.md'));
+    fs.writeFileSync(path.join(project, 'CLAUDE.md'), '# project');
+    fs.writeFileSync(path.join(project, '.clubhouse', 'CLAUDE.local.md'), '# local');
+    fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
+    // The person excluded the project CLAUDE.md themselves before Clubhouse did.
+    fs.writeFileSync(settingsFile(), JSON.stringify({ hooks: { Stop: [] }, claudeMdExcludes: ['/elsewhere/CLAUDE.md', projectMd] }));
+    await deliver();
+    expect(ours(readSettings().claudeMdExcludes)).toEqual([projectMd, localMd]);
+    const manifest = JSON.parse(fs.readFileSync(manifestFile(), 'utf-8'));
+    expect(manifest.settingsFile).toBe('.claude/settings.local.json');
+    expect(ours(manifest.entries)).toEqual([localMd]);
+    // The local file goes away: its entry comes out at the next start, the person's stay.
+    fs.rmSync(path.join(project, '.clubhouse', 'CLAUDE.local.md'));
+    await deliver();
+    expect(readSettings().claudeMdExcludes.slice(0, 2)).toEqual(['/elsewhere/CLAUDE.md', projectMd]);
+    expect(ours(readSettings().claudeMdExcludes)).toEqual([projectMd]);
+    expect(readSettings().hooks).toEqual({ Stop: [] });
+  });
+
+  it('removes its entries and the manifest on unmanage, keeping the rest of the settings', async () => {
+    fs.writeFileSync(path.join(project, 'CLAUDE.md'), '# project');
+    fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
+    fs.writeFileSync(settingsFile(), JSON.stringify({ hooks: { Stop: [] }, claudeMdExcludes: ['/elsewhere/CLAUDE.md'] }));
+    await deliver();
+    expect(ours(readSettings().claudeMdExcludes)).toContain(fwd(path.join(project, 'CLAUDE.md')));
+    await removeManagedClaudeExcludes(agent.worktreePath!);
+    expect(readSettings()).toEqual({ hooks: { Stop: [] }, claudeMdExcludes: ['/elsewhere/CLAUDE.md'] });
+    expect(fs.existsSync(manifestFile())).toBe(false);
+  });
+
+  it('removes a settings file it created once nothing else is in it', async () => {
+    fs.writeFileSync(path.join(project, 'CLAUDE.md'), '# project');
+    await deliver();
+    expect(fs.existsSync(settingsFile())).toBe(true);
+    await removeManagedClaudeExcludes(agent.worktreePath!);
+    expect(fs.existsSync(settingsFile())).toBe(false);
+    expect(fs.existsSync(manifestFile())).toBe(false);
+  });
+
+  it('keeps a settings file it created once the person adds to it', async () => {
+    fs.writeFileSync(path.join(project, 'CLAUDE.md'), '# project');
+    await deliver();
+    fs.writeFileSync(settingsFile(), JSON.stringify({ ...readSettings(), model: 'opus' }));
+    await removeManagedClaudeExcludes(agent.worktreePath!);
+    expect(readSettings()).toEqual({ model: 'opus' });
+  });
+
+  it('takes its entries out when the agent starts on a CLI that does not read them', async () => {
+    fs.writeFileSync(path.join(project, 'CLAUDE.md'), '# project');
+    fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
+    fs.writeFileSync(settingsFile(), JSON.stringify({ claudeMdExcludes: ['/elsewhere/CLAUDE.md'] }));
+    await deliver();
+    await deliver(provider({ configDir: '.github', mcpConfigFile: '.github/mcp.json', legacyInstructionsFile: 'copilot-instructions.md' }, 'copilot-cli'));
+    expect(readSettings()).toEqual({ claudeMdExcludes: ['/elsewhere/CLAUDE.md'] });
+    expect(fs.existsSync(manifestFile())).toBe(false);
+  });
+
+  it('leaves an unreadable settings file and its manifest alone on unmanage', async () => {
+    fs.writeFileSync(path.join(project, 'CLAUDE.md'), '# project');
+    await deliver();
+    fs.writeFileSync(settingsFile(), '{ broken');
+    await removeManagedClaudeExcludes(agent.worktreePath!);
+    expect(fs.readFileSync(settingsFile(), 'utf-8')).toBe('{ broken');
+    expect(fs.existsSync(manifestFile())).toBe(true);
+  });
+});
+
+describe('isSameFolder', () => {
+  it('compares folders after resolving links', async () => {
+    const real = path.join(root, 'home-real');
+    const link = path.join(root, 'home-link');
+    fs.mkdirSync(real);
+    linkDir(real, link);
+    expect(await isSameFolder(link, real)).toBe(true);
+    expect(await isSameFolder(path.join(real, '.'), real)).toBe(true);
+    expect(await isSameFolder(real, project)).toBe(false);
+  });
+
+  it('ignores case only on Windows', async () => {
+    const a = path.join(root, 'Missing', 'Home');
+    const b = path.join(root, 'missing', 'home');
+    expect(await isSameFolder(a, b, 'win32')).toBe(true);
+    expect(await isSameFolder(a, b, 'linux')).toBe(false);
   });
 });

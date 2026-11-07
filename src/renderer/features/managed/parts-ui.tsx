@@ -42,3 +42,15 @@ export function CheckIcon() {
     </svg>
   );
 }
+
+/** What to do about env values an MCP part was stored with, which Clubhouse no longer uses (D46). */
+export function droppedEnvText(names: string[]): string {
+  if (names.length === 1) return `Set ${names[0]} in your environment. Clubhouse no longer stores this value.`;
+  const list = `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return `Set ${list} in your environment. Clubhouse no longer stores these values.`;
+}
+
+export function DroppedEnvNote({ names, testId, className = '' }: { names?: string[]; testId: string; className?: string }) {
+  if (!names || names.length === 0) return null;
+  return <p data-testid={testId} className={`text-xs text-ctp-warning ${className}`}>{droppedEnvText(names)}</p>;
+}

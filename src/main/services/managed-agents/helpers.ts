@@ -65,19 +65,24 @@ export async function managedHelperSetup(
 
 /**
  * The model a managed helper starts on when start_helper leaves it out: the
- * helper template's (D52). Only when the template's model is for the CLI the
- * helper runs on: no CLI asked for and none in the template, or the same one
- * asked for, or none asked for and the template's CLI is the orchestrator's.
- * `default` means the CLI's default, so it sets nothing.
+ * helper template's (D52), when it is for the CLI the helper runs on.
+ * `runsOn` is that CLI: the one asked for, else the orchestrator's; unknown
+ * (undefined) for Auto, which decides later. Nothing when start_helper names
+ * a model or a difficulty (a preset picks the model then), or the template
+ * says `default` (the CLI's default, so nothing is passed).
+ *
+ * A template with a CLI gives its model only to a helper on that CLI. A
+ * template without one gives it only when `modelFits` says the CLI the helper
+ * runs on takes it (start_helper's model check, passed without a warning).
  */
-export function helperTemplateModel(
+export async function helperTemplateModel(
   settings: ManagedTemplateSettings,
-  asked: { cli?: string; model?: string },
-  orchestratorCli: string | undefined,
-): string | undefined {
-  if (asked.model || !settings.model || settings.model === 'default') return undefined;
-  const templateCli = settings.orchestrator;
-  if (!templateCli) return asked.cli ? undefined : settings.model;
-  if (asked.cli) return asked.cli === templateCli ? settings.model : undefined;
-  return orchestratorCli === templateCli ? settings.model : undefined;
+  asked: { model?: string; difficulty?: string },
+  runsOn: string | undefined,
+  modelFits: (cli: string, model: string) => Promise<boolean>,
+): Promise<string | undefined> {
+  if (asked.model || asked.difficulty || !settings.model || settings.model === 'default') return undefined;
+  if (!runsOn) return undefined;
+  if (settings.orchestrator) return settings.orchestrator === runsOn ? settings.model : undefined;
+  return (await modelFits(runsOn, settings.model)) ? settings.model : undefined;
 }

@@ -18,8 +18,10 @@ import { MCP_BACKUP_DIR } from './mcp-backup';
 import * as path from 'path';
 import {
   deliverManagedSetup,
+  EXCLUDES_MANIFEST,
   mcpServersOf,
   quickManagedLaunch,
+  removeManagedClaudeExcludes,
   resolveManagedSetup,
   setupFingerprint,
   type DeliveryRecord,
@@ -45,6 +47,16 @@ export function managedAgents(): ManagedAgentsService {
       setManagedSetup: (projectPath, agentId, setup) => agentConfig.setManagedSetup(projectPath, agentId, setup),
       isRunning,
       onChanged: () => broadcastToAllWindows(IPC.MANAGED.CHANGED),
+      onUnmanaged: async (_projectPath, agent) => {
+        if (!agent.worktreePath) return;
+        try {
+          // The CLAUDE.md excludes Clubhouse added come out; the person's settings stay (D49).
+          await removeManagedClaudeExcludes(agent.worktreePath);
+        } catch (err) {
+          // telemetry-exempt: the agent is already unmanaged; the entries only turn off parent CLAUDE.md files.
+          appLog('core:managed', 'warn', 'Could not remove the CLAUDE.md excludes Clubhouse added', { meta: { agentId: agent.id, error: err instanceof Error ? err.message : String(err) } });
+        }
+      },
     });
   }
   return service;
@@ -102,6 +114,8 @@ async function excludeManagedFiles(projectPath: string, provider: OrchestratorPr
       `${conv.configDir}/${conv.skillsDir}/`,
       // Where Claude Code's claudeMdExcludes go (D49).
       ...(provider.id === 'claude-code' ? [`${conv.configDir}/${conv.localSettingsFile || 'settings.local.json'}`] : []),
+      // Which of those excludes Clubhouse added, so it replaces only its own.
+      EXCLUDES_MANIFEST,
       `${MCP_BACKUP_DIR}/`,
     ]);
   } catch (err) {

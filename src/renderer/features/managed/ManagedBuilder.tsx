@@ -3,6 +3,7 @@ import type { ManagedAgentSetup, ManagedPartKind, ManagedPreview, ManagedPartSum
 import { BlockList, type BuilderAgent } from './BlockList';
 import { LibraryPanel, PartToggleList } from './LibraryPanel';
 import { PartDialog } from './PartDialog';
+import { DroppedEnvNote } from './parts-ui';
 import { errorText, managed, unwrap, useManagedParts } from './managedApi';
 
 export type BuilderTab = 'instructions' | 'skills' | 'mcp' | 'preview';
@@ -230,7 +231,15 @@ export function PreviewPane({ agent, setup }: { agent: BuilderAgent; setup?: Set
           <h3 className="text-[13px] font-semibold text-ctp-text mb-1">MCP servers</h3>
           {preview.mcps.length === 0 ? <p className="text-xs text-ctp-overlay1">None.</p> : (
             <dl className="grid grid-cols-[140px_minmax(0,1fr)] gap-x-3.5 gap-y-1 text-xs">
-              {preview.mcps.map((m) => <Fragment key={m.id}><dt className="text-ctp-overlay1">{m.name}</dt><dd className="text-ctp-text">{m.builtin ? 'Built-in' : 'Custom'} · {m.serverKey}</dd></Fragment>)}
+              {preview.mcps.map((m) => (
+                <Fragment key={m.id}>
+                  <dt className="text-ctp-overlay1">{m.name}</dt>
+                  <dd className="text-ctp-text">
+                    {m.builtin ? 'Built-in' : 'Custom'} · {m.serverKey}
+                    <DroppedEnvNote names={m.droppedEnvValues} testId={`managed-preview-dropped-env-${m.id}`} className="mt-0.5" />
+                  </dd>
+                </Fragment>
+              ))}
             </dl>
           )}
         </section>
@@ -256,6 +265,17 @@ function OutsideTheSetup({ preview }: { preview: ManagedPreview }) {
           <h3 className="text-[13px] font-semibold text-ctp-text mb-1">Also loaded from the repo</h3>
           <p className="text-xs text-ctp-overlay1 mb-1">Git tracks these skill folders, so Clubhouse leaves them in place and {cli} loads them too.</p>
           {list(preview.repoSkills, 'managed-preview-repo-skills')}
+        </section>
+      )}
+      {preview.keptSkills && preview.keptSkills.length > 0 && (
+        <section>
+          <h3 className="text-[13px] font-semibold text-ctp-text mb-1">Also loaded</h3>
+          <p className="text-xs text-ctp-overlay1 mb-1">
+            {preview.keptSkillsReason === 'link'
+              ? `The skills folder links to somewhere outside this agent's folder, so Clubhouse moves nothing out of it and ${cli} loads these too.`
+              : `Clubhouse couldn't ask git which of these it tracks, so it leaves them in place and ${cli} loads them too.`}
+          </p>
+          {list(preview.keptSkills, 'managed-preview-kept-skills')}
         </section>
       )}
       {preview.alsoRead && preview.alsoRead.length > 0 && (

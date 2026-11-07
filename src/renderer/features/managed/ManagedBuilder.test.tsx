@@ -166,6 +166,15 @@ describe('PartToggleList', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'Notes' }));
     expect(onToggle).toHaveBeenCalledWith('notes', true);
   });
+
+  it('gives an MCP server stored with env values a short line saying to set them in the environment (D46)', () => {
+    render(<PartToggleList kind="mcp" parts={[
+      part('old', { kind: 'mcp', name: 'Old', droppedEnvValues: ['MODE', 'REGION', 'TIER'] }),
+      part('clean', { kind: 'mcp', name: 'Clean' }),
+    ]} selected={[]} agent={agent} onToggle={vi.fn()} onFork={vi.fn()} onEdit={vi.fn()} onNew={vi.fn()} />);
+    expect(screen.getByTestId('managed-part-dropped-env-old').textContent).toBe('Set MODE, REGION and TIER in your environment. Clubhouse no longer stores these values.');
+    expect(screen.queryByTestId('managed-part-dropped-env-clean')).toBeNull();
+  });
 });
 
 describe('ImpactDialog', () => {
@@ -419,6 +428,35 @@ describe('Preview: what the CLI reads besides the setup (#2819)', () => {
     expect(screen.getByTestId('managed-preview-not-read').textContent).toBe('Not read: CLAUDE.md');
     expect(screen.getByText('Also read by Claude Code')).toBeTruthy();
     expect(screen.getByTestId('managed-preview-also-read').textContent).toBe('AGENTS.md');
+  });
+
+  it('lists skill folders Clubhouse left in place because the skills folder is a link, or git failed (D48)', async () => {
+    const spy = vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value: {
+      instructions: 'x', blocks: [], skills: [], mcps: [], missing: [],
+      keptSkills: ['.claude/skills/theirs'], keptSkillsReason: 'link', cliName: 'Claude Code',
+    } } as never);
+    const { unmount } = render(<PreviewPane agent={agent} />);
+    expect((await screen.findByTestId('managed-preview-kept-skills')).textContent).toBe('.claude/skills/theirs');
+    expect(screen.getByText('Also loaded')).toBeTruthy();
+    expect(screen.getByText(/links to somewhere outside this agent's folder/)).toBeTruthy();
+    unmount();
+    spy.mockResolvedValue({ ok: true, value: {
+      instructions: 'x', blocks: [], skills: [], mcps: [], missing: [],
+      keptSkills: ['.claude/skills/maybe'], keptSkillsReason: 'git', cliName: 'Claude Code',
+    } } as never);
+    render(<PreviewPane agent={agent} />);
+    expect((await screen.findByTestId('managed-preview-kept-skills')).textContent).toBe('.claude/skills/maybe');
+    expect(screen.getByText(/couldn't ask git which of these it tracks/)).toBeTruthy();
+  });
+
+  it('says in the MCP section which env values to set in the environment (D46)', async () => {
+    vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value: {
+      instructions: 'x', blocks: [], skills: [], missing: [],
+      mcps: [{ id: 'old', name: 'Old', serverKey: 'old', builtin: false, droppedEnvValues: ['MODE'] }, { id: 'clean', name: 'Clean', serverKey: 'clean', builtin: false }],
+    } } as never);
+    render(<PreviewPane agent={agent} />);
+    expect((await screen.findByTestId('managed-preview-dropped-env-old')).textContent).toBe('Set MODE in your environment. Clubhouse no longer stores this value.');
+    expect(screen.queryByTestId('managed-preview-dropped-env-clean')).toBeNull();
   });
 
   it('shows none of it when there is nothing outside the setup', async () => {

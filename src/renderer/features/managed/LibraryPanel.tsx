@@ -4,7 +4,7 @@ import { Toggle } from '../../components/Toggle';
 import { inputClass, selectClass } from '../agents/agentSettingsUi';
 import type { ManagedPartKind, ManagedPartSummary } from '../../../shared/managed-agents-types';
 import { partKindLabel, sourceLabel } from './managedApi';
-import { CheckIcon } from './parts-ui';
+import { CheckIcon, DroppedEnvNote } from './parts-ui';
 import type { BuilderAgent } from './BlockList';
 
 type SourceFilter = 'all' | 'builtin' | 'custom';
@@ -138,6 +138,7 @@ export function PartToggleList({ kind, parts, selected, agent, onToggle, onFork,
                   <span className="text-xs text-ctp-overlay1">{sourceLabel(p, agent?.agentId, agent?.agentName)}</span>
                 </div>
                 <div className="text-xs text-ctp-overlay1 mt-0.5 truncate">{p.description || p.preview}</div>
+                <DroppedEnvNote names={p.droppedEnvValues} testId={`managed-part-dropped-env-${p.id}`} className="mt-0.5 truncate" />
               </div>
               <div className="flex items-center gap-1">
                 {!p.builtin && <Button kind="quiet" aria-label={`Edit ${p.name}`} onClick={() => onEdit(p.id)} disabled={disabled}>Edit</Button>}

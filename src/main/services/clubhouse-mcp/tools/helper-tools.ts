@@ -654,8 +654,20 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
       // telemetry-exempt: the refusal reaches the calling agent as the tool result
       return refused(`Could not start helper "${args.name}": ${errorText(err)}`);
     }
-    // No model asked for: the helper template's, when it is for the CLI the helper runs on (D52).
-    const templateModel = helperTemplateModel(managedHelper.settings, args, orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator);
+    // No model or difficulty asked for: the helper template's, when it is for the CLI the helper runs on (D52).
+    // Managed helpers have no persona, so that CLI is the one asked for, else the orchestrator's; Auto decides later.
+    const orchestratorCli = orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator;
+    const runsOn = args.cli === AUTO_CLI ? undefined : (args.cli ?? orchestratorCli);
+    const templateModel = await helperTemplateModel(managedHelper.settings, args, runsOn, async (helperCli, templateModelId) => {
+      let checkProject = homePath;
+      try {
+        checkProject = (await resolveTargetProject(homePath, orchestratorId, args.project)).path;
+      } catch {
+        // telemetry-exempt: a bad project is refused under the lock; check the model with the home profile
+      }
+      const check = await checkHelperModel(helperCli, templateModelId, checkProject);
+      return check.ok && !check.warning;
+    });
     if (templateModel) args = { ...args, model: templateModel };
   }
   const { name, task, persona, cli, model, effort, difficulty, access, branchFrom, folder } = args;

@@ -376,6 +376,9 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
 
     // Clubhouse-managed agents (#2896): write the agent's setup into its folder
     // before every start. Managed agents never take the Clubhouse Mode path.
+    // Not gated on the managedAgents flag: an agent already configured as
+    // managed keeps getting its setup with the flag off, or it would start
+    // half-configured (D56).
     let managedSetup = false;
     if (params.kind === 'durable' && !managed) {
       const config = firstConfig;

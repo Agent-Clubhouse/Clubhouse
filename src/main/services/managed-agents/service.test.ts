@@ -151,6 +151,22 @@ describe('parts by reference', () => {
     expect(saved).toEqual({ serverKey: 'old', transport: 'stdio', command: 'old2', envVars: ['HOME_DIR', 'MODE'] });
   });
 
+  it('reports the names a part stored literal env values for, never the values (D46)', async () => {
+    const catalog = createAssetCatalogStore({ dir: path.join(root, 'catalog') });
+    const entry = await user(() => catalog.createAsset({ kind: 'mcp', name: 'Old', payload: { serverKey: 'old', transport: 'stdio', command: 'old', env: { MODE: 'fast', REGION: 'eu' }, envVars: ['HOME_DIR'] } }));
+    const full = await user(() => service.getPart(entry.id));
+    expect(full.droppedEnvValues).toEqual(['MODE', 'REGION']);
+    const listed = (await user(() => service.listParts('mcp'))).find((p) => p.id === entry.id)!;
+    expect(listed.droppedEnvValues).toEqual(['MODE', 'REGION']);
+    expect((await user(() => service.headContent(entry.id)))!.droppedEnvValues).toEqual(['MODE', 'REGION']);
+    expect(JSON.stringify(listed)).not.toContain('fast');
+    // A part with names only, and one saved again after the edit, report nothing.
+    const clean = await user(() => service.createPart({ name: 'Clean', content: { kind: 'mcp', serverKey: 'clean', transport: 'stdio', command: 'c', envVars: ['CLEAN_MODE'] } }));
+    expect((await user(() => service.getPart(clean.id))).droppedEnvValues).toBeUndefined();
+    await user(() => service.updatePart({ id: entry.id, expectedRevision: entry.headRevision, content: { ...full.content, command: 'old2' } as never }));
+    expect((await user(() => service.getPart(entry.id))).droppedEnvValues).toBeUndefined();
+  });
+
   it('refuses a setup for an agent without its own folder', async () => {
     const a = agent('a', {});
     delete a.worktreePath;
@@ -186,6 +202,29 @@ describe('setups', () => {
     const one = await user(() => service.createPart({ name: 'One', content: { kind: 'skill', skillName: 'deploy', files: [{ path: 'SKILL.md', content: '# one' }] } }));
     const two = await user(() => service.createPart({ name: 'Two', content: { kind: 'skill', skillName: 'deploy', files: [{ path: 'SKILL.md', content: '# two' }] } }));
     await expectCode(user(() => service.saveSetup('/p', 'a', { blocks: [], skills: [one.id, two.id], mcps: [] })), 'invalid');
+  });
+
+  it('unmanage clears the setup and asks for Clubhouse\'s own additions to the agent folder to be removed (D49)', async () => {
+    const onUnmanaged = vi.fn(async () => {});
+    const withHook = createManagedAgentsService({
+      catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+      state: createManagedStateStore(path.join(root, 'managed')),
+      listProjects: async () => [{ path: '/p', name: 'Project' }],
+      listAgents: async () => [...agents.values()],
+      getAgent: async (_p, id) => agents.get(id) ?? null,
+      setManagedSetup: async (_p, id, setup) => { const a = agents.get(id)!; if (setup) a.managed = setup; else delete a.managed; },
+      isRunning: () => false,
+      onUnmanaged,
+    });
+    agent('a', {});
+    await user(() => withHook.unmanage('/p', 'a'));
+    expect(agents.get('a')!.managed).toBeUndefined();
+    expect(onUnmanaged).toHaveBeenCalledTimes(1);
+    expect(onUnmanaged).toHaveBeenCalledWith('/p', expect.objectContaining({ id: 'a', worktreePath: agents.get('a')!.worktreePath }));
+    // An agent that wasn't managed has nothing of Clubhouse's to remove.
+    agent('b');
+    await user(() => withHook.unmanage('/p', 'b'));
+    expect(onUnmanaged).toHaveBeenCalledTimes(1);
   });
 });
 
