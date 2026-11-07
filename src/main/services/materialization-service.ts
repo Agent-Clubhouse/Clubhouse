@@ -510,6 +510,37 @@ function instructionsToWrite(
  * that never woke doesn't bring over the raw project template.
  */
 export async function materializedInstructions(projectPath: string, agent: DurableAgentConfig): Promise<string | null> {
+  const { defaults, ctx, personaContent, resolvedPersonaContent } = await clubhouseModeResolution(projectPath, agent);
+  return instructionsToWrite(defaults.instructions, personaContent, resolvedPersonaContent, ctx);
+}
+
+/** What Clubhouse Mode delivers besides the instructions file, as materializeAgent resolves it. */
+export interface MaterializedDefaults {
+  /** The project's source skill folders, which step 4 copies into the worktree, in name order. */
+  skills: Array<{ name: string; path: string }>;
+  /** The MCP config step 3 writes, wildcards resolved, or null when it writes none. Neither parsed nor checked. */
+  mcpJson: string | null;
+  /** The wildcard replacement step 4 applies to each text file it copies. */
+  resolveText: (text: string) => string;
+}
+
+/**
+ * The skills and MCP servers Clubhouse Mode would deliver to this agent at its
+ * next wake. Reads only. Switching a Clubhouse Mode agent to managed brings
+ * these over too, so one that never woke, or whose last materialization
+ * failed, still gets the project's defaults.
+ */
+export async function materializedDefaults(projectPath: string, agent: DurableAgentConfig): Promise<MaterializedDefaults> {
+  const { defaults, ctx } = await clubhouseModeResolution(projectPath, agent);
+  const skills = (await listSourceSkills(projectPath))
+    .map((s) => ({ name: s.name, path: s.path }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const mcpJson = defaults.mcpJson && !agent.clubhouseModeOverride ? replaceWildcards(defaults.mcpJson, ctx) : null;
+  return { skills, mcpJson, resolveText: (text) => replaceWildcards(text, ctx) };
+}
+
+/** The project defaults and wildcard context materializeAgent resolves for an agent. */
+async function clubhouseModeResolution(projectPath: string, agent: DurableAgentConfig) {
   const defaults = await readProjectAgentDefaults(projectPath);
   const missionId = resolveMissionId(agent, defaults);
   const personaId = resolvePersonaId(agent, defaults);
@@ -519,7 +550,7 @@ export async function materializedInstructions(projectPath: string, agent: Durab
   const personaContent = await resolvePersonaContent(projectPath, personaId);
   const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
   const resolvedPersonaContent = personaContent ? replaceWildcards(personaContent, ctx) : undefined;
-  return instructionsToWrite(defaults.instructions, personaContent, resolvedPersonaContent, ctx);
+  return { defaults, ctx, personaContent, resolvedPersonaContent };
 }
 
 /**

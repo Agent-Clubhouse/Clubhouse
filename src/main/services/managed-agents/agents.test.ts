@@ -21,6 +21,8 @@ const h = vi.hoisted(() => ({
   clubhouseMode: false,
   /** What Clubhouse Mode would write at the next wake; null when nothing. */
   materialized: null as string | null,
+  /** The skills and MCP servers Clubhouse Mode would deliver at the next wake. */
+  modeDefaults: { skills: [] as Array<{ name: string; path: string }>, mcpJson: null as string | null, resolveText: (t: string) => t },
   /** The orchestration fields each persona decides, as the persona layer resolves them. */
   personaPolicy: {} as Record<string, Record<string, unknown>>,
   /** Calls into orchestration-policy, in order. */
@@ -53,7 +55,10 @@ vi.mock('../orchestration-policy', () => ({
   reconcileAfterPersonaChange: vi.fn(async () => { h.policyCalls.push('reconcile'); }),
 }));
 vi.mock('../clubhouse-mode-settings', () => ({ isClubhouseModeEnabled: () => h.clubhouseMode }));
-vi.mock('../materialization-service', () => ({ materializedInstructions: vi.fn(async () => h.materialized) }));
+vi.mock('../materialization-service', () => ({
+  materializedInstructions: vi.fn(async () => h.materialized),
+  materializedDefaults: vi.fn(async () => h.modeDefaults),
+}));
 vi.mock('../agent-system', () => ({
   resolveOrchestrator: async () => ({
     id: 'claude-code',
@@ -74,6 +79,7 @@ import { createManagedStateStore } from './state-store';
 import { createManagedAgentsService, type ManagedAgentsService } from './service';
 import * as agentConfig from '../agent-config';
 import * as orchestrationPolicy from '../orchestration-policy';
+import * as materialization from '../materialization-service';
 import { convertToManaged, leftoverWildcards, previewConvert, settingsForConvert } from './agents';
 import { keepInstructionsAtFirstStart } from './before-managed';
 
@@ -100,6 +106,8 @@ beforeEach(async () => {
   h.instructionsFromDisk = false;
   h.clubhouseMode = false;
   h.materialized = null;
+  h.modeDefaults = { skills: [], mcpJson: null, resolveText: (t) => t };
+  vi.mocked(materialization.materializedDefaults).mockClear();
   h.personaPolicy = {};
   h.policyCalls = [];
   h.conventions = { configDir: '.claude', skillsDir: 'skills', mcpConfigFile: '.mcp.json', legacyInstructionsFile: 'CLAUDE.md', settingsFormat: 'json' };
@@ -306,6 +314,119 @@ describe('convertToManaged for an agent with a persona or Clubhouse Mode (#2901)
     const preview = await user(() => previewConvert('/p', 'ada'));
     expect(preview.notes).toEqual(["Its instructions still have @@If, @@EndIf and @@Mission, which a managed agent doesn't fill in. Edit the block after the switch."]);
     expect(leftoverWildcards('@@Path @@BuildCommand')).toEqual([]);
+  });
+});
+
+describe('convertToManaged brings over what Clubhouse Mode would deliver', () => {
+  /** A project source skill, as Clubhouse Mode copies from .clubhouse/skills. */
+  function projectSkill(name: string, files: Record<string, string>) {
+    const dir = path.join(root, 'project', '.clubhouse', 'skills', name);
+    for (const [rel, content] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+      fs.writeFileSync(path.join(dir, rel), content);
+    }
+    return { name, path: dir };
+  }
+
+  function projectDefaults() {
+    h.modeDefaults = {
+      skills: [projectSkill('review', { 'SKILL.md': '# Review\nReview as @@AgentName.' })],
+      mcpJson: JSON.stringify({ mcpServers: { clubhouse: { command: 'clubhouse-bridge' }, linear: { command: 'npx', args: ['-y', 'linear-mcp'], env: { LINEAR_KEY: '${LINEAR_KEY}' } } } }),
+      resolveText: (t) => t.replace(/@@AgentName/g, 'ada'),
+    };
+  }
+
+  it('a Clubhouse Mode agent that never woke converts with the project default skill and MCP server, and the preview lists them', async () => {
+    h.clubhouseMode = true;
+    projectDefaults();
+    const preview = await user(() => previewConvert('/p', 'ada'));
+    expect(preview.skills).toEqual(['review']);
+    expect(preview.mcps).toEqual(['linear']);
+    expect(preview.notes).toEqual([]);
+
+    const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    expect(setup.skills).toHaveLength(1);
+    expect(setup.mcps).toHaveLength(2);
+    expect(setup.mcps[0]).toBe(CLUBHOUSE_MCP_PART_ID);
+    const skill = await user(() => service.getPart(setup.skills[0]));
+    expect(skill.content).toEqual({ kind: 'skill', skillName: 'review', files: [{ path: 'SKILL.md', content: '# Review\nReview as ada.' }] });
+    expect(skill.description).toContain("from the project's defaults");
+    const mcp = await user(() => service.getPart(setup.mcps[1]));
+    expect(mcp.content).toEqual({ kind: 'mcp', serverKey: 'linear', transport: 'stdio', command: 'npx', args: ['-y', 'linear-mcp'], envVars: ['LINEAR_KEY'] });
+  });
+
+  it('runs the defaults through the same checks and notes as the folder', async () => {
+    h.clubhouseMode = true;
+    h.modeDefaults = {
+      skills: [projectSkill('no-entry', { 'README.md': 'No SKILL.md.' })],
+      mcpJson: JSON.stringify({ mcpServers: { leaky: { command: 'leaky', env: { API_TOKEN: 'sk-live-1234567890abcdef' } } } }),
+      resolveText: (t) => t,
+    };
+    const preview = await user(() => previewConvert('/p', 'ada'));
+    expect(preview.skills).toEqual([]);
+    expect(preview.mcps).toEqual(['leaky']);
+    expect(preview.notes).toEqual([
+      "The no-entry skill isn't brought over because it has no SKILL.md.",
+      "leaky: values for API_TOKEN aren't kept. Set them in your environment.",
+    ]);
+    const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    expect((await user(() => service.getPart(setup.mcps[1]))).content).toEqual({ kind: 'mcp', serverKey: 'leaky', transport: 'stdio', command: 'leaky', envVars: ['API_TOKEN'] });
+
+    h.agents.set('bo', { id: 'bo', name: 'bo', color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: wt });
+    h.modeDefaults = { skills: [], mcpJson: '{ not json', resolveText: (t) => t };
+    expect((await user(() => previewConvert('/p', 'bo'))).notes).toEqual(["The project's default MCP servers aren't brought over because they aren't valid JSON."]);
+  });
+
+  it("the folder's copy of a skill or MCP server wins, and the preview says so", async () => {
+    h.clubhouseMode = true;
+    projectDefaults();
+    write('.claude/skills/review/SKILL.md', '# Review\nMy own way.');
+    write('.mcp.json', JSON.stringify({ mcpServers: { linear: { command: 'linear-local' } } }));
+    const preview = await user(() => previewConvert('/p', 'ada'));
+    expect(preview.skills).toEqual(['review']);
+    expect(preview.mcps).toEqual(['linear']);
+    expect(preview.notes).toEqual([
+      "The review skill in its folder is kept over the project's default of the same name.",
+      "The linear MCP server in its .mcp.json is kept over the project's default of the same name.",
+      'Its .mcp.json is copied to .clubhouse-before-managed/.mcp.json in its folder before Clubhouse writes its own. The copy stays out of commits.',
+    ]);
+    const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    expect(setup.skills).toHaveLength(1);
+    expect((await user(() => service.getPart(setup.skills[0]))).content).toMatchObject({ files: [{ path: 'SKILL.md', content: '# Review\nMy own way.' }] });
+    expect(setup.mcps).toHaveLength(2);
+    expect((await user(() => service.getPart(setup.mcps[1]))).content).toMatchObject({ serverKey: 'linear', command: 'linear-local' });
+  });
+
+  it('says nothing when the folder holds what Clubhouse Mode last delivered', async () => {
+    h.clubhouseMode = true;
+    projectDefaults();
+    // Woke: its folder has the resolved copies.
+    write('.claude/skills/review/SKILL.md', '# Review\nReview as ada.');
+    write('.mcp.json', h.modeDefaults.mcpJson!);
+    const preview = await user(() => previewConvert('/p', 'ada'));
+    expect(preview.skills).toEqual(['review']);
+    expect(preview.mcps).toEqual(['linear']);
+    expect(preview.notes).toEqual(['Its .mcp.json is copied to .clubhouse-before-managed/.mcp.json in its folder before Clubhouse writes its own. The copy stays out of commits.']);
+  });
+
+  it('a plain unmanaged agent, or one with Clubhouse Mode off for it, gets only what is in its folder', async () => {
+    projectDefaults();
+    write('.claude/skills/ship/SKILL.md', '# Ship\nOpen a PR.');
+    let preview = await user(() => previewConvert('/p', 'ada'));
+    expect(preview.skills).toEqual(['ship']);
+    expect(preview.mcps).toEqual([]);
+    expect(preview.notes).toEqual([]);
+    expect(materialization.materializedDefaults).not.toHaveBeenCalled();
+    const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    expect(setup.skills).toHaveLength(1);
+    expect(setup.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+
+    h.clubhouseMode = true;
+    h.agents.set('bo', { id: 'bo', name: 'bo', color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: wt, clubhouseModeOverride: true });
+    preview = await user(() => previewConvert('/p', 'bo'));
+    expect(preview.skills).toEqual(['ship']);
+    expect(preview.mcps).toEqual([]);
+    expect(materialization.materializedDefaults).not.toHaveBeenCalled();
   });
 });
 

@@ -16,7 +16,7 @@ import {
 } from '../orchestration-policy';
 import { resolveOrchestrator } from '../agent-system';
 import { isClubhouseModeEnabled } from '../clubhouse-mode-settings';
-import { materializedInstructions } from '../materialization-service';
+import { materializedDefaults, materializedInstructions, type MaterializedDefaults } from '../materialization-service';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type {
   ManagedAgentSetup,
@@ -89,6 +89,8 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
 
 // ── Switching an existing agent to managed ─────────────────────────────
 
+type PartSource = 'folder' | 'project';
+
 interface ConvertPlan {
   /** What the block holds: the instructions file, or for a Clubhouse Mode agent what Clubhouse Mode would write. Empty when there is none. */
   instructions: string;
@@ -98,8 +100,9 @@ interface ConvertPlan {
   keepInstructions: boolean;
   /** The block the instructions become. */
   blockName: string;
-  skills: Array<{ folder: string; content: ManagedSkillContent }>;
-  mcps: Array<{ serverKey: string; content: ManagedMcpContent }>;
+  /** `from` is `project` for a project default Clubhouse Mode would deliver, else the agent's folder. */
+  skills: Array<{ folder: string; from: PartSource; content: ManagedSkillContent }>;
+  mcps: Array<{ serverKey: string; from: PartSource; content: ManagedMcpContent }>;
   notes: string[];
 }
 
@@ -219,7 +222,15 @@ async function planConvert(projectPath: string, agent: DurableAgentConfig, workt
     notes.push(`Its instructions still have ${joinAnd(leftover)}, which a managed agent doesn't fill in. Edit the block after the switch.`);
   }
 
+  // What Clubhouse Mode would deliver at the next wake, merged with the folder's own; the folder's copy wins.
+  const fromMode = await defaultsToKeep(projectPath, agent);
+
   const skills: ConvertPlan['skills'] = [];
+  const addSkill = async (folder: string, files: ManagedSkillContent['files'], from: PartSource) => {
+    const checked = validatePayload('skill', { skillName: folder, files });
+    if (checked.ok === false) { notes.push(`The ${folder} skill isn't brought over because ${refusal(checked.issues)}.`); return; }
+    skills.push({ folder, from, content: { kind: 'skill', skillName: checked.payload.skillName, files: checked.payload.files.map((f) => ({ ...f })) } });
+  };
   const skillsRoot = path.join(worktreePath, conv.configDir, conv.skillsDir);
   let folders: string[] = [];
   try {
@@ -228,15 +239,49 @@ async function planConvert(projectPath: string, agent: DurableAgentConfig, workt
       .map((e) => e.name)
       .sort((a, b) => a.localeCompare(b));
   } catch { /* telemetry-exempt: no skills folder, so no skills to bring over */ }
+  const inFolder = new Map<string, ManagedSkillContent['files'] | null>();
   for (const folder of folders) {
     const read = await readSkillFolder(path.join(skillsRoot, folder));
+    inFolder.set(folder, 'problem' in read ? null : read.files);
     if ('problem' in read) { notes.push(`The ${folder} skill isn't brought over because ${read.problem}.`); continue; }
-    const checked = validatePayload('skill', { skillName: folder, files: read.files });
-    if (checked.ok === false) { notes.push(`The ${folder} skill isn't brought over because ${refusal(checked.issues)}.`); continue; }
-    skills.push({ folder, content: { kind: 'skill', skillName: checked.payload.skillName, files: checked.payload.files.map((f) => ({ ...f })) } });
+    await addSkill(folder, read.files, 'folder');
+  }
+  for (const source of fromMode?.skills ?? []) {
+    if (source.name.startsWith('.')) continue;
+    const read = await readSkillFolder(source.path);
+    // As Clubhouse Mode copies them: wildcards resolved in text files.
+    const files = 'problem' in read ? null : read.files.map((f) => (f.encoding ? f : { ...f, content: fromMode!.resolveText(f.content) }));
+    if (inFolder.has(source.name)) {
+      const own = inFolder.get(source.name);
+      if (!own || !files || !sameSkillFiles(own, files)) notes.push(`The ${source.name} skill in its folder is kept over the project's default of the same name.`);
+      continue;
+    }
+    if (!files) { notes.push(`The ${source.name} skill isn't brought over because ${(read as { problem: string }).problem}.`); continue; }
+    await addSkill(source.name, files, 'project');
   }
 
   const mcps: ConvertPlan['mcps'] = [];
+  const addMcp = (serverKey: string, rawDef: unknown, from: PartSource) => {
+    // Managed MCP parts keep env names only (D46): literal values are dropped here, and said so.
+    const { def, dropped } = envAsNames(rawDef);
+    if (dropped.length > 0) notes.push(`${serverKey}: values for ${dropped.join(', ')} aren't kept. Set them in your environment.`);
+    const adopted = adoptNativeMcpServer(serverKey, def);
+    if (adopted.ok === false) { notes.push(`The ${serverKey} MCP server isn't brought over because ${refusal(adopted.issues)}.`); return; }
+    const p = adopted.payload;
+    mcps.push({
+      serverKey,
+      from,
+      content: {
+        kind: 'mcp',
+        serverKey: p.serverKey,
+        transport: p.transport,
+        ...(p.command !== undefined && { command: p.command }),
+        ...(p.args && { args: [...p.args] }),
+        ...(p.url !== undefined && { url: p.url }),
+        ...(p.envVars && { envVars: [...p.envVars] }),
+      },
+    });
+  };
   let raw: string | null = null;
   try {
     raw = conv.settingsFormat === 'toml' ? null : await readLocalMcpJson(worktreePath, conv);
@@ -245,43 +290,79 @@ async function planConvert(projectPath: string, agent: DurableAgentConfig, workt
     // telemetry-exempt: the file becomes a note in the preview.
     notes.push(`MCP servers in ${conv.mcpConfigFile} aren't brought over because Clubhouse can't read the file.`);
   }
+  let ownServers: Record<string, unknown> = {};
   if (raw !== null) {
-    let servers: Record<string, unknown> = {};
-    try {
-      const parsed = JSON.parse(raw) as { mcpServers?: unknown };
-      if (parsed && typeof parsed.mcpServers === 'object' && parsed.mcpServers && !Array.isArray(parsed.mcpServers)) servers = parsed.mcpServers as Record<string, unknown>;
-      else notes.push(`MCP servers in ${conv.mcpConfigFile} aren't brought over because the file has no mcpServers list.`);
-    } catch {
-      // telemetry-exempt: the file becomes a note in the preview.
-      notes.push(`MCP servers in ${conv.mcpConfigFile} aren't brought over because the file isn't valid JSON.`);
-    }
-    for (const [serverKey, rawDef] of Object.entries(servers)) {
-      // Clubhouse's own bridge is the built-in Clubhouse part, added below.
-      if (serverKey === 'clubhouse') continue;
-      // Managed MCP parts keep env names only (D46): literal values are dropped here, and said so.
-      const { def, dropped } = envAsNames(rawDef);
-      if (dropped.length > 0) notes.push(`${serverKey}: values for ${dropped.join(', ')} aren't kept. Set them in your environment.`);
-      const adopted = adoptNativeMcpServer(serverKey, def);
-      if (adopted.ok === false) { notes.push(`The ${serverKey} MCP server isn't brought over because ${refusal(adopted.issues)}.`); continue; }
-      const p = adopted.payload;
-      mcps.push({
-        serverKey,
-        content: {
-          kind: 'mcp',
-          serverKey: p.serverKey,
-          transport: p.transport,
-          ...(p.command !== undefined && { command: p.command }),
-          ...(p.args && { args: [...p.args] }),
-          ...(p.url !== undefined && { url: p.url }),
-          ...(p.envVars && { envVars: [...p.envVars] }),
-        },
-      });
+    const parsed = mcpServersIn(raw);
+    if (parsed === 'invalid') notes.push(`MCP servers in ${conv.mcpConfigFile} aren't brought over because the file isn't valid JSON.`);
+    else if (parsed === 'no_list') notes.push(`MCP servers in ${conv.mcpConfigFile} aren't brought over because the file has no mcpServers list.`);
+    else ownServers = parsed;
+  }
+  for (const [serverKey, rawDef] of Object.entries(ownServers)) {
+    // Clubhouse's own bridge is the built-in Clubhouse part, added in convertToManaged.
+    if (serverKey === 'clubhouse') continue;
+    addMcp(serverKey, rawDef, 'folder');
+  }
+  if (fromMode?.mcpJson) {
+    const parsed = mcpServersIn(fromMode.mcpJson);
+    if (parsed === 'invalid') notes.push('The project\'s default MCP servers aren\'t brought over because they aren\'t valid JSON.');
+    else if (parsed === 'no_list') notes.push('The project\'s default MCP servers aren\'t brought over because they have no mcpServers list.');
+    else {
+      for (const [serverKey, rawDef] of Object.entries(parsed)) {
+        if (serverKey === 'clubhouse') continue;
+        if (Object.prototype.hasOwnProperty.call(ownServers, serverKey)) {
+          if (canonicalJson(ownServers[serverKey]) !== canonicalJson(rawDef)) notes.push(`The ${serverKey} MCP server in its ${conv.mcpConfigFile} is kept over the project's default of the same name.`);
+          continue;
+        }
+        addMcp(serverKey, rawDef, 'project');
+      }
     }
   }
   if (await hasMcpFileToKeep(worktreePath, conv)) {
     notes.push(`Its ${conv.mcpConfigFile} is copied to ${mcpBackupPath(conv)} in its folder before Clubhouse writes its own. The copy stays out of commits.`);
   }
   return { instructions, onDisk, keepInstructions, blockName: `${agent.name} notes`, skills, mcps, notes };
+}
+
+/**
+ * The skills and MCP servers Clubhouse Mode would deliver at the next wake, for
+ * a Clubhouse Mode agent only. Null for any other agent, or when they can't be
+ * resolved (the switch then keeps only what is in its folder).
+ */
+async function defaultsToKeep(projectPath: string, agent: DurableAgentConfig): Promise<MaterializedDefaults | null> {
+  if (!usesClubhouseMode(projectPath, agent)) return null;
+  try {
+    return await materializedDefaults(projectPath, agent);
+  } catch (err) {
+    // telemetry-exempt: the switch keeps what is in its folder.
+    appLog('core:managed', 'warn', 'Could not resolve the Clubhouse Mode skills and MCP servers for the switch to managed', { meta: { agentId: agent.id, error: err instanceof Error ? err.message : String(err) } });
+    return null;
+  }
+}
+
+/** The mcpServers map in an MCP JSON file, or why there is none. */
+function mcpServersIn(raw: string): Record<string, unknown> | 'invalid' | 'no_list' {
+  let parsed: { mcpServers?: unknown };
+  try {
+    parsed = JSON.parse(raw) as { mcpServers?: unknown };
+  } catch {
+    // telemetry-exempt: becomes a note in the preview.
+    return 'invalid';
+  }
+  if (parsed && typeof parsed.mcpServers === 'object' && parsed.mcpServers && !Array.isArray(parsed.mcpServers)) return parsed.mcpServers as Record<string, unknown>;
+  return 'no_list';
+}
+
+/** Whether two skill folders hold the same files with the same content. The executable bit is left out: Clubhouse Mode's copy doesn't keep it. */
+function sameSkillFiles(a: ManagedSkillContent['files'], b: ManagedSkillContent['files']): boolean {
+  const key = (files: ManagedSkillContent['files']) => canonicalJson([...files].map((f) => [f.path, f.encoding ?? 'utf8', f.content]).sort());
+  return key(a) === key(b);
+}
+
+/** JSON with object keys sorted, to compare two values. */
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_k, v: unknown) => (v && typeof v === 'object' && !Array.isArray(v)
+    ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([x], [y]) => x.localeCompare(y)))
+    : v));
 }
 
 function joinAnd(items: string[]): string {
@@ -344,7 +425,10 @@ async function createAgentPart(name: string, description: string, content: Manag
 /**
  * Switch an existing agent to managed (#2893). Keep turns its current
  * instructions file into a block, and its skill folders and MCP servers into
- * custom parts, all for this agent only. What can't be brought over is listed
+ * custom parts, all for this agent only. For a Clubhouse Mode agent the block
+ * is what Clubhouse Mode would write, and the project's default skills and MCP
+ * servers it would deliver are added, the folder's own copy winning on a name
+ * clash. What can't be brought over is listed
  * by previewConvert first. Nothing on disk is deleted: the next start
  * overwrites the instructions file it manages, and skill folders it replaces
  * are moved to app data (D15).
@@ -387,11 +471,15 @@ export async function convertToManaged(projectPath: string, agentId: string, opt
     }
     const skills: string[] = [];
     for (const skill of plan.skills) {
-      skills.push(await make(`${skill.folder}, ${agent.name}`, `The ${skill.folder} skill ${agent.name} had before it was managed.`, skill.content));
+      skills.push(await make(`${skill.folder}, ${agent.name}`, skill.from === 'project'
+        ? `The ${skill.folder} skill Clubhouse Mode gave ${agent.name} from the project's defaults before it was managed.`
+        : `The ${skill.folder} skill ${agent.name} had before it was managed.`, skill.content));
     }
     const mcps: string[] = [...bridge];
     for (const mcp of plan.mcps) {
-      mcps.push(await make(`${mcp.serverKey}, ${agent.name}`, `The ${mcp.serverKey} MCP server ${agent.name} had before it was managed.`, mcp.content));
+      mcps.push(await make(`${mcp.serverKey}, ${agent.name}`, mcp.from === 'project'
+        ? `The ${mcp.serverKey} MCP server Clubhouse Mode gave ${agent.name} from the project's defaults before it was managed.`
+        : `The ${mcp.serverKey} MCP server ${agent.name} had before it was managed.`, mcp.content));
     }
     return service.saveSetup(projectPath, agentId, { blocks, skills, mcps });
   });

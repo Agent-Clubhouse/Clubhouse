@@ -66,6 +66,7 @@ import {
   buildWildcardContext,
   cleanupStaleJsonInTomlConfigs,
   materializeAgent,
+  materializedDefaults,
   materializedInstructions,
   previewMaterialization,
   ensureDefaultTemplates,
@@ -1132,6 +1133,35 @@ describe('materialization-service', () => {
     it('is null when Clubhouse Mode would write no instructions', async () => {
       mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {} }));
       await expect(materializedInstructions('/project', testAgent)).resolves.toBeNull();
+    });
+  });
+
+  describe('materializedDefaults', () => {
+    const mcpJson = JSON.stringify({ mcpServers: { clubhouse: { command: 'bridge' }, linear: { command: 'npx', args: ['linear', '@@AgentName'] } } });
+    beforeEach(() => {
+      vi.mocked(fsp.readdir).mockImplementation(async (p: unknown) => {
+        const dirPath = String(p).replace(/\\/g, '/');
+        if (dirPath.endsWith('.clubhouse/skills')) {
+          return [{ name: 'review', isDirectory: () => true }, { name: 'go-standby', isDirectory: () => true }] as any;
+        }
+        return [];
+      });
+      mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {}, agentDefaults: { mcpJson } }));
+    });
+
+    it('lists the source skills and resolves the MCP config as materializeAgent does, without writing', async () => {
+      const result = await materializedDefaults('/project', testAgent);
+      expect(result.skills.map((s) => s.name)).toEqual(['go-standby', 'review']);
+      expect(result.skills[1].path.replace(/\\/g, '/')).toMatch(/\.clubhouse\/skills\/review$/);
+      expect(JSON.parse(result.mcpJson!).mcpServers.linear.args).toEqual(['linear', 'bold-falcon']);
+      expect(result.resolveText('For @@AgentName on @@StandbyBranch.')).toBe('For bold-falcon on bold-falcon/standby.');
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+      expect(mockProvider.writeInstructions).not.toHaveBeenCalled();
+    });
+
+    it('has no MCP config for an agent with a local override, which materializeAgent leaves alone', async () => {
+      const result = await materializedDefaults('/project', { ...testAgent, clubhouseModeOverride: true });
+      expect(result.mcpJson).toBeNull();
     });
   });
 
