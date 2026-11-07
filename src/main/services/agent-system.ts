@@ -724,8 +724,10 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
  * won't start. Say which by name in the terminal's setup notice, and keep them
  * for Details (D95). Never fails the start.
  */
-async function noteTerminalMcpProblems(projectPath: string, agentId: string, config: DurableAgentConfig, spawnEnv: Record<string, string>): Promise<void> {
+async function noteTerminalMcpProblems(projectPath: string, agentId: string, config: DurableAgentConfig, spawnEnv: Record<string, string>, commandPrefix?: string): Promise<void> {
   try {
+    // A command prefix (such as `source .env`) runs before the CLI and can set them: nothing to say then.
+    if (commandPrefix) { (await import('./managed-agents')).recordMcpStartProblems(agentId, []); return; }
     const { resolveProjectMcpServers } = await import('./agent-mcp-servers');
     const { missingEnvNotice, missingMcpEnv } = await import('../../shared/mcp-start-problems');
     const { getShellEnvironment } = await import('../util/shell');
@@ -914,7 +916,7 @@ async function spawnPtyAgent(
   if (mcpPort <= 0) delete spawnEnv.CLUBHOUSE_MCP_PORT;
 
   // A managed agent's MCP server whose variables aren't set won't start: say which, by name (D95).
-  if (params.kind === 'durable' && durableConfig?.managed) await noteTerminalMcpProblems(params.projectPath, params.agentId, durableConfig, spawnEnv);
+  if (params.kind === 'durable' && durableConfig?.managed) await noteTerminalMcpProblems(params.projectPath, params.agentId, durableConfig, spawnEnv, commandPrefix);
 
   if (profileEnv) {
     appLog('core:agent', 'info', 'Profile env injected', {

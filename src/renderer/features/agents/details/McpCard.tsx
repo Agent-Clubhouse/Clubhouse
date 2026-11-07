@@ -67,7 +67,9 @@ export function mcpRows(
   // A missing variable says what to do, so it leads; the CLI's line follows when it has one.
   const reasons: Record<string, string> = {};
   for (const p of problems) reasons[p.server] = missingEnvReason(p.missingEnv);
+  // A connected server started after all (a variable came from somewhere Clubhouse can't see): no reason then.
   for (const r of rows) {
+    if (r.status === 'connected') { delete r.reason; continue; }
     if (reasons[r.name] && r.reason) r.reason = `${reasons[r.name]} ${r.reason}`;
     else if (reasons[r.name]) r.reason = reasons[r.name];
   }

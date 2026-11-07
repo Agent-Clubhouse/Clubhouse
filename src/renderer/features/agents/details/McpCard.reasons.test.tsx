@@ -30,6 +30,11 @@ describe('mcpRows reasons', () => {
     expect(configuredOnly).toEqual(['jira']);
     expect(reasons.jira).toBe('JIRA_URL and JIRA_USER aren\'t set in your environment.');
   });
+
+  it('shows no reason on a server that connected anyway', () => {
+    const { rows } = mcpRows([{ name: 'workiq', status: 'connected' }], null, [], [{ server: 'workiq', missingEnv: ['WORKIQ_TENANT'] }]);
+    expect(rows[0].reason).toBeUndefined();
+  });
 });
 
 describe('McpCard', () => {

@@ -167,6 +167,13 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
     }) }));
     expect(JSON.stringify(vi.mocked(appendChatEvent).mock.calls)).not.toContain('/synthetic');
   });
+  it('says nothing about variables when a command prefix runs first, since it can set them (D95)', async () => {
+    await save(raw({ workiq: { command: 'never', env_vars: ['SYNTHETIC_MISSING_VAR'] } }));
+    vi.mocked(appendChatEvent).mockClear();
+    const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli'); registerChatDriver(driver);
+    expect(await tryStartChatAgent({ agentId: agent.id, projectPath: root, cwd, kind: 'durable', permissionMode: 'auto' }, copilot, undefined, 'source .env', agent)).toBe('chat');
+    expect(JSON.stringify(vi.mocked(appendChatEvent).mock.calls)).not.toContain('mcp_server_env_missing');
+  });
   it('still rejects inherited canonical JSON that is not a valid MCP configuration', async () => {
     await fs.writeFile(settingsPath, JSON.stringify({ agentDefaults: { mcpJson: JSON.stringify({ servers: {} }) } }));
     await expect(start()).rejects.toThrow('mcpServers');
