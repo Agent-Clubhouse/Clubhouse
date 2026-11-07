@@ -1,6 +1,7 @@
 import { test, expect, type Locator } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
+import { readReviewEntry } from '../review-entry';
 import { CHAT_MEDIA, md } from '../../src/main/orchestrators/adapters/testing/chat-script';
 import { chatDom, expectCanvasPainted, openRichChat, TURN_TIMEOUT, type RichChat } from './harness';
 
@@ -74,6 +75,7 @@ test.describe('claude: file chips in one reply', () => {
 
   test.beforeAll(async () => {
     chat = await openRichChat({
+      reviewEntry: readReviewEntry(process.env.CLUBHOUSE_E2E_REVIEW_ENTRY),
       cli: 'claude',
       projectFiles: {
         [path.join('src', 'app.ts')]: APP_TS,

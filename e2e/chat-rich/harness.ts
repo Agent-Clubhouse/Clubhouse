@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { installFakeClis, ORCHESTRATOR_FOR_CLI, type FakeClis } from '../chat-fake-cli';
 import { launchApp, type ElectronApp } from '../launch';
+import { assertReviewReceipt, type ReviewEntry } from '../review-entry';
 import { addProject } from '../smoke-helpers';
 import { reportActionFailure } from '../renderer-diagnostics';
 import type { ChatFixtureCli } from '../../src/main/orchestrators/adapters/testing/fake-cli';
@@ -44,6 +45,8 @@ const GITHUB_REFS_STUBS_FILE = 'refs.json';
 const GITHUB_REFS_REQUESTS_FILE = 'requests.jsonl';
 
 export interface RichChatOptions {
+  /** Explicit run-only bootstrap; runner pins artifacts and owns the receipt. */
+  reviewEntry?: ReviewEntry;
   cli: ChatFixtureCli;
   /** Existing Copilot scripts speak ACP. SDK coverage is a separate, explicit
    * multi-turn recording replay with the legacy flag absent by default. */
@@ -215,17 +218,31 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
   let rendererWindow: Page | undefined;
   try {
     const app = await launchApp({
+      ...(opts.reviewEntry && { executablePath: opts.reviewEntry.executablePath, args: [opts.reviewEntry.bootstrapPath] }),
       // Local to ACP fixtures; never change the application's SDK default.
       experimental: { newChrome: false, ...(opts.cli === 'copilot' && !sdk && { copilotLegacyAcp: true }) },
       userDataFiles: {
         ...USER_DATA_FILES,
         ...(sdk && { 'profiles.json': { profiles: [{ id: sdkProfileId, name: 'SDK fake fixture', orchestrators: { 'copilot-cli': { env: sdkEnv } } }] } }),
       },
-      env: { ...fakes.env, ...sdkEnv, CLUBHOUSE_TEST_HELPER_SEAM: '1', [GITHUB_REFS_ENV]: githubRefsDir, ...(copilotHome && { COPILOT_HOME: copilotHome }) },
+      env: { ...fakes.env, ...sdkEnv, ...(opts.reviewEntry && { CLUBHOUSE_REVIEW_GUARD_RECEIPT: opts.reviewEntry.receiptPath }), CLUBHOUSE_TEST_HELPER_SEAM: '1', [GITHUB_REFS_ENV]: githubRefsDir, ...(copilotHome && { COPILOT_HOME: copilotHome }) },
     });
     electronApp = app.electronApp;
     const { window } = app;
     rendererWindow = window;
+    if (opts.reviewEntry) {
+      // Bootstrap enforces installation before product load; this verifies its
+      // owned receipt and live accounting before any fixture project/agent work.
+      assertReviewReceipt(await fs.promises.readFile(opts.reviewEntry.receiptPath, 'utf8'), electronApp.process().pid);
+      const guard = await electronApp.evaluate(() => {
+        const value = (globalThis as unknown as { __clubhouseReviewGuard?: {
+          active: boolean; status(): { accountingKnown: boolean; sessions: number; osFirewall: boolean };
+        } }).__clubhouseReviewGuard;
+        return value && { active: value.active, ...value.status() };
+      });
+      expect(guard).toMatchObject({ active: true, accountingKnown: true, osFirewall: false });
+      expect(guard?.sessions).toBeGreaterThan(0);
+    }
     if (opts.flags) await setExperimentalFlags(window, opts.flags);
     if (opts.cli === 'copilot') {
       const selection = await window.evaluate(async () => {
