@@ -11,7 +11,7 @@ describe('Chat E2E shard lists', () => {
       .filter((name) => name.endsWith('.spec.ts'))
       .map((name) => `chat-rich/${name}`);
     expect(specs.length).toBeGreaterThan(0);
-    expect(chatShardProblems([...specs, 'dispatcher.spec.ts', 'managed-agents.spec.ts'])).toEqual([]);
+    expect(chatShardProblems([...specs, 'dispatcher.spec.ts', 'managed-agents.spec.ts', 'managed-agents-acceptance.spec.ts'])).toEqual([]);
   });
 
   it('match the shards the e2e-chat job runs, so no list goes unrun', () => {

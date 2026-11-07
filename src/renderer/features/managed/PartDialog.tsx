@@ -192,12 +192,12 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
           )}
           <label className="flex items-center gap-4">
             <span className="w-28 text-ctp-subtext1">Name</span>
-            <input className={`${inputClass} flex-1`} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+            <input className={`${inputClass} flex-1`} value={name} onChange={(e) => setName(e.target.value)} autoFocus data-testid="managed-part-name" />
           </label>
           <label className="flex items-start gap-4">
             <span className="w-28 pt-1.5 text-ctp-subtext1">Description</span>
             <span className="flex-1 flex flex-col gap-1">
-              <input className={`${inputClass} w-full`} value={description} onChange={(e) => setDescription(e.target.value)} />
+              <input className={`${inputClass} w-full`} value={description} onChange={(e) => setDescription(e.target.value)} data-testid="managed-part-description" />
               <span className="text-xs text-ctp-overlay1">{kind === 'skill' ? 'Agents read this to decide when to use the skill.' : 'Shown in the library so you can tell parts apart.'}</span>
             </span>
           </label>
@@ -216,12 +216,13 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
             <>
               <label className="flex items-center gap-4">
                 <span className="w-28 text-ctp-subtext1">Folder name</span>
-                <input className={`${inputClass} flex-1 font-mono`} value={content.skillName} onChange={(e) => setContent({ ...content, skillName: e.target.value })} placeholder="release-notes" />
+                <input className={`${inputClass} flex-1 font-mono`} value={content.skillName} onChange={(e) => setContent({ ...content, skillName: e.target.value })} placeholder="release-notes" data-testid="managed-part-skill-name" />
               </label>
               <div className="flex items-start gap-4">
                 <span className="w-28 pt-1.5 text-ctp-subtext1">Instructions</span>
                 <textarea
                   aria-label="SKILL.md"
+                  data-testid="managed-part-skill-md"
                   className={`${textareaClass} flex-1 min-h-32`}
                   value={content.files.find((f) => f.path === 'SKILL.md')?.content ?? ''}
                   onChange={(e) => {
@@ -265,11 +266,11 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
             <>
               <label className="flex items-center gap-4">
                 <span className="w-28 text-ctp-subtext1">Server key</span>
-                <input className={`${inputClass} flex-1 font-mono`} value={content.serverKey} onChange={(e) => setContent({ ...content, serverKey: e.target.value })} placeholder="workiq" />
+                <input className={`${inputClass} flex-1 font-mono`} value={content.serverKey} onChange={(e) => setContent({ ...content, serverKey: e.target.value })} placeholder="workiq" data-testid="managed-part-server-key" />
               </label>
               <label className="flex items-center gap-4">
                 <span className="w-28 text-ctp-subtext1">Transport</span>
-                <select className={selectClass} value={content.transport} onChange={(e) => setContent({ ...content, transport: e.target.value as 'stdio' | 'http' | 'sse' })}>
+                <select className={selectClass} data-testid="managed-part-transport" value={content.transport} onChange={(e) => setContent({ ...content, transport: e.target.value as 'stdio' | 'http' | 'sse' })}>
                   <option value="stdio">Command (stdio)</option>
                   <option value="http">URL (HTTP)</option>
                   <option value="sse">URL (SSE)</option>
@@ -279,12 +280,12 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
                 <>
                   <label className="flex items-center gap-4">
                     <span className="w-28 text-ctp-subtext1">Command</span>
-                    <input className={`${inputClass} flex-1 font-mono`} value={content.command ?? ''} onChange={(e) => setContent({ ...content, command: e.target.value })} placeholder="npx" />
+                    <input className={`${inputClass} flex-1 font-mono`} value={content.command ?? ''} onChange={(e) => setContent({ ...content, command: e.target.value })} placeholder="npx" data-testid="managed-part-command" />
                   </label>
                   <label className="flex items-start gap-4">
                     <span className="w-28 pt-1.5 text-ctp-subtext1">Arguments</span>
                     <span className="flex-1 flex flex-col gap-1">
-                      <textarea aria-label="Arguments" className={`${textareaClass} min-h-16`} value={argsText} onChange={(e) => setArgsText(e.target.value)} />
+                      <textarea aria-label="Arguments" data-testid="managed-part-args" className={`${textareaClass} min-h-16`} value={argsText} onChange={(e) => setArgsText(e.target.value)} />
                       <span className="text-xs text-ctp-overlay1">One per line.</span>
                     </span>
                   </label>
@@ -298,7 +299,7 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
               <label className="flex items-start gap-4">
                 <span className="w-28 pt-1.5 text-ctp-subtext1">Environment</span>
                 <span className="flex-1 flex flex-col gap-1">
-                  <input aria-label="Environment" className={`${inputClass} w-full font-mono`} value={envText} onChange={(e) => setEnvText(e.target.value)} placeholder="WORKIQ_TENANT" />
+                  <input aria-label="Environment" data-testid="managed-part-env" className={`${inputClass} w-full font-mono`} value={envText} onChange={(e) => setEnvText(e.target.value)} placeholder="WORKIQ_TENANT" />
                   <span className="text-xs text-ctp-overlay1">Variable names only. Values come from your signed-in environment when the agent starts. Clubhouse stores no secrets.</span>
                 </span>
               </label>

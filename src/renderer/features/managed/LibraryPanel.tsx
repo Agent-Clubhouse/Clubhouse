@@ -125,17 +125,17 @@ export function PartToggleList({ kind, parts, selected, agent, onToggle, onFork,
       <div className="flex items-center gap-2 flex-wrap">
         <div className="w-[320px] max-w-full"><SearchRow kind={kind} query={query} setQuery={setQuery} source={source} setSource={setSource} /></div>
         {note && <span className="text-xs text-ctp-overlay1">{note}</span>}
-        <Button className="ml-auto" onClick={onNew} disabled={disabled}>{kind === 'skill' ? 'New skill' : 'New MCP server'}</Button>
+        <Button className="ml-auto" onClick={onNew} disabled={disabled} data-testid={`managed-${kind}-new`}>{kind === 'skill' ? 'New skill' : 'New MCP server'}</Button>
       </div>
       <ul className="border-t border-surface-0">
         {shown.map((p) => {
           const on = selected.includes(p.id);
           return (
-            <li key={p.id} className="flex items-center gap-3.5 py-2.5 border-b border-surface-0">
+            <li key={p.id} data-testid="managed-part-row" data-part-id={p.id} className="flex items-center gap-3.5 py-2.5 border-b border-surface-0">
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline gap-2.5 text-[13px]">
                   <span className="font-medium text-ctp-text truncate">{p.name}</span>
-                  <span className="text-xs text-ctp-overlay1">{sourceLabel(p, agent?.agentId, agent?.agentName)}</span>
+                  <span className="text-xs text-ctp-overlay1" data-testid="managed-part-source">{sourceLabel(p, agent?.agentId, agent?.agentName)}</span>
                 </div>
                 <div className="text-xs text-ctp-overlay1 mt-0.5 truncate">{p.description || p.preview}</div>
                 <DroppedEnvNote names={p.droppedEnvValues} testId={`managed-part-dropped-env-${p.id}`} className="mt-0.5 truncate" />
