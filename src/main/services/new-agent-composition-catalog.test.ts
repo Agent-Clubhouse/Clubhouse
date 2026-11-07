@@ -56,7 +56,7 @@ beforeEach(() => {
 afterEach(async () => {
   state.beforeRename = undefined; state.beforeReadyRename = undefined;
   await Promise.all(owned.splice(0));
-  await flushAgentConfig(); clearAgentConfigCache(); _resetSettingsAuditForTesting(false);
+  await flushAgentConfig(project); clearAgentConfigCache(); _resetSettingsAuditForTesting(false);
   fs.rmSync(state.root, { recursive: true, force: true });
 });
 async function reviewed(agentId: string) {
@@ -76,7 +76,6 @@ it('commits through the real store and flushes readiness only after the saved co
   });
   observe(started.done);
   expect(await started.done).toBe('ready');
-  await flushAgentConfig();
   expect(records()[0].creation).toBeUndefined();
 });
 

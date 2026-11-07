@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../shared/types';
+import type { FinishedQuickAgents, FinishedQuickAgentsChange } from '../../shared/finished-quick-agents';
 import { consumeNewAgentComposition } from '../services/new-agent-composition-drafts';
 import { notifyMcpEnablementChanged } from '../services/mcp-settings';
 import { ATTR } from '../../shared/telemetry/attributes';
@@ -1311,7 +1312,7 @@ describe('agent-handlers: finished quick agents (#2467)', () => {
   });
 
   it('hands the window\'s localStorage lists to the store and returns the stored lists', async () => {
-    const legacy = { p: [] };
+    const legacy: FinishedQuickAgents = { p: [] };
     expect(await handlers.get(IPC.AGENT.FINISHED_QUICK_HYDRATE)!({}, legacy)).toEqual({ p: [] });
     expect(finishedQuickStore.hydrateFinishedQuickAgents).toHaveBeenCalledWith(legacy);
   });
@@ -1330,7 +1331,7 @@ describe('agent-handlers: finished quick agents (#2467)', () => {
     const send = vi.fn();
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([{ isDestroyed: () => false, webContents: { isDestroyed: () => false, send } }] as never);
     const listener = vi.mocked(finishedQuickStore.onFinishedQuickAgentsChange).mock.calls.at(-1)![0];
-    const change = { state: { p: [] }, acked: { w: 1 } };
+    const change: FinishedQuickAgentsChange = { state: { p: [] }, acked: { w: 1 } };
     listener(change);
     expect(send).toHaveBeenCalledWith(IPC.AGENT.FINISHED_QUICK_CHANGED, change);
   });
