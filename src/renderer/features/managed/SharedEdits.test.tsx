@@ -155,7 +155,30 @@ describe('a stale edit', () => {
     fireEvent.click(within(dialog).getByTestId('managed-stale-fork'));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(fork).toHaveBeenCalledWith('rules');
-    expect(update).toHaveBeenLastCalledWith({ id: 'rules-copy', expectedRevision: 1, description: '', content: { kind: 'block', content: 'mine!' } });
+    expect(update).toHaveBeenLastCalledWith({ id: 'rules-copy', expectedRevision: 1, expectedDescription: '', description: '', content: { kind: 'block', content: 'mine!' } });
+  });
+
+  it('in the part dialog, sends the name and description it opened, and Keep mine pins their rename', async () => {
+    vi.spyOn(m(), 'getPart')
+      .mockResolvedValueOnce({ ok: true, value: full('rules', 'text', { name: 'Rules', description: 'Old' }) } as never)
+      .mockResolvedValue({ ok: true, value: full('rules', 'text', { name: 'House rules', description: 'New', revision: 1, updatedBy: 'Dispatcher' }) } as never);
+    const update = vi.spyOn(m(), 'updatePart')
+      .mockResolvedValueOnce(STALE)
+      .mockResolvedValue({ ok: true, value: part('rules', { revision: 2 }) } as never);
+    render(<PartDialog open kind="block" editId="rules" onClose={vi.fn()} />);
+    const text = await screen.findByRole('textbox', { name: 'Block text' });
+    await waitFor(() => expect((text as HTMLTextAreaElement).value).toBe('text'));
+    fireEvent.change(text, { target: { value: 'my text' } });
+    fireEvent.click(screen.getByTestId('managed-part-save'));
+    const dialog = await screen.findByTestId('managed-stale-dialog');
+    expect(update).toHaveBeenNthCalledWith(1, expect.objectContaining({ expectedRevision: 1, expectedName: 'Rules', expectedDescription: 'Old', name: 'Rules' }));
+    // Their rename shows in the diff before anything is saved.
+    const lines = [...within(dialog).getByTestId('managed-stale-diff').children].map((el) => el.textContent);
+    expect(lines).toContain('- Name: House rules');
+    expect(lines).toContain('+ Name: Rules');
+    fireEvent.click(within(dialog).getByTestId('managed-stale-mine'));
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ expectedRevision: 1, expectedName: 'House rules', expectedDescription: 'New', name: 'Rules', description: 'Old' }));
   });
 });
 

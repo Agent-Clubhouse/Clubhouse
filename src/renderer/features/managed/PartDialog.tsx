@@ -11,6 +11,9 @@ import { StaleEditDialog } from './StaleEditDialog';
 
 type SkillFile = ManagedSkillContent['files'][number];
 
+/** The version an edit started from. */
+interface Opened { revision: number; name: string; description: string }
+
 const TEXT_EXT = /\.(md|markdown|txt|json|ya?ml|toml|sh|zsh|bash|py|js|mjs|cjs|ts|tsx|jsx|rb|go|rs|java|kt|swift|c|h|cpp|css|html|xml|csv|ini|cfg|env\.example)$/i;
 
 /** Only when main can't read the file's mode (Windows, or no path): a script is guessed by its name. */
@@ -97,7 +100,8 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [content, setContent] = useState<ManagedPartContent>(() => blankContent(kind));
-  const [revision, setRevision] = useState(0);
+  // What the editor opened: the save is refused as stale if any of it changed since (D92).
+  const [opened, setOpened] = useState<Opened>({ revision: 0, name: '', description: '' });
   const [usedBy, setUsedBy] = useState<ManagedPartConsumer[]>([]);
   const [templates, setTemplates] = useState<Array<{ id: string; name: string }>>([]);
   // Saving found a newer version (#2897): theirs, and the restarts the person had ticked.
@@ -118,13 +122,13 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
     setImpact(false);
     setStale(null);
     if (!editId) {
-      setName(''); setDescription(''); setContent(blankContent(kind)); setRevision(0); setUsedBy([]); setTemplates([]); setArgsText(''); setEnvText('');
+      setName(''); setDescription(''); setContent(blankContent(kind)); setOpened({ revision: 0, name: '', description: '' }); setUsedBy([]); setTemplates([]); setArgsText(''); setEnvText('');
       return;
     }
     let cancelled = false;
     void unwrap(managed().getPart(editId)).then((p) => {
       if (cancelled) return;
-      setName(p.name); setDescription(p.description); setContent(p.content); setRevision(p.revision); setUsedBy(p.usedBy); setTemplates(p.templates);
+      setName(p.name); setDescription(p.description); setContent(p.content); setOpened({ revision: p.revision, name: p.name, description: p.description }); setUsedBy(p.usedBy); setTemplates(p.templates);
       setArgsText(p.content.kind === 'mcp' ? (p.content.args ?? []).join('\n') : '');
       setEnvText(p.content.kind === 'mcp' ? (p.content.envVars ?? []).join(', ') : '');
     }).catch((err) => { /* telemetry-exempt: shown to the person */ if (!cancelled) setError(errorText(err)); });
@@ -162,15 +166,17 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
     ? { ...content, ...(content.transport === 'stdio' && { args: parseArgs(argsText) }), envVars: parseEnvVars(envText) }
     : content);
 
-  /** Save. `expected` is their revision when the person chose Keep mine, so a third change is still caught. */
-  const commit = async (restart: ManagedPartConsumer[] = [], expected = revision) => {
+  /** Save. `expected` is their version when the person chose Keep mine, so a third change is still caught. */
+  const commit = async (restart: ManagedPartConsumer[] = [], expected: Opened = opened) => {
     setBusy(true);
     setError(null);
     const saved = toSave();
     let reached: ManagedPartConsumer[] = [];
     try {
       if (editId) {
-        reached = (await unwrap(managed().updatePart({ id: editId, expectedRevision: expected, name, description, content: saved }))).usedBy;
+        reached = (await unwrap(managed().updatePart({
+          id: editId, expectedRevision: expected.revision, expectedName: expected.name, expectedDescription: expected.description, name, description, content: saved,
+        }))).usedBy;
       } else {
         const created = await unwrap(managed().createPart({ name, description, content: saved }));
         onCreated?.(created);
@@ -207,7 +213,7 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
     setError(null);
     try {
       const copy = await unwrap(managed().forkPart(editId));
-      await unwrap(managed().updatePart({ id: copy.id, expectedRevision: copy.revision, description, content: toSave() }));
+      await unwrap(managed().updatePart({ id: copy.id, expectedRevision: copy.revision, expectedDescription: copy.description, description, content: toSave() }));
     } catch (err) {
       // telemetry-exempt: shown in the dialog.
       setError(errorText(err));
@@ -374,7 +380,11 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
           mine={{ name, description, content: toSave() }}
           busy={busy}
           error={error}
-          onKeepMine={() => { setRevision(stale.theirs.revision); void commit(stale.restart, stale.theirs.revision); }}
+          onKeepMine={() => {
+            const theirs: Opened = { revision: stale.theirs.revision, name: stale.theirs.name, description: stale.theirs.description };
+            setOpened(theirs);
+            void commit(stale.restart, theirs);
+          }}
           onTakeTheirs={() => { setStale(null); onClose(); }}
           onFork={() => void saveAsCopy()}
           forkLabel="Save mine as a copy"

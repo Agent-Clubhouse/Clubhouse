@@ -411,3 +411,34 @@ describe('builder tools: filters, template delete, plain agents, stale edits (#2
     expect(state.agents.has('new-mixed')).toBe(false);
   });
 });
+
+describe('stale renames over MCP (#2897, D92)', () => {
+  it('needs the name and description it read to change them, and refuses either when it changed', async () => {
+    const part = (await call('create_agent_part', { kind: 'block', name: 'Tool rules', description: 'Old', content: { kind: 'block', content: 'one' } })).json;
+    const bare = await call('update_agent_part', { id: part.id, expectedRevision: part.revision, name: 'Renamed' });
+    expect(bare.isError).toBe(true);
+    expect(bare.content[0].text).toMatch(/needs expectedName/);
+    const noDesc = await call('update_agent_part', { id: part.id, expectedRevision: part.revision, description: 'x' });
+    expect(noDesc.content[0].text).toMatch(/needs expectedDescription/);
+    // Someone renames it in the app; the revision stays.
+    await managedAgents().updatePart({ id: part.id, expectedRevision: part.revision, expectedName: 'Tool rules', name: 'Tool rules v2' });
+    const stale = await call('update_agent_part', { id: part.id, expectedRevision: part.revision, expectedName: 'Tool rules', name: 'Tool rules' });
+    expect(stale.isError).toBe(true);
+    expect(stale.content[0].text).toMatch(/^stale: Tool rules v2 changed since you read it/);
+    const descStale = await call('update_agent_part', { id: part.id, expectedRevision: part.revision, expectedDescription: 'Older', description: 'x' });
+    expect(descStale.content[0].text).toMatch(/^stale/);
+    const ok = await call('update_agent_part', { id: part.id, expectedRevision: part.revision, expectedName: 'Tool rules v2', expectedDescription: 'Old', name: 'Tool rules 3', description: 'New' });
+    expect(ok.json).toMatchObject({ name: 'Tool rules 3', description: 'New' });
+  });
+
+  it('refuses a confirm token after a rename between the preview and the commit', async () => {
+    const part = (await call('create_agent_part', { kind: 'block', name: 'Token rules', content: { kind: 'block', content: 'one' } })).json;
+    for (const id of ['ta', 'tb']) state.agents.set(id, { id, name: id, color: 'indigo', createdAt: '', worktreePath: `/w/${id}`, managed: { version: 1, blocks: [part.id], skills: [], mcps: [] } });
+    const args = { id: part.id, expectedRevision: part.revision, content: { kind: 'block', content: 'two' } };
+    const first = await call('update_agent_part', args);
+    await managedAgents().updatePart({ id: part.id, expectedRevision: part.revision, expectedName: 'Token rules', name: 'Token rules v2' });
+    const r = await call('update_agent_part', { ...args, confirm: first.json.confirm });
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/^stale/);
+  });
+});

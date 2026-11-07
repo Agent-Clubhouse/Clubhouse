@@ -432,11 +432,25 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       return summarize(entry);
     },
 
-    /** Edit a custom part for everyone who uses it. Built-ins are read-only. */
-    async updatePart(input: { id: string; expectedRevision: number; name?: string; description?: string; content?: ManagedPartContent; actor?: string }): Promise<ManagedPartSummary> {
+    /**
+     * Edit a custom part for everyone who uses it. Built-ins are read-only.
+     * A rename or a description edit doesn't change the revision, so the
+     * editor and the MCP tool also send the name and description they read
+     * (`expectedName`, `expectedDescription`): a part renamed or redescribed
+     * since is refused as stale like a content change (D92).
+     */
+    async updatePart(input: {
+      id: string; expectedRevision: number; expectedName?: string; expectedDescription?: string;
+      name?: string; description?: string; content?: ManagedPartContent; actor?: string;
+    }): Promise<ManagedPartSummary> {
       let entry = await entryOf(input.id);
       if (entry.source.kind === 'builtin') throw new ManagedError('builtin_read_only', 'Built-in parts can\'t be edited. Make your copy instead.');
       if (entry.headRevision !== input.expectedRevision) throw new ManagedError('stale', 'It changed since you opened it.');
+      const currentDescription = (await state.read()).parts[entry.id]?.description ?? '';
+      if ((input.expectedName !== undefined && input.expectedName.trim() !== entry.name)
+        || (input.expectedDescription !== undefined && input.expectedDescription.trim() !== currentDescription)) {
+        throw new ManagedError('stale', 'It changed since you opened it.');
+      }
       refuseEnvValues(input.content);
       try {
         if (input.content) {

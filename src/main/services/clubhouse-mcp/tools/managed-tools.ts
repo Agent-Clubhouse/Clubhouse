@@ -42,7 +42,7 @@ class ArgError extends Error {}
 /** A refused stale edit: what the part is now, so the caller can read it and decide (D92). */
 function staleText(part: { name: string; revision: number; updatedAt: string; updatedBy?: string }): string {
   const by = part.updatedBy ? ` by ${part.updatedBy}` : '';
-  return `${part.name} changed since you read it. It is at revision ${part.revision} now, saved${by} at ${part.updatedAt}. Read it with get_agent_part, then call again with expectedRevision ${part.revision} if your change should still go in.`;
+  return `${part.name} changed since you read it. It is at revision ${part.revision} now, saved${by} at ${part.updatedAt}. Read it with get_agent_part, then call again with expectedRevision ${part.revision} (and its name and description as expectedName and expectedDescription) if your change should still go in.`;
 }
 
 function kindArg(args: Record<string, unknown>): ManagedPartKind {
@@ -202,19 +202,29 @@ export function registerManagedTools(): void {
     });
 
   tool('update_agent_part',
-    'Edit or rename a custom part for every agent that uses it. Built-ins are read-only: fork them. When more than one agent uses it, the first call returns the agents and templates it reaches and a confirm token; call again with the same arguments and confirm to save. A token is yours only, works once, and expires after 10 minutes. Running agents keep their current setup until restarted.',
-    { id: S, expectedRevision: { type: 'number' }, name: S, description: S, content: OBJ, confirm: S }, ['id', 'expectedRevision'],
+    'Edit or rename a custom part for every agent that uses it. Built-ins are read-only: fork them. A rename needs expectedName and a description edit needs expectedDescription: the name and description you read with get_agent_part, since neither changes the revision. When more than one agent uses it, the first call returns the agents and templates it reaches and a confirm token; call again with the same arguments and confirm to save. A token is yours only, works once, and expires after 10 minutes. Running agents keep their current setup until restarted.',
+    { id: S, expectedRevision: { type: 'number' }, expectedName: S, expectedDescription: S, name: S, description: S, content: OBJ, confirm: S }, ['id', 'expectedRevision'],
     async (callerId, args) => {
       const id = requireString(args, 'id');
       const expectedRevision = numberArg(args, 'expectedRevision');
       const content = contentArg(args);
       const name = optionalString(args, 'name');
       const description = optionalString(args, 'description');
+      // The same rule as the editor: a rename or description edit says what it read (D92).
+      const expectedName = typeof args.expectedName === 'string' ? args.expectedName : undefined;
+      const expectedDescription = typeof args.expectedDescription === 'string' ? args.expectedDescription : undefined;
+      if (name !== undefined && expectedName === undefined) throw new ArgError('A rename needs expectedName: the name you read with get_agent_part.');
+      if (description !== undefined && expectedDescription === undefined) throw new ArgError('A description edit needs expectedDescription: the description you read with get_agent_part (empty for none).');
       const part = await svc().getPart(id);
       if (part.builtin) throw new ManagedError('builtin_read_only', 'Built-in parts can\'t be edited. Fork it with fork_agent_part instead.');
       // Never saved over a newer version: say what is there now, so the caller can read it and decide.
-      if (part.revision !== expectedRevision) throw new ManagedError('stale', staleText(part));
-      const digest = digestOf('update_agent_part', id, part.revision, part.content, expectedRevision, content ?? null, name ?? null, description ?? null,
+      if (part.revision !== expectedRevision
+        || (expectedName !== undefined && expectedName.trim() !== part.name)
+        || (expectedDescription !== undefined && expectedDescription.trim() !== part.description)) {
+        throw new ManagedError('stale', staleText(part));
+      }
+      // The name and description are in the digest too, so a rename between preview and confirm refuses the token.
+      const digest = digestOf('update_agent_part', id, part.revision, part.name, part.description, part.content, expectedRevision, content ?? null, name ?? null, description ?? null,
         part.usedBy.map((c) => c.agentId).sort(), part.templates.map((t) => t.id).sort());
       const given = optionalString(args, 'confirm');
       if (given) redeemConfirm(callerId, given, digest);
@@ -224,7 +234,7 @@ export function registerManagedTools(): void {
           templates: part.templates.map((t) => t.name),
           note: 'Call again with the same arguments and this confirm token to save. Each agent gets the change at its next start; running ones keep their setup until restarted. Agents made from these templates later get it too.' });
       }
-      return json(await asDispatcher(callerId, () => svc().updatePart({ id, expectedRevision, name, description, content, actor: ACTOR })));
+      return json(await asDispatcher(callerId, () => svc().updatePart({ id, expectedRevision, expectedName, expectedDescription, name, description, content, actor: ACTOR })));
     });
 
   tool('fork_agent_part',

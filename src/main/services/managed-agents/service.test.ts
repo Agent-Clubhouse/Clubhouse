@@ -760,3 +760,30 @@ describe('attribution and helper changes (#2899, #2900)', () => {
     expect(await service.templateConsumers(t.id)).toEqual([expect.objectContaining({ agentId: 'a', running: true, projectName: 'Project' })]);
   });
 });
+
+describe('stale renames and description edits (#2897, D92)', () => {
+  it('refuses a save whose name was changed since it was opened, and keeps the rename', async () => {
+    const part = await user(() => service.createPart({ name: 'Rules', description: 'Old', content: { kind: 'block', content: 'one' } }));
+    // Someone else renames it: the revision doesn't move.
+    const renamed = await user(() => service.updatePart({ id: part.id, expectedRevision: part.revision, expectedName: 'Rules', name: 'House rules' }));
+    expect(renamed.revision).toBe(part.revision);
+    // The editor opened "Rules" and sends that name back with its text.
+    await expectCode(user(() => service.updatePart({ id: part.id, expectedRevision: part.revision, expectedName: 'Rules', expectedDescription: 'Old', name: 'Rules', description: 'Old', content: { kind: 'block', content: 'two' } })), 'stale');
+    const now = await user(() => service.getPart(part.id));
+    expect(now.name).toBe('House rules');
+    expect(now.content).toEqual({ kind: 'block', content: 'one' });
+    // Pinned to what is there now, it saves.
+    const saved = await user(() => service.updatePart({ id: part.id, expectedRevision: now.revision, expectedName: 'House rules', expectedDescription: 'Old', name: 'Rules', content: { kind: 'block', content: 'two' } }));
+    expect(saved.name).toBe('Rules');
+  });
+
+  it('refuses a save whose description was changed since it was opened', async () => {
+    const part = await user(() => service.createPart({ name: 'Notes', description: 'Old', content: { kind: 'block', content: 'one' } }));
+    await user(() => service.updatePart({ id: part.id, expectedRevision: part.revision, expectedDescription: 'Old', description: 'New' }));
+    await expectCode(user(() => service.updatePart({ id: part.id, expectedRevision: part.revision, expectedName: 'Notes', expectedDescription: 'Old', description: 'Old', content: { kind: 'block', content: 'two' } })), 'stale');
+    expect((await user(() => service.getPart(part.id))).description).toBe('New');
+    // No description before counts as empty.
+    const bare = await user(() => service.createPart({ name: 'Bare', content: { kind: 'block', content: 'x' } }));
+    await user(() => service.updatePart({ id: bare.id, expectedRevision: bare.revision, expectedDescription: '', description: 'Now one' }));
+  });
+});
