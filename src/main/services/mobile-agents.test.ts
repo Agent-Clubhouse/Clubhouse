@@ -142,6 +142,11 @@ describe('agent.create', () => {
     }
     expect(startDurableCreation).not.toHaveBeenCalled();
   });
+  it('creates the agent when persona is null or left out: nothing to refuse (#2901)', async () => {
+    for (const persona of [null, undefined]) await createMobileAgent(project, create({ persona }) as never, allow);
+    expect(startDurableCreation).toHaveBeenCalledTimes(2);
+    for (const call of vi.mocked(startDurableCreation).mock.calls) expect(call[1]).not.toHaveProperty('persona');
+  });
   it('refuses a name that cannot be a folder and branch, with the reason', async () => {
     const err = await refusal(createMobileAgent(project, create({ name: 'my agent' }), allow));
     expect(err).toMatchObject({ code: 'invalid_name', statusCode: 400 });
@@ -205,11 +210,9 @@ describe('Free Agent Mode from a phone (#2462)', () => {
         code: 'managed_agent', statusCode: 409, detail: expect.stringContaining('is Clubhouse managed'),
       });
     }
-    for (const change of [{ persona: 'qa' }, { persona: null }]) {
-      expect(await refusal(updateMobileAgent(project, managed, { agentId: 'durable_1', freeAgentMode: true, ...change }, live))).toMatchObject({
-        code: 'managed_agent', statusCode: 409, detail: expect.stringContaining('Personas were retired'),
-      });
-    }
+    expect(await refusal(updateMobileAgent(project, managed, { agentId: 'durable_1', freeAgentMode: true, persona: 'qa' }, live))).toMatchObject({
+      code: 'managed_agent', statusCode: 409, detail: expect.stringContaining('Personas were retired'),
+    });
     expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
     // Its other settings still change.
     await updateMobileAgent(project, managed, { agentId: 'durable_1', freeAgentMode: true }, live);
@@ -375,8 +378,8 @@ describe('agent.update', () => {
     expect(await refuse({ color: 'plaid' })).toBe('invalid_color');
     expect(await refuse({ orchestrator: 'gemini' })).toBe('orchestrator_unavailable');
     expect(await refuse({ orchestrator: 'codex-cli', runtime: 'chat' })).toBe('runtime_unavailable');
-    // Personas were retired (#2901): any persona, set or cleared, is refused.
-    for (const persona of ['qa', 'pirate', 'dispatcher', null]) expect(await refuse({ persona })).toBe('managed_agent');
+    // Personas were retired (#2901): any persona is refused. Clearing one (null) is a no-op, tested below.
+    for (const persona of ['qa', 'pirate', 'dispatcher']) expect(await refuse({ persona })).toBe('managed_agent');
     expect(await refuse({ persona: 'qa' }, agent({ persona: 'qa' }))).toBe('managed_agent');
     expect(await refuse({ clubhouseMode: false })).toBe('clubhouse_mode_unavailable');
     expect(await refuse({}, agent({ creation: { state: 'creating', startedAt: 'now' } }))).toBe('agent_creating');
@@ -384,6 +387,21 @@ describe('agent.update', () => {
     expect(await refuse({ runtime: 'chat' })).toBe('runtime_unavailable');
     expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
     expect(agentConfig.updateDurable).not.toHaveBeenCalled();
+  });
+  it('takes persona: null as a no-op, asleep or awake, and saves the rest (#2901)', async () => {
+    const result = await updateMobileAgent(project, agent({ persona: 'qa' }), { agentId: 'durable_1', persona: null }, live);
+    expect(result.settings.persona).toEqual({ value: null, editable: 'never' });
+    expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
+    expect(agentConfig.updateDurable).not.toHaveBeenCalled();
+    await updateMobileAgent(project, agent(), { agentId: 'durable_1', persona: null, idleSleep: 30 }, live);
+    expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/work/app', 'durable_1', { idleSleep: 30 });
+    // Not a spawn setting while it runs, since it changes nothing.
+    await updateMobileAgent(project, agent(), { agentId: 'durable_1', persona: null, idleSleep: 15 }, { live: 'running', assertAuthorized: allow });
+    expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith('/work/app', 'durable_1', { idleSleep: 15 });
+    // A managed agent too.
+    const managed = agent({ managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+    await updateMobileAgent(project, managed, { agentId: 'durable_1', persona: null, freeAgentMode: true }, live);
+    expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith('/work/app', 'durable_1', { freeAgentMode: true });
   });
   it('lets an agent without a worktree keep a free-form name', async () => {
     await updateMobileAgent(project, agent({ worktreePath: undefined }), { agentId: 'durable_1', name: 'Release notes' }, live);

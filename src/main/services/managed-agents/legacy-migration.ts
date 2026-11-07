@@ -31,35 +31,50 @@ import developerNoMergeText from './builtin-text/developer-no-merge.md';
 import researcherText from './builtin-text/researcher.md';
 import codeReviewerText from './builtin-text/code-reviewer.md';
 import helperText from './builtin-text/helper.md';
+import uiLeadText from './legacy-persona-text/ui-lead.md';
+import qualityAuditorText from './legacy-persona-text/quality-auditor.md';
+import docUpdaterText from './legacy-persona-text/doc-updater.md';
 
 /** The persona whose front matter supplied project-wide orchestration defaults. */
 export const LEGACY_ORCHESTRATOR_PERSONA = 'orchestrator';
 
 /**
- * The old built-in personas whose text Clubhouse still ships, as the role
- * blocks (builtins.ts). `ui-lead`, `quality-auditor` and `doc-updater` were
- * dropped, and the Dispatcher's text is its own (dispatcher-instructions.md).
+ * The old built-in personas' text, by persona id. Most of it Clubhouse still
+ * ships as the role blocks (builtins.ts). `ui-lead`, `quality-auditor` and
+ * `doc-updater` are no blocks any more: their text is kept here only so an
+ * agent that used one keeps it when it switches (legacy-persona-text/). The
+ * Dispatcher's text is its own (dispatcher-instructions.md). A Map, so an id
+ * like `constructor` finds nothing.
  */
-const BUILTIN_PERSONA_BODIES: Readonly<Record<string, string>> = {
-  'orchestrator': orchestratorText,
-  'project-manager': projectManagerText,
-  'group-project-pm': groupProjectLeadText,
-  'qa': qualityAssuranceText,
-  'executor-merge': developerFullMergeText,
-  'executor-pr-only': developerNoMergeText,
-  'researcher': researcherText,
-  'judge': codeReviewerText,
-  'workhorse': helperText,
-};
+const BUILTIN_PERSONA_BODIES: ReadonlyMap<string, string> = new Map([
+  ['orchestrator', orchestratorText],
+  ['project-manager', projectManagerText],
+  ['group-project-pm', groupProjectLeadText],
+  ['qa', qualityAssuranceText],
+  ['executor-merge', developerFullMergeText],
+  ['executor-pr-only', developerNoMergeText],
+  ['researcher', researcherText],
+  ['judge', codeReviewerText],
+  ['workhorse', helperText],
+  ['ui-lead', uiLeadText],
+  ['quality-auditor', qualityAuditorText],
+  ['doc-updater', docUpdaterText],
+]);
 
 /** The front matter of the built-in personas that had orchestration defaults: only the Orchestrator's. */
-const BUILTIN_PERSONA_ORCHESTRATION: Readonly<Record<string, OrchestrationPolicyConfig>> = {
-  orchestrator: { orchestrate: true },
-};
+const BUILTIN_PERSONA_ORCHESTRATION: ReadonlyMap<string, OrchestrationPolicyConfig> = new Map([
+  ['orchestrator', { orchestrate: true }],
+]);
 
-/** A persona id is a file name: no separators, no `..`, nothing that leaves the personas folder. */
+/**
+ * A persona id names a file in the personas folder, as the persona runtime
+ * read it: not empty, no path separator, not `..`, no NUL. Anything else is
+ * skipped and logged with a code only.
+ */
 function isPersonaFileName(id: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id) && !id.includes('..');
+  const ok = id.length > 0 && id !== '..' && !/[/\\\0]/.test(id);
+  if (!ok) appLog('core:managed', 'warn', 'Skipped a legacy persona id that is not a file name', { meta: { code: 'invalid_persona_id' } });
+  return ok;
 }
 
 async function readPersonaFile(dir: string, id: string): Promise<string | undefined> {
@@ -100,7 +115,7 @@ export async function legacyPersonaId(projectPath: string, agent: DurableAgentCo
  */
 export async function legacyPersonaBody(projectPath: string, personaId: string | undefined): Promise<string | undefined> {
   if (!personaId) return undefined;
-  const raw = await readOnDiskPersona(projectPath, personaId) ?? BUILTIN_PERSONA_BODIES[personaId];
+  const raw = await readOnDiskPersona(projectPath, personaId) ?? BUILTIN_PERSONA_BODIES.get(personaId);
   return raw === undefined ? undefined : stripFrontMatter(raw);
 }
 
@@ -109,7 +124,7 @@ async function personaOrchestration(projectPath: string, personaId: string): Pro
   const raw = await readOnDiskPersona(projectPath, personaId);
   const config = raw !== undefined
     ? normalizeOrchestrationConfig(readFrontMatterValue(raw, 'orchestration'))
-    : normalizeOrchestrationConfig(BUILTIN_PERSONA_ORCHESTRATION[personaId]);
+    : normalizeOrchestrationConfig(BUILTIN_PERSONA_ORCHESTRATION.get(personaId));
   if (config?.autoHelpers === true) delete config.autoHelpers;
   return config;
 }
@@ -137,6 +152,8 @@ export async function legacyPersonaOrchestration(projectPath: string, agent: Dur
 /**
  * The fields the persona layer decided for an agent: set in `layer` and not
  * on the agent itself. Written as its own, they resolve as the layer did.
+ * One exception, the old rule (#2671): a persona's Auto `off` beat the
+ * agent's own `autoHelpers: true`, so it is carried over that too.
  * Undefined when there are none.
  */
 export function orchestrationToCarry(
@@ -149,5 +166,6 @@ export function orchestrationToCarry(
   for (const key of Object.keys(ORCHESTRATION_DEFAULTS) as Array<keyof OrchestrationPolicy>) {
     if (stored[key] === undefined && layer[key] !== undefined) carried[key] = layer[key];
   }
+  if (layer.autoHelpers === false && stored.autoHelpers === true) carried.autoHelpers = false;
   return Object.keys(carried).length > 0 ? carried as OrchestrationPolicyConfig : undefined;
 }

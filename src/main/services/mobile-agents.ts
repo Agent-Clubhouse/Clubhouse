@@ -404,7 +404,10 @@ async function assertOrchestrator(projectPath: string, orchestrator: string): Pr
   if (!(await effectiveOrchestrators(projectPath)).some((o) => o.id === orchestrator)) throw new MobileControlError('orchestrator_unavailable', 409);
 }
 
-/** Personas were retired (#2901): any persona in a command is refused, and nothing in it is saved. */
+/**
+ * Personas were retired (#2901): a persona in a command is refused, and
+ * nothing in it is saved. `null` (clear it) is a no-op: there is none to clear.
+ */
 function refusePersona(name: string): never {
   throw new MobileControlError('managed_agent', 409, 'rejected', `Personas were retired, so ${name} can't take one. Clubhouse-managed agents get their instructions from their setup.`);
 }
@@ -433,7 +436,7 @@ export async function createMobileAgent(project: MobileAgentProject, command: Mo
   const orchestrator = command.orchestrator ?? (await effectiveOrchestrators(project.path))[0]?.id ?? DEFAULT_ORCHESTRATOR;
   await assertOrchestrator(project.path, orchestrator);
   if (command.freeAgentMode && !permissionsSupported(orchestrator)) throw new MobileControlError('free_agent_mode_unavailable');
-  if (command.persona !== undefined) refusePersona(name);
+  if (command.persona != null) refusePersona(name);
   const orchestration = command.orchestration !== undefined ? parseMobileOrchestration(command.orchestration, 'create', { mcpEnabled: isMcpEnabled(project.path) }) : undefined;
   if (command.mcpIds?.length) {
     const catalog = new Set((await readMcpCatalog(project.path).catch((): McpCatalogEntry[] => [])).map((m) => m.id));
@@ -480,11 +483,12 @@ export async function updateMobileAgent(
 ) {
   const state = stateOf(config, live);
   if (state === 'creating') throw new MobileControlError('agent_creating');
-  if (command.persona !== undefined) refusePersona(config.name);
+  if (command.persona != null) refusePersona(config.name);
   const { idleSleep } = command;
   const awake = state === 'running' || state === 'starting';
   // Only the settings themselves: the server passes the whole command, with its version, epoch and id.
-  if (awake && SPAWN_SETTINGS.some((k) => command[k] !== undefined)) throw new MobileControlError('agent_running', 409, 'rejected', LOCKED_DETAIL);
+  // `persona: null` changes nothing, so it doesn't count.
+  if (awake && SPAWN_SETTINGS.some((k) => (k === 'persona' ? command.persona != null : command[k] !== undefined))) throw new MobileControlError('agent_running', 409, 'rejected', LOCKED_DETAIL);
 
   const identity: { name?: string; color?: string; emoji?: string | null } = {};
   const updates: DurableConfigUpdates = {};

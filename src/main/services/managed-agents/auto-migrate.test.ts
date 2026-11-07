@@ -106,6 +106,7 @@ import * as agentConfig from '../agent-config';
 import * as legacySettings from './legacy-settings';
 import {
   _resetAutoMigrateForTesting,
+  PERSONA_LAYER_CARRY_CUTOFF,
   autoMigrateFrom,
   backupLocation,
   legacyConfiguredFrom,
@@ -287,8 +288,58 @@ describe('the switch at spawn (D59)', () => {
     expect(await migrateAtSpawn('beta', agent('beta', 'plain'))).toBeNull();
     expect(await migrateAtSpawn('remote-1', agent('remote-1', 'far', { persona: 'qa' }))).toBeNull();
     expect(get('remote-1', 'far').managed).toBeUndefined();
-    expect(agentConfig.setManagedMigration).not.toHaveBeenCalled();
+    // The plain agent is only stamped (D62); nothing is switched, and the other project's agent is left alone.
+    expect(vi.mocked(agentConfig.setManagedMigration).mock.calls).toEqual([['beta', 'plain', { layerCarriedAt: expect.any(String) }]]);
+    expect(get('remote-1', 'far').personaLayerCarriedAt).toBeUndefined();
     expect(await parts('block')).toEqual([]);
+  });
+
+  it('a plain agent started before the startup pass keeps its persona layer for that session (D62)', async () => {
+    h.projectLayer = { orchestrate: true, maxHelpers: 2 };
+    const plain = agent('beta', 'plain');
+    expect(await migrateAtSpawn('beta', plain)).toBeNull();
+    expect(get('beta', 'plain').orchestration).toEqual({ orchestrate: true, maxHelpers: 2 });
+    expect(get('beta', 'plain').personaLayerCarriedAt).toEqual(expect.any(String));
+    // The pass then has nothing to do for it, and a later spawn doesn't carry again.
+    h.policyCalls = [];
+    expect((await runStartupMigration()).carried).toBe(0);
+    expect(await migrateAtSpawn('beta', structuredClone(get('beta', 'plain')))).toBeNull();
+    expect(h.policyCalls).toEqual([]);
+  });
+
+  it('carries at spawn during the agent\'s own transition, which the startup pass waits out', async () => {
+    h.projectLayer = { maxHelpers: 2 };
+    const plain = agent('beta', 'plain');
+    h.busy.add('plain');
+    expect(await migrateAtSpawn('beta', plain)).toBeNull();
+    expect(get('beta', 'plain').orchestration).toEqual({ maxHelpers: 2 });
+  });
+
+  it('an agent whose automatic switch fails still keeps what the built-in Orchestrator persona gave it', async () => {
+    // As legacy-migration reads the built-in Orchestrator: orchestrate true.
+    h.personaPolicy = { orchestrator: { orchestrate: true } };
+    const ada = agent('beta', 'ada', { persona: 'orchestrator' });
+    vi.spyOn(service, 'saveSetup').mockRejectedValue(new ManagedError('invalid', 'Two skills use the folder name ship.'));
+
+    // Fails before the switch's own carry.
+    const { carryPersonaOrchestration } = await import('../orchestration-policy');
+    vi.mocked(carryPersonaOrchestration).mockRejectedValueOnce(new Error('cut short'));
+    expect(await migrateAtSpawn('beta', ada)).toBeNull();
+    expect(get('beta', 'ada').managed).toBeUndefined();
+    expect(get('beta', 'ada').managedMigrationFailure).toBeDefined();
+    expect(get('beta', 'ada').orchestration).toEqual({ orchestrate: true });
+    expect(get('beta', 'ada').personaLayerCarriedAt).toEqual(expect.any(String));
+    expect(h.policyCalls).toContain('carry-plain');
+  });
+
+  it('the startup pass carries for an agent whose automatic switch fails', async () => {
+    h.personaPolicy = { orchestrator: { orchestrate: true } };
+    agent('beta', 'ada', { persona: 'orchestrator' });
+    const { carryPersonaOrchestration } = await import('../orchestration-policy');
+    vi.mocked(carryPersonaOrchestration).mockRejectedValueOnce(new Error('cut short'));
+    expect(await runStartupMigration()).toMatchObject({ switched: 0, failed: 1 });
+    expect(get('beta', 'ada').orchestration).toEqual({ orchestrate: true });
+    expect(get('beta', 'ada').personaLayerCarriedAt).toEqual(expect.any(String));
   });
 });
 
@@ -407,6 +458,44 @@ describe('the startup pass (D59)', () => {
     expect(get('beta', 'plain').orchestration).toEqual({ maxHelpers: 3, helperAccess: 'standard' });
   });
 
+  it('carries only agents created before the carry first ran, and records when that was', async () => {
+    h.projectLayer = { orchestrate: true };
+    agent('beta', 'old', { createdAt: '2026-01-01T00:00:00.000Z' });
+    agent('beta', 'unreadable', { createdAt: 'not a date' });
+
+    expect((await runStartupMigration()).carried).toBe(2);
+    const state = await createManagedStateStore(h.stateDir).read();
+    const cutoff = state.migrations?.[PERSONA_LAYER_CARRY_CUTOFF];
+    expect(cutoff).toEqual(expect.any(String));
+
+    // A later start: an agent created after the cutoff (unstamped, say by an older build), in a project whose
+    // orchestrator.md or default persona would decide its orchestration, gets nothing written onto it.
+    _resetAutoMigrateForTesting();
+    const after = new Date(Date.parse(cutoff!) + 60_000).toISOString();
+    agent('beta', 'new-plain', { createdAt: after });
+    h.policyCalls = [];
+    expect((await runStartupMigration()).carried).toBe(0);
+    expect(await migrateAtSpawn('beta', structuredClone(get('beta', 'new-plain')))).toBeNull();
+    expect(h.policyCalls).toEqual([]);
+    expect(get('beta', 'new-plain').orchestration).toBeUndefined();
+    expect(get('beta', 'new-plain').personaLayerCarriedAt).toBeUndefined();
+    // The cutoff stays the first one.
+    expect((await createManagedStateStore(h.stateDir).read()).migrations?.[PERSONA_LAYER_CARRY_CUTOFF]).toBe(cutoff);
+  });
+
+  it('carries nothing when the cutoff can\'t be read, and tries again next time', async () => {
+    h.projectLayer = { orchestrate: true };
+    agent('beta', 'old');
+    fs.mkdirSync(h.stateDir, { recursive: true });
+    fs.writeFileSync(path.join(h.stateDir, 'state.json'), '{ not json');
+    expect((await runStartupMigration()).carried).toBe(0);
+    expect(get('beta', 'old').orchestration).toBeUndefined();
+    expect(appLog).toHaveBeenCalledWith('core:managed', 'warn', 'Could not read when the persona layer carry started', expect.anything());
+    fs.rmSync(path.join(h.stateDir, 'state.json'));
+    expect(await migrateAtSpawn('beta', structuredClone(get('beta', 'old')))).toBeNull();
+    expect(get('beta', 'old').orchestration).toEqual({ orchestrate: true });
+  });
+
   describe('managed agents work at app start (D61, D63)', () => {
     it('runs the settings migration even when the built-in parts fail to install, and switches no agents', async () => {
       seed();
@@ -441,8 +530,9 @@ describe('switched once, by hand or on its own (#2901)', () => {
     const save = vi.spyOn(service, 'saveSetup');
 
     expect(await migrateAtSpawn('alpha', structuredClone(get('alpha', 'ada')))).toBeNull();
-    // It stays unmanaged, so the startup pass keeps its persona layer (D62), and switches nothing.
-    expect(await runStartupMigration()).toEqual({ switched: 0, failed: 0, deferred: 0, carried: 1 });
+    // It stays unmanaged, so its spawn kept its persona layer (D62), and the startup pass switches nothing.
+    expect(get('alpha', 'ada').personaLayerCarriedAt).toEqual(expect.any(String));
+    expect(await runStartupMigration()).toEqual({ switched: 0, failed: 0, deferred: 0, carried: 0 });
 
     expect(save).not.toHaveBeenCalled();
     expect(get('alpha', 'ada').managed).toBeUndefined();

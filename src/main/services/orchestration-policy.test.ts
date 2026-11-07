@@ -442,6 +442,15 @@ describe('carryPersonaOrchestration: what the retired persona layer decided beco
     expect(await getOrchestrationPolicy(PROJECT, 'plain')).toMatchObject({ access: 'same', maxHelpers: 2 });
   });
 
+  it('a persona\'s Auto off beats the agent\'s own on, as it did, audited with the old value', async () => {
+    state.layers.set('own-on', { autoHelpers: false });
+    setAgents(PROJECT, [agent('own-on', { persona: 'quiet', orchestration: { orchestrate: true, autoHelpers: true } })]);
+    expect(await carryPersonaOrchestration(PROJECT, 'own-on', 'plain')).toEqual({ autoHelpers: false });
+    expect(find('own-on').orchestration).toEqual({ orchestrate: true, autoHelpers: false });
+    expect(auditRows).toEqual([expect.objectContaining({ key: 'orchestration.autoHelpers', before: true, after: false, code: 'carried_from_persona_layer' })]);
+    expect(await getOrchestrationPolicy(PROJECT, 'own-on')).toMatchObject({ autoHelpers: false, sources: { autoHelpers: 'agent' } });
+  });
+
   it('never touches the gate', async () => {
     state.layers.set('orch', { orchestrate: true });
     setAgents(PROJECT, [agent('orch')]);

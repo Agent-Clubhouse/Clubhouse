@@ -432,7 +432,8 @@ export interface DurableAgentConfig {
   /**
    * When the orchestration fields the retired persona layer (a project or
    * user `orchestrator.md`, or its persona) decided for this unmanaged agent
-   * were kept as its own (D62). Set once, so it isn't done again.
+   * were kept as its own (D62). Set once, so it isn't done again. A new
+   * agent gets it at creation: it never had that layer.
    */
   personaLayerCarriedAt?: string;
 }

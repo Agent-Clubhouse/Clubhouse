@@ -22,6 +22,7 @@ vi.mock('../agent-settings-service', () => ({
   }),
 }));
 
+import { appLog } from '../log-service';
 import { legacyPersonaBody, legacyPersonaId, legacyPersonaOrchestration, orchestrationToCarry } from './legacy-migration';
 
 let root: string;
@@ -77,14 +78,42 @@ describe('legacyPersonaBody', () => {
     expect(await legacyPersonaBody(project, 'qa')).toBe('Project QA.\n');
   });
 
-  it('is undefined for no id, an unknown id, a dropped built-in or a name that leaves the personas folder', async () => {
+  it('is undefined for no id, an unknown id or a name that leaves the personas folder', async () => {
     expect(await legacyPersonaBody(project, undefined)).toBeUndefined();
     expect(await legacyPersonaBody(project, 'pirate')).toBeUndefined();
-    expect(await legacyPersonaBody(project, 'ui-lead')).toBeUndefined();
     fs.mkdirSync(path.join(project, '.clubhouse'), { recursive: true });
     fs.writeFileSync(path.join(project, '.clubhouse', 'secret.md'), 'Secret.');
-    expect(await legacyPersonaBody(project, path.join('..', 'secret'))).toBeUndefined();
-    expect(await legacyPersonaBody(project, '..')).toBeUndefined();
+    for (const id of [path.join('..', 'secret'), '../secret', '..\\secret', '..', '', 'a\0b']) {
+      expect(await legacyPersonaBody(project, id), JSON.stringify(id)).toBeUndefined();
+    }
+  });
+
+  it('logs a skipped id with its code only', async () => {
+    vi.mocked(appLog).mockClear();
+    expect(await legacyPersonaBody(project, '../secret-name')).toBeUndefined();
+    expect(appLog).toHaveBeenCalledWith('core:managed', 'warn', expect.any(String), { meta: { code: 'invalid_persona_id' } });
+    expect(JSON.stringify(vi.mocked(appLog).mock.calls)).not.toContain('secret-name');
+  });
+
+  it('keeps the dropped built-ins\' text for a switch, though they are no blocks', async () => {
+    expect(await legacyPersonaBody(project, 'ui-lead')).toContain('# Role: UI/Design Lead');
+    expect(await legacyPersonaBody(project, 'quality-auditor')).toContain('# Role: Quality Auditor');
+    expect(await legacyPersonaBody(project, 'doc-updater')).toContain('# Role: Documentation Updater');
+    writePersona(project, 'ui-lead', 'Our UI lead.\n');
+    expect(await legacyPersonaBody(project, 'ui-lead')).toBe('Our UI lead.\n');
+  });
+
+  it('finds nothing for an inherited object key', async () => {
+    for (const id of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      expect(await legacyPersonaBody(project, id), id).toBeUndefined();
+      expect(await legacyPersonaOrchestration(project, agent({ persona: id })), id).toBeUndefined();
+    }
+  });
+
+  it('reads an id the persona runtime read, spaces and all', async () => {
+    writePersona(project, 'My Reviewer', withPolicy({ maxHelpers: 2 }, 'Review with care.\n'));
+    expect(await legacyPersonaBody(project, 'My Reviewer')).toBe('Review with care.\n');
+    expect(await legacyPersonaOrchestration(project, agent({ persona: 'My Reviewer' }))).toEqual({ maxHelpers: 2 });
   });
 });
 
@@ -132,6 +161,12 @@ describe('orchestrationToCarry', () => {
   it('is what the layer set and the agent didn\'t', () => {
     expect(orchestrationToCarry({ access: 'same' }, { access: 'standard', maxHelpers: 2, orchestrate: true })).toEqual({ maxHelpers: 2, orchestrate: true });
     expect(orchestrationToCarry(undefined, { orchestrate: true })).toEqual({ orchestrate: true });
+  });
+
+  it('carries a persona\'s Auto off over the agent\'s own on, as the old rule had it (#2671)', () => {
+    expect(orchestrationToCarry({ autoHelpers: true, orchestrate: true }, { autoHelpers: false })).toEqual({ autoHelpers: false });
+    expect(orchestrationToCarry({ autoHelpers: false }, { autoHelpers: false })).toBeUndefined();
+    expect(orchestrationToCarry(undefined, { autoHelpers: false })).toEqual({ autoHelpers: false });
   });
 
   it('is undefined when the layer decides nothing the agent left open', () => {

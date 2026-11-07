@@ -519,7 +519,8 @@ export async function turnOffOrchestration(
  * Before an unmanaged agent switches to managed (#2901): the persona layer is
  * retired, so every field the agent's persona or the project's Orchestrator
  * persona decided (managed-agents/legacy-migration) is written to its own
- * fields, and the policy resolves as it did with the layer. A managed agent,
+ * fields, and the policy resolves as it did with the layer (a persona's
+ * Auto off over the agent's own on included, audited with its old value). A managed agent,
  * or one whose persona layer decides nothing, is left as it is. The gate isn't
  * touched: the outcome doesn't change. Saved as is, without the MCP check: MCP
  * off masks it the same either way. A switch that fails afterwards keeps the
@@ -536,9 +537,12 @@ export async function carryPersonaOrchestration(projectPath: string, agentId: st
     if (!agent || agent.managed) return undefined;
     const carried = orchestrationToCarry(agent.orchestration, await legacyPersonaOrchestration(projectPath, agent));
     if (!carried) return undefined;
+    const previous: Record<string, unknown> = { ...agent.orchestration };
     await agentConfig.setOrchestrationConfig(projectPath, agentId, normalizeOrchestrationConfig({ ...agent.orchestration, ...carried }));
     for (const [key, value] of Object.entries(carried)) {
-      await appendSettingsAudit({ surface: 'persona', targetId: agentId, scope: 'agent', key: `orchestration.${key}`, before: null, after: value as boolean | number | string, outcome: 'ok', code: why === 'plain' ? 'carried_from_persona_layer' : 'carried_to_managed' });
+      // Only autoHelpers can have a value before: a persona's Auto off overrides the agent's own on (orchestrationToCarry).
+      const before = (previous[key] as boolean | number | string | undefined) ?? null;
+      await appendSettingsAudit({ surface: 'persona', targetId: agentId, scope: 'agent', key: `orchestration.${key}`, before, after: value as boolean | number | string, outcome: 'ok', code: why === 'plain' ? 'carried_from_persona_layer' : 'carried_to_managed' });
     }
     appLog('core:orchestration', 'info', why === 'plain'
       ? 'Orchestration defaults from the persona layer kept on a plain agent'

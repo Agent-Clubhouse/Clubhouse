@@ -1985,6 +1985,8 @@ export async function beginDurableCreation(
     color,
     ...(plan ? { branch: plan.branch, worktreePath: plan.wtPath, branchOwned: false } : {}),
     createdAt: startedAt,
+    // A new agent never had the retired persona layer, so there is nothing to carry onto it (D62).
+    personaLayerCarriedAt: startedAt,
     ...(model && model !== 'default' ? { model } : {}),
     ...(effort ? { effort } : {}),
     ...(routing ? { routing } : {}),

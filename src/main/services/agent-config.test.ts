@@ -341,6 +341,11 @@ describe('createDurable', () => {
     expect(config.id).toMatch(/^durable_/);
   });
 
+  it('stamps a new agent as carried: it never had the retired persona layer (D62)', async () => {
+    const config = await createDurable(PROJECT_PATH, 'my-agent', 'indigo');
+    expect(config.personaLayerCarriedAt).toBe(config.createdAt);
+  });
+
   it('branch = {name}/standby', async () => {
     const config = await createDurable(PROJECT_PATH, 'my-agent', 'indigo');
     expect(config.branch).toBe('my-agent/standby');
