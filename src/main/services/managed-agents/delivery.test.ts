@@ -62,6 +62,14 @@ describe('deliverManagedSetup', () => {
     expect(text).not.toContain('@@');
   });
 
+  it('delivers conditional wildcards as written: a variant is its own block (#2901)', async () => {
+    const rules = await user(() => service.createPart({ name: 'Variant', content: { kind: 'block', content: '@@If(nope)\nOnly sometimes.\n@@EndIf' } }));
+    agent.managed = { version: 1, blocks: [rules.id], skills: [], mcps: [] };
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    const text = fs.readFileSync(path.join(agent.worktreePath!, 'CLAUDE.md'), 'utf-8');
+    expect(text).toContain('@@If(nope)\nOnly sometimes.\n@@EndIf');
+  });
+
   it('copies skills whole, including binary files, and removes a skill dropped from the setup', async () => {
     const a = await user(() => service.createPart({ name: 'Deploy', content: { kind: 'skill', skillName: 'deploy', files: [
       { path: 'SKILL.md', content: '# Deploy' },

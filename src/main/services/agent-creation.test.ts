@@ -363,6 +363,16 @@ describe('startDurableCreation (#2226)', () => {
     expect(inject).toHaveBeenCalledWith(expect.objectContaining({ id: started.agentId, worktreePath: agentPath('injected') }));
   });
 
+  it('logs a failed injection and goes on, unless it is required (#2899)', async () => {
+    const optional = await startDurableCreation(PROJECT_PATH, { name: 'best-effort', color: 'indigo' }, { inject: async () => { throw new Error('no setup'); } });
+    expect(await optional.done).toBe('ready');
+    events.length = 0;
+    const required = await startDurableCreation(PROJECT_PATH, { name: 'required', color: 'indigo' }, { inject: async () => { throw new Error('no setup'); }, injectRequired: true });
+    expect(await required.done).toBe('failed');
+    expect(events.at(-1)).toMatchObject({ stage: 'failed', reason: 'Could not set up the new agent: no setup' });
+    expect(dirs.has(agentPath('required'))).toBe(false);
+  });
+
   it('throws up front for a bad request, without a record', async () => {
     await expect(startDurableCreation(PROJECT_PATH, { name: 'x', color: 'indigo', folderName: '..' })).rejects.toThrow(/agent name/);
     expect(events).toEqual([]);
