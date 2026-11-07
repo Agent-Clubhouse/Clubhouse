@@ -36,7 +36,7 @@ Decisions made while building, for the maintainer to revisit. Newest last.
 | D7 | Restart resumes. Instruction, skill and MCP files are rewritten before every start, including resume. Whether a resumed CLI session re-reads its instructions file is unverified per CLI. Chat resume sends no system prompt. | The agreed behavior is that Restart resumes the conversation. | A CLI doesn't re-read on resume: show "Restart with a new conversation" more prominently for that CLI. |
 | D8 | Built-in role blocks start from today's persona files, without front matter. | #2902 will rewrite them. The ids stay stable. | |
 | D9 | "Changes waiting" is computed against an in-memory record of what each running session got. | An app restart re-delivers anyway. | |
-| D10 | Conditional wildcards (`@@If`) are still processed until #2901 removes them. | Built-in text from personas still uses them. | |
+| D10 | Managed agents don't process conditional wildcards (`@@If` / `@@EndIf`): a variant is its own block, and the text is delivered as written. Unmanaged agents keep them until #2901 retires them with migration. | Retired for managed agents (#2901). No built-in block uses them. | |
 | D11 | Catalog writes from the Dispatcher are refused today. #2900 widens this for the Dispatcher only. | The catalog guard refuses agent surfaces. | |
 | D12 | The managed UI ships behind a preview-only experimental flag (`managedAgents`) while it lands, and graduates when the epic's acceptance passes. | Half a feature shouldn't reach stable builds. | |
 | D13 | Setup changes write no settings-audit row yet. | The audit inventory is pinned by a test, so this is a follow-up. | |

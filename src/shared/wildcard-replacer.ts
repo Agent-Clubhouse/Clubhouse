@@ -15,7 +15,7 @@ export interface WildcardContext {
  * wildcards in a string, and process @@If(value)...@@EndIf conditional blocks.
  * Returns the input unchanged if no wildcards are found.
  */
-export function replaceWildcards(text: string, ctx: WildcardContext): string {
+export function replaceWildcards(text: string, ctx: WildcardContext, opts: { conditionals?: boolean } = {}): string {
   let result = text
     .replace(/@@AgentName/g, ctx.agentName)
     .replace(/@@StandbyBranch/g, ctx.standbyBranch)
@@ -27,8 +27,9 @@ export function replaceWildcards(text: string, ctx: WildcardContext): string {
     .replace(/@@Mission/g, ctx.mission || '')
     .replace(/@@Persona/g, ctx.persona || '');
 
-  // Process @@If(value)...@@EndIf conditional blocks
-  result = processConditionalBlocks(result, ctx);
+  // Process @@If(value)...@@EndIf conditional blocks. Managed agents pass
+  // conditionals: false: a variant is its own instruction block there (#2901).
+  if (opts.conditionals !== false) result = processConditionalBlocks(result, ctx);
 
   return result;
 }

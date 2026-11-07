@@ -68,7 +68,7 @@ export async function renderManagedInstructions(projectPath: string, agent: Dura
   const composed = composeInstructions(resolved.blocks.map((b) => ({ content: b.content })));
   if (composed.ok === false) throw new Error(composed.code);
   const ctx = await wildcardContextFor(projectPath, agent);
-  return replaceWildcards(composed.text, ctx);
+  return replaceWildcards(composed.text, ctx, { conditionals: false });
 }
 
 /** The MCP servers a managed agent gets, as the providers' launch code takes them. The Clubhouse bridge is separate. */
@@ -220,7 +220,7 @@ export async function previewManagedSetup(params: {
   for (const b of resolved.blocks) usage.set(b.id, (await params.service.consumers(b.id)).length);
   let line = 1;
   const blocks = resolved.blocks.map((b) => {
-    const lines = replaceWildcards(b.content, ctx).split('\n').length;
+    const lines = replaceWildcards(b.content, ctx, { conditionals: false }).split('\n').length;
     const entry = { id: b.id, name: b.name, builtin: b.builtin, usedBy: usage.get(b.id) ?? 0, startLine: line, endLine: line + lines - 1 };
     line += lines + 1;
     return entry;
