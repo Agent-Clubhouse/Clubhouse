@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { ManagedAgentSetup } from '../../../shared/managed-agents-types';
-import { CLUBHOUSE_MCP_PART_ID } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, isListed } from '../../../shared/managed-agents-types';
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
@@ -13,7 +13,8 @@ import { createAssetCatalogStore } from '../asset-catalog/store';
 import { withSettingsSurface, _resetSettingsAuditForTesting } from '../settings-audit';
 import { createManagedStateStore } from './state-store';
 import { createManagedAgentsService, diffTemplates, ManagedError, type ManagedAgentsService } from './service';
-import { BUILTIN_BLOCK_IDS, builtinParts } from './builtins';
+import { BUILTIN_BLOCK_IDS, BUILTIN_MANIFEST, builtinParts, builtinTemplates, DEFAULT_HELPER_TEMPLATE_ID } from './builtins';
+import { BUILTIN_TEXT } from './builtin-text/index';
 
 const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
 
@@ -62,6 +63,77 @@ describe('built-ins', () => {
     const before = (await user(() => service.getPart(BUILTIN_BLOCK_IDS.identity))).revision;
     await service.ensureBuiltins();
     expect((await user(() => service.getPart(BUILTIN_BLOCK_IDS.identity))).revision).toBe(before);
+  });
+
+  it('ships the built-ins from the maintainer\'s builder review (#2902), with the cut ones retired (D71)', async () => {
+    const blocks = (await user(() => service.listParts('block'))).filter((b) => b.builtin);
+    expect(blocks.filter(isListed).map((b) => b.name)).toEqual([
+      'Clubhouse basics', 'Developer', 'Group project lead', 'Group projects', 'Helper', 'Identity',
+      'Merging', 'Orchestrator', 'Product owner', 'Pull requests', 'Quality assurance', 'Researcher',
+    ]);
+    expect(blocks.filter((b) => b.retired).map((b) => b.id).sort()).toEqual([
+      BUILTIN_BLOCK_IDS.reviewer, BUILTIN_BLOCK_IDS.developerMerge, BUILTIN_BLOCK_IDS.developerPr, BUILTIN_BLOCK_IDS.projectManager,
+    ].sort());
+    const templates = await user(() => service.listTemplates());
+    expect(templates.filter(isListed).map((t) => t.name)).toEqual([
+      'Orchestrator', 'Group Project Lead', 'Quality Assurance', 'Developer (Full Merge)', 'Developer (No Merge)',
+      'Product Owner', 'Researcher', 'Helper', 'Developer helper', 'Research helper', 'QA helper',
+    ]);
+    expect(templates.filter((t) => t.retired).map((t) => t.id)).toEqual(['builtin-template-project-manager']);
+    expect(DEFAULT_HELPER_TEMPLATE_ID).toBe('builtin-template-helper');
+    expect(await service.defaultHelperTemplateId()).toBe('builtin-template-helper');
+  });
+
+  it('keeps the manifest whole: every id code uses, every block file, and every template block exist', () => {
+    const ids = new Set(BUILTIN_MANIFEST.blocks.map((b) => b.id));
+    for (const id of Object.values(BUILTIN_BLOCK_IDS)) expect(ids, id).toContain(id);
+    expect(Object.keys(BUILTIN_TEXT).sort()).toEqual(BUILTIN_MANIFEST.blocks.map((b) => b.file).sort());
+    const retired = new Set(BUILTIN_MANIFEST.blocks.filter((b) => b.retired).map((b) => b.id));
+    for (const t of builtinTemplates()) {
+      for (const id of t.setup.blocks) expect(ids, `${t.id} lists ${id}`).toContain(id);
+      if (!t.retired) expect(t.setup.blocks.filter((id) => retired.has(id)), t.id).toEqual([]);
+      expect(t.setup.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+    }
+    expect(new Set(builtinTemplates().map((t) => t.id)).size).toBe(builtinTemplates().length);
+  });
+
+  it('keeps the Identity line the E2E specs look for', () => {
+    const identity = builtinParts().find((p) => p.id === BUILTIN_BLOCK_IDS.identity)!;
+    expect((identity.payload as { content: string }).content.split('\n')[0]).toBe('You are @@AgentName, an agent working in Clubhouse.');
+  });
+
+  it('a retired built-in is hidden from listings but still resolves, builds a setup and keeps its agents (D71)', async () => {
+    const parts = await user(() => service.listParts('block'));
+    const pm = parts.find((p) => p.id === BUILTIN_BLOCK_IDS.projectManager)!;
+    expect(pm).toMatchObject({ builtin: true, retired: true });
+    expect(parts.filter(isListed).map((p) => p.id)).not.toContain(pm.id);
+    expect(parts.find((p) => p.id === BUILTIN_BLOCK_IDS.identity)!.retired).toBeUndefined();
+    const read = await user(() => service.getPart(pm.id));
+    expect(read.retired).toBe(true);
+    expect(read.content.kind === 'block' && read.content.content.length).toBeGreaterThan(0);
+
+    const template = await user(() => service.getTemplate('builtin-template-project-manager'));
+    expect(template.retired).toBe(true);
+    const { setup } = await user(() => service.setupFromTemplate(template.id));
+    expect(setup.blocks).toEqual([BUILTIN_BLOCK_IDS.identity, BUILTIN_BLOCK_IDS.basics, BUILTIN_BLOCK_IDS.projectManager]);
+    agent('a', setup);
+    const listed = await user(() => service.listTemplates());
+    expect(listed.find((t) => t.id === template.id)!.usedBy).toBe(1);
+    expect((await user(() => service.listParts('block'))).find((p) => p.id === pm.id)!.usedBy.map((c) => c.agentId)).toEqual(['a']);
+    // Its agent's setup still saves: the part is installed.
+    expect((await user(() => service.saveSetup('/p', 'a', setup))).blocks).toContain(pm.id);
+    // A second install leaves it in place.
+    await service.ensureBuiltins();
+    expect((await user(() => service.getPart(pm.id))).revision).toBe(read.revision);
+  });
+
+  it('frees a retired built-in\'s name for new parts and templates (D71)', async () => {
+    const block = await user(() => service.createPart({ name: 'Code reviewer', content: { kind: 'block', content: 'Review hard.' } }));
+    expect(block.builtin).toBe(false);
+    const t = await user(() => service.saveTemplate({ name: 'Project Manager', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: {} }));
+    expect(t.retired).toBeUndefined();
+    await expectCode(user(() => service.createPart({ name: 'Identity', content: { kind: 'block', content: 'x' } })), 'name_taken');
+    await expectCode(user(() => service.saveTemplate({ name: 'Helper', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: {} })), 'name_taken');
   });
 
   it('refuses edits to a built-in but lets it be forked', async () => {
@@ -300,7 +372,7 @@ describe('templates', () => {
 
   it('falls back to the built-in Helper template when the default is unset or gone', async () => {
     expect(await service.defaultHelperTemplateId()).toBe('builtin-template-helper');
-    const t = await user(() => service.saveTemplate({ name: 'QA helper', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: {} }));
+    const t = await user(() => service.saveTemplate({ name: 'Careful reviewer', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: {} }));
     await user(() => service.setDefaultHelperTemplateId(t.id));
     expect(await service.defaultHelperTemplateId()).toBe(t.id);
     await user(() => service.deleteTemplate(t.id));

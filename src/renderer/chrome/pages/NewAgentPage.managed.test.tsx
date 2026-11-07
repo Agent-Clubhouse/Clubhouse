@@ -41,6 +41,18 @@ const customTemplate = {
   usedBy: 1,
 };
 
+// Cut from the built-ins (D71): agents made from it keep working, but nothing offers it.
+const retiredTemplate = {
+  id: 'builtin-template-project-manager',
+  name: 'Project Manager',
+  description: 'Replaced by Product Owner.',
+  builtin: true,
+  retired: true as const,
+  setup: { blocks: ['b-identity', 'b-pm'], skills: [], mcps: ['builtin-mcp-clubhouse'] },
+  settings: {},
+  usedBy: 2,
+};
+
 let spawnDurableAgent: ReturnType<typeof vi.fn>;
 const req = (over: Partial<NewAgentRequest> = {}): NewAgentRequest => ({ kind: 'durable', seq: 1, ...over });
 const openWith = (over: Partial<NewAgentRequest> = {}) => {
@@ -109,7 +121,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
   });
 
   it('Start with template lists built-in and custom templates, and Create makes the agent from one', async () => {
-    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [builtinTemplate, customTemplate] } as never);
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [builtinTemplate, retiredTemplate, customTemplate] } as never);
     const create = vi.spyOn(m(), 'createAgent').mockResolvedValue({ ok: true, value: { id: 'm-new', name: 'keen-heron', color: 'emerald' } } as never);
     openWith();
     await managedSwitch();
@@ -121,6 +133,9 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     expect(within(screen.getByRole('region', { name: 'Built-in' })).getByText('Orchestrator')).toBeTruthy();
     expect(within(screen.getByRole('region', { name: 'Your templates' })).getByText('Release lead')).toBeTruthy();
     expect(builtin.textContent).toContain('2 blocks · 1 skill · 1 MCP server · helpers on, up to 3');
+    // A retired built-in isn't offered (D71).
+    expect(screen.queryByTestId('managed-template-builtin-template-project-manager')).toBeNull();
+    expect(screen.queryByText('Project Manager')).toBeNull();
     expect(screen.getByTestId('managed-template-custom-release').textContent).toContain('Custom');
 
     fireEvent.click(within(builtin).getByRole('button', { name: 'Create from Orchestrator' }));
@@ -365,11 +380,12 @@ describe('NewAgentPage, a quick agent from a template (D25)', () => {
   const typeMission = () => fireEvent.change(screen.getByTestId('new-agent-mission'), { target: { value: 'Summarize the inbox' } });
 
   it('shows None and the templates under the mission box, keeps the mission, and starts from the one picked', async () => {
-    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [builtinTemplate, serverTemplate] } as never);
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [builtinTemplate, retiredTemplate, serverTemplate] } as never);
     openWith({ kind: 'quick' });
     const select = await screen.findByTestId('new-agent-quick-template') as HTMLSelectElement;
     await waitFor(() => expect(select.disabled).toBe(false));
     expect(screen.getByTestId('new-agent-mission').compareDocumentPosition(select) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Project Manager is retired (D71), so it isn't listed.
     expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['None', 'Orchestrator', 'WorkIQ reader (yours)']);
     expect(select.value).toBe('');
     expect(screen.getByTestId('new-agent-quick-template-help').textContent).toBe('Optional. Starts the agent with a template’s instructions and MCP servers.');

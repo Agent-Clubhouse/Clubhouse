@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
-import { CLUBHOUSE_MCP_PART_ID } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, isListed } from '../../../shared/managed-agents-types';
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
@@ -13,7 +13,7 @@ import { createAssetCatalogStore } from '../asset-catalog/store';
 import { withSettingsSurface, _resetSettingsAuditForTesting } from '../settings-audit';
 import { createManagedStateStore } from './state-store';
 import { createManagedAgentsService, type ManagedAgentsService } from './service';
-import { BUILTIN_BLOCK_IDS } from './builtins';
+import { BUILTIN_BLOCK_IDS, builtinParts, builtinTemplates } from './builtins';
 import { appLog } from '../log-service';
 import {
   deliverManagedSetup,
@@ -75,6 +75,34 @@ describe('deliverManagedSetup', () => {
     expect(text.startsWith('You are cool-gazelle, an agent working in Clubhouse.')).toBe(true);
     expect(text.endsWith('\n\nWork on cool-gazelle/standby.')).toBe(true);
     expect(text).not.toContain('@@');
+  });
+
+  it('every built-in template that is offered composes with no @@If and only wildcards delivery fills (#2902)', async () => {
+    const text = new Map(builtinParts().map((p) => [p.id, 'content' in p.payload ? p.payload.content : '']));
+    const offered = builtinTemplates().filter(isListed);
+    expect(offered.length).toBeGreaterThan(0);
+    for (const t of offered) {
+      const raw = t.setup.blocks.map((id) => text.get(id)!).join('\n\n');
+      expect(raw, t.id).not.toMatch(/@@(If|EndIf)\b/);
+      const { setup } = await user(() => service.setupFromTemplate(t.id));
+      expect(setup.blocks, t.id).toEqual(t.setup.blocks);
+      agent.managed = setup;
+      await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+      const delivered = fs.readFileSync(path.join(agent.worktreePath!, 'CLAUDE.md'), 'utf-8');
+      expect(delivered.startsWith('You are cool-gazelle, an agent working in Clubhouse.'), t.id).toBe(true);
+      // Every wildcard was one delivery fills: none is left as written.
+      expect(delivered, t.id).not.toMatch(/@@\w/);
+    }
+  });
+
+  it('still delivers a retired built-in to an agent that uses it (D71)', async () => {
+    const { setup } = await user(() => service.setupFromTemplate('builtin-template-project-manager'));
+    agent.managed = setup;
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    const delivered = fs.readFileSync(path.join(agent.worktreePath!, 'CLAUDE.md'), 'utf-8');
+    const pm = builtinParts().find((p) => p.id === BUILTIN_BLOCK_IDS.projectManager)!;
+    expect(pm.retired).toBe(true);
+    expect(delivered.endsWith((pm.payload as { content: string }).content)).toBe(true);
   });
 
   it('delivers conditional wildcards as written: a variant is its own block (#2901)', async () => {

@@ -52,6 +52,17 @@ describe('Agent parts library page', () => {
     expect(screen.queryByTestId('managed-library-hidden')).toBeNull();
   });
 
+  it('hides retired built-ins (D71)', async () => {
+    vi.spyOn(m(), 'listParts').mockResolvedValue({ ok: true, value: [...parts, part('pm', { name: 'Project manager', builtin: true, retired: true, usedBy: [consumer('ada'), consumer('lead')] })] });
+    render(<PartLibraryView kind="block" />);
+    const rows = await screen.findAllByTestId('managed-library-row');
+    expect(rows.map((r) => r.textContent)).toEqual([expect.stringContaining('Coding standards'), expect.stringContaining('Identity')]);
+    fireEvent.click(screen.getByRole('switch', { name: 'Show parts used by one agent' }));
+    expect(screen.queryByText('Project manager')).toBeNull();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Source' }), { target: { value: 'builtin' } });
+    expect(screen.getAllByTestId('managed-library-row').map((r) => r.textContent)).toEqual([expect.stringContaining('Identity')]);
+  });
+
   it('filters by source and search', async () => {
     vi.spyOn(m(), 'listParts').mockResolvedValue({ ok: true, value: parts });
     render(<PartLibraryView kind="block" />);
@@ -124,6 +135,17 @@ describe('Templates page', () => {
     expect(within(builtin).getByText('No agents')).toBeTruthy();
     fireEvent.click(within(builtin).getByRole('button', { name: 'Make your copy of Orchestrator' }));
     await waitFor(() => expect(save).toHaveBeenCalledWith({ name: 'Orchestrator copy', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: {} }));
+  });
+
+  it('leaves retired built-in templates out (D71)', async () => {
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [
+      template('builtin-orch', { name: 'Orchestrator', builtin: true }),
+      template('builtin-template-project-manager', { name: 'Project Manager', builtin: true, retired: true, usedBy: 3 }),
+    ] });
+    render(<TemplatesSettingsView />);
+    const builtin = await screen.findByTestId('managed-templates-builtin');
+    expect(within(builtin).getByText('Orchestrator')).toBeTruthy();
+    expect(screen.queryByText('Project Manager')).toBeNull();
   });
 
   it('saving lists the changes and agents, and applies to the ticked agents only', async () => {
@@ -219,6 +241,25 @@ describe('Helpers page with managed agents', () => {
     expect(select.value).toBe('qa');
     expect(screen.getByRole('heading', { name: 'Smart helper selection' })).toBeTruthy();
     expect(screen.getByTestId('helper-presets-footer').textContent).toBe('Smart helper selection balances load across your providers. Built-in templates ask orchestrators to use it.');
+  });
+
+  it('offers no retired template for the default, but keeps one already chosen (D71)', async () => {
+    const list = [
+      template('builtin-template-helper', { name: 'Helper', builtin: true }),
+      template('builtin-template-project-manager', { name: 'Project Manager', builtin: true, retired: true }),
+    ];
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: list });
+    const first = render(<HelpersSettingsView />);
+    let select = await screen.findByTestId('helpers-default-template') as HTMLSelectElement;
+    await waitFor(() => expect(select.disabled).toBe(false));
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Helper']);
+    first.unmount();
+
+    vi.spyOn(m(), 'getDefaultHelperTemplate').mockResolvedValue({ ok: true, value: 'builtin-template-project-manager' });
+    render(<HelpersSettingsView />);
+    select = await screen.findByTestId('helpers-default-template') as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('builtin-template-project-manager'));
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Helper', 'Project Manager']);
   });
 
   it('lets orchestrators choose helper templates only when turned on, off by default (D31)', async () => {

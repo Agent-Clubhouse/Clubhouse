@@ -30,6 +30,11 @@ export interface ManagedAgentSetup {
  */
 export const CLUBHOUSE_MCP_PART_ID = 'builtin-mcp-clubhouse';
 
+/** Whether a part or template is offered for new choices: everything but retired built-ins. */
+export function isListed(item: { retired?: boolean }): boolean {
+  return !item.retired;
+}
+
 /** What the builder's MCP page says beside the Clubhouse part's disabled switch. */
 export const CLUBHOUSE_PART_NOTE = 'Always on. Clubhouse uses it for status, helpers, messages and the Dispatcher.';
 
@@ -42,6 +47,11 @@ export interface ManagedPartSummary {
   name: string;
   description: string;
   builtin: boolean;
+  /**
+   * A retired built-in (#2902): still installed and delivered to agents and
+   * templates that list it, but hidden from the library and from new choices.
+   */
+  retired?: true;
   revision: number;
   updatedAt: string;
   /** Who last changed it, when not the person: for example "Dispatcher". */
@@ -107,6 +117,11 @@ export interface ManagedTemplate {
   name: string;
   description: string;
   builtin: boolean;
+  /**
+   * A retired built-in template (#2902): agents made from it keep working and
+   * it still resolves by id, but New agent and the template lists hide it.
+   */
+  retired?: true;
   setup: Omit<ManagedAgentSetup, 'version' | 'templateId'>;
   settings: ManagedTemplateSettings;
   updatedAt?: string;

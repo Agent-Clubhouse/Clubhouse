@@ -17,6 +17,7 @@ import type { DurableAgentConfig } from '../../../shared/types';
 import {
   CLUBHOUSE_MCP_PART_ID,
   CLUBHOUSE_PART_ALWAYS_ON,
+  isListed,
   type ManagedAgentSetup,
   type ManagedErrorCode,
   type ManagedPart,
@@ -278,6 +279,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       name: entry.name,
       description: builtin ? (BUILTINS.get(entry.id)?.description ?? '') : (meta.description ?? ''),
       builtin,
+      ...(builtin && BUILTINS.get(entry.id)?.retired && { retired: true as const }),
       revision: entry.headRevision,
       updatedAt: head?.savedAt ?? entry.createdAt,
       ...(meta.updatedBy && { updatedBy: meta.updatedBy }),
@@ -348,7 +350,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       if (!name) throw new ManagedError('invalid', 'Give it a name.');
       refuseEnvValues(input.content);
       const taken = (await liveEntries());
-      if (Object.values(taken).some((e) => e.kind === kind && e.name.toLowerCase() === name.toLowerCase())) {
+      if (Object.values(taken).some((e) => e.kind === kind && !isRetiredBuiltin(e) && e.name.toLowerCase() === name.toLowerCase())) {
         throw new ManagedError('name_taken', `${name} already exists. Use it, or pick another name.`);
       }
       let entry: CatalogEntry;
@@ -385,7 +387,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         }
         if (input.name !== undefined && input.name.trim() && input.name.trim() !== entry.name) {
           const name = input.name.trim();
-          if (Object.values(await liveEntries()).some((e) => e.kind === entry.kind && e.id !== entry.id && e.name.toLowerCase() === name.toLowerCase())) {
+          if (Object.values(await liveEntries()).some((e) => e.kind === entry.kind && e.id !== entry.id && !isRetiredBuiltin(e) && e.name.toLowerCase() === name.toLowerCase())) {
             throw new ManagedError('name_taken', `${name} already exists.`);
           }
           entry = await catalog.renameAsset({ assetId: entry.id, expectedName: entry.name, name });
@@ -606,7 +608,8 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       const template = await state.update((s) => {
         const id = input.id ?? `template-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
         if (input.id && !s.templates[input.id]) throw new ManagedError('not_found');
-        const clash = [...BUILTIN_TEMPLATES.values(), ...Object.values(s.templates)].some((t) => t.id !== id && t.name.toLowerCase() === name.toLowerCase());
+        // A retired built-in's name (D71) is free: nothing lists it any more.
+        const clash = [...BUILTIN_TEMPLATES.values(), ...Object.values(s.templates)].some((t) => isListed(t) && t.id !== id && t.name.toLowerCase() === name.toLowerCase());
         if (clash) throw new ManagedError('name_taken', `A template called ${name} already exists.`);
         const t: ManagedTemplate = {
           id, name, description: input.description?.trim() ?? '', builtin: false,
@@ -875,6 +878,11 @@ function describeAlready(change: ManagedTemplateChange): string {
   if (change.kind === 'remove') return `already has no ${change.name}`;
   if (change.kind === 'order') return 'order not pushed';
   return `${change.key} already ${change.to}`;
+}
+
+/** A retired built-in part (D71): its name is free for new parts, since nothing lists it. */
+function isRetiredBuiltin(entry: CatalogEntry): boolean {
+  return entry.source.kind === 'builtin' && BUILTINS.get(entry.id)?.retired === true;
 }
 
 export function isBuiltinPart(id: string): boolean {

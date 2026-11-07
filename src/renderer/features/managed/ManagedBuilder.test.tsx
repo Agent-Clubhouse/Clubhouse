@@ -425,6 +425,16 @@ describe('focus and announcements (#2819)', () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('managed-write-block')));
   });
 
+  it('the block library hides a retired built-in unless the setup still uses it (D71)', () => {
+    const parts = [part('a'), part('pm', { name: 'Project manager', builtin: true, retired: true })];
+    const { rerender } = render(<LibraryPanel parts={parts} inUse={[]} onAdd={vi.fn()} onNew={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Add a' })).toBeTruthy();
+    expect(screen.queryByText('Project manager')).toBeNull();
+    rerender(<LibraryPanel parts={parts} inUse={['pm']} onAdd={vi.fn()} onNew={vi.fn()} />);
+    expect(screen.getByText('Project manager')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add Project manager' })).toBeNull();
+  });
+
   it('Add in the library moves focus to the next block that can be added, then the search box', async () => {
     function Library() {
       const [inUse, setInUse] = useState<string[]>([]);

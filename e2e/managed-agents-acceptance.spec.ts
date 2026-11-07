@@ -16,8 +16,9 @@ import { addProject } from './smoke-helpers';
  *   (WorkIQ); fork the base instructions and add specific stuff locally."
  *
  * Agent A starts from the Orchestrator template and gets a new skill. Agent B
- * starts from Project Manager, switches on A's skill, adds a WorkIQ MCP server,
- * and makes its own copy of the Project manager block with a line of its own.
+ * starts from Product Owner (the maintainer's "pm"; the Project Manager
+ * template is retired, D71), switches on A's skill, adds a WorkIQ MCP server,
+ * and makes its own copy of the Product owner block with a line of its own.
  * After a restart, B's folder holds all of it, and A's instructions don't have
  * B's line.
  *
@@ -26,12 +27,12 @@ import { addProject } from './smoke-helpers';
  */
 
 const AGENT_A = 'acc-orchestrator';
-const AGENT_B = 'acc-pm';
+const AGENT_B = 'acc-po';
 const TEMPLATE_A = 'builtin-template-orchestrator';
-const TEMPLATE_B = 'builtin-template-project-manager';
-// builtinTemplates() in src/main/services/managed-agents/builtins.ts.
+const TEMPLATE_B = 'builtin-template-product-owner';
+// builtin-text/manifest.json, read by src/main/services/managed-agents/builtins.ts.
 const BASE_BLOCKS = ['builtin-block-identity', 'builtin-block-clubhouse-basics'];
-const ROLE_BLOCK_B = 'builtin-block-project-manager';
+const ROLE_BLOCK_B = 'builtin-block-product-owner';
 const identityLine = (name: string): string => `You are ${name}, an agent working in Clubhouse.`;
 
 const SKILL_NAME = 'Release notes';
@@ -193,8 +194,8 @@ test('base template, a new skill, a skill from another agent, an MCP server, and
   const skillToggle = () => w.locator(`[data-testid="agent-settings-page-skills"] [data-testid="managed-part-toggle-${skillId}"]`);
   await expect(skillToggle()).toHaveAttribute('aria-checked', 'true');
 
-  // ── Agent B: Project Manager ──
-  const b = await createFromTemplate(w, AGENT_B, TEMPLATE_B, 'Project Manager');
+  // ── Agent B: Product Owner ──
+  const b = await createFromTemplate(w, AGENT_B, TEMPLATE_B, 'Product Owner');
   await openAgentSettings(w, AGENT_B);
 
   // The skill A has: off on B until switched on.

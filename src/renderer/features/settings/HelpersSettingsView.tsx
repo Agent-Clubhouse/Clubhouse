@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { MAX_HELPER_LIMIT } from '../../../shared/orchestration-policy';
+import { isListed } from '../../../shared/managed-agents-types';
 import { useProjectStore } from '../../stores/projectStore';
 import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { Button } from '../../components/Button';
@@ -107,7 +108,8 @@ function DefaultHelperTemplateSection() {
           data-testid="helpers-default-template"
         >
           {current !== null && templates && !templates.some((t) => t.id === current) && <option value={current}>{current}</option>}
-          {(templates ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}{t.builtin ? '' : ' (yours)'}</option>)}
+          {/* Retired built-ins (D71) aren't offered, but one already chosen stays shown. */}
+          {(templates ?? []).filter((t) => isListed(t) || t.id === current).map((t) => <option key={t.id} value={t.id}>{t.name}{t.builtin ? '' : ' (yours)'}</option>)}
         </select>
       </SettingsField>
       <SettingsField
