@@ -34,6 +34,7 @@ import { recordDisposeRequest } from '../../helper-dispose-requests';
 import { listHelpersEverywhere, type HelperEntry } from '../../helper-index';
 import * as projectStore from '../../project-store';
 import { appLog } from '../../log-service';
+import { recordHelperDisposed } from '../../../telemetry/helper-usage';
 import { broadcastToAllWindows } from '../../../util/ipc-broadcast';
 import { findMainWindow } from '../../../ipc/window-handlers';
 import { IPC } from '../../../../shared/ipc-channels';
@@ -319,6 +320,8 @@ async function disposeLocked(homePath: string, callerId: string, ref: string, fo
       return textResult(`dispose_helper failed: ${result.message}`, true);
     }
 
+    // Disposed: recorded before anything else can fail. agent-config already released any Auto reservation.
+    recordHelperDisposed(helper.id);
     await refreshRenderer(helperPath);
     // Report what the re-check after the stop found: that is what was lost.
     const final = result.checks ?? checks;

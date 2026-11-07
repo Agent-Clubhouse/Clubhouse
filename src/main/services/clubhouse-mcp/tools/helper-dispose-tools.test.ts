@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   killAgent: vi.fn(async (..._args: unknown[]) => undefined),
   disposeHelper: vi.fn(),
   setHelperHandoff: vi.fn(),
+  recordDisposed: vi.fn(),
 }));
 
 function clean(): HelperDisposeChecks {
@@ -82,6 +83,7 @@ vi.mock('../../../util/ipc-broadcast', () => ({
   broadcastToAllWindows: (...args: unknown[]) => mocks.broadcast(...args),
 }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
+vi.mock('../../../telemetry/helper-usage', () => ({ recordHelperDisposed: (id: string) => mocks.recordDisposed(id) }));
 
 import { registerHelperDisposeTools } from './helper-dispose-tools';
 import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry';
@@ -168,6 +170,23 @@ describe('dispose_helper', () => {
     expect(mocks.disposeHelper).toHaveBeenCalledWith(PROJECT, 'helper', { force: false, expectedParentId: 'orch' });
     expect(withAgentLock).toHaveBeenCalledWith(PROJECT, 'orch', expect.any(Function));
     expect(mocks.broadcast).toHaveBeenCalledWith(IPC.WINDOW.REQUEST_DURABLE_RELOAD, 'proj_1');
+  });
+
+  it('records a disposal before refreshing the rail, so a refresh that fails can\'t lose it', async () => {
+    const projectStore = await import('../../project-store');
+    vi.mocked(projectStore.list).mockRejectedValueOnce(new Error('store unreadable'));
+    mocks.recordDisposed.mockClear();
+    const { json } = await call('dispose_helper', { helper: 'helper' });
+    expect(json).toMatchObject({ status: 'disposed' });
+    expect(mocks.recordDisposed).toHaveBeenCalledWith('helper');
+    expect(mocks.recordDisposed.mock.invocationCallOrder[0]).toBeGreaterThan(mocks.disposeHelper.mock.invocationCallOrder[0]);
+  });
+
+  it('records no disposal when the helper is held', async () => {
+    mocks.checks.set('helper', { dirty: 1, unpushed: 0, unmerged: 0 });
+    mocks.recordDisposed.mockClear();
+    await call('dispose_helper', { helper: 'helper' });
+    expect(mocks.recordDisposed).not.toHaveBeenCalled();
   });
 
   it('holds a helper with work at risk and returns the facts, changing nothing', async () => {

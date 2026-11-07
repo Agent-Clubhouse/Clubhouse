@@ -201,6 +201,7 @@ import {
   updateDurableConfig,
 } from './agent-config';
 import { setPersonaChangeHook } from './persona-change-hook';
+import { _resetHelperAutoStateForTesting, commitAutoDecision, reservationSummary, reservedLoad, reserveAutoDecision, settleAutoDecision } from './helper-auto-state';
 import type { DurableAgentConfig } from '../../shared/types';
 
 const PROJECT_PATH = path.resolve('helpers-project');
@@ -916,6 +917,70 @@ describe('delete cascade', () => {
     expect(agents.find((a) => a.id === 'durable_2_h')).not.toHaveProperty('parentAgentId');
     expect(agents.find((a) => a.id === 'durable_5_h')).not.toHaveProperty('parentAgentId');
     expect(agents.find((a) => a.id === 'durable_3_gone')?.parentAgentId).toBe('durable_1_orch');
+  });
+
+  describe('an Auto reservation ends with the helper (#2887)', () => {
+    // A count that hasn't seen any of these rows: only a confirmed end may release.
+    const unseen = { live: new Set<string>(), notRunning: new Set<string>() };
+    const hold = (helperId: string, started = true) => {
+      reserveAutoDecision(`d-${helperId}`, { provider: 'claude-code', key: 'claude-code:default' });
+      commitAutoDecision(`d-${helperId}`, helperId);
+      if (started) settleAutoDecision(`d-${helperId}`, 'started');
+    };
+    beforeEach(() => { _resetHelperAutoStateForTesting(); });
+
+    it('a disposal through the shared path releases it before any count, however it was asked for', async () => {
+      seedFamily({ durable_2_h: {} });
+      hold('durable_2_h');
+      expect(reservedLoad(unseen)).toEqual({ 'claude-code': 1 });
+      // The same call the UI and the MCP tool make, with nothing after it.
+      expect(await disposeHelper(PROJECT_PATH, 'durable_2_h')).toMatchObject({ ok: true });
+      expect(reservationSummary().held).toBe(0);
+      expect(reservedLoad(unseen)).toEqual({});
+    });
+
+    it('a cascade disposal releases each helper it disposed', async () => {
+      seedFamily({ durable_2_a: {}, durable_3_b: {} });
+      hold('durable_2_a');
+      hold('durable_3_b', false);
+      expect(await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose')).toMatchObject({ ok: true });
+      expect(reservationSummary().held).toBe(0);
+    });
+
+    it('a refused disposal releases nothing', async () => {
+      seedFamily({ durable_2_dirty: { dirty: 1 } });
+      hold('durable_2_dirty');
+      expect(await disposeHelper(PROJECT_PATH, 'durable_2_dirty')).toMatchObject({ ok: false });
+      expect(reservedLoad(unseen)).toEqual({ 'claude-code': 1 });
+    });
+
+    it('a helper deleted, removed from the list, or released to an ordinary agent releases it', async () => {
+      seed([
+        agent('durable_1_orch'),
+        agent('durable_2_h', { parentAgentId: 'durable_1_orch' }),
+        agent('durable_3_orch'),
+        agent('durable_4_h', { parentAgentId: 'durable_3_orch' }),
+        agent('durable_5_h', { parentAgentId: 'durable_3_orch' }),
+        agent('durable_6_h', { parentAgentId: 'durable_3_orch' }),
+      ]);
+      for (const id of ['durable_2_h', 'durable_4_h', 'durable_5_h', 'durable_6_h']) hold(id);
+      await deleteDurable(PROJECT_PATH, 'durable_2_h');
+      expect(reservationSummary().held).toBe(3);
+      await setParentAgent(PROJECT_PATH, 'durable_4_h', null);
+      expect(reservationSummary().held).toBe(2);
+      await deleteUnregister(PROJECT_PATH, 'durable_5_h');
+      expect(reservationSummary().held).toBe(1);
+      // Its parent deleted: the helper stays as an ordinary agent, and isn't Auto's load.
+      await deleteDurable(PROJECT_PATH, 'durable_3_orch');
+      expect(reservationSummary().held).toBe(0);
+    });
+
+    it('a helper moved to another parent is still a helper, and keeps it', async () => {
+      seed([agent('durable_1_a'), agent('durable_2_b'), agent('durable_3_h', { parentAgentId: 'durable_1_a' })]);
+      hold('durable_3_h');
+      await setParentAgent(PROJECT_PATH, 'durable_3_h', 'durable_2_b');
+      expect(reservationSummary().held).toBe(1);
+    });
   });
 
   it('disposeHelper honours the checks unless forced', async () => {
