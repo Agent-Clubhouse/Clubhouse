@@ -664,6 +664,10 @@ describe('convert acceptance (#2819)', () => {
     // An effort is for a model, so it follows the model's rule (#2895).
     expect(settingsForConvert('claude-code', { orchestrator: 'codex-cli', model: 'gpt-5', effort: 'xhigh', idleSleep: 30 })).toEqual({ idleSleep: 30 });
     expect(settingsForConvert('claude-code', { effort: 'high', helperTemplateId: 'builtin-template-helper' })).toEqual({ effort: 'high', helperTemplateId: 'builtin-template-helper' });
+    // Only for the model the agent will run: the template's, or its own when that is the same (D81).
+    expect(settingsForConvert('claude-code', { effort: 'high' }, 'sonnet')).toEqual({});
+    expect(settingsForConvert('claude-code', { model: 'opus', effort: 'high' }, 'sonnet')).toEqual({ model: 'opus', effort: 'high' });
+    expect(settingsForConvert('claude-code', { orchestrator: 'codex-cli', model: 'opus', effort: 'high' }, 'opus')).toEqual({});
   });
 
   it('copies the MCP file aside once, and a second copy never overwrites the first', async () => {

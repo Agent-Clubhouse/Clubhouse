@@ -272,7 +272,8 @@ describe('previewManagedSetup', () => {
       { key: 'effort', label: 'Effort', value: 'high' },
       { key: 'freeAgentMode', label: 'Free Agent Mode', value: 'On' },
       { key: 'orchestration', label: 'Orchestration', value: 'Can start helpers' },
-      { key: 'helpers', label: 'Helpers', value: 'Up to 3 at once, Smart selection, no approvals, from Helper' },
+      { key: 'helpers', label: 'Helpers', value: 'Up to 3 at once, Smart selection, no approvals' },
+      { key: 'helperTemplate', label: 'Helper template', value: 'Helper' },
       { key: 'dispatcher', label: 'Dispatcher', value: 'Connected' },
     ]);
   });

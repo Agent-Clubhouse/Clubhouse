@@ -2,8 +2,9 @@
  * The rows a managed agent's Settings page adds to the Runtime and Helpers
  * controls it shares with other agents (#2895): effort, auto-sleep and the
  * helper template. Each saves on change to the agent's own setting, through
- * the same call templates and the builder use. A running agent picks the
- * change up at its next start, and the setup-changed bar offers Restart.
+ * the same call templates and the builder use. A running agent picks up a
+ * new effort at its next start, and the setup-changed bar offers Restart.
+ * Auto-sleep and the helper template reach a running agent at once (D82, D83).
  */
 import { useEffect, useId, useState } from 'react';
 import type { DurableAgentConfig } from '../../../shared/types';

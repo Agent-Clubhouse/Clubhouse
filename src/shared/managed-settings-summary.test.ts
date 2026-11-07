@@ -22,7 +22,8 @@ describe('managedSettingsSummary', () => {
       orchestration: { orchestrate: true, maxHelpers: 2, autoHelpers: false, control: 'ask-before-start', connectToDispatcher: false },
       helperTemplateName: 'Quality Assurance',
     });
-    expect(value(rows, 'helpers')).toBe('Up to 2 at once, fixed selection, asks before starting, from Quality Assurance');
+    expect(value(rows, 'helpers')).toBe('Up to 2 at once, fixed selection, asks before starting');
+    expect(value(rows, 'helperTemplate')).toBe('Quality Assurance');
     expect(value(rows, 'dispatcher')).toBe('Not connected');
     expect(managedSettingsSummary({ orchestration: { orchestrate: true } }).find((r) => r.key === 'helpers')!.value)
       .toBe('Up to 5 at once, selection from the app setting, no approvals');

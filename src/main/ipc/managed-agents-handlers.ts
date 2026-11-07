@@ -10,7 +10,7 @@ import { dismissMigrationNotice, managedAgents, restartManagedAgent, runningSnap
 import { applyManagedSettings, convertToManaged, createManagedAgent, previewConvert } from '../services/managed-agents/agents';
 import { withSwitchLock } from '../services/managed-agents/auto-migrate';
 import { previewManagedSetup } from '../services/managed-agents/delivery';
-import { ManagedError } from '../services/managed-agents/service';
+import { checkTemplateSettings, ManagedError } from '../services/managed-agents/service';
 import * as agentConfig from '../services/agent-config';
 import { resolveOrchestrator } from '../services/agent-system';
 import { appLog } from '../services/log-service';
@@ -110,12 +110,15 @@ export function registerManagedAgentsHandlers(): void {
   // agent that doesn't exist yet, named as the person typed it, in the folder
   // Clubhouse would give it (`.clubhouse/agents/<name>/`).
   ipcMain.handle(IPC.MANAGED.PREVIEW_DRAFT, withValidatedArgs(
-    [stringArg(), objectArg<{ name: string; setup: { blocks: string[]; skills: string[]; mcps: string[] }; settings?: ManagedTemplateSettings }>({ validate: (v) => {
+    [stringArg({ maxLength: 4096 }), objectArg<{ name: string; setup: { blocks: string[]; skills: string[]; mcps: string[] }; settings?: ManagedTemplateSettings }>({ validate: (v) => {
       stringArg({ maxLength: 200 })(v.name, 'name');
       setupShape(v.setup);
+      // The CLI id, model, effort, orchestration fields and helper template, as a template's are checked.
+      const checked = checkTemplateSettings(v.settings);
+      if (checked.orchestrator && !getProvider(checked.orchestrator)) throw new Error('Invalid settings orchestrator');
     } })],
     (_e, projectPath, input) => result(async () => {
-      const settings = input.settings ?? {};
+      const settings = checkTemplateSettings(input.settings);
       const agent: DurableAgentConfig = {
         id: 'new-agent',
         name: input.name.trim() || 'new-agent',
@@ -133,7 +136,7 @@ export function registerManagedAgentsHandlers(): void {
     }),
   ));
   // The effort levels each model of a CLI takes, for the builder's Effort list. `default` is the CLI's default model's.
-  ipcMain.handle(IPC.MANAGED.MODEL_EFFORTS, withValidatedArgs([stringArg({ maxLength: 64 }), stringArg({ optional: true })],
+  ipcMain.handle(IPC.MANAGED.MODEL_EFFORTS, withValidatedArgs([stringArg({ maxLength: 64 }), stringArg({ optional: true, maxLength: 4096 })],
     (_e, cli, projectPath) => result(async (): Promise<Record<string, string[]>> => {
       const provider = getProvider(cli as OrchestratorId);
       if (!provider) return {};

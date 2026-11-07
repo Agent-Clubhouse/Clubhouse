@@ -83,6 +83,7 @@ import { setAgentIdleSleep } from './chat-idle-settings';
 import { noteManagedSettingsChanged } from './managed-agents/changed-notice';
 import { execFile } from 'child_process';
 import { pathExists } from './fs-utils';
+import { delivered } from './managed-agents/delivery-records';
 import { assertProviderSelection, noteProviderSelection } from './agent-transition';
 import { registerProvider } from '../orchestrators/registry';
 import { isInsideGitRepo } from './git-service';
@@ -1274,9 +1275,12 @@ describe('deleteUnregister', () => {
     captureMainAgentWrite((value) => { writtenAgents = value; });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
 
+    // What a managed session started with is freed with the agent (D79).
+    delivered.set('durable_unreg', { fingerprint: 'f', deliveredAt: 't', parts: {}, order: [] });
     const result = await deleteUnregister(PROJECT_PATH, 'durable_unreg');
     await flushAgentConfig(PROJECT_PATH);
     expect(result.ok).toBe(true);
+    expect(delivered.has('durable_unreg')).toBe(false);
     const remaining = JSON.parse(writtenAgents);
     expect(remaining.length).toBe(0);
     // No rm or git commands
@@ -1427,10 +1431,14 @@ describe('updateDurableConfig', () => {
     // The effort is passed at launch, so the bar compares it too (#2895).
     await updateDurableConfig(PROJECT_PATH, 'durable_managed', { effort: 'high' });
     expect(noteManagedSettingsChanged).toHaveBeenCalledTimes(3);
-    // Not for a field the bar doesn't compare, nor for an unmanaged agent.
+    // Auto-sleep and the helper template apply at once, but Settings and Preview show them (#2895).
     await updateDurableConfig(PROJECT_PATH, 'durable_managed', { idleSleep: 15 });
+    await updateDurableConfig(PROJECT_PATH, 'durable_managed', { helperTemplateId: 'builtin-template-helper' });
+    expect(noteManagedSettingsChanged).toHaveBeenCalledTimes(5);
+    // Not for a field neither shows, nor for an unmanaged agent.
+    await updateDurableConfig(PROJECT_PATH, 'durable_managed', { buildCommand: 'make' });
     await updateDurableConfig(PROJECT_PATH, 'durable_plain', { model: 'sonnet' });
-    expect(noteManagedSettingsChanged).toHaveBeenCalledTimes(3);
+    expect(noteManagedSettingsChanged).toHaveBeenCalledTimes(5);
   });
 
   it('persists and clears the per-agent auto-sleep, and applies it live (#2143)', async () => {

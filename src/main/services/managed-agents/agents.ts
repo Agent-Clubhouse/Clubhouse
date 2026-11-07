@@ -474,7 +474,13 @@ export async function convertToManaged(projectPath: string, agentId: string, opt
     return switchWith(projectPath, agent, provider, await readInstructionsOf(provider, agent.worktreePath), async () => {
       await stillUnmanaged(projectPath, agentId);
       return service.saveSetup(projectPath, agentId, setup);
-    }, () => applyManagedSettings(projectPath, agentId, settingsForConvert(provider.id, settings)));
+    }, () => {
+      const applied = settingsForConvert(provider.id, settings, agent.model);
+      if (settings.effort && applied.effort === undefined) {
+        appLog('core:managed', 'info', 'Switch to managed: the template\'s effort was left out, since the agent runs another model', { meta: { agentId, templateId: options.templateId } });
+      }
+      return applyManagedSettings(projectPath, agentId, applied);
+    });
   }
   const plan = await planConvert(projectPath, agent, agent.worktreePath, provider);
   // The Clubhouse part is in every managed setup: the Clubhouse MCP always runs.
@@ -616,13 +622,19 @@ async function undoSwitch(agent: DurableAgentConfig, made: string[], backup: str
 /**
  * A template's settings for an agent switching to managed. The agent keeps
  * its CLI, so it keeps its conversation (D51): the template's CLI isn't
- * applied, and neither are its model and effort when the template is for
- * another CLI. An effort is for a model, so it goes with the model's rule.
+ * applied, and neither is its model when the template is for another CLI.
+ * An effort is for one model (D81): it applies only when the agent will run
+ * the template's model, because the template sets it or the agent already
+ * has it (no model on either side is the CLI's default). `agentModel` is the
+ * agent's own model before the switch.
  */
-export function settingsForConvert(currentCli: string, settings: ManagedTemplateSettings): ManagedTemplateSettings {
+export function settingsForConvert(currentCli: string, settings: ManagedTemplateSettings, agentModel?: string): ManagedTemplateSettings {
   const { orchestrator, model, effort, ...rest } = settings;
   const sameCli = !orchestrator || orchestrator === currentCli;
-  return { ...rest, ...(model !== undefined && sameCli && { model }), ...(effort !== undefined && sameCli && { effort }) };
+  const modelApplied = model !== undefined && sameCli;
+  const norm = (m: string | undefined) => (m && m !== 'default' ? m : 'default');
+  const runsTemplateModel = sameCli && norm(modelApplied ? model : agentModel) === norm(model);
+  return { ...rest, ...(modelApplied && { model }), ...(effort !== undefined && runsTemplateModel && { effort }) };
 }
 
 /** Copy the agent's MCP file aside in its folder before the first managed start overwrites it (D54). */

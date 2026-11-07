@@ -186,7 +186,12 @@ export type ManagedTemplateChange =
   | { kind: 'add'; part: ManagedPartKind; id: string; name: string }
   | { kind: 'remove'; part: ManagedPartKind; id: string; name: string }
   | { kind: 'order' }
-  | { kind: 'setting'; key: string; from: string; to: string };
+  /**
+   * `followsModel`: not an edit of the effort, but what a pushed model or CLI
+   * change does to it (D81): the template's effort goes with the new model,
+   * or the effort goes back to the CLI default.
+   */
+  | { kind: 'setting'; key: string; from: string; to: string; followsModel?: true };
 
 export interface ManagedTemplatePushTarget {
   projectPath: string;

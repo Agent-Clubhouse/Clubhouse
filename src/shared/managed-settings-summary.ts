@@ -38,9 +38,9 @@ export function managedSettingsSummary(input: ManagedSettingsSummaryInput): Mana
     const selection = policy.sources.autoHelpers === 'agent'
       ? (policy.autoHelpers ? 'Smart selection' : 'fixed selection')
       : 'selection from the app setting';
-    const parts = [`Up to ${policy.maxHelpers} at once`, selection, APPROVALS[policy.control]];
-    if (input.helperTemplateName) parts.push(`from ${input.helperTemplateName}`);
-    rows.push({ key: 'helpers', label: 'Helpers', value: parts.join(', ') });
+    rows.push({ key: 'helpers', label: 'Helpers', value: [`Up to ${policy.maxHelpers} at once`, selection, APPROVALS[policy.control]].join(', ') });
+    // Its own row: it reaches a running agent at once, so "Running now" never shows it waiting (D83).
+    if (input.helperTemplateName) rows.push({ key: 'helperTemplate', label: 'Helper template', value: input.helperTemplateName });
   }
   if (!input.helper) rows.push({ key: 'dispatcher', label: 'Dispatcher', value: policy.connectToDispatcher ? 'Connected' : 'Not connected' });
   return rows;

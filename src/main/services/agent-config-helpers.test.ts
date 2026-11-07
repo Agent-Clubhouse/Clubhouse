@@ -202,6 +202,7 @@ import {
 } from './agent-config';
 import { _resetHelperAutoStateForTesting, commitAutoDecision, reservationSummary, reservedLoad, reserveAutoDecision, settleAutoDecision } from './helper-auto-state';
 import type { DurableAgentConfig } from '../../shared/types';
+import { delivered } from './managed-agents/delivery-records';
 
 const PROJECT_PATH = path.resolve('helpers-project');
 const CONFIG_PATH = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
@@ -927,6 +928,13 @@ describe('delete cascade', () => {
       expect(await disposeHelper(PROJECT_PATH, 'durable_2_h')).toMatchObject({ ok: true });
       expect(reservationSummary().held).toBe(0);
       expect(reservedLoad(unseen)).toEqual({});
+    });
+
+    it('a disposal frees what the helper\'s managed sessions kept: it never starts again (D79)', async () => {
+      seedFamily({ durable_2_h: {} });
+      delivered.set('durable_2_h', { fingerprint: 'f', deliveredAt: 't', parts: {}, order: [] });
+      expect(await disposeHelper(PROJECT_PATH, 'durable_2_h')).toMatchObject({ ok: true });
+      expect(delivered.has('durable_2_h')).toBe(false);
     });
 
     it('a cascade disposal releases each helper it disposed', async () => {

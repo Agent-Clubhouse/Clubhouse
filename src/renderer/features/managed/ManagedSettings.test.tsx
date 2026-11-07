@@ -5,6 +5,7 @@ import { HELPER_ROUTING_LABELS } from '../../../shared/helper-routing';
 import { HelpersSettingsView } from '../settings/HelpersSettingsView';
 import { PartLibraryView } from './PartLibraryView';
 import { TemplatesSettingsView } from './TemplatesSettingsView';
+import { changeText } from './TemplatePushDialog';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 
 const m = () => window.clubhouse.managed;
@@ -244,6 +245,12 @@ describe('Templates page', () => {
         orchestration: { orchestrate: true, autoHelpers: true, control: 'ask-everything', connectToDispatcher: false },
       },
     }));
+  });
+
+  it('says what a pushed model change does to the effort (D81)', () => {
+    expect(changeText({ kind: 'setting', key: 'effort', from: 'reset by the new model', to: 'high', followsModel: true })).toBe('~ Effort high goes with the new model');
+    expect(changeText({ kind: 'setting', key: 'effort', from: 'reset by the new model', to: 'CLI default', followsModel: true })).toBe('~ Effort goes back to the CLI default with the new model');
+    expect(changeText({ kind: 'setting', key: 'helperTemplateId', from: 'app default', to: 'QA helper' })).toBe('~ Helper template app default → QA helper');
   });
 
   it('deletes one of yours from its menu', async () => {
