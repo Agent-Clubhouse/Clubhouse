@@ -7,6 +7,8 @@ import { Button } from '../../components/Button';
 import { inputClass, selectClass, textareaClass, SectionHeading } from './agentSettingsUi';
 import { useReportDirty } from './agentSettingsPages';
 
+const UNSUPPORTED = 'This composition contains MCP or native subagent references. Builder cannot preview or save it. Nothing was changed or loaded.';
+
 const SAVED_ONLY = "Builder edits are saved only. Review a separate snapshot below for next-start adoption.";
 
 const OPERATIONAL_LABELS: Record<keyof TemplateOperationalDefaults, string> = {
@@ -52,8 +54,8 @@ export function AgentBuilderSection({ projectPath, projectId, agentId, onDirtyCh
     setError('');
     window.clubhouse.agentSettings.builderRead(projectPath, agentId).then((result) => {
       if (cancelled) return;
-      if (result.ok) { setView(result.view); setTemplate(result.view.templateId ?? ''); }
-      else setError('Could not load the Builder. Try Reload.');
+      if (result.ok === true) { setView(result.view); setTemplate(result.view.templateId ?? ''); }
+      else setError(result.code === 'unsupported' ? UNSUPPORTED : 'Could not load the Builder. Try Reload.');
     }).catch(() => {
       // telemetry-exempt: instruction content stays out of telemetry; error shown here.
       if (!cancelled) setError('Could not load the Builder. Try Reload.');
@@ -65,23 +67,28 @@ export function AgentBuilderSection({ projectPath, projectId, agentId, onDirtyCh
   const blocks = displayed?.blocks ?? [];
   const previewContents = blocks.map((block) => drafts[block.key] ?? block.content);
   const previewKey = JSON.stringify(previewContents);
+  const hasPreview = !!displayed;
   useEffect(() => {
     let cancelled = false;
     setPreviewError('');
+    if (!hasPreview) { setPreview(''); return; }
     window.clubhouse.agentSettings.builderPreview(JSON.parse(previewKey) as string[]).then((result) => {
       if (cancelled) return;
-      if (result.ok) setPreview(result.text);
+      if (result.ok === true) setPreview(result.text);
       else { setPreview(''); setPreviewError('The preview is too large. Shorten a block.'); }
     }).catch(() => {
       // telemetry-exempt: instruction content stays out of telemetry; error shown here.
       if (!cancelled) { setPreview(''); setPreviewError('Could not compose the preview.'); }
     });
     return () => { cancelled = true; };
-  }, [previewKey]);
+  }, [previewKey, hasPreview]);
 
   async function reload() {
     const result = await window.clubhouse.agentSettings.builderRead(projectPath, agentId);
-    if (result.ok === false) throw new Error('builder_read_failed');
+    if (result.ok === false) {
+      if (result.code === 'unsupported') { setView(null); setError(UNSUPPORTED); return; }
+      throw new Error('builder_read_failed');
+    }
     setView(result.view);
     setTemplate(result.view.templateId ?? '');
     setDrafts({});
@@ -103,7 +110,7 @@ export function AgentBuilderSection({ projectPath, projectId, agentId, onDirtyCh
         setReplacement(null);
         setName('');
         setContent('');
-        setError(result.code === 'stale' ? 'The saved Builder changed elsewhere. Your changes were not saved. Reloaded the latest version.' : 'Could not save. Your changes were reverted.');
+        setError(result.code === 'unsupported' ? UNSUPPORTED : result.code === 'stale' ? 'The saved Builder changed elsewhere. Your changes were not saved. Reloaded the latest version.' : 'Could not save. Your changes were reverted.');
         await reload();
         return;
       }

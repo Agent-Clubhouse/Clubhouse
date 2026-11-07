@@ -39,7 +39,7 @@ export function AgentBuilderSkills({ projectId, projectPath, agentId, view, susp
     setCatalog([]); setDocument(null); setSelected(''); setReview(null); onPreview(null);
     bridge.list(context).then((result) => {
       if (!mounted.current || sequence.current !== id || current.current !== identity) return;
-      if (result.ok) setCatalog(result.value); else setError('Could not load catalog skills. Reload skills.');
+      if (result.ok === true) setCatalog(result.value); else setError('Could not load catalog skills. Reload skills.');
     }).catch(() => {
       // telemetry-exempt: fixed visible failure; payloads and transport errors stay local.
       if (mounted.current && sequence.current === id) setError('Could not load catalog skills. Reload skills.');
@@ -66,14 +66,14 @@ export function AgentBuilderSkills({ projectId, projectPath, agentId, view, susp
     await perform(async () => {
       const result = await bridge.read(context, assetId);
       if (!valid()) return;
-      if (result.ok) setDocument(result.value); else setError('This skill is unavailable. Reload skills.');
+      if (result.ok === true) setDocument(result.value); else setError('This skill is unavailable. Reload skills.');
     });
   }
   async function preview(action: BuilderCommand) {
     await perform(async () => {
       const result = await window.clubhouse.agentSettings.builderCommand(projectPath, agentId, view.revision, action);
       if (!valid()) return;
-      if (!result.ok) { setError(result.code === 'stale' ? 'The source or Builder changed. Reload before reviewing again.' : 'This composition is blocked. Check skill names and ownership, then reload.'); return; }
+      if (result.ok === false) { setError(result.code === 'unsupported' ? 'MCP or native subagent composition is unsupported in Builder. No reference change was saved or loaded.' : result.code === 'stale' ? 'The source or Builder changed. Reload before reviewing again.' : 'This composition is blocked. Check skill names and ownership, then reload.'); return; }
       setReview({ action, view: result.view }); onPreview(result.view);
     });
   }
@@ -97,7 +97,6 @@ export function AgentBuilderSkills({ projectId, projectPath, agentId, view, susp
       </li>)}
     </ul>
     {(displayed.excludedSkills ?? []).map((skill) => <p key={skill.assetId}>Excluded template skill: {skill.name}. Select it below to restore its reference.</p>)}
-    {(displayed.unsupported ?? []).map((message) => <p key={message} role="alert">{message}</p>)}
     {!creating && !review && <>
       <label htmlFor="builder-catalog-skill">Catalog skill</label>
       <select id="builder-catalog-skill" value={selected} disabled={locked} className={selectClass} onChange={(event) => void load(event.target.value)}>
@@ -106,7 +105,7 @@ export function AgentBuilderSkills({ projectId, projectPath, agentId, view, susp
       </select>
       <Button disabled={locked} onClick={() => void perform(async () => {
         const result = await bridge.list(context);
-        if (valid()) { if (result.ok) { setCatalog(result.value); setSelected(''); setDocument(null); } else setError('Could not load catalog skills.'); }
+        if (valid()) { if (result.ok === true) { setCatalog(result.value); setSelected(''); setDocument(null); } else setError('Could not load catalog skills.'); }
       })}>Reload skills</Button>
       <Button disabled={locked} onClick={() => { setCreating(true); setDocument(null); }}>Create skill bundle</Button>
       {document && <div className="space-y-2">
@@ -116,7 +115,7 @@ export function AgentBuilderSkills({ projectId, projectPath, agentId, view, susp
         <Button disabled={locked} onClick={() => void perform(async () => {
           const result = await bridge.copy({ context, assetId: document.assetId, expectedRevision: document.revision });
           if (!valid()) return;
-          if (!result.ok) { setError('Could not copy this exact revision. Reload skills.'); return; }
+          if (result.ok === false) { setError('Could not copy this exact revision. Reload skills.'); return; }
           setCatalog((items) => [...items, result.value]); setSelected(result.value.assetId); setDocument(result.value);
           setNotice('Independent copy saved, unassigned. Review and assign it explicitly.');
         })}>Make copy</Button>
@@ -132,7 +131,7 @@ export function AgentBuilderSkills({ projectId, projectPath, agentId, view, susp
       <Button disabled={locked || !name.trim() || !payload.skillName} onClick={() => void perform(async () => {
         const result = await bridge.create({ context, name: name.trim(), scope, payload });
         if (!valid()) return;
-        if (!result.ok) { setError('Could not create a valid complete bundle. Check names, paths, encoding and size.'); return; }
+        if (result.ok === false) { setError('Could not create a valid complete bundle. Check names, paths, encoding and size.'); return; }
         setCreating(false); setName(''); setPayload({ skillName: '', files: [{ path: 'SKILL.md', content: '' }] });
         setCatalog((items) => [...items, result.value]); setSelected(result.value.assetId); setDocument(result.value);
         setNotice('Bundle saved, unassigned. Review and assign it explicitly.');
@@ -145,7 +144,7 @@ export function AgentBuilderSkills({ projectId, projectPath, agentId, view, susp
         const action = { ...review.action, confirm: true, fingerprint: review.view.skillFingerprint } as BuilderCommand;
         const result = await window.clubhouse.agentSettings.builderCommand(projectPath, agentId, view.revision, action);
         if (!valid()) return;
-        if (!result.ok) { setReview(null); onPreview(null); setError('The source or composition changed, or saving failed. Reload before retrying.'); return; }
+        if (result.ok === false) { setReview(null); onPreview(null); setError(result.code === 'unsupported' ? 'MCP or native subagent composition is unsupported in Builder. No reference change was saved or loaded.' : 'The source or composition changed, or saving failed. Reload before retrying.'); return; }
         setReview(null); onPreview(null); setNotice('Skill references saved in Builder only. Provider loading is unverified.'); onSaved(result.view);
       })}>Save skill references</Button>
       <Button disabled={locked} onClick={() => { setReview(null); onPreview(null); }}>Cancel reference change</Button>

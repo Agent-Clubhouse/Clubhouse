@@ -162,3 +162,13 @@ it('shows raised defaults and requires explicit agreement before saving a templa
   await settle();
   expect(requests[requests.length - 1]).toMatchObject({ type: 'template', confirm: true, acknowledgeOperationalIncreases: true });
 });
+
+it('shows explicit unsupported composition refusal without a successful snapshot or skill workflow', async () => {
+  api.builderRead = vi.fn(async () => ({ ok: false, code: 'unsupported' }));
+  renderBuilder();
+  expect(await screen.findByText('This composition contains MCP or native subagent references. Builder cannot preview or save it. Nothing was changed or loaded.')).toBeVisible();
+  expect(screen.queryByRole('region', { name: 'Builder skills' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Save skill references' })).not.toBeInTheDocument();
+  expect(api.builderCommand).not.toHaveBeenCalled();
+  expect(api.builderPreview).not.toHaveBeenCalled();
+});

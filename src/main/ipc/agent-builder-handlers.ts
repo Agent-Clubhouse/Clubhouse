@@ -3,7 +3,7 @@ import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { BuilderCommand, BuilderResult } from '../../shared/agent-builder-types';
 import { peekDurableConfigs } from '../services/agent-config';
-import { createAgentBuilder, builderSnapshotAdoption } from '../services/asset-catalog/builder';
+import { createAgentBuilder, builderSnapshotAdoption, BuilderUnsupportedCompositionError } from '../services/asset-catalog/builder';
 import { seedBuilderTemplates } from '../services/asset-catalog/builder-seeds';
 import { composeInstructions } from '../services/asset-catalog/composer';
 import { AssetCatalogError, assetCatalogDir, createAssetCatalogStore, type AssetCatalogStore } from '../services/asset-catalog/store';
@@ -66,7 +66,7 @@ export function registerAgentBuilderHandlers(injectedStore?: AssetCatalogStore):
       });
     } catch (error) {
       // telemetry-exempt: instruction content must never reach logs or telemetry. Visible error in the Builder.
-      return { ok: false, code: error instanceof AssetCatalogError && ['stale_revision', 'stale_preview', 'stale_choice'].includes(error.code) ? 'stale' : 'failed' };
+      return { ok: false, code: error instanceof BuilderUnsupportedCompositionError ? 'unsupported' : error instanceof AssetCatalogError && ['stale_revision', 'stale_preview', 'stale_choice'].includes(error.code) ? 'stale' : 'failed' };
     }
   }
   ipcMain.handle(IPC.AGENT.BUILDER_READ, withValidatedArgs([stringArg(), stringArg()], (_event, project, agent) => perform(project, agent)));

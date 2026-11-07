@@ -16,7 +16,6 @@ export interface BuilderView {
   excludedSkills?: Array<{ assetId: string; name: string }>;
   /** Desired composition only; never runtime-load evidence. */
   skillFingerprint?: string;
-  unsupported?: string[];
   revision: number;
   templateId: string | null;
   templates: Array<{ id: string; name: string }>;
@@ -37,4 +36,4 @@ export type BuilderCommand =
   | { type: 'return'; key: string }
   | { type: 'edit'; key: string; content: string }
   | { type: 'remove'; key: string };
-export type BuilderResult = { ok: true; view: BuilderView } | { ok: false; code: 'stale' | 'failed' };
+export type BuilderResult = { ok: true; view: BuilderView } | { ok: false; code: 'stale' | 'failed' | 'unsupported' };

@@ -259,3 +259,39 @@ it('refuses a source change between confirmation planning and serialized composi
   await expect(command({ type: 'skill', assetId: asset.id, expectedRevision: 1, confirm: true, fingerprint: preview.skillFingerprint })).rejects.toMatchObject({ code: 'stale_revision' });
   expect((await read()).skills).toEqual([]);
 });
+
+it('holds direct/base skills consistently without changing the preserved block snapshot rules', async () => {
+  const skill = await store.createAsset({ kind: 'skill', name: 'Pinned skill', payload: { skillName: 'pinned', files: [{ path: 'SKILL.md', content: 'first' }] } });
+  await store.saveRevision({ assetId: skill.id, expectedRevision: 1, payload: { skillName: 'pinned', files: [{ path: 'SKILL.md', content: 'second' }] } });
+  const templateId = 'builtin-builder-custom';
+  const payload = await store.readRevision(templateId, 1);
+  await installBuiltinAsset(store, { assetId: templateId, kind: 'template', name: 'Custom', builtinId: templateId, expectedRevision: 1,
+    payload: { ...payload, skills: [skill.id] } });
+  await choose('custom');
+  const composition = await builder.compositionOf(agentId);
+  composition.additions.push(skill.id); composition.floors[skill.id] = 1;
+  const snapshot = await builderSnapshotAdoption(store, composition);
+  expect(snapshot).toEqual({ content: { mode: 'hold', revisions: { [skill.id]: 1, 'builtin-builder-identity': 1 } }, structure: { mode: 'accepted' } });
+  const preview = await builder.read(agentId, snapshot, composition);
+  expect(preview.skills).toHaveLength(1);
+  expect(preview.skills![0]).toMatchObject({ revision: 1, provenance: expect.arrayContaining([{ via: 'addition' }, expect.objectContaining({ via: 'base' })]) });
+});
+it.each(['mcp', 'native'] as const)('refuses %s references in an accepted template even when excluded, without synthesizing holds', async (kind) => {
+  const templateId = 'builtin-builder-custom';
+  const payload = await store.readRevision(templateId, 1);
+  const asset = kind === 'mcp'
+    ? await store.createAsset({ kind: 'mcp', name: 'Unsupported MCP', payload: { serverKey: 'unsupported', transport: 'stdio', command: 'fixture' } })
+    : await store.createAsset({ kind: 'subagent', name: 'Unsupported native', payload: { agentName: 'unsupported', description: 'fixture', blocks: [{ entryId: 'role', blockId: 'builtin-builder-identity', blockRevision: 1 }], skills: [], mcps: [] } });
+  await installBuiltinAsset(store, { assetId: templateId, kind: 'template', name: 'Custom', builtinId: templateId, expectedRevision: 1,
+    payload: { ...payload, ...(kind === 'mcp' ? { mcps: [asset.id] } : { subagents: [{ entryId: 'native', subagentId: asset.id, subagentRevision: 1 }] }) } });
+  const composition = await builder.compositionOf(agentId);
+  composition.template = { templateId, acceptedRevision: 2 };
+  composition.entries = [{ baseEntryId: 'identity', source: { kind: 'follow' } }];
+  if (kind === 'mcp') composition.removals.push(asset.id); else composition.excludedSubagentEntryIds.push('native');
+  const before = await store.read();
+  const explicit = { content: { mode: 'takeable' as const }, structure: { mode: 'accepted' as const } };
+  await expect(builderSnapshotAdoption(store, composition)).rejects.toMatchObject({ code: 'unsupported' });
+  await expect(builder.read(agentId, explicit, composition)).rejects.toMatchObject({ code: 'unsupported' });
+  await expect(builder.command(agentId, 0, { type: 'template', templateId, confirm: false }, explicit)).rejects.toMatchObject({ code: 'unsupported' });
+  expect(await store.read()).toEqual(before);
+});

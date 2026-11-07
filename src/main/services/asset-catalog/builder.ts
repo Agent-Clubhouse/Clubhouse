@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import type { BaseAdoption, CompositionInput, InstanceEntry, SkillAssetPayload } from '../../../shared/asset-catalog-types';
+import type { BaseAdoption, CatalogIndex, CompositionInput, InstanceEntry, SkillAssetPayload } from '../../../shared/asset-catalog-types';
 import type { BuilderCommand, BuilderView } from '../../../shared/agent-builder-types';
 import { emptyComposition } from './planner';
 import { BUILDER_TEMPLATES } from './builder-seeds';
@@ -8,36 +8,38 @@ import { AssetCatalogError, type AssetCatalogStore } from './store';
 const inputOf = (value: CompositionInput): CompositionInput => Object.fromEntries(Object.keys(emptyComposition()).map((key) => [key, value[key as keyof CompositionInput]])) as unknown as CompositionInput;
 const keyOf = (entry: InstanceEntry) => entry.baseEntryId ? `base:${entry.baseEntryId}` : `local:${entry.localId}`;
 
+/** This slice cannot interpret native/MCP composition or create its snapshot policy. */
+export class BuilderUnsupportedCompositionError extends Error {
+  readonly code = 'unsupported';
+}
+function assertBuilderSupported(index: CatalogIndex, composition: CompositionInput): void {
+  const template = composition.template && index.assets[composition.template.templateId]?.revisions
+    .find((r) => r.revision === composition.template!.acceptedRevision)?.projection;
+  // Refuse even excluded base references: this editor has no review/restore flow
+  // for those asset types. Never inspect native payloads or synthesize their holds.
+  if (composition.subagents.length || (template?.kind === 'template' && (template.subagents.length || template.mcps.length))
+    || [...composition.additions, ...composition.removals].some((id) => index.assets[id]?.kind === 'mcp')) {
+    throw new BuilderUnsupportedCompositionError();
+  }
+}
+
 /** Snapshot for this saved-only editor, not an adoption policy for activation.
  * Keep accepted template text pinned. Agent-owned text uses its saved head.
  * Every planner/commit still receives adoption explicitly; runtime policy is undecided.
  */
 export async function builderSnapshotAdoption(store: AssetCatalogStore, composition: CompositionInput): Promise<BaseAdoption> {
   const index = await store.read();
+  assertBuilderSupported(index, composition);
   const revisions: Record<string, number> = { ...composition.floors };
   if (composition.template) {
     const template = index.assets[composition.template.templateId];
     const projection = template?.revisions.find((r) => r.revision === composition.template!.acceptedRevision)?.projection;
     if (projection?.kind !== 'template') throw new AssetCatalogError('invalid_composition');
-    for (const id of [...projection.skills, ...projection.mcps]) revisions[id] = composition.floors[id] ?? index.assets[id]?.headRevision;
+    for (const id of projection.skills) revisions[id] = composition.floors[id] ?? index.assets[id]?.headRevision;
     for (const ref of projection.entries) revisions[ref.blockId] = Math.max(revisions[ref.blockId] ?? 0, ref.blockRevision);
   }
-  for (const id of composition.additions) revisions[id] = composition.floors[id] ?? index.assets[id]?.headRevision;
-  // Resolve unsupported native definitions truthfully for the saved preview only.
-  const nativeRefs = composition.subagents.map((entry) => entry.source.subagentId).filter((id): id is string => !!id);
-  if (composition.template) {
-    const projection = index.assets[composition.template.templateId]?.revisions.find((r) => r.revision === composition.template!.acceptedRevision)?.projection;
-    if (projection?.kind === 'template') for (const ref of projection.subagents) {
-      revisions[ref.subagentId] = ref.subagentRevision; nativeRefs.push(ref.subagentId);
-    }
-  }
-  for (const id of nativeRefs) {
-    revisions[id] ??= index.assets[id]?.headRevision;
-    const projection = index.assets[id]?.revisions.find((r) => r.revision === revisions[id])?.projection;
-    if (projection?.kind === 'subagent') {
-      for (const ref of projection.blocks) revisions[ref.blockId] = ref.blockRevision;
-      for (const ref of [...projection.skills, ...projection.mcps]) revisions[ref] = composition.floors[ref] ?? index.assets[ref]?.headRevision;
-    }
+  for (const id of composition.additions) {
+    if (index.assets[id]?.kind === 'skill') revisions[id] = composition.floors[id] ?? index.assets[id].headRevision;
   }
   for (const entry of composition.entries) {
     if (entry.source.blockId) revisions[entry.source.blockId] = index.assets[entry.source.blockId]?.headRevision;
@@ -52,6 +54,7 @@ export function createAgentBuilder(store: AssetCatalogStore, projectId?: string)
   async function read(agentId: string, adoption: BaseAdoption, draft?: CompositionInput): Promise<BuilderView> {
     const composition = draft ?? await compositionOf(agentId);
     const index = await store.read();
+    assertBuilderSupported(index, composition);
     const { plan, blocks: resolvedBlocks, composed } = await store.previewInstructions({ agentId, adoption, draft: composition, ...(projectId && { projectId }) });
     if (plan.blockers.length) throw new AssetCatalogError('composition_blocked');
     const blocks = resolvedBlocks.map((block) => {
@@ -71,7 +74,6 @@ export function createAgentBuilder(store: AssetCatalogStore, projectId?: string)
       templates: BUILDER_TEMPLATES.map((t) => ({ id: `builtin-builder-${t.id}`, name: t.name })),
       skills: await Promise.all(plan.skills.map(async (skill) => ({ ...skill, payload: await store.readRevision(skill.assetId, skill.revision) as SkillAssetPayload }))),
       excludedSkills: plan.excluded.filter((item) => item.kind === 'skill').map(({ assetId }) => ({ assetId, name: index.assets[assetId]?.name ?? 'Unavailable skill' })),
-      unsupported: [...(plan.mcpServers.length ? ['MCP delivery is unsupported in Builder.'] : []), ...(plan.subagents.length ? ['Native subagent delivery is unsupported in Builder.'] : [])],
       blocks, customOrder: plan.structure?.customOrder ?? false, text: composed.text,
     };
   }
@@ -79,6 +81,7 @@ export function createAgentBuilder(store: AssetCatalogStore, projectId?: string)
     const index = await store.read();
     if ((index.compositions[agentId]?.revision ?? 0) !== expectedRevision) throw new AssetCatalogError('stale_revision');
     const composition: CompositionInput = structuredClone(inputOf(index.compositions[agentId] ?? emptyComposition()));
+    assertBuilderSupported(index, composition);
     if (action.type === 'template') {
       if (!BUILDER_TEMPLATES.some((t) => `builtin-builder-${t.id}` === action.templateId)) throw new AssetCatalogError('invalid_composition');
       // Replace with a preview. This slice carries nothing to another template.
@@ -88,7 +91,6 @@ export function createAgentBuilder(store: AssetCatalogStore, projectId?: string)
       const targetAdoption = await builderSnapshotAdoption(store, {
         ...emptyComposition(), template: { templateId: template.id, acceptedRevision: template.headRevision },
         entries: projection.entries.map((ref) => ({ baseEntryId: ref.entryId, source: { kind: 'follow' } })),
-        subagents: projection.subagents.map((ref) => ({ baseEntryId: ref.entryId, source: { kind: 'follow' } })),
       });
       targetAdoption.structure = adoption.structure;
       const preview = await store.previewTemplateSwitch({ agentId, templateId: action.templateId, selection: {}, adoption: targetAdoption, ...(projectId && { projectId }) });
