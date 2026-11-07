@@ -26,6 +26,7 @@ import type { UsageLimit } from '../../shared/chat/events';
 import { getProvider } from '../orchestrators';
 import type { OrchestratorId } from '../orchestrators';
 import { helperAutoCooldown, helperQuotaRead } from '../telemetry/feature-events';
+import { recordQuotaSample } from '../telemetry/helper-usage';
 import { isLoginRequiredError } from './agent-runtime/login-error';
 import { AUTO_COOLDOWN_AUTH_MS, AUTO_COOLDOWN_AVAILABILITY_MS, AUTO_COOLDOWN_QUOTA_MS } from './helper-auto-policy';
 import { onChatEvent } from './agent-runtime/chat-event-bus';
@@ -95,7 +96,9 @@ function startRead(providerId: string, entry: QuotaEntry, env: Record<string, st
       entry.source = 'cli_query';
       entry.notApplicable = reading.kind === 'not_applicable';
       entry.windows = reading.kind === 'windows' ? reading.windows : [];
-      helperQuotaRead(providerId, viewOf(entry, now).state, true);
+      const view = viewOf(entry, now);
+      helperQuotaRead(providerId, view.state, true);
+      recordQuotaSample(providerId, view);
       return { startedAt, outcome: reading.kind };
     })
     .catch((err: unknown): SettledRead => {

@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
 import type { DurableAgentConfig } from '../../../../shared/types';
 import type { ModelList } from '../../../orchestrators/types';
+import type { McpToolResult } from '../types';
 import { IPC } from '../../../../shared/ipc-channels';
 import { resolveHelperAccess, type AgentLaunchAccess } from '../../../../shared/orchestration-policy';
 
@@ -18,6 +19,17 @@ const agents = new Map<string, DurableAgentConfig>();
 const where = new Map<string, string>();
 const isAt = (projectPath: string, id: string) => !where.has(id) || where.get(id) === projectPath;
 const configListeners = new Set<(projectPath: string) => void>();
+
+const mockRecordDecision = vi.fn();
+const mockRecordSpawnResult = vi.fn();
+const mockRecordReuse = vi.fn();
+vi.mock('../../../telemetry/helper-usage', () => ({
+  recordHelperDecision: (...args: unknown[]) => mockRecordDecision(...args),
+  recordHelperSpawnResult: (...args: unknown[]) => mockRecordSpawnResult(...args),
+  recordHelperReuse: (...args: unknown[]) => mockRecordReuse(...args),
+  recordHelperDisposed: (): void => undefined,
+  recordQuotaSample: (): void => undefined,
+}));
 
 const mockCheckDurableCreation = vi.fn(async (_projectPath: string, _params: Record<string, unknown>) => {});
 vi.mock('../../agent-config', () => ({
@@ -199,6 +211,7 @@ import { agentRegistry } from '../../agent-registry';
 import { setHelperStartFields as agentConfigSetStartFields } from '../../agent-config';
 import { _resetProviderQuotaForTesting, noteProviderFailure } from '../../provider-quota';
 import { _resetHelperRoutingForTesting } from '../../helper-routing';
+import { reservationSummary } from '../../helper-auto-state';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
@@ -230,8 +243,11 @@ function runAgent(id: string, orchestrate = false): void {
   setOrchestrationEnabled(id, orchestrate);
 }
 
-function parse(result: { content: Array<{ text: string }> }): Record<string, unknown> {
-  return JSON.parse(result.content[0].text);
+/** A tool's JSON reply. A first block that isn't text fails the test instead of being parsed as nothing. */
+function parse(result: McpToolResult): Record<string, unknown> {
+  const [first] = result.content;
+  if (first?.type !== 'text' || typeof first.text !== 'string') throw new Error(`expected a text result, got ${JSON.stringify(result)}`);
+  return JSON.parse(first.text);
 }
 
 /** A creation the test finishes by hand. */
@@ -315,6 +331,20 @@ beforeEach(() => {
 
   addAgent({ id: 'orch', name: 'Orch' });
   runAgent('orch', true);
+});
+
+describe('parse, the test helper', () => {
+  it('reads the JSON in a text first block', () => {
+    expect(parse({ content: [{ type: 'text', text: '{"state":"starting","n":1}' }] })).toEqual({ state: 'starting', n: 1 });
+  });
+
+  it.each<[string, McpToolResult]>([
+    ['no blocks', { content: [] }],
+    ['an image first block', { content: [{ type: 'image', data: 'AAAA', mimeType: 'image/png' }, { type: 'text', text: '{}' }] }],
+    ['a text block with no text', { content: [{ type: 'text' }] }],
+  ])('fails on %s instead of parsing nothing', (_name, result) => {
+    expect(() => parse(result)).toThrow(/expected a text result/);
+  });
 });
 
 // ── Gating ─────────────────────────────────────────────────────────────────
@@ -866,6 +896,78 @@ describe('start_helper cli "auto" (#2671)', () => {
     modelLists.set('codex-cli', live([['gpt-6.1-sol', ['high']], ['gpt-6.1-terra', ['medium']], ['gpt-6-luna', ['low']]]));
     mockGetPolicy.mockResolvedValue(policy);
     agents.set('orch', { ...agents.get('orch')!, orchestration: { orchestrate: true, autoHelpers: true } } as never);
+    mockRecordDecision.mockClear();
+    mockRecordSpawnResult.mockClear();
+    mockRecordReuse.mockClear();
+  });
+
+  it('records the decision with its helper, holds the provider through the start, and records it started', async () => {
+    const first = controllableCreation();
+    let second: ReturnType<typeof controllableCreation> | undefined;
+    try {
+      const body = parse(await start({}));
+      const decisionId = (body.routing as { decisionId: string }).decisionId;
+      expect(mockRecordDecision).toHaveBeenCalledTimes(1);
+      expect(mockRecordDecision.mock.calls[0][0]).toMatchObject({ decisionId, helperId: 'helper_h', outcome: 'chosen', mode: 'auto' });
+      expect(reservationSummary()).toMatchObject({ held: 1, startedPending: 0 });
+      first.ready('helper_h');
+      await _settleHelperStartsForTesting();
+      expect(mockRecordSpawnResult).toHaveBeenCalledWith({ decisionId, helperId: 'helper_h', result: 'started' });
+      // Started, and kept until a count sees it: the next start's count reconciles it once.
+      expect(reservationSummary()).toMatchObject({ held: 1, startedPending: 1 });
+      // Its own creation, still going: the first one's has already finished.
+      second = controllableCreation();
+      const next = parse(await start({ name: 'h2', folder: 'h2' }));
+      expect((next.routing as { load: Record<string, number> }).load).toEqual({ 'claude-code': 1, 'codex-cli': 0 });
+      expect(reservationSummary()).toMatchObject({ held: 1, startedPending: 0 });
+    } finally {
+      // Finish every creation this test still holds open, then wait for both starts, so none outlives it.
+      // Only a row still creating is finished, so cleanup can't throw over an assertion above.
+      for (const [gate, id] of [[first, 'helper_h'], [second, 'helper_h2']] as const) {
+        if (gate && agents.get(id)?.creation?.state === 'creating') gate.ready(id);
+      }
+      await _settleHelperStartsForTesting();
+    }
+  });
+
+  it('a creation refused up front releases the provider and records why', async () => {
+    mockStartDurableCreation.mockRejectedValueOnce(new Error('That name is taken.'));
+    const result = await start({});
+    expect(result.isError).toBe(true);
+    expect(reservationSummary().held).toBe(0);
+    expect(mockRecordDecision.mock.calls[0][0]).toMatchObject({ outcome: 'chosen' });
+    expect(mockRecordDecision.mock.calls[0][0].helperId).toBeUndefined();
+    expect(mockRecordSpawnResult).toHaveBeenCalledWith({ decisionId: mockRecordDecision.mock.calls[0][0].decisionId, result: 'creation_refused' });
+  });
+
+  it('a failed creation releases the provider and records it as a failed start', async () => {
+    const creation = controllableCreation();
+    parse(await start({}));
+    creation.fail('helper_h', 'no space');
+    await _settleHelperStartsForTesting();
+    expect(reservationSummary().held).toBe(0);
+    expect(mockRecordSpawnResult).toHaveBeenCalledWith(expect.objectContaining({ helperId: 'helper_h', result: 'spawn_failed' }));
+  });
+
+  it('a refusal records a refused decision and holds nothing', async () => {
+    await noteProviderFailure('claude-code', PROJECT, 'auth');
+    await noteProviderFailure('codex-cli', PROJECT, 'auth');
+    const result = await start({});
+    expect(result.isError).toBe(true);
+    expect(mockRecordDecision).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'refused', refusalCode: 'no_candidate' }));
+    expect(reservationSummary().held).toBe(0);
+  });
+
+  it('a wake is reuse, never a new decision', async () => {
+    const creation = controllableCreation();
+    parse(await start({}));
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+    running.delete('helper_h');
+    mockRecordDecision.mockClear();
+    await callTool('orch', 'wake_helper', { helper: 'helper_h' });
+    expect(mockRecordReuse).toHaveBeenCalledWith({ helperId: 'helper_h', kind: expect.stringMatching(/^(wake|resume)$/) });
+    expect(mockRecordDecision).not.toHaveBeenCalled();
   });
 
   it('needs a difficulty, and refuses a model or effort, which belong to one CLI', async () => {

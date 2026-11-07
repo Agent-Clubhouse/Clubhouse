@@ -98,6 +98,8 @@ describe('CodexChatEventMapper', () => {
     const [tokens, limits] = events.filter((e) => e.type === 'usage');
     expect(tokens.data).toEqual({
       scope: 'session',
+      // The thread these running totals belong to; no coverage is claimed for it.
+      threadId: fx.THREAD_ID,
       tokens: { input: 1000, cachedInput: 400, cacheWrite: 0, output: 200, reasoning: 50, total: 1200 },
       context: { used: 300, size: 272_000 },
     });
@@ -802,6 +804,49 @@ describe('per-turn token usage (#2161)', () => {
 
   it('a turn with no token updates ends without usage', () => {
     expect(turnEndedUsage(mapAll(new CodexChatEventMapper(), [turnCompleted('t9')]))).toBeUndefined();
+  });
+
+  it('leaves out a figure whose running total went down, rather than reporting zero', () => {
+    const mapper = new CodexChatEventMapper();
+    mapAll(mapper, [tokenUpdate('t1', breakdown(5000, 1000, 400), breakdown(5000, 1000, 400)), turnCompleted('t1')]);
+    // A compaction or reset: input and total fall, output grows.
+    const second = mapAll(mapper, [
+      tokenUpdate('t2', breakdown(900, 100, 450), breakdown(900, 100, 50)),
+      turnCompleted('t2'),
+    ]);
+    const usage = turnEndedUsage(second) as Record<string, number>;
+    expect(usage.output).toBe(50);
+    expect(usage).not.toHaveProperty('input');
+    expect(usage).not.toHaveProperty('cachedInput');
+    expect(usage).not.toHaveProperty('total');
+    // A genuine zero delta is still a zero.
+    expect(usage.cacheWrite).toBe(0);
+  });
+
+  it('names the thread on each running total, and flags a subagent thread a collab call named', () => {
+    const mapper = new CodexChatEventMapper();
+    const main = mapper.mapNotification(tokenUpdate('t1', breakdown(1000, 0, 100), breakdown(1000, 0, 100)));
+    expect(main[0]).toMatchObject({ data: { scope: 'session', threadId: fx.THREAD_ID } });
+    // The protocol doesn't say what a thread's total covers, so none is claimed.
+    expect(main[0].data).not.toHaveProperty('coverage');
+    expect((main[0].data as { subagentId?: string }).subagentId).toBeUndefined();
+
+    mapper.mapNotification({
+      method: 'item/started',
+      params: {
+        threadId: fx.THREAD_ID, turnId: 't1', startedAtMs: 1,
+        item: {
+          type: 'collabAgentToolCall' as const, id: 'collab-1', tool: 'spawnAgent' as const, status: 'inProgress' as const,
+          senderThreadId: fx.THREAD_ID, receiverThreadIds: ['sub-a'], prompt: 'help', model: null, reasoningEffort: null, agentsStates: {},
+        },
+      },
+    } as unknown as ServerNotification);
+    const sub = mapper.mapNotification({
+      method: 'thread/tokenUsage/updated',
+      params: { threadId: 'sub-a', turnId: 's1', tokenUsage: { total: breakdown(10, 0, 1), last: breakdown(10, 0, 1), modelContextWindow: 272_000 } },
+    });
+    expect(sub[0]).toMatchObject({ data: { scope: 'session', threadId: 'sub-a', subagentId: 'sub-a' } });
+    expect(sub[0].data).not.toHaveProperty('coverage');
   });
 
   it('still reports the session total and context on each update', () => {

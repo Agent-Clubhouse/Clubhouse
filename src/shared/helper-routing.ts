@@ -19,7 +19,7 @@ export function isHelperDifficulty(value: unknown): value is HelperDifficulty {
 }
 
 /** Recorded on each decision, so telemetry can tell which values produced it. */
-export const HELPER_ROUTING_POLICY_VERSION = 1;
+export const HELPER_ROUTING_POLICY_VERSION = 2;
 
 /** The providers presets are defined for. Copilot's list reports no per-model efforts. */
 export const PRESET_PROVIDERS = ['claude-code', 'codex-cli'] as const;
@@ -85,7 +85,8 @@ export function normalizeSavedPresets(raw: unknown): SavedPresets {
 // ── Codes ────────────────────────────────────────────────────────────────
 
 export type HelperRoutingMode = 'explicit' | 'preset' | 'auto';
-export type HelperRoutingReason = 'explicit_request' | 'persona_pinned' | 'preset_on_cli' | 'only_candidate' | 'lower_load' | 'better_quota_tier' | 'sticky' | 'default_order';
+/** `sticky` and `default_order` are policy 1's, kept so an older saved decision still reads. */
+export type HelperRoutingReason = 'explicit_request' | 'persona_pinned' | 'preset_on_cli' | 'only_candidate' | 'lower_pressure' | 'lower_load' | 'fair_rotation' | 'better_quota_tier' | 'unknown_fallback' | 'sticky' | 'default_order';
 export type HelperRoutingFallback = 'none' | 'builtin_preset' | 'candidate_skipped' | 'model_unverified';
 export type HelperRoutingFieldSource = 'request' | 'persona' | 'orchestrator' | 'auto' | 'custom_mapping' | 'builtin_mapping' | 'cli_default';
 export type HelperRoutingSkip = 'cli_disabled' | 'cli_unavailable' | 'auto_not_supported' | 'no_valid_mapping' | 'cooling_down' | 'quota_near_limit' | 'quota_exhausted';
@@ -96,7 +97,7 @@ export type HelperContextStatus = 'none' | 'applied' | 'reset' | 'not_applied';
 
 /** What the desktop advertises at this stage. A client keys on these, so nothing is listed before it works. */
 export const HELPER_ROUTING_MODES: readonly HelperRoutingMode[] = ['explicit', 'preset', 'auto'];
-export const HELPER_ROUTING_REASONS: readonly HelperRoutingReason[] = ['explicit_request', 'persona_pinned', 'preset_on_cli', 'only_candidate', 'lower_load', 'better_quota_tier', 'sticky', 'default_order'];
+export const HELPER_ROUTING_REASONS: readonly HelperRoutingReason[] = ['explicit_request', 'persona_pinned', 'preset_on_cli', 'only_candidate', 'lower_pressure', 'lower_load', 'fair_rotation', 'better_quota_tier', 'unknown_fallback', 'sticky', 'default_order'];
 export const HELPER_ROUTING_FALLBACKS: readonly HelperRoutingFallback[] = ['none', 'builtin_preset', 'candidate_skipped', 'model_unverified'];
 export const HELPER_ROUTING_SKIPS: readonly HelperRoutingSkip[] = ['cli_disabled', 'cli_unavailable', 'auto_not_supported', 'no_valid_mapping', 'cooling_down', 'quota_near_limit', 'quota_exhausted'];
 export const HELPER_AUTO_OFF_REASONS: readonly HelperAutoOffReason[] = ['not_enabled', 'project_off', 'persona_off', 'orchestration_off', 'mcp_off', 'dispatcher_locked'];
@@ -112,8 +113,11 @@ export const HELPER_ROUTING_LABELS = {
     persona_pinned: 'Set by the persona',
     preset_on_cli: 'From the helper settings for this difficulty',
     only_candidate: 'The only provider available',
+    lower_pressure: 'Less of this provider’s weekly limit is used',
     lower_load: 'Fewer helpers running on this provider',
+    fair_rotation: 'Its turn among providers with the same usage',
     better_quota_tier: 'This provider has more of its limit left',
+    unknown_fallback: 'Its usage couldn’t be checked, and the others are getting close to their limits',
     sticky: 'Stayed on the provider chosen last',
     default_order: 'No reason to switch',
   },
@@ -203,8 +207,14 @@ export interface HelperRouting {
   /** What Auto saw, for a decision it made. Never live: these are as of `decidedAt`. */
   load?: Record<string, number>;
   quota?: Record<string, QuotaDecisionView>;
-  /** `unknown_scored_as_healthy`: the chosen provider's quota was unknown, and that says nothing about its capacity. */
-  quotaBasis?: 'known' | 'unknown_scored_as_healthy';
+  /**
+   * `unknown_fallback`: the chosen provider's usage was unknown, and it was used
+   * only because every measured one was past the low mark. It says nothing about
+   * its capacity. `unknown_scored_as_healthy` is policy 1's, kept for old records.
+   */
+  quotaBasis?: 'known' | 'unknown_fallback' | 'unknown_scored_as_healthy';
+  /** The decision's id, for an Auto choice. It names the decision and its reservation, never the helper. */
+  decisionId?: string;
   skipped?: Record<string, HelperRoutingSkip>;
 }
 
