@@ -81,6 +81,7 @@ export function mcpServersOf(resolved: Resolved): Record<string, McpServerDef> {
       ? { command: c.command, ...(c.args && c.args.length > 0 && { args: [...c.args] }) }
       : { type: c.transport, url: c.url };
     if (c.envVars && c.envVars.length > 0) def.env_vars = [...c.envVars];
+    if (c.env && Object.keys(c.env).length > 0) def.env = { ...c.env };
     servers[c.serverKey] = def;
   }
   return servers;
@@ -97,7 +98,20 @@ function insideDir(dir: string, rel: string): string {
   return target;
 }
 
-async function writeSkills(worktree: string, provider: OrchestratorProvider, skills: Resolved['skills']): Promise<void> {
+/**
+ * A folder Clubhouse didn't write is never deleted: it's moved to app data
+ * first, so a managed skill with the same folder name can take its place.
+ */
+async function moveAside(dir: string, backupRoot: string | undefined): Promise<void> {
+  if (!backupRoot) throw new Error(`a folder Clubhouse didn't write is in the way: ${path.basename(dir)}`);
+  const target = path.join(backupRoot, `${path.basename(dir)}-${Date.now()}`);
+  await fsp.mkdir(backupRoot, { recursive: true });
+  await fsp.cp(dir, target, { recursive: true });
+  await fsp.rm(dir, { recursive: true, force: true });
+  appLog('core:managed', 'info', 'Moved a skill folder Clubhouse did not write out of the way', { meta: { folder: path.basename(dir) } });
+}
+
+async function writeSkills(worktree: string, provider: OrchestratorProvider, skills: Resolved['skills'], backupRoot?: string): Promise<void> {
   const conv = provider.conventions;
   const root = path.join(worktree, conv.configDir, conv.skillsDir);
   await fsp.mkdir(root, { recursive: true });
@@ -113,6 +127,9 @@ async function writeSkills(worktree: string, provider: OrchestratorProvider, ski
   }
   for (const skill of skills) {
     const dir = insideDir(root, skill.content.skillName);
+    let exists = false;
+    try { exists = (await fsp.stat(dir)).isDirectory(); } catch { /* telemetry-exempt: not there yet */ }
+    if (exists && !previous.includes(skill.content.skillName)) await moveAside(dir, backupRoot);
     // Replace the folder whole, so a file removed from the skill doesn't linger.
     await fsp.rm(dir, { recursive: true, force: true });
     await fsp.mkdir(dir, { recursive: true });
@@ -139,6 +156,8 @@ async function writeMcpFile(worktree: string, provider: OrchestratorProvider, se
 
 export interface DeliveryRecord {
   fingerprint: string;
+  /** Parts the setup lists that no longer exist, skipped this start. */
+  missing?: number;
   deliveredAt: string;
   orchestrator?: string;
   parts: Record<string, { name: string; revision: number }>;
@@ -168,6 +187,8 @@ export async function deliverManagedSetup(params: {
   projectPath: string;
   agent: DurableAgentConfig;
   provider: OrchestratorProvider;
+  /** Where a skill folder Clubhouse didn't write is moved before a managed one replaces it. */
+  backupRoot?: string;
 }): Promise<DeliveryRecord | null> {
   const { service, projectPath, agent, provider } = params;
   if (!agent.managed || !agent.worktreePath) return null;
@@ -177,9 +198,9 @@ export async function deliverManagedSetup(params: {
   }
   const instructions = await renderManagedInstructions(projectPath, agent, resolved);
   await provider.writeInstructions(agent.worktreePath, instructions);
-  await writeSkills(agent.worktreePath, provider, resolved.skills);
+  await writeSkills(agent.worktreePath, provider, resolved.skills, params.backupRoot);
   await writeMcpFile(agent.worktreePath, provider, mcpServersOf(resolved));
-  return setupFingerprint(agent, resolved);
+  return { ...setupFingerprint(agent, resolved), ...(resolved.missing.length > 0 && { missing: resolved.missing.length }) };
 }
 
 /** The exact result an agent gets at its next start, for the builder's Preview. */

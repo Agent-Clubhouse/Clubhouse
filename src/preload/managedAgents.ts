@@ -40,7 +40,7 @@ const managed = {
   templateFromAgent: (projectPath: string, agentId: string, name: string, description?: string) => call<ManagedTemplate>(IPC.MANAGED.TEMPLATE_FROM_AGENT, projectPath, agentId, name, description),
   previewTemplatePush: (id: string, next: Pick<ManagedTemplate, 'setup' | 'settings'>) =>
     call<{ changes: ManagedTemplateChange[]; targets: ManagedTemplatePushTarget[] }>(IPC.MANAGED.PREVIEW_TEMPLATE_PUSH, id, next),
-  pushTemplate: (id: string, next: Pick<ManagedTemplate, 'setup' | 'settings'>, targets: Array<{ projectPath: string; agentId: string }>) => call<null>(IPC.MANAGED.PUSH_TEMPLATE, id, next, targets),
+  pushTemplate: (id: string, next: Pick<ManagedTemplate, 'setup' | 'settings'>, targets: Array<{ projectPath: string; agentId: string }>) => call<{ failed: Array<{ agentId: string; message: string }> }>(IPC.MANAGED.PUSH_TEMPLATE, id, next, targets),
   getDefaultHelperTemplate: () => call<string>(IPC.MANAGED.GET_DEFAULT_HELPER_TEMPLATE),
   setDefaultHelperTemplate: (id: string) => call<void>(IPC.MANAGED.SET_DEFAULT_HELPER_TEMPLATE, id),
   createAgent: (projectPath: string, input: { name: string; color: string; templateId?: string; setup?: SetupInput; settings?: ManagedTemplateSettings }) =>

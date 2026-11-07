@@ -76,17 +76,19 @@ export async function convertToManaged(projectPath: string, agentId: string, opt
   if (!agent) throw new ManagedError('not_found');
   if (agent.managed) return agent.managed;
   if (!agent.worktreePath) throw new ManagedError('invalid', 'This agent works in the project folder. Managed agents need their own folder.');
+  if (!options.keep && !options.templateId) throw new ManagedError('invalid', 'Choose a template, or keep what the agent has now.');
+  const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
+  let existing = '';
+  try {
+    existing = await provider.readInstructions(agent.worktreePath);
+  } catch { /* telemetry-exempt: no instructions file yet */ }
+  await backupInstructions(agent, provider.conventions.legacyInstructionsFile, existing);
   if (!options.keep && options.templateId) {
     const { setup, settings } = await service.setupFromTemplate(options.templateId);
     const saved = await service.saveSetup(projectPath, agentId, setup);
     await applyManagedSettings(projectPath, agentId, settings);
     return saved;
   }
-  const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
-  let existing = '';
-  try {
-    existing = await provider.readInstructions(agent.worktreePath);
-  } catch { /* telemetry-exempt: no instructions file yet */ }
   const blocks: string[] = [];
   if (existing.trim()) {
     const part = await service.createPart({
@@ -101,11 +103,13 @@ export async function convertToManaged(projectPath: string, agentId: string, opt
     });
     blocks.push(part.id);
   }
-  // Keep a copy of what was there, so nothing is lost when Clubhouse takes over the file.
-  try {
-    const backup = path.join(managedStateDir(), 'before-managed', agent.id);
-    await fsp.mkdir(backup, { recursive: true });
-    if (existing) await fsp.writeFile(path.join(backup, path.basename(provider.conventions.legacyInstructionsFile || 'instructions.md')), existing, 'utf-8');
-  } catch { /* telemetry-exempt: the backup is best effort; the block above keeps the text */ }
   return service.saveSetup(projectPath, agentId, { blocks, skills: [], mcps: agent.mcpOverride === false ? [] : [CLUBHOUSE_MCP_PART_ID] });
+}
+
+/** Keep a copy of the instructions file before Clubhouse takes it over, so nothing is lost. */
+async function backupInstructions(agent: DurableAgentConfig, file: string, existing: string): Promise<void> {
+  if (!existing) return;
+  const backup = path.join(managedStateDir(), 'before-managed', agent.id);
+  await fsp.mkdir(backup, { recursive: true });
+  await fsp.writeFile(path.join(backup, path.basename(file || 'instructions.md')), existing, 'utf-8');
 }

@@ -112,10 +112,15 @@ export function registerManagedAgentsHandlers(): void {
   ipcMain.handle(IPC.MANAGED.PREVIEW_TEMPLATE_PUSH, withValidatedArgs([idArg(), nextArg()], (_e, id, next) => result(() => s().previewTemplatePush(id, next))));
   ipcMain.handle(IPC.MANAGED.PUSH_TEMPLATE, withValidatedArgs(
     [idArg(), nextArg(), arrayArg(objectArg<{ projectPath: string; agentId: string }>())],
-    (_e, id, next, targets) => result(async (): Promise<null> => {
-      const settings = await s().pushTemplate(id, next, targets);
-      for (const t of settings) await applyManagedSettings(t.projectPath, t.agentId, t.settings);
-      return null;
+    (_e, id, next, targets) => result(async (): Promise<{ failed: Array<{ agentId: string; message: string }> }> => {
+      const results = await s().pushTemplate(id, next, targets);
+      const failed: Array<{ agentId: string; message: string }> = [];
+      for (const t of results) {
+        if (t.failed) { failed.push({ agentId: t.agentId, message: t.failed }); continue; }
+        try { await applyManagedSettings(t.projectPath, t.agentId, t.settings); }
+        catch (err) { failed.push({ agentId: t.agentId, message: err instanceof Error ? err.message : String(err) }); }
+      }
+      return { failed };
     }),
   ));
   ipcMain.handle(IPC.MANAGED.GET_DEFAULT_HELPER_TEMPLATE, withValidatedArgs([], () => result(() => s().defaultHelperTemplateId())));

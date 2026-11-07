@@ -68,8 +68,8 @@ function replaceIn(setup: ManagedAgentSetup, from: string, to: string | null): M
   const swap = (ids: string[]) => {
     const out: string[] = [];
     for (const id of ids) {
-      if (id !== from) out.push(id);
-      else if (to && !out.includes(to)) out.push(to);
+      const next = id === from ? to : id;
+      if (next && !out.includes(next)) out.push(next);
     }
     return out;
   };
@@ -91,6 +91,7 @@ function payloadToContent(kind: ManagedPartKind, payload: AssetPayload): Managed
     ...(p.args && { args: [...p.args] }),
     ...(p.url !== undefined && { url: p.url }),
     ...(p.envVars && { envVars: [...p.envVars] }),
+    ...(p.env && Object.keys(p.env).length > 0 && { env: { ...p.env } }),
   };
 }
 
@@ -104,6 +105,7 @@ function contentToPayload(content: ManagedPartContent): AssetPayload {
     ...(content.args && { args: content.args }),
     ...(content.url !== undefined && { url: content.url }),
     ...(content.envVars && content.envVars.length > 0 && { envVars: content.envVars }),
+    ...(content.env && Object.keys(content.env).length > 0 && { env: content.env }),
   } as McpAssetPayload;
 }
 
@@ -293,7 +295,13 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       try {
         if (input.content) {
           if (input.content.kind !== entry.kind) throw new ManagedError('invalid');
-          entry = await catalog.saveRevision({ assetId: entry.id, expectedRevision: input.expectedRevision, payload: contentToPayload(input.content) });
+          let payload = contentToPayload(input.content);
+          // Keep catalog-only MCP fields the builder doesn't edit (auth, upstream).
+          if (input.content.kind === 'mcp') {
+            const current = await catalog.readRevision(entry.id, entry.headRevision) as McpAssetPayload;
+            payload = { ...(current.auth && { auth: current.auth }), ...(current.upstream && { upstream: current.upstream }), ...payload } as McpAssetPayload;
+          }
+          entry = await catalog.saveRevision({ assetId: entry.id, expectedRevision: input.expectedRevision, payload });
         }
         if (input.name !== undefined && input.name.trim() && input.name.trim() !== entry.name) {
           const name = input.name.trim();
@@ -382,12 +390,27 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       const entry = await entryOf(input.id);
       if (entry.source.kind === 'builtin') throw new ManagedError('builtin_read_only');
       if (entry.headRevision !== input.expectedRevision) throw new ManagedError('stale');
-      const users = await managedAgents();
+      const users = (await managedAgents()).filter(({ agent }) => KINDS.some((k) => listOf(agent.managed!, k).includes(entry.id)));
+      // Delete first: the catalog checks the revision, so a part saved meanwhile is refused with nothing changed.
+      const content = await contentOf(entry);
+      const s0 = await state.read();
+      const description = s0.parts[entry.id]?.description;
+      try {
+        await catalog.deleteAsset({ assetId: entry.id, expectedRevision: input.expectedRevision });
+      } catch (err) {
+        // telemetry-exempt: rethrown as a ManagedError with a code the caller shows.
+        mapCatalogError(err);
+      }
       for (const { projectPath, agent } of users) {
         const setup = agent.managed!;
-        if (!KINDS.some((k) => listOf(setup, k).includes(entry.id))) continue;
-        if (input.mode === 'copy') await api.forkPart({ id: entry.id, agent: { projectPath, agentId: agent.id } });
-        else await writeAgentSetup(projectPath, agent.id, replaceIn(setup, entry.id, null));
+        if (input.mode === 'copy') {
+          const name = await uniqueName(entry.kind as ManagedPartKind, `${entry.name}, ${agent.name}`);
+          const copy = await catalog.createAsset({ kind: entry.kind, name, payload: contentToPayload(content) });
+          await state.update((s) => { s.parts[copy.id] = { ...(description && { description }) }; });
+          await writeAgentSetup(projectPath, agent.id, replaceIn(setup, entry.id, copy.id));
+        } else {
+          await writeAgentSetup(projectPath, agent.id, replaceIn(setup, entry.id, null));
+        }
       }
       await state.update((s) => {
         for (const t of Object.values(s.templates)) {
@@ -395,12 +418,6 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         }
         delete s.parts[entry.id];
       });
-      try {
-        await catalog.deleteAsset({ assetId: entry.id, expectedRevision: input.expectedRevision });
-      } catch (err) {
-        // telemetry-exempt: rethrown as a ManagedError with a code the caller shows.
-        mapCatalogError(err);
-      }
       changed();
     },
 
@@ -416,6 +433,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     async saveSetup(projectPath: string, agentId: string, setup: Omit<ManagedAgentSetup, 'version'>): Promise<ManagedAgentSetup> {
       const agent = await deps.getAgent(projectPath, agentId);
       if (!agent) throw new ManagedError('not_found');
+      if (!agent.worktreePath) throw new ManagedError('invalid', `${agent.name} works in the project folder. Managed agents need their own folder.`);
       const live = await liveEntries();
       const clean = (ids: string[], kind: ManagedPartKind) => {
         const out: string[] = [];
@@ -530,11 +548,17 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     },
 
     /** Apply a template edit's changes to the agents named. Settings changes are returned for the caller to apply. */
-    async pushTemplate(id: string, next: Pick<ManagedTemplate, 'setup' | 'settings'>, agents: Array<{ projectPath: string; agentId: string }>): Promise<Array<{ projectPath: string; agentId: string; settings: ManagedTemplateSettings }>> {
+    async pushTemplate(id: string, next: Pick<ManagedTemplate, 'setup' | 'settings'>, agents: Array<{ projectPath: string; agentId: string }>): Promise<Array<{ projectPath: string; agentId: string; settings: ManagedTemplateSettings; failed?: string }>> {
       const current = await api.getTemplate(id);
       const live = await liveEntries();
+      // Every part the edit names must still exist, as its kind.
+      for (const kind of KINDS) {
+        for (const pid of listOf({ version: 1, ...next.setup }, kind)) {
+          if (live[pid]?.kind !== kind) throw new ManagedError('not_found', 'A part in this template no longer exists. Reload and try again.');
+        }
+      }
       const changes = diffTemplates(current, next, (pid) => live[pid]?.name ?? pid);
-      const settingsOut: Array<{ projectPath: string; agentId: string; settings: ManagedTemplateSettings }> = [];
+      const settingsOut: Array<{ projectPath: string; agentId: string; settings: ManagedTemplateSettings; failed?: string }> = [];
       for (const target of agents) {
         const agent = await deps.getAgent(target.projectPath, target.agentId);
         if (!agent?.managed || agent.managed.templateId !== id) continue;
@@ -547,11 +571,17 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
           } else if (change.kind === 'remove') {
             setup = replaceIn(setup, change.id, null);
           } else if (change.kind === 'setting') {
-            Object.assign(settings, pickSetting(next.settings, change.key));
+            mergeSetting(settings, next.settings, change.key);
           }
         }
-        await writeAgentSetup(target.projectPath, target.agentId, setup);
-        if (Object.keys(settings).length > 0) settingsOut.push({ ...target, settings });
+        try {
+          // Through saveSetup, so each agent's result is checked (skill folders, missing parts).
+          await api.saveSetup(target.projectPath, target.agentId, setup);
+          if (Object.keys(settings).length > 0) settingsOut.push({ ...target, settings });
+        } catch (err) {
+          // telemetry-exempt: reported to the caller per agent, and shown in the push dialog.
+          settingsOut.push({ ...target, settings: {}, failed: err instanceof Error ? err.message : String(err) });
+        }
       }
       if (!BUILTIN_TEMPLATES.has(id)) {
         await state.update((s) => {
@@ -631,12 +661,21 @@ function flattenSettings(settings: ManagedTemplateSettings): Record<string, unkn
   return out;
 }
 
-function pickSetting(settings: ManagedTemplateSettings, key: string): ManagedTemplateSettings {
+/**
+ * Add one changed setting to what gets applied. A setting the template no
+ * longer sets goes back to the default: null for orchestration fields, the
+ * CLI default model, Free Agent Mode off. The CLI is never unset.
+ */
+function mergeSetting(out: ManagedTemplateSettings, from: ManagedTemplateSettings, key: string): void {
   if (key.startsWith('orchestration.')) {
-    const k = key.slice('orchestration.'.length) as keyof NonNullable<ManagedTemplateSettings['orchestration']>;
-    return { orchestration: { [k]: settings.orchestration?.[k] } as ManagedTemplateSettings['orchestration'] };
+    const k = key.slice('orchestration.'.length);
+    const value = (from.orchestration as Record<string, unknown> | undefined)?.[k];
+    out.orchestration = { ...(out.orchestration ?? {}), [k]: value === undefined ? null : value } as ManagedTemplateSettings['orchestration'];
+    return;
   }
-  return { [key]: (settings as Record<string, unknown>)[key] } as ManagedTemplateSettings;
+  if (key === 'model') out.model = from.model ?? 'default';
+  else if (key === 'freeAgentMode') out.freeAgentMode = from.freeAgentMode ?? false;
+  else if (key === 'orchestrator' && from.orchestrator) out.orchestrator = from.orchestrator;
 }
 
 export function diffTemplates(

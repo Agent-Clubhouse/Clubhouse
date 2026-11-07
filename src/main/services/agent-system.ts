@@ -743,7 +743,8 @@ async function spawnPtyAgent(
       // user has opted this orchestrator into the hook server (app-level).
       // Default: on for Claude Code, off for every other orchestrator.
       facts.hooksEnabled = false;
-      if (!managed && isHookCapable(provider) && orchestratorSettings.isHookServerEnabled(provider.id)) {
+      // An unmanaged agent with Clubhouse features off (#2893) is a plain CLI: no Clubhouse hooks.
+      if (!managed && durableConfig?.clubhouseFeatures !== false && isHookCapable(provider) && orchestratorSettings.isHookServerEnabled(provider.id)) {
         facts.hooksEnabled = true;
         const hookUrl = `http://127.0.0.1:${port}/hook`;
         await provider.writeHooksConfig(params.cwd, hookUrl);
@@ -792,7 +793,11 @@ async function spawnPtyAgent(
   // with it turned off gets neither the bridge nor project servers (#2223). A
   // helper always gets the bridge; project servers keep following the settings
   // (#2610).
-  if (mcpEnabledForSpawn && mcpPort > 0 && provider.buildMcpArgs) {
+  // A managed agent's MCP parts reach it even with the Clubhouse bridge off (#2896):
+  // the bridge follows its Clubhouse part, its other servers follow its setup.
+  const managedSetupServers = !!durableConfig?.managed;
+  const bridgeOn = mcpEnabledForSpawn && mcpPort > 0;
+  if ((bridgeOn || managedSetupServers) && provider.buildMcpArgs) {
     const { buildClubhouseMcpDef } = await import('./clubhouse-mcp/injection');
     const { resolveProjectMcpServers } = await import('./materialization-service');
 
@@ -800,15 +805,15 @@ async function spawnPtyAgent(
     // project MCP file materialised into the worktree never reaches them.
     // Launch flags are the only path — hand over the project's servers here
     // alongside the Clubhouse bridge.
-    const projectServers = isMcpEnabled(params.projectPath, durableConfig?.mcpOverride)
+    const projectServers = managedSetupServers || isMcpEnabled(params.projectPath, durableConfig?.mcpOverride)
       ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined)
       : {};
-
-    args = [...args, ...provider.buildMcpArgs({
+    const servers = {
       ...projectServers,
       // The bridge is last so a project server of the same name can't shadow it.
-      clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId),
-    })];
+      ...(bridgeOn ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId) } : {}),
+    };
+    if (Object.keys(servers).length > 0) args = [...args, ...provider.buildMcpArgs(servers)];
   }
   // trailingArgs (e.g. Codex's bare mission prompt) must come after any
   // dynamically-injected flags above, not before — see SpawnCommandResult.

@@ -108,6 +108,37 @@ describe('parts by reference', () => {
     expect(agents.get('a')!.managed!.blocks).toEqual([BUILTIN_BLOCK_IDS.identity, part.id]);
   });
 
+  it('back to shared never leaves the origin twice', async () => {
+    const part = await user(() => service.createPart({ name: 'Rules', content: { kind: 'block', content: 'shared' } }));
+    agent('a', { blocks: [part.id] });
+    const fork = await user(() => service.forkPart({ id: part.id, agent: { projectPath: '/p', agentId: 'a' } }));
+    agents.get('a')!.managed!.blocks = [fork.id, part.id];
+    await user(() => service.backToShared({ projectPath: '/p', agentId: 'a', id: fork.id }));
+    expect(agents.get('a')!.managed!.blocks).toEqual([part.id]);
+  });
+
+  it('a stale delete changes nothing', async () => {
+    const part = await user(() => service.createPart({ name: 'Rules', content: { kind: 'block', content: 'one' } }));
+    agent('a', { blocks: [part.id] });
+    await user(() => service.updatePart({ id: part.id, expectedRevision: part.revision, content: { kind: 'block', content: 'two' } }));
+    await expectCode(user(() => service.deletePart({ id: part.id, expectedRevision: part.revision, mode: 'remove' })), 'stale');
+    expect(agents.get('a')!.managed!.blocks).toEqual([part.id]);
+  });
+
+  it('keeps an MCP part\'s literal env through an edit', async () => {
+    const mcp = await user(() => service.createPart({ name: 'Svc', content: { kind: 'mcp', serverKey: 'svc', transport: 'stdio', command: 'svc', env: { MODE: 'fast' } } }));
+    const full = await user(() => service.getPart(mcp.id));
+    expect(full.content).toMatchObject({ env: { MODE: 'fast' } });
+    await user(() => service.updatePart({ id: mcp.id, expectedRevision: mcp.revision, content: { ...full.content, command: 'svc2' } as never }));
+    expect((await user(() => service.getPart(mcp.id))).content).toMatchObject({ command: 'svc2', env: { MODE: 'fast' } });
+  });
+
+  it('refuses a setup for an agent without its own folder', async () => {
+    const a = agent('a', {});
+    delete a.worktreePath;
+    await expectCode(user(() => service.saveSetup('/p', 'a', { blocks: [], skills: [], mcps: [] })), 'invalid');
+  });
+
   it('deleting a part in use either gives each agent a copy or removes it', async () => {
     const part = await user(() => service.createPart({ name: 'Rules', content: { kind: 'block', content: 'text' } }));
     agent('a', { blocks: [part.id] });
@@ -172,6 +203,21 @@ describe('templates', () => {
     expect(agents.get('c')!.managed!.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
     expect(settings.map((x) => x.agentId)).toEqual(['a', 'b']);
     expect((await user(() => service.getTemplate(t.id))).setup.skills).toEqual([skill.id]);
+  });
+
+  it('pushes every orchestration change, resets unset settings, and reports an agent it could not update', async () => {
+    const one = await user(() => service.createPart({ name: 'One', content: { kind: 'skill', skillName: 'deploy', files: [{ path: 'SKILL.md', content: '# 1' }] } }));
+    const two = await user(() => service.createPart({ name: 'Two', content: { kind: 'skill', skillName: 'deploy', files: [{ path: 'SKILL.md', content: '# 2' }] } }));
+    const t = await user(() => service.saveTemplate({ name: 'Team', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: { model: 'opus', orchestration: { orchestrate: true } } }));
+    agent('a', { templateId: t.id });
+    agent('b', { skills: [one.id], templateId: t.id });
+    const next = { setup: { blocks: [], skills: [two.id], mcps: [] }, settings: { orchestration: { maxHelpers: 3, autoHelpers: true } } };
+    const results = await user(() => service.pushTemplate(t.id, next, [{ projectPath: '/p', agentId: 'a' }, { projectPath: '/p', agentId: 'b' }]));
+    const a = results.find((r) => r.agentId === 'a')!;
+    expect(a.settings).toEqual({ model: 'default', orchestration: { orchestrate: null, maxHelpers: 3, autoHelpers: true } });
+    expect(results.find((r) => r.agentId === 'b')!.failed).toMatch(/folder name deploy/);
+    expect(agents.get('b')!.managed!.skills).toEqual([one.id]);
+    await expectCode(user(() => service.pushTemplate(t.id, { setup: { blocks: ['gone'], skills: [], mcps: [] }, settings: {} }, [])), 'not_found');
   });
 
   it('diffs reorder of shared blocks as one change', () => {

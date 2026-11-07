@@ -71,6 +71,8 @@ export interface ManagedMcpContent {
   url?: string;
   /** Names of variables forwarded from the signed-in environment. Never values. */
   envVars?: string[];
+  /** Literal, non-secret values (the catalog refuses secret-looking ones). */
+  env?: Record<string, string>;
 }
 export type ManagedPartContent = ManagedBlockContent | ManagedSkillContent | ManagedMcpContent;
 

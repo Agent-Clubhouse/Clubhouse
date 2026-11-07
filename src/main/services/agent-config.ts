@@ -3094,6 +3094,8 @@ async function setClubhouseFeaturesInner(projectPath: string, agentId: string, o
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) throw new Error('Agent not found');
+  // A managed agent's bridge follows its Clubhouse MCP part instead.
+  if (agent.managed) throw new Error('Clubhouse features are part of a managed agent\'s setup');
   if (on) {
     delete agent.clubhouseFeatures;
     if (agent.mcpOverride === false) delete agent.mcpOverride;

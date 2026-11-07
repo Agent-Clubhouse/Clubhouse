@@ -13,7 +13,8 @@ import type { OrchestratorProvider } from '../../orchestrators/types';
 import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
 import type { ManagedAgentStatus } from '../../../shared/managed-agents-types';
 import { createManagedAgentsService, type ManagedAgentsService } from './service';
-import { createManagedStateStore } from './state-store';
+import { createManagedStateStore, managedStateDir } from './state-store';
+import * as path from 'path';
 import {
   deliverManagedSetup,
   mcpServersOf,
@@ -61,9 +62,34 @@ export async function deliverForSpawn(projectPath: string, agent: DurableAgentCo
     delivered.delete(agent.id);
     return;
   }
-  const record = await deliverManagedSetup({ service: managedAgents(), projectPath, agent, provider });
+  // Forget the last record first: if this delivery fails, nothing claims the agent is up to date.
+  delivered.delete(agent.id);
+  const record = await deliverManagedSetup({
+    service: managedAgents(), projectPath, agent, provider,
+    backupRoot: path.join(managedStateDir(), 'replaced-skills', agent.id),
+  });
   if (record) delivered.set(agent.id, record);
+  void excludeManagedFiles(projectPath, provider);
   broadcastToAllWindows(IPC.MANAGED.CHANGED);
+  if (record?.missing) {
+    broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, agent.id,
+      `${record.missing} part${record.missing === 1 ? '' : 's'} in ${agent.name}'s setup no longer exist${record.missing === 1 ? 's' : ''} and ${record.missing === 1 ? 'was' : 'were'} skipped. Open its builder to fix the setup.`);
+  }
+}
+
+/** Keep Clubhouse's managed files out of commits, as Clubhouse Mode does. */
+async function excludeManagedFiles(projectPath: string, provider: OrchestratorProvider): Promise<void> {
+  try {
+    const conv = provider.conventions;
+    const gitExclude = await import('../git-exclude-manager');
+    await gitExclude.addExclusions(projectPath, `clubhouse-managed-${provider.id}`, [
+      conv.mcpConfigFile,
+      `${conv.configDir}/${conv.skillsDir}/`,
+    ]);
+  } catch (err) {
+    // telemetry-exempt: not a git project, or the exclude file is read-only; delivery already succeeded.
+    appLog('core:managed', 'warn', 'Could not add managed files to git excludes', { meta: { error: err instanceof Error ? err.message : String(err) } });
+  }
 }
 
 export async function managedMcpServersFor(agent: DurableAgentConfig): Promise<Record<string, McpServerDef>> {
@@ -138,7 +164,10 @@ export async function restartManagedAgent(projectPath: string, agentId: string, 
   restarting.add(agentId);
   try {
     const agentSystem = await import('../agent-system');
-    if (options.whenTurnEnds) await waitForTurnEnd(agentId);
+    if (options.whenTurnEnds && !(await waitForTurnEnd(agentId))) {
+      // Stopped by someone else, or still working after the wait: don't restart behind their back.
+      throw new Error(isRunning(agentId) ? 'The agent is still working. Try Restart again later.' : 'The agent stopped before its turn ended.');
+    }
     const before = await agentConfig.getDurableConfig(projectPath, agentId);
     if (!before) throw new Error('agent not found');
     if (agentSystem.isAgentRunning(agentId)) {

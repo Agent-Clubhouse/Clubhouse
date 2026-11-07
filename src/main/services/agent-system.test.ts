@@ -1118,6 +1118,12 @@ describe('agent-system', () => {
       expect(Object.keys(flagsFromBuild()!)).toEqual(['clubhouse']);
     });
 
+    it('gives a managed agent without the Clubhouse part its own MCP servers and no bridge (#2896)', async () => {
+      withConfig({ mcpOverride: false, worktreePath: '/project/wt', managed: { version: 1, blocks: [], skills: [], mcps: ['part-github'] } });
+      await spawn();
+      expect(Object.keys(flagsFromBuild()!)).toEqual(['github']);
+    });
+
     it('gives a helper its project servers too where MCP is on for them', async () => {
       mockIsMcpEnabled.mockImplementation(((_p: string, agentOverride?: boolean) => agentOverride ?? true) as never);
       withConfig({ parentAgentId: 'orch-1' });

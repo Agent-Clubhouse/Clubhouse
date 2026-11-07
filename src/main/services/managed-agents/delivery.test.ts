@@ -82,6 +82,22 @@ describe('deliverManagedSetup', () => {
     expect(fs.existsSync(path.join(skills, 'mine'))).toBe(true);
   });
 
+  it('moves a skill folder Clubhouse did not write out of the way instead of deleting it', async () => {
+    const skill = await user(() => service.createPart({ name: 'Review', content: { kind: 'skill', skillName: 'review', files: [{ path: 'SKILL.md', content: '# managed' }] } }));
+    const mine = path.join(agent.worktreePath!, '.claude', 'skills', 'review');
+    fs.mkdirSync(mine, { recursive: true });
+    fs.writeFileSync(path.join(mine, 'SKILL.md'), '# mine');
+    agent.managed = { version: 1, blocks: [], skills: [skill.id], mcps: [] };
+    const backupRoot = path.join(root, 'backup');
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot }));
+    expect(fs.readFileSync(path.join(mine, 'SKILL.md'), 'utf-8')).toBe('# managed');
+    const [saved] = fs.readdirSync(backupRoot);
+    expect(fs.readFileSync(path.join(backupRoot, saved, 'SKILL.md'), 'utf-8')).toBe('# mine');
+    // Without a place to put it, delivery refuses rather than delete it.
+    fs.rmSync(path.join(agent.worktreePath!, '.claude', 'skills', '.clubhouse-managed-skills.json'));
+    await expect(user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }))).rejects.toThrow(/in the way/);
+  });
+
   it('writes MCP servers to the JSON file without the Clubhouse part, and none for TOML CLIs', async () => {
     const mcp = await user(() => service.createPart({ name: 'WorkIQ', content: { kind: 'mcp', serverKey: 'workiq', transport: 'stdio', command: 'npx', args: ['-y', 'workiq-mcp'], envVars: ['WORKIQ_TENANT'] } }));
     agent.managed = { version: 1, blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID, mcp.id] };
@@ -107,6 +123,7 @@ describe('deliverManagedSetup', () => {
     agent.managed = { version: 1, blocks: [BUILTIN_BLOCK_IDS.identity, 'gone'], skills: [], mcps: [] };
     const record = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
     expect(Object.keys(record!.parts)).toEqual([BUILTIN_BLOCK_IDS.identity]);
+    expect(record!.missing).toBe(1);
   });
 });
 
