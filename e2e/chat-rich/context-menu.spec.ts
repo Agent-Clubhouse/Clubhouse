@@ -57,7 +57,7 @@ test('native copy menu preserves rich link, image and selection content', async 
       return labels();
     }
     async function choose(labelOrRole: string) {
-      await app.evaluate(({ BrowserWindow }, name) => {
+      await app.evaluate(async ({ BrowserWindow, clipboard }, name) => {
         const state = (globalThis as ProbeGlobal).__copyMenuProbe!;
         const item = state.menu?.items.find(i => i.label === name || i.role === name);
         if (!item || !item.enabled) throw new Error(`Missing enabled menu item: ${name}`);
@@ -66,6 +66,7 @@ test('native copy menu preserves rich link, image and selection content', async 
         state.menu!.closePopup();
         // Electron's actual MenuItem callback, not a reconstructed test action.
         // This does NOT claim to automate native OS menu selection itself.
+        await clipboard.clear();
         item.click({}, win, win.webContents);
       }, labelOrRole);
     }
@@ -138,6 +139,8 @@ test('native copy menu preserves rich link, image and selection content', async 
     await expect(page.getByTestId('agent-context-menu')).toBeVisible();
     expect(await app.evaluate(() => (globalThis as ProbeGlobal).__copyMenuProbe!.calls)).toBe(before);
     await page.keyboard.press('Escape');
+    expect(page.url()).toBe(urlBefore);
+    expect(await app.evaluate(() => (globalThis as ProbeGlobal).__copyMenuProbe!.externalAttempts)).toBe(0);
     await chat.expectScriptComplete();
     await page.screenshot({ path: test.info().outputPath('copy-content.png') });
   } catch (error) {
