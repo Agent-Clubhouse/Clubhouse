@@ -11,7 +11,7 @@ import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
 import type { OrchestratorProvider } from '../../orchestrators/types';
 import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
-import type { ManagedAgentStatus } from '../../../shared/managed-agents-types';
+import type { ManagedAgentStatus, ManagedRunningSnapshot } from '../../../shared/managed-agents-types';
 import { createManagedAgentsService, ManagedError, type ManagedAgentsService } from './service';
 import { createManagedStateStore, managedStateDir } from './state-store';
 import { ensureBuiltinsOnceFor } from './builtins-once';
@@ -218,6 +218,18 @@ export async function statusFor(projectPath: string, agentId: string): Promise<M
   const cliChanged = (record.orchestrator ?? '') !== (agent.orchestrator ?? '');
   if (changes.length === 0) changes.push(cliChanged ? 'The CLI changed' : 'Its settings changed');
   return { managed: true, running, waiting: true, changes, deliveredAt: record.deliveredAt, cliChanged, ...notice };
+}
+
+/**
+ * What a running agent's session started with, for Preview's "Running now",
+ * while its next start differs (the setup-changed bar is showing). Null when
+ * it isn't running, nothing is waiting, or this app run didn't deliver it.
+ */
+export async function runningSnapshotFor(projectPath: string, agentId: string): Promise<ManagedRunningSnapshot | null> {
+  const status = await statusFor(projectPath, agentId);
+  const snapshot = delivered.get(agentId)?.snapshot;
+  if (!status.running || !status.waiting || !snapshot) return null;
+  return { ...snapshot, changes: status.changes };
 }
 
 /** The person dismissed the "Switched to managed when Clubhouse updated" notice. The marker stays (D59). */

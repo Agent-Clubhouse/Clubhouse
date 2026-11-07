@@ -34,6 +34,10 @@ const managed = {
   saveSetup: (projectPath: string, agentId: string, setup: SetupInput) => call<ManagedAgentSetup>(IPC.MANAGED.SAVE_SETUP, projectPath, agentId, setup),
   unmanage: (projectPath: string, agentId: string) => call<void>(IPC.MANAGED.UNMANAGE, projectPath, agentId),
   preview: (projectPath: string, agentId: string, setup?: SetupInput) => call<ManagedPreview>(IPC.MANAGED.PREVIEW, projectPath, agentId, setup),
+  /** What a New agent draft would get at its first start, rendered as delivery renders it. */
+  previewDraft: (projectPath: string, input: { name: string; setup: SetupInput; settings?: ManagedTemplateSettings }) => call<ManagedPreview>(IPC.MANAGED.PREVIEW_DRAFT, projectPath, input),
+  /** Effort levels by model id for a CLI; `default` is its default model's. */
+  modelEfforts: (cli: string, projectPath?: string) => call<Record<string, string[]>>(IPC.MANAGED.MODEL_EFFORTS, cli, projectPath),
   listTemplates: () => call<Array<ManagedTemplate & { usedBy: number }>>(IPC.MANAGED.LIST_TEMPLATES),
   getTemplate: (id: string) => call<ManagedTemplate>(IPC.MANAGED.GET_TEMPLATE, id),
   saveTemplate: (input: Omit<ManagedTemplate, 'builtin' | 'updatedAt' | 'id'> & { id?: string }) => call<ManagedTemplate>(IPC.MANAGED.SAVE_TEMPLATE, input),

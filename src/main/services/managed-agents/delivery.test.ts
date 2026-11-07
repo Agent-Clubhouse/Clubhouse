@@ -258,6 +258,61 @@ describe('previewManagedSetup', () => {
     expect(preview.instructions).toBe(fs.readFileSync(path.join(agent.worktreePath!, 'CLAUDE.md'), 'utf-8'));
     expect(preview.blocks.map((b) => [b.name, b.startLine, b.endLine])).toEqual([['Identity', 1, 2], ['Rules', 4, 5]]);
   });
+
+  it('gives the text with wildcards as written for "Show wildcards", and a settings summary (#2895)', async () => {
+    const rules = await user(() => service.createPart({ name: 'Rules', content: { kind: 'block', content: 'Work in @@Path on @@StandbyBranch.' } }));
+    agent.managed = { version: 1, blocks: [rules.id], skills: [], mcps: [] };
+    Object.assign(agent, { orchestrator: 'claude-code', model: 'opus', effort: 'high', freeAgentMode: true, orchestration: { orchestrate: true, maxHelpers: 3, autoHelpers: true } });
+    const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(preview.instructions).toBe('Work in .clubhouse/agents/cool-gazelle/ on cool-gazelle/standby.');
+    expect(preview.rawInstructions).toBe('Work in @@Path on @@StandbyBranch.');
+    expect(preview.settings).toEqual([
+      { key: 'cli', label: 'CLI', value: 'Claude Code' },
+      { key: 'model', label: 'Model', value: 'opus' },
+      { key: 'effort', label: 'Effort', value: 'high' },
+      { key: 'freeAgentMode', label: 'Free Agent Mode', value: 'On' },
+      { key: 'orchestration', label: 'Orchestration', value: 'Can start helpers' },
+      { key: 'helpers', label: 'Helpers', value: 'Up to 3 at once, Smart selection, no approvals, from Helper' },
+      { key: 'dispatcher', label: 'Dispatcher', value: 'Connected' },
+    ]);
+  });
+
+  it('renders an agent that doesn\'t exist yet as delivery will, once it has its folder (#2895)', async () => {
+    const rules = await user(() => service.createPart({ name: 'Rules', content: { kind: 'block', content: 'I am @@AgentName in @@Path on @@StandbyBranch.' } }));
+    const setup = { version: 1 as const, blocks: [BUILTIN_BLOCK_IDS.identity, rules.id], skills: [], mcps: [] };
+    // The New agent builder's draft: no folder yet, the name typed.
+    const draft: DurableAgentConfig = { id: 'new-agent', name: 'cool-gazelle', color: 'gray', createdAt: '2026-11-07T00:00:00.000Z' };
+    const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent: draft, provider: provider(), setup }));
+    // The agent as created: its folder is .clubhouse/agents/<name>, its branch <name>/standby.
+    agent.managed = setup;
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(preview.instructions).toBe(fs.readFileSync(path.join(agent.worktreePath!, 'CLAUDE.md'), 'utf-8'));
+  });
+});
+
+describe('what a running session started with (D9, #2895)', () => {
+  it('keeps the delivered text, parts and settings in the record for "Running now"', async () => {
+    const rules = await user(() => service.createPart({ name: 'Rules', content: { kind: 'block', content: 'Name: @@AgentName' } }));
+    const notes = await user(() => service.createPart({ name: 'Notes', content: { kind: 'skill', skillName: 'notes', files: [{ path: 'SKILL.md', content: '# n' }] } }));
+    agent.managed = { version: 1, blocks: [rules.id], skills: [notes.id], mcps: [] };
+    agent.model = 'opus';
+    const record = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(record!.snapshot).toMatchObject({
+      instructions: 'Name: cool-gazelle',
+      rawInstructions: 'Name: @@AgentName',
+      skills: ['Notes'],
+      mcps: ['Clubhouse'],
+    });
+    expect(record!.snapshot!.settings.find((r) => r.key === 'model')!.value).toBe('opus');
+  });
+
+  it('fingerprints the effort, which every launch passes', async () => {
+    agent.managed = { version: 1, blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [] };
+    const first = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    agent.effort = 'high';
+    const second = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(first!.fingerprint).not.toBe(second!.fingerprint);
+  });
 });
 
 describe('quickManagedLaunch (D25)', () => {

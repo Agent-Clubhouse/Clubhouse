@@ -609,3 +609,52 @@ describe('restart with nothing to resume (#2819)', () => {
     expect(toasts()).toEqual([]);
   });
 });
+
+describe('Preview: wildcards, settings and what is running now (#2895)', () => {
+  const rows = (model: string) => [
+    { key: 'cli', label: 'CLI', value: 'Claude Code' },
+    { key: 'model', label: 'Model', value: model },
+    { key: 'orchestration', label: 'Orchestration', value: 'Off' },
+  ];
+
+  it('shows the settings summary, and the text with wildcards as written when asked', async () => {
+    vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value: {
+      instructions: 'Work on release-lead/standby.', rawInstructions: 'Work on @@StandbyBranch.',
+      blocks: [], skills: [], mcps: [], missing: [], settings: rows('opus'),
+    } } as never);
+    render(<PreviewPane agent={agent} />);
+    expect((await screen.findByTestId('managed-preview-text')).textContent).toBe('Work on release-lead/standby.');
+    expect(screen.getByTestId('managed-preview-settings').textContent).toBe('CLIClaude CodeModelopusOrchestrationOff');
+    fireEvent.click(screen.getByRole('switch', { name: 'Show wildcards' }));
+    expect(screen.getByTestId('managed-preview-text').textContent).toBe('Work on @@StandbyBranch.');
+    expect(screen.queryByTestId('managed-preview-running')).toBeNull();
+  });
+
+  it('puts what the running session started with beside the next start, and says what differs', async () => {
+    vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value: {
+      instructions: 'New rules.', rawInstructions: 'New rules.', blocks: [], skills: [], mcps: [], missing: [], settings: rows('opus'),
+      running: {
+        deliveredAt: '2026-11-07T10:00:00.000Z', instructions: 'Old rules for release-lead.', rawInstructions: 'Old rules for @@AgentName.',
+        skills: [], mcps: ['Clubhouse'], settings: rows('sonnet'), changes: ['Rules was edited', 'Its settings changed'],
+      },
+    } } as never);
+    render(<PreviewPane agent={agent} />);
+    expect((await screen.findByTestId('managed-preview-running-text')).textContent).toBe('Old rules for release-lead.');
+    expect(screen.getByText('Running now')).toBeTruthy();
+    expect(screen.getByText('Next start')).toBeTruthy();
+    expect(screen.getByTestId('managed-preview-running-changes').textContent).toContain('Rules was edited');
+    expect(screen.getByTestId('managed-preview-setting-model').textContent).toBe('opus (running now: sonnet)');
+    expect(screen.getByTestId('managed-preview-setting-cli').textContent).toBe('Claude Code');
+    fireEvent.click(screen.getByRole('switch', { name: 'Show wildcards' }));
+    expect(screen.getByTestId('managed-preview-running-text').textContent).toBe('Old rules for @@AgentName.');
+  });
+
+  it('renders a New agent draft through previewDraft, never an agent preview', async () => {
+    const agentPreview = vi.spyOn(m(), 'preview');
+    const draftPreview = vi.spyOn(m(), 'previewDraft').mockResolvedValue({ ok: true, value: { instructions: 'You are keen-heron.', blocks: [], skills: [], mcps: [], missing: [] } } as never);
+    render(<PreviewPane draft={{ projectPath: '/p', name: 'keen-heron', setup: { blocks: ['b'], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, settings: { model: 'opus' } }} />);
+    expect((await screen.findByTestId('managed-preview-text')).textContent).toBe('You are keen-heron.');
+    expect(draftPreview).toHaveBeenCalledWith('/p', { name: 'keen-heron', setup: { blocks: ['b'], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, settings: { model: 'opus' } });
+    expect(agentPreview).not.toHaveBeenCalled();
+  });
+});

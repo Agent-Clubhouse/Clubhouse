@@ -24,11 +24,16 @@ import {
   type ManagedAgentSetup,
   type ManagedMcpContent,
   type ManagedPreview,
+  type ManagedRunningSnapshot,
+  type ManagedSettingsRow,
   type ManagedSkillContent,
 } from '../../../shared/managed-agents-types';
+import { managedSettingsSummary } from '../../../shared/managed-settings-summary';
+import { resolveOrchestrationPolicy } from '../../../shared/orchestration-policy';
 import { withClubhouseSetup, type ManagedAgentsService } from './service';
 import { withWorkingIdentity } from './builtins';
 import { skillsFolderOf } from '../../../shared/skills-folder';
+import { helperTemplateFor } from './helpers';
 
 /** Written beside the managed skills so a later start removes only what Clubhouse put there. */
 const SKILLS_MANIFEST = '.clubhouse-managed-skills.json';
@@ -77,11 +82,43 @@ function wildcardContextFor(projectPath: string, agent: DurableAgentConfig) {
   return buildWildcardContext(agent, projectPath);
 }
 
-/** What the setup renders to, with wildcards filled in for this agent. */
-export async function renderManagedInstructions(projectPath: string, agent: DurableAgentConfig, resolved: Resolved): Promise<string> {
+/** The blocks joined in order, wildcards as written. */
+function composeManagedText(resolved: Resolved): string {
   const composed = composeInstructions(resolved.blocks.map((b) => ({ content: b.content })));
   if (composed.ok === false) throw new Error(composed.code);
-  return replaceManagedWildcards(composed.text, wildcardContextFor(projectPath, agent));
+  return composed.text;
+}
+
+/** What the setup renders to, with wildcards filled in for this agent. */
+export async function renderManagedInstructions(projectPath: string, agent: DurableAgentConfig, resolved: Resolved): Promise<string> {
+  return replaceManagedWildcards(composeManagedText(resolved), wildcardContextFor(projectPath, agent));
+}
+
+/**
+ * Preview's settings summary for an agent: CLI, model, effort, Free Agent
+ * Mode, orchestration and helpers. The helper template is named only when
+ * it orchestrates; a template that can't be read is left out.
+ */
+export async function managedSettingsRows(service: ManagedAgentsService, agent: DurableAgentConfig, provider: OrchestratorProvider | undefined): Promise<ManagedSettingsRow[]> {
+  const helper = !!agent.parentAgentId;
+  let helperTemplateName: string | undefined;
+  if (resolveOrchestrationPolicy(agent.orchestration, { helper }).orchestrate) {
+    try {
+      const { templateId } = await helperTemplateFor(service, agent.helperTemplateId);
+      helperTemplateName = (await service.getTemplate(templateId)).name;
+    } catch {
+      // telemetry-exempt: the summary leaves the helper template out.
+    }
+  }
+  return managedSettingsSummary({
+    cliName: provider?.displayName ?? agent.orchestrator,
+    model: agent.model,
+    effort: agent.effort,
+    freeAgentMode: agent.freeAgentMode,
+    orchestration: agent.orchestration,
+    helperTemplateName,
+    helper,
+  });
 }
 
 /** The MCP servers a managed agent gets, as the providers' launch code takes them. The Clubhouse bridge is separate. */
@@ -650,6 +687,8 @@ async function writeMcpFile(worktree: string, provider: OrchestratorProvider, se
 
 export interface DeliveryRecord {
   fingerprint: string;
+  /** What the session started with, for Preview's "Running now" (D9). Set by a delivery, not by a fingerprint of the current setup. */
+  snapshot?: Omit<ManagedRunningSnapshot, 'changes'>;
   /** Parts the setup lists that no longer exist, skipped this start. */
   missing?: number;
   deliveredAt: string;
@@ -665,7 +704,7 @@ export function setupFingerprint(agent: DurableAgentConfig, resolved: Resolved):
   const order = [...resolved.blocks.map((b) => b.id), '|', ...resolved.skills.map((s) => s.id), '|', ...resolved.mcps.map((m) => m.id)];
   const fingerprint = canonicalHash({
     parts, order,
-    orchestrator: agent.orchestrator ?? null, model: agent.model ?? null,
+    orchestrator: agent.orchestrator ?? null, model: agent.model ?? null, effort: agent.effort ?? null,
     freeAgentMode: agent.freeAgentMode ?? null, orchestration: agent.orchestration ?? null,
   });
   return { fingerprint, deliveredAt: new Date().toISOString(), ...(agent.orchestrator && { orchestrator: agent.orchestrator }), parts, order };
@@ -706,7 +745,19 @@ export async function deliverManagedSetup(params: {
   if (provider.id === CLAUDE_CODE_ID) await writeClaudeExcludes(agent.worktreePath, provider);
   // Another CLI doesn't read them, so the entries Clubhouse added for Claude Code come out.
   else await removeManagedClaudeExcludes(agent.worktreePath);
-  return { ...setupFingerprint(agent, resolved), ...(resolved.missing.length > 0 && { missing: resolved.missing.length }) };
+  const record = setupFingerprint(agent, resolved);
+  return {
+    ...record,
+    snapshot: {
+      deliveredAt: record.deliveredAt,
+      instructions,
+      rawInstructions: composeManagedText(resolved),
+      skills: resolved.skills.map((sk) => sk.name),
+      mcps: resolved.mcps.map((m) => m.name),
+      settings: await managedSettingsRows(service, agent, provider),
+    },
+    ...(resolved.missing.length > 0 && { missing: resolved.missing.length }),
+  };
 }
 
 /** What a quick agent gets from a template (#2893, D25). */
@@ -773,10 +824,18 @@ export async function previewManagedSetup(params: {
   agent: DurableAgentConfig;
   provider: OrchestratorProvider | undefined;
   setup?: ManagedAgentSetup;
+  /**
+   * An agent with no folder yet (a New agent draft): the checkout its worktree
+   * will come from, so Preview can say which built-in skills the project's
+   * own committed copy replaces.
+   */
+  projectOwnFrom?: string;
 }): Promise<ManagedPreview> {
   const setup = params.setup ?? params.agent.managed;
   if (!setup) return { instructions: '', blocks: [], skills: [], mcps: [], missing: [] };
   const resolved = await resolveSetup(params.service, setup);
+  const rawInstructions = composeManagedText(resolved);
+  // The same render delivery writes, so Preview matches the file byte for byte.
   const instructions = await renderManagedInstructions(params.projectPath, params.agent, resolved);
   const ctx = wildcardContextFor(params.projectPath, params.agent);
   const usage = new Map<string, number>();
@@ -794,10 +853,15 @@ export async function previewManagedSetup(params: {
   const worktree = params.agent.worktreePath;
   const projectOwn = worktree && params.provider
     ? await projectOwnSkills(worktree, params.provider, resolved.skills, await deliveredBefore(path.join(worktree, skillsFolderOf(params.provider.conventions))))
-    : new Set<string>();
+    // Clubhouse never delivers into the project's checkout, so nothing there is its own.
+    : params.projectOwnFrom && params.provider
+      ? await projectOwnSkills(params.projectOwnFrom, params.provider, resolved.skills, [])
+      : new Set<string>();
   return {
     ...extra,
     instructions,
+    rawInstructions,
+    settings: await managedSettingsRows(params.service, params.agent, params.provider),
     blocks,
     skills: resolved.skills.map((s) => ({
       id: s.id, name: s.name, skillName: s.content.skillName, files: s.content.files.length, folder: `${folderRoot}/${s.content.skillName}`.replace(/\\/g, '/'),
