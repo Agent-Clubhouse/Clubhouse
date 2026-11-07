@@ -161,7 +161,11 @@ test.describe('claude: file chips in one reply', () => {
     const view = chat.window.getByTestId('local-file-preview');
     const filesBefore = await Promise.all([p.plan, p.report, p.scratch].map((file) => fs.promises.readFile(file)));
     const projectsBefore = await chat.window.evaluate(() => window.clubhouse.project.list());
-    const capture = async (name: string) => testInfo.attach(name, { body: await chat.window.screenshot(), contentType: 'image/png' });
+    const capture = async (name: string) => {
+      const screenshotPath = testInfo.outputPath(`${name}.png`);
+      await chat.window.screenshot({ path: screenshotPath });
+      await testInfo.attach(name, { path: screenshotPath, contentType: 'image/png' });
+    };
     const close = async () => {
       await view.getByRole('button', { name: 'Close', exact: true }).click();
       await expect(view).toHaveCount(0);
