@@ -156,13 +156,16 @@ export function snapshot(agentId: string, limit?: SnapshotLimit): Promise<Termin
   if (!session) return Promise.resolve(null);
   const seq = session.seq;
   return new Promise((resolve) => {
-    // A disposed terminal never runs its write callbacks. Retry once the
-    // reset (if that is what disposed it) has created the replacement.
+    // Disposal settles waiters even if xterm later invokes a queued callback.
+    // Retry once reset (if that disposed it) has created the replacement.
     const abandon = () => resolve(Promise.resolve().then(() => snapshot(agentId, limit)));
     session.waiters.add(abandon);
     // The callback runs right after everything written before it is parsed
     // and before anything written after it, so the buffer matches `seq`.
     session.terminal.write('', () => {
+      // xterm can finish queued writes after disposal. That old callback must
+      // neither touch its disposed serializer nor settle a replacement snapshot.
+      if (sessions.get(agentId) !== session || !session.waiters.has(abandon)) return;
       session.waiters.delete(abandon);
       resolve({ ...serializeWithin(session.serializer, limit?.maxEncodedBytes), seq });
     });
