@@ -146,7 +146,8 @@ test.describe('claude: file chips in one reply', () => {
     await expect(dom.fileChip(p.todo)).toHaveText(p.todo);
   });
 
-  test('scratch files open in-app through Open in Files and supported Markdown links', async ({}, testInfo) => {
+  test('scratch files open in-app through Open in Files and supported Markdown links', async () => {
+    const testInfo = test.info();
     const owned = chat.electronApp.process();
     const receipt = {
       mainPid: owned.pid,
