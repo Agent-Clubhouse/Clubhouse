@@ -101,15 +101,6 @@ export function FirstRun() {
   const addProject = useProjectStore((s) => s.addProject);
   const newAgentBinding = useKeyboardShortcutsStore((s) => s.shortcuts['new-quick-agent']?.currentBinding);
   const [dragging, setDragging] = useState(false);
-  const [annex, setAnnex] = useState(false);
-
-  // Annex (another machine as a satellite) is offered where its settings exist.
-  useEffect(() => {
-    let cancelled = false;
-    window.clubhouse.app.isPreviewEligible().then((ok: boolean) => { if (!cancelled) setAnnex(!!ok); })
-      .catch(() => { /* telemetry-exempt: the Annex line just stays hidden */ });
-    return () => { cancelled = true; };
-  }, []);
 
   const choose = () => {
     reportChromeFeature('first_run_add');
@@ -177,12 +168,8 @@ export function FirstRun() {
         <p className="mt-3.5 text-xs text-ctp-overlay1">
           Guides for each step are in{' '}
           <button type="button" onClick={() => useUIStore.getState().toggleHelp()} className="text-ctp-accent hover:underline cursor-pointer focus-ring rounded">Help</button>.
-          {annex && (
-            <>
-              {' '}Using Clubhouse on another {IS_MAC ? 'Mac' : 'computer'}?{' '}
-              <button type="button" data-testid="first-run-annex" onClick={openAnnex} className="text-ctp-accent hover:underline cursor-pointer focus-ring rounded">Connect to it</button>.
-            </>
-          )}
+          {' '}Using Clubhouse on another {IS_MAC ? 'Mac' : 'computer'}?{' '}
+          <button type="button" data-testid="first-run-annex" onClick={openAnnex} className="text-ctp-accent hover:underline cursor-pointer focus-ring rounded">Connect to it</button>.
         </p>
       </div>
     </div>

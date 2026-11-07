@@ -9,6 +9,7 @@ import { launchApp, type LaunchedApp } from './launch';
 import { addProject } from './smoke-helpers';
 import {
   AGENT_ID,
+  ANNEX_PAGES,
     BETA_FLAGS,
   BETA_TRANSCRIPT,
   CHAT_MESSAGE_SHOWN_KEY,
@@ -153,11 +154,11 @@ async function expectNewLayout(w: Page): Promise<void> {
 
 const settingsNav = (w: Page, label: string) => w.getByRole('button', { name: label, exact: true });
 
-/** Open Settings, check which of the Preview pages it lists, and close it again. */
+/** Open Settings, check which of the Preview pages it lists, and close it again. The Annex pages are always listed (#2811). */
 async function expectSettingsPages(w: Page, listed: string[]): Promise<void> {
   await w.locator('[data-testid="nav-settings"]').click();
   await expect(settingsNav(w, 'Updates')).toBeVisible({ timeout: 10_000 });
-  for (const label of listed) await expect(settingsNav(w, label)).toBeVisible({ timeout: 15_000 });
+  for (const label of [...ANNEX_PAGES, ...listed]) await expect(settingsNav(w, label)).toBeVisible({ timeout: 15_000 });
   // The Preview pages appear once the eligibility answer arrives, so give a wrong one time to show.
   await w.waitForTimeout(1_000);
   for (const label of PREVIEW_PAGES.filter((page) => !listed.includes(page))) {
@@ -192,6 +193,7 @@ test('Preview off, fresh install: the new layout, and turning Preview on is the 
   await preview.click();
   await expect(preview).toHaveAttribute('aria-checked', 'false');
   await expect(settingsNav(w, 'Experimental')).toHaveCount(0, { timeout: 10_000 });
+  await expect(settingsNav(w, 'Annex')).toBeVisible();
   expect(await eligible(w)).toBe(false);
   await expect.poll(() => savedPreview(profile!)).toBe(false);
 });
@@ -252,7 +254,7 @@ test('Preview on, no saved flags: the new layout with the Preview pages to opt i
   expect(await eligible(w)).toBe(true);
   await expectNewLayout(w);
   expect(await flagsInForce(w)).toEqual({});
-  await expectSettingsPages(w, ['Experimental', 'Annex', 'Annex control']);
+  await expectSettingsPages(w, ['Experimental']);
 });
 
 test('Preview off, fresh install: Chat is on, no tip, and a saved agent choice wins', async () => {

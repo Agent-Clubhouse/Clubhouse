@@ -20,7 +20,14 @@ import { appLog } from './log-service';
 const SYSTEM_THUMBNAIL_TIMEOUT_MS = 5000;
 
 /** After a try that failed for a reason that can pass, how long to wait before another: a stuck thumbnailer would hold up every build. */
-const TEMPORARY_FAILURE_RETRY_MS = 30_000;
+export const TEMPORARY_FAILURE_RETRY_MS = 30_000;
+
+/**
+ * Tries in a row that fail for a reason that can pass, on a file that hasn't changed,
+ * before the answer counts as no image: an unknown icon keeps every phone's icon refs
+ * unknown, so one stuck file mustn't do that for good. A change to the file starts over.
+ */
+export const TEMPORARY_FAILURES_BEFORE_REFUSAL = 3;
 
 /** About 15 MB at a typical thumbnail's size. Past it the oldest is made again if asked for. */
 const THUMBNAIL_CACHE_MAX_ENTRIES = 512;
@@ -201,7 +208,7 @@ function temporaryFailure(filePath: string, err: unknown): IconRead {
   return ICON_TEMPORARILY_UNAVAILABLE;
 }
 
-interface CachedThumbnail { mtimeMs: number; size: number; image: Promise<IconRead>; retryAtMs?: number }
+interface CachedThumbnail { mtimeMs: number; size: number; image: Promise<IconRead>; retryAtMs?: number; failures?: number }
 
 const thumbnails = new Map<string, CachedThumbnail>();
 
@@ -217,7 +224,8 @@ export async function readIconImage(filePath: string): Promise<IconRead> {
     const { mtimeMs, size } = await fsp.stat(filePath);
     const cached = thumbnails.get(filePath);
     thumbnails.delete(filePath);
-    if (cached && cached.mtimeMs === mtimeMs && cached.size === size && (cached.retryAtMs === undefined || Date.now() < cached.retryAtMs)) {
+    const unchanged = !!cached && cached.mtimeMs === mtimeMs && cached.size === size;
+    if (unchanged && (cached.retryAtMs === undefined || Date.now() < cached.retryAtMs)) {
       thumbnails.set(filePath, cached);
       return await cached.image;
     }
@@ -225,8 +233,18 @@ export async function readIconImage(filePath: string): Promise<IconRead> {
     thumbnails.set(filePath, entry);
     if (thumbnails.size > THUMBNAIL_CACHE_MAX_ENTRIES) thumbnails.delete(thumbnails.keys().next().value!);
     const image = await entry.image;
-    if (image === ICON_TEMPORARILY_UNAVAILABLE) entry.retryAtMs = Date.now() + TEMPORARY_FAILURE_RETRY_MS;
-    return image;
+    if (image !== ICON_TEMPORARILY_UNAVAILABLE) return image;
+    entry.failures = (unchanged ? cached.failures ?? 0 : 0) + 1;
+    if (entry.failures < TEMPORARY_FAILURES_BEFORE_REFUSAL) {
+      entry.retryAtMs = Date.now() + TEMPORARY_FAILURE_RETRY_MS;
+      return image;
+    }
+    // Kept until the file changes, like any other answer.
+    appLog('core:annex', 'warn', 'Gave up on an icon that kept failing; it counts as no image until the file changes', {
+      meta: { file: path.basename(filePath), failures: entry.failures },
+    });
+    entry.image = Promise.resolve(null);
+    return null;
   } catch (err) {
     // The file is gone: the same as no icon. // telemetry-exempt: expected, and the phone draws initials
     thumbnails.delete(filePath);

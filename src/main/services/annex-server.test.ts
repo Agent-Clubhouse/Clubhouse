@@ -2736,10 +2736,10 @@ describe('annex-server', () => {
   // -------------------------------------------------------------------------
 
   describe('readBody error handling', () => {
-    it('reads a body of exactly 1 MiB and drops the connection one byte past it', async () => {
+    it('reads a body of exactly 1 MiB and refuses one byte past it without dropping the connection', async () => {
       const LIMIT = 1024 * 1024;
       const fed = (size: number) => {
-        const stream = new PassThrough();
+        const stream = Object.assign(new PassThrough(), { headers: {} });
         const result = annexServer._testing.readBody(stream as unknown as http.IncomingMessage);
         stream.write(Buffer.alloc(size - 1, 'a'));
         stream.end(Buffer.alloc(1, 'a'));
@@ -2747,8 +2747,94 @@ describe('annex-server', () => {
       };
       expect(await fed(LIMIT).result).toHaveLength(LIMIT);
       const over = fed(LIMIT + 1);
-      await expect(over.result).rejects.toThrow('Body exceeded maximum allowed size');
-      expect(over.stream.destroyed).toBe(true);
+      await expect(over.result).rejects.toMatchObject({ code: 'too_large', statusCode: 413 });
+      // The caller answers first and drains the rest: destroying here would lose the answer.
+      expect(over.stream.destroyed).toBe(false);
+    });
+
+    describe('an oversized body on any route gets a 413 it can read (#2711)', () => {
+      const LIMIT = 1024 * 1024;
+      const TOO_LARGE = { error: 'too_large', maxBytes: LIMIT };
+
+      /**
+       * Uploads `total` bytes over a raw socket, honoring backpressure and reading the
+       * answer as it goes, so `sent` shows how far the upload got. A socket error is kept,
+       * not thrown: a dropped connection is what the old code did.
+       */
+      function upload(port: number, route: string, total: number, opts: { token?: string; chunked?: boolean } = {}) {
+        const block = Buffer.alloc(64 * 1024, 'a');
+        return new Promise<{ status: number | null; headers: Record<string, string>; body: unknown; sent: number; socketError: string | null }>((resolve) => {
+          let raw = '';
+          let sent = 0;
+          let socketError: string | null = null;
+          const socket = net.createConnection({ host: '127.0.0.1', port }, () => {
+            socket.write([
+              // Connection: close, so a reply the server keeps the socket open after still ends the read.
+              `POST ${route} HTTP/1.1`, 'Host: 127.0.0.1', 'Connection: close', 'Content-Type: application/json',
+              ...(opts.token ? [`Authorization: Bearer ${opts.token}`] : []),
+              opts.chunked ? 'Transfer-Encoding: chunked' : `Content-Length: ${total}`, '', '',
+            ].join('\r\n'));
+            pump();
+          });
+          const pump = () => {
+            while (sent < total && !socket.destroyed) {
+              const part = block.subarray(0, Math.min(block.length, total - sent));
+              sent += part.length;
+              const framed = opts.chunked ? Buffer.concat([Buffer.from(`${part.length.toString(16)}\r\n`), part, Buffer.from('\r\n')]) : part;
+              if (!socket.write(framed)) { socket.once('drain', pump); return; }
+            }
+            if (opts.chunked && sent >= total && !socket.destroyed) socket.write('0\r\n\r\n');
+          };
+          socket.on('data', (data) => { raw += data.toString(); });
+          socket.on('error', (err) => { socketError = err.message; });
+          socket.on('close', () => {
+            const [head, bytes = ''] = raw.split('\r\n\r\n');
+            const [statusLine = '', ...lines] = head.split('\r\n');
+            const status = /^HTTP\/1\.1 (\d+)/.exec(statusLine)?.[1];
+            let body: unknown = null;
+            try { body = JSON.parse(bytes); } catch { body = bytes; }
+            resolve({
+              status: status ? Number(status) : null,
+              headers: Object.fromEntries(lines.map((l) => l.split(': ')).map(([k, v]) => [k.toLowerCase(), v])),
+              body, sent, socketError,
+            });
+          });
+        });
+      }
+
+      it.each([
+        ['wake agent', '/api/v1/agents/some-agent/wake'],
+        ['quick agent spawn', '/api/v1/projects/proj1/agents/quick'],
+        ['permission response', '/api/v1/agents/some-agent/permission-response'],
+      ])('%s: answers 413 with a JSON error while reading the upload to its end', async (_label, route) => {
+        const { port, token } = await startAndPair();
+        const result = await upload(port, route, LIMIT + 1, { token });
+        expect(result).toMatchObject({ status: 413, body: TOO_LARGE, sent: LIMIT + 1, socketError: null });
+        expect(result.headers).toMatchObject({ 'content-type': 'application/json', connection: 'close' });
+        expect(appLog).toHaveBeenCalledWith('core:annex', 'warn', 'Annex request body too large',
+          expect.objectContaining({ meta: expect.objectContaining({ method: 'POST', path: route, maxBytes: LIMIT }) }));
+      });
+
+      it('answers a chunked upload with no Content-Length once it passes the limit', async () => {
+        const { port, token } = await startAndPair();
+        const result = await upload(port, '/api/v1/agents/some-agent/wake', 4 * LIMIT, { token, chunked: true });
+        expect(result).toMatchObject({ status: 413, body: TOO_LARGE, socketError: null });
+      });
+
+      it('refuses an oversized pairing body with a 413, not a dropped connection', async () => {
+        annexServer.start();
+        await new Promise((r) => setTimeout(r, 100));
+        const status = annexServer.getStatus() as { port: number; pairingPort?: number };
+        const result = await upload(status.pairingPort || status.port, '/pair', LIMIT + 1);
+        expect(result).toMatchObject({ status: 413, body: TOO_LARGE, sent: LIMIT + 1, socketError: null });
+      });
+
+      it('still takes a body at the limit', async () => {
+        const { port, token } = await startAndPair();
+        // Exactly 1 MiB that isn't JSON: read in full, then refused as invalid_json rather than too_large.
+        const result = await upload(port, '/api/v1/agents/some-agent/wake', LIMIT, { token });
+        expect(result).toMatchObject({ status: 400, body: { error: 'invalid_json' } });
+      });
     });
 
     /**
@@ -3538,6 +3624,73 @@ describe('annex-server', () => {
         expect(res.status).toBe(503);
         expect(JSON.parse(res.body)).toEqual({ error: 'icon_unavailable' });
       }, 30_000);
+
+      describe('after a temporary icon failure (#2723)', () => {
+        const { ICON_RETRY_REFRESH_DELAY_MS, ICON_RETRY_REFRESH_MAX } = annexServer._testing;
+        /** The retry refresh's real delay is over 30 s; it's checked that it's asked for, then run in `ms`. */
+        const shortenRetryRefresh = (ms: number) => {
+          const realSetTimeout = globalThis.setTimeout;
+          return vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, delay?: number) => (
+            realSetTimeout(fn, delay === ICON_RETRY_REFRESH_DELAY_MS ? ms : delay))) as typeof setTimeout);
+        };
+        const retryRefreshes = (timers: ReturnType<typeof shortenRetryRefresh>) => timers.mock.calls.filter(([, delay]) => delay === ICON_RETRY_REFRESH_DELAY_MS).length;
+
+        it('waits until the icon can be tried again', () => {
+          expect(ICON_RETRY_REFRESH_DELAY_MS).toBeGreaterThan(30_000);
+        });
+
+        it('sends complete refs once the failure clears, with nothing else changing', async () => {
+          fakeDecoder();
+          // A directory passes the stat and fails the read, with an error that isn't a missing file.
+          fs.mkdirSync(path.join(dir, 'a0.png'));
+          serveAgentsWithIcons(['a0.png']);
+          const timers = shortenRetryRefresh(50);
+          try {
+            const refs = await connectWithRefs(true);
+            expect(snapshots(refs)[0]).not.toHaveProperty('iconRefs');
+            expect(retryRefreshes(timers)).toBe(1);
+
+            fs.rmdirSync(path.join(dir, 'a0.png'));
+            writeIcon('a0.png', pngFile(MIB));
+            await vi.waitFor(() => expect(snapshots(refs)).toHaveLength(2), { timeout: 10_000 });
+            expect(snapshots(refs)[1].iconRefs.agents.a0).toMatchObject({ type: 'image/png', width: 128 });
+            // Complete now, so nothing more is asked for.
+            expect(retryRefreshes(timers)).toBe(1);
+          } finally {
+            timers.mockRestore();
+          }
+        }, 30_000);
+
+        it('stops after a few refreshes in a row while it keeps failing', async () => {
+          fakeDecoder();
+          fs.mkdirSync(path.join(dir, 'a0.png'));
+          serveAgentsWithIcons(['a0.png']);
+          const timers = shortenRetryRefresh(20);
+          try {
+            const refs = await connectWithRefs(true);
+            await vi.waitFor(() => expect(snapshots(refs)).toHaveLength(1 + ICON_RETRY_REFRESH_MAX), { timeout: 10_000 });
+            await new Promise((r) => setTimeout(r, 300));
+            expect(snapshots(refs)).toHaveLength(1 + ICON_RETRY_REFRESH_MAX);
+            expect(retryRefreshes(timers)).toBe(ICON_RETRY_REFRESH_MAX);
+            for (const snapshot of snapshots(refs)) expect(snapshot).not.toHaveProperty('iconRefs');
+          } finally {
+            timers.mockRestore();
+          }
+        }, 30_000);
+
+        it('asks for nothing when every icon was read', async () => {
+          fakeDecoder();
+          serveAgentsWithIcons([writeIcon('a0.png', pngFile(MIB))]);
+          const timers = shortenRetryRefresh(20);
+          try {
+            const refs = await connectWithRefs(true);
+            expect(snapshots(refs)[0].iconRefs.agents.a0).toBeDefined();
+            expect(retryRefreshes(timers)).toBe(0);
+          } finally {
+            timers.mockRestore();
+          }
+        }, 30_000);
+      });
 
       it('does not build or report a form no socket gets', async () => {
         fakeDecoder();
@@ -6541,7 +6694,7 @@ describe('annex-server', () => {
       const { _testing } = await import('./annex-server');
       const { EventEmitter } = await import('events');
 
-      const mockReq = new EventEmitter() as any;
+      const mockReq = Object.assign(new EventEmitter(), { headers: {} }) as any;
       const resultPromise = _testing.readBody(mockReq);
 
       // 900 chunks × 1 KB = ~900 KB (well under the 1 MB limit)
@@ -6562,8 +6715,7 @@ describe('annex-server', () => {
       const { _testing } = await import('./annex-server');
       const { EventEmitter } = await import('events');
 
-      const mockReq = new EventEmitter() as any;
-      mockReq.destroy = vi.fn();
+      const mockReq = Object.assign(new EventEmitter(), { headers: {}, pause: vi.fn(), destroy: vi.fn() }) as any;
       const resultPromise = _testing.readBody(mockReq);
 
       // Send chunks exceeding 1 MB
@@ -6571,15 +6723,17 @@ describe('annex-server', () => {
       mockReq.emit('data', bigChunk);
       mockReq.emit('data', bigChunk); // total 1200 KB > 1 MB limit
 
-      await expect(resultPromise).rejects.toThrow('Body exceeded maximum allowed size');
-      expect(mockReq.destroy).toHaveBeenCalled();
+      await expect(resultPromise).rejects.toMatchObject({ code: 'too_large' });
+      // Paused for the caller to answer and drain, not destroyed (#2711).
+      expect(mockReq.pause).toHaveBeenCalled();
+      expect(mockReq.destroy).not.toHaveBeenCalled();
     });
 
     it('rejects on stream error', async () => {
       const { _testing } = await import('./annex-server');
       const { EventEmitter } = await import('events');
 
-      const mockReq = new EventEmitter() as any;
+      const mockReq = Object.assign(new EventEmitter(), { headers: {} }) as any;
       const resultPromise = _testing.readBody(mockReq);
 
       mockReq.emit('error', new Error('connection reset'));

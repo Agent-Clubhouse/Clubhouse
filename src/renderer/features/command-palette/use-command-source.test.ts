@@ -193,13 +193,13 @@ describe('useCommandSource', () => {
     mockGetExperimentalSettings.mockResolvedValue({});
   });
 
-  it('annex commands hidden when not preview-eligible', async () => {
-    mockIsPreviewEligible.mockResolvedValueOnce(false);
+  it('lists annex commands when not preview-eligible, since Annex is stable (#2811)', async () => {
+    mockIsPreviewEligible.mockResolvedValue(false);
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
-    expect(findItem(result.current, 'action:toggle-annex-server')).toBeUndefined();
-    expect(findItem(result.current, 'action:toggle-annex-client')).toBeUndefined();
-    expect(findItem(result.current, 'action:annex-show-pin')).toBeUndefined();
+    expect(findItem(result.current, 'action:toggle-annex-server')).toBeDefined();
+    expect(findItem(result.current, 'action:toggle-annex-client')).toBeDefined();
+    expect(findItem(result.current, 'action:annex-show-pin')).toBeDefined();
   });
 
   it('includes toggle annex server action when preview-eligible', async () => {

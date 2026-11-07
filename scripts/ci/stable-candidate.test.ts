@@ -28,7 +28,7 @@ import {
   verifyHarnessCheckout,
   withCandidateVersion,
 } from './stable-candidate-lib.mjs';
-import { BETA_FLAGS, PREVIEW_PAGES } from '../../e2e/stable-state-seeds.mjs';
+import { ANNEX_PAGES, BETA_FLAGS, PREVIEW_PAGES } from '../../e2e/stable-state-seeds.mjs';
 
 /**
  * Nothing here packages or launches anything. The script itself only ever runs
@@ -460,13 +460,13 @@ describe('the matrix', () => {
 
   it('expects nothing Preview-gated without Preview', () => {
     for (const scenario of SCENARIOS.filter((s: { preview: boolean }) => !s.preview)) {
-      expect(expectedFor(scenario)).toMatchObject({ previewEligible: false, newChrome: true, chatEnabled: true, flagsInForce: null, settingsPages: [], dispatcherRow: true });
+      expect(expectedFor(scenario)).toMatchObject({ previewEligible: false, newChrome: true, chatEnabled: true, flagsInForce: null, settingsPages: ANNEX_PAGES, dispatcherRow: true });
     }
   });
 
   it('expects flags to take effect only with Preview on', () => {
-    expect(expectedFor({ state: 'beta', preview: true, flags: true })).toMatchObject({ previewEligible: true, newChrome: true, chatEnabled: true, flagsInForce: BETA_FLAGS, settingsPages: PREVIEW_PAGES, dispatcherRow: true });
-    expect(expectedFor({ state: 'beta', preview: true, flags: false })).toMatchObject({ previewEligible: true, newChrome: true, chatEnabled: true, flagsInForce: null, settingsPages: ['Experimental', 'Annex', 'Annex control'], dispatcherRow: true });
+    expect(expectedFor({ state: 'beta', preview: true, flags: true })).toMatchObject({ previewEligible: true, newChrome: true, chatEnabled: true, flagsInForce: BETA_FLAGS, settingsPages: [...ANNEX_PAGES, ...PREVIEW_PAGES], dispatcherRow: true });
+    expect(expectedFor({ state: 'beta', preview: true, flags: false })).toMatchObject({ previewEligible: true, newChrome: true, chatEnabled: true, flagsInForce: null, settingsPages: ['Annex', 'Annex control', 'Experimental'], dispatcherRow: true });
     expect(expectedFor({ state: 'fresh', preview: true, flags: true })).toMatchObject({ newChrome: true, dispatcherRow: true });
   });
 
@@ -507,7 +507,7 @@ describe('checkStartupRecord', () => {
 describe('checkRenderer', () => {
   const offObserved = {
     eligible: false, flags: {}, newChromeLayout: true, titleBar: false, chromeTitleBar: true, chromeSidebar: true,
-    dispatcherRow: true, wakesInChat: false, settingsPages: [],
+    dispatcherRow: true, wakesInChat: false, settingsPages: ANNEX_PAGES,
   };
 
   it('passes the new layout with Preview off', () => {
@@ -521,7 +521,8 @@ describe('checkRenderer', () => {
     ['chrome-title-bar', { chromeTitleBar: false }],
     ['chrome-sidebar', { chromeSidebar: false }],
     ['dispatcher-row', { dispatcherRow: false }],
-    ['settings pages', { settingsPages: ['Experimental'] }],
+    ['settings pages', { settingsPages: [...ANNEX_PAGES, 'Experimental'] }],
+    ['settings pages', { settingsPages: [] }],
     ['flags in force', { flags: { goobers: true } }],
   ])('fails on %s', (label, change) => {
     expect(checkRenderer({ ...offObserved, ...change }, expectedFor({ state: 'beta', preview: false, flags: true })).join()).toContain(label);
@@ -529,7 +530,7 @@ describe('checkRenderer', () => {
 
   it('does not care what order the flags come back in', () => {
     const reversed = Object.fromEntries(Object.entries(BETA_FLAGS).reverse());
-    const on = { ...offObserved, eligible: true, newChromeLayout: true, titleBar: false, chromeTitleBar: true, chromeSidebar: true, dispatcherRow: true, wakesInChat: null, settingsPages: PREVIEW_PAGES, flags: reversed };
+    const on = { ...offObserved, eligible: true, newChromeLayout: true, titleBar: false, chromeTitleBar: true, chromeSidebar: true, dispatcherRow: true, wakesInChat: null, settingsPages: [...ANNEX_PAGES, ...PREVIEW_PAGES], flags: reversed };
     expect(checkRenderer(on, expectedFor({ state: 'beta', preview: true, flags: true }))).toEqual([]);
   });
 });
@@ -565,7 +566,7 @@ describe('rendererProbeSource', () => {
     const { observed, calls } = await run(['title-bar'], ['Updates', ' Experimental ', 'Annex'], '/project');
     expect(JSON.parse(JSON.stringify(observed))).toEqual({
       eligible: false, flags: {}, newChromeLayout: false, titleBar: true, chromeTitleBar: false, chromeSidebar: false,
-      dispatcherRow: false, wakesInChat: false, settingsPages: ['Experimental', 'Annex'],
+      dispatcherRow: false, wakesInChat: false, settingsPages: ['Annex', 'Experimental'],
     });
     expect(calls).toEqual([['agent', 'claude-code', { projectPath: '/project', starting: true }], ['nav-settings'], ['nav-settings']].map((c) => expect.arrayContaining(c.map((v) => (typeof v === 'object' ? expect.objectContaining(v as object) : v)))));
   }, 30_000);
