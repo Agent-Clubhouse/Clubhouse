@@ -433,6 +433,35 @@ describe('exactly its parts (#2819)', () => {
     expect(preview.skills.find((sk) => sk.id === BUILTIN_SKILL_IDS.validate)!.projectOwn).toBeUndefined();
   });
 
+  it('matches a tracked folder to a built-in ignoring case, so a tracked Build/ is the project\'s build skill (D74)', async () => {
+    const wt = agent.worktreePath!;
+    const skills = path.join(wt, '.claude', 'skills');
+    git(wt, 'init', '-q');
+    fs.mkdirSync(path.join(skills, 'Build'), { recursive: true });
+    fs.writeFileSync(path.join(skills, 'Build', 'SKILL.md'), '# ours');
+    git(wt, 'add', '.claude/skills/Build/SKILL.md');
+    agent.managed = { version: 1, blocks: [], skills: [BUILTIN_SKILL_IDS.build], mcps: [] };
+    const backupRoot = path.join(root, 'backup');
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot }));
+    // On a case-insensitive file system build/ is Build/; either way only the project's folder is there.
+    expect(fs.readdirSync(skills).filter((f) => !f.startsWith('.'))).toEqual(['Build']);
+    expect(fs.readFileSync(path.join(skills, 'Build', 'SKILL.md'), 'utf-8')).toBe('# ours');
+    expect(fs.existsSync(backupRoot)).toBe(false);
+    expect(JSON.parse(fs.readFileSync(path.join(skills, '.clubhouse-managed-skills.json'), 'utf-8'))).toEqual({ skills: [] });
+  });
+
+  it('never removes a folder it delivered once the project commits it, even after the skill leaves the setup (D74)', async () => {
+    const wt = agent.worktreePath!;
+    const skills = path.join(wt, '.claude', 'skills');
+    git(wt, 'init', '-q');
+    agent.managed = { version: 1, blocks: [], skills: [BUILTIN_SKILL_IDS.build], mcps: [] };
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    git(wt, 'add', '.claude/skills/build/SKILL.md');
+    agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(fs.existsSync(path.join(skills, 'build', 'SKILL.md'))).toBe(true);
+  });
+
   it('still replaces an untracked folder in a built-in skill\'s way, and leaves one it delivered once git tracks it (D74)', async () => {
     const wt = agent.worktreePath!;
     const skills = path.join(wt, '.claude', 'skills');

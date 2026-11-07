@@ -91,19 +91,24 @@ export const BUILTIN_SKILL_IDS = {
  */
 export function withWorkingIdentity<T extends { blocks: string[] }>(setup: T): T {
   if (!setup.blocks.includes(BUILTIN_BLOCK_IDS.identity)) return setup;
-  return { ...setup, blocks: setup.blocks.map((id) => (id === BUILTIN_BLOCK_IDS.identity ? BUILTIN_BLOCK_IDS.identityHelper : id)) };
+  // Never both: a setup that lists both gets the working one once, where it came first.
+  const blocks = setup.blocks.map((id) => (id === BUILTIN_BLOCK_IDS.identity ? BUILTIN_BLOCK_IDS.identityHelper : id));
+  return { ...setup, blocks: blocks.filter((id, i) => id !== BUILTIN_BLOCK_IDS.identityHelper || blocks.indexOf(id) === i) };
 }
+
+/** LF, whatever the checkout did: .gitattributes keeps builtin-text LF, and this is the backstop. */
+const lf = (text: string) => text.replace(/\r\n/g, '\n');
 
 function blockText(file: string): string {
   const text = BUILTIN_TEXT[file];
   if (text === undefined) throw new Error(`Built-in block text ${file} is missing; run scripts/sync-builtin-text.mjs`);
-  return text.trim();
+  return lf(text).trim();
 }
 
 function skillText(file: string): string {
   const text = BUILTIN_SKILL_TEXT[file];
   if (text === undefined) throw new Error(`Built-in skill file ${file} is missing; run scripts/sync-builtin-text.mjs`);
-  return text;
+  return lf(text);
 }
 
 export function builtinParts(): BuiltinPart[] {

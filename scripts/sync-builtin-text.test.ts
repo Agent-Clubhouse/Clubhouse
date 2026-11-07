@@ -251,6 +251,45 @@ describe('sync-builtin-text', () => {
     expect(existsSync(path.join(textDir, 'skills'))).toBe(false);
   });
 
+  it('refuses what the asset catalog would refuse at startup, and ids that aren\'t safe in a file name or source (#2902)', async () => {
+    const { syncBuiltinText } = await import('./sync-builtin-text.mjs');
+    syncBuiltinText(exportDir, { textDir, write: true });
+    const before = readFileSync(path.join(textDir, 'manifest.json'), 'utf8');
+    writeDoc('skills', skill('leaky', { text: skillMd('leaky', 'Use it.', 'Token: sk-live-1234567890abcdef') }));
+    writeDoc('skills', skill('huge', { text: skillMd('huge', 'Use it.', 'x'.repeat(5 * 1024 * 1024 + 1)) }));
+    writeDoc('blocks', block('builtin-block-leaky', { text: 'Use sk-live-1234567890abcdef to sign in.' }));
+    writeDoc('blocks', block("builtin-block-it's"));
+    // A / can't be in a file name, so these are written under other names.
+    writeFileSync(path.join(exportDir, 'blocks', 'slash.json'), JSON.stringify(block('builtin-block-a/b')));
+    writeFileSync(path.join(exportDir, 'templates', 'slash.json'), JSON.stringify(template('builtin-template-x/y', ['builtin-block-identity'])));
+    const r = syncBuiltinText(exportDir, { textDir, write: true });
+    expect(r.written).toBe(false);
+    expect(r.problems).toEqual(expect.arrayContaining([
+      'skill builtin-skill-leaky: the asset catalog refuses it (secret_value at files[0].content)',
+      'skill builtin-skill-huge: the asset catalog refuses it (too_large at files[0].content)',
+      'block builtin-block-leaky: the asset catalog refuses it (secret_value at content)',
+      'block builtin-block-it\'s: "builtin-block-it\'s" isn\'t a valid built-in id (lowercase letters, digits, - and _)',
+      'block builtin-block-a/b: "builtin-block-a/b" isn\'t a valid built-in id (lowercase letters, digits, - and _)',
+      'template builtin-template-x/y: "builtin-template-x/y" isn\'t a valid built-in id (lowercase letters, digits, - and _)',
+    ]));
+    expect(readFileSync(path.join(textDir, 'manifest.json'), 'utf8')).toBe(before);
+  });
+
+  it('treats CRLF line endings on disk or in the export as no difference (#2902)', async () => {
+    const { syncBuiltinText } = await import('./sync-builtin-text.mjs');
+    writeDoc('skills', skill('build'));
+    syncBuiltinText(exportDir, { textDir, write: true });
+    for (const file of ['identity.md', 'skills/build/SKILL.md', 'manifest.json', 'index.ts']) {
+      const full = path.join(textDir, file);
+      writeFileSync(full, readFileSync(full, 'utf8').replace(/\n/g, '\r\n'));
+    }
+    expect(syncBuiltinText(exportDir, { textDir })).toMatchObject({ problems: [], differences: [] });
+    // An export with CRLF writes LF.
+    writeDoc('blocks', block('builtin-block-identity', { name: 'Identity', text: 'You are @@AgentName.\r\nSecond line.', order: 0 }));
+    syncBuiltinText(exportDir, { textDir, write: true });
+    expect(readFileSync(path.join(textDir, 'identity.md'), 'utf8')).toBe('You are @@AgentName.\nSecond line.\n');
+  });
+
   it('the committed built-in text matches its own manifest exactly', async () => {
     const { DEFAULT_TEXT_DIR, syncBuiltinText } = await import('./sync-builtin-text.mjs');
     // Rebuild an export from what the app bundles; a sync of it must find nothing to change.

@@ -321,6 +321,8 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
   const api = {
     /** Install or update the built-in parts. Startup only: runs as Clubhouse itself. */
     async ensureBuiltins(): Promise<void> {
+      // One bad built-in is logged and skipped, so the rest still install; the call fails at the end so a later start retries.
+      const failed: string[] = [];
       await withSettingsSurface('system', undefined, async () => {
         const index = await catalog.read();
         for (const part of BUILTINS.values()) {
@@ -330,12 +332,19 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
             const current = await catalog.readRevision(part.id, existing.headRevision).catch((): null => null);
             if (current && canonicalHash(current) === canonicalHash(part.payload)) continue;
           }
-          await installBuiltinAsset(catalog, {
-            assetId: part.id, kind: part.kind, name: part.name, builtinId: part.id,
-            expectedRevision: existing?.headRevision ?? 0, payload: part.payload,
-          });
+          try {
+            await installBuiltinAsset(catalog, {
+              assetId: part.id, kind: part.kind, name: part.name, builtinId: part.id,
+              expectedRevision: existing?.headRevision ?? 0, payload: part.payload,
+            });
+          } catch (err) {
+            // telemetry-exempt: logged with the built-in's id and the catalog's code; the call throws once every part was tried.
+            failed.push(part.id);
+            appLog('core:managed', 'error', 'A built-in agent part could not be installed; skipped', { meta: { id: part.id, code: err instanceof AssetCatalogError ? err.code : 'unknown' } });
+          }
         }
       });
+      if (failed.length > 0) throw new Error(`Built-in agent parts could not be installed: ${failed.join(', ')}`);
     },
 
     async listParts(kind: ManagedPartKind): Promise<ManagedPartSummary[]> {
@@ -608,7 +617,8 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       const name = input.name.trim();
       if (!name) throw new ManagedError('invalid', 'Give it a name.');
       const live = await liveEntries();
-      const keep = (ids: string[]) => ids.filter((id) => live[id]);
+      // Parts that exist, each once (as checkSetup keeps them), so a repeated skill is no clash with itself.
+      const keep = (ids: string[]) => [...new Set(ids)].filter((id) => live[id]);
       refuseSkillFolderClash(await skillFolders(keep(input.setup.skills), live));
       const template = await state.update((s) => {
         const id = input.id ?? `template-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;

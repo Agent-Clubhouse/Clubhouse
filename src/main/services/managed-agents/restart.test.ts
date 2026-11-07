@@ -1,3 +1,6 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 
@@ -173,17 +176,49 @@ describe('the managed exclude block (D16)', () => {
     const [, , again] = replaceExclusions.mock.calls[1] as unknown as [string, string, string[]];
     expect(again.some((p) => p.includes('CLAUDE.md'))).toBe(false);
     expect(again).toContain('.mcp.json');
-    expect(again).toContain('.claude/skills/');
+    // Never the whole skills folder: that would hide the person's own skills in every checkout (D73).
+    expect(again.some((p) => p.includes('skills'))).toBe(false);
   });
 
-  it('excludes Codex\'s .agents/skills folder', async () => {
+  /** A worktree with a managed-skills manifest listing `names` in each of `roots`. */
+  function worktreeWith(roots: Record<string, string[]>): string {
+    const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-excludes-'));
+    for (const [rel, names] of Object.entries(roots)) {
+      fs.mkdirSync(path.join(wt, rel), { recursive: true });
+      fs.writeFileSync(path.join(wt, rel, '.clubhouse-managed-skills.json'), JSON.stringify({ skills: names }));
+    }
+    return wt;
+  }
+
+  it('excludes exactly the skill folders Clubhouse delivered, across the project\'s managed agents (D73)', async () => {
+    add('one', true);
+    add('two', true);
+    add('plain', false);
+    state.agents.get('one')!.worktreePath = worktreeWith({ '.claude/skills': ['build', 'test'] });
+    state.agents.get('two')!.worktreePath = worktreeWith({ '.claude/skills': ['notes', 'build', '../escape', '*'] });
+    state.agents.get('plain')!.worktreePath = worktreeWith({ '.claude/skills': ['theirs'] });
+    await deliverForSpawn('/p', state.agents.get('one')!, provider);
+    await vi.waitFor(() => expect(replaceExclusions).toHaveBeenCalledTimes(1));
+    const [, , patterns] = replaceExclusions.mock.calls[0] as unknown as [string, string, string[]];
+    expect(patterns.filter((p) => p.includes('skills'))).toEqual([
+      '/.claude/skills/.clubhouse-managed-skills.json', '/.claude/skills/build/', '/.claude/skills/notes/', '/.claude/skills/test/',
+    ]);
+  });
+
+  it('excludes Codex\'s delivered .agents/skills folders, and the old .codex/skills ones until that folder is cleaned up', async () => {
     add('excl-codex', true);
-    const codex = { id: 'codex-cli', conventions: { configDir: '.codex', skillsDir: 'skills', skillsRoot: '.agents/skills', mcpConfigFile: '.codex/config.toml', legacyInstructionsFile: 'AGENTS.md', localSettingsFile: 'config.toml' } } as unknown as OrchestratorProvider;
+    add('later', true);
+    state.agents.get('excl-codex')!.worktreePath = worktreeWith({ '.agents/skills': ['build'] });
+    // Not started since the move: its old delivery is still there.
+    state.agents.get('later')!.worktreePath = worktreeWith({ '.codex/skills': ['ship'] });
+    const codex = { id: 'codex-cli', conventions: { configDir: '.codex', skillsDir: 'skills', skillsRoot: '.agents/skills', previousSkillsRoots: ['.codex/skills'], mcpConfigFile: '.codex/config.toml', legacyInstructionsFile: 'AGENTS.md', localSettingsFile: 'config.toml' } } as unknown as OrchestratorProvider;
     await deliverForSpawn('/p', state.agents.get('excl-codex')!, codex);
     await vi.waitFor(() => expect(replaceExclusions).toHaveBeenCalledTimes(1));
     const [, tag, patterns] = replaceExclusions.mock.calls[0] as unknown as [string, string, string[]];
     expect(tag).toBe('clubhouse-managed-codex-cli');
-    expect(patterns).toContain('.agents/skills/');
-    expect(patterns).not.toContain('.codex/skills/');
+    expect(patterns.filter((p) => p.includes('skills'))).toEqual([
+      '/.agents/skills/.clubhouse-managed-skills.json', '/.agents/skills/build/',
+      '/.codex/skills/.clubhouse-managed-skills.json', '/.codex/skills/ship/',
+    ]);
   });
 });

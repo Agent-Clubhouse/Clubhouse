@@ -18,11 +18,11 @@ import { ensureBuiltinsOnceFor } from './builtins-once';
 import { MCP_BACKUP_DIR } from './mcp-backup';
 import { keepInstructionsAtFirstStart } from './before-managed';
 import * as path from 'path';
-import { skillsFolderOf } from '../../../shared/skills-folder';
 import {
   deliverManagedSetup,
   EXCLUDES_MANIFEST,
   instructionsExcludePattern,
+  managedSkillExcludes,
   mcpServersOf,
   quickManagedLaunch,
   removeManagedClaudeExcludes,
@@ -125,17 +125,21 @@ export async function deliverForSpawn(projectPath: string, agent: DurableAgentCo
  * one any more (#2901), so the instructions file is listed here too, anchored
  * to the root and only when the agent's worktree doesn't track it. A file the
  * project tracks shows as modified either way (D16). The block is rewritten
- * each time, so it lists exactly what this start excludes.
+ * each time, so it lists exactly what this start excludes. Skills are listed
+ * folder by folder, as delivered (D73).
  */
 async function excludeManagedFiles(projectPath: string, worktreePath: string | undefined, provider: OrchestratorProvider): Promise<void> {
   try {
     const conv = provider.conventions;
     const instructions = worktreePath ? await instructionsExcludePattern(worktreePath, provider) : null;
+    // Only the skill folders Clubhouse delivered, in any of this project's managed agents (D73).
+    const worktrees = (await agentConfig.peekDurableConfigs(projectPath)).filter((a) => a.managed && a.worktreePath).map((a) => a.worktreePath!);
+    const skills = await managedSkillExcludes(worktreePath ? [worktreePath, ...worktrees] : worktrees, provider);
     const gitExclude = await import('../git-exclude-manager');
     await gitExclude.replaceExclusions(projectPath, `clubhouse-managed-${provider.id}`, [
       ...(instructions ? [instructions] : []),
       conv.mcpConfigFile,
-      `${skillsFolderOf(conv)}/`,
+      ...skills,
       // Where Claude Code's claudeMdExcludes go (D49).
       ...(provider.id === 'claude-code' ? [`${conv.configDir}/${conv.localSettingsFile || 'settings.local.json'}`] : []),
       // Which of those excludes Clubhouse added, so it replaces only its own.

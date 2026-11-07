@@ -254,6 +254,18 @@ describe('ManagedBuilder skill folder clashes (#2902)', () => {
     expect(onChange).toHaveBeenCalledWith({ blocks: [], skills: ['notes', 'my-post'], mcps: [] });
   });
 
+  it('still checks the folder after a swap: a fork moved to another folder can clash there', async () => {
+    vi.spyOn(m(), 'listParts').mockImplementation(async (kind: string) => ({ ok: true, value: kind === 'skill' ? [
+      ...skills,
+      part('my-notes-post', { kind: 'skill', name: 'Renamed post', skillName: 'notes', forkedFrom: 'builtin-skill-post-result-pr' }),
+    ] : [] }) as never);
+    const onChange = vi.fn();
+    render(<ManagedBuilder target={{ kind: 'draft', value: { blocks: [], skills: ['builtin-skill-post-result-pr', 'notes'], mcps: [] }, onChange }} tab="skills" />);
+    fireEvent.click(await screen.findByRole('switch', { name: 'Renamed post' }));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId('managed-skill-clash').textContent).toBe('Renamed post and Notes both install to notes/. Pick one.');
+  });
+
   it('says so for a setup that was saved with a clash', async () => {
     render(<ManagedBuilder target={{ kind: 'draft', value: { blocks: [], skills: ['builtin-skill-post-result-board', 'my-post'], mcps: [] }, onChange: vi.fn() }} tab="skills" />);
     expect((await screen.findByTestId('managed-skill-clash')).textContent).toBe('Post result to the board and My post both install to post-result/. Pick one.');

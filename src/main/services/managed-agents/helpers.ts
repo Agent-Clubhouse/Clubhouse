@@ -8,7 +8,7 @@ import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedTemplateSett
 import type { ManagedAgentsService } from './service';
 import { ensureBuiltinsOnceFor } from './builtins-once';
 import { appLog } from '../log-service';
-import { withWorkingIdentity } from './builtins';
+import { BUILTIN_BLOCK_IDS, withWorkingIdentity } from './builtins';
 
 export const HELPER_KEEPS_CLUBHOUSE_PART = 'Helpers always keep the Clubhouse MCP part so they can reach their orchestrator.';
 
@@ -52,23 +52,28 @@ export async function managedHelperSetup(
   // checkSetup lets the Clubhouse part through before it is installed (a saved setup always has it),
   // but a helper's setup is built from the built-in parts, so a start whose built-ins didn't install is refused here.
   if (!live[CLUBHOUSE_MCP_PART_ID]) throw new Error('the built-in agent parts aren\'t installed yet. Try again.');
-  const drop = new Set(args.removeParts ?? []);
+  // A helper works on the branch it was given, so it gets the working Identity (#2902). Swap first, so
+  // removeParts and addParts are checked against what the helper gets, and either Identity id names it.
+  const working = withWorkingIdentity(base.setup);
+  const asWorking = (id: string) => (id === BUILTIN_BLOCK_IDS.identity ? BUILTIN_BLOCK_IDS.identityHelper : id);
+  const drop = new Set((args.removeParts ?? []).map(asWorking));
   // A helper reports to its orchestrator through the Clubhouse MCP part.
   if (drop.has(CLUBHOUSE_MCP_PART_ID)) throw new Error(HELPER_KEEPS_CLUBHOUSE_PART);
-  const inTemplate = new Set([...base.setup.blocks, ...base.setup.skills, ...base.setup.mcps]);
+  const inTemplate = new Set([...working.blocks, ...working.skills, ...working.mcps]);
   for (const id of drop) {
     if (!live[id]) throw new Error(`there is no agent part "${id}" to remove. Call list_agent_parts for ids.`);
     if (!inTemplate.has(id)) throw new Error(`"${live[id].name}" (${id}) isn't in template "${templateId}", so there is nothing to remove.`);
   }
   const setup = {
-    blocks: withWorkingIdentity(base.setup).blocks.filter((id) => !drop.has(id)),
-    skills: base.setup.skills.filter((id) => !drop.has(id)),
-    mcps: base.setup.mcps.filter((id) => !drop.has(id)),
+    blocks: working.blocks.filter((id) => !drop.has(id)),
+    skills: working.skills.filter((id) => !drop.has(id)),
+    mcps: working.mcps.filter((id) => !drop.has(id)),
   };
-  for (const id of args.addParts ?? []) {
+  for (const raw of args.addParts ?? []) {
+    const id = asWorking(raw);
     const kind = live[id]?.kind;
     const list = kind === 'block' ? setup.blocks : kind === 'skill' ? setup.skills : kind === 'mcp' ? setup.mcps : null;
-    if (!list) throw new Error(`there is no agent part "${id}" to add. Call list_agent_parts for ids.`);
+    if (!list) throw new Error(`there is no agent part "${raw}" to add. Call list_agent_parts for ids.`);
     if (!list.includes(id)) list.push(id);
   }
   if (!setup.mcps.includes(CLUBHOUSE_MCP_PART_ID)) setup.mcps.unshift(CLUBHOUSE_MCP_PART_ID);

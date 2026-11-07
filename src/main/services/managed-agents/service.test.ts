@@ -9,7 +9,7 @@ import { CLUBHOUSE_MCP_PART_ID, isListed } from '../../../shared/managed-agents-
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 
-import { createAssetCatalogStore } from '../asset-catalog/store';
+import { createAssetCatalogStore, installBuiltinAsset } from '../asset-catalog/store';
 import { withSettingsSurface, _resetSettingsAuditForTesting } from '../settings-audit';
 import { createManagedStateStore } from './state-store';
 import { createManagedAgentsService, diffTemplates, ManagedError, type ManagedAgentsService } from './service';
@@ -63,6 +63,24 @@ describe('built-ins', () => {
     const before = (await user(() => service.getPart(BUILTIN_BLOCK_IDS.identity))).revision;
     await service.ensureBuiltins();
     expect((await user(() => service.getPart(BUILTIN_BLOCK_IDS.identity))).revision).toBe(before);
+  });
+
+  it('logs and skips one built-in that won\'t install, installs the rest, and fails at the end so a later start retries', async () => {
+    const catalog = createAssetCatalogStore({ dir: path.join(root, 'catalog-bad') });
+    // A built-in record of another kind under the Identity block's id: the install of the block is refused.
+    await withSettingsSurface('system', undefined, () => installBuiltinAsset(catalog, {
+      assetId: BUILTIN_BLOCK_IDS.identity, kind: 'mcp', name: 'Wrong', builtinId: BUILTIN_BLOCK_IDS.identity, expectedRevision: 0,
+      payload: { serverKey: 'wrong', transport: 'stdio', command: 'wrong' },
+    }));
+    const fresh = createManagedAgentsService({
+      catalog, state: createManagedStateStore(path.join(root, 'managed-bad')),
+      listProjects: async () => [], listAgents: async () => [], getAgent: async () => null, setManagedSetup: async () => {}, isRunning: () => false,
+    });
+    await expect(fresh.ensureBuiltins()).rejects.toThrow(`Built-in agent parts could not be installed: ${BUILTIN_BLOCK_IDS.identity}`);
+    const installed = (await user(() => fresh.listParts('block'))).map((p) => p.id);
+    expect(installed).toContain(BUILTIN_BLOCK_IDS.basics);
+    expect(installed).toContain(BUILTIN_BLOCK_IDS.groupProjects);
+    expect((await user(() => fresh.listParts('skill'))).map((p) => p.id)).toContain(BUILTIN_SKILL_IDS.validate);
   });
 
   it('ships the built-ins from the maintainer\'s builder review (#2902), with the cut ones retired (D71)', async () => {
@@ -212,6 +230,9 @@ describe('built-ins', () => {
     // A user skill that happens to use the folder.
     const mine = await user(() => service.createPart({ name: 'Mine', content: { kind: 'skill', skillName: 'post-result', files: [{ path: 'SKILL.md', content: '# mine' }] } }));
     await refused([S.postResultBoard, mine.id], 'Post result to the board and Mine both install to post-result/. Pick one.');
+    // A skill listed twice is that skill once, not a clash with itself.
+    const twice = await user(() => service.saveTemplate({ name: 'Twice', description: '', setup: { blocks: [], skills: [S.postResultPr, S.build, S.postResultPr], mcps: [] }, settings: {} }));
+    expect(twice.setup.skills).toEqual([S.postResultPr, S.build]);
     // One at a time is fine, and the library says which folder each uses.
     await user(() => service.saveSetup('/p', 'qa', { blocks: [], skills: [fork.id], mcps: [] }));
     expect((await user(() => service.getPart(fork.id))).skillName).toBe('post-result');
@@ -531,6 +552,30 @@ describe('managed helpers (#2899)', () => {
     await expect(user(() => managedHelperSetup(service, { addParts: ['nope'] }))).rejects.toThrow(/no agent part "nope"/);
     await expect(user(() => managedHelperSetup(service, { removeParts: ['nope'] }))).rejects.toThrow(/no agent part "nope"/);
     await expect(user(() => managedHelperSetup(service, { removeParts: [BUILTIN_BLOCK_IDS.qa] }))).rejects.toThrow(/isn't in template "builtin-template-helper"/);
+  });
+
+  it('checks removeParts and addParts against the working Identity a helper gets, and never gives it both (#2902)', async () => {
+    const { managedHelperSetup } = await import('./helpers');
+    const { identity, identityHelper, qa, basics } = BUILTIN_BLOCK_IDS;
+    // The QA template lists the durable Identity; its helper gets the working one.
+    const tpl = 'builtin-template-quality-assurance';
+    expect((await user(() => service.getTemplate(tpl))).setup.blocks[0]).toBe(identity);
+    // Removing either id removes the Identity the helper gets.
+    for (const id of [identity, identityHelper]) {
+      const setup = await user(() => managedHelperSetup(service, { template: tpl, removeParts: [id] }));
+      expect(setup.blocks, id).toEqual([basics, qa]);
+    }
+    // Adding either id is the working one, once.
+    for (const id of [identity, identityHelper]) {
+      const setup = await user(() => managedHelperSetup(service, { template: tpl, addParts: [id] }));
+      expect(setup.blocks, id).toEqual([identityHelper, basics, qa]);
+    }
+    // Removed, then added back, it's the working one too.
+    const back = await user(() => managedHelperSetup(service, { template: tpl, removeParts: [identity], addParts: [identity] }));
+    expect(back.blocks).toEqual([basics, qa, identityHelper]);
+    // A template that lists both gives the helper the working one once.
+    const both = await user(() => service.saveTemplate({ name: 'Both', description: '', setup: { blocks: [identity, basics, identityHelper], skills: [], mcps: [] }, settings: {} }));
+    expect((await user(() => managedHelperSetup(service, { template: both.id }))).blocks).toEqual([identityHelper, basics]);
   });
 
   it('never removes the Clubhouse MCP part, and adds it to a template without it', async () => {

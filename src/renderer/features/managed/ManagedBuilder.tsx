@@ -108,11 +108,13 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
       setSkillClash(null);
       if (on && !list.includes(id)) {
         const part = skillParts.find((p) => p.id === id);
-        // A fork takes the place of the part it came from: a swap, not a clash.
-        if (part?.forkedFrom && list.includes(part.forkedFrom)) { update(kind, list.map((x) => (x === part.forkedFrom ? id : x))); return; }
+        // A fork takes the place of the part it came from: a swap, not a clash with it.
+        const next = part?.forkedFrom && list.includes(part.forkedFrom) ? list.map((x) => (x === part.forkedFrom ? id : x)) : [...list, id];
         // Two skills that install to one folder: say so, and let the person pick (never pick one for them).
-        const clash = part && findSkillFolderClash([...skillsIn(list, skillParts), ...skillsIn([id], skillParts)]);
+        const clash = findSkillFolderClash(skillsIn(next, skillParts));
         if (clash) { setSkillClash(skillFolderClashMessage(clash.a, clash.b, clash.folder)); return; }
+        update(kind, next);
+        return;
       }
     }
     update(kind, on ? (list.includes(id) ? list : [...list, id]) : list.filter((x) => x !== id));

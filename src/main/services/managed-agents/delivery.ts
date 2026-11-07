@@ -237,13 +237,50 @@ async function removePreviousManagedSkills(worktree: string, provider: Orchestra
       appLog('core:managed', 'warn', 'The previous skills folder is a link; its managed skills were left in place', { meta: { folders: listed.length } });
       continue;
     }
+    // One the project has since committed is the project's now; when git can't say, nothing goes.
+    const tracked = await trackedFiles(worktree, [rel.replace(/\\/g, '/')]);
+    if (tracked.ok === false) {
+      appLog('core:managed', 'warn', 'git could not list tracked skill folders; the previous folder\'s managed skills were left in place', { meta: { code: tracked.code } });
+      continue;
+    }
+    const committed = new Set(tracked.files.map((f) => f.slice(rel.length + 1).split('/')[0].toLowerCase()));
     for (const name of listed) {
       // Only a plain folder name in the manifest: never the folder itself or anything outside it.
       if (!name || name !== path.basename(name) || name === '.' || name === '..') continue;
+      if (committed.has(name.toLowerCase())) continue;
       await fsp.rm(insideDir(root, name), { recursive: true, force: true });
     }
     await fsp.rm(path.join(root, SKILLS_MANIFEST), { force: true });
   }
+}
+
+/**
+ * Exactly what Clubhouse wrote into skills folders, as anchored exclude
+ * patterns: each delivered skill folder and the manifest, in the current
+ * skills folder and any the provider used before (until that folder's
+ * cleanup has removed its manifest). Read from each worktree's manifests,
+ * since `.git/info/exclude` covers the main checkout and every worktree: a
+ * whole-folder pattern would hide the person's own skills there (D73).
+ */
+export async function managedSkillExcludes(worktrees: string[], provider: OrchestratorProvider): Promise<string[]> {
+  const roots = [skillsFolderOf(provider.conventions), ...(provider.conventions.previousSkillsRoots ?? [])];
+  const out = new Set<string>();
+  for (const worktree of new Set(worktrees)) {
+    for (const rel of roots) {
+      const root = path.join(worktree, rel);
+      let names: string[];
+      try {
+        const raw = JSON.parse(await fsp.readFile(path.join(root, SKILLS_MANIFEST), 'utf-8'));
+        names = Array.isArray(raw?.skills) ? raw.skills.filter((x: unknown): x is string => typeof x === 'string') : [];
+      } catch { continue; /* telemetry-exempt: Clubhouse wrote nothing here */ }
+      out.add(`/${rel}/${SKILLS_MANIFEST}`);
+      for (const name of names) {
+        // A plain folder name only, so a pattern can't reach past the skill.
+        if (name && name === path.basename(name) && name !== '.' && name !== '..' && !/[*?[\]!#\\]/.test(name)) out.add(`/${rel}/${name}/`);
+      }
+    }
+  }
+  return [...out].sort();
 }
 
 /** The skill folders a previous delivery wrote here, from its manifest. */
@@ -255,31 +292,39 @@ async function deliveredBefore(root: string): Promise<string[]> {
   return [];
 }
 
-/**
- * Built-in skills the project has its own copy of (D74): the folder is
- * already in the agent's skills folder and git tracks it. Clubhouse leaves
- * it in place and doesn't deliver the built-in, so the CLI loads the
- * project's. When git can't say, a folder Clubhouse didn't write counts as
- * the project's too, so nothing tracked is ever overwritten. Custom skills
- * aren't checked: they replace the folder as before (D48).
- */
-async function projectOwnSkills(worktree: string, provider: OrchestratorProvider, skills: Resolved['skills'], previous: string[]): Promise<Set<string>> {
+type TrackedSkillFolders = { ok: true; names: Set<string> } | { ok: false; code: string };
+
+/** The top-level folders git tracks in the agent's skills folder, lowercased (file systems may ignore case). */
+async function trackedSkillFolders(worktree: string, provider: OrchestratorProvider): Promise<TrackedSkillFolders> {
   const rel = skillsFolderOf(provider.conventions);
-  const root = path.join(worktree, rel);
-  const present: string[] = [];
-  for (const skill of skills) {
-    if (!skill.builtin) continue;
-    try {
-      if ((await fsp.stat(insideDir(root, skill.content.skillName))).isDirectory()) present.push(skill.content.skillName);
-    } catch { /* telemetry-exempt: not there, so the built-in is delivered */ }
-  }
-  if (present.length === 0) return new Set();
-  const listed = await trackedFiles(worktree, present.map((n) => `${rel}/${n}`));
-  if (listed.ok === false) {
-    appLog('core:managed', 'warn', 'git could not list tracked skill folders; built-in skills in the way were left in place', { meta: { code: listed.code } });
-    return new Set(present.filter((n) => !previous.includes(n)));
-  }
-  return new Set(present.filter((n) => listed.files.some((f) => f === `${rel}/${n}` || f.startsWith(`${rel}/${n}/`))));
+  const listed = await trackedFiles(worktree, [rel]);
+  if (listed.ok === false) return listed;
+  return { ok: true, names: new Set(listed.files.filter((f) => f.startsWith(`${rel}/`)).map((f) => f.slice(rel.length + 1).split('/')[0].toLowerCase())) };
+}
+
+/**
+ * Built-in skills the project has its own copy of (D74): git tracks a folder
+ * by that name in the agent's skills folder. Clubhouse leaves it in place and
+ * doesn't deliver the built-in, so the CLI loads the project's. Names match
+ * ignoring case, since macOS and Windows file systems do: a tracked `Build/`
+ * is the project's `build` skill. When git can't say, a folder on disk that
+ * Clubhouse didn't write counts as the project's too, so nothing tracked is
+ * ever overwritten. Custom skills aren't checked: they replace the folder as
+ * before (D48). Returns the setup's folder names that are the project's.
+ */
+async function projectOwnSkills(worktree: string, provider: OrchestratorProvider, skills: Resolved['skills'], previous: string[], tracked?: TrackedSkillFolders): Promise<Set<string>> {
+  const builtins = skills.filter((s) => s.builtin).map((s) => s.content.skillName);
+  if (builtins.length === 0) return new Set();
+  const rel = skillsFolderOf(provider.conventions);
+  const known = tracked ?? await trackedSkillFolders(worktree, provider);
+  if (known.ok === true) return new Set(builtins.filter((n) => known.names.has(n.toLowerCase())));
+  appLog('core:managed', 'warn', 'git could not list tracked skill folders; built-in skills in the way were left in place', { meta: { code: known.code } });
+  let onDisk: string[] = [];
+  try {
+    onDisk = (await fsp.readdir(path.join(worktree, rel), { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name.toLowerCase());
+  } catch { /* telemetry-exempt: no skills folder, so nothing is in the way */ }
+  const wrote = new Set(previous.map((n) => n.toLowerCase()));
+  return new Set(builtins.filter((n) => onDisk.includes(n.toLowerCase()) && !wrote.has(n.toLowerCase())));
 }
 
 /** The note for a built-in skill the project's own copy replaces (D74). */
@@ -296,12 +341,15 @@ async function writeSkills(worktree: string, provider: OrchestratorProvider, ski
   // A linked skills folder (or .claude) leads outside the agent's folder: nothing is moved out of it (D48).
   const safeToMove = await insideWithoutLinks(worktree, root);
   const previous = await deliveredBefore(root);
+  const tracked = await trackedSkillFolders(worktree, provider);
   // Never written, recorded or cleaned up: the folder is the project's (D74).
-  const projectOwn = await projectOwnSkills(worktree, provider, skills, previous);
+  const projectOwn = await projectOwnSkills(worktree, provider, skills, previous, tracked);
   const delivered = skills.filter((s) => !projectOwn.has(s.content.skillName));
   const current = delivered.map((s) => s.content.skillName);
   for (const name of previous) {
     if (current.includes(name) || projectOwn.has(name)) continue;
+    // One Clubhouse wrote that the project has since committed is the project's now; when git can't say, it stays.
+    if (tracked.ok === false || tracked.names.has(name.toLowerCase())) continue;
     await fsp.rm(insideDir(root, name), { recursive: true, force: true });
   }
   for (const skill of delivered) {
@@ -698,7 +746,7 @@ export async function quickManagedLaunch(params: {
   const setup = withWorkingIdentity(fromTemplate);
   const resolved = await resolveSetup(params.service, setup);
   const partCount = (s: { blocks: string[]; skills: string[]; mcps: string[] }) => s.blocks.length + s.skills.length + s.mcps.length;
-  const dropped = partCount(template.setup) - partCount(setup);
+  const dropped = partCount(template.setup) - partCount(fromTemplate);
   const agent: DurableAgentConfig = {
     id: params.agentId, name: params.agentName, color: 'gray', createdAt: new Date().toISOString(),
     worktreePath: params.cwd, ...(params.branch && { branch: params.branch }),

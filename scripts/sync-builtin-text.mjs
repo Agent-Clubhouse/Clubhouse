@@ -40,10 +40,61 @@
  * problems. --write refuses to write when the export has problems.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { register } from 'node:module';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const DEFAULT_TEXT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'main', 'services', 'managed-agents', 'builtin-text');
+
+/**
+ * The asset catalog's own checks (`validatePayload`, `nameIssues`,
+ * `isAssetId`), loaded from its TypeScript source, so a sync refuses what
+ * `ensureBuiltins` would refuse at startup: sizes, secrets, paths and the
+ * rest. Vitest loads TypeScript itself; plain Node strips the types, and a
+ * small resolve hook adds the `.ts` the source's imports leave out.
+ */
+async function loadCatalogChecks() {
+  const source = pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'main', 'services', 'asset-catalog', 'validation.ts')).href;
+  if (!process.env.VITEST) {
+    const hook = `export async function resolve(specifier, context, next) {
+      try { return await next(specifier, context); } catch (err) {
+        if (/^\\.{1,2}\\//.test(specifier) && !/\\.[cm]?[jt]s$/.test(specifier)) {
+          for (const ext of ['.ts', '/index.ts']) { try { return await next(specifier + ext, context); } catch { /* next */ } }
+        }
+        throw err;
+      }
+    }
+    // The source is ES modules without "type": "module"; saying so skips Node's guess and its warning.
+    export async function load(url, context, next) {
+      return next(url, url.endsWith('.ts') ? { ...context, format: 'module-typescript' } : context);
+    }`;
+    register(`data:text/javascript,${encodeURIComponent(hook)}`);
+  }
+  return import(source);
+}
+
+let catalogChecks = null;
+let catalogChecksError = null;
+try {
+  catalogChecks = await loadCatalogChecks();
+} catch (err) {
+  catalogChecksError = err instanceof Error ? err.message : String(err);
+}
+
+/** What the catalog would refuse about one built-in, as problem text; empty when it takes it. */
+function catalogProblems(where, kind, id, name, payload) {
+  if (!catalogChecks) return [`${where}: the asset catalog's checks couldn't load (${catalogChecksError}), so nothing can be checked`];
+  const issues = [...catalogChecks.nameIssues(name)];
+  if (!catalogChecks.isAssetId(id)) issues.push({ code: 'invalid_identifier', path: 'id' });
+  if (payload) {
+    const checked = catalogChecks.validatePayload(kind, payload, true);
+    if (checked.ok === false) issues.push(...checked.issues);
+  }
+  return issues.length === 0 ? [] : [`${where}: the asset catalog refuses it (${issues.map((i) => `${i.code} at ${i.path}`).join(', ')})`];
+}
+
+/** Line endings don't count as a difference: a Windows checkout may have turned them into CRLF. */
+const lf = (text) => text.replace(/\r\n/g, '\n');
 
 /** Builder ids that become a different built-in id. Applied to blocks and to template block lists. */
 export const ID_MAP = { 'custom-block-a3kvsk': 'builtin-block-group-projects' };
@@ -196,6 +247,8 @@ export function plan(exp, { current = null, textDir = DEFAULT_TEXT_DIR } = {}) {
     if (!doc.id || !doc.name) { problems.push(`${where}: needs an id and a name`); continue; }
     const id = mapId(doc.id);
     if (!id.startsWith(BLOCK_PREFIX)) { problems.push(`${where}: "${id}" isn't a built-in id (add it to ID_MAP)`); continue; }
+    // Its id names its file and its import: an asset id (a-z, 0-9, - and _), never a / or a quote.
+    if (catalogChecks && !catalogChecks.isAssetId(id)) { problems.push(`${where}: "${id}" isn't a valid built-in id (lowercase letters, digits, - and _)`); continue; }
     if (!STATUSES.has(doc.status)) problems.push(`${where}: unknown status "${doc.status}"`);
     if (known.has(id)) { problems.push(`${where}: duplicate id ${id}`); continue; }
     const file = `${id.slice(BLOCK_PREFIX.length)}.md`;
@@ -205,8 +258,9 @@ export function plan(exp, { current = null, textDir = DEFAULT_TEXT_DIR } = {}) {
       if (doc.origin !== 'builtin' && !current?.blocks?.some((b) => b.id === id)) continue; // never shipped
       if (!existsSync(path.join(textDir, file))) problems.push(`${where}: cut, but its shipped text ${file} is missing`);
     } else {
-      const text = typeof doc.text === 'string' ? doc.text.trim() : '';
+      const text = typeof doc.text === 'string' ? lf(doc.text).trim() : '';
       if (!text) problems.push(`${where}: has no text`);
+      else problems.push(...catalogProblems(where, 'block', id, doc.name, { content: text }));
       texts.set(file, `${text}\n`);
     }
     blocks.push({ id, name: doc.name, description: doc.description ?? '', file, ...(cut && { retired: true }) });
@@ -236,7 +290,7 @@ export function plan(exp, { current = null, textDir = DEFAULT_TEXT_DIR } = {}) {
       description = shipped?.description ?? fm.description ?? '';
     } else {
       // The whole SKILL.md, written exactly as the builder has it.
-      const text = typeof doc.text === 'string' ? doc.text : '';
+      const text = typeof doc.text === 'string' ? lf(doc.text) : '';
       if (!text.trim()) problems.push(`${where}: has no text`);
       else {
         const fm = skillFrontMatter(text);
@@ -244,6 +298,8 @@ export function plan(exp, { current = null, textDir = DEFAULT_TEXT_DIR } = {}) {
         // The export also gives the folder it parsed: it must agree.
         else if (typeof doc.folder === 'string' && doc.folder !== fm.name) problems.push(`${where}: front matter name "${fm.name}" isn't its folder "${doc.folder}"`);
         else { skillName = fm.name; description = fm.description; }
+        // What ensureBuiltins installs: the folder and its SKILL.md, under the library name.
+        problems.push(...catalogProblems(where, 'skill', doc.id, doc.name, { skillName: fm.name ?? doc.id.slice(SKILL_PREFIX.length), files: [{ path: 'SKILL.md', content: text }] }));
       }
       // Delivery copies skill files as they are: a wildcard in one would reach the agent unfilled.
       const tokens = [...new Set(text.match(/@@[A-Za-z]+/g) ?? [])];
@@ -268,6 +324,9 @@ export function plan(exp, { current = null, textDir = DEFAULT_TEXT_DIR } = {}) {
   for (const doc of [...exp.templates].sort(byOrder)) {
     const where = `template ${doc.id ?? doc.file}`;
     if (!doc.id || !doc.name) { problems.push(`${where}: needs an id and a name`); continue; }
+    // Agents and templates point at it, and it lands in source: the same id rules as a part.
+    if (catalogChecks && !catalogChecks.isAssetId(doc.id)) { problems.push(`${where}: "${doc.id}" isn't a valid built-in id (lowercase letters, digits, - and _)`); continue; }
+    if (catalogChecks && catalogChecks.nameIssues(doc.name).length > 0) problems.push(`${where}: the name isn't a valid name`);
     if (!STATUSES.has(doc.status)) problems.push(`${where}: unknown status "${doc.status}"`);
     if (seen.has(doc.id)) { problems.push(`${where}: duplicate id`); continue; }
     seen.add(doc.id);
@@ -341,24 +400,24 @@ export function differences(planned, textDir = DEFAULT_TEXT_DIR) {
       ...diffList(current.skills, planned.manifest.skills, 'skill'),
       ...diffList(current.templates, planned.manifest.templates, 'template'),
     );
-    if (out.length === 0 && manifestJson(current) !== manifestJson(planned.manifest)) out.push('manifest.json: formatting');
+    if (out.length === 0 && lf(readOr(path.join(textDir, 'manifest.json')) ?? '') !== manifestJson(planned.manifest)) out.push('manifest.json: formatting');
   }
   for (const [file, text] of planned.texts) {
     const have = readOr(path.join(textDir, file));
     if (have === null) out.push(`${file}: missing`);
-    else if (have !== text) out.push(`${file}: text differs`);
+    else if (lf(have) !== text) out.push(`${file}: text differs`);
   }
   for (const [file, text] of planned.skillFiles) {
     const have = readOr(path.join(textDir, file));
     if (have === null) out.push(`${file}: missing`);
-    else if (have !== text) out.push(`${file}: text differs`);
+    else if (lf(have) !== text) out.push(`${file}: text differs`);
   }
   const wanted = new Set(planned.manifest.blocks.map((b) => b.file));
   if (existsSync(textDir)) {
     for (const f of readdirSync(textDir)) if (f.endsWith('.md') && !wanted.has(f)) out.push(`${f}: not a built-in block (would be removed)`);
   }
   for (const folder of strayFolders(planned, textDir)) out.push(`skills/${folder}: not a built-in skill (would be removed)`);
-  if (readOr(path.join(textDir, 'index.ts')) !== planned.index) out.push('index.ts: out of date');
+  if (lf(readOr(path.join(textDir, 'index.ts')) ?? '') !== planned.index) out.push('index.ts: out of date');
   return out;
 }
 
