@@ -617,7 +617,8 @@ async function keepMcpFile(projectPath: string, worktree: string, provider: Orch
   if (!kept) return;
   try {
     const gitExclude = await import('../git-exclude-manager');
-    await gitExclude.addExclusions(projectPath, 'clubhouse-managed-backup', [`${MCP_BACKUP_DIR}/`]);
+    // In the agent's CLI's managed block, which every start rewrites with it (D76).
+    await gitExclude.addExclusions(projectPath, `clubhouse-managed-${provider.id}`, [`/${MCP_BACKUP_DIR}/`]);
   } catch (err) {
     // telemetry-exempt: not a git project, or the exclude file is read-only; the copy is kept either way.
     appLog('core:managed', 'warn', 'Could not add the kept MCP file to git excludes', { meta: { error: err instanceof Error ? err.message : String(err) } });

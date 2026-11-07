@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { replaceExclusions } from './git-exclude-manager';
+import { removeExclusions, replaceExclusions } from './git-exclude-manager';
 
 function ignored(cwd: string, rel: string): boolean {
   try {
@@ -26,5 +26,15 @@ describe('git-exclude-manager with git', () => {
     expect(ignored(repo, '.claude/skills/build/SKILL.md')).toBe(true);
     expect(ignored(repo, '.claude/skills/mine/SKILL.md')).toBe(false);
     expect(fs.readFileSync(path.join(repo, '.git', 'info', 'exclude'), 'utf-8')).not.toContain(' # ');
+  });
+
+  it('removes a dead tag\'s old-format lines, leaving the person\'s own lines', async () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'exclude-git-'));
+    execFileSync('git', ['init', '-q'], { cwd: repo, stdio: 'ignore' });
+    const file = path.join(repo, '.git', 'info', 'exclude');
+    fs.writeFileSync(file, '# mine\n*.log\nCLAUDE.md # clubhouse-mode\n.mcp.json # clubhouse-mode\n');
+    await removeExclusions(repo, 'clubhouse-mode');
+    expect(fs.readFileSync(file, 'utf-8')).toBe('# mine\n*.log\n');
+    expect(ignored(repo, 'debug.log')).toBe(true);
   });
 });

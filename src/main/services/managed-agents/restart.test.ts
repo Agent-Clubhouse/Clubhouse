@@ -25,7 +25,8 @@ vi.mock('./delivery', async (importOriginal) => ({
   instructionsExcludePattern: instructionsPattern,
 }));
 const replaceExclusions = vi.hoisted(() => vi.fn(async () => {}));
-vi.mock('../git-exclude-manager', () => ({ addExclusions: vi.fn(async () => {}), replaceExclusions }));
+const removeExclusions = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('../git-exclude-manager', () => ({ addExclusions: vi.fn(async () => {}), replaceExclusions, removeExclusions }));
 vi.mock('../agent-system', () => ({
   isAgentRunning: (id: string) => state.running.has(id),
   killAgent,
@@ -156,28 +157,23 @@ describe('the managed exclude block (D16)', () => {
 
   beforeEach(() => {
     replaceExclusions.mockClear();
+    removeExclusions.mockClear();
     instructionsPattern.mockClear();
   });
 
-  it('lists the instructions file as the agent\'s worktree gives it, anchored, and leaves it out when the worktree tracks it', async () => {
+  it('lists only what Clubhouse alone writes: never the root files a person may have too (D76)', async () => {
     add('excl', true);
     const agent = state.agents.get('excl')!;
     await deliverForSpawn('/p', agent, provider);
     await vi.waitFor(() => expect(replaceExclusions).toHaveBeenCalledTimes(1));
-    expect(instructionsPattern).toHaveBeenCalledWith(agent.worktreePath, provider);
     const [, tag, patterns] = replaceExclusions.mock.calls[0] as unknown as [string, string, string[]];
     expect(tag).toBe('clubhouse-managed-claude-code');
-    expect(patterns).toContain('/CLAUDE.md');
-    expect(patterns).not.toContain('CLAUDE.md');
-
-    instructionsPattern.mockResolvedValueOnce(null);
-    await deliverForSpawn('/p', agent, provider);
-    await vi.waitFor(() => expect(replaceExclusions).toHaveBeenCalledTimes(2));
-    const [, , again] = replaceExclusions.mock.calls[1] as unknown as [string, string, string[]];
-    expect(again.some((p) => p.includes('CLAUDE.md'))).toBe(false);
-    expect(again).toContain('.mcp.json');
-    // Never the whole skills folder: that would hide the person's own skills in every checkout (D73).
-    expect(again.some((p) => p.includes('skills'))).toBe(false);
+    // No skills delivered in this worktree, so only Clubhouse's own bookkeeping files.
+    expect(patterns).toEqual(['/.clubhouse-managed-excludes.json', '/.clubhouse-before-managed/']);
+    for (const rootFile of ['CLAUDE.md', '/CLAUDE.md', '.mcp.json', '.claude/settings.local.json']) expect(patterns).not.toContain(rootFile);
+    expect(instructionsPattern).not.toHaveBeenCalled();
+    // The dead old-format blocks are cleaned up.
+    await vi.waitFor(() => expect(removeExclusions.mock.calls.map((c) => (c as unknown as [string, string])[1]).sort()).toEqual(['clubhouse-managed-backup', 'clubhouse-mode']));
   });
 
   /** A worktree with a managed-skills manifest listing `names` in each of `roots`. */
