@@ -64,7 +64,7 @@ export function createAgentBuilder(store: AssetCatalogStore, projectId?: string)
         key: block.entryKey, entry, assetId: block.assetId, revision: block.revision,
         name: block.name, content: block.text,
         source: from ? `Fork of ${index.assets[from.assetId]?.name ?? 'missing block'} at revision ${from.revision}`
-          : entry.source.kind === 'local' ? "This agent's" : 'Inherited from template',
+          : entry.source.kind === 'local' ? "This agent's" : entry.baseEntryId ? 'Inherited from template' : 'Shared block reference',
         editable: entry.source.kind !== 'follow',
       };
     });
@@ -157,12 +157,14 @@ export function createAgentBuilder(store: AssetCatalogStore, projectId?: string)
       const entry = composition.entries[position];
       if (!entry || !block) throw new AssetCatalogError('invalid_composition');
       if (action.type === 'fork') {
-        if (entry.source.kind !== 'follow' || !entry.baseEntryId) throw new AssetCatalogError('invalid_composition');
+        if (entry.source.kind !== 'follow') throw new AssetCatalogError('invalid_composition');
         const copy = await store.copyAsset({ assetId: block.assetId, revision: block.revision, agentId });
         entry.source = { kind: 'fork', blockId: copy.id, forkedFrom: { assetId: block.assetId, revision: block.revision } };
       } else if (action.type === 'return') {
-        if (entry.source.kind !== 'fork' || !entry.baseEntryId) throw new AssetCatalogError('invalid_composition');
-        entry.source = { kind: 'follow' };
+        if (entry.source.kind !== 'fork') throw new AssetCatalogError('invalid_composition');
+        const origin = entry.source.forkedFrom;
+        entry.source = entry.baseEntryId ? { kind: 'follow' } : { kind: 'follow', blockId: origin.assetId };
+        if (!entry.baseEntryId) composition.floors[origin.assetId] = Math.max(composition.floors[origin.assetId] ?? 0, origin.revision);
       } else if (action.type === 'remove') {
         if (entry.source.kind !== 'local') throw new AssetCatalogError('invalid_composition');
         composition.entries.splice(position, 1);

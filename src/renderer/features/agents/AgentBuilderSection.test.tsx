@@ -172,3 +172,13 @@ it('shows explicit unsupported composition refusal without a successful snapshot
   expect(api.builderCommand).not.toHaveBeenCalled();
   expect(api.builderPreview).not.toHaveBeenCalled();
 });
+it('labels a direct shared fork return without claiming it belongs to the template', async () => {
+  saved.blocks = [{ ...identity, key: 'local:shared', assetId: 'owned-copy', source: 'Fork of Shared at revision 1', editable: true,
+    entry: { localId: 'shared', source: { kind: 'fork', blockId: 'owned-copy', forkedFrom: { assetId: 'shared', revision: 1 } } } }];
+  renderBuilder();
+  const button = await screen.findByRole('button', { name: 'Return to shared block' });
+  expect(screen.queryByRole('button', { name: 'Return to template' })).toBeNull();
+  fireEvent.click(button);
+  await settle();
+  expect(requests.at(-1)).toEqual({ type: 'return', key: 'local:shared' });
+});

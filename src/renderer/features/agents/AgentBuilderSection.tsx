@@ -177,7 +177,7 @@ export function AgentBuilderSection({ projectPath, projectId, agentId, onDirtyCh
             <Button kind="quiet" aria-label={`Move ${block.name} up`} disabled={locked || hasEdits || index === 0} onClick={() => move(index, index - 1)}>Move up</Button>
             <Button kind="quiet" aria-label={`Move ${block.name} down`} disabled={locked || hasEdits || index === blocks.length - 1} onClick={() => move(index, index + 1)}>Move down</Button>
             {!block.editable && <Button kind="ghost" disabled={locked || hasEdits} onClick={() => void run({ type: 'fork', key: block.key })}>Fork block</Button>}
-            {block.entry.source.kind === 'fork' && <Button kind="quiet" disabled={locked || hasEdits} onClick={() => void run({ type: 'return', key: block.key })}>Return to template</Button>}
+            {block.entry.source.kind === 'fork' && <Button kind="quiet" disabled={locked || hasEdits} onClick={() => void run({ type: 'return', key: block.key })}>{block.entry.baseEntryId ? 'Return to template' : 'Return to shared block'}</Button>}
             {block.entry.source.kind === 'local' && <Button kind="quiet" disabled={locked || hasEdits} onClick={() => void run({ type: 'remove', key: block.key })}>Remove block</Button>}
           </div>
         </div>

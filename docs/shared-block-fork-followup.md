@@ -1,0 +1,5 @@
+# Direct shared block fork follow-up
+
+Source-only separate successor from407; current407 review build/profiles unchanged. NewAgent shared references expose existing Fork block controls but the service previously refused every non-template fork. Shared references also incorrectly said Inherited from template. This source correction allows following direct references to fork through the existing immutable copy/provenance path, and returns a direct fork to its original shared reference with a revision floor. Template return remains unchanged. Renderer distinguishes Return to shared block from Return to template.
+
+Unrun regressions cover exact source copy, private edit, return, unchanged source asset and another consumer's composition; renderer checks wording and command key. No removal behavior broadened. No install/type/test/lint/build/app/provider work. Before validation, review return semantics and source deletion/change refusal, persistence and failure cases; no claim of completed full NewAgent draft editing/forking.
