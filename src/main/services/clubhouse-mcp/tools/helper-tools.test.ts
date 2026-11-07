@@ -884,22 +884,32 @@ describe('start_helper cli "auto" (#2671)', () => {
   });
 
   it('records the decision with its helper, holds the provider through the start, and records it started', async () => {
-    const creation = controllableCreation();
-    const body = parse(await start({}));
-    const decisionId = (body.routing as { decisionId: string }).decisionId;
-    expect(mockRecordDecision).toHaveBeenCalledTimes(1);
-    expect(mockRecordDecision.mock.calls[0][0]).toMatchObject({ decisionId, helperId: 'helper_h', outcome: 'chosen', mode: 'auto' });
-    expect(reservationSummary()).toMatchObject({ held: 1, startedPending: 0 });
-    creation.ready('helper_h');
-    await _settleHelperStartsForTesting();
-    expect(mockRecordSpawnResult).toHaveBeenCalledWith({ decisionId, helperId: 'helper_h', result: 'started' });
-    // Started, and kept until a count sees it: the next start's count reconciles it once.
-    expect(reservationSummary()).toMatchObject({ held: 1, startedPending: 1 });
-    // Its own creation, still going: the first one's has already finished.
-    controllableCreation();
-    const next = parse(await start({ name: 'h2', folder: 'h2' }));
-    expect((next.routing as { load: Record<string, number> }).load).toEqual({ 'claude-code': 1, 'codex-cli': 0 });
-    expect(reservationSummary()).toMatchObject({ held: 1, startedPending: 0 });
+    const first = controllableCreation();
+    let second: ReturnType<typeof controllableCreation> | undefined;
+    try {
+      const body = parse(await start({}));
+      const decisionId = (body.routing as { decisionId: string }).decisionId;
+      expect(mockRecordDecision).toHaveBeenCalledTimes(1);
+      expect(mockRecordDecision.mock.calls[0][0]).toMatchObject({ decisionId, helperId: 'helper_h', outcome: 'chosen', mode: 'auto' });
+      expect(reservationSummary()).toMatchObject({ held: 1, startedPending: 0 });
+      first.ready('helper_h');
+      await _settleHelperStartsForTesting();
+      expect(mockRecordSpawnResult).toHaveBeenCalledWith({ decisionId, helperId: 'helper_h', result: 'started' });
+      // Started, and kept until a count sees it: the next start's count reconciles it once.
+      expect(reservationSummary()).toMatchObject({ held: 1, startedPending: 1 });
+      // Its own creation, still going: the first one's has already finished.
+      second = controllableCreation();
+      const next = parse(await start({ name: 'h2', folder: 'h2' }));
+      expect((next.routing as { load: Record<string, number> }).load).toEqual({ 'claude-code': 1, 'codex-cli': 0 });
+      expect(reservationSummary()).toMatchObject({ held: 1, startedPending: 0 });
+    } finally {
+      // Finish every creation this test still holds open, then wait for both starts, so none outlives it.
+      // Only a row still creating is finished, so cleanup can't throw over an assertion above.
+      for (const [gate, id] of [[first, 'helper_h'], [second, 'helper_h2']] as const) {
+        if (gate && agents.get(id)?.creation?.state === 'creating') gate.ready(id);
+      }
+      await _settleHelperStartsForTesting();
+    }
   });
 
   it('a creation refused up front releases the provider and records why', async () => {
