@@ -363,3 +363,57 @@ it('refuses stale direct fork commands before creating a copy', async () => {
   await expect(command({ type: 'fork', key: 'local:direct' }, view.revision)).rejects.toMatchObject({ code: 'stale_revision' });
   expect(await store.read()).toEqual(before);
 });
+it('refuses a changed direct source before fork without creating a private copy', async () => {
+  const shared = await directSharedFixture();
+  const payload = { content: 'CHANGED_BEFORE_FORK' };
+  const impact = await store.previewAssetEdit({ assetId: shared.id, payload });
+  await store.saveRevision({ assetId: shared.id, expectedRevision: 1, payload, impactFingerprint: impact.fingerprint });
+  const before = await store.read();
+  await expect(command({ type: 'fork', key: 'local:direct' })).rejects.toMatchObject({ code: 'stale_revision' });
+  expect(await store.read()).toEqual(before);
+});
+it.each(['source', 'composition'] as const)('retains an unassigned private copy when %s changes after copy commit', async (race) => {
+  const shared = await directSharedFixture();
+  const original = await store.read();
+  const composition = await builder.compositionOf(agentId);
+  const held = await builderSnapshotAdoption(store, composition);
+  const otherPlan = await store.plan({ agentId: 'other-consumer', draft: composition, adoption: held });
+  await store.saveComposition({ agentId: 'other-consumer', expectedRevision: 0, composition, adoption: held, previewFingerprint: otherPlan.fingerprint });
+  const otherBefore = (await store.read()).compositions['other-consumer'];
+  const copy = store.copyAsset.bind(store);
+  let privateId: string | undefined;
+  let afterInterleaving: Awaited<ReturnType<typeof store.read>> | undefined;
+  const spy = vi.spyOn(store, 'copyAsset').mockImplementationOnce(async (input) => {
+    const asset = await copy(input); privateId = asset.id;
+    // The real copy index commit has completed. Mutate only through real public
+    // store/Builder operations before the outer fork gets to saveComposition.
+    if (race === 'source') {
+      const payload = { content: 'SOURCE_CHANGED_AFTER_COPY' };
+      const impact = await store.previewAssetEdit({ assetId: shared.id, payload });
+      await store.saveRevision({ assetId: shared.id, expectedRevision: 1, payload, impactFingerprint: impact.fingerprint });
+    } else {
+      await command({ type: 'append', name: 'Concurrent block', content: 'CONCURRENT_CONTENT' });
+    }
+    afterInterleaving = await store.read();
+    return asset;
+  });
+  try {
+    await expect(command({ type: 'fork', key: 'local:direct' })).rejects.toMatchObject({ code: 'stale_revision' });
+    expect(privateId).toBeDefined();
+    expect(afterInterleaving).toBeDefined();
+    const after = await store.read();
+    expect(after).toEqual(afterInterleaving);
+    expect(after.compositions['other-consumer']).toEqual(otherBefore);
+    expect(after.assets[privateId!].owner).toEqual({ kind: 'agent', agentId });
+    expect(after.assets[privateId!].source).toMatchObject({ kind: 'copy', originAssetId: shared.id, originRevision: 1 });
+    expect(await store.readRevision(privateId!, 1)).toEqual({ content: 'ORIGINAL' });
+    expect(after.compositions[agentId].entries.some((entry) => entry.source.blockId === privateId)).toBe(false);
+    if (race === 'source') {
+      expect(after.compositions[agentId]).toEqual(original.compositions[agentId]);
+      expect(await store.readRevision(shared.id, 2)).toEqual({ content: 'SOURCE_CHANGED_AFTER_COPY' });
+    } else {
+      expect(after.assets[shared.id]).toEqual(original.assets[shared.id]);
+      expect(after.compositions[agentId].revision).toBe(original.compositions[agentId].revision + 1);
+    }
+  } finally { spy.mockRestore(); }
+});
