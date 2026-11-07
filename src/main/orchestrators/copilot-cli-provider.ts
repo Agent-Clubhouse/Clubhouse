@@ -404,6 +404,18 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     return hasCopilotSession(this.sessionStateDir(), sessionId);
   }
 
+  /** hasSession, for the store under another COPILOT_HOME (#2749). */
+  async hasSessionInStore(sessionId: string, copilotHome: string): Promise<boolean | undefined> {
+    const stateDir = path.join(copilotHome, 'session-state');
+    try {
+      await fsp.access(stateDir);
+    } catch (err) {
+      // A folder that's gone holds no sessions; anything else means we can't tell.
+      return (err as NodeJS.ErrnoException).code === 'ENOENT' ? false : undefined;
+    }
+    return hasCopilotSession(stateDir, sessionId);
+  }
+
   /** Whether `sessionId` is a Copilot session for `cwd`; undefined when the store can't tell. */
   async hasSessionForCwd(sessionId: string, cwd: string): Promise<boolean | undefined> {
     return copilotSessionInCwd(this.sessionStateDir(), sessionId, cwd);

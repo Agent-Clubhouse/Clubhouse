@@ -148,6 +148,7 @@ vi.mock('../services/dispatcher/dispatcher-service', () => ({
   onExperimentalSettingsChanged: vi.fn(async () => undefined),
 }));
 
+vi.mock('../services/provider-profiles-removed', () => ({ takeRemovedProfilesNotice: vi.fn(async () => null) }));
 vi.mock('../services/preview-eligible', () => ({
   isPreviewEligible: vi.fn(() => true),
 }));

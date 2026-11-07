@@ -782,7 +782,7 @@ Never sent:
 - MCP tool names other than Clubhouse built-ins; MCP server names;
 - error messages and raw stacks (only sanitized frames are sent);
 - hostnames, device names and aliases, IPs, Annex fingerprints, bearer tokens, PINs, nonces;
-- environment variables and profile env;
+- environment variables;
 - model strings other than the bucketed `c.model.family`.
 
 ---

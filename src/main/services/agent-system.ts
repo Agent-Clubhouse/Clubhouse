@@ -49,6 +49,7 @@ import * as os from 'os';
 import { getAgentRuntime, isChatAgent } from './agent-runtime';
 import { cancelChatStart, tryStartChatAgent, type ChatRuntimeNotice, type ChatStartFacts, type ChatStartResult } from './agent-runtime/chat-spawn';
 import { clearStaleResume, isSessionNotFound, takeChatStartFailure, type StaleResumeReason } from './agent-runtime/stale-session';
+import { removedProfileStateDirs } from './provider-profiles-removed';
 import { noteKillRequest, recordSleep, sleepInfoForExit, takeKillRequest } from './agent-runtime/sleep-reason';
 import { onAgentExit } from './agent-exit-broadcast';
 import { sessionCaptureFor, trackSessionCapture, noteSessionCaptureFailure } from './session-capture-barrier';
@@ -508,8 +509,19 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       const exists = madeBy && madeBy !== provider.id ? false
         : isSessionCapable(provider) && provider.hasSession ? await provider.hasSession(params.sessionId).catch((): undefined => undefined)
           : undefined;
-      if (params.strictResume && (exists === false || madeBy !== provider.id)) throw new AgentResumeError('resume_unverified');
-      if (exists === false) {
+      // A session a removed provider profile saved under its own config folder
+      // (#2749): the CLI can't resume it from here, but it stays in history, and
+      // resumes again if Clubhouse is started with that folder's variable set.
+      const inRemovedProfile = exists !== true && !(madeBy && madeBy !== provider.id)
+        && await inRemovedProfileStore(provider, params.sessionId);
+      if (params.strictResume && (exists === false || inRemovedProfile || madeBy !== provider.id)) throw new AgentResumeError('resume_unverified');
+      if (inRemovedProfile) {
+        appLog('core:agent', 'warn', 'Saved session is in a removed provider profile\'s store; starting fresh and keeping it in history', {
+          meta: { agentId: params.agentId, sessionId: params.sessionId },
+        });
+        recordResumeOutcome(provider.id, params.agentId, 'fresh_not_found');
+        params = { ...params, resume: false, sessionId: undefined };
+      } else if (exists === false) {
         appLog('core:agent', 'warn', 'Saved session is gone from the CLI store; starting fresh', {
           meta: { agentId: params.agentId, sessionId: params.sessionId },
         });
@@ -1089,6 +1101,19 @@ async function captureSession(
  * Clear a dead resume id (#2113). `reason` is where it was found dead; only a
  * resume that quit right away is `exited_early` to the user.
  */
+/**
+ * Whether `sessionId` may be in a removed provider profile's store (#2749): the
+ * CLAUDE_CONFIG_DIR, CODEX_HOME or COPILOT_HOME a saved profile gave this
+ * provider, read-only. "Can't tell" counts as yes, so nothing is erased on a guess.
+ */
+async function inRemovedProfileStore(provider: OrchestratorProvider, sessionId: string): Promise<boolean> {
+  if (!isSessionCapable(provider) || !provider.hasSessionInStore) return false;
+  for (const dir of await removedProfileStateDirs(provider.id)) {
+    if (await provider.hasSessionInStore(sessionId, dir).catch((): undefined => undefined) !== false) return true;
+  }
+  return false;
+}
+
 async function clearResume(projectPath: string, orchestrator: string, agentId: string, sessionId: string, reason: SessionStaleReason): Promise<void> {
   const userReason: StaleResumeReason = reason === 'exit_early' ? 'exited_early' : 'not_found';
   try {
@@ -1265,7 +1290,9 @@ export async function listSessions(
     if (isSessionCapable(provider) && provider.hasSession) {
       const has = await provider.hasSession(s.sessionId).catch((): undefined => undefined);
       if (has === false) {
-        missing.push(s.sessionId);
+        // Saved under a removed provider profile's own store (#2749): not offered, since it can't
+        // resume from here, but never pruned.
+        if (!(await inRemovedProfileStore(provider, s.sessionId))) missing.push(s.sessionId);
         continue;
       }
     }

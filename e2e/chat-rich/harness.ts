@@ -150,8 +150,8 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
   if (opts.cli === 'copilot' && opts.flags?.copilotLegacyAcp !== undefined && opts.flags.copilotLegacyAcp !== !sdk) {
     throw new Error('copilotLegacyAcp contradicts the selected fake transport');
   }
-  if (sdk && (opts.script !== 'multi-turn' || opts.projectFiles?.['.clubhouse/settings.json'] !== undefined)) {
-    throw new Error('SDK fake coverage requires multi-turn and its test-owned project profile');
+  if (sdk && opts.script !== 'multi-turn') {
+    throw new Error('SDK fake coverage requires multi-turn');
   }
   const root = await tempDir(`chat-rich-${opts.cli}-`);
   const projectDir = path.join(root, 'project');

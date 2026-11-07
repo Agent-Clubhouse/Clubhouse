@@ -28,6 +28,7 @@ import { useOnboardingStore } from './stores/onboardingStore';
 import { isNewChromeEnabled } from './chrome/chromeFlag';
 import { initializePluginSystem } from './plugins/plugin-loader';
 import { rendererLog } from './plugins/renderer-logger';
+import { showRemovedProfilesNotice } from './profiles-removed-notice';
 import { useToastStore } from './stores/toastStore';
 import { processResumeQueue } from './services/resume-queue';
 import type { RestartSessionState } from '../shared/types';
@@ -128,6 +129,9 @@ export async function initApp(): Promise<() => void> {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
   });
+
+  // 7b. Provider profiles were removed (#2749): a one-time notice for anyone who had saved some.
+  void showRemovedProfilesNotice();
 
   // 8. Tell main the app is ready: the end of the startup span (spec §4.1).
   markRendererReady({ initStartMs, settingsLoadedMs, pluginsReadyMs });

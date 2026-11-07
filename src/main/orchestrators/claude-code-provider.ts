@@ -395,6 +395,36 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
   }
 
   /**
+   * Whether a session file for `sessionId` is under another CLAUDE_CONFIG_DIR's
+   * `projects/<encoded cwd>/` (#2749). Read-only, names only. undefined when
+   * the store exists but can't be read.
+   */
+  async hasSessionInStore(sessionId: string, configDir: string): Promise<boolean | undefined> {
+    if (!/^[0-9a-f-]{8,}$/i.test(sessionId)) return false;
+    const projectsDir = path.join(configDir, 'projects');
+    let projects: fs.Dirent[];
+    try {
+      projects = await fsp.readdir(projectsDir, { withFileTypes: true });
+    } catch (err) {
+      // No store at all means no sessions; anything else means we can't tell.
+      return (err as NodeJS.ErrnoException).code === 'ENOENT' ? false : undefined;
+    }
+    const names = [`${sessionId}.jsonl`, `${sessionId}.json`];
+    for (const project of projects) {
+      if (!project.isDirectory()) continue;
+      for (const dir of [path.join(projectsDir, project.name), path.join(projectsDir, project.name, 'sessions')]) {
+        try {
+          const entries = await fsp.readdir(dir);
+          if (entries.some((name) => names.includes(name))) return true;
+        } catch {
+          // telemetry-exempt: a project folder without that layout; the others are still checked
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
    * Read a historical session transcript from Claude Code's JSONL storage.
    * Returns raw StreamJsonEvent[] or null if session not found.
    */

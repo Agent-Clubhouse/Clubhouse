@@ -291,6 +291,14 @@ export interface SessionCapable {
    * can name any session the conversation mentions.
    */
   hasSessionForCwd?(sessionId: string, cwd: string): Promise<boolean | undefined>;
+
+  /**
+   * Whether `sessionId` is in the CLI's store under `stateDir` (a
+   * CLAUDE_CONFIG_DIR, CODEX_HOME or COPILOT_HOME) rather than the launch
+   * environment's. Read-only. Only used for sessions a removed provider profile
+   * may have saved (#2749), so they are never pruned or cleared as missing.
+   */
+  hasSessionInStore?(sessionId: string, stateDir: string): Promise<boolean | undefined>;
 }
 
 /**

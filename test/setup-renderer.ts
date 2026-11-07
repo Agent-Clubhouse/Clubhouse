@@ -352,6 +352,7 @@ vi.stubGlobal('clubhouse', {
     onOrchestrationSettingsChanged: () => noop,
     getLiveAgentsForUpdate: vi.fn().mockResolvedValue([]),
     getPendingResumes: vi.fn().mockResolvedValue(null),
+    takeRemovedProfilesNotice: vi.fn().mockResolvedValue(null),
     resumeManualAgent: vi.fn().mockResolvedValue(undefined),
     resolveWorkingAgent: vi.fn().mockResolvedValue(undefined),
     confirmUpdateRestart: vi.fn().mockResolvedValue(undefined),

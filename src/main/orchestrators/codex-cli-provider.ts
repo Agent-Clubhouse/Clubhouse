@@ -651,7 +651,12 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
    * capped listing could miss it. undefined when the store can't be read.
    */
   async hasSession(sessionId: string): Promise<boolean | undefined> {
-    const sessionsDir = path.join(this.resolveCodexHome(), 'sessions');
+    return this.hasSessionInStore(sessionId, this.resolveCodexHome());
+  }
+
+  /** hasSession, for the store under another CODEX_HOME (#2749). */
+  async hasSessionInStore(sessionId: string, codexHome: string): Promise<boolean | undefined> {
+    const sessionsDir = path.join(codexHome, 'sessions');
     let unreadable = false;
     const walk = async (dir: string, depth: number): Promise<boolean> => {
       if (depth > CODEX_SESSION_WALK_MAX_DEPTH) return false;

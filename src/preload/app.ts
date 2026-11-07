@@ -69,6 +69,8 @@ export const app = {
     ipcRenderer.invoke(IPC.APP.GET_VERSION),
   isPreviewEligible: (): Promise<boolean> =>
     ipcRenderer.invoke(IPC.APP.IS_PREVIEW_ELIGIBLE),
+  takeRemovedProfilesNotice: (): Promise<{ profiles: Array<{ name: string; variables: Record<string, string[]> }> } | null> =>
+    ipcRenderer.invoke(IPC.APP.TAKE_REMOVED_PROFILES_NOTICE),
   getArchInfo: (): Promise<{ arch: string; platform: string; rosetta: boolean }> =>
     ipcRenderer.invoke(IPC.APP.GET_ARCH_INFO),
   getCliInstallStatus: (): Promise<CliInstallStatus> =>
