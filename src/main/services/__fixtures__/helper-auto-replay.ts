@@ -85,7 +85,7 @@ export function runReplay(config: SimConfig): SimResult {
   const cursors: Record<string, string> = { ...(config.cursors ?? {}) };
   const result: SimResult = {
     picks: Object.fromEntries(subs.map((s) => [s.key, 0])), sequence: [], refused: 0, reasons: {},
-    maxSpreadBp: 0, meanSpreadBp: 0, unusedAtReset: Object.fromEntries(subs.map((s) => [s.key, []])),
+    maxSpreadBp: 0, meanSpreadBp: 0, unusedAtReset: Object.fromEntries(subs.map((s): [string, number[]] => [s.key, []])),
     minHeadroomPercent: 100, exhaustedAt: {}, unknownChosen: 0, decisions: [], cursors,
   };
   let spreadSum = 0;
