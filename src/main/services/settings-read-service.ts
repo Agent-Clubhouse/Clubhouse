@@ -31,13 +31,11 @@ import * as annexSettings from './annex-settings';
 import { AppearanceError, findOwnProject, findProject } from './appearance-service';
 import { chatIdleSettings } from './chat-idle-settings';
 import * as chatRuntimeSettings from './chat-runtime-settings';
-import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import { getDispatcherPath } from './dispatcher/dispatcher-paths';
 import { getDispatcherState, isDispatcherAgentId } from './dispatcher/dispatcher-service';
 import * as dispatcherSettings from './dispatcher/dispatcher-settings';
 import * as freeAgentSettings from './free-agent-settings';
 import { appLog } from './log-service';
-import { resolveMissionId } from './materialization-service';
 import { resolveMcpEnabled, getSettings as getMcpSettings } from './mcp-settings';
 import { peekStoredSettings } from './settings-store';
 import { buildAgentSettings } from './mobile-agents';
@@ -94,7 +92,6 @@ const APP_FILES = {
   chatIdle: CHAT_IDLE_SETTINGS.filename,
   chatRuntime: 'chat-runtime-settings.json',
   mcp: MCP_SETTINGS.filename,
-  clubhouseMode: 'clubhouse-mode-settings.json',
   freeAgent: 'free-agent-settings.json',
   orchestration: 'orchestration-settings.json',
   orchestrator: 'orchestrator-settings.json',
@@ -167,18 +164,14 @@ function appValue(file: AppFiles[keyof AppFiles], key: string | string[], effect
   return { ...savedLevel(file, ...[key].flat()), effective };
 }
 
-/** A retired setting (#2901): nothing applies, whatever an old config still holds. */
+/** A retired setting (#2901): nothing applies, whatever an old config still holds. Kept so a reader's key doesn't vanish. */
 const retired = (): SettingValue => ({ stored: null, effective: null, source: 'default' });
 
-/** Agent over project, as resolveMissionId and the rest do it. `effective` is the resolver's answer. */
+/** Agent over project. `effective` is the resolver's answer. */
 function agentOverProject(own: unknown, project: unknown, effective: unknown): SettingValue {
   const hasOwn = own !== undefined && own !== null;
   const hasProject = project !== undefined && project !== null;
   return { stored: hasOwn ? own : null, effective: effective ?? null, source: hasOwn ? 'agent' : hasProject ? 'project' : 'default' };
-}
-
-function clubhouseModeLevel(path: string, { files }: AppContext): SettingSource {
-  return clubhouseModeSettings.getSettings().projectOverrides?.[path] !== undefined ? 'project' : savedLevel(files.clubhouseMode, 'enabled').source;
 }
 
 function permissionModeLevel(path: string, { files }: AppContext): SettingSource {
@@ -189,8 +182,7 @@ function permissionModeLevel(path: string, { files }: AppContext): SettingSource
 function mcpLevel(path: string | undefined, override: boolean | undefined, ctx: AppContext): { enabled: boolean; source: SettingSource } {
   const { enabled, source } = resolveMcpEnabled(path, override);
   if (source !== 'app') return { enabled, source };
-  // Clubhouse mode decides only where it keeps MCP on. Off, the MCP switch saved off is what decided.
-  return { enabled, source: enabled && !getMcpSettings().enabled ? savedLevel(ctx.files.clubhouseMode, 'enabled').source : savedLevel(ctx.files.mcp, 'enabled').source };
+  return { enabled, source: savedLevel(ctx.files.mcp, 'enabled').source };
 }
 
 /**
@@ -278,9 +270,9 @@ const AGENT_SECTIONS: ReadonlyArray<Section<AgentContext>> = [
   {
     name: 'agent.persona',
     fields: [
-      // Personas were retired (#2901): always null, kept so a reader's key doesn't vanish.
+      // Personas and Clubhouse Mode's missions were retired (#2901): always null.
       ['persona', retired],
-      ['mission', ({ config, defaults }) => agentOverProject(config.mission, defaults.mission, resolveMissionId(config, defaults) || null)],
+      ['mission', retired],
     ],
   },
   {
@@ -334,15 +326,8 @@ const AGENT_SECTIONS: ReadonlyArray<Section<AgentContext>> = [
         const { enabled, source } = mcpLevel(ctx.path, config.mcpOverride, ctx);
         return { stored: null, effective: enabled, source };
       }],
-      ['clubhouse_mode', (ctx) => {
-        const projectOn = ctx.view.settings.clubhouseMode.projectEnabled;
-        const optedOut = ctx.config.clubhouseModeOverride;
-        return {
-          stored: optedOut === undefined ? null : !optedOut,
-          effective: projectOn && !optedOut,
-          source: optedOut !== undefined && projectOn ? 'agent' : clubhouseModeLevel(ctx.path, ctx),
-        };
-      }],
+      // Clubhouse Mode was retired (#2901): always null.
+      ['clubhouse_mode', retired],
       ['mcp_ids', ({ config, defaultMcps }) => agentOverProject(config.mcpIds, defaultMcps.length > 0 ? defaultMcps : undefined, config.mcpIds || defaultMcps)],
     ],
   },
@@ -400,7 +385,7 @@ const PROJECT_SECTIONS: ReadonlyArray<Section<ProjectContext>> = [
         source: projectOrchestrator ? 'project' : 'default',
       })],
       ['persona', retired],
-      ['mission', ({ defaults }) => held(defaults.mission, 'project')],
+      ['mission', retired],
       ['free_agent_mode', ({ defaults }) => held(defaults.freeAgentMode, 'project')],
       ['profile_id', ({ defaults }) => held(defaults.profileId, 'project')],
       ['source_control_provider', ({ defaults }) => held(defaults.sourceControlProvider, 'project')],
@@ -410,11 +395,7 @@ const PROJECT_SECTIONS: ReadonlyArray<Section<ProjectContext>> = [
   {
     name: 'project.modes',
     fields: [
-      ['clubhouse_mode', (ctx) => ({
-        stored: clubhouseModeSettings.getSettings().projectOverrides?.[ctx.project.path] ?? null,
-        effective: clubhouseModeSettings.isClubhouseModeEnabled(ctx.project.path),
-        source: clubhouseModeLevel(ctx.project.path, ctx),
-      })],
+      ['clubhouse_mode', retired],
       ['mcp', (ctx) => {
         const { enabled, source } = mcpLevel(ctx.project.path, undefined, ctx);
         return { stored: getMcpSettings().projectOverrides?.[ctx.project.path] ?? null, effective: enabled, source };
@@ -449,7 +430,7 @@ const APP_SECTIONS: ReadonlyArray<Section<AppContext>> = [
         return { stored, effective, source: Object.keys(stored).length > 0 ? 'app' : 'default' };
       }],
       ['mcp_enabled', ({ files }) => appValue(files.mcp, 'enabled', resolveMcpEnabled().enabled)],
-      ['clubhouse_mode_enabled', ({ files }) => appValue(files.clubhouseMode, 'enabled', clubhouseModeSettings.getSettings().enabled)],
+      ['clubhouse_mode_enabled', retired],
       ['permission_mode', ({ files }) => appValue(files.freeAgent, 'defaultMode', freeAgentSettings.getSettings().defaultMode)],
       ['global_helper_cap', ({ files }) => {
         const effective = orchestrationSettings.getGlobalHelperCap();

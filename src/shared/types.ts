@@ -254,7 +254,7 @@ export interface ProjectAgentDefaults {
   helperAuto?: 'off';
   /** Shell command prefix prepended before the CLI binary (e.g. ". ./init.ps1 &&") */
   commandPrefix?: string;
-  /** Default mission ID. Resolved at materialization to .clubhouse/missions/<id>.md content; substituted for @@mission. */
+  /** Default mission ID. Only Clubhouse Mode filled @@Mission with it; retired (#2901), read only by the switch to managed. */
   mission?: string;
   /**
    * @deprecated Personas were retired (#2901). A project default persona id
@@ -303,6 +303,7 @@ export interface DurableAgentConfig {
   quickAgentDefaults?: QuickAgentDefaults;
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;
+  /** Clubhouse Mode turned off for this agent. Clubhouse Mode was retired (#2901); read only by the switch to managed. */
   clubhouseModeOverride?: boolean;
   /** Last CLI session ID, used to resume previous session on wake */
   lastSessionId?: string;
@@ -742,7 +743,6 @@ export interface DurableConfigUpdates {
   /** A provider's choice for this model; null clears it. Refused when the model doesn't offer it. */
   contextWindow?: string | null;
   freeAgentMode?: boolean;
-  clubhouseModeOverride?: boolean;
   lastSessionId?: string | null;
   lastSleep?: AgentSleepInfo | null;
   mcpIds?: string[] | null;
@@ -758,70 +758,6 @@ export interface DurableConfigUpdates {
   testCommand?: string;
   lintCommand?: string;
   sourceControlProvider?: SourceControlProvider | null;
-}
-
-/**
- * A single per-agent wildcard override, paired with the effective resolved value.
- * `override` is the value stored on the agent record (null when inheriting);
- * `resolved` is what the wildcard actually substitutes to (override → project
- * default → built-in fallback).
- */
-export interface WildcardOverride {
-  override: string | null;
-  resolved: string;
-}
-
-/**
- * Resolved wildcard actuals for a single agent, used to populate the per-agent
- * simple settings form when Clubhouse Mode manages the agent. Identity fields
- * are read-only computed actuals; command/provider fields carry per-agent
- * overrides; mission exposes the override, the project default, and the
- * lists of authorable library items.
- */
-export interface AgentWildcardSettings {
-  agentName: string;
-  standbyBranch: string;
-  agentPath: string;
-  sourceControlProvider: { override: SourceControlProvider | null; resolved: SourceControlProvider };
-  buildCommand: WildcardOverride;
-  testCommand: WildcardOverride;
-  lintCommand: WildcardOverride;
-  mission: { override: string | null; projectDefault: string | null; resolved: string | null };
-  missions: Array<{ id: string }>;
-}
-
-export interface ClubhouseModeSettings {
-  enabled: boolean;
-  projectOverrides?: Record<string, boolean>;
-  sourceControlProvider?: SourceControlProvider;
-}
-
-export type ConfigDiffCategory = 'instructions' | 'permissions-allow' | 'permissions-deny' | 'mcp' | 'skills' | 'agent-templates';
-export type ConfigDiffAction = 'added' | 'removed' | 'modified';
-
-export interface ConfigDiffItem {
-  id: string;                    // e.g. "permissions-allow:Read(.clubhouse/agents/x/**)"
-  category: ConfigDiffCategory;
-  action: ConfigDiffAction;
-  label: string;                 // Human-readable
-  agentValue?: string;           // Current agent value (resolved)
-  defaultValue?: string;         // Project default value (resolved)
-  rawAgentValue?: string;        // Agent value with wildcards re-applied (for propagation)
-}
-
-export interface ConfigDiffResult {
-  agentId: string;
-  agentName: string;
-  hasDiffs: boolean;
-  items: ConfigDiffItem[];
-}
-
-export interface MaterializationPreview {
-  instructions: string;
-  permissions: PermissionsConfig;
-  mcpJson: string | null;
-  skills: string[];
-  agentTemplates: string[];
 }
 
 /** Provenance of a config item — who added it */

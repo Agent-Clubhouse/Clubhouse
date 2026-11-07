@@ -12,7 +12,7 @@
  * 4. Create a renderer store with createSettingsStore() in the renderer
  * That's it — no IPC channels, handler registration, or preload changes needed.
  *
- * The badge, session, headless, clubhouse-mode, orchestrator, free-agent,
+ * The badge, session, headless, orchestrator, free-agent,
  * notification, sound, logging, and marketplace settings are per-window
  * session. Popout windows must be reopened to see changes to these settings;
  * they do not have generalized settings-changed broadcasts (see #1709).

@@ -1,6 +1,5 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { AgentWildcardSettings } from '../shared/types';
 
 export const agentSettings = {
   agentSettings: {
@@ -14,33 +13,15 @@ export const agentSettings = {
     ipcRenderer.invoke(IPC.AGENT.LIST_SKILLS, worktreePath, projectPath, agentId),
   listAgentTemplates: (worktreePath: string, projectPath?: string) =>
     ipcRenderer.invoke(IPC.AGENT.LIST_AGENT_TEMPLATES, worktreePath, projectPath),
-  listSourceSkills: (projectPath: string) =>
-    ipcRenderer.invoke(IPC.AGENT.LIST_SOURCE_SKILLS, projectPath),
-  listSourceAgentTemplates: (projectPath: string) =>
-    ipcRenderer.invoke(IPC.AGENT.LIST_SOURCE_AGENT_TEMPLATES, projectPath),
-  readSourceSkillContent: (projectPath: string, skillName: string): Promise<string> =>
-    ipcRenderer.invoke(IPC.AGENT.READ_SOURCE_SKILL_CONTENT, projectPath, skillName),
+  // Project source skills and agent templates: only the plugin agentConfig API's inject and remove (#2901).
   writeSourceSkillContent: (projectPath: string, skillName: string, content: string) =>
     ipcRenderer.invoke(IPC.AGENT.WRITE_SOURCE_SKILL_CONTENT, projectPath, skillName, content),
   deleteSourceSkill: (projectPath: string, skillName: string) =>
     ipcRenderer.invoke(IPC.AGENT.DELETE_SOURCE_SKILL, projectPath, skillName),
-  readSourceAgentTemplateContent: (projectPath: string, agentName: string): Promise<string> =>
-    ipcRenderer.invoke(IPC.AGENT.READ_SOURCE_AGENT_TEMPLATE_CONTENT, projectPath, agentName),
   writeSourceAgentTemplateContent: (projectPath: string, agentName: string, content: string) =>
     ipcRenderer.invoke(IPC.AGENT.WRITE_SOURCE_AGENT_TEMPLATE_CONTENT, projectPath, agentName, content),
   deleteSourceAgentTemplate: (projectPath: string, agentName: string) =>
     ipcRenderer.invoke(IPC.AGENT.DELETE_SOURCE_AGENT_TEMPLATE, projectPath, agentName),
-  // Clubhouse-mode wildcard library (missions) + per-agent actuals
-  getAgentWildcards: (projectPath: string, agentId: string): Promise<AgentWildcardSettings | null> =>
-    ipcRenderer.invoke(IPC.AGENT.GET_AGENT_WILDCARDS, projectPath, agentId),
-  listSourceMissions: (projectPath: string): Promise<Array<{ id: string; path: string }>> =>
-    ipcRenderer.invoke(IPC.AGENT.LIST_SOURCE_MISSIONS, projectPath),
-  readSourceMissionContent: (projectPath: string, missionId: string): Promise<string> =>
-    ipcRenderer.invoke(IPC.AGENT.READ_SOURCE_MISSION_CONTENT, projectPath, missionId),
-  writeSourceMissionContent: (projectPath: string, missionId: string, content: string): Promise<void> =>
-    ipcRenderer.invoke(IPC.AGENT.WRITE_SOURCE_MISSION_CONTENT, projectPath, missionId, content),
-  deleteSourceMission: (projectPath: string, missionId: string): Promise<void> =>
-    ipcRenderer.invoke(IPC.AGENT.DELETE_SOURCE_MISSION, projectPath, missionId),
   createSkill: (basePath: string, name: string, isSource: boolean, projectPath?: string) =>
     ipcRenderer.invoke(IPC.AGENT.CREATE_SKILL, basePath, name, isSource, projectPath),
   createAgentTemplate: (basePath: string, name: string, isSource: boolean, projectPath?: string) =>
@@ -101,8 +82,6 @@ export const agentSettings = {
     commandPrefix?: string;
   }) =>
     ipcRenderer.invoke(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, projectPath, defaults),
-  resetProjectAgentDefaults: (projectPath: string): Promise<void> =>
-    ipcRenderer.invoke(IPC.AGENT.RESET_PROJECT_AGENT_DEFAULTS, projectPath),
   getProjectConfigBreakdown: (projectPath: string, knownPluginIds: string[]) =>
     ipcRenderer.invoke(IPC.AGENT.GET_PROJECT_CONFIG_BREAKDOWN, projectPath, knownPluginIds),
   removePluginInjectionItem: (projectPath: string, itemId: string): Promise<boolean> =>
@@ -117,37 +96,5 @@ export const agentSettings = {
     localSettingsFile: string;
   } | null> =>
     ipcRenderer.invoke(IPC.AGENT.GET_CONVENTIONS, projectPath),
-  materializeAgent: (projectPath: string, agentId: string) =>
-    ipcRenderer.invoke(IPC.AGENT.MATERIALIZE_AGENT, projectPath, agentId),
-  previewMaterialization: (projectPath: string, agentId: string): Promise<{
-    instructions: string;
-    permissions: { allow?: string[]; deny?: string[] };
-    mcpJson: string | null;
-    skills: string[];
-    agentTemplates: string[];
-  } | null> =>
-    ipcRenderer.invoke(IPC.AGENT.PREVIEW_MATERIALIZATION, projectPath, agentId),
-  computeConfigDiff: (projectPath: string, agentId: string): Promise<{
-    agentId: string;
-    agentName: string;
-    hasDiffs: boolean;
-    items: Array<{
-      id: string;
-      category: string;
-      action: string;
-      label: string;
-      agentValue?: string;
-      defaultValue?: string;
-      rawAgentValue?: string;
-    }>;
-  }> =>
-    ipcRenderer.invoke(IPC.AGENT.COMPUTE_CONFIG_DIFF, projectPath, agentId),
-  propagateConfigChanges: (projectPath: string, agentId: string, selectedItemIds: string[]): Promise<{
-    ok: boolean;
-    message: string;
-    propagatedCount: number;
-  }> =>
-    ipcRenderer.invoke(IPC.AGENT.PROPAGATE_CONFIG_CHANGES, projectPath, agentId, selectedItemIds),
-
   },
 };

@@ -15,14 +15,13 @@ import * as headlessManager from './headless-manager';
 import * as headlessSettings from './headless-settings';
 import * as freeAgentSettings from './free-agent-settings';
 import * as orchestratorSettings from './orchestrator-settings';
-import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as configPipeline from './config-pipeline';
 import { getDurableConfig, addSessionEntry, updateDurableConfig } from './agent-config';
 import type { QuickManagedLaunch } from './managed-agents/delivery';
 import { clubhouseMcpOverride, isDisposedAgent, isEffortValue } from '../../shared/agent-helpers';
-import { materializeAgent, cleanupStaleJsonInTomlConfigs } from './materialization-service';
+import { cleanupStaleJsonInTomlConfigs } from './toml-config-cleanup';
 import * as profileSettings from './profile-settings';
-import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs, UnsupportedPermissionRulesError } from './agent-settings-service';
+import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
 import { applyLaunchWrapper, validateWrapperConfig } from '../orchestrators/shared';
 import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode } from '../../shared/types';
 import type { RoutedMessagePart } from '../../shared/chat';
@@ -374,9 +373,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     }
 
     // Clubhouse-managed agents (#2896): write the agent's setup into its folder
-    // before every start. Managed agents never take the Clubhouse Mode path.
-    let managedSetup = false;
-    // An agent that uses Clubhouse Mode or a
+    // before every start. An agent that used Clubhouse Mode or a
     // persona switches to managed first, keeping what it has, and this start is
     // its first managed one (D59). A failed switch starts it as it is.
     if (params.kind === 'durable' && !managed && firstConfig && !firstConfig.managed) {
@@ -387,7 +384,6 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     if (params.kind === 'durable' && !managed) {
       const config = firstConfig;
       if (config?.managed) {
-        managedSetup = true;
         try {
           const { deliverForSpawn } = await import('./managed-agents');
           await tel.step('clubhouse.agent.materialize', () =>
@@ -420,27 +416,6 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       if (!quickManaged.bridge) agentRegistry.setMcpBridgeOff(params.agentId);
       const instructions = quickManaged.instructions;
       params = { ...params, systemPrompt: [instructions, params.systemPrompt].filter(Boolean).join('\n\n') };
-    }
-
-    // Clubhouse Mode: materialize project defaults into worktree before spawn
-    facts.clubhouseMode = params.kind === 'durable' && clubhouseModeSettings.isClubhouseModeEnabled(params.projectPath);
-    if (facts.clubhouseMode && !managed && !managedSetup) {
-      try {
-        const config = await getDurableConfig(params.projectPath, params.agentId);
-        // Never on a managed agent, even one a switch made managed after this spawn read its config.
-        if (config && !config.managed && !config.clubhouseModeOverride && config.worktreePath) {
-          await tel.step('clubhouse.agent.materialize', () =>
-            withErrorType('materialize_failed', () => materializeAgent({ projectPath: params.projectPath, agent: config, provider })),
-          );
-        }
-      } catch (err) {
-        if (err instanceof UnsupportedPermissionRulesError) throw err;
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        appLog('core:agent', 'warn', 'Clubhouse mode materialization failed, continuing spawn', {
-          meta: { agentId: params.agentId, error: errorMessage },
-        });
-        broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, errorMessage);
-      }
     }
 
     const allowedTools = params.allowedTools
@@ -845,7 +820,7 @@ async function spawnPtyAgent(
   const bridgeOn = mcpEnabledForSpawn && mcpPort > 0;
   if ((bridgeOn || managedSetupServers) && provider.buildMcpArgs) {
     const { buildClubhouseMcpDef } = await import('./clubhouse-mcp/injection');
-    const { resolveProjectMcpServers } = await import('./materialization-service');
+    const { resolveProjectMcpServers } = await import('./agent-mcp-servers');
 
     // Codex and Copilot read MCP only from their own user-level config, so the
     // project MCP file materialised into the worktree never reaches them.

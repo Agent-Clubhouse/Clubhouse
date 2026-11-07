@@ -39,7 +39,7 @@ export function parsePluginPrefix(name: string): string | null {
 
 /**
  * Build a structured provenance breakdown of all project agent default configs.
- * This powers the Clubhouse mode management UI.
+ * This powers the project's Default agent settings page.
  */
 export async function getProjectConfigBreakdown(
   projectPath: string,

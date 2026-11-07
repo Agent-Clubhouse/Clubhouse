@@ -1,6 +1,15 @@
 /**
- * What the switch to managed still reads of the retired personas (#2901).
- * Read-only: nothing here applies a persona or writes one.
+ * What the switch to managed still reads of the retired personas and
+ * Clubhouse Mode (#2901). Read-only: nothing here applies a persona, runs
+ * Clubhouse Mode or writes either.
+ *
+ * Clubhouse Mode's settings stay in `<userData>/clubhouse-mode-settings.json`,
+ * which nothing writes any more. readLegacyClubhouseModeSettings reads that
+ * file as plain JSON, for the automatic switch (D59) and the startup pass's
+ * settings migrations (D61, D63), and treats a missing or unreadable file as
+ * Clubhouse Mode off. materializedInstructions and materializedDefaults give
+ * what Clubhouse Mode would have written at an agent's next wake, so a
+ * Clubhouse Mode agent that never woke keeps it when it switches (D58).
  *
  * An unmanaged agent saved before personas were retired may still have a
  * persona id, its own (`agent.persona`) or its project's default
@@ -14,14 +23,17 @@
  * unmanaged, the startup pass, D62) writes what it decided to the agent's
  * own fields first, and the policy resolves the same.
  */
+import { app } from 'electron';
+import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { readProjectAgentDefaults } from '../agent-settings-service';
+import { listSourceSkills, readProjectAgentDefaults, readSourceMissionContent } from '../agent-settings-service';
 import { appLog } from '../log-service';
 import { readFrontMatterValue, stripFrontMatter } from '../../../shared/front-matter';
 import { ORCHESTRATION_DEFAULTS, normalizeOrchestrationConfig, type OrchestrationPolicy, type OrchestrationPolicyConfig } from '../../../shared/orchestration-policy';
-import type { DurableAgentConfig } from '../../../shared/types';
+import type { DurableAgentConfig, SourceControlProvider } from '../../../shared/types';
+import { replaceWildcards, type WildcardContext } from '../../../shared/wildcard-replacer';
 import orchestratorText from './builtin-text/orchestrator.md';
 import projectManagerText from './builtin-text/project-manager.md';
 import groupProjectLeadText from './builtin-text/group-project-lead.md';
@@ -168,4 +180,162 @@ export function orchestrationToCarry(
   }
   if (layer.autoHelpers === false && stored.autoHelpers === true) carried.autoHelpers = false;
   return Object.keys(carried).length > 0 ? carried as OrchestrationPolicyConfig : undefined;
+}
+
+// ── Clubhouse Mode ───────────────────────────────────────────────────────
+
+/** The file Clubhouse Mode's settings were saved in, in the app's user data folder. */
+export const LEGACY_CLUBHOUSE_MODE_FILE = 'clubhouse-mode-settings.json';
+
+/** What clubhouse-mode-settings.json held. Nothing writes it any more. */
+export interface LegacyClubhouseModeSettings {
+  enabled: boolean;
+  projectOverrides?: Record<string, boolean>;
+  /** The app-level source control provider before it moved to source-control-settings.json (D61). */
+  sourceControlProvider?: SourceControlProvider;
+}
+
+const SOURCE_CONTROL_PROVIDERS: readonly SourceControlProvider[] = ['github', 'azure-devops'];
+
+/**
+ * Clubhouse Mode's saved settings, read as plain JSON each time. A missing
+ * file, or one that can't be read or parsed, is Clubhouse Mode off with no
+ * overrides. Values of the wrong type are left out.
+ */
+export function readLegacyClubhouseModeSettings(): LegacyClubhouseModeSettings {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(path.join(app.getPath('userData'), LEGACY_CLUBHOUSE_MODE_FILE), 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+      // telemetry-exempt: logged; an unreadable file counts as Clubhouse Mode off
+      appLog('core:managed', 'warn', 'Could not read the old Clubhouse Mode settings', { meta: { code: (err as NodeJS.ErrnoException)?.code ?? 'unknown' } });
+    }
+    return { enabled: false };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    // telemetry-exempt: logged; a file that isn't JSON counts as Clubhouse Mode off
+    appLog('core:managed', 'warn', 'The old Clubhouse Mode settings are not valid JSON');
+    return { enabled: false };
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { enabled: false };
+  const saved = parsed as Record<string, unknown>;
+  const out: LegacyClubhouseModeSettings = { enabled: saved.enabled === true };
+  if (saved.projectOverrides && typeof saved.projectOverrides === 'object' && !Array.isArray(saved.projectOverrides)) {
+    const overrides = Object.entries(saved.projectOverrides as Record<string, unknown>).filter((e): e is [string, boolean] => typeof e[1] === 'boolean');
+    if (overrides.length > 0) out.projectOverrides = Object.fromEntries(overrides);
+  }
+  if (SOURCE_CONTROL_PROVIDERS.includes(saved.sourceControlProvider as SourceControlProvider)) {
+    out.sourceControlProvider = saved.sourceControlProvider as SourceControlProvider;
+  }
+  return out;
+}
+
+/** Whether Clubhouse Mode was on for a project (its override, then the app switch), or at app level with no project. */
+export function legacyClubhouseModeEnabled(projectPath?: string): boolean {
+  const settings = readLegacyClubhouseModeSettings();
+  const own = projectPath ? settings.projectOverrides?.[projectPath] : undefined;
+  return own ?? settings.enabled;
+}
+
+/** The agent's mission, else its project's default. Only Clubhouse Mode filled @@Mission with it. */
+export function legacyMissionId(agent: DurableAgentConfig, defaults: { mission?: string }): string | undefined {
+  return agent.mission ?? defaults.mission;
+}
+
+/**
+ * Keep the text of each @@If(value) ... @@EndIf block whose value is the
+ * agent's source control provider, and drop the others. Clubhouse Mode did
+ * this; managed agents never do (D10).
+ */
+export function processConditionalBlocks(text: string, sourceControlProvider: string | undefined): string {
+  return text.replace(
+    /@@If\(([^)]+)\)\s*\n?([\s\S]*?)@@EndIf\s*\n?/g,
+    (_match, value: string, content: string) => (sourceControlProvider === value ? content : ''),
+  );
+}
+
+/** Clubhouse Mode's wildcard pass: the shared wildcards, then @@Mission and @@Persona, then @@If blocks. */
+interface ClubhouseModeContext extends WildcardContext {
+  mission?: string;
+  persona?: string;
+}
+
+function resolveClubhouseModeText(text: string, ctx: ClubhouseModeContext): string {
+  const filled = replaceWildcards(text, ctx)
+    .replace(/@@Mission/g, ctx.mission || '')
+    .replace(/@@Persona/g, ctx.persona || '');
+  return processConditionalBlocks(filled, ctx.sourceControlProvider);
+}
+
+/**
+ * The instructions file Clubhouse Mode wrote, or null when it wrote none and
+ * left the file as it was. `persona` is a legacy persona's text, added after
+ * the template unless the template placed it with @@Persona.
+ */
+function instructionsToWrite(template: string | undefined, persona: string | undefined, ctx: ClubhouseModeContext): string | null {
+  const resolvedPersona = persona ? resolveClubhouseModeText(persona, ctx) : undefined;
+  if (template) {
+    const resolved = resolveClubhouseModeText(template, ctx);
+    return resolvedPersona && !template.includes('@@Persona') ? `${resolved}\n\n${resolvedPersona}` : resolved;
+  }
+  return resolvedPersona ?? null;
+}
+
+/** The project defaults and wildcard context Clubhouse Mode resolved for an agent, with a legacy persona's text for @@Persona. */
+async function clubhouseModeResolution(projectPath: string, agent: DurableAgentConfig, persona?: string) {
+  // Loaded on use: agent-wildcards reads source-control-settings, which reads this module.
+  const { buildWildcardContext, resolveAgentCommands, resolveSourceControlProvider } = await import('../agent-wildcards');
+  const defaults = await readProjectAgentDefaults(projectPath);
+  const missionId = legacyMissionId(agent, defaults);
+  const scp = await resolveSourceControlProvider(projectPath, agent);
+  const mission = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
+  const ctx: ClubhouseModeContext = { ...buildWildcardContext(agent, projectPath, scp, resolveAgentCommands(agent, defaults)), mission, persona };
+  return { defaults, ctx };
+}
+
+async function legacyPersonaText(projectPath: string, agent: DurableAgentConfig): Promise<string | undefined> {
+  return agent.managed ? undefined : legacyPersonaBody(projectPath, await legacyPersonaId(projectPath, agent));
+}
+
+/**
+ * The instructions file Clubhouse Mode would write for this agent at its next
+ * wake, wildcards and @@If blocks resolved, or null when it writes none.
+ * Switching a Clubhouse Mode agent to managed keeps this, so one that never
+ * woke doesn't bring over the raw project template. An agent that still has a
+ * legacy persona keeps that persona's text too, as Clubhouse Mode wrote it.
+ */
+export async function materializedInstructions(projectPath: string, agent: DurableAgentConfig): Promise<string | null> {
+  const persona = await legacyPersonaText(projectPath, agent);
+  const { defaults, ctx } = await clubhouseModeResolution(projectPath, agent, persona);
+  return instructionsToWrite(defaults.instructions, persona, ctx);
+}
+
+/** What Clubhouse Mode delivered besides the instructions file. */
+export interface MaterializedDefaults {
+  /** The project's source skill folders, which it copied into the worktree, in name order. */
+  skills: Array<{ name: string; path: string }>;
+  /** The MCP config it wrote, wildcards resolved, or null when it wrote none. Neither parsed nor checked. */
+  mcpJson: string | null;
+  /** The wildcard replacement it applied to each text file it copied. */
+  resolveText: (text: string) => string;
+}
+
+/**
+ * The skills and MCP servers Clubhouse Mode would deliver to this agent at its
+ * next wake. Switching a Clubhouse Mode agent to managed brings these over
+ * too, so one that never woke, or whose last materialization failed, still
+ * gets the project's defaults.
+ */
+export async function materializedDefaults(projectPath: string, agent: DurableAgentConfig): Promise<MaterializedDefaults> {
+  const persona = await legacyPersonaText(projectPath, agent);
+  const { defaults, ctx } = await clubhouseModeResolution(projectPath, agent, persona);
+  const skills = (await listSourceSkills(projectPath))
+    .map((s) => ({ name: s.name, path: s.path }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const mcpJson = defaults.mcpJson && !agent.clubhouseModeOverride ? resolveClubhouseModeText(defaults.mcpJson, ctx) : null;
+  return { skills, mcpJson, resolveText: (text) => resolveClubhouseModeText(text, ctx) };
 }

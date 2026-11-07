@@ -100,7 +100,7 @@ export const agent = {
     ipcRenderer.on(IPC.AGENT.CONFIGS_CHANGED, listener);
     return () => { ipcRenderer.removeListener(IPC.AGENT.CONFIGS_CHANGED, listener); };
   },
-  /** Clubhouse MCP or Clubhouse Mode settings changed, so policies that depend on MCP may read differently (#2589). */
+  /** Clubhouse MCP settings changed, so policies that depend on MCP may read differently (#2589). */
   onMcpEnablementChanged: (callback: () => void) => {
     const listener = () => callback();
     ipcRenderer.on(IPC.AGENT.MCP_ENABLEMENT_CHANGED, listener);

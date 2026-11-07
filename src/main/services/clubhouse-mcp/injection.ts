@@ -207,8 +207,8 @@ export interface McpEnablementScope {
  *
  * Whether it injects follows isMcpEnabled's precedence: the agent's own
  * setting (`agentOverride`, from DurableAgentConfig.mcpOverride) wins, then
- * the project override for `projectPath`, then the global toggle, then
- * Clubhouse mode. Callers pass both so project-only enablement injects and an
+ * the project override for `projectPath`, then the global toggle. Callers
+ * pass both so project-only enablement injects and an
  * agent with MCP turned off never gets the entry (#2223).
  */
 export function injectClubhouseMcp(

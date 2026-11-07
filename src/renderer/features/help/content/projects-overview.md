@@ -23,7 +23,7 @@ Clubhouse creates a `.clubhouse/` folder in your project root to store its confi
 | Path | Contents |
 |------|----------|
 | `agents/` | Agent definitions and per-agent config |
-| `skills/` | Custom skill scripts |
+| `skills/` | Skills Clubhouse Mode used before it was retired. Only the switch to managed reads them. |
 | `templates/` | Reusable agent templates |
 | `instructions/` | Project-level instructions for agent behavior |
 

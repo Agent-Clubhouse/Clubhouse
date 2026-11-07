@@ -15,12 +15,10 @@ import { normalizeSessionEvents, buildSessionSummary, paginateEvents, SUMMARY_TR
 import { appLog } from '../services/log-service';
 import { broadcastSnapshotRefresh } from '../services/annex-server';
 import { bindingManager } from '../services/clubhouse-mcp/binding-manager';
-import { refreshClubhouseModeReadme } from '../services/materialization-service';
 import * as orchestrationPolicy from '../services/orchestration-policy';
 import * as dispatcher from '../services/dispatcher/dispatcher-service';
 import * as projectStore from '../services/project-store';
 import { listHelpersEverywhere } from '../services/helper-index';
-import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import { onMcpEnablementChanged } from '../services/mcp-settings';
 import * as permissionQueue from '../services/annex-permission-queue';
 import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanArg } from './validation';
@@ -190,17 +188,6 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.LIST_DURABLE, withValidatedArgs(
     [stringArg()],
     async (_event, projectPath) => {
-      // Refresh the CH-mode self-edit guide once per project per session.
-      // LIST_DURABLE fires when the user opens / activates a project in the UI,
-      // so this is a low-overhead place to pick up updated readme content even
-      // when no agent is woken.
-      if (clubhouseModeSettings.isClubhouseModeEnabled(projectPath)) {
-        refreshClubhouseModeReadme(projectPath).catch((err) => {
-          appLog('core:materialization', 'warn', 'Failed to refresh clubhouse-mode.md from LIST_DURABLE', {
-            meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
-          });
-        });
-      }
       return agentConfig.listDurable(projectPath);
     },
   ));

@@ -10,7 +10,6 @@ import { useCliChangeConfirm } from './useCliChangeConfirm';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
-import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { HandshakeRetry } from './HandshakeRetry';
 import { UtilityTerminal } from './UtilityTerminal';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
@@ -496,16 +495,8 @@ export function AgentSettingsView({ agent }: Props) {
   const [agentMcpConfigs, setAgentMcpConfigs] = useState<Record<string, Record<string, string>>>({});
   const [mcpLoaded, setMcpLoaded] = useState(false);
 
-  // Clubhouse Mode and persona, for an unmanaged agent that couldn't switch
-  // (#2901): General › Setup says what it uses and can turn Clubhouse Mode off,
-  // and the classic shell hides the file editors Clubhouse Mode overwrites.
-  const isClubhouseModeEnabled = useClubhouseModeStore((s) => s.isEnabledForProject);
-  const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
-  const [clubhouseModeOverride, setClubhouseModeOverride] = useState(false);
-  const clubhouseActive = projectPath ? isClubhouseModeEnabled(projectPath) : false;
-  const isManagedByClubhouse = clubhouseActive && !clubhouseModeOverride;
-
-  // The persona the agent uses, if any
+  // The persona an unmanaged agent that couldn't switch still names (#2901):
+  // General › Setup says so beside the offer to switch.
   const [agentPersona, setAgentPersona] = useState('');
 
   // Chat / CLI runtime override ('' = provider default). Only offered
@@ -523,10 +514,6 @@ export function AgentSettingsView({ agent }: Props) {
 
 
   useEffect(() => {
-    loadClubhouseSettings();
-  }, [loadClubhouseSettings]);
-
-  useEffect(() => {
     let cancelled = false;
     // Same gate as main: on unless the flag is saved off.
     window.clubhouse.app.getExperimentalSettings()
@@ -535,7 +522,7 @@ export function AgentSettingsView({ agent }: Props) {
     return () => { cancelled = true; };
   }, []);
 
-  // Load clubhouse mode override + persona from durable config
+  // Load the persona and runtime from durable config
   useEffect(() => {
     if (!projectPath) return;
     let cancelled = false;
@@ -546,7 +533,6 @@ export function AgentSettingsView({ agent }: Props) {
       try {
         const config = await window.clubhouse.agent.getDurableConfig(projectPath, agent.id);
         if (cancelled || request !== runtimeRequest.current) return;
-        setClubhouseModeOverride(config?.clubhouseModeOverride ?? false);
         setAgentPersona(config?.persona ?? '');
         if (request.epoch === epoch) setRuntimeMode(config?.runtimeMode ?? '');
         setRuntimeLoadedTarget(runtimeTarget);
@@ -1115,15 +1101,11 @@ export function AgentSettingsView({ agent }: Props) {
           clubhouseFeatures={clubhouseFeatures}
           onClubhouseFeaturesChange={setClubhouseFeatures}
           isRunning={isRunning}
-          legacy={isDispatcherAgent(agent) ? null : legacyUse({ managed: managedSetup ?? undefined, clubhouseModeOverride, persona: agentPersona }, clubhouseActive)}
-          onClubhouseModeOff={async () => {
-            await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { clubhouseModeOverride: true });
-            setClubhouseModeOverride(true);
-          }}
+          legacy={isDispatcherAgent(agent) ? null : legacyUse({ managed: managedSetup ?? undefined, persona: agentPersona })}
         />
       )}
 
-      {!isManagedByClubhouse && !isManagedAgent && !pageMode && (
+      {!isManagedAgent && !pageMode && (
         <p className="mt-3 text-xs text-ctp-overlay1">
           Skills and MCP settings live in the agent worktree. Agents that share a root directory share them.
         </p>
@@ -1373,16 +1355,12 @@ export function AgentSettingsView({ agent }: Props) {
     body = (
       <>
         {general}
-        {!isManagedByClubhouse && (
-          <>
-            <SectionHeading title="Instructions" sub={<span className="font-mono">{instructionsFileLabel}</span>} />
-            {instructionsEditor}
-            {skillsSection}
-            {mcpSections}
-            <SectionHeading title="Permissions" sub={<span className="font-mono">{permissionsPathLabel}</span>} />
-            {permissionsEditor}
-          </>
-        )}
+        <SectionHeading title="Instructions" sub={<span className="font-mono">{instructionsFileLabel}</span>} />
+        {instructionsEditor}
+        {skillsSection}
+        {mcpSections}
+        <SectionHeading title="Permissions" sub={<span className="font-mono">{permissionsPathLabel}</span>} />
+        {permissionsEditor}
         {helpersSettings}
         <SectionHeading title="Quick agents" sub={`Defaults for quick agents ${agent.name} starts`} />
         {quickDefaults}

@@ -9,10 +9,9 @@ import * as path from 'path';
 import * as agentConfig from '../agent-config';
 import { carryPersonaOrchestration, setOrchestrationPolicy } from '../orchestration-policy';
 import { resolveOrchestrator } from '../agent-system';
-import { isClubhouseModeEnabled } from '../clubhouse-mode-settings';
 import { isMcpEnabled } from '../mcp-settings';
 import { clubhouseMcpOverride } from '../../../shared/agent-helpers';
-import { materializedDefaults, materializedInstructions, type MaterializedDefaults } from '../materialization-service';
+import { legacyClubhouseModeEnabled, materializedDefaults, materializedInstructions, type MaterializedDefaults } from './legacy-migration';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type {
   ManagedAgentSetup,
@@ -177,9 +176,9 @@ async function readInstructionsOf(provider: OrchestratorProvider, worktreePath: 
   }
 }
 
-/** Whether Clubhouse Mode writes this agent's files at each wake. */
+/** Whether the agent used Clubhouse Mode, which wrote its files at each wake until it was retired (#2901). */
 function usesClubhouseMode(projectPath: string, agent: DurableAgentConfig): boolean {
-  return !agent.managed && !agent.clubhouseModeOverride && isClubhouseModeEnabled(projectPath);
+  return !agent.managed && !agent.clubhouseModeOverride && legacyClubhouseModeEnabled(projectPath);
 }
 
 /** The wildcards a managed start fills in; any other `@@` token stays as written (#2901). */

@@ -1,14 +1,12 @@
-/** What keeps a project on Clubhouse MCP once the change is saved. */
-export type McpKeptBy = 'project_setting' | 'clubhouse_mode';
+/** What keeps a project on Clubhouse MCP once the change is saved: its own MCP setting. */
+export type McpKeptBy = 'project_setting';
 
-/** What a proposed MCP or Clubhouse mode change would turn off (services/mcp-off-impact). */
+/** What a proposed MCP change would turn off (services/mcp-off-impact). */
 export interface McpOffImpact {
   /** The change takes MCP away from the app, a project or an agent. */
   turnsOff: boolean;
   /** MCP goes off at app level. */
   appLoses: boolean;
-  /** MCP's own switch is off under this change and Clubhouse mode keeps it on at app level. */
-  appKeptByClubhouseMode: boolean;
   /** Projects that lose MCP, by name. */
   projectsLosing: string[];
   /** Agents that lose Clubhouse tools, helpers aside. */

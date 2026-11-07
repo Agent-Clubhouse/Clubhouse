@@ -998,11 +998,17 @@ export interface AgentConfigTargetOptions {
   projectId?: string;
 }
 
+/**
+ * Since Clubhouse Mode was retired (#2901), these methods still read and write
+ * the project's files (`.clubhouse/skills`, `.clubhouse/agent-templates` and
+ * the project's default agent settings), so a plugin's remove and list calls
+ * keep working. No agent reads those files when it starts any more, apart from
+ * project MCP servers, which reach an unmanaged agent without an MCP file of
+ * its own. A Clubhouse-managed agent gets only its setup.
+ */
 export interface AgentConfigAPI {
   /**
-   * Inject a skill definition for project agents.
-   * When clubhouse mode is on, integrates with materialization.
-   * When off, writes directly to the orchestrator's skills directory.
+   * Inject a skill definition into the project's source skills folder.
    * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
   injectSkill(name: string, content: string, opts?: AgentConfigTargetOptions): Promise<void>;
@@ -1011,9 +1017,7 @@ export interface AgentConfigAPI {
   /** List skills injected by this plugin. */
   listInjectedSkills(opts?: AgentConfigTargetOptions): Promise<string[]>;
   /**
-   * Inject an agent template definition for project agents.
-   * When clubhouse mode is on, integrates with materialization.
-   * When off, writes directly to the orchestrator's agent templates directory.
+   * Inject an agent template definition into the project's source agent templates folder.
    * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
   injectAgentTemplate(name: string, content: string, opts?: AgentConfigTargetOptions): Promise<void>;
@@ -1022,10 +1026,8 @@ export interface AgentConfigAPI {
   /** List agent templates injected by this plugin. */
   listInjectedAgentTemplates(opts?: AgentConfigTargetOptions): Promise<string[]>;
   /**
-   * Append content to the project instruction file.
+   * Append content to the project's default instructions.
    * Content is added at the end with a plugin attribution comment.
-   * When clubhouse mode is on, integrates with materialization pipeline.
-   * When off, appends directly to the instruction file.
    * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
   appendInstructions(content: string, opts?: AgentConfigTargetOptions): Promise<void>;
@@ -1036,7 +1038,7 @@ export interface AgentConfigAPI {
   /**
    * Add permission allow rules for project agents.
    * Requires the elevated 'agent-config.permissions' permission.
-   * Rules are namespaced per plugin and merged during materialization.
+   * Rules are namespaced per plugin and saved in the project's default permissions.
    * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
   addPermissionAllowRules(rules: string[], opts?: AgentConfigTargetOptions): Promise<void>;
@@ -1053,7 +1055,7 @@ export interface AgentConfigAPI {
   /**
    * Inject MCP server configuration for project agents.
    * Requires the elevated 'agent-config.mcp' permission.
-   * Configuration is merged into the agent's .mcp.json during materialization.
+   * Saved in the project's default MCP servers.
    * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
   injectMcpServers(servers: Record<string, unknown>, opts?: AgentConfigTargetOptions): Promise<void>;

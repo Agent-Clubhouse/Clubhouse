@@ -18,7 +18,7 @@ export interface DispatcherEnablementInput {
   /** isGraduatedFlagOn for `dispatcher` in experimental-settings.json: only a saved false reads off. */
   graduatedFlagOn: boolean;
   newLayout: boolean;
-  /** MCP at app level: the MCP switch or the global Clubhouse mode. Project and agent overrides don't count. */
+  /** MCP at app level: the MCP switch. Project and agent overrides don't count. */
   appMcp: boolean;
 }
 

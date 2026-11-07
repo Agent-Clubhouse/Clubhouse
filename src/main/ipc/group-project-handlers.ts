@@ -43,8 +43,8 @@ export function registerGroupProjectHandlers(): void {
   // NOTE: Group-project creation and its bulletin board are local features and
   // must work regardless of whether the Clubhouse MCP bridge is enabled. Gating
   // registration on isMcpEnabledForAny() previously meant that on a fresh install
-  // (MCP + Clubhouse Mode both default-off) NONE of these IPC handlers — including
-  // group-project:create — were registered, so the renderer's invoke() rejected
+  // (MCP default-off) NONE of these IPC handlers, including
+  // group-project:create, were registered, so the renderer's invoke() rejected
   // with "No handler registered" and project creation silently no-op'd. The MCP
   // bridge / tool exposure is gated separately in registerMcpBindingHandlers(),
   // so registering these handlers unconditionally does not expose anything

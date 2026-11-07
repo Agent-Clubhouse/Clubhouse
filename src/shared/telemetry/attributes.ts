@@ -251,7 +251,7 @@ export type GitOp = (typeof GIT_OPS)[number];
  */
 export const SETTINGS_KEYS = [
   'clipboard', 'editor', 'mcp', 'security', 'goobers', 'annex', 'notifications', 'orchestrators', 'headless',
-  'free_agent', 'badge', 'update', 'logging', 'sound', 'session', 'clubhouse_mode', 'experimental', 'marketplace', 'theme', 'chat_idle', 'orchestration',
+  'free_agent', 'badge', 'update', 'logging', 'sound', 'session', 'experimental', 'marketplace', 'theme', 'chat_idle', 'orchestration',
   'source_control',
 ] as const;
 
@@ -400,7 +400,6 @@ export const ATTR = {
   // Config snapshot (§5.4): counts and switches only, never names.
   projectsCount: intAttr('clubhouse.projects.count'),
   themeKind: enumAttr('clubhouse.theme.kind', ['builtin', 'plugin']),
-  clubhouseMode: boolAttr('clubhouse.clubhouse_mode'),
   annexServer: boolAttr('clubhouse.annex.server'),
   annexClient: boolAttr('clubhouse.annex.client'),
   loggingEnabled: boolAttr('clubhouse.logging.enabled'),

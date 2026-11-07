@@ -211,7 +211,7 @@ const RETRY_DELAYS_MS = [1_000, 5_000, 15_000, 60_000];
  * Call `onWiresChanged` when the Dispatcher wires change: the Dispatcher is
  * turned on or off, an agent's policy changes (its switch, its orchestration),
  * MCP changes for it (its own setting,
- * its project's, the app's, or Clubhouse Mode), or a project is
+ * its project's or the app's), or a project is
  * added or removed. Changes that leave the wires as they were are ignored. A
  * change counts as handled only once a rebuild commits it; until then the
  * check is retried a few times, and the next change retries it again.

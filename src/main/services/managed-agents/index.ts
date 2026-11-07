@@ -117,12 +117,18 @@ export async function deliverForSpawn(projectPath: string, agent: DurableAgentCo
   }
 }
 
-/** Keep Clubhouse's managed files out of commits, as Clubhouse Mode does. */
+/**
+ * Keep Clubhouse's managed files out of commits, as Clubhouse Mode's own
+ * exclude block did. That block stays where it was written, but nothing adds
+ * one any more (#2901), so the instructions file is listed here too. A file
+ * the project tracks shows as modified either way (D16).
+ */
 async function excludeManagedFiles(projectPath: string, provider: OrchestratorProvider): Promise<void> {
   try {
     const conv = provider.conventions;
     const gitExclude = await import('../git-exclude-manager');
     await gitExclude.addExclusions(projectPath, `clubhouse-managed-${provider.id}`, [
+      conv.legacyInstructionsFile,
       conv.mcpConfigFile,
       `${conv.configDir}/${conv.skillsDir}/`,
       // Where Claude Code's claudeMdExcludes go (D49).

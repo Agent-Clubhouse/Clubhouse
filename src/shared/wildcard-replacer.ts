@@ -6,20 +6,18 @@ export interface WildcardContext {
   buildCommand?: string;   // e.g. "npm run build"
   testCommand?: string;    // e.g. "npm test"
   lintCommand?: string;    // e.g. "npm run lint"
-  mission?: string;        // resolved mission content (full markdown body)
-  persona?: string;        // resolved persona content (full markdown body)
 }
 
 /**
- * Replace @@AgentName, @@StandbyBranch, @@Path, and @@SourceControlProvider
- * wildcards in a string, and process @@If(value)...@@EndIf conditional blocks.
- * Returns the input unchanged if no wildcards are found.
+ * Replace @@AgentName, @@StandbyBranch, @@Path, @@SourceControlProvider,
+ * @@BuildCommand, @@TestCommand and @@LintCommand in a string. Returns the
+ * input unchanged if no wildcards are found.
  *
- * Managed agents pass `missionAndPersona: false`: @@Mission and @@Persona
- * stay exactly as written there, as Preview and the switch say (D58, D60).
+ * Anything else stays exactly as written: @@Mission and @@Persona (D60), and
+ * @@If / @@EndIf, which only Clubhouse Mode resolved (D10, retired in #2901).
  */
-export function replaceWildcards(text: string, ctx: WildcardContext, opts: { conditionals?: boolean; missionAndPersona?: boolean } = {}): string {
-  let result = text
+export function replaceWildcards(text: string, ctx: WildcardContext): string {
+  return text
     .replace(/@@AgentName/g, ctx.agentName)
     .replace(/@@StandbyBranch/g, ctx.standbyBranch)
     .replace(/@@Path/g, ctx.agentPath)
@@ -27,79 +25,4 @@ export function replaceWildcards(text: string, ctx: WildcardContext, opts: { con
     .replace(/@@BuildCommand/g, ctx.buildCommand || 'npm run build')
     .replace(/@@TestCommand/g, ctx.testCommand || 'npm test')
     .replace(/@@LintCommand/g, ctx.lintCommand || 'npm run lint');
-  if (opts.missionAndPersona !== false) {
-    result = result
-      .replace(/@@Mission/g, ctx.mission || '')
-      .replace(/@@Persona/g, ctx.persona || '');
-  }
-
-  // Process @@If(value)...@@EndIf conditional blocks. Managed agents pass
-  // conditionals: false: a variant is its own instruction block there (#2901).
-  if (opts.conditionals !== false) result = processConditionalBlocks(result, ctx);
-
-  return result;
-}
-
-/**
- * Reverse of replaceWildcards — replaces resolved agent-specific values back
- * to wildcard tokens. Processes longest values first to avoid partial matches
- * (e.g. agentPath before agentName when agentPath contains agentName).
- *
- * Cannot reverse @@If/@@EndIf blocks (lossy), but this is acceptable since
- * the primary use case is permissions and simple string values.
- */
-export function unreplaceWildcards(text: string, ctx: WildcardContext): string {
-  // Build replacement pairs sorted by value length (longest first)
-  const pairs: Array<{ value: string; token: string }> = [
-    { value: ctx.standbyBranch, token: '@@StandbyBranch' },
-    { value: ctx.agentPath, token: '@@Path' },
-    { value: ctx.agentName, token: '@@AgentName' },
-  ];
-  if (ctx.sourceControlProvider) {
-    pairs.push({ value: ctx.sourceControlProvider, token: '@@SourceControlProvider' });
-  }
-  if (ctx.buildCommand) {
-    pairs.push({ value: ctx.buildCommand, token: '@@BuildCommand' });
-  }
-  if (ctx.testCommand) {
-    pairs.push({ value: ctx.testCommand, token: '@@TestCommand' });
-  }
-  if (ctx.lintCommand) {
-    pairs.push({ value: ctx.lintCommand, token: '@@LintCommand' });
-  }
-  if (ctx.mission) {
-    pairs.push({ value: ctx.mission, token: '@@Mission' });
-  }
-  if (ctx.persona) {
-    pairs.push({ value: ctx.persona, token: '@@Persona' });
-  }
-
-  // Sort longest-value-first to avoid partial matches
-  pairs.sort((a, b) => b.value.length - a.value.length);
-
-  let result = text;
-  for (const { value, token } of pairs) {
-    if (value) {
-      result = result.split(value).join(token);
-    }
-  }
-  return result;
-}
-
-/**
- * Process @@If(value)...@@EndIf conditional blocks.
- * Keeps content when sourceControlProvider matches value, strips it otherwise.
- * Handles multiple blocks in the same text.
- */
-function processConditionalBlocks(text: string, ctx: WildcardContext): string {
-  // Match @@If(value)...@@EndIf — non-greedy, handles multiline
-  return text.replace(
-    /@@If\(([^)]+)\)\s*\n?([\s\S]*?)@@EndIf\s*\n?/g,
-    (_match, value: string, content: string) => {
-      if (ctx.sourceControlProvider === value) {
-        return content;
-      }
-      return '';
-    },
-  );
 }

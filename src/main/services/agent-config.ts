@@ -29,6 +29,7 @@ import { uncommittedPorcelain } from './clubhouse-owned-files';
 import { isDispatcherPath } from './dispatcher/dispatcher-paths';
 import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedMigration, type ManagedMigrationFailure } from '../../shared/managed-agents-types';
 import { noteManagedSettingsChanged } from './managed-agents/changed-notice';
+import { legacyClubhouseModeEnabled } from './managed-agents/legacy-migration';
 
 /**
  * Non-blocking git command execution. Prevents UI freezes in large repos.
@@ -1232,7 +1233,6 @@ const AGENT_AUDIT_KEYS: Record<keyof DurableConfigUpdates, AuditKeyFormat | 'boo
   model: 'value',
   contextWindow: 'value',
   freeAgentMode: 'value',
-  clubhouseModeOverride: 'value',
   mcpOverride: 'value',
   runtimeMode: 'value',
   idleSleep: 'value',
@@ -1329,13 +1329,6 @@ async function updateDurableConfigInner(
       agent.freeAgentMode = true;
     } else {
       delete agent.freeAgentMode;
-    }
-  }
-  if (updates.clubhouseModeOverride !== undefined) {
-    if (updates.clubhouseModeOverride) {
-      agent.clubhouseModeOverride = true;
-    } else {
-      delete agent.clubhouseModeOverride;
     }
   }
   if (updates.lastSleep !== undefined) {
@@ -1998,6 +1991,9 @@ export async function beginDurableCreation(
     ...(parentAgentId !== undefined ? { parentAgentId } : {}),
     ...(parentAgentId !== undefined && parentProject ? { parentProjectPath: parentProject } : {}),
     ...(parentAgentId !== undefined && params.disposable ? { disposable: true } : {}),
+    // Clubhouse Mode was retired (#2901). A new agent never used it, so the switch to managed
+    // must not take it for one that did where the old setting is still on for the project (D59).
+    ...(legacyClubhouseModeEnabled(projectPath) ? { clubhouseModeOverride: true } : {}),
     creation: {
       state: 'creating',
       startedAt,

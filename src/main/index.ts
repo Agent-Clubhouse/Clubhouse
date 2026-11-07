@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import { app, BrowserWindow, ipcMain, powerMonitor, session, net, protocol } from 'electron';
 import { cleanupTranscriptStaging } from './services/agent-runtime/chat-transcript';
 import { registerAllHandlers } from './ipc';
+import { primeLegacyMcpSettings } from './services/managed-agents/legacy-settings';
 import { configurePluginMcpHost } from './ipc/plugin-mcp-handlers';
 import { startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
 import { cleanupWatchesForWindow, getActiveWatchCount, stopAllWatches } from './services/file-watch-service';
@@ -267,6 +268,9 @@ app.on('ready', () => {
   });
 
   markStartup('register_ipc_start');
+  // Before anything reads MCP enablement: where Clubhouse Mode turned MCP on, the MCP settings say so
+  // now (D63), since that fallback went with Clubhouse Mode (#2901). Synchronous; the write finishes below.
+  primeLegacyMcpSettings();
   registerAllHandlers();
   // Only the main window's app page may mint plugin MCP tokens.
   configurePluginMcpHost({

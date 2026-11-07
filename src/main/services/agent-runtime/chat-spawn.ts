@@ -22,7 +22,7 @@ import { agentEndpointUrl, NONCE_HEADER, waitReady as waitMcpBridgeReady } from 
 import { injectClubhouseMcp, buildClubhouseMcpDef, CLUBHOUSE_NONCE_ENV } from '../clubhouse-mcp/injection';
 import { clubhouseMcpOverride } from '../../../shared/agent-helpers';
 import { isMcpEnabled } from '../mcp-settings';
-import { resolveAgentMcpServers } from '../materialization-service';
+import { resolveAgentMcpServers } from '../agent-mcp-servers';
 import { touchSessionEntry } from '../agent-config';
 import { broadcastAgentExit } from '../agent-exit-broadcast';
 import { appLog } from '../log-service';

@@ -1,9 +1,10 @@
 /**
  * Settings migrations for the move away from Clubhouse Mode (#2901), run by
- * the startup pass. Each makes explicit
- * something that today only follows from Clubhouse Mode, so that removing
- * Clubhouse Mode later changes nothing for the person. Nothing is removed
- * here: the old fallbacks stay until the legacy runtime goes.
+ * the startup pass. Each makes explicit something that only followed from
+ * Clubhouse Mode, so that its removal changes nothing for the person. The old
+ * value is read from clubhouse-mode-settings.json as plain JSON
+ * (legacy-migration), and a missing file means there is nothing to move.
+ * Nothing is removed here: the old file stays on disk, ignored.
  *
  * The MCP one runs at every start, since Clubhouse Mode can be turned on for
  * a project after the first run. It never changes what a project resolves
@@ -13,13 +14,13 @@
  *
  * Both run at app start whether or not the built-in parts installed.
  */
-import * as clubhouseModeSettings from '../clubhouse-mode-settings';
 import * as mcpSettings from '../mcp-settings';
 import * as sourceControlSettings from '../source-control-settings';
 import type { McpSettings } from '../../../shared/types';
 import { appLog } from '../log-service';
-import { createManagedStateStore, type ManagedStateStore } from './state-store';
+import { createManagedStateStore, managedStateDir, readManagedMigrationsSync, type ManagedStateStore } from './state-store';
 import { codeOf } from './log-code';
+import { readLegacyClubhouseModeSettings } from './legacy-migration';
 
 export const MCP_FROM_CLUBHOUSE_MODE = 'mcp-from-clubhouse-mode';
 export const SOURCE_CONTROL_PROVIDER = 'source-control-provider';
@@ -31,9 +32,9 @@ export const MCP_APP_LEVEL_EXPLICIT = 'mcp-app-level-explicit';
  * set explicitly (D63), so each project resolves exactly as it does now with
  * the Clubhouse Mode fallback gone. Null when nothing needs to change.
  *
- * isMcpEnabled asks the MCP project override, then the MCP app switch, then
- * Clubhouse Mode (its project override, then its app switch). With the MCP
- * app switch on, Clubhouse Mode never decides, so nothing changes.
+ * isMcpEnabled used to ask the MCP project override, then the MCP app switch,
+ * then Clubhouse Mode (its project override, then its app switch). With the
+ * MCP app switch on, Clubhouse Mode never decided, so nothing changes.
  */
 export function mcpSettingsWithoutClubhouseMode(
   mcp: McpSettings,
@@ -72,17 +73,50 @@ async function once(state: ManagedStateStore, id: string, run: () => Promise<boo
   return changed;
 }
 
+/** The save primeLegacyMcpSettings started, for migrateLegacySettings to finish. */
+let primed: Promise<void> | null = null;
+
+/**
+ * The MCP migration up to its save, synchronously: the store holds the new
+ * value in memory as soon as the save starts. With the Clubhouse Mode fallback
+ * gone, isMcpEnabled reads only the MCP settings, so index.ts runs this before
+ * the IPC handlers, the bridge and any spawn read them. migrateLegacySettings
+ * then waits for the write and keeps the records. Skipped when state.json
+ * can't be read; migrateLegacySettings then does it all. Never throws.
+ */
+export function primeLegacyMcpSettings(dir: string = managedStateDir()): void {
+  if (primed) return;
+  try {
+    const migrations = readManagedMigrationsSync(dir);
+    if (!migrations) return;
+    const next = mcpSettingsWithoutClubhouseMode(mcpSettings.getSettings(), readLegacyClubhouseModeSettings(), { appLevelDone: !!migrations[MCP_APP_LEVEL_EXPLICIT] });
+    if (next) {
+      primed = mcpSettings.saveSettings(next);
+      // telemetry-exempt: migrateLegacySettings awaits it and logs a failure; this only keeps it from reading as unhandled meanwhile.
+      primed.catch(() => {});
+    }
+  } catch (err) {
+    // telemetry-exempt: logged; migrateLegacySettings tries again in the background.
+    appLog('core:managed', 'warn', 'Could not make the MCP settings explicit before startup', { meta: { code: codeOf(err) } });
+  }
+}
+
 /** Run the MCP migration, and each one-time migration not done yet. Returns which ones changed a setting. Never throws. */
 export async function migrateLegacySettings(state: ManagedStateStore = createManagedStateStore()): Promise<{ mcp: boolean; sourceControl: boolean }> {
   const result = { mcp: false, sourceControl: false };
   try {
     // Every start, not once: Clubhouse Mode turned on for a project since the last start is made explicit too.
-    const mode = clubhouseModeSettings.getSettings();
+    const mode = readLegacyClubhouseModeSettings();
     const appLevelDone = !!(await state.read()).migrations?.[MCP_APP_LEVEL_EXPLICIT];
+    // A failed primed write throws here, so nothing below records a change that wasn't saved.
+    const primedSave = primed;
+    primed = null;
+    if (primedSave) await primedSave;
     const next = mcpSettingsWithoutClubhouseMode(mcpSettings.getSettings(), mode, { appLevelDone });
-    if (next) {
-      await mcpSettings.saveSettings(next);
+    if (next) await mcpSettings.saveSettings(next);
+    if (primedSave || next) {
       mcpSettings.notifyMcpEnablementChanged();
+      mcpSettings.startMcpBridgeIfEnabled();
       result.mcp = true;
       // Informational only: when it last changed something. Never read to skip it.
       await state.update((s) => { s.migrations = { ...(s.migrations ?? {}), [MCP_FROM_CLUBHOUSE_MODE]: new Date().toISOString() }; });
@@ -92,12 +126,12 @@ export async function migrateLegacySettings(state: ManagedStateStore = createMan
       await state.update((s) => { s.migrations = { ...(s.migrations ?? {}), [MCP_APP_LEVEL_EXPLICIT]: new Date().toISOString() }; });
     }
   } catch (err) {
-    // telemetry-exempt: logged; the Clubhouse Mode fallback still turns MCP on, and the next start tries again.
+    // telemetry-exempt: logged; the next start tries again.
     appLog('core:managed', 'warn', 'Could not make the MCP settings explicit', { meta: { code: codeOf(err) } });
   }
   try {
     result.sourceControl = await once(state, SOURCE_CONTROL_PROVIDER, async () => {
-      const old = clubhouseModeSettings.getSettings().sourceControlProvider;
+      const old = readLegacyClubhouseModeSettings().sourceControlProvider;
       if (!old || sourceControlSettings.getAppSourceControlProvider()) return false;
       await sourceControlSettings.setAppSourceControlProvider(old);
       return true;
@@ -107,4 +141,9 @@ export async function migrateLegacySettings(state: ManagedStateStore = createMan
     appLog('core:managed', 'warn', 'Could not move the source control provider setting', { meta: { code: codeOf(err) } });
   }
   return result;
+}
+
+/** Tests only. */
+export function _resetLegacySettingsForTesting(): void {
+  primed = null;
 }

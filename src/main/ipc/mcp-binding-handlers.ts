@@ -196,7 +196,7 @@ export function registerMcpBindingHandlers(): void {
       // Allow unbinding for sleeping/exited agents to support cleanup of stale
       // wire definitions without requiring the agent to be running.
       bindingManager.unbind(agentId as string, targetId as string);
-      // A restore re-run (MCP settings save, Clubhouse Mode toggle) must not
+      // A restore re-run (an MCP settings save) must not
       // bring this back from a store whose save hasn't landed yet.
       markBindingRemovedByUser(agentId as string, targetId as string);
       appLog('core:mcp', 'info', 'Binding removed', { meta: { agentId, targetId } });
@@ -295,7 +295,7 @@ export function maybeStartMcpBridge(): void {
 }
 
 /**
- * Called when MCP or Clubhouse Mode settings change. Tells whatever follows
+ * Called when MCP settings change. Tells whatever follows
  * MCP (gates, Dispatcher wires, views) first, since that matters most when MCP
  * has just gone off everywhere. If MCP becomes enabled for any project, lazily
  * start the bridge and register handlers without requiring an app restart.

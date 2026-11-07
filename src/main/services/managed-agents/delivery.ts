@@ -15,7 +15,7 @@ import { execFile } from 'child_process';
 import { composeInstructions } from '../asset-catalog/composer';
 import { canonicalHash } from '../asset-catalog/planner';
 import { replaceWildcards } from '../../../shared/wildcard-replacer';
-import { buildWildcardContext, resolveAgentCommands, resolveSourceControlProvider } from '../materialization-service';
+import { buildWildcardContext, resolveAgentCommands, resolveSourceControlProvider } from '../agent-wildcards';
 import { readProjectAgentDefaults } from '../agent-settings-service';
 import { appLog } from '../log-service';
 import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
@@ -63,11 +63,10 @@ async function resolveSetup(service: ManagedAgentsService, setup: ManagedAgentSe
 }
 
 /**
- * How a managed agent's text is filled in, the same for delivery and Preview:
- * no conditional blocks (D10), and @@Mission and @@Persona left as written (D60).
+ * The wildcard context for a managed agent's text, the same for delivery and
+ * Preview. replaceWildcards leaves @@If blocks (D10) and @@Mission and
+ * @@Persona (D60) as written.
  */
-export const MANAGED_WILDCARDS = { conditionals: false, missionAndPersona: false } as const;
-
 async function wildcardContextFor(projectPath: string, agent: DurableAgentConfig) {
   const defaults = await readProjectAgentDefaults(projectPath);
   const scp = await resolveSourceControlProvider(projectPath, agent);
@@ -79,7 +78,7 @@ export async function renderManagedInstructions(projectPath: string, agent: Dura
   const composed = composeInstructions(resolved.blocks.map((b) => ({ content: b.content })));
   if (composed.ok === false) throw new Error(composed.code);
   const ctx = await wildcardContextFor(projectPath, agent);
-  return replaceWildcards(composed.text, ctx, MANAGED_WILDCARDS);
+  return replaceWildcards(composed.text, ctx);
 }
 
 /** The MCP servers a managed agent gets, as the providers' launch code takes them. The Clubhouse bridge is separate. */
@@ -612,7 +611,7 @@ export async function quickManagedLaunch(params: {
   if (!params.branch) ctx.standbyBranch = 'the checked-out branch';
   return {
     templateId: params.templateId,
-    instructions: replaceWildcards(composed.text, ctx, MANAGED_WILDCARDS),
+    instructions: replaceWildcards(composed.text, ctx),
     servers: mcpServersOf(resolved),
     bridge: setup.mcps.includes(CLUBHOUSE_MCP_PART_ID),
     skippedSkills: resolved.skills.length,
@@ -637,7 +636,7 @@ export async function previewManagedSetup(params: {
   for (const b of resolved.blocks) usage.set(b.id, (await params.service.consumers(b.id)).length);
   let line = 1;
   const blocks = resolved.blocks.map((b) => {
-    const lines = replaceWildcards(b.content, ctx, MANAGED_WILDCARDS).split('\n').length;
+    const lines = replaceWildcards(b.content, ctx).split('\n').length;
     const entry = { id: b.id, name: b.name, builtin: b.builtin, usedBy: usage.get(b.id) ?? 0, startLine: line, endLine: line + lines - 1 };
     line += lines + 1;
     return entry;

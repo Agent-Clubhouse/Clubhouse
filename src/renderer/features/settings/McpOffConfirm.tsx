@@ -1,7 +1,7 @@
 /**
  * The confirmation before Clubhouse MCP goes off, at app or project level, for
- * every setting that can do it: its own switch, a project's override, and
- * Clubhouse mode, which it falls back to. Main counts what the change would do
+ * every setting that can do it: its own switch and a project's override. Main
+ * counts what the change would do
  * (services/mcp-off-impact). Nothing is saved until the user confirms.
  */
 
@@ -21,16 +21,9 @@ function join(items: string[]): string {
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
-/**
- * What stops working, in one sentence. `projectName` narrows it to a project.
- * The Clubhouse mode setting isn't offered (#2901), so the lead doesn't
- * point at it.
- */
+/** What stops working, in one sentence. `projectName` narrows it to a project. */
 export function mcpOffLead(impact: McpOffImpact | null, projectName?: string): string {
   if (!impact) return 'Helpers, orchestration and connections to the Dispatcher stop working where Clubhouse MCP goes off.';
-  if (impact.appKeptByClubhouseMode && !projectName) {
-    return 'Clubhouse mode, which agents made before Clubhouse-managed agents still use, keeps Clubhouse MCP on at app level, so nothing stops working yet.';
-  }
   if (projectName) return `In ${projectName}, helpers, orchestration and connections to the Dispatcher stop working.`;
   return impact.dispatcherGoesOff
     ? 'Helpers, orchestration, connections to the Dispatcher and the Dispatcher itself stop working.'
@@ -53,7 +46,7 @@ export function mcpOffCounts(impact: McpOffImpact): string {
 /** What keeps MCP. Empty when nothing does. */
 export function mcpOffKeeps({ keeps }: McpOffImpact): string {
   const items = [
-    ...keeps.projects.map((p) => `${p.name} (${p.via === 'clubhouse_mode' ? 'Clubhouse mode' : 'its own setting'})`),
+    ...keeps.projects.map((p) => `${p.name} (its own setting)`),
     ...keeps.agents.map((a) => `${a.name} in ${a.project} (its own setting)`),
   ];
   return items.length > 0 ? `These keep Clubhouse MCP: ${join(items)}.` : '';

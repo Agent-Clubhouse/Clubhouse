@@ -26,38 +26,31 @@ export function legacyPersonaName(id: string): string {
 }
 
 /**
- * What an unmanaged agent uses from the older ways of configuring agents
- * (#2901): Clubhouse Mode (on for its project and not turned off for it) and
- * a persona. Null for a managed agent or one that uses neither.
+ * What an unmanaged agent still names from the older ways of configuring
+ * agents (#2901): a persona. Clubhouse Mode was retired in step 4 and its
+ * setting isn't read by the app any more, so it isn't shown. Null for a
+ * managed agent or one with no persona.
  */
 export interface LegacyUse {
-  clubhouseMode: boolean;
   /** The persona's display name. */
-  persona: string | null;
+  persona: string;
 }
 
-type LegacyFields = Pick<DurableAgentConfig, 'managed' | 'clubhouseModeOverride' | 'persona'>;
+type LegacyFields = Pick<DurableAgentConfig, 'managed' | 'persona'>;
 
-export function legacyUse(config: LegacyFields, clubhouseModeOnForProject: boolean): LegacyUse | null {
-  if (config.managed) return null;
-  const clubhouseMode = clubhouseModeOnForProject && !config.clubhouseModeOverride;
-  const persona = config.persona ? legacyPersonaName(config.persona) : null;
-  return clubhouseMode || persona ? { clubhouseMode, persona } : null;
+export function legacyUse(config: LegacyFields): LegacyUse | null {
+  if (config.managed || !config.persona) return null;
+  return { persona: legacyPersonaName(config.persona) };
 }
 
-/** "Ada uses Clubhouse Mode." or "Ada uses the Reviewer persona." */
+/** "Ada uses the Reviewer persona." */
 export function legacyLine(name: string, use: LegacyUse): string {
-  if (use.clubhouseMode && use.persona) return `${name} uses Clubhouse Mode and the ${use.persona} persona.`;
-  if (use.clubhouseMode) return `${name} uses Clubhouse Mode.`;
   return `${name} uses the ${use.persona} persona.`;
 }
 
-/** What the bulk list shows for an agent: "Clubhouse Mode", the persona, both, or "Plain". */
+/** What the bulk list shows for an agent: the persona, or "Plain". */
 export function legacyLabel(use: LegacyUse | null): string {
-  if (!use) return 'Plain';
-  if (use.clubhouseMode && use.persona) return `Clubhouse Mode, ${use.persona} persona`;
-  if (use.clubhouseMode) return 'Clubhouse Mode';
-  return `${use.persona} persona`;
+  return use ? `${use.persona} persona` : 'Plain';
 }
 
 /** The notice on an agent Clubhouse switched to managed on its own (D59). */

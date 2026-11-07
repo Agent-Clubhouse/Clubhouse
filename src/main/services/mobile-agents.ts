@@ -20,7 +20,6 @@ import { checkAvailability, getAvailableOrchestrators, resolveOrchestrator, reso
 import { readDefaultMcps, readMcpCatalog, readProjectAgentDefaults } from './agent-settings-service';
 import * as orchestratorSettings from './orchestrator-settings';
 import * as profileSettings from './profile-settings';
-import { isClubhouseModeEnabled } from './clubhouse-mode-settings';
 import { chatIdleSettings } from './chat-idle-settings';
 import { isChatEnabled, resolveRuntimeMode } from './chat-runtime-settings';
 import { resolveChatDriver } from './agent-runtime/chat-drivers';
@@ -284,11 +283,8 @@ export async function buildAgentSettings(
   const appMinutes = chatIdleSettings.getSettings().idleTimeoutMinutes;
   const idle = normalizeIdleSleep(config.idleSleep);
   const resolved = resolveIdleSleep(idle, appMinutes);
-  const clubhouseProject = !dispatcher && isClubhouseModeEnabled(project.path);
-  // A Clubhouse-managed agent never takes the Clubhouse Mode path (#2896), so it isn't editable for it
-  // (#2901). projectEnabled stays the project's setting. Personas were retired (#2901): `persona` is
-  // always null and never editable, kept for phones that read it.
-  const managed = !!config.managed;
+  // Personas and Clubhouse Mode were retired (#2901): `persona` and `clubhouseMode` are always null
+  // and never editable, and `projectEnabled` is false, kept for phones that read them.
   // The Dispatcher's orchestration settings are locked (#2533), so it has none to show.
   const orchestration = dispatcher ? null : await orchestrationOf(project.path, config);
   const routing = mobileHelperRoutingDetail(config.routing);
@@ -312,10 +308,7 @@ export async function buildAgentSettings(
       model: field(config.model ?? 'default', spawn),
       runtime: { ...field(config.runtimeMode ?? 'default', runtimeEditable), resolved: runtime },
       persona: field(null, 'never'),
-      clubhouseMode: {
-        ...field(clubhouseProject ? !managed && !config.clubhouseModeOverride : null, clubhouseProject && !managed ? 'sleeping' : 'never'),
-        projectEnabled: clubhouseProject,
-      },
+      clubhouseMode: { ...field(null, 'never'), projectEnabled: false },
       freeAgentMode: field(!!config.freeAgentMode, permissionsSupported(orchestrator) ? spawn : 'never'),
       // Only chat agents idle-sleep; the value is kept either way.
       idleSleep: { ...field(idle, 'always'), minutes: resolved.minutes, source: resolved.source, applies: runtime === 'chat' },
@@ -412,6 +405,11 @@ function refusePersona(name: string): never {
   throw new MobileControlError('managed_agent', 409, 'rejected', `Personas were retired, so ${name} can't take one. Clubhouse-managed agents get their instructions from their setup.`);
 }
 
+/** Clubhouse Mode was retired (#2901): any clubhouseMode in a command is refused, and nothing in it is saved. */
+function refuseClubhouseMode(name: string): never {
+  throw new MobileControlError('managed_agent', 409, 'rejected', `Clubhouse Mode was retired, so ${name} can't use it. Clubhouse-managed agents get their instructions, skills and MCP servers from their setup.`);
+}
+
 const assertColor = (color: string): void => {
   if (!AGENT_COLORS.some((c) => c.id === color)) throw invalid('invalid_color');
 };
@@ -484,6 +482,7 @@ export async function updateMobileAgent(
   const state = stateOf(config, live);
   if (state === 'creating') throw new MobileControlError('agent_creating');
   if (command.persona != null) refusePersona(config.name);
+  if (command.clubhouseMode !== undefined) refuseClubhouseMode(config.name);
   const { idleSleep } = command;
   const awake = state === 'running' || state === 'starting';
   // Only the settings themselves: the server passes the whole command, with its version, epoch and id.
@@ -511,15 +510,6 @@ export async function updateMobileAgent(
   if (command.runtime !== undefined) {
     if (command.runtime !== 'default' && !chatAvailable(orchestrator)) throw new MobileControlError('runtime_unavailable');
     updates.runtimeMode = command.runtime === 'default' ? null : command.runtime;
-  }
-  // Its setup replaces Clubhouse Mode (#2901), as the desktop's settings say.
-  if (config.managed && command.clubhouseMode !== undefined) {
-    throw new MobileControlError('managed_agent', 409, 'rejected', `${config.name} is Clubhouse managed, so its Clubhouse mode can't be changed. Its setup decides its instructions, skills and MCP servers.`);
-  }
-  if (command.clubhouseMode !== undefined) {
-    // Only an agent in a Clubhouse mode project can opt out of it.
-    if (!isClubhouseModeEnabled(project.path)) throw new MobileControlError('clubhouse_mode_unavailable');
-    updates.clubhouseModeOverride = !command.clubhouseMode;
   }
   if (command.freeAgentMode !== undefined) {
     // Turning it off is always allowed; on needs a CLI with permission support.
