@@ -333,6 +333,20 @@ beforeEach(() => {
   runAgent('orch', true);
 });
 
+describe('parse, the test helper', () => {
+  it('reads the JSON in a text first block', () => {
+    expect(parse({ content: [{ type: 'text', text: '{"state":"starting","n":1}' }] })).toEqual({ state: 'starting', n: 1 });
+  });
+
+  it.each<[string, McpToolResult]>([
+    ['no blocks', { content: [] }],
+    ['an image first block', { content: [{ type: 'image', data: 'AAAA', mimeType: 'image/png' }, { type: 'text', text: '{}' }] }],
+    ['a text block with no text', { content: [{ type: 'text' }] }],
+  ])('fails on %s instead of parsing nothing', (_name, result) => {
+    expect(() => parse(result)).toThrow(/expected a text result/);
+  });
+});
+
 // ── Gating ─────────────────────────────────────────────────────────────────
 
 describe('gating', () => {
