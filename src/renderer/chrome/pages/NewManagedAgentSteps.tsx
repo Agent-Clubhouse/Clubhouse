@@ -1,12 +1,23 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Agent, Project } from '../../../shared/types';
 import { CLUBHOUSE_MCP_PART_ID, isListed, type ManagedTemplate, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
-import { DEFAULT_MAX_HELPERS, MAX_HELPER_LIMIT, type OrchestrationPolicyConfig } from '../../../shared/orchestration-policy';
+import {
+  DEFAULT_MAX_HELPERS, MAX_HELPER_LIMIT, ORCHESTRATION_DEFAULTS,
+  type OrchestrationAccess, type OrchestrationControl, type OrchestrationPolicyConfig,
+} from '../../../shared/orchestration-policy';
+import { normalizeIdleSleep, type AgentIdleSleep } from '../../../shared/idle-sleep';
 import { Button } from '../../components/Button';
 import { Toggle } from '../../components/Toggle';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
 import { ManagedBuilder, type SetupDraft } from '../../features/managed/ManagedBuilder';
 import { managed, unwrap, useManagedTemplates } from '../../features/managed/managedApi';
+import {
+  EffortSelect, HELPER_SELECTION_HELP, HELPER_TEMPLATE_HELP, HelperSelectionSelect, HelperTemplateSelect, IDLE_SLEEP_HELP, IdleSleepSelect,
+  effortHelp, useModelEfforts,
+} from '../../features/managed/settings-fields';
+import { AccessSelect, ControlSelect, DISPATCHER_HELP, DispatcherToggle } from '../../features/agents/helpers/OrchestrationFields';
+import { controlHelp } from '../../features/agents/helpers/helper-model';
+import { useDispatcherConnection } from '../../features/dispatcher/useDispatcherEnabled';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useAgentStore } from '../../stores/agentStore';
@@ -183,7 +194,11 @@ function useManagedAgents(): { list: CopyCandidate[] | null } {
   return { list };
 }
 
-export function copySeed(c: { agent: Agent; setup: SetupDraft; orchestration?: OrchestrationPolicyConfig }): BuilderSeed {
+/** What Copy another agent reads from the picked agent's durable config, besides what the agent list has. */
+type CopiedSettings = Pick<ManagedTemplateSettings, 'orchestration' | 'effort' | 'idleSleep' | 'helperTemplateId'>;
+
+export function copySeed(c: { agent: Agent; setup: SetupDraft; orchestration?: OrchestrationPolicyConfig; config?: CopiedSettings }): BuilderSeed {
+  const orchestration = c.config?.orchestration ?? c.orchestration;
   return {
     key: `copy:${c.agent.id}`,
     origin: `copied from ${c.agent.name}`,
@@ -192,18 +207,27 @@ export function copySeed(c: { agent: Agent; setup: SetupDraft; orchestration?: O
       ...(c.agent.orchestrator && { orchestrator: c.agent.orchestrator }),
       ...(c.agent.model && c.agent.model !== 'default' && { model: c.agent.model }),
       ...(c.agent.freeAgentMode && { freeAgentMode: true }),
-      ...(c.orchestration && { orchestration: { ...c.orchestration } }),
+      ...(orchestration && { orchestration: { ...orchestration } }),
+      ...(c.config?.effort && { effort: c.config.effort }),
+      ...(c.config?.idleSleep && { idleSleep: c.config.idleSleep }),
+      ...(c.config?.helperTemplateId && { helperTemplateId: c.config.helperTemplateId }),
     },
   };
 }
 
-/** The picked agent's orchestration policy lives on its durable config. A failed read copies none. */
-async function orchestrationOf(c: CopyCandidate): Promise<OrchestrationPolicyConfig | undefined> {
+/** The picked agent's orchestration policy, effort, auto-sleep and helper template live on its durable config. A failed read copies none. */
+async function copiedSettingsOf(c: CopyCandidate): Promise<CopiedSettings | undefined> {
   try {
     const config = await window.clubhouse.agent.getDurableConfig(c.project.path, c.agent.id);
-    return config?.orchestration;
+    if (!config) return undefined;
+    return {
+      ...(config.orchestration && { orchestration: config.orchestration }),
+      ...(config.effort && { effort: config.effort }),
+      ...(config.idleSleep !== undefined && { idleSleep: config.idleSleep }),
+      ...(config.helperTemplateId && { helperTemplateId: config.helperTemplateId }),
+    };
   } catch {
-    // telemetry-exempt: the builder opens with orchestration off, which the person can see and change.
+    // telemetry-exempt: the builder opens with these at their defaults, which the person can see and change.
     return undefined;
   }
 }
@@ -226,7 +250,7 @@ export function CopyStep({ name, onPick, onBack, onCancel }: {
             <li key={c.agent.id} className={i > 0 ? 'border-t border-surface-0' : ''}>
               <button
                 type="button"
-                onClick={() => { void orchestrationOf(c).then((orchestration) => onPick(copySeed({ ...c, orchestration }))); }}
+                onClick={() => { void copiedSettingsOf(c).then((config) => onPick(copySeed({ ...c, config }))); }}
                 className="w-full flex items-center gap-2.5 px-3 py-2 text-left cursor-pointer hover:bg-surface-0 focus-ring rounded-lg"
               >
                 <AgentAvatar agent={c.agent} size="2xs" />
@@ -247,12 +271,13 @@ export function CopyStep({ name, onPick, onBack, onCancel }: {
 
 // ── The builder for a new agent ─────────────────────────────────────────────
 
-type NewBuilderTab = 'instructions' | 'skills' | 'mcp' | 'settings';
+type NewBuilderTab = 'instructions' | 'skills' | 'mcp' | 'settings' | 'preview';
 const TABS: ReadonlyArray<{ id: NewBuilderTab; label: string }> = [
   { id: 'instructions', label: 'Instructions' },
   { id: 'skills', label: 'Skills' },
   { id: 'mcp', label: 'MCP servers' },
   { id: 'settings', label: 'Settings' },
+  { id: 'preview', label: 'Preview' },
 ];
 
 /** The builder's choices, held by the New agent page so Back and forward keep them. */
@@ -267,9 +292,21 @@ export interface BuilderDraft {
   freeAgentMode: boolean;
   orchestrate: boolean;
   helperLimit: string;
+  /** Empty: the CLI's default. */
+  effort: string;
+  idleSleep: AgentIdleSleep;
+  /** Unset: the app setting. */
+  autoHelpers?: boolean;
+  /** Unset: follows orchestration. */
+  connectToDispatcher?: boolean;
+  control?: OrchestrationControl;
+  access?: OrchestrationAccess;
+  /** Empty: the app's default helper template. */
+  helperTemplateId: string;
 }
 
 export function draftFromSeed(seed: BuilderSeed): BuilderDraft {
+  const o = seed.settings.orchestration ?? {};
   return {
     key: seed.key,
     tab: 'instructions',
@@ -277,8 +314,45 @@ export function draftFromSeed(seed: BuilderSeed): BuilderDraft {
     orchestrator: seed.settings.orchestrator ?? '',
     model: seed.settings.model ?? 'default',
     freeAgentMode: !!seed.settings.freeAgentMode,
-    orchestrate: !!seed.settings.orchestration?.orchestrate,
-    helperLimit: String(seed.settings.orchestration?.maxHelpers ?? DEFAULT_MAX_HELPERS),
+    orchestrate: !!o.orchestrate,
+    helperLimit: String(o.maxHelpers ?? DEFAULT_MAX_HELPERS),
+    effort: seed.settings.effort ?? '',
+    idleSleep: normalizeIdleSleep(seed.settings.idleSleep),
+    ...(o.autoHelpers !== undefined && { autoHelpers: o.autoHelpers }),
+    ...(o.connectToDispatcher !== undefined && { connectToDispatcher: o.connectToDispatcher }),
+    ...(o.control !== undefined && { control: o.control }),
+    ...(o.access !== undefined && { access: o.access }),
+    helperTemplateId: seed.settings.helperTemplateId ?? '',
+  };
+}
+
+/**
+ * The settings Create agent sends, and Preview shows: the seed's, with what
+ * this page edits taken from the draft. A setting left at its default isn't
+ * sent, so the agent follows the app or the CLI.
+ */
+export function builderSettings(draft: BuilderDraft, seed: BuilderSeed, opts: { orchestrator: string; supportsPermissions: boolean; limit: number }): ManagedTemplateSettings {
+  const orchestration: OrchestrationPolicyConfig = {
+    ...(seed.settings.orchestration ?? {}),
+    orchestrate: draft.orchestrate,
+    ...(draft.orchestrate && Number.isFinite(opts.limit) && { maxHelpers: opts.limit }),
+  };
+  delete orchestration.autoHelpers;
+  delete orchestration.connectToDispatcher;
+  delete orchestration.control;
+  delete orchestration.access;
+  if (draft.autoHelpers !== undefined) orchestration.autoHelpers = draft.autoHelpers;
+  if (draft.connectToDispatcher !== undefined) orchestration.connectToDispatcher = draft.connectToDispatcher;
+  if (draft.control !== undefined) orchestration.control = draft.control;
+  if (draft.access !== undefined) orchestration.access = draft.access;
+  return {
+    orchestrator: opts.orchestrator,
+    ...(draft.model !== 'default' && { model: draft.model }),
+    ...(draft.effort && { effort: draft.effort }),
+    freeAgentMode: opts.supportsPermissions && draft.freeAgentMode,
+    orchestration,
+    ...(draft.idleSleep !== 'inherit' && { idleSleep: draft.idleSleep }),
+    ...(draft.helperTemplateId && { helperTemplateId: draft.helperTemplateId }),
   };
 }
 
@@ -297,7 +371,7 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
   onBack: () => void;
   onCancel: () => void;
 }) {
-  const { tab, setup, orchestrator, model, freeAgentMode, orchestrate, helperLimit } = draft;
+  const { tab, setup, orchestrator, model, freeAgentMode, orchestrate, helperLimit, effort } = draft;
   const change = (patch: Partial<BuilderDraft>) => onDraftChange({ ...draft, ...patch });
   const setTab = (next: NewBuilderTab) => change({ tab: next });
   const tabsId = useId();
@@ -322,20 +396,14 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
   const modelChoices = !modelsLoading && model !== 'default' && !modelOptions.some((o) => o.id === model)
     ? [...modelOptions, { id: model, label: model }]
     : modelOptions;
+  const { levelsFor, loading: effortsLoading } = useModelEfforts(resolvedOrchestrator, projectPath);
+  const effortLevels = levelsFor(model);
+  const { show: showDispatcher } = useDispatcherConnection();
+  const settings = builderSettings(draft, seed, { orchestrator: resolvedOrchestrator, supportsPermissions, limit });
 
   const create = () => {
     if (busy || !canCreate || limitProblem) return;
-    const orchestration: OrchestrationPolicyConfig = {
-      ...(seed.settings.orchestration ?? {}),
-      orchestrate: orchestrating,
-      ...(orchestrating && { maxHelpers: limit }),
-    };
-    onCreate(setup, {
-      orchestrator: resolvedOrchestrator,
-      ...(model !== 'default' && { model }),
-      freeAgentMode: supportsPermissions && freeAgentMode,
-      orchestration,
-    });
+    onCreate(setup, settings);
   };
   const onKeyDown = (e: React.KeyboardEvent) => {
     // ⌘↵ creates, except while typing in a block or skill editor, or in a dialog
@@ -353,7 +421,12 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
         <Segmented<NewBuilderTab> label="Builder section" idPrefix={tabsId} value={tab} options={TABS} onChange={setTab} testIdPrefix="new-agent-builder-tab" />
       </div>
       <div {...tabPanelProps(tabsId, tab)}>
-        {tab !== 'settings' && <ManagedBuilder target={{ kind: 'draft', value: setup, onChange: setSetup, agentName: name }} tab={tab} />}
+        {tab !== 'settings' && (
+          <ManagedBuilder
+            target={{ kind: 'draft', value: setup, onChange: setSetup, agentName: name, preview: { projectPath, settings } }}
+            tab={tab}
+          />
+        )}
         {tab === 'settings' && (
           <div data-testid="new-agent-builder-settings" className="w-[600px] max-w-full">
             <Row
@@ -366,7 +439,7 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
               <select
                 id="new-agent-builder-orchestrator"
                 value={resolvedOrchestrator}
-                onChange={(e) => change({ orchestrator: e.target.value, model: 'default' })}
+                onChange={(e) => change({ orchestrator: e.target.value, model: 'default', effort: '' })}
                 className={`${selectClass} w-40`}
               >
                 {cliChoices.map((o) => {
@@ -374,9 +447,22 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
                   return <option key={o.id} value={o.id}>{o.displayName}{a && !a.available ? ' (not found)' : ''}</option>;
                 })}
               </select>
-              <select aria-label="Model" value={model} disabled={modelsLoading} onChange={(e) => change({ model: e.target.value })} className={`${selectClass} w-[120px]`}>
+              <select aria-label="Model" value={model} disabled={modelsLoading} onChange={(e) => change({ model: e.target.value, effort: '' })} className={`${selectClass} w-[120px]`}>
                 {modelsLoading ? <option value={model}>Loading…</option> : modelChoices.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
+            </Row>
+            <Row label="Effort" htmlFor="new-agent-builder-effort" help={effortHelp(effortLevels, effortsLoading)}>
+              <EffortSelect
+                id="new-agent-builder-effort"
+                value={effort}
+                levels={effortLevels}
+                disabled={effortsLoading || (effortLevels.length === 0 && !effort)}
+                onChange={(next) => change({ effort: next })}
+                className={`${selectClass} w-40`}
+              />
+            </Row>
+            <Row label="Workspace" help="Clubhouse managed agents always get their own worktree and branch, or their own folder outside git.">
+              <span className="text-[13px] text-ctp-text">Its own worktree and branch</span>
             </Row>
             <Row
               label="Permissions"
@@ -413,6 +499,65 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
                 />
               </Row>
             )}
+            {orchestrating && (
+              <>
+                <Row label="Helper selection" htmlFor="new-agent-builder-helper-selection" help={HELPER_SELECTION_HELP}>
+                  <HelperSelectionSelect
+                    id="new-agent-builder-helper-selection"
+                    value={draft.autoHelpers}
+                    onChange={(next) => change({ autoHelpers: next })}
+                    className={`${selectClass} w-40`}
+                  />
+                </Row>
+                <Row label="Helper template" htmlFor="new-agent-builder-helper-template" help={HELPER_TEMPLATE_HELP}>
+                  <HelperTemplateSelect
+                    id="new-agent-builder-helper-template"
+                    value={draft.helperTemplateId}
+                    onChange={(next) => change({ helperTemplateId: next })}
+                    className={`${selectClass} w-56`}
+                  />
+                </Row>
+                <Row label="Approvals" htmlFor="new-agent-builder-control" help={controlHelp(draft.control ?? ORCHESTRATION_DEFAULTS.control, name)}>
+                  <ControlSelect
+                    id="new-agent-builder-control"
+                    value={draft.control ?? ORCHESTRATION_DEFAULTS.control}
+                    onChange={(next) => change({ control: next })}
+                    className={`${selectClass} w-48`}
+                  />
+                </Row>
+                <Row label="Helper access" htmlFor="new-agent-builder-access" help={`Never more than ${name} has when a helper starts.`}>
+                  <AccessSelect
+                    id="new-agent-builder-access"
+                    value={draft.access ?? ORCHESTRATION_DEFAULTS.access}
+                    access={null}
+                    running={false}
+                    name={name}
+                    onChange={(next) => change({ access: next })}
+                    className={`${selectClass} w-48`}
+                  />
+                </Row>
+              </>
+            )}
+            <Rule />
+            {showDispatcher && (
+              <Row label="Dispatcher" help={DISPATCHER_HELP}>
+                <DispatcherToggle
+                  checked={draft.connectToDispatcher ?? orchestrating}
+                  name={name}
+                  onChange={(on) => change({ connectToDispatcher: on })}
+                  testId="new-agent-builder-dispatcher"
+                />
+                <span className="text-[13px] text-ctp-text">Connect to Dispatcher</span>
+              </Row>
+            )}
+            <Row label="Auto-sleep" htmlFor="new-agent-builder-idle-sleep" help={IDLE_SLEEP_HELP}>
+              <IdleSleepSelect
+                id="new-agent-builder-idle-sleep"
+                value={draft.idleSleep}
+                onChange={(next) => change({ idleSleep: next })}
+                className={`${selectClass} w-48`}
+              />
+            </Row>
             <p className="mt-2 pl-32 text-xs leading-normal text-ctp-overlay1">Instructions don't grant access. These settings do.</p>
           </div>
         )}

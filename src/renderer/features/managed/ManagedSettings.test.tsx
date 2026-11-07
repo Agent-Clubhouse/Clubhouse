@@ -5,6 +5,7 @@ import { HELPER_ROUTING_LABELS } from '../../../shared/helper-routing';
 import { HelpersSettingsView } from '../settings/HelpersSettingsView';
 import { PartLibraryView } from './PartLibraryView';
 import { TemplatesSettingsView } from './TemplatesSettingsView';
+import { useOrchestratorStore } from '../../stores/orchestratorStore';
 
 const m = () => window.clubhouse.managed;
 
@@ -210,6 +211,39 @@ describe('Templates page', () => {
     dialog = await screen.findByTestId('managed-template-push-dialog');
     fireEvent.click(within(dialog).getByTestId('managed-template-save-apply'));
     expect((await screen.findByTestId('managed-template-notice')).textContent).toBe("Saved Release lead. Couldn't apply it to ada (Skill folder clash).");
+  });
+
+  it('a template carries effort, helper selection, helper template, approvals, Dispatcher and auto-sleep, and sets only what it names (#2898)', async () => {
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [template('mine', { name: 'Release lead' }), template('qa', { name: 'QA helper' })] });
+    vi.spyOn(m(), 'modelEfforts').mockResolvedValue({ ok: true, value: { default: ['low', 'high'] } });
+    const save = vi.spyOn(m(), 'saveTemplate').mockResolvedValue({ ok: true, value: template('new') });
+    useOrchestratorStore.setState({ allOrchestrators: [{ id: 'claude-code', displayName: 'Claude Code', capabilities: { permissions: true } }] as never });
+    render(<TemplatesSettingsView />);
+    fireEvent.click(await screen.findByTestId('managed-template-new'));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Lead' } });
+    // Without a CLI there is no model or effort to set.
+    expect((screen.getByLabelText('Effort') as HTMLSelectElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('CLI'), { target: { value: 'claude-code' } });
+    await waitFor(() => expect((screen.getByLabelText('Effort') as HTMLSelectElement).disabled).toBe(false));
+    fireEvent.change(screen.getByLabelText('Effort'), { target: { value: 'high' } });
+    fireEvent.click(screen.getByRole('switch', { name: 'Orchestration' }));
+    fireEvent.change(screen.getByLabelText('Helper selection'), { target: { value: 'fixed' } });
+    const helperTemplate = screen.getByLabelText('Helper template') as HTMLSelectElement;
+    await waitFor(() => expect([...helperTemplate.options].map((o) => o.textContent)).toContain('QA helper'));
+    fireEvent.change(helperTemplate, { target: { value: 'qa' } });
+    fireEvent.change(screen.getByLabelText('Approvals'), { target: { value: 'ask-everything' } });
+    fireEvent.click(screen.getByRole('switch', { name: 'Connect new agents to the Dispatcher' }));
+    fireEvent.change(screen.getByLabelText('Auto-sleep'), { target: { value: '30' } });
+    // Back to the app setting takes the key out again.
+    fireEvent.change(screen.getByLabelText('Helper selection'), { target: { value: 'smart' } });
+    fireEvent.click(screen.getByTestId('managed-template-save'));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({
+      name: 'Lead', description: '', setup: { blocks: [], skills: [], mcps: [] },
+      settings: {
+        orchestrator: 'claude-code', effort: 'high', helperTemplateId: 'qa', idleSleep: 30,
+        orchestration: { orchestrate: true, autoHelpers: true, control: 'ask-everything', connectToDispatcher: false },
+      },
+    }));
   });
 
   it('deletes one of yours from its menu', async () => {
