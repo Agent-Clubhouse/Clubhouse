@@ -92,6 +92,7 @@ export const agentSettings = {
     legacyInstructionsFile: string;
     mcpConfigFile: string;
     skillsDir: string;
+    skillsRoot?: string;
     agentTemplatesDir: string;
     localSettingsFile: string;
   } | null> =>

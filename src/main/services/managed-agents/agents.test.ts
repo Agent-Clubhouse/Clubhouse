@@ -172,6 +172,19 @@ describe('previewConvert', () => {
     expect(preview.notes).toEqual(["MCP servers in .codex/config.toml aren't brought over because Clubhouse can't read that format yet."]);
   });
 
+  it('brings over a Codex agent\'s skills from .agents/skills and its earlier .codex/skills, the current folder winning', async () => {
+    h.conventions = { configDir: '.codex', skillsDir: 'skills', skillsRoot: '.agents/skills', mcpConfigFile: '.codex/config.toml', legacyInstructionsFile: 'AGENTS.md', settingsFormat: 'toml' };
+    (h.conventions as unknown as { previousSkillsRoots: string[] }).previousSkillsRoots = ['.codex/skills'];
+    write('.agents/skills/ship/SKILL.md', '# Ship\nNew.');
+    write('.codex/skills/ship/SKILL.md', '# Ship\nOld.');
+    write('.codex/skills/notes/SKILL.md', '# Notes');
+    const preview = await user(() => previewConvert('/p', 'ada'));
+    expect(preview.skills).toEqual(['notes', 'ship']);
+    const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
+    const contents = await Promise.all(setup.skills.map(async (id) => (await user(() => service.getPart(id))).content));
+    expect(contents.map((c) => (c.kind === 'skill' ? [c.skillName, c.files[0].content] : null))).toEqual([['notes', '# Notes'], ['ship', '# Ship\nNew.']]);
+  });
+
   it('says an unreadable MCP file is not brought over', async () => {
     write('.mcp.json', '{ not json');
     const preview = await user(() => previewConvert('/p', 'ada'));
@@ -425,7 +438,11 @@ describe('convertToManaged for an agent with a persona or Clubhouse Mode (#2901)
     h.instructions = 'You are @@AgentName on @@StandbyBranch.\n@@If(github)\nPR\n@@EndIf\n@@Mission';
     const preview = await user(() => previewConvert('/p', 'ada'));
     expect(preview.notes).toEqual(["Its instructions still have @@If, @@EndIf and @@Mission, which a managed agent doesn't fill in. Edit the block after the switch."]);
-    expect(leftoverWildcards('@@Path @@BuildCommand')).toEqual([]);
+    expect(leftoverWildcards('@@Path @@AgentName @@StandbyBranch')).toEqual([]);
+    // The built-in build, test, lint and validate skills replace these for managed agents (#2902).
+    expect(leftoverWildcards('@@BuildCommand @@TestCommand @@LintCommand @@SourceControlProvider')).toEqual([
+      '@@BuildCommand', '@@TestCommand', '@@LintCommand', '@@SourceControlProvider',
+    ]);
   });
 });
 
@@ -549,14 +566,14 @@ describe('a switch that fails (#2901)', () => {
     // A case-insensitive file system has only one of the two.
     if (fs.readdirSync(path.join(wt, '.claude', 'skills')).length < 2) return;
     h.instructions = 'Ship small PRs.';
-    await expect(user(() => convertToManaged('/p', 'ada', { keep: true }))).rejects.toThrow('Two skills use the folder name ship');
+    await expect(user(() => convertToManaged('/p', 'ada', { keep: true }))).rejects.toThrow(/^(Ship and ship|ship and Ship) both install to (ship|Ship)\/\. Pick one\.$/);
     expect((await user(() => service.listParts('block'))).filter((p) => !p.builtin)).toEqual([]);
     expect((await user(() => service.listParts('skill'))).filter((p) => !p.builtin)).toEqual([]);
     expect(h.policyCalls).toEqual([]);
   });
 
   it('checkSetup counts the planned skill folders, ignoring case', async () => {
-    await expect(user(() => service.checkSetup({ blocks: [], skills: [], mcps: [] }, { skillFolders: ['Ship', 'ship'] }))).rejects.toThrow('Two skills use the folder name ship');
+    await expect(user(() => service.checkSetup({ blocks: [], skills: [], mcps: [] }, { skillFolders: ['Ship', 'ship'] }))).rejects.toThrow('Ship and ship both install to ship/. Pick one.');
     await expect(user(() => service.checkSetup({ blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, { skillFolders: ['ship', 'review'] }))).resolves.toMatchObject({ mcps: [CLUBHOUSE_MCP_PART_ID] });
   });
 

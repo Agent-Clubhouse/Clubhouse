@@ -102,6 +102,16 @@ describe('builder tools for the Dispatcher (#2900)', () => {
     expect(saved.json).toMatchObject({ revision: part.revision + 1 });
   });
 
+  it('leaves retired built-ins out of the lists, and still reads them by id (D71)', async () => {
+    const parts = (await call('list_agent_parts', { kind: 'block' })).json as Array<{ id: string }>;
+    expect(parts.map((p) => p.id)).toContain(BUILTIN_BLOCK_IDS.identity);
+    expect(parts.map((p) => p.id)).not.toContain(BUILTIN_BLOCK_IDS.projectManager);
+    const templates = (await call('list_agent_templates', {})).json as Array<{ id: string }>;
+    expect(templates.map((t) => t.id)).toContain('builtin-template-product-owner');
+    expect(templates.map((t) => t.id)).not.toContain('builtin-template-project-manager');
+    expect((await call('get_agent_part', { id: BUILTIN_BLOCK_IDS.projectManager })).json).toMatchObject({ retired: true });
+  });
+
   it('refuses to edit a built-in, and sets a managed agent\'s setup', async () => {
     const identity = (await call('get_agent_part', { id: 'builtin-block-identity' })).json;
     const r = await call('update_agent_part', { id: identity.id, expectedRevision: identity.revision, content: { kind: 'block', content: 'x' } });

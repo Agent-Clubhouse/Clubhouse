@@ -49,6 +49,7 @@ import * as fsp from 'fs/promises';
 import * as childProcess from 'child_process';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { CodexCliProvider, parseCodexDebugModels } from './codex-cli-provider';
+import { skillsFolderOf } from '../../shared/skills-folder';
 
 /** Match any path whose basename is 'codex' (with or without .exe/.cmd) */
 function isCodexPath(p: string | Buffer | URL): boolean {
@@ -103,6 +104,11 @@ describe('CodexCliProvider', () => {
 
     it('uses skills dir', () => {
       expect(provider.conventions.skillsDir).toBe('skills');
+    });
+
+    it('reads repository skills from .agents/skills, and used .codex/skills before', () => {
+      expect(skillsFolderOf(provider.conventions)).toBe('.agents/skills');
+      expect(provider.conventions.previousSkillsRoots).toEqual(['.codex/skills']);
     });
 
     it('uses agents dir for templates', () => {

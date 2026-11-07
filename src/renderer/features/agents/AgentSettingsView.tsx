@@ -41,6 +41,7 @@ import { ManagedBuilder, PreviewPane } from '../managed/ManagedBuilder';
 import { ManagedGeneralSection } from '../managed/ManagedGeneralSection';
 import { legacyUse } from '../managed/legacy';
 import { isDispatcherAgent } from '../dispatcher/dispatcherStore';
+import { skillsFolderOf } from '../../../shared/skills-folder';
 
 interface Props {
   agent: Agent;
@@ -742,7 +743,7 @@ export function AgentSettingsView({ agent }: Props) {
     if (localInstructionsFile === 'CLAUDE.md') return 'CLAUDE.md';
     return `${configDir}/${localInstructionsFile}`;
   })();
-  const skillsPathLabel = conventions ? `${conventions.configDir}/${conventions.skillsDir}/` : '.claude/skills/';
+  const skillsPathLabel = conventions ? `${skillsFolderOf(conventions)}/` : '.claude/skills/';
   const mcpPathLabel = conventions?.mcpConfigFile || '.mcp.json';
   const permissionsPathLabel = conventions?.permissionRules === false ? 'Not supported by this provider' : conventions ? `${conventions.configDir}/${conventions.localSettingsFile}` : '.claude/settings.local.json';
 

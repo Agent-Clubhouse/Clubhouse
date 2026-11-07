@@ -121,6 +121,19 @@ export interface OrchestratorConventions {
   mcpConfigFile: string;
   /** Subdirectory name for skills (e.g. 'skills') */
   skillsDir: string;
+  /**
+   * The skills folder relative to the worktree, when it isn't
+   * `<configDir>/<skillsDir>` (Codex: `.agents/skills`). Read it through
+   * `skillsFolderOf` (shared/skills-folder).
+   */
+  skillsRoot?: string;
+  /**
+   * Skills folders this provider used before, relative to the worktree. The
+   * next managed delivery removes the skills Clubhouse wrote there (listed in
+   * that folder's managed-skills manifest), and the switch to managed still
+   * reads skills from them.
+   */
+  previousSkillsRoots?: string[];
   /** Subdirectory name for agent templates (e.g. 'agents') */
   agentTemplatesDir: string;
   /** Settings filename within configDir (e.g. 'settings.local.json') */

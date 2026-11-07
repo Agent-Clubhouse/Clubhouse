@@ -19,7 +19,7 @@ import { previewManagedSetup } from '../../managed-agents/delivery';
 import { ManagedError } from '../../managed-agents/service';
 import { resolveOrchestrator } from '../../agent-system';
 import { optionalBoolean, optionalString, requireString } from './validation';
-import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_ALWAYS_ON, type ManagedPartContent, type ManagedPartKind, type ManagedTemplateSettings } from '../../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_ALWAYS_ON, isListed, type ManagedPartContent, type ManagedPartKind, type ManagedTemplateSettings } from '../../../../shared/managed-agents-types';
 import type { Project } from '../../../../shared/types';
 
 const ACTOR = 'Dispatcher';
@@ -170,9 +170,9 @@ export function registerManagedTools(): void {
   const svc = () => managedAgents();
 
   tool('list_agent_parts',
-    'List the agent part library: instruction blocks, skills or MCP servers. Each part says whether it is built in, a short preview, and which agents and templates use it. Parts are used by reference: an edit reaches every agent using it at its next start.',
+    'List the agent part library: instruction blocks, skills or MCP servers. Each part says whether it is built in, a short preview, and which agents and templates use it. Parts are used by reference: an edit reaches every agent using it at its next start. Retired built-ins are left out; agents that use one still get it, and get_agent_part reads it.',
     { kind: { ...S, description: 'block, skill or mcp' } }, ['kind'],
-    async (_c, args) => json(await svc().listParts(kindArg(args))));
+    async (_c, args) => json((await svc().listParts(kindArg(args))).filter(isListed)));
 
   tool('get_agent_part', 'Read one agent part with its full content and revision.',
     { id: S }, ['id'],
@@ -279,9 +279,9 @@ export function registerManagedTools(): void {
       return json(await previewManagedSetup({ service: svc(), projectPath: t.project.path, agent, provider }));
     });
 
-  tool('list_agent_templates', 'List templates (built-in and custom) with their parts, settings and how many agents were made from each.',
+  tool('list_agent_templates', 'List templates (built-in and custom) with their parts, settings and how many agents were made from each. Retired built-in templates are left out; agents made from one keep working.',
     {}, [],
-    async () => json(await svc().listTemplates()));
+    async () => json((await svc().listTemplates()).filter(isListed)));
 
   tool('save_agent_template',
     'Create a custom template (name required), or edit one by id. Editing an id keeps every field you leave out as saved; settings, when given, replaces the template\'s settings as a whole. Editing changes future agents only; use push_agent_template to apply it to agents made from it. settings: orchestrator, model, freeAgentMode, orchestration {...}.',

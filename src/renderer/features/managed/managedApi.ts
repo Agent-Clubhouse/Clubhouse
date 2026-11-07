@@ -97,14 +97,15 @@ export function useManagedSetup(projectPath: string | undefined, agentId: string
   );
 }
 
-/** The wildcards a block can use, with this agent's values when known. */
+/**
+ * The wildcards a block can use, with this agent's values when known. Managed
+ * delivery fills only these (MANAGED_WILDCARDS); the built-in build, test,
+ * lint and validate skills replace the command and source control wildcards (#2902).
+ */
 export const WILDCARDS: Array<{ token: string; describe: string }> = [
   { token: '@@AgentName', describe: 'agent name' },
   { token: '@@Path', describe: 'its folder' },
   { token: '@@StandbyBranch', describe: 'its branch' },
-  { token: '@@BuildCommand', describe: 'build command' },
-  { token: '@@TestCommand', describe: 'test command' },
-  { token: '@@LintCommand', describe: 'lint command' },
 ];
 
 export function partKindLabel(kind: ManagedPartKind, plural = false): string {

@@ -1344,6 +1344,7 @@ export function getAvailableOrchestrators() {
       legacyInstructionsFile: p.conventions.legacyInstructionsFile,
       mcpConfigFile: p.conventions.mcpConfigFile,
       skillsDir: p.conventions.skillsDir,
+      ...(p.conventions.skillsRoot && { skillsRoot: p.conventions.skillsRoot }),
       agentTemplatesDir: p.conventions.agentTemplatesDir,
       localSettingsFile: p.conventions.localSettingsFile,
       permissionRules: p.conventions.permissionRules,

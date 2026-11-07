@@ -594,7 +594,7 @@ describe('start_helper with Clubhouse-managed agents (#2899)', () => {
     const two = await make('Release two');
     const result = await callTool('orch', 'start_helper', { name: 'dup', task: 't', addParts: [one.id, two.id] });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toMatch(/Two skills use the folder name release/);
+    expect(result.content[0].text).toMatch(/Release one and Release two both install to release\/\. Pick one\./);
     expect(mockStartDurableCreation).not.toHaveBeenCalled();
   });
 

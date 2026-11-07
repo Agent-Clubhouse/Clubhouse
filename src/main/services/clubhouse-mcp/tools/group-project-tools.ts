@@ -112,12 +112,11 @@ export function registerGroupProjectTools(): void {
     description:
         'Post a message to a channel on the project board.\n\n' +
         'CHANNEL MODEL:\n' +
-        '- "general" (protected): introductions and broad announcements. Keep traffic low.\n' +
-        '- "control" (protected): coordination — tell other agents where to look ("follow #fix-login-bug") and agree on channel naming.\n' +
-        '- "inbox-<agent-name>" (protected): an agent\'s direct inbox. Post here for 1:1 async work with that agent.\n' +
-        '- work channels: create them liberally for scoped work (e.g. "fix-login-bug", "schema-v2"). One focused topic per channel.\n\n' +
-        'Introduce yourself on "general" when you first join. Prefer scoped work channels over posting shared context to "general". ' +
-        'Post replies where the work is happening — do not cross-post.\n\n' +
+        '- "general" (protected): team-wide announcements only. Avoid posting here otherwise.\n' +
+        '- "control" (protected): changes to how the team works, and agreeing on new channels before anyone creates one.\n' +
+        '- "inbox-<agent-name>" (protected): an agent\'s direct inbox. Post here for 1:1 work with that agent. Prefer inboxes over short-lived channels.\n' +
+        '- work channels: only for scoped coordination agreed in "control", for example dev, QA and design working together on one piece.\n\n' +
+        'Post replies where the work is happening, and do not cross-post.\n\n' +
         'Your identity is set automatically. The "system" channel is reserved. ' +
         'Keep messages concise — plain text or short markdown beats large JSON payloads.',
       inputSchema: {
@@ -318,14 +317,14 @@ export function registerGroupProjectTools(): void {
         description: project.description,
         instructions: project.instructions,
         systemInstructions:
-          'CHANNEL MODEL: Every project has protected "general" and "control" channels, plus a per-agent "inbox-<agent-name>" channel. Work channels are freeform — create them with post_bulletin as needed.\n' +
-          '- general: introduce yourself when you join ("I am <name>, working on <focus>"); post announcements that affect everyone. Keep traffic low.\n' +
-          '- control: set up shared work ("new channel #fix-login-bug, follow if relevant"), agree on naming, resolve cross-stream questions.\n' +
-          '- inbox-<your-name>: your direct inbox. Check it every poll. Other agents post here for 1:1 asks.\n' +
-          '- work channels: make them liberally for focused coordination. One topic per channel. Prefer this over cross-posting to "general".\n\n' +
+          'CHANNEL MODEL: A group project is a shared message board for a team of agents, with one lead who coordinates. Every project has protected "general" and "control" channels, plus a per-agent "inbox-<agent-name>" channel.\n' +
+          '- Check your inbox, "control" and "general" when you join, between tasks, and each time you poll. Follow other channels when you are asked to.\n' +
+          '- control: changes to how the team works. general: team-wide announcements only; avoid posting there otherwise.\n' +
+          '- inbox-<your-name>: your direct inbox. Reach another agent through theirs. Prefer inboxes over short-lived channels.\n' +
+          '- work channels: create one only after agreeing in "control", and only for scoped coordination, for example dev, QA and design working together on one piece.\n\n' +
           'POLLING: Call read_bulletin with since=<latestTimestamp from last read> and channels=["general","control","inbox-<your-name>", ...subscribed work channels]. ' +
           'Only drill into a channel with read_topic when its newMessageCount > 0. Use summary=true for large reads and read_message for full bodies.\n\n' +
-          'POSTING: Introduce yourself on "general" after you first join. Post replies on the channel where the work is happening. Do not cross-post. Keep messages short — plain text or short markdown, not large JSON.',
+          'POSTING: Post replies on the channel where the work is happening. Do not cross-post. Keep messages short: plain text or short markdown, not large JSON.',
       };
 
       if (includeMembersList) {
