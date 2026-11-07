@@ -7,6 +7,7 @@ import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators
 import { Modal } from '../../components/Modal';
 import { Spinner } from '../../components/Spinner';
 import { PERSONA_TEMPLATES } from '../personas';
+import { useManagedFlag } from '../managed/managed-flag';
 import type { McpCatalogEntry } from '../../../shared/types';
 
 interface Props {
@@ -24,6 +25,8 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
   const [useWorktree, setUseWorktree] = useState(false);
   const [freeAgentMode, setFreeAgentMode] = useState(false);
   const [persona, setPersona] = useState('');
+  // With Clubhouse-managed agents on, personas aren't offered (#2901).
+  const managedFlag = useManagedFlag();
   const [mcpCatalog, setMcpCatalog] = useState<McpCatalogEntry[]>([]);
   const [selectedMcps, setSelectedMcps] = useState<string[]>([]);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
@@ -55,7 +58,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || nameProblem) return;
-    onCreate(name.trim(), color, model, useWorktree, orchestrator, freeAgentMode || undefined, selectedMcps.length > 0 ? selectedMcps : undefined, persona || undefined);
+    onCreate(name.trim(), color, model, useWorktree, orchestrator, freeAgentMode || undefined, selectedMcps.length > 0 ? selectedMcps : undefined, (!managedFlag && persona) || undefined);
   };
 
   return (
@@ -164,7 +167,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
           </label>
 
           {/* Persona */}
-          <label className="block mb-3">
+          {!managedFlag && <label className="block mb-3">
             <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Persona</span>
             <select
               value={persona}
@@ -178,7 +181,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
-          </label>
+          </label>}
 
           {/* Use Worktree */}
           <label className="flex items-center gap-2 mb-3 cursor-pointer">

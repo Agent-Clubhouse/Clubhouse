@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AddAgentDialog } from './AddAgentDialog';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { loadManagedFlag, resetManagedFlag } from '../managed/managed-flag';
 
 vi.mock('../../../shared/name-generator', () => ({
   generateDurableName: () => 'test-agent',
@@ -196,6 +197,23 @@ describe('AddAgentDialog', () => {
       expect(defaultProps.onCreate).toHaveBeenCalledWith(
         'test-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, 'qa',
       );
+    });
+  });
+
+  describe('with Clubhouse-managed agents on (#2901)', () => {
+    it('offers no persona and creates the agent without one', async () => {
+      const spy = vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
+      resetManagedFlag();
+      try {
+        await loadManagedFlag();
+        render(<AddAgentDialog {...defaultProps} />);
+        expect(screen.queryByTestId('add-agent-persona-select')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByText('Create Agent'));
+        expect(defaultProps.onCreate).toHaveBeenCalledWith('test-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, undefined);
+      } finally {
+        spy.mockRestore();
+        resetManagedFlag();
+      }
     });
   });
 

@@ -36,6 +36,7 @@ import { DispatcherSettingsView } from '../features/settings/DispatcherSettingsV
 import { PartLibraryView } from '../features/managed/PartLibraryView';
 import { TemplatesSettingsView } from '../features/managed/TemplatesSettingsView';
 import { OrchestrationSettingsView } from '../features/managed/OrchestrationSettingsView';
+import { SwitchAgentsSettingsView } from '../features/managed/SwitchAgentsSettingsView';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
 import { AnnexDisabledView } from './AnnexDisabledView';
 import { SatelliteDisconnectedOverlay } from './SatelliteDisconnectedOverlay';
@@ -290,6 +291,7 @@ export function MainContentView() {
     if (settingsSubPage === 'managed-mcp') return <PartLibraryView key="mcp" kind="mcp" />;
     if (settingsSubPage === 'managed-templates') return <TemplatesSettingsView />;
     if (settingsSubPage === 'managed-orchestration') return <OrchestrationSettingsView />;
+    if (settingsSubPage === 'managed-switch') return <SwitchAgentsSettingsView />;
     if (settingsSubPage === 'feedback') return <FeedbackSettingsView />;
     if (settingsSubPage === 'about') return <AboutSettingsView />;
     return <ProjectSettings projectId={projectId} />;

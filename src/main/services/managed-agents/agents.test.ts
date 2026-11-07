@@ -14,6 +14,8 @@ const h = vi.hoisted(() => ({
   service: null as unknown,
   stateDir: '',
   instructions: '',
+  /** Read the instructions file from the worktree, as a real provider does. */
+  instructionsFromDisk: false,
   conventions: { configDir: '.claude', skillsDir: 'skills', mcpConfigFile: '.mcp.json', legacyInstructionsFile: 'CLAUDE.md', settingsFormat: 'json' } as Record<string, string>,
 }));
 
@@ -28,7 +30,7 @@ vi.mock('../agent-system', () => ({
   resolveOrchestrator: async () => ({
     id: 'claude-code',
     conventions: h.conventions,
-    readInstructions: async () => h.instructions,
+    readInstructions: async (worktree: string) => (h.instructionsFromDisk ? fs.readFileSync(path.join(worktree, 'CLAUDE.md'), 'utf-8') : h.instructions),
   }),
 }));
 vi.mock('./index', () => ({ managedAgents: () => h.service }));
@@ -65,6 +67,7 @@ beforeEach(async () => {
   _resetSettingsAuditForTesting(false);
   h.stateDir = path.join(root, 'managed');
   h.instructions = '';
+  h.instructionsFromDisk = false;
   h.conventions = { configDir: '.claude', skillsDir: 'skills', mcpConfigFile: '.mcp.json', legacyInstructionsFile: 'CLAUDE.md', settingsFormat: 'json' };
   h.agents.clear();
   h.agents.set('ada', { id: 'ada', name: 'ada', color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: wt });
@@ -186,6 +189,30 @@ describe('convertToManaged with keep', () => {
     h.agents.get('ada')!.mcpOverride = false;
     const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
     expect(setup).toMatchObject({ blocks: [], skills: [], mcps: [] });
+  });
+});
+
+describe('convertToManaged for a Clubhouse Mode agent (#2901)', () => {
+  it('keeps the instructions Clubhouse Mode last wrote into its worktree, not the project template', async () => {
+    // Clubhouse Mode wrote these at the agent's last wake, wildcards resolved.
+    h.instructionsFromDisk = true;
+    write('CLAUDE.md', 'You are ada. Build with npm run build.');
+    write('.claude/skills/ship/SKILL.md', '# Ship\nOpen a PR.');
+    const before = { ...h.agents.get('ada')!, persona: 'qa' };
+    h.agents.set('ada', before);
+
+    const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
+
+    const block = await user(() => service.getPart(setup.blocks[0]));
+    expect(block.content).toEqual({ kind: 'block', content: 'You are ada. Build with npm run build.' });
+    const skill = await user(() => service.getPart(setup.skills[0]));
+    expect(skill.content).toMatchObject({ kind: 'skill', skillName: 'ship' });
+    expect(h.agents.get('ada')!.managed).toEqual(setup);
+    // Nothing on disk changes until its next start, and its persona and Clubhouse Mode fields are left as they were.
+    expect(fs.readFileSync(path.join(wt, 'CLAUDE.md'), 'utf-8')).toBe('You are ada. Build with npm run build.');
+    expect(h.agents.get('ada')!.persona).toBe('qa');
+    expect(h.agents.get('ada')!.clubhouseModeOverride).toBeUndefined();
+    expect(vi.mocked(agentConfig.updateDurableConfig)).not.toHaveBeenCalledWith('/p', 'ada', expect.objectContaining({ clubhouseModeOverride: expect.anything() }));
   });
 });
 

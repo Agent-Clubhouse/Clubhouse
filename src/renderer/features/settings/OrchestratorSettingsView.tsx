@@ -12,6 +12,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { resetChatFlagCache } from '../agents/chat/AgentRuntimePane';
 import { RICH_CHAT_CONTENT_FLAG, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
+import { useManagedFlag } from '../managed/managed-flag';
 import { useMcpOffConfirm } from './McpOffConfirm';
 import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsHelp, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
 import type { FreeAgentPermissionMode, SourceControlProvider } from '../../../shared/types';
@@ -206,6 +207,9 @@ function AppAgentSettings() {
   const setFreeAgentDefaultMode = useFreeAgentSettingsStore((s) => s.setDefaultMode);
   const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
   const [showConfirm, setShowConfirm] = useState(false);
+  // With Clubhouse-managed agents on, Clubhouse Mode isn't offered (#2901). Agents
+  // that still use it keep it until they switch to managed.
+  const managedFlag = useManagedFlag();
   const { chatEnabled, richChatEnabled, chatResolved, flagSaveFailed, runtimeSaving, runtimeSaveFailed, runtimeSettings, setChatFlag, setRichChatFlag, setRuntimeMode } = useChatRuntimeSettings();
   const idleMinutes = useChatIdleSettingsStore((st) => st.idleTimeoutMinutes as number);
   const saveIdle = useChatIdleSettingsStore((st) => st.saveSettings);
@@ -307,14 +311,14 @@ function AppAgentSettings() {
       </SettingsSection>
 
       <SettingsSection title="Durable agents">
-        <SettingsField
+        {!managedFlag && <SettingsField
           label="Clubhouse Mode"
           help="Manage agent instructions, permissions and MCP config in one place. Clubhouse pushes them to worktrees when an agent wakes."
           testId="clubhouse-mode-row"
         >
           <Toggle aria-label="Clubhouse Mode" checked={clubhouseEnabled} onChange={handleClubhouseToggle} />
-        </SettingsField>
-        {clubhouseEnabled && (
+        </SettingsField>}
+        {clubhouseEnabled && !managedFlag && (
           <SettingsBlock>
             <p className={settingsHelp}>
               Project defaults can use these wildcards, resolved for each agent when it wakes.
@@ -327,7 +331,7 @@ function AppAgentSettings() {
             </p>
           </SettingsBlock>
         )}
-        {clubhouseEnabled && (
+        {clubhouseEnabled && !managedFlag && (
           <SettingsField
             label="Default source control provider"
             help="Used by every project unless it sets its own."
@@ -544,6 +548,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const clearClubhouseOverride = useClubhouseModeStore((s) => s.clearProjectOverride);
   const { requestMcpChange, mcpOffDialog } = useMcpOffConfirm();
   const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
+  const managedFlag = useManagedFlag();
 
   const sessionPromptGlobal = useSessionSettingsStore((s) => s.promptForName);
   const sessionOverrides = useSessionSettingsStore((s) => s.projectOverrides);
@@ -700,7 +705,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
           </select>
         </SettingsField>
 
-        <SettingsField label="Clubhouse Mode" help="Manage agent config in one place and push it to worktrees." htmlFor={`${idBase}-clubhouse`}>
+        {!managedFlag && <SettingsField label="Clubhouse Mode" help="Manage agent config in one place and push it to worktrees." htmlFor={`${idBase}-clubhouse`}>
           <select
             id={`${idBase}-clubhouse`}
             value={currentClubhouseMode}
@@ -711,7 +716,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
             <option value="on">On</option>
             <option value="off">Off</option>
           </select>
-        </SettingsField>
+        </SettingsField>}
 
         {/* Shown with the app-wide MCP bridge off too: an override keeps working then, and this is where to see it. */}
         {mcpLoaded && (

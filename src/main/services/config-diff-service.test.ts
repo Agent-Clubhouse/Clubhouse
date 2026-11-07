@@ -404,6 +404,20 @@ describe('config-diff-service', () => {
       expect(result.items).toHaveLength(0);
     });
 
+    it('skips diff for a Clubhouse-managed agent, so a switched Clubhouse Mode agent is not asked about drift (#2901)', async () => {
+      const managedAgent = { ...testAgent, managed: { version: 1, blocks: ['b'], skills: [], mcps: [] } };
+      mockFileSystem({
+        'agents.json': agentsJsonWith(managedAgent),
+        'settings.json': settingsJsonWith({ instructions: 'Different' }),
+      });
+      vi.mocked(mockProvider.readInstructions).mockReturnValue('Completely different');
+
+      const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
+
+      expect(result.hasDiffs).toBe(false);
+      expect(result.items).toHaveLength(0);
+    });
+
     it('returns empty result when no project defaults exist', async () => {
       mockFileSystem({
         'agents.json': agentsJsonWith(testAgent),

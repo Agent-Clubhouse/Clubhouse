@@ -237,11 +237,56 @@ export const CHROME_HELP_SECTIONS: HelpSection[] = [
 /** Annex lives in Settings only on builds that show the Annex pages (preview-eligible). */
 const ANNEX_TOPIC: HelpTopic = { id: 'settings-annex', title: 'Annex', content: settingsAnnexChrome };
 
+/**
+ * Text that changes with Clubhouse-managed agents on (#2901): the persona
+ * row, Apply and Extract persona, "Agent from a template…" and the Clubhouse
+ * Mode setting aren't offered then. Each `from` must be in its article.
+ */
+export const MANAGED_HELP_EDITS: Record<string, ReadonlyArray<{ from: string; to: string }>> = {
+  'agents-durable': [
+    {
+      from: '2. Set the **Name**, **Color**, **Runs on** and **Model**. Optionally pick a **Persona**, **MCPs** and **Free Agent Mode**.',
+      to: '2. Set the **Name** and **Color**. With **Clubhouse managed** on, choose **Start with template** or **Build from scratch** to pick its instructions, skills and MCP servers. Turn it off for a plain agent that keeps its own files.',
+    },
+    {
+      from: 'To start from a saved setup, choose **Agent from a template…** under **New**.',
+      to: 'Templates are in **Settings > Managed agents > Templates**.',
+    },
+    { from: '| **Persona** | A role the agent takes on, such as reviewer or researcher |\n', to: '' },
+    {
+      from: 'With **Clubhouse mode** on, project defaults sync to the agent when it wakes. See **Clubhouse mode**.',
+      to: 'An agent made before Clubhouse-managed agents can switch in its settings, under **General > Setup**, or with others in **Settings > Managed agents > Switch agents**. Switching keeps what it has now.',
+    },
+  ],
+  'agents-overview': [
+    { from: '- **Apply persona…** and **Extract persona…**;\n', to: '' },
+  ],
+  'projects-settings': [
+    { from: '- **Clubhouse Mode**, which keeps durable agents in sync with project defaults. See **Clubhouse mode**.\n', to: '' },
+  ],
+};
+
+/** The sections without Clubhouse Mode and personas, for Clubhouse-managed agents (#2901). */
+export function managedHelpSections(sections: HelpSection[], editText: boolean): HelpSection[] {
+  return sections
+    .filter((s) => s.id !== 'personas')
+    .map((s) => ({
+      ...s,
+      topics: s.topics
+        .filter((t) => t.id !== 'agents-clubhouse-mode')
+        .map((t) => {
+          const edits = editText ? MANAGED_HELP_EDITS[t.id] : undefined;
+          return edits ? { ...t, content: edits.reduce((text, e) => text.replace(e.from, e.to), t.content) } : t;
+        }),
+    }));
+}
+
 /** The active shell's built-in sections. */
-export function getHelpSections(opts: { annex?: boolean } = {}): HelpSection[] {
-  if (!isNewChromeEnabled()) return HELP_SECTIONS;
-  if (!opts.annex) return CHROME_HELP_SECTIONS;
-  return CHROME_HELP_SECTIONS.map((s) => (s.id === 'settings'
+export function getHelpSections(opts: { annex?: boolean; managed?: boolean } = {}): HelpSection[] {
+  if (!isNewChromeEnabled()) return opts.managed ? managedHelpSections(HELP_SECTIONS, false) : HELP_SECTIONS;
+  const chrome = opts.managed ? managedHelpSections(CHROME_HELP_SECTIONS, true) : CHROME_HELP_SECTIONS;
+  if (!opts.annex) return chrome;
+  return chrome.map((s) => (s.id === 'settings'
     ? { ...s, topics: [...s.topics.slice(0, 3), ANNEX_TOPIC, ...s.topics.slice(3)] }
     : s));
 }

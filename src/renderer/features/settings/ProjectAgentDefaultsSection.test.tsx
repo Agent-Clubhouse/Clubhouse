@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
+import { loadManagedFlag, resetManagedFlag } from '../managed/managed-flag';
 
 function renderSection(overrides: Partial<React.ComponentProps<typeof ProjectAgentDefaultsSection>> = {}) {
   return render(
@@ -499,6 +500,32 @@ describe('ProjectAgentDefaultsSection', () => {
       window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockRejectedValue(new Error('fail'));
       renderSection();
       expect(await screen.findByText('Default agent settings')).toBeInTheDocument();
+    });
+  });
+
+  describe('with Clubhouse-managed agents on (#2901)', () => {
+    let flag: ReturnType<typeof vi.spyOn>;
+    beforeEach(async () => {
+      flag = vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
+      resetManagedFlag();
+      await loadManagedFlag();
+    });
+    afterEach(() => {
+      flag.mockRestore();
+      resetManagedFlag();
+    });
+
+    it('offers no default persona or conditional blocks, and keeps a saved persona on save', async () => {
+      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({ instructions: 'Default instructions', persona: 'qa' });
+      renderSection({ clubhouseMode: true });
+      expect(await screen.findByText('Source control provider')).toBeInTheDocument();
+      expect(screen.queryByText('Default persona')).not.toBeInTheDocument();
+      expect(screen.queryByText(/controls conditional blocks/)).not.toBeInTheDocument();
+      expect(screen.getByText("Agents here that still use Clubhouse Mode get these settings each time they wake. Managed agents don't use them.")).toBeInTheDocument();
+
+      fireEvent.change(screen.getByPlaceholderText('implement-and-ship'), { target: { value: 'ship' } });
+      fireEvent.click(screen.getByText('Save defaults'));
+      await waitFor(() => expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith('/project', expect.objectContaining({ persona: 'qa', mission: 'ship' })));
     });
   });
 });

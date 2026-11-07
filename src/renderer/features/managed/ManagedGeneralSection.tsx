@@ -5,13 +5,15 @@ import { Toggle } from '../../components/Toggle';
 import { Field, SectionHeading, inputClass, selectClass } from '../agents/agentSettingsUi';
 import type { ManagedAgentSetup, ManagedConvertPreview } from '../../../shared/managed-agents-types';
 import { errorText, managed, unwrap, useManagedTemplates } from './managedApi';
+import { legacyLine, type LegacyUse } from './legacy';
 
 /**
  * General › Setup for an agent (#2893). Managed: which template it came from,
  * Save as template, Stop managing. Unmanaged: the switch to managed, and the
- * Clubhouse features opt-out for a plain CLI.
+ * Clubhouse features opt-out for a plain CLI. An unmanaged agent that uses
+ * Clubhouse Mode or a persona says so, as the offer to switch (#2901).
  */
-export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, clubhouseFeatures, onClubhouseFeaturesChange, isRunning }: {
+export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, clubhouseFeatures, onClubhouseFeaturesChange, isRunning, legacy }: {
   projectPath: string;
   agentId: string;
   agentName: string;
@@ -20,6 +22,8 @@ export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, 
   /** Called with the saved value once the switch's change is saved. */
   onClubhouseFeaturesChange?: (on: boolean) => void;
   isRunning: boolean;
+  /** What the unmanaged agent uses from Clubhouse Mode and personas, if anything. */
+  legacy?: LegacyUse | null;
 }) {
   const templates = useManagedTemplates();
   const [convertOpen, setConvertOpen] = useState(false);
@@ -46,7 +50,13 @@ export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, 
         </>
       ) : (
         <>
-          <Field label="Clubhouse managed" help={`Off. ${agentName} uses the instructions, skills and MCP config in its folder, and Clubhouse doesn't change them.`} testId="managed-general-off">
+          <Field
+            label="Clubhouse managed"
+            help={legacy
+              ? <span data-testid="managed-general-legacy">{legacyLine(agentName, legacy)} Switch to managed keeps what it has now.</span>
+              : `Off. ${agentName} uses the instructions, skills and MCP config in its folder, and Clubhouse doesn't change them.`}
+            testId="managed-general-off"
+          >
             <Button onClick={() => setConvertOpen(true)} disabled={busy}>Switch to managed…</Button>
           </Field>
           <Field

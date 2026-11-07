@@ -6,7 +6,8 @@ import { CommandPaletteList, optionId } from './CommandPaletteList';
 import { useCommandSource } from './use-command-source';
 import { fuzzyFilter, FuzzyFilterItem } from './fuzzy-match';
 import { CATEGORY, CommandItem } from './command-registry';
-import { HELP_SECTIONS } from '../help/help-content';
+import { HELP_SECTIONS, managedHelpSections, type HelpSection } from '../help/help-content';
+import { useManagedFlag } from '../managed/managed-flag';
 import { searchHelpTopics } from '../help/help-search';
 import { pushModal, removeModal } from '../../components/layers';
 
@@ -28,8 +29,11 @@ function stripPrefix(query: string): string {
   return query;
 }
 
-function helpItems(query: string): FuzzyFilterItem<CommandItem>[] {
-  return searchHelpTopics(HELP_SECTIONS, query).slice(0, HELP_RESULTS).map((r) => ({
+// With Clubhouse-managed agents on, Clubhouse Mode and personas leave Help (#2901).
+const MANAGED_HELP_SECTIONS = managedHelpSections(HELP_SECTIONS, false);
+
+function helpItems(sections: HelpSection[], query: string): FuzzyFilterItem<CommandItem>[] {
+  return searchHelpTopics(sections, query).slice(0, HELP_RESULTS).map((r) => ({
     item: {
       id: `help:${r.sectionId}:${r.topic.id}`,
       label: r.topic.title,
@@ -64,6 +68,7 @@ export function CommandPalette() {
   const recordRecent = useCommandPaletteStore((s) => s.recordRecent);
   const isRecent = useCommandPaletteStore((s) => s.isRecent);
   const allCommands = useCommandSource();
+  const managedFlag = useManagedFlag();
   const dialogRef = useRef<HTMLDivElement>(null);
 
   // Focus goes back where it was when the palette closes. While open the
@@ -122,8 +127,8 @@ export function CommandPalette() {
 
     // Re-sort with boosted scores
     const ranked = [...recents, ...rest].sort((a, b) => b.score - a.score);
-    return mode === 'all' ? [...ranked, ...helpItems(searchQuery)] : ranked;
-  }, [modeFiltered, query, mode, isRecent]);
+    return mode === 'all' ? [...ranked, ...helpItems(managedFlag ? MANAGED_HELP_SECTIONS : HELP_SECTIONS, searchQuery)] : ranked;
+  }, [modeFiltered, query, mode, isRecent, managedFlag]);
 
   const executeItem = useCallback((item: CommandItem) => {
     recordRecent(item.id);

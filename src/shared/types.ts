@@ -985,7 +985,7 @@ export interface SoundSettings {
 
 export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'mcp' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher'
   // Clubhouse-managed agents (#2819), behind the managedAgents flag.
-  | 'managed-blocks' | 'managed-skills' | 'managed-mcp' | 'managed-templates' | 'managed-orchestration';
+  | 'managed-blocks' | 'managed-skills' | 'managed-mcp' | 'managed-templates' | 'managed-orchestration' | 'managed-switch';
 
 // --- Chat idle settings ---
 

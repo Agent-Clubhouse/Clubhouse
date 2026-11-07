@@ -48,6 +48,8 @@ import type { ManagedAgentSetup } from '../../../shared/managed-agents-types';
 import { useManagedFlag } from '../managed/managed-flag';
 import { ManagedBuilder, PreviewPane } from '../managed/ManagedBuilder';
 import { ManagedGeneralSection } from '../managed/ManagedGeneralSection';
+import { legacyUse } from '../managed/legacy';
+import { isDispatcherAgent } from '../dispatcher/dispatcherStore';
 
 interface Props {
   agent: Agent;
@@ -1288,6 +1290,7 @@ export function AgentSettingsView({ agent }: Props) {
           clubhouseFeatures={clubhouseFeatures}
           onClubhouseFeaturesChange={setClubhouseFeatures}
           isRunning={isRunning}
+          legacy={isDispatcherAgent(agent) ? null : legacyUse({ managed: managedSetup ?? undefined, clubhouseModeOverride, persona: agentPersona }, clubhouseActive)}
         />
       )}
 
@@ -1686,7 +1689,7 @@ export function AgentSettingsView({ agent }: Props) {
             <SectionHeading title="Instructions" sub={<span className="font-mono">{instructionsFileLabel}</span>} />
             {instructionsEditor}
             {skillsSection}
-            {definitionsSection}
+            {!managedFlag && definitionsSection}
             {mcpSections}
             <SectionHeading title="Permissions" sub={<span className="font-mono">{permissionsPathLabel}</span>} />
             {permissionsEditor}

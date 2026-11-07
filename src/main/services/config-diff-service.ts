@@ -38,8 +38,9 @@ export async function computeConfigDiff(params: {
     return { agentId, agentName: '', hasDiffs: false, items: [] };
   }
 
-  // Skip if agent opted out of materialization
-  if (agent.clubhouseModeOverride) {
+  // Skip if agent opted out of materialization. A Clubhouse-managed agent never
+  // takes the Clubhouse Mode path (#2896), so its files aren't drift from the defaults.
+  if (agent.clubhouseModeOverride || agent.managed) {
     return { agentId, agentName: agent.name, hasDiffs: false, items: [] };
   }
 

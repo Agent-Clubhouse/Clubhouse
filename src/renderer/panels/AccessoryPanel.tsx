@@ -30,6 +30,7 @@ const MANAGED_PAGES: SettingsCategory[] = [
   { label: 'Templates', page: 'managed-templates', group: 'managed' },
   { label: 'Orchestration', page: 'managed-orchestration', group: 'managed' },
   { label: 'Helpers', page: 'helpers', group: 'managed' },
+  { label: 'Switch agents', page: 'managed-switch', group: 'managed' },
 ];
 
 /**

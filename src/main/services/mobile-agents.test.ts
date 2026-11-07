@@ -230,6 +230,12 @@ describe('agent settings', () => {
       },
     });
   });
+  it('has no Clubhouse Mode switch for a Clubhouse-managed agent, even in a Clubhouse Mode project (#2901)', async () => {
+    vi.mocked(isClubhouseModeEnabled).mockReturnValue(true);
+    const result = await buildAgentSettings(project, agent({ managed: { version: 1, blocks: [], skills: [], mcps: [] } }), 'sleeping');
+    expect(result.settings.clubhouseMode).toEqual({ value: null, editable: 'never', projectEnabled: false });
+    vi.mocked(isClubhouseModeEnabled).mockReturnValue(false);
+  });
   it('resolves inherited auto-sleep from the app setting, and runtime from the live agent', async () => {
     vi.mocked(isClubhouseModeEnabled).mockReturnValue(true);
     const result = await buildAgentSettings(project, agent({ orchestrator: 'codex-cli', clubhouseModeOverride: true }), 'running');

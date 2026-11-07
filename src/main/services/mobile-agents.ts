@@ -284,7 +284,8 @@ export async function buildAgentSettings(
   const appMinutes = chatIdleSettings.getSettings().idleTimeoutMinutes;
   const idle = normalizeIdleSleep(config.idleSleep);
   const resolved = resolveIdleSleep(idle, appMinutes);
-  const clubhouseProject = !dispatcher && isClubhouseModeEnabled(project.path);
+  // A Clubhouse-managed agent never takes the Clubhouse Mode path (#2896), so it has no switch for it.
+  const clubhouseProject = !dispatcher && !config.managed && isClubhouseModeEnabled(project.path);
   // The Dispatcher's orchestration settings are locked (#2533), so it has none to show.
   const orchestration = dispatcher ? null : await orchestrationOf(project.path, config);
   const routing = mobileHelperRoutingDetail(config.routing);
