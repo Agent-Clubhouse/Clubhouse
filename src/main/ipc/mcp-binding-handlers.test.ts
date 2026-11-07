@@ -4,7 +4,7 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
   app: { getPath: () => '/tmp/clubhouse-test' },
   BrowserWindow: {
-    getAllWindows: () => [],
+    getAllWindows: (): ReturnType<typeof BrowserWindow.getAllWindows> => [],
     fromWebContents: vi.fn(),
   },
 }));
@@ -12,12 +12,12 @@ vi.mock('electron', () => ({
 vi.mock('../services/mcp-settings', () => ({
   isMcpEnabledForAny: vi.fn(() => true),
   notifyMcpEnablementChanged: vi.fn(),
-  onMcpEnablementChanged: vi.fn(() => () => undefined),
+  onMcpEnablementChanged: vi.fn((): (() => void) => (): undefined => undefined),
   mcpSettingsStore: { get: vi.fn(() => ({})), save: vi.fn() },
 }));
 
 vi.mock('../services/orchestration-policy', () => ({
-  watchMcpForOrchestration: vi.fn(() => () => undefined),
+  watchMcpForOrchestration: vi.fn((): (() => void) => (): undefined => undefined),
 }));
 
 vi.mock('../services/clubhouse-mcp', () => ({
@@ -89,18 +89,18 @@ vi.mock('../services/canvas-wire-source', () => ({
 
 vi.mock('../services/helper-wire-source', () => ({
   helperWireBindingSource: { id: 'helper-wires', prune: true, collect: vi.fn(async () => []) },
-  watchHelperWires: vi.fn(() => () => undefined),
+  watchHelperWires: vi.fn((): (() => void) => (): undefined => undefined),
 }));
 
 vi.mock('../services/orchestrator-connections', () => ({
   ORCHESTRATOR_CONNECTION_SOURCE_ID: 'orchestrator-connections',
   orchestratorConnectionSource: { id: 'orchestrator-connections', prune: true, collect: vi.fn(async () => []) },
-  watchOrchestratorConnections: vi.fn(() => () => undefined),
+  watchOrchestratorConnections: vi.fn((): (() => void) => (): undefined => undefined),
 }));
 
 vi.mock('../services/dispatcher-wire-source', () => ({
   dispatcherWireBindingSource: { id: 'dispatcher-wires', prune: true, collect: vi.fn(async () => []) },
-  watchDispatcherWires: vi.fn(() => () => undefined),
+  watchDispatcherWires: vi.fn((): (() => void) => (): undefined => undefined),
 }));
 
 import { ipcMain, BrowserWindow } from 'electron';
@@ -124,6 +124,7 @@ import { helperWireBindingSource, watchHelperWires } from '../services/helper-wi
 import { orchestratorConnectionSource, watchOrchestratorConnections } from '../services/orchestrator-connections';
 import { dispatcherConnectionSource, isRemovalUnsaved } from '../services/dispatcher-connections';
 import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/dispatcher-wire-source';
+import { registerAgentTools } from '../services/clubhouse-mcp/tools/agent-tools';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import {
   registerMcpBindingHandlers,
@@ -148,6 +149,7 @@ beforeEach(() => {
     return undefined as any;
   });
   _resetHandlersForTesting();
+  vi.mocked(isMcpEnabledForAny).mockReturnValue(true);
   registerMcpBindingHandlers();
   mockGet.mockReset();
   mockFromWebContents.mockReset();
@@ -193,13 +195,41 @@ describe('mcp-binding-handlers registration', () => {
     expect(vi.mocked(ipcMain.handle).mock.calls.length).toBe(callCount);
   });
 
-  it('does not register when MCP is disabled', () => {
+  it('registers only an empty read when MCP is disabled, without starting services', () => {
     vi.mocked(isMcpEnabledForAny).mockReturnValue(false);
     handlers.clear();
-    vi.mocked(ipcMain.handle).mockClear();
+    vi.clearAllMocks();
     _resetHandlersForTesting();
     registerMcpBindingHandlers();
-    expect(ipcMain.handle).not.toHaveBeenCalled();
+    registerMcpBindingHandlers();
+    expect([...handlers.keys()]).toEqual([IPC.MCP_BINDING.GET_BINDINGS]);
+    expect(ipcMain.handle).toHaveBeenCalledTimes(1);
+    expect(getHandler(IPC.MCP_BINDING.GET_BINDINGS)()).toEqual([]);
+    expect(bindingManager.getAllBindings).not.toHaveBeenCalled();
+    expect(bindingManager.onChange).not.toHaveBeenCalled();
+    expect(registerAgentTools).not.toHaveBeenCalled();
+    expect(registerConnectionTools).not.toHaveBeenCalled();
+    expect(bridgeServer.start).not.toHaveBeenCalled();
+  });
+
+  it('keeps the same read across disabled-to-enabled registration without duplicates', () => {
+    vi.mocked(isMcpEnabledForAny).mockReturnValue(false);
+    handlers.clear();
+    vi.clearAllMocks();
+    _resetHandlersForTesting();
+    registerMcpBindingHandlers();
+    const read = getHandler(IPC.MCP_BINDING.GET_BINDINGS);
+    expect(read()).toEqual([]);
+    vi.mocked(isMcpEnabledForAny).mockReturnValue(true);
+    registerMcpBindingHandlers();
+    expect(getHandler(IPC.MCP_BINDING.GET_BINDINGS)).toBe(read);
+    expect(vi.mocked(ipcMain.handle).mock.calls.filter(([channel]) => channel === IPC.MCP_BINDING.GET_BINDINGS)).toHaveLength(1);
+    expect(handlers.has(IPC.MCP_BINDING.BIND)).toBe(true);
+    read();
+    expect(bindingManager.getAllBindings).toHaveBeenCalledTimes(1);
+    vi.mocked(isMcpEnabledForAny).mockReturnValue(false);
+    expect(read()).toEqual([]);
+    expect(bindingManager.getAllBindings).toHaveBeenCalledTimes(1);
   });
 
   it('subscribes to binding onChange for broadcast', () => {
@@ -207,7 +237,7 @@ describe('mcp-binding-handlers registration', () => {
   });
 
   it('broadcasts bindings when onChange fires', () => {
-    const bindings = [{ agentId: 'a1', targets: [] }];
+    const bindings: Array<{ agentId: string; targets: never[] }> = [{ agentId: 'a1', targets: [] }];
     vi.mocked(bindingManager.getAllBindings).mockReturnValue(bindings as any);
     const onChangeCallback = vi.mocked(bindingManager.onChange).mock.calls[0][0] as () => void;
     onChangeCallback();

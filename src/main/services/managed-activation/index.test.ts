@@ -19,8 +19,8 @@ vi.mock('../agent-settings-service', () => ({ readLaunchWrapper: async () => W.w
 vi.mock('child_process', () => ({ execFile: (...args: unknown[]) => W.execute(...args) }));
 import { createAssetCatalogStore } from '../asset-catalog/store';
 import { emptyComposition } from '../asset-catalog/planner';
-import { adoptManagedActivation, previewManagedActivation, withManagedActivationLaunch, readManagedActivation } from './index';
-import { withAgentActivity } from '../agent-transition';
+import { adoptManagedActivation, previewManagedActivation, withManagedActivationLaunch, readManagedActivation, unassignManagedActivation } from './index';
+import { agentTransitionBusy, withAgentActivity } from '../agent-transition';
 import type { BaseAdoption } from '../../../shared/asset-catalog-types';
 const platform = process.platform;
 const adoption: BaseAdoption = { content: { mode: 'takeable' }, structure: { mode: 'accepted' } };
@@ -66,6 +66,18 @@ describe('guarded production activation entry points with fake CLI flag evidence
     expect(await fs.readdir(workspacePath)).toEqual([]);
     const state = (await readManagedActivation('agent-1'))!;
     expect(state.generations[state.desired!].runs[0]).toMatchObject({ outcome: 'pty_process_created', endedAt: expect.any(String) });
+  });
+  it('owns the transition while preparing a local target guard and checks it at adoption/unassignment commit', async () => {
+    const delivery = await preview();
+    const prepare = vi.fn(async () => {
+      expect(agentTransitionBusy('agent-1')).toBe(true);
+      return () => { expect(agentTransitionBusy('agent-1')).toBe(true); throw new Error('current target changed'); };
+    });
+    await expect(adoptManagedActivation('agent-1', delivery.token, { prepare })).rejects.toThrow('current target changed');
+    expect(await readManagedActivation('agent-1')).toBeNull(); expect(prepare).toHaveBeenCalledOnce();
+    const state = await adoptManagedActivation('agent-1', delivery.token);
+    await expect(unassignManagedActivation('agent-1', state.revision, { prepare })).rejects.toThrow('current target changed');
+    expect(await readManagedActivation('agent-1')).toEqual(state);
   });
   it('rejects commit when installed selection moves A to B even though A remains unchanged', async () => {
     const delivery = await preview(); const original = W.binary;

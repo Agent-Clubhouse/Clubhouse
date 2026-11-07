@@ -43,6 +43,7 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
     { label: 'Helpers', page: 'helpers' },
     { label: 'Dispatcher', page: 'dispatcher' },
     { label: 'Profiles', page: 'profiles' },
+    { label: 'Skill library', page: 'skill-library' },
     { label: 'Display & UI', page: 'display' },
     { label: 'External editor', page: 'editor' },
     { label: 'Keyboard shortcuts', page: 'keyboard-shortcuts' },

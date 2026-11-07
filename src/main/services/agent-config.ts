@@ -1,3 +1,4 @@
+import { commitCreationComposition } from './new-agent-composition-lifecycle';
 import { UnsupportedPermissionRulesError } from './permission-rules-error';
 import { noteProviderSelection, withAgentActivity } from './agent-transition';
 import { execFile } from 'child_process';
@@ -1667,6 +1668,8 @@ interface ActiveCreation {
   /** The project path the creation was started with (the cache key). */
   projectPath: string;
   controller: AbortController;
+  /** Survives removal of the journal at ready, preventing cancel/delete races. */
+  compositionAttempted?: boolean;
   /** Settles once the creation has finished, including its cleanup. */
   settled: Promise<void>;
 }
@@ -1736,7 +1739,54 @@ function planDurableWorktree(projectPath: string, name: string, options: Durable
   }
 }
 
+/** Issued only by the live creation owner; never accepted from renderer input. */
+export interface CreationCompositionReservation {
+  readonly agentId: string;
+  readonly reservationId: string;
+  /** Must be called at the actual catalog rename boundary, not only at entry. */
+  assertCurrent(): void;
+}
+
+const issuedCompositionReservations = new WeakSet<CreationCompositionReservation>();
+export function assertCreationCompositionReservation(reservation: CreationCompositionReservation, agentId: string): void {
+  if (!issuedCompositionReservations.has(reservation) || reservation.agentId !== agentId) throw new CreationCompositionRetainedError();
+  reservation.assertCurrent();
+}
+
+export class CreationCompositionRetainedError extends Error {
+  constructor() { super('Creation stopped with a composition save pending reconciliation. The failed record and catalog assets were retained.'); }
+}
+
+export interface DurableCreationIdReservation { readonly agentId: string; readonly expiresAt: number }
+const draftIds = new Map<DurableCreationIdReservation, { projectPath: string }>();
+function expireDraftIds(): void {
+  for (const reservation of draftIds.keys()) if (reservation.expiresAt <= Date.now()) draftIds.delete(reservation);
+}
+export function reserveDurableCreationId(projectPath: string): DurableCreationIdReservation {
+  expireDraftIds();
+  if (draftIds.size >= 64) throw new Error('Close an unused New agent preview before opening another.');
+  let agentId = generateDurableId();
+  while (agentIdOwners.has(agentId) || [...draftIds.keys()].some((r) => r.agentId === agentId)) agentId = generateDurableId();
+  const reservation = Object.freeze({ agentId, expiresAt: Date.now() + 10 * 60_000 });
+  draftIds.set(reservation, { projectPath: path.resolve(projectPath) });
+  return reservation;
+}
+export function releaseDurableCreationId(reservation: DurableCreationIdReservation): void { draftIds.delete(reservation); }
+function claimDurableCreationId(reservation: DurableCreationIdReservation, projectPath: string): string {
+  expireDraftIds();
+  const owned = draftIds.get(reservation);
+  if (!owned || owned.projectPath !== path.resolve(projectPath) || agentIdOwners.has(reservation.agentId)) {
+    throw new Error('New agent preview expired or its target changed. Preview again.');
+  }
+  draftIds.delete(reservation);
+  return reservation.agentId;
+}
+
 export interface DurableCreationRunOptions {
+  /** Opaque main-owned identity, consumed once after creation validation. */
+  idReservation?: DurableCreationIdReservation;
+  /** Required main-only save; rejects creation on failure. Legacy inject stays best effort. */
+  commitComposition?: (config: DurableAgentConfig, reservation: CreationCompositionReservation) => Promise<void>;
   /** Send the stages to onDurableCreationEvent listeners (the asynchronous API does). */
   emitEvents?: boolean;
   /**
@@ -2015,6 +2065,7 @@ export async function beginDurableCreation(
   const parentAgentId = params.parentAgentId;
   const problem = creationProblem(projectPath, plan, agents, folderOnDisk, parentAgentId, parentAgents ?? agents);
   if (problem) throw problem;
+  const reservedId = options.idReservation ? claimDurableCreationId(options.idReservation, projectPath) : undefined;
   let folderKey: string | undefined;
   let branchReservation: string | undefined;
   if (plan) {
@@ -2026,8 +2077,9 @@ export async function beginDurableCreation(
     branchReservation = key;
   }
 
-  let id = generateDurableId();
-  while (agentIdOwners.has(id)) id = generateDurableId();
+  expireDraftIds();
+  let id = reservedId ?? generateDurableId();
+  while (agentIdOwners.has(id) || (!reservedId && [...draftIds.keys()].some((r) => r.agentId === id))) id = generateDurableId();
   const startedAt = new Date().toISOString();
   const config: DurableAgentConfig = {
     id,
@@ -2144,6 +2196,8 @@ async function runDurableCreation(
   }, CREATION_HEARTBEAT_MS);
   heartbeat.unref?.();
 
+  let compositionAttempted = false;
+  let compositionJournal: DurableAgentCreation['composition'];
   let ownsFolder = false;
   let branchOwned = false;
   let branchStartSha: string | undefined;
@@ -2268,12 +2322,45 @@ async function runDurableCreation(
         });
       }
     }
+    if (options.commitComposition) {
+      const reservationId = randomUUID();
+      const reservation: CreationCompositionReservation = Object.freeze({
+        agentId: id, reservationId,
+        assertCurrent: () => {
+          checkCancelled();
+          if (activeCreations.get(id) !== active) throw new DurableCreationCancelledError();
+        },
+      });
+      issuedCompositionReservations.add(reservation);
+      await commitCreationComposition({
+        assertCurrent: reservation.assertCurrent,
+        prepare: async () => {
+          // Set before persistence: even an ambiguous journal write must retain the record.
+          compositionAttempted = true;
+          active.compositionAttempted = true;
+          compositionJournal = { reservationId, agentId: id, beforeRevision: 0, expectedRevision: 1, phase: 'prepared' };
+          await update((agent) => {
+            if (!agent.creation) throw new DurableCreationCancelledError();
+            agent.creation.composition = { ...compositionJournal! };
+          }, true);
+        },
+        commit: () => options.commitComposition!(cloneAgent(initial), reservation),
+        recordCommitted: async () => {
+          await update((agent) => {
+            if (agent.creation?.composition?.reservationId !== reservationId) throw new CreationCompositionRetainedError();
+            agent.creation.composition.phase = 'committed';
+            compositionJournal = { ...agent.creation.composition };
+          }, true);
+        },
+      });
+    }
     checkCancelled();
     emit('config_injected', await reachStage('config_injected'));
 
     checkCancelled();
     // Flushed when a worktree was made, so a quit right after ready is not mistaken for an interrupted creation.
-    const ready = await update((agent) => { delete agent.creation; }, !!plan);
+    const ready = await update((agent) => { checkCancelled(); delete agent.creation; }, !!plan || compositionAttempted);
+    if (compositionAttempted) checkCancelled();
     emit('ready', ready);
     return ready;
   } catch (err) {
@@ -2281,14 +2368,14 @@ async function runDurableCreation(
     if (plan) {
       await cleanupPartialWorktree(projectPath, { id, wtPath: plan.wtPath, ownsFolder, branch: plan.branch, branchOwned, branchStartSha });
     }
-    if (cancelled) {
+    if (cancelled && !compositionAttempted) {
       await removeAgentRecord(projectPath, id);
       appLog('core:agent-config', 'info', 'Agent creation cancelled and cleaned up', { meta: { agentId: id } });
       emit('cancelled');
       throw new DurableCreationCancelledError();
     }
-    const reason = errorMessage(err);
-    if (options.keepFailedRecord) {
+    const reason = compositionAttempted && err instanceof DurableCreationCancelledError ? new CreationCompositionRetainedError().message : errorMessage(err);
+    if (options.keepFailedRecord || compositionAttempted) {
       const failed = await mutateAgentRecord(projectPath, id, (agent) => {
         // The worktree and any branch Clubhouse made are gone; a later delete must not touch anything.
         delete agent.worktreePath;
@@ -2296,13 +2383,14 @@ async function runDurableCreation(
         delete agent.branchOwned;
         delete agent.branchStartSha;
         const { owner: _owner, heartbeatAt: _beat, folderOwned: _folder, ...rest } = agent.creation ?? { startedAt: initial.createdAt, state: 'failed' as const };
-        agent.creation = { ...rest, state: 'failed', stage: 'failed', reason };
+        agent.creation = { ...rest, ...(compositionJournal && { composition: compositionJournal }), state: 'failed', stage: 'failed', reason };
       }, { flush: true });
       emit('failed', failed ?? undefined, reason);
     } else {
       await removeAgentRecord(projectPath, id);
       emit('failed', undefined, reason);
     }
+    if (compositionAttempted && err instanceof DurableCreationCancelledError) throw new CreationCompositionRetainedError();
     throw err;
   } finally {
     clearInterval(heartbeat);
@@ -2331,7 +2419,9 @@ async function stopDurableCreation(projectPath: string, agentId: string): Promis
 export async function cancelDurableCreation(projectPath: string, agentId: string): Promise<boolean> {
   const active = activeCreations.get(agentId);
   if (!(await stopDurableCreation(projectPath, agentId))) return false;
-  if ((await readAgentsEntry(active!.projectPath)).agentsById.has(agentId)) {
+  const retained = (await readAgentsEntry(active!.projectPath)).agentsById.get(agentId);
+  if (active!.compositionAttempted || retained?.creation?.composition) throw new CreationCompositionRetainedError();
+  if (retained) {
     await deleteDurable(active!.projectPath, agentId);
   }
   return true;

@@ -363,6 +363,61 @@ describe('startDurableCreation (#2226)', () => {
     expect(inject).toHaveBeenCalledWith(expect.objectContaining({ id: started.agentId, worktreePath: agentPath('injected') }));
   });
 
+  it('persists the owned marker before required composition save and records it before ready', async () => {
+    let assertCurrent: (() => void) | undefined;
+    const started = await startDurableCreation(PROJECT_PATH, { name: 'composed', color: 'indigo', useWorktree: false }, {
+      commitComposition: async (config, reservation) => {
+        expect(diskAgents().find((a) => a.id === config.id)?.creation?.composition).toEqual({
+          agentId: config.id, reservationId: reservation.reservationId,
+          beforeRevision: 0, expectedRevision: 1, phase: 'prepared',
+        });
+        reservation.assertCurrent();
+        assertCurrent = reservation.assertCurrent;
+      },
+    });
+    expect(await started.done).toBe('ready');
+    expect(events.find((e) => e.stage === 'config_injected')?.config?.creation?.composition?.phase).toBe('committed');
+    expect(assertCurrent).toBeDefined();
+    expect(() => assertCurrent!()).toThrow();
+    expect(diskAgents().find((a) => a.id === started.agentId)?.creation).toBeUndefined();
+  });
+
+  it('required composition rejection retains a failed journal and never emits ready', async () => {
+    const started = await startDurableCreation(PROJECT_PATH, { name: 'failed-composition', color: 'indigo', useWorktree: false }, {
+      commitComposition: async () => { throw undefined; },
+    });
+    expect(await started.done).toBe('failed');
+    expect(events.some((e) => e.stage === 'ready')).toBe(false);
+    expect(diskAgents().find((a) => a.id === started.agentId)?.creation).toMatchObject({
+      state: 'failed', composition: { phase: 'prepared', expectedRevision: 1 },
+    });
+  });
+
+  it('cancellation during required save refuses deletion and preserves the failed record', async () => {
+    let cancellation: Promise<unknown> | undefined;
+    const started = await startDurableCreation(PROJECT_PATH, { name: 'cancel-composition', color: 'indigo', useWorktree: false }, {
+      commitComposition: async (config) => {
+        // Observe immediately; do not await the cancellation controller from its own root.
+        cancellation = cancelDurableCreation(PROJECT_PATH, config.id).then(
+          () => 'unexpected-success', (error: unknown) => error,
+        );
+      },
+    });
+    expect(await started.done).toBe('failed');
+    expect(await cancellation).toBeInstanceOf(Error);
+    expect(events.some((e) => e.stage === 'ready' || e.stage === 'cancelled')).toBe(false);
+    expect(diskAgents().find((a) => a.id === started.agentId)?.creation).toMatchObject({
+      state: 'failed', composition: { phase: 'committed' },
+    });
+  });
+
+  it('retains legacy best-effort injection failure behavior', async () => {
+    const started = await startDurableCreation(PROJECT_PATH, { name: 'legacy-inject', color: 'indigo', useWorktree: false }, {
+      inject: async () => { throw new Error('legacy injection failure'); },
+    });
+    expect(await started.done).toBe('ready');
+  });
+
   it('throws up front for a bad request, without a record', async () => {
     await expect(startDurableCreation(PROJECT_PATH, { name: 'x', color: 'indigo', folderName: '..' })).rejects.toThrow(/agent name/);
     expect(events).toEqual([]);
@@ -705,6 +760,20 @@ describe('interrupted creation recovery (#2226)', () => {
     await listDurable(PROJECT_PATH);
     expect(dirs.has(outside)).toBe(true);
     expect(fsp.rm).not.toHaveBeenCalledWith(outside, expect.anything());
+  });
+
+  it.each(['prepared', 'committed'] as const)('retains persisted %s composition ownership on restart without touching catalog bytes', async (phase) => {
+    const record = creatingRecord();
+    const composition = { reservationId: 'prior-reservation', agentId: record.id, beforeRevision: 0 as const, expectedRevision: 1 as const, phase };
+    record.creation!.composition = composition;
+    files.set(CONFIG_PATH, JSON.stringify([record]));
+    const catalogPath = path.join(PROJECT_PATH, 'catalog-sentinel.json');
+    // A newer revision is opaque to creation recovery and must remain untouched.
+    const newer = JSON.stringify({ compositions: { [record.id]: { revision: 2 } } });
+    files.set(catalogPath, newer);
+    await listDurable(PROJECT_PATH);
+    expect(diskAgents().find((a) => a.id === record.id)?.creation).toMatchObject({ state: 'failed', composition });
+    expect(files.get(catalogPath)).toBe(newer);
   });
 
   it('leaves alone a creation another live Clubhouse instance is running (H3)', async () => {

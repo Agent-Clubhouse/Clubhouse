@@ -1,3 +1,4 @@
+import { consumeNewAgentComposition } from '../services/new-agent-composition-drafts';
 import { contextWindowOptionsFor } from '../services/context-window';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -254,6 +255,23 @@ export function registerAgentHandlers(): void {
       assertCreatable(projectPath);
       const { agentId, config } = await startDurableCreation(projectPath, params, personaInjection(projectPath, params));
       return { agentId, config };
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.CREATE_WITH_COMPOSITION, withValidatedArgs(
+    [stringArg(), objectArg<Record<string, unknown>>(), stringArg({ minLength: 1, maxLength: 256 })],
+    async (event, projectPath, rawParams, token) => {
+      const params = parseStartCreationParams(rawParams);
+      assertCreatable(projectPath);
+      const draft = consumeNewAgentComposition(event.sender.id, token, projectPath, params);
+      try {
+        const started = await startDurableCreation(projectPath, params, draft.options);
+        const outcome = await started.done;
+        if (outcome !== 'ready') throw new Error('Agent creation did not complete. Inspect the retained creation record before trying again.');
+        const config = await agentConfig.getDurableConfig(projectPath, started.agentId);
+        if (!config || config.id !== started.agentId || config.creation) throw new Error('Agent creation is not ready.');
+        return config;
+      } finally { draft.release(); }
     },
   ));
 

@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { DurableAgentConfig } from '../../shared/types';
+import type { FinishedQuickAgents, FinishedQuickAgentsChange } from '../../shared/finished-quick-agents';
+import { consumeNewAgentComposition } from '../services/new-agent-composition-drafts';
 import { notifyMcpEnablementChanged } from '../services/mcp-settings';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
@@ -41,6 +44,8 @@ vi.mock('../services/agent-config', () => ({
   getDisposeChecks: vi.fn(async () => ({ dirty: 0, unpushed: 0, unmerged: 0 })),
   disposeHelper: vi.fn(async () => ({ ok: true, message: 'Disposed' })),
 }));
+
+vi.mock('../services/new-agent-composition-drafts', () => ({ consumeNewAgentComposition: vi.fn() }));
 
 vi.mock('../services/agent-creation', async (importOriginal) => ({
   ...await importOriginal<typeof import('../services/agent-creation')>(),
@@ -184,7 +189,7 @@ describe('agent-handlers', () => {
       IPC.AGENT.READ_TRANSCRIPT, IPC.AGENT.GET_TRANSCRIPT_INFO,
       IPC.AGENT.READ_TRANSCRIPT_PAGE, IPC.AGENT.READ_TRANSCRIPT_FROM, IPC.AGENT.IS_HEADLESS_AGENT,
       IPC.AGENT.GET_RUNNING_STATUSES,
-      IPC.AGENT.START_DURABLE_CREATION, IPC.AGENT.CANCEL_DURABLE_CREATION,
+      IPC.AGENT.START_DURABLE_CREATION, IPC.AGENT.CANCEL_DURABLE_CREATION, IPC.AGENT.CREATE_WITH_COMPOSITION,
       IPC.AGENT.FINISHED_QUICK_HYDRATE, IPC.AGENT.FINISHED_QUICK_APPLY,
     ];
     for (const channel of expectedChannels) {
@@ -291,6 +296,72 @@ describe('agent-handlers', () => {
       expect(await handler({}, '/project', 'agent-2')).toBe(true);
       expect(agentCreation.cancelDurableCreation).toHaveBeenCalledWith('/project', 'agent-2');
     });
+  });
+
+  describe('CREATE_WITH_COMPOSITION', () => {
+    const ready: DurableAgentConfig = { id: 'agent-2', name: 'Saved', color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z' };
+    const params = { name: 'Saved', color: 'indigo', useWorktree: false };
+    const event = { sender: { id: 37 } };
+    function gate<T>() {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((done) => { resolve = done; });
+      return { promise, resolve };
+    }
+    it('forwards the sender/token/project and waits for done and persisted-ready read without spawning', async () => {
+      const started = gate<void>(), completed = gate<agentCreation.DurableCreationOutcome>();
+      const reading = gate<void>(), persisted = gate<DurableAgentConfig | null>();
+      const release = vi.fn();
+      const options = { commitComposition: vi.fn(async () => {}) };
+      vi.mocked(consumeNewAgentComposition).mockReturnValueOnce({ options, release });
+      vi.mocked(agentCreation.startDurableCreation).mockImplementationOnce(async () => {
+        started.resolve();
+        return { agentId: ready.id, config: { ...ready, creation: { state: 'creating', startedAt: ready.createdAt } }, done: completed.promise };
+      });
+      vi.mocked(agentConfig.getDurableConfig).mockImplementationOnce(async () => { reading.resolve(); return persisted.promise; });
+      let settled = false;
+      const operation = handlers.get(IPC.AGENT.CREATE_WITH_COMPOSITION)!(event, '/project', params, 'review-token').then(
+        (value: unknown) => { settled = true; return { ok: true as const, value }; },
+        (error: unknown) => { settled = true; return { ok: false as const, error }; },
+      );
+      try {
+        expect(await Promise.race([started.promise.then(() => true), operation.then(() => false)])).toBe(true);
+        expect(consumeNewAgentComposition).toHaveBeenCalledWith(37, 'review-token', '/project', expect.objectContaining(params));
+        expect(agentCreation.startDurableCreation).toHaveBeenCalledWith('/project', expect.objectContaining(params), options);
+        expect(agentConfig.getDurableConfig).not.toHaveBeenCalled();
+        expect(settled).toBe(false); expect(release).not.toHaveBeenCalled();
+        completed.resolve('ready');
+        expect(await Promise.race([reading.promise.then(() => true), operation.then(() => false)])).toBe(true);
+        expect(agentConfig.getDurableConfig).toHaveBeenCalledWith('/project', ready.id);
+        expect(settled).toBe(false); expect(release).not.toHaveBeenCalled();
+        persisted.resolve(ready);
+        expect(await operation).toEqual({ ok: true, value: ready });
+        expect(release).toHaveBeenCalledTimes(1);
+        expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+        expect(agentConfig.createDurable).not.toHaveBeenCalled();
+        expect(applyPersonaToAgent).not.toHaveBeenCalled();
+      } finally {
+        completed.resolve('ready'); persisted.resolve(ready); await operation;
+      }
+    });
+    it.each(['failed', 'cancelled', 'start-rejection', 'missing', 'mismatch', 'still-creating'] as const)(
+      'releases the consumed draft on %s and does not return or spawn a ready agent', async (failure) => {
+        const release = vi.fn();
+        vi.mocked(consumeNewAgentComposition).mockReturnValueOnce({ options: {}, release });
+        if (failure === 'start-rejection') vi.mocked(agentCreation.startDurableCreation).mockRejectedValueOnce(undefined);
+        else vi.mocked(agentCreation.startDurableCreation).mockResolvedValueOnce({ agentId: ready.id, config: ready,
+          done: Promise.resolve(failure === 'failed' || failure === 'cancelled' ? failure : 'ready') });
+        if (failure === 'missing') vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce(null);
+        if (failure === 'mismatch') vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce({ ...ready, id: 'unrelated' });
+        if (failure === 'still-creating') vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce({ ...ready, creation: { state: 'creating', startedAt: ready.createdAt } });
+        const operation = handlers.get(IPC.AGENT.CREATE_WITH_COMPOSITION)!(event, '/project', params, 'review-token');
+        if (failure === 'start-rejection') await expect(operation).rejects.toBeUndefined();
+        else await expect(operation).rejects.toThrow();
+        expect(release).toHaveBeenCalledTimes(1);
+        if (failure === 'failed' || failure === 'cancelled' || failure === 'start-rejection') expect(agentConfig.getDurableConfig).not.toHaveBeenCalled();
+        expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
+        expect(agentConfig.createDurable).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('Dispatcher singleton guards (#2535)', () => {
@@ -1241,7 +1312,7 @@ describe('agent-handlers: finished quick agents (#2467)', () => {
   });
 
   it('hands the window\'s localStorage lists to the store and returns the stored lists', async () => {
-    const legacy = { p: [] };
+    const legacy: FinishedQuickAgents = { p: [] };
     expect(await handlers.get(IPC.AGENT.FINISHED_QUICK_HYDRATE)!({}, legacy)).toEqual({ p: [] });
     expect(finishedQuickStore.hydrateFinishedQuickAgents).toHaveBeenCalledWith(legacy);
   });
@@ -1260,7 +1331,7 @@ describe('agent-handlers: finished quick agents (#2467)', () => {
     const send = vi.fn();
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([{ isDestroyed: () => false, webContents: { isDestroyed: () => false, send } }] as never);
     const listener = vi.mocked(finishedQuickStore.onFinishedQuickAgentsChange).mock.calls.at(-1)![0];
-    const change = { state: { p: [] }, acked: { w: 1 } };
+    const change: FinishedQuickAgentsChange = { state: { p: [] }, acked: { w: 1 } };
     listener(change);
     expect(send).toHaveBeenCalledWith(IPC.AGENT.FINISHED_QUICK_CHANGED, change);
   });

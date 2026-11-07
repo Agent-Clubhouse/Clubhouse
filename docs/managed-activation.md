@@ -1,6 +1,6 @@
 # Managed activation backend
 
-This is a bounded backend slice of #2739 and #2819. It does not complete either issue or enable the Builder UI to activate an agent. The main-only API is not registered with IPC, agent tools, or the renderer. No release, installation, real-provider prompt, authentication test, or native instruction-load proof accompanies this change.
+This is a bounded slice of #2739 and #2819. It does not complete either issue. A separate local-user adoption surface now calls the main-only service through validated IPC; agent tools cannot call it. See [the adoption integration guide](managed-activation-ui.md) for its saved-revision contract and review checklist. No release, installation, real-provider prompt, authentication test, or native instruction-load proof accompanies this change.
 
 ## Explicit adoption
 
@@ -36,12 +36,16 @@ A persisted unresolved start after app interruption blocks as `activation_runtim
 
 Focused tests cover frozen retention and permissions, preview binding, A-to-B commit/launch regressions, staging interruption/recovery, published edits and observed parent swaps, alias/shared-workspace refusal, unsupported modes, fake capability evidence, skill grammar, actual terminal argument construction, process creation/fast exit, receipt failures, cleanup throw/refusal/timeout and real-exit tracking. Existing identity, provider/model/access, session/wire/worktree settings are not mutated by adoption. Existing runtime session capture keeps its prior behavior.
 
-Still required: user-facing activation/adoption UI and inventory/review boundaries; broader provider/platform/session delivery; hooks/MCP session configuration; native subagent delivery; runtime reconciliation; history retention policy; real installed-path validation and human review. This PR makes no screenshots or visual-proof claim and does not complete #2819 acceptance.
+Still required: human adoption/integration review and inventory/review boundaries; broader provider/platform/session delivery; hooks/MCP session configuration; native subagent delivery; runtime reconciliation; history retention policy; real installed-path validation and human review. This PR makes no screenshots or visual-proof claim and does not complete #2819 acceptance.
 
-## Separate adoption UI integration dependency
+## Adoption integration boundary
 
-The next deliverable is a separate isolated integration draft, preserving the held #2842 checkout and runnable package. It needs a typed local-user IPC/preload bridge for delivery preview/adopt/read/unassign. Main resolves the current agent and project and requires explicit BaseAdoption, the saved revision/current target and the delivery token. The surface must show effective namespaced skills, ambient-context notice and specific block reasons, then refresh receipts with separate desired/prepared/materialized/PTY observations.
+The separate integration draft adds typed local-user delivery preview/adopt/read/unassign IPC. Main resolves the current registered project and agent; the renderer supplies IDs, explicit policy choices, catalog and receipt revisions, and an opaque delivery token only. It cannot supply CLI paths, capabilities, staging destinations, frozen payloads or manifests.
 
-The existing Builder effective preview composes unsaved drafts and is saved-only. It cannot authorize adoption or activate anything. Add a distinct explicit next-start adoption action, separate from Start, with no wake and no invented adoption default. The UI integration depends on the backend contract and Builder surface; both need honest integration and visual review. The #2842 visual hold does not prevent work in a separate checkout, but backend readiness does not constitute that visual or adoption acceptance.
+The commit guard is prepared inside the existing per-agent transition reservation. Registry pending writes/generation cover the actual shared writeStore path (including migration/backup restoration), quarantine and queued user mutations. This evidence is raised before asynchronous I/O, so an outstanding libuv rename cannot evade a final byte check. App-owned registration/config byte hashes and config generation detect intervening changes. The final version check and receipt replacement are synchronous, with no awaited work between them. A refused adoption may leave a reserved historical pin; pins are retained, not swept by generic cleanup. This is a same-app target check, not a filesystem sandbox guarantee.
+
+Builder's effective preview can include unsaved drafts and cannot authorize adoption. Next-start adoption uses a separate saved delivery preview; both policy choices start unset, and draft, target, saved revision, receipt revision or policy changes invalidate approval. Reads use sequence and mutation epochs plus monotonic receipt revisions, so old same-target reads/errors cannot replace newer adoption/unassignment state. Adoption neither starts nor wakes the agent.
 
 The native PTY-create boundary has a synchronous final compatibility and CLI identity check after asynchronous cwd validation. A shutdown/policy rejection after intent is recorded as a known non-creation; secondary receipt persistence failures preserve the original rejection and leave intent conservatively unresolved.
+
+The held #2842 checkout and runnable package remain unchanged. Both Builder and this separate integration need human visual/integration review; backend readiness does not constitute visual acceptance.

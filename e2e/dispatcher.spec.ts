@@ -196,8 +196,9 @@ test('Clubhouse MCP saved off: no Dispatcher, no bridge, until MCP is turned on'
   await expect(w.locator('[data-testid="chrome-sidebar"]')).toBeVisible({ timeout: 15_000 });
   await expect(row(w)).toHaveCount(0);
   expect(fs.existsSync(dispatcherDir())).toBe(false);
-  // The bridge and these handlers share one gate, and only this one can be seen from here.
-  expect(await w.evaluate(() => window.clubhouse.mcpBinding.getBindings().then(() => 'up', () => 'down'))).toBe('down');
+  // The disabled read is available without enabling the bridge or Dispatcher.
+  // Bridge startup remains covered independently by the handler service tests.
+  expect(await w.evaluate(() => window.clubhouse.mcpBinding.getBindings())).toEqual([]);
 
   await openSettingsPage(w, 'Dispatcher');
   const enabled = w.locator('[data-testid="dispatcher-enabled"]');

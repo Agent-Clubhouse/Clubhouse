@@ -15,15 +15,15 @@ class BundleError extends Error {
 const refuse = (code: SkillBundleErrorCode): never => { throw new BundleError(code); };
 
 /** Resolve IDs in main. The guard is synchronous and runs at each catalog rename. */
-async function registeredContext(context: SkillBundleContext): Promise<() => void> {
+export async function registeredSkillBundleContext(context: SkillBundleContext, expectedProjectPath?: string): Promise<() => void> {
   const before = projectRegistryMutationState();
   if (before.pending) refuse('target_changed');
   const project = (await peekProjects()).find((p) => p.id === context.projectId);
-  if (!project || isDispatcherPath(project.path)) refuse('target_changed');
+  if (!project || isDispatcherPath(project.path) || (expectedProjectPath !== undefined && project.path !== expectedProjectPath)) refuse('target_changed');
   const configGeneration = agentConfigGeneration();
   if (context.agentId) {
     const agent = (await peekDurableConfigs(project.path)).find((a) => a.id === context.agentId);
-    if (!agent || agent.creation || agent.disposedAt || agent.parentAgentId) refuse('target_changed');
+    if (!agent || agent.persona === 'dispatcher' || agent.creation || agent.disposedAt || agent.parentAgentId) refuse('target_changed');
   }
   const guard = () => {
     const current = projectRegistryMutationState();
@@ -46,11 +46,11 @@ function summary(entry: CatalogEntry): SkillBundleSummary {
 
 /** Dependency injection is main-only; the preload receives just safe DTO operations. */
 export function createCatalogSkillBundleEditor(options: {
-  resolveContext?: typeof registeredContext;
+  resolveContext?: typeof registeredSkillBundleContext;
   store?: (guard: () => void) => AssetCatalogStore;
   now?: () => number;
 } = {}): SkillBundleEditorBridge {
-  const resolveContext = options.resolveContext ?? registeredContext;
+  const resolveContext = options.resolveContext ?? registeredSkillBundleContext;
   const storeFor = options.store ?? ((guard) => createAssetCatalogStore({ dir: assetCatalogDir(),
     rename: async (from, to) => {
       // Same-app pending registry I/O is tracked before submission. No async gap
@@ -92,6 +92,23 @@ export function createCatalogSkillBundleEditor(options: {
     return { ...summary(entry), payload: await store.readRevision(entry.id, entry.headRevision) as SkillAssetPayload };
   }
   return {
+    create: (request) => perform(request.context, async (store) => {
+      if (!['library', 'project', 'agent'].includes(request.scope)
+        || (request.scope === 'agent' && !request.context.agentId)) refuse('invalid_request');
+      const owner = request.scope === 'agent' ? { kind: 'agent' as const, agentId: request.context.agentId! }
+        : request.scope === 'project' ? { kind: 'project' as const, projectId: request.context.projectId }
+          : { kind: 'library' as const };
+      const entry = await store.createAsset({ kind: 'skill', name: request.name, owner, payload: structuredClone(request.payload) });
+      return document(store, entry);
+    }),
+    copy: (request) => perform(request.context, async (store) => {
+      if (!request.context.agentId) refuse('invalid_request');
+      const entry = await entryFor(store, request.context, request.assetId);
+      if (entry.headRevision !== request.expectedRevision) refuse('stale_revision');
+      const copy = await store.copyAsset({ assetId: entry.id, revision: request.expectedRevision,
+        expectedHeadRevision: request.expectedRevision, agentId: request.context.agentId! });
+      return document(store, copy);
+    }),
     list: (context) => perform(context, async (store) => Object.values((await store.read()).assets)
       .filter((entry) => visible(entry, context)).map(summary)),
     read: (context, assetId) => perform(context, async (store) => document(store, await entryFor(store, context, assetId))),

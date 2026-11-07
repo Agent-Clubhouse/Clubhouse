@@ -77,6 +77,20 @@ describe('explicit managed snapshots and private generation receipts', () => {
     await adopt();
     await expect(service.preview(request)).rejects.toMatchObject({ code: 'activation_stale' });
   });
+  it('checks the trusted target guard after durable temp preparation for adoption and unassignment', async () => {
+    const delivery = await service.preview(request);
+    let prepared = false;
+    const check = () => { expect(prepared).toBe(true); throw new Error('target changed'); };
+    // Observe the temp preparation through the synchronous guard itself.
+    const { readdirSync } = await import('fs');
+    const guard = () => { prepared = readdirSync(path.join(options.dir, 'agent-1')).some((file) => file.endsWith('.tmp')); check(); };
+    await expect(service.adopt({ ...request, previewToken: delivery.token }, guard)).rejects.toThrow('target changed');
+    expect(await service.read('agent-1')).toBeNull();
+    const adopted = await adopt();
+    await expect(service.unassign('agent-1', adopted.revision, guard)).rejects.toThrow('target changed');
+    expect(await service.read('agent-1')).toEqual(adopted);
+    expect((await fs.readdir(path.join(options.dir, 'agent-1'))).some((file) => file.endsWith('.tmp'))).toBe(false);
+  });
   it('keeps accepted frozen bytes after catalog edits and unassignment retains pins without deleting any edits', async () => {
     const state = await adopt(); const generation = state.generations[state.desired!];
     const impact = await catalog.previewAssetEdit({ assetId: blockId, payload: { content: 'Future' } });

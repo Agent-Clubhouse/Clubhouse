@@ -548,6 +548,14 @@ export interface DurableAgentCreation {
   stage?: DurableCreationStage;
   /** Why creation failed, as a sentence for the user. */
   reason?: string;
+  /** Main-owned journal: a composition save may have committed; retain on failure. */
+  composition?: {
+    reservationId: string;
+    agentId: string;
+    beforeRevision: 0;
+    expectedRevision: 1;
+    phase: 'prepared' | 'committed';
+  };
   /** True once this creation made the agent's folder itself, so cleanup after a quit may delete it. */
   folderOwned?: boolean;
   /** The Clubhouse process running the creation, so another instance leaves it alone. */
@@ -590,6 +598,7 @@ export interface DurableWorktreeOptions {
 
 /** Everything the asynchronous create API takes (#2226). */
 export interface StartDurableCreationParams extends DurableWorktreeOptions {
+
   name: string;
   color: string;
   model?: string;
@@ -956,7 +965,7 @@ export interface SoundSettings {
   }>;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'mcp' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher';
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'mcp' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher' | 'skill-library';
 
 // --- Chat idle settings ---
 

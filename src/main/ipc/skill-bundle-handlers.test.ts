@@ -14,10 +14,10 @@ beforeEach(() => {
   handlers = new Map();
   vi.mocked(ipcMain.handle).mockImplementation((channel, handler) => { handlers.set(channel, handler as (...args: unknown[]) => unknown); });
   const observe = async () => ({ ok: true as const, value: currentSettingsOrigin() });
-  bridge = { list: vi.fn(observe), read: vi.fn(observe), preview: vi.fn(observe), save: vi.fn(observe) } as unknown as SkillBundleEditorBridge;
+  bridge = { create: vi.fn(observe), copy: vi.fn(observe), list: vi.fn(observe), read: vi.fn(observe), preview: vi.fn(observe), save: vi.fn(observe) } as unknown as SkillBundleEditorBridge;
   registerSkillBundleHandlers(bridge);
 });
-it('registers only four typed catalog operations in local UI audit scope', async () => {
+it('registers typed catalog operations in local UI audit scope', async () => {
   expect([...handlers.keys()]).toEqual(Object.values(IPC.CATALOG_SKILL_BUNDLE));
   const invoke = handlers.get(IPC.CATALOG_SKILL_BUNDLE.LIST)!;
   expect(await invoke({}, context)).toEqual({ ok: true, value: { surface: 'ui' } });
@@ -43,4 +43,17 @@ it.each([
 it.each([0, -1, 1.5, '3', NaN])('requires a saved catalog revision, received %s', (expectedRevision) => {
   expect(() => handlers.get(IPC.CATALOG_SKILL_BUNDLE.SAVE)!({}, { context, assetId: 'asset-1', expectedRevision, token: 'token' })).toThrow();
   expect(bridge.save).not.toHaveBeenCalled();
+});
+
+it('validates complete create and exact-revision copy DTOs without accepting owner or paths', async () => {
+  const create = { context, name: 'Created', scope: 'agent', payload: { skillName: 'created', files: [{ path: 'SKILL.md', content: 'test' }] } };
+  await handlers.get(IPC.CATALOG_SKILL_BUNDLE.CREATE)!({}, create);
+  expect(bridge.create).toHaveBeenCalledWith(create);
+  expect(() => handlers.get(IPC.CATALOG_SKILL_BUNDLE.CREATE)!({}, { ...create, owner: { kind: 'library' } })).toThrow();
+  expect(() => handlers.get(IPC.CATALOG_SKILL_BUNDLE.CREATE)!({}, { ...create, scope: 'outside' })).toThrow();
+  const copy = { context, assetId: 'asset-1', expectedRevision: 1 };
+  await handlers.get(IPC.CATALOG_SKILL_BUNDLE.COPY)!({}, copy);
+  expect(bridge.copy).toHaveBeenCalledWith(copy);
+  expect(() => handlers.get(IPC.CATALOG_SKILL_BUNDLE.COPY)!({}, { ...copy, payload: create.payload })).toThrow();
+  expect(() => handlers.get(IPC.CATALOG_SKILL_BUNDLE.COPY)!({}, { ...copy, expectedRevision: 0 })).toThrow();
 });
