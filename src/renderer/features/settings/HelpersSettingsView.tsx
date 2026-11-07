@@ -17,6 +17,8 @@ import { sameProjectPath } from '../../utils/project-path';
 import { parseHelperCount, useGlobalHelperCap } from '../agents/helpers/orchestration-hooks';
 import { HelperPresetsSection } from './HelperPresetsSection';
 import { SettingsBlock, SettingsField, SettingsPage, SettingsSection, settingsHelp, settingsInput } from './SettingsLayout';
+import { useManagedFlag } from '../managed/managed-flag';
+import { errorText, managed, unwrap, useManagedTemplates } from '../managed/managedApi';
 
 interface OrphanRow {
   projectId: string;
@@ -30,7 +32,64 @@ function formatWhen(iso: string | undefined): string {
   return Number.isFinite(t) ? new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '';
 }
 
+/** Clubhouse-managed agents (#2899): the template a helper gets when its orchestrator names none. */
+function DefaultHelperTemplateSection() {
+  const { value: templates, error: listError } = useManagedTemplates();
+  const [current, setCurrent] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void unwrap(managed().getDefaultHelperTemplate())
+      .then((id) => { if (!cancelled) setCurrent(id); })
+      .catch((err) => { /* telemetry-exempt: shown under the field */ if (!cancelled) setError(errorText(err)); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const choose = async (id: string) => {
+    const previous = current;
+    setCurrent(id);
+    setError(null);
+    setSaving(true);
+    try {
+      await unwrap(managed().setDefaultHelperTemplate(id));
+    } catch (err) {
+      // telemetry-exempt: shown under the field, which goes back to the saved value.
+      setError(errorText(err));
+      setCurrent(previous);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const shownError = error ?? listError;
+  return (
+    <SettingsSection title="Template">
+      <SettingsField
+        label="Default helper template"
+        htmlFor="helpers-default-template"
+        help={shownError
+          ? <span className="text-ctp-error" role="alert">{shownError}</span>
+          : 'Used when an orchestrator starts a helper without naming one. Helpers are always Clubhouse managed.'}
+      >
+        <select
+          id="helpers-default-template"
+          className={`${settingsInput} w-[200px]`}
+          value={current ?? ''}
+          disabled={!templates || current === null || saving}
+          onChange={(e) => void choose(e.target.value)}
+          data-testid="helpers-default-template"
+        >
+          {current !== null && templates && !templates.some((t) => t.id === current) && <option value={current}>{current}</option>}
+          {(templates ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}{t.builtin ? '' : ' (yours)'}</option>)}
+        </select>
+      </SettingsField>
+    </SettingsSection>
+  );
+}
+
 export function HelpersSettingsView() {
+  const managedFlag = useManagedFlag();
   const { cap, loaded } = useGlobalHelperCap();
   const [draft, setDraft] = useState('');
   const [capError, setCapError] = useState<string | null>(null);
@@ -133,7 +192,15 @@ export function HelpersSettingsView() {
         </SettingsField>
       </SettingsSection>
 
-      <HelperPresetsSection />
+      {managedFlag && <DefaultHelperTemplateSection />}
+
+      {managedFlag ? (
+        <HelperPresetsSection
+          title="Smart helper selection"
+          autoLabel="Smart helper selection"
+          footer="Smart helper selection balances load across your providers. Built-in templates ask orchestrators to use it."
+        />
+      ) : <HelperPresetsSection />}
 
       <SettingsSection title="Disposed helpers without an orchestrator" meta={orphans && orphans.length > 0 ? String(orphans.length) : undefined}>
         <SettingsBlock>

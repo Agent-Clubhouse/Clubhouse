@@ -1,0 +1,30 @@
+import { Button } from '../../components/Button';
+import { useUIStore } from '../../stores/uiStore';
+import { SettingsBlock, SettingsPage, SettingsSection, settingsHelp } from '../settings/SettingsLayout';
+
+/**
+ * Settings, Managed agents, Orchestration (#2899): orchestration is a setting
+ * any agent can have, so this page only says where it lives.
+ */
+export function OrchestrationSettingsView() {
+  const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
+  return (
+    <SettingsPage title="Orchestration" description="Agents that start and run helpers." testId="managed-orchestration">
+      <SettingsSection title="Turning it on">
+        <SettingsBlock className="flex flex-col gap-2">
+          <p className="text-[13px] text-ctp-subtext1">
+            Any agent can start helpers. Turn on orchestration in the agent's own settings, on its Helpers page, and set how many helpers it may run.
+            A managed agent also needs the Clubhouse MCP server in its setup.
+          </p>
+          <p className={settingsHelp}>Templates can turn it on for the agents made from them.</p>
+        </SettingsBlock>
+      </SettingsSection>
+      <SettingsSection title="Helpers">
+        <SettingsBlock className="flex items-center gap-3">
+          <p className={`${settingsHelp} flex-1 min-w-0`}>The limit across every orchestrator, the default helper template and Smart helper selection are on the Helpers page.</p>
+          <Button onClick={() => setSettingsSubPage('helpers')} data-testid="managed-orchestration-open-helpers">Open Helpers</Button>
+        </SettingsBlock>
+      </SettingsSection>
+    </SettingsPage>
+  );
+}

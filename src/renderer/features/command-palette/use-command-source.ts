@@ -403,8 +403,8 @@ export function useCommandSource(): CommandItem[] {
         label: c.label,
         category: CATEGORY.settings,
         icon: 'settings',
-        detail: 'App',
-        keywords: ['settings', 'preferences', 'config'],
+        detail: c.group === 'managed' ? 'Managed agents' : 'App',
+        keywords: c.group === 'managed' ? ['settings', 'managed', 'agent parts'] : ['settings', 'preferences', 'config'],
         execute: () => openApp(c.page),
       });
     }

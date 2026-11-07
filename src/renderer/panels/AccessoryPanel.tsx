@@ -13,7 +13,24 @@ import { SettingsSubPage } from '../../shared/types';
 import { useFeedbackStore } from '../stores/feedbackStore';
 
 
-export interface SettingsCategory { label: string; page: SettingsSubPage }
+export interface SettingsCategory {
+  label: string;
+  page: SettingsSubPage;
+  /** The sidebar group the page sits in. Pages without one are plain App pages. */
+  group?: 'managed';
+  /** Indented under the group's "Agent parts" label. */
+  part?: boolean;
+}
+
+/** Clubhouse-managed agents (#2819): the group that follows About and Agents & providers when the flag is on. */
+const MANAGED_PAGES: SettingsCategory[] = [
+  { label: 'Instruction blocks', page: 'managed-blocks', group: 'managed', part: true },
+  { label: 'Skills', page: 'managed-skills', group: 'managed', part: true },
+  { label: 'MCP servers', page: 'managed-mcp', group: 'managed', part: true },
+  { label: 'Templates', page: 'managed-templates', group: 'managed' },
+  { label: 'Orchestration', page: 'managed-orchestration', group: 'managed' },
+  { label: 'Helpers', page: 'helpers', group: 'managed' },
+];
 
 /**
  * The settings categories, split into app-wide and per-project pages. Shared by
@@ -24,6 +41,7 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
   const [showExperimental, setShowExperimental] = useState(false);
   const [showAnnex, setShowAnnex] = useState(false);
   const [showGoobers, setShowGoobers] = useState(false);
+  const [showManaged, setShowManaged] = useState(false);
   const initFeedback = useFeedbackStore((s) => s.init);
   useEffect(() => { void initFeedback(); }, [initFeedback]);
   useEffect(() => {
@@ -34,13 +52,14 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
     });
     window.clubhouse.app.getExperimentalSettings().then((s) => {
       setShowGoobers(!!s.goobers);
+      setShowManaged(s.managedAgents === true);
     });
   }, [previewChannel]);
 
   const app: SettingsCategory[] = [
     { label: 'About', page: 'about' },
     { label: 'Agents & providers', page: 'orchestrators' },
-    { label: 'Helpers', page: 'helpers' },
+    ...(showManaged ? MANAGED_PAGES : [{ label: 'Helpers', page: 'helpers' as SettingsSubPage }]),
     { label: 'Dispatcher', page: 'dispatcher' },
     { label: 'Profiles', page: 'profiles' },
     { label: 'Display & UI', page: 'display' },
