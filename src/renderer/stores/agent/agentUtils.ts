@@ -35,7 +35,6 @@ export function protectedAgentIds(
     | 'activeAgentId'
     | 'agentSettingsOpenFor'
     | 'deleteDialogAgent'
-    | 'configChangesDialogAgent'
     | 'sessionNamePromptFor'
   >,
 ): Set<string> {
@@ -43,7 +42,6 @@ export function protectedAgentIds(
     state.activeAgentId,
     state.agentSettingsOpenFor,
     state.deleteDialogAgent,
-    state.configChangesDialogAgent,
     state.sessionNamePromptFor,
   ].filter((id): id is string => Boolean(id));
 
@@ -81,9 +79,6 @@ export function removeAgentsFromState(
     state.agentSettingsOpenFor && ids.has(state.agentSettingsOpenFor) ? null : state.agentSettingsOpenFor;
   const deleteDialogAgent =
     state.deleteDialogAgent && ids.has(state.deleteDialogAgent) ? null : state.deleteDialogAgent;
-  const clearConfigDialog = state.configChangesDialogAgent && ids.has(state.configChangesDialogAgent);
-  const configChangesDialogAgent = clearConfigDialog ? null : state.configChangesDialogAgent;
-  const configChangesProjectPath = clearConfigDialog ? null : state.configChangesProjectPath;
   const sessionNamePromptFor =
     state.sessionNamePromptFor && ids.has(state.sessionNamePromptFor) ? null : state.sessionNamePromptFor;
 
@@ -92,8 +87,6 @@ export function removeAgentsFromState(
     activeAgentId,
     agentSettingsOpenFor,
     deleteDialogAgent,
-    configChangesDialogAgent,
-    configChangesProjectPath,
     agentActivity,
     agentSpawnedAt,
     agentTerminalAt,

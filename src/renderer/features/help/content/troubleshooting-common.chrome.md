@@ -63,10 +63,6 @@ Models come from the agent provider. Update its CLI, check your API key, and loo
 - **The agent is sleeping or finished.** Sleeping agents fold into **N sleeping**, and finished quick agents into **N finished quick agents**, under the project.
 - **You're on another host.** If the host row at the top says a satellite's name, switch back to **Local**.
 
-## The config changes dialog keeps appearing
-
-It means the agent's setup has drifted from the project defaults while Clubhouse mode is on. Choose **Keep for this agent** to keep its own setup, or **Save to Clubhouse** to make its changes the new defaults.
-
 ## Still stuck?
 
 Report it at [github.com/Agent-Clubhouse/Clubhouse/issues](https://github.com/Agent-Clubhouse/Clubhouse/issues), with:

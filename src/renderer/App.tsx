@@ -26,7 +26,6 @@ import { QuickAgentDialog } from './features/agents/QuickAgentDialog';
 import { BlueprintGallery } from './features/blueprints/BlueprintGallery';
 import { PluginUpdateBanner } from './features/plugins/PluginUpdateBanner';
 import { CollapsedSidebarNotices } from './features/app/AppNotices';
-import { ConfigChangesDialog } from './features/agents/ConfigChangesDialog';
 import { initApp } from './app-initializer';
 import { initAppEventBridge } from './app-event-bridge';
 import { ToastContainer } from './components/ToastContainer';
@@ -295,7 +294,6 @@ export function App() {
         <BlueprintGallery />
         <WhatsNewDialog />
         <OnboardingModal />
-        <ConfigChangesDialog />
         <FeedbackDialogHost />
         <FilePreviewHost />
         <ToastContainer />
@@ -330,7 +328,6 @@ export function App() {
         <BlueprintGallery />
         <WhatsNewDialog />
         <OnboardingModal />
-        <ConfigChangesDialog />
         <FeedbackDialogHost />
         <FilePreviewHost />
         <ToastContainer />
@@ -384,7 +381,6 @@ export function App() {
         <BlueprintGallery />
         <WhatsNewDialog />
         <OnboardingModal />
-        <ConfigChangesDialog />
         <FeedbackDialogHost />
         <FilePreviewHost />
         <ToastContainer />
@@ -417,7 +413,6 @@ export function App() {
         <BlueprintGallery />
         <WhatsNewDialog />
         <OnboardingModal />
-        <ConfigChangesDialog />
         <FeedbackDialogHost />
         <FilePreviewHost />
         <ToastContainer />
@@ -450,7 +445,6 @@ export function App() {
       <BlueprintGallery />
       <WhatsNewDialog />
       <OnboardingModal />
-      <ConfigChangesDialog />
       <FeedbackDialogHost />
       <FilePreviewHost />
       <ToastContainer />

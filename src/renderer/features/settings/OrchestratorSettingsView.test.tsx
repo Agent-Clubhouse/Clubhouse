@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore } from '../../stores/headlessStore';
-import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
 import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import { OrchestratorSettingsView } from './OrchestratorSettingsView';
@@ -13,8 +12,8 @@ import { useUIStore } from '../../stores/uiStore';
 
 // Mock ProjectAgentDefaultsSection to avoid deep component tree
 vi.mock('./ProjectAgentDefaultsSection', () => ({
-  ProjectAgentDefaultsSection: ({ projectPath, clubhouseMode }: any) => (
-    <div data-testid="project-agent-defaults" data-path={projectPath} data-clubhouse-mode={String(clubhouseMode)} />
+  ProjectAgentDefaultsSection: ({ projectPath }: any) => (
+    <div data-testid="project-agent-defaults" data-path={projectPath} />
   ),
 }));
 
@@ -43,15 +42,6 @@ function resetStores() {
     setDefaultMode: vi.fn(),
     setProjectMode: vi.fn(),
     clearProjectMode: vi.fn(),
-  });
-  useClubhouseModeStore.setState({
-    enabled: false,
-    projectOverrides: {},
-    loadSettings: vi.fn().mockResolvedValue(undefined),
-    setEnabled: vi.fn(),
-    setProjectOverride: vi.fn(),
-    clearProjectOverride: vi.fn(),
-    isEnabledForProject: () => false,
   });
   useSessionSettingsStore.setState({
     promptForName: false,
@@ -613,13 +603,6 @@ describe('OrchestratorSettingsView', () => {
       expect(screen.getByTestId('project-agent-defaults')).toBeInTheDocument();
     });
 
-    it('passes clubhouseMode to ProjectAgentDefaultsSection', () => {
-      useClubhouseModeStore.setState({ enabled: true });
-      render(<OrchestratorSettingsView projectId="proj-1" />);
-      const defaults = screen.getByTestId('project-agent-defaults');
-      expect(defaults.getAttribute('data-clubhouse-mode')).toBe('true');
-    });
-
     it('does not show orchestrator picker with single orchestrator', () => {
       render(<OrchestratorSettingsView projectId="proj-1" />);
       expect(screen.queryByText('Agents run on')).not.toBeInTheDocument();
@@ -646,8 +629,7 @@ describe('OrchestratorSettingsView', () => {
     });
 
     describe('project override dropdowns clickability', () => {
-      it('all override dropdowns are enabled when clubhouse mode is on', () => {
-        useClubhouseModeStore.setState({ enabled: true });
+      it('all override dropdowns are enabled', () => {
         render(<OrchestratorSettingsView projectId="proj-1" />);
 
         const selects = screen.getAllByRole('combobox');
@@ -714,8 +696,7 @@ describe('OrchestratorSettingsView', () => {
         updateProject: vi.fn(),
       });
     });
-    it('offers no Clubhouse Mode switch, wildcards or its source control default app-wide, even with it on', () => {
-      useClubhouseModeStore.setState({ enabled: true });
+    it('offers no Clubhouse Mode switch, wildcards or its source control default app-wide', () => {
       render(<OrchestratorSettingsView />);
       expect(screen.getByText('Prompt for session name on quit')).toBeInTheDocument();
       expect(screen.queryByRole('switch', { name: 'Clubhouse Mode' })).not.toBeInTheDocument();
@@ -723,12 +704,10 @@ describe('OrchestratorSettingsView', () => {
       expect(screen.queryByText('Default source control provider')).not.toBeInTheDocument();
     });
 
-    it('offers no Clubhouse Mode choice for a project, and still passes what it is to the defaults', () => {
-      useClubhouseModeStore.setState({ enabled: true });
+    it('offers no Clubhouse Mode choice for a project', () => {
       render(<OrchestratorSettingsView projectId="proj-1" />);
       expect(screen.getByText('Quick agent mode')).toBeInTheDocument();
       expect(screen.queryByLabelText('Clubhouse Mode')).not.toBeInTheDocument();
-      expect(screen.getByTestId('project-agent-defaults').getAttribute('data-clubhouse-mode')).toBe('true');
     });
   });
 });

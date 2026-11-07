@@ -37,41 +37,9 @@ vi.mock('./SkillsSection', () => ({
   },
 }));
 
-vi.mock('./AgentTemplatesSection', () => ({
-  AgentTemplatesSection: (props: any) => {
-    return <div data-testid="agent-templates-section" data-disabled={String(props.disabled)} />;
-  },
-}));
-
 vi.mock('./McpJsonSection', () => ({
   McpJsonSection: (props: any) => {
     return <div data-testid="mcp-json-section" data-disabled={String(props.disabled)} />;
-  },
-}));
-
-let _capturedTemplateOnCreate: ((config: any) => void) | undefined;
-let _capturedTemplateOnClose: (() => void) | undefined;
-vi.mock('./TemplateConfigDialog', () => ({
-  TemplateConfigDialog: (props: any) => {
-    _capturedTemplateOnCreate = props.onCreate;
-    _capturedTemplateOnClose = props.onClose;
-    return (
-      <div data-testid="template-config-dialog">
-        <span data-testid="template-dialog-persona">{props.persona?.name}</span>
-        <button data-testid="template-dialog-create" onClick={() => props.onCreate({
-          persona: props.persona,
-          name: props.persona.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-          color: 'indigo',
-          model: 'default',
-          orchestrator: 'claude-code',
-          useWorktree: true,
-          freeAgentMode: false,
-        })}>
-          Create Agent
-        </button>
-        <button data-testid="template-dialog-close" onClick={props.onClose}>Cancel</button>
-      </div>
-    );
   },
 }));
 
@@ -343,7 +311,6 @@ describe('AgentSettingsView', () => {
       expect(screen.queryByLabelText('Persona')).not.toBeInTheDocument();
       expect(screen.queryByRole('heading', { name: 'Clubhouse Mode' })).not.toBeInTheDocument();
       expect(screen.queryByRole('switch', { name: 'Local overrides' })).not.toBeInTheDocument();
-      expect(screen.queryByTestId('agent-templates-section')).not.toBeInTheDocument();
       expect(screen.queryByText('Copy as template')).not.toBeInTheDocument();
     });
 
@@ -366,7 +333,6 @@ describe('AgentSettingsView', () => {
       renderSettings();
       expect(await screen.findByTestId('managed-general-legacy')).toHaveTextContent('bold-falcon uses the Quality Assurance persona.');
       expect(await screen.findByTestId('skills-section')).toBeInTheDocument();
-      expect(screen.queryByTestId('agent-templates-section')).not.toBeInTheDocument();
     });
 
     it('a plain agent gets the usual Setup text', async () => {
@@ -413,7 +379,7 @@ describe('AgentSettingsView', () => {
 
     it('shows shared settings info note', () => {
       renderSettings();
-      expect(screen.getByText(/Skills, agent definitions and MCP settings live in the agent worktree/)).toBeInTheDocument();
+      expect(screen.getByText(/Skills and MCP settings live in the agent worktree/)).toBeInTheDocument();
     });
   });
 
@@ -650,8 +616,7 @@ describe('AgentSettingsView', () => {
       // When managed, these should not render
       await waitFor(() => {
         expect(screen.queryByTestId('skills-section')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('agent-templates-section')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('mcp-json-section')).not.toBeInTheDocument();
+          expect(screen.queryByTestId('mcp-json-section')).not.toBeInTheDocument();
       });
     });
 
@@ -873,13 +838,6 @@ describe('AgentSettingsView', () => {
       act(() => useAgentSettingsPages.getState().setShellOpen(true));
       expect(screen.getByTestId('agent-settings-shell')).not.toHaveClass('hidden');
       expect(screen.getByTestId('utility-terminal')).toBeInTheDocument();
-    });
-
-    it('clears counts when Clubhouse Mode manages the agent', () => {
-      useAgentSettingsPages.getState().setCount('skills', 4);
-      useClubhouseModeStore.setState({ enabled: true, isEnabledForProject: () => true });
-      renderSettings();
-      expect(useAgentSettingsPages.getState().counts).toEqual({});
     });
   });
 });

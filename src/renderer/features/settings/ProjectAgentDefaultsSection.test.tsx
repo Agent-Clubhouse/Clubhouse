@@ -21,8 +21,6 @@ describe('ProjectAgentDefaultsSection', () => {
       freeAgentMode: false,
     });
     window.clubhouse.agentSettings.writeProjectAgentDefaults = vi.fn().mockResolvedValue(undefined);
-    window.clubhouse.agentSettings.listSourceSkills = vi.fn().mockResolvedValue([]);
-    window.clubhouse.agentSettings.listSourceAgentTemplates = vi.fn().mockResolvedValue([]);
     window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockResolvedValue({
       userInstructions: 'Default instructions',
       pluginInstructionBlocks: [],
@@ -65,14 +63,12 @@ describe('ProjectAgentDefaultsSection', () => {
       expect(await screen.findByText('Save defaults')).toBeInTheDocument();
     });
 
-    it('shows Skills section', async () => {
+    it('has no project skills or agent definitions sections (#2901)', async () => {
       renderSection();
-      expect(await screen.findByText('Skills')).toBeInTheDocument();
-    });
-
-    it('shows Agent Definitions section', async () => {
-      renderSection();
-      expect(await screen.findByText('Agent definitions')).toBeInTheDocument();
+      await screen.findByText('Default agent settings');
+      expect(screen.queryByText('Skills')).not.toBeInTheDocument();
+      expect(screen.queryByText('Agent definitions')).not.toBeInTheDocument();
+      expect(screen.queryByText('Managed skills')).not.toBeInTheDocument();
     });
   });
 
@@ -138,34 +134,13 @@ describe('ProjectAgentDefaultsSection', () => {
     });
   });
 
-  describe('clubhouse mode banner', () => {
-    it('shows snapshot note when clubhouse mode is off', async () => {
-      renderSection({ clubhouseMode: false });
+  describe('intro', () => {
+    it('says the defaults are snapshots for new agents, with no Clubhouse Mode wildcard list', async () => {
+      renderSection();
       expect(await screen.findByText(/snapshots when new durable agents/)).toBeInTheDocument();
-    });
-
-    it('says agents still on Clubhouse Mode get these, with the wildcards, when it is on', async () => {
-      renderSection({ clubhouseMode: true });
-      expect(await screen.findByText(/still use Clubhouse Mode/)).toBeInTheDocument();
-      expect(screen.getByText('@@AgentName')).toBeInTheDocument();
-      expect(screen.getByText('@@StandbyBranch')).toBeInTheDocument();
-      expect(screen.getByText('@@Path')).toBeInTheDocument();
-    });
-
-    it('lists @@Mission and @@Persona in the active banner', async () => {
-      renderSection({ clubhouseMode: true });
-      await screen.findByText(/still use Clubhouse Mode/);
-      // Both tokens are mentioned in the banner *and* in helper text under
-      // their respective inputs — just assert presence.
-      expect(screen.getAllByText('@@Mission').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText('@@Persona').length).toBeGreaterThanOrEqual(1);
-    });
-
-    it('references the self-edit guide path when clubhouse mode is on', async () => {
-      renderSection({ clubhouseMode: true });
-      await screen.findByText(/still use Clubhouse Mode/);
-      // Referenced in the banner and again in the persona helper text.
-      expect(screen.getAllByText('.clubhouse/clubhouse-mode.md').length).toBeGreaterThanOrEqual(1);
+      expect(screen.queryByText(/still use Clubhouse Mode/)).not.toBeInTheDocument();
+      expect(screen.queryByText('@@AgentName')).not.toBeInTheDocument();
+      expect(screen.queryByText('.clubhouse/clubhouse-mode.md')).not.toBeInTheDocument();
     });
   });
 
@@ -450,11 +425,10 @@ describe('ProjectAgentDefaultsSection', () => {
   describe('without personas and conditional blocks (#2901)', () => {
     it('offers no default persona or conditional blocks, and keeps a saved persona on save', async () => {
       window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({ instructions: 'Default instructions', persona: 'qa' });
-      renderSection({ clubhouseMode: true });
+      renderSection();
       expect(await screen.findByText('Source control provider')).toBeInTheDocument();
       expect(screen.queryByText('Default persona')).not.toBeInTheDocument();
       expect(screen.queryByText(/controls conditional blocks/)).not.toBeInTheDocument();
-      expect(screen.getByText("Agents here that still use Clubhouse Mode get these settings each time they wake. Managed agents don't use them.")).toBeInTheDocument();
 
       fireEvent.change(screen.getByPlaceholderText('implement-and-ship'), { target: { value: 'ship' } });
       fireEvent.click(screen.getByText('Save defaults'));

@@ -18,8 +18,7 @@ vi.mock('../app-event-bridge', () => ({ initAppEventBridge: () => () => {} }));
 vi.mock('../plugins/plugin-loader', () => ({ handleProjectSwitch: vi.fn(async () => {}), getBuiltinProjectPluginIds: () => [], pluginSystemReady: Promise.resolve(), getActiveContext: () => null }));
 vi.mock('../features/agents/AgentTerminal', () => ({ AgentTerminal: () => null }));
 vi.mock('../features/agents/chat/AgentRuntimePane', () => ({ AgentRuntimePane: () => null }));
-vi.mock('./sidebar/ChromeAgentDialogs', () => ({ ChromeAgentDialogs: () => null,
-  useChromeDialogStore: { getState: () => ({ close: () => {} }) } }));
+vi.mock('./sidebar/ChromeAgentDialogs', () => ({ ChromeAgentDialogs: () => null }));
 
 const projects: Project[] = [{ id: 'p1', name: 'Alpha', path: '/synthetic/alpha' }, { id: 'p2', name: 'Beta', path: '/synthetic/beta' }];
 const snapshot: SatelliteSnapshot = { projects, agents: {}, quickAgents: {}, theme: null, orchestrators: null, pendingPermissions: [], lastSeq: 1 };

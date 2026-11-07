@@ -13,7 +13,6 @@ export type AgentSettingsPage =
   | 'general'
   | 'instructions'
   | 'skills'
-  | 'definitions'
   | 'mcp'
   | 'permissions'
   | 'helpers'
@@ -24,7 +23,6 @@ export const AGENT_SETTINGS_PAGES: ReadonlyArray<{ page: AgentSettingsPage; labe
   { page: 'general', label: 'General' },
   { page: 'instructions', label: 'Instructions' },
   { page: 'skills', label: 'Skills' },
-  { page: 'definitions', label: 'Agent definitions' },
   { page: 'mcp', label: 'MCP servers' },
   { page: 'permissions', label: 'Permissions' },
   { page: 'helpers', label: 'Helpers' },
@@ -56,7 +54,6 @@ interface AgentSettingsPagesState {
   setDirtyPages: (pages: AgentSettingsPage[]) => void;
   setCount: (page: AgentSettingsPage, count: number) => void;
   setHiddenPages: (pages: AgentSettingsPage[]) => void;
-  clearCounts: () => void;
   setShellOpen: (open: boolean) => void;
   setPendingLeave: (then: (() => void) | null) => void;
   setRequestedPage: (request: { agentId: string; page: AgentSettingsPage } | null) => void;
@@ -93,9 +90,6 @@ export const useAgentSettingsPages = create<AgentSettingsPagesState>((set, get) 
     if (prev.length === pages.length && prev.every((p, i) => p === pages[i])) return;
     // A hidden page can't stay selected.
     set((s) => ({ hiddenPages: pages, page: pages.includes(s.page) ? 'general' : s.page }));
-  },
-  clearCounts: () => {
-    if (Object.keys(get().counts).length > 0) set({ counts: {} });
   },
   setShellOpen: (shellOpen) => set({ shellOpen }),
   setPendingLeave: (pendingLeave) => set({ pendingLeave }),
@@ -198,6 +192,6 @@ export function hiddenAgentSettingsPages(
   // Clubhouse-managed agents (#2893): the builder takes over the file pages for
   // a managed agent; an unmanaged agent keeps one basic page plus orchestration.
   if (remote) return [...hidden, 'preview'];
-  if (managed) return [...hidden, 'definitions', 'permissions'];
-  return [...hidden, 'instructions', 'skills', 'definitions', 'mcp', 'permissions', 'preview'];
+  if (managed) return [...hidden, 'permissions'];
+  return [...hidden, 'instructions', 'skills', 'mcp', 'permissions', 'preview'];
 }

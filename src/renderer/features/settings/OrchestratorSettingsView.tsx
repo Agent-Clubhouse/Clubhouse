@@ -2,7 +2,6 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useOrchestratorStore, DEFAULT_HOOK_SERVER_ORCHESTRATOR } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore, SpawnMode } from '../../stores/headlessStore';
-import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
 import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import { useFreeAgentSettingsStore } from '../../stores/freeAgentSettingsStore';
@@ -186,7 +185,6 @@ function AppAgentSettings() {
   const checkAllAvailability = useOrchestratorStore((s) => s.checkAllAvailability);
   const defaultMode = useHeadlessStore((s) => s.defaultMode);
   const setDefaultMode = useHeadlessStore((s) => s.setDefaultMode);
-  const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
   const promptForName = useSessionSettingsStore((s) => s.promptForName);
   const setPromptForName = useSessionSettingsStore((s) => s.setPromptForName);
   const loadSessionSettings = useSessionSettingsStore((s) => s.loadSettings);
@@ -239,10 +237,9 @@ function AppAgentSettings() {
 
   useEffect(() => {
     loadSettings().then(() => checkAllAvailability());
-    loadClubhouseSettings();
     loadSessionSettings();
     loadFreeAgentSettings();
-  }, [loadSettings, checkAllAvailability, loadClubhouseSettings, loadSessionSettings, loadFreeAgentSettings]);
+  }, [loadSettings, checkAllAvailability, loadSessionSettings, loadFreeAgentSettings]);
 
   return (
     <>
@@ -452,10 +449,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const setProjectMode = useHeadlessStore((s) => s.setProjectMode);
   const clearProjectMode = useHeadlessStore((s) => s.clearProjectMode);
 
-  const clubhouseGlobal = useClubhouseModeStore((s) => s.enabled);
-  const clubhouseOverrides = useClubhouseModeStore((s) => s.projectOverrides);
   const { requestMcpChange, mcpOffDialog } = useMcpOffConfirm();
-  const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
 
   const sessionPromptGlobal = useSessionSettingsStore((s) => s.promptForName);
   const sessionOverrides = useSessionSettingsStore((s) => s.projectOverrides);
@@ -476,11 +470,10 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const loadMcpSettings = useMcpSettingsStore((s) => s.loadSettings);
 
   useEffect(() => {
-    loadClubhouseSettings();
     loadSessionSettings();
     loadFreeAgentSettings();
     loadMcpSettings();
-  }, [loadClubhouseSettings, loadSessionSettings, loadFreeAgentSettings, loadMcpSettings]);
+  }, [loadSessionSettings, loadFreeAgentSettings, loadMcpSettings]);
 
   if (!project) return null;
 
@@ -496,11 +489,6 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
     else setProjectMode(projectPath, value as SpawnMode);
   };
 
-  // Clubhouse mode
-  const hasClubhouseOverride = projectPath in clubhouseOverrides;
-  const clubhouseEffective = hasClubhouseOverride
-    ? clubhouseOverrides[projectPath]
-    : clubhouseGlobal;
   // Session name
   const sessionOverride = sessionOverrides[projectPath];
   const currentSessionMode = sessionOverride === undefined ? 'global' : (sessionOverride ? 'on' : 'off');
@@ -613,7 +601,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
       </SettingsSection>
 
       {mcpOffDialog}
-      <ProjectAgentDefaultsSection projectPath={project.path} clubhouseMode={clubhouseEffective} />
+      <ProjectAgentDefaultsSection projectPath={project.path} />
     </>
   );
 }

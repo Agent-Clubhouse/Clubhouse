@@ -16,8 +16,6 @@ function createMinimalState(overrides: Partial<AgentState> = {}): AgentState {
     activeAgentId: null,
     agentSettingsOpenFor: null,
     deleteDialogAgent: null,
-    configChangesDialogAgent: null,
-    configChangesProjectPath: null,
     sessionNamePromptFor: null,
     projectActiveAgent: {},
     cancelledAgentIds: {},

@@ -1,8 +1,6 @@
 import { useEffect, useId, useState, useCallback, useMemo, type ReactNode } from 'react';
 
 import type { SourceControlProvider, ProjectConfigBreakdown, ProvenancedConfigItem } from '../../../shared/types';
-import { SourceSkillsSection } from './SourceSkillsSection';
-import { SourceAgentTemplatesSection } from './SourceAgentTemplatesSection';
 import { useProfileStore } from '../../stores/profileStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { usePluginStore } from '../../plugins/plugin-store';
@@ -17,10 +15,6 @@ import { Button } from '../../components/Button';
 const CODE_CLASS = 'font-mono text-ctp-subtext1';
 const SELECT_CLASS = `${settingsInput} w-[220px]`;
 const TEXT_INPUT_CLASS = `${settingsInput} w-[220px] font-mono`;
-const CLUBHOUSE_WILDCARDS = [
-  '@@AgentName', '@@StandbyBranch', '@@Path', '@@BuildCommand', '@@TestCommand',
-  '@@LintCommand', '@@SourceControlProvider', '@@Mission', '@@Persona',
-];
 
 function Code({ children }: { children: ReactNode }) {
   return <code className={CODE_CLASS}>{children}</code>;
@@ -44,7 +38,6 @@ interface ProjectAgentDefaults {
 
 interface Props {
   projectPath: string;
-  clubhouseMode?: boolean;
 }
 
 // ── Provenance meta text ─────────────────────────────────────────────────
@@ -227,8 +220,8 @@ function ConfigItemList({
 
 // ── Main component ───────────────────────────────────────────────────────
 
-export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Props) {
-  const [_defaults, setDefaults] = useState<ProjectAgentDefaults>({});
+export function ProjectAgentDefaultsSection({ projectPath }: Props) {
+  const [defaults, setDefaults] = useState<ProjectAgentDefaults>({});
   const [instructions, setInstructions] = useState('');
   const [permAllow, setPermAllow] = useState('');
   const [permDeny, setPermDeny] = useState('');
@@ -240,9 +233,6 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
   const [testCommand, setTestCommand] = useState('');
   const [lintCommand, setLintCommand] = useState('');
   const [mission, setMission] = useState('');
-  const [persona, setPersona] = useState('');
-  // Personas, Clubhouse Mode and conditional blocks aren't offered (#2901).
-  // The saved values stay for agents that still use them.
   const [profileId, setProfileId] = useState<string | undefined>(undefined);
   const [commandPrefix, setCommandPrefix] = useState('');
   const [dirty, setDirty] = useState(false);
@@ -282,7 +272,6 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
       setTestCommand(d.testCommand || '');
       setLintCommand(d.lintCommand || '');
       setMission(d.mission || '');
-      setPersona(d.persona || '');
       setProfileId(d.profileId);
       setCommandPrefix(d.commandPrefix || '');
       setLoaded(true);
@@ -360,7 +349,8 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
     if (testCommand.trim()) newDefaults.testCommand = testCommand.trim();
     if (lintCommand.trim()) newDefaults.lintCommand = lintCommand.trim();
     if (mission.trim()) newDefaults.mission = mission.trim();
-    if (persona) newDefaults.persona = persona;
+    // Personas aren't offered (#2901); a saved default stays for agents that still use one.
+    if (defaults.persona) newDefaults.persona = defaults.persona;
     if (profileId) newDefaults.profileId = profileId;
     if (commandPrefix.trim()) newDefaults.commandPrefix = commandPrefix.trim();
 
@@ -466,20 +456,8 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
         }
       >
         <p className={`${settingsHelp} mb-2`}>
-          {clubhouseMode
-            ? 'Agents here that still use Clubhouse Mode get these settings each time they wake. Managed agents don\'t use them.'
-            : 'These settings are applied as snapshots when new durable agents are created. Changes here do not affect existing agents.'}
+          These settings are applied as snapshots when new durable agents are created. Changes here do not affect existing agents.
         </p>
-        {clubhouseMode && (
-          <div className="mb-2">
-            <p className="text-xs flex flex-wrap gap-x-2.5 gap-y-0.5">
-              {CLUBHOUSE_WILDCARDS.map((w) => <Code key={w}>{w}</Code>)}
-            </p>
-            <p className={`${settingsHelp} mt-1`}>
-              Full reference in <Code>.clubhouse/clubhouse-mode.md</Code> in this project.
-            </p>
-          </div>
-        )}
 
         {orphanedPluginIds.length > 0 && (
           <OrphanBanner
@@ -753,32 +731,6 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
           </SettingsBlock>
         )}
       </SettingsSection>
-
-      {/* Managed skills (provenance) above the source skill list */}
-      {breakdown && breakdown.skills.length > 0 && (
-        <SettingsSection title="Managed skills">
-          <ConfigItemList
-            items={breakdown.skills}
-            orphanedPluginIds={orphanedPluginIds}
-            onRemove={setRemoveTarget}
-            removing={removing}
-          />
-        </SettingsSection>
-      )}
-      <SourceSkillsSection projectPath={projectPath} />
-
-      {/* Managed agent definitions (provenance) above the source list */}
-      {breakdown && breakdown.agentTemplates.length > 0 && (
-        <SettingsSection title="Managed agent definitions">
-          <ConfigItemList
-            items={breakdown.agentTemplates}
-            orphanedPluginIds={orphanedPluginIds}
-            onRemove={setRemoveTarget}
-            removing={removing}
-          />
-        </SettingsSection>
-      )}
-      <SourceAgentTemplatesSection projectPath={projectPath} />
 
       <ConfirmDialog
         open={showResetConfirm}

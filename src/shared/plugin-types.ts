@@ -1062,9 +1062,9 @@ export interface AgentConfigAPI {
   getInjectedMcpServers(opts?: AgentConfigTargetOptions): Promise<Record<string, unknown>>;
   /**
    * Register an agent template at runtime (v0.9+).
-   * The template appears in the agent template gallery alongside built-in templates,
-   * grouped under the plugin name. Returns a Disposable to unregister the template.
-   * Template creation injects the specified prompt content, skills, and MCP servers.
+   * @deprecated Does nothing since Clubhouse-managed agents replaced the agent
+   * template gallery (#2901). Kept so plugins that call it keep working; the
+   * returned Disposable is a no-op.
    */
   registerAgentTemplate(template: {
     name: string;

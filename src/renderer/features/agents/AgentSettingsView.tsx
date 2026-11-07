@@ -16,11 +16,8 @@ import { UtilityTerminal } from './UtilityTerminal';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
 import { EmojiPicker } from '../../components/EmojiPicker';
 import { SkillsSection } from './SkillsSection';
-import { AgentTemplatesSection } from './AgentTemplatesSection';
 import { McpJsonSection } from './McpJsonSection';
 import { AgentAvatar } from './AgentAvatar';
-import { TemplateConfigDialog, type TemplateConfig } from './TemplateConfigDialog';
-import type { RegisteredPluginAgentTemplate } from '../../plugins/plugin-agent-template-registry';
 import type { AgentRuntimeMode } from '../../../shared/chat';
 import { Toggle } from '../../components/Toggle';
 import { Button } from '../../components/Button';
@@ -154,7 +151,7 @@ function McpConfigRow({
 
 export function AgentSettingsView({ agent }: Props) {
   const isRunning = agent.status === 'running';
-  const { closeAgentSettings, updateAgent, loadDurableAgents } = useAgentStore();
+  const { closeAgentSettings, updateAgent } = useAgentStore();
   const { projects, activeProjectId } = useProjectStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const worktreePath = agent.worktreePath || activeProject?.path || '';
@@ -499,14 +496,16 @@ export function AgentSettingsView({ agent }: Props) {
   const [agentMcpConfigs, setAgentMcpConfigs] = useState<Record<string, Record<string, string>>>({});
   const [mcpLoaded, setMcpLoaded] = useState(false);
 
-  // Clubhouse Mode state
+  // Clubhouse Mode and persona, for an unmanaged agent that couldn't switch
+  // (#2901): General › Setup says what it uses and can turn Clubhouse Mode off,
+  // and the classic shell hides the file editors Clubhouse Mode overwrites.
   const isClubhouseModeEnabled = useClubhouseModeStore((s) => s.isEnabledForProject);
   const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
   const [clubhouseModeOverride, setClubhouseModeOverride] = useState(false);
   const clubhouseActive = projectPath ? isClubhouseModeEnabled(projectPath) : false;
   const isManagedByClubhouse = clubhouseActive && !clubhouseModeOverride;
 
-  // Persona state (per-agent override of project default)
+  // The persona the agent uses, if any
   const [agentPersona, setAgentPersona] = useState('');
 
   // Chat / CLI runtime override ('' = provider default). Only offered
@@ -586,71 +585,6 @@ export function AgentSettingsView({ agent }: Props) {
     setInstructionsDirty(false);
     setPermDirty(false);
     setQadDirty(false);
-  };
-
-  // Plugin template → TemplateConfigDialog flow
-  const [pendingPluginTemplate, setPendingPluginTemplate] = useState<RegisteredPluginAgentTemplate | null>(null);
-
-  const handleCreateFromPluginTemplate = (entry: RegisteredPluginAgentTemplate) => {
-    setPendingPluginTemplate(entry);
-  };
-
-  const handlePluginTemplateCreate = async (templateConfig: TemplateConfig) => {
-    const entry = pendingPluginTemplate;
-    setPendingPluginTemplate(null);
-    if (!entry || !projectPath) return;
-
-    try {
-      const { name, color, model, orchestrator: orch, useWorktree, freeAgentMode, mcpIds } = templateConfig;
-
-      // Create durable agent with user-chosen config
-      const config = await window.clubhouse.agent.createDurable(
-        projectPath, name, color, model !== 'default' ? model : undefined, useWorktree,
-        orch, freeAgentMode || undefined, mcpIds, undefined,
-      );
-
-      const agentWorktree = config.worktreePath || worktreePath;
-
-      // Write plugin template prompt as the agent's instructions
-      if (entry.template.promptContent) {
-        await window.clubhouse.agentSettings.saveInstructions(agentWorktree, entry.template.promptContent, projectPath);
-      }
-
-      // Inject skills from the plugin template
-      if (entry.template.skills) {
-        for (const [skillName, content] of Object.entries(entry.template.skills)) {
-          await window.clubhouse.agentSettings.writeSkillContent(agentWorktree, skillName, content, projectPath);
-        }
-      }
-
-      // Inject MCP servers from the plugin template into the agent's .mcp.json
-      if (entry.template.mcpServers && Object.keys(entry.template.mcpServers).length > 0) {
-        const rawJson = await window.clubhouse.agentSettings.readMcpRawJson(agentWorktree, projectPath, config.id);
-        let mcpConfig: Record<string, unknown>;
-        try {
-          mcpConfig = JSON.parse(rawJson);
-        } catch {
-          mcpConfig = {};
-        }
-        if (!mcpConfig.mcpServers || typeof mcpConfig.mcpServers !== 'object') {
-          mcpConfig.mcpServers = {};
-        }
-        const servers = mcpConfig.mcpServers as Record<string, unknown>;
-        for (const [serverName, serverDef] of Object.entries(entry.template.mcpServers)) {
-          servers[serverName] = serverDef;
-        }
-        await window.clubhouse.agentSettings.writeMcpRawJson(agentWorktree, JSON.stringify(mcpConfig, null, 2), projectPath, config.id);
-      }
-
-      // Refresh agent list so the new agent appears
-      if (activeProject) {
-        await loadDurableAgents(activeProject.id, projectPath);
-      }
-
-      setRefreshKey((k) => k + 1);
-    } catch (err) {
-      console.error('Failed to create from plugin template:', err);
-    }
   };
 
   // Load quick agent defaults and agent model from config
@@ -823,7 +757,6 @@ export function AgentSettingsView({ agent }: Props) {
     return `${configDir}/${localInstructionsFile}`;
   })();
   const skillsPathLabel = conventions ? `${conventions.configDir}/${conventions.skillsDir}/` : '.claude/skills/';
-  const agentTemplatesPathLabel = conventions ? `${conventions.configDir}/${conventions.agentTemplatesDir}/` : '.claude/agents/';
   const mcpPathLabel = conventions?.mcpConfigFile || '.mcp.json';
   const permissionsPathLabel = conventions?.permissionRules === false ? 'Not supported by this provider' : conventions ? `${conventions.configDir}/${conventions.localSettingsFile}` : '.claude/settings.local.json';
 
@@ -854,9 +787,9 @@ export function AgentSettingsView({ agent }: Props) {
   // ── One save bar ───────────────────────────────────────────────
   //
   // Text edits on this view (instructions, permissions, quick agent defaults)
-  // and the sections that join the bar (.mcp.json, wildcards) save and discard
-  // together. Skills and agent definition editors keep their own Save and
-  // Cancel, but their open edits still mark the page and guard leaving.
+  // and the .mcp.json section save and discard together. The skills editor
+  // keeps its own Save and Cancel, but its open edits still mark the page and
+  // guard leaving.
 
   const [sectionDirty, setSectionDirty] = useState<Record<SectionKey, boolean>>(NO_SECTION_DIRTY);
   const sectionHandles = useRef<Partial<Record<BarSectionKey, SaveHandle>>>({});
@@ -868,15 +801,14 @@ export function AgentSettingsView({ agent }: Props) {
     };
     const count = (p: AgentSettingsPage) => (n: number) => setCount(p, n);
     return {
-      mcpDirty: dirty('mcp'), wildcardsDirty: dirty('wildcards'), skillsDirty: dirty('skills'), definitionsDirty: dirty('definitions'),
-      mcpRegister: register('mcp'), wildcardsRegister: register('wildcards'),
-      skillsCount: count('skills'), definitionsCount: count('definitions'), mcpCount: count('mcp'),
+      mcpDirty: dirty('mcp'), skillsDirty: dirty('skills'),
+      mcpRegister: register('mcp'),
+      skillsCount: count('skills'), mcpCount: count('mcp'),
     };
   }, [setCount]);
 
   /** What the bar saves and discards, in page order. */
   const barItems: BarItem[] = [];
-  if (sectionDirty.wildcards) barItems.push({ key: 'wildcards', name: 'wildcards', save: () => sectionHandles.current.wildcards?.save() ?? Promise.resolve(), discard: () => sectionHandles.current.wildcards?.discard() });
   if (instructionsDirty) barItems.push({ key: 'instructions', name: 'instructions', save: handleSaveInstructions, discard: () => discardInstructions() });
   if (sectionDirty.mcp) barItems.push({ key: 'mcp', name: 'MCP servers', save: () => sectionHandles.current.mcp?.save() ?? Promise.resolve(), discard: () => sectionHandles.current.mcp?.discard() });
   if (permDirty) barItems.push({ key: 'permissions', name: 'permissions', save: handleSavePermissions, discard: () => discardPermissions() });
@@ -884,10 +816,8 @@ export function AgentSettingsView({ agent }: Props) {
 
   const dirtyPages = useMemo(() => {
     const dirty = new Set<AgentSettingsPage>();
-    if (sectionDirty.wildcards) dirty.add('general');
     if (instructionsDirty) dirty.add('instructions');
     if (sectionDirty.skills) dirty.add('skills');
-    if (sectionDirty.definitions) dirty.add('definitions');
     if (sectionDirty.mcp) dirty.add('mcp');
     if (permDirty) dirty.add('permissions');
     if (qadDirty) dirty.add('quick');
@@ -962,16 +892,6 @@ export function AgentSettingsView({ agent }: Props) {
   // Nothing here is unsaved once the view is gone.
   useEffect(() => () => setDirtyPages([]), [setDirtyPages]);
   const dirtyPageNames = dirtyPages.map((p) => AGENT_SETTINGS_PAGES.find((x) => x.page === p)?.label ?? p);
-
-  // ── Sidebar counts ─────────────────────────────────────────────
-  //
-  // The sections report their own counts as they load and change. Clubhouse
-  // Mode hides those sections, so their counts no longer apply.
-
-  const clearCounts = useAgentSettingsPages((s) => s.clearCounts);
-  useEffect(() => {
-    if (isManagedByClubhouse) clearCounts();
-  }, [isManagedByClubhouse, clearCounts]);
 
   // ── Pieces ─────────────────────────────────────────────────────
 
@@ -1205,7 +1125,7 @@ export function AgentSettingsView({ agent }: Props) {
 
       {!isManagedByClubhouse && !isManagedAgent && !pageMode && (
         <p className="mt-3 text-xs text-ctp-overlay1">
-          Skills, agent definitions and MCP settings live in the agent worktree. Agents that share a root directory share them.
+          Skills and MCP settings live in the agent worktree. Agents that share a root directory share them.
         </p>
       )}
     </>
@@ -1244,20 +1164,6 @@ export function AgentSettingsView({ agent }: Props) {
       hideTitle={pageMode}
       onDirtyChange={sectionCallbacks.skillsDirty}
       onCountChange={sectionCallbacks.skillsCount}
-    />
-  );
-
-  const definitionsSection = (
-    <AgentTemplatesSection
-      worktreePath={worktreePath}
-      projectPath={projectPath}
-      disabled={isRunning}
-      refreshKey={refreshKey}
-      pathLabel={agentTemplatesPathLabel}
-      onCreateFromPluginTemplate={handleCreateFromPluginTemplate}
-      hideTitle={pageMode}
-      onDirtyChange={sectionCallbacks.definitionsDirty}
-      onCountChange={sectionCallbacks.definitionsCount}
     />
   );
 
@@ -1392,16 +1298,6 @@ export function AgentSettingsView({ agent }: Props) {
   // Orchestration (#2232): saved by its own controls, like the Orchestration card.
   const helpersSettings = showHelpers ? <AgentHelpersSettings agent={agent} projectPath={projectPath} /> : null;
 
-  const managedNote = (
-    <p data-testid="agent-settings-managed" className="mt-3 text-[13px] text-ctp-subtext1">
-      Clubhouse Mode manages this from project defaults.{' '}
-      <button type="button" onClick={() => setPage('general')} className="text-ctp-accent hover:underline cursor-pointer">
-        Turn on local overrides in General
-      </button>{' '}
-      to edit it here.
-    </p>
-  );
-
   // ── Page content ───────────────────────────────────────────────
 
   let body: React.ReactNode;
@@ -1410,7 +1306,6 @@ export function AgentSettingsView({ agent }: Props) {
       general: `How ${agent.name} looks and what it runs on`,
       instructions: <><span className="font-mono">{instructionsFileLabel}</span> in the agent worktree</>,
       skills: undefined,
-      definitions: undefined,
       mcp: undefined,
       permissions: <span className="font-mono">{permissionsPathLabel}</span>,
       helpers: `How ${agent.name} starts, runs and disposes of helper agents. The same switches are in its Orchestration card beside the chat.`,
@@ -1427,7 +1322,6 @@ export function AgentSettingsView({ agent }: Props) {
       general,
       instructions: instructionsEditor,
       skills: skillsSection,
-      definitions: definitionsSection,
       mcp: mcpSections,
       permissions: permissionsEditor,
       helpers: helpersSettings,
@@ -1441,16 +1335,12 @@ export function AgentSettingsView({ agent }: Props) {
     }
     // Every page stays mounted and only the selected one shows, so edits held
     // inside a page (an open skill editor, .mcp.json) survive a page switch.
-    body = AGENT_SETTINGS_PAGES.filter(({ page: p }) => !hiddenPages.includes(p)).map(({ page: p, label }) => {
-      // Clubhouse Mode manages files in the worktree; the orchestration policy isn't one.
-      const managed = isManagedByClubhouse && !isManagedAgent && p !== 'general' && p !== 'quick' && p !== 'helpers' && p !== 'preview';
-      return (
-        <div key={p} data-testid={`agent-settings-page-${p}`} hidden={p !== page}>
-          <PageTitle title={label} sub={sub[p]} right={p === page ? reloadButton : undefined} />
-          {managed ? managedNote : content[p]}
-        </div>
-      );
-    });
+    body = AGENT_SETTINGS_PAGES.filter(({ page: p }) => !hiddenPages.includes(p)).map(({ page: p, label }) => (
+      <div key={p} data-testid={`agent-settings-page-${p}`} hidden={p !== page}>
+        <PageTitle title={label} sub={sub[p]} right={p === page ? reloadButton : undefined} />
+        {content[p]}
+      </div>
+    ));
   } else if (isManagedAgent && builderAgent && builderTarget) {
     // Classic shell, managed agent: Clubhouse writes its instructions, skills and
     // MCP files at every start, so the builder takes the place of the file editors.
@@ -1600,32 +1490,18 @@ export function AgentSettingsView({ agent }: Props) {
         }}
       />
 
-      {pendingPluginTemplate && (
-        <TemplateConfigDialog
-          persona={{
-            id: `plugin-${pendingPluginTemplate.pluginId}-${pendingPluginTemplate.template.name}`,
-            name: pendingPluginTemplate.template.name,
-            description: pendingPluginTemplate.template.description || '',
-            content: pendingPluginTemplate.template.promptContent,
-          }}
-          personaColor="indigo"
-          projectPath={projectPath}
-          onClose={() => setPendingPluginTemplate(null)}
-          onCreate={handlePluginTemplateCreate}
-        />
-      )}
     </div>
   );
 }
 
 /** Sections that hold their own edits. */
-type SectionKey = 'mcp' | 'wildcards' | 'skills' | 'definitions';
+type SectionKey = 'mcp' | 'skills';
 /** Sections whose edits the save bar saves. */
-type BarSectionKey = 'mcp' | 'wildcards';
-const NO_SECTION_DIRTY: Record<SectionKey, boolean> = { mcp: false, wildcards: false, skills: false, definitions: false };
+type BarSectionKey = 'mcp';
+const NO_SECTION_DIRTY: Record<SectionKey, boolean> = { mcp: false, skills: false };
 
 interface BarItem {
-  key: 'wildcards' | 'instructions' | 'mcp' | 'permissions' | 'quick';
+  key: 'instructions' | 'mcp' | 'permissions' | 'quick';
   /** How the bar and its toast name it. */
   name: string;
   save: () => Promise<void>;

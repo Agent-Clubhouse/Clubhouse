@@ -15,7 +15,6 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useChromeStore, type NewAgentRequest } from '../chromeStore';
-import { useChromeDialogStore } from '../sidebar/ChromeAgentDialogs';
 
 const projects = [
   { id: 'p1', name: 'Clubhouse', path: '/tmp/ch' },
@@ -71,7 +70,6 @@ beforeEach(() => {
     availability: {},
   });
   useUIStore.setState({ explorerTab: 'agents', activeHostId: null });
-  useChromeDialogStore.setState({ request: null });
   useChromeStore.setState({ newAgent: req(), newAgentBusy: false, lastProjectId: 'p2', projectActivity: {}, projectScopeId: null });
 });
 

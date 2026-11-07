@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { McpOffImpact } from '../../../shared/mcp-off-impact';
-import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import { MCP_OFF_RESTORE_NOTE, mcpOffCounts, mcpOffKeeps, mcpOffLead } from './McpOffConfirm';
 import { McpSettingsView } from './McpSettingsView';
@@ -38,7 +37,6 @@ beforeEach(() => {
   saveSettings.mockClear();
   saveWorks = true;
   useMcpSettingsStore.setState({ enabled: true, projectDefault: true, loaded: true, loadSettings: async () => {}, saveSettings } as never);
-  useClubhouseModeStore.setState({ enabled: false, loadSettings: (async () => {}) as never });
   window.clubhouse.app.getMcpOffImpact = vi.fn(async () => IMPACT);
   window.clubhouse.dispatcher.stop = vi.fn(async () => ({}) as never);
 });
@@ -72,11 +70,11 @@ describe('McpSettingsView', () => {
     expect(screen.queryByText(/Start the bridge server for every project/)).toBeNull();
   });
 
-  it('says Clubhouse mode keeps MCP on while its own switch is off', () => {
+  it('no longer points at the hidden Clubhouse mode setting (#2901)', () => {
     useMcpSettingsStore.setState({ enabled: false } as never);
-    useClubhouseModeStore.setState({ enabled: true });
     render(<McpSettingsView />);
-    expect(screen.getByTestId('mcp-kept-by-clubhouse-mode')).toHaveTextContent('Clubhouse mode is on, so MCP is still on at app level.');
+    expect(screen.queryByTestId('mcp-kept-by-clubhouse-mode')).toBeNull();
+    expect(screen.queryByText(/Clubhouse mode also keeps MCP on/)).toBeNull();
   });
 
   it('asks before saving, with counts, what keeps MCP, and that MCP back starts nothing', async () => {

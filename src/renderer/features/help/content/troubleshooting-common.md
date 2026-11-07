@@ -60,12 +60,6 @@ If `Cmd+K` doesn't work:
 - Check **Settings > Keyboard Shortcuts** for conflicts
 - Try `Cmd+K` from a non-text-input area first
 
-## Clubhouse Mode Dialog Keeps Appearing
-
-The Config Changes dialog appears when an agent's config has drifted from project defaults. To stop it:
-- Click **Keep for this agent** to lock the agent to its own config
-- Or **Save to Clubhouse** to sync changes back to defaults
-
 ## Still Stuck?
 
 Report issues at [github.com/Agent-Clubhouse/Clubhouse/issues](https://github.com/Agent-Clubhouse/Clubhouse/issues). Include:

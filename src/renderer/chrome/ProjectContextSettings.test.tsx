@@ -20,8 +20,7 @@ vi.mock('../plugins/plugin-loader', () => ({ handleProjectSwitch: async () => {}
 // Only terminal rendering is irrelevant to this synthetic settings navigation.
 vi.mock('../features/agents/AgentTerminal', () => ({ AgentTerminal: () => null }));
 vi.mock('../features/agents/chat/AgentRuntimePane', () => ({ AgentRuntimePane: () => null }));
-vi.mock('./sidebar/ChromeAgentDialogs', () => ({ ChromeAgentDialogs: () => null,
-  useChromeDialogStore: { getState: () => ({ close: () => {} }) } }));
+vi.mock('./sidebar/ChromeAgentDialogs', () => ({ ChromeAgentDialogs: () => null }));
 const projects = [{ id: 'p1', name: 'Alpha', path: '/synthetic/alpha' }, { id: 'p2', name: 'Beta', path: '/synthetic/beta' }];
 beforeEach(() => {
   useChromeFlagStore.setState({ enabled: true });

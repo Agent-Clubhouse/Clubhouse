@@ -7,8 +7,6 @@ import { useUIStore } from '../../stores/uiStore';
 import { AgentListItem } from './AgentListItem';
 import { AddAgentDialog } from './AddAgentDialog';
 import { DeleteAgentDialog } from './DeleteAgentDialog';
-import { ApplyPersonaDialog } from './ApplyPersonaDialog';
-import { ExtractPersonaDialog } from './ExtractPersonaDialog';
 import { QuickAgentGhostCompact } from './QuickAgentGhost';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
@@ -102,8 +100,6 @@ function AgentListInner() {
   const spawnQuickAgent = useAgentStore((s) => s.spawnQuickAgent);
   const loadDurableAgents = useAgentStore((s) => s.loadDurableAgents);
   const deleteDialogAgent = useAgentStore((s) => s.deleteDialogAgent);
-  const applyPersonaDialogAgent = useAgentStore((s) => s.applyPersonaDialogAgent);
-  const extractPersonaDialogAgent = useAgentStore((s) => s.extractPersonaDialogAgent);
   const reorderAgents = useAgentStore((s) => s.reorderAgents);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const projects = useProjectStore((s) => s.projects);
@@ -846,8 +842,6 @@ function AgentListInner() {
         />
       )}
       {deleteDialogAgent && <DeleteAgentDialog />}
-      {applyPersonaDialogAgent && <ApplyPersonaDialog />}
-      {extractPersonaDialogAgent && <ExtractPersonaDialog />}
       <ManagedRestartHost />
     </div>
   );
