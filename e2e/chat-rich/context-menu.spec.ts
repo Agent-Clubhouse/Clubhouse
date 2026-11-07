@@ -153,11 +153,12 @@ test('native copy menu preserves rich link, image and selection content', async 
     await choose('Copy'); await expect.poll(text).toBe('Selection fixture text.');
     await page.evaluate(() => document.getSelection()?.removeAllRanges());
 
-    await dom.composer.fill('Editable copy fixture');
-    await dom.composer.selectText();
-    expect(await menu(dom.composer)).toContain('copy');
+    const composerInput = dom.composer.getByRole('textbox', { name: 'Message', exact: true });
+    await composerInput.fill('Editable copy fixture');
+    await composerInput.selectText();
+    expect(await menu(composerInput)).toContain('copy');
     await choose('copy'); await expect.poll(text).toBe('Editable copy fixture');
-    await dom.composer.fill('');
+    await composerInput.fill('');
 
     // Existing agent-row menus retain control; the fallback must not open.
     const before = await app.evaluate(() => (globalThis as ProbeGlobal).__copyMenuProbe!.calls);
