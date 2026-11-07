@@ -284,7 +284,7 @@ export type ChatMcpServerStatus = 'connected' | 'pending' | 'needs_auth' | 'fail
 export interface ChatMcpServer {
   name: string;
   status: ChatMcpServerStatus;
-  /** Why it failed, when the CLI says: its first error line (an exit code, the first stderr line), never env values (D91). */
+  /** Why it failed, when the CLI says: its first error line (an exit code, the first stderr line), never env values (D95). */
   error?: string;
 }
 

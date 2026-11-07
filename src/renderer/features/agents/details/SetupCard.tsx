@@ -6,7 +6,7 @@
  * Open builder goes to the agent's Instructions page; Restart applies what
  * is waiting. An agent Clubhouse switched on its own says so until the
  * notice is dismissed (D59). A helper says what start_helper changed from its
- * template (D87), and a setup or template the Dispatcher changed says so (D86).
+ * template (D91), and a setup or template the Dispatcher changed says so (D90).
  */
 import { useState } from 'react';
 import type { Agent } from '../../../../shared/types';
@@ -60,7 +60,7 @@ function BuiltFrom({ templateName, changes }: { templateName: string | null; cha
 function SetupRows({ setup, templateName, templateChange, runsOn, changes }: {
   setup: ManagedAgentSetup;
   templateName: string | null;
-  /** Who last changed the template, when not the person (D86). */
+  /** Who last changed the template, when not the person (D90). */
   templateChange: string | null;
   runsOn: string;
   changes: string[] | null;

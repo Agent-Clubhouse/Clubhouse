@@ -538,7 +538,7 @@ describe('managed helpers (#2899)', () => {
     expect(setup.mcps).toEqual([CLUBHOUSE_MCP_PART_ID, pw.id]);
     const template = await user(() => service.getTemplate('builtin-template-helper'));
     expect(template.setup.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
-    // Kept for the helper's Details: "Helper template, plus Playwright, minus Clubhouse basics" (D87).
+    // Kept for the helper's Details: "Helper template, plus Playwright, minus Clubhouse basics" (D91).
     expect(setup.helperChanges).toEqual({ added: [pw.id], removed: [BUILTIN_BLOCK_IDS.basics] });
   });
 

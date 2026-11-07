@@ -104,7 +104,7 @@ describe('managed setup audit (D13)', () => {
     expect((await getDurableConfig(PROJECT_PATH, 'a1'))?.managed?.mcps).toEqual(['m1', CLUBHOUSE_MCP_PART_ID]);
   });
 
-  it('keeps who saved it, when, and start_helper\'s changes, none of them as settings rows (D86, D87)', async () => {
+  it('keeps who saved it, when, and start_helper\'s changes, none of them as settings rows (D90, D91)', async () => {
     await setManagedSetup(PROJECT_PATH, 'a1', {
       version: 1, blocks: ['b1'], skills: [], mcps: [], helperChanges: { added: ['b1'], removed: ['b0'] }, updatedAt: 't1', updatedBy: 'Dispatcher',
     });

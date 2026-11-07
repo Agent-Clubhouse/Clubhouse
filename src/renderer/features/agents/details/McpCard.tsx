@@ -15,7 +15,7 @@ import { CardNote, DetailsCard } from './DetailsCard';
  * row carries the agent's wires. Servers set in Clubhouse that the agent
  * isn't known to have loaded are listed apart, as configured. A server that
  * can't start says why under its row: the variable a managed agent's server
- * needs and the session's environment lacks, or the CLI's error line (D91).
+ * needs and the session's environment lacks, or the CLI's error line (D95).
  */
 
 /** The server name Clubhouse injects its own MCP under (clubhouse-mcp/injection.ts). */

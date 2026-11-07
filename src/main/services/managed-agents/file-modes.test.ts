@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { executableBits } from './file-modes';
 
-/** Skill import reads real executable bits (#2894, D92). */
+/** Skill import reads real executable bits (#2894, D96). */
 
 let dir: string;
 

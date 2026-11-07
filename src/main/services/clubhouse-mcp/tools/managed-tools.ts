@@ -39,7 +39,7 @@ function fail(text: string): McpToolResult {
 
 class ArgError extends Error {}
 
-/** A refused stale edit: what the part is now, so the caller can read it and decide (D88). */
+/** A refused stale edit: what the part is now, so the caller can read it and decide (D92). */
 function staleText(part: { name: string; revision: number; updatedAt: string; updatedBy?: string }): string {
   const by = part.updatedBy ? ` by ${part.updatedBy}` : '';
   return `${part.name} changed since you read it. It is at revision ${part.revision} now, saved${by} at ${part.updatedAt}. Read it with get_agent_part, then call again with expectedRevision ${part.revision} if your change should still go in.`;

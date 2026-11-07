@@ -219,7 +219,7 @@ describe('the managed exclude block (D16)', () => {
   });
 });
 
-describe('MCP start problems in the status (#2896, D91)', () => {
+describe('MCP start problems in the status (#2896, D95)', () => {
   it('reports what a running session\'s servers lack, by name, and forgets it when the agent stops', async () => {
     add('mcp-user', true);
     state.running.add('mcp-user');

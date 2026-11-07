@@ -1,6 +1,6 @@
 /**
  * A CLI's error for an MCP server that failed to start, safe to show in the
- * chat and Details (#2896, D91): its first line, URL queries cut, and any
+ * chat and Details (#2896, D95): its first line, URL queries cut, and any
  * secret-shaped text redacted. Clubhouse never reads the values of a server's
  * variables, so one can only appear if the CLI printed it, and the redaction
  * catches the common shapes then.

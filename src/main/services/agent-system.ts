@@ -722,7 +722,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
  * A managed agent starting in the terminal: its MCP servers whose variables
  * aren't set in the environment the CLI gets (the shell's plus Clubhouse's)
  * won't start. Say which by name in the terminal's setup notice, and keep them
- * for Details (D91). Never fails the start.
+ * for Details (D95). Never fails the start.
  */
 async function noteTerminalMcpProblems(projectPath: string, agentId: string, config: DurableAgentConfig, spawnEnv: Record<string, string>): Promise<void> {
   try {
@@ -913,7 +913,7 @@ async function spawnPtyAgent(
   // No bridge here: never point the agent at a port from its base env (#2620).
   if (mcpPort <= 0) delete spawnEnv.CLUBHOUSE_MCP_PORT;
 
-  // A managed agent's MCP server whose variables aren't set won't start: say which, by name (D91).
+  // A managed agent's MCP server whose variables aren't set won't start: say which, by name (D95).
   if (params.kind === 'durable' && durableConfig?.managed) await noteTerminalMcpProblems(params.projectPath, params.agentId, durableConfig, spawnEnv);
 
   if (profileEnv) {

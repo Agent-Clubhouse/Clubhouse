@@ -156,7 +156,7 @@ export function registerManagedAgentsHandlers(): void {
   ));
   // Reached only through the preload's executableBits(File[]): the paths come from
   // webUtils.getPathForFile, so they are files the person dropped or picked.
-  // Only each file's mode is read, as true, false or null (D92).
+  // Only each file's mode is read, as true, false or null (D96).
   ipcMain.handle(IPC.MANAGED.EXECUTABLE_BITS, withValidatedArgs([arrayArg(stringArg({ minLength: 0, maxLength: 4096 }), { maxLength: 2000 })],
     (_e, paths) => result(() => executableBits(paths))));
   ipcMain.handle(IPC.MANAGED.SET_CLUBHOUSE_FEATURES, withValidatedArgs([stringArg(), idArg(), booleanArg()],

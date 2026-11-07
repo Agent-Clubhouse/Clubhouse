@@ -1,5 +1,5 @@
 /**
- * Why an MCP server can't start (#2896, D91), said without values: the
+ * Why an MCP server can't start (#2896, D95), said without values: the
  * variable names it needs that the session's environment doesn't have, or the
  * first line of the error its CLI reported.
  */

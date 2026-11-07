@@ -1,5 +1,5 @@
 /**
- * Skill import (#2894, D92): whether each dropped or picked file is
+ * Skill import (#2894, D96): whether each dropped or picked file is
  * executable, read from the file itself rather than guessed from its name.
  * Only the mode is read, never the content, and nothing is run.
  */

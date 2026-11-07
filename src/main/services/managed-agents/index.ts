@@ -84,7 +84,7 @@ export function _setManagedAgentsForTesting(next: ManagedAgentsService | null): 
 const delivered = new Map<string, DeliveryRecord>();
 /** Agents whose last delivery failed, with the reason, until a delivery succeeds. */
 const failedDeliveries = new Map<string, string>();
-/** Each running session's MCP servers that can't start for want of a variable, by name (D91). */
+/** Each running session's MCP servers that can't start for want of a variable, by name (D95). */
 const mcpProblems = new Map<string, ManagedMcpProblem[]>();
 
 /** The spawn path: what this session's MCP servers lack. Details shows it while the agent runs. */

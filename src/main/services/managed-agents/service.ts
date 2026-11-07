@@ -90,7 +90,7 @@ function withClubhousePartIn<T extends { setup: { blocks: string[]; skills: stri
 }
 
 /**
- * Who a write is attributed to when it isn't the person (D86): the caller's
+ * Who a write is attributed to when it isn't the person (D90): the caller's
  * own name for it, else "Dispatcher" for a write that runs under the
  * Dispatcher's surface (its builder tools), else nobody.
  */
@@ -332,8 +332,8 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
 
   /**
    * Every setup write goes through here. It stamps when and, for a write that
-   * isn't the person's, who (D86). A helper's start_helper changes are kept
-   * while its parts stay as they were, and dropped once they change (D87).
+   * isn't the person's, who (D90). A helper's start_helper changes are kept
+   * while its parts stay as they were, and dropped once they change (D91).
    */
   async function writeAgentSetup(
     projectPath: string,
@@ -623,7 +623,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
      * Save what an agent is built from, after checkSetup's checks. The Clubhouse
      * MCP part is added when it's missing. `helperChanges` is start_helper's
      * record of what it changed from the template; who saved it comes from
-     * `actor` or the surface the call runs under (D86). Bookkeeping fields the
+     * `actor` or the surface the call runs under (D90). Bookkeeping fields the
      * caller passes inside `setup` are ignored.
      */
     async saveSetup(

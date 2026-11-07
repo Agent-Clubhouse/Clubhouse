@@ -25,10 +25,10 @@ export interface ManagedAgentSetup {
   /**
    * A helper only: the parts start_helper added to or left out of its
    * template, for Details ("Helper template, plus Playwright, minus
-   * code-review"). Dropped once the setup's parts change (D87).
+   * code-review"). Dropped once the setup's parts change (D91).
    */
   helperChanges?: ManagedHelperChanges;
-  /** Who last changed the setup, when not the person: for example "Dispatcher" (D86). */
+  /** Who last changed the setup, when not the person: for example "Dispatcher" (D90). */
   updatedBy?: string;
   /** When the setup was last saved (ISO time). */
   updatedAt?: string;
@@ -160,7 +160,7 @@ export interface ManagedTemplate {
   setup: Omit<ManagedAgentSetup, 'version' | 'templateId'>;
   settings: ManagedTemplateSettings;
   updatedAt?: string;
-  /** Who last changed it, when not the person: for example "Dispatcher" (D86). */
+  /** Who last changed it, when not the person: for example "Dispatcher" (D90). */
   updatedBy?: string;
 }
 
@@ -231,7 +231,7 @@ export interface ManagedAgentStatus {
   /**
    * A running agent's MCP servers that can't start because variables they
    * need aren't set in the environment its session started with. Names only,
-   * never values (D91).
+   * never values (D95).
    */
   mcpProblems?: ManagedMcpProblem[];
 }

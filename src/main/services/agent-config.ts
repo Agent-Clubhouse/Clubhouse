@@ -3027,7 +3027,7 @@ async function setManagedSetupInner(projectPath: string, agentId: string, setup:
     agent.managed = {
       version: 1, blocks: [...setup.blocks], skills: [...setup.skills], mcps,
       ...(setup.templateId ? { templateId: setup.templateId } : {}),
-      // Bookkeeping for Details (D86, D87): what start_helper changed, and who saved it when.
+      // Bookkeeping for Details (D90, D91): what start_helper changed, and who saved it when.
       ...(setup.helperChanges ? { helperChanges: { added: [...setup.helperChanges.added], removed: [...setup.helperChanges.removed] } } : {}),
       ...(setup.updatedAt ? { updatedAt: setup.updatedAt } : {}),
       ...(setup.updatedBy ? { updatedBy: setup.updatedBy } : {}),

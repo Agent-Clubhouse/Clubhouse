@@ -158,7 +158,7 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
     expect(appendChatEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'notice', data: expect.objectContaining({ code: 'mcp_configuration', message: expect.stringContaining('isn\'t valid JSON') }) }));
     expect(JSON.stringify(vi.mocked(appendChatEvent).mock.calls)).not.toContain('invalid-canonical-secret');
   });
-  it('says in the chat which variables a server needs and the environment lacks, by name only (#2896, D91)', async () => {
+  it('says in the chat which variables a server needs and the environment lacks, by name only (#2896, D95)', async () => {
     await save(raw({ workiq: { command: 'never', env_vars: ['SYNTHETIC_MISSING_VAR', 'PATH'] } }));
     vi.mocked(appendChatEvent).mockClear();
     await start();

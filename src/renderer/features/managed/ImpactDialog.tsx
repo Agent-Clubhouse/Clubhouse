@@ -12,7 +12,7 @@ export function impactTitle(partName: string, agents: number, templates: number)
   return `Save ${partName} for ${who}?`;
 }
 
-/** Whether saving a part asks first: anything besides one agent uses it (#2897, D89). */
+/** Whether saving a part asks first: anything besides one agent uses it (#2897, D93). */
 export function needsImpactDialog(part: { usedBy: unknown[]; templates: unknown[] }, otherAgents = 0): boolean {
   return part.usedBy.length + part.templates.length > 1 || otherAgents > 0;
 }

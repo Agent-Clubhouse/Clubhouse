@@ -225,7 +225,7 @@ export class CodexChatEventMapper {
       }
       case 'mcpServer/startupStatus/updated': {
         const { name, status, error } = notification.params;
-        // Details lists every server Codex reported, with why one failed (D91).
+        // Details lists every server Codex reported, with why one failed (D95).
         const line = status === 'failed' ? safeMcpErrorLine(error) : undefined;
         const before = JSON.stringify([...this.mcpServers.values()]);
         this.mcpServers.set(name, { name, status: CODEX_MCP_STATUS[status] ?? 'unknown', ...(line && { error: line }) });

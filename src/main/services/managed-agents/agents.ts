@@ -53,7 +53,7 @@ export interface CreateManagedAgentInput {
   settings?: ManagedTemplateSettings;
   /**
    * false: a plain (unmanaged) agent in its own folder, with these settings and
-   * no template or parts (create_managed_agent, #2900, D90).
+   * no template or parts (create_managed_agent, #2900, D94).
    */
   managed?: false;
 }

@@ -18,7 +18,7 @@ const SCRIPT_EXT = /\.(sh|zsh|bash|py)$/i;
 
 /**
  * A dropped or picked file as a skill file. `executable` is the file's real
- * executable bit, read by main from its mode (D92); null means it can't be
+ * executable bit, read by main from its mode (D96); null means it can't be
  * told, and then a script name is the guess.
  */
 export async function readFileAsSkillFile(file: File, relPath: string, executable: boolean | null): Promise<SkillFile> {

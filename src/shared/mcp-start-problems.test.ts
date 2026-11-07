@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mcpErrorLine, missingEnvNotice, missingEnvReason, missingMcpEnv } from './mcp-start-problems';
 
-describe('MCP start problems (#2896, D91)', () => {
+describe('MCP start problems (#2896, D95)', () => {
   it('finds servers whose variables aren\'t set, by name, and skips the Clubhouse server', () => {
     const servers = {
       workiq: { command: 'npx', env_vars: ['WORKIQ_TENANT', 'WORKIQ_REGION'] },

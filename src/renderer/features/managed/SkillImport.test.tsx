@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PartDialog, readFileAsSkillFile } from './PartDialog';
 
-/** Skill import keeps each file's real executable bit, read by main from its mode (#2894, D92). */
+/** Skill import keeps each file's real executable bit, read by main from its mode (#2894, D96). */
 
 const m = () => window.clubhouse.managed;
 const file = (name: string, bytes: string | Uint8Array) => new File([bytes], name);

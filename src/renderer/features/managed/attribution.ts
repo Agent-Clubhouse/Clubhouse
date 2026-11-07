@@ -1,6 +1,6 @@
 /**
- * Who changed a part, setup or template and when (#2900, D86), and what a
- * helper was built from (#2899, D87), as Details and the library say them.
+ * Who changed a part, setup or template and when (#2900, D90), and what a
+ * helper was built from (#2899, D91), as Details and the library say them.
  */
 import { formatAgo } from '../agents/states/format';
 

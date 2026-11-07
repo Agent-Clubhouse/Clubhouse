@@ -591,7 +591,7 @@ async function runChatStart(
     };
     // No bridge here: never point the agent at a port from its base env (#2620).
     if (mcpPort <= 0) delete env.CLUBHOUSE_MCP_PORT;
-    // A server whose variables aren't set won't start: say which, by name, in the chat and Details (D91).
+    // A server whose variables aren't set won't start: say which, by name, in the chat and Details (D95).
     const envProblems = missingMcpEnv(configuredServers, env);
     for (const problem of envProblems) mcpNotices.push({ level: 'warn', code: 'mcp_server_env_missing', message: missingEnvNotice(problem) });
     if (durableConfig?.managed) await noteMcpStartProblems(params.agentId, envProblems);
