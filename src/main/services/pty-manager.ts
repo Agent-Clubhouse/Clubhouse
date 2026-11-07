@@ -18,6 +18,7 @@ import { tagError, type ErrorType } from '../telemetry/types';
 import { stripTerminalEscapes } from '../../shared/terminal-text';
 import * as renderDiag from './pty-render-diagnostics';
 import { altScreenAfter, resyncOffset, type PtyBufferSnapshot, type PtySnapshotSize } from '../../shared/pty-snapshot';
+import { PtyInputModeTracker } from '../../shared/pty-input-modes';
 
 /** Pattern matching common API key environment variable names. */
 const API_KEY_ENV_PATTERN = /^(ANTHROPIC_API_KEY|OPENAI_API_KEY|GOOGLE_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|AZURE_OPENAI_API_KEY|MISTRAL_API_KEY|COHERE_API_KEY|HUGGING_FACE_TOKEN|HF_TOKEN)$/;
@@ -62,6 +63,8 @@ interface ManagedSession {
   sizeLog: Array<{ seq: number; cols: number; rows: number }>;
   /** Whether the alt screen was active at the buffer head (evicted history). */
   headAltScreen: boolean;
+  /** Two input modes and parser state after all evicted output, before the raw tail. */
+  headInputModes: PtyInputModeTracker;
   /** Last few evicted chars, so a toggle split across chunks is still seen. */
   evictedTail: string;
   /** Current PTY size, to skip resizes that change nothing. */
@@ -276,6 +279,7 @@ function createSession(process: pty.IPty, agentId: string, pendingCommand?: stri
     outputSeq: outputSeqHighWater,
     sizeLog: [{ seq: outputSeqHighWater, cols: SPAWN_COLS, rows: SPAWN_ROWS }],
     headAltScreen: false,
+    headInputModes: new PtyInputModeTracker(),
     evictedTail: '',
     cols: SPAWN_COLS,
     rows: SPAWN_ROWS,
@@ -294,6 +298,7 @@ function appendToBuffer(session: ManagedSession, data: string): void {
   let evicted = false;
   while (session.outputSize > MAX_BUFFER_SIZE && session.outputHead < session.outputChunks.length - 1) {
     const chunk = session.outputChunks[session.outputHead]!;
+    session.headInputModes.feed(chunk);
     const scanned = session.evictedTail + chunk;
     session.headAltScreen = altScreenAfter(scanned, session.headAltScreen);
     session.evictedTail = scanned.slice(-EVICT_TAIL_CHARS);
@@ -332,8 +337,9 @@ export function getBuffer(agentId: string): string {
  * the PTY size each part of it was written at.  Live PTY.DATA events whose seq
  * is <= `seq` are already in `data`.
  *
- * Once the head has been evicted, the data starts at a safe point past any cut
- * escape sequence, and re-enters the alt screen if it was active there.
+ * After eviction, the existing resync heuristic skips a cut prefix where it
+ * finds a boundary. The replay restores the alt screen and two input modes at
+ * that start; it does not repair incomplete sequences with no boundary (#2743).
  */
 export function getBufferSnapshot(agentId: string): PtyBufferSnapshot {
   const session = sessions.get(agentId);
@@ -342,7 +348,9 @@ export function getBufferSnapshot(agentId: string): PtyBufferSnapshot {
   const startSeq = session.outputSeq - raw.length;
   const truncated = session.evictedChars > 0;
   const skip = truncated ? resyncOffset(raw) : 0;
-  const prefix = truncated && session.headAltScreen ? '\x1b[?1049h' : '';
+  const prefix = truncated
+    ? (session.headAltScreen ? '\x1b[?1049h' : '') + session.headInputModes.replayPrefix(raw.slice(0, skip))
+    : '';
   const sizes: PtySnapshotSize[] = [];
   for (const entry of session.sizeLog) {
     // Sizes set before the replay start all apply at offset 0; the last wins.
@@ -364,8 +372,8 @@ annexEventBus.onActiveChange((active) => {
   }
 
   for (const session of sessions.values()) {
-    const buffer = getSessionBuffer(session);
-    if (buffer) mirrorOutput(session, buffer);
+    const snapshot = getBufferSnapshot(session.agentId);
+    if (snapshot.data) mirrorOutput(session, snapshot.data, snapshot.seq);
   }
 });
 
@@ -382,9 +390,9 @@ function currentSize(session: ManagedSession): { cols: number; rows: number } {
   return { cols, rows };
 }
 
-function mirrorOutput(session: ManagedSession, data: string): void {
+function mirrorOutput(session: ManagedSession, data: string, seq = session.outputSeq): void {
   headlessTerminal.ensure(session.agentId, { ...currentSize(session), windowsPty: localWindowsPty });
-  headlessTerminal.feedData(session.agentId, data, session.outputSeq);
+  headlessTerminal.feedData(session.agentId, data, seq);
 }
 
 /** Get the last activity timestamp for an agent's PTY session, or null if no session exists. */
