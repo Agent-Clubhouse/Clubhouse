@@ -386,3 +386,154 @@ describe('paginateEvents', () => {
     expect(page.events).toHaveLength(5);
   });
 });
+
+// ── Token usage: each message once ─────────────────────────────────────
+
+describe('session usage', () => {
+  const assistant = (id: string | undefined, content: unknown[], usage?: Record<string, unknown>, model?: string): StreamJsonEvent => ({
+    type: 'assistant',
+    message: { ...(id && { id }), content, ...(usage && { usage }), ...(model && { model }) },
+  } as unknown as StreamJsonEvent);
+  const text = (t: string) => ({ type: 'text', text: t });
+  const tool = (name = 'Read') => ({ type: 'tool_use', name, id: `tu-${name}`, input: {} });
+
+  it('counts a message with several text blocks once, not once per block', () => {
+    const events = normalizeSessionEvents([assistant('m1', [text('one'), text('two'), text('three')], { input_tokens: 100, output_tokens: 50 })]);
+    expect(events.filter((e) => e.type === 'assistant_message')).toHaveLength(3);
+    expect(events.filter((e) => e.usage)).toHaveLength(1);
+    const summary = buildSessionSummary(events);
+    expect(summary.totalInputTokens).toBe(100);
+    expect(summary.totalOutputTokens).toBe(50);
+    expect(summary.tokenUsage).toBe('complete');
+  });
+
+  it('keeps the usage of a tool-only message', () => {
+    const events = normalizeSessionEvents([assistant('m1', [tool('Write')], { input_tokens: 40, output_tokens: 8 })]);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: 'tool_use', usage: { inputTokens: 40, outputTokens: 8 }, messageId: 'm1' });
+    expect(buildSessionSummary(events)).toMatchObject({ totalInputTokens: 40, totalOutputTokens: 8, tokenUsage: 'complete' });
+  });
+
+  it('keeps the usage of a thinking-only message as a usage event, without inventing reply text', () => {
+    const events = normalizeSessionEvents([assistant('m1', [{ type: 'thinking', thinking: 'hmm' }], { input_tokens: 10, output_tokens: 20 })]);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: 'usage', usage: { inputTokens: 10, outputTokens: 20 } });
+    expect(events[0].text).toBeUndefined();
+    expect(buildSessionSummary(events)).toMatchObject({ totalInputTokens: 10, totalOutputTokens: 20, summary: null });
+  });
+
+  it('records one message repeated across records once, where records of one message share an id', () => {
+    const usage = { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 900 };
+    const events = normalizeSessionEvents([
+      assistant('m1', [text('first block')], usage),
+      assistant('m1', [tool('Edit')], usage),
+      assistant('m1', [text('last block')], usage),
+    ]);
+    expect(events.filter((e) => e.usage)).toHaveLength(1);
+    const summary = buildSessionSummary(events);
+    expect(summary).toMatchObject({ totalInputTokens: 100, totalOutputTokens: 50, totalCacheReadTokens: 900, tokenUsage: 'complete' });
+  });
+
+  it('a repeated record that gains usage fills in the message without adding to it', () => {
+    const events = normalizeSessionEvents([
+      assistant('m1', [text('a')], { input_tokens: 100, output_tokens: 1 }),
+      assistant('m1', [text('b')], { input_tokens: 100, output_tokens: 60 }),
+    ]);
+    expect(events.filter((e) => e.usage)).toHaveLength(1);
+    expect(events.find((e) => e.usage)!.usage).toEqual({ inputTokens: 100, outputTokens: 60 });
+    expect(buildSessionSummary(events)).toMatchObject({ totalOutputTokens: 60, tokenUsage: 'complete' });
+  });
+
+  it('a later record missing fields does not erase what an earlier one reported', () => {
+    const events = normalizeSessionEvents([
+      assistant('m1', [text('a')], { input_tokens: 100, output_tokens: 20, cache_creation_input_tokens: 7 }),
+      assistant('m1', [text('b')], { output_tokens: 20 }),
+    ]);
+    expect(events.find((e) => e.usage)!.usage).toEqual({ inputTokens: 100, outputTokens: 20, cacheWriteTokens: 7 });
+  });
+
+  it('a record that gets a message its first record had no usage for takes it, and is no longer missing', () => {
+    const events = normalizeSessionEvents([
+      assistant('m1', [text('a')]),
+      assistant('m1', [tool()], { input_tokens: 5, output_tokens: 6 }),
+    ]);
+    expect(events[0]).toMatchObject({ usage: { inputTokens: 5, outputTokens: 6 } });
+    expect(events[0].usageMissing).toBeUndefined();
+    expect(buildSessionSummary(events).tokenUsage).toBe('complete');
+  });
+
+  it('never sums changed values of one message: it keeps the highest per field and flags the conflict', () => {
+    const events = normalizeSessionEvents([
+      assistant('m1', [text('a')], { input_tokens: 100, output_tokens: 50 }),
+      assistant('m1', [text('b')], { input_tokens: 90, output_tokens: 70 }),
+    ]);
+    const carrier = events.find((e) => e.usage)!;
+    expect(carrier.usage).toEqual({ inputTokens: 100, outputTokens: 70, conflict: true });
+    const summary = buildSessionSummary(events);
+    // Not 190 / 120, and not claimed as a complete measurement.
+    expect(summary).toMatchObject({ totalInputTokens: 100, totalOutputTokens: 70, tokenUsage: 'partial', tokenUsageConflicts: 1 });
+  });
+
+  it('the same message id in two sessions is never deduplicated together', () => {
+    const one = normalizeSessionEvents([assistant('m1', [text('a')], { input_tokens: 10, output_tokens: 1 })]);
+    const two = normalizeSessionEvents([assistant('m1', [text('a')], { input_tokens: 10, output_tokens: 1 })]);
+    expect(buildSessionSummary(one).totalInputTokens + buildSessionSummary(two).totalInputTokens).toBe(20);
+    // Within a session, ids are what repeat; a message with no id counts per record.
+    const noId = normalizeSessionEvents([assistant(undefined, [text('a')], { input_tokens: 10, output_tokens: 1 }), assistant(undefined, [text('b')], { input_tokens: 10, output_tokens: 1 })]);
+    expect(buildSessionSummary(noId).totalInputTokens).toBe(20);
+  });
+
+  it('a field the transcript left out is not zero: totals skip it and the summary is partial', () => {
+    const events = normalizeSessionEvents([assistant('m1', [text('a')], { output_tokens: 9 })]);
+    expect(events[0].usage).toEqual({ outputTokens: 9 });
+    expect(events[0].usage).not.toHaveProperty('inputTokens');
+    expect(buildSessionSummary(events)).toMatchObject({ totalOutputTokens: 9, tokenUsage: 'partial' });
+    expect(buildSessionSummary(events)).not.toHaveProperty('totalCacheReadTokens');
+  });
+
+  it('a session with one fully reported message and one with none is partial, not complete', () => {
+    const events = normalizeSessionEvents([
+      assistant('m1', [text('a')], { input_tokens: 10, output_tokens: 2 }),
+      assistant('m2', [text('b'), text('c')]),
+    ]);
+    expect(events.filter((e) => e.usageMissing)).toHaveLength(1);
+    expect(buildSessionSummary(events)).toMatchObject({ totalInputTokens: 10, tokenUsage: 'partial' });
+  });
+
+  it('counts a message with several text blocks and no usage as one gap, not one per block', () => {
+    const events = normalizeSessionEvents([
+      assistant('m1', [text('a')], { input_tokens: 1, output_tokens: 1 }),
+      assistant('m2', [text('b'), text('c'), text('d')]),
+    ]);
+    expect(events.filter((e) => e.usageMissing)).toHaveLength(1);
+  });
+
+  it('a tool-only and a thinking-only message with no usage are gaps too', () => {
+    const events = normalizeSessionEvents([
+      assistant('m1', [text('a')], { input_tokens: 1, output_tokens: 1 }),
+      assistant('m2', [tool()]),
+      assistant('m3', [{ type: 'thinking', thinking: 'x' }]),
+    ]);
+    expect(events.filter((e) => e.usageMissing).map((e) => e.type)).toEqual(['tool_use', 'usage']);
+    expect(buildSessionSummary(events).tokenUsage).toBe('partial');
+  });
+
+  it('a session with no usage at all says none', () => {
+    const events = normalizeSessionEvents([assistant('m1', [text('a')]), assistant('m2', [tool()])]);
+    const summary = buildSessionSummary(events);
+    expect(summary).toMatchObject({ tokenUsage: 'none', totalInputTokens: 0, totalOutputTokens: 0 });
+  });
+
+  it('reads the role-based format the same way', () => {
+    const events = normalizeSessionEvents([
+      { role: 'assistant', id: 'r1', content: [text('a'), text('b')], usage: { input_tokens: 30, output_tokens: 4 }, model: 'claude-sonnet-5-5' },
+    ] as unknown as StreamJsonEvent[]);
+    expect(events.filter((e) => e.usage)).toHaveLength(1);
+    expect(buildSessionSummary(events)).toMatchObject({ totalInputTokens: 30, totalOutputTokens: 4, model: 'claude-sonnet-5-5', tokenUsage: 'complete' });
+  });
+
+  it('keeps the model from a message whose only event is a tool call', () => {
+    const events = normalizeSessionEvents([assistant('m1', [tool()], { input_tokens: 1, output_tokens: 1 }, 'claude-opus-5-5')]);
+    expect(buildSessionSummary(events).model).toBe('claude-opus-5-5');
+  });
+});

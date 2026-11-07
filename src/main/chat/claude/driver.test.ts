@@ -201,6 +201,9 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
     expect(turnTypes).toEqual(['turn_started', 'agent_message_chunk', 'agent_message_chunk', 'agent_message', 'usage', 'usage', 'turn_ended']);
     const turnUsage = drafts.of('usage').filter((d) => d.turnId === 'turn-1');
     expect(turnUsage.map((d) => [d.data.scope, d.data.costUsd])).toEqual([['turn', 0.0012], ['session', 0.0012]]);
+    // The turn figure is the main loop's; the session total (modelUsage) also counts subagents and compaction.
+    // Documented for the Agent SDK only; the stream-json transport says nothing, so it is unscoped.
+    expect(turnUsage.map((d) => [d.data.scope, d.data.coverage])).toEqual(id === 'claude_agent_sdk' ? [['turn', 'main'], ['session', 'inclusive']] : [['turn', undefined], ['session', undefined]]);
     expect(drafts.of('agent_message')[0].data).toEqual({ messageId: 'msg_hello', text: 'Hello' });
     // Context is the last main-loop call's prompt (2,000 + 30,000 cache read + 8,000 cache write)
     // against the model's window from modelUsage.

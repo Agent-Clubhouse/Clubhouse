@@ -317,7 +317,9 @@ export const agent = {
       toolInput?: Record<string, unknown>;
       text?: string;
       filePath?: string;
-      usage?: { inputTokens: number; outputTokens: number };
+      usage?: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number; conflict?: boolean };
+      messageId?: string;
+      usageMissing?: boolean;
       costUsd?: number;
       durationMs?: number;
       model?: string;
@@ -335,6 +337,10 @@ export const agent = {
     totalDurationMs: number;
     totalInputTokens: number;
     totalOutputTokens: number;
+    totalCacheReadTokens?: number;
+    totalCacheWriteTokens?: number;
+    tokenUsage?: 'complete' | 'partial' | 'none';
+    tokenUsageConflicts?: number;
     model: string | null;
     orchestrator: string | null;
     eventCount: number;

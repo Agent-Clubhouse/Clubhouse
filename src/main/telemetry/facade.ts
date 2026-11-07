@@ -240,6 +240,7 @@ export const tel = {
 
   event(name: EventName, attrs?: TelAttr[], opts?: EventOptions): void {
     toLocal((l) => l.event(name, attrs, opts));
+    if (opts?.localOnly) return;
     // Options only when given, so plain events keep their two-argument call shape.
     const emit = (rt: TelemetryRuntime): void => (opts ? rt.event(name, attrs, opts) : rt.event(name, attrs));
     const target = exportRuntime(EVENTS[name].level);
