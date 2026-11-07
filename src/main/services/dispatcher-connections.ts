@@ -676,15 +676,27 @@ export async function listDispatcherLinksForUser(): Promise<DispatcherLink[]> {
 
 // ── Keeping up with changes ──────────────────────────────────────────────
 
+export type DispatcherWatchWorkKind = 'initial-settlement' | 'change-check' | 'user-removal' | 'user-draw';
+/** Synchronous observation only; undefined return excludes async observers. No payloads. */
+export type DispatcherWatchWorkObserver = (kind: DispatcherWatchWorkKind, terminal: Promise<unknown>) => undefined;
+
 /**
  * Keep the store and the wires in step: the user removing or drawing a pair, and
  * any change that can move a link's status (an agent's policy, its persona, MCP,
  * the Dispatcher, the project list). Returns an unsubscribe function.
  */
-export function watchDispatcherConnections(onChanged: () => unknown): () => void {
+export function watchDispatcherConnections(onChanged: () => unknown, observeWork?: DispatcherWatchWorkObserver): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
+
+  const accepted = (kind: DispatcherWatchWorkKind, terminal: Promise<unknown>): void => {
+    if (!observeWork) return;
+    try { observeWork(kind, terminal); } catch {
+      // telemetry-exempt: optional observation must not change accepted work or
+      // its existing error/retry behavior. Never catch/replace terminal itself.
+    }
+  };
 
   const check = async (): Promise<void> => {
     if (writesBlocked) await probeStoreWrites();
@@ -707,12 +719,12 @@ export function watchDispatcherConnections(onChanged: () => unknown): () => void
     // Coalesce a burst of writes, and stay out of the writer's call stack.
     timer = setTimeout(() => {
       timer = null;
-      void check().catch((err) => {
+      accepted('change-check', check().catch((err) => {
         // telemetry-exempt: logged; the next change retries, and rebuilds read the store anyway
         appLog('core:mcp', 'warn', 'Could not update Dispatcher connections after a change', {
           meta: { error: err instanceof Error ? err.message : String(err) },
         });
-      });
+      }));
     }, 50);
   };
 
@@ -726,7 +738,7 @@ export function watchDispatcherConnections(onChanged: () => unknown): () => void
   };
   scheduleRetry = retry;
   // Removals an earlier session left pending go into the store as soon as it takes them.
-  void settlePendingRemovals().then((again) => { if (again) retry(); });
+  accepted('initial-settlement', settlePendingRemovals().then((again) => { if (again) retry(); }));
 
   const projectChanged = (projectPath: string): void => {
     // The Dispatcher's own writes (status, sessions) never move a link.
@@ -740,7 +752,7 @@ export function watchDispatcherConnections(onChanged: () => unknown): () => void
     onMcpEnablementChanged(changed),
     projectStore.onProjectsChanged(changed),
     onBindingRemovedByUser((agentId, targetId) => {
-      void recordUserRemoval({ agentId, targetId }).then((recorded) => {
+      accepted('user-removal', recordUserRemoval({ agentId, targetId }).then((recorded) => {
         if (recorded) appLog('core:mcp', 'info', 'The user removed a Dispatcher connection', { meta: { agentId, targetId } });
         if (pendingRemovals.has(pairKey({ agentId, targetId }))) retry();
       }, (err) => {
@@ -748,15 +760,15 @@ export function watchDispatcherConnections(onChanged: () => unknown): () => void
         appLog('core:mcp', 'warn', 'Could not record a user-removed Dispatcher connection', {
           meta: { agentId, targetId, error: err instanceof Error ? err.message : String(err) },
         });
-      });
+      }));
     }),
     onBindingDrawnByUser((agentId, targetId) => {
-      void clearUserRemoval({ agentId, targetId }).catch((err) => {
+      accepted('user-draw', clearUserRemoval({ agentId, targetId }).catch((err) => {
         // telemetry-exempt: logged; the Dispatcher stays refused for this pair, which is the safe side
         appLog('core:mcp', 'warn', 'Could not clear a Dispatcher connection removal', {
           meta: { agentId, targetId, error: err instanceof Error ? err.message : String(err) },
         });
-      });
+      }));
     }),
   ];
   return () => {
