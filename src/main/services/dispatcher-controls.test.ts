@@ -7,7 +7,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach as rawBeforeEach, describe, expect, it as rawIt, vi } from 'vitest';
+import { FixtureWork, ownedRegistration } from '../../../test/dispatcher-work-owner';
 
 // What the gate decides is covered in mcp-call-gate.test.ts and test/mcp-off.
 vi.mock('./clubhouse-mcp/mcp-call-gate', async (original) => ({ ...await original<typeof import('./clubhouse-mcp/mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
@@ -68,7 +69,7 @@ vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => state.base }));
 vi.mock('./project-store', () => ({
   list: vi.fn(async () => [...state.projects]),
-  onProjectsChanged: vi.fn(() => () => undefined),
+  onProjectsChanged: vi.fn((): (() => void) => (): undefined => undefined),
 }));
 vi.mock('./fs-utils', () => ({ pathExists: vi.fn(async () => true) }));
 vi.mock('./agent-config', () => ({
@@ -81,8 +82,8 @@ vi.mock('./agent-config', () => ({
     return () => state.agentListeners.delete(listener);
   }),
 }));
-vi.mock('./mcp-settings', () => ({ onMcpEnablementChanged: vi.fn(() => () => undefined) }));
-vi.mock('./persona-change-hook', () => ({ onPersonaChanged: vi.fn(() => () => undefined) }));
+vi.mock('./mcp-settings', () => ({ onMcpEnablementChanged: vi.fn((): (() => void) => (): undefined => undefined) }));
+vi.mock('./persona-change-hook', () => ({ onPersonaChanged: vi.fn((): (() => void) => (): undefined => undefined) }));
 vi.mock('./helper-index', () => ({
   listHelpersEverywhere: vi.fn(async (_p: string, id: string) => state.helpers.get(id) ?? []),
 }));
@@ -132,24 +133,24 @@ import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { callTool, getScopedToolList, _resetForTesting } from './clubhouse-mcp/tool-registry';
 import { registerDispatcherControlTools } from './clubhouse-mcp/tools/dispatcher-control-tools';
 import { agentRegistry } from './agent-registry';
-import { auditPath, appendAudit, readAudit, MAX_AUDIT_BYTES, _resetDispatcherAuditForTesting, type AuditRow } from './dispatcher-audit';
+import { auditPath, appendAudit as actualAppendAudit, readAudit as actualReadAudit, MAX_AUDIT_BYTES, _resetDispatcherAuditForTesting, type AuditRow } from './dispatcher-audit';
 import {
   dispatcherConnectionSource,
-  clearUserRemoval,
+  clearUserRemoval as actualClearUserRemoval,
   dispatcherConnectionsPath,
   dispatcherPendingRemovalsPath,
-  isRemovalUnsaved,
-  listDispatcherLinksForUser,
-  readDispatcherConnections,
+  isRemovalUnsaved as actualIsRemovalUnsaved,
+  listDispatcherLinksForUser as actualListDispatcherLinksForUser,
+  readDispatcherConnections as actualReadDispatcherConnections,
   watchDispatcherConnections,
   MAX_DISPATCHER_LINKS_PER_AGENT,
   _resetDispatcherConnectionsForTesting,
 } from './dispatcher-connections';
-import { setOrchestratorHelpers } from './dispatcher-controls';
+import { setOrchestratorHelpers as actualSetOrchestratorHelpers } from './dispatcher-controls';
 import {
   clearBindingRemovedByUser,
   markBindingRemovedByUser,
-  rebuildPersistedBindings,
+  rebuildPersistedBindings as actualRebuildPersistedBindings,
   registerPersistedBindingSource,
   _resetPersistedBindingSourcesForTesting,
   type PersistedBinding,
@@ -166,25 +167,98 @@ let stopWatching: (() => void) | null = null;
 /** User wires the canvas source lists, as canvas storage would. */
 let canvasWires: PersistedBinding[] = [];
 
-function startApp(): void {
-  registerPersistedBindingSource({ id: 'canvas', collect: async () => canvasWires });
-  registerPersistedBindingSource(dispatcherConnectionSource);
-  stopWatching = watchDispatcherConnections(() => rebuildPersistedBindings());
+/** One serial Vitest case; the old object survives timeout until its raw work ends. */
+interface HarnessCase {
+  work: FixtureWork;
+  base?: string;
+  epoch?: ReturnType<FixtureWork['epoch']>;
+  watcherRejected: boolean;
+  watcherError?: unknown;
+  teardownComplete: boolean;
+}
+let currentCase: HarnessCase | undefined;
+
+function fixture(): HarnessCase {
+  if (!currentCase) throw new Error('Dispatcher fixture has not started');
+  return currentCase;
+}
+function epochWork() {
+  const epoch = fixture().epoch;
+  if (!epoch) throw new Error('Dispatcher fixture has no epoch');
+  return epoch.work;
+}
+function observeCase(promise: Promise<unknown>): void { fixture().work.roots.observe(promise); }
+
+// Raw callback promises, including async waitFor predicates, outlive Vitest's
+// timeout wrappers. Never put teardown/restart controllers in scopes they await.
+const it = ownedRegistration(rawIt, 1, observeCase);
+const beforeEach = ownedRegistration(rawBeforeEach, 0, observeCase);
+const waitFor = ownedRegistration(vi.waitFor, 0, observeCase);
+
+/** Return the original operation promise; retain its complete store/audit tail. */
+function ownOperation<A extends unknown[], R>(operation: (...args: A) => Promise<R>) {
+  return function (this: unknown, ...args: A): Promise<R> {
+    const work = epochWork(); // Capture before invocation, never after an await.
+    return work.observe(operation.apply(this, args));
+  };
+}
+const appendAudit = ownOperation(actualAppendAudit);
+const readAudit = ownOperation(actualReadAudit);
+const clearUserRemoval = ownOperation(actualClearUserRemoval);
+const isRemovalUnsaved = ownOperation(actualIsRemovalUnsaved);
+const listDispatcherLinksForUser = ownOperation(actualListDispatcherLinksForUser);
+const readDispatcherConnections = ownOperation(actualReadDispatcherConnections);
+const setOrchestratorHelpers = ownOperation(actualSetOrchestratorHelpers);
+const rebuildPersistedBindings = ownOperation(actualRebuildPersistedBindings);
+
+function assertRetired(owner: HarnessCase): void {
+  owner.work.assertSettled();
+  if (owner.watcherRejected) throw owner.watcherError; // Including rejected undefined.
+  if (!owner.teardownComplete) throw new Error('Previous Dispatcher fixture teardown is incomplete');
 }
 
-/** Everything in memory goes; the files stay. */
+function startApp(): void {
+  const owner = fixture();
+  let stop: (() => void) | undefined;
+  const epoch = owner.work.epoch(() => stop?.());
+  owner.epoch = epoch;
+  registerPersistedBindingSource({ id: 'canvas', collect: async () => canvasWires });
+  registerPersistedBindingSource(dispatcherConnectionSource);
+  stop = watchDispatcherConnections(
+    () => epoch.work.observe(actualRebuildPersistedBindings()),
+    (_kind, terminal) => {
+      epoch.work.observe(terminal);
+      // Public operation rejections may be expected by .rejects. A rejected full
+      // watcher tail is unexpected: retain it explicitly, rather than hiding an
+      // unhandled rejection by enabling the ownership observer.
+      void terminal.then((): undefined => undefined, (error: unknown) => {
+        owner.watcherRejected = true;
+        owner.watcherError = error;
+      });
+      return undefined;
+    },
+  );
+  stopWatching = stop;
+}
+
+/** Retire the old epoch before forgetting memory; case/setup roots stay outside it. */
 async function restart(): Promise<void> {
-  stopWatching?.();
-  for (const { agentId } of bindingManager.getAllBindings()) bindingManager.unbindAgent(agentId);
-  _resetPersistedBindingSourcesForTesting();
-  _resetDispatcherConnectionsForTesting();
-  _resetDispatcherAuditForTesting();
-  startApp();
+  const owner = fixture();
+  const resetAndStart = (): undefined => {
+    for (const { agentId } of bindingManager.getAllBindings()) bindingManager.unbindAgent(agentId);
+    _resetPersistedBindingSourcesForTesting();
+    _resetDispatcherConnectionsForTesting();
+    _resetDispatcherAuditForTesting();
+    startApp();
+    return undefined;
+  };
+  if (owner.epoch) await owner.work.restart(owner.epoch, resetAndStart);
+  else owner.work.start(resetAndStart);
   await rebuildPersistedBindings();
 }
 
 const text = (r: { content: Array<{ text?: string }> }) => r.content[0].text ?? '';
-const call = (name: string, args: Record<string, unknown> = {}, caller = 'dispatcher') => callTool(caller, name, args);
+const call = ownOperation((name: string, args: Record<string, unknown> = {}, caller: Parameters<typeof callTool>[0] = 'dispatcher') => callTool(caller, name, args));
 const isBound = (a: string, b: string) => bindingManager.getBindingsForAgent(a).some((x) => x.targetId === b);
 const storedPairs = async () => (await readDispatcherConnections()).map((c) => `${c.agentId}>${c.targetId}`);
 
@@ -210,7 +284,7 @@ async function userRemoves(a: string, b: string): Promise<void> {
   bindingManager.unbind(a, b);
   canvasWires = canvasWires.filter((w) => !(w.agentId === a && w.targetId === b));
   markBindingRemovedByUser(a, b);
-  await vi.waitFor(async () => expect(await storedPairs()).not.toContain(`${a}>${b}`));
+  await waitFor(async () => expect(await storedPairs()).not.toContain(`${a}>${b}`));
 }
 
 const controls = async (args: Record<string, unknown> = {}) => JSON.parse(text(await call('list_orchestrator_controls', args)));
@@ -221,7 +295,13 @@ function agentChanged(): void {
 }
 
 beforeEach(async () => {
-  state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatcher-controls-'));
+  // Fail CLOSED before changing base/maps/hooks if a timed-out prior callback or
+  // its teardown is still running, or accounting was incomplete.
+  if (currentCase) assertRetired(currentCase);
+  const owner: HarnessCase = { work: new FixtureWork(), watcherRejected: false, teardownComplete: false };
+  currentCase = owner;
+  owner.base = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatcher-controls-'));
+  state.base = owner.base;
   state.projects = [{ id: 'p1', name: 'one', path: P1 }, { id: 'p2', name: 'two', path: P2 }];
   state.agents = new Map<string, unknown[]>([
     [P1, [agent('a'), agent('b'), agent('plain'), agent('helper', { parentAgentId: 'a' }), agent('gone', { disposedAt: '2026-01-01' } as Partial<DurableAgentConfig>)]],
@@ -249,10 +329,19 @@ beforeEach(async () => {
   await restart();
 });
 
-afterEach(() => {
-  stopWatching?.();
-  stopWatching = null;
-  fs.rmSync(state.base, { recursive: true, force: true });
+afterEach(async () => {
+  const owner = fixture();
+  // Closing synchronously stops every watcher and releases explicit fixture
+  // gates. Await RAW bodies/setup/predicates before sealing their epoch children.
+  // A hook timeout cannot admit another base: teardownComplete stays false.
+  await owner.work.close();
+  if (owner.watcherRejected) throw owner.watcherError;
+  owner.work.admitNext(() => {
+    if (owner.base) fs.rmSync(owner.base, { recursive: true, force: true });
+    stopWatching = null;
+    owner.teardownComplete = true;
+    return undefined;
+  });
 });
 
 describe('callers', () => {
@@ -613,7 +702,7 @@ describe('a link the user removes stays removed', () => {
 
   it('ends when the user draws the pair', async () => {
     userDraws('a', 'b');
-    await vi.waitFor(() => expect(storeFile().removedByUser).toEqual([]));
+    await waitFor(() => expect(storeFile().removedByUser).toEqual([]));
     await restart();
     expect(isBound('a', 'b')).toBe(true);
     // It is the user's now: the Dispatcher still can't claim or remove it.
@@ -668,7 +757,7 @@ describe('a removal the store can\'t take', () => {
 
     state.failWrite = null;
     await restart();
-    await vi.waitFor(() => expect(pendingFile()).toBe(false));
+    await waitFor(() => expect(pendingFile()).toBe(false));
     expect(storeFile().connections).toEqual([]);
     expect(storeFile().removedByUser).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'b', agentProjectPath: P1 })]);
     expect((await controls()).unconfirmed_removals).toBeUndefined();
@@ -687,7 +776,7 @@ describe('a removal the store can\'t take', () => {
 
     state.failWrite = null;
     agentChanged();
-    await vi.waitFor(() => expect(storeFile().removedByUser).toHaveLength(1));
+    await waitFor(() => expect(storeFile().removedByUser).toHaveLength(1));
     await restart();
     expect(isBound('a', 'b')).toBe(false);
     await expectRefused();
@@ -697,12 +786,16 @@ describe('a removal the store can\'t take', () => {
     const timers = vi.spyOn(globalThis, 'setTimeout');
     state.failWrite = folderRefuses;
     await removeWire('a', 'b');
-    await vi.waitFor(() => expect(timers.mock.calls.some(([, ms]) => ms === 30_000)).toBe(true));
-    const retry = timers.mock.calls.find(([, ms]) => ms === 30_000)![0] as () => void;
+    await waitFor(() => expect(timers.mock.calls.some(([, ms]) => ms === 30_000)).toBe(true));
+    const retryIndex = timers.mock.calls.findIndex(([, ms]) => ms === 30_000);
+    const retry = timers.mock.calls[retryIndex][0] as () => void;
+    const retryHandle = timers.mock.results[retryIndex];
     timers.mockRestore();
+    expect(retryHandle.type).toBe('return');
+    clearTimeout(retryHandle.value as ReturnType<typeof setTimeout>);
     state.failWrite = null;
     retry();
-    await vi.waitFor(() => expect(storeFile().removedByUser).toHaveLength(1));
+    await waitFor(() => expect(storeFile().removedByUser).toHaveLength(1));
   });
 
   it('restores nothing while the folder still takes no writes after a restart, and says why', async () => {
@@ -717,7 +810,7 @@ describe('a removal the store can\'t take', () => {
     // The limit the user was told about: with no record at all, it returns once writes do.
     state.failWrite = null;
     agentChanged();
-    await vi.waitFor(() => expect(isBound('a', 'b')).toBe(true));
+    await waitFor(() => expect(isBound('a', 'b')).toBe(true));
     expect(await linkRow('a', 'b')).toMatchObject({ status: 'active' });
   });
 
@@ -727,7 +820,7 @@ describe('a removal the store can\'t take', () => {
     state.failRead = null;
     await restart();
     expect(isBound('a', 'b')).toBe(false);
-    await vi.waitFor(() => expect(pendingFile()).toBe(false));
+    await waitFor(() => expect(pendingFile()).toBe(false));
     expect(storeFile().connections).toEqual([]);
     expect(storeFile().removedByUser).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'b', agentProjectPath: P1 })]);
   });
@@ -816,7 +909,7 @@ describe('a removal the store can\'t take', () => {
       expect(await listDispatcherLinksForUser()).toEqual([]);
       state.failWrite = null;
       agentChanged();
-      await vi.waitFor(async () => expect(await linkRow('a', 'b')).toMatchObject({ status: 'active' }));
+      await waitFor(async () => expect(await linkRow('a', 'b')).toMatchObject({ status: 'active' }));
       expect(isBound('a', 'b')).toBe(true);
       expect(JSON.parse(text(await call('disconnect_orchestrators', { from: 'a', to: 'b' }))).links[0].outcome).toBe('kept');
       expect(isBound('a', 'b')).toBe(true);
@@ -827,7 +920,7 @@ describe('a removal the store can\'t take', () => {
       await removeWire('a', 'b');
       state.failWrite = null;
       userDraws('a', 'b');
-      await vi.waitFor(() => {
+      await waitFor(() => {
         expect(storeFile().connections).toEqual([]);
         expect(storeFile().removedByUser).toEqual([]);
         expect(pendingFile()).toBe(false);
@@ -844,6 +937,7 @@ describe('a removal the store can\'t take', () => {
 
       let release!: () => void;
       const held = new Promise<void>((resolve) => { release = resolve; });
+      fixture().work.releaseOnClose(release);
       let captured: { store: Buffer; pending: Buffer } | undefined;
       state.beforeRemove = async (file) => {
         if (file !== dispatcherPendingRemovalsPath()) return;
@@ -860,7 +954,7 @@ describe('a removal the store can\'t take', () => {
       let drainError: unknown;
       try {
         userDraws('a', 'b');
-        await vi.waitFor(() => expect(captured).toBeDefined());
+        await waitFor(() => expect(captured).toBeDefined());
         expect(storeFile().connections).toEqual([]);
         expect(storeFile().removedByUser).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'b' })]);
         expect(pendingFile()).toBe(true);
@@ -892,8 +986,16 @@ describe('a removal the store can\'t take', () => {
       stopWatching?.();
       stopWatching = null;
       await isRemovalUnsaved({ agentId: 'a', targetId: 'b' });
-      fs.writeFileSync(dispatcherConnectionsPath(), captured!.store);
-      fs.writeFileSync(dispatcherPendingRemovalsPath(), captured!.pending);
+      // Also retire the full watcher/startup/rebuild tails before replacing the
+      // exact crash-boundary bytes. One store barrier alone is not quiescence.
+      const owner = fixture();
+      owner.epoch!.stop();
+      await owner.epoch!.work.settle();
+      owner.work.start(() => {
+        fs.writeFileSync(dispatcherConnectionsPath(), captured!.store);
+        fs.writeFileSync(dispatcherPendingRemovalsPath(), captured!.pending);
+        return undefined;
+      });
       await restart();
       expect(isBound('a', 'b')).toBe(true);
       expect(await storedPairs()).toEqual([]);
@@ -1014,7 +1116,7 @@ describe('a removal the store can\'t take', () => {
       let drainError: unknown;
       try {
         userDraws('a', 'b');
-        await vi.waitFor(() => expect(queued).toBe(true));
+        await waitFor(() => expect(queued).toBe(true));
         await isRemovalUnsaved({ agentId: 'a', targetId: 'c' });
         expect(storeFile().removedByUser).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'c' })]);
         expect(pendingFile()).toBe(false);
@@ -1064,14 +1166,14 @@ describe('suspended links', () => {
   ])('%s: the binding goes, the entry stays, readback says why, and it returns', async (_name, policy, reason) => {
     state.policies.set('b', policy);
     agentChanged();
-    await vi.waitFor(() => expect(isBound('a', 'b')).toBe(false));
+    await waitFor(() => expect(isBound('a', 'b')).toBe(false));
     expect(await storedPairs()).toEqual(['a>b']);
     expect(await linkRow('a', 'b')).toMatchObject({ status: 'suspended', reason, reason_agent: 'b' });
     expect(await listDispatcherLinksForUser()).toEqual([expect.objectContaining({ agentId: 'a', targetId: 'b', status: 'suspended', reason })]);
 
     state.policies.delete('b');
     agentChanged();
-    await vi.waitFor(() => expect(isBound('a', 'b')).toBe(true));
+    await waitFor(() => expect(isBound('a', 'b')).toBe(true));
     expect(await linkRow('a', 'b')).toMatchObject({ status: 'active' });
     expect((await linkRow('a', 'b')).reason).toBeUndefined();
   });
@@ -1079,13 +1181,13 @@ describe('suspended links', () => {
   it('the Dispatcher off: lists nothing, names the reason, restores when on', async () => {
     state.dispatcherOn = false;
     for (const listener of state.dispatcherListeners) listener();
-    await vi.waitFor(() => expect(isBound('a', 'b')).toBe(false));
+    await waitFor(() => expect(isBound('a', 'b')).toBe(false));
     expect(await storedPairs()).toEqual(['a>b']);
     expect(await listDispatcherLinksForUser()).toEqual([expect.objectContaining({ status: 'suspended', reason: 'dispatcher_off' })]);
 
     state.dispatcherOn = true;
     for (const listener of state.dispatcherListeners) listener();
-    await vi.waitFor(() => expect(isBound('a', 'b')).toBe(true));
+    await waitFor(() => expect(isBound('a', 'b')).toBe(true));
   });
 
   it('stays suspended across a restart, and lets the Dispatcher sever it', async () => {
@@ -1100,7 +1202,7 @@ describe('suspended links', () => {
   it('can be removed by the user, and then stays removed', async () => {
     state.policies.set('b', { orchestrate: false, connectToDispatcher: false });
     agentChanged();
-    await vi.waitFor(() => expect(isBound('a', 'b')).toBe(false));
+    await waitFor(() => expect(isBound('a', 'b')).toBe(false));
     await userRemoves('a', 'b');
     expect(await listDispatcherLinksForUser()).toEqual([]);
     state.policies.delete('b');
@@ -1115,16 +1217,16 @@ describe('suspended links', () => {
   ])('an end %s: dropped for good', async (_name, change) => {
     change();
     agentChanged();
-    await vi.waitFor(async () => expect(await storedPairs()).toEqual([]));
-    await vi.waitFor(() => expect(isBound('a', 'b')).toBe(false));
+    await waitFor(async () => expect(await storedPairs()).toEqual([]));
+    await waitFor(() => expect(isBound('a', 'b')).toBe(false));
   });
 
   it('a project unregistered: dropped for good', async () => {
     await call('connect_orchestrators', { from: 'a', to: 'c' });
     state.projects = state.projects.filter((p) => p.path !== P2);
     agentChanged();
-    await vi.waitFor(async () => expect(await storedPairs()).toEqual(['a>b']));
-    await vi.waitFor(() => expect(isBound('a', 'c')).toBe(false));
+    await waitFor(async () => expect(await storedPairs()).toEqual(['a>b']));
+    await waitFor(() => expect(isBound('a', 'c')).toBe(false));
   });
 
   it('an unreadable project: entry and binding stay, and readback says unverified', async () => {
