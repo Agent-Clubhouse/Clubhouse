@@ -78,9 +78,9 @@ describe('Agent parts library page', () => {
     const detail = screen.getByTestId('managed-part-detail');
     expect((await within(detail).findByTestId('managed-part-text')).textContent).toBe('Be kind.');
     expect(within(detail).getByTestId('managed-part-consumers').textContent).toMatch(/lead.*Running.*Orchestrator.*Template/);
-    expect(within(detail).queryByRole('button', { name: 'Edit' })).toBeNull();
-    expect(within(detail).queryByRole('button', { name: 'Delete' })).toBeNull();
-    expect(within(detail).getByRole('button', { name: 'Make your copy' })).toBeTruthy();
+    expect(within(detail).queryByRole('button', { name: /^Edit/ })).toBeNull();
+    expect(within(detail).queryByRole('button', { name: /^Delete/ })).toBeNull();
+    expect(within(detail).getByRole('button', { name: 'Make your copy of Core' })).toBeTruthy();
   });
 
   it('deletes a part in use with the chosen outcome', async () => {
@@ -91,7 +91,7 @@ describe('Agent parts library page', () => {
     const [row] = await screen.findAllByTestId('managed-library-row');
     fireEvent.click(within(row).getByRole('button', { expanded: false }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Coding standards' }));
     let dialog = screen.getByTestId('managed-delete-dialog');
     expect((within(dialog).getByRole('radio', { name: /Give each agent its own copy/ }) as HTMLInputElement).checked).toBe(true);
     fireEvent.click(within(dialog).getByTestId('managed-delete-confirm'));
@@ -99,7 +99,7 @@ describe('Agent parts library page', () => {
     await waitFor(() => expect(screen.queryByTestId('managed-delete-dialog')).toBeNull());
 
     fireEvent.click(within(screen.getAllByTestId('managed-library-row')[0]).getByRole('button', { expanded: false }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Coding standards' }));
     dialog = screen.getByTestId('managed-delete-dialog');
     fireEvent.click(within(dialog).getByRole('radio', { name: /Remove it from those agents/ }));
     fireEvent.click(within(dialog).getByTestId('managed-delete-confirm'));
@@ -117,7 +117,7 @@ describe('Templates page', () => {
     expect(within(yours).getByText('2 agents')).toBeTruthy();
     const builtin = screen.getByTestId('managed-templates-builtin');
     expect(within(builtin).getByText('No agents')).toBeTruthy();
-    fireEvent.click(within(builtin).getByRole('button', { name: 'Make your copy' }));
+    fireEvent.click(within(builtin).getByRole('button', { name: 'Make your copy of Orchestrator' }));
     await waitFor(() => expect(save).toHaveBeenCalledWith({ name: 'Orchestrator copy', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: {} }));
   });
 
@@ -137,7 +137,7 @@ describe('Templates page', () => {
     const push = vi.spyOn(m(), 'pushTemplate').mockResolvedValue({ ok: true, value: { failed: [] } });
     const save = vi.spyOn(m(), 'saveTemplate').mockResolvedValue({ ok: true, value: template('mine') });
     render(<TemplatesSettingsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Release lead' }));
     const max = screen.getByLabelText('Most helpers at once');
     fireEvent.change(max, { target: { value: '3' } });
     fireEvent.blur(max);
@@ -168,7 +168,7 @@ describe('Templates page', () => {
     const push = vi.spyOn(m(), 'pushTemplate').mockResolvedValue({ ok: true, value: { failed: [{ agentId: 'ada', message: 'Skill folder clash' }] } });
     const save = vi.spyOn(m(), 'saveTemplate').mockResolvedValue({ ok: true, value: template('mine') });
     render(<TemplatesSettingsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Release lead' }));
     fireEvent.click(screen.getByRole('switch', { name: 'Orchestration' }));
     fireEvent.click(screen.getByTestId('managed-template-save'));
     let dialog = await screen.findByTestId('managed-template-push-dialog');
@@ -177,7 +177,7 @@ describe('Templates page', () => {
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     expect(push).not.toHaveBeenCalled();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Release lead' }));
     fireEvent.click(screen.getByRole('switch', { name: 'Orchestration' }));
     fireEvent.click(screen.getByTestId('managed-template-save'));
     dialog = await screen.findByTestId('managed-template-push-dialog');

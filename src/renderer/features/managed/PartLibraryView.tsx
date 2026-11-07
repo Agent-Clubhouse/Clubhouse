@@ -134,10 +134,10 @@ function PartDetail({ part, onEdit, onFork, onDelete }: {
         </form>
       ) : (
         <div className="flex items-center gap-1 flex-wrap">
-          {!part.builtin && <Button onClick={onEdit}>Edit</Button>}
-          <Button onClick={onFork}>{part.builtin ? 'Make your copy' : 'Fork'}</Button>
-          {!part.builtin && <Button kind="quiet" onClick={() => setRenaming(true)}>Rename</Button>}
-          {!part.builtin && <Button kind="danger" onClick={onDelete}>Delete</Button>}
+          {!part.builtin && <Button aria-label={`Edit ${part.name}`} onClick={onEdit}>Edit</Button>}
+          <Button aria-label={part.builtin ? `Make your copy of ${part.name}` : `Fork ${part.name}`} onClick={onFork}>{part.builtin ? 'Make your copy' : 'Fork'}</Button>
+          {!part.builtin && <Button kind="quiet" aria-label={`Rename ${part.name}`} onClick={() => setRenaming(true)}>Rename</Button>}
+          {!part.builtin && <Button kind="danger" aria-label={`Delete ${part.name}`} onClick={onDelete}>Delete</Button>}
           {part.builtin && <span className={`${settingsHelp} ml-1`}>Built-in parts are read-only and update with Clubhouse.</span>}
         </div>
       )}

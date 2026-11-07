@@ -187,7 +187,7 @@ export function SettingsCard(props: SettingsCardProps) {
   const { agent, chat, projectPath, provider } = props;
   const flag = useManagedFlag();
   const local = agent.kind === 'durable' && !isRemoteProjectId(agent.projectId) && !!projectPath;
-  const { value: setup } = useManagedSetup(flag && local ? projectPath : undefined, agent.id);
+  const { value: setup } = useManagedSetup(flag && local ? projectPath : undefined, flag && local ? agent.id : undefined);
   if (!flag || !local || !setup || !projectPath) return <AgentSettingsCard {...props} />;
   const awake = agent.status !== 'sleeping' && agent.status !== 'error';
   const runsOn = `${provider} · ${modelLabel(chat && awake ? chat.model : agent.model, awake ? chat : undefined)}`;

@@ -11,7 +11,7 @@ import { SettingsCard } from '../agents/details/SettingsCard';
 import { useAgentDetailsStore } from '../agents/details/detailsStore';
 import { resetManagedFlag } from './managed-flag';
 import { CLI_CHANGED_NOTE, RESUME_NOTE, resetSetupBarDismissals, SetupChangedBar, setupChangedText } from './SetupChangedBar';
-import { ManagedRestartHost, useManagedRestartRequests } from './restart';
+import { ALREADY_PENDING, ManagedRestartHost, PENDING_RESTART_NOTE, requestManagedRestart, resetPendingRestarts, useManagedRestartRequests } from './restart';
 
 const agent: Agent = {
   id: 'a1', projectId: 'p1', name: 'release-lead', kind: 'durable', status: 'running', color: 'teal',
@@ -47,7 +47,17 @@ beforeEach(() => {
   useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: '/work/proj' }] as never });
   useManagedRestartRequests.setState({ confirm: null, busy: false });
   useToastStore.setState({ toasts: [] });
+  resetPendingRestarts();
 });
+
+const toasts = () => useToastStore.getState().toasts.map((t) => `${t.type}: ${t.message}`);
+
+/** A restart main hasn't answered yet: the wait for the turn to end. */
+function holdRestart() {
+  let answer: (v: unknown) => void = () => {};
+  const restart = vi.spyOn(m(), 'restart').mockImplementation(() => new Promise((r) => { answer = r; }) as never);
+  return { restart, answer: (v: unknown) => answer(v) };
+}
 
 afterEach(() => {
   useProjectStore.setState({ projects: [] });
@@ -80,13 +90,17 @@ describe('SetupChangedBar', () => {
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeTruthy();
   });
 
-  it('shows nothing with the flag off, and never asks for the status', async () => {
+  it('shows nothing with the flag off, and never asks for the status or listens for changes', async () => {
     setFlag(false);
     const read = mockStatus(status());
+    const listen = vi.spyOn(m(), 'onChanged');
     render(<SetupChangedBar agent={agent} variant="dock" />);
+    renderHook(() => useAgentRowActions(agent));
+    render(<SettingsCard agent={agent} projectPath="/work/proj" provider="Claude Code" />);
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(screen.queryByTestId('setup-changed-bar')).toBeNull();
     expect(read).not.toHaveBeenCalled();
+    expect(listen).not.toHaveBeenCalled();
   });
 
   it('shows nothing when nothing is waiting', async () => {
@@ -135,6 +149,40 @@ describe('SetupChangedBar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Restart when this turn ends' }));
     await waitFor(() => expect(restart).toHaveBeenCalledWith('/work/proj', 'a1', { whenTurnEnds: true }));
     await waitFor(() => expect(screen.queryByTestId('managed-restart-confirm')).toBeNull());
+  });
+
+  it('"when this turn ends" closes the confirm at once, says it is waiting, and a second Restart is told so', async () => {
+    setFlag(true);
+    mockStatus(status());
+    mockWorking(true);
+    const held = holdRestart();
+    render(<SetupChangedBar agent={agent} variant="dock" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Restart' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Restart when this turn ends' }));
+    // Main is still waiting for the turn, but nothing is held open.
+    await waitFor(() => expect(screen.queryByTestId('managed-restart-confirm')).toBeNull());
+    expect(held.restart).toHaveBeenCalledWith('/work/proj', 'a1', { whenTurnEnds: true });
+    expect(screen.getByTestId('setup-changed-note')).toHaveTextContent(PENDING_RESTART_NOTE);
+    fireEvent.click(screen.getByRole('button', { name: 'Restart' }));
+    expect(await screen.findByTestId('setup-changed-error')).toHaveTextContent(ALREADY_PENDING);
+    expect(held.restart).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('managed-restart-confirm')).toBeNull();
+    // Answered: the note goes back to what restart does.
+    await act(async () => { held.answer({ ok: true, value: { resumed: true } }); });
+    expect(screen.getByTestId('setup-changed-note')).toHaveTextContent(RESUME_NOTE);
+  });
+
+  it('a waiting restart that fails shows why in the bar', async () => {
+    setFlag(true);
+    mockStatus(status());
+    mockWorking(true);
+    const held = holdRestart();
+    render(<SetupChangedBar agent={agent} variant="dock" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Restart' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Restart when this turn ends' }));
+    await waitFor(() => expect(screen.getByTestId('setup-changed-note')).toHaveTextContent(PENDING_RESTART_NOTE));
+    await act(async () => { held.answer({ ok: false, code: 'failed', message: 'The agent stopped before its turn ended.' }); });
+    expect(screen.getByTestId('setup-changed-error')).toHaveTextContent('The agent stopped before its turn ended.');
   });
 
   it('"Restart now" from the confirm restarts without waiting, and Cancel does nothing', async () => {
@@ -259,6 +307,26 @@ describe('⋯ menu restart items', () => {
   });
 });
 
+describe('⋯ menu restart while one is waiting', () => {
+  const target = { projectPath: '/work/proj', agentId: 'a1', agentName: 'release-lead' };
+
+  it('closes the host confirm at once, toasts, and a later request is told a restart is waiting', async () => {
+    mockWorking(true);
+    const held = holdRestart();
+    render(<ManagedRestartHost />);
+    await act(async () => { await requestManagedRestart(target); });
+    fireEvent.click(await screen.findByRole('button', { name: 'Restart when this turn ends' }));
+    await waitFor(() => expect(screen.queryByTestId('managed-restart-confirm')).toBeNull());
+    expect(toasts()).toContain('info: release-lead restarts when this turn ends.');
+    await act(async () => { await requestManagedRestart(target, { fresh: true }); });
+    expect(toasts()).toContain(`info: release-lead: ${ALREADY_PENDING}`);
+    expect(screen.queryByTestId('managed-restart-confirm')).toBeNull();
+    expect(held.restart).toHaveBeenCalledTimes(1);
+    await act(async () => { held.answer({ ok: false, code: 'failed', message: 'Still working.' }); });
+    expect(toasts()).toContain("error: Couldn't restart release-lead. Still working.");
+  });
+});
+
 describe('Setup card', () => {
   const setup: ManagedAgentSetup = {
     version: 1, blocks: ['b1', 'b2', 'b3'], skills: ['s1', 's2'], mcps: ['m1'], templateId: 'builtin-template-release',
@@ -297,6 +365,20 @@ describe('Setup card', () => {
     expect(screen.getByTestId('details-setup-waiting')).toHaveTextContent('Playwright was added');
     expect(screen.getByTestId('details-setup-note')).toHaveTextContent('Applies when it restarts or next wakes.');
     expect(screen.getByRole('button', { name: 'Restart' })).toBeTruthy();
+  });
+
+  it('says a restart is waiting for the turn to end', async () => {
+    setFlag(true);
+    mockStatus(status());
+    mockWorking(true);
+    const held = holdRestart();
+    render(<SettingsCard agent={agent} projectPath="/work/proj" provider="Claude Code" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Restart' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Restart when this turn ends' }));
+    await waitFor(() => expect(screen.getByTestId('details-setup-note')).toHaveTextContent(PENDING_RESTART_NOTE));
+    expect(screen.queryByTestId('managed-restart-confirm')).toBeNull();
+    await act(async () => { held.answer({ ok: true, value: { resumed: true } }); });
+    expect(screen.getByTestId('details-setup-note')).toHaveTextContent('Applies when it restarts or next wakes.');
   });
 
   it('has no Waiting row, note or Restart when nothing is waiting, and Open builder goes to Instructions', async () => {

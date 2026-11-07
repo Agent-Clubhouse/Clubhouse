@@ -257,8 +257,8 @@ export function TemplatesSettingsView() {
         <ul data-testid="managed-templates-yours">
           {yours.map((t) => (
             <TemplateRow key={t.id} t={t}>
-              <Button kind="quiet" onClick={() => edit(t)}>Edit</Button>
-              <Button kind="quiet" onClick={() => void copy(t)}>Fork</Button>
+              <Button kind="quiet" aria-label={`Edit ${t.name}`} onClick={() => edit(t)}>Edit</Button>
+              <Button kind="quiet" aria-label={`Fork ${t.name}`} onClick={() => void copy(t)}>Fork</Button>
               <Button
                 kind="quiet"
                 icon={<MoreIcon />}
@@ -275,7 +275,7 @@ export function TemplatesSettingsView() {
         <ul data-testid="managed-templates-builtin">
           {builtin.map((t) => (
             <TemplateRow key={t.id} t={t}>
-              <Button kind="quiet" onClick={() => void copy(t)}>Make your copy</Button>
+              <Button kind="quiet" aria-label={`Make your copy of ${t.name}`} onClick={() => void copy(t)}>Make your copy</Button>
             </TemplateRow>
           ))}
         </ul>

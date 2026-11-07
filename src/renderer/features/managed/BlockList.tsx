@@ -4,6 +4,7 @@ import { textareaClass } from '../agents/agentSettingsUi';
 import type { ManagedPartConsumer, ManagedPartSummary } from '../../../shared/managed-agents-types';
 import { ImpactDialog } from './ImpactDialog';
 import { errorText, managed, sourceLabel, unwrap } from './managedApi';
+import { restartAfterSave } from './restart';
 import { GripIcon, WildcardBar } from './parts-ui';
 
 export interface BuilderAgent {
@@ -140,11 +141,17 @@ function BlockCard({ index, id, part, agent, disabled, handleRef, onDragStart, o
     setError(null);
     try {
       await unwrap(managed().updatePart({ id, expectedRevision: editing.revision, content: { kind: 'block', content: editing.text } }));
-      for (const c of restart) await unwrap(managed().restart(c.projectPath, c.agentId));
-      setEditing(null);
-      setImpact(null);
-    } catch (err) { /* telemetry-exempt: shown to the person beside the control */ setError(errorText(err)); }
-    finally { setBusy(false); }
+    } catch (err) {
+      // telemetry-exempt: shown to the person beside the control
+      setError(errorText(err));
+      setBusy(false);
+      return;
+    }
+    // Saved: the editor closes, and restarts run on their own (a working agent waits for its turn to end).
+    setEditing(null);
+    setImpact(null);
+    setBusy(false);
+    restartAfterSave(restart.map(({ projectPath, agentId, agentName }) => ({ projectPath, agentId, agentName })));
   };
   const requestSave = () => {
     if (part.usedBy.length > 1 || others.length > 0) setImpact(part.usedBy);
@@ -153,11 +160,14 @@ function BlockCard({ index, id, part, agent, disabled, handleRef, onDragStart, o
   const forkInstead = async () => {
     setImpact(null);
     setBusy(true);
+    setError(null);
     try {
       const text = editing?.text;
       const copyId = await onFork();
+      // The fork failed (the builder says why): keep the editor open with the text.
+      if (!copyId) return;
       // The copy now sits where the shared block was: keep the person's edit by applying it there.
-      if (text !== undefined && copyId && copyId !== id) {
+      if (text !== undefined && copyId !== id) {
         const copy = await unwrap(managed().getPart(copyId));
         await unwrap(managed().updatePart({ id: copyId, expectedRevision: copy.revision, content: { kind: 'block', content: text } }));
       }
@@ -193,9 +203,13 @@ function BlockCard({ index, id, part, agent, disabled, handleRef, onDragStart, o
         <span className="text-[13px] font-semibold text-ctp-text truncate">{part.name}</span>
         <span className="text-xs text-ctp-overlay1 truncate">{sourceLabel(part, agent?.agentId, agent?.agentName)}</span>
         <span className="ml-auto flex items-center gap-0.5">
-          {!editing && !part.builtin && <Button kind="quiet" onClick={() => void startEdit()} disabled={disabled || busy}>Edit</Button>}
-          {!editing && <Button kind="quiet" onClick={() => void onFork()} disabled={disabled || busy}>{part.builtin ? 'Make your copy' : 'Fork'}</Button>}
-          {!editing && onBackToShared && <Button kind="quiet" onClick={() => void onBackToShared()} disabled={disabled || busy}>Back to shared</Button>}
+          {!editing && !part.builtin && <Button kind="quiet" aria-label={`Edit ${part.name}`} onClick={() => void startEdit()} disabled={disabled || busy}>Edit</Button>}
+          {!editing && (
+            <Button kind="quiet" aria-label={part.builtin ? `Make your copy of ${part.name}` : `Fork ${part.name}`} onClick={() => void onFork()} disabled={disabled || busy}>
+              {part.builtin ? 'Make your copy' : 'Fork'}
+            </Button>
+          )}
+          {!editing && onBackToShared && <Button kind="quiet" aria-label={`Put ${part.name} back to shared`} onClick={() => void onBackToShared()} disabled={disabled || busy}>Back to shared</Button>}
           {!editing && <Button kind="quiet" aria-label={`Remove ${part.name}`} onClick={onRemove} disabled={disabled || busy}>Remove</Button>}
         </span>
       </div>

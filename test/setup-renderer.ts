@@ -546,6 +546,7 @@ vi.stubGlobal('clubhouse', {
     setDefaultHelperTemplate: async () => ({ ok: true, value: undefined }),
     createAgent: async () => ({ ok: false, code: 'failed' }),
     convertAgent: async () => ({ ok: false, code: 'failed' }),
+    previewConvert: async () => ({ ok: true, value: { blocks: [], skills: [], mcps: [], notes: [] } }),
     applySettings: async () => ({ ok: true, value: undefined }),
     status: async () => ({ ok: true, value: { managed: false, running: false, waiting: false, changes: [], cliChanged: false } }),
     isWorking: async () => ({ ok: true, value: false }),

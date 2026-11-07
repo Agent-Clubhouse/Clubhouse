@@ -3,6 +3,7 @@ import { IPC } from '../shared/ipc-channels';
 import type {
   ManagedAgentSetup,
   ManagedAgentStatus,
+  ManagedConvertPreview,
   ManagedPart,
   ManagedPartConsumer,
   ManagedPartContent,
@@ -46,6 +47,8 @@ const managed = {
   createAgent: (projectPath: string, input: { name: string; color: string; templateId?: string; setup?: SetupInput; settings?: ManagedTemplateSettings }) =>
     call<DurableAgentConfig>(IPC.MANAGED.CREATE_AGENT, projectPath, input),
   convertAgent: (projectPath: string, agentId: string, keep: boolean, templateId?: string) => call<ManagedAgentSetup>(IPC.MANAGED.CONVERT_AGENT, projectPath, agentId, keep, templateId),
+  /** What "Keep what it has now" would make of the agent's files. Writes nothing. */
+  previewConvert: (projectPath: string, agentId: string) => call<ManagedConvertPreview>(IPC.MANAGED.PREVIEW_CONVERT, projectPath, agentId),
   applySettings: (projectPath: string, agentId: string, settings: ManagedTemplateSettings) => call<void>(IPC.MANAGED.APPLY_SETTINGS, projectPath, agentId, settings),
   status: (projectPath: string, agentId: string) => call<ManagedAgentStatus>(IPC.MANAGED.STATUS, projectPath, agentId),
   isWorking: (agentId: string) => call<boolean>(IPC.MANAGED.IS_WORKING, agentId),

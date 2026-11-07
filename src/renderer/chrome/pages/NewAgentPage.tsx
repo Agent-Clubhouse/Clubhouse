@@ -27,7 +27,7 @@ import { openCreatedAgent } from '../startPage';
 import { ProjectPicker } from './ProjectPicker';
 import { reportChromeActionFailed, reportChromeFeature } from '../telemetry';
 import { IS_MAC, Row, Rule, footerLinkClass, inputClass, mono, selectClass } from './newAgentUi';
-import { BuilderStep, CopyStep, SCRATCH_SEED, TemplateStep, templateSeed, type BuilderSeed } from './NewManagedAgentSteps';
+import { BuilderStep, CopyStep, SCRATCH_SEED, TemplateStep, draftFromSeed, templateSeed, type BuilderDraft, type BuilderSeed } from './NewManagedAgentSteps';
 
 /**
  * The New agent page (#2031): one form in the pane for every way of making an
@@ -53,6 +53,11 @@ function writeManagedPref(on: boolean): void {
 }
 
 type Step = 'form' | 'templates' | 'builder' | 'copy';
+
+/** Focus is somewhere that takes typing or its own keys. */
+function isEditingTarget(el: HTMLElement): boolean {
+  return el.isContentEditable || !!el.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"]');
+}
 
 const failureText = (err: unknown) => (err instanceof ManagedUiError || err instanceof Error ? err.message : String(err));
 
@@ -125,6 +130,10 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const [cropUrl, setCropUrl] = useState<string | null>(null);
   const [step, setStep] = useState<Step>('form');
   const [seed, setSeed] = useState<BuilderSeed | null>(null);
+  // The builder's draft lives here, not in the step, so Back and forward to
+  // the same start keep it, and a name problem found on Create can be fixed
+  // on the form without losing it.
+  const [draft, setDraft] = useState<BuilderDraft | null>(null);
   const [builderFrom, setBuilderFrom] = useState<Step>('form');
   const missionRef = useRef<HTMLTextAreaElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -218,7 +227,12 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   };
 
   const openStep = (next: Step) => { setError(null); setStep(next); };
-  const openBuilder = (from: Step, next: BuilderSeed) => { setSeed(next); setBuilderFrom(from); openStep('builder'); };
+  const openBuilder = (from: Step, next: BuilderSeed) => {
+    setSeed(next);
+    setDraft((held) => (held && held.key === next.key ? held : draftFromSeed(next)));
+    setBuilderFrom(from);
+    openStep('builder');
+  };
   const back = () => { if (!busy) openStep(step === 'builder' ? builderFrom : 'form'); };
 
   /** Create a managed agent from a template as it is, or from the builder's parts and settings. */
@@ -291,6 +305,8 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
       submit();
     } else if (e.key === 'Escape' && !busy && !e.defaultPrevented && !cropUrl
       && !(e.target as HTMLElement).closest('[data-testid="project-picker"], [role="dialog"]')) {
+      // On a step, Esc in a field or editor belongs to that field: it never goes Back.
+      if (step !== 'form' && isEditingTarget(e.target as HTMLElement)) return;
       e.preventDefault();
       if (step === 'form') close(); else back();
     }
@@ -342,12 +358,14 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
         {step === 'copy' && (
           <CopyStep name={name.trim()} onPick={(next) => openBuilder('copy', next)} onBack={back} onCancel={() => close()} />
         )}
-        {step === 'builder' && seed && (
+        {step === 'builder' && seed && draft && (
           <BuilderStep
             name={name.trim()}
             projectName={projectName}
             projectPath={project.path}
             seed={seed}
+            draft={draft}
+            onDraftChange={setDraft}
             busy={busy}
             error={error}
             canCreate={identityOk}

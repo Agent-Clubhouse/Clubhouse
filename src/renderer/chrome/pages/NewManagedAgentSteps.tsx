@@ -23,6 +23,8 @@ import { IS_MAC, Row, Rule, Segmented, footerLinkClass, inputClass, selectClass 
 
 /** What the builder opens with, and the subtitle's "from …" part. */
 export interface BuilderSeed {
+  /** Which start this is: going back and forward to the same one keeps the draft. */
+  key: string;
   origin: string;
   setup: SetupDraft;
   settings: ManagedTemplateSettings;
@@ -33,6 +35,7 @@ export interface BuilderSeed {
 const IDENTITY_BLOCK_ID = 'builtin-block-identity';
 
 export const SCRATCH_SEED: BuilderSeed = {
+  key: 'scratch',
   origin: 'from scratch',
   setup: { blocks: [IDENTITY_BLOCK_ID], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] },
   settings: {},
@@ -40,6 +43,7 @@ export const SCRATCH_SEED: BuilderSeed = {
 
 export function templateSeed(t: ManagedTemplate): BuilderSeed {
   return {
+    key: `template:${t.id}`,
     origin: `from the ${t.name} template`,
     setup: { blocks: [...t.setup.blocks], skills: [...t.setup.skills], mcps: [...t.setup.mcps], templateId: t.id },
     settings: t.settings,
@@ -178,16 +182,29 @@ function useManagedAgents(): { list: CopyCandidate[] | null } {
   return { list };
 }
 
-export function copySeed(c: { agent: Agent; setup: SetupDraft }): BuilderSeed {
+export function copySeed(c: { agent: Agent; setup: SetupDraft; orchestration?: OrchestrationPolicyConfig }): BuilderSeed {
   return {
+    key: `copy:${c.agent.id}`,
     origin: `copied from ${c.agent.name}`,
     setup: { ...c.setup, blocks: [...c.setup.blocks], skills: [...c.setup.skills], mcps: [...c.setup.mcps] },
     settings: {
       ...(c.agent.orchestrator && { orchestrator: c.agent.orchestrator }),
       ...(c.agent.model && c.agent.model !== 'default' && { model: c.agent.model }),
       ...(c.agent.freeAgentMode && { freeAgentMode: true }),
+      ...(c.orchestration && { orchestration: { ...c.orchestration } }),
     },
   };
+}
+
+/** The picked agent's orchestration policy lives on its durable config. A failed read copies none. */
+async function orchestrationOf(c: CopyCandidate): Promise<OrchestrationPolicyConfig | undefined> {
+  try {
+    const config = await window.clubhouse.agent.getDurableConfig(c.project.path, c.agent.id);
+    return config?.orchestration;
+  } catch {
+    // telemetry-exempt: the builder opens with orchestration off, which the person can see and change.
+    return undefined;
+  }
 }
 
 export function CopyStep({ name, onPick, onBack, onCancel }: {
@@ -208,7 +225,7 @@ export function CopyStep({ name, onPick, onBack, onCancel }: {
             <li key={c.agent.id} className={i > 0 ? 'border-t border-surface-0' : ''}>
               <button
                 type="button"
-                onClick={() => onPick(copySeed(c))}
+                onClick={() => { void orchestrationOf(c).then((orchestration) => onPick(copySeed({ ...c, orchestration }))); }}
                 className="w-full flex items-center gap-2.5 px-3 py-2 text-left cursor-pointer hover:bg-surface-0 focus-ring rounded-lg"
               >
                 <AgentAvatar agent={c.agent} size="2xs" />
@@ -237,11 +254,42 @@ const TABS: ReadonlyArray<{ id: NewBuilderTab; label: string }> = [
   { id: 'settings', label: 'Settings' },
 ];
 
-export function BuilderStep({ name, projectName, projectPath, seed, busy, error, canCreate, onCreate, onBack, onCancel }: {
+/** The builder's choices, held by the New agent page so Back and forward keep them. */
+export interface BuilderDraft {
+  /** The seed's key: forward to the same start keeps this draft, a different one replaces it. */
+  key: string;
+  tab: NewBuilderTab;
+  setup: SetupDraft;
+  /** Empty: the project's first CLI. */
+  orchestrator: string;
+  model: string;
+  freeAgentMode: boolean;
+  orchestrate: boolean;
+  helperLimit: string;
+}
+
+export function draftFromSeed(seed: BuilderSeed): BuilderDraft {
+  return {
+    key: seed.key,
+    tab: 'instructions',
+    setup: seed.setup,
+    orchestrator: seed.settings.orchestrator ?? '',
+    model: seed.settings.model ?? 'default',
+    freeAgentMode: !!seed.settings.freeAgentMode,
+    orchestrate: !!seed.settings.orchestration?.orchestrate,
+    helperLimit: String(seed.settings.orchestration?.maxHelpers ?? DEFAULT_MAX_HELPERS),
+  };
+}
+
+export const NEEDS_CLUBHOUSE_MCP = 'Needs the Clubhouse MCP server.';
+
+export function BuilderStep({ name, projectName, projectPath, seed, draft, onDraftChange, busy, error, canCreate, onCreate, onBack, onCancel }: {
   name: string;
   projectName: string;
   projectPath: string;
   seed: BuilderSeed;
+  draft: BuilderDraft;
+  onDraftChange: (next: BuilderDraft) => void;
   busy: boolean;
   error: string | null;
   /** The name from the identity rows is usable. */
@@ -250,25 +298,25 @@ export function BuilderStep({ name, projectName, projectPath, seed, busy, error,
   onBack: () => void;
   onCancel: () => void;
 }) {
-  const [tab, setTab] = useState<NewBuilderTab>('instructions');
-  const [setup, setSetup] = useState<SetupDraft>(seed.setup);
+  const { tab, setup, orchestrator, model, freeAgentMode, orchestrate, helperLimit } = draft;
+  const change = (patch: Partial<BuilderDraft>) => onDraftChange({ ...draft, ...patch });
+  const setTab = (next: NewBuilderTab) => change({ tab: next });
+  const setSetup = (next: SetupDraft) => change({ setup: next });
 
   // Settings, prefilled from the template or the copied agent.
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const availability = useOrchestratorStore((s) => s.availability);
   const { effectiveOrchestrators } = useEffectiveOrchestrators(projectPath);
-  const [orchestrator, setOrchestrator] = useState(seed.settings.orchestrator ?? '');
   const resolvedOrchestrator = orchestrator || effectiveOrchestrators[0]?.id || 'claude-code';
-  const [model, setModel] = useState(seed.settings.model ?? 'default');
   const { options: modelOptions, loading: modelsLoading } = useModelOptions(resolvedOrchestrator, projectPath);
-  const [freeAgentMode, setFreeAgentMode] = useState(!!seed.settings.freeAgentMode);
-  const [orchestrate, setOrchestrate] = useState(!!seed.settings.orchestration?.orchestrate);
-  const [helperLimit, setHelperLimit] = useState(String(seed.settings.orchestration?.maxHelpers ?? DEFAULT_MAX_HELPERS));
   const selectedOrch = allOrchestrators.find((o) => o.id === resolvedOrchestrator);
   const supportsPermissions = selectedOrch?.capabilities?.permissions ?? false;
   const avail = availability[resolvedOrchestrator];
+  // Helpers go through the Clubhouse MCP server: without it, orchestration can't work.
+  const hasClubhouseMcp = setup.mcps.includes(CLUBHOUSE_MCP_PART_ID);
+  const orchestrating = orchestrate && hasClubhouseMcp;
   const limit = /^\d+$/.test(helperLimit.trim()) ? Number(helperLimit.trim()) : NaN;
-  const limitProblem = orchestrate && !(limit >= 1 && limit <= MAX_HELPER_LIMIT) ? `Enter a number from 1 to ${MAX_HELPER_LIMIT}.` : null;
+  const limitProblem = orchestrating && !(limit >= 1 && limit <= MAX_HELPER_LIMIT) ? `Enter a number from 1 to ${MAX_HELPER_LIMIT}.` : null;
   const cliChoices = effectiveOrchestrators.some((o) => o.id === resolvedOrchestrator)
     ? effectiveOrchestrators
     : [...effectiveOrchestrators, ...allOrchestrators.filter((o) => o.id === resolvedOrchestrator)];
@@ -280,8 +328,8 @@ export function BuilderStep({ name, projectName, projectPath, seed, busy, error,
     if (busy || !canCreate || limitProblem) return;
     const orchestration: OrchestrationPolicyConfig = {
       ...(seed.settings.orchestration ?? {}),
-      orchestrate,
-      ...(orchestrate && { maxHelpers: limit }),
+      orchestrate: orchestrating,
+      ...(orchestrating && { maxHelpers: limit }),
     };
     onCreate(setup, {
       orchestrator: resolvedOrchestrator,
@@ -291,8 +339,10 @@ export function BuilderStep({ name, projectName, projectPath, seed, busy, error,
     });
   };
   const onKeyDown = (e: React.KeyboardEvent) => {
-    // ⌘↵ creates, except while typing in a block or skill editor.
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+    // ⌘↵ creates, except while typing in a block or skill editor, or in a dialog
+    // (the part dialog is drawn inside this step and has its own buttons).
+    const target = e.target as HTMLElement;
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && target.tagName !== 'TEXTAREA' && !target.closest('[role="dialog"]')) {
       e.preventDefault();
       create();
     }
@@ -301,7 +351,7 @@ export function BuilderStep({ name, projectName, projectPath, seed, busy, error,
     <div className="w-[960px] max-w-full mx-auto px-6 pt-12 pb-10 flex flex-col" data-testid="new-agent-builder" onKeyDown={onKeyDown}>
       <StepHeader id="new-agent-step-title" title={`Build ${name}`} subtitle={`${projectName} · ${seed.origin} · nothing runs until you create it`} />
       <div className="mb-3">
-        <Segmented<NewBuilderTab> label="Builder section" value={tab} options={TABS} onChange={(next) => setTab(next)} testIdPrefix="new-agent-builder-tab" />
+        <Segmented<NewBuilderTab> label="Builder section" value={tab} options={TABS} onChange={setTab} testIdPrefix="new-agent-builder-tab" />
       </div>
       {tab !== 'settings' && <ManagedBuilder target={{ kind: 'draft', value: setup, onChange: setSetup, agentName: name }} tab={tab} />}
       {tab === 'settings' && (
@@ -316,7 +366,7 @@ export function BuilderStep({ name, projectName, projectPath, seed, busy, error,
             <select
               id="new-agent-builder-orchestrator"
               value={resolvedOrchestrator}
-              onChange={(e) => { setOrchestrator(e.target.value); setModel('default'); }}
+              onChange={(e) => change({ orchestrator: e.target.value, model: 'default' })}
               className={`${selectClass} w-40`}
             >
               {cliChoices.map((o) => {
@@ -324,7 +374,7 @@ export function BuilderStep({ name, projectName, projectPath, seed, busy, error,
                 return <option key={o.id} value={o.id}>{o.displayName}{a && !a.available ? ' (not found)' : ''}</option>;
               })}
             </select>
-            <select aria-label="Model" value={model} disabled={modelsLoading} onChange={(e) => setModel(e.target.value)} className={`${selectClass} w-[120px]`}>
+            <select aria-label="Model" value={model} disabled={modelsLoading} onChange={(e) => change({ model: e.target.value })} className={`${selectClass} w-[120px]`}>
               {modelsLoading ? <option value={model}>Loading…</option> : modelChoices.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
             </select>
           </Row>
@@ -334,15 +384,15 @@ export function BuilderStep({ name, projectName, projectPath, seed, busy, error,
               ? 'Uses the configured Free agent permission mode. Enable only if you trust this agent with the project.'
               : `${selectedOrch?.displayName ?? 'This CLI'} doesn't support it.`}
           >
-            <Toggle checked={supportsPermissions && freeAgentMode} onChange={setFreeAgentMode} disabled={!supportsPermissions} aria-label="Free Agent Mode" />
+            <Toggle checked={supportsPermissions && freeAgentMode} onChange={(on) => change({ freeAgentMode: on })} disabled={!supportsPermissions} aria-label="Free Agent Mode" />
             <span className={`text-[13px] ${supportsPermissions ? 'text-ctp-text' : 'text-ctp-overlay1'}`}>Free Agent Mode</span>
           </Row>
           <Rule />
-          <Row label="Orchestration" help={orchestrate ? 'It can start helpers and give them work.' : 'It works alone.'}>
-            <Toggle checked={orchestrate} onChange={setOrchestrate} aria-label="Can start helpers" />
-            <span className="text-[13px] text-ctp-text">Can start helpers</span>
+          <Row label="Orchestration" help={!hasClubhouseMcp ? NEEDS_CLUBHOUSE_MCP : orchestrating ? 'It can start helpers and give them work.' : 'It works alone.'}>
+            <Toggle checked={orchestrating} onChange={(on) => change({ orchestrate: on })} disabled={!hasClubhouseMcp} aria-label="Can start helpers" />
+            <span className={`text-[13px] ${hasClubhouseMcp ? 'text-ctp-text' : 'text-ctp-overlay1'}`}>Can start helpers</span>
           </Row>
-          {orchestrate && (
+          {orchestrating && (
             <Row
               label="Helper limit"
               htmlFor="new-agent-builder-helper-limit"
@@ -356,7 +406,7 @@ export function BuilderStep({ name, projectName, projectPath, seed, busy, error,
                 min={1}
                 max={MAX_HELPER_LIMIT}
                 value={helperLimit}
-                onChange={(e) => setHelperLimit(e.target.value)}
+                onChange={(e) => change({ helperLimit: e.target.value })}
                 aria-invalid={limitProblem ? true : undefined}
                 aria-describedby={limitProblem ? 'new-agent-builder-helper-limit-error' : undefined}
                 className={`${inputClass} w-20`}

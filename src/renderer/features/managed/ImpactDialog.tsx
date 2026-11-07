@@ -6,7 +6,8 @@ import { AgentDot } from './parts-ui';
 
 /**
  * Saving a part several agents use (#2897): who it reaches, which are running,
- * and an optional restart for the running ones. Restart resumes the conversation.
+ * and an optional restart for the running ones. Restart resumes the conversation;
+ * the caller restarts a working agent when its turn ends (restartAfterSave).
  */
 export function ImpactDialog({ open, partName, consumers, busy, error, onSave, onCancel, onForkInstead, forkLabel }: {
   open: boolean;
@@ -51,15 +52,15 @@ export function ImpactDialog({ open, partName, consumers, busy, error, onSave, o
               </span>
               {c.running && (
                 <label className="flex items-center gap-1.5 text-ctp-subtext1 cursor-pointer">
-                  <input type="checkbox" checked={restart.has(c.agentId)} onChange={() => toggle(c.agentId)} aria-label={`Restart ${c.agentName} now`} />
-                  Restart now
+                  <input type="checkbox" checked={restart.has(c.agentId)} onChange={() => toggle(c.agentId)} aria-label={`Restart ${c.agentName}`} />
+                  Restart
                 </label>
               )}
             </span>
           </li>
         ))}
       </ul>
-      {running.length > 0 && <p className="mt-3 text-xs text-ctp-overlay1">Restart reloads the setup and resumes the same conversation.</p>}
+      {running.length > 0 && <p className="mt-3 text-xs text-ctp-overlay1">Restart reloads the setup and resumes the same conversation. An agent in the middle of a turn restarts when that turn ends.</p>}
       {error && <p role="alert" className="mt-2 text-xs text-ctp-error">{error}</p>}
     </Modal>
   );

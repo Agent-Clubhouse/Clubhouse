@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import type { ManagedAgentSetup, ManagedPartKind, ManagedPreview, ManagedPartSummary } from '../../../shared/managed-agents-types';
 import { BlockList, type BuilderAgent } from './BlockList';
 import { LibraryPanel, PartToggleList } from './LibraryPanel';
@@ -12,41 +12,57 @@ export type BuilderTarget =
   | { kind: 'agent'; agent: BuilderAgent }
   | { kind: 'draft'; value: SetupDraft; onChange: (next: SetupDraft) => void; agentName?: string };
 
-/** The agent's setup, loaded and saved per change, or a draft held by the caller. */
+/**
+ * The agent's setup, loaded and saved per change, or a draft held by the caller.
+ * Loads follow the agent's ids, not the target object, so a parent's render
+ * doesn't reload it. Every load and save takes a sequence number, and a load
+ * that started before the latest save is dropped, so it can't put back an
+ * older setup over a newer edit.
+ */
 export function useBuilderSetup(target: BuilderTarget): { setup: SetupDraft | null; save: (next: SetupDraft) => Promise<void>; error: string | null; reload: () => void } {
   const [loaded, setLoaded] = useState<SetupDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const agent = target.kind === 'agent' ? target.agent : null;
+  const projectPath = target.kind === 'agent' ? target.agent.projectPath : undefined;
+  const agentId = target.kind === 'agent' ? target.agent.agentId : undefined;
+  const seq = useRef(0);
   const reload = useCallback(() => {
-    if (!agent) return;
-    void unwrap(managed().getSetup(agent.projectPath, agent.agentId))
-      .then((s) => { setLoaded(s ? { blocks: s.blocks, skills: s.skills, mcps: s.mcps, ...(s.templateId && { templateId: s.templateId }) } : null); setError(null); })
-      .catch((err) => { /* telemetry-exempt: shown to the person */ setError(errorText(err)); });
-  }, [agent?.projectPath, agent?.agentId]);
+    if (!projectPath || !agentId) return;
+    const mine = ++seq.current;
+    void unwrap(managed().getSetup(projectPath, agentId))
+      .then((s) => {
+        if (mine !== seq.current) return;
+        setLoaded(s ? { blocks: s.blocks, skills: s.skills, mcps: s.mcps, ...(s.templateId && { templateId: s.templateId }) } : null);
+        setError(null);
+      })
+      .catch((err) => { /* telemetry-exempt: shown to the person */ if (mine === seq.current) setError(errorText(err)); });
+  }, [projectPath, agentId]);
   useEffect(() => {
-    if (!agent) return;
+    if (!projectPath || !agentId) return;
+    setLoaded(null);
     reload();
-    return managed().onChanged(reload);
-  }, [reload, agent]);
+    const off = managed().onChanged(reload);
+    return () => { seq.current++; off(); };
+  }, [reload, projectPath, agentId]);
+  const save = useCallback(async (next: SetupDraft) => {
+    if (!projectPath || !agentId) return;
+    // Loads already under way read the setup from before this save.
+    seq.current++;
+    setLoaded(next);
+    try {
+      await unwrap(managed().saveSetup(projectPath, agentId, next));
+      // And so may a load that started while it was saving.
+      seq.current++;
+      setError(null);
+    } catch (err) {
+      // telemetry-exempt: shown to the person, and the saved setup is reloaded.
+      setError(errorText(err));
+      reload();
+    }
+  }, [projectPath, agentId, reload]);
   if (target.kind === 'draft') {
     return { setup: target.value, save: async (next) => target.onChange(next), error: null, reload: () => {} };
   }
-  return {
-    setup: loaded,
-    error,
-    reload,
-    save: async (next) => {
-      setLoaded(next);
-      try {
-        await unwrap(managed().saveSetup(target.agent.projectPath, target.agent.agentId, next));
-        setError(null);
-      } catch (err) {
-        // telemetry-exempt: shown to the person, and the saved setup is reloaded.
-        setError(errorText(err));
-        reload();
-      }
-    },
-  };
+  return { setup: loaded, error, reload, save };
 }
 
 const listKey = (kind: ManagedPartKind): 'blocks' | 'skills' | 'mcps' => (kind === 'block' ? 'blocks' : kind === 'skill' ? 'skills' : 'mcps');

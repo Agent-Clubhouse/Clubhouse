@@ -45,24 +45,30 @@ export function errorText(err: unknown): string {
 
 export const managed = () => window.clubhouse.managed;
 
-/** Refetch on mount and whenever main broadcasts a managed change. */
-function useLive<T>(load: () => Promise<T>, deps: unknown[]): { value: T | null; error: string | null; reload: () => void } {
+/**
+ * Refetch on mount and whenever main broadcasts a managed change. Disabled
+ * (an unmanaged row, the flag off, ids not known yet), it loads nothing and
+ * doesn't listen, so a list of agent rows adds no listeners.
+ */
+function useLive<T>(load: () => Promise<T>, deps: unknown[], enabled = true): { value: T | null; error: string | null; reload: () => void } {
   const [value, setValue] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const seq = useRef(0);
   const run = useCallback(() => {
+    if (!enabled) return;
     const id = ++seq.current;
     load().then((v) => { if (id === seq.current) { setValue(v); setError(null); } })
       .catch((err) => { if (id === seq.current) setError(errorText(err)); });
-  }, deps);
+  }, [enabled, ...deps]);
   useEffect(() => {
     // New ids: the last answer was about something else, so it doesn't show meanwhile.
     setValue(null);
     setError(null);
+    if (!enabled) return;
     run();
     const off = managed().onChanged(run);
     return () => { seq.current++; off(); };
-  }, [run]);
+  }, [run, enabled]);
   return { value, error, reload: run };
 }
 
@@ -78,6 +84,7 @@ export function useManagedStatus(projectPath: string | undefined, agentId: strin
   return useLive<ManagedAgentStatus | null>(
     () => (projectPath && agentId ? unwrap(managed().status(projectPath, agentId)) : Promise.resolve(null)),
     [projectPath, agentId],
+    !!projectPath && !!agentId,
   );
 }
 
@@ -86,6 +93,7 @@ export function useManagedSetup(projectPath: string | undefined, agentId: string
   return useLive<ManagedAgentSetup | null>(
     () => (projectPath && agentId ? unwrap(managed().getSetup(projectPath, agentId)) : Promise.resolve(null)),
     [projectPath, agentId],
+    !!projectPath && !!agentId,
   );
 }
 

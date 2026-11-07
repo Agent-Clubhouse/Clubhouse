@@ -140,6 +140,18 @@ export interface ManagedPreview {
   missing: string[];
 }
 
+/**
+ * What "Keep what it has now" makes of an agent's files when it switches to
+ * managed (#2893), by name, before anything is written. `notes` says what
+ * can't be brought over and why, so nothing is dropped silently.
+ */
+export interface ManagedConvertPreview {
+  blocks: string[];
+  skills: string[];
+  mcps: string[];
+  notes: string[];
+}
+
 export type ManagedErrorCode =
   | 'not_found'
   | 'stale'

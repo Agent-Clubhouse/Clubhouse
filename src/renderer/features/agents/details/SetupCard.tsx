@@ -10,7 +10,7 @@ import type { Agent } from '../../../../shared/types';
 import type { ManagedAgentSetup, ManagedPartSummary } from '../../../../shared/managed-agents-types';
 import { Button } from '../../../components/Button';
 import { useManagedParts, useManagedStatus, useManagedTemplates } from '../../managed/managedApi';
-import { useManagedRestart } from '../../managed/restart';
+import { PENDING_RESTART_NOTE, useManagedRestart } from '../../managed/restart';
 import { openAgentSettingsOn } from '../agentSettingsPages';
 import { CardNote, CardRow, DetailsCard } from './DetailsCard';
 import { useAgentDetailsStore } from './detailsStore';
@@ -83,7 +83,7 @@ export function SetupCard({ agent, projectPath, setup, runsOn }: {
   const setOpen = useAgentDetailsStore((s) => s.setSettingsOpen);
   const templates = useManagedTemplates();
   const { value: status } = useManagedStatus(projectPath, agent.id);
-  const { restart, busy, error, dialog } = useManagedRestart({ projectPath, agentId: agent.id, agentName: agent.name });
+  const { restart, busy, pending, error, dialog } = useManagedRestart({ projectPath, agentId: agent.id, agentName: agent.name });
 
   const templateName = setup.templateId ? templates.value?.find((t) => t.id === setup.templateId)?.name ?? null : null;
   const changes = status?.waiting && status.running ? status.changes : null;
@@ -93,7 +93,7 @@ export function SetupCard({ agent, projectPath, setup, runsOn }: {
   return (
     <DetailsCard id="settings" title="Setup" summary={summary} open={open} onToggle={() => setOpen(!open)}>
       <SetupRows setup={setup} templateName={templateName} runsOn={runsOn} changes={changes} />
-      {waiting && <CardNote><span data-testid="details-setup-note">{SETUP_WAITING_NOTE}</span></CardNote>}
+      {(waiting || pending) && <CardNote><span data-testid="details-setup-note">{pending ? PENDING_RESTART_NOTE : SETUP_WAITING_NOTE}</span></CardNote>}
       {error && <CardNote><span className="text-ctp-error" role="alert" data-testid="details-setup-error">{error}</span></CardNote>}
       <div className="pr-3.5 pl-[33px] pt-1 flex items-center gap-1.5">
         <Button kind="ghost" onClick={() => openAgentSettingsOn(agent.id, 'instructions')} data-testid="details-setup-open-builder">Open builder</Button>

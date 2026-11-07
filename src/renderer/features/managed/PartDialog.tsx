@@ -6,6 +6,7 @@ import type { ManagedPartConsumer, ManagedPartContent, ManagedPartKind, ManagedP
 import { ImpactDialog } from './ImpactDialog';
 import { errorText, managed, partKindLabel, unwrap } from './managedApi';
 import { WildcardBar } from './parts-ui';
+import { restartAfterSave } from './restart';
 
 type SkillFile = ManagedSkillContent['files'][number];
 
@@ -41,6 +42,16 @@ async function filesFromEntry(entry: FileSystemEntry, prefix = ''): Promise<Arra
   return out;
 }
 
+/** Arguments, one per line. Blank lines are dropped. */
+export function parseArgs(text: string): string[] {
+  return text.split('\n').map((x) => x.replace(/\r$/, '')).filter((x) => x.length > 0);
+}
+
+/** Variable names, separated by commas, spaces or new lines. */
+export function parseEnvVars(text: string): string[] {
+  return text.split(/[\s,]+/).filter(Boolean);
+}
+
 function blankContent(kind: ManagedPartKind): ManagedPartContent {
   if (kind === 'block') return { kind, content: '' };
   if (kind === 'skill') return { kind, skillName: '', files: [{ path: 'SKILL.md', content: '' }] };
@@ -70,6 +81,10 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [impact, setImpact] = useState(false);
+  // MCP arguments and variable names as typed: parsed on save, so a trailing
+  // new line or comma isn't swallowed while the person is still typing.
+  const [argsText, setArgsText] = useState('');
+  const [envText, setEnvText] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
 
@@ -78,13 +93,15 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
     setError(null);
     setImpact(false);
     if (!editId) {
-      setName(''); setDescription(''); setContent(blankContent(kind)); setRevision(0); setUsedBy([]);
+      setName(''); setDescription(''); setContent(blankContent(kind)); setRevision(0); setUsedBy([]); setArgsText(''); setEnvText('');
       return;
     }
     let cancelled = false;
     void unwrap(managed().getPart(editId)).then((p) => {
       if (cancelled) return;
       setName(p.name); setDescription(p.description); setContent(p.content); setRevision(p.revision); setUsedBy(p.usedBy);
+      setArgsText(p.content.kind === 'mcp' ? (p.content.args ?? []).join('\n') : '');
+      setEnvText(p.content.kind === 'mcp' ? (p.content.envVars ?? []).join(', ') : '');
     }).catch((err) => { /* telemetry-exempt: shown to the person */ if (!cancelled) setError(errorText(err)); });
     return () => { cancelled = true; };
   }, [open, editId, kind]);
@@ -117,22 +134,28 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
   const commit = async (restart: ManagedPartConsumer[] = []) => {
     setBusy(true);
     setError(null);
+    const saved: ManagedPartContent = content.kind === 'mcp'
+      ? { ...content, ...(content.transport === 'stdio' && { args: parseArgs(argsText) }), envVars: parseEnvVars(envText) }
+      : content;
     try {
       if (editId) {
-        await unwrap(managed().updatePart({ id: editId, expectedRevision: revision, name, description, content }));
-        for (const c of restart) await unwrap(managed().restart(c.projectPath, c.agentId));
+        await unwrap(managed().updatePart({ id: editId, expectedRevision: revision, name, description, content: saved }));
       } else {
-        const created = await unwrap(managed().createPart({ name, description, content }));
+        const created = await unwrap(managed().createPart({ name, description, content: saved }));
         onCreated?.(created);
       }
-      onClose();
     } catch (err) {
       // telemetry-exempt: shown to the person in the dialog.
       setError(errorText(err));
-    } finally {
       setBusy(false);
       setImpact(false);
+      return;
     }
+    setBusy(false);
+    setImpact(false);
+    onClose();
+    // Saved: restarts run on their own and report their own failures.
+    restartAfterSave(restart.map(({ projectPath, agentId, agentName }) => ({ projectPath, agentId, agentName })));
   };
   const save = () => {
     if (editId && usedBy.length > 1) setImpact(true);
@@ -261,7 +284,7 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
                   <label className="flex items-start gap-4">
                     <span className="w-28 pt-1.5 text-ctp-subtext1">Arguments</span>
                     <span className="flex-1 flex flex-col gap-1">
-                      <textarea className={`${textareaClass} min-h-16`} value={(content.args ?? []).join('\n')} onChange={(e) => setContent({ ...content, args: e.target.value.split('\n').filter((x) => x.length > 0) })} />
+                      <textarea aria-label="Arguments" className={`${textareaClass} min-h-16`} value={argsText} onChange={(e) => setArgsText(e.target.value)} />
                       <span className="text-xs text-ctp-overlay1">One per line.</span>
                     </span>
                   </label>
@@ -275,7 +298,7 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
               <label className="flex items-start gap-4">
                 <span className="w-28 pt-1.5 text-ctp-subtext1">Environment</span>
                 <span className="flex-1 flex flex-col gap-1">
-                  <input className={`${inputClass} w-full font-mono`} value={(content.envVars ?? []).join(', ')} onChange={(e) => setContent({ ...content, envVars: e.target.value.split(/[\s,]+/).filter(Boolean) })} placeholder="WORKIQ_TENANT" />
+                  <input aria-label="Environment" className={`${inputClass} w-full font-mono`} value={envText} onChange={(e) => setEnvText(e.target.value)} placeholder="WORKIQ_TENANT" />
                   <span className="text-xs text-ctp-overlay1">Variable names only. Values come from your signed-in environment when the agent starts. Clubhouse stores no secrets.</span>
                 </span>
               </label>

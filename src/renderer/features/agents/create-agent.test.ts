@@ -32,6 +32,19 @@ describe('createDurableAgent with Clubhouse features off (#2893)', () => {
     vi.spyOn(window.clubhouse.managed, 'setClubhouseFeatures').mockResolvedValue({ ok: false, code: 'failed', message: 'nope' });
     const onError = vi.fn();
     vi.spyOn(console, 'error').mockImplementation(() => {});
+    const del = vi.spyOn(window.clubhouse.agent, 'deleteDurable').mockImplementation(async () => { order.push('delete'); });
+    await expect(createDurableAgent(project, { ...input, clubhouseFeatures: false }, { onError })).resolves.toBeNull();
+    expect(onError).toHaveBeenCalledWith('nope');
+    // The half-made agent is removed before the error shows.
+    expect(del).toHaveBeenCalledWith('/tmp/ch', 'a-new');
+    expect(order).toEqual(['create', 'delete']);
+  });
+
+  it('still reports the first error when removing the half-made agent fails too', async () => {
+    vi.spyOn(window.clubhouse.managed, 'setClubhouseFeatures').mockResolvedValue({ ok: false, code: 'failed', message: 'nope' });
+    vi.spyOn(window.clubhouse.agent, 'deleteDurable').mockRejectedValue(new Error('busy'));
+    const onError = vi.fn();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
     await expect(createDurableAgent(project, { ...input, clubhouseFeatures: false }, { onError })).resolves.toBeNull();
     expect(onError).toHaveBeenCalledWith('nope');
     expect(order).toEqual(['create']);

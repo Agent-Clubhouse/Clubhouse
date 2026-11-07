@@ -17,7 +17,7 @@ import { openAgentSettingsOn } from '../agents/agentSettingsPages';
 import { XIcon } from '../agents/chat/icons';
 import { useManagedFlag } from './managed-flag';
 import { useManagedStatus } from './managedApi';
-import { useManagedRestart } from './restart';
+import { PENDING_RESTART_NOTE, useManagedRestart } from './restart';
 
 export const RESUME_NOTE = 'Restart resumes this conversation';
 export const CLI_CHANGED_NOTE = 'The CLI changed, so restarting starts a new conversation.';
@@ -59,13 +59,13 @@ export function SetupChangedBar({ agent, variant }: {
   const { status, projectPath } = useRunningManagedStatus(agent);
   const dismissed = useDismissed((s) => s.byAgent[agent.id]);
   const target = projectPath ? { projectPath, agentId: agent.id, agentName: agent.name } : null;
-  const { restart, busy, error, dialog } = useManagedRestart(target);
+  const { restart, busy, pending, error, dialog } = useManagedRestart(target);
 
   const showing = !!status && status.managed && status.running && status.waiting && dismissed !== dismissKey(status);
   if (!status || !showing) return dialog ? <>{dialog}</> : null;
 
   const text = setupChangedText(status.changes);
-  const note = status.cliChanged ? CLI_CHANGED_NOTE : RESUME_NOTE;
+  const note = pending ? PENDING_RESTART_NOTE : status.cliChanged ? CLI_CHANGED_NOTE : RESUME_NOTE;
   const dismiss = () => useDismissed.setState((s) => ({ byAgent: { ...s.byAgent, [agent.id]: dismissKey(status) } }));
   const frame = variant === 'dock'
     ? 'border border-surface-0 rounded-lg bg-ctp-mantle px-3 py-2 text-[12.5px]'

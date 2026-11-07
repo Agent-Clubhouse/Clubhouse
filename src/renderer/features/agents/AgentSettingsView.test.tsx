@@ -309,6 +309,38 @@ describe('AgentSettingsView', () => {
       expect(screen.getByRole('heading', { name: 'Quick agents' })).toBeInTheDocument();
       expect(screen.queryByTestId('agent-settings-nav')).not.toBeInTheDocument();
     });
+
+    it('shows the builder instead of the file editors for a managed agent, and scrolls to a requested section', async () => {
+      resetManagedFlag();
+      window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ managedAgents: true });
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+      const getSetup = vi.spyOn(window.clubhouse.managed, 'getSetup').mockResolvedValue({ ok: true, value: { version: 1, blocks: [], skills: [], mcps: [] } } as never);
+      const scroll = vi.fn();
+      Element.prototype.scrollIntoView = scroll;
+      useAgentSettingsPages.getState().setRequestedPage({ agentId: defaultAgent.id, page: 'preview' });
+      try {
+        const { rerender } = renderSettings();
+        expect(await screen.findByTestId('managed-builder-instructions')).toBeInTheDocument();
+        expect(screen.getByTestId('managed-builder-skills')).toBeInTheDocument();
+        expect(screen.getByTestId('managed-builder-mcp')).toBeInTheDocument();
+        expect(await screen.findByTestId('managed-preview')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Instructions')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('skills-section')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('mcp-json-section')).not.toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: 'Permissions' })).not.toBeInTheDocument();
+        await waitFor(() => expect(scroll).toHaveBeenCalled());
+        expect(scroll.mock.contexts[0]).toBe(screen.getByTestId('agent-settings-section-preview'));
+        // A re-render with an equal agent doesn't load the setup again.
+        const loads = getSetup.mock.calls.length;
+        rerender(<AgentSettingsView agent={{ ...defaultAgent }} />);
+        await act(async () => { await Promise.resolve(); });
+        expect(getSetup.mock.calls.length).toBe(loads);
+      } finally {
+        useAgentSettingsPages.getState().setRequestedPage(null);
+        delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+        resetManagedFlag();
+      }
+    });
   });
 
   describe('main agent tab - editable mode', () => {

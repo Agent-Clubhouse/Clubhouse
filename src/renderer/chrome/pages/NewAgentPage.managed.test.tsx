@@ -238,12 +238,110 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     expect(within(list).getAllByRole('button')).toHaveLength(1);
     expect(within(list).queryByText('plain-otter')).toBeNull();
     fireEvent.click(within(list).getByText('gallant-swift'));
-    expect(screen.getByText('Clubhouse · copied from gallant-swift · nothing runs until you create it')).toBeTruthy();
+    expect(await screen.findByText('Clubhouse · copied from gallant-swift · nothing runs until you create it')).toBeTruthy();
     fireEvent.click(screen.getByTestId('new-agent-builder-create'));
     await waitFor(() => expect(create).toHaveBeenCalledWith('/tmp/ch', expect.objectContaining({
       name: 'keen-heron',
       setup: { blocks: ['b-identity'], skills: ['s-notes'], mcps: [], templateId: 'custom-release' },
       settings: expect.objectContaining({ orchestrator: 'claude-code', model: 'opus', freeAgentMode: true }),
+    })));
+  });
+
+  it('Copy another agent brings its orchestration from its config', async () => {
+    flagOn();
+    vi.spyOn(m(), 'getSetup').mockImplementation(async (_path: string, id: string) => ({
+      ok: true, value: id === 'a1' ? { version: 1, blocks: ['b-identity'], skills: [], mcps: ['builtin-mcp-clubhouse'] } : null,
+    }) as never);
+    const config = vi.spyOn(window.clubhouse.agent, 'getDurableConfig').mockResolvedValue({ id: 'a1', orchestration: { orchestrate: true, maxHelpers: 2, access: 'same' } } as never);
+    const create = vi.spyOn(m(), 'createAgent').mockResolvedValue({ ok: true, value: { id: 'm-new' } } as never);
+    openWith();
+    await managedSwitch();
+    fireEvent.click(screen.getByText('Copy another agent…'));
+    fireEvent.click(within(await screen.findByRole('list', { name: 'Managed agents' })).getByText('gallant-swift'));
+    await screen.findByTestId('new-agent-builder');
+    expect(config).toHaveBeenCalledWith('/tmp/gb', 'a1');
+    fireEvent.click(screen.getByRole('radio', { name: 'Settings' }));
+    expect(screen.getByRole('switch', { name: 'Can start helpers' }).getAttribute('aria-checked')).toBe('true');
+    expect((screen.getByLabelText('Helper limit') as HTMLInputElement).value).toBe('2');
+    fireEvent.click(screen.getByTestId('new-agent-builder-create'));
+    await waitFor(() => expect(create).toHaveBeenCalledWith('/tmp/ch', expect.objectContaining({
+      settings: expect.objectContaining({ orchestration: { orchestrate: true, maxHelpers: 2, access: 'same' } }),
+    })));
+  });
+
+  it('Back then forward to the same start keeps the builder draft, and the name can be fixed meanwhile', async () => {
+    flagOn();
+    vi.spyOn(m(), 'createAgent')
+      .mockResolvedValueOnce({ ok: false, code: 'name_taken' } as never)
+      .mockResolvedValueOnce({ ok: true, value: { id: 'm-new' } } as never);
+    openWith();
+    await managedSwitch();
+    fireEvent.change(screen.getByTestId('new-agent-name'), { target: { value: 'keen-heron' } });
+    fireEvent.click(screen.getByTestId('new-agent-scratch'));
+    fireEvent.click(screen.getByRole('radio', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Free Agent Mode' }));
+    fireEvent.click(screen.getByTestId('new-agent-builder-create'));
+    expect((await screen.findByTestId('new-agent-error')).textContent).toMatch(/That name is taken/);
+
+    fireEvent.click(screen.getByText('Back'));
+    fireEvent.change(screen.getByTestId('new-agent-name'), { target: { value: 'keen-heron-2' } });
+    fireEvent.click(screen.getByTestId('new-agent-scratch'));
+    // Same tab, same switch.
+    expect(screen.getByRole('switch', { name: 'Free Agent Mode' }).getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(screen.getByTestId('new-agent-builder-create'));
+    await waitFor(() => expect(m().createAgent).toHaveBeenLastCalledWith('/tmp/ch', expect.objectContaining({
+      name: 'keen-heron-2',
+      settings: expect.objectContaining({ freeAgentMode: true }),
+    })));
+  });
+
+  it('Esc in a field of the builder doesn\'t go Back; Esc elsewhere does', async () => {
+    flagOn();
+    openWith();
+    await managedSwitch();
+    fireEvent.click(screen.getByTestId('new-agent-scratch'));
+    fireEvent.click(screen.getByRole('radio', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Can start helpers' }));
+    fireEvent.keyDown(screen.getByLabelText('Helper limit'), { key: 'Escape' });
+    fireEvent.keyDown(screen.getByLabelText('Model'), { key: 'Escape' });
+    expect(screen.getByTestId('new-agent-builder')).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole('heading', { name: /^Build / }), { key: 'Escape' });
+    expect(screen.queryByTestId('new-agent-builder')).toBeNull();
+    expect(screen.getByTestId('new-agent-name')).toBeTruthy();
+  });
+
+  it('⌘↵ inside the part dialog doesn\'t create the agent', async () => {
+    flagOn();
+    const create = vi.spyOn(m(), 'createAgent').mockResolvedValue({ ok: true, value: { id: 'm-new' } } as never);
+    openWith();
+    await managedSwitch();
+    fireEvent.click(screen.getByTestId('new-agent-scratch'));
+    fireEvent.click(screen.getByTestId('managed-write-block'));
+    const dialog = await screen.findByTestId('managed-part-dialog');
+    fireEvent.keyDown(within(dialog).getByLabelText('Name'), { key: 'Enter', metaKey: true });
+    fireEvent.keyDown(within(dialog).getByLabelText('Name'), { key: 'Enter', ctrlKey: true });
+    expect(create).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByRole('heading', { name: /^Build / }), { key: 'Enter', metaKey: true });
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  });
+
+  it('helpers need the Clubhouse MCP server', async () => {
+    flagOn();
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [{ ...builtinTemplate, setup: { ...builtinTemplate.setup, mcps: [] } }] } as never);
+    const create = vi.spyOn(m(), 'createAgent').mockResolvedValue({ ok: true, value: { id: 'm-new' } } as never);
+    openWith();
+    await managedSwitch();
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Customize Orchestrator' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Settings' }));
+    const helpers = screen.getByRole('switch', { name: 'Can start helpers' });
+    expect(helpers).toBeDisabled();
+    expect(helpers.getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByText('Needs the Clubhouse MCP server.')).toBeTruthy();
+    expect(screen.queryByLabelText('Helper limit')).toBeNull();
+    fireEvent.click(screen.getByTestId('new-agent-builder-create'));
+    await waitFor(() => expect(create).toHaveBeenCalledWith('/tmp/ch', expect.objectContaining({
+      settings: expect.objectContaining({ orchestration: expect.objectContaining({ orchestrate: false }) }),
     })));
   });
 

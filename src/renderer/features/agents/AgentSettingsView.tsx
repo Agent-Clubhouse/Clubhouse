@@ -210,6 +210,12 @@ export function AgentSettingsView({ agent }: Props) {
     return () => { cancelled = true; off(); };
   }, [managedFlag, projectPath, agent.id, agent.projectId]);
   const isManagedAgent = managedFlag && !!managedSetup;
+  // One object per agent, so the builder doesn't see a new target on every render.
+  const builderAgent = useMemo(
+    () => (projectPath ? { projectPath, agentId: agent.id, agentName: agent.name } : null),
+    [projectPath, agent.id, agent.name],
+  );
+  const builderTarget = useMemo(() => (builderAgent ? { kind: 'agent' as const, agent: builderAgent } : null), [builderAgent]);
 
   // Helpers (#2232): not for a helper or an agent on another machine, like the Orchestration card.
   const setHiddenPages = useAgentSettingsPages((s) => s.setHiddenPages);
@@ -228,7 +234,9 @@ export function AgentSettingsView({ agent }: Props) {
   useEffect(() => {
     if (!requestedPage || requestedPage.agentId !== agent.id || hiddenPages.includes(requestedPage.page)) return;
     setPage(requestedPage.page);
-  }, [requestedPage, agent.id, hiddenPages, setPage]);
+    // The classic shell stacks the pages: bring the asked-for section into view instead.
+    if (!pageMode) document.getElementById(`agent-settings-section-${requestedPage.page}`)?.scrollIntoView?.({ block: 'start' });
+  }, [requestedPage, agent.id, hiddenPages, setPage, pageMode]);
 
   // Shell in worktree: the sidebar row (new chrome) or the row under the page
   // (classic) opens it. It stays mounted once opened.
@@ -1278,6 +1286,7 @@ export function AgentSettingsView({ agent }: Props) {
           agentName={agent.name}
           setup={managedSetup}
           clubhouseFeatures={clubhouseFeatures}
+          onClubhouseFeaturesChange={setClubhouseFeatures}
           isRunning={isRunning}
         />
       )}
@@ -1392,7 +1401,7 @@ export function AgentSettingsView({ agent }: Props) {
           </Button>
         </Field>
       </>}
-      {!isManagedByClubhouse && !pageMode && (
+      {!isManagedByClubhouse && !isManagedAgent && !pageMode && (
         <p className="mt-3 text-xs text-ctp-overlay1">
           Skills, agent definitions and MCP settings live in the agent worktree. Agents that share a root directory share them.
         </p>
@@ -1606,7 +1615,6 @@ export function AgentSettingsView({ agent }: Props) {
       quick: `Defaults for quick agents ${agent.name} starts`,
       preview: `What ${agent.name} gets at its next start`,
     };
-    const builderAgent = projectPath ? { projectPath, agentId: agent.id, agentName: agent.name } : null;
     const builderNote = isRunning ? <span className="ml-2 text-ctp-overlay1">· Changes apply when the next session starts</span> : null;
     if (isManagedAgent && builderAgent) {
       sub.instructions = <>In the order {agent.name} reads them{builderNote}</>;
@@ -1624,10 +1632,10 @@ export function AgentSettingsView({ agent }: Props) {
       quick: quickDefaults,
       preview: isManagedAgent && builderAgent ? <PreviewPane agent={builderAgent} /> : null,
     };
-    if (isManagedAgent && builderAgent) {
-      content.instructions = <ManagedBuilder target={{ kind: 'agent', agent: builderAgent }} tab="instructions" />;
-      content.skills = <ManagedBuilder target={{ kind: 'agent', agent: builderAgent }} tab="skills" />;
-      content.mcp = <ManagedBuilder target={{ kind: 'agent', agent: builderAgent }} tab="mcp" />;
+    if (isManagedAgent && builderTarget) {
+      content.instructions = <ManagedBuilder target={builderTarget} tab="instructions" />;
+      content.skills = <ManagedBuilder target={builderTarget} tab="skills" />;
+      content.mcp = <ManagedBuilder target={builderTarget} tab="mcp" />;
     }
     // Every page stays mounted and only the selected one shows, so edits held
     // inside a page (an open skill editor, .mcp.json) survive a page switch.
@@ -1641,6 +1649,34 @@ export function AgentSettingsView({ agent }: Props) {
         </div>
       );
     });
+  } else if (isManagedAgent && builderAgent && builderTarget) {
+    // Classic shell, managed agent: Clubhouse writes its instructions, skills and
+    // MCP files at every start, so the builder takes the place of the file editors.
+    const builderNote = isRunning ? 'Changes apply when the next session starts' : undefined;
+    body = (
+      <>
+        {general}
+        <div id="agent-settings-section-instructions" data-testid="agent-settings-section-instructions">
+          <SectionHeading title="Instructions" sub={builderNote ?? `In the order ${agent.name} reads them`} />
+          <ManagedBuilder target={builderTarget} tab="instructions" />
+        </div>
+        <div id="agent-settings-section-skills" data-testid="agent-settings-section-skills">
+          <SectionHeading title="Skills" sub={builderNote ?? `Copied into ${agent.name}'s folder at its next start`} />
+          <ManagedBuilder target={builderTarget} tab="skills" />
+        </div>
+        <div id="agent-settings-section-mcp" data-testid="agent-settings-section-mcp">
+          <SectionHeading title="MCP servers" sub={builderNote ?? 'Sign-in comes from your environment'} />
+          <ManagedBuilder target={builderTarget} tab="mcp" />
+        </div>
+        <div id="agent-settings-section-preview" data-testid="agent-settings-section-preview">
+          <SectionHeading title="Preview" sub={`What ${agent.name} gets at its next start`} />
+          <PreviewPane agent={builderAgent} />
+        </div>
+        {helpersSettings}
+        <SectionHeading title="Quick agents" sub={`Defaults for quick agents ${agent.name} starts`} />
+        {quickDefaults}
+      </>
+    );
   } else {
     body = (
       <>

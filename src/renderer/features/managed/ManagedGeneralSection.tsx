@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '../../components/Button';
 import { Modal } from '../../components/Modal';
 import { Toggle } from '../../components/Toggle';
 import { Field, SectionHeading, inputClass, selectClass } from '../agents/agentSettingsUi';
-import type { ManagedAgentSetup } from '../../../shared/managed-agents-types';
+import type { ManagedAgentSetup, ManagedConvertPreview } from '../../../shared/managed-agents-types';
 import { errorText, managed, unwrap, useManagedTemplates } from './managedApi';
 
 /**
@@ -11,12 +11,14 @@ import { errorText, managed, unwrap, useManagedTemplates } from './managedApi';
  * Save as template, Stop managing. Unmanaged: the switch to managed, and the
  * Clubhouse features opt-out for a plain CLI.
  */
-export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, clubhouseFeatures, isRunning }: {
+export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, clubhouseFeatures, onClubhouseFeaturesChange, isRunning }: {
   projectPath: string;
   agentId: string;
   agentName: string;
   setup: ManagedAgentSetup | null;
   clubhouseFeatures: boolean;
+  /** Called with the saved value once the switch's change is saved. */
+  onClubhouseFeaturesChange?: (on: boolean) => void;
   isRunning: boolean;
 }) {
   const templates = useManagedTemplates();
@@ -56,7 +58,10 @@ export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, 
           >
             <Toggle
               checked={clubhouseFeatures}
-              onChange={(on) => void run(() => unwrap(managed().setClubhouseFeatures(projectPath, agentId, on)))}
+              onChange={(on) => void run(async () => {
+                await unwrap(managed().setClubhouseFeatures(projectPath, agentId, on));
+                onClubhouseFeaturesChange?.(on);
+              })}
               disabled={busy || isRunning}
               aria-label="Clubhouse features"
             />
@@ -67,6 +72,8 @@ export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, 
 
       {convertOpen && (
         <ConvertDialog
+          projectPath={projectPath}
+          agentId={agentId}
           agentName={agentName}
           templates={(templates.value ?? []).map((t) => ({ id: t.id, name: t.name }))}
           busy={busy}
@@ -105,7 +112,37 @@ export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, 
   );
 }
 
-function ConvertDialog({ agentName, templates, busy, error, onCancel, onConvert }: {
+const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+
+/** "Becomes: 1 block, skills release-notes, review, MCP servers github." */
+export function convertSummary(p: Pick<ManagedConvertPreview, 'blocks' | 'skills' | 'mcps'>): string {
+  const parts = [
+    ...(p.blocks.length > 0 ? [`${p.blocks.length} ${plural(p.blocks.length, 'block', 'blocks')}`] : []),
+    ...(p.skills.length > 0 ? [`${plural(p.skills.length, 'skill', 'skills')} ${p.skills.join(', ')}`] : []),
+    ...(p.mcps.length > 0 ? [`${plural(p.mcps.length, 'MCP server', 'MCP servers')} ${p.mcps.join(', ')}`] : []),
+  ];
+  return parts.length > 0 ? `Becomes: ${parts.join(', ')}.` : 'It has no instructions, skills or MCP servers to bring over yet.';
+}
+
+/** What Keep would bring over, read when the dialog opens. Nothing is written until Switch to managed. */
+function useConvertPreview(projectPath: string, agentId: string): { preview: ManagedConvertPreview | null; error: string | null } {
+  const [preview, setPreview] = useState<ManagedConvertPreview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setPreview(null);
+    setError(null);
+    unwrap(managed().previewConvert(projectPath, agentId))
+      .then((p) => { if (!cancelled) setPreview(p); })
+      .catch((err) => { /* telemetry-exempt: shown to the person in the dialog */ if (!cancelled) setError(errorText(err)); });
+    return () => { cancelled = true; };
+  }, [projectPath, agentId]);
+  return { preview, error };
+}
+
+function ConvertDialog({ projectPath, agentId, agentName, templates, busy, error, onCancel, onConvert }: {
+  projectPath: string;
+  agentId: string;
   agentName: string;
   templates: Array<{ id: string; name: string }>;
   busy: boolean;
@@ -115,6 +152,7 @@ function ConvertDialog({ agentName, templates, busy, error, onCancel, onConvert 
 }) {
   const [keep, setKeep] = useState(true);
   const [templateId, setTemplateId] = useState(templates[0]?.id ?? '');
+  const { preview, error: previewError } = useConvertPreview(projectPath, agentId);
   return (
     <Modal
       open
@@ -124,14 +162,23 @@ function ConvertDialog({ agentName, templates, busy, error, onCancel, onConvert 
       testId="managed-convert-dialog"
       footer={<>
         <Button onClick={onCancel} disabled={busy}>Cancel</Button>
-        <Button kind="primary" disabled={busy || (!keep && !templateId)} onClick={() => onConvert(keep, keep ? undefined : templateId)}>Switch to managed</Button>
+        <Button kind="primary" disabled={busy || (keep ? !preview : !templateId)} onClick={() => onConvert(keep, keep ? undefined : templateId)}>Switch to managed</Button>
       </>}
     >
       <div className="flex flex-col gap-3 text-[13px]">
         <label className="flex gap-2.5 items-start cursor-pointer">
           <input type="radio" name="convert" checked={keep} onChange={() => setKeep(true)} className="mt-1" />
-          <span><span className="font-semibold text-ctp-text">Keep what {agentName} has now</span><br />
-            <span className="text-xs text-ctp-overlay1">Its instructions file becomes a block for {agentName} only, and the original is kept in Clubhouse's app data. You can add skills and MCP servers next.</span></span>
+          <span className="flex-1"><span className="font-semibold text-ctp-text">Keep what {agentName} has now</span><br />
+            <span className="text-xs text-ctp-overlay1">Its instructions file, skills and MCP servers become parts for {agentName} only. The original instructions file is kept in Clubhouse's app data.</span>
+            {keep && (
+              <span className="mt-2 flex flex-col gap-1 text-xs" data-testid="managed-convert-preview">
+                {!preview && !previewError && <span className="text-ctp-overlay1">Reading what it has…</span>}
+                {previewError && <span role="alert" className="text-ctp-error">{previewError}</span>}
+                {preview && <span className="text-ctp-subtext1" data-testid="managed-convert-summary">{convertSummary(preview)}</span>}
+                {preview?.notes.map((n) => <span key={n} className="text-ctp-warning">{n}</span>)}
+              </span>
+            )}
+          </span>
         </label>
         <label className="flex gap-2.5 items-start cursor-pointer">
           <input type="radio" name="convert" checked={!keep} onChange={() => setKeep(false)} className="mt-1" />
@@ -144,7 +191,7 @@ function ConvertDialog({ agentName, templates, busy, error, onCancel, onConvert 
             )}
           </span>
         </label>
-        <p className="text-xs text-ctp-overlay1">{agentName} keeps its name, history and branch. The change applies when its next session starts.</p>
+        <p className="text-xs text-ctp-overlay1">Nothing changes until you switch. {agentName} keeps its name, history and branch, and the change applies when its next session starts.</p>
         {error && <p role="alert" className="text-xs text-ctp-error">{error}</p>}
       </div>
     </Modal>
