@@ -1,3 +1,5 @@
+import { NewAgentCompositionPicker, type NewAgentCompositionSelection } from '../../features/agents/NewAgentCompositionPicker';
+import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { McpCatalogEntry, Project } from '../../../shared/types';
 import { AGENT_COLORS, generateDurableName } from '../../../shared/name-generator';
@@ -97,6 +99,8 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const [model, setModel] = useState('default');
   const [customModel, setCustomModel] = useState('');
   const [persona, setPersona] = useState('');
+  const [composition, setComposition] = useState<NewAgentCompositionSelection | null>(null);
+  const managedComposition = durable && composition?.projectId === projectId && composition.enabled ? composition : null;
   const [useWorktree, setUseWorktree] = useState(true);
   const [isGit, setIsGit] = useState<boolean | null>(null);
   const [freeAgentMode, setFreeAgentMode] = useState(false);
@@ -162,7 +166,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   // Durable waits for the git check, which decides the worktree row.
   // The help line never shows a branch or folder the main process would refuse.
   const worktreeName = name.trim() && !nameProblem ? name.trim() : 'name';
-  const canSubmit = !!project && !busy && (durable
+  const canSubmit = !!project && !busy && (!managedComposition || !!managedComposition.preview) && (durable
     ? !!name.trim() && isGit !== null && !nameProblem
     : !!mission.trim() && (model !== 'custom' || !!customModel.trim()));
 
@@ -192,7 +196,20 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
     setError(null);
     goBusy();
     const target = project;
-    if (durable) {
+    if (durable && managedComposition?.preview) {
+      const token = managedComposition.preview.token;
+      setComposition({ ...managedComposition, preview: null });
+      void window.clubhouse.agent.createWithComposition(target.path, {
+        name: name.trim(), color, model: resolvedModel, useWorktree: !!isGit && useWorktree,
+        orchestrator: resolvedOrchestrator, freeAgentMode: (supportsPermissions && freeAgentMode) || undefined,
+      }, token).then(async (config) => {
+        await useAgentStore.getState().loadDurableAgents(target.id, target.path);
+        finish(target.id, config.id);
+      }).catch(async (error: unknown) => {
+        await useAgentStore.getState().loadDurableAgents(target.id, target.path).catch(() => {});
+        failed(error instanceof Error ? error.message : 'Could not create the agent. Preview again.');
+      });
+    } else if (durable) {
       reportChromeFeature('new_agent_create');
       void createDurableAgent(
         { id: target.id, path: target.path },
@@ -404,7 +421,10 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
           )}
         </Row>
 
-        {durable && (
+        {durable && project && !isRemoteProjectId(project.id) && (
+          <NewAgentCompositionPicker key={project.id} projectId={project.id} disabled={busy} onChange={setComposition} />
+        )}
+        {durable && !managedComposition && (
           <Row label="Persona" htmlFor="new-agent-persona">
             <select id="new-agent-persona" data-testid="new-agent-persona" value={persona} onChange={(e) => setPersona(e.target.value)} className={`${selectClass} w-[288px]`}>
               <option value="">Project default</option>
@@ -437,7 +457,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
           <span className={`text-[13px] ${supportsPermissions ? 'text-ctp-text' : 'text-ctp-overlay1'}`}>Free Agent Mode</span>
         </Row>
 
-        {durable && mcpCatalog.length > 0 && (
+        {durable && !managedComposition && mcpCatalog.length > 0 && (
           <Row label="MCP servers" top help={`Project defaults from the MCP catalog, ${selectedMcps.length} of ${mcpCatalog.length}.`}>
             <div className="w-[288px] max-h-32 overflow-y-auto rounded-md border border-surface-1 bg-ctp-crust p-1.5 grid grid-cols-2 gap-x-2">
               {mcpCatalog.map((entry) => (

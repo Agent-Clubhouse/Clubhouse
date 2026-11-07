@@ -1,3 +1,4 @@
+import { previewNewAgentComposition, discardNewAgentComposition } from '../services/new-agent-composition-drafts';
 import { renameSync } from 'node:fs';
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
@@ -69,6 +70,16 @@ export function registerAgentBuilderHandlers(injectedStore?: AssetCatalogStore):
       return { ok: false, code: error instanceof BuilderUnsupportedCompositionError ? 'unsupported' : error instanceof AssetCatalogError && ['stale_revision', 'stale_preview', 'stale_choice'].includes(error.code) ? 'stale' : 'failed' };
     }
   }
+  ipcMain.handle(IPC.AGENT.NEW_COMPOSITION_PREVIEW, withValidatedArgs(
+    [stringArg(), stringArg(), arrayArg(stringArg({ maxLength: 256 }), { maxLength: 256 })],
+    async (event, projectId, templateId, skillIds) => {
+      if (!await ready) throw new Error('Builder templates are unavailable.');
+      return previewNewAgentComposition(event.sender.id, projectId, templateId, skillIds);
+    },
+  ));
+  ipcMain.handle(IPC.AGENT.NEW_COMPOSITION_DISCARD, withValidatedArgs(
+    [stringArg({ maxLength: 256 })], (event, token) => discardNewAgentComposition(event.sender.id, token),
+  ));
   ipcMain.handle(IPC.AGENT.BUILDER_READ, withValidatedArgs([stringArg(), stringArg()], (_event, project, agent) => perform(project, agent)));
   ipcMain.handle(IPC.AGENT.BUILDER_COMMAND, withValidatedArgs(
     [stringArg(), stringArg(), numberArg({ integer: true, min: 0 }), builderCommandArg],

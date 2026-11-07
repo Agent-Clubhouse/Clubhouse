@@ -1,0 +1,44 @@
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, expect, it, vi } from 'vitest';
+import type { NewAgentCompositionPreview } from '../../../shared/new-agent-composition';
+import { NewAgentCompositionPicker } from './NewAgentCompositionPicker';
+const preview: NewAgentCompositionPreview = { token: 'reviewed', expiresAt: 1000, text: 'Identity @@AgentName', skills: [], availableSkills: [{ id: 'skill-1', name: 'Shared guide' }] };
+beforeEach(() => {
+  window.clubhouse.agent.previewNewComposition = vi.fn(async () => preview);
+  window.clubhouse.agent.discardNewComposition = vi.fn(async () => {});
+});
+it('requires an explicit preview and invalidates it when skill selection changes', async () => {
+  const changed = vi.fn();
+  render(<NewAgentCompositionPicker projectId="p1" disabled={false} onChange={changed} />);
+  fireEvent.change(screen.getByLabelText('New agent composition'), { target: { value: 'builtin-builder-custom' } });
+  expect(changed).toHaveBeenLastCalledWith({ projectId: 'p1', enabled: true, preview: null });
+  fireEvent.click(screen.getByRole('button', { name: 'Preview saved composition' }));
+  await screen.findByLabelText('Reviewed composition');
+  expect(changed).toHaveBeenLastCalledWith({ projectId: 'p1', enabled: true, preview });
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Shared guide' }));
+  expect(screen.queryByLabelText('Reviewed composition')).toBeNull();
+  expect(window.clubhouse.agent.discardNewComposition).toHaveBeenCalledWith('reviewed');
+  expect(changed).toHaveBeenLastCalledWith({ projectId: 'p1', enabled: true, preview: null });
+});
+it('releases a late preview after unmount rather than publishing it to another target', async () => {
+  let resolve!: (value: NewAgentCompositionPreview) => void;
+  const pending = new Promise<NewAgentCompositionPreview>((done) => { resolve = done; });
+  window.clubhouse.agent.previewNewComposition = vi.fn(() => pending);
+  const changed = vi.fn();
+  const mounted = render(<NewAgentCompositionPicker projectId="p1" disabled={false} onChange={changed} />);
+  fireEvent.change(screen.getByLabelText('New agent composition'), { target: { value: 'builtin-builder-custom' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Preview saved composition' }));
+  mounted.unmount();
+  await act(async () => { resolve(preview); await pending; });
+  expect(window.clubhouse.agent.discardNewComposition).toHaveBeenCalledWith('reviewed');
+  expect(changed.mock.calls.some(([selection]) => selection.preview === preview)).toBe(false);
+});
+it('shows a visible refusal and leaves confirmation unavailable', async () => {
+  window.clubhouse.agent.previewNewComposition = vi.fn(async () => { throw new Error('Source changed'); });
+  const changed = vi.fn();
+  render(<NewAgentCompositionPicker projectId="p1" disabled={false} onChange={changed} />);
+  fireEvent.change(screen.getByLabelText('New agent composition'), { target: { value: 'builtin-builder-custom' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Preview saved composition' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Source changed');
+  expect(changed).toHaveBeenLastCalledWith({ projectId: 'p1', enabled: true, preview: null });
+});

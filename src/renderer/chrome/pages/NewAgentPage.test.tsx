@@ -43,6 +43,26 @@ beforeEach(() => {
 });
 
 describe('NewAgentPage', () => {
+  it('creates a reviewed sleeping composition without the legacy spawn helper', async () => {
+    const request = req(); useChromeStore.setState({ newAgent: request });
+    window.clubhouse.agent.previewNewComposition = vi.fn(async () => ({ token: 'draft-token', expiresAt: Date.now() + 1000,
+      text: 'Reviewed Identity', skills: [], availableSkills: [] }));
+    window.clubhouse.agent.discardNewComposition = vi.fn(async () => {});
+    window.clubhouse.agent.createWithComposition = vi.fn().mockResolvedValue({ id: 'saved-agent' });
+    const load = vi.fn(async () => {});
+    useAgentStore.setState({ loadDurableAgents: load });
+    render(<NewAgentPage request={request} />);
+    await waitFor(() => expect(screen.getByTestId('new-agent-submit')).toBeEnabled());
+    fireEvent.change(screen.getByLabelText('New agent composition'), { target: { value: 'builtin-builder-custom' } });
+    expect(screen.getByTestId('new-agent-submit')).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Preview saved composition' }));
+    await screen.findByText('Reviewed Identity');
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    await waitFor(() => expect(load).toHaveBeenCalledWith('p1', '/tmp/ch'));
+    expect(window.clubhouse.agent.createWithComposition).toHaveBeenCalledWith('/tmp/ch', expect.not.objectContaining({ persona: expect.anything() }), 'draft-token');
+    expect(createDurableAgent).not.toHaveBeenCalled();
+  });
+
   it('starts on Durable in the selected project, with the worktree switch on', async () => {
     render(<NewAgentPage request={req()} />);
     expect(screen.getByRole('radio', { name: 'Durable' }).getAttribute('aria-checked')).toBe('true');

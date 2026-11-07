@@ -598,6 +598,7 @@ export interface DurableWorktreeOptions {
 
 /** Everything the asynchronous create API takes (#2226). */
 export interface StartDurableCreationParams extends DurableWorktreeOptions {
+
   name: string;
   color: string;
   model?: string;

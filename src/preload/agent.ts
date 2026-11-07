@@ -1,3 +1,4 @@
+import type { NewAgentCompositionPreview } from '../shared/new-agent-composition';
 import type { ContextWindowOptions } from '../shared/context-window';
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
@@ -8,6 +9,11 @@ import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOut
 
 export const agent = {
   agent: {
+  createWithComposition: (projectPath: string, params: StartDurableCreationParams, token: string): Promise<DurableAgentConfig> =>
+    ipcRenderer.invoke(IPC.AGENT.CREATE_WITH_COMPOSITION, projectPath, params, token),
+  previewNewComposition: (projectId: string, templateId: string, skillIds: string[]): Promise<NewAgentCompositionPreview> =>
+    ipcRenderer.invoke(IPC.AGENT.NEW_COMPOSITION_PREVIEW, projectId, templateId, skillIds),
+  discardNewComposition: (token: string): Promise<void> => ipcRenderer.invoke(IPC.AGENT.NEW_COMPOSITION_DISCARD, token),
   listDurable: (projectPath: string) =>
     ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
   getRunningStatuses: (agentIds: string[]): Promise<string[]> =>

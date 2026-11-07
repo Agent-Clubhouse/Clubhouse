@@ -1756,7 +1756,34 @@ export class CreationCompositionRetainedError extends Error {
   constructor() { super('Creation stopped with a composition save pending reconciliation. The failed record and catalog assets were retained.'); }
 }
 
+export interface DurableCreationIdReservation { readonly agentId: string; readonly expiresAt: number }
+const draftIds = new Map<DurableCreationIdReservation, { projectPath: string }>();
+function expireDraftIds(): void {
+  for (const reservation of draftIds.keys()) if (reservation.expiresAt <= Date.now()) draftIds.delete(reservation);
+}
+export function reserveDurableCreationId(projectPath: string): DurableCreationIdReservation {
+  expireDraftIds();
+  if (draftIds.size >= 64) throw new Error('Close an unused New agent preview before opening another.');
+  let agentId = generateDurableId();
+  while (agentIdOwners.has(agentId) || [...draftIds.keys()].some((r) => r.agentId === agentId)) agentId = generateDurableId();
+  const reservation = Object.freeze({ agentId, expiresAt: Date.now() + 10 * 60_000 });
+  draftIds.set(reservation, { projectPath: path.resolve(projectPath) });
+  return reservation;
+}
+export function releaseDurableCreationId(reservation: DurableCreationIdReservation): void { draftIds.delete(reservation); }
+function claimDurableCreationId(reservation: DurableCreationIdReservation, projectPath: string): string {
+  expireDraftIds();
+  const owned = draftIds.get(reservation);
+  if (!owned || owned.projectPath !== path.resolve(projectPath) || agentIdOwners.has(reservation.agentId)) {
+    throw new Error('New agent preview expired or its target changed. Preview again.');
+  }
+  draftIds.delete(reservation);
+  return reservation.agentId;
+}
+
 export interface DurableCreationRunOptions {
+  /** Opaque main-owned identity, consumed once after creation validation. */
+  idReservation?: DurableCreationIdReservation;
   /** Required main-only save; rejects creation on failure. Legacy inject stays best effort. */
   commitComposition?: (config: DurableAgentConfig, reservation: CreationCompositionReservation) => Promise<void>;
   /** Send the stages to onDurableCreationEvent listeners (the asynchronous API does). */
@@ -2037,6 +2064,7 @@ export async function beginDurableCreation(
   const parentAgentId = params.parentAgentId;
   const problem = creationProblem(projectPath, plan, agents, folderOnDisk, parentAgentId, parentAgents ?? agents);
   if (problem) throw problem;
+  const reservedId = options.idReservation ? claimDurableCreationId(options.idReservation, projectPath) : undefined;
   let folderKey: string | undefined;
   let branchReservation: string | undefined;
   if (plan) {
@@ -2048,8 +2076,9 @@ export async function beginDurableCreation(
     branchReservation = key;
   }
 
-  let id = generateDurableId();
-  while (agentIdOwners.has(id)) id = generateDurableId();
+  expireDraftIds();
+  let id = reservedId ?? generateDurableId();
+  while (agentIdOwners.has(id) || (!reservedId && [...draftIds.keys()].some((r) => r.agentId === id))) id = generateDurableId();
   const startedAt = new Date().toISOString();
   const config: DurableAgentConfig = {
     id,
