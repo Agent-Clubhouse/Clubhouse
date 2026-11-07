@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
@@ -24,6 +25,7 @@ vi.mock('../agent-config', () => ({
 }));
 
 import { agentFolders, clearAgentFoldersCache, importChatImage, readChatFilePreview, resolveChatFile, statChatPaths } from './chat-files';
+import { readMobileChatContent } from '../annex-chat-content';
 import { agentMediaDir } from './chat-transcript';
 import { CHAT_FILE_PREVIEW_PDF_MAX_BYTES, CHAT_FILE_PREVIEW_TEXT_MAX_BYTES } from '../../../shared/chat';
 import { execFileSync } from 'child_process';
@@ -277,5 +279,37 @@ describe('importChatImage (local markdown images, #2422)', () => {
     fs.symlinkSync(outside, sessionOutput, 'dir');
     clearAgentFoldersCache();
     expect(await agentFolders('a1')).not.toContain(sessionOutput);
+  });
+});
+
+// Real preview IO on disposable fixtures, through the same content route Go uses.
+describe('explicit scratch/home paths shared by desktop and Annex', () => {
+  it('expands raw ~/ against the desktop home through the Annex content reader', async () => {
+    vi.spyOn(os, 'homedir').mockReturnValue(outside);
+    expect(await readMobileChatContent(new URLSearchParams({ path: '~/secret.txt' }), 'a1', () => true))
+      .toMatchObject({ kind: 'text', name: 'secret.txt', text: 'nope' });
+  });
+
+  it('reads hostless/localhost file URLs with encoded spaces and Unicode outside projects', async () => {
+    const file = path.join(outside, 'notes # café.txt');
+    fs.writeFileSync(file, 'scratch content');
+    const url = pathToFileURL(file);
+    expect(await readChatFilePreview('a1', url.href)).toMatchObject({ text: 'scratch content' });
+    const localHostUrl = url.href.replace('file://', 'file://localhost');
+    expect(await readMobileChatContent(new URLSearchParams({ path: localHostUrl }), 'a1', () => true))
+      .toMatchObject({ text: 'scratch content' });
+  });
+
+  it('refuses remote file URL hosts, malformed encodings, network/device and automount forms before lookup', async () => {
+    const lookup = vi.spyOn(fsp, 'realpath');
+    for (const candidate of [
+      'file://other-host' + pathToFileURL(path.join(outside, 'secret.txt')).pathname,
+      'file:///bad%ZZ.txt', 'file:///bad%2Fname.txt', '//host/share/a.txt',
+      '\\\\host\\share\\a.txt', '\\\\?\\C:\\a.txt', '\\\\.\\pipe\\a',
+      ...(process.platform === 'win32' ? [] : ['/net/host/a.txt']),
+    ]) {
+      await expect(readChatFilePreview('a1', candidate)).rejects.toThrow('not available');
+    }
+    expect(lookup).not.toHaveBeenCalled();
   });
 });

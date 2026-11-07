@@ -1,4 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import type { ChatFilePreview } from '../../../../shared/chat';
+import { PreviewBody } from '../../../features/agents/chat/rich/FileChips';
+import { absoluteViewPath, isFileScopeDenied } from '../../../utils/file-preview';
+import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
 import type { PluginAPI } from '../../../../shared/plugin-types';
 import { fileState } from './state';
 import type { Tab, ScrollState } from './state';
@@ -29,7 +33,7 @@ function getLanguage(ext: string): string {
 const MAX_TEXT_SIZE = 1_000_000; // 1 MB
 const MAX_IMAGE_SIZE = 10_000_000; // 10 MB
 
-type FileType = 'text' | 'binary' | 'image' | 'svg' | 'markdown' | 'none' | 'too-large';
+type FileType = 'text' | 'binary' | 'image' | 'svg' | 'markdown' | 'none' | 'too-large' | 'read-only';
 
 // Per-tab loaded file data (cached to avoid reloading on tab switch)
 interface LoadedFile {
@@ -37,6 +41,8 @@ interface LoadedFile {
   content: string;
   binaryData: string;
   fileType: FileType;
+  preview?: ChatFilePreview;
+  error?: string;
 }
 
 /**
@@ -264,13 +270,28 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
           result.fileType = 'text';
         }
       }
-    } catch {
-      result.fileType = 'none';
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // A scoped Files API can refuse a local file even though #2478 permits
+      // viewing it (outside worktree or symlink). Only that policy denial gets
+      // the read-only route; OS/read failures remain errors, remote paths stay remote.
+      if (isFileScopeDenied(err) && !isRemoteProjectId(api.context.projectId || '')) {
+        const absolute = absoluteViewPath(checkoutRoot, relativePath);
+        try {
+          const viewed = await window.clubhouse.file.preview(absolute);
+          result.preview = viewed.preview;
+          result.fileType = 'read-only';
+        } catch (previewError) {
+          result.error = previewError instanceof Error ? previewError.message : 'This file is not available.';
+        }
+      } else {
+        result.error = message;
+      }
     }
 
     _fileCache.set(keyOf(relativePath), result);
     return result;
-  }, [api, keyOf]);
+  }, [api, keyOf, checkoutRoot]);
 
   // Load file when active tab changes
   useEffect(() => {
@@ -616,6 +637,21 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
   let body: React.ReactElement;
 
   switch (loadedFile.fileType) {
+    case 'none':
+      body = React.createElement('div', { role: 'alert', className: 'p-4 text-xs text-ctp-error' }, loadedFile.error || 'This file is not available.');
+      break;
+
+    case 'read-only':
+      body = React.createElement('div', { className: 'flex flex-col flex-1 min-h-0' },
+        React.createElement('div', { className: 'px-3 py-1 text-xs text-ctp-overlay1' }, 'Read-only preview'),
+        loadedFile.preview ? React.createElement(PreviewBody, {
+          preview: loadedFile.preview,
+          showOpenHint: false,
+          target: { path: activeTab.filePath, line: scrollTarget?.filePath === activeTab.filePath ? scrollTarget.line : undefined, col: scrollTarget?.column },
+        }) : null,
+      );
+      break;
+
     case 'binary':
       body = React.createElement('div', {
         className: 'flex flex-col items-center justify-center flex-1 text-ctp-subtext0 gap-3',
@@ -679,7 +715,7 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
     case 'markdown':
       if (previewMode === 'preview') {
         body = React.createElement('div', { className: 'flex-1 min-h-0 overflow-auto' },
-          React.createElement(MarkdownPreview, { content: loadedFile.content }),
+          React.createElement(MarkdownPreview, { content: loadedFile.content, allowLocalFiles: !isRemoteProjectId(api.context.projectId || '') }),
         );
       } else {
         body = React.createElement('div', { className: 'flex-1 min-h-0' },

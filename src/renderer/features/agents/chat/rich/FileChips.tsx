@@ -11,12 +11,11 @@
  * pages for a PDF, and Open in Files / Show in Finder for everything.
  */
 
-import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { ChatFileInfo, ChatFilePreview, ChatFileUnavailable } from '../../../../../shared/chat';
 import { LAYER_PORTAL_ATTR } from '../../../../components/layers';
 import { Button } from '../../../../components/Button';
-import { useDispatcherStore } from '../../../dispatcher/dispatcherStore';
 import { ReadOnlyMonacoEditor } from '../../../../plugins/builtin/canvas/ReadOnlyMonacoEditor';
 import { findFilePaths, namesFileClearly, wholeFilePath, type FilePathMatch } from './file-paths';
 import { dataUrlOf } from './media';
@@ -182,27 +181,6 @@ export function useOpenFilePreview(): ((path: string, kind: string, anchor: Elem
   return useContext(FilePreviewContext);
 }
 
-/** Separators as `/`, no trailing one, and case-folded on Windows, for comparing folders. */
-function folderKey(p: string): string {
-  const key = p.replace(/\\/g, '/').replace(/\/+$/, '');
-  return window.clubhouse?.platform === 'win32' ? key.toLowerCase() : key;
-}
-
-/**
- * True for a file in the Dispatcher's folder, which is in no project, so it
- * has no Files tab to open in (#2557). Opening it there would make the folder
- * the active project. A relative path is in it when the Dispatcher wrote it.
- */
-export function inDispatcherFolder(agentId: string, filePath: string): boolean {
-  const { state, project } = useDispatcherStore.getState();
-  if (!project) return false;
-  if (/^(~[\\/]|file:)/i.test(filePath)) return false;
-  if (!/^([A-Za-z]:)?[\\/]/.test(filePath)) return state?.agentId === agentId;
-  const folder = folderKey(project.path);
-  const key = folderKey(filePath);
-  return key === folder || key.startsWith(`${folder}/`);
-}
-
 function revealLabel(): string {
   return window.clubhouse?.platform === 'darwin' ? 'Show in Finder' : window.clubhouse?.platform === 'win32' ? 'Show in Explorer' : 'Show in folder';
 }
@@ -210,7 +188,7 @@ function revealLabel(): string {
 const POPOVER_W = 560;
 const POPOVER_H = 420;
 
-function PreviewBody({ preview, target }: { preview: ChatFilePreview; target: Target }) {
+export function PreviewBody({ preview, target, showOpenHint = true }: { preview: ChatFilePreview; target: Pick<Target, 'path' | 'line' | 'col'>; showOpenHint?: boolean }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     // A PDF's bytes go to pdf.js, not a data: URL.
@@ -225,9 +203,9 @@ function PreviewBody({ preview, target }: { preview: ChatFilePreview; target: Ta
     // Past the end of what's shown: the editor stops at its last line, and this says why.
     const past = target.line !== undefined && target.line > lines;
     const note = past && preview.truncated
-      ? `Line ${target.line} is past the first ${formatSize(preview.text.length)} shown here. Open it in Files to go there.`
+      ? `Line ${target.line} is past the first ${formatSize(preview.text.length)} shown here.${showOpenHint ? ' Open it in Files to go there.' : ''}`
       : past ? `Line ${target.line} is past the end of this file, which has ${lines} lines.`
-        : preview.truncated ? `Showing the first ${formatSize(preview.text.length)}. Open it in Files to see the rest.` : null;
+        : preview.truncated ? `Showing the first ${formatSize(preview.text.length)}.${showOpenHint ? ' Open it in Files to see the rest.' : ''}` : null;
     return (
       <div className="flex flex-col min-h-0 flex-1">
         <div className="flex-1 min-h-[200px]" data-testid="chat-file-preview-text">
@@ -292,11 +270,10 @@ function FilePreviewPopover({ agentId, target, onClose }: { agentId: string; tar
     try {
       const result = await window.clubhouse.chat.fileAction(agentId, target.path, action);
       if (action === 'open' && result) {
-        if (result.kind === 'open-file-not-found') { setError('That file is not in an open project'); return; }
         // Loaded on use: the bridge pulls in most of the app's stores.
         const { handleProtocolAction } = await import('../../../../app-event-bridge');
         // The location stays here: main only resolves which project holds the file.
-        handleProtocolAction(result.kind === 'open-file' && target.line !== undefined
+        handleProtocolAction((result.kind === 'open-file' || result.kind === 'open-file-not-found') && target.line !== undefined
           ? { ...result, line: target.line, ...(target.col !== undefined && { column: target.col }) }
           : result);
         onClose();
@@ -311,8 +288,6 @@ function FilePreviewPopover({ agentId, target, onClose }: { agentId: string; tar
   const below = target.anchor.bottom + 6 + POPOVER_H <= window.innerHeight;
   const top = below ? target.anchor.bottom + 6 : Math.max(12, target.anchor.top - 6 - POPOVER_H);
   const name = preview?.name ?? target.path.split(/[\\/]/).pop() ?? target.path;
-  const noOpen = inDispatcherFolder(agentId, target.path);
-  const noOpenId = useId();
   return createPortal(
     <div
       ref={el}
@@ -334,13 +309,8 @@ function FilePreviewPopover({ agentId, target, onClose }: { agentId: string; tar
       {preview && <PreviewBody preview={preview} target={target} />}
       <div className="flex items-center gap-2 px-3 py-2 border-t border-surface-0">
         {error && <span className="mr-auto text-[12px] text-ctp-error" role="alert">{error}</span>}
-        {!error && noOpen && (
-          <span id={noOpenId} className="mr-auto text-[12px] text-ctp-overlay1" data-testid="chat-file-no-open">
-            The Dispatcher’s folder isn’t a project, so this doesn’t open in Files.
-          </span>
-        )}
         <span className="ml-auto" />
-        <Button kind="ghost" disabled={noOpen} aria-describedby={noOpen ? noOpenId : undefined} onClick={() => void act('open')}>Open in Files</Button>
+        <Button kind="ghost" onClick={() => void act('open')}>Open in Files</Button>
         <Button kind="ghost" onClick={() => void act('reveal')}>{revealLabel()}</Button>
       </div>
     </div>,

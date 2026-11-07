@@ -1,3 +1,4 @@
+import { useFilePreviewStore } from './stores/filePreviewStore';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 type StoreSubscriber = (...args: unknown[]) => void;
@@ -1025,13 +1026,15 @@ describe('handleProtocolAction', () => {
     expect(addToast).toHaveBeenCalledWith('Failed to open folder as a project', 'error');
   });
 
-  it('open-file-not-found shows an error toast naming the file', () => {
+  it('open-file-not-found opens an in-app read-only preview without adding a project', () => {
     const addToast = vi.fn();
     vi.mocked(useToastStore.getState).mockReturnValue({ addToast } as never);
 
-    handleProtocolAction({ kind: 'open-file-not-found', filePath: '/x/y.ts' });
+    handleProtocolAction({ kind: 'open-file-not-found', filePath: '/x/y.ts', line: 12, column: 5 });
 
-    expect(addToast).toHaveBeenCalledWith('No open project contains /x/y.ts', 'error');
+    expect(useFilePreviewStore.getState().target).toEqual({ path: '/x/y.ts', line: 12, col: 5 });
+    expect(addToast).not.toHaveBeenCalled();
+    useFilePreviewStore.getState().close();
   });
 
   it("says a file in the Dispatcher's folder doesn't open in Files, and opens no project (#2557)", () => {

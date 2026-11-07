@@ -1,5 +1,6 @@
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { renderMarkdownSafe } from '../../../utils/safe-markdown';
+import { isRemoteAgentId, isRemoteProjectId } from '../../../stores/remoteProjectStore';
 import { useSafeMarkdownLinks } from '../../../utils/safe-markdown-links';
 import type {
   AgentMessageItem,
@@ -35,7 +36,6 @@ export function Markdown({ text, streaming = false, className = '' }: { text: st
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latest = useRef(text);
   latest.current = text;
-  const onClick = useSafeMarkdownLinks();
 
   useEffect(() => {
     if (!streaming) {
@@ -61,6 +61,7 @@ export function Markdown({ text, streaming = false, className = '' }: { text: st
   const richLinks = useRichLinks();
   const richHandlers = useTokenHandlers(richLinks);
   const fileAgent = useFileChips();
+  const onClick = useSafeMarkdownLinks(!isRemoteAgentId(mediaAgent || fileAgent || '') && !isRemoteProjectId(richLinks?.projectId || ''));
   // Returned audio and video become inline cards (#2425), placed once their chips are confirmed.
   const mediaCards = useMediaCards(fileAgent);
   const { scan: scanMedia } = mediaCards;

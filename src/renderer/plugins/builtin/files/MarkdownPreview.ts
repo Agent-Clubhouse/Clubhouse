@@ -130,9 +130,9 @@ export function splitMermaidSegments(content: string): Segment[] {
   return segments;
 }
 
-export function MarkdownPreview({ content }: { content: string }) {
+export function MarkdownPreview({ content, allowLocalFiles = true }: { content: string; allowLocalFiles?: boolean }) {
   injectHljsStyle();
-  const handleClick = useSafeMarkdownLinks();
+  const handleClick = useSafeMarkdownLinks(allowLocalFiles);
 
   const segments = useMemo(() => splitMermaidSegments(content), [content]);
 

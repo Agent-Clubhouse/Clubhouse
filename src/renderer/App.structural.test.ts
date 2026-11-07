@@ -349,6 +349,7 @@ describe('App.tsx – global dialog presence in all return paths', () => {
     'PermissionViolationBanner',
     'UpdateBanner',
     'ToastContainer',
+    'FilePreviewHost',
   ];
 
   for (const component of additionalGlobalComponents) {

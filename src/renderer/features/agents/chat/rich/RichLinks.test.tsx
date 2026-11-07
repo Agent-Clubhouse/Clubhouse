@@ -1,3 +1,4 @@
+import { useFilePreviewStore } from '../../../../stores/filePreviewStore';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { GithubRefResult, GithubRefState } from '../../../../../shared/github-ref';
@@ -8,7 +9,7 @@ import { usePluginStore } from '../../../../plugins/plugin-store';
 import { Markdown } from '../MessageBlocks';
 import { CommandCard } from '../ToolBlocks';
 import type { ToolCallItem } from '../../../../stores/chatStore';
-import { GithubRefCardBody, RichLinkProvider, RichText } from './RichLinks';
+import { GithubRefCardBody, RichLinkProvider, RichText, openLink } from './RichLinks';
 import { resetGithubRefClient, fetchGithubRef, CLIENT_TTL_MS } from './github-ref-client';
 import { makeGithubRef } from './link-tokens';
 import { resetRichChatContentFlag } from './rich-flag';
@@ -209,4 +210,10 @@ describe('GithubRefCardBody', () => {
     render(<GithubRefCardBody refLabel="#1" details={null} />);
     expect(screen.getByText('Loading…')).toBeInTheDocument();
   });
+});
+
+it('keeps remote absolute file links on their target rather than reading the controller filesystem', () => {
+  useFilePreviewStore.getState().close();
+  openLink('/remote/scratch.md', { projectId: 'remote||satellite||p1', repo: null });
+  expect(useFilePreviewStore.getState().target).toBeNull();
 });

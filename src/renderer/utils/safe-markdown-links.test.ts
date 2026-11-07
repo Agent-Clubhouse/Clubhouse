@@ -1,5 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { useFilePreviewStore } from '../stores/filePreviewStore';
 import { useSafeMarkdownLinks } from './safe-markdown-links';
 
 const mockOpenExternalUrl = vi.fn();
@@ -35,6 +36,7 @@ function makeClickEvent(anchorAttrs?: { href?: string } | null) {
 
 describe('useSafeMarkdownLinks', () => {
   beforeEach(() => {
+    useFilePreviewStore.getState().close();
     mockOpenExternalUrl.mockClear();
     mockOpenExternalUrl.mockResolvedValue(undefined);
   });
@@ -100,6 +102,22 @@ describe('useSafeMarkdownLinks', () => {
 
     expect(preventDefault).toHaveBeenCalled();
     expect(mockOpenExternalUrl).toHaveBeenCalledWith('mailto:test@example.com');
+  });
+
+  it.each(['/tmp/scratch.md:12:5', '~/scratch.md:12:5', 'C:\\scratch\\notes.md:12:5'])('opens absolute local link %s inside the app with its location', (href) => {
+    const { result } = renderHook(() => useSafeMarkdownLinks());
+    const event = makeClickEvent({ href });
+    result.current(event);
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(useFilePreviewStore.getState().target).toEqual({ path: href.replace(':12:5', ''), line: 12, col: 5 });
+    expect(mockOpenExternalUrl).not.toHaveBeenCalled();
+  });
+
+  it('does not resolve a remote document path on the local desktop', () => {
+    const { result } = renderHook(() => useSafeMarkdownLinks(false));
+    result.current(makeClickEvent({ href: '/remote/notes.md' }));
+    expect(useFilePreviewStore.getState().target).toBeNull();
+    expect(mockOpenExternalUrl).not.toHaveBeenCalled();
   });
 
   it('prevents default but does NOT open external URL for relative links', () => {
