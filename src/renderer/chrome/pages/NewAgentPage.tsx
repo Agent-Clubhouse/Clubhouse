@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { McpCatalogEntry, Project } from '../../../shared/types';
-import type { ManagedTemplate, ManagedTemplateSettings } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, type ManagedTemplate, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
 import { AGENT_COLORS, generateDurableName } from '../../../shared/name-generator';
 import { validateAgentGitName } from '../../../shared/agent-name';
 import { useProjectStore } from '../../stores/projectStore';
@@ -17,7 +17,7 @@ import { Tooltip } from '../../components/Tooltip';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
 import { createDurableAgent } from '../../features/agents/create-agent';
 import { useManagedFlag } from '../../features/managed/managed-flag';
-import { ManagedUiError } from '../../features/managed/managedApi';
+import { ManagedUiError, useManagedTemplates } from '../../features/managed/managedApi';
 import { createManagedDurableAgent, type ManagedAgentInput } from '../../features/managed/create-managed-agent';
 import type { SetupDraft } from '../../features/managed/ManagedBuilder';
 import { isRemoteProjectId } from '../../stores/remoteProjectStore';
@@ -57,6 +57,58 @@ type Step = 'form' | 'templates' | 'builder' | 'copy';
 /** Focus is somewhere that takes typing or its own keys. */
 function isEditingTarget(el: HTMLElement): boolean {
   return el.isContentEditable || !!el.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"]');
+}
+
+/**
+ * What a quick agent gets from a template (D25). It runs in a folder that
+ * isn't its own, so nothing is written there: the instructions lead its
+ * prompt, and its MCP servers go in the launch flags where the CLI has them.
+ */
+export function quickTemplateHelp(t: Pick<ManagedTemplate, 'setup'> | undefined, opts: { mcpLaunchFlags: boolean; cliName: string }): string {
+  if (!t) return 'Optional. Starts the agent with a template’s instructions and MCP servers.';
+  const parts = ['Its instructions lead the agent’s prompt.'];
+  const servers = t.setup.mcps.filter((id) => id !== CLUBHOUSE_MCP_PART_ID).length;
+  if (servers > 0) {
+    const noun = servers === 1 ? 'Its MCP server' : `Its ${servers} MCP servers`;
+    if (!opts.mcpLaunchFlags) parts.push(`${noun} can’t reach ${opts.cliName}, which reads them only from the folder’s own MCP file.`);
+    else parts.push(`${noun} ${servers === 1 ? 'is' : 'are'} passed at launch.`);
+  }
+  if (t.setup.skills.length > 0) parts.push(`${t.setup.skills.length === 1 ? 'Its skill isn’t' : 'Its skills aren’t'} used, since a quick agent has no folder of its own.`);
+  if (!t.setup.mcps.includes(CLUBHOUSE_MCP_PART_ID)) parts.push('Without the Clubhouse MCP part it gets no Clubhouse tools.');
+  return parts.join(' ');
+}
+
+/** The Template row of a quick agent, under its mission. Mounted only with the flag on, so templates load only then. */
+function QuickTemplateRow({ value, onChange, disabled, mcpLaunchFlags, cliName }: {
+  value: string;
+  onChange: (template: ManagedTemplate | null) => void;
+  disabled: boolean;
+  mcpLaunchFlags: boolean;
+  cliName: string;
+}) {
+  const { value: templates, error } = useManagedTemplates();
+  const selected = templates?.find((t) => t.id === value);
+  return (
+    <Row
+      label="Template"
+      htmlFor="new-agent-quick-template"
+      help={error
+        ? <span className="text-ctp-error" role="alert">{error}</span>
+        : <span data-testid="new-agent-quick-template-help">{quickTemplateHelp(selected, { mcpLaunchFlags, cliName })}</span>}
+    >
+      <select
+        id="new-agent-quick-template"
+        data-testid="new-agent-quick-template"
+        value={value}
+        disabled={disabled || !templates}
+        onChange={(e) => onChange(templates?.find((t) => t.id === e.target.value) ?? null)}
+        className={`${selectClass} w-[288px]`}
+      >
+        <option value="">None</option>
+        {(templates ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}{t.builtin ? '' : ' (yours)'}</option>)}
+      </select>
+    </Row>
+  );
 }
 
 const failureText = (err: unknown) => (err instanceof ManagedUiError || err instanceof Error ? err.message : String(err));
@@ -118,13 +170,15 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const [selectedMcps, setSelectedMcps] = useState<string[]>([]);
   const [mission, setMission] = useState('');
   const [parentAgentId, setParentAgentId] = useState('');
+  const [quickTemplateId, setQuickTemplateId] = useState('');
   // Clubhouse-managed agents (#2893), behind the preview flag.
   const managedFlag = useManagedFlag();
   const remote = isRemoteProjectId(projectId);
   const [managedPref, setManagedPref] = useState(readManagedPref);
-  // Quick agents stay as they were for now: a managed quick agent picking a
-  // template needs main to accept a setup for quick agents (#2893 follow-up).
   const isManaged = managedFlag && durable && !remote && managedPref;
+  // A quick agent can start from a template (D25). It stays a quick agent: the
+  // runtime rows stay, and the template only fills them in.
+  const quickTemplates = managedFlag && !durable && !remote;
   const [clubhouseFeatures, setClubhouseFeatures] = useState(true);
   const [image, setImage] = useState<string | null>(null);
   const [cropUrl, setCropUrl] = useState<string | null>(null);
@@ -157,6 +211,16 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
 
   // Per project: git (the worktree row), the MCP catalog and its defaults.
   const projectPath = project?.path;
+
+  /** A template fills in the CLI, model and Free Agent Mode it sets. Each can still be changed. */
+  const pickQuickTemplate = (t: ManagedTemplate | null) => {
+    setQuickTemplateId(t?.id ?? '');
+    if (!t) return;
+    const { orchestrator: cli, model: m, freeAgentMode: free } = t.settings;
+    if (cli && !parent && effectiveOrchestrators.some((o) => o.id === cli)) setOrchestrator(cli);
+    if (m) setModel(m);
+    if (free !== undefined) setFreeAgentMode(free);
+  };
   useEffect(() => {
     if (!projectPath) return;
     let cancelled = false;
@@ -281,7 +345,8 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
       });
     } else {
       reportChromeFeature('new_agent_start');
-      useAgentStore.getState().spawnQuickAgent(
+      const spawnQuick = useAgentStore.getState().spawnQuickAgent;
+      const args = [
         target.id,
         target.path,
         mission.trim(),
@@ -289,6 +354,11 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
         parentAgentId || undefined,
         parentAgentId ? undefined : resolvedOrchestrator,
         (supportsPermissions && freeAgentMode) || undefined,
+      ] as const;
+      // Without a template the call is the same as before the flag.
+      (quickTemplates && quickTemplateId
+        ? spawnQuick(...args, undefined, undefined, { managedTemplateId: quickTemplateId })
+        : spawnQuick(...args)
       ).then((id) => finish(target.id, id))
         .catch((err) => {
           reportChromeActionFailed('agent_start', err);
@@ -513,6 +583,15 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
                 className="flex-1 h-24 px-2.5 py-2 rounded-md border border-surface-1 bg-ctp-crust text-[13px] leading-normal text-ctp-text placeholder:text-ctp-overlay0 focus-ring resize-none"
               />
             </Row>
+            {quickTemplates && (
+              <QuickTemplateRow
+                value={quickTemplateId}
+                onChange={pickQuickTemplate}
+                disabled={busy}
+                mcpLaunchFlags={selectedOrch?.mcpLaunchFlags === true}
+                cliName={selectedOrch?.displayName ?? 'this CLI'}
+              />
+            )}
             <Rule />
             <Row label="Runs in" htmlFor="new-agent-runs-in" help="Or inside a durable agent’s worktree, so it works on that branch.">
               <select id="new-agent-runs-in" value={parentAgentId} onChange={(e) => setParentAgentId(e.target.value)} className={`${selectClass} w-[288px]`}>

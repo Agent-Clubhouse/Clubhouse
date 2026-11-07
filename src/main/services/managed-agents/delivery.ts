@@ -203,6 +203,60 @@ export async function deliverManagedSetup(params: {
   return { ...setupFingerprint(agent, resolved), ...(resolved.missing.length > 0 && { missing: resolved.missing.length }) };
 }
 
+/** What a quick agent gets from a template (#2893, D25). */
+export interface QuickManagedLaunch {
+  templateId: string;
+  /** The template's blocks, joined and filled in for this quick agent. Goes in the system prompt. */
+  instructions: string;
+  /** The template's MCP servers, for the launch flags. The Clubhouse bridge is separate. */
+  servers: Record<string, McpServerDef>;
+  /** Whether the template lists the Clubhouse MCP part. Without it the agent gets no bridge. */
+  bridge: boolean;
+  /** Skills in the template. Not delivered: a quick agent's folder is the project's or another agent's. */
+  skippedSkills: number;
+  /** Parts the template lists that no longer exist. */
+  missing: number;
+}
+
+/**
+ * Build a quick agent from a template. Nothing is written anywhere: a quick
+ * agent runs in the project folder or a durable agent's worktree, whose
+ * instruction, skill and MCP files belong to someone else. The instructions
+ * reach it through the system prompt every CLI already takes, and the MCP
+ * servers through the launch flags, for the CLIs that have them.
+ */
+export async function quickManagedLaunch(params: {
+  service: ManagedAgentsService;
+  projectPath: string;
+  cwd: string;
+  agentId: string;
+  agentName: string;
+  templateId: string;
+  /** The branch checked out in `cwd`, when there is one. */
+  branch?: string | null;
+}): Promise<QuickManagedLaunch> {
+  const { setup } = await params.service.setupFromTemplate(params.templateId);
+  const resolved = await resolveSetup(params.service, setup);
+  const agent: DurableAgentConfig = {
+    id: params.agentId, name: params.agentName, color: 'gray', createdAt: new Date().toISOString(),
+    worktreePath: params.cwd, ...(params.branch && { branch: params.branch }),
+  };
+  const composed = composeInstructions(resolved.blocks.map((b) => ({ content: b.content })));
+  if (composed.ok === false) throw new Error(composed.code);
+  const ctx = await wildcardContextFor(params.projectPath, agent);
+  const rel = path.relative(params.projectPath, params.cwd).replace(/\\/g, '/');
+  ctx.agentPath = rel ? `${rel}/` : './';
+  if (!params.branch) ctx.standbyBranch = 'the checked-out branch';
+  return {
+    templateId: params.templateId,
+    instructions: replaceWildcards(composed.text, ctx, { conditionals: false }),
+    servers: mcpServersOf(resolved),
+    bridge: setup.mcps.includes(CLUBHOUSE_MCP_PART_ID),
+    skippedSkills: resolved.skills.length,
+    missing: resolved.missing.length,
+  };
+}
+
 /** The exact result an agent gets at its next start, for the builder's Preview. */
 export async function previewManagedSetup(params: {
   service: ManagedAgentsService;

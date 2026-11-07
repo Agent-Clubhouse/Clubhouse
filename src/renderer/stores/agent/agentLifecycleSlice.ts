@@ -24,7 +24,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
       set({ resumingAgents: {} });
     },
 
-    spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId, orchestrator, freeAgentMode, pluginMetadata, cwdOverride) => {
+    spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId, orchestrator, freeAgentMode, pluginMetadata, cwdOverride, options) => {
       const agentId = generateQuickAgentId();
       const name = generateQuickName();
 
@@ -142,6 +142,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
           allowedTools: quickDefaults?.allowedTools,
           orchestrator: resolvedOrchestrator,
           freeAgentMode: resolvedFreeAgentMode,
+          ...(options?.managedTemplateId && { managedTemplate: { id: options.managedTemplateId, agentName: name } }),
         });
 
         set((s) => {

@@ -8,7 +8,7 @@ vi.mock('../../hooks/useModelOptions', () => ({
 const createDurableAgent = vi.fn();
 vi.mock('../../features/agents/create-agent', () => ({ createDurableAgent: (...args: unknown[]) => createDurableAgent(...args) }));
 
-import { NewAgentPage } from './NewAgentPage';
+import { NewAgentPage, quickTemplateHelp } from './NewAgentPage';
 import { templateSummary } from './NewManagedAgentSteps';
 import { resetManagedFlag } from '../../features/managed/managed-flag';
 import { useAgentStore } from '../../stores/agentStore';
@@ -378,5 +378,86 @@ describe('templateSummary', () => {
   it('counts parts and adds helpers only when orchestration is on', () => {
     expect(templateSummary(customTemplate)).toBe('1 block · 0 skills · 0 MCP servers');
     expect(templateSummary(builtinTemplate)).toBe('2 blocks · 1 skill · 1 MCP server · helpers on, up to 3');
+  });
+});
+
+describe('NewAgentPage, a quick agent from a template (D25)', () => {
+  const serverTemplate = {
+    id: 'custom-workiq', name: 'WorkIQ reader', description: '', builtin: false,
+    setup: { blocks: ['b-identity'], skills: [], mcps: ['builtin-mcp-clubhouse', 'p-workiq'] },
+    settings: { model: 'opus', freeAgentMode: true }, usedBy: 0,
+  };
+  let spawnQuickAgent: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    spawnQuickAgent = vi.fn().mockResolvedValue('q-new');
+    useAgentStore.setState({ spawnQuickAgent } as never);
+  });
+  const typeMission = () => fireEvent.change(screen.getByTestId('new-agent-mission'), { target: { value: 'Summarize the inbox' } });
+
+  it('with the flag off, a quick agent has no Template row and starts as before', async () => {
+    openWith({ kind: 'quick' });
+    await screen.findByTestId('new-agent-mission');
+    expect(screen.queryByTestId('new-agent-quick-template')).toBeNull();
+    typeMission();
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalled());
+    expect(spawnQuickAgent.mock.calls[0][9]).toBeUndefined();
+  });
+
+  it('shows None and the templates under the mission box, keeps the mission, and starts from the one picked', async () => {
+    flagOn();
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [builtinTemplate, serverTemplate] } as never);
+    openWith({ kind: 'quick' });
+    const select = await screen.findByTestId('new-agent-quick-template') as HTMLSelectElement;
+    await waitFor(() => expect(select.disabled).toBe(false));
+    expect(screen.getByTestId('new-agent-mission').compareDocumentPosition(select) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['None', 'Orchestrator', 'WorkIQ reader (yours)']);
+    expect(select.value).toBe('');
+    expect(screen.getByTestId('new-agent-quick-template-help').textContent).toBe('Optional. Starts the agent with a template’s instructions and MCP servers.');
+
+    fireEvent.change(select, { target: { value: 'custom-workiq' } });
+    // The template fills in its model and Free Agent Mode; the rows stay to change them.
+    expect((screen.getByRole('combobox', { name: 'Model' }) as HTMLSelectElement).value).toBe('opus');
+    expect(screen.getByRole('switch', { name: 'Free Agent Mode' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByTestId('new-agent-quick-template-help').textContent)
+      .toBe('Its instructions lead the agent’s prompt. Its MCP server can’t reach Claude Code, which reads them only from the folder’s own MCP file.');
+
+    typeMission();
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalled());
+    const call = spawnQuickAgent.mock.calls[0];
+    expect(call[2]).toBe('Summarize the inbox');
+    expect(call[3]).toBe('opus');
+    expect(call[9]).toEqual({ managedTemplateId: 'custom-workiq' });
+  });
+
+  it('None starts a quick agent with no template', async () => {
+    flagOn();
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [serverTemplate] } as never);
+    openWith({ kind: 'quick' });
+    const select = await screen.findByTestId('new-agent-quick-template') as HTMLSelectElement;
+    await waitFor(() => expect(select.disabled).toBe(false));
+    fireEvent.change(select, { target: { value: 'custom-workiq' } });
+    fireEvent.change(select, { target: { value: '' } });
+    typeMission();
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalled());
+    expect(spawnQuickAgent.mock.calls[0][9]).toBeUndefined();
+  });
+});
+
+describe('quickTemplateHelp', () => {
+  const opts = { mcpLaunchFlags: true, cliName: 'Codex' };
+  const setup = (mcps: string[], skills: string[] = []) => ({ setup: { blocks: ['b'], skills, mcps } });
+
+  it('says the servers are passed at launch on a CLI that takes them', () => {
+    expect(quickTemplateHelp(setup(['builtin-mcp-clubhouse', 'a', 'b']), opts)).toBe('Its instructions lead the agent’s prompt. Its 2 MCP servers are passed at launch.');
+  });
+
+  it('says what can\'t reach the agent: servers on a CLI without launch flags, skills, and Clubhouse tools without the part', () => {
+    expect(quickTemplateHelp(setup(['a'], ['s1', 's2']), { mcpLaunchFlags: false, cliName: 'Claude Code' })).toBe(
+      'Its instructions lead the agent’s prompt. Its MCP server can’t reach Claude Code, which reads them only from the folder’s own MCP file. Its skills aren’t used, since a quick agent has no folder of its own. Without the Clubhouse MCP part it gets no Clubhouse tools.',
+    );
+    expect(quickTemplateHelp(undefined, opts)).toBe('Optional. Starts the agent with a template’s instructions and MCP servers.');
   });
 });

@@ -39,6 +39,8 @@ export interface OrchestratorInfo {
   shortName: string;
   badge?: string;
   capabilities: ProviderCapabilities;
+  /** The CLI takes MCP servers as launch flags, not only from the folder's MCP file. */
+  mcpLaunchFlags?: boolean;
   conventions?: {
     configDir: string;
     localInstructionsFile: string;
@@ -1559,6 +1561,8 @@ export interface SpawnAgentParams {
   agentFile?: string;
   /** Source directory for agent file (e.g. --source ~/.copilot/agents/) */
   agentSource?: string;
+  /** Clubhouse-managed quick agents (#2893): start from this template. Needs the managedAgents preview flag. */
+  managedTemplate?: { id: string; agentName: string };
 }
 
 export type AgentDetailedState = 'idle' | 'working' | 'needs_permission' | 'tool_error';

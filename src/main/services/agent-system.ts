@@ -18,6 +18,7 @@ import * as orchestratorSettings from './orchestrator-settings';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as configPipeline from './config-pipeline';
 import { getDurableConfig, addSessionEntry, updateDurableConfig } from './agent-config';
+import type { QuickManagedLaunch } from './managed-agents/delivery';
 import { clubhouseMcpOverride, isDisposedAgent, isEffortValue } from '../../shared/agent-helpers';
 import { materializeAgent, cleanupStaleJsonInTomlConfigs } from './materialization-service';
 import * as profileSettings from './profile-settings';
@@ -118,6 +119,13 @@ export interface SpawnAgentParams {
   agentFile?: string;
   /** Source directory for agent file (e.g. --source ~/.copilot/agents/) */
   agentSource?: string;
+  /**
+   * Clubhouse-managed quick agents (#2893, D25): build a quick agent from this
+   * template. Its instructions go in the system prompt and its MCP servers in
+   * the launch flags; nothing is written into the folder it runs in. Needs the
+   * managedAgents preview flag.
+   */
+  managedTemplate?: { id: string; agentName: string };
 }
 
 export function isHeadlessAgent(agentId: string): boolean {
@@ -388,6 +396,24 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       }
     }
 
+    // A quick agent built from a template (#2893, D25): its instructions lead
+    // the system prompt. A template that can't be read fails the start, since
+    // the person chose it.
+    let quickManaged: QuickManagedLaunch | null = null;
+    if (params.kind === 'quick' && params.managedTemplate) {
+      const { getSettings: getExperimentalSettings } = await import('./experimental-settings');
+      if (getExperimentalSettings().managedAgents !== true) {
+        throw tagError(new Error('A quick agent can start from a template only with Clubhouse-managed agents on (Settings > Experimental).'), 'preflight_failed');
+      }
+      const template = params.managedTemplate;
+      const { quickLaunchFor } = await import('./managed-agents');
+      quickManaged = await tel.step('clubhouse.agent.materialize', () =>
+        withErrorType('materialize_failed', () => quickLaunchFor(params.projectPath, params.cwd, params.agentId, template, provider)),
+      );
+      const instructions = quickManaged.instructions;
+      params = { ...params, systemPrompt: [instructions, params.systemPrompt].filter(Boolean).join('\n\n') };
+    }
+
     // Clubhouse Mode: materialize project defaults into worktree before spawn
     facts.clubhouseMode = params.kind === 'durable' && clubhouseModeSettings.isClubhouseModeEnabled(params.projectPath);
     if (facts.clubhouseMode && !managed && !managedSetup) {
@@ -625,6 +651,12 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         // Plugin-enabled lookup is treated as always-true: plugins live renderer-side,
         // main has no real-time view. Binary-on-PATH check still catches the common case.
         let { binary: headlessBin, args: headlessArgs } = headlessResult;
+        // A quick agent's template servers (D25), as the terminal path passes them. Only
+        // CLIs with launch flags have any here (quickLaunchFor empties them otherwise),
+        // and their headless commands take options after the prompt.
+        if (quickManaged && provider.buildMcpArgs && Object.keys(quickManaged.servers).length > 0) {
+          headlessArgs = [...headlessArgs, ...provider.buildMcpArgs(quickManaged.servers)];
+        }
         let wrapperApplied = false;
         if (wrapperConfig) {
           const v = validateWrapperConfig(wrapperConfig, provider.id, { isPluginEnabled: () => true });
@@ -681,7 +713,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
 
     // Fall back to PTY mode
     facts.runtime = 'pty';
-    await spawnPtyAgent(params, provider, allowedTools, profileEnv, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts, managed);
+    await spawnPtyAgent(params, provider, allowedTools, profileEnv, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts, managed, quickManaged);
     if (!managed || ptyManager.isRunning(params.agentId)) broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
   } catch (err) {
     if (!(err instanceof ProcessStartedReceiptError)) untrackAgent(params.agentId);
@@ -700,6 +732,7 @@ async function spawnPtyAgent(
   mcpConfigs?: Record<string, Record<string, string>>,
   facts: SpawnFacts = {},
   managed: ManagedLaunchLease | null = null,
+  quickManaged: QuickManagedLaunch | null = null,
 ): Promise<void> {
   const nonce = randomUUID();
   agentRegistry.setNonce(params.agentId, nonce);
@@ -723,6 +756,9 @@ async function spawnPtyAgent(
       agentMcpOverride = clubhouseMcpOverride(durableConfig);
     } catch { /* config not available */ }
   }
+  // A quick agent built from a template without the Clubhouse MCP part gets no bridge (D25).
+  // With the part, it follows the project's MCP setting as any quick agent does.
+  if (quickManaged && !quickManaged.bridge) agentMcpOverride = false;
   const mcpEnabledForSpawn = isMcpEnabled(params.projectPath, agentMcpOverride);
   facts.mcpEnabled = mcpEnabledForSpawn;
   // Snapshot MCP config for all formats — TOML injection is now supported
@@ -795,7 +831,8 @@ async function spawnPtyAgent(
   // (#2610).
   // A managed agent's MCP parts reach it even with the Clubhouse bridge off (#2896):
   // the bridge follows its Clubhouse part, its other servers follow its setup.
-  const managedSetupServers = !!durableConfig?.managed;
+  // A quick agent's template servers likewise (D25), in place of the project's.
+  const managedSetupServers = !!durableConfig?.managed || !!quickManaged;
   const bridgeOn = mcpEnabledForSpawn && mcpPort > 0;
   if ((bridgeOn || managedSetupServers) && provider.buildMcpArgs) {
     const { buildClubhouseMcpDef } = await import('./clubhouse-mcp/injection');
@@ -805,9 +842,11 @@ async function spawnPtyAgent(
     // project MCP file materialised into the worktree never reaches them.
     // Launch flags are the only path — hand over the project's servers here
     // alongside the Clubhouse bridge.
-    const projectServers = managedSetupServers || isMcpEnabled(params.projectPath, durableConfig?.mcpOverride)
-      ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined)
-      : {};
+    const projectServers = quickManaged
+      ? quickManaged.servers
+      : managedSetupServers || isMcpEnabled(params.projectPath, durableConfig?.mcpOverride)
+        ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined)
+        : {};
     const servers = {
       ...projectServers,
       // The bridge is last so a project server of the same name can't shadow it.
@@ -1312,6 +1351,8 @@ export function getAvailableOrchestrators() {
     shortName: p.shortName,
     badge: p.badge,
     capabilities: p.getCapabilities(),
+    // MCP servers can be handed over at launch, not only through the folder's MCP file.
+    mcpLaunchFlags: !!p.buildMcpArgs,
     conventions: {
       configDir: p.conventions.configDir,
       localInstructionsFile: p.conventions.localInstructionsFile,

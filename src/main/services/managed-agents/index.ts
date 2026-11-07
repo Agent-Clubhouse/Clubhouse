@@ -18,9 +18,11 @@ import * as path from 'path';
 import {
   deliverManagedSetup,
   mcpServersOf,
+  quickManagedLaunch,
   resolveManagedSetup,
   setupFingerprint,
   type DeliveryRecord,
+  type QuickManagedLaunch,
 } from './delivery';
 
 let service: ManagedAgentsService | null = null;
@@ -90,6 +92,33 @@ async function excludeManagedFiles(projectPath: string, provider: OrchestratorPr
     // telemetry-exempt: not a git project, or the exclude file is read-only; delivery already succeeded.
     appLog('core:managed', 'warn', 'Could not add managed files to git excludes', { meta: { error: err instanceof Error ? err.message : String(err) } });
   }
+}
+
+/**
+ * Spawn path for a quick agent started from a template (#2893, D25). Reads the
+ * template and writes nothing. What can't reach the agent is logged: skills
+ * always (its folder isn't its own), MCP servers on a CLI with no launch flag
+ * for them (Claude Code reads them only from the folder's MCP file).
+ */
+export async function quickLaunchFor(
+  projectPath: string,
+  cwd: string,
+  agentId: string,
+  template: { id: string; agentName: string },
+  provider: OrchestratorProvider,
+): Promise<QuickManagedLaunch> {
+  const { getCurrentBranch } = await import('../git-service');
+  const branch = await getCurrentBranch(cwd).catch((): null => null);
+  const launch = await quickManagedLaunch({
+    service: managedAgents(), projectPath, cwd, agentId, agentName: template.agentName, templateId: template.id, branch,
+  });
+  const serversLeftOut = provider.buildMcpArgs ? 0 : Object.keys(launch.servers).length;
+  if (launch.skippedSkills > 0 || serversLeftOut > 0 || launch.missing > 0) {
+    appLog('core:managed', 'warn', 'Quick agent template: some parts were not delivered', {
+      meta: { agentId, templateId: template.id, skills: launch.skippedSkills, mcpServers: serversLeftOut, missing: launch.missing, orchestrator: provider.id },
+    });
+  }
+  return provider.buildMcpArgs ? launch : { ...launch, servers: {} };
 }
 
 export async function managedMcpServersFor(agent: DurableAgentConfig): Promise<Record<string, McpServerDef>> {

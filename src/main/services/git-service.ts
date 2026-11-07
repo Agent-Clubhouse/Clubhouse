@@ -601,6 +601,12 @@ async function readWorktrees(dirPath: string): Promise<GitWorktreeEntry[]> {
  * HEAD commit sha of the repository containing `dirPath`, or null when it is
  * not a repository or has no commits yet.
  */
+/** The checked-out branch, or null when there is none (not a repository, or a detached HEAD). */
+export async function getCurrentBranch(dirPath: string): Promise<string | null> {
+  const head = await tryGitExec(['rev-parse', '--abbrev-ref', 'HEAD'], dirPath, 'status');
+  return head && head !== 'HEAD' ? head : null;
+}
+
 export async function getHeadSha(dirPath: string): Promise<string | null> {
   try {
     const sha = (await gitExec(['rev-parse', '--verify', 'HEAD'], dirPath, undefined, 'head_sha')).trim();
