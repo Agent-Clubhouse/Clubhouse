@@ -205,7 +205,17 @@ export async function migrateAtSpawn(projectPath: string, agent: DurableAgentCon
     if (!fresh) return null;
     if (fresh.managed) return fresh;
     const from = autoMigrateFrom(projectPath, fresh);
-    if (!from || await switchedEarlier(fresh)) return null;
+    if (!from) return null;
+    if (await switchedEarlier(fresh)) {
+      // A switch by hand may be writing it right now (its backup exists before
+      // its save): wait for it, so this start runs as managed.
+      const tail = switching.get(agent.id);
+      if (tail) {
+        await tail;
+        return await managedNow(projectPath, agent.id);
+      }
+      return null;
+    }
     await migrate(projectPath, fresh, from);
     return await managedNow(projectPath, agent.id);
   } catch (err) {

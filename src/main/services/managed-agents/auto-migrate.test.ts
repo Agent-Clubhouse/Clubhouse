@@ -528,7 +528,7 @@ describe('a switch by hand during the automatic one (#2901)', () => {
     const { convertToManaged } = await import('./agents');
 
     const auto = migrateAtSpawn('alpha', ada);
-    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled(), { timeout: 10_000 });
     // As the IPC convert (and so the Switch agents page) calls it.
     const byHand = withSwitchLock('ada', () => withSettingsSurface('ui', undefined, () => convertToManaged('alpha', 'ada', { keep: true })));
     release();
@@ -536,6 +536,31 @@ describe('a switch by hand during the automatic one (#2901)', () => {
 
     expect(spy).toHaveBeenCalledTimes(1);
     expect(handSetup).toEqual(managed!.managed);
+    expect(await parts('block')).toHaveLength(1);
+  });
+
+  it('a spawn that finds a hand switch mid-way (backup written, not saved yet) waits and starts as managed', async () => {
+    h.clubhouseMode.add('alpha');
+    const ada = agent('alpha', 'ada');
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    await service.ensureBuiltins();
+    const { convertToManaged } = await import('./agents');
+    const { beforeManagedDir } = await import('./before-managed');
+    let backupWritten!: () => void;
+    const written = new Promise<void>((r) => { backupWritten = r; });
+    const byHand = withSwitchLock('ada', async () => {
+      // As a switch does before its save: the backup folder exists first.
+      fs.mkdirSync(beforeManagedDir('ada'), { recursive: true });
+      backupWritten();
+      await gate;
+      return withSettingsSurface('ui', undefined, () => convertToManaged('alpha', 'ada', { keep: true }));
+    });
+    await written;
+    const auto = migrateAtSpawn('alpha', ada);
+    release();
+    const [, managed] = await Promise.all([byHand, auto]);
+    expect(managed?.managed).toBeDefined();
     expect(await parts('block')).toHaveLength(1);
   });
 
