@@ -111,6 +111,23 @@ describe('agent-registry', () => {
       expect(agentRegistry.get('agent-1')?.runtime).toBe('headless');
     });
 
+    it('marks a run bridge-off, keeps its nonce, and a new registration clears it (D25)', () => {
+      agentRegistry.register('agent-1', { projectPath: '/p', orchestrator: 'claude-code', runtime: 'pty' });
+      agentRegistry.setNonce('agent-1', 'n1');
+      const seen: string[] = [];
+      const off = agentRegistry.onAuthChange((id) => seen.push(id));
+      agentRegistry.setMcpBridgeOff('agent-1');
+      agentRegistry.setMcpBridgeOff('agent-1'); // already off: no event
+      off();
+      expect(agentRegistry.get('agent-1')?.mcpBridgeOff).toBe(true);
+      expect(getAgentNonce('agent-1')).toBe('n1');
+      expect(seen).toEqual(['agent-1']);
+      agentRegistry.register('agent-1', { projectPath: '/p', orchestrator: 'claude-code', runtime: 'pty' });
+      expect(agentRegistry.get('agent-1')?.mcpBridgeOff).toBeUndefined();
+      agentRegistry.setMcpBridgeOff('nonexistent');
+      expect(agentRegistry.get('nonexistent')).toBeUndefined();
+    });
+
     it('ignores setRuntime for unregistered agent', () => {
       agentRegistry.setRuntime('nonexistent', 'headless');
       expect(agentRegistry.get('nonexistent')).toBeUndefined();

@@ -92,6 +92,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         freeAgentMode: resolvedFreeAgentMode || undefined,
         pluginMetadata,
         runCwd: cwd,
+        ...(options?.managedTemplateId && { managedTemplateId: options.managedTemplateId }),
       };
 
       set((s) => ({

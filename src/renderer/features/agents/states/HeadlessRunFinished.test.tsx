@@ -5,6 +5,7 @@ import { HeadlessRunFinished } from './HeadlessRunFinished';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import type { CompletedQuickAgent } from '../../../../shared/types';
+import { resetManagedFlag } from '../../managed/managed-flag';
 
 vi.mock('../TranscriptViewer', () => ({ TranscriptViewer: () => <div data-testid="transcript-viewer" /> }));
 
@@ -143,6 +144,32 @@ describe('HeadlessRunFinished', () => {
       expect(spawnQuickAgent).toHaveBeenCalledWith(
         'proj-1', '/projects/p', failed.mission, 'sonnet', 'durable-1', 'claude-code', true, { card: '7' }, '/wt',
       );
+    });
+
+    it('Retry keeps the template the run started from, with Clubhouse-managed agents on (D25)', async () => {
+      resetManagedFlag();
+      vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
+      const onRetried = vi.fn();
+      render(<HeadlessRunFinished completed={{ ...failed, managedTemplateId: 'custom-workiq' }} onDismiss={vi.fn()} onRetried={onRetried} />);
+      fireEvent.click(screen.getByTestId('run-retry-button'));
+      await waitFor(() => expect(onRetried).toHaveBeenCalled());
+      expect(spawnQuickAgent).toHaveBeenCalledWith(
+        'proj-1', '/projects/p', failed.mission, 'sonnet', 'durable-1', 'claude-code', true, { card: '7' }, '/wt', { managedTemplateId: 'custom-workiq' },
+      );
+      resetManagedFlag();
+    });
+
+    it('Retry with Clubhouse-managed agents off starts without the template', async () => {
+      resetManagedFlag();
+      vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: false } as never);
+      const onRetried = vi.fn();
+      render(<HeadlessRunFinished completed={{ ...failed, managedTemplateId: 'custom-workiq' }} onDismiss={vi.fn()} onRetried={onRetried} />);
+      fireEvent.click(screen.getByTestId('run-retry-button'));
+      await waitFor(() => expect(onRetried).toHaveBeenCalled());
+      expect(spawnQuickAgent).toHaveBeenCalledWith(
+        'proj-1', '/projects/p', failed.mission, 'sonnet', 'durable-1', 'claude-code', true, { card: '7' }, '/wt',
+      );
+      resetManagedFlag();
     });
 
     it('offers no Retry and titles the run by name when it has no mission (#2813)', () => {

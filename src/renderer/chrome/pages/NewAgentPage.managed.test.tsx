@@ -431,6 +431,28 @@ describe('NewAgentPage, a quick agent from a template (D25)', () => {
     expect(call[9]).toEqual({ managedTemplateId: 'custom-workiq' });
   });
 
+  it('leaves the model alone when the template\'s model is for a CLI that won\'t run', async () => {
+    flagOn();
+    const otherCli = { ...serverTemplate, id: 'custom-codex', name: 'Codex reader', settings: { orchestrator: 'codex-cli', model: 'gpt-5-codex', freeAgentMode: true } };
+    const noCli = { ...serverTemplate, id: 'custom-nocli', name: 'Loose', settings: { model: 'gpt-5-codex' } };
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [otherCli, noCli] } as never);
+    openWith({ kind: 'quick' });
+    const select = await screen.findByTestId('new-agent-quick-template') as HTMLSelectElement;
+    await waitFor(() => expect(select.disabled).toBe(false));
+    const model = () => (screen.getByRole('combobox', { name: 'Model' }) as HTMLSelectElement).value;
+    // Codex isn't available here, so Claude Code runs and keeps its own model; Free Agent Mode still applies.
+    fireEvent.change(select, { target: { value: 'custom-codex' } });
+    expect(model()).toBe('default');
+    expect(screen.getByRole('switch', { name: 'Free Agent Mode' }).getAttribute('aria-checked')).toBe('true');
+    // No CLI named, and the model isn't one of the current CLI's.
+    fireEvent.change(select, { target: { value: 'custom-nocli' } });
+    expect(model()).toBe('default');
+    typeMission();
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalled());
+    expect(spawnQuickAgent.mock.calls[0][3]).not.toBe('gpt-5-codex');
+  });
+
   it('None starts a quick agent with no template', async () => {
     flagOn();
     vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [serverTemplate] } as never);

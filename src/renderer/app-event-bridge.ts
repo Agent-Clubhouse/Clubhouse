@@ -284,6 +284,7 @@ function initPtyExitListener(): () => void {
           toolCalls,
           inputTokens,
           outputTokens,
+          ...(agent.managedTemplateId && { managedTemplateId: agent.managedTemplateId }),
         });
 
         // Keep the finished run on screen when it was the one being viewed,

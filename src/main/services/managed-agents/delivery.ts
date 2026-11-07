@@ -235,8 +235,13 @@ export async function quickManagedLaunch(params: {
   /** The branch checked out in `cwd`, when there is one. */
   branch?: string | null;
 }): Promise<QuickManagedLaunch> {
+  // setupFromTemplate keeps only the parts that still exist, so what it dropped
+  // is what's missing: the template's own list minus what came back.
+  const template = await params.service.getTemplate(params.templateId);
   const { setup } = await params.service.setupFromTemplate(params.templateId);
   const resolved = await resolveSetup(params.service, setup);
+  const partCount = (s: { blocks: string[]; skills: string[]; mcps: string[] }) => s.blocks.length + s.skills.length + s.mcps.length;
+  const dropped = partCount(template.setup) - partCount(setup);
   const agent: DurableAgentConfig = {
     id: params.agentId, name: params.agentName, color: 'gray', createdAt: new Date().toISOString(),
     worktreePath: params.cwd, ...(params.branch && { branch: params.branch }),
@@ -253,7 +258,7 @@ export async function quickManagedLaunch(params: {
     servers: mcpServersOf(resolved),
     bridge: setup.mcps.includes(CLUBHOUSE_MCP_PART_ID),
     skippedSkills: resolved.skills.length,
-    missing: resolved.missing.length,
+    missing: dropped + resolved.missing.length,
   };
 }
 

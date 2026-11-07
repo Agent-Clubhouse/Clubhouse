@@ -135,6 +135,8 @@ export interface Agent {
   runCwd?: string;
   /** Quick agents: HEAD sha of `runCwd` when the run was spawned (best-effort). */
   runBaseSha?: string;
+  /** Quick agents started from a template (D25, Clubhouse-managed agents on): its id, so Retry keeps it. */
+  managedTemplateId?: string;
 }
 
 export interface CompletedQuickAgent {
@@ -172,6 +174,8 @@ export interface CompletedQuickAgent {
   inputTokens?: number;
   /** Headless runs: output tokens. */
   outputTokens?: number;
+  /** The template the run started from (D25), for Retry. */
+  managedTemplateId?: string;
 }
 
 // --- Profile types ---

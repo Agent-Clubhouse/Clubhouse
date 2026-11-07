@@ -21,6 +21,7 @@ const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
 let root: string;
 let project: string;
 let service: ManagedAgentsService;
+let catalog: ReturnType<typeof createAssetCatalogStore>;
 let agent: DurableAgentConfig;
 
 function provider(conv: Partial<OrchestratorProvider['conventions']> = {}): OrchestratorProvider {
@@ -38,8 +39,9 @@ beforeEach(async () => {
   const wt = path.join(project, '.clubhouse', 'agents', 'cool-gazelle');
   fs.mkdirSync(wt, { recursive: true });
   _resetSettingsAuditForTesting(false);
+  catalog = createAssetCatalogStore({ dir: path.join(root, 'catalog') });
   service = createManagedAgentsService({
-    catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+    catalog,
     state: createManagedStateStore(path.join(root, 'managed')),
     listProjects: async () => [],
     listAgents: async () => [],
@@ -179,6 +181,18 @@ describe('quickManagedLaunch (D25)', () => {
     const template = await user(() => service.saveTemplate({ name: 'Plain', description: '', settings: {}, setup: { blocks: [], skills: [], mcps: [] } }));
     const launch = await user(() => quickManagedLaunch({ service, projectPath: project, cwd: project, agentId: 'q', agentName: 'q', templateId: template.id }));
     expect(launch).toMatchObject({ bridge: false, instructions: '' });
+  });
+
+  it('counts the parts the template names that no longer exist', async () => {
+    const keep = await user(() => service.createPart({ name: 'Keep', content: { kind: 'block', content: 'kept' } }));
+    const gone = await user(() => service.createPart({ name: 'Gone', content: { kind: 'block', content: 'gone' } }));
+    const goneSkill = await user(() => service.createPart({ name: 'Old', content: { kind: 'skill', skillName: 'old', files: [{ path: 'SKILL.md', content: '# Old' }] } }));
+    const template = await user(() => service.saveTemplate({ name: 'Stale', description: '', settings: {}, setup: { blocks: [keep.id, gone.id], skills: [goneSkill.id], mcps: [] } }));
+    // Gone from the catalog behind the service's back, so the template still names them.
+    await catalog.deleteAsset({ assetId: gone.id, expectedRevision: gone.revision });
+    await catalog.deleteAsset({ assetId: goneSkill.id, expectedRevision: goneSkill.revision });
+    const launch = await user(() => quickManagedLaunch({ service, projectPath: project, cwd: project, agentId: 'q', agentName: 'q', templateId: template.id }));
+    expect(launch).toMatchObject({ instructions: 'kept', skippedSkills: 0, missing: 2 });
   });
 
   it('refuses a template that doesn\'t exist', async () => {

@@ -410,6 +410,11 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       quickManaged = await tel.step('clubhouse.agent.materialize', () =>
         withErrorType('materialize_failed', () => quickLaunchFor(params.projectPath, params.cwd, params.agentId, template, provider)),
       );
+      // No Clubhouse part, no bridge (D25). Not injecting it isn't enough: the
+      // folder may be a durable agent's worktree whose MCP file names the bridge,
+      // and this agent's env carries its own identity and nonce. The bridge
+      // server refuses it; hooks keep the nonce.
+      if (!quickManaged.bridge) agentRegistry.setMcpBridgeOff(params.agentId);
       const instructions = quickManaged.instructions;
       params = { ...params, systemPrompt: [instructions, params.systemPrompt].filter(Boolean).join('\n\n') };
     }

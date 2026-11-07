@@ -510,6 +510,15 @@ describe('initAppEventBridge', () => {
       expect(record.stderrTail).toBeUndefined();
     });
 
+    it('keeps the template a run started from, for Retry (D25)', async () => {
+      const record = await exitQuickAgent({ ...headlessAgent, managedTemplateId: 'custom-workiq' }, '', 1);
+      expect(record.managedTemplateId).toBe('custom-workiq');
+    });
+
+    it('adds no template to a run that started without one', async () => {
+      expect(await exitQuickAgent(headlessAgent, '', 1)).not.toHaveProperty('managedTemplateId');
+    });
+
     it('keeps the stderr tail and the failing exit code when a headless run fails', async () => {
       const record = await exitQuickAgent(headlessAgent, '', 1, 'Error: invalid API key');
       expect(record).toMatchObject({ summary: null, exitCode: 1, stderrTail: 'Error: invalid API key', filesModified: [] });

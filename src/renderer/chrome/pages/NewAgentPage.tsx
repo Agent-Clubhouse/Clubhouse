@@ -212,13 +212,20 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   // Per project: git (the worktree row), the MCP catalog and its defaults.
   const projectPath = project?.path;
 
-  /** A template fills in the CLI, model and Free Agent Mode it sets. Each can still be changed. */
+  /**
+   * A template fills in the CLI, model and Free Agent Mode it sets. Each can still be changed.
+   * Its model only when it belongs to the CLI that will run: the template's own CLI, or
+   * one of the current CLI's models when the CLI stays (a parent fixes it, the template's
+   * CLI isn't available, or the template names none).
+   */
   const pickQuickTemplate = (t: ManagedTemplate | null) => {
     setQuickTemplateId(t?.id ?? '');
     if (!t) return;
     const { orchestrator: cli, model: m, freeAgentMode: free } = t.settings;
-    if (cli && !parent && effectiveOrchestrators.some((o) => o.id === cli)) setOrchestrator(cli);
-    if (m) setModel(m);
+    const switchCli = !!cli && !parent && effectiveOrchestrators.some((o) => o.id === cli);
+    if (switchCli) setOrchestrator(cli);
+    const willRun = switchCli ? cli : runOrchestrator;
+    if (m && ((cli && cli === willRun) || modelOptions.some((o) => o.id === m))) setModel(m);
     if (free !== undefined) setFreeAgentMode(free);
   };
   useEffect(() => {

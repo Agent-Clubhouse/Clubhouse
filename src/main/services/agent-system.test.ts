@@ -1173,6 +1173,16 @@ describe('agent-system', () => {
         await quick();
         expect(mockInjectClubhouseMcp.mock.calls.at(-1)?.[4]).toEqual({ projectPath: PROJECT, agentOverride: false });
         expect(Object.keys(flagsFromBuild()!)).toEqual(['workiq']);
+        // Its folder's MCP file may still name the bridge (another agent's worktree):
+        // the bridge server refuses it by this mark, and its hooks keep the nonce.
+        expect(agentRegistry.get('quick-1')?.mcpBridgeOff).toBe(true);
+        const env = mockPtySpawn.mock.calls.at(-1)![4] as Record<string, string>;
+        expect(env.CLUBHOUSE_HOOK_NONCE).toBe(agentRegistry.get('quick-1')?.nonce);
+      });
+
+      it('leaves the bridge on for a template with the Clubhouse MCP part', async () => {
+        await quick();
+        expect(agentRegistry.get('quick-1')?.mcpBridgeOff).toBeUndefined();
       });
 
       it('refuses with the preview flag off, starting nothing', async () => {
