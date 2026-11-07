@@ -475,10 +475,34 @@ async function writeClaudeExcludes(worktree: string, provider: OrchestratorProvi
   return unmatched;
 }
 
+/** Where the CLI's instructions file is, relative to the worktree with forward slashes: Copilot's is in its config folder, the others' at the root. */
+function instructionsFileRel(provider: OrchestratorProvider): string {
+  const conv = provider.conventions;
+  return provider.id === COPILOT_ID ? forwardSlashes(path.join(conv.configDir, conv.legacyInstructionsFile)) : conv.legacyInstructionsFile;
+}
+
+/**
+ * The `.git/info/exclude` pattern that keeps the instructions file Clubhouse
+ * writes out of commits (D16), or null when the worktree tracks that file:
+ * excluding a tracked file does nothing. Anchored to the root, since the
+ * exclude file is shared by every worktree and the main checkout, and a bare
+ * name would hide every untracked file of that name at any depth. When git
+ * can't say, the file is excluded, as a pattern for a tracked file is harmless.
+ */
+export async function instructionsExcludePattern(worktree: string, provider: OrchestratorProvider): Promise<string | null> {
+  const rel = instructionsFileRel(provider);
+  const listed = await trackedFiles(worktree, [rel]);
+  if (listed.ok === false) {
+    appLog('core:managed', 'warn', 'git could not say whether the instructions file is tracked; it is excluded', { meta: { code: listed.code } });
+  } else if (listed.files.includes(rel)) {
+    return null;
+  }
+  return `/${rel}`;
+}
+
 /** Instruction files in the worktree, other than the one Clubhouse writes, that Copilot also reads. Only the ones git tracks: Clubhouse wrote none of them. */
 async function copilotRepoInstructions(worktree: string, provider: OrchestratorProvider): Promise<string[]> {
-  const conv = provider.conventions;
-  const own = forwardSlashes(path.join(conv.configDir, conv.legacyInstructionsFile));
+  const own = instructionsFileRel(provider);
   const listed = await trackedFiles(worktree, ['CLAUDE.md', 'AGENTS.md', '.claude/rules']);
   const tracked = listed.ok ? listed.files : [];
   return tracked.filter((f) => f !== own).sort((a, b) => a.localeCompare(b));

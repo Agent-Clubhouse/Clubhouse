@@ -41,6 +41,7 @@ import {
   orchestrationToCarry,
   processConditionalBlocks,
   readLegacyClubhouseModeSettings,
+  _resetLegacyReadWarningsForTesting,
 } from './legacy-migration';
 
 let root: string;
@@ -223,6 +224,18 @@ describe('readLegacyClubhouseModeSettings', () => {
     expect(readLegacyClubhouseModeSettings()).toEqual({ enabled: false });
     write('[true]');
     expect(readLegacyClubhouseModeSettings()).toEqual({ enabled: false });
+  });
+});
+
+describe('readLegacyClubhouseModeSettings warnings', () => {
+  it('logs a file that isn\'t JSON once per process, however often it is read', () => {
+    _resetLegacyReadWarningsForTesting();
+    fs.writeFileSync(path.join(h.userData, 'clubhouse-mode-settings.json'), '{ not json');
+    vi.mocked(appLog).mockClear();
+    for (let i = 0; i < 3; i++) expect(readLegacyClubhouseModeSettings()).toEqual({ enabled: false });
+    expect(legacyClubhouseModeEnabled(project)).toBe(false);
+    const warnings = vi.mocked(appLog).mock.calls.filter((c) => String(c[2]).includes('not valid JSON'));
+    expect(warnings).toHaveLength(1);
   });
 });
 

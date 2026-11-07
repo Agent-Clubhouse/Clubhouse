@@ -197,10 +197,25 @@ export interface LegacyClubhouseModeSettings {
 
 const SOURCE_CONTROL_PROVIDERS: readonly SourceControlProvider[] = ['github', 'azure-devops'];
 
+/** The file is read on every call (wildcard resolution included), so each warning is logged once per process. */
+const warnedLegacyRead = new Set<string>();
+
+function warnLegacyReadOnce(kind: string, message: string, meta?: Record<string, unknown>): void {
+  if (warnedLegacyRead.has(kind)) return;
+  warnedLegacyRead.add(kind);
+  if (meta) appLog('core:managed', 'warn', message, { meta });
+  else appLog('core:managed', 'warn', message);
+}
+
+/** Tests only. */
+export function _resetLegacyReadWarningsForTesting(): void {
+  warnedLegacyRead.clear();
+}
+
 /**
  * Clubhouse Mode's saved settings, read as plain JSON each time. A missing
  * file, or one that can't be read or parsed, is Clubhouse Mode off with no
- * overrides. Values of the wrong type are left out.
+ * overrides, logged once per process. Values of the wrong type are left out.
  */
 export function readLegacyClubhouseModeSettings(): LegacyClubhouseModeSettings {
   let raw: string;
@@ -209,7 +224,7 @@ export function readLegacyClubhouseModeSettings(): LegacyClubhouseModeSettings {
   } catch (err) {
     if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
       // telemetry-exempt: logged; an unreadable file counts as Clubhouse Mode off
-      appLog('core:managed', 'warn', 'Could not read the old Clubhouse Mode settings', { meta: { code: (err as NodeJS.ErrnoException)?.code ?? 'unknown' } });
+      warnLegacyReadOnce('read', 'Could not read the old Clubhouse Mode settings', { code: (err as NodeJS.ErrnoException)?.code ?? 'unknown' });
     }
     return { enabled: false };
   }
@@ -218,7 +233,7 @@ export function readLegacyClubhouseModeSettings(): LegacyClubhouseModeSettings {
     parsed = JSON.parse(raw);
   } catch {
     // telemetry-exempt: logged; a file that isn't JSON counts as Clubhouse Mode off
-    appLog('core:managed', 'warn', 'The old Clubhouse Mode settings are not valid JSON');
+    warnLegacyReadOnce('json', 'The old Clubhouse Mode settings are not valid JSON');
     return { enabled: false };
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { enabled: false };

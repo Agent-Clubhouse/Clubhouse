@@ -1118,6 +1118,18 @@ describe('agent-system', () => {
       expect(Object.keys(flagsFromBuild()!)).toEqual(['clubhouse']);
     });
 
+    it('tells the person through the setup notice when project MCP servers were left out (D10)', async () => {
+      mockIsMcpEnabled.mockImplementation((() => true) as never);
+      withConfig({});
+      vi.mocked(resolveProjectMcpServers).mockImplementation((async (_p: string, _a: unknown, onNotice?: (m: string) => void) => {
+        onNotice?.('left out');
+        return {};
+      }) as never);
+      mockBroadcastToAllWindows.mockClear();
+      await spawn();
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, 'agent-1', 'left out');
+    });
+
     it('gives a managed agent without the Clubhouse part its own MCP servers and no bridge (#2896)', async () => {
       withConfig({ mcpOverride: false, worktreePath: '/project/wt', managed: { version: 1, blocks: [], skills: [], mcps: ['part-github'] } });
       await spawn();

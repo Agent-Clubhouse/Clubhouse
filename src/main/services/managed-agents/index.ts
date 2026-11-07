@@ -21,6 +21,7 @@ import * as path from 'path';
 import {
   deliverManagedSetup,
   EXCLUDES_MANIFEST,
+  instructionsExcludePattern,
   mcpServersOf,
   quickManagedLaunch,
   removeManagedClaudeExcludes,
@@ -109,7 +110,7 @@ export async function deliverForSpawn(projectPath: string, agent: DurableAgentCo
   }
   failedDeliveries.delete(agent.id);
   if (record) delivered.set(agent.id, record);
-  void excludeManagedFiles(projectPath, provider);
+  void excludeManagedFiles(projectPath, agent.worktreePath, provider);
   broadcastToAllWindows(IPC.MANAGED.CHANGED);
   if (record?.missing) {
     broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, agent.id,
@@ -120,15 +121,18 @@ export async function deliverForSpawn(projectPath: string, agent: DurableAgentCo
 /**
  * Keep Clubhouse's managed files out of commits, as Clubhouse Mode's own
  * exclude block did. That block stays where it was written, but nothing adds
- * one any more (#2901), so the instructions file is listed here too. A file
- * the project tracks shows as modified either way (D16).
+ * one any more (#2901), so the instructions file is listed here too, anchored
+ * to the root and only when the agent's worktree doesn't track it. A file the
+ * project tracks shows as modified either way (D16). The block is rewritten
+ * each time, so it lists exactly what this start excludes.
  */
-async function excludeManagedFiles(projectPath: string, provider: OrchestratorProvider): Promise<void> {
+async function excludeManagedFiles(projectPath: string, worktreePath: string | undefined, provider: OrchestratorProvider): Promise<void> {
   try {
     const conv = provider.conventions;
+    const instructions = worktreePath ? await instructionsExcludePattern(worktreePath, provider) : null;
     const gitExclude = await import('../git-exclude-manager');
-    await gitExclude.addExclusions(projectPath, `clubhouse-managed-${provider.id}`, [
-      conv.legacyInstructionsFile,
+    await gitExclude.replaceExclusions(projectPath, `clubhouse-managed-${provider.id}`, [
+      ...(instructions ? [instructions] : []),
       conv.mcpConfigFile,
       `${conv.configDir}/${conv.skillsDir}/`,
       // Where Claude Code's claudeMdExcludes go (D49).

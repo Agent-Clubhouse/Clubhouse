@@ -829,7 +829,9 @@ async function spawnPtyAgent(
     const projectServers = quickManaged
       ? quickManaged.servers
       : managedSetupServers || isMcpEnabled(params.projectPath, durableConfig?.mcpOverride)
-        ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined)
+        ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined, (message) => {
+          broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, message);
+        })
         : {};
     const servers = {
       ...projectServers,

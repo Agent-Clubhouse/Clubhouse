@@ -69,7 +69,7 @@ vi.mock('../agent-system', () => ({
   }),
 }));
 vi.mock('./index', () => ({ managedAgents: () => h.service }));
-vi.mock('../git-exclude-manager', () => ({ addExclusions: vi.fn(async () => {}) }));
+vi.mock('../git-exclude-manager', () => ({ addExclusions: vi.fn(async () => {}), replaceExclusions: vi.fn(async () => {}) }));
 vi.mock('./state-store', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./state-store')>()),
   managedStateDir: () => h.stateDir,

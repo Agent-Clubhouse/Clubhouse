@@ -18,6 +18,7 @@ import { appLog } from '../log-service';
 import {
   deliverManagedSetup,
   EXCLUDES_MANIFEST,
+  instructionsExcludePattern,
   isSameFolder,
   parentInstructionFiles,
   previewManagedSetup,
@@ -247,6 +248,46 @@ describe('quickLaunchFor (D25)', () => {
 function git(cwd: string, ...args: string[]) {
   execFileSync('git', args, { cwd, stdio: 'ignore' });
 }
+
+describe('instructionsExcludePattern (D16)', () => {
+  function ignored(cwd: string, rel: string): boolean {
+    try {
+      execFileSync('git', ['check-ignore', '-q', '--', rel], { cwd, stdio: 'ignore' });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  it('anchors the instructions file to the root, so an untracked one in a subfolder still shows', async () => {
+    const wt = agent.worktreePath!;
+    git(wt, 'init', '-q');
+    const pattern = await instructionsExcludePattern(wt, provider());
+    expect(pattern).toBe('/CLAUDE.md');
+    fs.writeFileSync(path.join(wt, '.git', 'info', 'exclude'), `${pattern}\n`);
+    expect(ignored(wt, 'CLAUDE.md')).toBe(true);
+    expect(ignored(wt, 'docs/CLAUDE.md')).toBe(false);
+  });
+
+  it('uses Copilot\'s path in its config folder', async () => {
+    const wt = agent.worktreePath!;
+    git(wt, 'init', '-q');
+    const copilot = provider({ configDir: '.github', legacyInstructionsFile: 'copilot-instructions.md', mcpConfigFile: '.github/mcp.json' }, 'copilot-cli');
+    expect(await instructionsExcludePattern(wt, copilot)).toBe('/.github/copilot-instructions.md');
+  });
+
+  it('adds nothing when the worktree tracks the file', async () => {
+    const wt = agent.worktreePath!;
+    git(wt, 'init', '-q');
+    fs.writeFileSync(path.join(wt, 'CLAUDE.md'), '# theirs');
+    git(wt, 'add', 'CLAUDE.md');
+    expect(await instructionsExcludePattern(wt, provider())).toBeNull();
+  });
+
+  it('still excludes it outside a git checkout', async () => {
+    expect(await instructionsExcludePattern(agent.worktreePath!, provider())).toBe('/CLAUDE.md');
+  });
+});
 
 describe('exactly its parts (#2819)', () => {
   it('moves every untracked skill folder the setup does not list to app data, and leaves tracked ones for Preview (D48)', async () => {

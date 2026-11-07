@@ -10,10 +10,20 @@ import { readLocalMcpJson, readProjectAgentDefaults, type SettingsConventions } 
 import { buildWildcardContext, resolveAgentCommands, resolveSourceControlProvider } from './agent-wildcards';
 import { appLog } from './log-service';
 
-/** Project defaults with agent wildcards. Invalid desired config is an explicit failure. */
+/** What an agent is told when the project MCP JSON isn't JSON (D10). */
+export const PROJECT_MCP_JSON_INVALID_NOTICE = 'The project MCP configuration isn\'t valid JSON, so its servers were left out. Conditional wildcards (@@If) are no longer processed; edit the project MCP configuration to fix it.';
+
+/**
+ * Project defaults with agent wildcards. Project MCP JSON that isn't JSON, for
+ * example one that still has @@If blocks now conditional wildcards are retired
+ * (D10), gives no project servers, with a warning (a code only) and
+ * `onNotice`, rather than failing the start. Valid JSON that isn't a valid MCP
+ * configuration is still an explicit failure.
+ */
 export async function resolveProjectMcpServers(
   projectPath: string,
   agent?: DurableAgentConfig,
+  onNotice?: (message: string) => void,
 ): Promise<Record<string, McpServerDef>> {
   // Managed agents (#2896) get exactly their MCP server parts, never project defaults.
   if (agent?.managed) {
@@ -26,6 +36,16 @@ export async function resolveProjectMcpServers(
   if (agent) {
     const scp = await resolveSourceControlProvider(projectPath, agent);
     json = replaceWildcards(json, buildWildcardContext(agent, projectPath, scp, resolveAgentCommands(agent, defaults)));
+  }
+  try {
+    JSON.parse(json);
+  } catch {
+    // telemetry-exempt: logged with a code; the agent starts without the project's servers and is told why.
+    appLog('core:mcp', 'warn', 'Project MCP JSON is not valid JSON; no project MCP servers delivered', {
+      meta: { code: /@@If\(/.test(json) ? 'conditional_wildcards' : 'invalid_json' },
+    });
+    onNotice?.(PROJECT_MCP_JSON_INVALID_NOTICE);
+    return {};
   }
   const { clubhouse: _clubhouse, ...rest } = parseMcpJson(json);
   return rest;
@@ -42,14 +62,15 @@ export async function resolveAgentMcpServers(
   local: { cwd: string; conventions: SettingsConventions; onNotice?: (message: string) => void },
 ): Promise<Record<string, McpServerDef>> {
   if (agent?.managed) return resolveProjectMcpServers(projectPath, agent);
+  const fromProject = () => resolveProjectMcpServers(projectPath, agent, local.onNotice);
   // No TOML reader exists here. Preserve canonical delivery and make the limitation visible.
   if (local.conventions.settingsFormat === 'toml') {
     local.onNotice?.('Local TOML MCP configuration is not supported by chat preparation. Chat uses project MCP JSON defaults; local TOML servers are not delivered by this path. The local file is preserved.');
-    return resolveProjectMcpServers(projectPath, agent);
+    return fromProject();
   }
   const raw = await readLocalMcpJson(local.cwd, local.conventions);
   const servers = raw === null ? undefined : parseMcpJson(raw);
-  if (!servers) return resolveProjectMcpServers(projectPath, agent);
+  if (!servers) return fromProject();
   const { clubhouse: _clubhouse, ...rest } = servers;
   if (_clubhouse) {
     const message = 'Configured clubhouse entry is reserved; only the separately controlled live bridge is delivered.';

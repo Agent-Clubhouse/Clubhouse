@@ -92,7 +92,7 @@ vi.mock('./index', () => ({
   managedAgents: () => h.service,
   ensureBuiltinsOnce: async () => (h.service as { ensureBuiltins(): Promise<void> }).ensureBuiltins(),
 }));
-vi.mock('../git-exclude-manager', () => ({ addExclusions: vi.fn(async () => {}) }));
+vi.mock('../git-exclude-manager', () => ({ addExclusions: vi.fn(async () => {}), replaceExclusions: vi.fn(async () => {}) }));
 vi.mock('./legacy-settings', () => ({ migrateLegacySettings: vi.fn(async () => ({ mcp: false, sourceControl: false })) }));
 vi.mock('./state-store', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./state-store')>()),

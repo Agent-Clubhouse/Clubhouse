@@ -150,12 +150,20 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
     await expect(write({}, cwd, raw({}), root)).rejects.toThrow('shared');
     expect(await save(raw({}))).toEqual({ ok: true });
   });
-  it('rejects invalid inherited canonical desired JSON without touching local data', async () => {
+  it('starts without project servers when inherited canonical JSON is not JSON, with a notice, leaving project settings as they are (D10)', async () => {
     const bytes = JSON.stringify({ agentDefaults: { mcpJson: '{invalid-canonical-secret' } });
     await fs.writeFile(settingsPath, bytes);
-    await expect(start()).rejects.toThrow('Invalid MCP JSON');
+    vi.mocked(appendChatEvent).mockClear();
+    expect(await start()).toEqual({ clubhouse: { command: 'synthetic-live-bridge' } });
     expect(await fs.readFile(settingsPath, 'utf8')).toBe(bytes);
-    await expect(fs.readFile(localPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    // A normal start writes the bridge locally; the project's bytes never reach it.
+    expect(await fs.readFile(localPath, 'utf8').catch(() => '')).not.toContain('invalid-canonical-secret');
+    expect(appendChatEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'notice', data: expect.objectContaining({ code: 'mcp_configuration', message: expect.stringContaining('isn\'t valid JSON') }) }));
+    expect(JSON.stringify(vi.mocked(appendChatEvent).mock.calls)).not.toContain('invalid-canonical-secret');
+  });
+  it('still rejects inherited canonical JSON that is not a valid MCP configuration', async () => {
+    await fs.writeFile(settingsPath, JSON.stringify({ agentDefaults: { mcpJson: JSON.stringify({ servers: {} }) } }));
+    await expect(start()).rejects.toThrow('mcpServers');
     expect(injectClubhouseMcp).not.toHaveBeenCalled();
   });
   it('preserves local TOML and delivers canonical JSON with a visible limitation notice', async () => {

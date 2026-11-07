@@ -15,7 +15,8 @@ vi.mock('./agent-settings-service', async (importOriginal) => ({
   readProjectAgentDefaults: vi.fn(async () => h.defaults),
 }));
 
-import { resolveAgentMcpServers, resolveProjectMcpServers } from './agent-mcp-servers';
+import { appLog } from './log-service';
+import { PROJECT_MCP_JSON_INVALID_NOTICE, resolveAgentMcpServers, resolveProjectMcpServers } from './agent-mcp-servers';
 
 const conventions = { configDir: '.claude', mcpConfigFile: '.mcp.json', localSettingsFile: 'settings.local.json' } as never;
 let worktree: string;
@@ -53,5 +54,33 @@ describe('unmanaged agents', () => {
     await expect(resolveAgentMcpServers('/project', agent({ clubhouseModeOverride: undefined }), { cwd: worktree, conventions })).resolves.toEqual({ own: { command: 'own' } });
     fs.writeFileSync(path.join(worktree, '.mcp.json'), JSON.stringify({ mcpServers: {} }));
     await expect(resolveAgentMcpServers('/project', agent(), { cwd: worktree, conventions })).resolves.toEqual({});
+  });
+});
+
+describe('project MCP JSON that is not JSON (D10)', () => {
+  const withConditional = '{ "mcpServers": {\n@@If(github)\n"gh": { "command": "gh" }\n@@EndIf\n} }';
+
+  it('gives no project servers with a warning that has a code only, and tells the agent, rather than failing the start', async () => {
+    h.defaults = { mcpJson: withConditional };
+    const notices: string[] = [];
+    await expect(resolveProjectMcpServers('/project', agent(), (m) => notices.push(m))).resolves.toEqual({});
+    expect(notices).toEqual([PROJECT_MCP_JSON_INVALID_NOTICE]);
+    expect(appLog).toHaveBeenCalledWith('core:mcp', 'warn', expect.any(String), { meta: { code: 'conditional_wildcards' } });
+
+    h.defaults = { mcpJson: '{ not json' };
+    await expect(resolveProjectMcpServers('/project')).resolves.toEqual({});
+    expect(appLog).toHaveBeenCalledWith('core:mcp', 'warn', expect.any(String), { meta: { code: 'invalid_json' } });
+  });
+
+  it('reaches chat through its notices when the agent has no MCP file of its own', async () => {
+    h.defaults = { mcpJson: withConditional };
+    const onNotice = vi.fn();
+    await expect(resolveAgentMcpServers('/project', agent(), { cwd: worktree, conventions, onNotice })).resolves.toEqual({});
+    expect(onNotice).toHaveBeenCalledWith(PROJECT_MCP_JSON_INVALID_NOTICE);
+  });
+
+  it('still fails on JSON that is not a valid MCP configuration', async () => {
+    h.defaults = { mcpJson: JSON.stringify({ servers: {} }) };
+    await expect(resolveProjectMcpServers('/project', agent())).rejects.toThrow(/mcpServers/);
   });
 });

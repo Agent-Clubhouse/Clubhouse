@@ -96,6 +96,39 @@ export async function addExclusions(projectPath: string, tag: string, patterns: 
   });
 }
 
+/**
+ * Make the lines tagged `tag` exactly `patterns`: lines with the tag that
+ * aren't in `patterns` come out, and the rest are added. Writes nothing when
+ * the file already says that.
+ */
+export async function replaceExclusions(projectPath: string, tag: string, patterns: string[]): Promise<void> {
+  const excludePath = await getExcludePath(projectPath);
+  return enqueueWrite(excludePath, async () => {
+    const marker = tagFor(tag);
+    const wanted = patterns.map((p) => `${p} ${marker}`);
+
+    let existing = '';
+    try {
+      existing = await fsp.readFile(excludePath, 'utf-8');
+    } catch {
+      // File doesn't exist yet
+    }
+
+    const lines = existing.split('\n');
+    while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+    const kept = lines.filter((line) => {
+      const bare = line.replace(/\r$/, '');
+      return !bare.endsWith(` ${marker}`) || wanted.includes(bare);
+    }).map((line) => (wanted.includes(line.replace(/\r$/, '')) ? line.replace(/\r$/, '') : line));
+    const next = [...kept, ...wanted.filter((line) => !kept.includes(line))];
+    const content = next.length > 0 ? `${next.join('\n')}\n` : '';
+    if (content === existing) return;
+
+    await fsp.mkdir(path.dirname(excludePath), { recursive: true });
+    await writeAtomically(excludePath, content);
+  });
+}
+
 export async function removeExclusions(projectPath: string, tag: string): Promise<void> {
   const excludePath = await getExcludePath(projectPath);
   return enqueueWrite(excludePath, async () => {
