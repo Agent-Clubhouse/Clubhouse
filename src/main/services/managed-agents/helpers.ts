@@ -6,6 +6,8 @@
 import type { HelperStartArgs } from '../../../shared/types';
 import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
 import type { ManagedAgentsService } from './service';
+import { ensureBuiltinsOnceFor } from './builtins-once';
+import { appLog } from '../log-service';
 
 export const HELPER_KEEPS_CLUBHOUSE_PART = 'Helpers always keep the Clubhouse MCP part so they can reach their orchestrator.';
 
@@ -25,6 +27,14 @@ export async function managedHelperSetup(
   service: ManagedAgentsService,
   args: Pick<HelperStartArgs, 'template' | 'addParts' | 'removeParts'>,
 ): Promise<ManagedAgentSetup & { templateId: string; settings: ManagedTemplateSettings }> {
+  // Every helper's setup uses built-in parts (the Clubhouse MCP part at least), so
+  // a start before startup installed them, or after that install failed, waits for them.
+  try {
+    await ensureBuiltinsOnceFor(service);
+  } catch (err) {
+    // telemetry-exempt: logged; the checks below refuse the start if a part it needs is missing.
+    appLog('core:managed', 'warn', 'Could not install the built-in agent parts before a helper start', { meta: { error: err instanceof Error ? err.message : String(err) } });
+  }
   const defaultId = await service.defaultHelperTemplateId();
   // Off (the default), only the default helper template is used. Naming it is no choice, so that passes.
   const choosing = (args.template !== undefined && args.template !== defaultId) || !!args.addParts?.length || !!args.removeParts?.length;

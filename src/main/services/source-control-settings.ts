@@ -4,26 +4,26 @@
  * to live in the Clubhouse Mode settings, which go away with Clubhouse Mode
  * (#2901). The value there is copied here once, and a save of the Clubhouse
  * Mode settings that carries one is kept here too, so both say the same until
- * the old place is removed.
+ * the old place is removed. Agents & providers sets it directly.
  */
 import { createSettingsStore } from './settings-store';
-import type { SourceControlProvider } from '../../shared/types';
+import type { SourceControlProvider, SourceControlSettings } from '../../shared/types';
+import { SOURCE_CONTROL_SETTINGS } from '../../shared/settings-definitions';
 
-export interface SourceControlSettings {
-  provider?: SourceControlProvider;
-}
+export type { SourceControlSettings };
 
 const PROVIDERS: readonly SourceControlProvider[] = ['github', 'azure-devops'];
 
-const store = createSettingsStore<SourceControlSettings>(
-  'source-control-settings.json',
+/** Also behind the generic settings bridge (settings-handlers.ts), for its row in Agents & providers. */
+export const sourceControlSettingsStore = createSettingsStore<SourceControlSettings>(
+  SOURCE_CONTROL_SETTINGS.filename,
   {},
   (raw) => (PROVIDERS.includes(raw.provider as SourceControlProvider) ? { provider: raw.provider as SourceControlProvider } : {}),
   { audit: { key: 'source_control', keys: ['provider'] } },
 );
 
-export const getSettings = store.get;
-export const saveSettings = store.save;
+export const getSettings = sourceControlSettingsStore.get;
+export const saveSettings = sourceControlSettingsStore.save;
 
 export function getAppSourceControlProvider(): SourceControlProvider | undefined {
   return getSettings().provider;

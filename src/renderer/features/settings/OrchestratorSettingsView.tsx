@@ -12,10 +12,11 @@ import { RICH_CHAT_CONTENT_FLAG, resetRichChatContentFlag } from '../agents/chat
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
 import { useMcpOffConfirm } from './McpOffConfirm';
 import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsHelp, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
-import type { FreeAgentPermissionMode } from '../../../shared/types';
+import type { FreeAgentPermissionMode, SourceControlProvider } from '../../../shared/types';
 import { type AgentRuntimeMode, type ChatRuntimeSettings } from '../../../shared/chat';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
 import { useChatIdleSettingsStore } from '../../stores/chatIdleSettingsStore';
+import { useSourceControlSettingsStore } from '../../stores/sourceControlSettingsStore';
 import { CHAT_IDLE_TIMEOUT_CHOICES } from '../../../shared/settings-definitions';
 
 interface Props {
@@ -196,6 +197,10 @@ function AppAgentSettings() {
   const saveIdle = useChatIdleSettingsStore((st) => st.saveSettings);
   const loadIdle = useChatIdleSettingsStore((st) => st.loadSettings);
   useEffect(() => { if (chatEnabled) void loadIdle(); }, [chatEnabled, loadIdle]);
+  const sourceControlProvider = useSourceControlSettingsStore((st) => st.provider);
+  const loadSourceControl = useSourceControlSettingsStore((st) => st.loadSettings);
+  const saveSourceControl = useSourceControlSettingsStore((st) => st.saveSettings);
+  useEffect(() => { void loadSourceControl(); }, [loadSourceControl]);
   const idBase = useId();
 
   // Deep link (uiStore.openRuntimeSettings): scroll to the provider's runtime
@@ -282,6 +287,22 @@ function AppAgentSettings() {
           help="Ask to name the session when a durable agent stops. Projects can override this."
         >
           <Toggle aria-label="Prompt for session name on quit" checked={promptForName} onChange={setPromptForName} />
+        </SettingsField>
+        <SettingsField
+          label="Source control provider"
+          help={<>Replaces <code className={CODE_CLASS}>@@SourceControlProvider</code> for agents whose project and own settings don’t set one.</>}
+          htmlFor={`${idBase}-source-control`}
+        >
+          <select
+            id={`${idBase}-source-control`}
+            value={sourceControlProvider ?? 'github'}
+            onChange={(e) => { void saveSourceControl({ provider: e.target.value as SourceControlProvider }); }}
+            className={SELECT_CLASS}
+            data-testid="app-source-control-provider"
+          >
+            <option value="github">GitHub (gh CLI)</option>
+            <option value="azure-devops">Azure DevOps (az CLI)</option>
+          </select>
         </SettingsField>
         {chatEnabled && (
           <SettingsField

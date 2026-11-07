@@ -53,7 +53,6 @@ import { getAgentRuntime } from '../../agent-runtime';
 import { findGitCommonDir, getDefaultBranch, getGitInfo } from '../../git-service';
 import { withoutClubhouseOwnedChanges } from '../../clubhouse-owned-files';
 import { findParent, listAllHelpers, listHelpersEverywhere, type HelperEntry } from '../../helper-index';
-import { listAvailablePersonas } from '../../materialization-service';
 import * as projectStore from '../../project-store';
 import {
   checkHelperLimitFor,
@@ -858,8 +857,13 @@ const PENDING_NOTE =
   'Waiting requests are kept in memory only: each expires after 24 hours and all are cleared when ' +
   'Clubhouse quits or your orchestration is turned off. If you hear nothing, ask the user or call start_helper again.';
 
+/** Said in start_helper's result when an orchestrator passes a persona, which managed helpers don't take (#2901). */
+export const HELPER_PERSONA_IGNORED = 'persona was ignored: helpers start from a template. Pass cli or model to choose them.';
+
 async function startHelper(agentId: string, args: Record<string, unknown>): Promise<McpToolResult> {
-  const outcome = await runHelperStart(agentId, parseStartArgs(args));
+  const parsed = parseStartArgs(args);
+  const personaNote = parsed.persona ? { personaNote: HELPER_PERSONA_IGNORED } : {};
+  const outcome = await runHelperStart(agentId, parsed);
   switch (outcome.kind) {
     case 'refused':
       return textResult(outcome.message, true);
@@ -879,6 +883,7 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
         ...(outcome.modelWarning && { modelWarning: outcome.modelWarning }),
         ...(outcome.effortWarning && { effortWarning: outcome.effortWarning }),
         ...(outcome.quotaWarning && { quotaWarning: outcome.quotaWarning.message }),
+        ...personaNote,
         message:
           (outcome.reused ? 'You already asked for this start, and it is still waiting. ' : '') +
           'This agent is set to ask the user before starting helpers, so nothing was created yet. ' +
@@ -899,6 +904,7 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
         ...(outcome.modelWarning && { modelWarning: outcome.modelWarning }),
         ...(outcome.effortWarning && { effortWarning: outcome.effortWarning }),
         ...(outcome.quotaWarning && { quotaWarning: outcome.quotaWarning.message }),
+        ...personaNote,
         ...(outcome.launch.clamped && { accessNote: `Access lowered to ${outcome.launch.level}: a helper never gets more than you run with or than its CLI allows at that level.` }),
         message:
           `Helper "${outcome.name}" is being created${outcome.project.cross ? ` in ${outcome.project.name}` : ''}. Its worktree can take up to a minute; ` +
@@ -1292,24 +1298,17 @@ async function messageParent(agentId: string, args: Record<string, unknown>): Pr
 
 // ── list_projects (#2515) ────────────────────────────────────────────────
 
-/** One local project's entry: what start_helper's `project` and `persona` can name there. */
+/** One local project's entry: what start_helper's `project` can name. Helpers take no persona (#2901), so none are listed. */
 async function describeProject(project: Project, homePath: string, homeGit: string | null): Promise<Record<string, unknown>> {
-  const [yours, git, defaultBranch, personas] = await Promise.all([
+  const [yours, git, defaultBranch] = await Promise.all([
     agentConfig.isSameProject(project.path, homePath),
     findGitCommonDir(project.path),
     getDefaultBranch(project.path).catch((): null => null),
-    // The same layered lookup a persona is applied with: project, user, built-in.
-    listAvailablePersonas(project.path).catch((err: unknown): Array<{ id: string }> => {
-      // telemetry-exempt: logged; the project is listed without its personas
-      appLog('core:mcp', 'warn', 'list_projects: could not list personas', { meta: { projectPath: project.path, error: errorText(err) } });
-      return [];
-    }),
   ]);
   return {
     name: projectName(project),
     path: project.path,
     defaultBranch,
-    personas: personas.map((p) => p.id),
     ...(yours && { yours: true }),
     ...(!yours && !git && { notGit: true }),
     ...(!yours && git && homeGit && samePath(git, homeGit) && { sameRepository: true }),
@@ -1444,7 +1443,7 @@ export function registerHelperTools(): void {
     {
       description:
         'List the Clubhouse projects on this machine that start_helper can create a helper in: name, path, ' +
-        'default branch and the persona ids each one has. Your own project is marked "yours". ' +
+        'and default branch. Your own project is marked "yours". ' +
         'Projects marked "sameRepository" (the same git repository as yours) or "notGit" can\'t take a helper from you.',
       inputSchema: { type: 'object', properties: {} },
     },

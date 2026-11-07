@@ -37,10 +37,12 @@ Open **Settings** from the agent's row menu or hover card.
 | **Appearance** | Name, color and icon |
 | **Runs on** and **Model** | The CLI and model the agent uses. Changes apply the next time it starts or wakes. |
 | **Runtime** | Chat or CLI. Hidden when **Chat view** is off in **Settings > Agents & providers**. |
-| **Instructions** | Markdown that guides the agent: style, limits, how to work |
-| **Permissions** | Tools the agent may use without asking, and tools it's always denied |
-| **MCP** | The agent's Model Context Protocol servers |
-| **Quick agent defaults** | What quick agents started from this agent inherit |
+| **Instructions**, **Skills** and **MCP servers** | A Clubhouse managed agent's parts: the blocks it reads in order, the skills copied into its folder and the MCP servers it gets |
+| **Helpers** | Whether the agent orchestrates, and how it starts and disposes of helpers |
+| **Quick agents** | What quick agents started from this agent inherit |
+| **Preview** | What a Clubhouse managed agent gets at its next start |
+
+A plain agent has only **General**, **Helpers** and **Quick agents** here. It keeps its instructions, skills, MCP servers and permissions in its own files, and the classic layout still edits them in the app.
 
 An agent that used Clubhouse Mode or a persona switches to managed on its own at its next start, keeping what it has now, and says so in its settings under **General > Setup**. Any other agent made before Clubhouse-managed agents can switch there, or with others in **Settings > Managed agents > Switch agents**.
 

@@ -65,7 +65,7 @@ async function saveAgentMcp(worktreePath: string, content: string, projectPath?:
   const save = async (expected?: Awaited<ReturnType<typeof getMcpContext>>) => {
     const context = await getMcpContext(worktreePath, projectPath, agentId);
     if (expected && expected.target !== context.target) throw new Error('Agent MCP target changed. Reload before saving.');
-    if (context.managed) return { ok: false, error: 'Clubhouse Mode manages MCP from project defaults. Turn on Local overrides in General before saving agent MCP settings.' };
+    if (context.managed) return { ok: false, error: 'Clubhouse Mode manages this agent\'s MCP from project defaults. Turn Clubhouse Mode off for it in General › Setup, or switch it to managed, before saving its MCP settings.' };
     return agentSettings.writeMcpRawJson(worktreePath, content, context.conventions, async () => {
       const current = await getMcpContext(worktreePath, projectPath, context.agentId);
       if (current.target !== context.target) throw new Error('Agent MCP target changed. Reload before saving.');

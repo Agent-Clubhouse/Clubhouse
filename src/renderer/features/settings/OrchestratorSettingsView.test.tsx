@@ -696,12 +696,22 @@ describe('OrchestratorSettingsView', () => {
         updateProject: vi.fn(),
       });
     });
-    it('offers no Clubhouse Mode switch, wildcards or its source control default app-wide', () => {
+    it('offers no Clubhouse Mode switch or wildcards app-wide', () => {
       render(<OrchestratorSettingsView />);
       expect(screen.getByText('Prompt for session name on quit')).toBeInTheDocument();
       expect(screen.queryByRole('switch', { name: 'Clubhouse Mode' })).not.toBeInTheDocument();
       expect(screen.queryByText('.clubhouse/clubhouse-mode.md')).not.toBeInTheDocument();
-      expect(screen.queryByText('Default source control provider')).not.toBeInTheDocument();
+    });
+
+    it('sets the app-wide source control provider in its own store (D61)', async () => {
+      const save = vi.fn().mockResolvedValue(undefined);
+      window.clubhouse.settings.get = vi.fn().mockImplementation(async (key: string) => (key === 'source_control' ? { provider: 'azure-devops' } : null));
+      window.clubhouse.settings.save = save;
+      render(<OrchestratorSettingsView />);
+      const select = screen.getByLabelText('Source control provider');
+      await waitFor(() => expect(select).toHaveValue('azure-devops'));
+      fireEvent.change(select, { target: { value: 'github' } });
+      await waitFor(() => expect(save).toHaveBeenCalledWith('source_control', { provider: 'github' }));
     });
 
     it('offers no Clubhouse Mode choice for a project', () => {

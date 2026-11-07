@@ -225,6 +225,7 @@ import { AgentStoppingError } from '../../agent-runtime/agent-stopping';
 import {
   approveHelperStart,
   declineHelperStart,
+  HELPER_PERSONA_IGNORED,
   registerHelperTools,
   watchHelperStartRequests,
   _resetHelperToolsForTesting,
@@ -547,6 +548,7 @@ describe('start_helper with Clubhouse-managed agents (#2899)', () => {
     controllableCreation();
     const result = await callTool('orch', 'start_helper', { name: 'plain', task: 't' });
     expect(result.isError).toBeFalsy();
+    expect(parse(result)).not.toHaveProperty('personaNote');
     const [, , options] = mockStartDurableCreation.mock.calls[0];
     await options.inject(agents.get('helper_plain'));
     expect(agents.get('helper_plain')!.managed).toMatchObject({ templateId: 'builtin-template-helper' });
@@ -556,6 +558,8 @@ describe('start_helper with Clubhouse-managed agents (#2899)', () => {
     controllableCreation();
     const result = await callTool('orch', 'start_helper', { name: 'm', task: 't', persona: 'workhorse' });
     expect(result.isError).toBeFalsy();
+    // The orchestrator is told its persona was ignored, not left to guess.
+    expect(parse(result).personaNote).toBe(HELPER_PERSONA_IGNORED);
     const [, params, options] = mockStartDurableCreation.mock.calls[0];
     expect(params.persona).toBeUndefined();
     expect(options.injectRequired).toBe(true);
@@ -566,7 +570,9 @@ describe('start_helper with Clubhouse-managed agents (#2899)', () => {
 
   it('checks and holds a start for approval without its persona', async () => {
     mockGetPolicy.mockResolvedValue({ orchestrate: true, access: 'same', control: 'ask-before-start', maxHelpers: 5 });
-    await callTool('orch', 'start_helper', { name: 'held', task: 't', persona: 'workhorse' });
+    const held = parse(await callTool('orch', 'start_helper', { name: 'held', task: 't', persona: 'workhorse' }));
+    expect(held.state).toBe('needs_approval');
+    expect(held.personaNote).toBe(HELPER_PERSONA_IGNORED);
     expect(mockCheckDurableCreation).toHaveBeenCalledTimes(1);
     expect(mockCheckDurableCreation.mock.calls[0][1]).not.toHaveProperty('persona');
     expect(listStartRequests()[0].args).not.toHaveProperty('persona');
@@ -2022,22 +2028,20 @@ describe('helpers in another project', () => {
       expect(getScopedToolList('orch').map((t) => t.name)).toContain('list_projects');
     });
 
-    it('lists each project with its default branch and personas, and marks the caller\'s', async () => {
+    it('lists each project with its default branch, no personas, and marks the caller\'s', async () => {
       setOrchestrationEnabled('orch', true, { crossProject: true });
       const same = path.join(path.sep, 'tmp', 'project-wt');
       const plain = path.join(path.sep, 'tmp', 'plain-folder');
       projects.push({ id: 'proj_wt', name: 'wt', path: same }, { id: 'proj_plain', name: 'plain', path: plain });
       gitDirs.set(same, path.join(PROJECT, '.git'));
       gitDirs.set(plain, null);
-      mockListPersonas.mockImplementation(async (p: string) =>
-        (p === FAR ? [{ id: 'far-only', name: 'Far only', source: 'project' }, { id: 'workhorse', name: 'Workhorse', source: 'builtin' }] : []));
 
       const body = parse(await callTool('orch', 'list_projects', {}));
       expect(body.projects).toEqual([
-        { name: 'home', path: PROJECT, defaultBranch: 'main', personas: [], yours: true },
-        { name: 'Far Away', path: FAR, defaultBranch: 'main', personas: ['far-only', 'workhorse'] },
-        { name: 'wt', path: same, defaultBranch: 'main', personas: [], sameRepository: true },
-        { name: 'plain', path: plain, defaultBranch: null, personas: [], notGit: true },
+        { name: 'home', path: PROJECT, defaultBranch: 'main', yours: true },
+        { name: 'Far Away', path: FAR, defaultBranch: 'main' },
+        { name: 'wt', path: same, defaultBranch: 'main', sameRepository: true },
+        { name: 'plain', path: plain, defaultBranch: null, notGit: true },
       ]);
     });
   });

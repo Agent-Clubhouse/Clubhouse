@@ -233,6 +233,11 @@ export interface QuickAgentDefaults {
 
 export type SourceControlProvider = 'github' | 'azure-devops';
 
+/** The app-level source control provider (D61), in source-control-settings.json. Unset falls back to the old Clubhouse Mode value. */
+export interface SourceControlSettings {
+  provider?: SourceControlProvider;
+}
+
 /** Project-level default settings applied as snapshots when creating new agents. */
 export interface ProjectAgentDefaults {
   instructions?: string;

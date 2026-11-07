@@ -6,7 +6,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { AgentSettingsView } from './AgentSettingsView';
-import { useAgentSettingsPages, requestCloseAgentSettings } from './agentSettingsPages';
+import { useAgentSettingsPages, requestCloseAgentSettings, requestLeaveAgentSettings } from './agentSettingsPages';
 import { useToastStore } from '../../stores/toastStore';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import type { Agent, MaterializationPreview } from '../../../shared/types';
@@ -31,14 +31,18 @@ vi.mock('../../components/ImageCropDialog', () => ({
   ImageCropDialog: () => <div data-testid="image-crop-dialog" />,
 }));
 
+let skillsProps: any;
 vi.mock('./SkillsSection', () => ({
   SkillsSection: (props: any) => {
+    skillsProps = props;
     return <div data-testid="skills-section" data-disabled={String(props.disabled)} />;
   },
 }));
 
+let mcpProps: any;
 vi.mock('./McpJsonSection', () => ({
   McpJsonSection: (props: any) => {
+    mcpProps = props;
     return <div data-testid="mcp-json-section" data-disabled={String(props.disabled)} />;
   },
 }));
@@ -762,6 +766,141 @@ describe('AgentSettingsView', () => {
       await waitFor(() => {
         expect(screen.getByDisplayValue('exotic-model-7b')).toBeInTheDocument();
       });
+    });
+  });
+
+  // The classic shell still edits a plain agent's files (D65), so the save bar,
+  // the leave guard and the section reports are covered there.
+  describe('classic shell editors', () => {
+    beforeEach(() => {
+      useChromeFlagStore.setState({ enabled: false });
+      useToastStore.setState({ toasts: [] });
+    });
+
+    it('collects text edits in one save bar and marks the dirty pages', async () => {
+      renderSettings();
+      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'New instructions' } });
+      fireEvent.change(await screen.findByLabelText('Allowed tools, one per line', { selector: '#agent-settings-perm-allow' }), { target: { value: 'Read(**)\nEdit(**)' } });
+
+      const bar = screen.getByTestId('agent-settings-save-bar');
+      expect(bar).toHaveTextContent('Unsaved changes to instructions and permissions');
+      expect(useAgentSettingsPages.getState().dirtyPages).toEqual(['instructions', 'permissions']);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => {
+        expect(window.clubhouse.agentSettings.saveInstructions).toHaveBeenCalledWith(
+          '/project/.clubhouse/agents/bold-falcon', 'New instructions', '/project',
+        );
+        expect(window.clubhouse.agentSettings.savePermissions).toHaveBeenCalledWith(
+          '/project/.clubhouse/agents/bold-falcon', { allow: ['Read(**)', 'Edit(**)'], deny: undefined }, '/project',
+        );
+      });
+      await waitFor(() => expect(screen.queryByTestId('agent-settings-save-bar')).not.toBeInTheDocument());
+      expect(useAgentSettingsPages.getState().dirtyPages).toEqual([]);
+    });
+
+    it('keeps going after a failed save, says which saved, and leaves the bar usable', async () => {
+      window.clubhouse.agentSettings.saveInstructions = vi.fn().mockRejectedValue(new Error('EACCES'));
+      renderSettings();
+      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'Nope' } });
+      fireEvent.change(await screen.findByLabelText('Allowed tools, one per line', { selector: '#agent-settings-perm-allow' }), { target: { value: 'Edit(**)' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => expect(window.clubhouse.agentSettings.savePermissions).toHaveBeenCalled());
+      await waitFor(() => {
+        expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual(["Saved permissions. Couldn't save instructions."]);
+      });
+      expect(screen.getByTestId('agent-settings-save-bar')).toHaveTextContent('Unsaved changes to instructions');
+      expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Discard' })).not.toBeDisabled();
+    });
+
+    it('discards text edits back to what was loaded', async () => {
+      renderSettings();
+      const editor = await screen.findByLabelText('Instructions');
+      await waitFor(() => expect(editor).toHaveValue('Agent instructions'));
+      fireEvent.change(editor, { target: { value: 'Scratch' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+      expect(editor).toHaveValue('Agent instructions');
+      expect(screen.queryByTestId('agent-settings-save-bar')).not.toBeInTheDocument();
+      expect(window.clubhouse.agentSettings.saveInstructions).not.toHaveBeenCalled();
+    });
+
+    it('saves and discards .mcp.json edits through the bar', async () => {
+      renderSettings();
+      await screen.findByTestId('mcp-json-section');
+      const handle = { save: vi.fn().mockResolvedValue(undefined), discard: vi.fn() };
+      act(() => {
+        mcpProps.onRegisterSave(handle);
+        mcpProps.onDirtyChange(true);
+      });
+      expect(screen.getByTestId('agent-settings-save-bar')).toHaveTextContent('Unsaved changes to MCP servers');
+      expect(useAgentSettingsPages.getState().dirtyPages).toEqual(['mcp']);
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(handle.save).toHaveBeenCalled());
+      fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+      expect(handle.discard).toHaveBeenCalled();
+    });
+
+    it('marks a page with an open skill editor without adding it to the bar', async () => {
+      renderSettings();
+      await screen.findByTestId('skills-section');
+      act(() => skillsProps.onDirtyChange(true));
+      expect(useAgentSettingsPages.getState().dirtyPages).toEqual(['skills']);
+      expect(screen.queryByTestId('agent-settings-save-bar')).not.toBeInTheDocument();
+    });
+
+    it('asks before leaving with unsaved edits', async () => {
+      const closeAgentSettings = vi.fn();
+      useAgentStore.setState({ closeAgentSettings });
+      renderSettings();
+      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'Unsaved' } });
+
+      act(() => requestCloseAgentSettings());
+      expect(closeAgentSettings).not.toHaveBeenCalled();
+      expect(await screen.findByText('Leave with unsaved changes?')).toBeInTheDocument();
+      expect(screen.getByText('Your changes to instructions will be lost.')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId('confirm-destructive-cancel'));
+      expect(closeAgentSettings).not.toHaveBeenCalled();
+
+      act(() => requestCloseAgentSettings());
+      fireEvent.click(await screen.findByTestId('confirm-destructive-confirm'));
+      expect(closeAgentSettings).toHaveBeenCalled();
+    });
+
+    it('runs the pending action after confirming, so the other agent opens', async () => {
+      const closeAgentSettings = vi.fn();
+      const next = vi.fn();
+      useAgentStore.setState({ closeAgentSettings, agentSettingsOpenFor: 'agent-1' });
+      renderSettings();
+      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'Unsaved' } });
+      act(() => requestLeaveAgentSettings(next));
+      expect(next).not.toHaveBeenCalled();
+      fireEvent.click(await screen.findByTestId('confirm-destructive-confirm'));
+      expect(closeAgentSettings).toHaveBeenCalled();
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('shows the launch wrapper states as plain words', async () => {
+      (window.clubhouse.project as any).readMcpCatalog = vi.fn().mockResolvedValue([
+        { id: 'fs', name: 'Filesystem', command: 'fs' },
+      ]);
+      renderSettings();
+      const wrapper = await screen.findByTestId('agent-settings-launch-wrapper');
+      expect(wrapper).toHaveTextContent('Launch wrapper');
+      expect(wrapper).toHaveTextContent('Filesystem');
+      expect(wrapper.querySelector('.uppercase')).toBeNull();
+    });
+
+    it('takes sidebar counts from the sections', async () => {
+      renderSettings();
+      await screen.findByTestId('skills-section');
+      act(() => {
+        skillsProps.onCountChange(2);
+        mcpProps.onCountChange(3);
+      });
+      expect(useAgentSettingsPages.getState().counts).toEqual({ skills: 2, mcp: 3 });
     });
   });
 
