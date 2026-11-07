@@ -2,7 +2,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ClubhouseModeSettings, McpSettings } from '../../../shared/types';
+import type { McpSettings } from '../../../shared/types';
+import type { LegacyClubhouseModeSettings as ClubhouseModeSettings } from './legacy-migration';
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
@@ -21,8 +22,10 @@ vi.mock('../mcp-settings', () => ({
     h.mcp = structuredClone(next);
   }),
   notifyMcpEnablementChanged: vi.fn(),
+  startMcpBridgeIfEnabled: vi.fn(),
 }));
-vi.mock('../clubhouse-mode-settings', () => ({ getSettings: () => structuredClone(h.mode) }));
+// The old clubhouse-mode-settings.json, read as plain JSON (legacy-migration.test covers the read).
+vi.mock('./legacy-migration', () => ({ readLegacyClubhouseModeSettings: () => structuredClone(h.mode) }));
 vi.mock('../source-control-settings', () => ({
   getAppSourceControlProvider: () => h.scp,
   setAppSourceControlProvider: vi.fn(async (p: 'github' | 'azure-devops') => { h.scp = p; }),
@@ -30,7 +33,7 @@ vi.mock('../source-control-settings', () => ({
 
 import * as mcpSettings from '../mcp-settings';
 import { createManagedStateStore, type ManagedStateStore } from './state-store';
-import { MCP_FROM_CLUBHOUSE_MODE, mcpSettingsWithoutClubhouseMode, migrateLegacySettings, SOURCE_CONTROL_PROVIDER } from './legacy-settings';
+import { _resetLegacySettingsForTesting, MCP_APP_LEVEL_EXPLICIT, MCP_FROM_CLUBHOUSE_MODE, mcpSettingsWithoutClubhouseMode, migrateLegacySettings, primeLegacyMcpSettings, SOURCE_CONTROL_PROVIDER } from './legacy-settings';
 
 /** isMcpEnabled's chain, MCP settings first, then Clubhouse Mode. */
 function resolve(mcp: McpSettings, mode: ClubhouseModeSettings, project: string, withFallback: boolean): boolean {
@@ -41,9 +44,12 @@ function resolve(mcp: McpSettings, mode: ClubhouseModeSettings, project: string,
 }
 
 let state: ManagedStateStore;
+let stateDir: string;
 
 beforeEach(() => {
-  state = createManagedStateStore(fs.mkdtempSync(path.join(os.tmpdir(), 'managed-legacy-')));
+  stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-legacy-'));
+  state = createManagedStateStore(stateDir);
+  _resetLegacySettingsForTesting();
   h.mcp = { enabled: false };
   h.mode = { enabled: false };
   h.scp = undefined;
@@ -81,6 +87,7 @@ describe('migrateLegacySettings', () => {
     expect(await migrateLegacySettings(state)).toEqual({ mcp: true, sourceControl: false });
     expect(h.mcp).toEqual({ enabled: true, projectOverrides: { a: false } });
     expect(mcpSettings.notifyMcpEnablementChanged).toHaveBeenCalled();
+    expect(mcpSettings.startMcpBridgeIfEnabled).toHaveBeenCalled();
     expect((await state.read()).migrations?.[MCP_FROM_CLUBHOUSE_MODE]).toEqual(expect.any(String));
 
     vi.mocked(mcpSettings.saveSettings).mockClear();
@@ -144,5 +151,48 @@ describe('migrateLegacySettings', () => {
     expect(read.defaultHelperTemplateId).toBe('builtin-template-helper');
     // The source control move is once-only; the MCP one runs every start and records only when it changed something.
     expect(Object.keys(read.migrations ?? {}).sort()).toEqual([SOURCE_CONTROL_PROVIDER]);
+  });
+});
+
+describe('primeLegacyMcpSettings (#2901)', () => {
+  it('puts the explicit MCP settings in place synchronously, before anything reads them, and the pass keeps the records', async () => {
+    h.mode = { enabled: true, projectOverrides: { a: false } };
+    primeLegacyMcpSettings(stateDir);
+    // No await yet: the in-memory value is what isMcpEnabled reads from now on.
+    expect(h.mcp).toEqual({ enabled: true, projectOverrides: { a: false } });
+    expect(await migrateLegacySettings(state)).toEqual({ mcp: true, sourceControl: false });
+    const migrations = (await state.read()).migrations ?? {};
+    expect(migrations[MCP_FROM_CLUBHOUSE_MODE]).toEqual(expect.any(String));
+    expect(migrations[MCP_APP_LEVEL_EXPLICIT]).toEqual(expect.any(String));
+    expect(mcpSettings.saveSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('respects the app-level switch made explicit by an earlier start', async () => {
+    h.mode = { enabled: true };
+    await state.update((s) => { s.migrations = { [MCP_APP_LEVEL_EXPLICIT]: '2026-11-01T00:00:00.000Z' }; });
+    primeLegacyMcpSettings(stateDir);
+    expect(h.mcp.enabled).toBe(false);
+    expect(mcpSettings.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it('leaves it all to the pass when managed state can\'t be read, and does nothing with no old settings file', async () => {
+    fs.writeFileSync(path.join(stateDir, 'state.json'), '{ not json');
+    h.mode = { enabled: true };
+    primeLegacyMcpSettings(stateDir);
+    expect(mcpSettings.saveSettings).not.toHaveBeenCalled();
+
+    h.mode = { enabled: false };
+    primeLegacyMcpSettings(path.join(stateDir, 'fresh'));
+    expect(mcpSettings.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it('records nothing when the primed write fails, so the next start tries again', async () => {
+    h.mode = { enabled: true };
+    h.failMcpSave = true;
+    primeLegacyMcpSettings(stateDir);
+    expect((await migrateLegacySettings(state)).mcp).toBe(false);
+    const migrations = (await state.read()).migrations ?? {};
+    expect(migrations[MCP_FROM_CLUBHOUSE_MODE]).toBeUndefined();
+    expect(migrations[MCP_APP_LEVEL_EXPLICIT]).toBeUndefined();
   });
 });

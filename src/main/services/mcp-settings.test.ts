@@ -17,24 +17,15 @@ vi.mock('./settings-store', () => {
   };
 });
 
-let cmStored: { enabled: boolean; projectOverrides?: Record<string, boolean> } = { enabled: false };
-
-vi.mock('./clubhouse-mode-settings', () => ({
-  isClubhouseModeEnabled: vi.fn(() => false),
-  getSettings: vi.fn(() => ({ ...cmStored })),
-}));
-
 import {
-  _resetAgentBridgeNeedForTesting, ensureMcpBridgeForAgent, isMcpEnabled, isMcpEnabledForAny, isMcpOnAtAppLevel, notifyMcpEnablementChanged, resolveMcpWithProposal, onMcpEnablementChanged, saveSettings, setMcpBridgeStarter,
+  _resetAgentBridgeNeedForTesting, ensureMcpBridgeForAgent, isMcpEnabled, isMcpEnabledForAny, isMcpOnAtAppLevel, notifyMcpEnablementChanged, resolveMcpEnabled, resolveMcpWithProposal, onMcpEnablementChanged, saveSettings, setMcpBridgeStarter, startMcpBridgeIfEnabled,
 } from './mcp-settings';
-import { isClubhouseModeEnabled } from './clubhouse-mode-settings';
 import { resetAllSettingsStoresForTests } from './settings-store';
 
 describe('mcp-settings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetAllSettingsStoresForTests();
-    cmStored = { enabled: false };
   });
 
   describe('isMcpEnabled', () => {
@@ -58,13 +49,14 @@ describe('mcp-settings', () => {
       expect(isMcpEnabled('/project')).toBe(false);
     });
 
-    it('falls back to clubhouse mode when all disabled', async () => {
+    it('has no Clubhouse Mode fallback: with everything off, MCP is off at the app level (#2901)', async () => {
       await saveSettings({ enabled: false });
-      vi.mocked(isClubhouseModeEnabled).mockReturnValue(true);
-      expect(isMcpEnabled()).toBe(true);
+      expect(isMcpEnabled()).toBe(false);
+      expect(isMcpEnabled('/project')).toBe(false);
+      expect(resolveMcpEnabled('/project')).toEqual({ enabled: false, source: 'app' });
     });
 
-    // Precedence: agent > project > global (> Clubhouse mode). #2223
+    // Precedence: agent > project > global. #2223
     it.each([
       // [case, global, project override, agent override, expected]
       ['global on', true, undefined, undefined, true],
@@ -78,23 +70,8 @@ describe('mcp-settings', () => {
       ['agent on beats project off', true, false, true, true],
       ['agent on beats global and project off', false, false, true, true],
     ] as const)('precedence: %s', async (_case, enabled, project, agent, expected) => {
-      vi.mocked(isClubhouseModeEnabled).mockReturnValue(false);
       await saveSettings({ enabled, ...(project === undefined ? {} : { projectOverrides: { '/project': project } }) });
       expect(isMcpEnabled('/project', agent)).toBe(expected);
-    });
-
-    it('an agent turned off stays off even when Clubhouse mode is on', async () => {
-      await saveSettings({ enabled: false });
-      vi.mocked(isClubhouseModeEnabled).mockReturnValue(true);
-      expect(isMcpEnabled('/project', false)).toBe(false);
-      expect(isMcpEnabled('/project')).toBe(true);
-    });
-
-    it('clubhouse mode fallback receives project path', async () => {
-      await saveSettings({ enabled: false });
-      vi.mocked(isClubhouseModeEnabled).mockReturnValue(false);
-      isMcpEnabled('/my-project');
-      expect(isClubhouseModeEnabled).toHaveBeenCalledWith('/my-project');
     });
   });
 
@@ -123,28 +100,9 @@ describe('mcp-settings', () => {
       expect(isMcpEnabledForAny()).toBe(false);
     });
 
-    it('returns true when Clubhouse Mode global toggle is on', async () => {
-      await saveSettings({ enabled: false });
-      cmStored = { enabled: true };
-      expect(isMcpEnabledForAny()).toBe(true);
-    });
-
-    it('returns true when any Clubhouse Mode project override is true', async () => {
-      await saveSettings({ enabled: false });
-      cmStored = { enabled: false, projectOverrides: { '/x': false, '/y': true } };
-      expect(isMcpEnabledForAny()).toBe(true);
-    });
-
     it('starts no bridge with MCP off at app level and nobody else using it: the Dispatcher gives it no reason to', async () => {
       await saveSettings({ enabled: false });
-      cmStored = { enabled: false };
-      expect(isMcpEnabledForAny()).toBe(false);
-    });
-
-    it('returns false when all Clubhouse Mode project overrides are false', async () => {
-      await saveSettings({ enabled: false });
-      cmStored = { enabled: false, projectOverrides: { '/x': false } };
-      expect(isMcpEnabledForAny()).toBe(false);
+        expect(isMcpEnabledForAny()).toBe(false);
     });
   });
 });
@@ -168,7 +126,6 @@ describe('ensureMcpBridgeForAgent (#2610)', () => {
   beforeEach(() => {
     resetAllSettingsStoresForTests();
     _resetAgentBridgeNeedForTesting();
-    cmStored = { enabled: false };
   });
 
   it('counts as MCP on for any, with everything else off, and starts the bridge each time', async () => {
@@ -185,33 +142,43 @@ describe('ensureMcpBridgeForAgent (#2610)', () => {
   });
 
   describe('at app level', () => {
-    it('reads the MCP switch, then the global Clubhouse mode, and no override', async () => {
+    it('reads the MCP switch and no override', async () => {
       await saveSettings({ enabled: false, projectOverrides: { '/x': true } });
-      vi.mocked(isClubhouseModeEnabled).mockReturnValue(false);
       expect(isMcpOnAtAppLevel()).toBe(false);
-      vi.mocked(isClubhouseModeEnabled).mockReturnValue(true);
-      expect(isMcpOnAtAppLevel()).toBe(true);
       await saveSettings({ enabled: true });
-      vi.mocked(isClubhouseModeEnabled).mockReturnValue(false);
       expect(isMcpOnAtAppLevel()).toBe(true);
     });
   });
 
   describe('resolving a proposal', () => {
     it('follows the chain with the change applied, and saves nothing', async () => {
-      await saveSettings({ enabled: true });
-      cmStored = { enabled: false, projectOverrides: { '/cm': true } };
+      await saveSettings({ enabled: true, projectOverrides: { '/own': true } });
       const off = { mcp: { enabled: false } };
       expect(resolveMcpWithProposal(off)).toBe(false);
       expect(resolveMcpWithProposal(off, '/x')).toBe(false);
-      expect(resolveMcpWithProposal(off, '/cm')).toBe(true);
+      expect(resolveMcpWithProposal(off, '/own')).toBe(true);
       expect(resolveMcpWithProposal(off, '/x', true)).toBe(true);
       expect(resolveMcpWithProposal({ mcp: { enabled: false, projectOverrides: { '/x': true } } }, '/x')).toBe(true);
       expect(resolveMcpWithProposal({ mcp: { projectOverrides: { '/x': false } } }, '/x')).toBe(false);
-      cmStored = { enabled: true };
-      expect(resolveMcpWithProposal(off, '/x')).toBe(true);
-      expect(resolveMcpWithProposal({ ...off, clubhouseMode: { enabled: false } }, '/x')).toBe(false);
       expect(isMcpEnabled('/x')).toBe(true);
     });
+  });
+});
+
+describe('startMcpBridgeIfEnabled (D63)', () => {
+  beforeEach(() => {
+    resetAllSettingsStoresForTests();
+    _resetAgentBridgeNeedForTesting();
+  });
+
+  it('starts the bridge only when MCP is on somewhere', async () => {
+    const starter = vi.fn();
+    setMcpBridgeStarter(starter);
+    await saveSettings({ enabled: false });
+    startMcpBridgeIfEnabled();
+    expect(starter).not.toHaveBeenCalled();
+    await saveSettings({ enabled: false, projectOverrides: { '/p': true } });
+    startMcpBridgeIfEnabled();
+    expect(starter).toHaveBeenCalledTimes(1);
   });
 });

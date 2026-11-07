@@ -57,7 +57,13 @@ vi.mock('../agent-config', () => ({
 vi.mock('../project-store', () => ({
   peekProjects: async () => [...h.projects.keys()].filter((p) => p !== h.dispatcherPath && !p.startsWith('remote')).map((p) => ({ id: p, name: p, path: p })),
 }));
-vi.mock('../clubhouse-mode-settings', () => ({ isClubhouseModeEnabled: (p: string) => h.clubhouseMode.has(p) }));
+// Clubhouse Mode's old settings, as clubhouse-mode-settings.json held them (legacy-migration.test covers the read).
+vi.mock('./legacy-migration', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./legacy-migration')>(),
+  legacyClubhouseModeEnabled: (p: string) => h.clubhouseMode.has(p),
+  materializedInstructions: vi.fn(async () => 'What Clubhouse Mode writes.'),
+  materializedDefaults: vi.fn(async () => ({ skills: [], mcpJson: null, resolveText: (t: string) => t })),
+}));
 vi.mock('../dispatcher/dispatcher-paths', () => ({ isDispatcherPath: (p: string) => p === h.dispatcherPath }));
 vi.mock('../agent-transition', () => ({ agentTransitionBusy: (id: string) => h.busy.has(id) }));
 /** A stand-in for the retired persona layer's carry, as agents.test has it; orchestration-policy.test and legacy-migration.test cover the real one. */
@@ -74,10 +80,6 @@ vi.mock('../orchestration-policy', () => ({
   }),
 }));
 vi.mock('../mcp-settings', () => ({ isMcpEnabled: (p: string, agentOverride?: boolean) => agentOverride ?? !h.mcpOff.has(p) }));
-vi.mock('../materialization-service', () => ({
-  materializedInstructions: vi.fn(async () => 'What Clubhouse Mode writes.'),
-  materializedDefaults: vi.fn(async () => ({ skills: [], mcpJson: null, resolveText: (t: string) => t })),
-}));
 vi.mock('../agent-system', () => ({
   isAgentRunning: (id: string) => h.running.has(id),
   resolveOrchestrator: async () => ({

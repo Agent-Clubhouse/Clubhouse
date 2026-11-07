@@ -542,7 +542,7 @@ describe('initAppEventBridge', () => {
     onMaterializationFailed('agent-1', 'malformed wildcard template');
 
     expect(mockAddToast).toHaveBeenCalledWith(
-      'Agent agent-1 started without the latest Clubhouse Mode settings: malformed wildcard template',
+      'Agent agent-1 started without its latest setup: malformed wildcard template',
       'error',
     );
   });

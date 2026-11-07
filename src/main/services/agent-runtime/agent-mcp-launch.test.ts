@@ -5,7 +5,7 @@ import * as path from 'path';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { OrchestratorProvider } from '../../orchestrators';
 
-const fixture = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], managed: true, enabled: true }));
+const fixture = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], enabled: true }));
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() }, app: { getPath: () => '/unused-synthetic-app' } }));
 vi.mock('../agent-config', () => ({
   peekDurableConfigs: vi.fn(async () => fixture.agents),
@@ -13,7 +13,6 @@ vi.mock('../agent-config', () => ({
   touchSessionEntry: vi.fn(async () => {}), updateDurableConfig: vi.fn(async () => {}),
 }));
 vi.mock('../agent-system', () => ({ resolveOrchestrator: vi.fn(async (_p: string, id?: string) => id === 'copilot-cli' ? copilot : claude) }));
-vi.mock('../clubhouse-mode-settings', () => ({ isClubhouseModeEnabled: vi.fn(() => fixture.managed), getSettings: vi.fn(() => ({ enabled: false })) }));
 vi.mock('../mcp-settings', () => ({ isMcpEnabled: vi.fn(() => fixture.enabled) }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../agent-registry', () => ({ agentRegistry: { setNonce: vi.fn(), setRuntime: vi.fn(), get: vi.fn(), setLaunchCap: vi.fn(), setUserLaunchAccess: vi.fn(), reportLaunchAccess: vi.fn() }, untrackAgent: vi.fn() }));
@@ -43,7 +42,6 @@ import { withAgentActivity, withAgentTransition } from '../agent-transition';
 import { ipcMain } from 'electron';
 import { IPC } from '../../../shared/ipc-channels';
 import { registerAgentSettingsHandlers } from '../../ipc/agent-settings-handlers';
-import { materializeAgent } from '../materialization-service';
 import { tryStartChatAgent, stopAllChatAgents } from './chat-spawn';
 import { FakeChatDriver } from './fake-chat-driver';
 import { registerChatDriver, clearChatDrivers } from './chat-drivers';
@@ -62,13 +60,13 @@ const raw = (servers: object) => JSON.stringify({ mcpServers: servers });
 
 beforeEach(async () => {
   vi.clearAllMocks(); clearChatDrivers(); clearChatRuntimes(); clearDriverHealth();
-  fixture.managed = true; fixture.enabled = true;
+  fixture.enabled = true;
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-2849-'));
   cwd = path.join(root, 'agent'); localPath = path.join(cwd, conventions.mcpConfigFile);
   settingsPath = path.join(root, '.clubhouse/settings.json');
   await fs.mkdir(path.dirname(settingsPath), { recursive: true }); await fs.mkdir(cwd);
   await fs.writeFile(settingsPath, JSON.stringify({ orchestrator: 'claude-code', agentDefaults: { mcpJson: raw(projectMap) } }));
-  agent = { id: 'synthetic-agent', name: 'synthetic', color: 'blue', createdAt: '', worktreePath: cwd, orchestrator: 'copilot-cli', clubhouseModeOverride: true };
+  agent = { id: 'synthetic-agent', name: 'synthetic', color: 'blue', createdAt: '', worktreePath: cwd, orchestrator: 'copilot-cli' };
   fixture.agents = [agent]; handlers = new Map();
   vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: never) => { handlers.set(channel, handler); });
   registerAgentSettingsHandlers();
@@ -79,12 +77,11 @@ async function save(content: string) { return handlers.get(IPC.AGENT.WRITE_MCP_R
 async function start() {
   // No explicit legacy selection: exercise the standard Copilot SDK adapter.
   const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli'); registerChatDriver(driver);
-  await materializeAgent({ projectPath: root, agent, provider: copilot });
   expect(await tryStartChatAgent({ agentId: agent.id, projectPath: root, cwd, kind: 'durable', permissionMode: 'auto' }, copilot, undefined, undefined, agent)).toBe('chat');
   return driver.last.startOptions!.mcpServers;
 }
 
-describe('#2849 effective-provider save → materialize → chat prepare (no provider/server)', () => {
+describe('#2849 effective-provider save → chat prepare (no provider/server)', () => {
   it('delivers an agent-only Copilot map, preserving project scope, unrelated entries and Claude file', async () => {
     const projectBefore = await fs.readFile(settingsPath, 'utf8');
     const claudeFile = path.join(cwd, '.mcp.json'); const claudeBefore = raw({ otherProvider: { command: 'never-run-claude' } });
@@ -96,19 +93,17 @@ describe('#2849 effective-provider save → materialize → chat prepare (no pro
     expect(await fs.readFile(settingsPath, 'utf8')).toBe(projectBefore);
     expect(await fs.readFile(claudeFile, 'utf8')).toBe(claudeBefore);
   });
+  it('saves an agent\'s own MCP file whatever the old Clubhouse Mode setting says (#2901)', async () => {
+    agent.clubhouseModeOverride = undefined;
+    expect(await save(raw({ local: { command: 'never' } }))).toEqual({ ok: true });
+    expect(await start()).toEqual({ local: { command: 'never' }, clubhouse: { command: 'synthetic-live-bridge' } });
+  });
   it('inherits project defaults only for a missing local file, before injection creates it', async () => {
     expect(await start()).toEqual({ ...projectMap, clubhouse: { command: 'synthetic-live-bridge' } });
   });
-  it('keeps a deliberately empty local map empty through materialization and prepare', async () => {
+  it('keeps a deliberately empty local map empty through prepare', async () => {
     expect(await save(raw({}))).toEqual({ ok: true });
     expect(await start()).toEqual({ clubhouse: { command: 'synthetic-live-bridge' } });
-  });
-  it('refuses managed Save, then materializes and delivers canonical defaults', async () => {
-    agent.clubhouseModeOverride = false;
-    expect(await save(raw({ local: { command: 'never' } }))).toMatchObject({ ok: false, error: expect.stringContaining('Turn Clubhouse Mode off for it in General › Setup') });
-    await expect(fs.readFile(localPath)).rejects.toMatchObject({ code: 'ENOENT' });
-    expect(await start()).toEqual({ ...projectMap, clubhouse: { command: 'synthetic-live-bridge' } });
-    expect(agent.clubhouseModeOverride).toBe(false);
   });
   it.each(['{broken-sensitive-content', raw({ broken: { type: 'socket', url: 'sensitive-url' } }), '{"mcpServers":[]}'])('blocks invalid local bytes without injection/overwrite, and permits deliberate valid repair (%s)', async (content) => {
     await fs.mkdir(path.dirname(localPath), { recursive: true }); await fs.writeFile(localPath, content);
@@ -118,13 +113,6 @@ describe('#2849 effective-provider save → materialize → chat prepare (no pro
     expect(await handlers.get(IPC.AGENT.READ_MCP_RAW_JSON)!({}, cwd, root, agent.id)).toBe(content);
     expect(await save(raw({ repaired: { command: 'never-run-repaired' } }))).toEqual({ ok: true });
     expect(await start()).toHaveProperty('repaired');
-  });
-  it('preserves malformed bytes when managed materialization runs before prepare', async () => {
-    agent.clubhouseModeOverride = false;
-    await fs.mkdir(path.dirname(localPath), { recursive: true }); await fs.writeFile(localPath, '{malformed');
-    await expect(start()).rejects.toThrow('Invalid MCP JSON');
-    expect(await fs.readFile(localPath, 'utf8')).toBe('{malformed');
-    expect(injectClubhouseMcp).not.toHaveBeenCalled();
   });
   it('cannot deliver a configured bridge collision when MCP is off, or shadow the live bridge when on', async () => {
     await save(raw({ clubhouse: { command: 'stale-do-not-run' }, custom: { command: 'never' } }));
@@ -141,13 +129,12 @@ describe('#2849 effective-provider save → materialize → chat prepare (no pro
     release(); expect(await saving).toEqual({ ok: true });
     await expect(withAgentActivity(agent.id, async () => 'available')).resolves.toBe('available');
   });
-  it.each(['provider', 'folder', 'managed'])('revalidates an external %s change immediately before file write', async (change) => {
+  it.each(['provider', 'folder'])('revalidates an external %s change immediately before file write', async (change) => {
     let reads = 0;
     vi.mocked(peekDurableConfigs).mockImplementation(async () => {
       if (++reads === 2) {
         if (change === 'provider') agent.orchestrator = 'claude-code';
-        else if (change === 'folder') agent.worktreePath = root;
-        else agent.clubhouseModeOverride = false;
+        else agent.worktreePath = root;
       }
       return fixture.agents;
     });
@@ -163,8 +150,7 @@ describe('#2849 effective-provider save → materialize → chat prepare (no pro
     await expect(write({}, cwd, raw({}), root)).rejects.toThrow('shared');
     expect(await save(raw({}))).toEqual({ ok: true });
   });
-  it.each([true, false])('rejects invalid inherited canonical desired JSON without touching local data (managed=%s)', async (managed) => {
-    agent.clubhouseModeOverride = !managed;
+  it('rejects invalid inherited canonical desired JSON without touching local data', async () => {
     const bytes = JSON.stringify({ agentDefaults: { mcpJson: '{invalid-canonical-secret' } });
     await fs.writeFile(settingsPath, bytes);
     await expect(start()).rejects.toThrow('Invalid MCP JSON');

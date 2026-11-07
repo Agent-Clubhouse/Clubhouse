@@ -4,7 +4,6 @@ import type { Agent } from '../../../../shared/types';
 import { createChatViewState, type ChatViewState } from '../../../stores/chatStore';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useChatIdleSettingsStore } from '../../../stores/chatIdleSettingsStore';
-import { useClubhouseModeStore } from '../../../stores/clubhouseModeStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useAgentSettingsPages } from '../agentSettingsPages';
@@ -43,7 +42,6 @@ beforeEach(() => {
       { id: 'codex-cli', displayName: 'Codex', shortName: 'CX', capabilities: { permissions: false } },
     ] as never,
   });
-  useClubhouseModeStore.setState({ enabled: true, projectOverrides: {}, loadSettings: vi.fn(async () => {}) } as never);
   window.clubhouse.settings.get = vi.fn(async () => ({ idleTimeoutMinutes: 60 })) as never;
   window.clubhouse.git.branchChanges = vi.fn(async () => ({ available: false, files: [] }));
   window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: 'a1', ...saved })) as never;
@@ -292,14 +290,15 @@ describe('Settings card for legacy configuration (#2901)', () => {
     useAgentSettingsPages.getState().reset();
   });
 
-  it('has no Clubhouse mode row, and offers the switch to an agent that uses it', async () => {
+  it('has no Clubhouse mode row, and offers the switch to an agent with a persona', async () => {
+    saved = { idleSleep: 30, persona: 'qa' };
     const open = vi.fn();
     const real = useAgentStore.getState().openAgentSettings;
     useAgentStore.setState({ openAgentSettings: open });
     try {
       render(<AgentDetails agent={agent} chat={chatState()} />);
       const card = openSettings();
-      expect(await card.findByTestId('details-settings-legacy')).toHaveTextContent('faithful-urchin uses Clubhouse Mode.');
+      expect(await card.findByTestId('details-settings-legacy')).toHaveTextContent('faithful-urchin uses the Quality Assurance persona.');
       expect(card.queryByTestId('details-setting-clubhouse-mode')).not.toBeInTheDocument();
       useAgentSettingsPages.getState().setPage('helpers');
       fireEvent.click(card.getByRole('button', { name: 'Switch to managed…' }));
@@ -310,27 +309,26 @@ describe('Settings card for legacy configuration (#2901)', () => {
     }
   });
 
-  it('says why the automatic switch failed beside the switch offer (D59)', async () => {
+  it('says why the automatic switch failed beside the switch offer, for an agent that used Clubhouse Mode too (D59)', async () => {
     const status = vi.spyOn(window.clubhouse.managed, 'status').mockResolvedValue({ ok: true, value: { managed: false, running: false, waiting: false, changes: [], cliChanged: false, migrationFailed: 'It was changing state at the time.' } } as never);
     try {
       render(<AgentDetails agent={agent} chat={chatState()} />);
       const card = openSettings();
       expect(await card.findByTestId('details-settings-migration-failed')).toHaveTextContent("Clubhouse couldn't switch it when it updated. It was changing state at the time.");
-      expect(card.getByTestId('details-settings-legacy')).toHaveTextContent('faithful-urchin uses Clubhouse Mode.');
+      expect(card.getByTestId('details-settings-legacy')).not.toHaveTextContent('uses');
       expect(card.getByRole('button', { name: 'Switch to managed…' })).toBeTruthy();
     } finally {
       status.mockRestore();
     }
   });
 
-  it('names the persona, and says nothing for an agent that uses neither', async () => {
-    useClubhouseModeStore.setState({ enabled: false } as never);
+  it('names the persona, and says nothing for a plain agent, whatever an old Clubhouse Mode field says', async () => {
     saved = { idleSleep: 30, persona: 'qa' };
     const { unmount } = render(<AgentDetails agent={agent} chat={chatState()} />);
     expect(await openSettings().findByTestId('details-settings-legacy')).toHaveTextContent('faithful-urchin uses the Quality Assurance persona.');
     unmount();
 
-    saved = { idleSleep: 30 };
+    saved = { idleSleep: 30, clubhouseModeOverride: false };
     render(<AgentDetails agent={agent} chat={chatState()} />);
     // The card stays open from before.
     const card = within(screen.getByTestId('details-card-settings'));

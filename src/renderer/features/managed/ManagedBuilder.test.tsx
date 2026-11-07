@@ -372,9 +372,11 @@ describe('ManagedGeneralSection', () => {
 
   it('an unmanaged agent whose automatic switch failed says why beside the switch offer (D59)', async () => {
     vi.spyOn(m(), 'status').mockResolvedValue({ ok: true, value: { managed: false, running: false, waiting: false, changes: [], cliChanged: false, migrationFailed: 'Two skills use the folder name ship.' } } as never);
-    render(<ManagedGeneralSection projectPath="/p" agentId="ada" agentName="ada" setup={null} clubhouseFeatures isRunning={false} legacy={{ clubhouseMode: true, persona: null }} />);
+    // An agent that used Clubhouse Mode names no persona, so only the reason shows.
+    render(<ManagedGeneralSection projectPath="/p" agentId="ada" agentName="ada" setup={null} clubhouseFeatures isRunning={false} legacy={null} />);
     expect(await screen.findByTestId('managed-general-migration-failed')).toHaveTextContent("Clubhouse couldn't switch it when it updated. Two skills use the folder name ship.");
-    expect(screen.getByTestId('managed-general-legacy')).toHaveTextContent('ada uses Clubhouse Mode. Switch to managed keeps what it has now.');
+    expect(screen.queryByTestId('managed-general-legacy')).toBeNull();
+    expect(screen.queryByRole('switch', { name: 'Clubhouse Mode for this agent' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Switch to managed…' })).toBeTruthy();
   });
 

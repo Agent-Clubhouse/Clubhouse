@@ -648,7 +648,7 @@ describe('OrchestratorSettingsView', () => {
 
       describe('turning MCP off for the project', () => {
         const losing = {
-          turnsOff: true, appLoses: false, appKeptByClubhouseMode: false, projectsLosing: ['my-app'], agentsLosing: 2, quickAgentsLosing: 0, agentsKeeping: 1, helpersReportOnly: 1, orchestratorsLosing: 1, connectedLosing: 1,
+          turnsOff: true, appLoses: false, projectsLosing: ['my-app'], agentsLosing: 2, quickAgentsLosing: 0, agentsKeeping: 1, helpersReportOnly: 1, orchestratorsLosing: 1, connectedLosing: 1,
           runningLosing: 1, runningOrchestratorsWithHelpers: 1, dispatcherGoesOff: false, dispatcherRunning: true, keeps: { projects: [], agents: [{ name: 'lead', project: 'my-app' }] }, unreadableProjects: [],
         };
 

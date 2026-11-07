@@ -53,7 +53,6 @@ import { setMcpCaller, setMcpCallerQuick } from '../../src/main/services/clubhou
 import { injectClubhouseMcp } from '../../src/main/services/clubhouse-mcp/injection';
 import { registerBuiltinProviders } from '../../src/main/orchestrators';
 import { registerChatRuntime } from '../../src/main/services/agent-runtime';
-import { saveSettings as saveClubhouseMode } from '../../src/main/services/clubhouse-mode-settings';
 import { MCP_UNBIND_CANVAS_CLEANUP } from '../../src/shared/mcp-unbind';
 import { registerSettingsHandlers } from '../../src/main/ipc/settings-handlers';
 import { registerDispatcherHandlers } from '../../src/main/ipc/dispatcher-handlers';
@@ -304,8 +303,8 @@ describe('Clubhouse MCP going off, for running agents', () => {
       bindingManager.bind(CODEX, { targetId: looping.id, targetKind: 'group-project', label: 'looping' });
       await setProjectPolling(looping.id, true);
       expect(polledSent.filter((m) => m.includes('start polling for "looping"'))).toHaveLength(1);
-      await save({ enabled: false, projectDefault: true, projectOverrides: { [overridePath]: true } });
-      await saveClubhouseMode({ enabled: false, projectOverrides: { [clubhousePath]: true } });
+      // project-clubhouse had Clubhouse Mode on: the startup pass gave it an MCP override of its own (D63).
+      await save({ enabled: false, projectDefault: true, projectOverrides: { [overridePath]: true, [clubhousePath]: true } });
       // Pruning follows the save within moments; the rebuild is debounced.
       await vi.waitFor(() => {
         expect(hasBinding(ORCH, dispatcherId)).toBe(false);
@@ -368,7 +367,7 @@ describe('Clubhouse MCP going off, for running agents', () => {
       expect(sent).toHaveLength(1);
     });
 
-    it('keeps a project with its own setting on, and one kept by Clubhouse mode: orchestration and all', async () => {
+    it('keeps projects with their own setting on, one of them made explicit from Clubhouse Mode: orchestration and all', async () => {
       // All but its wires to the Dispatcher, which is off at app level.
       expect(await clients[IN_OVERRIDE].names()).toEqual(expect.arrayContaining(['start_helper', 'list_helpers', 'list_settings']));
       expect((await clients[IN_OVERRIDE].call('list_helpers')).isError).toBe(false);
@@ -489,7 +488,6 @@ describe('Clubhouse MCP going off, for running agents', () => {
   describe('with MCP off for one project only', () => {
     beforeAll(async () => {
       await save({ enabled: true, projectDefault: true, projectOverrides: { [projectPath]: false } });
-      await saveClubhouseMode({ enabled: false });
     });
 
     it('refuses that project\'s agents and leaves the rest, the Dispatcher included', async () => {
@@ -497,17 +495,6 @@ describe('Clubhouse MCP going off, for running agents', () => {
       expect((await clients[IN_OVERRIDE].call('list_settings')).isError).toBe(false);
       expect((await clients[dispatcherId].call('list_settings')).isError).toBe(false);
       expect(dispatcher.isDispatcherEnabled()).toBe(true);
-    });
-  });
-
-  describe('kept on by Clubhouse mode alone', () => {
-    it('leaves everyone open, the Dispatcher too, with MCP\'s own switch off', async () => {
-      await saveClubhouseMode({ enabled: true });
-      await save({ enabled: false, projectDefault: true });
-      expect((await clients[ORCH].call('list_settings')).isError).toBe(false);
-      expect((await clients[dispatcherId].call('list_settings')).isError).toBe(false);
-      await saveClubhouseMode({ enabled: false });
-      expect(refusedForMcp(await clients[ORCH].call('list_settings'))).toBe(true);
     });
   });
 
@@ -643,13 +630,12 @@ describe('Clubhouse MCP going off, for running agents', () => {
   });
 
   describe('what a change would turn off, and what keeps MCP', () => {
-    it('names a project that keeps it through its own setting or Clubhouse mode', async () => {
+    it('names the projects that keep it through their own setting', async () => {
       const impact = await readMcpOffImpact({
-        mcp: { enabled: false, projectOverrides: { [overridePath]: true } },
-        clubhouseMode: { enabled: false, projectOverrides: { [clubhousePath]: true } },
+        mcp: { enabled: false, projectOverrides: { [overridePath]: true, [clubhousePath]: true } },
       });
       expect(impact.appLoses).toBe(true);
-      expect(impact.keeps.projects).toEqual([{ name: 'project-override', via: 'project_setting' }, { name: 'project-clubhouse', via: 'clubhouse_mode' }]);
+      expect(impact.keeps.projects).toEqual([{ name: 'project-override', via: 'project_setting' }, { name: 'project-clubhouse', via: 'project_setting' }]);
       expect(impact.projectsLosing).toEqual(['project-one']);
       expect(impact.agentsKeeping).toBe(4);
     });
@@ -663,11 +649,6 @@ describe('Clubhouse MCP going off, for running agents', () => {
       agentRegistry.untrack('quick_one');
     });
 
-    it('says nothing goes off at app level while Clubhouse mode keeps it on', async () => {
-      const impact = await readMcpOffImpact({ mcp: { enabled: false }, clubhouseMode: { enabled: true } });
-      expect(impact).toMatchObject({ turnsOff: false, appLoses: false, appKeptByClubhouseMode: true, agentsLosing: 0, dispatcherGoesOff: false });
-    });
-
     it('counts one project losing MCP, and leaves the Dispatcher out of it', async () => {
       const impact = await readMcpOffImpact({ mcp: { projectOverrides: { [projectPath]: false } } });
       expect(impact).toMatchObject({ turnsOff: true, appLoses: false, dispatcherGoesOff: false, projectsLosing: ['project-one'] });
@@ -675,15 +656,6 @@ describe('Clubhouse MCP going off, for running agents', () => {
       // A helper with its own setting on is named like any agent; the other three can only report.
       expect(impact.keeps.agents).toEqual([{ name: 'helper-on', project: 'project-one' }, { name: 'own-mcp', project: 'project-one' }]);
       expect(impact.helpersReportOnly).toBe(2);
-    });
-
-    it('sees Clubhouse mode going off as MCP going off, where MCP had only that', async () => {
-      await save({ enabled: false, projectDefault: true });
-      await saveClubhouseMode({ enabled: true });
-      const impact = await readMcpOffImpact({ clubhouseMode: { enabled: false } });
-      expect(impact).toMatchObject({ turnsOff: true, appLoses: true });
-      await saveClubhouseMode({ enabled: false });
-      await save({ enabled: true, projectDefault: true });
     });
   });
 });

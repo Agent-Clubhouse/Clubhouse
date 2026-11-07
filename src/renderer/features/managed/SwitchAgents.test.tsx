@@ -2,7 +2,6 @@ import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@te
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Agent, DurableAgentConfig } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
-import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentRowActions } from '../agents/useAgentRowActions';
 import { CHROME_HELP_SECTIONS, HELP_SECTIONS } from '../help/help-content';
@@ -22,26 +21,23 @@ beforeEach(() => {
 afterEach(() => {
   useProjectStore.setState({ projects: [] });
   useAgentStore.setState({ agents: {} });
-  useClubhouseModeStore.setState({ enabled: false, projectOverrides: {} });
 });
 
 describe('legacy detection', () => {
-  it('counts Clubhouse Mode only when it is on for the project and not turned off for the agent', () => {
-    expect(legacyUse(config('a'), true)).toEqual({ clubhouseMode: true, persona: null });
-    expect(legacyUse(config('a', { clubhouseModeOverride: true }), true)).toBeNull();
-    expect(legacyUse(config('a'), false)).toBeNull();
+  it('no longer reads Clubhouse Mode: it was retired, and its setting isn\'t read by the app (#2901)', () => {
+    expect(legacyUse(config('a'))).toBeNull();
+    expect(legacyUse(config('a', { clubhouseModeOverride: false }))).toBeNull();
   });
 
   it('names a persona, a custom one by its id, and ignores a managed agent', () => {
-    expect(legacyUse(config('a', { persona: 'qa' }), false)).toEqual({ clubhouseMode: false, persona: 'Quality Assurance' });
-    expect(legacyUse(config('a', { persona: 'my-reviewer' }), false)?.persona).toBe('my-reviewer');
-    expect(legacyUse(config('a', { persona: 'qa', managed: { version: 1, blocks: [], skills: [], mcps: [] } }), true)).toBeNull();
+    expect(legacyUse(config('a', { persona: 'qa' }))).toEqual({ persona: 'Quality Assurance' });
+    expect(legacyUse(config('a', { persona: 'my-reviewer' }))?.persona).toBe('my-reviewer');
+    expect(legacyUse(config('a', { persona: 'qa', managed: { version: 1, blocks: [], skills: [], mcps: [] } }))).toBeNull();
   });
 
   it('says it in one plain line', () => {
-    expect(legacyLine('ada', { clubhouseMode: true, persona: null })).toBe('ada uses Clubhouse Mode.');
-    expect(legacyLine('ada', { clubhouseMode: false, persona: 'Researcher' })).toBe('ada uses the Researcher persona.');
-    expect(legacyLine('ada', { clubhouseMode: true, persona: 'Researcher' })).toBe('ada uses Clubhouse Mode and the Researcher persona.');
+    expect(legacyLine('ada', { persona: 'Researcher' })).toBe('ada uses the Researcher persona.');
+    expect(legacyLabel({ persona: 'Researcher' })).toBe('Researcher persona');
     expect(legacyLabel(null)).toBe('Plain');
   });
 });
@@ -93,7 +89,7 @@ describe('Help without Clubhouse Mode and personas (#2901)', () => {
 describe('Settings, Switch agents', () => {
   const lists: Record<string, DurableAgentConfig[]> = {
     alpha: [
-      config('ada'),
+      config('ada', { persona: 'researcher' }),
       config('bea', { persona: 'qa' }),
       config('cal', { clubhouseModeOverride: true }),
       config('dot', { managed: { version: 1, blocks: [], skills: [], mcps: [] } }),
@@ -107,8 +103,6 @@ describe('Settings, Switch agents', () => {
 
   beforeEach(() => {
     useProjectStore.setState({ projects: [{ id: 'p1', name: 'alpha', path: 'alpha' }, { id: 'p2', name: 'beta', displayName: 'Beta', path: 'beta' }] as never });
-    // Clubhouse Mode is on for alpha only.
-    useClubhouseModeStore.setState({ enabled: false, projectOverrides: { alpha: true }, loadSettings: vi.fn(async () => {}) } as never);
     useAgentStore.setState({ agents: { bea: { id: 'bea', status: 'running' } as Agent } });
     window.clubhouse.agent.listDurable = vi.fn(async (p: string) => lists[p]) as never;
   });
@@ -120,8 +114,8 @@ describe('Settings, Switch agents', () => {
     render(<SwitchAgentsSettingsView />);
     await waitFor(() => expect(screen.getAllByTestId('managed-switch-row')).toHaveLength(5));
     for (const name of ['dot', 'hal', 'ivy', 'jo']) expect(screen.queryByText(name)).toBeNull();
-    expect(row('ada')).toHaveTextContent('alpha · Clubhouse Mode');
-    expect(row('bea')).toHaveTextContent('alpha · Clubhouse Mode, Quality Assurance persona');
+    expect(row('ada')).toHaveTextContent('alpha · Researcher persona');
+    expect(row('bea')).toHaveTextContent('alpha · Quality Assurance persona');
     // A running legacy agent switches on its own at its next start (D59).
     expect(row('bea')).toHaveTextContent('Running. It switches on its own at its next start.');
     expect(row('cal')).toHaveTextContent('alpha · Plain');
@@ -147,7 +141,7 @@ describe('Settings, Switch agents', () => {
       // A plain agent never switches on its own.
       expect(row('cal')).toHaveTextContent('Running: the switch applies at its next start.');
     } finally {
-      lists.alpha[0] = config('ada');
+      lists.alpha[0] = config('ada', { persona: 'researcher' });
     }
   });
 

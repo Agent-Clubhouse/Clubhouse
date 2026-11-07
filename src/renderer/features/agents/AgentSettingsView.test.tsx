@@ -4,12 +4,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
-import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { AgentSettingsView } from './AgentSettingsView';
 import { useAgentSettingsPages, requestCloseAgentSettings, requestLeaveAgentSettings } from './agentSettingsPages';
 import { useToastStore } from '../../stores/toastStore';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
-import type { Agent, MaterializationPreview } from '../../../shared/types';
+import type { Agent } from '../../../shared/types';
 
 // Mock heavy child components
 vi.mock('../../components/SettingsMonacoEditor', () => ({
@@ -67,14 +66,6 @@ const defaultAgent: Agent = {
   worktreePath: '/project/.clubhouse/agents/bold-falcon',
 };
 
-const mockPreview: MaterializationPreview = {
-  instructions: 'You are bold-falcon.',
-  permissions: { allow: ['Read(**)', 'Edit(**)'], deny: ['WebFetch'] },
-  mcpJson: '{"mcpServers": {}}',
-  skills: ['mission', 'review'],
-  agentTemplates: ['researcher'],
-};
-
 function resetStores() {
   useAgentStore.setState({
     agents: { 'agent-1': defaultAgent },
@@ -109,12 +100,6 @@ function resetStores() {
       },
     }],
   });
-  useClubhouseModeStore.setState({
-    enabled: false,
-    projectOverrides: {},
-    loadSettings: vi.fn().mockResolvedValue(undefined),
-    isEnabledForProject: () => false,
-  });
 }
 
 function renderSettings(agentOverrides: Partial<Agent> = {}) {
@@ -134,7 +119,6 @@ describe('AgentSettingsView', () => {
     window.clubhouse.agentSettings.saveInstructions = vi.fn().mockResolvedValue(undefined);
     window.clubhouse.agentSettings.readPermissions = vi.fn().mockResolvedValue({ allow: ['Read(**)'] });
     window.clubhouse.agentSettings.savePermissions = vi.fn().mockResolvedValue(undefined);
-    window.clubhouse.agentSettings.previewMaterialization = vi.fn().mockResolvedValue(mockPreview);
     (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({});
     (window.clubhouse.agent as any).updateDurableConfig = vi.fn().mockResolvedValue(undefined);
     (window.clubhouse.agent as any).getModelOptions = vi.fn().mockResolvedValue(MODEL_OPTION_LIST);
@@ -306,36 +290,22 @@ describe('AgentSettingsView', () => {
   });
 
   describe('legacy configuration with Clubhouse-managed agents (#2901)', () => {
-    it('hides them, and says the agent uses Clubhouse Mode with the offer to switch', async () => {
-      useClubhouseModeStore.setState({ enabled: true, isEnabledForProject: () => true });
-      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({});
+    it('offers no Clubhouse Mode, whatever an old config holds, and keeps the file editors (#2901)', async () => {
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ clubhouseModeOverride: false });
       renderSettings();
-      expect(await screen.findByTestId('managed-general-legacy')).toHaveTextContent('bold-falcon uses Clubhouse Mode. Switch to managed keeps what it has now.');
-      expect(screen.getByRole('button', { name: 'Switch to managed…' })).toBeInTheDocument();
+      expect(await screen.findByTestId('managed-general-off')).toHaveTextContent('uses the instructions, skills and MCP config in its folder');
+      expect(await screen.findByTestId('skills-section')).toBeInTheDocument();
+      expect(screen.queryByRole('switch', { name: 'Clubhouse Mode for this agent' })).not.toBeInTheDocument();
+      expect(screen.queryByTestId('managed-clubhouse-mode')).not.toBeInTheDocument();
       expect(screen.queryByLabelText('Persona')).not.toBeInTheDocument();
       expect(screen.queryByRole('heading', { name: 'Clubhouse Mode' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('switch', { name: 'Local overrides' })).not.toBeInTheDocument();
-      expect(screen.queryByText('Copy as template')).not.toBeInTheDocument();
     });
 
-    it('turns Clubhouse Mode off for this agent from General > Setup, without switching', async () => {
-      useClubhouseModeStore.setState({ enabled: true, isEnabledForProject: () => true });
-      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({});
-      const update = vi.fn().mockResolvedValue(undefined);
-      (window.clubhouse.agent as any).updateDurableConfig = update;
-      renderSettings();
-      const toggle = await screen.findByRole('switch', { name: 'Clubhouse Mode for this agent' });
-      expect(screen.getByTestId('managed-clubhouse-mode')).toHaveTextContent('Turn it off to keep its own files.');
-      fireEvent.click(toggle);
-      await waitFor(() => expect(update).toHaveBeenCalledWith(expect.any(String), expect.any(String), { clubhouseModeOverride: true }));
-      await waitFor(() => expect(screen.queryByTestId('managed-clubhouse-mode')).not.toBeInTheDocument());
-      expect(screen.queryByTestId('managed-general-legacy')).not.toBeInTheDocument();
-    });
-
-    it('names the persona of an agent outside Clubhouse Mode, and keeps its file editors', async () => {
+    it('names the persona of an unmanaged agent, with the offer to switch, and keeps its file editors', async () => {
       (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'qa' });
       renderSettings();
-      expect(await screen.findByTestId('managed-general-legacy')).toHaveTextContent('bold-falcon uses the Quality Assurance persona.');
+      expect(await screen.findByTestId('managed-general-legacy')).toHaveTextContent('bold-falcon uses the Quality Assurance persona. Switch to managed keeps what it has now.');
+      expect(screen.getByRole('button', { name: 'Switch to managed…' })).toBeInTheDocument();
       expect(await screen.findByTestId('skills-section')).toBeInTheDocument();
     });
 
@@ -604,36 +574,6 @@ describe('AgentSettingsView', () => {
       const select = await screen.findByLabelText('Runtime');
       expect(select).toBeDisabled();
       expect(select).toHaveAttribute('title', 'Stop the agent to change this');
-    });
-  });
-
-  describe('clubhouse mode', () => {
-    beforeEach(() => {
-      useClubhouseModeStore.setState({
-        enabled: true,
-        isEnabledForProject: () => true,
-      });
-    });
-
-    it('hides editable sections when managed by clubhouse', async () => {
-      renderSettings();
-      // When managed, these should not render
-      await waitFor(() => {
-        expect(screen.queryByTestId('skills-section')).not.toBeInTheDocument();
-          expect(screen.queryByTestId('mcp-json-section')).not.toBeInTheDocument();
-      });
-    });
-
-  });
-
-  describe('clubhouse mode banner not shown when off', () => {
-    it('does not show clubhouse banner when mode is off', () => {
-      useClubhouseModeStore.setState({
-        enabled: false,
-        isEnabledForProject: () => false,
-      });
-      renderSettings();
-      expect(screen.queryByRole('heading', { name: 'Clubhouse Mode' })).not.toBeInTheDocument();
     });
   });
 

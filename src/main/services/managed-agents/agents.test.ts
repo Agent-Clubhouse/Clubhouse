@@ -50,12 +50,14 @@ vi.mock('../orchestration-policy', () => ({
     return carried;
   }),
 }));
-vi.mock('../clubhouse-mode-settings', () => ({ isClubhouseModeEnabled: () => h.clubhouseMode }));
 /** isMcpEnabled's chain: the agent's override, then the project's, then the app switch. */
 vi.mock('../mcp-settings', () => ({
   isMcpEnabled: vi.fn((projectPath?: string, agentOverride?: boolean) => agentOverride ?? (projectPath ? h.mcp.projectOverrides[projectPath] : undefined) ?? h.mcp.enabled),
 }));
-vi.mock('../materialization-service', () => ({
+// Clubhouse Mode's old settings and what it would write (legacy-migration.test covers the real ones).
+vi.mock('./legacy-migration', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./legacy-migration')>(),
+  legacyClubhouseModeEnabled: () => h.clubhouseMode,
   materializedInstructions: vi.fn(async () => h.materialized),
   materializedDefaults: vi.fn(async () => h.modeDefaults),
 }));
@@ -79,7 +81,7 @@ import { createManagedStateStore } from './state-store';
 import { createManagedAgentsService, type ManagedAgentsService } from './service';
 import * as agentConfig from '../agent-config';
 import * as orchestrationPolicy from '../orchestration-policy';
-import * as materialization from '../materialization-service';
+import * as materialization from './legacy-migration';
 import { convertToManaged, leftoverWildcards, previewConvert, settingsForConvert } from './agents';
 import { keepInstructionsAtFirstStart } from './before-managed';
 

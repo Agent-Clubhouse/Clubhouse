@@ -88,7 +88,6 @@ import * as svc from './dispatcher-service';
 import { getSettings, updateSettings } from './dispatcher-settings';
 import { agentRegistry } from '../agent-registry';
 import { notifyMcpEnablementChanged, isMcpEnabledForAny, saveSettings as saveMcp } from '../mcp-settings';
-import { getSettings as getClubhouseMode, saveSettings as saveClubhouseMode } from '../clubhouse-mode-settings';
 import { DISPATCHER_CLASSIC_MESSAGE } from '../../../shared/dispatcher-types';
 import { MCP_REQUIRED_MESSAGE } from '../../../shared/orchestration-policy';
 
@@ -115,7 +114,6 @@ beforeEach(async () => {
   svc._resetDispatcherForTesting();
   await updateSettings(() => ({}));
   await saveMcp({ enabled: true });
-  await saveClubhouseMode({ enabled: false });
   for (const agentId of agentRegistry.getAllRegistrations().keys()) agentRegistry.untrack(agentId);
   vi.mocked(agentConfig.createDurable).mockClear();
   vi.mocked(agentSystem.killAgent).mockClear();
@@ -126,10 +124,9 @@ afterEach(() => {
   fs.rmSync(h.baseDir, { recursive: true, force: true });
 });
 
-/** MCP off at app level: its switch saved off and the global Clubhouse mode off. */
+/** MCP off at app level: its switch saved off. */
 async function mcpOffAtApp(): Promise<void> {
   await saveMcp({ enabled: false });
-  await saveClubhouseMode({ enabled: false });
   notifyMcpEnablementChanged();
   await settle();
 }
@@ -244,20 +241,6 @@ describe('Clubhouse MCP at app level', () => {
     expect(svc.getDispatcherState()).toMatchObject({ enabled: false, offReason: 'mcp_off' });
     // The override is why the bridge starts, not the Dispatcher.
     expect(isMcpEnabledForAny()).toBe(true);
-  });
-
-  it('the global Clubhouse mode counts as MCP on, with its own switch off', async () => {
-    await saveMcp({ enabled: false });
-    await saveClubhouseMode({ ...getClubhouseMode(), enabled: true });
-    await svc.initDispatcher();
-    expect(svc.getDispatcherState()).toMatchObject({ enabled: true, mcpOff: false, agentId: 'durable_1' });
-  });
-
-  it('a Clubhouse mode override on a project does not keep the Dispatcher on', async () => {
-    await saveMcp({ enabled: false });
-    await saveClubhouseMode({ enabled: false, projectOverrides: { '/some/project': true } });
-    await svc.initDispatcher();
-    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, offReason: 'mcp_off' });
   });
 
   it('never stops a running Dispatcher: it stays running, derived off, with the saved value kept', async () => {

@@ -66,14 +66,6 @@ vi.mock('../services/headless-settings', () => ({
   saveSettings: vi.fn(),
 }));
 
-vi.mock('../services/clubhouse-mode-settings', () => ({
-  getSettings: vi.fn(() => ({ enabled: false })),
-  saveSettings: vi.fn(),
-  isClubhouseModeEnabled: vi.fn(() => false),
-}));
-
-const mockSetAppScp = vi.hoisted(() => vi.fn(async () => {}));
-vi.mock('../services/source-control-settings', () => ({ setAppSourceControlProvider: mockSetAppScp }));
 
 vi.mock('../services/badge-settings', () => ({
   getSettings: vi.fn(() => ({ showBadge: true })),
@@ -120,12 +112,6 @@ vi.mock('../services/log-service', () => ({
 vi.mock('../services/log-settings', () => ({
   getSettings: vi.fn(() => ({ enabled: true, namespaces: {} })),
   saveSettings: vi.fn(),
-}));
-
-vi.mock('../services/materialization-service', () => ({
-  ensureDefaultTemplates: vi.fn(),
-  enableExclusions: vi.fn(),
-  disableExclusions: vi.fn(),
 }));
 
 vi.mock('../services/agent-system', () => ({
@@ -192,7 +178,6 @@ import * as themeService from '../services/theme-service';
 import * as orchestratorSettings from '../services/orchestrator-settings';
 import { onOrchestratorHookServerChanged } from '../services/hook-server-toggle';
 import * as headlessSettings from '../services/headless-settings';
-import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as badgeSettings from '../services/badge-settings';
 import { clipboardSettings } from './settings-handlers';
 import * as autoUpdateService from '../services/auto-update-service';
@@ -206,8 +191,6 @@ import * as annexServer from '../services/annex-server';
 import { _reset as resetActiveTheme, getActiveTheme } from '../services/active-theme-store';
 import { THEMES } from '../../renderer/themes';
 import { NEON_CYBERPUNK_THEME } from '../../shared/__fixtures__/neon-cyberpunk-theme';
-import { ensureDefaultTemplates, enableExclusions, disableExclusions } from '../services/materialization-service';
-import { resolveOrchestrator } from '../services/agent-system';
 
 describe('app-handlers', () => {
   let handleHandlers: Map<string, (...args: any[]) => any>;
@@ -250,7 +233,6 @@ describe('app-handlers', () => {
       IPC.APP.CONFIRM_UPDATE_RESTART,
       IPC.APP.GET_PENDING_RELEASE_NOTES, IPC.APP.CLEAR_PENDING_RELEASE_NOTES,
       IPC.APP.GET_VERSION_HISTORY,
-      IPC.APP.GET_CLUBHOUSE_MODE_SETTINGS, IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS,
       IPC.APP.GET_SOUND_SETTINGS, IPC.APP.SAVE_SOUND_SETTINGS,
       IPC.APP.LIST_SOUND_PACKS, IPC.APP.IMPORT_SOUND_PACK,
       IPC.APP.DELETE_SOUND_PACK, IPC.APP.GET_SOUND_DATA,
@@ -343,7 +325,6 @@ describe('app-handlers', () => {
     [IPC.LOG.SAVE_LOG_SETTINGS, 'logging'],
     [IPC.APP.SAVE_SOUND_SETTINGS, 'sound'],
     [IPC.APP.SAVE_SESSION_SETTINGS, 'session'],
-    [IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS, 'clubhouse_mode'],
     [IPC.APP.SAVE_EXPERIMENTAL_SETTINGS, 'experimental'],
   ])('%s reports clubhouse.settings.changed with key %s', async (channel, key) => {
     await handleHandlers.get(channel)!({}, {});
@@ -910,67 +891,9 @@ describe('app-handlers', () => {
     expect(result).toMatch(/[\\/]\.clubhouse[\\/]logs$/);
   });
 
-  // --- Clubhouse Mode ---
-
-  it('GET_CLUBHOUSE_MODE_SETTINGS delegates to clubhouseModeSettings', async () => {
-    const handler = handleHandlers.get(IPC.APP.GET_CLUBHOUSE_MODE_SETTINGS)!;
-    const result = await handler({});
-    expect(clubhouseModeSettings.getSettings).toHaveBeenCalled();
-    expect(result).toEqual({ enabled: false });
-  });
-
-  it('SAVE_CLUBHOUSE_MODE_SETTINGS enables templates and exclusions on first enable', async () => {
-    vi.mocked(clubhouseModeSettings.isClubhouseModeEnabled).mockReturnValueOnce(false);
-    vi.mocked(clubhouseModeSettings.isClubhouseModeEnabled).mockReturnValueOnce(true);
-
-    const handler = handleHandlers.get(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS)!;
-    await handler({}, { enabled: true }, '/project');
-
-    expect(clubhouseModeSettings.saveSettings).toHaveBeenCalledWith({ enabled: true });
-    expect(ensureDefaultTemplates).toHaveBeenCalledWith('/project');
-    expect(enableExclusions).toHaveBeenCalledWith('/project', expect.anything());
-  });
-
-  it('SAVE_CLUBHOUSE_MODE_SETTINGS never writes the app-level source control setting, so it can\'t undo the Agents & providers row (D61)', async () => {
-    mockSetAppScp.mockClear();
-    vi.mocked(clubhouseModeSettings.saveSettings).mockClear();
-    const handler = handleHandlers.get(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS)!;
-    await handler({}, { enabled: false, sourceControlProvider: 'github' });
-    expect(clubhouseModeSettings.saveSettings).toHaveBeenCalledWith({ enabled: false, sourceControlProvider: 'github' });
-    expect(mockSetAppScp).not.toHaveBeenCalled();
-  });
-
-  it('SAVE_CLUBHOUSE_MODE_SETTINGS removes exclusions on disable', async () => {
-    vi.mocked(clubhouseModeSettings.isClubhouseModeEnabled).mockReturnValueOnce(true);
-    vi.mocked(clubhouseModeSettings.isClubhouseModeEnabled).mockReturnValueOnce(false);
-
-    const handler = handleHandlers.get(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS)!;
-    await handler({}, { enabled: false }, '/project');
-
-    expect(disableExclusions).toHaveBeenCalledWith('/project');
-  });
-
-  it('SAVE_CLUBHOUSE_MODE_SETTINGS does not touch exclusions when state unchanged', async () => {
-    vi.mocked(clubhouseModeSettings.isClubhouseModeEnabled).mockReturnValueOnce(false);
-    vi.mocked(clubhouseModeSettings.isClubhouseModeEnabled).mockReturnValueOnce(false);
-
-    const handler = handleHandlers.get(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS)!;
-    await handler({}, { enabled: false }, '/project');
-
-    expect(ensureDefaultTemplates).not.toHaveBeenCalled();
-    expect(enableExclusions).not.toHaveBeenCalled();
-    expect(disableExclusions).not.toHaveBeenCalled();
-  });
-
-  it('SAVE_CLUBHOUSE_MODE_SETTINGS gracefully handles resolveOrchestrator failure on enable', async () => {
-    vi.mocked(clubhouseModeSettings.isClubhouseModeEnabled).mockReturnValueOnce(false);
-    vi.mocked(clubhouseModeSettings.isClubhouseModeEnabled).mockReturnValueOnce(true);
-    vi.mocked(resolveOrchestrator).mockRejectedValueOnce(new Error('no orchestrator'));
-
-    const handler = handleHandlers.get(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS)!;
-    // Should not throw
-    await handler({}, { enabled: true }, '/project');
-    expect(ensureDefaultTemplates).toHaveBeenCalledWith('/project');
+  it('registers no Clubhouse Mode settings channels: Clubhouse Mode was retired (#2901)', () => {
+    expect(handleHandlers.has('app:get-clubhouse-mode-settings')).toBe(false);
+    expect(handleHandlers.has('app:save-clubhouse-mode-settings')).toBe(false);
   });
 
   // --- Input validation ---

@@ -55,12 +55,6 @@ vi.mock('./hook-server', () => ({
   waitReady: vi.fn(() => Promise.resolve(12345)),
 }));
 
-// Mock clubhouse-mode-settings
-const mockIsClubhouseModeEnabled = vi.fn(() => false);
-vi.mock('./clubhouse-mode-settings', () => ({
-  isClubhouseModeEnabled: (...args: unknown[]) => mockIsClubhouseModeEnabled(...args),
-}));
-
 // Most agent-system tests target non-MCP behavior. Enable MCP explicitly only
 // in tests that exercise MCP injection so snapshot assertions stay focused.
 const mockIsMcpEnabled = vi.fn(() => false);
@@ -111,8 +105,6 @@ vi.mock('./agent-runtime/chat-spawn', async (importOriginal) => {
   return { ...actual, tryStartChatAgent: (...args: Parameters<typeof actual.tryStartChatAgent>) => mockTryStartChatAgent(...args) };
 });
 
-// Mock materialization-service
-const mockMaterializeAgent = vi.fn();
 const mockCleanupStaleJsonInTomlConfigs = vi.fn();
 const mockDeliverForSpawn = vi.fn(async () => {});
 const mockQuickLaunchFor = vi.fn();
@@ -126,9 +118,10 @@ vi.mock('./managed-agents/auto-migrate', () => ({
   migrateAtSpawn: (...args: unknown[]) => mockMigrateAtSpawn(...args),
 }));
 
-vi.mock('./materialization-service', () => ({
+vi.mock('./agent-mcp-servers', () => ({
   resolveProjectMcpServers: vi.fn(async () => ({})),
-  materializeAgent: (...args: unknown[]) => mockMaterializeAgent(...args),
+}));
+vi.mock('./toml-config-cleanup', () => ({
   cleanupStaleJsonInTomlConfigs: (...args: unknown[]) => mockCleanupStaleJsonInTomlConfigs(...args),
 }));
 
@@ -348,7 +341,7 @@ import {
 import * as os from 'os';
 import { broadcastAgentExit } from './agent-exit-broadcast';
 import { agentRegistry } from './agent-registry';
-import { resolveProjectMcpServers } from './materialization-service';
+import { resolveProjectMcpServers } from './agent-mcp-servers';
 
 /** Give a mock provider the SessionCapable surface, with the real CLIs' "resume <uuid>" pattern. */
 function sessionCapable(provider: Record<string, unknown>): void {
@@ -2666,10 +2659,8 @@ describe('agent-system', () => {
   });
 
   describe('managed agent delivery (#2896)', () => {
-    it('delivers a managed setup before the start and never takes the Clubhouse Mode path', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
+    it('delivers a managed setup before the start', async () => {
       mockDeliverForSpawn.mockClear();
-      mockMaterializeAgent.mockClear();
       const config = {
         id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1',
         managed: { version: 1, blocks: ['builtin-block-identity'], skills: [], mcps: [] },
@@ -2677,11 +2668,9 @@ describe('agent-system', () => {
       mockGetDurableConfig.mockReturnValue(config);
       await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
       expect(mockDeliverForSpawn).toHaveBeenCalledWith('/project', expect.objectContaining({ id: 'agent-1' }), expect.objectContaining({ id: 'claude-code' }));
-      expect(mockMaterializeAgent).not.toHaveBeenCalled();
     });
 
     it('keeps starting when delivery fails, and says why', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(false);
       mockDeliverForSpawn.mockRejectedValueOnce(new Error('disk full'));
       mockGetDurableConfig.mockReturnValue({
         id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1',
@@ -2691,80 +2680,51 @@ describe('agent-system', () => {
       expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, 'agent-1', 'disk full');
     });
 
-    it('stops Clubhouse Mode for an agent at the start after it switches to managed (#2901)', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
+    it('delivers to an agent from the start after it switches to managed (#2901)', async () => {
       mockDeliverForSpawn.mockClear();
-      mockMaterializeAgent.mockClear();
       const legacy = { id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1', persona: 'qa' };
       mockGetDurableConfig.mockReturnValue(legacy);
       await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
-      expect(mockMaterializeAgent).toHaveBeenCalledTimes(1);
       expect(mockDeliverForSpawn).not.toHaveBeenCalled();
 
       // Switch to managed saves a setup on the config and leaves the rest as it was.
-      mockMaterializeAgent.mockClear();
       mockGetDurableConfig.mockReturnValue({ ...legacy, managed: { version: 1, blocks: ['agent-1-notes'], skills: [], mcps: [] } });
       await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
-      expect(mockMaterializeAgent).not.toHaveBeenCalled();
       expect(mockDeliverForSpawn).toHaveBeenCalledTimes(1);
     });
 
-    it('switches a Clubhouse Mode agent to managed before materializing, and starts it as managed (D59)', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
+    it('switches a legacy-configured agent to managed before anything is written, and starts it as managed (D59)', async () => {
       mockDeliverForSpawn.mockClear();
-      mockMaterializeAgent.mockClear();
       mockMigrateAtSpawn.mockClear();
       const legacy = { id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1' };
       const managedConfig = { ...legacy, managed: { version: 1, blocks: ['agent-1-notes'], skills: [], mcps: [] } };
       mockGetDurableConfig.mockReturnValue(legacy);
       mockMigrateAtSpawn.mockImplementationOnce(async () => {
         // Nothing has been written into its folder yet.
-        expect(mockMaterializeAgent).not.toHaveBeenCalled();
         expect(mockDeliverForSpawn).not.toHaveBeenCalled();
         mockGetDurableConfig.mockReturnValue(managedConfig);
         return managedConfig;
       });
       await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
       expect(mockMigrateAtSpawn).toHaveBeenCalledWith('/project', expect.objectContaining({ id: 'agent-1' }));
-      expect(mockMaterializeAgent).not.toHaveBeenCalled();
       expect(mockDeliverForSpawn).toHaveBeenCalledWith('/project', managedConfig, expect.objectContaining({ id: 'claude-code' }));
 
-      // The next start is an ordinary managed one: no switch, no Clubhouse Mode.
+      // The next start is an ordinary managed one: no switch.
       mockMigrateAtSpawn.mockClear();
       mockDeliverForSpawn.mockClear();
       await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
       expect(mockMigrateAtSpawn).not.toHaveBeenCalled();
-      expect(mockMaterializeAgent).not.toHaveBeenCalled();
       expect(mockDeliverForSpawn).toHaveBeenCalledTimes(1);
     });
 
-    it('starts on Clubhouse Mode as today when the switch fails or does not apply (D59)', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
+    it('starts the agent on the files in its folder when the switch fails or does not apply (D59, #2901)', async () => {
       mockDeliverForSpawn.mockClear();
-      mockMaterializeAgent.mockClear();
       mockMigrateAtSpawn.mockClear();
       mockGetDurableConfig.mockReturnValue({ id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1' });
       await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
       expect(mockMigrateAtSpawn).toHaveBeenCalledTimes(1);
-      expect(mockMaterializeAgent).toHaveBeenCalledTimes(1);
       expect(mockDeliverForSpawn).not.toHaveBeenCalled();
-    });
-
-    it('never runs Clubhouse Mode on an agent a switch made managed, even when the switch reported a failure', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
-      mockMaterializeAgent.mockClear();
-      mockMigrateAtSpawn.mockClear();
-      const legacy = { id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1' };
-      mockGetDurableConfig.mockReturnValue(legacy);
-      mockMigrateAtSpawn.mockImplementationOnce(async () => {
-        // Saved, then a later step failed: the agent is managed, but the spawn heard nothing back.
-        mockGetDurableConfig.mockReturnValue({ ...legacy, managed: { version: 1, blocks: [], skills: [], mcps: [] } });
-        return null;
-      });
-      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
-      expect(mockMigrateAtSpawn).toHaveBeenCalledTimes(1);
-      expect(mockMaterializeAgent).not.toHaveBeenCalled();
-      mockGetDurableConfig.mockReturnValue(legacy);
+      expect(mockPtySpawn).toHaveBeenCalled();
     });
 
     it('never asks to switch a quick agent', async () => {
@@ -2774,152 +2734,10 @@ describe('agent-system', () => {
     });
 
     it('does nothing for an agent that is not managed', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(false);
       mockDeliverForSpawn.mockClear();
       mockGetDurableConfig.mockReturnValue({ id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1' });
       await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
       expect(mockDeliverForSpawn).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('clubhouse mode materialization', () => {
-    it('calls materializeAgent for durable agents when clubhouse mode is enabled', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
-      mockGetDurableConfig.mockReturnValue({
-        id: 'agent-1',
-        name: 'agent-1',
-        worktreePath: '/project/.clubhouse/agents/agent-1',
-      });
-
-      await spawnAgent({
-        agentId: 'agent-1',
-        projectPath: '/project',
-        cwd: '/project',
-        kind: 'durable',
-      });
-
-      expect(mockMaterializeAgent).toHaveBeenCalledWith({
-        projectPath: '/project',
-        agent: expect.objectContaining({
-          id: 'agent-1',
-          worktreePath: '/project/.clubhouse/agents/agent-1',
-        }),
-        provider: expect.objectContaining({ id: 'claude-code' }),
-      });
-    });
-
-    it('skips materialization when clubhouse mode is disabled', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(false);
-
-      await spawnAgent({
-        agentId: 'agent-1',
-        projectPath: '/project',
-        cwd: '/project',
-        kind: 'durable',
-      });
-
-      expect(mockMaterializeAgent).not.toHaveBeenCalled();
-    });
-
-    it('skips materialization for quick agents', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
-
-      await spawnAgent({
-        agentId: 'agent-1',
-        projectPath: '/project',
-        cwd: '/project',
-        kind: 'quick',
-      });
-
-      expect(mockMaterializeAgent).not.toHaveBeenCalled();
-    });
-
-    it('skips materialization when getDurableConfig returns null', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
-      mockGetDurableConfig.mockReturnValue(null);
-
-      await spawnAgent({
-        agentId: 'agent-1',
-        projectPath: '/project',
-        cwd: '/project',
-        kind: 'durable',
-      });
-
-      expect(mockMaterializeAgent).not.toHaveBeenCalled();
-    });
-
-    it('skips materialization when clubhouseModeOverride is true', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
-      mockGetDurableConfig.mockReturnValue({
-        id: 'agent-1',
-        name: 'agent-1',
-        worktreePath: '/project/.clubhouse/agents/agent-1',
-        clubhouseModeOverride: true,
-      });
-
-      await spawnAgent({
-        agentId: 'agent-1',
-        projectPath: '/project',
-        cwd: '/project',
-        kind: 'durable',
-      });
-
-      expect(mockMaterializeAgent).not.toHaveBeenCalled();
-    });
-
-    it('skips materialization when config has no worktreePath', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
-      mockGetDurableConfig.mockReturnValue({
-        id: 'agent-1',
-        name: 'agent-1',
-      });
-
-      await spawnAgent({
-        agentId: 'agent-1',
-        projectPath: '/project',
-        cwd: '/project',
-        kind: 'durable',
-      });
-
-      expect(mockMaterializeAgent).not.toHaveBeenCalled();
-    });
-
-    it('stops launch when inherited permission rules cannot be applied', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
-      mockGetDurableConfig.mockReturnValue({ id: 'agent-1', name: 'agent-1', worktreePath: '/project/agent' });
-      const { UnsupportedPermissionRulesError } = await import('./agent-settings-service');
-      mockMaterializeAgent.mockRejectedValueOnce(new UnsupportedPermissionRulesError('Rules not applied'));
-      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' }))
-        .rejects.toThrow('Rules not applied');
-      expect(mockPtySpawn).not.toHaveBeenCalled();
-    });
-
-    it('continues spawn when materialization throws', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
-      mockGetDurableConfig.mockReturnValue({
-        id: 'agent-1',
-        name: 'agent-1',
-        worktreePath: '/project/.clubhouse/agents/agent-1',
-      });
-      mockMaterializeAgent.mockImplementation(() => {
-        throw new Error('materialization failed');
-      });
-
-      // Should not throw — materialization errors are caught
-      await spawnAgent({
-        agentId: 'agent-1',
-        projectPath: '/project',
-        cwd: '/project',
-        kind: 'durable',
-      });
-
-      expect(mockMaterializeAgent).toHaveBeenCalled();
-      expect(mockPtySpawn).toHaveBeenCalled();
-      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
-        'agent:agent-materialization-failed',
-        'agent-1',
-        'materialization failed',
-      );
     });
   });
 
@@ -3681,13 +3499,12 @@ describe('managed instructions in the real terminal launch seam', () => {
   afterEach(() => { untrackAgent('managed-launch'); });
   const start = () => spawnAgent({ agentId: 'managed-launch', projectPath: '/project', cwd: '/workspace', kind: 'durable', orchestrator: 'claude-code' });
   it('passes only private file paths, preserves launch settings and skips legacy writes/restoration/chat', async () => {
-    mockIsClubhouseModeEnabled.mockReturnValue(true); // The actual production gate refuses this combination.
     await start();
     expect(mockPtySpawn).toHaveBeenCalledWith('managed-launch', '/workspace', '/usr/local/bin/claude',
       ['--model', 'opus', '--append-system-prompt-file', lease.instructionFile, '--plugin-dir', lease.pluginDir], expect.any(Object), expect.any(Function), undefined, expect.any(Object));
     expect(lease.beforeStart).toHaveBeenCalledWith('/usr/local/bin/claude');
     expect(lease.started).toHaveBeenCalledWith('pty:fixture:123');
-    expect(mockMaterializeAgent).not.toHaveBeenCalled(); expect(mockSnapshotFile).not.toHaveBeenCalled();
+    expect(mockSnapshotFile).not.toHaveBeenCalled();
     expect(mockProvider.writeHooksConfig).not.toHaveBeenCalled(); expect(mockTryStartChatAgent).not.toHaveBeenCalled();
     const args = mockPtySpawn.mock.calls[0];
     args[7].onObservedExit(); args[5]('managed-launch', 0, '', false);

@@ -88,10 +88,6 @@ vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
 
-vi.mock('../services/materialization-service', () => ({
-  refreshClubhouseModeReadme: vi.fn(async () => undefined),
-}));
-
 vi.mock('../services/orchestration-policy', () => ({
   getOrchestrationPolicy: vi.fn(async () => ({ orchestrate: true })),
   setOrchestrationPolicy: vi.fn(async () => ({ ok: true, message: 'Saved' })),
@@ -108,10 +104,6 @@ vi.mock('../services/helper-index', () => ({
 
 vi.mock('../services/project-store', () => ({
   list: vi.fn(async () => []),
-}));
-
-vi.mock('../services/clubhouse-mode-settings', () => ({
-  isClubhouseModeEnabled: vi.fn(() => false),
 }));
 
 vi.mock('../services/finished-quick-agents-store', () => ({
@@ -135,8 +127,6 @@ import * as agentSystem from '../services/agent-system';
 import * as headlessManager from '../services/headless-manager';
 import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
 import { appLog } from '../services/log-service';
-import { refreshClubhouseModeReadme } from '../services/materialization-service';
-import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as orchestrationPolicy from '../services/orchestration-policy';
 import { getAgentRuntime } from '../services/agent-runtime';
 import { AgentStoppingError } from '../services/agent-runtime/agent-stopping';
@@ -187,22 +177,6 @@ describe('agent-handlers', () => {
   });
 
   // --- CRUD ---
-
-  it('LIST_DURABLE refreshes the CH-mode readme when CH mode is enabled', async () => {
-    vi.mocked(clubhouseModeSettings.isClubhouseModeEnabled).mockReturnValue(true);
-    const handler = handlers.get(IPC.AGENT.LIST_DURABLE)!;
-    await handler({}, '/project');
-
-    expect(refreshClubhouseModeReadme).toHaveBeenCalledWith('/project');
-  });
-
-  it('LIST_DURABLE does NOT refresh the CH-mode readme when CH mode is disabled', async () => {
-    vi.mocked(clubhouseModeSettings.isClubhouseModeEnabled).mockReturnValue(false);
-    const handler = handlers.get(IPC.AGENT.LIST_DURABLE)!;
-    await handler({}, '/project');
-
-    expect(refreshClubhouseModeReadme).not.toHaveBeenCalled();
-  });
 
   it('LIST_DURABLE delegates to agentConfig.listDurable', async () => {
     const handler = handlers.get(IPC.AGENT.LIST_DURABLE)!;

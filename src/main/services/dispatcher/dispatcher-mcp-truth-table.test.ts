@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * The whole dependency, through the real resolvers: MCP at app, project and agent
- * level, Clubhouse mode, the Dispatcher's saved values and the layout. The PR that
+ * level, the Dispatcher's saved values and the layout. Clubhouse mode was
+ * MCP's fallback until it was retired (#2901); the startup pass made it explicit (D63). The PR that
  * made the Dispatcher default on carries this table.
  */
 
@@ -23,7 +24,6 @@ vi.mock('../../window-chrome', () => ({ newChromeEnabled: () => h.newLayout }));
 
 import { clubhouseMcpOverride } from '../../../shared/agent-helpers';
 import { resolveOrchestrationPolicy } from '../../../shared/orchestration-policy';
-import { saveSettings as saveClubhouseMode } from '../clubhouse-mode-settings';
 import { _resetAgentBridgeNeedForTesting, isMcpEnabled, isMcpEnabledForAny, isMcpOnAtAppLevel, saveSettings as saveMcp } from '../mcp-settings';
 import { dispatcherEnablement, updateSettings } from './dispatcher-settings';
 
@@ -32,7 +32,7 @@ type Tri = boolean | undefined;
 
 interface Row {
   name: string;
-  mcp: boolean; mcpProject?: boolean; agent?: boolean; clubhouse: boolean; clubhouseProject?: boolean;
+  mcp: boolean; mcpProject?: boolean; agent?: boolean;
   /** MCP at app level, and so whether the Dispatcher can be on. */
   app: boolean;
   /** MCP for an agent in the project with nothing of its own. */
@@ -43,25 +43,18 @@ interface Row {
   bridge: boolean;
 }
 
-const row = (name: string, inputs: Pick<Row, 'mcp' | 'mcpProject' | 'agent' | 'clubhouse' | 'clubhouseProject'>, app: boolean, project: boolean, own: boolean, bridge: boolean): Row =>
+const row = (name: string, inputs: Pick<Row, 'mcp' | 'mcpProject' | 'agent'>, app: boolean, project: boolean, own: boolean, bridge: boolean): Row =>
   ({ name, ...inputs, app, project, own, bridge });
 
 const TABLE: Row[] = [
-  row('MCP on', { mcp: true, clubhouse: false }, true, true, true, true),
-  row('MCP off, nothing else', { mcp: false, clubhouse: false }, false, false, false, false),
-  row('MCP off, project on', { mcp: false, mcpProject: true, clubhouse: false }, false, true, true, true),
-  row('MCP on, project off', { mcp: true, mcpProject: false, clubhouse: false }, true, false, false, true),
-  row('MCP off, agent on', { mcp: false, agent: true, clubhouse: false }, false, false, true, false),
-  row('MCP on, agent off', { mcp: true, agent: false, clubhouse: false }, true, true, false, true),
-  row('MCP on, project off, agent on', { mcp: true, mcpProject: false, agent: true, clubhouse: false }, true, false, true, true),
-  row('MCP off, project on, agent off', { mcp: false, mcpProject: true, agent: false, clubhouse: false }, false, true, false, true),
-  // Clubhouse mode is MCP's fallback, so it holds MCP on at app level with MCP's own switch off.
-  row('MCP off, Clubhouse mode on', { mcp: false, clubhouse: true }, true, true, true, true),
-  row('MCP off, Clubhouse mode on, its project off', { mcp: false, clubhouse: true, clubhouseProject: false }, true, false, false, true),
-  row('MCP off, Clubhouse mode off, its project on', { mcp: false, clubhouse: false, clubhouseProject: true }, false, true, true, true),
-  row('MCP off, project off, Clubhouse mode on', { mcp: false, mcpProject: false, clubhouse: true }, true, false, false, true),
-  row('MCP off, project off, Clubhouse project on', { mcp: false, mcpProject: false, clubhouse: false, clubhouseProject: true }, false, false, false, true),
-  row('MCP on, Clubhouse mode on', { mcp: true, clubhouse: true }, true, true, true, true),
+  row('MCP on', { mcp: true }, true, true, true, true),
+  row('MCP off, nothing else', { mcp: false }, false, false, false, false),
+  row('MCP off, project on', { mcp: false, mcpProject: true }, false, true, true, true),
+  row('MCP on, project off', { mcp: true, mcpProject: false }, true, false, false, true),
+  row('MCP off, agent on', { mcp: false, agent: true }, false, false, true, false),
+  row('MCP on, agent off', { mcp: true, agent: false }, true, true, false, true),
+  row('MCP on, project off, agent on', { mcp: true, mcpProject: false, agent: true }, true, false, true, true),
+  row('MCP off, project on, agent off', { mcp: false, mcpProject: true, agent: false }, false, true, false, true),
 ];
 
 /** Saved values and layout, and what they say with MCP on at app level. */
@@ -80,7 +73,6 @@ describe.each(TABLE)('$name', (r) => {
   beforeEach(async () => {
     _resetAgentBridgeNeedForTesting();
     await saveMcp({ enabled: r.mcp, ...(r.mcpProject !== undefined && { projectOverrides: { [P]: r.mcpProject } }) });
-    await saveClubhouseMode({ enabled: r.clubhouse, ...(r.clubhouseProject !== undefined && { projectOverrides: { [P]: r.clubhouseProject } }) });
   });
 
   it('resolves MCP at each level, and whether the bridge starts at launch', () => {

@@ -129,12 +129,6 @@ vi.mock('../services/headless-settings', () => ({
   saveSettings: vi.fn(),
 }));
 
-vi.mock('../services/clubhouse-mode-settings', () => ({
-  getSettings: vi.fn(() => ({ enabled: false })),
-  saveSettings: vi.fn(),
-  isClubhouseModeEnabled: vi.fn(() => false),
-}));
-
 vi.mock('../services/badge-settings', () => ({
   getSettings: vi.fn(() => ({ showBadge: true })),
   saveSettings: vi.fn(),
@@ -175,15 +169,6 @@ vi.mock('../services/log-service', () => ({
 vi.mock('../services/log-settings', () => ({
   getSettings: vi.fn(() => ({ enabled: true, namespaces: {} })),
   saveSettings: vi.fn(),
-}));
-
-vi.mock('../services/materialization-service', () => ({
-  ensureDefaultTemplates: vi.fn(),
-  enableExclusions: vi.fn(),
-  disableExclusions: vi.fn(),
-  materializeAgent: vi.fn(),
-  previewMaterialization: vi.fn(),
-  resetProjectAgentDefaults: vi.fn(),
 }));
 
 vi.mock('../services/agent-system', () => ({
@@ -332,11 +317,6 @@ vi.mock('../services/agent-settings-service', () => ({
   readSourceAgentTemplateContent: vi.fn(() => ''),
   writeSourceAgentTemplateContent: vi.fn(),
   deleteSourceAgentTemplate: vi.fn(),
-}));
-
-vi.mock('../services/config-diff-service', () => ({
-  computeConfigDiff: vi.fn(() => ({})),
-  propagateChanges: vi.fn(),
 }));
 
 // ── Service mocks (plugin-handlers deps) ───────────────────────────────

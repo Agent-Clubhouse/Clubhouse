@@ -816,7 +816,7 @@
       }
     },
     {
-      "name": "clubhouse_mode_unavailable",
+      "name": "managed_agent (clubhouseMode)",
       "request": {
         "agentId": "durable_sleepy",
         "clubhouseMode": true,
@@ -830,8 +830,8 @@
           "commandId": "cmd_072",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
-            "code": "clubhouse_mode_unavailable",
-            "message": "clubhouse_mode_unavailable"
+            "code": "managed_agent",
+            "message": "Clubhouse Mode was retired, so bright-otter can't use it. Clubhouse-managed agents get their instructions, skills and MCP servers from their setup."
           },
           "status": "rejected",
           "version": 1

@@ -53,7 +53,7 @@ vi.mock('../../helper-index', () => ({
   findParent: vi.fn(async () => null),
 }));
 vi.mock('../../project-store', () => ({ list: async () => [...projects] }));
-vi.mock('../../materialization-service', () => ({}));
+vi.mock('../../agent-mcp-servers', () => ({}));
 vi.mock('../../agent-system', () => ({
   spawnAgent: vi.fn(),
   killAgent: vi.fn(),

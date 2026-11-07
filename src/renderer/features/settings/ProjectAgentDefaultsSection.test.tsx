@@ -144,57 +144,12 @@ describe('ProjectAgentDefaultsSection', () => {
     });
   });
 
-  describe('default mission', () => {
-    it('renders the Default Mission input', async () => {
+  describe('without missions or a reset (#2901)', () => {
+    it('offers no default mission and no Reset to defaults: Clubhouse Mode, which used them, was retired', async () => {
       renderSection();
-      expect(await screen.findByText('Default mission')).toBeInTheDocument();
-    });
-
-    it('loads a saved mission value', async () => {
-      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({
-        instructions: 'test',
-        mission: 'implement-and-ship',
-      });
-      window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockResolvedValue({
-        userInstructions: 'test',
-        pluginInstructionBlocks: [],
-        allowRules: [],
-        denyRules: [],
-        skills: [],
-        agentTemplates: [],
-        mcpServers: [],
-        orphanedPluginIds: [],
-      });
-      renderSection();
-      await waitFor(() => {
-        expect(screen.getByDisplayValue('implement-and-ship')).toBeInTheDocument();
-      });
-    });
-
-    it('saves mission when set', async () => {
-      renderSection();
-      const input = await screen.findByPlaceholderText('implement-and-ship');
-      fireEvent.change(input, { target: { value: 'my-mission' } });
-      fireEvent.click(screen.getByText('Save defaults'));
-
-      await waitFor(() => {
-        const call = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0];
-        expect(call[1].mission).toBe('my-mission');
-      });
-    });
-
-    it('omits mission when left blank', async () => {
-      renderSection();
-      await screen.findByText('Default mission');
-      // Trigger dirty without setting mission
-      const textarea = screen.getByDisplayValue('Default instructions');
-      fireEvent.change(textarea, { target: { value: 'Updated' } });
-      fireEvent.click(screen.getByText('Save defaults'));
-
-      await waitFor(() => {
-        const call = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0];
-        expect(call[1].mission).toBeUndefined();
-      });
+      expect(await screen.findByText('Default agent settings')).toBeInTheDocument();
+      expect(screen.queryByText('Default mission')).not.toBeInTheDocument();
+      expect(screen.queryByText('Reset to defaults')).not.toBeInTheDocument();
     });
   });
 
@@ -382,90 +337,15 @@ describe('ProjectAgentDefaultsSection', () => {
     });
   });
 
-  describe('reset to defaults', () => {
-    it('renders the Reset to defaults button', async () => {
-      renderSection();
-      expect(await screen.findByText('Reset to defaults')).toBeInTheDocument();
-    });
-
-    it('shows confirmation dialog on click', async () => {
-      renderSection();
-      fireEvent.click(await screen.findByText('Reset to defaults'));
-      expect(screen.getByText('Reset to defaults?')).toBeInTheDocument();
-      expect(screen.getByText(/replaces every project-level agent default/)).toBeInTheDocument();
-    });
-
-    it('cancels confirmation dialog', async () => {
-      renderSection();
-      fireEvent.click(await screen.findByText('Reset to defaults'));
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      expect(screen.queryByText('Reset to defaults?')).not.toBeInTheDocument();
-    });
-
-    it('calls resetProjectAgentDefaults and reloads on confirm', async () => {
-      window.clubhouse.agentSettings.resetProjectAgentDefaults = vi.fn().mockResolvedValue(undefined);
-      // After reset, readProjectAgentDefaults returns fresh defaults
-      const readMock = vi.fn()
-        .mockResolvedValueOnce({
-          instructions: 'Custom instructions',
-          permissions: { allow: ['Read(**)'] },
-        })
-        .mockResolvedValueOnce({
-          instructions: 'Default @@AgentName instructions',
-          permissions: { allow: ['Read(@@Path**)'] },
-        });
-      window.clubhouse.agentSettings.readProjectAgentDefaults = readMock;
-      window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockResolvedValue({
-        userInstructions: 'Custom instructions',
-        pluginInstructionBlocks: [],
-        allowRules: [{ id: 'allow-rule:0', label: 'Read(**)', value: 'Read(**)', provenance: { source: 'user' } }],
-        denyRules: [],
-        skills: [],
-        agentTemplates: [],
-        mcpServers: [],
-        orphanedPluginIds: [],
-      });
-
-      renderSection();
-      await screen.findByText('Default agent settings');
-      fireEvent.click(screen.getByText('Reset to defaults'));
-      fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
-
-      await waitFor(() => {
-        expect(window.clubhouse.agentSettings.resetProjectAgentDefaults).toHaveBeenCalledWith('/project');
-      });
-      // Verify it reloaded defaults
-      await waitFor(() => {
-        expect(readMock).toHaveBeenCalledTimes(2);
-      });
-    });
-  });
-
-  describe('loading states', () => {
-    it('returns null before loading completes', () => {
-      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockReturnValue(new Promise(() => {}));
-      window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockReturnValue(new Promise(() => {}));
-      const { container } = renderSection();
-      expect(container.innerHTML).toBe('');
-    });
-
-    it('renders after load error', async () => {
-      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockRejectedValue(new Error('fail'));
-      window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockRejectedValue(new Error('fail'));
-      renderSection();
-      expect(await screen.findByText('Default agent settings')).toBeInTheDocument();
-    });
-  });
-
   describe('without personas and conditional blocks (#2901)', () => {
-    it('offers no default persona or conditional blocks, and keeps a saved persona on save', async () => {
-      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({ instructions: 'Default instructions', persona: 'qa' });
+    it('offers no default persona or conditional blocks, and keeps a saved persona and mission on save', async () => {
+      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({ instructions: 'Default instructions', persona: 'qa', mission: 'ship' });
       renderSection();
       expect(await screen.findByText('Source control provider')).toBeInTheDocument();
       expect(screen.queryByText('Default persona')).not.toBeInTheDocument();
       expect(screen.queryByText(/controls conditional blocks/)).not.toBeInTheDocument();
 
-      fireEvent.change(screen.getByPlaceholderText('implement-and-ship'), { target: { value: 'ship' } });
+      fireEvent.change(screen.getByDisplayValue('Default instructions'), { target: { value: 'Updated' } });
       fireEvent.click(screen.getByText('Save defaults'));
       await waitFor(() => expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith('/project', expect.objectContaining({ persona: 'qa', mission: 'ship' })));
     });

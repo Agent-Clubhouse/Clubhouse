@@ -54,6 +54,12 @@ vi.mock('fs/promises', () => ({
 }));
 
 // Mock fs-utils
+const legacyMode = vi.hoisted(() => ({ on: false }));
+vi.mock('./managed-agents/legacy-migration', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./managed-agents/legacy-migration')>(),
+  legacyClubhouseModeEnabled: () => legacyMode.on,
+}));
+
 vi.mock('./fs-utils', () => ({
   pathExists: vi.fn(),
 }));
@@ -344,6 +350,16 @@ describe('createDurable', () => {
   it('stamps a new agent as carried: it never had the retired persona layer (D62)', async () => {
     const config = await createDurable(PROJECT_PATH, 'my-agent', 'indigo');
     expect(config.personaLayerCarriedAt).toBe(config.createdAt);
+  });
+
+  it('marks a new agent in a project the old Clubhouse Mode setting covers as not using it, so the switch never takes it (#2901)', async () => {
+    legacyMode.on = true;
+    try {
+      expect((await createDurable(PROJECT_PATH, 'my-agent', 'indigo')).clubhouseModeOverride).toBe(true);
+    } finally {
+      legacyMode.on = false;
+    }
+    expect((await createDurable(PROJECT_PATH, 'other-agent', 'indigo')).clubhouseModeOverride).toBeUndefined();
   });
 
   it('branch = {name}/standby', async () => {

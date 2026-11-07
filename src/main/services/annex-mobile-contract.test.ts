@@ -348,7 +348,6 @@ vi.mock('./agent-settings-service', () => ({
   ],
   readDefaultMcps: async () => ['github'],
 }));
-vi.mock('./materialization-service', () => ({}));
 vi.mock('./orchestration-settings', () => ({
   getSettings: () => ({ globalHelperCap: 20 }),
   getGlobalHelperCap: () => 20,
@@ -370,7 +369,6 @@ vi.mock('../orchestrators', async (importOriginal) => {
 });
 vi.mock('./orchestrator-settings', () => ({ getSettings: () => ({ enabled: ['claude-code', 'codex-cli'] }) }));
 vi.mock('./profile-settings', () => ({ getProfile: () => undefined }));
-vi.mock('./clubhouse-mode-settings', () => ({ isClubhouseModeEnabled: () => false }));
 vi.mock('./chat-idle-settings', () => ({ chatIdleSettings: { getSettings: () => ({ idleTimeoutMinutes: 30 }) } }));
 vi.mock('./chat-runtime-settings', () => ({
   isChatEnabled: () => true,
@@ -1134,7 +1132,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('orchestrator_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'copilot-cli' });
     await command('runtime_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'codex-cli', runtime: 'chat' });
     await command('free_agent_mode_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'codex-cli', freeAgentMode: true });
-    await command('clubhouse_mode_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', clubhouseMode: true });
+    await command('managed_agent (clubhouseMode)', { type: 'agent.update', agentId: 'durable_sleepy', clubhouseMode: true });
     await command('managed_agent (persona)', { type: 'agent.update', agentId: 'durable_sleepy', persona: 'qa' });
     // Clearing a persona is a no-op: there is none to clear.
     await command('accepted persona clear (no-op)', { type: 'agent.update', agentId: 'durable_sleepy', persona: null });

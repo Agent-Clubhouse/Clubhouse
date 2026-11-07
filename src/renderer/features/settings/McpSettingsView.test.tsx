@@ -8,7 +8,6 @@ import { McpSettingsView } from './McpSettingsView';
 const IMPACT: McpOffImpact = {
   turnsOff: true,
   appLoses: true,
-  appKeptByClubhouseMode: false,
   projectsLosing: ['site'],
   agentsLosing: 3,
   quickAgentsLosing: 0,
@@ -20,7 +19,7 @@ const IMPACT: McpOffImpact = {
   runningOrchestratorsWithHelpers: 1,
   dispatcherGoesOff: true,
   dispatcherRunning: true,
-  keeps: { projects: [{ name: 'api', via: 'project_setting' }, { name: 'docs', via: 'clubhouse_mode' }], agents: [{ name: 'lead', project: 'site' }] },
+  keeps: { projects: [{ name: 'api', via: 'project_setting' }, { name: 'docs', via: 'project_setting' }], agents: [{ name: 'lead', project: 'site' }] },
   unreadableProjects: [],
 };
 
@@ -72,26 +71,11 @@ describe('McpSettingsView', () => {
     expect(screen.queryByText(/Start the bridge server for every project/)).toBeNull();
   });
 
-  it('says Clubhouse keeps MCP on while its own switch is off and Clubhouse Mode keeps it on (D63)', async () => {
+  it('has no Clubhouse Mode note, and asks main nothing until the switch is turned off (#2901)', async () => {
     useMcpSettingsStore.setState({ enabled: false } as never);
-    window.clubhouse.app.getMcpOffImpact = vi.fn(async () => ({ ...IMPACT, appKeptByClubhouseMode: true }));
-    render(<McpSettingsView />);
-    expect(await screen.findByText('Clubhouse keeps MCP on for agents that still use Clubhouse Mode.')).toBeInTheDocument();
-    expect(window.clubhouse.app.getMcpOffImpact).toHaveBeenCalledWith({});
-  });
-
-  it('shows no note when Clubhouse Mode keeps nothing on, or the switch is on', async () => {
-    useMcpSettingsStore.setState({ enabled: false } as never);
-    const { unmount } = render(<McpSettingsView />);
-    await waitFor(() => expect(window.clubhouse.app.getMcpOffImpact).toHaveBeenCalledWith({}));
-    expect(screen.queryByText(/Clubhouse keeps MCP on/)).toBeNull();
-    unmount();
-
-    useMcpSettingsStore.setState({ enabled: true } as never);
-    vi.mocked(window.clubhouse.app.getMcpOffImpact).mockClear();
     render(<McpSettingsView />);
     expect(screen.queryByText(/Clubhouse keeps MCP on/)).toBeNull();
-    expect(window.clubhouse.app.getMcpOffImpact).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('mcp-kept-by-clubhouse-mode')).toBeNull();
   });
 
   it('asks before saving, with counts, what keeps MCP, and that MCP back starts nothing', async () => {
@@ -100,7 +84,7 @@ describe('McpSettingsView', () => {
     expect(saveSettings).not.toHaveBeenCalled();
     expect(screen.getByTestId('mcp-off-lead')).toHaveTextContent('Helpers, orchestration, connections to the Dispatcher and the Dispatcher itself stop working.');
     expect(screen.getByTestId('mcp-off-counts')).toHaveTextContent('3 agents lose Clubhouse tools, and 4 keep them. 2 helpers can only report to their parent. 1 running orchestrator has helpers. The Dispatcher is running.');
-    expect(screen.getByTestId('mcp-off-keeps')).toHaveTextContent('These keep Clubhouse MCP: api (its own setting), docs (Clubhouse mode) and lead in site (its own setting).');
+    expect(screen.getByTestId('mcp-off-keeps')).toHaveTextContent('These keep Clubhouse MCP: api (its own setting), docs (its own setting) and lead in site (its own setting).');
     expect(screen.getByText('Stops new Clubhouse tool calls for these agents now. Running agents keep working on what they can do without Clubhouse tools, and can’t message other agents. Helpers can still report to their parent.')).toBeInTheDocument();
     expect(screen.getByText(MCP_OFF_RESTORE_NOTE)).toBeInTheDocument();
     expect(document.querySelector('[data-testid="mcp-off-dialog"]')?.textContent).not.toMatch(/—/);
@@ -199,16 +183,6 @@ describe('McpSettingsView', () => {
     expect(screen.getByTestId('mcp-off-counts')).toHaveTextContent('The Dispatcher is not running.');
   });
 
-  it('says so plainly when Clubhouse mode keeps MCP on, with no counts of nothing', async () => {
-    await openDialog({ ...IMPACT, turnsOff: false, appLoses: false, appKeptByClubhouseMode: true, dispatcherGoesOff: false, agentsLosing: 0, keeps: { projects: [], agents: [] } });
-    expect(screen.getByTestId('mcp-off-lead')).toHaveTextContent('keeps Clubhouse MCP on at app level, so nothing stops working yet');
-    expect(screen.queryByTestId('mcp-off-counts')).toBeNull();
-    expect(screen.queryByText(/Stops new Clubhouse tool calls/)).toBeNull();
-    expect(screen.queryByTestId('mcp-off-stop-dispatcher')).toBeNull();
-    await act(async () => { fireEvent.click(screen.getByTestId('mcp-off-confirm')); });
-    expect(saveSettings).toHaveBeenCalledWith({ enabled: false });
-  });
-
   it('still asks when the counts can\'t be read', async () => {
     window.clubhouse.app.getMcpOffImpact = vi.fn(async () => { throw new Error('IPC down'); });
     render(<McpSettingsView />);
@@ -220,10 +194,10 @@ describe('McpSettingsView', () => {
 });
 
 describe('the dialog copy', () => {
-  it('does not imply all MCP is off while Clubhouse mode keeps it on, or send people to the setting it hides (#2901)', () => {
-    const lead = mcpOffLead({ ...IMPACT, turnsOff: false, appLoses: false, appKeptByClubhouseMode: true, dispatcherGoesOff: false });
-    expect(lead).toBe('Clubhouse mode, which agents made before Clubhouse-managed agents still use, keeps Clubhouse MCP on at app level, so nothing stops working yet.');
-    expect(lead).not.toMatch(/Turning off Clubhouse mode/);
+  it('never sends people to the retired Clubhouse mode setting (#2901)', () => {
+    for (const impact of [IMPACT, { ...IMPACT, turnsOff: false, appLoses: false, dispatcherGoesOff: false }, null]) {
+      expect(mcpOffLead(impact)).not.toMatch(/Clubhouse mode/i);
+    }
   });
 
   it('narrows to the project, with no Dispatcher line', () => {

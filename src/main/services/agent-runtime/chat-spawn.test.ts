@@ -46,7 +46,7 @@ vi.mock('../clubhouse-mcp/injection', () => ({
   CLUBHOUSE_NONCE_ENV: 'CLUBHOUSE_HOOK_NONCE',
 }));
 vi.mock('../mcp-settings', () => ({ isMcpEnabled: vi.fn(() => true) }));
-vi.mock('../materialization-service', () => ({ resolveAgentMcpServers: vi.fn(async () => ({})) }));
+vi.mock('../agent-mcp-servers', () => ({ resolveAgentMcpServers: vi.fn(async () => ({})) }));
 const agentConfig = vi.hoisted(() => ({ touchSessionEntry: vi.fn(async () => {}), updateDurableConfig: vi.fn(async () => {}) }));
 vi.mock('../agent-config', () => agentConfig);
 const exitBroadcast = vi.hoisted(() => ({ broadcastAgentExit: vi.fn() }));
@@ -83,7 +83,7 @@ import type { OrchestratorProvider } from '../../orchestrators';
 import { getShellEnvironment } from '../../util/shell';
 import { injectClubhouseMcp, buildClubhouseMcpDef } from '../clubhouse-mcp/injection';
 import { isMcpEnabled } from '../mcp-settings';
-import { resolveAgentMcpServers } from '../materialization-service';
+import { resolveAgentMcpServers } from '../agent-mcp-servers';
 import { CodexChatDriver } from '../../orchestrators/adapters/codex-chat-driver';
 import { ClaudeChatDriver } from '../../chat/claude/driver';
 import { ClaudeSdkTransport, SDK_INIT_TIMEOUT_MS } from '../../chat/claude/sdk-transport';
