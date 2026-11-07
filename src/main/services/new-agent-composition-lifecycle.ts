@@ -1,4 +1,4 @@
-/** Main-only lifecycle primitives. Not yet connected to creation or renderer IPC. */
+/** Main-only lifecycle phase used by durable creation; renderer input cannot supply these callbacks. */
 export interface CreationCompositionMarker {
   readonly reservationId: string;
   readonly agentId: string;
@@ -13,7 +13,8 @@ export type CreationCompositionRecovery =
   | { kind: 'retain'; mayRemoveCreation: false; reason: 'saved' | 'changed' | 'missing-after-commit' | 'unknown' };
 
 /**
- * Recovery never deletes catalog state. Even a matching revision remains saved
+ * Classification helper only: actual restart recovery currently conservatively retains
+ * the journal without calling this helper. It never deletes catalog state. Even a matching revision remains saved
  * desired state until the owning creation explicitly reconciles it. An unknown
  * read cannot be substituted for an absent composition.
  */
