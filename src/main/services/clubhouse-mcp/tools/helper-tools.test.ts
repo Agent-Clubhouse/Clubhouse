@@ -895,6 +895,8 @@ describe('start_helper cli "auto" (#2671)', () => {
     expect(mockRecordSpawnResult).toHaveBeenCalledWith({ decisionId, helperId: 'helper_h', result: 'started' });
     // Started, and kept until a count sees it: the next start's count reconciles it once.
     expect(reservationSummary()).toMatchObject({ held: 1, startedPending: 1 });
+    // Its own creation, still going: the first one's has already finished.
+    controllableCreation();
     const next = parse(await start({ name: 'h2', folder: 'h2' }));
     expect((next.routing as { load: Record<string, number> }).load).toEqual({ 'claude-code': 1, 'codex-cli': 0 });
     expect(reservationSummary()).toMatchObject({ held: 1, startedPending: 0 });

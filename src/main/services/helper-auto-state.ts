@@ -59,15 +59,22 @@ const rotationStore = createSettingsStore<RotationFile>('helper-auto-rotation.js
 });
 
 /** The last key chosen for each tie set. */
+/** This run's rotation: what was saved, read once, then kept here. The saved file only carries it across a restart. */
+let rotation: RotationFile['cursors'] | null = null;
+
+function currentRotation(): RotationFile['cursors'] {
+  return (rotation ??= { ...rotationStore.get().cursors });
+}
+
 export function rotationCursors(): Record<string, string> {
-  return Object.fromEntries(Object.entries(rotationStore.get().cursors).map(([set, { key }]) => [set, key]));
+  return Object.fromEntries(Object.entries(currentRotation()).map(([set, { key }]) => [set, key]));
 }
 
 function commitRotation(cursorKey: string, key: string, now: number): void {
-  const cursors = { ...rotationStore.get().cursors, [cursorKey]: { key, at: now } };
-  const kept = Object.entries(cursors).sort((a, b) => b[1].at - a[1].at).slice(0, AUTO_MAX_ROTATION_CURSORS);
-  // In memory at once; the write is queued. A failed write leaves this run's value in place.
-  rotationStore.save({ version: 1, cursors: Object.fromEntries(kept) }).catch((err: unknown) => {
+  const cursors = { ...currentRotation(), [cursorKey]: { key, at: now } };
+  rotation = Object.fromEntries(Object.entries(cursors).sort((a, b) => b[1].at - a[1].at).slice(0, AUTO_MAX_ROTATION_CURSORS));
+  // This run's value is set above; the write is queued, and a failed one leaves it in place. Every save's failure is handled here.
+  rotationStore.save({ version: 1, cursors: rotation }).catch((err: unknown) => {
     // telemetry-exempt: logged; this run is unaffected, and a restart reads older history (see the header)
     appLog('core:mcp', 'warn', 'Auto: could not save the rotation', { meta: { error: err instanceof Error ? err.name : 'unknown' } });
   });
@@ -175,5 +182,6 @@ export function reservationSummary(now = Date.now()): { held: number; startedPen
 /** For testing. */
 export function _resetHelperAutoStateForTesting(): void {
   reservations.clear();
-  void rotationStore.save({ version: 1, cursors: {} });
+  // In memory only: a test reset writes nothing, so it leaves no save to settle or fail.
+  rotation = {};
 }
