@@ -39,6 +39,12 @@ function fail(text: string): McpToolResult {
 
 class ArgError extends Error {}
 
+/** A refused stale edit: what the part is now, so the caller can read it and decide (D92). */
+function staleText(part: { name: string; revision: number; updatedAt: string; updatedBy?: string }): string {
+  const by = part.updatedBy ? ` by ${part.updatedBy}` : '';
+  return `${part.name} changed since you read it. It is at revision ${part.revision} now, saved${by} at ${part.updatedAt}. Read it with get_agent_part, then call again with expectedRevision ${part.revision} (and its name and description as expectedName and expectedDescription) if your change should still go in.`;
+}
+
 function kindArg(args: Record<string, unknown>): ManagedPartKind {
   const kind = requireString(args, 'kind');
   if (!(KINDS as string[]).includes(kind)) throw new ArgError(`kind must be one of ${KINDS.join(', ')}`);
@@ -170,9 +176,15 @@ export function registerManagedTools(): void {
   const svc = () => managedAgents();
 
   tool('list_agent_parts',
-    'List the agent part library: instruction blocks, skills or MCP servers. Each part says whether it is built in, a short preview, and which agents and templates use it. Parts are used by reference: an edit reaches every agent using it at its next start. Retired built-ins are left out; agents that use one still get it, and get_agent_part reads it.',
-    { kind: { ...S, description: 'block, skill or mcp' } }, ['kind'],
-    async (_c, args) => json((await svc().listParts(kindArg(args))).filter(isListed)));
+    'List the agent part library: instruction blocks, skills or MCP servers. Each part says whether it is built in, a short preview, and which agents and templates use it. Parts are used by reference: an edit reaches every agent using it at its next start. Retired built-ins are left out; agents that use one still get it, and get_agent_part reads it. source "builtin" or "custom" lists only those, as the library\'s source filter does.',
+    { kind: { ...S, description: 'block, skill or mcp' }, source: { ...S, description: 'Optional: builtin or custom. Leave out for both.' } }, ['kind'],
+    async (_c, args) => {
+      const kind = kindArg(args);
+      const source = optionalString(args, 'source');
+      if (source !== undefined && source !== 'builtin' && source !== 'custom') throw new ArgError('source must be builtin or custom');
+      const parts = (await svc().listParts(kind)).filter(isListed);
+      return json(source === undefined ? parts : parts.filter((p) => p.builtin === (source === 'builtin')));
+    });
 
   tool('get_agent_part', 'Read one agent part with its full content and revision.',
     { id: S }, ['id'],
@@ -190,17 +202,29 @@ export function registerManagedTools(): void {
     });
 
   tool('update_agent_part',
-    'Edit or rename a custom part for every agent that uses it. Built-ins are read-only: fork them. When more than one agent uses it, the first call returns the agents and templates it reaches and a confirm token; call again with the same arguments and confirm to save. A token is yours only, works once, and expires after 10 minutes. Running agents keep their current setup until restarted.',
-    { id: S, expectedRevision: { type: 'number' }, name: S, description: S, content: OBJ, confirm: S }, ['id', 'expectedRevision'],
+    'Edit or rename a custom part for every agent that uses it. Built-ins are read-only: fork them. A rename needs expectedName and a description edit needs expectedDescription: the name and description you read with get_agent_part, since neither changes the revision. When more than one agent uses it, the first call returns the agents and templates it reaches and a confirm token; call again with the same arguments and confirm to save. A token is yours only, works once, and expires after 10 minutes. Running agents keep their current setup until restarted.',
+    { id: S, expectedRevision: { type: 'number' }, expectedName: S, expectedDescription: S, name: S, description: S, content: OBJ, confirm: S }, ['id', 'expectedRevision'],
     async (callerId, args) => {
       const id = requireString(args, 'id');
       const expectedRevision = numberArg(args, 'expectedRevision');
       const content = contentArg(args);
       const name = optionalString(args, 'name');
       const description = optionalString(args, 'description');
+      // The same rule as the editor: a rename or description edit says what it read (D92).
+      const expectedName = typeof args.expectedName === 'string' ? args.expectedName : undefined;
+      const expectedDescription = typeof args.expectedDescription === 'string' ? args.expectedDescription : undefined;
+      if (name !== undefined && expectedName === undefined) throw new ArgError('A rename needs expectedName: the name you read with get_agent_part.');
+      if (description !== undefined && expectedDescription === undefined) throw new ArgError('A description edit needs expectedDescription: the description you read with get_agent_part (empty for none).');
       const part = await svc().getPart(id);
       if (part.builtin) throw new ManagedError('builtin_read_only', 'Built-in parts can\'t be edited. Fork it with fork_agent_part instead.');
-      const digest = digestOf('update_agent_part', id, part.revision, part.content, expectedRevision, content ?? null, name ?? null, description ?? null,
+      // Never saved over a newer version: say what is there now, so the caller can read it and decide.
+      if (part.revision !== expectedRevision
+        || (expectedName !== undefined && expectedName.trim() !== part.name)
+        || (expectedDescription !== undefined && expectedDescription.trim() !== part.description)) {
+        throw new ManagedError('stale', staleText(part));
+      }
+      // The name and description are in the digest too, so a rename between preview and confirm refuses the token.
+      const digest = digestOf('update_agent_part', id, part.revision, part.name, part.description, part.content, expectedRevision, content ?? null, name ?? null, description ?? null,
         part.usedBy.map((c) => c.agentId).sort(), part.templates.map((t) => t.id).sort());
       const given = optionalString(args, 'confirm');
       if (given) redeemConfirm(callerId, given, digest);
@@ -210,7 +234,7 @@ export function registerManagedTools(): void {
           templates: part.templates.map((t) => t.name),
           note: 'Call again with the same arguments and this confirm token to save. Each agent gets the change at its next start; running ones keep their setup until restarted. Agents made from these templates later get it too.' });
       }
-      return json(await asDispatcher(callerId, () => svc().updatePart({ id, expectedRevision, name, description, content, actor: ACTOR })));
+      return json(await asDispatcher(callerId, () => svc().updatePart({ id, expectedRevision, expectedName, expectedDescription, name, description, content, actor: ACTOR })));
     });
 
   tool('fork_agent_part',
@@ -233,6 +257,7 @@ export function registerManagedTools(): void {
       if (mode !== 'copy' && mode !== 'remove') throw new ArgError('mode must be copy or remove');
       const part = await svc().getPart(id);
       if (part.builtin) throw new ManagedError('builtin_read_only', 'Built-in parts can\'t be deleted.');
+      if (part.revision !== expectedRevision) throw new ManagedError('stale', staleText(part));
       const digest = digestOf('delete_agent_part', id, part.revision, part.content, expectedRevision, mode,
         part.usedBy.map((c) => c.agentId).sort(), part.templates.map((t) => t.id).sort());
       const given = optionalString(args, 'confirm');
@@ -353,22 +378,47 @@ export function registerManagedTools(): void {
       return json({ status: 'pushed', applied, ...(skipped.length > 0 && { skipped }), failed });
     });
 
+  tool('delete_agent_template',
+    'Delete a custom template. Built-in templates can\'t be deleted. Agents made from it keep their setup; new agents and helpers can\'t start from it, and if it was the default helper template, helpers go back to the built-in Helper template. The first call returns the agents made from it and a confirm token; call again with the same id and confirm to delete.',
+    { id: S, confirm: S }, ['id'],
+    async (callerId, args) => {
+      const id = requireString(args, 'id');
+      const template = await svc().getTemplate(id);
+      if (template.builtin) throw new ManagedError('builtin_read_only', 'Built-in templates can\'t be deleted.');
+      const agents = await svc().templateConsumers(id);
+      const isDefaultHelper = (await svc().defaultHelperTemplateId()) === id;
+      const digest = digestOf('delete_agent_template', id, template.updatedAt ?? null, agents.map((a) => a.agentId).sort(), isDefaultHelper);
+      const given = optionalString(args, 'confirm');
+      if (!given) {
+        return json({ status: 'needs_confirmation', confirm: issueConfirm(callerId, digest),
+          madeFromIt: agents.map((c) => ({ agent: c.agentName, project: c.projectName, running: c.running })),
+          ...(isDefaultHelper && { defaultHelperTemplate: true }),
+          note: `Agents made from ${template.name} keep their setup. New agents can't start from it.${isDefaultHelper ? ' It is the default helper template, so new helpers use the built-in Helper template instead.' : ''} Call again with the same id and this confirm token to delete.` });
+      }
+      redeemConfirm(callerId, given, digest);
+      await asDispatcher(callerId, () => svc().deleteTemplate(id));
+      return json({ status: 'deleted' });
+    });
+
   tool('create_managed_agent',
-    'Create a Clubhouse-managed durable agent, from a template or a full setup. It gets its own worktree (or folder) and is created asleep; wake it with wake_agent.',
-    { project: PROJECT, name: S, color: S, templateId: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, ['project', 'name'],
+    'Create a durable agent, asleep; wake it with wake_agent. By default it is Clubhouse managed, from a template or a full setup, in its own worktree (or folder). managed: false makes a plain agent instead, in its own worktree, that reads its own files; it takes settings but no template or parts.',
+    { project: PROJECT, name: S, color: S, managed: { type: 'boolean', description: 'false for a plain (unmanaged) agent. Default true.' }, templateId: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, ['project', 'name'],
     async (callerId, args) => {
       const project = await resolveProject(requireString(args, 'project'));
       const hasSetup = ['blocks', 'skills', 'mcps'].some((k) => args[k] !== undefined);
+      const plain = optionalBoolean(args, 'managed') === false;
+      if (plain && (hasSetup || args.templateId !== undefined)) throw new ArgError('A plain agent has no template or parts. Leave out templateId, blocks, skills and mcps, or leave out managed: false.');
       const input = {
         name: requireString(args, 'name'),
         color: optionalString(args, 'color') ?? 'indigo',
+        ...(plain && { managed: false as const }),
         templateId: optionalString(args, 'templateId'),
         ...(hasSetup && { setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') } }),
         settings: objectArg<ManagedTemplateSettings>(args, 'settings'),
       };
       // Created asleep: nothing here spawns, so the whole creation can run under the grant.
       const config = await asDispatcher(callerId, () => createManagedAgent(project.path, input));
-      return json({ id: config.id, name: config.name, project: project.name, status: 'sleeping' });
+      return json({ id: config.id, name: config.name, project: project.name, managed: !!config.managed, status: 'sleeping' });
     });
 
   tool('restart_agent',

@@ -12,6 +12,7 @@ import { SettingsField, SettingsPage, SettingsSection, settingsError, settingsHe
 import { ManagedBuilder, type SetupDraft } from './ManagedBuilder';
 import { TemplatePushDialog } from './TemplatePushDialog';
 import { errorText, managed, unwrap, useManagedTemplates } from './managedApi';
+import { changedLine } from './attribution';
 import {
   EffortSelect, HELPER_SELECTION_HELP, HELPER_TEMPLATE_HELP, HelperSelectionSelect, HelperTemplateSelect, IDLE_SLEEP_HELP, IdleSleepSelect,
   effortHelp, useModelEfforts,
@@ -50,6 +51,7 @@ function TemplateRow({ t, children }: { t: ListedTemplate; children: React.React
       <span className="min-w-0">
         <span className="block text-[13px] text-ctp-text truncate">{t.name}</span>
         {t.description && <span className="block text-xs text-ctp-overlay1 truncate">{t.description}</span>}
+        {t.updatedBy && <span className="block text-xs text-ctp-overlay1 truncate" data-testid="managed-template-changed">{changedLine(t.updatedAt, t.updatedBy)}</span>}
       </span>
       <span className="text-xs text-ctp-overlay1 truncate">{usage(t.usedBy)}</span>
       <span className="flex items-center gap-1">{children}</span>

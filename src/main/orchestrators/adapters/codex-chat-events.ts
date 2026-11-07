@@ -10,6 +10,8 @@ import type {
   ChatErrorCode,
   ChatEventDraft,
   ChatImage,
+  ChatMcpServer,
+  ChatMcpServerStatus,
   ChatQuestionAnswers,
   ChatSessionState,
   ContentBlock,
@@ -22,6 +24,7 @@ import type {
   UsageLimit,
 } from '../../../shared/chat/events';
 import { COMPACTION_STARTED } from '../../../shared/chat/events';
+import { safeMcpErrorLine } from '../../services/mcp-error-text';
 import {
   commandApprovalDecisions,
   FILE_CHANGE_APPROVAL_DECISIONS,
@@ -89,6 +92,8 @@ export class CodexChatEventMapper {
   private readonly turnTokens = new Map<string, { before: TokenUsageBreakdown; latest: TokenUsageBreakdown }>();
   /** Threads a subagent tool call named: their token totals are their own, not the main thread's. */
   private readonly subagentThreads = new Set<string>();
+  /** Each MCP server's startup state as Codex last reported it, for Details (#2896). */
+  private readonly mcpServers = new Map<string, ChatMcpServer>();
 
   /** Translate one notification. Known methods with no chat meaning map to nothing. */
   mapNotification(notification: ServerNotification): ChatEventDraft[] {
@@ -220,10 +225,17 @@ export class CodexChatEventMapper {
       }
       case 'mcpServer/startupStatus/updated': {
         const { name, status, error } = notification.params;
-        if (status !== 'failed') return [];
-        return [{
+        // Details lists every server Codex reported, with why one failed (D95).
+        const line = status === 'failed' ? safeMcpErrorLine(error) : undefined;
+        const before = JSON.stringify([...this.mcpServers.values()]);
+        this.mcpServers.set(name, { name, status: CODEX_MCP_STATUS[status] ?? 'unknown', ...(line && { error: line }) });
+        const servers = [...this.mcpServers.values()];
+        const listed: ChatEventDraft[] = JSON.stringify(servers) === before ? [] : [{ type: 'session_info', data: { mcpServers: servers } }];
+        if (status !== 'failed') return listed;
+        return [...listed, {
           type: 'notice',
-          data: { level: 'warn', code: 'mcp_server_failed', message: `MCP server ${name} failed to start${error ? `: ${safeErrorText(error)}` : ''}` },
+          // The same redacted first line Details shows: the notice reaches the chat and its transcript.
+          data: { level: 'warn', code: 'mcp_server_failed', message: `MCP server ${name} failed to start${line ? `: ${line}` : ''}` },
         }];
       }
       case 'thread/name/updated': {
@@ -946,11 +958,5 @@ function stringRecord(v: unknown): Record<string, string> | undefined {
 
 const HTTP_TYPES: ReadonlySet<string> = new Set(['http', 'streamable_http', 'streamable-http']);
 
-/**
- * Codex's error text for a failed MCP server, shortened and with URL query
- * strings removed (they can carry tokens).
- */
-function safeErrorText(error: string): string {
-  const stripped = error.replace(/(https?:\/\/[^\s?#]+)\?[^\s#]*/g, '$1?…');
-  return stripped.length > 200 ? `${stripped.slice(0, 200)}…` : stripped;
-}
+/** Codex's MCP startup states as the chat names them. */
+const CODEX_MCP_STATUS: Record<string, ChatMcpServerStatus> = { starting: 'pending', ready: 'connected', failed: 'failed', cancelled: 'disabled' };

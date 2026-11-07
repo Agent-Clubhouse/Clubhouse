@@ -3180,7 +3180,14 @@ async function setManagedSetupInner(projectPath: string, agentId: string, setup:
     if (!agent.managed && !agent.switchedToManagedAt) agent.switchedToManagedAt = new Date().toISOString();
     // The Clubhouse MCP part is in every managed setup and can't be left out: the Clubhouse MCP always runs.
     const mcps = setup.mcps.includes(CLUBHOUSE_MCP_PART_ID) ? [...setup.mcps] : [CLUBHOUSE_MCP_PART_ID, ...setup.mcps];
-    agent.managed = { version: 1, blocks: [...setup.blocks], skills: [...setup.skills], mcps, ...(setup.templateId ? { templateId: setup.templateId } : {}) };
+    agent.managed = {
+      version: 1, blocks: [...setup.blocks], skills: [...setup.skills], mcps,
+      ...(setup.templateId ? { templateId: setup.templateId } : {}),
+      // Bookkeeping for Details (D90, D91): what start_helper changed, and who saved it when.
+      ...(setup.helperChanges ? { helperChanges: { added: [...setup.helperChanges.added], removed: [...setup.helperChanges.removed] } } : {}),
+      ...(setup.updatedAt ? { updatedAt: setup.updatedAt } : {}),
+      ...(setup.updatedBy ? { updatedBy: setup.updatedBy } : {}),
+    };
     delete agent.clubhouseFeatures;
     delete agent.persona;
     // Switched, by hand or on its own: an earlier automatic switch's failure no longer applies (D59).

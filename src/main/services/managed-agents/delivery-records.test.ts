@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { delivered, dropRunningSnapshot, failedDeliveries, forgetDelivery } from './delivery-records';
+import { delivered, dropRunningSnapshot, failedDeliveries, forgetDelivery, mcpProblems } from './delivery-records';
 import type { DeliveryRecord } from './delivery';
 
 const record = (): DeliveryRecord => ({
@@ -27,5 +27,16 @@ describe('what a running session started with (D79)', () => {
     forgetDelivery('ada');
     expect(delivered.has('ada')).toBe(false);
     expect(failedDeliveries.has('ada')).toBe(false);
+  });
+});
+
+describe('a session\'s MCP start problems (D95)', () => {
+  it('end with the session, and go when the agent is deleted or disposed', () => {
+    mcpProblems.set('ada', [{ server: 'workiq', missingEnv: ['WORKIQ_TENANT'] }]);
+    dropRunningSnapshot('ada');
+    expect(mcpProblems.has('ada')).toBe(false);
+    mcpProblems.set('ada', [{ server: 'workiq', missingEnv: ['WORKIQ_TENANT'] }]);
+    forgetDelivery('ada');
+    expect(mcpProblems.has('ada')).toBe(false);
   });
 });

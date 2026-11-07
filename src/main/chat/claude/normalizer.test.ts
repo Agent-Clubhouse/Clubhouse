@@ -42,6 +42,14 @@ describe('ClaudeNormalizer', () => {
     expect(without).not.toHaveProperty('mcpServers');
   });
 
+  it('keeps a failed server\'s error when the CLI gives one (#2896)', () => {
+    const [ev] = new ClaudeNormalizer().normalize({
+      type: 'system', subtype: 'init', session_id: 's1',
+      mcp_servers: [{ name: 'workiq', status: 'failed', error: 'MCP error -32000: Connection closed' }, { name: 'ok', status: 'connected' }],
+    });
+    expect(ev).toMatchObject({ kind: 'session_started', mcpServers: [{ name: 'workiq', status: 'failed', error: 'MCP error -32000: Connection closed' }, { name: 'ok', status: 'connected' }] });
+  });
+
   it('maps assistant blocks and remembers tool names for their results', () => {
     const n = new ClaudeNormalizer();
     const a = n.normalize({

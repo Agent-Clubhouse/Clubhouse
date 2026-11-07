@@ -11,6 +11,7 @@ import { applyManagedSettings, convertToManaged, createManagedAgent, previewConv
 import { withSwitchLock } from '../services/managed-agents/auto-migrate';
 import { previewManagedSetup } from '../services/managed-agents/delivery';
 import { checkTemplateSettings, ManagedError } from '../services/managed-agents/service';
+import { executableBits } from '../services/managed-agents/file-modes';
 import * as agentConfig from '../services/agent-config';
 import { resolveOrchestrator } from '../services/agent-system';
 import { appLog } from '../services/log-service';
@@ -55,6 +56,16 @@ function contentShape(value: unknown): void {
   }
 }
 
+/**
+ * Who made a change is never the renderer's to say: only the MCP tools set an
+ * actor, under the Dispatcher's surface (D90). Anything else the window sends
+ * as `actor` is dropped.
+ */
+export function withoutActor<T extends object>(input: T): Omit<T, 'actor'> {
+  const { actor: _ignored, ...rest } = input as T & { actor?: unknown };
+  return rest;
+}
+
 async function result<T>(fn: () => Promise<T>): Promise<ManagedResult<T>> {
   try {
     return { ok: true, value: await fn() };
@@ -73,15 +84,17 @@ export function registerManagedAgentsHandlers(): void {
   ipcMain.handle(IPC.MANAGED.GET_PART, withValidatedArgs([idArg()], (_e, id) => result(() => s().getPart(id))));
   ipcMain.handle(IPC.MANAGED.CREATE_PART, withValidatedArgs(
     [objectArg<{ name: string; description?: string; content: ManagedPartContent }>({ validate: (v) => { stringArg({ maxLength: 200 })(v.name, 'name'); contentShape(v.content); } })],
-    (_e, input) => result(() => s().createPart(input)),
+    (_e, input) => result(() => s().createPart(withoutActor(input))),
   ));
   ipcMain.handle(IPC.MANAGED.UPDATE_PART, withValidatedArgs(
-    [objectArg<{ id: string; expectedRevision: number; name?: string; description?: string; content?: ManagedPartContent }>({ validate: (v) => {
+    [objectArg<{ id: string; expectedRevision: number; expectedName?: string; expectedDescription?: string; name?: string; description?: string; content?: ManagedPartContent }>({ validate: (v) => {
       idArg()(v.id, 'id');
       numberArg()(v.expectedRevision, 'expectedRevision');
+      if (v.expectedName !== undefined) stringArg({ minLength: 0, maxLength: 200 })(v.expectedName, 'expectedName');
+      if (v.expectedDescription !== undefined) stringArg({ minLength: 0, maxLength: 2000 })(v.expectedDescription, 'expectedDescription');
       if (v.content !== undefined) contentShape(v.content);
     } })],
-    (_e, input) => result(() => s().updatePart(input)),
+    (_e, input) => result(() => s().updatePart(withoutActor(input))),
   ));
   ipcMain.handle(IPC.MANAGED.FORK_PART, withValidatedArgs(
     [idArg(), objectArg<{ projectPath: string; agentId: string }>({ optional: true }), stringArg({ optional: true, maxLength: 200 })],
@@ -137,11 +150,12 @@ export function registerManagedAgentsHandlers(): void {
   ));
   // The effort levels each model of a CLI takes, for the builder's Effort list. `default` is the CLI's default model's.
   ipcMain.handle(IPC.MANAGED.MODEL_EFFORTS, withValidatedArgs([stringArg({ maxLength: 64 }), stringArg({ optional: true, maxLength: 4096 })],
-    (_e, cli, projectPath) => result(async (): Promise<Record<string, string[]>> => {
+    // The project path no longer matters: provider profiles are gone (#2749), so a CLI has one model list.
+    (_e, cli, _projectPath) => result(async (): Promise<Record<string, string[]>> => {
       const provider = getProvider(cli as OrchestratorId);
       if (!provider) return {};
       // telemetry-exempt: a list that can't be read offers no levels; the Effort row says so.
-      const list = await modelListFor(provider, projectPath).catch((): null => null);
+      const list = await modelListFor(provider).catch((): null => null);
       const out: Record<string, string[]> = {};
       for (const m of list?.models ?? []) {
         if (m.efforts?.length) out[m.id] = [...m.efforts];
@@ -154,7 +168,7 @@ export function registerManagedAgentsHandlers(): void {
   ipcMain.handle(IPC.MANAGED.GET_TEMPLATE, withValidatedArgs([idArg()], (_e, id) => result(() => s().getTemplate(id))));
   ipcMain.handle(IPC.MANAGED.SAVE_TEMPLATE, withValidatedArgs(
     [objectArg<Omit<ManagedTemplate, 'builtin' | 'updatedAt' | 'id'> & { id?: string }>({ validate: (v) => { stringArg({ maxLength: 200 })(v.name, 'name'); setupShape(v.setup); } })],
-    (_e, input) => result(() => s().saveTemplate(input)),
+    (_e, input) => result(() => s().saveTemplate(withoutActor(input))),
   ));
   ipcMain.handle(IPC.MANAGED.DELETE_TEMPLATE, withValidatedArgs([idArg()], (_e, id) => result(() => s().deleteTemplate(id))));
   ipcMain.handle(IPC.MANAGED.TEMPLATE_FROM_AGENT, withValidatedArgs([stringArg(), idArg(), stringArg({ maxLength: 200 }), stringArg({ optional: true, maxLength: 2000 })],
@@ -202,6 +216,11 @@ export function registerManagedAgentsHandlers(): void {
     [stringArg(), idArg(), objectArg<{ fresh?: boolean; whenTurnEnds?: boolean }>({ optional: true })],
     (_e, projectPath, agentId, options) => result(() => restartManagedAgent(projectPath, agentId, options ?? {})),
   ));
+  // Reached only through the preload's executableBits(File[]): the paths come from
+  // webUtils.getPathForFile, so they are files the person dropped or picked.
+  // Only each file's mode is read, as true, false or null (D96).
+  ipcMain.handle(IPC.MANAGED.EXECUTABLE_BITS, withValidatedArgs([arrayArg(stringArg({ minLength: 0, maxLength: 4096 }), { maxLength: 2000 })],
+    (_e, paths) => result(() => executableBits(paths))));
   ipcMain.handle(IPC.MANAGED.SET_CLUBHOUSE_FEATURES, withValidatedArgs([stringArg(), idArg(), booleanArg()],
     (_e, projectPath, agentId, on) => result(async () => {
       await agentConfig.setClubhouseFeatures(projectPath, agentId, on);

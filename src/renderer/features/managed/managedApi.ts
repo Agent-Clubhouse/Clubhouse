@@ -16,7 +16,7 @@ import type {
 
 const MESSAGES: Record<ManagedErrorCode, string> = {
   not_found: 'It no longer exists. Reload and try again.',
-  stale: 'It changed since you opened it. Reload to see the latest version.',
+  stale: 'It changed since you opened it.',
   invalid: 'Check the name, paths and fields.',
   builtin_read_only: 'Built-in parts can\'t be edited. Make your copy instead.',
   in_use: 'Agents still use it.',
@@ -36,6 +36,11 @@ export async function unwrap<T>(p: Promise<ManagedResult<T>>): Promise<T> {
   const r = await p;
   if (r.ok === true) return r.value;
   throw new ManagedUiError(r.code, r.message || MESSAGES[r.code]);
+}
+
+/** A save refused because the part changed since it was opened. Editors show both versions then (#2897). */
+export function isStale(err: unknown): boolean {
+  return err instanceof ManagedUiError && err.code === 'stale';
 }
 
 export function errorText(err: unknown): string {

@@ -5,13 +5,15 @@
  * agent whose setup changed after its session started, what is waiting.
  * Open builder goes to the agent's Instructions page; Restart applies what
  * is waiting. An agent Clubhouse switched on its own says so until the
- * notice is dismissed (D59).
+ * notice is dismissed (D59). A helper says what start_helper changed from its
+ * template (D91), and a setup or template the Dispatcher changed says so (D90).
  */
 import { useState } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { ManagedAgentSetup, ManagedPartSummary } from '../../../../shared/managed-agents-types';
 import { Button } from '../../../components/Button';
 import { errorText, managed, unwrap, useManagedParts, useManagedStatus, useManagedTemplates } from '../../managed/managedApi';
+import { builtFromLine, changedLine } from '../../managed/attribution';
 import { migratedLine } from '../../managed/legacy';
 import { PENDING_RESTART_NOTE, useManagedRestart } from '../../managed/restart';
 import { openAgentSettingsOn } from '../agentSettingsPages';
@@ -46,20 +48,38 @@ function NameList({ ids, parts }: { ids: string[]; parts: ManagedPartSummary[] |
   );
 }
 
+/** "Helper template, plus Playwright, minus code-review", with names from the library once it loads. */
+function BuiltFrom({ templateName, changes }: { templateName: string | null; changes: NonNullable<ManagedAgentSetup['helperChanges']> }) {
+  const lists = [useManagedParts('block').value, useManagedParts('skill').value, useManagedParts('mcp').value];
+  if (lists.some((l) => l === null)) return <span className="text-ctp-overlay1">Loading</span>;
+  const byId = new Map(lists.flatMap((l) => l!).map((p) => [p.id, p.name]));
+  return <>{builtFromLine(templateName, changes, (id) => byId.get(id))}</>;
+}
+
 /** The rows, read only while the card is open. */
-function SetupRows({ setup, templateName, runsOn, changes }: {
+function SetupRows({ setup, templateName, templateChange, runsOn, changes }: {
   setup: ManagedAgentSetup;
   templateName: string | null;
+  /** Who last changed the template, when not the person (D90). */
+  templateChange: string | null;
   runsOn: string;
   changes: string[] | null;
 }) {
   const skills = useManagedParts('skill');
   const mcps = useManagedParts('mcp');
   const blocks = setup.blocks.length;
+  const helperChanges = setup.helperChanges && (setup.helperChanges.added.length > 0 || setup.helperChanges.removed.length > 0) ? setup.helperChanges : null;
   return (
     <>
       <CardRow label="Managed" labelWidth="wide" testId="details-setup-managed">By Clubhouse</CardRow>
-      <CardRow label="Template" labelWidth="wide" testId="details-setup-template">{templateName ?? 'None'}</CardRow>
+      {helperChanges ? (
+        <CardRow label="Built from" labelWidth="wide" testId="details-setup-built-from"><BuiltFrom templateName={templateName} changes={helperChanges} /></CardRow>
+      ) : (
+        <CardRow label="Template" labelWidth="wide" testId="details-setup-template">
+          {templateName ?? 'None'}
+          {templateChange && <span className="block text-xs text-ctp-overlay1" data-testid="details-setup-template-changed">{templateChange}</span>}
+        </CardRow>
+      )}
       <CardRow label="Instructions" labelWidth="wide" testId="details-setup-instructions">{blocks} {blocks === 1 ? 'block' : 'blocks'}</CardRow>
       <CardRow label="Skills" labelWidth="wide" testId="details-setup-skills"><NameList ids={setup.skills} parts={skills.value} /></CardRow>
       <CardRow label="MCP servers" labelWidth="wide" testId="details-setup-mcp"><NameList ids={setup.mcps} parts={mcps.value} /></CardRow>
@@ -102,14 +122,17 @@ export function SetupCard({ agent, projectPath, setup, runsOn }: {
     }
   };
 
-  const templateName = setup.templateId ? templates.value?.find((t) => t.id === setup.templateId)?.name ?? null : null;
+  const template = setup.templateId ? templates.value?.find((t) => t.id === setup.templateId) ?? null : null;
+  const templateName = template?.name ?? null;
+  const templateChange = template?.updatedBy ? `Template ${changedLine(template.updatedAt, template.updatedBy).replace(/^C/, 'c')}` : null;
   const changes = status?.waiting && status.running ? status.changes : null;
   const waiting = changes !== null;
   const summary = setupSummary(templateName, changes ? Math.max(1, changes.length) : 0);
 
   return (
     <DetailsCard id="settings" title="Setup" summary={summary} open={open} onToggle={() => setOpen(!open)}>
-      <SetupRows setup={setup} templateName={templateName} runsOn={runsOn} changes={changes} />
+      <SetupRows setup={setup} templateName={templateName} templateChange={templateChange} runsOn={runsOn} changes={changes} />
+      {setup.updatedBy && <CardNote><span data-testid="details-setup-changed">{changedLine(setup.updatedAt, setup.updatedBy)}</span></CardNote>}
       <span role="status" className="sr-only" data-testid="details-setup-live">{pending ? PENDING_RESTART_NOTE : waiting ? SETUP_WAITING_NOTE : ''}</span>
       {(waiting || pending) && <CardNote><span data-testid="details-setup-note">{pending ? PENDING_RESTART_NOTE : SETUP_WAITING_NOTE}</span></CardNote>}
       {error && <CardNote><span className="text-ctp-error" role="alert" data-testid="details-setup-error">{error}</span></CardNote>}

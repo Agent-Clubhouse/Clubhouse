@@ -2,26 +2,50 @@ import { useEffect, useRef, useState } from 'react';
 import { Modal } from '../../components/Modal';
 import { Button } from '../../components/Button';
 import { inputClass, selectClass, textareaClass } from '../agents/agentSettingsUi';
-import type { ManagedPartConsumer, ManagedPartContent, ManagedPartKind, ManagedPartSummary, ManagedSkillContent } from '../../../shared/managed-agents-types';
-import { ImpactDialog } from './ImpactDialog';
-import { errorText, managed, partKindLabel, unwrap } from './managedApi';
+import type { ManagedPart, ManagedPartConsumer, ManagedPartContent, ManagedPartKind, ManagedPartSummary, ManagedSkillContent } from '../../../shared/managed-agents-types';
+import { ImpactDialog, needsImpactDialog } from './ImpactDialog';
+import { errorText, isStale, managed, partKindLabel, unwrap } from './managedApi';
 import { WildcardBar } from './parts-ui';
-import { restartAfterSave } from './restart';
+import { noteRunningLeftAlone, restartAfterSave } from './restart';
+import { StaleEditDialog } from './StaleEditDialog';
 
 type SkillFile = ManagedSkillContent['files'][number];
 
+/** The version an edit started from. */
+interface Opened { revision: number; name: string; description: string }
+
 const TEXT_EXT = /\.(md|markdown|txt|json|ya?ml|toml|sh|zsh|bash|py|js|mjs|cjs|ts|tsx|jsx|rb|go|rs|java|kt|swift|c|h|cpp|css|html|xml|csv|ini|cfg|env\.example)$/i;
 
-async function readFileAsSkillFile(file: File, relPath: string): Promise<SkillFile> {
+/** Only when main can't read the file's mode (Windows, or no path): a script is guessed by its name. */
+const SCRIPT_EXT = /\.(sh|zsh|bash|py)$/i;
+
+/**
+ * A dropped or picked file as a skill file. `executable` is the file's real
+ * executable bit, read by main from its mode (D96); null means it can't be
+ * told, and then a script name is the guess.
+ */
+export async function readFileAsSkillFile(file: File, relPath: string, executable: boolean | null): Promise<SkillFile> {
   const buf = new Uint8Array(await file.arrayBuffer());
   const looksText = TEXT_EXT.test(relPath) || !buf.subarray(0, 4096).includes(0);
+  const exec = executable ?? (looksText && SCRIPT_EXT.test(relPath));
   if (looksText) {
     const content = new TextDecoder('utf-8', { fatal: false }).decode(buf);
-    return { path: relPath, content, ...(/\.(sh|zsh|bash|py)$/i.test(relPath) && { executable: true }) };
+    return { path: relPath, content, ...(exec && { executable: true }) };
   }
   let binary = '';
   for (let i = 0; i < buf.length; i++) binary += String.fromCharCode(buf[i]);
-  return { path: relPath, content: btoa(binary), encoding: 'base64' };
+  return { path: relPath, content: btoa(binary), encoding: 'base64', ...(exec && { executable: true }) };
+}
+
+/** Each file's executable bit from main, or null for all when it can't be read. */
+async function executableBitsOf(files: File[]): Promise<Array<boolean | null>> {
+  try {
+    const bits = await unwrap(managed().executableBits(files));
+    return files.map((_f, i): boolean | null => bits[i] ?? null);
+  } catch {
+    // telemetry-exempt: falls back to the name guess for every file
+    return files.map((): null => null);
+  }
 }
 
 /** Walk a dropped folder (webkitGetAsEntry) into relative file paths. */
@@ -76,8 +100,12 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [content, setContent] = useState<ManagedPartContent>(() => blankContent(kind));
-  const [revision, setRevision] = useState(0);
+  // What the editor opened: the save is refused as stale if any of it changed since (D92).
+  const [opened, setOpened] = useState<Opened>({ revision: 0, name: '', description: '' });
   const [usedBy, setUsedBy] = useState<ManagedPartConsumer[]>([]);
+  const [templates, setTemplates] = useState<Array<{ id: string; name: string }>>([]);
+  // Saving found a newer version (#2897): theirs, and the restarts the person had ticked.
+  const [stale, setStale] = useState<{ theirs: ManagedPart; restart: ManagedPartConsumer[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [impact, setImpact] = useState(false);
@@ -92,14 +120,15 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
     if (!open) return;
     setError(null);
     setImpact(false);
+    setStale(null);
     if (!editId) {
-      setName(''); setDescription(''); setContent(blankContent(kind)); setRevision(0); setUsedBy([]); setArgsText(''); setEnvText('');
+      setName(''); setDescription(''); setContent(blankContent(kind)); setOpened({ revision: 0, name: '', description: '' }); setUsedBy([]); setTemplates([]); setArgsText(''); setEnvText('');
       return;
     }
     let cancelled = false;
     void unwrap(managed().getPart(editId)).then((p) => {
       if (cancelled) return;
-      setName(p.name); setDescription(p.description); setContent(p.content); setRevision(p.revision); setUsedBy(p.usedBy);
+      setName(p.name); setDescription(p.description); setContent(p.content); setOpened({ revision: p.revision, name: p.name, description: p.description }); setUsedBy(p.usedBy); setTemplates(p.templates);
       setArgsText(p.content.kind === 'mcp' ? (p.content.args ?? []).join('\n') : '');
       setEnvText(p.content.kind === 'mcp' ? (p.content.envVars ?? []).join(', ') : '');
     }).catch((err) => { /* telemetry-exempt: shown to the person */ if (!cancelled) setError(errorText(err)); });
@@ -112,9 +141,10 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
     const roots = new Set(items.map((i) => i.path.split('/')[0]));
     const singleRoot = items.length > 0 && items.every((i) => i.path.includes('/')) && roots.size === 1 ? [...roots][0] : null;
     const files: SkillFile[] = [...content.files.filter((f) => !(f.path === 'SKILL.md' && !f.content))];
-    for (const item of items) {
+    const bits = await executableBitsOf(items.map((i) => i.file));
+    for (const [index, item] of items.entries()) {
       const rel = singleRoot ? item.path.slice(singleRoot.length + 1) : item.path;
-      const next = await readFileAsSkillFile(item.file, rel);
+      const next = await readFileAsSkillFile(item.file, rel, bits[index]);
       const at = files.findIndex((f) => f.path === rel);
       if (at >= 0) files[at] = next; else files.push(next);
     }
@@ -131,35 +161,68 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
     await addFiles(items);
   };
 
-  const commit = async (restart: ManagedPartConsumer[] = []) => {
+  /** The content as it will be saved: MCP arguments and names parsed from what was typed. */
+  const toSave = (): ManagedPartContent => (content.kind === 'mcp'
+    ? { ...content, ...(content.transport === 'stdio' && { args: parseArgs(argsText) }), envVars: parseEnvVars(envText) }
+    : content);
+
+  /** Save. `expected` is their version when the person chose Keep mine, so a third change is still caught. */
+  const commit = async (restart: ManagedPartConsumer[] = [], expected: Opened = opened) => {
     setBusy(true);
     setError(null);
-    const saved: ManagedPartContent = content.kind === 'mcp'
-      ? { ...content, ...(content.transport === 'stdio' && { args: parseArgs(argsText) }), envVars: parseEnvVars(envText) }
-      : content;
+    const saved = toSave();
+    let reached: ManagedPartConsumer[] = [];
     try {
       if (editId) {
-        await unwrap(managed().updatePart({ id: editId, expectedRevision: revision, name, description, content: saved }));
+        reached = (await unwrap(managed().updatePart({
+          id: editId, expectedRevision: expected.revision, expectedName: expected.name, expectedDescription: expected.description, name, description, content: saved,
+        }))).usedBy;
       } else {
         const created = await unwrap(managed().createPart({ name, description, content: saved }));
         onCreated?.(created);
       }
     } catch (err) {
-      // telemetry-exempt: shown to the person in the dialog.
-      setError(errorText(err));
+      // telemetry-exempt: a newer version is shown beside this one; anything else in the dialog.
+      if (editId && isStale(err)) {
+        try {
+          setStale({ theirs: await unwrap(managed().getPart(editId)), restart });
+        } catch (readErr) { /* telemetry-exempt: shown in the dialog */ setError(errorText(readErr)); }
+      } else {
+        setError(errorText(err));
+      }
       setBusy(false);
       setImpact(false);
       return;
     }
     setBusy(false);
     setImpact(false);
+    setStale(null);
     onClose();
     // Saved: restarts run on their own and report their own failures.
     restartAfterSave(restart.map(({ projectPath, agentId, agentName }) => ({ projectPath, agentId, agentName })));
+    noteRunningLeftAlone(reached, restart);
   };
   const save = () => {
-    if (editId && usedBy.length > 1) setImpact(true);
+    if (editId && needsImpactDialog({ usedBy, templates })) setImpact(true);
     else void commit();
+  };
+  /** Stale, and the person wants their version kept apart: a library copy with their edit, the shared part untouched. */
+  const saveAsCopy = async () => {
+    if (!editId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const copy = await unwrap(managed().forkPart(editId));
+      await unwrap(managed().updatePart({ id: copy.id, expectedRevision: copy.revision, expectedDescription: copy.description, description, content: toSave() }));
+    } catch (err) {
+      // telemetry-exempt: shown in the dialog.
+      setError(errorText(err));
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
+    setStale(null);
+    onClose();
   };
 
   const title = `${editId ? 'Edit' : 'New'} ${partKindLabel(kind).toLowerCase()}`.replace(/^./, (c) => c.toUpperCase());
@@ -168,7 +231,7 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
   return (
     <>
       <Modal
-        open={open && !impact}
+        open={open && !impact && !stale}
         onClose={onClose}
         onDismiss={() => {}}
         title={title}
@@ -309,7 +372,23 @@ export function PartDialog({ open, kind, editId, agentName, wildcardValues, onCl
         </div>
       </Modal>
       {impact && (
-        <ImpactDialog open partName={name} consumers={usedBy} busy={busy} error={error} onCancel={() => setImpact(false)} onSave={(restart) => void commit(restart)} />
+        <ImpactDialog open partName={name} consumers={usedBy} templates={templates} busy={busy} error={error} onCancel={() => setImpact(false)} onSave={(restart) => void commit(restart)} />
+      )}
+      {stale && (
+        <StaleEditDialog
+          theirs={stale.theirs}
+          mine={{ name, description, content: toSave() }}
+          busy={busy}
+          error={error}
+          onKeepMine={() => {
+            const theirs: Opened = { revision: stale.theirs.revision, name: stale.theirs.name, description: stale.theirs.description };
+            setOpened(theirs);
+            void commit(stale.restart, theirs);
+          }}
+          onTakeTheirs={() => { setStale(null); onClose(); }}
+          onFork={() => void saveAsCopy()}
+          forkLabel="Save mine as a copy"
+        />
       )}
     </>
   );

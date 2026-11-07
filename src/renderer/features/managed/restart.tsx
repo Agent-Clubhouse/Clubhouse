@@ -121,6 +121,24 @@ export function restartAfterSave(targets: RestartTarget[]): void {
   }
 }
 
+/** "Saved. 2 running agents will use it after a restart.", or null when no running agent was left alone. */
+export function leftAloneNotice(consumers: ReadonlyArray<{ agentId: string; running: boolean }>, restarted: ReadonlyArray<{ agentId: string }>): string | null {
+  const ticked = new Set(restarted.map((r) => r.agentId));
+  const n = consumers.filter((c) => c.running && !ticked.has(c.agentId)).length;
+  if (n === 0) return null;
+  return `Saved. ${n} running ${n === 1 ? 'agent' : 'agents'} will use it after a restart.`;
+}
+
+/**
+ * After a part is saved (#2897): the running agents that use it and weren't
+ * restarted keep their setup until they restart, so a toast says how many.
+ * Their setup-changed bar says the rest.
+ */
+export function noteRunningLeftAlone(consumers: ReadonlyArray<{ agentId: string; running: boolean }>, restarted: ReadonlyArray<{ agentId: string }>): void {
+  const text = leftAloneNotice(consumers, restarted);
+  if (text) toast(text, 'info');
+}
+
 /** Asked while the agent is mid-turn: restart when this turn ends (the default), now, or not at all. */
 export function RestartConfirmDialog({ agentName, fresh, busy, onWhenTurnEnds, onNow, onCancel }: {
   agentName: string;
