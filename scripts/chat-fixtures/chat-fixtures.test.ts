@@ -115,8 +115,8 @@ describe('fixture format', () => {
       copilot: ['handshake-1.0.82'],
       'copilot-sdk': ['died-mid-turn', 'elicitation-accept', 'elicitation-decline', 'exit-at-launch', 'handshake', 'hang-at-launch', 'no-answer', 'plan-approval', 'protocol-mismatch', 'slash-command', 'question', 'queue', 'resume', 'resume-not-found', 'steer', 'subagent'],
     };
-    // The model list needs a real login, so copilot-sdk gets it in phase 4 (docs/copilot-sdk-driver.md).
-    const missing: Record<string, string[]> = { 'copilot-sdk': ['model-list'] };
+    // copilot-sdk/model-list is hand-made: models.list needs a real login, so a recording waits for phase 4 (docs/copilot-sdk-driver.md).
+    const missing: Record<string, string[]> = {};
     for (const [cli, protocol] of [['claude', 'claude-stream-json'], ['codex', 'codex-app-server'], ['copilot', 'acp'], ['copilot-sdk', 'copilot-sdk']]) {
       const names = (await fs.promises.readdir(path.join(FIXTURES, cli))).map((f) => f.replace(/\.jsonl$/, '')).sort();
       expect(names).toEqual([...shared.filter((n) => !missing[cli]?.includes(n)), ...extra[cli]].sort());

@@ -30,7 +30,7 @@ import {
 import { resolveStructuredSpawn } from './structured-spawn';
 import { throwIfStartAborted, untilStartAborted } from './start-abort';
 import { ProcessExitedError } from './ndjson-rpc-base';
-import { RpcError } from './acp-client';
+import { RpcError } from './rpc-error';
 
 type LogFn = (level: 'debug' | 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
 

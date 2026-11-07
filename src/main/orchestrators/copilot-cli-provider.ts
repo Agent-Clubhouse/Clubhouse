@@ -135,7 +135,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
   protected readonly fallbackModelOptions = FALLBACK_MODEL_OPTIONS;
   protected readonly configEnvKeys = ['GH_HOST', 'GH_TOKEN'];
 
-  /** ACP `session/new` lists the models this login can use, with cost multipliers. No prompt is sent. */
+  /** The SDK's models.list: the models this login can use, with cost multipliers. No session, no prompt. */
   protected probeLiveModels(ctx: ModelProbeContext) {
     return probeCopilotModels(ctx);
   }
@@ -151,7 +151,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     return copilotContextWindowOptions(model, catalog);
   }
 
-  /** Fallback when the ACP handshake is unavailable. */
+  /** Fallback when models.list is unavailable (no login, or the CLI won't start headless). */
   protected readonly modelFetchConfig = {
     args: ['--help'],
     parser: (help: string) => parseModelChoicesFromHelp(help, COPILOT_MODEL_CHOICES_PATTERN),

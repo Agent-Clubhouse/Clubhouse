@@ -1,18 +1,9 @@
 import { NdjsonRpcBase, DEFAULT_RPC_TIMEOUT_MS, type BaseRpcOpts, type RpcRequestOptions } from './ndjson-rpc-base';
 import type { InitializeRequest, InitializeResponse } from './acp-schema';
 
-/** Rich RPC error that preserves error code and optional data from the JSON-RPC response. */
-export class RpcError extends Error {
-  readonly code: number;
-  readonly data?: unknown;
+import { RpcError } from './rpc-error';
 
-  constructor(code: number, message: string, data?: unknown) {
-    super(`RPC error ${code}: ${message}`);
-    this.name = 'RpcError';
-    this.code = code;
-    this.data = data;
-  }
-}
+export { RpcError };
 
 /** JSON-RPC 2.0 message types */
 export interface JsonRpcRequest {

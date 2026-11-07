@@ -1098,24 +1098,48 @@ export class CopilotSdkChatDriver implements ChatDriver {
   }
 }
 
+export interface CopilotModelListOptions {
+  /** Where the server runs. Defaults to a new empty folder, removed afterwards. */
+  cwd?: string;
+  timeoutMs?: number;
+  /** Kills the server when aborted. */
+  signal?: AbortSignal;
+}
+
+/**
+ * The SDK's models.list on a local server: the models this login can use. Opens
+ * no session and sends no prompt. Throws when it can't read them (no login).
+ */
+export async function listCopilotSdkModels(binary: string, env: Record<string, string>, opts: CopilotModelListOptions = {}): Promise<ModelInfo[]> {
+  const timeoutMs = opts.timeoutMs ?? TIER_CATALOG_TIMEOUT_MS;
+  const ownCwd = opts.cwd ? undefined : await fsp.mkdtemp(path.join(os.tmpdir(), 'clubhouse-copilot-models-'));
+  let server: CopilotServer | undefined;
+  let client: CopilotClient | undefined;
+  const onAbort = (): void => { void server?.kill(); };
+  opts.signal?.addEventListener('abort', onAbort, { once: true });
+  try {
+    server = await launchCopilotServer({ binary, cwd: opts.cwd ?? ownCwd, env, timeoutMs, signal: opts.signal });
+    const running = server;
+    const listing = (async () => {
+      client = await connect(running);
+      return client.listModels();
+    })();
+    return await withTimeout(Promise.race([listing, untilExit(running)]), timeoutMs, 'Listing models');
+  } finally {
+    opts.signal?.removeEventListener('abort', onAbort);
+    await client?.forceStop().catch(ignore);
+    await server?.kill();
+    if (ownCwd) await fsp.rm(ownCwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch(ignore);
+  }
+}
+
 /**
  * Each model's context tiers, from the SDK's models.list on a local server in
  * an empty folder. Sends no prompt. Throws when it can't read them (no login).
  */
 export async function readCopilotTierCatalog(binary: string, env: Record<string, string>): Promise<CopilotTierEntry[]> {
-  const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), 'clubhouse-copilot-tiers-'));
-  let server: CopilotServer | undefined;
-  let client: CopilotClient | undefined;
-  try {
-    server = await launchCopilotServer({ binary, cwd, env, timeoutMs: TIER_CATALOG_TIMEOUT_MS });
-    client = await connect(server);
-    const models = await withTimeout(client.listModels(), TIER_CATALOG_TIMEOUT_MS, 'Listing models');
-    return models.map((m) => copilotTierEntry(m as unknown as Record<string, unknown>)).filter((e): e is CopilotTierEntry => e !== null);
-  } finally {
-    await client?.forceStop().catch(ignore);
-    await server?.kill();
-    await fsp.rm(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch(ignore);
-  }
+  const models = await listCopilotSdkModels(binary, env);
+  return models.map((m) => copilotTierEntry(m as unknown as Record<string, unknown>)).filter((e): e is CopilotTierEntry => e !== null);
 }
 
 /** Register the standard Copilot driver. Returns the unregister function. */
