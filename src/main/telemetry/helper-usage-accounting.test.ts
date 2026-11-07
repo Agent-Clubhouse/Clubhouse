@@ -60,17 +60,21 @@ describe('turn samples', () => {
     expect(turn(t, 'a', 0, { scope: 'turn', tokens: { output: 4 } })).toMatchObject({ completeness: 'partial', figures: { output: 4 } });
   });
 
-  it('without a turn id, an identical report right after another is a repeat, and says dedup was by content', () => {
+  it('two distinct turns with no turn id and equal usage are both counted: equal figures prove nothing', () => {
     const t = new RunUsageTracker('copilot_acp');
     const a = turn(t, undefined, 0, undefined, { stopReason: 'end_turn', usage: { input: 5, output: 5 } });
-    const repeat = turn(t, undefined, 5000, undefined, { stopReason: 'end_turn', usage: { input: 5, output: 5 } });
-    expect(a!.dedup).toBe('content_equal');
-    expect(repeat).toBeUndefined();
+    const b = turn(t, undefined, 5000, undefined, { stopReason: 'end_turn', usage: { input: 5, output: 5 } });
+    expect(a).toMatchObject({ dedup: 'none', turnIndex: 1, figures: { input: 5, output: 5 } });
+    expect(b).toMatchObject({ dedup: 'none', turnIndex: 2, figures: { input: 5, output: 5 } });
+    expect(t.counts.turns).toBe(2);
   });
 
-  it('a driver with neither turn id nor content rule says dedup none', () => {
+  it('with no turn id, a second end for a turn already closed is the one actual duplicate', () => {
     const t = new RunUsageTracker('codex_app_server');
-    expect(turn(t, undefined, 0, undefined, { stopReason: 'end_turn', usage: { input: 1, output: 1 } })!.dedup).toBe('none');
+    t.turnStarted(undefined, 0);
+    expect(t.turnEnded(undefined, { stopReason: 'end_turn', usage: { input: 5, output: 5 } }, 10)).toBeDefined();
+    expect(t.turnEnded(undefined, { stopReason: 'end_turn', usage: { input: 5, output: 5 } }, 11)).toBeUndefined();
+    expect(t.counts.turns).toBe(1);
   });
 
   it('drops invalid figures instead of passing them on', () => {
@@ -165,5 +169,120 @@ describe('errors and limits', () => {
     t.usage({ scope: 'session', limits: [{ window: 'week', status: 'exceeded' }] }, undefined);
     t.usage({ scope: 'session', limits: [{ window: 'week', status: 'exceeded' }, { window: '5h', status: 'warning' }] }, undefined);
     expect(t.counts).toMatchObject({ authErrors: 1, rateLimitErrors: 2, quotaErrors: 1 });
+  });
+});
+
+describe('who did the arithmetic', () => {
+  const ended = { stopReason: 'end_turn' as const, usage: { input: 3, output: 1 } };
+  it('labels a provider turn, our sum of calls, and our difference of running totals apart', () => {
+    expect(turn(new RunUsageTracker('claude_agent_sdk'), 'a', 0, undefined, ended)!.source).toBe('provider_turn');
+    expect(turn(new RunUsageTracker('acp'), 'a', 0, undefined, ended)!.source).toBe('provider_turn');
+    expect(turn(new RunUsageTracker('copilot_sdk'), 'a', 0, undefined, ended)!.source).toBe('summed_calls');
+    expect(turn(new RunUsageTracker('codex_app_server'), 'a', 0, undefined, ended)!.source).toBe('cumulative_delta');
+  });
+
+  it('labels a Copilot SDK closing total as our sum, and the others as the provider\'s running total', () => {
+    const total = { scope: 'session' as const, coverage: 'inclusive' as const, tokens: { input: 9, output: 2 } };
+    const copilot = new RunUsageTracker('copilot_sdk');
+    copilot.usage(total, undefined);
+    expect(copilot.finalSamples(1)[0].source).toBe('summed_calls');
+    const claude = new RunUsageTracker('claude_agent_sdk');
+    claude.usage(total, undefined);
+    expect(claude.finalSamples(1)[0].source).toBe('provider_session_cumulative');
+  });
+});
+
+describe('what a running total covers', () => {
+  const total = (input: number, output: number, extra: Partial<Usage> = {}): Usage => ({ scope: 'session', coverage: 'inclusive', tokens: { input, output }, ...extra });
+
+  it('a fresh run\'s total is the run\'s own', () => {
+    const t = new RunUsageTracker('claude_agent_sdk');
+    t.usage(total(40, 9), undefined);
+    expect(t.finalSamples(1)[0].baseline).toBe('run');
+  });
+
+  it('a resumed native session\'s total carries earlier use: lifetime, with the turn samples still the run\'s share', () => {
+    const t = new RunUsageTracker('claude_agent_sdk', undefined, true);
+    // The first result of a resumed session already holds the earlier turns.
+    const first = turn(t, 'a', 0, { scope: 'turn', coverage: 'main', tokens: { input: 10, output: 2 } });
+    t.usage(total(50_010, 902), undefined);
+    const [final] = t.finalSamples(9);
+    expect(final).toMatchObject({ baseline: 'lifetime', figures: { input: 50_010, output: 902 } });
+    // The run's own use is the turn sample, which is not folded into the lifetime total.
+    expect(first!.figures).toEqual({ input: 10, output: 2 });
+    expect(t.counts.turns).toBe(1);
+  });
+
+  it('a reset or /clear mid-run makes the closing total cover only what came after', () => {
+    const t = new RunUsageTracker('claude_agent_sdk', undefined, true);
+    t.usage(total(900, 80), undefined);
+    t.usage(total(30, 4), undefined);
+    expect(t.finalSamples(1)[0]).toMatchObject({ baseline: 'after_reset', reset: true, figures: { input: 30, output: 4 } });
+  });
+
+  it('a reset on a fresh run is after_reset too, not the run\'s whole use', () => {
+    const t = new RunUsageTracker('codex_app_server');
+    t.usage({ scope: 'session', coverage: 'main', threadId: 'th', tokens: { input: 100, output: 20 } }, undefined);
+    t.usage({ scope: 'session', coverage: 'main', threadId: 'th', tokens: { input: 10, output: 2 } }, undefined);
+    expect(t.finalSamples(1)[0].baseline).toBe('after_reset');
+  });
+});
+
+describe('synthesized inclusive totals', () => {
+  const thread = (t: RunUsageTracker, threadId: string, tokens: ChatEventDataMap['usage']['tokens'], over: Partial<Usage> = {}) =>
+    t.usage({ scope: 'session', coverage: 'main', threadId, tokens, ...over }, undefined);
+  const scopes = (t: RunUsageTracker) => t.finalSamples(1).map((s) => s.scope);
+
+  it('is made from proven-disjoint threads that all report the same figures', () => {
+    const t = new RunUsageTracker('codex_app_server');
+    t.subagentDeclared('sub');
+    thread(t, 'main', { input: 100, output: 10 });
+    thread(t, 'sub', { input: 5, output: 1 }, { subagentId: 'sub' });
+    expect(t.finalSamples(1).find((s) => s.scope === 'inclusive')).toMatchObject({ figures: { input: 105, output: 11 }, completeness: 'complete', baseline: 'run' });
+  });
+
+  it('is left out when the parent is already inclusive or its coverage unknown', () => {
+    for (const coverage of ['inclusive', undefined] as const) {
+      const t = new RunUsageTracker('codex_app_server');
+      thread(t, 'main', { input: 100, output: 10 }, { coverage });
+      thread(t, 'sub', { input: 5, output: 1 }, { subagentId: 'sub' });
+      expect(scopes(t)).not.toContain('inclusive');
+    }
+  });
+
+  it('is left out when a child\'s coverage is unknown', () => {
+    const t = new RunUsageTracker('codex_app_server');
+    thread(t, 'main', { input: 100, output: 10 });
+    thread(t, 'sub', { input: 5, output: 1 }, { subagentId: 'sub', coverage: undefined });
+    expect(scopes(t)).toEqual(['main']);
+  });
+
+  it('is left out when a child leaves out a figure the parent reports: no sum may hide a partial contributor', () => {
+    const t = new RunUsageTracker('codex_app_server');
+    thread(t, 'main', { input: 100, output: 10, reasoning: 4 });
+    thread(t, 'sub', { input: 5, output: 1 }, { subagentId: 'sub' });
+    expect(scopes(t)).toEqual(['main']);
+  });
+
+  it('is left out when a child reports only half the figures', () => {
+    const t = new RunUsageTracker('codex_app_server');
+    thread(t, 'main', { input: 100, output: 10 });
+    thread(t, 'sub', { output: 1 }, { subagentId: 'sub' });
+    expect(scopes(t)).toEqual(['main']);
+  });
+
+  it('is left out when a declared subagent never reported', () => {
+    const t = new RunUsageTracker('codex_app_server');
+    t.subagentDeclared('quiet');
+    thread(t, 'main', { input: 100, output: 10 });
+    thread(t, 'sub', { input: 5, output: 1 }, { subagentId: 'sub' });
+    expect(scopes(t)).toEqual(['main']);
+  });
+
+  it('is left out with no thread names, since they cannot be told apart', () => {
+    const t = new RunUsageTracker('codex_app_server');
+    t.usage({ scope: 'session', coverage: 'main', tokens: { input: 100, output: 10 } }, undefined);
+    t.usage({ scope: 'session', coverage: 'main', subagentId: 'sub', tokens: { input: 5, output: 1 } }, undefined);
+    expect(scopes(t)).not.toContain('inclusive');
   });
 });

@@ -366,10 +366,13 @@ export function recordQuotaSample(provider: string, quota: QuotaView): void {
     if (!admit()) return;
     recent.push(t);
 
-    // Observed change since the last sample, only inside one reset window; across a reset no delta is claimed.
-    const sameWeek = before && !resetChanged(before.weeklyResets, weekly.resets);
-    const sameFive = before && !resetChanged(before.fiveResets, five.resets);
-    const resetBetween = !!before && (resetChanged(before.weeklyResets, weekly.resets) || resetChanged(before.fiveResets, five.resets));
+    // Observed change since the last sample, only with positive evidence that both readings are in one reset window:
+    // both reset times known and equal. A missing reset time on either side proves nothing, so no delta and no claim either way.
+    const windowState = (a: number | undefined, b: number | undefined): 'same' | 'changed' | 'unknown' =>
+      a === undefined || b === undefined ? 'unknown' : resetChanged(a, b) ? 'changed' : 'same';
+    const weekState = before ? windowState(before.weeklyResets, weekly.resets) : 'unknown';
+    const fiveState = before ? windowState(before.fiveResets, five.resets) : 'unknown';
+    const resetBetween = weekState === 'changed' || fiveState === 'changed' ? true : weekState === 'same' || fiveState === 'same' ? false : undefined;
     const limiting = quota.limitingWindow;
     emit('clubhouse.helper_quota.sample', [
       ATTR.helperSchemaVersion(HELPER_TELEMETRY_SCHEMA_VERSION),
@@ -387,9 +390,9 @@ export function recordQuotaSample(provider: string, quota: QuotaView): void {
       five.resets !== undefined && ATTR.helperQuotaFiveHourResetsMs(five.resets),
       ATTR.helperQuotaOtherWindows((quota.modelWindows?.length ?? 0) + (quota.unreadableWindows?.length ?? 0)),
       before && ATTR.helperQuotaDeltaSpanMs(t - before.atMs),
-      before && ATTR.helperQuotaResetBetween(resetBetween),
-      before && sameWeek && before.weeklyBp !== undefined && weekly.bp !== undefined && ATTR.helperQuotaWeeklyDeltaBp(weekly.bp - before.weeklyBp),
-      before && sameFive && before.fiveBp !== undefined && five.bp !== undefined && ATTR.helperQuotaFiveHourDeltaBp(five.bp - before.fiveBp),
+      resetBetween !== undefined && ATTR.helperQuotaResetBetween(resetBetween),
+      before && weekState === 'same' && before.weeklyBp !== undefined && weekly.bp !== undefined && ATTR.helperQuotaWeeklyDeltaBp(weekly.bp - before.weeklyBp),
+      before && fiveState === 'same' && before.fiveBp !== undefined && five.bp !== undefined && ATTR.helperQuotaFiveHourDeltaBp(five.bp - before.fiveBp),
     ]);
     quotaMemory.set(provider, {
       state: quota.state, weeklyBp: weekly.bp, weeklyResets: weekly.resets, fiveBp: five.bp, fiveResets: five.resets,
@@ -430,6 +433,7 @@ function usageAttrs(ctx: RunContext, entry: ledger.LedgerEntry | undefined, samp
     ATTR.helperUsageSource(sample.source),
     ATTR.helperUsageDedup(sample.dedup),
     ATTR.helperUsageScope(sample.scope),
+    sample.baseline && ATTR.helperUsageBaseline(sample.baseline),
     ATTR.helperUsageCompleteness(sample.completeness),
     ATTR.helperUsageMeasuredAtMs(sample.measuredAtMs),
     // Absent means the provider did not report it. Zero is a reported zero.
@@ -529,7 +533,7 @@ export function handleHelperChatEvent(event: ChatEvent): void {
         driver: d.driver,
         provider: d.provider,
         run: ledger.beginRun(agentId, event.ts, d.resumed === true),
-        tracker: new RunUsageTracker(d.driver),
+        tracker: new RunUsageTracker(d.driver, undefined, d.resumed === true),
         sessionIds: new Set([event.sessionId]),
         actualModel: d.model,
         disposeRequested: false,
@@ -553,6 +557,9 @@ export function handleHelperChatEvent(event: ChatEvent): void {
         return;
       case 'error':
         ctx.tracker.error(event.data.code);
+        return;
+      case 'subagent':
+        ctx.tracker.subagentDeclared(event.data.subagentId);
         return;
       case 'turn_ended':
         emitUsage(ctx, ctx.tracker.turnEnded(event.turnId, event.data, event.ts));

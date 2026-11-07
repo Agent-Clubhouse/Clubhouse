@@ -207,8 +207,10 @@ export const USAGE_SOURCES = [
   'provider_turn',
   /** The provider's running total for the session or thread, as last reported. */
   'provider_session_cumulative',
-  /** Our sum of the provider's per-call figures, each counted once. */
+  /** Our sum of the provider's per-call figures (a driver that reports each model call, not a total). */
   'summed_calls',
+  /** The difference between two of the provider's running totals, taken by us (a provider that reports no per-turn figure). */
+  'cumulative_delta',
 ] as const;
 export type UsageSource = (typeof USAGE_SOURCES)[number];
 
@@ -223,6 +225,15 @@ export type UsageDedup = (typeof USAGE_DEDUPS)[number];
 /** `unscoped`: the driver did not say, so the figure is not added to anything. */
 export const USAGE_SCOPES = ['main', 'inclusive', 'unscoped'] as const;
 export type UsageScope = (typeof USAGE_SCOPES)[number];
+
+/**
+ * What a closing (running-total) sample covers. `run`: a native session begun by this run and never reset, so
+ * the total is this run's use. `lifetime`: the run resumed a native session, whose provider total carries the
+ * earlier runs' use; the run's own share is unknown from this sample (use the turn samples). `after_reset`: the
+ * provider's total went down during the run (a /clear or compaction), so it covers only what came after.
+ */
+export const USAGE_BASELINES = ['run', 'lifetime', 'after_reset'] as const;
+export type UsageBaseline = (typeof USAGE_BASELINES)[number];
 
 export const USAGE_COMPLETENESS = ['complete', 'partial', 'none'] as const;
 export type UsageCompleteness = (typeof USAGE_COMPLETENESS)[number];

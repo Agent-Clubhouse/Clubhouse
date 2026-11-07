@@ -250,9 +250,10 @@ One sample per finished turn, deduplicated by the turn id, and a closing sample 
 
 | Field | Meaning |
 | --- | --- |
-| `source` | `provider_turn` (the provider's total for one turn) or `provider_session_cumulative` (its running total as last reported) |
+| `source` | Who did the arithmetic: `provider_turn` (the provider's own figure for one turn), `summed_calls` (our sum of per-call figures, the Copilot SDK), `cumulative_delta` (our difference of two running totals, Codex), `provider_session_cumulative` (the provider's running total as last reported) |
 | `scope` | `main` is the helper alone, `inclusive` also counts its subagents, `unscoped` means the driver did not say. Never add samples of different scope |
-| `dedup` | `turn_id`, `thread_cumulative`, `content_equal` (an identical report right after another is dropped), or `none` when repeats could not be told apart |
+| `dedup` | `turn_id`, `thread_cumulative`, or `none` when repeats could not be told apart. Without a turn id a turn is one start and its end: two turns with equal figures are two turns, and only a second end for a turn already closed is dropped |
+| `baseline` | Closing samples only. `run`: the total is this run's own. `lifetime`: the run resumed a native session, whose total carries earlier use, so the run's share is unknown from this sample (the turn samples are the run's measured use). `after_reset`: the total went down mid-run (/clear, compaction), so it covers only what came after |
 | `completeness` | `complete` (input and output reported), `partial`, `none` |
 | `reset` | A running total went down (a reset or compaction). No delta is claimed |
 
@@ -260,10 +261,11 @@ What each provider gives, as of this source:
 
 | Provider | Turn | Running total | Notes |
 | --- | --- | --- | --- |
-| Claude (stream-json and SDK) | Main loop of the turn (`main`) | Sum of per-model totals, subagents and compaction included (`inclusive`) | `input` includes cache reads and writes. No reasoning figure, so it is absent |
-| Codex | Difference of the thread's running totals | One total per thread (`main`); a subagent thread is flagged and reported apart. The closing samples are the helper's own thread (`subagent_excluded`) and, when subagents ran, the sum of every thread (`inclusive`) | A total that goes down leaves that figure out of the turn instead of showing zero |
-| Copilot SDK | Sum of the turn's `assistant.usage` calls, subagents included (`inclusive`) | Our sum over the session (`inclusive`) | A figure no call reported is absent. No per-call id, so calls cannot be deduplicated |
-| Copilot ACP and other ACP agents | The prompt's usage; an exact repeat of the previous report is dropped (`content_equal`) | Context and cost only, no tokens | Scope is `unscoped` |
+| Claude Agent SDK | Main loop of the turn (`main`) | Per-model totals of every query-pipeline call: main loop, subagents, sidechains, compaction (`inclusive`) | Scope is the SDK declaration of the result message in the pinned `@anthropic-ai/claude-agent-sdk` 0.3.316 (as inspected by the orchestrator); it leaves out calls outside the query pipeline (permission classifier, token-count probes), the totals are estimates, a resume carries earlier totals (`lifetime`) and /clear resets them. `input` includes cache reads and writes. No reasoning figure, so it is absent |
+| Claude stream-json | Same figures | Same figures | No such declaration for this transport, so scope is `unscoped` |
+| Codex | Difference of the thread's running totals (`cumulative_delta`) | One total per thread (`main`); a subagent thread is flagged and reported apart. The closing samples are the helper's own thread (`subagent_excluded`) and, only when every thread is named, reported `main`, every declared subagent reported, and all report the same figures, the sum of the threads (`inclusive`); otherwise no inclusive sample | A total that goes down leaves that figure out of the turn instead of showing zero |
+| Copilot SDK | Our sum of the turn's `assistant.usage` calls, subagents included (`summed_calls`, `inclusive`) | Our sum over the session (`summed_calls`, `inclusive`) | A figure no call reported is absent. No per-call id, so calls cannot be deduplicated |
+| Copilot ACP and other ACP agents | The prompt's usage; the mapper drops an exact repeat of the previous report (a local command re-sent it), which is the only place equality is used | Context and cost only, no tokens | Scope is `unscoped` |
 
 Parent and helper are never added: a helper's usage is its own run. The session transcript reader (`getSessionSummary`) counts each message once even though Claude writes one record per content block, keeps the usage of tool-only and thinking-only messages, and marks `tokenUsage` as `partial` when a message has none or repeated records disagree. A conflicting message keeps the highest figure per field, which may match no actual record, so it is flagged and must not be used as a measured sample.
 
@@ -271,7 +273,7 @@ Parent and helper are never added: a helper's usage is its own run. The session 
 
 `clubhouse.helper_quota.sample` is written when a token-free read has finished, on the provider's first reading, when its state changes, when a window moved by one point or its reset time changed (at least 5 minutes after the last sample), and otherwise at most every 15 minutes. At most 12 an hour per provider. There is no timer: only reads that demand already causes are sampled.
 
-`weekly_delta_bp` and `five_hour_delta_bp` are the change since the previous sample, labelled `observed`: they appear only when both readings are in the same reset window, and `reset_between=true` marks a window that reset in between, with no delta claimed. They cover the whole login. Use outside Clubhouse is in them and cannot be told apart from helper use, so per-helper burn is attributable only from usage samples.
+`weekly_delta_bp` and `five_hour_delta_bp` are the change since the previous sample, labelled `observed`: they appear only with positive evidence of one reset window, meaning both readings carry a reset time and the two are equal. If either reading lacks a reset time there is no delta and no `reset_between` either, since nothing is proven. `reset_between=true` marks a window whose reset time changed, with no delta claimed. They cover the whole login. Use outside Clubhouse is in them and cannot be told apart from helper use, so per-helper burn is attributable only from usage samples.
 
 #### Limits
 

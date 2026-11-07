@@ -307,7 +307,8 @@ describe('usage through a helper run', () => {
     });
     // Reasoning was never reported: absent, not zero.
     expect(samples[0].attrs).not.toHaveProperty('clubhouse.helper_usage.reasoning_tokens');
-    expect(samples[1].attrs).toMatchObject({ 'clubhouse.helper_usage.source': 'provider_session_cumulative', 'clubhouse.helper_usage.scope': 'inclusive', 'clubhouse.helper_usage.input_tokens': 1500 });
+    expect(samples[1].attrs).toMatchObject({ 'clubhouse.helper_usage.source': 'provider_session_cumulative', 'clubhouse.helper_usage.scope': 'inclusive', 'clubhouse.helper_usage.baseline': 'run', 'clubhouse.helper_usage.input_tokens': 1500 });
+    expect(samples[0].attrs).not.toHaveProperty('clubhouse.helper_usage.baseline');
     expect(samples[0].attrs['clubhouse.helper_run.id_hash']).toBe(samples[1].attrs['clubhouse.helper_run.id_hash']);
     expect(samples[0].attrs['clubhouse.helper_run.model_hash']).toBeDefined();
 
@@ -315,6 +316,26 @@ describe('usage through a helper run', () => {
     expect(outcome.attrs).toMatchObject({ 'clubhouse.helper_run.outcome': 'completed', 'clubhouse.helper_run.turns': 1, 'clubhouse.helper_run.native_resumed': false, 'clubhouse.helper_run.duration_ms': 9000 });
     expect(outcome.attrs['clubhouse.helper_run.id_hash']).toBe(samples[0].attrs['clubhouse.helper_run.id_hash']);
     for (const e of local) expect(e.opts?.localOnly).toBe(true);
+  });
+
+  it('marks the closing total of a resumed native session as lifetime, not this run\'s use', () => {
+    started('helper-1', { resumed: true });
+    handleHelperChatEvent(chat('usage', { scope: 'session', coverage: 'inclusive', tokens: { input: 80_000, output: 900 } }));
+    handleHelperChatEvent(chat('session_ended', { reason: 'idle_timeout' }));
+    const [final] = events('clubhouse.helper.usage.sample');
+    expect(final.attrs).toMatchObject({ 'clubhouse.helper_usage.kind': 'final', 'clubhouse.helper_usage.baseline': 'lifetime', 'clubhouse.helper_usage.input_tokens': 80_000 });
+    expect(events('clubhouse.helper.outcome')[0].attrs['clubhouse.helper_run.native_resumed']).toBe(true);
+  });
+
+  it('two idless turns with equal usage are two samples', () => {
+    started('helper-1', { driver: 'acp' });
+    for (let i = 0; i < 2; i++) {
+      handleHelperChatEvent(chat('turn_started', { trigger: 'prompt' }));
+      handleHelperChatEvent(chat('turn_ended', { stopReason: 'end_turn', usage: { input: 5, output: 5 } }));
+    }
+    const samples = events('clubhouse.helper.usage.sample');
+    expect(samples).toHaveLength(2);
+    expect(samples.map((s) => s.attrs['clubhouse.helper_usage.dedup'])).toEqual(['none', 'none']);
   });
 
   it('counts a turn delivered twice once', () => {
@@ -428,6 +449,21 @@ describe('plan-limit samples', () => {
     const second = events('clubhouse.helper_quota.sample')[1];
     expect(second.attrs['clubhouse.helper_quota.reset_between']).toBe(true);
     expect(second.attrs).not.toHaveProperty('clubhouse.helper_quota.weekly_delta_bp');
+  });
+
+  it('claims no delta and no reset state when a reset time is missing on either side', () => {
+    recordQuotaSample('claude-code', view({ weekly: { usedPercent: 40, resetsAt: null }, fiveHour: { usedPercent: 10, resetsAt: null } }));
+    now += 6 * 60_000;
+    recordQuotaSample('claude-code', view({ weekly: { usedPercent: 45, resetsAt: null }, fiveHour: { usedPercent: 10, resetsAt: null } }));
+    now += 6 * 60_000;
+    // Present now, missing before: still no evidence the two readings share a window.
+    recordQuotaSample('claude-code', view({ weekly: { usedPercent: 50, resetsAt: new Date(base + 86_400_000).toISOString() } }));
+    const samples = events('clubhouse.helper_quota.sample');
+    expect(samples).toHaveLength(3);
+    for (const s of samples) {
+      expect(s.attrs).not.toHaveProperty('clubhouse.helper_quota.weekly_delta_bp');
+      expect(s.attrs).not.toHaveProperty('clubhouse.helper_quota.reset_between');
+    }
   });
 
   it('skips an unchanged reading inside the interval and samples it after', () => {

@@ -5,23 +5,36 @@
  *
  * Rules:
  * - A figure the provider did not report is absent. Zero is only a reported zero.
- * - A turn is counted once, by its turn id. A repeat of the same turn is ignored.
- *   With no turn id the sample says so (`dedup: none`) instead of guessing.
+ * - A turn is counted once, by its turn id. A repeat of the same turn id is ignored.
+ *   With no turn id, a turn is one `turnStarted` and its `turnEnded`: two turns that
+ *   report equal figures are two turns (equal usage does not prove a repeat), and an
+ *   end with no open turn is ignored as a repeat of one already closed. Such samples
+ *   say `dedup: none`.
  * - A running total (a session or thread figure) is never added to a turn
  *   figure, and never to another thread's. Turn samples and the closing sample
  *   are separate readings of one run: use one, not both.
+ * - A closing sample says whether it is this run's own use (`run`), carries a
+ *   resumed native session's earlier use (`lifetime`), or covers only what came
+ *   after a reset (`after_reset`). Only turn samples are a run's measured use.
  * - A running total that goes down was reset or compacted. The sample says so
  *   and claims no delta.
  * - Main-agent and inclusive (subagents counted) figures keep their scope. A
  *   driver that does not say gets `unscoped`, and nothing is added to it.
- * - A subagent's own thread is reported apart from the helper's main thread.
+ * - A subagent's own thread is reported apart from the helper's main thread. A
+ *   synthesized inclusive total is made only from threads proven disjoint (each
+ *   named, each reported with `main` coverage, every declared subagent among
+ *   them) that all report the same figures; otherwise it is left out.
+ * - `source` says who did the arithmetic: the provider's turn figure, our sum of
+ *   its per-call figures, or our difference of its running totals.
  * - Nothing here reads message text, tool input or output.
  */
 import type { ChatDriverId } from '../../shared/chat/capabilities';
 import type { ChatEventDataMap, TokenUsage } from '../../shared/chat/events';
 import {
   HELPER_TELEMETRY_LIMITS,
+  USAGE_FIGURE_KEYS,
   usageCompleteness,
+  type UsageBaseline,
   type UsageCompleteness,
   type UsageDedup,
   type UsageFigures,
@@ -39,6 +52,8 @@ export interface UsageSample {
   measuredAtMs: number;
   turnIndex?: number;
   durationMs?: number;
+  /** Closing samples only: what the running total covers. */
+  baseline?: UsageBaseline;
   /** A running total went down since the last one: reset or compaction. */
   reset?: boolean;
   /** Subagent threads exist whose figures this sample does not include. */
@@ -86,14 +101,18 @@ const valid = (n: number | undefined): n is number => typeof n === 'number' && N
 /** Only valid, non-negative figures; anything else is treated as not reported. */
 function clean(f: UsageFigures): UsageFigures {
   const out: UsageFigures = {};
-  for (const key of ['input', 'cachedInput', 'cacheWrite', 'output', 'reasoning'] as const) if (valid(f[key])) out[key] = Math.trunc(f[key]!);
+  for (const key of USAGE_FIGURE_KEYS) if (valid(f[key])) out[key] = Math.trunc(f[key]!);
   return out;
 }
 
-/** How this driver tells a repeat from a new report, as far as the events show. */
-function turnDedupFor(driver: ChatDriverId, hasTurnId: boolean): UsageDedup {
-  if (hasTurnId) return 'turn_id';
-  return driver === 'acp' || driver === 'copilot_acp' ? 'content_equal' : 'none';
+/** Who computed a turn figure for this driver. */
+function turnSourceFor(driver: ChatDriverId): UsageSource {
+  // The Copilot SDK reports each model call; the turn is our sum. Codex reports running totals; the turn is our difference.
+  return driver === 'copilot_sdk' ? 'summed_calls' : driver === 'codex_app_server' ? 'cumulative_delta' : 'provider_turn';
+}
+
+function finalSourceFor(driver: ChatDriverId): UsageSource {
+  return driver === 'copilot_sdk' ? 'summed_calls' : 'provider_session_cumulative';
 }
 
 export class RunUsageTracker {
@@ -103,15 +122,26 @@ export class RunUsageTracker {
   /** The cumulative figures per thread; '' is the run's session-level figure when the driver names no thread. */
   private readonly cumulative = new Map<string, Cumulative>();
   private readonly subagentThreads = new Set<string>();
+  /** Subagents the driver announced, whether or not they ever reported usage. */
+  private readonly declaredSubagents = new Set<string>();
   private reset = false;
   private emitted = 0;
   private quotaWindowsExceeded = new Set<string>();
-  private lastNoTurnKey: string | undefined;
 
-  constructor(private readonly driver: ChatDriverId, private readonly maxSamples = HELPER_TELEMETRY_LIMITS.maxUsageSamplesPerRun) {}
+  /** `resumed`: the run continues a native session, so the provider's running totals carry earlier runs' use. */
+  constructor(
+    private readonly driver: ChatDriverId,
+    private readonly maxSamples = HELPER_TELEMETRY_LIMITS.maxUsageSamplesPerRun,
+    private readonly resumed = false,
+  ) {}
 
   turnStarted(turnId: string | undefined, atMs: number): void {
     this.open.set(turnId ?? '', { startMs: atMs });
+  }
+
+  /** The driver announced a subagent (a Codex thread, say). */
+  subagentDeclared(id: string): void {
+    this.declaredSubagents.add(id);
   }
 
   /** A `usage` event. Turn figures are held for the turn's end; running totals are kept as the latest of their thread. */
@@ -157,37 +187,33 @@ export class RunUsageTracker {
 
   /** A turn finished. Returns its sample, or undefined for a repeat of a turn already counted or past the cap. */
   turnEnded(turnId: string | undefined, data: TurnEndedData, atMs: number): UsageSample | undefined {
-    const turn = this.open.get(turnId ?? '');
-    this.open.delete(turnId ?? '');
+    const key = turnId ?? '';
+    const turn = this.open.get(key);
+    this.open.delete(key);
     if (turnId !== undefined) {
       if (this.counted.has(turnId)) return undefined;
       this.counted.add(turnId);
+    } else if (!turn) {
+      // No id and no open turn: this end belongs to a turn already closed.
+      return undefined;
     }
-    const tokens = data.usage ?? turn?.tokens;
-    const figures = clean(figuresOf(tokens));
-    // Without a turn id, an identical report right after another is a repeat (a local command re-sent the last usage).
-    if (turnId === undefined && Object.keys(figures).length > 0) {
-      const key = JSON.stringify(figures);
-      if (key === this.lastNoTurnKey) return undefined;
-      this.lastNoTurnKey = key;
-    }
+    const figures = clean(figuresOf(data.usage ?? turn?.tokens));
     this.counts.turns++;
     if (Object.keys(figures).length === 0) this.counts.turnsMissing++;
-    const sample: UsageSample = {
+    return this.admit({
       kind: 'turn',
-      source: 'provider_turn',
-      dedup: turnDedupFor(this.driver, turnId !== undefined),
+      source: turnSourceFor(this.driver),
+      dedup: turnId !== undefined ? 'turn_id' : 'none',
       scope: turn?.coverage ?? 'unscoped',
       figures,
       completeness: usageCompleteness(figures),
       measuredAtMs: atMs,
       turnIndex: this.counts.turns,
       durationMs: data.durationMs ?? (turn ? atMs - turn.startMs : undefined),
-    };
-    return this.admit(sample);
+    });
   }
 
-  private admit<T extends UsageSample>(sample: T): T | undefined {
+  private admit(sample: UsageSample): UsageSample | undefined {
     // Keep room for the closing samples: a few turn samples never crowd them out.
     const room = sample.kind === 'final' ? this.maxSamples + 2 : this.maxSamples;
     if (this.emitted >= room) {
@@ -198,10 +224,14 @@ export class RunUsageTracker {
     return sample;
   }
 
+  private baseline(): UsageBaseline {
+    return this.reset ? 'after_reset' : this.resumed ? 'lifetime' : 'run';
+  }
+
   /**
    * The closing samples, from the provider's running totals. The helper's own
-   * (main) figure, and when subagent threads were seen, an inclusive figure that
-   * is the sum of every thread's total. None when the provider reported no totals.
+   * (main) figure, and, only when it can be proven, an inclusive figure that is
+   * the sum of every thread's total. None when the provider reported no totals.
    */
   finalSamples(atMs: number): UsageSample[] {
     const out: UsageSample[] = [];
@@ -210,39 +240,54 @@ export class RunUsageTracker {
     const hasThreads = [...this.cumulative.keys()].some((key) => key !== '');
     for (const [, c] of mains) {
       const figures = clean(figuresOf(c.tokens));
-      const sample = this.admit<UsageSample>({
+      const sample = this.admit({
         kind: 'final',
-        source: 'provider_session_cumulative',
+        source: finalSourceFor(this.driver),
         dedup: hasThreads ? 'thread_cumulative' : 'none',
         scope: c.coverage ?? 'unscoped',
         figures,
         completeness: usageCompleteness(figures),
         measuredAtMs: atMs,
+        baseline: this.baseline(),
         ...(this.reset && { reset: true }),
         ...(subagents.length > 0 && { subagentExcluded: true }),
       });
       if (sample) out.push(sample);
     }
-    if (subagents.length > 0 && mains.length === 1 && !this.reset) {
-      // Each thread's own running total, added once: inclusive of the helper and what it spawned.
-      const sum: UsageFigures = {};
-      for (const [, c] of [...mains, ...subagents]) {
-        const f = clean(figuresOf(c.tokens));
-        for (const key of ['input', 'cachedInput', 'cacheWrite', 'output', 'reasoning'] as const) {
-          if (f[key] !== undefined) sum[key] = (sum[key] ?? 0) + f[key]!;
-        }
-      }
-      const sample = this.admit<UsageSample>({
+    const inclusive = this.inclusiveFigures(mains, subagents);
+    if (inclusive) {
+      const sample = this.admit({
         kind: 'final',
-        source: 'provider_session_cumulative',
+        source: finalSourceFor(this.driver),
         dedup: 'thread_cumulative',
         scope: 'inclusive',
-        figures: sum,
-        completeness: usageCompleteness(sum),
+        figures: inclusive,
+        completeness: usageCompleteness(inclusive),
         measuredAtMs: atMs,
+        baseline: this.baseline(),
       });
       if (sample) out.push(sample);
     }
     return out;
+  }
+
+  /**
+   * The sum of the helper's thread and its subagent threads, or undefined. It is
+   * made only when: no reset happened; the threads are named and distinct; every one
+   * reported `main` (thread-only) coverage, so none already includes another; every
+   * declared subagent reported; and every thread reported the same set of figures,
+   * so no sum hides a contributor that left one out.
+   */
+  private inclusiveFigures(mains: Array<[string, Cumulative]>, subagents: Array<[string, Cumulative]>): UsageFigures | undefined {
+    if (subagents.length === 0 || mains.length !== 1 || this.reset) return undefined;
+    const threads = [...mains, ...subagents];
+    if (threads.some(([key, c]) => key === '' || c.coverage !== 'main')) return undefined;
+    for (const id of this.declaredSubagents) if (!this.cumulative.has(id)) return undefined;
+    const parts = threads.map(([, c]) => clean(figuresOf(c.tokens)));
+    const reported = USAGE_FIGURE_KEYS.filter((k) => parts.some((p) => p[k] !== undefined));
+    if (reported.some((k) => parts.some((p) => p[k] === undefined))) return undefined;
+    const sum: UsageFigures = {};
+    for (const k of reported) sum[k] = parts.reduce((total, p) => total + p[k]!, 0);
+    return sum;
   }
 }

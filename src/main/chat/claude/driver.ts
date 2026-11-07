@@ -571,6 +571,19 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     this.capabilities = claudeCapabilities(opts.level);
   }
 
+  /**
+   * Whether the result's `usage` is documented as the main loop alone (per turn) and `modelUsage` as
+   * every query-pipeline call (main loop, Task subagents, sidechains, compaction), cumulative across
+   * turns, carried over by a resume and reset by /clear. That is the Agent SDK's declaration of
+   * SDKResultMessage in the version package.json pins (@anthropic-ai/claude-agent-sdk 0.3.316,
+   * sdk.d.ts around line 5967, as inspected by the orchestrator). Inclusive still leaves out calls
+   * outside the query pipeline (the permission classifier, token-count probes), and the totals are
+   * estimates. The stream-json CLI transport has no such statement of its own, so its figures stay unscoped.
+   */
+  private get measuredCoverage(): boolean {
+    return this.driverId === 'claude_agent_sdk';
+  }
+
   get nativeSessionId(): string | undefined {
     return this.transport.sessionId || this.opts.resumeNativeSessionId || undefined;
   }
@@ -1032,10 +1045,10 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         const context = this.lastContext && size ? { used: this.lastContext.used, size } : undefined;
         this.push({
           type: 'usage',
-          data: { scope: 'turn', coverage: 'main', tokens: t, costUsd: turnCost, costIsEstimate: turnCost !== undefined ? costIsEstimate : undefined, ...(context && { context }) },
+          data: { scope: 'turn', ...(this.measuredCoverage && { coverage: 'main' as const }), tokens: t, costUsd: turnCost, costIsEstimate: turnCost !== undefined ? costIsEstimate : undefined, ...(context && { context }) },
         }, true);
         if (ev.totalCostUsd !== undefined || ev.modelUsage) {
-          this.push({ type: 'usage', data: { scope: 'session', coverage: 'inclusive', tokens: sessionTokens(ev.modelUsage), costUsd: ev.totalCostUsd, costIsEstimate } }, true);
+          this.push({ type: 'usage', data: { scope: 'session', ...(this.measuredCoverage && { coverage: 'inclusive' as const }), tokens: sessionTokens(ev.modelUsage), costUsd: ev.totalCostUsd, costIsEstimate } }, true);
         }
         this.push({ type: 'turn_ended', data: { stopReason, durationMs: ev.durationMs, usage: t, costUsd: turnCost } }, true);
         this.turnRunning = false;
