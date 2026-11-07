@@ -168,12 +168,12 @@ describe('checkpoint fixture lifetime (fake producers only)', () => {
     const args = ['arg'];
     const options = { encoding: 'utf8' };
     let callback: ((...values: unknown[]) => unknown) | undefined;
-    let actualReceiver: unknown;
+    const actualCall: { receiver?: unknown } = {};
     let actualArgs: unknown[] = [];
     function delegate(file: string, cb: (...values: unknown[]) => unknown): EventEmitter;
     function delegate(file: string, args: string[], options: object, cb: (...values: unknown[]) => unknown): EventEmitter;
     function delegate(this: unknown, ...values: unknown[]): EventEmitter {
-      actualReceiver = this;
+      actualCall.receiver = this;
       actualArgs = values;
       const last = values[values.length - 1];
       if (typeof last === 'function') callback = (...values) => Reflect.apply(last, callbackThis, values);
@@ -192,7 +192,7 @@ describe('checkpoint fixture lifetime (fake producers only)', () => {
       expect(wrapped.name).toBe(delegate.name);
       expect(wrapped.length).toBe(delegate.length);
       expect(wrapped.call(receiver, 'git', args, options, cb)).toBe(child);
-      expect(actualReceiver).toBe(receiver);
+      expect(actualCall.receiver).toBe(receiver);
       expect(actualArgs.slice(0, 3)).toEqual(['git', args, options]);
       expect(actualArgs[1]).toBe(args);
       expect(actualArgs[2]).toBe(options);
