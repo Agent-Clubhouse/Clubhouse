@@ -98,6 +98,8 @@ describe('CodexChatEventMapper', () => {
     const [tokens, limits] = events.filter((e) => e.type === 'usage');
     expect(tokens.data).toEqual({
       scope: 'session',
+      // The thread these running totals belong to; no coverage is claimed for it.
+      threadId: fx.THREAD_ID,
       tokens: { input: 1000, cachedInput: 400, cacheWrite: 0, output: 200, reasoning: 50, total: 1200 },
       context: { used: 300, size: 272_000 },
     });

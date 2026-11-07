@@ -241,12 +241,16 @@ describe('synthesized inclusive totals', () => {
     expect(t.finalSamples(1).find((s) => s.scope === 'inclusive')).toMatchObject({ figures: { input: 105, output: 11 }, completeness: 'complete', baseline: 'run' });
   });
 
-  it('is left out when the parent is already inclusive or its coverage unknown', () => {
+  it('is left out when the parent is already inclusive or its coverage unknown: only the parent\'s own sample remains, never a sum', () => {
     for (const coverage of ['inclusive', undefined] as const) {
       const t = new RunUsageTracker('acp');
       thread(t, 'main', { input: 100, output: 10 }, { coverage });
       thread(t, 'sub', { input: 5, output: 1 }, { subagentId: 'sub' });
-      expect(scopes(t)).not.toContain('inclusive');
+      // A parent that reports `inclusive` keeps its own original sample under that scope; what must not exist is a made-up total.
+      const samples = t.finalSamples(1);
+      expect(samples).toHaveLength(1);
+      expect(samples[0].scope).toBe(coverage ?? 'unscoped');
+      expect(samples[0].figures).toEqual({ input: 100, output: 10 });
     }
   });
 
