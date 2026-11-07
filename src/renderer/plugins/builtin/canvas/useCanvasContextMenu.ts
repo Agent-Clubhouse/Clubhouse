@@ -9,6 +9,7 @@ import { useState, useCallback } from 'react';
 import type { CanvasViewType, Viewport } from './canvas-types';
 import type { ContextMenuSelection } from './CanvasContextMenu';
 import { screenToCanvas } from './canvas-operations';
+import { contentContext } from '../../../../shared/content-context-target';
 
 export interface CanvasContextMenuState {
   x: number;
@@ -81,6 +82,10 @@ export function useCanvasContextMenu({
   }, []);
 
   const handleViewContextMenu = useCallback((viewId: string, e: React.MouseEvent) => {
+    // Content/editor menus win over the surrounding canvas view menu.
+    if (e.defaultPrevented) return;
+    if (e.target instanceof Element && e.target.closest('[data-testid="canvas-view-content"]')
+      && contentContext(e.nativeEvent, e.target.ownerDocument)) return;
     e.preventDefault();
     e.stopPropagation();
     setViewContextMenu({ x: e.clientX, y: e.clientY, viewId });
