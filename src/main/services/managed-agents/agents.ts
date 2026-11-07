@@ -51,6 +51,11 @@ export interface CreateManagedAgentInput {
   setup?: Omit<ManagedAgentSetup, 'version'>;
   /** Settings over the template's. */
   settings?: ManagedTemplateSettings;
+  /**
+   * false: a plain (unmanaged) agent in its own folder, with these settings and
+   * no template or parts (create_managed_agent, #2900, D90).
+   */
+  managed?: false;
 }
 
 /** Apply settings a template or the builder carries. Unset fields are left alone. */
@@ -67,6 +72,7 @@ export async function applyManagedSettings(projectPath: string, agentId: string,
 }
 
 export async function createManagedAgent(projectPath: string, input: CreateManagedAgentInput): Promise<DurableAgentConfig> {
+  if (input.managed === false) return createPlainAgent(projectPath, input);
   const service = managedAgents();
   const base = input.templateId ? await service.setupFromTemplate(input.templateId) : null;
   const settings: ManagedTemplateSettings = { ...(base?.settings ?? {}), ...(input.settings ?? {}) };
@@ -87,6 +93,26 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
     // Leave no half-made agent: it has no setup, so remove it.
     await agentConfig.deleteUnregister(projectPath, config.id).catch(() => {});
     throw err;
+  }
+  return (await agentConfig.getDurableConfig(projectPath, config.id)) ?? config;
+}
+
+/**
+ * A plain agent the same way as a managed one, minus the setup: its own
+ * folder, the settings given, and nothing Clubhouse writes into it at start.
+ */
+async function createPlainAgent(projectPath: string, input: CreateManagedAgentInput): Promise<DurableAgentConfig> {
+  if (input.templateId || input.setup) throw new ManagedError('invalid', 'A plain agent has no template or parts.');
+  const settings = input.settings ?? {};
+  const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.freeAgentMode);
+  if (settings.orchestration && Object.keys(settings.orchestration).length > 0) {
+    try {
+      await applyManagedSettings(projectPath, config.id, { orchestration: settings.orchestration });
+    } catch (err) {
+      // Leave no half-made agent: its settings didn't apply, so remove it.
+      await agentConfig.deleteUnregister(projectPath, config.id).catch(() => {});
+      throw err;
+    }
   }
   return (await agentConfig.getDurableConfig(projectPath, config.id)) ?? config;
 }

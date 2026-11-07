@@ -22,6 +22,12 @@ vi.mock('../../project-store', () => ({ peekProjects: async () => [{ id: 'p1', n
 vi.mock('../../agent-config', () => ({
   listDurable: async () => [...state.agents.values()],
   getDurableConfig: async (_p: string, id: string) => state.agents.get(id) ?? null,
+  createDurable: async (_p: string, name: string, color: string, model?: string, _worktree?: boolean, orchestrator?: string) => {
+    const a: DurableAgentConfig = { id: `new-${name}`, name, color, createdAt: '', worktreePath: `/w/${name}`, ...(model && { model }), ...(orchestrator && { orchestrator: orchestrator as never }) };
+    state.agents.set(a.id, a);
+    return a;
+  },
+  deleteUnregister: async (_p: string, id: string) => { state.agents.delete(id); },
 }));
 vi.mock('../../managed-agents', async () => {
   const { createManagedAgentsService } = await import('../../managed-agents/service');
@@ -339,5 +345,69 @@ describe('restart_agent', () => {
     expect((await call('restart_agent', { project: 'Clubhouse', agent: 'newbie', now: true })).json).toEqual({
       status: 'restarted', resumed: false, note: 'There was no conversation to resume, so it started a new one.',
     });
+  });
+});
+
+describe('builder tools: filters, template delete, plain agents, stale edits (#2900)', () => {
+  it('filters list_agent_parts by source', async () => {
+    await call('create_agent_part', { kind: 'block', name: 'Filter me', content: { kind: 'block', content: 'x' } });
+    const custom = (await call('list_agent_parts', { kind: 'block', source: 'custom' })).json as Array<{ builtin: boolean; name: string }>;
+    expect(custom.length).toBeGreaterThan(0);
+    expect(custom.every((p) => !p.builtin)).toBe(true);
+    expect(custom.map((p) => p.name)).toContain('Filter me');
+    const builtin = (await call('list_agent_parts', { kind: 'block', source: 'builtin' })).json as Array<{ builtin: boolean }>;
+    expect(builtin.length).toBeGreaterThan(0);
+    expect(builtin.every((p) => p.builtin)).toBe(true);
+    const bad = await call('list_agent_parts', { kind: 'block', source: 'mine' });
+    expect(bad.isError).toBe(true);
+  });
+
+  it('refuses a stale edit with what the part is now, and never saves over it', async () => {
+    const part = (await call('create_agent_part', { kind: 'block', name: 'Stale rules', content: { kind: 'block', content: 'one' } })).json;
+    await call('update_agent_part', { id: part.id, expectedRevision: part.revision, content: { kind: 'block', content: 'two' } });
+    const stale = await call('update_agent_part', { id: part.id, expectedRevision: part.revision, content: { kind: 'block', content: 'mine' } });
+    expect(stale.isError).toBe(true);
+    expect(stale.content[0].text).toMatch(new RegExp(`^stale: Stale rules changed since you read it\\. It is at revision ${part.revision + 1} now, saved by Dispatcher`));
+    const now = (await call('get_agent_part', { id: part.id })).json;
+    expect(now.content.content).toBe('two');
+  });
+
+  it('deletes a custom template after a preview that lists the agents made from it', async () => {
+    const t = (await call('save_agent_template', { name: 'Doomed', blocks: [], skills: [], mcps: [] })).json;
+    expect(t.updatedBy).toBe('Dispatcher');
+    state.agents.set('made', { id: 'made', name: 'made', color: 'indigo', createdAt: '', worktreePath: '/w/made', managed: { version: 1, blocks: [], skills: [], mcps: [], templateId: t.id } });
+    const first = await call('delete_agent_template', { id: t.id });
+    expect(first.json).toMatchObject({ status: 'needs_confirmation', madeFromIt: [{ agent: 'made', project: 'Clubhouse', running: false }] });
+    expect(first.json.note).toMatch(/keep their setup/);
+    const done = await call('delete_agent_template', { id: t.id, confirm: first.json.confirm });
+    expect(done.json).toEqual({ status: 'deleted' });
+    expect((await call('list_agent_templates', {})).json.map((x: { id: string }) => x.id)).not.toContain(t.id);
+    // The agent keeps its setup.
+    expect(state.agents.get('made')!.managed!.templateId).toBe(t.id);
+    const builtin = await call('delete_agent_template', { id: 'builtin-template-helper' });
+    expect(builtin.isError).toBe(true);
+    expect(builtin.content[0].text).toMatch(/builtin_read_only/);
+  });
+
+  it('refuses a template delete whose agents changed since the preview', async () => {
+    const t = (await call('save_agent_template', { name: 'Moving', blocks: [], skills: [], mcps: [] })).json;
+    const first = await call('delete_agent_template', { id: t.id });
+    state.agents.set('late', { id: 'late', name: 'late', color: 'indigo', createdAt: '', worktreePath: '/w/late', managed: { version: 1, blocks: [], skills: [], mcps: [], templateId: t.id } });
+    const r = await call('delete_agent_template', { id: t.id, confirm: first.json.confirm });
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/^stale/);
+  });
+
+  it('creates a managed agent attributed to the Dispatcher, or a plain one when asked', async () => {
+    const managed = await call('create_managed_agent', { project: 'Clubhouse', name: 'builder-made' });
+    expect(managed.json).toMatchObject({ name: 'builder-made', managed: true, status: 'sleeping' });
+    expect(state.agents.get(managed.json.id)!.managed).toMatchObject({ updatedBy: 'Dispatcher' });
+    const plain = await call('create_managed_agent', { project: 'Clubhouse', name: 'plain-one', managed: false, settings: { model: 'opus' } });
+    expect(plain.json).toMatchObject({ name: 'plain-one', managed: false, status: 'sleeping' });
+    expect(state.agents.get(plain.json.id)!.managed).toBeUndefined();
+    expect(state.agents.get(plain.json.id)!.model).toBe('opus');
+    const mixed = await call('create_managed_agent', { project: 'Clubhouse', name: 'mixed', managed: false, templateId: 'builtin-template-helper' });
+    expect(mixed.isError).toBe(true);
+    expect(state.agents.has('new-mixed')).toBe(false);
   });
 });
