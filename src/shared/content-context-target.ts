@@ -43,4 +43,3 @@ export function contentContext(event: MouseEvent, doc: Document): ContentContext
   if (!link && !path && !image && !selection && !editable) return null;
   return { ...(link ? { link } : {}), ...(path ? { path } : {}), ...(image ? { image } : {}), ...(selection ? { selection } : {}), editable };
 }
-
