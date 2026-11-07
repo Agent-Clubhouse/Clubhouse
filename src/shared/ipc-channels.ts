@@ -13,6 +13,8 @@ export const IPC = {
     SAVE_SETUP: 'managed:save-setup',
     UNMANAGE: 'managed:unmanage',
     PREVIEW: 'managed:preview',
+    PREVIEW_DRAFT: 'managed:preview-draft',
+    MODEL_EFFORTS: 'managed:model-efforts',
     LIST_TEMPLATES: 'managed:list-templates',
     GET_TEMPLATE: 'managed:get-template',
     SAVE_TEMPLATE: 'managed:save-template',

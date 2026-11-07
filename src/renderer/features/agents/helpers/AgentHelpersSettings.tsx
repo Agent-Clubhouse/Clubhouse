@@ -5,7 +5,7 @@
  * saves on its own, like the card, so this page never joins the save bar.
  */
 
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
 import { Toggle } from '../../../components/Toggle';
 import { Field, SectionHeading, inputClass, selectClass } from '../agentSettingsUi';
@@ -17,7 +17,12 @@ import {
 import { useDispatcherConnection } from '../../dispatcher/useDispatcherEnabled';
 import { TurnOffOrchestrationDialog } from './TurnOffOrchestrationDialog';
 
-export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; projectPath: string | undefined }) {
+export function AgentHelpersSettings({ agent, projectPath, helperDefaults }: {
+  agent: Agent;
+  projectPath: string | undefined;
+  /** More rows under "Defaults for new helpers" (a managed agent's helper template). */
+  helperDefaults?: ReactNode;
+}) {
   const orch = useOrchestration(projectPath, agent);
   const ids = { auto: useId(), toggle: useId(), access: useId(), control: useId(), count: useId(), crossProject: useId(), dispatcher: useId() };
   // Connect to Dispatcher shows while the Dispatcher is turned on, with orchestration on or off (#2578).
@@ -130,6 +135,7 @@ export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; pro
           testId="settings-orchestrate-access"
         />
       </Field>
+      {helperDefaults}
       {orch.error && <p className="py-1.5 text-xs text-ctp-error" role="alert" data-testid="settings-orchestrate-error">{orch.error}</p>}
 
       {orch.turnOff && (

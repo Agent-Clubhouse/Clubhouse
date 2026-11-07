@@ -58,12 +58,20 @@ export interface CreateManagedAgentInput {
   managed?: false;
 }
 
-/** Apply settings a template or the builder carries. Unset fields are left alone. */
+/**
+ * Apply settings a template or the builder carries, to the agent's own
+ * settings, where each is always stored. Unset fields are left alone, and
+ * `null` puts one back to its default. The effort goes in the same write as
+ * the CLI and model, after them, since a new model clears it.
+ */
 export async function applyManagedSettings(projectPath: string, agentId: string, settings: ManagedTemplateSettings): Promise<void> {
   const updates: Parameters<typeof agentConfig.updateDurableConfig>[2] = {};
   if (settings.orchestrator !== undefined) updates.orchestrator = settings.orchestrator;
   if (settings.model !== undefined) updates.model = settings.model;
+  if (settings.effort !== undefined) updates.effort = settings.effort;
   if (settings.freeAgentMode !== undefined) updates.freeAgentMode = settings.freeAgentMode;
+  if (settings.idleSleep !== undefined) updates.idleSleep = settings.idleSleep;
+  if (settings.helperTemplateId !== undefined) updates.helperTemplateId = settings.helperTemplateId;
   if (Object.keys(updates).length > 0) await agentConfig.updateDurableConfig(projectPath, agentId, updates);
   if (settings.orchestration && Object.keys(settings.orchestration).length > 0) {
     const result = await setOrchestrationPolicy(projectPath, agentId, settings.orchestration);
@@ -86,9 +94,14 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
   const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.freeAgentMode);
   try {
     await service.saveSetup(projectPath, config.id, setup);
-    if (settings.orchestration && Object.keys(settings.orchestration).length > 0) {
-      await applyManagedSettings(projectPath, config.id, { orchestration: settings.orchestration });
-    }
+    // What createDurable doesn't take: orchestration, effort, auto-sleep and the helper template.
+    const rest: ManagedTemplateSettings = {
+      ...(settings.orchestration && Object.keys(settings.orchestration).length > 0 && { orchestration: settings.orchestration }),
+      ...(settings.effort && { effort: settings.effort }),
+      ...(settings.idleSleep && { idleSleep: settings.idleSleep }),
+      ...(settings.helperTemplateId && { helperTemplateId: settings.helperTemplateId }),
+    };
+    if (Object.keys(rest).length > 0) await applyManagedSettings(projectPath, config.id, rest);
   } catch (err) {
     // Leave no half-made agent: it has no setup, so remove it.
     await agentConfig.deleteUnregister(projectPath, config.id).catch(() => {});
@@ -487,7 +500,13 @@ export async function convertToManaged(projectPath: string, agentId: string, opt
     return switchWith(projectPath, agent, provider, await readInstructionsOf(provider, agent.worktreePath), async () => {
       await stillUnmanaged(projectPath, agentId);
       return service.saveSetup(projectPath, agentId, setup);
-    }, () => applyManagedSettings(projectPath, agentId, settingsForConvert(provider.id, settings)));
+    }, () => {
+      const applied = settingsForConvert(provider.id, settings, agent.model);
+      if (settings.effort && applied.effort === undefined) {
+        appLog('core:managed', 'info', 'Switch to managed: the template\'s effort was left out, since the agent runs another model', { meta: { agentId, templateId: options.templateId } });
+      }
+      return applyManagedSettings(projectPath, agentId, applied);
+    });
   }
   const plan = await planConvert(projectPath, agent, agent.worktreePath, provider);
   // The Clubhouse part is in every managed setup: the Clubhouse MCP always runs.
@@ -630,11 +649,18 @@ async function undoSwitch(agent: DurableAgentConfig, made: string[], backup: str
  * A template's settings for an agent switching to managed. The agent keeps
  * its CLI, so it keeps its conversation (D51): the template's CLI isn't
  * applied, and neither is its model when the template is for another CLI.
+ * An effort is for one model (D81): it applies only when the agent will run
+ * the template's model, because the template sets it or the agent already
+ * has it (no model on either side is the CLI's default). `agentModel` is the
+ * agent's own model before the switch.
  */
-export function settingsForConvert(currentCli: string, settings: ManagedTemplateSettings): ManagedTemplateSettings {
-  const { orchestrator, model, ...rest } = settings;
+export function settingsForConvert(currentCli: string, settings: ManagedTemplateSettings, agentModel?: string): ManagedTemplateSettings {
+  const { orchestrator, model, effort, ...rest } = settings;
   const sameCli = !orchestrator || orchestrator === currentCli;
-  return { ...rest, ...(model !== undefined && sameCli && { model }) };
+  const modelApplied = model !== undefined && sameCli;
+  const norm = (m: string | undefined) => (m && m !== 'default' ? m : 'default');
+  const runsTemplateModel = sameCli && norm(modelApplied ? model : agentModel) === norm(model);
+  return { ...rest, ...(modelApplied && { model }), ...(effort !== undefined && runsTemplateModel && { effort }) };
 }
 
 /** Copy the agent's MCP file aside in its folder before the first managed start overwrites it (D54). */

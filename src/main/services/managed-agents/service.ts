@@ -14,6 +14,9 @@ import { auditChanged, auditChanges, currentSettingsOrigin, withSettingsSurface 
 import { appLog } from '../log-service';
 import type { AssetPayload, BlockAssetPayload, CatalogEntry, McpAssetPayload, SkillAssetPayload } from '../../../shared/asset-catalog-types';
 import type { DurableAgentConfig } from '../../../shared/types';
+import { isEffortValue } from '../../../shared/agent-helpers';
+import { normalizeIdleSleep } from '../../../shared/idle-sleep';
+import { validateOrchestrationPatch } from '../../../shared/orchestration-policy';
 import {
   CLUBHOUSE_MCP_PART_ID,
   CLUBHOUSE_PART_ALWAYS_ON,
@@ -273,6 +276,12 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       .map(({ projectPath, projectName, agent }) => ({
         projectPath, projectName, agentId: agent.id, agentName: agent.name, color: agent.color, running: deps.isRunning(agent.id),
       }));
+  }
+
+  /** Setting values as the push dialog shows them, with helper templates by name. */
+  async function templateLabeler(): Promise<SettingLabeler> {
+    const names = new Map((await allTemplates()).map((t) => [t.id, t.name]));
+    return labelerFor((tid) => names.get(tid));
   }
 
   async function allTemplates(): Promise<ManagedTemplate[]> {
@@ -699,7 +708,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         const t: ManagedTemplate = {
           id, name, description: input.description?.trim() ?? '', builtin: false,
           setup: { blocks: keep(input.setup.blocks), skills: keep(input.setup.skills), mcps: withClubhousePart(keep(input.setup.mcps)) },
-          settings: { ...input.settings },
+          settings: templateSettingsToKeep(input.settings ?? {}),
           updatedAt: new Date().toISOString(),
           ...(actor && { updatedBy: actor }),
         };
@@ -745,18 +754,21 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     /** The changes an edit makes to a template, and the agents made from it. */
     async previewTemplatePush(id: string, edited: Pick<ManagedTemplate, 'setup' | 'settings'>): Promise<{ changes: ManagedTemplateChange[]; targets: ManagedTemplatePushTarget[] }> {
       // Removing the Clubhouse part is no change: it stays in every template.
-      const next = withClubhousePartIn(edited);
+      // Refused whole when a setting isn't one the setting takes, before anything is compared or written.
+      const next = { ...withClubhousePartIn(edited), settings: checkTemplateSettings(edited.settings) };
       const current = await api.getTemplate(id);
       const live = await liveEntries();
-      const changes = diffTemplates(current, next, (pid) => live[pid]?.name ?? pid);
+      const label = await templateLabeler();
+      const changes = withEffortFollowingModel(diffTemplates(current, next, (pid) => live[pid]?.name ?? pid, label), next.settings, label);
       const agents = (await managedAgents()).filter(({ agent }) => agent.managed?.templateId === id);
       const targets = agents.map(({ projectPath, agent }) => {
-        const applicable = changes.filter((c) => applies(c, agent));
-        const skipped = changes.filter((c) => !applies(c, agent));
+        const appliesHere = (c: ManagedTemplateChange) => pushApplies(c, agent, changes, next.settings, label);
+        const applicable = changes.filter(appliesHere);
+        const skipped = changes.filter((c) => !appliesHere(c));
         return {
           projectPath, agentId: agent.id, agentName: agent.name, color: agent.color, running: deps.isRunning(agent.id),
           applicable: applicable.length, total: changes.length,
-          ...(skipped.length > 0 && { note: skipped.map(describeAlready).join(', ') }),
+          ...(skipped.length > 0 && { note: skipped.map((c) => describeSkipped(c, agent, changes, next.settings)).join(', ') }),
         };
       });
       return { changes, targets };
@@ -769,7 +781,8 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
      * Agents not made from the template are left out.
      */
     async pushTemplate(id: string, edited: Pick<ManagedTemplate, 'setup' | 'settings'>, agents: Array<{ projectPath: string; agentId: string }>): Promise<TemplatePushResult[]> {
-      const next = withClubhousePartIn(edited);
+      // Checked before any agent is written, so a bad setting never leaves agents half-updated.
+      const next = { ...withClubhousePartIn(edited), settings: checkTemplateSettings(edited.settings) };
       const current = await api.getTemplate(id);
       const live = await liveEntries();
       // Every part the edit names must still exist, as its kind.
@@ -778,13 +791,14 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
           if (live[pid]?.kind !== kind) throw new ManagedError('not_found', 'A part in this template no longer exists. Reload and try again.');
         }
       }
-      const changes = diffTemplates(current, next, (pid) => live[pid]?.name ?? pid);
+      const label = await templateLabeler();
+      const changes = withEffortFollowingModel(diffTemplates(current, next, (pid) => live[pid]?.name ?? pid, label), next.settings, label);
       const settingsOut: TemplatePushResult[] = [];
       for (const target of agents) {
         const agent = await deps.getAgent(target.projectPath, target.agentId);
         if (!agent?.managed || agent.managed.templateId !== id) continue;
         // Nothing applies (it already has every change): skipped, and not saved again.
-        if (!changes.some((c) => applies(c, agent))) {
+        if (!changes.some((c) => pushApplies(c, agent, changes, next.settings, label))) {
           settingsOut.push({ ...target, settings: {}, changed: false });
           continue;
         }
@@ -796,10 +810,13 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
             if (!list.includes(change.id)) list.push(change.id);
           } else if (change.kind === 'remove') {
             setup = replaceIn(setup, change.id, null);
-          } else if (change.kind === 'setting') {
+          } else if (change.kind === 'setting' && change.key !== 'effort') {
             mergeSetting(settings, next.settings, change.key);
           }
         }
+        // The effort goes only with the model it is for (D81).
+        const effort = effortOutcome(agent, changes, next.settings);
+        if (effort.send !== undefined) settings.effort = effort.send;
         try {
           // Through saveSetup, so each agent's result is checked (skill folders, missing parts).
           await api.saveSetup(target.projectPath, target.agentId, setup);
@@ -815,7 +832,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
           const t = s.templates[id];
           if (!t) return;
           const { updatedBy: _was, ...rest } = t;
-          s.templates[id] = { ...rest, setup: { ...next.setup }, settings: { ...next.settings }, updatedAt: new Date().toISOString(), ...(actor && { updatedBy: actor }) };
+          s.templates[id] = { ...rest, setup: { ...next.setup }, settings: templateSettingsToKeep(next.settings), updatedAt: new Date().toISOString(), ...(actor && { updatedBy: actor }) };
         });
       }
       // Each agent's own setup change is recorded where agent configs are written.
@@ -901,30 +918,65 @@ export function settingsOf(agent: DurableAgentConfig): ManagedTemplateSettings {
   return {
     ...(agent.orchestrator && { orchestrator: agent.orchestrator }),
     ...(agent.model && { model: agent.model }),
+    ...(agent.effort && { effort: agent.effort }),
     ...(agent.freeAgentMode !== undefined && { freeAgentMode: agent.freeAgentMode }),
     ...(agent.orchestration && Object.keys(agent.orchestration).length > 0 && { orchestration: { ...agent.orchestration } }),
+    ...(agent.idleSleep !== undefined && { idleSleep: agent.idleSleep }),
+    ...(agent.helperTemplateId && { helperTemplateId: agent.helperTemplateId }),
   };
 }
 
+/**
+ * The settings a template keeps: the ones it sets, checked. A `null` (apply
+ * only) or a value that isn't one of the setting's is left out, so a saved
+ * template never carries one.
+ */
+export function templateSettingsToKeep(settings: ManagedTemplateSettings): ManagedTemplateSettings {
+  const { effort, idleSleep, helperTemplateId, ...rest } = settings;
+  const out: ManagedTemplateSettings = { ...rest };
+  if (isEffortValue(effort)) out.effort = effort;
+  const idle = normalizeIdleSleep(idleSleep);
+  if (idle !== 'inherit') out.idleSleep = idle;
+  if (typeof helperTemplateId === 'string' && helperTemplateId && helperTemplateId.length <= 128) out.helperTemplateId = helperTemplateId;
+  return out;
+}
+
+/** A setting's value as the push dialog shows it. Helper templates by name. */
+type SettingLabeler = (key: string, value: unknown) => string;
+
 function settingLabel(value: unknown): string {
-  if (value === undefined) return 'unset';
+  if (value === undefined || value === null) return 'unset';
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
+}
+
+function labelerFor(templateName: (id: string) => string | undefined): SettingLabeler {
+  const unset: Record<string, string> = { effort: 'CLI default', idleSleep: 'app default', helperTemplateId: 'app default' };
+  return (key, value) => {
+    if ((value === undefined || value === null) && unset[key]) return unset[key];
+    if (key === 'helperTemplateId' && typeof value === 'string') return templateName(value) ?? value;
+    if (key === 'idleSleep' && typeof value === 'number') return `${value} min`;
+    return settingLabel(value);
+  };
 }
 
 function flattenSettings(settings: ManagedTemplateSettings): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (settings.orchestrator !== undefined) out.orchestrator = settings.orchestrator;
   if (settings.model !== undefined) out.model = settings.model;
+  if (settings.effort !== undefined && settings.effort !== null) out.effort = settings.effort;
   if (settings.freeAgentMode !== undefined) out.freeAgentMode = settings.freeAgentMode;
   for (const [k, v] of Object.entries(settings.orchestration ?? {})) out[`orchestration.${k}`] = v;
+  if (settings.idleSleep !== undefined && settings.idleSleep !== null) out.idleSleep = settings.idleSleep;
+  if (settings.helperTemplateId) out.helperTemplateId = settings.helperTemplateId;
   return out;
 }
 
 /**
  * Add one changed setting to what gets applied. A setting the template no
  * longer sets goes back to the default: null for orchestration fields, the
- * CLI default model, Free Agent Mode off. The CLI is never unset.
+ * effort, auto-sleep and helper template, the CLI default model, Free Agent
+ * Mode off. The CLI is never unset.
  */
 function mergeSetting(out: ManagedTemplateSettings, from: ManagedTemplateSettings, key: string): void {
   if (key.startsWith('orchestration.')) {
@@ -934,7 +986,10 @@ function mergeSetting(out: ManagedTemplateSettings, from: ManagedTemplateSetting
     return;
   }
   if (key === 'model') out.model = from.model ?? 'default';
+  else if (key === 'effort') out.effort = from.effort ?? null;
   else if (key === 'freeAgentMode') out.freeAgentMode = from.freeAgentMode ?? false;
+  else if (key === 'idleSleep') out.idleSleep = from.idleSleep ?? null;
+  else if (key === 'helperTemplateId') out.helperTemplateId = from.helperTemplateId ?? null;
   else if (key === 'orchestrator' && from.orchestrator) out.orchestrator = from.orchestrator;
 }
 
@@ -942,6 +997,7 @@ export function diffTemplates(
   current: Pick<ManagedTemplate, 'setup' | 'settings'>,
   next: Pick<ManagedTemplate, 'setup' | 'settings'>,
   nameOf: (id: string) => string,
+  label: SettingLabeler = (_key, value) => settingLabel(value),
 ): ManagedTemplateChange[] {
   const changes: ManagedTemplateChange[] = [];
   for (const kind of KINDS) {
@@ -957,18 +1013,100 @@ export function diffTemplates(
   const a = flattenSettings(current.settings);
   const b = flattenSettings(next.settings);
   for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
-    if (JSON.stringify(a[key]) !== JSON.stringify(b[key])) changes.push({ kind: 'setting', key, from: settingLabel(a[key]), to: settingLabel(b[key]) });
+    if (JSON.stringify(a[key]) !== JSON.stringify(b[key])) changes.push({ kind: 'setting', key, from: label(key, a[key]), to: label(key, b[key]) });
   }
   return changes;
 }
 
-function applies(change: ManagedTemplateChange, agent: DurableAgentConfig): boolean {
+function applies(change: ManagedTemplateChange, agent: DurableAgentConfig, label: SettingLabeler = (_key, value) => settingLabel(value)): boolean {
   const setup = agent.managed!;
   if (change.kind === 'add') return !listOf(setup, change.part).includes(change.id);
   if (change.kind === 'remove') return listOf(setup, change.part).includes(change.id);
   if (change.kind === 'order') return false;
   const flat = flattenSettings(settingsOf(agent));
-  return settingLabel(flat[change.key]) !== change.to;
+  return label(change.key, flat[change.key]) !== change.to;
+}
+
+/**
+ * A template's settings from a push or preview, checked: a value a setting
+ * doesn't take refuses the whole call. `null` (back to the default) is
+ * dropped, as a saved template never keeps one.
+ */
+export function checkTemplateSettings(raw: unknown): ManagedTemplateSettings {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new ManagedError('invalid', 'settings must be an object.');
+  const s = raw as Record<string, unknown>;
+  const bad = (what: string): never => { throw new ManagedError('invalid', `The template's ${what}. Nothing was changed.`); };
+  if (s.orchestrator !== undefined && (typeof s.orchestrator !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(s.orchestrator))) bad('CLI isn\'t a CLI id');
+  if (s.model !== undefined && (typeof s.model !== 'string' || !s.model || s.model.length > 200)) bad('model isn\'t a model id');
+  if (s.effort !== undefined && s.effort !== null && !isEffortValue(s.effort)) bad('effort isn\'t an effort level such as low, medium or high');
+  if (s.freeAgentMode !== undefined && typeof s.freeAgentMode !== 'boolean') bad('Free Agent Mode must be on or off');
+  if (s.idleSleep !== undefined && s.idleSleep !== null && s.idleSleep !== 'never'
+    && !(typeof s.idleSleep === 'number' && Number.isInteger(s.idleSleep) && s.idleSleep > 0)) bad('auto-sleep must be "never" or whole minutes');
+  if (s.helperTemplateId !== undefined && s.helperTemplateId !== null
+    && (typeof s.helperTemplateId !== 'string' || s.helperTemplateId.length > 128)) bad('helper template isn\'t a template id');
+  if (s.orchestration !== undefined) {
+    try {
+      validateOrchestrationPatch(s.orchestration);
+    } catch (err) {
+      // telemetry-exempt: refused to the caller with the reason.
+      bad(`orchestration is invalid (${err instanceof Error ? err.message : String(err)})`);
+    }
+  }
+  return templateSettingsToKeep(s as ManagedTemplateSettings);
+}
+
+const modelOf = (model: string | undefined): string => (model && model !== 'default' ? model : 'default');
+
+/**
+ * What a push does to an agent's effort. An effort is for one model: the
+ * template's effort goes only to an agent that will run the template's model
+ * (on its CLI, when the template names one), so an agent that chose its own
+ * model keeps its effort. A pushed model or CLI change that changes the agent's
+ * model clears its effort (updateDurableConfig does), so the template's effort,
+ * when it has one for that model, is sent with it.
+ */
+function effortOutcome(agent: DurableAgentConfig, changes: ManagedTemplateChange[], next: ManagedTemplateSettings): { send?: string | null; skipped?: string; resets: boolean } {
+  const has = (key: string) => changes.some((c) => c.kind === 'setting' && c.key === key && !c.followsModel);
+  const cliAfter = has('orchestrator') && next.orchestrator ? next.orchestrator : agent.orchestrator;
+  const cliChanges = (cliAfter ?? '') !== (agent.orchestrator ?? '');
+  // A new CLI without a model clears the agent's model too.
+  const modelAfter = has('model') ? modelOf(next.model) : cliChanges ? 'default' : modelOf(agent.model);
+  const resets = cliChanges || modelAfter !== modelOf(agent.model);
+  const fits = (!next.orchestrator || next.orchestrator === cliAfter) && modelAfter === modelOf(next.model);
+  const effortEdited = has('effort');
+  if (effortEdited && next.effort == null) return { send: null, resets };
+  if (next.effort && (effortEdited || resets)) {
+    if (fits) return { send: next.effort, resets };
+    return { resets, ...(effortEdited && { skipped: 'effort not applied: it runs another model' }) };
+  }
+  return { resets };
+}
+
+/** A pushed model or CLI change with no effort edit: say what happens to the effort. */
+function withEffortFollowingModel(changes: ManagedTemplateChange[], next: ManagedTemplateSettings, label: SettingLabeler): ManagedTemplateChange[] {
+  const touchesModel = changes.some((c) => c.kind === 'setting' && (c.key === 'model' || c.key === 'orchestrator'));
+  const effortEdited = changes.some((c) => c.kind === 'setting' && c.key === 'effort');
+  if (!touchesModel || effortEdited) return changes;
+  // "CLI default" when the template has no effort, else its level, sent with the model.
+  return [...changes, { kind: 'setting', key: 'effort', from: 'reset by the new model', to: label('effort', next.effort), followsModel: true }];
+}
+
+function pushApplies(change: ManagedTemplateChange, agent: DurableAgentConfig, changes: ManagedTemplateChange[], next: ManagedTemplateSettings, label: SettingLabeler): boolean {
+  if (change.kind !== 'setting' || change.key !== 'effort') return applies(change, agent, label);
+  const o = effortOutcome(agent, changes, next);
+  if (o.send !== undefined) return o.resets || label('effort', o.send) !== label('effort', agent.effort);
+  // No effort sent: it changes only when a new model clears one it has.
+  return o.resets && !!agent.effort;
+}
+
+function describeSkipped(change: ManagedTemplateChange, agent: DurableAgentConfig, changes: ManagedTemplateChange[], next: ManagedTemplateSettings): string {
+  if (change.kind === 'setting' && change.key === 'effort') {
+    const o = effortOutcome(agent, changes, next);
+    if (o.skipped) return o.skipped;
+    return change.followsModel ? 'model unchanged, effort kept' : describeAlready(change);
+  }
+  return describeAlready(change);
 }
 
 function describeAlready(change: ManagedTemplateChange): string {

@@ -139,12 +139,47 @@ export interface ManagedPart extends ManagedPartSummary {
   content: ManagedPartContent;
 }
 
-/** Settings a template carries besides its parts. Unset means "leave as the person chose". */
+/**
+ * Settings a template carries besides its parts. Unset means "leave as the
+ * person chose". Each is an ordinary agent setting, stored where it always is.
+ * `null` is only for applying: it puts that setting back to its default
+ * (the CLI's effort, the app's auto-sleep, the app's default helper template).
+ * Saved templates never keep a `null`.
+ */
 export interface ManagedTemplateSettings {
   orchestrator?: OrchestratorId;
   model?: string;
+  /** The reasoning effort level, for the model these settings run (the agent's `effort`). */
+  effort?: string | null;
   freeAgentMode?: boolean;
   orchestration?: OrchestrationPolicyConfig;
+  /** Auto-sleep: minutes idle before a chat session sleeps, or `never` (the agent's `idleSleep`). */
+  idleSleep?: 'never' | number | null;
+  /** The template this agent's helpers start from when start_helper names none (the agent's `helperTemplateId`). */
+  helperTemplateId?: string | null;
+}
+
+/** One line of Preview's settings summary, e.g. `{ key: 'model', label: 'Model', value: 'opus' }`. */
+export interface ManagedSettingsRow {
+  key: string;
+  label: string;
+  value: string;
+}
+
+/**
+ * What a running managed agent's current session started with (D9), kept in
+ * memory from its delivery so Preview can show "Running now" beside the next start.
+ */
+export interface ManagedRunningSnapshot {
+  deliveredAt: string;
+  instructions: string;
+  /** The same text with wildcards as written. */
+  rawInstructions: string;
+  skills: string[];
+  mcps: string[];
+  settings: ManagedSettingsRow[];
+  /** What differs from the next start, in words, as the setup-changed bar says it. */
+  changes: string[];
 }
 
 export interface ManagedTemplate {
@@ -169,7 +204,12 @@ export type ManagedTemplateChange =
   | { kind: 'add'; part: ManagedPartKind; id: string; name: string }
   | { kind: 'remove'; part: ManagedPartKind; id: string; name: string }
   | { kind: 'order' }
-  | { kind: 'setting'; key: string; from: string; to: string };
+  /**
+   * `followsModel`: not an edit of the effort, but what a pushed model or CLI
+   * change does to it (D81): the template's effort goes with the new model,
+   * or the effort goes back to the CLI default.
+   */
+  | { kind: 'setting'; key: string; from: string; to: string; followsModel?: true };
 
 export interface ManagedTemplatePushTarget {
   projectPath: string;
@@ -247,6 +287,12 @@ export interface ManagedMcpProblem {
 /** The exact result an agent gets at its next start. */
 export interface ManagedPreview {
   instructions: string;
+  /** The same text with wildcards as written, for "Show wildcards". */
+  rawInstructions?: string;
+  /** CLI, model, effort, Free Agent Mode, orchestration and helpers. */
+  settings?: ManagedSettingsRow[];
+  /** Set while the agent runs and its next start differs from what its session started with. */
+  running?: ManagedRunningSnapshot;
   blocks: Array<{ id: string; name: string; builtin: boolean; usedBy: number; startLine: number; endLine: number }>;
   /**
    * `projectOwn`: a built-in skill whose folder git tracks in the agent's

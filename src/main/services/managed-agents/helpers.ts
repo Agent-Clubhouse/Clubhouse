@@ -1,7 +1,8 @@
 /**
  * Clubhouse-managed helpers (#2899): a helper is built from a template (the
- * one start_helper names, or the app's default helper template), with agent
- * parts added or left out for that helper only. Nothing is saved back.
+ * one start_helper names, else its orchestrator's helper template, else the
+ * app's default helper template), with agent parts added or left out for that
+ * helper only. Nothing is saved back.
  */
 import type { HelperStartArgs } from '../../../shared/types';
 import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedHelperChanges, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
@@ -14,7 +15,26 @@ export const HELPER_KEEPS_CLUBHOUSE_PART = 'Helpers always keep the Clubhouse MC
 
 /** start_helper's refusal while the person hasn't let orchestrators choose helper templates (#2899, D31). */
 export const HELPER_TEMPLATE_CHOICE_OFF =
-  'helpers here always use the default helper template, so template, addParts and removeParts are refused. Leave them out, or ask the person to turn on "Let orchestrators choose helper templates" in Settings › Managed agents › Helpers.';
+  'helpers here always use the helper template the person set (yours, else the app\'s default), so template, addParts and removeParts are refused. Leave them out, or ask the person to turn on "Let orchestrators choose helper templates" in Settings › Managed agents › Helpers.';
+
+/**
+ * The template a helper starts from when start_helper names none: the
+ * orchestrator's own helper template (#2895), else the app's default. One
+ * that no longer exists falls back to the app's default.
+ */
+export async function helperTemplateFor(service: ManagedAgentsService, agentTemplateId: string | undefined): Promise<{ templateId: string; appDefault: string }> {
+  const appDefault = await service.defaultHelperTemplateId();
+  if (agentTemplateId && agentTemplateId !== appDefault) {
+    try {
+      await service.getTemplate(agentTemplateId);
+      return { templateId: agentTemplateId, appDefault };
+    } catch {
+      // telemetry-exempt: logged; the helper starts from the app's default helper template.
+      appLog('core:managed', 'warn', 'An orchestrator\'s helper template no longer exists; using the default helper template', { meta: { templateId: agentTemplateId } });
+    }
+  }
+  return { templateId: appDefault, appDefault };
+}
 
 /**
  * The setup a helper starts with. Throws, before anything is created, when the
@@ -27,6 +47,8 @@ export const HELPER_TEMPLATE_CHOICE_OFF =
 export async function managedHelperSetup(
   service: ManagedAgentsService,
   args: Pick<HelperStartArgs, 'template' | 'addParts' | 'removeParts'>,
+  /** The orchestrator's own helper template (`helperTemplateId`), when it has one. */
+  agentTemplateId?: string,
 ): Promise<ManagedAgentSetup & { templateId: string; settings: ManagedTemplateSettings; helperChanges: ManagedHelperChanges }> {
   // Every helper's setup uses built-in parts (the Clubhouse MCP part at least), so
   // a start before startup installed them, or after that install failed, waits for them.
@@ -36,9 +58,11 @@ export async function managedHelperSetup(
     // telemetry-exempt: logged; the checks below refuse the start if a part it needs is missing.
     appLog('core:managed', 'warn', 'Could not install the built-in agent parts before a helper start', { meta: { error: err instanceof Error ? err.message : String(err) } });
   }
-  const defaultId = await service.defaultHelperTemplateId();
-  // Off (the default), only the default helper template is used. Naming it is no choice, so that passes.
-  const choosing = (args.template !== undefined && args.template !== defaultId) || !!args.addParts?.length || !!args.removeParts?.length;
+  const { templateId: defaultId, appDefault } = await helperTemplateFor(service, agentTemplateId);
+  // Off (the default), only the helper template the person set is used. Naming it, or the
+  // app's default, is no choice, so that passes.
+  const named = args.template !== undefined && args.template !== defaultId && args.template !== appDefault;
+  const choosing = named || !!args.addParts?.length || !!args.removeParts?.length;
   if (choosing && !(await service.helperTemplateChoice())) throw new Error(HELPER_TEMPLATE_CHOICE_OFF);
   const templateId = args.template ?? defaultId;
   let base;

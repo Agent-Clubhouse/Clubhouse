@@ -83,6 +83,7 @@ import { setAgentIdleSleep } from './chat-idle-settings';
 import { noteManagedSettingsChanged } from './managed-agents/changed-notice';
 import { execFile } from 'child_process';
 import { pathExists } from './fs-utils';
+import { delivered } from './managed-agents/delivery-records';
 import { assertProviderSelection, noteProviderSelection } from './agent-transition';
 import { registerProvider } from '../orchestrators/registry';
 import { isInsideGitRepo } from './git-service';
@@ -1274,9 +1275,12 @@ describe('deleteUnregister', () => {
     captureMainAgentWrite((value) => { writtenAgents = value; });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
 
+    // What a managed session started with is freed with the agent (D79).
+    delivered.set('durable_unreg', { fingerprint: 'f', deliveredAt: 't', parts: {}, order: [] });
     const result = await deleteUnregister(PROJECT_PATH, 'durable_unreg');
     await flushAgentConfig(PROJECT_PATH);
     expect(result.ok).toBe(true);
+    expect(delivered.has('durable_unreg')).toBe(false);
     const remaining = JSON.parse(writtenAgents);
     expect(remaining.length).toBe(0);
     // No rm or git commands
@@ -1424,11 +1428,17 @@ describe('updateDurableConfig', () => {
     vi.mocked(noteManagedSettingsChanged).mockClear();
     await updateDurableConfig(PROJECT_PATH, 'durable_managed', { model: 'sonnet' });
     await updateDurableConfig(PROJECT_PATH, 'durable_managed', { freeAgentMode: true });
-    expect(noteManagedSettingsChanged).toHaveBeenCalledTimes(2);
-    // Not for a field the bar doesn't compare, nor for an unmanaged agent.
+    // The effort is passed at launch, so the bar compares it too (#2895).
+    await updateDurableConfig(PROJECT_PATH, 'durable_managed', { effort: 'high' });
+    expect(noteManagedSettingsChanged).toHaveBeenCalledTimes(3);
+    // Auto-sleep and the helper template apply at once, but Settings and Preview show them (#2895).
     await updateDurableConfig(PROJECT_PATH, 'durable_managed', { idleSleep: 15 });
+    await updateDurableConfig(PROJECT_PATH, 'durable_managed', { helperTemplateId: 'builtin-template-helper' });
+    expect(noteManagedSettingsChanged).toHaveBeenCalledTimes(5);
+    // Not for a field neither shows, nor for an unmanaged agent.
+    await updateDurableConfig(PROJECT_PATH, 'durable_managed', { buildCommand: 'make' });
     await updateDurableConfig(PROJECT_PATH, 'durable_plain', { model: 'sonnet' });
-    expect(noteManagedSettingsChanged).toHaveBeenCalledTimes(2);
+    expect(noteManagedSettingsChanged).toHaveBeenCalledTimes(5);
   });
 
   it('persists and clears the per-agent auto-sleep, and applies it live (#2143)', async () => {
@@ -1907,6 +1917,34 @@ describe('updateDurableConfig: a new CLI (#2593)', () => {
     expect(await effortAfter({ model: 'opus' })).toBe('high');
     expect(await effortAfter({ orchestrator: 'claude-code' })).toBe('high');
     expect(await effortAfter({ name: 'renamed' } as never)).toBe('high');
+  });
+
+  it('sets and clears an effort, keeps one set with a new model, and refuses a bad one without changing anything (#2895)', async () => {
+    const after = async (updates: Parameters<typeof updateDurableConfig>[2]) => {
+      setup({ orchestrator: 'claude-code', model: 'opus', effort: 'high' });
+      clearAgentConfigCache(PROJECT_PATH);
+      await updateDurableConfig(PROJECT_PATH, 'durable_cli', updates);
+      return getDurableConfig(PROJECT_PATH, 'durable_cli');
+    };
+    expect((await after({ effort: 'low' }))!.effort).toBe('low');
+    expect((await after({ effort: null }))!.effort).toBeUndefined();
+    // A level chosen with a new model is for that model, so the model's change doesn't clear it.
+    const both = await after({ model: 'sonnet', effort: 'medium' });
+    expect([both!.model, both!.effort]).toEqual(['sonnet', 'medium']);
+    setup({ orchestrator: 'claude-code', model: 'opus', effort: 'high' });
+    clearAgentConfigCache(PROJECT_PATH);
+    await expect(updateDurableConfig(PROJECT_PATH, 'durable_cli', { model: 'sonnet', effort: 'High; rm -rf' })).rejects.toThrow(/effort/);
+    const unchanged = await getDurableConfig(PROJECT_PATH, 'durable_cli');
+    expect([unchanged!.model, unchanged!.effort]).toEqual(['opus', 'high']);
+  });
+
+  it('sets and clears the helper template its helpers start from (#2895)', async () => {
+    setup({ orchestrator: 'claude-code' });
+    clearAgentConfigCache(PROJECT_PATH);
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { helperTemplateId: 'builtin-template-quality-assurance' });
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.helperTemplateId).toBe('builtin-template-quality-assurance');
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { helperTemplateId: null });
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.helperTemplateId).toBeUndefined();
   });
 
   it('keeps a model chosen in the same update', async () => {

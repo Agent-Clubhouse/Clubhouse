@@ -6,15 +6,18 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { ManagedPartContent, ManagedPartKind, ManagedResult, ManagedTemplate, ManagedTemplateSettings } from '../../shared/managed-agents-types';
-import { dismissMigrationNotice, managedAgents, restartManagedAgent, statusFor, isAgentWorking } from '../services/managed-agents';
+import { dismissMigrationNotice, managedAgents, restartManagedAgent, runningSnapshotFor, statusFor, isAgentWorking } from '../services/managed-agents';
 import { applyManagedSettings, convertToManaged, createManagedAgent, previewConvert } from '../services/managed-agents/agents';
 import { withSwitchLock } from '../services/managed-agents/auto-migrate';
 import { previewManagedSetup } from '../services/managed-agents/delivery';
-import { ManagedError } from '../services/managed-agents/service';
+import { checkTemplateSettings, ManagedError } from '../services/managed-agents/service';
 import { executableBits } from '../services/managed-agents/file-modes';
 import * as agentConfig from '../services/agent-config';
 import { resolveOrchestrator } from '../services/agent-system';
 import { appLog } from '../services/log-service';
+import { modelListFor } from '../services/model-check';
+import { getProvider } from '../orchestrators';
+import type { DurableAgentConfig, OrchestratorId } from '../../shared/types';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { arrayArg, booleanArg, numberArg, objectArg, stringArg, withValidatedArgs, type ArgValidator } from './validation';
 
@@ -111,8 +114,55 @@ export function registerManagedAgentsHandlers(): void {
     const agent = await agentConfig.getDurableConfig(projectPath, agentId);
     if (!agent) throw new ManagedError('not_found');
     const provider = await resolveOrchestrator(projectPath, agent.orchestrator).catch((): undefined => undefined);
-    return previewManagedSetup({ service: s(), projectPath, agent, provider, ...(setup && { setup: { version: 1 as const, ...setup } }) });
+    const preview = await previewManagedSetup({ service: s(), projectPath, agent, provider, ...(setup && { setup: { version: 1 as const, ...setup } }) });
+    // Its saved setup, while it runs on something else: what the session started with, beside it.
+    const running = setup ? null : await runningSnapshotFor(projectPath, agentId).catch((): null => null);
+    return running ? { ...preview, running } : preview;
   })));
+  // The New agent builder's Preview (#2895): the same render as delivery, for an
+  // agent that doesn't exist yet, named as the person typed it, in the folder
+  // Clubhouse would give it (`.clubhouse/agents/<name>/`).
+  ipcMain.handle(IPC.MANAGED.PREVIEW_DRAFT, withValidatedArgs(
+    [stringArg({ maxLength: 4096 }), objectArg<{ name: string; setup: { blocks: string[]; skills: string[]; mcps: string[] }; settings?: ManagedTemplateSettings }>({ validate: (v) => {
+      stringArg({ maxLength: 200 })(v.name, 'name');
+      setupShape(v.setup);
+      // The CLI id, model, effort, orchestration fields and helper template, as a template's are checked.
+      const checked = checkTemplateSettings(v.settings);
+      if (checked.orchestrator && !getProvider(checked.orchestrator)) throw new Error('Invalid settings orchestrator');
+    } })],
+    (_e, projectPath, input) => result(async () => {
+      const settings = checkTemplateSettings(input.settings);
+      const agent: DurableAgentConfig = {
+        id: 'new-agent',
+        name: input.name.trim() || 'new-agent',
+        color: 'gray',
+        createdAt: new Date().toISOString(),
+        ...(settings.orchestrator && { orchestrator: settings.orchestrator }),
+        ...(settings.model && settings.model !== 'default' && { model: settings.model }),
+        ...(settings.effort && { effort: settings.effort }),
+        ...(settings.freeAgentMode && { freeAgentMode: true }),
+        ...(settings.orchestration && { orchestration: settings.orchestration }),
+        ...(settings.helperTemplateId && { helperTemplateId: settings.helperTemplateId }),
+      };
+      const provider = await resolveOrchestrator(projectPath, agent.orchestrator).catch((): undefined => undefined);
+      return previewManagedSetup({ service: s(), projectPath, agent, provider, setup: { version: 1 as const, ...input.setup }, projectOwnFrom: projectPath });
+    }),
+  ));
+  // The effort levels each model of a CLI takes, for the builder's Effort list. `default` is the CLI's default model's.
+  ipcMain.handle(IPC.MANAGED.MODEL_EFFORTS, withValidatedArgs([stringArg({ maxLength: 64 }), stringArg({ optional: true, maxLength: 4096 })],
+    // The project path no longer matters: provider profiles are gone (#2749), so a CLI has one model list.
+    (_e, cli, _projectPath) => result(async (): Promise<Record<string, string[]>> => {
+      const provider = getProvider(cli as OrchestratorId);
+      if (!provider) return {};
+      // telemetry-exempt: a list that can't be read offers no levels; the Effort row says so.
+      const list = await modelListFor(provider).catch((): null => null);
+      const out: Record<string, string[]> = {};
+      for (const m of list?.models ?? []) {
+        if (m.efforts?.length) out[m.id] = [...m.efforts];
+        if (m.isDefault) out.default = [...(m.efforts ?? [])];
+      }
+      return out;
+    })));
 
   ipcMain.handle(IPC.MANAGED.LIST_TEMPLATES, withValidatedArgs([], () => result(() => s().listTemplates())));
   ipcMain.handle(IPC.MANAGED.GET_TEMPLATE, withValidatedArgs([idArg()], (_e, id) => result(() => s().getTemplate(id))));

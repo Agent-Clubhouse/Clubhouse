@@ -76,7 +76,7 @@ import { createManagedAgentsService, type ManagedAgentsService } from './service
 import * as agentConfig from '../agent-config';
 import * as orchestrationPolicy from '../orchestration-policy';
 import * as materialization from './legacy-migration';
-import { convertToManaged, leftoverWildcards, previewConvert, settingsForConvert } from './agents';
+import { applyManagedSettings, convertToManaged, createManagedAgent, leftoverWildcards, previewConvert, settingsForConvert } from './agents';
 import { keepInstructionsAtFirstStart } from './before-managed';
 
 const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
@@ -661,6 +661,13 @@ describe('convert acceptance (#2819)', () => {
     expect(settingsForConvert('claude-code', { orchestrator: 'claude-code', model: 'opus' })).toEqual({ model: 'opus' });
     expect(settingsForConvert('claude-code', { model: 'opus', freeAgentMode: false })).toEqual({ model: 'opus', freeAgentMode: false });
     expect(settingsForConvert('claude-code', { orchestrator: 'codex-cli', model: 'gpt-5' })).toEqual({});
+    // An effort is for a model, so it follows the model's rule (#2895).
+    expect(settingsForConvert('claude-code', { orchestrator: 'codex-cli', model: 'gpt-5', effort: 'xhigh', idleSleep: 30 })).toEqual({ idleSleep: 30 });
+    expect(settingsForConvert('claude-code', { effort: 'high', helperTemplateId: 'builtin-template-helper' })).toEqual({ effort: 'high', helperTemplateId: 'builtin-template-helper' });
+    // Only for the model the agent will run: the template's, or its own when that is the same (D81).
+    expect(settingsForConvert('claude-code', { effort: 'high' }, 'sonnet')).toEqual({});
+    expect(settingsForConvert('claude-code', { model: 'opus', effort: 'high' }, 'sonnet')).toEqual({ model: 'opus', effort: 'high' });
+    expect(settingsForConvert('claude-code', { orchestrator: 'codex-cli', model: 'opus', effort: 'high' }, 'opus')).toEqual({});
   });
 
   it('copies the MCP file aside once, and a second copy never overwrites the first', async () => {
@@ -672,5 +679,43 @@ describe('convert acceptance (#2819)', () => {
     expect(fs.readFileSync(path.join(wt, '.clubhouse-before-managed', '.mcp.json'), 'utf-8')).toBe('earlier');
     // The original stays until the first managed start rewrites it.
     expect(fs.existsSync(path.join(wt, '.mcp.json'))).toBe(true);
+  });
+});
+
+describe('applying settings a template or the builder carries (#2895)', () => {
+  beforeEach(() => {
+    vi.mocked(agentConfig.updateDurableConfig).mockClear();
+    vi.mocked(orchestrationPolicy.setOrchestrationPolicy).mockClear();
+    vi.mocked(agentConfig.createDurable).mockReset();
+  });
+
+  it('writes each to the agent\'s own setting: effort with the CLI and model in one write, null back to the default', async () => {
+    await applyManagedSettings('/p', 'ada', {
+      orchestrator: 'codex-cli', model: 'gpt-5', effort: 'high', freeAgentMode: true, idleSleep: 30, helperTemplateId: 'builtin-template-quality-assurance',
+      orchestration: { orchestrate: true, maxHelpers: 3, autoHelpers: true, connectToDispatcher: false, control: 'ask-before-start' },
+    });
+    expect(agentConfig.updateDurableConfig).toHaveBeenCalledTimes(1);
+    expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/p', 'ada', {
+      orchestrator: 'codex-cli', model: 'gpt-5', effort: 'high', freeAgentMode: true, idleSleep: 30, helperTemplateId: 'builtin-template-quality-assurance',
+    });
+    expect(orchestrationPolicy.setOrchestrationPolicy).toHaveBeenCalledWith('/p', 'ada', { orchestrate: true, maxHelpers: 3, autoHelpers: true, connectToDispatcher: false, control: 'ask-before-start' });
+    await applyManagedSettings('/p', 'ada', { effort: null, idleSleep: null, helperTemplateId: null });
+    expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith('/p', 'ada', { effort: null, idleSleep: null, helperTemplateId: null });
+  });
+
+  it('create from a template applies what createDurable doesn\'t take: effort, auto-sleep, helper template and orchestration', async () => {
+    const t = await user(() => service.saveTemplate({
+      name: 'Lead', description: '', setup: { blocks: [], skills: [], mcps: [] },
+      settings: { orchestrator: 'claude-code', model: 'opus', effort: 'high', idleSleep: 'never', helperTemplateId: 'builtin-template-quality-assurance', orchestration: { orchestrate: true, maxHelpers: 3 } },
+    }));
+    vi.mocked(agentConfig.createDurable).mockImplementation(async (_p, name) => {
+      const made: DurableAgentConfig = { id: 'made', name, color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: wt };
+      h.agents.set('made', made);
+      return made;
+    });
+    await user(() => createManagedAgent('/p', { name: 'lead', color: 'indigo', templateId: t.id }));
+    expect(agentConfig.createDurable).toHaveBeenCalledWith('/p', 'lead', 'indigo', 'opus', true, 'claude-code', undefined);
+    expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/p', 'made', { effort: 'high', idleSleep: 'never', helperTemplateId: 'builtin-template-quality-assurance' });
+    expect(orchestrationPolicy.setOrchestrationPolicy).toHaveBeenCalledWith('/p', 'made', { orchestrate: true, maxHelpers: 3 });
   });
 });

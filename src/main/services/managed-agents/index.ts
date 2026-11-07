@@ -11,15 +11,17 @@ import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
 import type { OrchestratorProvider } from '../../orchestrators/types';
 import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
-import type { ManagedAgentStatus, ManagedMcpProblem } from '../../../shared/managed-agents-types';
+import type { ManagedAgentStatus, ManagedMcpProblem, ManagedRunningSnapshot } from '../../../shared/managed-agents-types';
 import { createManagedAgentsService, ManagedError, type ManagedAgentsService } from './service';
 import { createManagedStateStore, managedStateDir } from './state-store';
 import { ensureBuiltinsOnceFor } from './builtins-once';
 import { MCP_BACKUP_DIR } from './mcp-backup';
 import { keepInstructionsAtFirstStart } from './before-managed';
 import * as path from 'path';
+import { delivered, failedDeliveries, forgetDelivery, mcpProblems } from './delivery-records';
 import {
   deliverManagedSetup,
+  managedSettingsRows,
   EXCLUDES_MANIFEST,
   managedSkillExcludes,
   mcpServersOf,
@@ -81,13 +83,9 @@ export function _setManagedAgentsForTesting(next: ManagedAgentsService | null): 
 
 // ── What each running session started with ─────────────────────────────
 
-const delivered = new Map<string, DeliveryRecord>();
-/** Agents whose last delivery failed, with the reason, until a delivery succeeds. */
-const failedDeliveries = new Map<string, string>();
-/** Each running session's MCP servers that can't start for want of a variable, by name (D95). */
-const mcpProblems = new Map<string, ManagedMcpProblem[]>();
+// Freed when the agent is deleted or a helper disposed, and the text when its session ends (delivery-records).
 
-/** The spawn path: what this session's MCP servers lack. Details shows it while the agent runs. */
+/** The spawn path: what this session's MCP servers lack. Details shows it while the agent runs; delivery-records frees it. */
 export function recordMcpStartProblems(agentId: string, problems: ManagedMcpProblem[]): void {
   const before = JSON.stringify(mcpProblems.get(agentId) ?? []);
   if (problems.length > 0) mcpProblems.set(agentId, problems.map((p) => ({ server: p.server, missingEnv: [...p.missingEnv] })));
@@ -232,17 +230,29 @@ export async function statusFor(projectPath: string, agentId: string): Promise<M
   return { managed: true, running, waiting: true, changes, deliveredAt: record.deliveredAt, cliChanged, ...notice };
 }
 
+/**
+ * What a running agent's session started with, for Preview's "Running now",
+ * while its next start differs (the setup-changed bar is showing). Null when
+ * it isn't running, nothing is waiting, or this app run didn't deliver it.
+ */
+export async function runningSnapshotFor(projectPath: string, agentId: string): Promise<ManagedRunningSnapshot | null> {
+  const status = await statusFor(projectPath, agentId);
+  const snapshot = delivered.get(agentId)?.snapshot;
+  if (!status.running || !status.waiting || !snapshot) return null;
+  // The helper template reaches a running agent at once (D83), so it is never waiting: show it as it is now.
+  const agent = await agentConfig.getDurableConfig(projectPath, agentId);
+  const now = agent ? (await managedSettingsRows(managedAgents(), agent, undefined)).find((r) => r.key === 'helperTemplate') : undefined;
+  const settings = snapshot.settings.map((r) => (r.key === 'helperTemplate' && now ? now : r));
+  return { ...snapshot, settings, changes: status.changes };
+}
+
 /** The person dismissed the "Switched to managed when Clubhouse updated" notice. The marker stays (D59). */
 export async function dismissMigrationNotice(projectPath: string, agentId: string): Promise<void> {
   await agentConfig.setManagedMigration(projectPath, agentId, { dismissed: true });
   broadcastToAllWindows(IPC.MANAGED.CHANGED);
 }
 
-export function forgetDelivery(agentId: string): void {
-  delivered.delete(agentId);
-  failedDeliveries.delete(agentId);
-  mcpProblems.delete(agentId);
-}
+export { forgetDelivery };
 
 // ── Restart ────────────────────────────────────────────────────────────
 
