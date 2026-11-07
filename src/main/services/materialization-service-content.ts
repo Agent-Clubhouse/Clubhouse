@@ -189,8 +189,7 @@ disk and how to change them without using the UI.
 > **Note:** This file is regenerated whenever Clubhouse refreshes it (on
 > agent wake and on project open during a session). Local edits will be
 > overwritten — treat \`.clubhouse/settings.json\`, \`.clubhouse/agents.json\`,
-> \`.clubhouse/skills/\`, \`.clubhouse/missions/\`, and \`.clubhouse/personas/\` as
-> the editable surfaces.
+> \`.clubhouse/skills/\`, and \`.clubhouse/missions/\` as the editable surfaces.
 
 ---
 
@@ -273,7 +272,6 @@ Each entry in the \`agents\` array supports per-agent overrides:
   "id": "durable_...",
   "name": "bold-falcon",
   "branch": "bold-falcon/standby",
-  "persona": "qa",
   "mission": "investigate-and-report",
   "buildCommand": "npm run package",
   "testCommand": "npm test",
@@ -285,7 +283,7 @@ Each entry in the \`agents\` array supports per-agent overrides:
 }
 \`\`\`
 
-Editable fields: \`persona\`, \`mission\`, \`buildCommand\`, \`testCommand\`,
+Editable fields: \`mission\`, \`buildCommand\`, \`testCommand\`,
 \`lintCommand\`, \`sourceControlProvider\`, \`clubhouseModeOverride\`,
 \`freeAgentMode\`, \`model\`, \`orchestrator\`, \`mcpIds\`, \`mcpConfigs\`,
 \`mcpOverride\`.
@@ -347,41 +345,6 @@ the rest of materialization still succeeds.
 
 ---
 
-## Personas (\`.clubhouse/personas/\`)
-
-A **persona** layers a role (e.g. \`qa\`, \`researcher\`, \`judge\`) onto an
-agent. The content is substituted for the \`@@Persona\` wildcard, or appended to
-the instructions when the template doesn't reference the token.
-
-Clubhouse ships a built-in persona library. To customize, author an on-disk
-persona file — a flat markdown file where the filename (minus \`.md\`) is the
-persona ID. There are two on-disk scopes:
-
-\`\`\`
-.clubhouse/personas/        # project-scoped — this project only
-  qa.md                     # overrides the built-in "qa" persona here
-  my-reviewer.md            # a project-specific persona
-
-~/.clubhouse/personas/      # user-global — reusable across ALL your projects
-  my-reviewer.md            # author once, use in any project
-\`\`\`
-
-At materialization, persona content resolves by precedence: **project →
-user-global → built-in**. A \`.clubhouse/personas/<id>.md\` wins; otherwise a
-\`~/.clubhouse/personas/<id>.md\` is used; otherwise the built-in template of the
-same ID. Built-ins are never written to disk automatically — they remain
-available until you shadow one with a file of the same name. Put personas you
-want everywhere in \`~/.clubhouse/personas/\`; use \`.clubhouse/personas/\` to
-tweak one only for this project.
-
-**Selecting a persona** works exactly like missions:
-- Set \`agentDefaults.persona\` in \`.clubhouse/settings.json\` for the
-  project-wide default.
-- Set \`persona\` on an agent in \`.clubhouse/agents.json\` to override per-agent.
-- Per-agent wins. Either value is the persona ID.
-
----
-
 ## Wildcards available to all templates
 
 | Token                       | Resolves to                                          |
@@ -394,10 +357,10 @@ tweak one only for this project.
 | \`@@TestCommand\`             | from project defaults                                |
 | \`@@LintCommand\`             | from project defaults                                |
 | \`@@Mission\`                 | full markdown content of the active mission file     |
-| \`@@Persona\`                 | full markdown content of the active persona template |
+| \`@@Persona\`                 | nothing: personas were retired                       |
 | \`@@If(github)…@@EndIf\`      | conditional block, kept only when provider matches   |
 
-Neither \`@@Mission\` nor \`@@Persona\` appear in the built-in default template — add them to your customized \`agentDefaults.instructions\` if you want the content inlined at a specific position. \`@@Persona\` also acts as an "opt out" of the default auto-append behavior: when your template contains the token, the persona content is substituted in place and not appended again at the bottom.
+\`@@Mission\` doesn't appear in the built-in default template. Add it to your customized \`agentDefaults.instructions\` if you want the content inlined at a specific position.
 
 ---
 
@@ -407,9 +370,6 @@ Neither \`@@Mission\` nor \`@@Persona\` appear in the built-in default template 
 |--------------------------------------------|------------------------------------------------------------|
 | Change project default mission             | \`agentDefaults.mission\` in \`.clubhouse/settings.json\`     |
 | Give one agent a different mission         | \`mission\` in that agent's entry in \`.clubhouse/agents.json\`|
-| Change project default persona             | \`agentDefaults.persona\` in \`.clubhouse/settings.json\`     |
-| Give one agent a different persona         | \`persona\` in that agent's entry in \`.clubhouse/agents.json\`|
-| Customize a persona's content              | Author \`.clubhouse/personas/<id>.md\` (overrides built-in)  |
 | Override a command for one agent           | \`buildCommand\`/\`testCommand\`/\`lintCommand\` in \`.clubhouse/agents.json\` |
 | Tweak a skill body                         | Edit the file under \`.clubhouse/skills/<name>/SKILL.md\`    |
 | Add a new wildcard target                  | (Code change — see \`src/shared/wildcard-replacer.ts\`)      |

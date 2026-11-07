@@ -4,8 +4,7 @@
  * The orchestration policy is the source of truth: every agent whose resolved
  * policy has `connectToDispatcher` on gets a two-way agent-to-agent wire with
  * the Dispatcher. Unset, that follows `orchestrate` (#2578), so an orchestrate
- * change can move a wire too. The policy lives in agents.json
- * (and the persona), so nothing new is persisted and the wires come back on
+ * change can move a wire too. The policy lives in agents.json, so nothing new is persisted and the wires come back on
  * restart. There are no wires while the Dispatcher is off.
  *
  * The wires carry only what one side sends with `send_message`, plus what
@@ -32,7 +31,6 @@ import * as projectStore from './project-store';
 import { listDurable, onAgentConfigChanged } from './agent-config';
 import { resolveOrchestrationPolicies, setOrchestrationPolicy } from './orchestration-policy';
 import { onMcpEnablementChanged } from './mcp-settings';
-import { onPersonaChanged } from './persona-change-hook';
 import {
   DISPATCHER_NAME,
   getDispatcherAgentId,
@@ -211,15 +209,15 @@ const RETRY_DELAYS_MS = [1_000, 5_000, 15_000, 60_000];
 
 /**
  * Call `onWiresChanged` when the Dispatcher wires change: the Dispatcher is
- * turned on or off, an agent's policy changes (its switch, its orchestration,
- * its persona, a project default persona), MCP changes for it (its own setting,
+ * turned on or off, an agent's policy changes (its switch, its orchestration),
+ * MCP changes for it (its own setting,
  * its project's, the app's, or Clubhouse Mode), or a project is
  * added or removed. Changes that leave the wires as they were are ignored. A
  * change counts as handled only once a rebuild commits it; until then the
  * check is retried a few times, and the next change retries it again.
  *
- * A project's wires depend only on its own agents, defaults and personas, so
- * an agent or persona change reads only that project. The Dispatcher
+ * A project's wires depend only on its own agents and defaults, so an agent
+ * change reads only that project. The Dispatcher
  * changing, the project list changing, an MCP setting changing, a retry, and a path that matches no
  * registered project read every project. Returns an unsubscribe function.
  */
@@ -326,8 +324,6 @@ export function watchDispatcherWires(onWiresChanged: () => unknown): () => void 
 
   const unsubscribers = [
     onAgentConfigChanged(projectChanged),
-    // Both kinds of persona change are scoped to one project's agents.
-    onPersonaChanged((change) => projectChanged(change.projectPath)),
     onDispatcherChanged(allChanged),
     // Any project's agents may follow the setting that changed.
     onMcpEnablementChanged(allChanged),

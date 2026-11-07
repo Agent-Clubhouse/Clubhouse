@@ -134,13 +134,12 @@ export function HelperCountInput({ id, value, ceiling, disabled, className, onCo
 /** Why Auto is off where this agent's own switch can't change that. */
 const AUTO_LOCKED_NOTES: Partial<Record<HelperAutoOffReason, string>> = {
   project_off: 'This project turned it off.',
-  persona_off: 'This agent’s persona turned it off.',
   mcp_off: 'Clubhouse MCP is off for this agent.',
 };
 
 /**
  * Whether Auto works for this agent, not only its own switch: the app and the
- * project have a say. A project or persona that turned it off can't be overruled
+ * project have a say. A project that turned it off can't be overruled
  * here. "Use the app’s setting" clears this agent's own switch.
  */
 export function AutoHelpersToggle({ id, policy, name, disabled, onChange, testId }: {

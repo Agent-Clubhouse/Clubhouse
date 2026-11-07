@@ -3,7 +3,7 @@
  * Dispatcher on, and its agent settings once it exists. Always listed. Clubhouse
  * MCP off at app level shows the switch off and disabled, with the saved value
  * kept. Its row and view are in the new layout only, so on the classic layout a
- * switch that's off stays off (#2565). Its persona, orchestration settings and
+ * switch that's off stays off (#2565). Its instructions, orchestration settings and
  * folder can't change here or anywhere else.
  */
 

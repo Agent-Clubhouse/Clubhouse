@@ -109,7 +109,6 @@ function createPopoutApi(projectId?: string): PluginAPI {
         options.orchestrator,
         options.freeAgentMode,
         options.mcpIds,
-        undefined,
       );
       const agentId = await useAgentStore.getState().spawnDurableAgent(
         targetProjectId, project.path, config, false,

@@ -15,7 +15,6 @@ import { ATTR } from '../../shared/telemetry/attributes';
 import { tel, tagError } from '../telemetry/facade';
 import { orchestratorAttr } from '../telemetry/spawn-telemetry';
 import { appLog } from './log-service';
-import { applyPersonaToAgent } from './persona-application';
 import {
   DurableCreationCancelledError,
   beginDurableCreation,
@@ -28,7 +27,7 @@ export { cancelDurableCreation, onDurableCreationEvent };
 export type { DurableCreationListener } from './agent-config';
 
 export interface StartDurableCreationOptions {
-  /** Extra injection into the new worktree after the project defaults (e.g. a persona). */
+  /** Extra injection into the new worktree after the project defaults (e.g. a managed helper's setup). */
   inject?: (config: DurableAgentConfig) => Promise<void>;
   /** An inject failure fails the creation instead of being logged (a managed helper's setup, #2899). */
   injectRequired?: boolean;
@@ -102,45 +101,6 @@ export function startDurableCreation(
   return handleReady.then((handle) => ({ agentId: handle.config.id, config: handle.config, done }));
 }
 
-/**
- * Apply the persona (layered project > user > built-in lookup, plus any
- * front-matter settings) the same way "Apply persona" does, keeping the
- * project-default instructions the worktree was just seeded with. Failures are
- * logged, not thrown. Returns true when the persona was applied.
- */
-export async function injectPersona(
-  projectPath: string,
-  agentId: string,
-  persona: string,
-  agentName: string,
-  keep?: ReadonlyArray<'orchestrator' | 'model'>,
-): Promise<boolean> {
-  try {
-    await tel.step('clubhouse.agent.persona_inject', () =>
-      applyPersonaToAgent(projectPath, agentId, persona, { appendToExisting: true, ...(keep?.length && { keep }) }));
-    return true;
-  } catch (err) {
-    // telemetry-exempt: the clubhouse.agent.persona_inject step records the failure; the agent is created without the persona.
-    appLog('agents', 'warn', 'Failed to inject persona instructions on create', {
-      meta: { agentName, persona, error: err instanceof Error ? err.message : String(err) },
-    });
-    return false;
-  }
-}
-
-/** The `inject` option that applies a persona to the new worktree, as the New agent page does. */
-export function personaInjection(
-  projectPath: string,
-  { persona, name }: StartDurableCreationParams,
-  keep?: ReadonlyArray<'orchestrator' | 'model'>,
-): StartDurableCreationOptions {
-  return {
-    inject: persona
-      ? async (created) => { if (created.worktreePath) await injectPersona(projectPath, created.id, persona, name, keep); }
-      : undefined,
-  };
-}
-
 function optionalString(raw: Record<string, unknown>, key: string): string | undefined {
   const value = raw[key];
   if (value === undefined) return undefined;
@@ -190,7 +150,6 @@ export function parseStartCreationParams(raw: Record<string, unknown>): StartDur
     freeAgentMode: optionalBoolean(raw, 'freeAgentMode'),
     mcpIds: mcpIds as string[] | undefined,
     mcpConfigs: mcpConfigs as Record<string, Record<string, string>> | undefined,
-    persona: optionalString(raw, 'persona'),
     parentAgentId: optionalString(raw, 'parentAgentId'),
     disposable: optionalBoolean(raw, 'disposable'),
     ...parseWorktreeOptions(raw),

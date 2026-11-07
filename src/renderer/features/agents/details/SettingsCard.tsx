@@ -27,7 +27,6 @@ import { useEffectiveOrchestrators } from '../../../hooks/useEffectiveOrchestrat
 import { useModelOptions } from '../../../hooks/useModelOptions';
 import { useContextWindowOptions } from '../../../hooks/useContextWindowOptions';
 import { ContextWindowSelect, contextSummary, contextWindowHelp, formatContextChoice } from '../ContextWindowField';
-import { getPersonaTemplate } from '../../personas';
 import { useAgentSettingsPages } from '../agentSettingsPages';
 import { buildOrchestratorOptions } from '../orchestrator-options';
 import { useCliChangeConfirm } from '../useCliChangeConfirm';
@@ -86,10 +85,9 @@ export function accessLabel(
   return freeAgentMode ? 'Free agent' : 'Ask before edits';
 }
 
-/** "Custom, 12 lines", or null for none. */
-export function instructionsLabel(persona: string | undefined, text: string | null): string | null {
-  // Hidden personas too, so the Dispatcher's reads "Dispatcher" (#2557).
-  if (persona) return getPersonaTemplate(persona)?.name ?? persona;
+/** "Custom, 12 lines", or null for none. The Dispatcher's reads "Dispatcher" (#2557): Clubhouse writes it. */
+export function instructionsLabel(dispatcher: boolean, text: string | null): string | null {
+  if (dispatcher) return 'Dispatcher';
   if (!text || !text.trim()) return null;
   const lines = text.trimEnd().split(/\r?\n/).length;
   return `Custom, ${lines} ${lines === 1 ? 'line' : 'lines'}`;
@@ -392,7 +390,7 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
     }] : []),
     ...(local ? [
       { id: 'mcp', label: 'MCP servers', editable: 'never' as const, value: readText(mcp, (names) => (names.length === 0 ? 'None' : `${names.length} configured`)) },
-      { id: 'instructions', label: 'Instructions', editable: 'never' as const, value: readText(instructions, (text) => instructionsLabel(config?.persona, typeof text === 'string' ? text : null) ?? 'None') },
+      { id: 'instructions', label: 'Instructions', editable: 'never' as const, value: readText(instructions, (text) => instructionsLabel(isDispatcherAgent(agent), typeof text === 'string' ? text : null) ?? 'None') },
     ] : []),
   ];
   const anyLocked = rows.some((r) => isRowLocked(r.editable, running));

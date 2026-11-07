@@ -37,7 +37,7 @@ import { getDispatcherState, isDispatcherAgentId } from './dispatcher/dispatcher
 import * as dispatcherSettings from './dispatcher/dispatcher-settings';
 import * as freeAgentSettings from './free-agent-settings';
 import { appLog } from './log-service';
-import { resolveMissionId, resolvePersonaId } from './materialization-service';
+import { resolveMissionId } from './materialization-service';
 import { resolveMcpEnabled, getSettings as getMcpSettings } from './mcp-settings';
 import { peekStoredSettings } from './settings-store';
 import { buildAgentSettings } from './mobile-agents';
@@ -46,7 +46,7 @@ import * as orchestratorSettings from './orchestrator-settings';
 import * as projectStore from './project-store';
 
 /** `uncertain`: the app's settings file couldn't be read, so nothing proves whether the value is saved. */
-export type SettingSource = 'agent' | 'project' | 'persona' | 'app' | 'default' | 'uncertain';
+export type SettingSource = 'agent' | 'project' | 'app' | 'default' | 'uncertain';
 
 export interface SettingValue {
   /** What is saved at this level; null when nothing is. Only with `detail`. */
@@ -167,7 +167,10 @@ function appValue(file: AppFiles[keyof AppFiles], key: string | string[], effect
   return { ...savedLevel(file, ...[key].flat()), effective };
 }
 
-/** Agent over project, as resolvePersonaId and the rest do it. `effective` is the resolver's answer. */
+/** A retired setting (#2901): nothing applies, whatever an old config still holds. */
+const retired = (): SettingValue => ({ stored: null, effective: null, source: 'default' });
+
+/** Agent over project, as resolveMissionId and the rest do it. `effective` is the resolver's answer. */
 function agentOverProject(own: unknown, project: unknown, effective: unknown): SettingValue {
   const hasOwn = own !== undefined && own !== null;
   const hasProject = project !== undefined && project !== null;
@@ -275,7 +278,8 @@ const AGENT_SECTIONS: ReadonlyArray<Section<AgentContext>> = [
   {
     name: 'agent.persona',
     fields: [
-      ['persona', ({ config, defaults }) => agentOverProject(config.persona, defaults.persona, resolvePersonaId(config, defaults) || null)],
+      // Personas were retired (#2901): always null, kept so a reader's key doesn't vanish.
+      ['persona', retired],
       ['mission', ({ config, defaults }) => agentOverProject(config.mission, defaults.mission, resolveMissionId(config, defaults) || null)],
     ],
   },
@@ -395,7 +399,7 @@ const PROJECT_SECTIONS: ReadonlyArray<Section<ProjectContext>> = [
         effective: projectOrchestrator ?? DEFAULT_ORCHESTRATOR,
         source: projectOrchestrator ? 'project' : 'default',
       })],
-      ['persona', ({ defaults }) => held(defaults.persona, 'project')],
+      ['persona', retired],
       ['mission', ({ defaults }) => held(defaults.mission, 'project')],
       ['free_agent_mode', ({ defaults }) => held(defaults.freeAgentMode, 'project')],
       ['profile_id', ({ defaults }) => held(defaults.profileId, 'project')],

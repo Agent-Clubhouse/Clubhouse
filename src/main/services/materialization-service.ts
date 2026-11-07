@@ -1,12 +1,10 @@
-import { readExtractionDocument } from './persona-extraction-sources';
 import { parseMcpJson } from '../../shared/mcp-config';
 import * as fsp from 'fs/promises';
 import type { McpServerDef } from '../../shared/types';
 import * as path from 'path';
 import { pathExists } from './fs-utils';
 import { AgentWildcardSettings, DurableAgentConfig, MaterializationPreview, ProjectAgentDefaults, SourceControlProvider } from '../../shared/types';
-import { WildcardContext, replaceWildcards, unreplaceWildcards } from '../../shared/wildcard-replacer';
-import { PatternSettings, stripPersonaFrontMatter } from '../../shared/persona-pattern';
+import { WildcardContext, replaceWildcards } from '../../shared/wildcard-replacer';
 import { OrchestratorProvider } from '../orchestrators/types';
 import {
   readProjectAgentDefaults,
@@ -18,8 +16,6 @@ import {
   writeProjectAgentDefaults,
   listSourceMissions,
   readSourceMissionContent,
-  listSourcePersonaFiles,
-  readSourcePersonaContent,
   getMcpShadowWarning,
 } from './agent-settings-service';
 import { SettingsConventions } from './agent-settings-service';
@@ -28,7 +24,7 @@ import { effectiveAppSourceControlProvider } from './source-control-settings';
 import * as gitExcludeManager from './git-exclude-manager';
 import { appLog } from './log-service';
 import { jsonMcpToToml } from './toml-utils';
-import { PERSONA_TEMPLATES, getPersonaTemplate } from '../../renderer/features/personas';
+import { legacyPersonaBody, legacyPersonaId } from './managed-agents/legacy-migration';
 
 const EXCLUDE_TAG = 'clubhouse-mode';
 
@@ -93,50 +89,6 @@ export function resolveMissionId(
 }
 
 /**
- * Resolve the effective persona ID for an agent.
- * Per-agent override (`agent.persona`) wins; otherwise falls back to project default
- * (`defaults.persona`). Returns undefined when neither is set.
- */
-export function resolvePersonaId(
-  agent: DurableAgentConfig,
-  defaults: ProjectAgentDefaults,
-): string | undefined {
-  return agent.persona ?? defaults.persona;
-}
-
-/**
- * Resolve the effective persona content for a persona ID, layered by scope.
- * Precedence: project (.clubhouse/personas/<id>.md) → user
- * (~/.clubhouse/personas/<id>.md) → built-in persona template. Returns undefined
- * when none exists.
- */
-export async function resolvePersonaContent(
-  projectPath: string,
-  personaId: string | undefined,
-): Promise<string | undefined> {
-  const raw = await readLayeredPersonaRaw(projectPath, personaId);
-  // Strip any pattern front-matter so only the markdown body is substituted.
-  return raw === undefined ? undefined : stripPersonaFrontMatter(raw);
-}
-
-/**
- * Read the raw persona file content (front-matter included) layered by scope:
- * project (.clubhouse/personas) → user (~/.clubhouse/personas) → built-in.
- * Returns undefined when none exists.
- */
-export async function readLayeredPersonaRaw(
-  projectPath: string,
-  personaId: string | undefined,
-): Promise<string | undefined> {
-  if (!personaId) return undefined;
-  const project = await readSourcePersonaContent(projectPath, personaId, 'project');
-  if (project) return project;
-  const user = await readSourcePersonaContent(projectPath, personaId, 'user');
-  if (user) return user;
-  return getPersonaTemplate(personaId)?.content;
-}
-
-/**
  * Resolve the effective build/test/lint commands for an agent.
  * Per-agent override (`agent.*Command`) wins; otherwise falls back to project
  * defaults. Undefined fields are left undefined so the wildcard replacer can
@@ -176,146 +128,6 @@ export async function resolveSourceControlProvider(
 }
 
 /**
- * List persona options available to an agent: the built-in templates plus any
- * user-authored on-disk personas. When a disk persona shares an ID with a
- * built-in, the disk version wins (source reported as 'disk').
- */
-export async function listAvailablePersonas(
-  projectPath: string,
-): Promise<Array<{ id: string; name: string; source: 'builtin' | 'user' | 'project' }>> {
-  const [projectFiles, userFiles] = await Promise.all([
-    listSourcePersonaFiles(projectPath, 'project'),
-    listSourcePersonaFiles(projectPath, 'user'),
-  ]);
-
-  // Merge layered by precedence: project > user > built-in. The effective source
-  // tag is the highest-precedence layer that defines the id.
-  const byId = new Map<string, { id: string; name: string; source: 'builtin' | 'user' | 'project' }>();
-  for (const p of PERSONA_TEMPLATES) {
-    byId.set(p.id, { id: p.id, name: p.name, source: 'builtin' });
-  }
-  for (const f of userFiles) {
-    byId.set(f.id, { id: f.id, name: getPersonaTemplate(f.id)?.name ?? f.id, source: 'user' });
-  }
-  for (const f of projectFiles) {
-    byId.set(f.id, { id: f.id, name: getPersonaTemplate(f.id)?.name ?? f.id, source: 'project' });
-  }
-  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
-}
-
-/**
- * Read persona content for editing in the UI: the effective layered RAW content
- * (project → user → built-in), front-matter included so pattern settings
- * round-trip through the editor. Returns empty string when none exists.
- */
-export async function readPersonaForEdit(projectPath: string, personaId: string): Promise<string> {
-  const raw = await readLayeredPersonaRaw(projectPath, personaId);
-  return raw ?? '';
-}
-
-// ── Apply / extract persona patterns ─────────────────────────────────────
-
-/** Pick the pattern-settings subset from an agent's durable config. */
-function pickPatternSettings(agent: DurableAgentConfig): PatternSettings {
-  const s: PatternSettings = {};
-  if (agent.model) s.model = agent.model;
-  if (agent.orchestrator) s.orchestrator = agent.orchestrator;
-  if (agent.mcpIds && agent.mcpIds.length > 0) s.mcpIds = agent.mcpIds;
-  if (agent.mcpConfigs && Object.keys(agent.mcpConfigs).length > 0) s.mcpConfigs = agent.mcpConfigs;
-  if (agent.freeAgentMode) s.freeAgentMode = true;
-  if (agent.mission) s.mission = agent.mission;
-  if (agent.buildCommand) s.buildCommand = agent.buildCommand;
-  if (agent.testCommand) s.testCommand = agent.testCommand;
-  if (agent.lintCommand) s.lintCommand = agent.lintCommand;
-  if (agent.sourceControlProvider) s.sourceControlProvider = agent.sourceControlProvider;
-  // Access, control and limits carry over; `orchestrate` itself doesn't, so
-  // extracting a persona never turns orchestration on for its users (#2228).
-  if (agent.orchestration) {
-    const { orchestrate: _orchestrate, ...rest } = agent.orchestration;
-    if (Object.keys(rest).length > 0) s.orchestration = rest;
-  }
-  return s;
-}
-
-/**
- * Extract a reusable pattern from an agent: its instruction content (with this
- * agent's resolved values turned back into @@wildcards so the pattern is
- * portable) plus the pattern-settings subset of its config. The persona/mission
- * content is intentionally NOT folded into the wildcard context here — the
- * instructions themselves become the persona body.
- */
-export async function extractAgentPersona(params: {
-  projectPath: string;
-  agent: DurableAgentConfig;
-  provider: OrchestratorProvider;
-}): Promise<{ content: string; settings: PatternSettings; sources: string[] }> {
-  const { projectPath, agent, provider } = params;
-  const defaults = await readProjectAgentDefaults(projectPath);
-  const scp = await resolveSourceControlProvider(projectPath, agent);
-  const commands = resolveAgentCommands(agent, defaults);
-  // No mission/persona content in the context: we re-genericize only identity,
-  // commands, and provider so the body isn't accidentally collapsed to a token.
-  const ctx = buildWildcardContext(agent, projectPath, scp, commands);
-
-  if (!agent.worktreePath) throw new Error('The agent has no worktree to extract.');
-  if (!provider.inspectInstructions) throw new Error('This provider cannot inspect instructions for extraction.');
-  const primaryName = provider.id === 'copilot-cli' ? '.github/copilot-instructions.md'
-    : provider.id === 'codex-cli' ? 'AGENTS.md' : 'CLAUDE.md';
-  const documents: Array<{ name: string; content: string }> = [];
-  try {
-    const primary = await provider.inspectInstructions(agent.worktreePath);
-    if (primary) documents.push({ name: primaryName, content: primary });
-  } catch {
-    throw new Error('Could not read the primary instruction file. No persona was extracted.');
-  }
-  // Copilot's documented root instruction documents. This intentionally excludes
-  // ancestor/user files, nested rules, @references and session-specific context.
-  if (provider.id === 'copilot-cli') {
-    for (const name of ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md']) {
-      const text = await readExtractionDocument(agent.worktreePath, name);
-      if (text !== null) documents.push({ name, content: text });
-    }
-  }
-  const parts = documents.map(({ name, content }) => {
-    const body = unreplaceWildcards(content, ctx);
-    return documents.length > 1 ? `## Captured from ${name}\n\n${body}` : body;
-  });
-  return { content: parts.join('\n\n'), settings: pickPatternSettings(agent), sources: documents.map(({ name }) => name) };
-}
-
-/**
- * Write the agent's resolved persona body to its instructions. Overwrites by
- * default; with `append`, adds it after any existing instructions (used at
- * creation so the project-default snapshot is kept). Used outside Clubhouse
- * mode, where materialization does not run on wake. Mirrors the persona-only
- * branch of materializeAgent.
- */
-export async function writeResolvedPersonaInstructions(params: {
-  projectPath: string;
-  agent: DurableAgentConfig;
-  provider: OrchestratorProvider;
-  append?: boolean;
-}): Promise<void> {
-  const { projectPath, agent, provider, append } = params;
-  if (!agent.worktreePath) return;
-  const defaults = await readProjectAgentDefaults(projectPath);
-  const personaId = resolvePersonaId(agent, defaults);
-  const personaContent = await resolvePersonaContent(projectPath, personaId);
-  if (!personaContent) return;
-  const scp = await resolveSourceControlProvider(projectPath, agent);
-  const commands = resolveAgentCommands(agent, defaults);
-  const missionId = resolveMissionId(agent, defaults);
-  const missionContent = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
-  const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
-  const resolved = replaceWildcards(personaContent, ctx);
-  let existing = '';
-  if (append) {
-    try { existing = await provider.readInstructions(agent.worktreePath); } catch { /* none yet */ }
-  }
-  await provider.writeInstructions(agent.worktreePath, existing ? `${existing}\n\n${resolved}` : resolved);
-}
-
-/**
  * Build the resolved per-agent wildcard actuals used to populate the simple
  * settings form when an agent is managed by Clubhouse Mode. Resolution mirrors
  * materialization exactly so the form shows what would actually be substituted.
@@ -334,13 +146,7 @@ export async function getAgentWildcards(
 
   const missionOverride = agent.mission ?? null;
   const missionDefault = defaults.mission ?? null;
-  const personaOverride = agent.persona ?? null;
-  const personaDefault = defaults.persona ?? null;
-
-  const [missions, personas] = await Promise.all([
-    listSourceMissions(projectPath),
-    listAvailablePersonas(projectPath),
-  ]);
+  const missions = await listSourceMissions(projectPath);
 
   return {
     agentName: agent.name,
@@ -351,9 +157,7 @@ export async function getAgentWildcards(
     testCommand: { override: agent.testCommand ?? null, resolved: commands.testCommand || 'npm test' },
     lintCommand: { override: agent.lintCommand ?? null, resolved: commands.lintCommand || 'npm run lint' },
     mission: { override: missionOverride, projectDefault: missionDefault, resolved: missionOverride ?? missionDefault },
-    persona: { override: personaOverride, projectDefault: personaDefault, resolved: personaOverride ?? personaDefault },
     missions: missions.map((m) => ({ id: m.id })),
-    personas,
   };
 }
 
@@ -379,8 +183,7 @@ export async function materializeAgent(params: {
 
   const defaults = await readProjectAgentDefaults(projectPath);
   const missionId = resolveMissionId(agent, defaults);
-  const personaId = resolvePersonaId(agent, defaults);
-  if (!defaults.instructions && !defaults.permissions && !defaults.mcpJson && !personaId && !missionId) {
+  if (!defaults.instructions && !defaults.permissions && !defaults.mcpJson && !missionId) {
     // Also check source skills/templates
     const sourceSkills = await listSourceSkills(projectPath);
     const sourceTemplates = await listSourceAgentTemplates(projectPath);
@@ -390,9 +193,8 @@ export async function materializeAgent(params: {
   const scp = await resolveSourceControlProvider(projectPath, agent);
   const commands = resolveAgentCommands(agent, defaults);
   const missionContent = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
-  const personaContent = await resolvePersonaContent(projectPath, personaId);
-  const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
-  const resolvedPersonaContent = personaContent ? replaceWildcards(personaContent, ctx) : undefined;
+  // Personas were retired (#2901): @@Persona resolves empty and nothing is appended.
+  const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent);
   const conv = provider.conventions;
   if (defaults.permissions) assertPermissionRulesSupported(defaults.permissions, conv);
   if (defaults.mcpJson && !agent.clubhouseModeOverride && (!conv.settingsFormat || conv.settingsFormat === 'json')) {
@@ -406,11 +208,11 @@ export async function materializeAgent(params: {
     await cleanupStaleJsonInTomlConfigs(worktreePath, conv);
   }
 
-  // 1. Instructions (project defaults + persona layer)
-  const instructions = instructionsToWrite(defaults.instructions, personaContent, resolvedPersonaContent, ctx);
+  // 1. Instructions (project defaults)
+  const instructions = instructionsToWrite(defaults.instructions, undefined, ctx);
   if (instructions !== null) await provider.writeInstructions(worktreePath, instructions);
 
-  // 3. Local overrides own their entire MCP map, even during explicit persona materialization.
+  // 3. Local overrides own their entire MCP map.
   if (defaults.mcpJson && !agent.clubhouseModeOverride) {
     try {
       const resolved = replaceWildcards(defaults.mcpJson, ctx);
@@ -481,34 +283,35 @@ export async function materializeAgent(params: {
 
 /**
  * Step 1 of materializeAgent: the instructions file it writes, or null when it
- * writes none and leaves the file as it is.
+ * writes none and leaves the file as it is. `persona` is a legacy persona's
+ * text, which only the switch to managed passes (materializedInstructions): it
+ * is added after the template unless the template places it with @@Persona.
  */
 function instructionsToWrite(
   template: string | undefined,
-  personaContent: string | undefined,
-  resolvedPersonaContent: string | undefined,
+  persona: string | undefined,
   ctx: WildcardContext,
 ): string | null {
+  const resolvedPersona = persona ? replaceWildcards(persona, ctx) : undefined;
   if (template) {
     const resolved = replaceWildcards(template, ctx);
-    // Auto-append persona only when the template doesn't already use @@Persona,
-    // so users who opt into the wildcard don't get the persona injected twice.
-    const templateUsesPersonaToken = template.includes('@@Persona');
-    return personaContent && !templateUsesPersonaToken ? `${resolved}\n\n${resolvedPersonaContent}` : resolved;
+    return resolvedPersona && !template.includes('@@Persona') ? `${resolved}\n\n${resolvedPersona}` : resolved;
   }
-  // No project defaults but agent has a persona — write persona instructions alone
-  return personaContent ? resolvedPersonaContent! : null;
+  return resolvedPersona ?? null;
 }
 
 /**
  * The instructions file Clubhouse Mode would write for this agent at its next
  * wake, wildcards and @@If blocks resolved, or null when it writes none (#2901).
  * Reads only. Switching a Clubhouse Mode agent to managed keeps this, so one
- * that never woke doesn't bring over the raw project template.
+ * that never woke doesn't bring over the raw project template. An agent that
+ * still has a legacy persona keeps that persona's text too, as Clubhouse Mode
+ * wrote it before personas were retired (managed-agents/legacy-migration).
  */
 export async function materializedInstructions(projectPath: string, agent: DurableAgentConfig): Promise<string | null> {
-  const { defaults, ctx, personaContent, resolvedPersonaContent } = await clubhouseModeResolution(projectPath, agent);
-  return instructionsToWrite(defaults.instructions, personaContent, resolvedPersonaContent, ctx);
+  const persona = agent.managed ? undefined : await legacyPersonaBody(projectPath, await legacyPersonaId(projectPath, agent));
+  const { defaults, ctx } = await clubhouseModeResolution(projectPath, agent, persona);
+  return instructionsToWrite(defaults.instructions, persona, ctx);
 }
 
 /** What Clubhouse Mode delivers besides the instructions file, as materializeAgent resolves it. */
@@ -528,7 +331,8 @@ export interface MaterializedDefaults {
  * failed, still gets the project's defaults.
  */
 export async function materializedDefaults(projectPath: string, agent: DurableAgentConfig): Promise<MaterializedDefaults> {
-  const { defaults, ctx } = await clubhouseModeResolution(projectPath, agent);
+  const persona = agent.managed ? undefined : await legacyPersonaBody(projectPath, await legacyPersonaId(projectPath, agent));
+  const { defaults, ctx } = await clubhouseModeResolution(projectPath, agent, persona);
   const skills = (await listSourceSkills(projectPath))
     .map((s) => ({ name: s.name, path: s.path }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -536,18 +340,15 @@ export async function materializedDefaults(projectPath: string, agent: DurableAg
   return { skills, mcpJson, resolveText: (text) => replaceWildcards(text, ctx) };
 }
 
-/** The project defaults and wildcard context materializeAgent resolves for an agent. */
-async function clubhouseModeResolution(projectPath: string, agent: DurableAgentConfig) {
+/** The project defaults and wildcard context materializeAgent resolves for an agent, with a legacy persona's text for @@Persona. */
+async function clubhouseModeResolution(projectPath: string, agent: DurableAgentConfig, persona?: string) {
   const defaults = await readProjectAgentDefaults(projectPath);
   const missionId = resolveMissionId(agent, defaults);
-  const personaId = resolvePersonaId(agent, defaults);
   const scp = await resolveSourceControlProvider(projectPath, agent);
   const commands = resolveAgentCommands(agent, defaults);
   const missionContent = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
-  const personaContent = await resolvePersonaContent(projectPath, personaId);
-  const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
-  const resolvedPersonaContent = personaContent ? replaceWildcards(personaContent, ctx) : undefined;
-  return { defaults, ctx, personaContent, resolvedPersonaContent };
+  const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, persona);
+  return { defaults, ctx };
 }
 
 /**
@@ -647,23 +448,13 @@ export async function previewMaterialization(params: {
   const scp = await resolveSourceControlProvider(projectPath, agent);
   const commands = resolveAgentCommands(agent, defaults);
   const missionId = resolveMissionId(agent, defaults);
-  const personaId = resolvePersonaId(agent, defaults);
   const missionContent = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
-  const personaContent = await resolvePersonaContent(projectPath, personaId);
-  const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
+  const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent);
   const _conv = provider.conventions;
 
-  let instructions = defaults.instructions
+  const instructions = defaults.instructions
     ? replaceWildcards(defaults.instructions, ctx)
     : '';
-
-  // Auto-append persona only when the template doesn't already use @@Persona.
-  const templateUsesPersonaToken = defaults.instructions?.includes('@@Persona') ?? false;
-  if (personaContent && !templateUsesPersonaToken) {
-    instructions = instructions
-      ? `${instructions}\n\n${personaContent}`
-      : personaContent;
-  }
 
   const permissions = defaults.permissions
     ? {

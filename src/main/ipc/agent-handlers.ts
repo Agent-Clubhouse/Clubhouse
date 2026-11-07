@@ -34,7 +34,7 @@ import { orchestratorAttr } from '../telemetry/spawn-telemetry';
 import { assertAgentGitName } from '../../shared/agent-name';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableWorktreeOptions } from '../../shared/types';
-import { cancelDurableCreation, injectPersona, onDurableCreationEvent, parseStartCreationParams, parseWorktreeOptions, personaInjection, startDurableCreation } from '../services/agent-creation';
+import { cancelDurableCreation, onDurableCreationEvent, parseStartCreationParams, parseWorktreeOptions, startDurableCreation } from '../services/agent-creation';
 
 export { parseStartCreationParams };
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -78,7 +78,6 @@ async function createDurableAgent(
   freeAgentMode: boolean | undefined,
   mcpIds: string[] | undefined,
   mcpConfigs: Record<string, Record<string, string>> | undefined,
-  persona: string | undefined,
   worktreeOptions: DurableWorktreeOptions | undefined,
 ) {
   // The name becomes a folder and a git branch; refuse a bad one up front (#2221).
@@ -92,16 +91,10 @@ async function createDurableAgent(
 
   let config: Awaited<ReturnType<typeof agentConfig.createDurable>>;
   try {
-    config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator as OrchestratorId | undefined, freeAgentMode, mcpIds, mcpConfigs, persona, worktreeOptions);
+    config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator as OrchestratorId | undefined, freeAgentMode, mcpIds, mcpConfigs, worktreeOptions);
   } catch (err) {
     // worktree_failed and validation are tagged at their throw sites; anything else is a write failure.
     throw tagError(err, 'write_failed');
-  }
-
-  if (persona && config.worktreePath) {
-    if (await injectPersona(projectPath, config.id, persona, name)) {
-      config = (await agentConfig.getDurableConfig(projectPath, config.id)) ?? config;
-    }
   }
 
   broadcastSnapshotRefresh();
@@ -182,10 +175,9 @@ function assertNotDispatcher(projectPath: string, agentId: string, what: string)
 }
 
 /**
- * Nothing is created in the Dispatcher's folder (no duplicates). The persona
- * rules (no other agent gets the dispatcher persona, and the Dispatcher keeps
- * it) live in agentConfig.assertPersonaAllowed, which every create and config
- * update runs (#2551).
+ * Nothing is created in the Dispatcher's folder (no duplicates). The
+ * Dispatcher is known by its folder and agent id (isDispatcherAgent above),
+ * never by a persona (#2901).
  */
 function assertCreatable(projectPath: string): void {
   if (dispatcher.isDispatcherPath(projectPath)) {
@@ -228,15 +220,15 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(
     IPC.AGENT.CREATE_DURABLE,
     withValidatedArgs(
-      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), booleanArg({ optional: true }), arrayArg(stringArg(), { optional: true }), objectArg({ optional: true }), stringArg({ optional: true }), objectArg<Record<string, unknown>>({ optional: true })],
-      async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona, worktreeOptions) => tel.flow(
+      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), booleanArg({ optional: true }), arrayArg(stringArg(), { optional: true }), objectArg({ optional: true }), objectArg<Record<string, unknown>>({ optional: true })],
+      async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, worktreeOptions) => tel.flow(
         'clubhouse.agent.create',
         { attrs: [ATTR.usesWorktree(useWorktree !== false), ATTR.orchestrator(orchestratorAttr(orchestrator))] },
         () => {
           assertCreatable(projectPath);
           return createDurableAgent(
             projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds,
-            mcpConfigs as Record<string, Record<string, string>> | undefined, persona,
+            mcpConfigs as Record<string, Record<string, string>> | undefined,
             worktreeOptions ? parseWorktreeOptions(worktreeOptions) : undefined,
           );
         },
@@ -252,7 +244,7 @@ export function registerAgentHandlers(): void {
     async (_event, projectPath, rawParams) => {
       const params = parseStartCreationParams(rawParams);
       assertCreatable(projectPath);
-      const { agentId, config } = await startDurableCreation(projectPath, params, personaInjection(projectPath, params));
+      const { agentId, config } = await startDurableCreation(projectPath, params);
       return { agentId, config };
     },
   ));

@@ -4,10 +4,13 @@
  * folder's `.clubhouse/agents.json` like any agent's, so the usual agent
  * config store reads and writes it; it is never added to projectStore.
  *
- * Instructions are a file, like every other persona's: the resolved
- * `dispatcher` persona is written to the provider's instructions file in the
- * folder at create, on app start and whenever its CLI changes. There is no
- * systemPrompt path.
+ * Instructions are a file: Clubhouse's own Dispatcher text
+ * (`dispatcher-instructions.md`) is written to the provider's instructions
+ * file in the folder at create, on app start and whenever its CLI changes.
+ * There is no systemPrompt path. The Dispatcher is known by its folder and
+ * its agent id (isDispatcherPath, isDispatcherAgentId), never by a persona:
+ * one created before #2901 still has `persona: 'dispatcher'` in its config,
+ * which nothing reads.
  *
  * On by default in the new layout: a missing switch creates the agent's record
  * and writes its instructions. Nothing here ever starts it, so that costs no
@@ -24,7 +27,7 @@ import * as agentConfig from '../agent-config';
 import * as agentSystem from '../agent-system';
 import { getAllProviders, getProvider, type OrchestratorId } from '../../orchestrators';
 import { getSettings as getOrchestratorSettings, whenDefaultsDetected } from '../orchestrator-settings';
-import { resolvePersonaContent } from '../materialization-service';
+import dispatcherInstructions from './dispatcher-instructions.md';
 import { appLog } from '../log-service';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import type { DispatcherState } from '../../../shared/dispatcher-types';
@@ -34,13 +37,15 @@ import { isMcpOnAtAppLevel, onMcpEnablementChanged } from '../mcp-settings';
 import { newChromeEnabled } from '../../window-chrome';
 import { MCP_REQUIRED_MESSAGE } from '../../../shared/orchestration-policy';
 import { DISPATCHER_CLASSIC_MESSAGE } from '../../../shared/dispatcher-types';
-import { DISPATCHER_PERSONA, getDispatcherNotesPath, getDispatcherPath, isDispatcherPath } from './dispatcher-paths';
+import { getDispatcherNotesPath, getDispatcherPath, isDispatcherPath } from './dispatcher-paths';
 import { dispatcherEnablement, getSettings as getDispatcherSettings, isDispatcherEnabled, updateSettings } from './dispatcher-settings';
 
-export { DISPATCHER_PERSONA, getDispatcherPath, getDispatcherNotesPath, isDispatcherPath } from './dispatcher-paths';
+export { getDispatcherPath, getDispatcherNotesPath, isDispatcherPath } from './dispatcher-paths';
 export { isDispatcherEnabled, DISPATCHER_FLAG } from './dispatcher-settings';
 
 const NS = 'core:dispatcher';
+/** What the Dispatcher's instructions file holds. Clubhouse owns it: there is no project or user copy. */
+export const DISPATCHER_INSTRUCTIONS: string = dispatcherInstructions;
 export const DISPATCHER_NAME = 'Dispatcher';
 
 /** The last config read from disk; null before the Dispatcher was first created. */
@@ -152,16 +157,13 @@ async function ensureCreated(): Promise<DurableAgentConfig> {
     false,
     orchestrator,
     true, // free agent mode
-    undefined,
-    undefined,
-    DISPATCHER_PERSONA,
   );
   await agentConfig.updateDurableConfig(dir, created.id, { idleSleep: 'never', runtimeMode: 'chat', mcpOverride: true });
   appLog(NS, 'info', 'Dispatcher created', { meta: { agentId: created.id, orchestrator } });
   return (await agentConfig.getDurableConfig(dir, created.id)) ?? created;
 }
 
-/** Write the resolved `dispatcher` persona to the CLI's instructions file in the folder. */
+/** Write the Dispatcher's instructions to the CLI's instructions file in the folder. */
 async function writeInstructions(agent: DurableAgentConfig): Promise<void> {
   const dir = getDispatcherPath();
   const providerId = agent.orchestrator ?? defaultDispatcherOrchestrator();
@@ -170,9 +172,7 @@ async function writeInstructions(agent: DurableAgentConfig): Promise<void> {
     appLog(NS, 'warn', 'No provider to write Dispatcher instructions for', { meta: { orchestrator: providerId } });
     return;
   }
-  const content = await resolvePersonaContent(dir, agent.persona ?? DISPATCHER_PERSONA);
-  if (!content) return;
-  await provider.writeInstructions(dir, content);
+  await provider.writeInstructions(dir, DISPATCHER_INSTRUCTIONS);
   instructionsWrittenFor = provider.id;
 }
 
@@ -232,7 +232,7 @@ function watchChanges(): void {
 
 /**
  * At app start: read the existing record, and when the Dispatcher is on,
- * create it if needed and rewrite its instructions so persona updates reach it.
+ * create it if needed and rewrite its instructions so a new app version's text reaches it.
  * Creates nothing while it is off, and never starts it.
  */
 export function initDispatcher(): Promise<void> {

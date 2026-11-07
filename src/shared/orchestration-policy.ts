@@ -52,16 +52,15 @@ export interface OrchestrationPolicy {
   connectToDispatcher: boolean;
   /**
    * "Auto provider" (#2671): this agent's `cli: "auto"` may pick a helper's
-   * provider. Unset follows the app setting. A persona can only turn it off:
-   * see resolveOrchestrationPolicy, and services/helper-routing.ts for the rest.
+   * provider. Unset follows the app setting. A project can only turn it off:
+   * see decideHelperAuto, and services/helper-routing.ts for the rest.
    */
   autoHelpers: boolean;
 }
 
 /**
- * What is stored on DurableAgentConfig.orchestration and in persona
- * front-matter: only the fields set explicitly. Unset fields fall back to the
- * persona's front-matter, then to ORCHESTRATION_DEFAULTS.
+ * What is stored on DurableAgentConfig.orchestration: only the fields set
+ * explicitly. Unset fields fall back to ORCHESTRATION_DEFAULTS.
  */
 export type OrchestrationPolicyConfig = Partial<OrchestrationPolicy>;
 
@@ -102,15 +101,13 @@ export const MCP_OFF_TOOL_MESSAGE = 'Clubhouse MCP is off for this agent, so Clu
 export const MCP_OFF_HELPER_TOOL_MESSAGE = 'Clubhouse MCP is off for this agent, so the only Clubhouse tool available is message_parent. Tell your parent or the user.';
 
 /** Where each field of a resolved policy came from. */
-export type OrchestrationPolicySource = 'agent' | 'persona' | 'default';
+export type OrchestrationPolicySource = 'agent' | 'default';
 
 /** The switches that need Clubhouse MCP (#2589). */
 export type McpDependentSwitches = Pick<OrchestrationPolicy, 'orchestrate' | 'crossProjectHelpers' | 'connectToDispatcher' | 'autoHelpers'>;
 
 export interface ResolvedOrchestrationPolicy extends OrchestrationPolicy {
   sources: Record<keyof OrchestrationPolicy, OrchestrationPolicySource>;
-  /** A persona turned Auto off (#2671). It wins even over the agent's own switch, whose value stays in `autoHelpers`. */
-  personaAutoOff?: true;
   /** Whether `cli: "auto"` would work for this agent, once the app and the project have had their say. Set by the main side. */
   autoEffective?: { effective: boolean; reason?: HelperAutoOffReason; source: HelperAutoSource };
   /**
@@ -148,24 +145,23 @@ export function savedOrchestrate(policy: Pick<ResolvedOrchestrationPolicy, 'orch
   return policy.mcpOff ? policy.mcpOff.orchestrate : policy.orchestrate;
 }
 
-export type HelperAutoOffReason = 'not_enabled' | 'project_off' | 'persona_off' | 'orchestration_off' | 'mcp_off' | 'dispatcher_locked';
-export type HelperAutoSource = 'agent' | 'project' | 'persona' | 'app' | 'default' | 'mcp_off' | 'dispatcher_locked';
+export type HelperAutoOffReason = 'not_enabled' | 'project_off' | 'orchestration_off' | 'mcp_off' | 'dispatcher_locked';
+export type HelperAutoSource = 'agent' | 'project' | 'app' | 'default' | 'mcp_off' | 'dispatcher_locked';
 
 /**
  * Whether `cli: "auto"` is allowed for an agent (#2671). Off for good without
- * MCP. Then a project's or a persona's `off`, which never turn it on. Then the
+ * MCP. Then a project's `off`, which never turns it on. Then the
  * agent's own switch, then the app's. A repository's files can't spend another
  * provider's quota, so nothing in one enables this.
  */
 export function decideHelperAuto(input: {
   app: boolean;
   projectOff: boolean;
-  policy?: Pick<ResolvedOrchestrationPolicy, 'orchestrate' | 'autoHelpers' | 'sources' | 'personaAutoOff' | 'mcpOff' | 'mcpReportOnly'>;
+  policy?: Pick<ResolvedOrchestrationPolicy, 'orchestrate' | 'autoHelpers' | 'sources' | 'mcpOff' | 'mcpReportOnly'>;
 }): { effective: boolean; reason?: HelperAutoOffReason; source: HelperAutoSource } {
   const { app, projectOff, policy } = input;
   if (policy && isMcpDependentOff(policy)) return { effective: false, source: 'mcp_off', reason: 'mcp_off' };
   if (projectOff) return { effective: false, source: 'project', reason: 'project_off' };
-  if (policy?.personaAutoOff) return { effective: false, source: 'persona', reason: 'persona_off' };
   const own = policy?.sources.autoHelpers === 'agent' ? policy.autoHelpers : undefined;
   if (policy && !policy.orchestrate) return { effective: false, source: own !== undefined ? 'agent' : app ? 'app' : 'default', reason: 'orchestration_off' };
   if (own !== undefined) return own ? { effective: true, source: 'agent' } : { effective: false, source: 'agent', reason: 'not_enabled' };
@@ -210,7 +206,7 @@ export function normalizeOrchestrationConfig(raw: unknown): OrchestrationPolicyC
 /**
  * Validate a policy patch from IPC or a tool. Unlike normalize, an invalid
  * field is an error, so a bad request never half-applies. `null` for a field
- * clears it back to the persona or default value.
+ * clears it back to the default value.
  */
 export function validateOrchestrationPatch(raw: unknown): { [K in keyof OrchestrationPolicy]?: OrchestrationPolicy[K] | null } {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Orchestration policy must be an object');
@@ -268,15 +264,17 @@ export function applyOrchestrationPatch(
 }
 
 /**
- * Layer a policy: the agent's own fields, then its persona's front-matter,
- * then ORCHESTRATION_DEFAULTS.
+ * Resolve a policy: the agent's own fields, then ORCHESTRATION_DEFAULTS.
+ * (The persona layer that sat between them was retired in #2901: the switch
+ * to managed and the startup pass wrote what it decided to agents' own fields
+ * first, see managed-agents/legacy-migration.)
  *
  * An unset `connectToDispatcher` follows the resolved `orchestrate` (#2578),
  * with `default` as its source, so agents that orchestrate connect without a
  * bulk write.
  *
  * A helper talks only to its parent, so with `helper` it is always false,
- * whatever the agent or persona says. Its source is `default` then, since no
+ * whatever the agent says. Its source is `default` then, since no
  * stored value is in effect.
  *
  * No Clubhouse MCP, no orchestration (#2589): with `mcpOff`, `orchestrate`,
@@ -286,14 +284,9 @@ export function applyOrchestrationPatch(
  */
 export function resolveOrchestrationPolicy(
   agentConfig: OrchestrationPolicyConfig | undefined,
-  personaDefaults: OrchestrationPolicyConfig | undefined,
   options: { helper?: boolean; mcpOff?: boolean; mcpReportOnly?: boolean } = {},
 ): ResolvedOrchestrationPolicy {
   const agent = normalizeOrchestrationConfig(agentConfig) ?? {};
-  const persona = normalizeOrchestrationConfig(personaDefaults) ?? {};
-  // A cloned repository's persona can turn Auto off but never on: it would spend another provider's quota.
-  if (persona.autoHelpers === true) delete persona.autoHelpers;
-  const personaAutoOff = persona.autoHelpers === false ? { personaAutoOff: true as const } : {};
   const keys = Object.keys(ORCHESTRATION_DEFAULTS) as Array<keyof OrchestrationPolicy>;
   const policy = { ...ORCHESTRATION_DEFAULTS } as OrchestrationPolicy;
   const sources = {} as ResolvedOrchestrationPolicy['sources'];
@@ -301,9 +294,6 @@ export function resolveOrchestrationPolicy(
     if (agent[key] !== undefined) {
       (policy as unknown as Record<string, unknown>)[key] = agent[key];
       sources[key] = 'agent';
-    } else if (persona[key] !== undefined) {
-      (policy as unknown as Record<string, unknown>)[key] = persona[key];
-      sources[key] = 'persona';
     } else {
       sources[key] = 'default';
     }
@@ -317,11 +307,11 @@ export function resolveOrchestrationPolicy(
   if (options.mcpOff) {
     const { orchestrate, crossProjectHelpers, connectToDispatcher, autoHelpers } = policy;
     return {
-      ...policy, orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false, autoHelpers: false, sources, ...personaAutoOff,
+      ...policy, orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false, autoHelpers: false, sources,
       mcpOff: { orchestrate, crossProjectHelpers, connectToDispatcher, autoHelpers },
     };
   }
-  return { ...policy, sources, ...personaAutoOff, ...(options.mcpReportOnly && { mcpReportOnly: true as const }) };
+  return { ...policy, sources, ...(options.mcpReportOnly && { mcpReportOnly: true as const }) };
 }
 
 // ── Access ───────────────────────────────────────────────────────────────
@@ -569,5 +559,5 @@ export interface TurnOffOrchestrationResult extends HelperCascadeResult {
   policy?: ResolvedOrchestrationPolicy;
 }
 
-/** A policy patch as IPC takes it: a field set to null goes back to the persona or default value. */
+/** A policy patch as IPC takes it: a field set to null goes back to the default value. */
 export type OrchestrationPolicyPatch = ReturnType<typeof validateOrchestrationPatch>;

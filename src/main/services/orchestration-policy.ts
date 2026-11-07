@@ -4,21 +4,13 @@
  * access, check helper limits, and settle helpers when orchestration is
  * turned off.
  *
- * Policy layering, per field: the agent's own `orchestration` fields, then
- * the `orchestration:` front-matter of the agent's persona, then (for every
- * field but `orchestrate` and `connectToDispatcher`) the front-matter of the
- * Orchestrator persona (`orchestrator`, looked up project > user >
- * built-in), then
- * ORCHESTRATION_DEFAULTS. So a project ships its own policy by adding
- * `.clubhouse/personas/orchestrator.md` with, for example:
- *
- *     ---
- *     orchestration: {"orchestrate": true, "access": "same", "control": "ask-before-start", "maxHelpers": 3}
- *     ---
- *
- * The Orchestrator persona's `orchestrate` and `connectToDispatcher` apply
- * only to agents that use that persona, so it never turns orchestration on,
- * or connects the Dispatcher, for everyone.
+ * Policy, per field: the agent's own `orchestration` fields, then
+ * ORCHESTRATION_DEFAULTS. The persona layer that sat between them (a
+ * persona's `orchestration:` front matter and the project's or user's
+ * `orchestrator.md`) was retired in #2901. What it decided is written to an
+ * agent's own fields when it switches to managed, and once by the startup
+ * pass for agents that stay unmanaged (D62): see carryPersonaOrchestration
+ * and managed-agents/legacy-migration.
  *
  * An unset `connectToDispatcher` follows the agent's resolved `orchestrate`,
  * and a helper's is always false, whatever is set (#2578). It never opens the tool gate, which reads only
@@ -28,7 +20,7 @@
  * an agent, `orchestrate`, `crossProjectHelpers` and `connectToDispatcher`
  * resolve false, turning one on is refused, and the saved values stay. Writes
  * that decide about helpers compare the saved values, so a turn-off still
- * asks about helpers and a persona change still pins, with MCP off too.
+ * asks about helpers with MCP off too.
  *
  * A helper's bridge is forced on so it can start and report, which is why
  * isMcpEnabled above can read true for it. Its own calls follow its raw `mcpOverride`.
@@ -46,17 +38,12 @@
  * The tool gate. Only three things open it: a spawn (syncOrchestrationGate),
  * setOrchestrationPolicy, and MCP coming back for a gate MCP going off closed
  * (reconcileMcpGate), and only for an agent running in that project.
- * Everything else may only close it: policy reads, a persona change, the
- * agent leaving the registry. So an edit to agents.json or a persona file
- * never hands a running agent the orchestration tools it didn't have.
+ * Everything else may only close it: policy reads, the agent leaving the
+ * registry. So an edit to agents.json never hands a running agent the
+ * orchestration tools it didn't have.
  *
- * A persona change that would turn orchestration off while the agent has
- * helpers keeps it on instead: `orchestrate: true` is pinned on the agent
- * and the user turns it off through turnOffOrchestration, choosing what
- * happens to the helpers. Without helpers the gate just closes.
- *
- * Policy writes for one agent (set, turn-off, persona reconcile) run one at
- * a time under a per-agent lock, each on a fresh read of the config.
+ * Policy writes for one agent (set, turn-off, the carry before a switch) run
+ * one at a time under a per-agent lock, each on a fresh read of the config.
  *
  * Cross-project helpers (#2512): with `crossProjectHelpers` on (and
  * orchestration), the crossProject gate opens too, and the agent may start
@@ -76,7 +63,7 @@ import { agentRegistry } from './agent-registry';
 import * as orchestrationSettings from './orchestration-settings';
 import * as projectStore from './project-store';
 import { readProjectAgentDefaults } from './agent-settings-service';
-import { readLayeredPersonaRaw, resolvePersonaId } from './materialization-service';
+import { legacyPersonaOrchestration, orchestrationToCarry } from './managed-agents/legacy-migration';
 import { listHelpersEverywhere, type HelperEntry } from './helper-index';
 import {
   closeCrossProject,
@@ -89,10 +76,8 @@ import { appLog } from './log-service';
 import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import { appendSettingsAudit, currentSettingsOrigin, type SettingsAuditRow, type SettingsAuditSurface } from './settings-audit';
 import { isMcpEnabled, onMcpEnablementChanged } from './mcp-settings';
-import { setPersonaChangeHook, type PersonaChange } from './persona-change-hook';
 import { noteManagedSettingsChanged } from './managed-agents/changed-notice';
 import { clubhouseMcpOverride, isDisposedAgent } from '../../shared/agent-helpers';
-import { readFrontMatterValue } from '../../shared/persona-pattern';
 import type { DurableAgentConfig } from '../../shared/types';
 import {
   MCP_REQUIRED_MESSAGE,
@@ -120,9 +105,6 @@ import {
   type SetOrchestrationPolicyResult,
   type TurnOffOrchestrationResult,
 } from '../../shared/orchestration-policy';
-
-/** The persona whose front-matter supplies project-wide orchestration defaults. */
-export const ORCHESTRATOR_PERSONA_ID = 'orchestrator';
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -172,64 +154,13 @@ export async function withAgentLock<T>(_projectPath: string, agentId: string, fn
 
 // ── Resolution ───────────────────────────────────────────────────────────
 
-async function readPersonaPolicy(projectPath: string, personaId: string): Promise<OrchestrationPolicyConfig | undefined> {
-  try {
-    const raw = await readLayeredPersonaRaw(projectPath, personaId);
-    if (raw === undefined) return undefined;
-    const config = normalizeOrchestrationConfig(readFrontMatterValue(raw, 'orchestration'));
-    // A persona can turn Auto off and never on, so its `true` can't hide another layer's `false` when they merge (#2671).
-    if (config?.autoHelpers === true) delete config.autoHelpers;
-    return config;
-  } catch (err) {
-    // telemetry-exempt: an unreadable persona falls back to the defaults
-    appLog('core:orchestration', 'warn', 'Could not read orchestration defaults from a persona', {
-      meta: { personaId, error: errorText(err) },
-    });
-    return undefined;
-  }
-}
-
-/**
- * The persona layer of an agent's policy: its own persona's front-matter
- * over the Orchestrator persona's (minus `orchestrate` and `connectToDispatcher`).
- */
-export async function readPersonaOrchestrationDefaults(
-  projectPath: string,
-  agent: DurableAgentConfig,
-): Promise<OrchestrationPolicyConfig | undefined> {
-  // Managed agents (#2899): no persona layer. Their own settings decide.
-  if (agent.managed) return undefined;
-  return personaDefaultsFor(projectPath, await effectivePersonaId(projectPath, agent));
-}
-
-/** The persona an agent resolves to: its own, else the project default. */
-async function effectivePersonaId(projectPath: string, agent: DurableAgentConfig): Promise<string | undefined> {
-  try {
-    return resolvePersonaId(agent, await readProjectAgentDefaults(projectPath));
-  } catch {
-    // telemetry-exempt: unreadable project defaults mean the agent's own persona only
-    return agent.persona;
-  }
-}
-
-async function personaDefaultsFor(projectPath: string, personaId: string | undefined): Promise<OrchestrationPolicyConfig | undefined> {
-  const own = personaId ? await readPersonaPolicy(projectPath, personaId) : undefined;
-  if (personaId === ORCHESTRATOR_PERSONA_ID) return own;
-  const project = await readPersonaPolicy(projectPath, ORCHESTRATOR_PERSONA_ID);
-  if (project) {
-    delete project.orchestrate;
-    delete project.connectToDispatcher;
-  }
-  return normalizeOrchestrationConfig({ ...project, ...own });
-}
-
 /** Resolve an agent's policy from `stored` (its own fields, or the ones about to be saved). */
 async function resolveFor(
   projectPath: string,
   agent: DurableAgentConfig,
   stored: OrchestrationPolicyConfig | undefined,
 ): Promise<ResolvedOrchestrationPolicy> {
-  const policy = resolveOrchestrationPolicy(stored, await readPersonaOrchestrationDefaults(projectPath, agent), resolveOptions(projectPath, agent));
+  const policy = resolveOrchestrationPolicy(stored, resolveOptions(projectPath, agent));
   return withAutoEffective(policy, await projectAutoOff(projectPath));
 }
 
@@ -253,15 +184,6 @@ function resolveOptions(projectPath: string, agent: DurableAgentConfig): { helpe
     mcpOff: !isMcpEnabled(projectPath, clubhouseMcpOverride(agent)),
     mcpReportOnly: !!agent.parentAgentId && !isMcpEnabled(projectPath, agent.mcpOverride),
   };
-}
-
-/** Resolve as if the agent's effective persona were `personaId`. */
-async function resolveWithPersona(
-  projectPath: string,
-  personaId: string | undefined,
-  stored: OrchestrationPolicyConfig | undefined,
-): Promise<ResolvedOrchestrationPolicy> {
-  return resolveOrchestrationPolicy(stored, await personaDefaultsFor(projectPath, personaId));
 }
 
 /** Agents whose open gate closed because MCP went off, so MCP coming back reopens it. */
@@ -314,26 +236,17 @@ export async function getOrchestrationPolicy(projectPath: string, agentId: strin
 
 /**
  * Resolved policies for many agents of one project, for the mobile catalog.
- * Reads project defaults once and each persona once. Never touches the gate.
+ * Reads project defaults once. Never touches the gate.
  */
 export async function resolveOrchestrationPolicies(
   projectPath: string,
   agents: DurableAgentConfig[],
 ): Promise<Map<string, ResolvedOrchestrationPolicy>> {
-  const defaults = await readProjectAgentDefaults(projectPath).catch((): undefined => undefined);
-  const personas = new Map<string | undefined, Promise<OrchestrationPolicyConfig | undefined>>();
+  const projectOff = await projectAutoOff(projectPath);
   const out = new Map<string, ResolvedOrchestrationPolicy>();
-  await Promise.all(agents.map(async (agent) => {
-    let personaId = agent.persona;
-    if (defaults) {
-      try { personaId = resolvePersonaId(agent, defaults); } catch { /* telemetry-exempt: as effectivePersonaId, the agent's own persona */ }
-    }
-    if (!personas.has(personaId)) personas.set(personaId, personaDefaultsFor(projectPath, personaId));
-    out.set(agent.id, withAutoEffective(
-      resolveOrchestrationPolicy(agent.orchestration, agent.managed ? undefined : await personas.get(personaId), resolveOptions(projectPath, agent)),
-      defaults?.helperAuto === 'off',
-    ));
-  }));
+  for (const agent of agents) {
+    out.set(agent.id, withAutoEffective(resolveOrchestrationPolicy(agent.orchestration, resolveOptions(projectPath, agent)), projectOff));
+  }
   return out;
 }
 
@@ -422,8 +335,7 @@ async function auditPolicyRefusal(audit: PolicyAudit, patch: OrchestrationPolicy
 }
 
 /**
- * Change an agent's policy. Fields set to null go back to the persona or
- * default value. Turning orchestration off while the agent has live helpers
+ * Change an agent's policy. Fields set to null go back to the default value. Turning orchestration off while the agent has live helpers
  * changes nothing and returns `needsHelperChoice`: settle them with
  * turnOffOrchestration. An invalid patch throws. `precondition` runs under the
  * agent's lock on the fresh config, before anything is written, and refuses the
@@ -604,75 +516,27 @@ export async function turnOffOrchestration(
 }
 
 /**
- * After a persona change: if the resolved `orchestrate` went from on to off,
- * close the gate, or, while the agent has helpers, pin `orchestrate: true`
- * on it until the user turns it off with a helper choice. Never opens the
- * gate. `previousPersona` is the effective persona the agent had before (its
- * own, or the project default it used).
- */
-export async function reconcileAfterPersonaChange(
-  projectPath: string,
-  agentId: string,
-  previousPersona: string | undefined,
-): Promise<void> {
-  await withAgentLock(projectPath, agentId, async () => {
-    const agent = await agentConfig.getDurableConfig(projectPath, agentId);
-    if (!agent) return;
-    const before = await resolveWithPersona(projectPath, previousPersona, agent.orchestration);
-    const after = await resolveFor(projectPath, agent, agent.orchestration);
-    // `before` resolves without MCP, so compare saved with saved.
-    if (!before.orchestrate || savedOrchestrate(after)) return;
-
-    const { helperIds } = await getHelperSummary(projectPath, agentId);
-    if (helperIds.length > 0) {
-      await agentConfig.setOrchestrationConfig(projectPath, agentId, applyOrchestrationPatch(agent.orchestration, { orchestrate: true }));
-      // Not a change of what it does: it is pinned on where a persona change would turn it off.
-      await appendSettingsAudit({ surface: 'persona', targetId: agentId, scope: 'agent', key: 'orchestration.orchestrate', before: true, after: true, outcome: 'ok', code: 'pinned_for_helpers' });
-      appLog('core:orchestration', 'info', 'Persona change kept orchestration on: the agent has helpers', {
-        meta: { agentId, helpers: helperIds.length },
-      });
-      return;
-    }
-    setOrchestrationEnabled(agentId, false);
-  });
-}
-
-/** What carryPersonaOrchestration found and wrote, so a failed switch can put it back. */
-export interface CarriedPersonaOrchestration {
-  /** The persona the agent resolved to: its own, else the project default. */
-  previousPersona: string | undefined;
-  /** The agent's own fields before the carry. */
-  before: OrchestrationPolicyConfig | undefined;
-  /** The fields the persona layer decided, now the agent's own. */
-  carried: OrchestrationPolicyConfig | undefined;
-}
-
-/**
- * Before an unmanaged agent switches to managed (#2901): a managed agent has
- * no persona layer, so every field its persona or the project's Orchestrator
- * persona decided is written to its own fields, and the policy resolves the
- * same after the switch. A managed agent, or one whose persona layer decides
- * nothing, is left as it is. The gate isn't touched: the outcome doesn't change.
- * Saved as is, without the MCP check: MCP off masks it the same either way.
+ * Before an unmanaged agent switches to managed (#2901): the persona layer is
+ * retired, so every field the agent's persona or the project's Orchestrator
+ * persona decided (managed-agents/legacy-migration) is written to its own
+ * fields, and the policy resolves as it did with the layer. A managed agent,
+ * or one whose persona layer decides nothing, is left as it is. The gate isn't
+ * touched: the outcome doesn't change. Saved as is, without the MCP check: MCP
+ * off masks it the same either way. A switch that fails afterwards keeps the
+ * fields, since nothing else would give them back.
  *
- * `plain`: the same for a plain agent that stays unmanaged (D62), so it keeps
- * what a project or user `orchestrator.md` gave it once the persona layer goes.
+ * `plain`: the same for an agent that stays unmanaged (D62), so it keeps
+ * what a project or user `orchestrator.md`, or its persona, gave it.
+ *
+ * Returns the fields written, or undefined when there were none.
  */
-export async function carryPersonaOrchestration(projectPath: string, agentId: string, why: 'managed' | 'plain' = 'managed'): Promise<CarriedPersonaOrchestration | null> {
+export async function carryPersonaOrchestration(projectPath: string, agentId: string, why: 'managed' | 'plain' = 'managed'): Promise<OrchestrationPolicyConfig | undefined> {
   return withAgentLock(projectPath, agentId, async () => {
     const agent = await agentConfig.getDurableConfig(projectPath, agentId);
-    if (!agent || agent.managed) return null;
-    const previousPersona = await effectivePersonaId(projectPath, agent);
-    const layer = await personaDefaultsFor(projectPath, previousPersona);
-    const resolved = resolveOrchestrationPolicy(agent.orchestration, layer);
-    const carried: OrchestrationPolicyConfig = {};
-    for (const key of Object.keys(ORCHESTRATION_DEFAULTS) as Array<keyof OrchestrationPolicy>) {
-      if (resolved.sources[key] === 'persona') (carried as Record<string, unknown>)[key] = resolved[key];
-    }
-    const before = agent.orchestration && { ...agent.orchestration };
-    if (Object.keys(carried).length === 0) return { previousPersona, before, carried: undefined };
-    const stored = normalizeOrchestrationConfig({ ...before, ...carried });
-    await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
+    if (!agent || agent.managed) return undefined;
+    const carried = orchestrationToCarry(agent.orchestration, await legacyPersonaOrchestration(projectPath, agent));
+    if (!carried) return undefined;
+    await agentConfig.setOrchestrationConfig(projectPath, agentId, normalizeOrchestrationConfig({ ...agent.orchestration, ...carried }));
     for (const [key, value] of Object.entries(carried)) {
       await appendSettingsAudit({ surface: 'persona', targetId: agentId, scope: 'agent', key: `orchestration.${key}`, before: null, after: value as boolean | number | string, outcome: 'ok', code: why === 'plain' ? 'carried_from_persona_layer' : 'carried_to_managed' });
     }
@@ -681,45 +545,8 @@ export async function carryPersonaOrchestration(projectPath: string, agentId: st
       : 'Orchestration defaults from the persona kept on the agent before it switched to managed', {
       meta: { agentId, fields: Object.keys(carried) },
     });
-    return { previousPersona, before, carried };
+    return carried;
   });
-}
-
-/** Put back what carryPersonaOrchestration wrote, when the switch it was for failed. Fields changed since are left alone. */
-export async function restorePersonaOrchestration(projectPath: string, agentId: string, carry: CarriedPersonaOrchestration): Promise<void> {
-  if (!carry.carried) return;
-  await withAgentLock(projectPath, agentId, async () => {
-    const agent = await agentConfig.getDurableConfig(projectPath, agentId);
-    if (!agent) return;
-    const next: Record<string, unknown> = { ...(agent.orchestration ?? {}) };
-    for (const [key, value] of Object.entries(carry.carried!)) {
-      if (next[key] !== value) continue;
-      const was = carry.before?.[key as keyof OrchestrationPolicy];
-      if (was === undefined) delete next[key];
-      else next[key] = was;
-    }
-    await agentConfig.setOrchestrationConfig(projectPath, agentId, normalizeOrchestrationConfig(next));
-  });
-}
-
-/** Route a persona change to the agents it affects. */
-async function onPersonaChange(change: PersonaChange): Promise<void> {
-  // A persona can turn Auto off (#2671).
-  noteRoutingPolicyChanged();
-  if (change.kind === 'agent') {
-    const agent = await agentConfig.getDurableConfig(change.projectPath, change.agentId);
-    if (!agent) return;
-    // The persona it resolved to before: its old own one, else the (unchanged) project default.
-    const previous = change.previousPersona
-      ?? (await effectivePersonaId(change.projectPath, { ...agent, persona: undefined }));
-    await reconcileAfterPersonaChange(change.projectPath, change.agentId, previous);
-    return;
-  }
-  // The project default changed: only agents without their own persona follow it.
-  for (const agent of await agentConfig.listDurable(change.projectPath)) {
-    if (agent.persona || isDisposedAgent(agent)) continue;
-    await reconcileAfterPersonaChange(change.projectPath, agent.id, change.previousDefault);
-  }
 }
 
 // ── Access and limits ────────────────────────────────────────────────────
@@ -877,9 +704,3 @@ export function watchMcpForOrchestration(): () => void {
   ];
   return () => { for (const unsubscribe of unsubscribers) unsubscribe(); };
 }
-
-// ── Wiring ───────────────────────────────────────────────────────────────
-
-// Persona changes may turn the resolved policy off. (An agent leaving the
-// registry closes its gate in agent-registry's untrack.)
-setPersonaChangeHook(onPersonaChange);

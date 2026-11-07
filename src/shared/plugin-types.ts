@@ -673,6 +673,7 @@ export interface AgentsAPI {
     mcpIds?: string[];
     /** @deprecated Structured mode was removed. Accepted for compatibility and ignored; will be removed in the next plugin API major. */
     structuredMode?: boolean;
+    /** @deprecated Personas were retired (#2901). Accepted for compatibility and ignored; will be removed in the next plugin API major. */
     persona?: string;
   }): Promise<string>;
   runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string; orchestrator?: string; freeAgentMode?: boolean; metadata?: Record<string, string> }): Promise<string>;

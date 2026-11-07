@@ -85,9 +85,10 @@ export function normalizeSavedPresets(raw: unknown): SavedPresets {
 // ── Codes ────────────────────────────────────────────────────────────────
 
 export type HelperRoutingMode = 'explicit' | 'preset' | 'auto';
-/** `sticky` and `default_order` are policy 1's, kept so an older saved decision still reads. */
+/** `sticky` and `default_order` are policy 1's, and `persona_pinned` is from before personas were retired (#2901), kept so an older saved decision still reads. */
 export type HelperRoutingReason = 'explicit_request' | 'persona_pinned' | 'preset_on_cli' | 'only_candidate' | 'lower_pressure' | 'lower_load' | 'fair_rotation' | 'better_quota_tier' | 'unknown_fallback' | 'sticky' | 'default_order';
 export type HelperRoutingFallback = 'none' | 'builtin_preset' | 'candidate_skipped' | 'model_unverified';
+/** `persona` is from before personas were retired (#2901), kept so an older saved decision still reads. */
 export type HelperRoutingFieldSource = 'request' | 'persona' | 'orchestrator' | 'auto' | 'custom_mapping' | 'builtin_mapping' | 'cli_default';
 export type HelperRoutingSkip = 'cli_disabled' | 'cli_unavailable' | 'auto_not_supported' | 'no_valid_mapping' | 'cooling_down' | 'quota_near_limit' | 'quota_exhausted';
 export type { HelperAutoOffReason, HelperAutoSource } from './orchestration-policy';
@@ -100,7 +101,7 @@ export const HELPER_ROUTING_MODES: readonly HelperRoutingMode[] = ['explicit', '
 export const HELPER_ROUTING_REASONS: readonly HelperRoutingReason[] = ['explicit_request', 'persona_pinned', 'preset_on_cli', 'only_candidate', 'lower_pressure', 'lower_load', 'fair_rotation', 'better_quota_tier', 'unknown_fallback', 'sticky', 'default_order'];
 export const HELPER_ROUTING_FALLBACKS: readonly HelperRoutingFallback[] = ['none', 'builtin_preset', 'candidate_skipped', 'model_unverified'];
 export const HELPER_ROUTING_SKIPS: readonly HelperRoutingSkip[] = ['cli_disabled', 'cli_unavailable', 'auto_not_supported', 'no_valid_mapping', 'cooling_down', 'quota_near_limit', 'quota_exhausted'];
-export const HELPER_AUTO_OFF_REASONS: readonly HelperAutoOffReason[] = ['not_enabled', 'project_off', 'persona_off', 'orchestration_off', 'mcp_off', 'dispatcher_locked'];
+export const HELPER_AUTO_OFF_REASONS: readonly HelperAutoOffReason[] = ['not_enabled', 'project_off', 'orchestration_off', 'mcp_off', 'dispatcher_locked'];
 export const PRESET_CELL_STATES: readonly PresetCellState[] = ['valid', 'unverified', 'stale'];
 
 /**
@@ -159,7 +160,6 @@ export const HELPER_ROUTING_LABELS = {
   autoSource: {
     agent: 'Set on this agent',
     project: 'Set for this project',
-    persona: 'Set by this agent’s persona',
     app: 'Set for the whole app',
     default: 'Off unless turned on',
     mcp_off: 'Clubhouse MCP is off for this agent',
@@ -168,7 +168,6 @@ export const HELPER_ROUTING_LABELS = {
   autoOff: {
     not_enabled: 'It isn’t turned on',
     project_off: 'This project turned it off',
-    persona_off: 'This agent’s persona turned it off',
     orchestration_off: 'This agent doesn’t orchestrate',
     mcp_off: 'Clubhouse MCP is off for this agent',
     dispatcher_locked: 'The Dispatcher doesn’t start helpers',
@@ -192,7 +191,7 @@ export const HELPER_ROUTING_LABELS = {
  */
 export interface HelperRouting {
   mode: HelperRoutingMode;
-  /** True only when Auto chose among providers, so nothing claims balancing for a helper an argument or a persona decided. */
+  /** True only when Auto chose among providers, so nothing claims balancing for a helper an argument decided. */
   balanced: boolean;
   decidedAt: string;
   policyVersion: number;
@@ -301,7 +300,8 @@ export interface HelperAutoView {
     app: { value: boolean; editable: boolean };
     /** Only `off` or null: a project can't turn it on. */
     project?: { value: 'off' | null; choices: ['off', null]; editable: boolean };
-    persona?: { value: false | null; editable: false };
+    /** Always null: personas were retired (#2901). Kept for clients that read it. */
+    persona?: { value: null; editable: false };
     agent?: { value: boolean | null; editable: boolean };
   };
 }

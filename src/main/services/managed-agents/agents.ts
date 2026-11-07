@@ -7,13 +7,7 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as agentConfig from '../agent-config';
-import {
-  carryPersonaOrchestration,
-  reconcileAfterPersonaChange,
-  restorePersonaOrchestration,
-  setOrchestrationPolicy,
-  type CarriedPersonaOrchestration,
-} from '../orchestration-policy';
+import { carryPersonaOrchestration, setOrchestrationPolicy } from '../orchestration-policy';
 import { resolveOrchestrator } from '../agent-system';
 import { isClubhouseModeEnabled } from '../clubhouse-mode-settings';
 import { isMcpEnabled } from '../mcp-settings';
@@ -444,11 +438,10 @@ async function createAgentPart(name: string, description: string, content: Manag
  * overwrites the instructions file it manages, and skill folders it replaces
  * are moved to app data (D15).
  *
- * A managed agent has no persona layer, so what its persona gave its
- * orchestration policy becomes its own first, and a persona change's
- * reconcile runs after (#2901). The setup is checked before any part is made,
- * and a switch that fails after that removes the parts it made and puts the
- * policy back.
+ * The persona layer is retired, so what an agent's persona gave its
+ * orchestration policy becomes its own first (#2901), and stays even when the
+ * switch fails. The setup is checked before any part is made, and a switch
+ * that fails after that removes the parts it made.
  */
 export async function convertToManaged(projectPath: string, agentId: string, options: { keep: boolean; templateId?: string }): Promise<ManagedAgentSetup> {
   const service = managedAgents();
@@ -536,11 +529,12 @@ async function removeLeftoverParts(agent: DurableAgentConfig): Promise<void> {
 
 /**
  * The switch itself: back up its files, keep the persona's orchestration
- * defaults on the agent, make its parts and save the setup (`build`), then
- * settle as a persona change does. The parts are listed in a pending file in
- * its before-managed folder as they are made, so a switch cut short can be
- * cleaned up by the next one. On a failure before the setup is saved, the
- * parts it made and its backup are removed and the policy put back.
+ * defaults on the agent, then make its parts and save the setup (`build`).
+ * The parts are listed in a pending file in its before-managed folder as they
+ * are made, so a switch cut short can be cleaned up by the next one. On a
+ * failure before the setup is saved, the parts it made and its backup are
+ * removed. The orchestration fields it kept stay, so the policy resolves as
+ * the persona layer did.
  */
 async function switchWith(
   projectPath: string,
@@ -553,14 +547,13 @@ async function switchWith(
   await removeLeftoverParts(agent);
   const made: string[] = [];
   const pending: PendingSwitch = { startedAt: new Date().toISOString(), parts: made };
-  let carry: CarriedPersonaOrchestration | null = null;
   let backup: string | null = null;
   let saved: ManagedAgentSetup;
   try {
     await writePendingSwitch(agent.id, pending);
     backup = await backupInstructions(agent.id, provider.conventions.legacyInstructionsFile, onDisk);
     await keepMcpFile(projectPath, agent.worktreePath, provider);
-    carry = await carryPersonaOrchestration(projectPath, agent.id);
+    await carryPersonaOrchestration(projectPath, agent.id);
     saved = await build(async (name, description, content) => {
       const id = await createAgentPart(name, description, content);
       made.push(id);
@@ -568,7 +561,7 @@ async function switchWith(
       return id;
     });
   } catch (err) {
-    await undoSwitch(projectPath, agent, made, carry, backup);
+    await undoSwitch(agent, made, backup);
     throw err;
   }
   await clearPendingSwitch(agent.id).catch((err) => {
@@ -579,13 +572,11 @@ async function switchWith(
     // telemetry-exempt: the switch stands; the first start just doesn't check the file again.
     appLog('core:managed', 'warn', 'Could not mark the agent for a last instructions check at its first managed start', { meta: { agentId: agent.id, error: err instanceof Error ? err.message : String(err) } });
   });
-  // As after a persona change: with live helpers, orchestration stays on.
-  await reconcileAfterPersonaChange(projectPath, agent.id, carry?.previousPersona);
   if (after) await after();
   return saved;
 }
 
-async function undoSwitch(projectPath: string, agent: DurableAgentConfig, made: string[], carry: CarriedPersonaOrchestration | null, backup: string | null): Promise<void> {
+async function undoSwitch(agent: DurableAgentConfig, made: string[], backup: string | null): Promise<void> {
   const service = managedAgents();
   const left: string[] = [];
   for (const id of made) {
@@ -597,12 +588,6 @@ async function undoSwitch(projectPath: string, agent: DurableAgentConfig, made: 
       // telemetry-exempt: logged; the part stays in the library, unused, and the next switch tries again.
       appLog('core:managed', 'warn', 'Could not remove a part a failed switch to managed made', { meta: { agentId: agent.id, partId: id, error: err instanceof Error ? err.message : String(err) } });
     }
-  }
-  if (carry) {
-    await restorePersonaOrchestration(projectPath, agent.id, carry).catch((err) => {
-      // telemetry-exempt: logged; the fields it kept give the same policy as the persona did.
-      appLog('core:managed', 'warn', 'Could not put the orchestration policy back after a failed switch to managed', { meta: { agentId: agent.id, error: err instanceof Error ? err.message : String(err) } });
-    });
   }
   await clearAwaitingFirstStart(agent.id).catch(() => { /* telemetry-exempt: nothing was marked */ });
   // Nothing changed, so the file it copied is still in its folder: a failed switch leaves no backup behind.

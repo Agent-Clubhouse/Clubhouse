@@ -15,10 +15,9 @@ import { AGENT_IDLE_SLEEP_MINUTES, normalizeIdleSleep, resolveIdleSleep } from '
 import { AGENT_COLORS, generateDurableName } from '../../shared/name-generator';
 import { validateAgentGitName } from '../../shared/agent-name';
 import * as agentConfig from './agent-config';
-import { parseStartCreationParams, personaInjection, startDurableCreation } from './agent-creation';
+import { parseStartCreationParams, startDurableCreation } from './agent-creation';
 import { checkAvailability, getAvailableOrchestrators, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { readDefaultMcps, readMcpCatalog, readProjectAgentDefaults } from './agent-settings-service';
-import { listAvailablePersonas } from './materialization-service';
 import * as orchestratorSettings from './orchestrator-settings';
 import * as profileSettings from './profile-settings';
 import { isClubhouseModeEnabled } from './clubhouse-mode-settings';
@@ -79,26 +78,27 @@ async function modelOptions(projectPath: string, orchestrator: string): Promise<
   return [{ id: 'default', label: 'Default' }];
 }
 
-/** Orchestrators, models per orchestrator, personas and colours: what both the create form and settings pick from. */
+/**
+ * Orchestrators, models per orchestrator and colours: what both the create form and settings pick from.
+ * `personas` is always empty: personas were retired (#2901), and the key stays for phones that read it.
+ */
 export async function buildAgentOptions(projectPath: string) {
   const orchestrators = await effectiveOrchestrators(projectPath);
-  const [rows, personas] = await Promise.all([
-    Promise.all(orchestrators.map(async (o) => {
-      const [availability, models] = await Promise.all([
-        checkAvailability(projectPath, o.id).catch((err: unknown) => ({ available: false, error: err instanceof Error ? err.message : 'unavailable' })),
-        modelOptions(projectPath, o.id),
-      ]);
-      return {
-        id: o.id, displayName: o.displayName, shortName: o.shortName, ...(o.badge ? { badge: o.badge } : {}),
-        available: availability.available, ...(availability.error ? { unavailableReason: availability.error } : {}),
-        // Without permission support the CLI sets access itself; the phone shows "Set by the CLI".
-        permissions: o.capabilities?.permissions ?? false,
-        chat: chatAvailable(o.id),
-        models,
-      };
-    })),
-    listAvailablePersonas(projectPath).catch((): Awaited<ReturnType<typeof listAvailablePersonas>> => []),
-  ]);
+  const rows = await Promise.all(orchestrators.map(async (o) => {
+    const [availability, models] = await Promise.all([
+      checkAvailability(projectPath, o.id).catch((err: unknown) => ({ available: false, error: err instanceof Error ? err.message : 'unavailable' })),
+      modelOptions(projectPath, o.id),
+    ]);
+    return {
+      id: o.id, displayName: o.displayName, shortName: o.shortName, ...(o.badge ? { badge: o.badge } : {}),
+      available: availability.available, ...(availability.error ? { unavailableReason: availability.error } : {}),
+      // Without permission support the CLI sets access itself; the phone shows "Set by the CLI".
+      permissions: o.capabilities?.permissions ?? false,
+      chat: chatAvailable(o.id),
+      models,
+    };
+  }));
+  const personas: Array<{ id: string; name: string; source: 'builtin' | 'user' | 'project' }> = [];
   return { orchestrators: rows, personas, colors: MOBILE_AGENT_COLORS };
 }
 
@@ -262,7 +262,7 @@ async function assertContextWindow(project: MobileAgentProject, orchestrator: st
  * One agent's settings as the Settings card shows them, each with when it can
  * change (#2452). The Dispatcher's are Settings > Dispatcher's: CLI, model,
  * runtime, Free agent mode and auto-sleep, at any time (they apply the next
- * time it starts); its name, colour, emoji, persona and orchestration never.
+ * time it starts); its name, colour, emoji and orchestration never.
  */
 export async function buildAgentSettings(
   project: MobileAgentProject,
@@ -285,8 +285,9 @@ export async function buildAgentSettings(
   const idle = normalizeIdleSleep(config.idleSleep);
   const resolved = resolveIdleSleep(idle, appMinutes);
   const clubhouseProject = !dispatcher && isClubhouseModeEnabled(project.path);
-  // A Clubhouse-managed agent never takes the Clubhouse Mode path (#2896) and has no persona, so neither is
-  // editable for it (#2901). projectEnabled stays the project's setting.
+  // A Clubhouse-managed agent never takes the Clubhouse Mode path (#2896), so it isn't editable for it
+  // (#2901). projectEnabled stays the project's setting. Personas were retired (#2901): `persona` is
+  // always null and never editable, kept for phones that read it.
   const managed = !!config.managed;
   // The Dispatcher's orchestration settings are locked (#2533), so it has none to show.
   const orchestration = dispatcher ? null : await orchestrationOf(project.path, config);
@@ -310,7 +311,7 @@ export async function buildAgentSettings(
       orchestrator: { ...field(config.orchestrator ?? null, spawn), resolved: orchestrator, changeStartsNewSession: !!config.lastSessionId },
       model: field(config.model ?? 'default', spawn),
       runtime: { ...field(config.runtimeMode ?? 'default', runtimeEditable), resolved: runtime },
-      persona: field(managed ? null : config.persona ?? null, managed ? 'never' : identity),
+      persona: field(null, 'never'),
       clubhouseMode: {
         ...field(clubhouseProject ? !managed && !config.clubhouseModeOverride : null, clubhouseProject && !managed ? 'sleeping' : 'never'),
         projectEnabled: clubhouseProject,
@@ -403,8 +404,9 @@ async function assertOrchestrator(projectPath: string, orchestrator: string): Pr
   if (!(await effectiveOrchestrators(projectPath)).some((o) => o.id === orchestrator)) throw new MobileControlError('orchestrator_unavailable', 409);
 }
 
-async function assertPersona(projectPath: string, persona: string): Promise<void> {
-  if (!(await listAvailablePersonas(projectPath)).some((p) => p.id === persona)) throw invalid('unknown_persona');
+/** Personas were retired (#2901): any persona in a command is refused, and nothing in it is saved. */
+function refusePersona(name: string): never {
+  throw new MobileControlError('managed_agent', 409, 'rejected', `Personas were retired, so ${name} can't take one. Clubhouse-managed agents get their instructions from their setup.`);
 }
 
 const assertColor = (color: string): void => {
@@ -431,7 +433,7 @@ export async function createMobileAgent(project: MobileAgentProject, command: Mo
   const orchestrator = command.orchestrator ?? (await effectiveOrchestrators(project.path))[0]?.id ?? DEFAULT_ORCHESTRATOR;
   await assertOrchestrator(project.path, orchestrator);
   if (command.freeAgentMode && !permissionsSupported(orchestrator)) throw new MobileControlError('free_agent_mode_unavailable');
-  if (command.persona !== undefined) await assertPersona(project.path, command.persona);
+  if (command.persona !== undefined) refusePersona(name);
   const orchestration = command.orchestration !== undefined ? parseMobileOrchestration(command.orchestration, 'create', { mcpEnabled: isMcpEnabled(project.path) }) : undefined;
   if (command.mcpIds?.length) {
     const catalog = new Set((await readMcpCatalog(project.path).catch((): McpCatalogEntry[] => [])).map((m) => m.id));
@@ -441,7 +443,7 @@ export async function createMobileAgent(project: MobileAgentProject, command: Mo
   try {
     params = parseStartCreationParams({
       name, color: command.color, model: command.model, useWorktree, orchestrator, freeAgentMode: command.freeAgentMode,
-      mcpIds: command.mcpIds?.length ? command.mcpIds : undefined, persona: command.persona,
+      mcpIds: command.mcpIds?.length ? command.mcpIds : undefined,
       folderName, branchName, branchFrom,
     });
   } catch (err) {
@@ -450,7 +452,7 @@ export async function createMobileAgent(project: MobileAgentProject, command: Mo
   assertAuthorized();
   let started: Awaited<ReturnType<typeof startDurableCreation>>;
   try {
-    started = await startDurableCreation(project.path, params, personaInjection(project.path, params));
+    started = await startDurableCreation(project.path, params);
   } catch (err) {
     // telemetry-exempt: startDurableCreation records the refusal in its clubhouse.agent.create flow.
     throw new MobileControlError('create_refused', 409, 'rejected', err instanceof Error ? err.message : undefined);
@@ -478,6 +480,7 @@ export async function updateMobileAgent(
 ) {
   const state = stateOf(config, live);
   if (state === 'creating') throw new MobileControlError('agent_creating');
+  if (command.persona !== undefined) refusePersona(config.name);
   const { idleSleep } = command;
   const awake = state === 'running' || state === 'starting';
   // Only the settings themselves: the server passes the whole command, with its version, epoch and id.
@@ -505,15 +508,9 @@ export async function updateMobileAgent(
     if (command.runtime !== 'default' && !chatAvailable(orchestrator)) throw new MobileControlError('runtime_unavailable');
     updates.runtimeMode = command.runtime === 'default' ? null : command.runtime;
   }
-  // Its setup replaces both (#2901), as the desktop's settings say.
-  if (config.managed && (command.persona !== undefined || command.clubhouseMode !== undefined)) {
-    const which = command.persona !== undefined && command.clubhouseMode !== undefined ? 'persona and Clubhouse mode'
-      : command.persona !== undefined ? 'persona' : 'Clubhouse mode';
-    throw new MobileControlError('managed_agent', 409, 'rejected', `${config.name} is Clubhouse managed, so its ${which} can't be changed. Its setup decides its instructions, skills and MCP servers.`);
-  }
-  if (command.persona !== undefined) {
-    if (command.persona !== null) await assertPersona(project.path, command.persona);
-    updates.persona = command.persona ?? '';
+  // Its setup replaces Clubhouse Mode (#2901), as the desktop's settings say.
+  if (config.managed && command.clubhouseMode !== undefined) {
+    throw new MobileControlError('managed_agent', 409, 'rejected', `${config.name} is Clubhouse managed, so its Clubhouse mode can't be changed. Its setup decides its instructions, skills and MCP servers.`);
   }
   if (command.clubhouseMode !== undefined) {
     // Only an agent in a Clubhouse mode project can opt out of it.

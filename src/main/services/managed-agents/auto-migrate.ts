@@ -223,20 +223,21 @@ export interface StartupMigrationResult {
   failed: number;
   /** Running or waking: they switch at their next spawn. */
   deferred: number;
-  /** Plain agents whose persona layer was checked and kept as their own fields (D62). */
+  /** Agents staying unmanaged whose persona layer was checked and kept as their own fields (D62). */
   carried: number;
 }
 
 /**
- * A plain agent stays unmanaged, so it would lose what a project or user
- * `orchestrator.md` (or a project default persona) gives its orchestration
- * once the persona layer is removed. Keep the fields that layer decides as
- * its own, once (D62). Agents that switch get the same from the switch.
+ * An agent that stays unmanaged would lose what a project or user
+ * `orchestrator.md`, or its persona or the project's default one, gave its
+ * orchestration, since the persona layer is retired. Keep the fields that
+ * layer decided as its own, once (D62). Agents that switch get the same from
+ * the switch, so this is for plain agents and for legacy-configured ones
+ * Clubhouse doesn't switch on its own.
  */
 async function carryPersonaLayer(projectPath: string, agent: DurableAgentConfig): Promise<boolean> {
   if (agent.managed || agent.personaLayerCarriedAt || isDispatcherPath(projectPath)) return false;
   if (agent.parentAgentId || isDisposedAgent(agent) || agent.creation) return false;
-  if (legacyConfiguredFrom(projectPath, agent)) return false;
   if (agentTransitionBusy(agent.id)) return false;
   try {
     const { carryPersonaOrchestration } = await import('../orchestration-policy');
@@ -244,8 +245,8 @@ async function carryPersonaLayer(projectPath: string, agent: DurableAgentConfig)
     await agentConfig.setManagedMigration(projectPath, agent.id, { layerCarriedAt: new Date().toISOString() });
     return true;
   } catch (err) {
-    // telemetry-exempt: logged; the persona layer still applies, and the next start tries again.
-    appLog('core:managed', 'warn', 'Could not keep the persona layer\'s orchestration on a plain agent', { meta: { agentId: agent.id, code: codeOf(err) } });
+    // telemetry-exempt: logged; the next start tries again.
+    appLog('core:managed', 'warn', 'Could not keep the persona layer\'s orchestration on an unmanaged agent', { meta: { agentId: agent.id, code: codeOf(err) } });
     return false;
   }
 }
@@ -335,7 +336,10 @@ async function startupMigration(): Promise<StartupMigrationResult> {
         if (await carryPersonaLayer(project.path, agent)) result.carried++;
         continue;
       }
-      if (await switchedEarlier(agent).catch(() => true)) continue;
+      if (await switchedEarlier(agent).catch(() => true)) {
+        if (await carryPersonaLayer(project.path, agent)) result.carried++;
+        continue;
+      }
       // Running, waking or mid-change: never under a session. Its next spawn switches it.
       if (isAgentRunning(agent.id) || agentTransitionBusy(agent.id) || switchInProgress(agent.id)) {
         result.deferred++;
