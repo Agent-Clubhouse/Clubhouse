@@ -26,7 +26,9 @@ afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 const read = (id = 'agent-1') => handlers.get(IPC.AGENT.BUILDER_READ)!({}, '/project', id);
 const command = (revision: number, action: unknown) => handlers.get(IPC.AGENT.BUILDER_COMMAND)!({}, '/project', 'agent-1', revision, action);
 it('registers validated read, command and composer preview handlers; unknown agents are refused', async () => {
-  expect(handlers.size).toBe(3);
+  expect(handlers.size).toBe(5);
+  expect(handlers.has(IPC.AGENT.NEW_COMPOSITION_PREVIEW)).toBe(true);
+  expect(handlers.has(IPC.AGENT.NEW_COMPOSITION_DISCARD)).toBe(true);
   expect(await read()).toMatchObject({ ok: true, view: { revision: 0, blocks: [] } });
   expect(await read('missing')).toEqual({ ok: false, code: 'failed' });
   expect(await read('dispatcher-agent')).toEqual({ ok: false, code: 'failed' });

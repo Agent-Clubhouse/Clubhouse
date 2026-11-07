@@ -269,7 +269,7 @@ export function registerAgentHandlers(): void {
         const outcome = await started.done;
         if (outcome !== 'ready') throw new Error('Agent creation did not complete. Inspect the retained creation record before trying again.');
         const config = await agentConfig.getDurableConfig(projectPath, started.agentId);
-        if (!config || config.creation) throw new Error('Agent creation is not ready.');
+        if (!config || config.id !== started.agentId || config.creation) throw new Error('Agent creation is not ready.');
         return config;
       } finally { draft.release(); }
     },
