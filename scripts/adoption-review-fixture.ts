@@ -13,10 +13,13 @@ import type { ActivationReceipt, PreparedGeneration } from '../src/main/services
 export const REVIEW_AGENT = 'adoption-review-agent';
 export const SEEDED_AGENT = 'adoption-review-seeded';
 export const REVIEW_PROJECT = 'adoption-review-project';
+export const SKILL_REVIEW_AGENT = 'adoption-review-skills';
+export const NATIVE_REVIEW_AGENT = 'adoption-review-native';
+export const MCP_REVIEW_AGENT = 'adoption-review-mcp';
 const execute = promisify(execFile);
 const adoption: BaseAdoption = { content: { mode: 'takeable' }, structure: { mode: 'accepted' } };
 const stamp = '2000-01-01T00:00:00.000Z';
-export interface ReviewManifest { sourceHead: string; root: string; profile: string; project: string; binary: string; seededAgent: string; reviewAgent: string }
+export interface ReviewManifest { sourceHead: string; root: string; profile: string; project: string; binary: string; seededAgent: string; reviewAgent: string; coverage: { skillAgent: string; nativeAgent: string; mcpAgent: string; completeSkill: string; skillTemplate: string } }
 
 export async function prepareAdoptionReviewFixture(root: string, sourceHead: string): Promise<ReviewManifest> {
   if (!/^[a-f0-9]{40}$/.test(sourceHead)) throw new Error('A pinned source head is required');
@@ -28,6 +31,9 @@ export async function prepareAdoptionReviewFixture(root: string, sourceHead: str
   const agents = [
     { id: REVIEW_AGENT, name: 'review-agent', displayName: 'Fake adoption review, no live agent' },
     { id: SEEDED_AGENT, name: 'seeded-receipts', displayName: 'Seeded receipts only, not observed' },
+    { id: SKILL_REVIEW_AGENT, name: 'skill-review', displayName: 'Skill create copy exclude restore' },
+    { id: NATIVE_REVIEW_AGENT, name: 'native-refusal', displayName: 'Unsupported native editing fixture' },
+    { id: MCP_REVIEW_AGENT, name: 'mcp-refusal', displayName: 'Unsupported MCP editing fixture' },
   ].map((agent) => ({ ...agent, worktreePath: path.join(project, '.clubhouse', 'agents', agent.name),
     color: 'indigo', createdAt: stamp, orchestrator: 'claude-code', runtimeMode: 'terminal' }));
   await fs.mkdir(base, { recursive: true, mode: 0o700 });
@@ -78,6 +84,40 @@ exit 64
     const plan = await catalog.plan({ ...request, draft: composition });
     await catalog.saveComposition({ ...request, composition, expectedRevision: 0, previewFingerprint: plan.fingerprint });
   }
+  // Separate targets keep the original Builder/adoption observations unchanged.
+  // Synthetic members are inspected/copied only; no executable member is run.
+  const completeSkill = await catalog.createAsset({ kind: 'skill', name: 'Complete copy review bundle', payload: {
+    skillName: 'complete-copy-review', files: [
+      { path: 'SKILL.md', content: '# Complete review\nSee references/guide.md. Literal @@AgentName.\n' },
+      { path: 'references/guide.md', content: 'Inspect assets/sample.bin and scripts/check.sh without executing them.\n' },
+      { path: 'assets/sample.bin', content: 'AAECA/7/', encoding: 'base64' },
+      { path: 'scripts/check.sh', content: '#!/bin/sh\nexit 64\n', executable: true },
+    ],
+  } });
+  const fixtureBlock = await catalog.createAsset({ kind: 'block', name: 'Supplemental review role', payload: { content: 'Synthetic role, no execution.' } });
+  const skillTemplate = await catalog.createAsset({ kind: 'template', name: 'Template skill exclusion review', payload: {
+    entries: [{ entryId: 'role', blockId: fixtureBlock.id, blockRevision: 1 }], subagents: [], skills: [completeSkill.id], mcps: [],
+  } });
+  const native = await catalog.createAsset({ kind: 'subagent', name: 'Unsupported native fixture', owner: { kind: 'agent', agentId: NATIVE_REVIEW_AGENT }, payload: {
+    agentName: 'review-native', description: 'Synthetic unsupported editor target',
+    blocks: [{ entryId: 'role', blockId: fixtureBlock.id, blockRevision: 1 }], skills: [], mcps: [],
+  } });
+  const mcp = await catalog.createAsset({ kind: 'mcp', name: 'Unsupported MCP fixture', payload: {
+    serverKey: 'review-disabled', transport: 'stdio', command: '/nonexistent/review-never-execute',
+  } });
+  const supplements = [
+    { agentId: SKILL_REVIEW_AGENT, composition: { ...emptyComposition(),
+      template: { templateId: skillTemplate.id, acceptedRevision: 1 }, entries: [{ baseEntryId: 'role', source: { kind: 'follow' as const } }] } },
+    { agentId: NATIVE_REVIEW_AGENT, composition: { ...emptyComposition(), subagents: [{ localId: 'native', source: { kind: 'local' as const, subagentId: native.id } }] } },
+    { agentId: MCP_REVIEW_AGENT, composition: { ...emptyComposition(), additions: [mcp.id] } },
+  ];
+  for (const { agentId, composition } of supplements) {
+    const request = { agentId, projectId: REVIEW_PROJECT, adoption };
+    const plan = await catalog.plan({ ...request, draft: composition });
+    await catalog.saveComposition({ ...request, composition, expectedRevision: 1, previewFingerprint: plan.fingerprint });
+  }
+  const coverage = { skillAgent: SKILL_REVIEW_AGENT, nativeAgent: NATIVE_REVIEW_AGENT, mcpAgent: MCP_REVIEW_AGENT,
+    completeSkill: completeSkill.id, skillTemplate: skillTemplate.id };
   // Creates valid frozen/pinned metadata through the same service; no launch/lease is invoked.
   // This Darwin evidence is fixture data. Actual app entry still rejects non-macOS delivery.
   const capability = await establishDeliveryCapability(binary, 'darwin');
@@ -99,7 +139,7 @@ exit 64
   const seeded: ActivationReceipt = { ...state, revision: 1, desired: examples[0].id, materialized: examples[1].id,
     generations: Object.fromEntries(examples.map((item) => [item.id, item])) };
   await json(path.join(base, 'managed-activation', selected.id, 'state.json'), seeded);
-  const manifest = { sourceHead, root, profile, project, binary, reviewAgent: REVIEW_AGENT, seededAgent: SEEDED_AGENT };
+  const manifest = { sourceHead, root, profile, project, binary, reviewAgent: REVIEW_AGENT, seededAgent: SEEDED_AGENT, coverage };
   await json(path.join(root, 'review-manifest.json'), manifest);
   await fs.writeFile(path.join(root, 'README.txt'), 'VISUAL FIXTURE ONLY. NO REAL CLI OR LIVE AGENTS.\nThe seeded-receipts agent contains synthetic presentation samples. No process, exit, private publication or receipt failure was observed. No private generation files were staged.\nThe review-agent starts with saved catalog blocks/skill but no adoption receipt. Its human preview/adopt/unassign use ordinary production IPC and private fake CLI help/version only.\nDo not Start, wake, resume, sign in, or probe a provider.\n');
   return manifest;

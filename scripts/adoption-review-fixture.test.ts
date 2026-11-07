@@ -9,6 +9,7 @@ vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => W.profile 
 vi.mock('../src/main/services/log-service', () => ({ appLog: vi.fn() }));
 import { prepareAdoptionReviewFixture, REVIEW_AGENT, SEEDED_AGENT, REVIEW_PROJECT } from './adoption-review-fixture';
 import { createAssetCatalogStore } from '../src/main/services/asset-catalog/store';
+import { createAgentBuilder, builderSnapshotAdoption } from '../src/main/services/asset-catalog/builder';
 import { createManagedActivationService } from '../src/main/services/managed-activation/service';
 import { establishDeliveryCapability } from '../src/main/services/managed-activation/capability';
 const execute = promisify(execFile);
@@ -21,6 +22,31 @@ it.skipIf(process.platform === 'win32')('prepares isolated saved selection and c
   const fixture = await prepareAdoptionReviewFixture(root, head);
   const catalog = createAssetCatalogStore({ dir: path.join(fixture.profile, '.clubhouse-dev/asset-catalog') });
   const index = await catalog.read(); expect(index.compositions[REVIEW_AGENT].revision).toBe(1);
+  const complete = await catalog.readRevision(fixture.coverage.completeSkill, 1);
+  expect(complete).toMatchObject({ files: expect.arrayContaining([
+    { path: 'assets/sample.bin', content: 'AAECA/7/', encoding: 'base64' },
+    { path: 'scripts/check.sh', content: '#!/bin/sh\nexit 64\n', executable: true },
+  ]) });
+  const builder = createAgentBuilder(catalog, REVIEW_PROJECT);
+  const skillComposition = await builder.compositionOf(fixture.coverage.skillAgent);
+  const held = await builderSnapshotAdoption(catalog, skillComposition);
+  const skillView = await builder.read(fixture.coverage.skillAgent, held);
+  expect(skillView.skills?.map((item) => item.assetId)).toContain(fixture.coverage.completeSkill);
+  const removedPreview = await builder.command(fixture.coverage.skillAgent, skillView.revision,
+    { type: 'removeSkill', assetId: fixture.coverage.completeSkill, confirm: false }, held);
+  const removed = await builder.command(fixture.coverage.skillAgent, skillView.revision,
+    { type: 'removeSkill', assetId: fixture.coverage.completeSkill, confirm: true, fingerprint: removedPreview.skillFingerprint }, held);
+  expect(removed.excludedSkills?.map((item) => item.assetId)).toContain(fixture.coverage.completeSkill);
+  const restore = { type: 'skill' as const, assetId: fixture.coverage.completeSkill, expectedRevision: 1, confirm: false };
+  const restoredPreview = await builder.command(fixture.coverage.skillAgent, removed.revision, restore, held);
+  const restored = await builder.command(fixture.coverage.skillAgent, removed.revision,
+    { ...restore, confirm: true, fingerprint: restoredPreview.skillFingerprint }, held);
+  expect(restored.skills?.map((item) => item.assetId)).toContain(fixture.coverage.completeSkill);
+  expect(await catalog.readRevision(fixture.coverage.completeSkill, 1)).toEqual(complete);
+  for (const id of [fixture.coverage.nativeAgent, fixture.coverage.mcpAgent]) {
+    await expect(builderSnapshotAdoption(catalog, await builder.compositionOf(id))).rejects.toMatchObject({ code: 'unsupported' });
+  }
+
   const service = createManagedActivationService({ dir: path.join(fixture.profile, '.clubhouse-dev/managed-activation'), catalog, platform: 'darwin' });
   expect(await service.read(REVIEW_AGENT)).toBeNull();
   const seeded = (await service.read(SEEDED_AGENT))!;
