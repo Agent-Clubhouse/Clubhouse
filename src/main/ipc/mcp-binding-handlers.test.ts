@@ -124,6 +124,7 @@ import { helperWireBindingSource, watchHelperWires } from '../services/helper-wi
 import { orchestratorConnectionSource, watchOrchestratorConnections } from '../services/orchestrator-connections';
 import { dispatcherConnectionSource, isRemovalUnsaved } from '../services/dispatcher-connections';
 import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/dispatcher-wire-source';
+import { registerAgentTools } from '../services/clubhouse-mcp/tools/agent-tools';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import {
   registerMcpBindingHandlers,
@@ -148,6 +149,7 @@ beforeEach(() => {
     return undefined as any;
   });
   _resetHandlersForTesting();
+  vi.mocked(isMcpEnabledForAny).mockReturnValue(true);
   registerMcpBindingHandlers();
   mockGet.mockReset();
   mockFromWebContents.mockReset();
@@ -193,13 +195,41 @@ describe('mcp-binding-handlers registration', () => {
     expect(vi.mocked(ipcMain.handle).mock.calls.length).toBe(callCount);
   });
 
-  it('does not register when MCP is disabled', () => {
+  it('registers only an empty read when MCP is disabled, without starting services', () => {
     vi.mocked(isMcpEnabledForAny).mockReturnValue(false);
     handlers.clear();
-    vi.mocked(ipcMain.handle).mockClear();
+    vi.clearAllMocks();
     _resetHandlersForTesting();
     registerMcpBindingHandlers();
-    expect(ipcMain.handle).not.toHaveBeenCalled();
+    registerMcpBindingHandlers();
+    expect([...handlers.keys()]).toEqual([IPC.MCP_BINDING.GET_BINDINGS]);
+    expect(ipcMain.handle).toHaveBeenCalledTimes(1);
+    expect(getHandler(IPC.MCP_BINDING.GET_BINDINGS)()).toEqual([]);
+    expect(bindingManager.getAllBindings).not.toHaveBeenCalled();
+    expect(bindingManager.onChange).not.toHaveBeenCalled();
+    expect(registerAgentTools).not.toHaveBeenCalled();
+    expect(registerConnectionTools).not.toHaveBeenCalled();
+    expect(bridgeServer.start).not.toHaveBeenCalled();
+  });
+
+  it('keeps the same read across disabled-to-enabled registration without duplicates', () => {
+    vi.mocked(isMcpEnabledForAny).mockReturnValue(false);
+    handlers.clear();
+    vi.clearAllMocks();
+    _resetHandlersForTesting();
+    registerMcpBindingHandlers();
+    const read = getHandler(IPC.MCP_BINDING.GET_BINDINGS);
+    expect(read()).toEqual([]);
+    vi.mocked(isMcpEnabledForAny).mockReturnValue(true);
+    registerMcpBindingHandlers();
+    expect(getHandler(IPC.MCP_BINDING.GET_BINDINGS)).toBe(read);
+    expect(vi.mocked(ipcMain.handle).mock.calls.filter(([channel]) => channel === IPC.MCP_BINDING.GET_BINDINGS)).toHaveLength(1);
+    expect(handlers.has(IPC.MCP_BINDING.BIND)).toBe(true);
+    read();
+    expect(bindingManager.getAllBindings).toHaveBeenCalledTimes(1);
+    vi.mocked(isMcpEnabledForAny).mockReturnValue(false);
+    expect(read()).toEqual([]);
+    expect(bindingManager.getAllBindings).toHaveBeenCalledTimes(1);
   });
 
   it('subscribes to binding onChange for broadcast', () => {

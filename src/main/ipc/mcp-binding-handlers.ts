@@ -90,12 +90,21 @@ function broadcastBindingsChanged(): void {
   broadcastToAllWindows(IPC.MCP_BINDING.BINDINGS_CHANGED, bindingManager.getAllBindings());
 }
 
+let bindingReadRegistered = false;
 let handlersRegistered = false;
 
 export function registerMcpBindingHandlers(): void {
+  // Renderer startup always reads this snapshot, even when MCP is disabled.
+  // Registering the empty disabled read must not start tools, watchers or bridge.
+  if (!bindingReadRegistered) {
+    ipcMain.handle(IPC.MCP_BINDING.GET_BINDINGS, () => (
+      isMcpEnabledForAny() ? bindingManager.getAllBindings() : []
+    ));
+    bindingReadRegistered = true;
+  }
   if (handlersRegistered) return; // Already registered — idempotent
   if (!isMcpEnabledForAny()) {
-    return; // Feature not enabled for any project — don't register handlers
+    return; // Keep mutation handlers and MCP services gated.
   }
 
   handlersRegistered = true;
@@ -131,10 +140,6 @@ export function registerMcpBindingHandlers(): void {
   // Subscribe to binding changes for renderer broadcast
   bindingManager.onChange(() => {
     broadcastBindingsChanged();
-  });
-
-  ipcMain.handle(IPC.MCP_BINDING.GET_BINDINGS, () => {
-    return bindingManager.getAllBindings();
   });
 
   ipcMain.handle(IPC.MCP_BINDING.BIND, withValidatedArgs(
@@ -361,6 +366,7 @@ export function restorePersistedBindings(): Promise<void> {
 
 /** For testing only: reset the registration guard so handlers can be re-registered. */
 export function _resetHandlersForTesting(): void {
+  bindingReadRegistered = false;
   handlersRegistered = false;
   persistedSourcesRegistered = false;
   stopWatchingHelperWires?.();
