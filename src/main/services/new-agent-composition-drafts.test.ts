@@ -126,6 +126,7 @@ it.each([false, true])('binds selected block revisions through real creation (so
       expect(after.compositions[run.agentId]).toBeUndefined();
       expect(records.find((row: { id: string }) => row.id === run.agentId).creation.state).toBe('failed');
     } else {
+      expect(after.compositions[run.agentId].floors[block.id]).toBe(block.headRevision);
       expect(after.compositions[run.agentId].entries.at(-1)?.source).toEqual({ kind: 'follow', blockId: block.id });
       expect(records.find((row: { id: string }) => row.id === run.agentId).creation).toBeUndefined();
     }

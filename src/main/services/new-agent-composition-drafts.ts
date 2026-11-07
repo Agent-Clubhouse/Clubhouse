@@ -76,6 +76,9 @@ export async function previewNewAgentComposition(
         ...projection.entries.map((ref) => ({ baseEntryId: ref.entryId, source: { kind: 'follow' as const } })),
         ...blockIds.map((blockId) => ({ localId: randomUUID(), source: { kind: 'follow' as const, blockId } })),
       ],
+      // Direct shared references require an explicit accepted floor; template
+      // entries derive theirs from the accepted template revision instead.
+      floors: Object.fromEntries(blockIds.map((id) => [id, index.assets[id].headRevision])),
       additions: unique,
     };
     const adoption = await builderSnapshotAdoption(store, composition);
