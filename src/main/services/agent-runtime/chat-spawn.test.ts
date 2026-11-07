@@ -8,8 +8,6 @@ import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from '../../util
 
 const checkCopilotHooks = vi.hoisted(() => vi.fn(async (_cwd: string) => {}));
 vi.mock('../../orchestrators/copilot-hooks-config', () => ({ assertNoCopilotTerminalHooksForChat: checkCopilotHooks }));
-const previewEligibility = vi.hoisted(() => ({ value: true }));
-vi.mock('../preview-eligible', () => ({ isPreviewEligible: () => previewEligibility.value }));
 const mode = vi.hoisted(() => ({ value: { mode: 'chat' } as { mode: 'chat' | 'terminal'; driver?: string } }));
 vi.mock('../../util/shell', async (importActual) => ({
   ...await importActual<typeof import('../../util/shell')>(),
@@ -104,7 +102,6 @@ function ev(partial: Partial<ChatEvent> & Pick<ChatEvent, 'type' | 'data' | 'ses
 }
 
 beforeEach(() => {
-  previewEligibility.value = true;
   vi.clearAllMocks();
   clearChatDrivers();
   clearChatRuntimes();
@@ -506,89 +503,58 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       return { sdk, stream };
     }
 
-    describe('standard Copilot SDK with explicit legacy selection', () => {
+    describe('Copilot SDK, the only Copilot chat driver (#2868)', () => {
       const copilot = { ...provider, id: 'copilot-cli' } as unknown as OrchestratorProvider;
-      function copilotDrivers() {
-        const acp = new FakeChatDriver('copilot_acp', 'copilot-cli');
-        const sdk = Object.assign(new FakeChatDriver('copilot_sdk', 'copilot-cli'), { optIn: true });
-        registerChatDriver(acp);
+      function copilotDriver() {
+        const sdk = new FakeChatDriver('copilot_sdk', 'copilot-cli');
         registerChatDriver(sdk);
-        return { acp, sdk };
+        return sdk;
       }
 
-      it.each(['copilot_acp', 'copilot_sdk'])('refuses duplicate terminal callbacks before starting %s', async (driver) => {
-        const { acp, sdk } = copilotDrivers();
-        mode.value = { mode: 'chat', driver };
+      it('refuses duplicate terminal callbacks before starting', async () => {
+        const sdk = copilotDriver();
+        mode.value = { mode: 'chat', driver: 'copilot_sdk' };
         checkCopilotHooks.mockRejectedValueOnce(new Error('callbacks could be duplicated'));
         await expect(tryStartChatAgent(params, copilot, undefined, undefined, null)).rejects.toThrow('callbacks could be duplicated');
-        expect(acp.sessions).toHaveLength(0);
         expect(sdk.sessions).toHaveLength(0);
       });
 
-      it('uses SDK when nothing is chosen', async () => {
-        const { acp, sdk } = copilotDrivers();
-        expect(await tryStartChatAgent(params, copilot, undefined, undefined, null)).toBe('chat');
-        expect(acp.sessions).toHaveLength(0);
-        expect(sdk.sessions).toHaveLength(1);
-      });
-
-      it('is not a fallback for someone on ACP', async () => {
-        const { acp, sdk } = copilotDrivers();
-        mode.value = { mode: 'chat', driver: 'copilot_acp' };
-        const probe = vi.spyOn(sdk, 'probe');
-        acp.probe = async () => ({ handshakeOk: false, capabilities: acp.capabilities, error: 'no' });
-        expect(await tryStartChatAgent(params, copilot, undefined, undefined, null)).toBe('terminal');
-        expect(probe).not.toHaveBeenCalled();
-        expect(sdk.sessions).toHaveLength(0);
-      });
-
-      it('runs when chosen', async () => {
-        const { acp, sdk } = copilotDrivers();
-        mode.value = { mode: 'chat', driver: 'copilot_sdk' };
+      it('uses the SDK when nothing is chosen', async () => {
+        const sdk = copilotDriver();
         expect(await tryStartChatAgent(params, copilot, undefined, undefined, null)).toBe('chat');
         expect(sdk.sessions).toHaveLength(1);
-        expect(acp.sessions).toHaveLength(0);
       });
 
       it.each([
         ['a failed handshake', { handshakeOk: false, error: 'protocol mismatch' }, 'handshake failed: protocol mismatch'],
         ['a CLI below its floor', { handshakeOk: true, cliVersion: '1.0.82' }, 'older than chat supports (1.0.83 or newer)'],
-      ])('never probes ACP on %s, and reports the explicit recovery route', async (_name, probe, why) => {
-        const { acp, sdk } = copilotDrivers();
-        const acpProbe = vi.spyOn(acp, 'probe');
+      ])('opens the CLI view on %s, and says how to try chat again', async (_name, probe, why) => {
+        const sdk = copilotDriver();
         mode.value = { mode: 'chat', driver: 'copilot_sdk' };
         sdk.probe = async () => ({ capabilities: sdk.capabilities, ...probe }) as never;
         expect(await tryStartChatAgent(params, copilot, undefined, undefined, null)).toBe('terminal');
         expect(sdk.sessions).toHaveLength(0);
-        expect(acp.sessions).toHaveLength(0);
-        expect(toasts()[0].message).toContain('Use legacy Copilot ACP');
         expect(toasts()[0].message).toContain(why);
-        expect(acpProbe).not.toHaveBeenCalled();
+        expect(toasts()[0].message).toContain('restart the agent to try chat again');
+        expect(toasts()[0].message).not.toMatch(/ACP/);
         const logged = vi.mocked(appLog).mock.calls.map(([, , msg, opts]) => ({ msg, meta: opts?.meta as Record<string, unknown> }));
         expect(logged.find((l) => l.msg === 'Chat driver check' && l.meta.driver === 'copilot_sdk')?.meta).toMatchObject({ ok: false, reason: expect.stringContaining(why) });
       });
 
-      it.each([true, false])('reports unavailable SDK with reachable recovery (preview=%s)', async (eligible) => {
-        previewEligibility.value = eligible;
-        const acp = new FakeChatDriver('copilot_acp', 'copilot-cli');
-        registerChatDriver(acp);
-        const acpProbe = vi.spyOn(acp, 'probe');
+      it('reports an unregistered SDK driver and opens the CLI view', async () => {
         mode.value = { mode: 'chat', driver: 'copilot_sdk' };
         expect(await tryStartChatAgent(params, copilot, undefined, undefined, null)).toBe('terminal');
-        expect(acp.sessions).toHaveLength(0);
         expect(toasts()[0]).toMatchObject({ code: 'fallback', message: expect.stringContaining('Copilot SDK is not registered') });
+        expect(toasts()[0].message).not.toMatch(/ACP/);
         expect(notices()).toEqual([]);
-        expect(acpProbe).not.toHaveBeenCalled();
-        expect(toasts()[0].message).toContain('Use legacy Copilot ACP');
-        if (!eligible) expect(toasts()[0].message).toContain('Settings > Updates');
       });
 
-      it('sends a missing login to the CLI view rather than ACP', async () => {
-        const { acp, sdk } = copilotDrivers();
+      it('sends a missing login to the CLI view', async () => {
+        const sdk = copilotDriver();
         mode.value = { mode: 'chat', driver: 'copilot_sdk' };
         sdk.probe = async () => ({ handshakeOk: true, capabilities: sdk.capabilities, needsLogin: true, loginHint: 'Run copilot and use /login' });
         expect(await tryStartChatAgent(params, copilot, undefined, undefined, null)).toBe('terminal');
-        expect(acp.sessions).toHaveLength(0);
+        expect(sdk.sessions).toHaveLength(0);
       });
     });
 
@@ -926,9 +892,9 @@ describe('chat start facts for telemetry (#2304)', () => {
   });
 
   it('records whether a requested resume was honored, and the driver\'s load timings', async () => {
-    const driver = new FakeChatDriver('copilot_acp', 'claude-code');
+    const driver = new FakeChatDriver('claude_stream_json', 'claude-code');
     const realStart = driver.start.bind(driver);
-    // Like the ACP driver after a stalled session/load: a fresh session, with the load's timings.
+    // A driver that times its native session load and gave up on it: a fresh session, with the load's timings.
     driver.start = async (opts) => Object.assign(await realStart({ ...opts, resumeNativeSessionId: undefined }), { resumeTiming: { loadMs: 20_000 } });
     registerChatDriver(driver);
     const f = facts();

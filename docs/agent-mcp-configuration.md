@@ -32,8 +32,8 @@ is off for that agent.
 The sidebar's **configured** count summarizes configuration files and launch-wrapper
 selections. It is not proof of delivery, transport support, authentication or a
 connection. The map handed to a driver is a delivery boundary; the driver still
-negotiates transports and reports connection state. For example, the ACP driver
-already reports unsupported stdio servers explicitly when the agent refuses them.
+negotiates transports and reports connection state. For example, the Copilot SDK
+driver reports each server's connection state, and a server it couldn't send.
 No save or configuration read probes a server.
 
 ## Codex local TOML limitation

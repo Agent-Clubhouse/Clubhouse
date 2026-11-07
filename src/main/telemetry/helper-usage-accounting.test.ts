@@ -49,7 +49,7 @@ describe('turn samples', () => {
   });
 
   it('a turn with no usage is a missing sample, not zeros', () => {
-    const t = new RunUsageTracker('acp');
+    const t = new RunUsageTracker('claude_agent_sdk');
     const sample = turn(t, 'a', 0);
     expect(sample).toMatchObject({ completeness: 'none', figures: {} });
     expect(t.counts).toMatchObject({ turns: 1, turnsMissing: 1 });
@@ -61,7 +61,7 @@ describe('turn samples', () => {
   });
 
   it('two distinct turns with no turn id and equal usage are both counted: equal figures prove nothing', () => {
-    const t = new RunUsageTracker('copilot_acp');
+    const t = new RunUsageTracker('claude_agent_sdk');
     const a = turn(t, undefined, 0, undefined, { stopReason: 'end_turn', usage: { input: 5, output: 5 } });
     const b = turn(t, undefined, 5000, undefined, { stopReason: 'end_turn', usage: { input: 5, output: 5 } });
     expect(a).toMatchObject({ dedup: 'none', turnIndex: 1, figures: { input: 5, output: 5 } });
@@ -140,7 +140,7 @@ describe('closing samples', () => {
   });
 
   it('claims no inclusive total across a reset, even where a driver documents thread-only coverage', () => {
-    const t = new RunUsageTracker('acp');
+    const t = new RunUsageTracker('claude_agent_sdk');
     t.usage({ scope: 'session', coverage: 'main', threadId: 'main', tokens: { input: 100, output: 10 } }, undefined);
     t.usage({ scope: 'session', coverage: 'main', threadId: 'sub', subagentId: 'sub', tokens: { input: 5, output: 1 } }, undefined);
     t.usage({ scope: 'session', coverage: 'main', threadId: 'main', tokens: { input: 10, output: 1 } }, undefined);
@@ -148,13 +148,13 @@ describe('closing samples', () => {
   });
 
   it('a driver that gives no scope or identity is unscoped with dedup none', () => {
-    const t = new RunUsageTracker('acp');
+    const t = new RunUsageTracker('claude_agent_sdk');
     t.usage({ scope: 'session', tokens: { total: 5 } as never }, undefined);
     expect(t.finalSamples(1)[0]).toMatchObject({ scope: 'unscoped', dedup: 'none' });
   });
 
   it('no running totals, no closing sample', () => {
-    expect(new RunUsageTracker('acp').finalSamples(1)).toEqual([]);
+    expect(new RunUsageTracker('claude_agent_sdk').finalSamples(1)).toEqual([]);
   });
 });
 
@@ -175,7 +175,7 @@ describe('who did the arithmetic', () => {
   const ended = { stopReason: 'end_turn' as const, usage: { input: 3, output: 1 } };
   it('labels a provider turn, our sum of calls, and our difference of running totals apart', () => {
     expect(turn(new RunUsageTracker('claude_agent_sdk'), 'a', 0, undefined, ended)!.source).toBe('provider_turn');
-    expect(turn(new RunUsageTracker('acp'), 'a', 0, undefined, ended)!.source).toBe('provider_turn');
+    expect(turn(new RunUsageTracker('claude_agent_sdk'), 'a', 0, undefined, ended)!.source).toBe('provider_turn');
     expect(turn(new RunUsageTracker('copilot_sdk'), 'a', 0, undefined, ended)!.source).toBe('summed_calls');
     expect(turn(new RunUsageTracker('codex_app_server'), 'a', 0, undefined, ended)!.source).toBe('cumulative_delta');
   });
@@ -234,7 +234,7 @@ describe('synthesized inclusive totals', () => {
   const scopes = (t: RunUsageTracker) => t.finalSamples(1).map((s) => s.scope);
 
   it('is made from proven-disjoint threads that all report the same figures', () => {
-    const t = new RunUsageTracker('acp');
+    const t = new RunUsageTracker('claude_agent_sdk');
     t.subagentDeclared('sub');
     thread(t, 'main', { input: 100, output: 10 });
     thread(t, 'sub', { input: 5, output: 1 }, { subagentId: 'sub' });
@@ -243,7 +243,7 @@ describe('synthesized inclusive totals', () => {
 
   it('is left out when the parent is already inclusive or its coverage unknown: only the parent\'s own sample remains, never a sum', () => {
     for (const coverage of ['inclusive', undefined] as const) {
-      const t = new RunUsageTracker('acp');
+      const t = new RunUsageTracker('claude_agent_sdk');
       thread(t, 'main', { input: 100, output: 10 }, { coverage });
       thread(t, 'sub', { input: 5, output: 1 }, { subagentId: 'sub' });
       // A parent that reports `inclusive` keeps its own original sample under that scope; what must not exist is a made-up total.
@@ -255,28 +255,28 @@ describe('synthesized inclusive totals', () => {
   });
 
   it('is left out when a child\'s coverage is unknown', () => {
-    const t = new RunUsageTracker('acp');
+    const t = new RunUsageTracker('claude_agent_sdk');
     thread(t, 'main', { input: 100, output: 10 });
     thread(t, 'sub', { input: 5, output: 1 }, { subagentId: 'sub', coverage: undefined });
     expect(scopes(t)).toEqual(['main']);
   });
 
   it('is left out when a child leaves out a figure the parent reports: no sum may hide a partial contributor', () => {
-    const t = new RunUsageTracker('acp');
+    const t = new RunUsageTracker('claude_agent_sdk');
     thread(t, 'main', { input: 100, output: 10, reasoning: 4 });
     thread(t, 'sub', { input: 5, output: 1 }, { subagentId: 'sub' });
     expect(scopes(t)).toEqual(['main']);
   });
 
   it('is left out when a child reports only half the figures', () => {
-    const t = new RunUsageTracker('acp');
+    const t = new RunUsageTracker('claude_agent_sdk');
     thread(t, 'main', { input: 100, output: 10 });
     thread(t, 'sub', { output: 1 }, { subagentId: 'sub' });
     expect(scopes(t)).toEqual(['main']);
   });
 
   it('is left out when a declared subagent never reported', () => {
-    const t = new RunUsageTracker('acp');
+    const t = new RunUsageTracker('claude_agent_sdk');
     t.subagentDeclared('quiet');
     thread(t, 'main', { input: 100, output: 10 });
     thread(t, 'sub', { input: 5, output: 1 }, { subagentId: 'sub' });
@@ -284,7 +284,7 @@ describe('synthesized inclusive totals', () => {
   });
 
   it('is left out with no thread names, since they cannot be told apart', () => {
-    const t = new RunUsageTracker('acp');
+    const t = new RunUsageTracker('claude_agent_sdk');
     t.usage({ scope: 'session', coverage: 'main', tokens: { input: 100, output: 10 } }, undefined);
     t.usage({ scope: 'session', coverage: 'main', subagentId: 'sub', tokens: { input: 5, output: 1 } }, undefined);
     expect(scopes(t)).not.toContain('inclusive');

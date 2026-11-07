@@ -10,7 +10,7 @@
  * `if (runtime === ...)` branches.
  *
  * `ChatDriver` / `ChatDriverSession` are what a protocol transport implements
- * (Claude Agent SDK or stream-json, Codex app-server, Copilot ACP or SDK). The
+ * (Claude Agent SDK or stream-json, Codex app-server, Copilot SDK). The
  * chat runtime owns the session lifecycle, stamps envelopes, writes the
  * transcript and publishes events; drivers only translate protocol traffic.
  *
@@ -201,8 +201,7 @@ export interface ChatDriverStartOptions {
   /**
    * Continue this native session instead of starting a new one. Clubhouse's
    * transcript already holds the history, so a driver whose resume replays it
-   * (ACP session/load) must swallow the replayed updates rather than re-emit
-   * them as new events.
+   * must swallow the replayed updates rather than re-emit them as new events.
    */
   resumeNativeSessionId?: string;
   /** MCP servers to attach, keyed by name (the Clubhouse bridge plus project servers). */
@@ -210,7 +209,7 @@ export interface ChatDriverStartOptions {
   /**
    * HTTP endpoints serving the same server as a stdio entry in `mcpServers`,
    * keyed by that entry's name. A driver whose agent takes HTTP MCP servers
-   * (ACP agents that advertise `mcpCapabilities.http`) sends the endpoint
+   * (Copilot) sends the endpoint
    * instead of the stdio command. Header values are named by env var and
    * resolved from `env`, so secrets such as the agent's nonce stay out of
    * this object (#2240).
@@ -249,7 +248,7 @@ export interface ChatDriverSession {
    */
   readonly nativeSessionId: string | undefined;
   readonly capabilities: ChatCapabilities;
-  /** How long loading the requested native session took, when the driver times it (ACP). */
+  /** How long loading the requested native session took, when the driver times it. */
   readonly resumeTiming?: ChatResumeTiming;
   /**
    * Set when a resume was asked for and the driver started a fresh session

@@ -48,16 +48,14 @@ export interface RichChatOptions {
   /** Explicit run-only bootstrap; runner pins artifacts and owns the receipt. */
   reviewEntry?: ReviewEntry;
   cli: ChatFixtureCli;
-  /** Existing Copilot scripts speak ACP. SDK coverage is a separate, explicit
-   * multi-turn recording replay with the legacy flag absent by default. */
-  copilotTransport?: 'acp' | 'sdk';
   /**
    * A script for this test (or a function of the test's folders, for scripts
-   * that name files in them), or the name of a committed fixture.
+   * that name files in them), or the name of a committed fixture. Copilot's
+   * speak the SDK protocol (test/chat-fixtures/copilot-sdk), with a synthetic
+   * login (copilot-sdk-fixture.ts).
    */
   script: ChatScript | string | ((dirs: { projectDir: string; outsideDir: string }) => ChatScript);
-  /** Additional flags set through IPC before chat opens. ACP fixtures already
-   * opt into legacy ACP; Chat and rich content remain on by default. */
+  /** Flags set through IPC before chat opens. Chat and rich content are on by default. */
   flags?: Record<string, boolean>;
   /** Files to create in the project before it is added, keyed by relative path. */
   projectFiles?: Record<string, SeedFile>;
@@ -99,7 +97,7 @@ export interface RichChat {
   projectDir: string;
   /** A temp folder outside the project, removed with it. */
   outsideDir: string;
-  /** Copilot only: the COPILOT_HOME the app was launched with (the script's session journal lives here). */
+  /** Copilot only: the COPILOT_HOME the app was launched with, a folder of the test's own. */
   copilotHome?: string;
   fakes: FakeClis;
   /** Every GitHub reference lookup so far, in order. */
@@ -145,13 +143,9 @@ async function tempDir(prefix: string): Promise<string> {
 }
 
 export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
-  if (opts.cli !== 'copilot' && opts.copilotTransport) throw new Error('copilotTransport requires the Copilot fake');
-  const sdk = opts.cli === 'copilot' && opts.copilotTransport === 'sdk';
-  if (opts.cli === 'copilot' && opts.flags?.copilotLegacyAcp !== undefined && opts.flags.copilotLegacyAcp !== !sdk) {
-    throw new Error('copilotLegacyAcp contradicts the selected fake transport');
-  }
-  if (sdk && (opts.script !== 'multi-turn' || opts.projectFiles?.['.clubhouse/settings.json'] !== undefined)) {
-    throw new Error('SDK fake coverage requires multi-turn and its test-owned project profile');
+  const sdk = opts.cli === 'copilot';
+  if (sdk && opts.projectFiles?.['.clubhouse/settings.json'] !== undefined) {
+    throw new Error('Copilot fake coverage needs its test-owned project profile in .clubhouse/settings.json');
   }
   const root = await tempDir(`chat-rich-${opts.cli}-`);
   const projectDir = path.join(root, 'project');
@@ -182,17 +176,16 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
 
   let fixture: string;
   let copilotHome: string | undefined;
-  if (sdk) {
-    fixture = await writeAuthenticatedSdkFixture(scriptDir);
-  } else if (typeof opts.script === 'string') {
+  if (typeof opts.script === 'string') {
     fixture = opts.script;
   } else {
     const script = typeof opts.script === 'function' ? opts.script({ projectDir, outsideDir }) : opts.script;
-    ({ fixture, copilotHome } = await writeChatScript(scriptDir, 'script', buildChatScript(opts.cli, script)));
+    ({ fixture } = await writeChatScript(scriptDir, 'script', buildChatScript(opts.cli, script)));
   }
-  // Copilot always gets a home of its own, so the app never reads the
-  // runner's real ~/.copilot (session journals, resume checks).
-  if (opts.cli === 'copilot' && !copilotHome) {
+  if (sdk) {
+    fixture = await writeAuthenticatedSdkFixture(scriptDir, fixture);
+    // Copilot always gets a home of its own, so the app never reads the
+    // runner's real ~/.copilot (session state, resume checks).
     copilotHome = path.join(root, 'copilot-home');
     await fs.promises.mkdir(path.join(copilotHome, 'session-state'), { recursive: true });
   }
@@ -219,8 +212,7 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
   try {
     const app = await launchApp({
       ...(opts.reviewEntry && { executablePath: opts.reviewEntry.executablePath, args: [opts.reviewEntry.bootstrapPath] }),
-      // Local to ACP fixtures; never change the application's SDK default.
-      experimental: { newChrome: false, ...(opts.cli === 'copilot' && !sdk && { copilotLegacyAcp: true }) },
+      experimental: { newChrome: false },
       userDataFiles: {
         ...USER_DATA_FILES,
         ...(sdk && { 'profiles.json': { profiles: [{ id: sdkProfileId, name: 'SDK fake fixture', orchestrators: { 'copilot-cli': { env: sdkEnv } } }] } }),
@@ -244,17 +236,6 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
       expect(guard?.sessions).toBeGreaterThan(0);
     }
     if (opts.flags) await setExperimentalFlags(window, opts.flags);
-    if (opts.cli === 'copilot') {
-      const selection = await window.evaluate(async () => {
-        const app = (window as unknown as { clubhouse: { app: {
-          getExperimentalSettings(): Promise<Record<string, boolean>>;
-          isPreviewEligible(): Promise<boolean>;
-        } } }).clubhouse.app;
-        return { flags: await app.getExperimentalSettings(), preview: await app.isPreviewEligible() };
-      });
-      expect(selection.flags.copilotLegacyAcp === true).toBe(!sdk);
-      if (!sdk) expect(selection.preview, 'legacy ACP fixtures require preview eligibility').toBe(true);
-    }
 
     await addProject(electronApp, window, projectDir);
     const name = `rich-${opts.cli}-${Date.now()}`;
@@ -277,16 +258,16 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
     expect(report!.mismatch).toBeNull();
     expect(report!.consumed).toBeGreaterThan(0);
     if (opts.cli === 'copilot') {
-      expect(report!.protocol).toBe(sdk ? 'copilot-sdk' : 'acp');
-      expect(report!.argv).toEqual(expect.arrayContaining(sdk ? ['--headless', '--port', '0'] : ['--acp', '--stdio']));
-      expect(report!.argv).not.toContain(sdk ? '--acp' : '--headless');
+      // The Copilot SDK, the only Copilot chat driver (#2868), with no setting to choose it.
+      expect(report!.protocol).toBe('copilot-sdk');
+      expect(report!.argv).toEqual(expect.arrayContaining(['--headless', '--port', '0']));
       expect(report!.env.COPILOT_HOME).toBe(copilotHome);
       await expect.poll(() => window.evaluate(async (id) => {
         const events = await (window as unknown as { clubhouse: { chat: {
           readTranscript(agentId: string): Promise<Array<{ type: string; data?: { driver?: string } }>>;
         } } }).clubhouse.chat.readTranscript(id);
         return events.filter((event) => event.type === 'session_started').pop()?.data?.driver;
-      }, agentId), { timeout: TURN_TIMEOUT }).toBe(sdk ? 'copilot_sdk' : 'copilot_acp');
+      }, agentId), { timeout: TURN_TIMEOUT }).toBe('copilot_sdk');
     }
 
     const launched = electronApp;

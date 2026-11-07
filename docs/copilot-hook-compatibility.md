@@ -9,7 +9,6 @@ Copilot discovers `.github/hooks/hooks.json` even when Clubhouse's hook server i
 | Terminal | On | Clubhouse merges command hooks into the Copilot hook document, preserving custom entries and replacing its own entries on repeat writes. Hook changes require restart. |
 | Terminal | Off | Clubhouse does not inject command hooks. Existing custom hooks remain Copilot's configuration. |
 | SDK chat | On or off | Clubhouse uses the SDK event and permission callbacks, not its terminal hook injection. Configuration discovery remains enabled. |
-| ACP chat | On or off | Clubhouse uses ACP events and permission requests, not its terminal hook injection. |
 
 Chat startup refuses a hook document containing marked Clubhouse terminal callbacks, because those callbacks can overlap chat's protocol events. Stop the terminal agent and remove those marked callbacks before restarting chat; custom hooks are left intact. Disabling the hook server removes recognized Clubhouse entries from stopped agents and preserves a valid empty Copilot hooks object when needed. Conflicting permission documents are not rewritten.
 

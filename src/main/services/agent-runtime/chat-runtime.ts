@@ -487,7 +487,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     this.ended = true;
     this.clearIdleTimer();
     this.settleAllPermissions();
-    // Drivers that never echo (ACP) leave their keys behind; nothing can echo after the end.
+    // Drivers that never echo leave their keys behind; nothing can echo after the end.
     this.answeredHere.clear();
     await this.emit({ type: 'session_ended', data: { reason, exitCode, ...(message ? { message } : {}) } });
     await this.setState('sleeping');

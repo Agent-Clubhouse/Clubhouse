@@ -302,7 +302,7 @@ describe('a preview-only flag in a stable build', () => {
     });
   });
 
-  it('reports the new legacy choice separately from the retired SDK flag', async () => {
+  it('reads the removed legacy ACP choice as retired, and the retired SDK flag as saved (#2868)', async () => {
     writeApp('experimental-settings.json', { copilotSdk: false, copilotLegacyAcp: true });
     resetAllSettingsStoresForTests();
     packaged(false);
@@ -310,11 +310,8 @@ describe('a preview-only flag in a stable build', () => {
     const result = await read(dispatcher, { select: selection, detail: true });
     expect(result.targets[0].settings).toMatchObject({
       'app.system.experimental_copilot_sdk': { stored: false, effective: false, source: 'app' },
-      'app.system.experimental_copilot_legacy_acp': { stored: true, effective: true, source: 'app' },
+      'app.system.experimental_copilot_legacy_acp': { stored: null, effective: null, source: 'default' },
     });
-    packaged(true);
-    expect((await read(dispatcher, { select: selection, detail: true })).targets[0].settings)
-      .toMatchObject({ 'app.system.experimental_copilot_legacy_acp': { stored: true, effective: false, source: 'app' } });
   });
 
   it('reads Chat as off, and uncertain, while the file can\'t be read', async () => {

@@ -37,7 +37,7 @@ vi.mock('./dispatcher/dispatcher-service', async () => {
 import { resetAllSettingsStoresForTests } from './settings-store';
 import { getSettings, getSettingsForRenderer, getStoredSettings, isGraduatedFeatureOn, saveSettings } from './experimental-settings';
 import { isPreviewEligible } from './preview-eligible';
-import { isChatEnabled, isCopilotSdkEnabled, resolveRuntimeMode } from './chat-runtime-settings';
+import { isChatEnabled, resolveRuntimeMode } from './chat-runtime-settings';
 import { dispatcherEnablement, isDispatcherEnabled } from './dispatcher/dispatcher-settings';
 import { dispatcherCapability } from './mobile-dispatcher';
 import { applyExportGraduation, getTelemetrySettings } from '../telemetry/settings';
@@ -163,7 +163,7 @@ describe('chat and rich content, in any build', () => {
 describe('the preview-only list', () => {
   it('names each feature by the same key its reader uses', () => {
     expect([...PREVIEW_ONLY_EXPERIMENTAL_FLAGS].sort()).toEqual([
-      'goobers', COPILOT_SDK_FLAG, 'copilotLegacyAcp',
+      'goobers', COPILOT_SDK_FLAG,
     ].sort());
   });
 });
@@ -276,7 +276,7 @@ describe('a packaged stable build with Preview off', () => {
   it('runs a Chat-mode agent in chat, with the standard Copilot SDK, and leaves its saved choices alone', () => {
     const saved = bytes(CHAT_RUNTIME_FILE);
     expect(isChatEnabled()).toBe(true);
-    expect(isCopilotSdkEnabled()).toBe(true);
+    expect(resolveRuntimeMode('copilot-cli', 'chat')).toEqual({ mode: 'chat', driver: 'copilot_sdk' });
     expect(resolveRuntimeMode('claude-code', 'chat')).toEqual({ mode: 'chat' });
     expect(resolveRuntimeMode('claude-code')).toEqual({ mode: 'chat' });
     expect(bytes(CHAT_RUNTIME_FILE)).toBe(saved);
@@ -434,7 +434,7 @@ describe.each([
     expect(newChromeEnabled()).toBe(true);
     expect(uiChrome()).toBe('v2');
     expect(isChatEnabled()).toBe(true);
-    expect(isCopilotSdkEnabled()).toBe(true);
+    expect(resolveRuntimeMode('copilot-cli', 'chat')).toEqual({ mode: 'chat', driver: 'copilot_sdk' });
     expect(resolveRuntimeMode('claude-code').mode).toBe('chat');
     expect(isDispatcherEnabled()).toBe(true);
     expect(dispatcherCapability()).toMatchObject({ newLayout: true, flagOn: true, enabled: true });

@@ -5,7 +5,8 @@ vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 import { registerBuiltinChatDrivers } from './builtin-chat-drivers';
 import { appLog } from '../log-service';
 import { CodexChatDriver } from '../../orchestrators/adapters/codex-chat-driver';
-import { clearChatDrivers, registerChatDriver, listChatDrivers, resolveChatDriver } from './chat-drivers';
+import { clearChatDrivers, listChatDrivers, resolveChatDriver } from './chat-drivers';
+import type { ChatDriverId } from '../../../shared/chat';
 
 describe('registerBuiltinChatDrivers', () => {
   afterEach(() => clearChatDrivers());
@@ -16,7 +17,6 @@ describe('registerBuiltinChatDrivers', () => {
       'claude-code:claude_agent_sdk',
       'claude-code:claude_stream_json',
       'codex-cli:codex_app_server',
-      'copilot-cli:copilot_acp',
       'copilot-cli:copilot_sdk',
     ]);
     expect(resolveChatDriver('claude-code')?.id).toBe('claude_agent_sdk');
@@ -38,24 +38,12 @@ describe('registerBuiltinChatDrivers', () => {
     expect(appLog).toHaveBeenCalledWith('core:chat:codex', 'warn', 'no meta', undefined);
   });
 
-  it('uses SDK by default and preserves explicit legacy ACP', () => {
+  it('registers only the SDK driver for Copilot; the removed ACP id resolves to nothing (#2868)', () => {
     registerBuiltinChatDrivers();
     expect(resolveChatDriver('copilot-cli')?.id).toBe('copilot_sdk');
-    expect(resolveChatDriver('copilot-cli', 'copilot_acp')?.id).toBe('copilot_acp');
     expect(resolveChatDriver('copilot-cli', 'copilot_sdk')?.id).toBe('copilot_sdk');
-  });
-
-  it('never substitutes the other Copilot adapter when the selected one is missing', () => {
-    registerBuiltinChatDrivers();
-    const sdk = resolveChatDriver('copilot-cli', 'copilot_sdk')!;
-    const acp = resolveChatDriver('copilot-cli', 'copilot_acp')!;
-    clearChatDrivers();
-    registerChatDriver(acp);
-    expect(resolveChatDriver('copilot-cli')).toBeUndefined();
-    expect(resolveChatDriver('copilot-cli', 'copilot_sdk')).toBeUndefined();
-    clearChatDrivers();
-    registerChatDriver(sdk);
-    expect(resolveChatDriver('copilot-cli', 'copilot_acp')).toBeUndefined();
+    expect(resolveChatDriver('copilot-cli', 'copilot_acp' as ChatDriverId)).toBeUndefined();
+    expect(listChatDrivers().filter((d) => d.provider === 'copilot-cli')).toHaveLength(1);
   });
 
   it('unregisters what it registered', () => {

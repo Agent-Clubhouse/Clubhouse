@@ -107,7 +107,7 @@ export const NONCE_HEADER = 'X-Clubhouse-Nonce';
 /**
  * An agent's MCP endpoint (Streamable HTTP: POST JSON-RPC, JSON replies).
  * The stdio bridge script proxies to it; agents that take HTTP MCP servers
- * (Copilot over ACP, #2240) connect to it directly with {@link NONCE_HEADER}.
+ * (Copilot, #2240) connect to it directly with {@link NONCE_HEADER}.
  */
 export function agentEndpointUrl(port: number, agentId: string): string {
   return `http://127.0.0.1:${port}/mcp/${agentId}`;

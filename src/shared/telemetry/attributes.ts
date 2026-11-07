@@ -433,7 +433,7 @@ export const ATTR = {
   // closed enums only; never message text, tool inputs or paths.
   /** The chat transport, from the driver's `session_started` (research §7). */
   chatDriver: enumAttr('clubhouse.chat.driver', [
-    'claude_agent_sdk', 'claude_stream_json', 'codex_app_server', 'copilot_acp', 'copilot_sdk', 'acp',
+    'claude_agent_sdk', 'claude_stream_json', 'codex_app_server', 'copilot_sdk',
   ]),
   turnEndReason: enumAttr('clubhouse.turn.end_reason', ['complete', 'error', 'cancelled', 'timeout']),
   turnToolCalls: intAttr('clubhouse.turn.tool_calls'),
@@ -477,7 +477,7 @@ export const ATTR = {
    * reports the requested id until its init arrives.
    */
   chatResumeHonored: boolAttr('clubhouse.chat.resume_honored'),
-  /** A native session load (ACP `session/load`), request to answer or to giving up, in milliseconds (#2296). */
+  /** A native session load, request to answer or to giving up, in milliseconds, for a driver that times it (#2296). */
   chatResumeLoadMs: intAttr('clubhouse.chat.resume.load_ms'),
   /** The same load, request to its first replayed update, in milliseconds. */
   chatResumeFirstReplyMs: intAttr('clubhouse.chat.resume.first_reply_ms'),

@@ -319,7 +319,7 @@ class CodexChatSession implements ChatDriverSession {
       onUnrecognizedMessage: (message) => this.mapper.mapUnrecognized(message).forEach((e) => this.emit(e)),
       onExit: (code, signal) => {
         // Close out what the dead process can no longer finish, as the Claude
-        // and ACP drivers do: the running turn, then any open approvals.
+        // and Copilot drivers do: the running turn, then any open approvals.
         if (this.turnRunning) {
           // A turn the user already asked to stop (close or interrupt) ends
           // as cancelled even if the process dies before confirming it.

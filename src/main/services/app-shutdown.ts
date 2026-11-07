@@ -29,7 +29,7 @@ import { flushAllBulletinBoards } from './group-project-bulletin';
 import { restoreAll } from './config-pipeline';
 import { shutdownCompleted, shutdownStarted, shutdownStep } from '../telemetry/lifecycle';
 
-/** Past each driver's own close grace (ACP: 2s session close, then 5s). */
+/** Past each driver's own close grace (Copilot: 5s to detach, then 5s to stop). */
 const CHAT_STOP_TIMEOUT_MS = 10_000;
 /** killAll sends the exit command and SIGKILLs after 2s. */
 const PTY_STOP_TIMEOUT_MS = 5_000;

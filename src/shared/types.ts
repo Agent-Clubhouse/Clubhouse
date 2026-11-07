@@ -1016,6 +1016,13 @@ export interface ExperimentalSettings {
 export const STRUCTURED_MODE_REMOVED_NOTICE_KEY = 'structuredModeRemovedNotice';
 
 /**
+ * Set by the same migration when the removed `copilotLegacyAcp` opt-in was on
+ * (#2868), for a one-time notice that Copilot chat now uses the SDK. The
+ * renderer clears it after showing the notice.
+ */
+export const COPILOT_ACP_REMOVED_NOTICE_KEY = 'copilotLegacyAcpRemovedNotice';
+
+/**
  * Experimental features that count only in preview-eligible builds, where the
  * Experimental settings page is shown. Elsewhere they read as off and stay saved,
  * so a stable build never runs a feature it offers no way to turn off.
@@ -1024,7 +1031,6 @@ export const STRUCTURED_MODE_REMOVED_NOTICE_KEY = 'structuredModeRemovedNotice';
 export const PREVIEW_ONLY_EXPERIMENTAL_FLAGS: readonly string[] = [
   'goobers',
   'copilotSdk', // Legacy preference retained for downgrade compatibility only.
-  'copilotLegacyAcp',
 ];
 
 // --- Security settings ---

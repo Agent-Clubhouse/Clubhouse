@@ -1,20 +1,28 @@
 import { backupUnreadableSettings, createSettingsStore, latestRecoveryCopy, peekStoredSettingsSync } from './settings-store';
 import { isPreviewEligible } from './preview-eligible';
-import { PREVIEW_ONLY_EXPERIMENTAL_FLAGS, STRUCTURED_MODE_REMOVED_NOTICE_KEY, type ExperimentalSettings } from '../../shared/types';
+import { COPILOT_ACP_REMOVED_NOTICE_KEY, PREVIEW_ONLY_EXPERIMENTAL_FLAGS, STRUCTURED_MODE_REMOVED_NOTICE_KEY, type ExperimentalSettings } from '../../shared/types';
 import { RICH_CHAT_CONTENT_FLAG } from '../../shared/chat';
 import { NEW_CHROME_FLAG } from '../../shared/chrome-flag';
 import { isGraduatedFlagOn } from '../../shared/graduated-flags';
 
+/** Flags that were removed, and the marker each leaves when it was on. */
+const REMOVED_FLAGS: ReadonlyArray<[flag: string, notice: string]> = [
+  // Agents that used structured mode now run in Chat or the terminal.
+  ['structuredMode', STRUCTURED_MODE_REMOVED_NOTICE_KEY],
+  // The legacy Copilot ACP opt-in (#2868): Copilot chat now always uses the SDK.
+  ['copilotLegacyAcp', COPILOT_ACP_REMOVED_NOTICE_KEY],
+];
+
 /**
- * Drop the removed `structuredMode` flag. Agents that used structured mode now
- * run in the terminal; if the flag was on, leave a marker so the renderer can
- * tell the user once. Saving the migrated settings removes the old key from disk.
+ * Drop removed flags. If one was on, leave a marker so the renderer can tell
+ * the user once. Saving the migrated settings removes the old key from disk.
  */
 export function migrateExperimentalSettings(raw: Record<string, unknown>): ExperimentalSettings {
   const settings = { ...raw };
-  if ('structuredMode' in settings) {
-    if (settings.structuredMode === true) settings[STRUCTURED_MODE_REMOVED_NOTICE_KEY] = true;
-    delete settings.structuredMode;
+  for (const [flag, notice] of REMOVED_FLAGS) {
+    if (!(flag in settings)) continue;
+    if (settings[flag] === true) settings[notice] = true;
+    delete settings[flag];
   }
   return settings as ExperimentalSettings;
 }

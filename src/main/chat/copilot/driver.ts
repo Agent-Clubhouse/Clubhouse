@@ -113,7 +113,7 @@ function probeErrorCode(err: unknown): NonNullable<ChatDriverProbe['errorCode']>
 /**
  * The session's MCP servers. The Clubhouse bridge goes over HTTP with its nonce
  * header, resolved from `env` so it stays out of the config; stdio servers go
- * as they are. Copilot takes both here, unlike over ACP (#2240).
+ * as they are. Copilot takes both here (over ACP it refused stdio, #2240).
  */
 export function toSdkMcpServers(
   servers: Record<string, unknown> | undefined,
@@ -288,7 +288,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       streaming: true,
       workingDirectory: this.opts.cwd,
       // Off by default in the SDK. Without it the session ignores the user's own
-      // instructions, skills and MCP config, which Terminal and ACP both load.
+      // instructions, skills and MCP config, which Terminal loads.
       enableConfigDiscovery: true,
       ...(model && { model }),
       ...(this.opts.contextWindow && { contextTier: this.opts.contextWindow as SessionConfig['contextTier'] }),
@@ -314,7 +314,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     }
     this.sdk ??= await this.client.createSession(config);
     // Always sent, even if it looks right: a session opened on another driver or
-    // an earlier process can be in any mode, and ACP's stale values cost us #2174.
+    // an earlier process can be in any mode, and stale values cost us #2174.
     await this.sdk.rpc.mode.set({ mode: this.level === 'plan' ? 'plan' : 'interactive' }).catch((err: Error) => this.log('warn', 'Could not set the session mode', { error: err.message }));
     this.model = model ?? await this.sdk.rpc.model.getCurrent().then((c) => c.modelId, (err: Error): undefined => {
       this.log('warn', 'Could not read the current model', { error: err.message });
@@ -359,7 +359,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     this.commandsLoaded = this.loadCommands();
   }
 
-  /** What the composer offers: the same list ACP gets, less the commands that change access. */
+  /** What the composer offers: Copilot's own command list, less the commands that change access. */
   private async loadCommands(): Promise<void> {
     let listed: SlashCommandInfo[];
     try {
@@ -1011,7 +1011,8 @@ export interface CopilotSdkDriverOptions {
 
 /**
  * Copilot chat over `@github/copilot-sdk`, running the user's own `copilot`.
- * Standard Copilot adapter. A failed probe never selects legacy ACP automatically.
+ * The only Copilot chat driver since legacy ACP was removed (#2868): a failed
+ * probe opens the agent in the CLI view.
  */
 export class CopilotSdkChatDriver implements ChatDriver {
   readonly id = 'copilot_sdk' as const;

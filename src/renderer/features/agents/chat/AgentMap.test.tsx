@@ -5,7 +5,7 @@ import type { ChatEvent } from '../../../../shared/chat';
 import { foldChatEvents, type ChatViewState } from '../../../stores/chatStore';
 import { ChatViewBody } from './ChatView';
 import { useChatDraftStore, type ChatActions } from './useChatSession';
-import { chatFixture, FIXTURE_AGENT_ID, type FixtureProvider } from './fixtures';
+import { chatFixture, FEWER_CAPABILITIES, FIXTURE_AGENT_ID, type FixtureProvider } from './fixtures';
 import { buildAgentMap } from './view-model';
 import { useAgentDetailsStore } from '../details/detailsStore';
 
@@ -156,8 +156,8 @@ describe('Subagents card', () => {
     expect(screen.queryByTestId('details-card-subagents')).not.toBeInTheDocument();
   });
 
-  it('leaves out the Subagents card for the Copilot driver, which reports none', () => {
-    renderState(fold(chatFixture('copilot', 'agent_map')));
+  it('leaves out the Subagents card for a driver that reports none', () => {
+    renderState(fold(chatFixture('copilot', 'agent_map', undefined, FEWER_CAPABILITIES)));
     fireEvent.click(screen.getByTestId('agent-details-toggle'));
     expect(screen.getByTestId('agent-details')).toBeInTheDocument();
     expect(screen.queryByTestId('details-card-subagents')).not.toBeInTheDocument();

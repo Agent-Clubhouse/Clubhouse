@@ -147,7 +147,7 @@ export const DIAGNOSTICS_WORDS: Readonly<Record<'link' | 'state' | 'reason' | 'c
     'available',
   ]),
   reason: new Set(['stopped', 'idle_timeout', 'process_exit', 'fallback', 'error', 'killed', 'superseded', 'expired', 'access-required', 'connection-uncertain', 'enrollment-response-rejected', 'migration-required']),
-  cli: new Set(['claude-code', 'copilot-cli', 'codex-cli', 'claude_agent_sdk', 'claude_stream_json', 'codex_app_server', 'copilot_acp', 'copilot_sdk', 'acp']),
+  cli: new Set(['claude-code', 'copilot-cli', 'codex-cli', 'claude_agent_sdk', 'claude_stream_json', 'codex_app_server', 'copilot_sdk']),
 };
 
 function failure(value: unknown): string | undefined {

@@ -13,10 +13,9 @@
  *     whole environment to stdio MCP servers.
  *   - Codex starts stdio servers with a minimal environment, so the entry
  *     names the variables in `env_vars` and Codex forwards them.
- *   - ACP agents get exactly the env pairs in `session/new`; the ACP driver
- *     fills `env_vars` from the CLI's env and sends the values over the RPC
- *     pipe (see toAcpMcpServers), never in a config file or argv. The ACP
- *     client redacts those values from its request log.
+ *   - Copilot's SDK driver connects the bridge's HTTP endpoint instead, with
+ *     the nonce in a header it resolves from the CLI's env (toSdkMcpServers),
+ *     never in a config file or argv.
  * The file holds only the port and agent ID under fallback names, used by
  * the bridge when its env has none.
  */

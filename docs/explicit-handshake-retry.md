@@ -40,11 +40,10 @@ The action calls only the registered driver's existing `probe`, never `start`:
 | Driver | Probe protocol |
 | --- | --- |
 | Codex app-server | `initialize`, `initialized`, then kill; no thread/turn |
-| ACP, including Copilot | `initialize`, then kill; no session/prompt |
 | Claude stream-json / Agent SDK | Initialize transport, then close; no prompt |
 | Copilot SDK | Connect, `getStatus` and `getAuthStatus`, then close; no session |
 
-The Codex and ACP protocol tests assert the exact message list. Claude and
+The Codex protocol tests assert the exact message list. Claude and
 Copilot have synthetic probe tests too. Recovery regressions use temporary fake
 binary files and a fake probe that reads a repaired fixture; no installed provider,
 authentication or model is called. This shared path applies on all three platforms.

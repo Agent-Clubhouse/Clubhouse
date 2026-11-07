@@ -76,20 +76,12 @@ describe('ExperimentalSettingsView', () => {
     expect(screen.queryByRole('switch', { name: 'Dispatcher' })).toBeNull();
   });
 
-  it('offers the Use legacy Copilot ACP flag, off by default, and says when it needs Chat', async () => {
-    mockGetExperimentalSettings.mockResolvedValue({ chat: false });
-    const { unmount } = render(<ExperimentalSettingsView />);
-    const toggle = await screen.findByRole('switch', { name: 'Use legacy Copilot ACP' });
-    expect(toggle).toHaveAttribute('aria-checked', 'false');
-    expect(screen.getByText(/Needs Chat, which is off in Settings > Agents & providers\./)).toBeInTheDocument();
-    fireEvent.click(toggle);
-    await waitFor(() => expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ chat: false, copilotLegacyAcp: true }));
-    unmount();
-
-    mockGetExperimentalSettings.mockResolvedValue({});
+  it('no longer offers legacy Copilot ACP: the driver was removed (#2868)', async () => {
+    mockGetExperimentalSettings.mockResolvedValue({ copilotLegacyAcp: true });
     render(<ExperimentalSettingsView />);
-    await screen.findByRole('switch', { name: 'Use legacy Copilot ACP' });
-    expect(screen.queryByText(/Needs Chat/)).not.toBeInTheDocument();
+    await screen.findByRole('switch', { name: 'Goobers' });
+    expect(screen.queryByRole('switch', { name: /Copilot ACP/ })).toBeNull();
+    expect(screen.queryByText(/legacy Copilot ACP/i)).toBeNull();
   });
 
   it('does not list Telemetry export, and saving another flag keeps its saved value for a downgrade', async () => {
@@ -115,12 +107,12 @@ describe('ExperimentalSettingsView', () => {
     expect(toggle).toHaveAttribute('aria-checked', 'false');
   });
 
-  it('failed SDK flag save rolls back, blocks duplicate changes, then retries without changing other flags', async () => {
-    mockGetExperimentalSettings.mockResolvedValue({ copilotLegacyAcp: false, telemetry: true });
+  it('a failed save rolls back, blocks duplicate changes, then retries without changing other flags', async () => {
+    mockGetExperimentalSettings.mockResolvedValue({ goobers: false, telemetry: true });
     let reject!: (reason: Error) => void;
     mockSaveExperimentalSettings.mockImplementationOnce(() => new Promise<void>((_resolve, fail) => { reject = fail; }));
     render(<ExperimentalSettingsView />);
-    const toggle = await screen.findByRole('switch', { name: 'Use legacy Copilot ACP' });
+    const toggle = await screen.findByRole('switch', { name: 'Goobers' });
     fireEvent.click(toggle);
     await waitFor(() => expect(mockSaveExperimentalSettings).toHaveBeenCalledTimes(1));
     expect(toggle).toBeDisabled();
@@ -133,7 +125,7 @@ describe('ExperimentalSettingsView', () => {
     fireEvent.click(toggle);
     await waitFor(() => expect(toggle).not.toBeDisabled());
     expect(toggle).toHaveAttribute('aria-checked', 'true');
-    expect(mockSaveExperimentalSettings).toHaveBeenLastCalledWith({ copilotLegacyAcp: true, telemetry: true });
+    expect(mockSaveExperimentalSettings).toHaveBeenLastCalledWith({ goobers: true, telemetry: true });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 

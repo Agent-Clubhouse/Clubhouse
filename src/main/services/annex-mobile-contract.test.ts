@@ -1606,7 +1606,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       const seen: ChatEvent[] = [];
       const off = onChatEvent((event) => { if (event.agentId === `durable_${name}`) seen.push(event); });
       let n = 0;
-      const driver = new FakeChatDriver('copilot_acp', 'copilot-cli', caps);
+      const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli', caps);
       const runtime = new ChatAgentRuntime({
         agentId: `durable_${name}`, provider: 'copilot-cli', driverId: driver.id, cwd: APP, level: 'ask', idleTimeoutMs: 0,
         startSession: () => driver.start({ agentId: `durable_${name}`, provider: 'copilot-cli', cwd: APP, binaryPath: '/bin/copilot', level: 'ask' }),

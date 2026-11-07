@@ -95,7 +95,7 @@ For `variant: 'asset'`, the tool result carries `rawOutput.binaryResultsForLlm: 
 
 Recording costs tokens, and a recording names your machine's paths, so area fixtures are built, not recorded:
 
-1. Start from the builder. If a step is missing, add it to `chat-script.ts` next to the provider's other shapes, copying field sets from a committed fixture or the provider's generated schema (`codex-protocol/generated`, the ACP types). Then add a case to `chat-script.test.ts` that replays it through the fake CLI.
+1. Start from the builder. If a step is missing, add it to `chat-script.ts` next to the provider's other shapes, copying field sets from a committed fixture or the provider's generated schema (`codex-protocol/generated`, the Copilot SDK's types). Then add a case to `chat-script.test.ts` that replays it through the fake CLI (for Copilot, through the real SDK driver).
 2. List any shape no capture backs in the header's `synthesized` field (the builder does this for the shapes it invents), as for committed hand-made fixtures.
 3. When a real recording of that shape exists (docs/chat-fixtures.md, "Recording a fixture"), compare it with the builder's output and fix the builder to match. Change the driver only if the recording proves it wrong.
 

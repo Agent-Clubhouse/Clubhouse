@@ -46,13 +46,11 @@ beforeEach(() => {
 });
 afterEach(() => { clearChatDrivers(); clearDriverHealth(); fs.rmSync(dir, { recursive: true, force: true }); });
 describe('explicit scoped handshake retry', () => {
-  it.each([
-    ['copilot_sdk', 'copilot_acp'], ['copilot_acp', 'copilot_sdk'],
-  ] as const)('does not probe %s selection through registered %s', async (selected, registered) => {
+  it('does not probe the Copilot SDK selection through another provider\'s driver', async () => {
     clearChatDrivers();
     state.agents[0].orchestrator = 'copilot-cli';
-    state.mode = { mode: 'chat', driver: selected };
-    const other = new FakeChatDriver(registered, 'copilot-cli');
+    state.mode = { mode: 'chat', driver: 'copilot_sdk' };
+    const other = new FakeChatDriver('codex_app_server', 'codex-cli');
     const probe = vi.spyOn(other, 'probe');
     registerChatDriver(other);
     expect(await retryAgentHandshake(dir, 'a')).toMatchObject({ status: 'cannot_probe' });
