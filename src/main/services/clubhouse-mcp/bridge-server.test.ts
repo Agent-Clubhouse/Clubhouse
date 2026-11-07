@@ -346,6 +346,26 @@ describe('BridgeServer', () => {
     expect(body.result).toBeDefined();
   });
 
+  describe('an agent started without the Clubhouse MCP part (D25)', () => {
+    beforeEach(() => {
+      mockGetAgentNonce.mockReturnValue('quick-nonce');
+      mockAgentRegistryGet.mockImplementation((id) => (id === 'quick-1' ? { mcpBridgeOff: true } : undefined));
+    });
+    afterEach(() => { mockAgentRegistryGet.mockReset(); });
+
+    it('refuses every request with its valid nonce: initialize, tools/list, tools/call and the event stream', async () => {
+      const send = (body: unknown) => makeRequest(port, 'POST', '/mcp/quick-1', body, 'quick-nonce');
+      expect((await send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })).statusCode).toBe(403);
+      expect((await send({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).statusCode).toBe(403);
+      expect((await send({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'anything', arguments: {} } })).statusCode).toBe(403);
+      expect((await rawRequest(port, 'GET', '/mcp/quick-1/events', { 'X-Clubhouse-Nonce': 'quick-nonce', Accept: 'text/event-stream' })).statusCode).toBe(403);
+    });
+
+    it('leaves other agents alone', async () => {
+      expect((await makeRequest(port, 'POST', '/mcp/agent-1', { jsonrpc: '2.0', id: 4, method: 'tools/list' }, 'quick-nonce')).statusCode).toBe(200);
+    });
+  });
+
   it('returns 404 for unknown routes', async () => {
     const { statusCode } = await makeRequest(port, 'POST', '/unknown', {}, 'test-nonce');
     expect(statusCode).toBe(404);

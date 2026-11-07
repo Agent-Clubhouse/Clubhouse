@@ -19,7 +19,7 @@ import { useManagedFlag } from './managed-flag';
 import { useManagedStatus } from './managedApi';
 import { PENDING_RESTART_NOTE, useManagedRestart } from './restart';
 
-export const RESUME_NOTE = 'Restart resumes this conversation';
+export const RESUME_NOTE = 'Restart keeps the conversation. The new setup applies from the next turn.';
 export const CLI_CHANGED_NOTE = 'The CLI changed, so restarting starts a new conversation.';
 
 /** "Setup changed since this session started: Coding standards was edited; Playwright was added." */

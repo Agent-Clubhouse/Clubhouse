@@ -22,6 +22,8 @@ export const IPC = {
     PUSH_TEMPLATE: 'managed:push-template',
     GET_DEFAULT_HELPER_TEMPLATE: 'managed:get-default-helper-template',
     SET_DEFAULT_HELPER_TEMPLATE: 'managed:set-default-helper-template',
+    GET_HELPER_TEMPLATE_CHOICE: 'managed:get-helper-template-choice',
+    SET_HELPER_TEMPLATE_CHOICE: 'managed:set-helper-template-choice',
     CREATE_AGENT: 'managed:create-agent',
     CONVERT_AGENT: 'managed:convert-agent',
     PREVIEW_CONVERT: 'managed:preview-convert',

@@ -974,6 +974,18 @@ describe('agentStore', () => {
       expect(spawnCall.systemPrompt).toContain('clubhouse-summary');
     });
 
+    it('passes a template to main with the generated name, and nothing without one (D25)', async () => {
+      const projectPath = path.join(path.sep, 'work', 'proj');
+      const id = await getState().spawnQuickAgent('proj_1', projectPath, 'do stuff', undefined, undefined, 'codex-cli', undefined, undefined, undefined, { managedTemplateId: 'tpl-1' });
+      const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
+      expect(spawnCall.managedTemplate).toEqual({ id: 'tpl-1', agentName: getState().agents[id].name });
+      // Kept on the agent, so its finished record can retry from the same template.
+      expect(getState().agents[id].managedTemplateId).toBe('tpl-1');
+      const plain = await getState().spawnQuickAgent('proj_1', projectPath, 'again');
+      expect(mockAgent.spawnAgent.mock.calls[1][0]).not.toHaveProperty('managedTemplate');
+      expect(getState().agents[plain]).not.toHaveProperty('managedTemplateId');
+    });
+
     it('parent with allowedTools — passes to spawnAgent', async () => {
       seedAgent({ id: 'parent_2', kind: 'durable', worktreePath: '/wt/parent' });
       mockAgent.getDurableConfig.mockResolvedValue({

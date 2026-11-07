@@ -44,6 +44,9 @@ const managed = {
   pushTemplate: (id: string, next: Pick<ManagedTemplate, 'setup' | 'settings'>, targets: Array<{ projectPath: string; agentId: string }>) => call<{ failed: Array<{ agentId: string; message: string }> }>(IPC.MANAGED.PUSH_TEMPLATE, id, next, targets),
   getDefaultHelperTemplate: () => call<string>(IPC.MANAGED.GET_DEFAULT_HELPER_TEMPLATE),
   setDefaultHelperTemplate: (id: string) => call<void>(IPC.MANAGED.SET_DEFAULT_HELPER_TEMPLATE, id),
+  /** Whether orchestrators may name a template, or add and remove parts, for their helpers. */
+  getHelperTemplateChoice: () => call<boolean>(IPC.MANAGED.GET_HELPER_TEMPLATE_CHOICE),
+  setHelperTemplateChoice: (on: boolean) => call<void>(IPC.MANAGED.SET_HELPER_TEMPLATE_CHOICE, on),
   createAgent: (projectPath: string, input: { name: string; color: string; templateId?: string; setup?: SetupInput; settings?: ManagedTemplateSettings }) =>
     call<DurableAgentConfig>(IPC.MANAGED.CREATE_AGENT, projectPath, input),
   convertAgent: (projectPath: string, agentId: string, keep: boolean, templateId?: string) => call<ManagedAgentSetup>(IPC.MANAGED.CONVERT_AGENT, projectPath, agentId, keep, templateId),

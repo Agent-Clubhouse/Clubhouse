@@ -9,17 +9,27 @@ import type { ManagedAgentsService } from './service';
 
 export const HELPER_KEEPS_CLUBHOUSE_PART = 'Helpers always keep the Clubhouse MCP part so they can reach their orchestrator.';
 
+/** start_helper's refusal while the person hasn't let orchestrators choose helper templates (#2899, D31). */
+export const HELPER_TEMPLATE_CHOICE_OFF =
+  'helpers here always use the default helper template, so template, addParts and removeParts are refused. Leave them out, or ask the person to turn on "Let orchestrators choose helper templates" in Settings › Managed agents › Helpers.';
+
 /**
  * The setup a helper starts with. Throws, before anything is created, when the
  * template or a part id is unknown, a removed part isn't in the template, the
  * Clubhouse MCP part is removed, or the result fails the checks a saved setup
- * must pass (such as two skills with one folder name).
+ * must pass (such as two skills with one folder name). Also throws when the
+ * call names another template or changes parts while the person hasn't let
+ * orchestrators choose helper templates.
  */
 export async function managedHelperSetup(
   service: ManagedAgentsService,
   args: Pick<HelperStartArgs, 'template' | 'addParts' | 'removeParts'>,
 ): Promise<ManagedAgentSetup & { templateId: string }> {
-  const templateId = args.template ?? await service.defaultHelperTemplateId();
+  const defaultId = await service.defaultHelperTemplateId();
+  // Off (the default), only the default helper template is used. Naming it is no choice, so that passes.
+  const choosing = (args.template !== undefined && args.template !== defaultId) || !!args.addParts?.length || !!args.removeParts?.length;
+  if (choosing && !(await service.helperTemplateChoice())) throw new Error(HELPER_TEMPLATE_CHOICE_OFF);
+  const templateId = args.template ?? defaultId;
   let base;
   try {
     base = await service.setupFromTemplate(templateId);

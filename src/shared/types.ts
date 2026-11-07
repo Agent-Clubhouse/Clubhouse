@@ -39,6 +39,8 @@ export interface OrchestratorInfo {
   shortName: string;
   badge?: string;
   capabilities: ProviderCapabilities;
+  /** The CLI takes MCP servers as launch flags, not only from the folder's MCP file. */
+  mcpLaunchFlags?: boolean;
   conventions?: {
     configDir: string;
     localInstructionsFile: string;
@@ -133,6 +135,8 @@ export interface Agent {
   runCwd?: string;
   /** Quick agents: HEAD sha of `runCwd` when the run was spawned (best-effort). */
   runBaseSha?: string;
+  /** Quick agents started from a template (D25, Clubhouse-managed agents on): its id, so Retry keeps it. */
+  managedTemplateId?: string;
 }
 
 export interface CompletedQuickAgent {
@@ -170,6 +174,8 @@ export interface CompletedQuickAgent {
   inputTokens?: number;
   /** Headless runs: output tokens. */
   outputTokens?: number;
+  /** The template the run started from (D25), for Retry. */
+  managedTemplateId?: string;
 }
 
 // --- Profile types ---
@@ -1559,6 +1565,8 @@ export interface SpawnAgentParams {
   agentFile?: string;
   /** Source directory for agent file (e.g. --source ~/.copilot/agents/) */
   agentSource?: string;
+  /** Clubhouse-managed quick agents (#2893): start from this template. Needs the managedAgents preview flag. */
+  managedTemplate?: { id: string; agentName: string };
 }
 
 export type AgentDetailedState = 'idle' | 'working' | 'needs_permission' | 'tool_error';

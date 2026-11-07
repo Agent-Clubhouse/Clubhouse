@@ -250,6 +250,9 @@ describe('templates', () => {
 });
 
 describe('managed helpers (#2899)', () => {
+  // These are the "Let orchestrators choose helper templates" behaviors; off is covered below.
+  beforeEach(async () => { await user(() => service.setHelperTemplateChoice(true)); });
+
   it('builds a helper from the default template with parts added and removed for it only', async () => {
     const { managedHelperSetup } = await import('./helpers');
     const pw = await user(() => service.createPart({ name: 'Playwright', content: { kind: 'mcp', serverKey: 'playwright', transport: 'stdio', command: 'npx' } }));
@@ -283,6 +286,38 @@ describe('managed helpers (#2899)', () => {
     const one = await user(() => service.createPart({ name: 'Ship one', content: { kind: 'skill', skillName: 'ship', files: [{ path: 'SKILL.md', content: '# 1' }] } }));
     const two = await user(() => service.createPart({ name: 'Ship two', content: { kind: 'skill', skillName: 'ship', files: [{ path: 'SKILL.md', content: '# 2' }] } }));
     await expectCode(user(() => managedHelperSetup(service, { addParts: [one.id, two.id] })), 'invalid');
+  });
+});
+
+describe('letting orchestrators choose helper templates (D31)', () => {
+  it('is off by default and kept in managed state', async () => {
+    expect(await service.helperTemplateChoice()).toBe(false);
+    await user(() => service.setHelperTemplateChoice(true));
+    expect(await service.helperTemplateChoice()).toBe(true);
+    const state = JSON.parse(fs.readFileSync(path.join(root, 'managed', 'state.json'), 'utf-8'));
+    expect(state.helperTemplateChoice).toBe(true);
+    await user(() => service.setHelperTemplateChoice(false));
+    expect(await service.helperTemplateChoice()).toBe(false);
+    expect(JSON.parse(fs.readFileSync(path.join(root, 'managed', 'state.json'), 'utf-8'))).not.toHaveProperty('helperTemplateChoice');
+  });
+
+  it('off, uses only the default helper template and refuses another template or part changes', async () => {
+    const { managedHelperSetup, HELPER_TEMPLATE_CHOICE_OFF } = await import('./helpers');
+    expect((await user(() => managedHelperSetup(service, {}))).templateId).toBe('builtin-template-helper');
+    // Naming the default is no choice.
+    expect((await user(() => managedHelperSetup(service, { template: 'builtin-template-helper' }))).templateId).toBe('builtin-template-helper');
+    for (const args of [{ template: 'builtin-template-quality-assurance' }, { addParts: [BUILTIN_BLOCK_IDS.qa] }, { removeParts: [BUILTIN_BLOCK_IDS.basics] }]) {
+      await expect(user(() => managedHelperSetup(service, args))).rejects.toThrow(HELPER_TEMPLATE_CHOICE_OFF);
+    }
+    expect(HELPER_TEMPLATE_CHOICE_OFF).toContain('Settings › Managed agents › Helpers');
+  });
+
+  it('off, follows the default the person picked', async () => {
+    const { managedHelperSetup } = await import('./helpers');
+    await user(() => service.setDefaultHelperTemplateId('builtin-template-quality-assurance'));
+    const setup = await user(() => managedHelperSetup(service, {}));
+    expect(setup.templateId).toBe('builtin-template-quality-assurance');
+    expect((await user(() => managedHelperSetup(service, { template: 'builtin-template-quality-assurance' }))).templateId).toBe('builtin-template-quality-assurance');
   });
 });
 

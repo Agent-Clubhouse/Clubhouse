@@ -540,7 +540,8 @@ async function noteContextOutcome(helperPath: string, helperId: string, provider
 // ── start_helper ─────────────────────────────────────────────────────────
 
 /** How start_helper's template arguments are described: the registry has no per-flag schemas, so they are always listed. */
-const NEEDS_MANAGED = 'Needs Clubhouse-managed agents (Settings > Experimental), and refused while they are off.';
+const NEEDS_MANAGED = 'Needs Clubhouse-managed agents (Settings > Experimental), and refused while they are off. '
+  + 'Also refused unless the person lets orchestrators choose helper templates (Settings › Managed agents › Helpers).';
 const MANAGED_ARGS_OFF =
   'template, addParts and removeParts need Clubhouse-managed agents, which are off. Leave them out, or ask the person to turn on Clubhouse-managed agents in Settings > Experimental.';
 
@@ -1337,7 +1338,8 @@ export function registerHelperTools(): void {
         'approves or declines. With project, the helper is created in another Clubhouse project ' +
         '(see list_projects); that needs cross-project helpers turned on for you. ' +
         'With Clubhouse-managed agents on, templates replace personas: every helper is built from a template ' +
-        '(the one you name, or the default helper template), with parts added or removed for it only, and persona is ignored.',
+        '(the one you name, or the default helper template), with parts added or removed for it only, and persona is ignored. ' +
+        'Naming a template or changing parts needs the person to let orchestrators choose helper templates; otherwise every helper gets the default helper template.',
       inputSchema: {
         type: 'object',
         properties: {

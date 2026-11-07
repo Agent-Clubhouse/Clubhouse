@@ -115,9 +115,17 @@ vi.mock('./agent-runtime/chat-spawn', async (importOriginal) => {
 const mockMaterializeAgent = vi.fn();
 const mockCleanupStaleJsonInTomlConfigs = vi.fn();
 const mockDeliverForSpawn = vi.fn(async () => {});
+const mockQuickLaunchFor = vi.fn();
 vi.mock('./managed-agents', () => ({
   deliverForSpawn: (...args: unknown[]) => mockDeliverForSpawn(...(args as [])),
+  quickLaunchFor: (...args: unknown[]) => mockQuickLaunchFor(...args),
 }));
+// Clubhouse-managed quick agents (D25) read the preview flag; null keeps the real settings.
+const experimentalFlags = vi.hoisted(() => ({ value: null as Record<string, boolean> | null }));
+vi.mock('./experimental-settings', async (original) => {
+  const actual = await original<typeof import('./experimental-settings')>();
+  return { ...actual, getSettings: () => experimentalFlags.value ?? actual.getSettings() };
+});
 
 vi.mock('./materialization-service', () => ({
   resolveProjectMcpServers: vi.fn(async () => ({})),
@@ -1129,6 +1137,86 @@ describe('agent-system', () => {
       withConfig({ parentAgentId: 'orch-1' });
       await spawn();
       expect(Object.keys(flagsFromBuild()!).sort()).toEqual(['clubhouse', 'github']);
+    });
+
+    describe('a quick agent started from a template (D25)', () => {
+      const PROJECT = path.join(path.sep, 'work', 'project');
+      const launch = (over: Record<string, unknown> = {}) => ({
+        templateId: 'tpl', instructions: 'You are swift-otter.', servers: { workiq: { command: 'workiq' } }, bridge: true, skippedSkills: 0, missing: 0, ...over,
+      });
+      const quick = (extra: Record<string, unknown> = {}) => spawnAgent({
+        agentId: 'quick-1', projectPath: PROJECT, cwd: PROJECT, kind: 'quick', orchestrator: 'codex-cli',
+        mission: 'Fix it', systemPrompt: 'Write a summary.', managedTemplate: { id: 'tpl', agentName: 'swift-otter' }, ...extra,
+      });
+      beforeEach(() => {
+        experimentalFlags.value = { managedAgents: true };
+        mockQuickLaunchFor.mockReset().mockResolvedValue(launch());
+        (mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mockClear();
+      });
+      afterEach(() => {
+        experimentalFlags.value = null;
+        untrackAgent('quick-1');
+      });
+
+      it('puts the template\'s instructions first in the system prompt and its servers in the launch flags, in place of the project\'s', async () => {
+        mockIsMcpEnabled.mockImplementation(((_p: string, agentOverride?: boolean) => agentOverride ?? true) as never);
+        await quick();
+        expect(mockQuickLaunchFor).toHaveBeenCalledWith(PROJECT, PROJECT, 'quick-1', { id: 'tpl', agentName: 'swift-otter' }, expect.objectContaining({ id: 'codex-cli' }));
+        expect((mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0].systemPrompt).toBe('You are swift-otter.\n\nWrite a summary.');
+        expect(Object.keys(flagsFromBuild()!).sort()).toEqual(['clubhouse', 'workiq']);
+        expect(resolveProjectMcpServers).not.toHaveBeenCalled();
+      });
+
+      it('gives no bridge when the template has no Clubhouse MCP part', async () => {
+        mockIsMcpEnabled.mockImplementation(((_p: string, agentOverride?: boolean) => agentOverride ?? true) as never);
+        mockQuickLaunchFor.mockResolvedValue(launch({ bridge: false }));
+        await quick();
+        expect(mockInjectClubhouseMcp.mock.calls.at(-1)?.[4]).toEqual({ projectPath: PROJECT, agentOverride: false });
+        expect(Object.keys(flagsFromBuild()!)).toEqual(['workiq']);
+        // Its folder's MCP file may still name the bridge (another agent's worktree):
+        // the bridge server refuses it by this mark, and its hooks keep the nonce.
+        expect(agentRegistry.get('quick-1')?.mcpBridgeOff).toBe(true);
+        const env = mockPtySpawn.mock.calls.at(-1)![4] as Record<string, string>;
+        expect(env.CLUBHOUSE_HOOK_NONCE).toBe(agentRegistry.get('quick-1')?.nonce);
+      });
+
+      it('leaves the bridge on for a template with the Clubhouse MCP part', async () => {
+        await quick();
+        expect(agentRegistry.get('quick-1')?.mcpBridgeOff).toBeUndefined();
+      });
+
+      it('refuses with the preview flag off, starting nothing', async () => {
+        experimentalFlags.value = {};
+        await expect(quick()).rejects.toThrow(/only with Clubhouse-managed agents on/);
+        expect(mockQuickLaunchFor).not.toHaveBeenCalled();
+        expect(mockPtySpawn).not.toHaveBeenCalled();
+      });
+
+      it('fails the start when the template can\'t be read', async () => {
+        mockQuickLaunchFor.mockRejectedValue(new Error('not_found'));
+        await expect(quick()).rejects.toThrow('not_found');
+        expect(mockPtySpawn).not.toHaveBeenCalled();
+      });
+
+      it('passes the template\'s servers to a headless run too, after its own flags', async () => {
+        mockGetSpawnMode.mockReturnValueOnce('headless');
+        const codex = mockCodexProvider as unknown as { buildHeadlessCommand?: unknown };
+        codex.buildHeadlessCommand = vi.fn(() => Promise.resolve({ binary: 'codex', args: ['exec', 'prompt', '--json'], outputKind: 'stream-json' as const }));
+        (mockCodexProvider.buildMcpArgs as ReturnType<typeof vi.fn>).mockClear();
+        try {
+          await quick();
+        } finally {
+          delete codex.buildHeadlessCommand;
+        }
+        expect(flagsFromBuild()).toEqual({ workiq: { command: 'workiq' } });
+        expect(mockHeadlessSpawn.mock.calls.at(-1)![3]).toEqual(['exec', 'prompt', '--json', '-c', 'mcp_servers.clubhouse.command=node']);
+      });
+
+      it('leaves a quick agent without a template as it was', async () => {
+        await quick({ managedTemplate: undefined });
+        expect(mockQuickLaunchFor).not.toHaveBeenCalled();
+        expect((mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0].systemPrompt).toBe('Write a summary.');
+      });
     });
 
     it('does not start a helper the bridge cannot serve, and says why', async () => {

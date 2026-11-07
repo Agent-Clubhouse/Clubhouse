@@ -183,6 +183,8 @@ export const agent = {
     pluginOwner?: string;
     companionWorkspace?: string;
     permissionMode?: 'auto' | 'skip-all';
+    /** Clubhouse-managed quick agents: start from this template. */
+    managedTemplate?: { id: string; agentName: string };
   }) => ipcRenderer.invoke(IPC.AGENT.SPAWN_AGENT, params),
 
   /** `waitForExit`: resolve once the PTY exited and its session id is saved (restart-with-resume). */

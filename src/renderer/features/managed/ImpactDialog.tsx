@@ -60,7 +60,7 @@ export function ImpactDialog({ open, partName, consumers, busy, error, onSave, o
           </li>
         ))}
       </ul>
-      {running.length > 0 && <p className="mt-3 text-xs text-ctp-overlay1">Restart reloads the setup and resumes the same conversation. An agent in the middle of a turn restarts when that turn ends.</p>}
+      {running.length > 0 && <p className="mt-3 text-xs text-ctp-overlay1">Restart keeps the conversation. The new setup applies from the next turn. An agent in the middle of a turn restarts when that turn ends.</p>}
       {error && <p role="alert" className="mt-2 text-xs text-ctp-error">{error}</p>}
     </Modal>
   );

@@ -544,6 +544,8 @@ vi.stubGlobal('clubhouse', {
     pushTemplate: async () => ({ ok: true, value: { failed: [] } }),
     getDefaultHelperTemplate: async () => ({ ok: true, value: 'builtin-template-helper' }),
     setDefaultHelperTemplate: async () => ({ ok: true, value: undefined }),
+    getHelperTemplateChoice: async () => ({ ok: true, value: false }),
+    setHelperTemplateChoice: async () => ({ ok: true, value: undefined }),
     createAgent: async () => ({ ok: false, code: 'failed' }),
     convertAgent: async () => ({ ok: false, code: 'failed' }),
     previewConvert: async () => ({ ok: true, value: { blocks: [], skills: [], mcps: [], notes: [] } }),

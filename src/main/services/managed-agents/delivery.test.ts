@@ -13,7 +13,7 @@ import { withSettingsSurface, _resetSettingsAuditForTesting } from '../settings-
 import { createManagedStateStore } from './state-store';
 import { createManagedAgentsService, type ManagedAgentsService } from './service';
 import { BUILTIN_BLOCK_IDS } from './builtins';
-import { deliverManagedSetup, previewManagedSetup, resolveManagedMcpServers } from './delivery';
+import { deliverManagedSetup, previewManagedSetup, quickManagedLaunch, resolveManagedMcpServers } from './delivery';
 import type { OrchestratorProvider } from '../../orchestrators/types';
 
 const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
@@ -21,6 +21,7 @@ const user = <T>(fn: () => T) => withSettingsSurface('ui', undefined, fn);
 let root: string;
 let project: string;
 let service: ManagedAgentsService;
+let catalog: ReturnType<typeof createAssetCatalogStore>;
 let agent: DurableAgentConfig;
 
 function provider(conv: Partial<OrchestratorProvider['conventions']> = {}): OrchestratorProvider {
@@ -38,8 +39,9 @@ beforeEach(async () => {
   const wt = path.join(project, '.clubhouse', 'agents', 'cool-gazelle');
   fs.mkdirSync(wt, { recursive: true });
   _resetSettingsAuditForTesting(false);
+  catalog = createAssetCatalogStore({ dir: path.join(root, 'catalog') });
   service = createManagedAgentsService({
-    catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+    catalog,
     state: createManagedStateStore(path.join(root, 'managed')),
     listProjects: async () => [],
     listAgents: async () => [],
@@ -143,5 +145,78 @@ describe('previewManagedSetup', () => {
     await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
     expect(preview.instructions).toBe(fs.readFileSync(path.join(agent.worktreePath!, 'CLAUDE.md'), 'utf-8'));
     expect(preview.blocks.map((b) => [b.name, b.startLine, b.endLine])).toEqual([['Identity', 1, 2], ['Rules', 4, 5]]);
+  });
+});
+
+describe('quickManagedLaunch (D25)', () => {
+  const listing = (dir: string) => (fs.existsSync(dir) ? fs.readdirSync(dir).sort() : []);
+
+  it('renders the template for the quick agent in its folder and writes nothing', async () => {
+    const mcp = await user(() => service.createPart({ name: 'WorkIQ', content: { kind: 'mcp', serverKey: 'workiq', transport: 'stdio', command: 'npx', envVars: ['WORKIQ_TENANT'] } }));
+    const skill = await user(() => service.createPart({ name: 'Notes', content: { kind: 'skill', skillName: 'notes', files: [{ path: 'SKILL.md', content: '# Notes' }] } }));
+    const template = await user(() => service.saveTemplate({
+      name: 'Release', description: '', settings: {},
+      setup: { blocks: [BUILTIN_BLOCK_IDS.identity], skills: [skill.id], mcps: [CLUBHOUSE_MCP_PART_ID, mcp.id] },
+    }));
+    const before = listing(project);
+    const launch = await user(() => quickManagedLaunch({
+      service, projectPath: project, cwd: project, agentId: 'quick_1', agentName: 'swift-otter', templateId: template.id, branch: 'main',
+    }));
+    expect(launch.instructions).toBe('You are swift-otter, an agent working in Clubhouse.\nYour workspace is ./ and your branch is main.');
+    expect(launch.servers).toEqual({ workiq: { command: 'npx', env_vars: ['WORKIQ_TENANT'] } });
+    expect(launch).toMatchObject({ templateId: template.id, bridge: true, skippedSkills: 1, missing: 0 });
+    expect(listing(project)).toEqual(before);
+  });
+
+  it('names a durable agent\'s worktree relative to the project, and says so when there is no branch', async () => {
+    const launch = await user(() => quickManagedLaunch({
+      service, projectPath: project, cwd: agent.worktreePath!, agentId: 'quick_2', agentName: 'calm-heron', templateId: 'builtin-template-researcher',
+    }));
+    expect(launch.instructions.split('\n')[1]).toBe('Your workspace is .clubhouse/agents/cool-gazelle/ and your branch is the checked-out branch.');
+    expect(launch.bridge).toBe(true);
+    expect(launch.servers).toEqual({});
+  });
+
+  it('reports no bridge for a template without the Clubhouse MCP part', async () => {
+    const template = await user(() => service.saveTemplate({ name: 'Plain', description: '', settings: {}, setup: { blocks: [], skills: [], mcps: [] } }));
+    const launch = await user(() => quickManagedLaunch({ service, projectPath: project, cwd: project, agentId: 'q', agentName: 'q', templateId: template.id }));
+    expect(launch).toMatchObject({ bridge: false, instructions: '' });
+  });
+
+  it('counts the parts the template names that no longer exist', async () => {
+    const keep = await user(() => service.createPart({ name: 'Keep', content: { kind: 'block', content: 'kept' } }));
+    const gone = await user(() => service.createPart({ name: 'Gone', content: { kind: 'block', content: 'gone' } }));
+    const goneSkill = await user(() => service.createPart({ name: 'Old', content: { kind: 'skill', skillName: 'old', files: [{ path: 'SKILL.md', content: '# Old' }] } }));
+    const template = await user(() => service.saveTemplate({ name: 'Stale', description: '', settings: {}, setup: { blocks: [keep.id, gone.id], skills: [goneSkill.id], mcps: [] } }));
+    // Gone from the catalog behind the service's back, so the template still names them.
+    await catalog.deleteAsset({ assetId: gone.id, expectedRevision: gone.revision });
+    await catalog.deleteAsset({ assetId: goneSkill.id, expectedRevision: goneSkill.revision });
+    const launch = await user(() => quickManagedLaunch({ service, projectPath: project, cwd: project, agentId: 'q', agentName: 'q', templateId: template.id }));
+    expect(launch).toMatchObject({ instructions: 'kept', skippedSkills: 0, missing: 2 });
+  });
+
+  it('refuses a template that doesn\'t exist', async () => {
+    await expect(user(() => quickManagedLaunch({ service, projectPath: project, cwd: project, agentId: 'q', agentName: 'q', templateId: 'nope' }))).rejects.toThrow();
+  });
+});
+
+describe('quickLaunchFor (D25)', () => {
+  it('keeps the servers for a CLI with launch flags and drops them, logged, for one without', async () => {
+    const { quickLaunchFor, _setManagedAgentsForTesting } = await import('./index');
+    const { appLog } = await import('../log-service');
+    _setManagedAgentsForTesting(service);
+    try {
+      const mcp = await user(() => service.createPart({ name: 'WorkIQ', content: { kind: 'mcp', serverKey: 'workiq', transport: 'stdio', command: 'npx' } }));
+      const template = await user(() => service.saveTemplate({ name: 'Reader', description: '', settings: {}, setup: { blocks: [], skills: [], mcps: [mcp.id] } }));
+      const flags = { ...provider(), id: 'codex-cli', buildMcpArgs: () => [] } as unknown as OrchestratorProvider;
+      const withFlags = await user(() => quickLaunchFor(project, project, 'q1', { id: template.id, agentName: 'q' }, flags));
+      expect(Object.keys(withFlags.servers)).toEqual(['workiq']);
+      vi.mocked(appLog).mockClear();
+      const without = await user(() => quickLaunchFor(project, project, 'q2', { id: template.id, agentName: 'q' }, provider()));
+      expect(without.servers).toEqual({});
+      expect(appLog).toHaveBeenCalledWith('core:managed', 'warn', expect.stringContaining('not delivered'), expect.objectContaining({ meta: expect.objectContaining({ mcpServers: 1 }) }));
+    } finally {
+      _setManagedAgentsForTesting(null);
+    }
   });
 });

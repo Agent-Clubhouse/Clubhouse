@@ -574,6 +574,13 @@ export function registerAgentHandlers(): void {
         if (typeof v.projectPath !== 'string' || !v.projectPath) throw new Error(`${name}.projectPath must be a non-empty string`);
         if (typeof v.cwd !== 'string' || !v.cwd) throw new Error(`${name}.cwd must be a non-empty string`);
         if (typeof v.kind !== 'string' || !v.kind) throw new Error(`${name}.kind must be a non-empty string`);
+        if (v.managedTemplate !== undefined) {
+          const t = v.managedTemplate as { id?: unknown; agentName?: unknown } | null;
+          if (!t || typeof t.id !== 'string' || !t.id || t.id.length > 128 || typeof t.agentName !== 'string' || t.agentName.length > 200) {
+            throw new Error(`${name}.managedTemplate must be { id, agentName }`);
+          }
+          if (v.kind !== 'quick') throw new Error(`${name}.managedTemplate is for quick agents`);
+        }
       },
     })],
     async (_event, params) => {

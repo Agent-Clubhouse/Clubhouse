@@ -11,6 +11,7 @@ import { MAX_HELPER_LIMIT } from '../../../shared/orchestration-policy';
 import { useProjectStore } from '../../stores/projectStore';
 import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { Button } from '../../components/Button';
+import { Toggle } from '../../components/Toggle';
 import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAction';
 import { orphanedDisposed } from '../agents/helpers/helper-model';
 import { sameProjectPath } from '../../utils/project-path';
@@ -32,19 +33,45 @@ function formatWhen(iso: string | undefined): string {
   return Number.isFinite(t) ? new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '';
 }
 
-/** Clubhouse-managed agents (#2899): the template a helper gets when its orchestrator names none. */
+/**
+ * Clubhouse-managed agents (#2899): the template a helper gets when its
+ * orchestrator names none, and whether an orchestrator may name another one or
+ * change parts for one helper (off by default).
+ */
 function DefaultHelperTemplateSection() {
   const { value: templates, error: listError } = useManagedTemplates();
   const [current, setCurrent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [choice, setChoice] = useState<boolean | null>(null);
+  const [choiceError, setChoiceError] = useState<string | null>(null);
+  const [choiceSaving, setChoiceSaving] = useState(false);
   useEffect(() => {
     let cancelled = false;
     void unwrap(managed().getDefaultHelperTemplate())
       .then((id) => { if (!cancelled) setCurrent(id); })
       .catch((err) => { /* telemetry-exempt: shown under the field */ if (!cancelled) setError(errorText(err)); });
+    void unwrap(managed().getHelperTemplateChoice())
+      .then((on) => { if (!cancelled) setChoice(on); })
+      .catch((err) => { /* telemetry-exempt: shown under the field */ if (!cancelled) setChoiceError(errorText(err)); });
     return () => { cancelled = true; };
   }, []);
+
+  const turnChoice = async (on: boolean) => {
+    const previous = choice;
+    setChoice(on);
+    setChoiceError(null);
+    setChoiceSaving(true);
+    try {
+      await unwrap(managed().setHelperTemplateChoice(on));
+    } catch (err) {
+      // telemetry-exempt: shown under the field, which goes back to the saved value.
+      setChoiceError(errorText(err));
+      setChoice(previous);
+    } finally {
+      setChoiceSaving(false);
+    }
+  };
 
   const choose = async (id: string) => {
     const previous = current;
@@ -83,6 +110,23 @@ function DefaultHelperTemplateSection() {
           {current !== null && templates && !templates.some((t) => t.id === current) && <option value={current}>{current}</option>}
           {(templates ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}{t.builtin ? '' : ' (yours)'}</option>)}
         </select>
+      </SettingsField>
+      <SettingsField
+        label="Let orchestrators choose helper templates"
+        help={choiceError
+          ? <span className="text-ctp-error" role="alert" data-testid="helpers-template-choice-error">{choiceError}</span>
+          : <span id="helpers-template-choice-help">{choice
+            ? 'An orchestrator can name any template, and add or leave out parts, for one helper. Nothing it picks is saved.'
+            : 'Every helper gets the default helper template. An orchestrator that names another template or changes parts is told to ask you.'}</span>}
+      >
+        <Toggle
+          aria-label="Let orchestrators choose helper templates"
+          aria-describedby={choiceError ? undefined : 'helpers-template-choice-help'}
+          checked={choice === true}
+          disabled={choice === null || choiceSaving}
+          onChange={(on) => void turnChoice(on)}
+          data-testid="helpers-template-choice"
+        />
       </SettingsField>
     </SettingsSection>
   );

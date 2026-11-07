@@ -21,6 +21,8 @@ export interface ManagedState {
   parts: Record<string, PartMeta>;
   templates: Record<string, ManagedTemplate>;
   defaultHelperTemplateId?: string;
+  /** Orchestrators may name a template or add and remove parts for a helper (#2899). Off unless the person turns it on. */
+  helperTemplateChoice?: boolean;
 }
 
 const EMPTY: ManagedState = { version: 1, parts: {}, templates: {} };
@@ -53,6 +55,7 @@ export function createManagedStateStore(dir: string = managedStateDir()): Manage
       parts: parsed.parts && typeof parsed.parts === 'object' ? parsed.parts : {},
       templates: parsed.templates && typeof parsed.templates === 'object' ? parsed.templates : {},
       ...(typeof parsed.defaultHelperTemplateId === 'string' ? { defaultHelperTemplateId: parsed.defaultHelperTemplateId } : {}),
+      ...(parsed.helperTemplateChoice === true ? { helperTemplateChoice: true } : {}),
     };
   }
 
