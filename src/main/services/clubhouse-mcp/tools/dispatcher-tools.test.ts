@@ -38,7 +38,7 @@ vi.mock('../../agent-config', () => ({
   isSameProject: vi.fn(async (a: string, b: string) => path.resolve(a) === path.resolve(b)),
   onAgentConfigChanged: vi.fn(() => () => {}),
 }));
-vi.mock('../../agent-creation', () => ({ startDurableCreation: vi.fn(), personaInjection: vi.fn(() => ({})) }));
+vi.mock('../../agent-creation', () => ({ startDurableCreation: vi.fn() }));
 vi.mock('../../helper-index', () => ({
   // A helper is in the project it is listed in; its parent is in its parentProjectPath, else there.
   listHelpersEverywhere: vi.fn(async (home: string, id: string) => {
@@ -53,7 +53,7 @@ vi.mock('../../helper-index', () => ({
   findParent: vi.fn(async () => null),
 }));
 vi.mock('../../project-store', () => ({ list: async () => [...projects] }));
-vi.mock('../../materialization-service', () => ({ listAvailablePersonas: vi.fn(async () => []) }));
+vi.mock('../../materialization-service', () => ({}));
 vi.mock('../../agent-system', () => ({
   spawnAgent: vi.fn(),
   killAgent: vi.fn(),
@@ -79,7 +79,6 @@ vi.mock('../../git-service', () => ({
   findGitCommonDir: async (dir: string) => (dir === DISPATCHER_DIR ? null : path.join(dir, '.git')),
   getDefaultBranch: async () => 'main',
 }));
-vi.mock('../../persona-application', () => ({ applyPersonaToAgent: vi.fn() }));
 vi.mock('../../orchestration-policy', () => ({
   isCrossProjectAllowed: vi.fn(async () => false),
   checkHelperLimitFor: vi.fn(),
@@ -145,7 +144,7 @@ function runAgent(id: string, projectPath: string): void {
 }
 
 async function runDispatcher(): Promise<void> {
-  addAgent(DISPATCHER_DIR, { id: 'dispatcher', name: 'Dispatcher', persona: 'dispatcher' });
+  addAgent(DISPATCHER_DIR, { id: 'dispatcher', name: 'Dispatcher' });
   runAgent('dispatcher', DISPATCHER_DIR);
   await syncDispatcherGate(DISPATCHER_DIR, 'dispatcher');
 }
@@ -312,7 +311,7 @@ describe('list_agents', () => {
     addAgent(PROJECT_A, { id: 'h', parentAgentId: 'lead', orchestration: { connectToDispatcher: true } });
     // Once: only the project with agents resolves.
     vi.mocked(resolveOrchestrationPolicies).mockImplementationOnce(async (_p, agents) =>
-      new Map(agents.map((a) => [a.id, resolveOrchestrationPolicy(a.orchestration, undefined, { helper: !!a.parentAgentId })])));
+      new Map(agents.map((a) => [a.id, resolveOrchestrationPolicy(a.orchestration, { helper: !!a.parentAgentId })])));
     const rows = parse(await callTool('dispatcher', 'list_agents', {})).agents as Array<{ id: string }>;
     expect(rows.map((r) => r.id)).toEqual(['lead']);
   });

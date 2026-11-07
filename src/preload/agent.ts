@@ -12,8 +12,8 @@ export const agent = {
     ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
   getRunningStatuses: (agentIds: string[]): Promise<string[]> =>
     ipcRenderer.invoke(IPC.AGENT.GET_RUNNING_STATUSES, agentIds),
-  createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], mcpConfigs?: Record<string, Record<string, string>>, persona?: string, worktreeOptions?: DurableWorktreeOptions) =>
-    ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona, worktreeOptions),
+  createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], mcpConfigs?: Record<string, Record<string, string>>, worktreeOptions?: DurableWorktreeOptions) =>
+    ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, worktreeOptions),
   /** Asynchronous create (#2226): resolves with the id while the worktree is still being made. */
   startDurableCreation: (projectPath: string, params: StartDurableCreationParams): Promise<{ agentId: string; config: DurableAgentConfig }> =>
     ipcRenderer.invoke(IPC.AGENT.START_DURABLE_CREATION, projectPath, params),

@@ -69,7 +69,7 @@ describe('helper routing', () => {
   });
 
   it('has words for every source of the Auto setting, and no label calls unknown quota healthy', () => {
-    for (const source of ['agent', 'project', 'persona', 'app', 'default', 'mcp_off', 'dispatcher_locked'] as const) expect(HELPER_ROUTING_LABELS.autoSource[source]).toBeTruthy();
+    for (const source of ['agent', 'project', 'app', 'default', 'mcp_off', 'dispatcher_locked'] as const) expect(HELPER_ROUTING_LABELS.autoSource[source]).toBeTruthy();
     expect(JSON.stringify(HELPER_ROUTING_LABELS).toLowerCase()).not.toContain('healthy');
   });
 
@@ -83,12 +83,12 @@ describe('helper routing', () => {
       .toBe('its default model. You or the orchestrator chose this.');
   });
 
-  it('the orchestrator persona makes no claims of cost or preference', () => {
-    const persona = fs.readFileSync(path.join(__dirname, '../renderer/features/personas/orchestrator.md'), 'utf8');
-    expect(persona).toContain('`difficulty` keeps the helper on its CLI.');
-    expect(persona).toContain('Don\'t claim a choice is cheapest, best or preferred');
-    expect(persona).toContain('Unknown quota means unknown, not available.');
-    expect(persona).toContain('A helper stays on its provider for its whole task.');
+  it('the built-in Orchestrator block makes no claims of cost or preference', () => {
+    const text = fs.readFileSync(path.join(__dirname, '../main/services/managed-agents/builtin-text/orchestrator.md'), 'utf8');
+    expect(text).toContain('`difficulty` keeps the helper on its CLI.');
+    expect(text).toContain('Don\'t claim a choice is cheapest, best or preferred');
+    expect(text).toContain('Unknown quota means unknown, not available.');
+    expect(text).toContain('A helper stays on its provider for its whole task.');
   });
 });
 

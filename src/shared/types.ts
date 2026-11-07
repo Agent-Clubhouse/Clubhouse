@@ -256,7 +256,11 @@ export interface ProjectAgentDefaults {
   commandPrefix?: string;
   /** Default mission ID. Resolved at materialization to .clubhouse/missions/<id>.md content; substituted for @@mission. */
   mission?: string;
-  /** Default persona template ID. Applied to every agent in the project unless the agent has its own `persona` set. */
+  /**
+   * @deprecated Personas were retired (#2901). A project default persona id
+   * saved before then. Only the switch to managed reads it (managed-agents/
+   * legacy-migration); nothing writes or applies it.
+   */
   persona?: string;
 }
 
@@ -322,7 +326,12 @@ export interface DurableAgentConfig {
   mcpConfigs?: Record<string, Record<string, string>>;
   /** Per-agent override for the Clubhouse MCP bridge feature. A helper always gets the bridge: see clubhouseMcpOverride. */
   mcpOverride?: boolean;
-  /** Persona template ID applied at creation. Used to re-inject instructions on materialization. */
+  /**
+   * @deprecated Personas were retired (#2901). The persona id an agent had
+   * before then, kept as a legacy field: the switch to managed reads it
+   * (managed-agents/legacy-migration) and drops it. Nothing writes it, and an
+   * old Dispatcher's `persona: 'dispatcher'` means nothing.
+   */
   persona?: string;
   /** Mission ID overriding the project default. Resolved to .clubhouse/missions/<id>.md content; substituted for @@mission. */
   mission?: string;
@@ -390,7 +399,7 @@ export interface DurableAgentConfig {
   creation?: DurableAgentCreation;
   /**
    * Orchestration policy (#2228): only the fields set on this agent. Unset
-   * fields come from the persona's front-matter, then the defaults. Written
+   * fields come from the defaults. Written
    * only through services/orchestration-policy.ts, never updateDurableConfig.
    */
   orchestration?: import('./orchestration-policy').OrchestrationPolicyConfig;
@@ -421,9 +430,10 @@ export interface DurableAgentConfig {
   /** The last automatic switch to managed failed (D59). Cleared when it switches. */
   managedMigrationFailure?: import('./managed-agents-types').ManagedMigrationFailure;
   /**
-   * When the orchestration fields a persona layer (a project or user
-   * `orchestrator.md`) decided for this plain agent were kept as its own
-   * (D62). Set once, so it isn't done again.
+   * When the orchestration fields the retired persona layer (a project or
+   * user `orchestrator.md`, or its persona) decided for this unmanaged agent
+   * were kept as its own (D62). Set once, so it isn't done again. A new
+   * agent gets it at creation: it never had that layer.
    */
   personaLayerCarriedAt?: string;
 }
@@ -509,6 +519,7 @@ export type HelperDisposeDecision = 'disposed' | 'declined';
 export interface HelperStartArgs {
   name: string;
   task: string;
+  /** @deprecated Accepted and ignored (#2901): helpers start from a template. start_helper says so in `personaNote`. */
   persona?: string;
   cli?: string;
   model?: string;
@@ -654,7 +665,6 @@ export interface StartDurableCreationParams extends DurableWorktreeOptions {
   freeAgentMode?: boolean;
   mcpIds?: string[];
   mcpConfigs?: Record<string, Record<string, string>>;
-  persona?: string;
   /** Helpers (#2224): make the new agent a helper of this durable agent. */
   parentAgentId?: string;
   /**
@@ -743,7 +753,6 @@ export interface DurableConfigUpdates {
   runtimeMode?: import('./chat').AgentRuntimeMode | null;
   /** Per-agent auto-sleep; 'inherit' or null clears it (app default). */
   idleSleep?: import('./idle-sleep').AgentIdleSleep | null;
-  persona?: string;
   mission?: string;
   buildCommand?: string;
   testCommand?: string;
@@ -766,7 +775,7 @@ export interface WildcardOverride {
  * Resolved wildcard actuals for a single agent, used to populate the per-agent
  * simple settings form when Clubhouse Mode manages the agent. Identity fields
  * are read-only computed actuals; command/provider fields carry per-agent
- * overrides; mission/persona expose the override, the project default, and the
+ * overrides; mission exposes the override, the project default, and the
  * lists of authorable library items.
  */
 export interface AgentWildcardSettings {
@@ -778,9 +787,7 @@ export interface AgentWildcardSettings {
   testCommand: WildcardOverride;
   lintCommand: WildcardOverride;
   mission: { override: string | null; projectDefault: string | null; resolved: string | null };
-  persona: { override: string | null; projectDefault: string | null; resolved: string | null };
   missions: Array<{ id: string }>;
-  personas: Array<{ id: string; name: string; source: 'builtin' | 'user' | 'project' }>;
 }
 
 export interface ClubhouseModeSettings {

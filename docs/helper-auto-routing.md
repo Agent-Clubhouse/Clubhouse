@@ -13,7 +13,7 @@ Auto applies only where it is selected, and only to a new helper. It never write
 **Is Auto allowed?** Asked only for `cli: "auto"`. The first of these that is set wins:
 
 1. `dispatcher_locked` or `mcp_off`: always off. See [Where Auto is off](#where-auto-is-off).
-2. Project or persona `off`. These two can only turn it off, so a cloned repository can't spend another provider's quota.
+2. Project `off`. It can only turn it off, so a cloned repository can't spend another provider's quota. (A persona's `off` did the same until personas were retired in #2901; `scopes.persona` is always null now.)
 3. The orchestrator's `orchestration.autoHelpers`.
 4. The app setting.
 5. Built-in: off.
@@ -28,26 +28,22 @@ Auto applies only where it is selected, and only to a new helper. It never write
 
 `cli: "auto"` while Auto isn't allowed is refused, not ignored.
 
-`preset` has no switch. It only changes anything when an orchestrator sends `difficulty`, it stays on one CLI, and an orchestrator can already name any model. This also means turning on a stage 2 setting can't quietly authorize cross-provider routing when stage 4 ships. The limitation: a project or persona `off` stops Auto but doesn't stop presets.
+`preset` has no switch. It only changes anything when an orchestrator sends `difficulty`, it stays on one CLI, and an orchestrator can already name any model. This also means turning on a stage 2 setting can't quietly authorize cross-provider routing when stage 4 ships. The limitation: a project `off` stops Auto but doesn't stop presets.
 
-A start that names no CLI, model, effort or difficulty is today's path. Nothing is decided and no `routing` is recorded, whatever its persona sets.
+A start that names no CLI, model, effort or difficulty is today's path. Nothing is decided and no `routing` is recorded.
 
 **Each of CLI, model and effort**, highest first:
 
 1. An explicit request argument. A saved Sol choice that Go sends lands here and is authoritative.
-2. A persona front-matter pin, for values the request didn't name.
-3. A mapping cell (`preset` or `auto` only): custom, then built-in.
-4. `explicit` mode only: nothing passed, so the CLI's own default and the user's CLI config apply.
+2. A mapping cell (`preset` or `auto` only): custom, then built-in.
+3. `explicit` mode only: nothing passed, so the CLI's own default and the user's CLI config apply.
 
-`preset` and `auto` have no step 4. With no valid cell they refuse with `no_valid_mapping`.
+`preset` and `auto` have no step 3. With no valid cell they refuse with `no_valid_mapping`.
 
-A persona's model isn't known to fit the CLI, so it is checked. In `preset` mode, one a live list refuses is `no_valid_mapping`. In `explicit` mode it only warns, as nothing asked for a preset. A persona's `default` is that persona's own choice, and is allowed.
+Personas were retired (#2901), and with them the persona front-matter pin that sat between steps 1 and 2: `start_helper` accepts and ignores `persona`, and says so in `personaNote`. A decision saved before then can still read `persona_pinned` with a `persona` source.
 
-A persona's model goes with its CLI. If the request names a different CLI from the one the persona pins, the persona's model is dropped too, and the model comes from below that step.
+A cell's effort belongs to its model. So an explicit model takes no effort from a preset: it gets an explicit effort or the CLI's default. An explicit effort on a preset's model is checked against that model.
 
-A cell's effort belongs to its model. So an explicit or pinned model takes no effort from a preset: it gets an explicit effort or the CLI's default. An explicit effort on a preset's model is checked against that model.
-
-**Behaviour change in stage 2.** Until stage 2, a persona with `model:` or `orchestrator:` in its front-matter overwrote an explicit `start_helper` CLI or model, because it is applied during creation. Now the persona step leaves alone what the request named, and still applies the rest. A start that names nothing is unchanged, so its persona still sets them.
 
 ## Difficulty
 
@@ -168,7 +164,7 @@ Auto adds no rule to #2660's context setting:
 - A saved choice is per CLI and model. A model change keeps one the model offers and clears one it doesn't. A CLI change clears it.
 - At launch, `contextWindowForLaunch` clears a refused choice and keeps, without passing, one it can't check. Both emit the `context_window_not_applied` notice.
 
-v1 has no context column and `start_helper` has no context argument, so the only case is a persona supplying a choice against the model Auto picked. It is reported as `routing.context.status`: `none`, `applied`, `reset` or `not_applied`. A wake doesn't change the model, so it adds no case.
+v1 has no context column and `start_helper` has no context argument, so the only case was a persona supplying a choice against the model Auto picked, which can't happen since personas were retired (#2901). It is reported as `routing.context.status`: `none`, `applied`, `reset` or `not_applied`. A wake doesn't change the model, so it adds no case.
 
 `status` is a code with no text of its own. The words come from #2660's existing `contextWindowNotice`, `contextWindowReset` and `context_window_not_applied` notice, so a client shows those and doesn't add a second warning.
 
@@ -196,7 +192,7 @@ Stable codes:
 - `fallback`: `none`, `builtin_preset`, `candidate_skipped`, `model_unverified`, `retried_after_spawn_failure`.
 - `source`: `request`, `persona`, `auto`, `orchestrator`, `custom_mapping`, `builtin_mapping`, `cli_default`.
 - `skipped`, per provider: `cli_disabled`, `cli_unavailable`, `auto_not_supported`, `no_valid_mapping`, `cooling_down`, `quota_near_limit`, `quota_exhausted`.
-- `auto.reason`, when Auto is off: `not_enabled`, `project_off`, `persona_off`, `orchestration_off`, `mcp_off`, `dispatcher_locked`.
+- `auto.reason`, when Auto is off: `not_enabled`, `project_off`, `orchestration_off`, `mcp_off`, `dispatcher_locked`.
 
 MCP calls the provider `cli`, as `start_helper` does.
 
@@ -329,7 +325,7 @@ jq -s 'map(select(.t=="event")) as $e
 |---|---|---|
 | Agent | `updateDurableConfig` | Exhaustive by type. Bookkeeping (`lastSleep`, session ids) is left out |
 | Agent | `updateDurable`, `saveAgentIcon`, so appearance too | Name, color, emoji, icon |
-| Agent | `setOrchestrationPolicy`, `turnOffOrchestration`, a persona pinning | Each policy field, refusals too |
+| Agent | `setOrchestrationPolicy`, `turnOffOrchestration`, the persona layer carried at a switch | Each policy field, refusals too |
 | Agent | Instructions, permissions, MCP binding instructions and disabled tools | Changed only |
 | Project | `projectStore.update`, so appearance too | Color, CLI, name, emoji, icon |
 | Project | `writeProjectAgentDefaults`, including reset | Exhaustive by type |
@@ -379,9 +375,9 @@ App-wide preset editing from the phone is in scope.
   "copilot-cli":{"autoEligible":false,"reason":"auto_not_supported","quota":{"state":"unknown","unknownReason":"not_supported","asOf":null},"cells":null}}}
 ```
 
-A cell with nothing valid has `effective: null`. Until the `auto` mode is advertised, `autoEligible` only says whether a provider has presets. With `agentId`, stage 2 also returns `agent:{usable,reason?}`, where `reason` is `dispatcher_locked`, `mcp_off` or `orchestration_off`. The `auto` block appears from stage 4 and `quota` from stage 3. `source` under `auto` is `agent`, `project`, `persona`, `app`, `default`, `mcp_off` or `dispatcher_locked`, and `auto.reason` is set whenever `effective` is false.
+A cell with nothing valid has `effective: null`. Until the `auto` mode is advertised, `autoEligible` only says whether a provider has presets. With `agentId`, stage 2 also returns `agent:{usable,reason?}`, where `reason` is `dispatcher_locked`, `mcp_off` or `orchestration_off`. The `auto` block appears from stage 4 and `quota` from stage 3. `source` under `auto` is `agent`, `project`, `app`, `default`, `mcp_off` or `dispatcher_locked`, and `auto.reason` is set whenever `effective` is false.
 
-**Revisions.** The full snapshot has `helperRoutingRevision`, and a `helper_routing:changed` event carries `{revision}`, so an open or cached page knows to refetch. The revision moves when a saved value changes, when an app-wide read finds that a cell's state changed, or when something that decides Auto changes: a project's `off` or default persona from any surface, an orchestrator's switch or persona, or Clubhouse MCP. It doesn't move for a quota sample, and no snapshot is broadcast for one. It is opaque to a client. A list changing doesn't make a write stale: only a saved value does.
+**Revisions.** The full snapshot has `helperRoutingRevision`, and a `helper_routing:changed` event carries `{revision}`, so an open or cached page knows to refetch. The revision moves when a saved value changes, when an app-wide read finds that a cell's state changed, or when something that decides Auto changes: a project's `off` from any surface, an orchestrator's switch, or Clubhouse MCP. It doesn't move for a quota sample, and no snapshot is broadcast for one. It is opaque to a client. A list changing doesn't make a write stale: only a saved value does.
 
 **Quota freshness** is pulled. See `docs/mobile-control-v1.md#quota` for the rule: the smallest `refreshAfterSeconds` across providers, at least 5 seconds, with age measured from a `serverTime` anchor on suspend-aware monotonic time, never the phone's clock.
 

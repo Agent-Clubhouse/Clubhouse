@@ -4,11 +4,19 @@
  * Agents that use a built-in by reference pick up a new revision when their
  * next session starts.
  *
- * The role blocks start from today's persona files with their front matter
- * removed. The maintainer will rewrite them (#2902); the ids stay stable.
+ * The role blocks' text lives in `builtin-text/`, one file per role. It
+ * started as the old built-in role files, without their front matter. The
+ * maintainer will rewrite it (#2902); the ids stay stable.
  */
-import { getPersonaTemplate } from '../../../renderer/features/personas';
-import { stripPersonaFrontMatter } from '../../../shared/persona-pattern';
+import orchestratorText from './builtin-text/orchestrator.md';
+import projectManagerText from './builtin-text/project-manager.md';
+import groupProjectLeadText from './builtin-text/group-project-lead.md';
+import qualityAssuranceText from './builtin-text/quality-assurance.md';
+import developerFullMergeText from './builtin-text/developer-full-merge.md';
+import developerNoMergeText from './builtin-text/developer-no-merge.md';
+import researcherText from './builtin-text/researcher.md';
+import codeReviewerText from './builtin-text/code-reviewer.md';
+import helperText from './builtin-text/helper.md';
 import { CLUBHOUSE_MCP_PART_ID, type ManagedTemplate } from '../../../shared/managed-agents-types';
 import type { BlockAssetPayload, McpAssetPayload } from '../../../shared/asset-catalog-types';
 
@@ -34,11 +42,7 @@ const CLUBHOUSE_BASICS = [
   '- When something needs the person to decide, say so plainly and wait. Don\'t guess at choices that are theirs.',
 ].join('\n');
 
-function persona(id: string): string {
-  const template = getPersonaTemplate(id);
-  if (!template) throw new Error(`built-in persona ${id} is missing`);
-  return stripPersonaFrontMatter(template.content).trim();
-}
+const role = (text: string): string => text.trim();
 
 /** Ids are stable forever: agents and templates point at them. */
 export const BUILTIN_BLOCK_IDS = {
@@ -60,15 +64,15 @@ export function builtinParts(): BuiltinPart[] {
   return [
     block(BUILTIN_BLOCK_IDS.identity, 'Identity', 'Tells the agent its name, workspace and branch.', IDENTITY),
     block(BUILTIN_BLOCK_IDS.basics, 'Clubhouse basics', 'How to work inside Clubhouse.', CLUBHOUSE_BASICS),
-    block(BUILTIN_BLOCK_IDS.orchestrator, 'Orchestrator', 'Plans work and runs helpers to do it.', persona('orchestrator')),
-    block(BUILTIN_BLOCK_IDS.projectManager, 'Project manager', 'Plans and dispatches work. Does not write code.', persona('project-manager')),
-    block(BUILTIN_BLOCK_IDS.groupLead, 'Group project lead', 'Runs a group project board and the agents on it.', persona('group-project-pm')),
-    block(BUILTIN_BLOCK_IDS.qa, 'Quality assurance', 'Reviews changes and test coverage. Approves or rejects.', persona('qa')),
-    block(BUILTIN_BLOCK_IDS.developerMerge, 'Developer, full merge', 'Builds features and merges when checks pass.', persona('executor-merge')),
-    block(BUILTIN_BLOCK_IDS.developerPr, 'Developer, no merge', 'Builds features and opens a PR for review.', persona('executor-pr-only')),
-    block(BUILTIN_BLOCK_IDS.researcher, 'Researcher', 'Investigates and reports. Does not change code.', persona('researcher')),
-    block(BUILTIN_BLOCK_IDS.reviewer, 'Code reviewer', 'Adversarial review of changes.', persona('judge')),
-    block(BUILTIN_BLOCK_IDS.helper, 'Helper', 'Does one task for the agent that started it, then reports back.', persona('workhorse')),
+    block(BUILTIN_BLOCK_IDS.orchestrator, 'Orchestrator', 'Plans work and runs helpers to do it.', role(orchestratorText)),
+    block(BUILTIN_BLOCK_IDS.projectManager, 'Project manager', 'Plans and dispatches work. Does not write code.', role(projectManagerText)),
+    block(BUILTIN_BLOCK_IDS.groupLead, 'Group project lead', 'Runs a group project board and the agents on it.', role(groupProjectLeadText)),
+    block(BUILTIN_BLOCK_IDS.qa, 'Quality assurance', 'Reviews changes and test coverage. Approves or rejects.', role(qualityAssuranceText)),
+    block(BUILTIN_BLOCK_IDS.developerMerge, 'Developer, full merge', 'Builds features and merges when checks pass.', role(developerFullMergeText)),
+    block(BUILTIN_BLOCK_IDS.developerPr, 'Developer, no merge', 'Builds features and opens a PR for review.', role(developerNoMergeText)),
+    block(BUILTIN_BLOCK_IDS.researcher, 'Researcher', 'Investigates and reports. Does not change code.', role(researcherText)),
+    block(BUILTIN_BLOCK_IDS.reviewer, 'Code reviewer', 'Adversarial review of changes.', role(codeReviewerText)),
+    block(BUILTIN_BLOCK_IDS.helper, 'Helper', 'Does one task for the agent that started it, then reports back.', role(helperText)),
     {
       id: CLUBHOUSE_MCP_PART_ID,
       kind: 'mcp',

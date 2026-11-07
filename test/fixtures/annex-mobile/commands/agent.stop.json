@@ -50,14 +50,14 @@
       "name": "accepted (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_133",
+        "commandId": "cmd_134",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.stop",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_133",
+          "commandId": "cmd_134",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_dispatcher",
@@ -73,7 +73,7 @@
       "name": "guided: settled sleep",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_175",
+        "commandId": "cmd_176",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.stop",
         "version": 1,
@@ -81,7 +81,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_175",
+          "commandId": "cmd_176",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_term",
@@ -99,7 +99,7 @@
       "name": "guided: stop failed",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_182",
+        "commandId": "cmd_183",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.stop",
         "version": 1,
@@ -107,7 +107,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_182",
+          "commandId": "cmd_183",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "command_failed",
@@ -123,7 +123,7 @@
       "name": "guided: capture failed",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_183",
+        "commandId": "cmd_184",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.stop",
         "version": 1,
@@ -131,7 +131,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_183",
+          "commandId": "cmd_184",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "session_capture_failed",

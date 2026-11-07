@@ -348,13 +348,7 @@ vi.mock('./agent-settings-service', () => ({
   ],
   readDefaultMcps: async () => ['github'],
 }));
-vi.mock('./materialization-service', () => ({
-  listAvailablePersonas: async () => [{ id: 'qa', name: 'QA', source: 'builtin' }, { id: 'architect', name: 'Architect', source: 'project' }],
-  // Orchestration defaults from persona front-matter: only the architect sets any.
-  resolvePersonaId: (agent: { persona?: string }, defaults: { persona?: string }) => agent.persona || defaults.persona,
-  readLayeredPersonaRaw: async (_projectPath: string, personaId: string) =>
-    (personaId === 'architect' ? '---\norchestration: {"control": "ask-before-start", "maxHelpers": 4}\n---\n\n# Architect' : undefined),
-}));
+vi.mock('./materialization-service', () => ({}));
 vi.mock('./orchestration-settings', () => ({
   getSettings: () => ({ globalHelperCap: 20 }),
   getGlobalHelperCap: () => 20,
@@ -391,7 +385,6 @@ vi.mock('./git-service', () => ({
   getBranchChanges: async () => ({ available: true, base: 'main', noBase: false, ahead: 2, uncommitted: 1,
     files: [{ path: 'a.ts', additions: 80, deletions: 40 }, { path: 'b.ts', additions: 14, deletions: 11 }] }),
 }));
-vi.mock('./persona-application', () => ({ applyPersonaToAgent: async () => undefined }));
 // Helper requests (#159): the real request stores and runner; the orchestrator side is faked.
 vi.mock('./clubhouse-mcp/tools/helper-tools', async () => {
   const starts = await import('./helper-start-requests');
@@ -591,7 +584,9 @@ function resetWorld() {
       { id: 'durable_docs', name: 'Docs', color: 'violet', parentAgentId: 'durable_chat', worktreePath: `${APP}/.clubhouse/agents/docs`, createdAt: '2026-10-06T09:00:00.000Z' },
     ],
     [DISPATCHER_PATH]: [
-      { id: 'durable_dispatcher', name: 'Dispatcher', color: 'indigo', orchestrator: 'claude-code', freeAgentMode: true, persona: 'dispatcher',
+      { id: 'durable_dispatcher', name: 'Dispatcher', color: 'indigo', orchestrator: 'claude-code', freeAgentMode: true,
+        // A Dispatcher created before #2901 still has this legacy field; nothing reads it.
+        persona: 'dispatcher',
         idleSleep: 'never', runtimeMode: 'chat', mcpOverride: true, createdAt: '2026-10-07T09:00:00.000Z', lastSessionId: 'sess_dispatch' },
     ],
   };
@@ -1105,7 +1100,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     annexServer._testing.trackedQuickAgents.delete('quick_new');
 
     const create = { type: 'agent.create', projectId: 'proj_app', name: 'calm-otter', color: 'emerald' };
-    await command('accepted', { ...create, orchestrator: 'claude-code', model: 'opus', persona: 'qa', freeAgentMode: true, useWorktree: true, mcpIds: ['github'], branchFrom: 'main' });
+    await command('accepted', { ...create, orchestrator: 'claude-code', model: 'opus', freeAgentMode: true, useWorktree: true, mcpIds: ['github'], branchFrom: 'main' });
     await command('accepted minimal', { ...create, name: 'quiet-wren' });
     await command('accepted with folder and branch', { ...create, name: 'calm-otter', folderName: 'otter', branchName: 'feature/otter', useWorktree: true });
     await command('project_not_found', { ...create, projectId: 'missing' });
@@ -1117,7 +1112,8 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('invalid_branch_name', { ...create, branchName: 'bad..branch' });
     await command('orchestrator_unavailable', { ...create, orchestrator: 'copilot-cli' });
     await command('free_agent_mode_unavailable', { ...create, orchestrator: 'codex-cli', freeAgentMode: true });
-    await command('unknown_persona', { ...create, persona: 'pirate' });
+    // Personas were retired (#2901): any persona is refused, the existing 409.
+    await command('managed_agent (persona)', { ...create, persona: 'qa' });
     await command('unknown_mcp', { ...create, mcpIds: ['jira'] });
     await command('create_refused', { ...create, name: 'taken' });
     await command('invalid_command (unknown field)', { ...create, instructions: 'be nice' });
@@ -1127,8 +1123,8 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('invalid_command (orchestration null)', { ...create, orchestration: null });
     W.durables[APP] = W.durables[APP].filter((d) => d.id !== 'durable_created');
 
-    await command('accepted', { type: 'agent.update', agentId: 'durable_sleepy', name: 'bright-otter', color: 'rose', emoji: '🦦', model: 'sonnet', persona: 'architect', freeAgentMode: true, runtime: 'chat', idleSleep: 30 });
-    await command('accepted clear', { type: 'agent.update', agentId: 'durable_sleepy', emoji: null, persona: null, runtime: 'default', idleSleep: 'inherit' });
+    await command('accepted', { type: 'agent.update', agentId: 'durable_sleepy', name: 'bright-otter', color: 'rose', emoji: '🦦', model: 'sonnet', freeAgentMode: true, runtime: 'chat', idleSleep: 30 });
+    await command('accepted clear', { type: 'agent.update', agentId: 'durable_sleepy', emoji: null, runtime: 'default', idleSleep: 'inherit' });
     await command('accepted orchestrator', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'claude-code' });
     await command('accepted while running (idleSleep)', { type: 'agent.update', agentId: 'durable_chat', idleSleep: 'never' });
     await command('agent_not_found', { type: 'agent.update', agentId: 'missing', idleSleep: 30 });
@@ -1139,7 +1135,9 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('runtime_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'codex-cli', runtime: 'chat' });
     await command('free_agent_mode_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'codex-cli', freeAgentMode: true });
     await command('clubhouse_mode_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', clubhouseMode: true });
-    await command('unknown_persona', { type: 'agent.update', agentId: 'durable_sleepy', persona: 'pirate' });
+    await command('managed_agent (persona)', { type: 'agent.update', agentId: 'durable_sleepy', persona: 'qa' });
+    // Clearing a persona is a no-op: there is none to clear.
+    await command('accepted persona clear (no-op)', { type: 'agent.update', agentId: 'durable_sleepy', persona: null });
     await command('invalid_color', { type: 'agent.update', agentId: 'durable_sleepy', color: 'chartreuse' });
     await command('invalid_command (no settings)', { type: 'agent.update', agentId: 'durable_sleepy' });
     await command('invalid_command (unknown field)', { type: 'agent.update', agentId: 'durable_sleepy', instructions: 'be nice' });

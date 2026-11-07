@@ -9,8 +9,9 @@ const OTHER_PROJECT = path.join('projects', 'other');
 
 const state = vi.hoisted(() => ({
   agents: new Map<string, Record<string, unknown>[]>(),
-  personas: new Map<string, string>(),
-  projectDefaults: {} as { persona?: string },
+  /** What the retired persona layer decided, per agent id (legacy-migration). */
+  layers: new Map<string, Record<string, unknown>>(),
+  projectDefaults: {} as { helperAuto?: 'off' },
   globalCap: 20,
   running: new Set<string>(),
 }));
@@ -120,9 +121,9 @@ vi.mock('./agent-settings-service', () => ({
   readProjectAgentDefaults: vi.fn(async () => state.projectDefaults),
 }));
 
-vi.mock('./materialization-service', () => ({
-  resolvePersonaId: (agent: DurableAgentConfig, defaults: { persona?: string }) => agent.persona ?? defaults.persona,
-  readLayeredPersonaRaw: vi.fn(async (_projectPath: string, personaId: string) => state.personas.get(personaId)),
+vi.mock('./managed-agents/legacy-migration', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./managed-agents/legacy-migration')>(),
+  legacyPersonaOrchestration: vi.fn(async (_projectPath: string, agent: DurableAgentConfig) => (agent.managed ? undefined : state.layers.get(agent.id))),
 }));
 
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
@@ -155,10 +156,8 @@ import {
   getHelperSummary,
   getOrchestrationPolicy,
   isCrossProjectAllowed,
-  reconcileAfterPersonaChange,
   resolveHelperLaunchSettings,
   resolveOrchestrationPolicies,
-  restorePersonaOrchestration,
   setOrchestrationPolicy,
   syncOrchestrationGate,
   turnOffOrchestration,
@@ -166,7 +165,6 @@ import {
   withAgentLock,
 } from './orchestration-policy';
 import { isCrossProjectEnabled, isOrchestrationEnabled, setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './clubhouse-mcp/orchestration-gate';
-import { notifyPersonaChanged, notifyProjectDefaultPersonaChanged } from './persona-change-hook';
 import * as agentConfig from './agent-config';
 import { mcpCallAccess, mcpCallerKind, setMcpCallerUnreadable } from './clubhouse-mcp/mcp-call-gate';
 import { disposeHelperTool } from './clubhouse-mcp/tools/helper-dispose-tools';
@@ -177,10 +175,6 @@ function agent(id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgen
 
 function setAgents(projectPath: string, list: DurableAgentConfig[]): void {
   state.agents.set(projectPath, list as unknown as Record<string, unknown>[]);
-}
-
-function persona(policy: Record<string, unknown>): string {
-  return `---\norchestration: ${JSON.stringify(policy)}\n---\n\n# Persona`;
 }
 
 /** Register the agent as running in `projectPath`, as a spawn does. */
@@ -196,7 +190,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   _resetOrchestrationGateForTesting();
   state.agents.clear();
-  state.personas.clear();
+  state.layers.clear();
   state.projectDefaults = {};
   registry.clear();
   state.globalCap = 20;
@@ -211,68 +205,6 @@ describe('getOrchestrationPolicy', () => {
   it('returns the defaults', async () => {
     setAgents(PROJECT, [agent('orch')]);
     expect(await getOrchestrationPolicy(PROJECT, 'orch')).toMatchObject({ orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5 });
-  });
-
-  it('takes defaults from the agent\'s persona front-matter', async () => {
-    state.personas.set('orchestrator', persona({ orchestrate: true, control: 'ask-before-start', maxHelpers: 3 }));
-    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator' })]);
-    const policy = await getOrchestrationPolicy(PROJECT, 'orch');
-    expect(policy).toMatchObject({ orchestrate: true, control: 'ask-before-start', maxHelpers: 3 });
-    expect(policy?.sources.control).toBe('persona');
-  });
-
-  it('uses the Orchestrator persona\'s limits for other agents but never its orchestrate', async () => {
-    state.personas.set('orchestrator', persona({ orchestrate: true, maxHelpers: 2 }));
-    setAgents(PROJECT, [agent('dev', { persona: 'developer' })]);
-    expect(await getOrchestrationPolicy(PROJECT, 'dev')).toMatchObject({ orchestrate: false, maxHelpers: 2 });
-  });
-
-  it('never connects other agents to the Dispatcher from the Orchestrator persona (#2534)', async () => {
-    state.personas.set('orchestrator', persona({ orchestrate: true, connectToDispatcher: true, maxHelpers: 2 }));
-    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator' }), agent('dev', { persona: 'developer' })]);
-    expect(await getOrchestrationPolicy(PROJECT, 'orch')).toMatchObject({ connectToDispatcher: true, sources: { connectToDispatcher: 'persona' } });
-    expect(await getOrchestrationPolicy(PROJECT, 'dev')).toMatchObject({ connectToDispatcher: false, maxHelpers: 2, sources: { connectToDispatcher: 'default' } });
-  });
-
-  it('lets an agent\'s own persona connect it to the Dispatcher (#2534)', async () => {
-    state.personas.set('lead', persona({ connectToDispatcher: true }));
-    setAgents(PROJECT, [agent('orch', { persona: 'lead' })]);
-    expect((await getOrchestrationPolicy(PROJECT, 'orch'))?.connectToDispatcher).toBe(true);
-  });
-
-  it('turns orchestration on for agents using the built-in Orchestrator persona, and only them (#2233)', async () => {
-    const { getPersonaTemplate } = await import('../../renderer/features/personas');
-    state.personas.set('orchestrator', getPersonaTemplate('orchestrator')!.content);
-    state.personas.set('workhorse', getPersonaTemplate('workhorse')!.content);
-    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator' }), agent('helper', { persona: 'workhorse' })]);
-    expect(await getOrchestrationPolicy(PROJECT, 'orch')).toMatchObject({ orchestrate: true, access: 'same', control: 'hands-off', maxHelpers: 5 });
-    expect((await getOrchestrationPolicy(PROJECT, 'orch'))?.sources.orchestrate).toBe('persona');
-    expect((await getOrchestrationPolicy(PROJECT, 'helper'))?.orchestrate).toBe(false);
-  });
-
-  it('gives a managed agent no persona layer: only its own settings decide (#2899)', async () => {
-    state.projectDefaults = { persona: 'lead' };
-    state.personas.set('lead', persona({ orchestrate: true, maxHelpers: 2 }));
-    state.personas.set('orchestrator', persona({ orchestrate: true, maxHelpers: 2 }));
-    const managed = { version: 1 as const, blocks: [], skills: [], mcps: [] };
-    setAgents(PROJECT, [agent('m', { managed }), agent('n', { managed, orchestration: { orchestrate: true } })]);
-    expect(await getOrchestrationPolicy(PROJECT, 'm')).toMatchObject({ orchestrate: false, maxHelpers: 5 });
-    expect((await getOrchestrationPolicy(PROJECT, 'n'))?.orchestrate).toBe(true);
-    const all = await resolveOrchestrationPolicies(PROJECT, [agent('m', { managed })]);
-    expect(all.get('m')).toMatchObject({ orchestrate: false, maxHelpers: 5 });
-  });
-
-  it('follows the project default persona when the agent has none', async () => {
-    state.projectDefaults = { persona: 'lead' };
-    state.personas.set('lead', persona({ orchestrate: true }));
-    setAgents(PROJECT, [agent('orch')]);
-    expect((await getOrchestrationPolicy(PROJECT, 'orch'))?.orchestrate).toBe(true);
-  });
-
-  it('lets the agent\'s own fields win over its persona', async () => {
-    state.personas.set('orchestrator', persona({ orchestrate: true, access: 'auto' }));
-    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator', orchestration: { orchestrate: false } })]);
-    expect(await getOrchestrationPolicy(PROJECT, 'orch')).toMatchObject({ orchestrate: false, access: 'auto' });
   });
 
   it('never opens the gate, even when the config on disk says on', async () => {
@@ -301,24 +233,25 @@ describe('getOrchestrationPolicy', () => {
   it('returns null for an unknown agent', async () => {
     expect(await getOrchestrationPolicy(PROJECT, 'nope')).toBeNull();
   });
+
+  it('has no persona layer: what an old persona decided no longer reaches the policy (#2901)', async () => {
+    state.layers.set('orch', { orchestrate: true, maxHelpers: 2 });
+    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator' }), agent('own', { orchestration: { orchestrate: true } })]);
+    expect(await getOrchestrationPolicy(PROJECT, 'orch')).toMatchObject({ orchestrate: false, maxHelpers: 5, sources: { orchestrate: 'default', maxHelpers: 'default' } });
+    expect(await getOrchestrationPolicy(PROJECT, 'own')).toMatchObject({ orchestrate: true, sources: { orchestrate: 'agent' } });
+  });
 });
 
 describe('resolveOrchestrationPolicies (mobile catalog)', () => {
-  it('resolves each agent like getOrchestrationPolicy, reading each persona once, without touching the gate', async () => {
-    const { readLayeredPersonaRaw } = await import('./materialization-service');
-    state.projectDefaults = { persona: 'lead' };
-    state.personas.set('lead', persona({ orchestrate: true, control: 'ask-before-start' }));
-    state.personas.set('orchestrator', persona({ maxHelpers: 2 }));
-    const agents = [agent('a'), agent('b', { orchestration: { control: 'ask-everything', maxHelpers: 7 } }), agent('c', { persona: 'dev' })];
+  it('resolves each agent like getOrchestrationPolicy, without touching the gate', async () => {
+    state.projectDefaults = { helperAuto: 'off' };
+    const agents = [agent('a', { orchestration: { orchestrate: true } }), agent('b', { orchestration: { control: 'ask-everything', maxHelpers: 7 } }), agent('c', { persona: 'dev' })];
     setAgents(PROJECT, agents);
     setOrchestrationEnabled('a', true);
-    vi.mocked(readLayeredPersonaRaw).mockClear();
     const policies = await resolveOrchestrationPolicies(PROJECT, agents);
-    // Two personas (lead, dev), each read with the Orchestrator persona's limits.
-    expect(readLayeredPersonaRaw).toHaveBeenCalledTimes(4);
     for (const a of agents) expect(policies.get(a.id)).toEqual(await getOrchestrationPolicy(PROJECT, a.id));
-    expect(policies.get('b')).toMatchObject({ orchestrate: true, control: 'ask-everything', maxHelpers: 7, sources: { orchestrate: 'persona', control: 'agent' } });
-    expect(policies.get('c')).toMatchObject({ orchestrate: false, maxHelpers: 2, sources: { maxHelpers: 'persona' } });
+    expect(policies.get('b')).toMatchObject({ orchestrate: false, control: 'ask-everything', maxHelpers: 7, sources: { orchestrate: 'default', control: 'agent' } });
+    expect(policies.get('a')?.autoEffective).toMatchObject({ effective: false, reason: 'project_off' });
     expect(isOrchestrationEnabled('a')).toBe(true);
   });
 });
@@ -468,76 +401,62 @@ describe('setOrchestrationPolicy for a managed agent (#2819)', () => {
   });
 });
 
-describe('switching to managed keeps the persona\'s policy (#2901)', () => {
+describe('carryPersonaOrchestration: what the retired persona layer decided becomes the agent\'s own (#2901)', () => {
   const managed = { version: 1 as const, blocks: [], skills: [], mcps: [] };
-  /** What setManagedSetup does to the agent's record. */
-  const switchToManaged = (id: string) => {
-    const a = find(id) as DurableAgentConfig;
-    a.managed = managed;
-    delete a.persona;
-  };
+  beforeEach(() => { auditRows.length = 0; });
 
-  it('an Orchestrator-persona agent with no own orchestration still orchestrates after the switch', async () => {
-    state.personas.set('orchestrator', persona({ orchestrate: true, control: 'ask-before-start' }));
+  it('writes the fields the layer decided, audited as carried to managed, and the policy resolves as the layer did', async () => {
+    state.layers.set('orch', { orchestrate: true, control: 'ask-before-start' });
     setAgents(PROJECT, [agent('orch', { persona: 'orchestrator' })]);
-    const carry = await carryPersonaOrchestration(PROJECT, 'orch');
-    expect(carry).toMatchObject({ previousPersona: 'orchestrator', before: undefined, carried: { orchestrate: true, control: 'ask-before-start' } });
-    switchToManaged('orch');
+    expect(await carryPersonaOrchestration(PROJECT, 'orch')).toEqual({ orchestrate: true, control: 'ask-before-start' });
+    expect(find('orch').orchestration).toEqual({ orchestrate: true, control: 'ask-before-start' });
     const policy = await getOrchestrationPolicy(PROJECT, 'orch');
-    expect(policy).toMatchObject({ orchestrate: true, control: 'ask-before-start' });
-    expect(policy?.sources.orchestrate).toBe('agent');
+    expect(policy).toMatchObject({ orchestrate: true, control: 'ask-before-start', sources: { orchestrate: 'agent', control: 'agent' } });
     expect(auditRows.filter((r) => r.code === 'carried_to_managed').map((r) => r.key)).toEqual(['orchestration.orchestrate', 'orchestration.control']);
+    expect(auditRows.every((r) => r.surface === 'persona')).toBe(true);
   });
 
-  it('keeps the project orchestrator.md layer for another persona, and the agent\'s own fields win', async () => {
-    state.personas.set('orchestrator', persona({ orchestrate: true, maxHelpers: 2, access: 'standard' }));
+  it('leaves the agent\'s own fields as they are', async () => {
+    state.layers.set('dev', { maxHelpers: 2, access: 'standard' });
     setAgents(PROJECT, [agent('dev', { persona: 'developer', orchestration: { access: 'same' } })]);
-    const before = await getOrchestrationPolicy(PROJECT, 'dev');
-    await carryPersonaOrchestration(PROJECT, 'dev');
+    expect(await carryPersonaOrchestration(PROJECT, 'dev')).toEqual({ maxHelpers: 2 });
     expect(find('dev').orchestration).toEqual({ access: 'same', maxHelpers: 2 });
-    switchToManaged('dev');
-    const after = await getOrchestrationPolicy(PROJECT, 'dev');
-    for (const key of ['orchestrate', 'access', 'control', 'maxHelpers', 'crossProjectHelpers', 'connectToDispatcher', 'autoHelpers'] as const) {
-      expect(after?.[key]).toEqual(before?.[key]);
-    }
   });
 
-  it('uses the project default persona, writes nothing when the persona decides nothing, and skips a managed agent', async () => {
-    state.projectDefaults = { persona: 'orchestrator' };
-    state.personas.set('orchestrator', persona({ orchestrate: true }));
-    setAgents(PROJECT, [agent('a'), agent('b', { persona: 'plain' }), agent('m', { managed })]);
-    expect((await carryPersonaOrchestration(PROJECT, 'a'))?.previousPersona).toBe('orchestrator');
-    expect(find('a').orchestration).toEqual({ orchestrate: true });
-    state.personas.clear();
-    expect(await carryPersonaOrchestration(PROJECT, 'b')).toMatchObject({ carried: undefined });
+  it('writes nothing when the layer decides nothing, and skips a managed or unknown agent', async () => {
+    setAgents(PROJECT, [agent('b', { persona: 'plain' }), agent('m', { managed, orchestration: { maxHelpers: 9 } })]);
+    state.layers.set('m', { orchestrate: true });
+    expect(await carryPersonaOrchestration(PROJECT, 'b')).toBeUndefined();
     expect(find('b').orchestration).toBeUndefined();
-    expect(await carryPersonaOrchestration(PROJECT, 'm')).toBeNull();
+    expect(await carryPersonaOrchestration(PROJECT, 'm')).toBeUndefined();
+    expect(find('m').orchestration).toEqual({ maxHelpers: 9 });
+    expect(await carryPersonaOrchestration(PROJECT, 'nope')).toBeUndefined();
+    expect(auditRows).toEqual([]);
   });
 
-  it('a plain agent that stays unmanaged keeps what orchestrator.md decided for it, and only that (D62)', async () => {
-    state.personas.set('orchestrator', persona({ orchestrate: true, maxHelpers: 2, access: 'standard' }));
+  it('an agent that stays unmanaged is audited as carried from the persona layer (D62)', async () => {
+    state.layers.set('plain', { maxHelpers: 2 });
     setAgents(PROJECT, [agent('plain', { orchestration: { access: 'same' } })]);
-    const before = await getOrchestrationPolicy(PROJECT, 'plain');
-    const carry = await carryPersonaOrchestration(PROJECT, 'plain', 'plain');
-    // orchestrate and connectToDispatcher never come from the project file for a non-Orchestrator agent.
-    expect(carry?.carried).toEqual({ maxHelpers: 2 });
-    expect(find('plain').orchestration).toEqual({ access: 'same', maxHelpers: 2 });
+    expect(await carryPersonaOrchestration(PROJECT, 'plain', 'plain')).toEqual({ maxHelpers: 2 });
     expect(auditRows.filter((r) => r.code === 'carried_from_persona_layer').map((r) => r.key)).toEqual(['orchestration.maxHelpers']);
-    // With the persona layer gone, it resolves the same.
-    state.personas.clear();
-    const after = await getOrchestrationPolicy(PROJECT, 'plain');
-    for (const key of ['orchestrate', 'access', 'control', 'maxHelpers', 'crossProjectHelpers', 'connectToDispatcher', 'autoHelpers'] as const) {
-      expect(after?.[key]).toEqual(before?.[key]);
-    }
+    expect(await getOrchestrationPolicy(PROJECT, 'plain')).toMatchObject({ access: 'same', maxHelpers: 2 });
   });
 
-  it('puts the fields back when the switch fails, leaving fields changed since', async () => {
-    state.personas.set('orchestrator', persona({ orchestrate: true, maxHelpers: 3 }));
-    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator', orchestration: { access: 'same' } })]);
-    const carry = (await carryPersonaOrchestration(PROJECT, 'orch'))!;
-    find('orch').orchestration = { ...find('orch').orchestration, maxHelpers: 4 };
-    await restorePersonaOrchestration(PROJECT, 'orch', carry);
-    expect(find('orch').orchestration).toEqual({ access: 'same', maxHelpers: 4 });
+  it('a persona\'s Auto off beats the agent\'s own on, as it did, audited with the old value', async () => {
+    state.layers.set('own-on', { autoHelpers: false });
+    setAgents(PROJECT, [agent('own-on', { persona: 'quiet', orchestration: { orchestrate: true, autoHelpers: true } })]);
+    expect(await carryPersonaOrchestration(PROJECT, 'own-on', 'plain')).toEqual({ autoHelpers: false });
+    expect(find('own-on').orchestration).toEqual({ orchestrate: true, autoHelpers: false });
+    expect(auditRows).toEqual([expect.objectContaining({ key: 'orchestration.autoHelpers', before: true, after: false, code: 'carried_from_persona_layer' })]);
+    expect(await getOrchestrationPolicy(PROJECT, 'own-on')).toMatchObject({ autoHelpers: false, sources: { autoHelpers: 'agent' } });
+  });
+
+  it('never touches the gate', async () => {
+    state.layers.set('orch', { orchestrate: true });
+    setAgents(PROJECT, [agent('orch')]);
+    live('orch');
+    await carryPersonaOrchestration(PROJECT, 'orch');
+    expect(isOrchestrationEnabled('orch')).toBe(false);
   });
 });
 
@@ -569,13 +488,12 @@ describe('setOrchestrationPolicy', () => {
     expect(isOrchestrationEnabled('orch')).toBe(true);
   });
 
-  it('connects an agent through its own orchestrate, not through the Orchestrator persona (#2578)', async () => {
-    state.personas.set('orchestrator', persona({ orchestrate: true }));
+  it('connects an agent through its own orchestrate (#2578)', async () => {
     setAgents(PROJECT, [
-      agent('orch', { persona: 'orchestrator' }),
-      agent('dev', { persona: 'developer' }),
-      agent('off', { persona: 'orchestrator', orchestration: { connectToDispatcher: false } }),
-      agent('helper', { persona: 'orchestrator', parentAgentId: 'orch' }),
+      agent('orch', { orchestration: { orchestrate: true } }),
+      agent('dev'),
+      agent('off', { orchestration: { orchestrate: true, connectToDispatcher: false } }),
+      agent('helper', { orchestration: { orchestrate: true }, parentAgentId: 'orch' }),
     ]);
     expect(await getOrchestrationPolicy(PROJECT, 'orch')).toMatchObject({ orchestrate: true, connectToDispatcher: true, sources: { connectToDispatcher: 'default' } });
     expect((await getOrchestrationPolicy(PROJECT, 'dev'))?.connectToDispatcher).toBe(false);
@@ -586,19 +504,18 @@ describe('setOrchestrationPolicy', () => {
     expect(Object.fromEntries([...all].map(([id, p]) => [id, p.connectToDispatcher]))).toEqual({ orch: true, dev: false, off: false, helper: false });
   });
 
-  it('never connects a helper, from its own setting or its persona, in either read (#2578)', async () => {
-    state.personas.set('lead', persona({ connectToDispatcher: true }));
+  it('never connects a helper, from its own setting, in either read (#2578)', async () => {
     setAgents(PROJECT, [
       agent('orch', { orchestration: { orchestrate: true } }),
       agent('explicit', { parentAgentId: 'orch', orchestration: { connectToDispatcher: true } }),
-      agent('from-persona', { parentAgentId: 'orch', persona: 'lead' }),
+      agent('orchestrating', { parentAgentId: 'orch', orchestration: { orchestrate: true } }),
     ]);
     const off = { connectToDispatcher: false, sources: { connectToDispatcher: 'default' } };
     expect(await getOrchestrationPolicy(PROJECT, 'explicit')).toMatchObject(off);
-    expect(await getOrchestrationPolicy(PROJECT, 'from-persona')).toMatchObject(off);
+    expect(await getOrchestrationPolicy(PROJECT, 'orchestrating')).toMatchObject(off);
     const all = await resolveOrchestrationPolicies(PROJECT, agentsOf(PROJECT));
     expect(all.get('explicit')).toMatchObject(off);
-    expect(all.get('from-persona')).toMatchObject(off);
+    expect(all.get('orchestrating')).toMatchObject(off);
   });
 
   it('a phone or IPC write of true on a helper still resolves false (#2578)', async () => {
@@ -652,11 +569,11 @@ describe('setOrchestrationPolicy', () => {
     expect(isOrchestrationEnabled('orch')).toBe(false);
   });
 
-  it('a null field goes back to the persona value', async () => {
-    state.personas.set('orchestrator', persona({ maxHelpers: 3 }));
+  it('a null field goes back to the default, whatever an old persona said', async () => {
+    state.layers.set('orch', { maxHelpers: 3 });
     setAgents(PROJECT, [agent('orch', { persona: 'orchestrator', orchestration: { maxHelpers: 8 } })]);
     const result = await setOrchestrationPolicy(PROJECT, 'orch', { maxHelpers: null });
-    expect(result.policy?.maxHelpers).toBe(3);
+    expect(result.policy?.maxHelpers).toBe(5);
     expect(find('orch').orchestration).toBeUndefined();
   });
 
@@ -715,72 +632,6 @@ describe('setOrchestrationPolicy', () => {
 
   it('reports an unknown agent', async () => {
     expect(await setOrchestrationPolicy(PROJECT, 'nope', { orchestrate: true })).toMatchObject({ ok: false, message: 'Agent not found' });
-  });
-});
-
-describe('persona change re-sync', () => {
-  beforeEach(() => {
-    state.personas.set('orchestrator', persona({ orchestrate: true }));
-  });
-
-  it('closes the gate when the new persona turns orchestration off', async () => {
-    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator' })]);
-    live('orch');
-    await syncOrchestrationGate(PROJECT, 'orch');
-    expect(isOrchestrationEnabled('orch')).toBe(true);
-    find('orch').persona = 'developer';
-    await notifyPersonaChanged(PROJECT, 'orch', 'orchestrator');
-    expect(isOrchestrationEnabled('orch')).toBe(false);
-    expect(find('orch').orchestration).toBeUndefined();
-  });
-
-  it('keeps orchestration on, pinned on the agent, while it has helpers', async () => {
-    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator' }), agent('h1', { parentAgentId: 'orch' })]);
-    live('orch');
-    await syncOrchestrationGate(PROJECT, 'orch');
-    find('orch').persona = 'developer';
-    await reconcileAfterPersonaChange(PROJECT, 'orch', 'orchestrator');
-    expect(find('orch').orchestration).toEqual({ orchestrate: true });
-    expect(isOrchestrationEnabled('orch')).toBe(true);
-    expect((await getOrchestrationPolicy(PROJECT, 'orch'))?.orchestrate).toBe(true);
-  });
-
-  it('handles an agent that had no persona of its own, via the project default', async () => {
-    state.projectDefaults = { persona: 'orchestrator' };
-    setAgents(PROJECT, [agent('orch', { persona: 'developer' })]);
-    live('orch');
-    setOrchestrationEnabled('orch', true);
-    // It used the project default (orchestrator) before choosing developer.
-    await notifyPersonaChanged(PROJECT, 'orch', undefined);
-    expect(isOrchestrationEnabled('orch')).toBe(false);
-  });
-
-  it('re-checks agents on the project default persona when it changes', async () => {
-    state.projectDefaults = { persona: 'developer' };
-    setAgents(PROJECT, [
-      agent('follower'),
-      agent('keeper'),
-      agent('h1', { parentAgentId: 'keeper' }),
-      agent('own', { persona: 'orchestrator' }),
-    ]);
-    for (const id of ['follower', 'keeper', 'own']) {
-      live(id);
-      setOrchestrationEnabled(id, true);
-    }
-    await notifyProjectDefaultPersonaChanged(PROJECT, 'orchestrator');
-    expect(isOrchestrationEnabled('follower')).toBe(false);
-    // Has helpers: kept on, pinned.
-    expect(isOrchestrationEnabled('keeper')).toBe(true);
-    expect(find('keeper').orchestration).toEqual({ orchestrate: true });
-    // Has its own persona: not affected.
-    expect(isOrchestrationEnabled('own')).toBe(true);
-  });
-
-  it('never opens the gate when the new persona turns orchestration on', async () => {
-    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator' })]);
-    live('orch');
-    await reconcileAfterPersonaChange(PROJECT, 'orch', 'developer');
-    expect(isOrchestrationEnabled('orch')).toBe(false);
   });
 });
 
@@ -1018,9 +869,8 @@ describe('cross-project helpers (#2512)', () => {
     expect(await isCrossProjectAllowed(PROJECT, 'orch')).toBe(false);
   });
 
-  it('opens it at spawn from the saved policy or persona front-matter', async () => {
-    state.personas.set('xp', persona({ orchestrate: true, crossProjectHelpers: true }));
-    setAgents(PROJECT, [agent('orch', { persona: 'xp' }), agent('plain', { orchestration: { orchestrate: true } })]);
+  it('opens it at spawn from the saved policy', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true, crossProjectHelpers: true } }), agent('plain', { orchestration: { orchestrate: true } })]);
     live('orch');
     live('plain');
     await syncOrchestrationGate(PROJECT, 'orch');
@@ -1484,23 +1334,6 @@ describe('no Clubhouse MCP, no orchestration (#2589)', () => {
     mcp.app = false;
     expect(await turnOffOrchestration(PROJECT, 'orch', 'keep')).toMatchObject({ ok: true });
     expect(find('orch').orchestration).toEqual({ orchestrate: false });
-  });
-
-  it('still pins orchestration when a persona change would drop it with MCP off', async () => {
-    state.personas.set('lead', persona({ orchestrate: true }));
-    state.personas.set('dev', persona({}));
-    setAgents(PROJECT, [agent('orch', { persona: 'dev' }), agent('h1', { parentAgentId: 'orch' })]);
-    mcp.app = false;
-    await reconcileAfterPersonaChange(PROJECT, 'orch', 'lead');
-    expect(find('orch').orchestration).toEqual({ orchestrate: true });
-  });
-
-  it('does not pin when a persona change keeps saved orchestration on with MCP off', async () => {
-    state.personas.set('lead', persona({ orchestrate: true }));
-    setAgents(PROJECT, [agent('orch', { persona: 'lead' }), agent('h1', { parentAgentId: 'orch' })]);
-    mcp.app = false;
-    await reconcileAfterPersonaChange(PROJECT, 'orch', 'lead');
-    expect(find('orch').orchestration).toBeUndefined();
   });
 
   it('allows the other fields with MCP off, without opening anything', async () => {

@@ -88,55 +88,47 @@ describe('orchestration policy', () => {
   });
 
   describe('resolveOrchestrationPolicy', () => {
-    it('layers agent over persona over defaults and reports sources', () => {
-      const policy = resolveOrchestrationPolicy({ control: 'ask-everything' }, { orchestrate: true, control: 'hands-off', maxHelpers: 2 });
-      expect(policy).toMatchObject({ orchestrate: true, access: 'same', control: 'ask-everything', maxHelpers: 2 });
+    it('takes the agent\'s own fields over the defaults and reports sources', () => {
+      const policy = resolveOrchestrationPolicy({ control: 'ask-everything', maxHelpers: 2 });
+      expect(policy).toMatchObject({ orchestrate: false, access: 'same', control: 'ask-everything', maxHelpers: 2 });
       expect(policy.sources).toEqual({
-        orchestrate: 'persona', access: 'default', control: 'agent', maxHelpers: 'persona', crossProjectHelpers: 'default', connectToDispatcher: 'default', autoHelpers: 'default',
+        orchestrate: 'default', access: 'default', control: 'agent', maxHelpers: 'agent', crossProjectHelpers: 'default', connectToDispatcher: 'default', autoHelpers: 'default',
       });
     });
 
     describe('connectToDispatcher (#2578)', () => {
       it('follows the resolved orchestrate while unset, with default as its source', () => {
-        expect(resolveOrchestrationPolicy({ orchestrate: true }, undefined)).toMatchObject({ connectToDispatcher: true, sources: { connectToDispatcher: 'default' } });
-        expect(resolveOrchestrationPolicy(undefined, { orchestrate: true })).toMatchObject({ connectToDispatcher: true, sources: { connectToDispatcher: 'default' } });
-        expect(resolveOrchestrationPolicy({ orchestrate: false }, { orchestrate: true })).toMatchObject({ connectToDispatcher: false, sources: { connectToDispatcher: 'default' } });
-        expect(resolveOrchestrationPolicy(undefined, undefined).connectToDispatcher).toBe(false);
+        expect(resolveOrchestrationPolicy({ orchestrate: true })).toMatchObject({ connectToDispatcher: true, sources: { connectToDispatcher: 'default' } });
+        expect(resolveOrchestrationPolicy({ orchestrate: false })).toMatchObject({ connectToDispatcher: false, sources: { connectToDispatcher: 'default' } });
+        expect(resolveOrchestrationPolicy(undefined).connectToDispatcher).toBe(false);
       });
 
-      it('lets an explicit value win over orchestrate, from the agent or its persona', () => {
-        expect(resolveOrchestrationPolicy({ orchestrate: true, connectToDispatcher: false }, undefined)).toMatchObject({ connectToDispatcher: false, sources: { connectToDispatcher: 'agent' } });
-        expect(resolveOrchestrationPolicy({ connectToDispatcher: true }, undefined)).toMatchObject({ orchestrate: false, connectToDispatcher: true, sources: { connectToDispatcher: 'agent' } });
-        expect(resolveOrchestrationPolicy({ orchestrate: true }, { connectToDispatcher: false })).toMatchObject({ connectToDispatcher: false, sources: { connectToDispatcher: 'persona' } });
-        expect(resolveOrchestrationPolicy({ connectToDispatcher: true }, { connectToDispatcher: false }).connectToDispatcher).toBe(true);
+      it('lets an explicit value win over orchestrate', () => {
+        expect(resolveOrchestrationPolicy({ orchestrate: true, connectToDispatcher: false })).toMatchObject({ connectToDispatcher: false, sources: { connectToDispatcher: 'agent' } });
+        expect(resolveOrchestrationPolicy({ connectToDispatcher: true })).toMatchObject({ orchestrate: false, connectToDispatcher: true, sources: { connectToDispatcher: 'agent' } });
       });
 
       it('is always false on a helper, whatever is set, with default as its source', () => {
         const off = { connectToDispatcher: false, sources: { connectToDispatcher: 'default' } };
-        expect(resolveOrchestrationPolicy(undefined, { orchestrate: true }, { helper: true })).toMatchObject({ orchestrate: true, ...off });
-        expect(resolveOrchestrationPolicy({ connectToDispatcher: true }, undefined, { helper: true })).toMatchObject(off);
-        expect(resolveOrchestrationPolicy(undefined, { connectToDispatcher: true }, { helper: true })).toMatchObject(off);
-        expect(resolveOrchestrationPolicy({ connectToDispatcher: false }, undefined, { helper: true })).toMatchObject(off);
+        expect(resolveOrchestrationPolicy({ orchestrate: true }, { helper: true })).toMatchObject({ orchestrate: true, ...off });
+        expect(resolveOrchestrationPolicy({ connectToDispatcher: true }, { helper: true })).toMatchObject(off);
+        expect(resolveOrchestrationPolicy({ connectToDispatcher: false }, { helper: true })).toMatchObject(off);
       });
 
-      it('leaves a helper\'s other fields layered as usual', () => {
-        const policy = resolveOrchestrationPolicy({ control: 'ask-everything' }, { maxHelpers: 2 }, { helper: true });
-        expect(policy).toMatchObject({ control: 'ask-everything', maxHelpers: 2, sources: { control: 'agent', maxHelpers: 'persona' } });
+      it('leaves a helper\'s other fields as usual', () => {
+        const policy = resolveOrchestrationPolicy({ control: 'ask-everything' }, { helper: true });
+        expect(policy).toMatchObject({ control: 'ask-everything', maxHelpers: 5, sources: { control: 'agent', maxHelpers: 'default' } });
       });
     });
 
-    it('takes crossProjectHelpers from persona front-matter', () => {
-      const policy = resolveOrchestrationPolicy(undefined, { orchestrate: true, crossProjectHelpers: true });
+    it('takes crossProjectHelpers from the agent', () => {
+      const policy = resolveOrchestrationPolicy({ orchestrate: true, crossProjectHelpers: true });
       expect(policy.crossProjectHelpers).toBe(true);
-      expect(policy.sources.crossProjectHelpers).toBe('persona');
-    });
-
-    it('lets an agent turn off what its persona turns on', () => {
-      expect(resolveOrchestrationPolicy({ orchestrate: false }, { orchestrate: true }).orchestrate).toBe(false);
+      expect(policy.sources.crossProjectHelpers).toBe('agent');
     });
 
     it('ignores invalid stored values', () => {
-      expect(resolveOrchestrationPolicy({ maxHelpers: -1 } as never, undefined).maxHelpers).toBe(5);
+      expect(resolveOrchestrationPolicy({ maxHelpers: -1 } as never).maxHelpers).toBe(5);
     });
   });
 
@@ -284,7 +276,7 @@ describe('no Clubhouse MCP, no orchestration (#2589)', () => {
   const saved = { orchestrate: true, crossProjectHelpers: true, connectToDispatcher: true, maxHelpers: 3 };
 
   it('reads the switches off and keeps what is saved', () => {
-    const policy = resolveOrchestrationPolicy(saved, undefined, { mcpOff: true });
+    const policy = resolveOrchestrationPolicy(saved, { mcpOff: true });
     expect(policy).toMatchObject({ orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false, maxHelpers: 3 });
     expect(policy.mcpOff).toEqual({ orchestrate: true, crossProjectHelpers: true, connectToDispatcher: true, autoHelpers: false });
     expect(savedOrchestrate(policy)).toBe(true);
@@ -293,13 +285,13 @@ describe('no Clubhouse MCP, no orchestration (#2589)', () => {
   });
 
   it('saves a Connect to Dispatcher that follows orchestrate as it would resolve', () => {
-    const policy = resolveOrchestrationPolicy({ orchestrate: true }, undefined, { mcpOff: true });
+    const policy = resolveOrchestrationPolicy({ orchestrate: true }, { mcpOff: true });
     expect(policy.connectToDispatcher).toBe(false);
     expect(policy.mcpOff?.connectToDispatcher).toBe(true);
   });
 
   it('adds nothing while MCP is on', () => {
-    const policy = resolveOrchestrationPolicy(saved, undefined, { mcpOff: false });
+    const policy = resolveOrchestrationPolicy(saved, { mcpOff: false });
     expect(policy).not.toHaveProperty('mcpOff');
     expect(policy.orchestrate).toBe(true);
     expect(savedOrchestrate(policy)).toBe(true);
@@ -318,28 +310,18 @@ describe('autoHelpers (#2671)', () => {
   it('keeps a boolean, and is off unless set', () => {
     expect(normalizeOrchestrationConfig({ autoHelpers: true })).toEqual({ autoHelpers: true });
     expect(normalizeOrchestrationConfig({ autoHelpers: 'yes' })).toBeUndefined();
-    expect(resolveOrchestrationPolicy(undefined, undefined).autoHelpers).toBe(false);
+    expect(resolveOrchestrationPolicy(undefined).autoHelpers).toBe(false);
     expect(() => validateOrchestrationPatch({ autoHelpers: 'on' })).toThrow(/autoHelpers/);
     expect(validateOrchestrationPatch({ autoHelpers: null })).toEqual({ autoHelpers: null });
   });
 
-  it('a persona can turn it off and never on', () => {
-    expect(resolveOrchestrationPolicy(undefined, { autoHelpers: true })).toMatchObject({ autoHelpers: false, sources: { autoHelpers: 'default' } });
-    expect(resolveOrchestrationPolicy(undefined, { autoHelpers: true })).not.toHaveProperty('personaAutoOff');
-    expect(resolveOrchestrationPolicy(undefined, { autoHelpers: false })).toMatchObject({ autoHelpers: false, personaAutoOff: true, sources: { autoHelpers: 'persona' } });
-  });
-
   describe('decideHelperAuto: the outcome, at every level', () => {
-    const decide = (app: boolean, projectOff: boolean, agent: object, persona?: object, options?: object) =>
-      decideHelperAuto({ app, projectOff, policy: resolveOrchestrationPolicy({ orchestrate: true, ...agent }, persona, options) });
-
-    it('a persona\'s off beats the agent\'s own on, the bug a source check would miss', () => {
-      expect(decide(true, false, { autoHelpers: true }, { autoHelpers: false })).toEqual({ effective: false, source: 'persona', reason: 'persona_off' });
-    });
+    const decide = (app: boolean, projectOff: boolean, agent: object, options?: object) =>
+      decideHelperAuto({ app, projectOff, policy: resolveOrchestrationPolicy({ orchestrate: true, ...agent }, options) });
 
     it('a project\'s off beats everything but MCP', () => {
       expect(decide(true, true, { autoHelpers: true })).toEqual({ effective: false, source: 'project', reason: 'project_off' });
-      expect(decide(true, true, { autoHelpers: true }, undefined, { mcpOff: true })).toEqual({ effective: false, source: 'mcp_off', reason: 'mcp_off' });
+      expect(decide(true, true, { autoHelpers: true }, { mcpOff: true })).toEqual({ effective: false, source: 'mcp_off', reason: 'mcp_off' });
     });
 
     it('the agent\'s switch beats the app, both ways', () => {
@@ -347,9 +329,9 @@ describe('autoHelpers (#2671)', () => {
       expect(decide(true, false, { autoHelpers: false })).toEqual({ effective: false, source: 'agent', reason: 'not_enabled' });
     });
 
-    it('unset follows the app, and a persona\'s true changes nothing', () => {
+    it('unset follows the app', () => {
       expect(decide(true, false, {})).toEqual({ effective: true, source: 'app' });
-      expect(decide(false, false, {}, { autoHelpers: true })).toEqual({ effective: false, source: 'default', reason: 'not_enabled' });
+      expect(decide(false, false, {})).toEqual({ effective: false, source: 'default', reason: 'not_enabled' });
     });
 
     it('an agent that doesn\'t orchestrate can\'t use it', () => {
@@ -360,7 +342,7 @@ describe('autoHelpers (#2671)', () => {
   it('needs Clubhouse MCP to turn on, and reads off without it, keeping what is saved', () => {
     expect(patchTurnsOnMcpSwitch({ autoHelpers: true })).toBe(true);
     expect(patchTurnsOnMcpSwitch({ autoHelpers: false })).toBe(false);
-    expect(resolveOrchestrationPolicy({ autoHelpers: true }, undefined, { mcpOff: true })).toMatchObject({ autoHelpers: false, mcpOff: { autoHelpers: true } });
+    expect(resolveOrchestrationPolicy({ autoHelpers: true }, { mcpOff: true })).toMatchObject({ autoHelpers: false, mcpOff: { autoHelpers: true } });
   });
 });
 
@@ -368,7 +350,7 @@ describe('a report-only helper', () => {
   const saved = { orchestrate: true, crossProjectHelpers: true, connectToDispatcher: true, autoHelpers: true };
 
   it('counts as off, and reads off with what is saved kept', () => {
-    const policy = resolveOrchestrationPolicy(saved, undefined, { mcpReportOnly: true });
+    const policy = resolveOrchestrationPolicy(saved, { mcpReportOnly: true });
     expect(isMcpDependentOff(policy)).toBe(true);
     expect(asShownPolicy(policy)).toMatchObject({ orchestrate: false, crossProjectHelpers: false, autoHelpers: false, mcpOff: { orchestrate: true, crossProjectHelpers: true, autoHelpers: true } });
     expect(savedOrchestrate(asShownPolicy(policy))).toBe(true);
@@ -381,7 +363,7 @@ describe('a report-only helper', () => {
   });
 
   it('has Auto off for good', () => {
-    const policy = resolveOrchestrationPolicy(saved, undefined, { mcpReportOnly: true });
+    const policy = resolveOrchestrationPolicy(saved, { mcpReportOnly: true });
     expect(decideHelperAuto({ app: true, projectOff: false, policy })).toEqual({ effective: false, source: 'mcp_off', reason: 'mcp_off' });
   });
 });

@@ -23,7 +23,6 @@ export interface DurableAgentInput {
   orchestrator?: string;
   freeAgentMode?: boolean;
   mcpIds?: string[];
-  persona?: string;
   /**
    * False turns Clubhouse's hooks, permission prompts and MCP bridge off
    * (#2893), set before the first session starts so it never gets them.
@@ -65,7 +64,7 @@ export async function createDurableAgent(
   { onError }: { onError?: (message: string) => void } = {},
 ): Promise<string | null> {
   const fail = (err: unknown) => (onError ? onError(err instanceof Error ? err.message : String(err)) : toastFailure(err));
-  const { name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, persona, clubhouseFeatures } = input;
+  const { name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, clubhouseFeatures } = input;
 
   if (isRemoteProjectId(project.id)) {
     // Remote project — proxy create to satellite via REST
@@ -99,7 +98,7 @@ export async function createDurableAgent(
 
   try {
     const config = await window.clubhouse.agent.createDurable(
-      project.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds, undefined, persona,
+      project.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds,
     );
     if (tempId) removeAgent(tempId);
     if (await plainAgentSkipsClubhouseMode(project.path)) {

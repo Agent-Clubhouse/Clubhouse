@@ -1,7 +1,7 @@
 /**
  * Helper presets and what a start decides from them (#2671,
  * docs/helper-auto-routing.md). Stage 2: `difficulty` picks a model and effort on
- * one CLI. Explicit arguments win over a persona's pins, which win over a preset.
+ * one CLI. Explicit arguments win over a preset.
  *
  * Presets are checked against the CLI's own list when written and again when
  * used. A saved value is never rewritten: one no longer offered shows as stale,
@@ -10,7 +10,6 @@
  */
 
 import { createHash, randomUUID } from 'crypto';
-import { parsePersonaFile } from '../../shared/persona-pattern';
 import {
   BUILTIN_PRESETS,
   HELPER_DIFFICULTIES,
@@ -52,7 +51,6 @@ import { appLog } from './log-service';
 import { forceProviderQuota, isProviderCoolingDown, readProviderQuota } from './provider-quota';
 import { noteRoutingPolicyChanged, setRoutingPolicyListener } from './helper-routing-changes';
 import { onMcpEnablementChanged } from './mcp-settings';
-import { readLayeredPersonaRaw } from './materialization-service';
 import { checkHelperEffort, checkHelperModel, modelListFor } from './model-check';
 import * as orchestrationSettings from './orchestration-settings';
 import { appendSettingsAudit, type SettingsAuditSurface } from './settings-audit';
@@ -157,10 +155,9 @@ export interface StartPlanRequest {
   model?: string;
   effort?: string;
   difficulty?: string;
-  persona?: string;
   /** The CLI the helper gets when nothing else names one. */
   orchestratorCli?: string;
-  /** The project the helper is created in: its persona, and the profile whose login the lists follow. */
+  /** The project the helper is created in: the profile whose login the lists follow. */
   projectPath: string;
 }
 
@@ -181,8 +178,6 @@ export interface StartPlan {
   provider?: string;
   model?: string;
   effort?: string;
-  /** What the persona must leave alone, because the request named it. */
-  keep: ReadonlyArray<'orchestrator' | 'model'>;
   routing: HelperRouting;
   /** A preset that couldn't be fully checked. */
   warning?: string;
@@ -193,50 +188,26 @@ export type StartPlanResult =
   /** `message` is for the orchestrator. `userReason` follows "because" in what a person who approved the start reads. */
   | { ok: false; code: 'no_valid_mapping' | 'auto_not_supported' | 'auto_off' | 'no_candidate'; message: string; userReason: string; decision?: HelperDecisionRecord };
 
-/** What a persona's front-matter sets for a CLI and model. Unreadable means nothing: the creation refuses a missing persona. */
-async function personaPins(projectPath: string, persona: string | undefined): Promise<{ orchestrator?: string; model?: string }> {
-  if (!persona) return {};
-  try {
-    const raw = await readLayeredPersonaRaw(projectPath, persona);
-    if (!raw) return {};
-    const settings = parsePersonaFile(raw).settings as { orchestrator?: unknown; model?: unknown };
-    return {
-      ...(typeof settings.orchestrator === 'string' && settings.orchestrator && { orchestrator: settings.orchestrator }),
-      ...(typeof settings.model === 'string' && settings.model && { model: settings.model }),
-    };
-  } catch (err) {
-    // telemetry-exempt: logged; the start goes on as if the persona pinned nothing
-    appLog('core:mcp', 'warn', 'start_helper: could not read a persona', { meta: { persona, error: errorText(err) } });
-    return {};
-  }
-}
-
 /**
- * The order is: the request, then the persona's pins, then a preset (with
- * `difficulty`), then nothing passed, so the CLI's own default. A preset's effort
+ * The order is: the request, then a preset (with `difficulty`), then nothing
+ * passed, so the CLI's own default. A preset's effort
  * belongs to its model, so it isn't used when the model came from elsewhere.
  * Returns no plan for a start that asked for nothing: that is today's path, and
  * it records nothing.
  */
 export async function planHelperStart(request: StartPlanRequest): Promise<StartPlanResult> {
-  const { cli, model, effort, difficulty, persona, orchestratorCli, projectPath } = request;
+  const { cli, model, effort, difficulty, orchestratorCli, projectPath } = request;
   if (!cli && !model && !effort && !difficulty) return { ok: true, plan: null };
 
-  const pinned = await personaPins(projectPath, persona);
-  const wantsAuto = cli === AUTO_CLI;
-  if (wantsAuto) {
+  if (cli === AUTO_CLI) {
     if (!request.auto?.effective) return autoOffRefusal(request.auto);
-    // A persona's pin decides, and Auto has nothing to balance. Its CLI or the orchestrator's is used.
-    if (!pinned.orchestrator && !pinned.model) return prepareAuto(request);
+    return prepareAuto(request);
   }
-  // A persona's model goes with its CLI: it can't run on another one the request named.
-  const otherCli = !!cli && !wantsAuto && !!pinned.orchestrator && pinned.orchestrator !== cli;
-  const pins = otherCli ? {} : pinned;
-  const namedCli = wantsAuto ? undefined : cli;
-  const provider = namedCli ?? pins.orchestrator ?? orchestratorCli;
-  const providerSource: HelperRoutingFieldSource = namedCli ? 'request' : pins.orchestrator ? 'persona' : 'orchestrator';
-  let resolvedModel = model ?? pins.model;
-  let modelSource: HelperRoutingFieldSource = model ? 'request' : pins.model ? 'persona' : 'cli_default';
+  const namedCli = cli;
+  const provider = namedCli ?? orchestratorCli;
+  const providerSource: HelperRoutingFieldSource = namedCli ? 'request' : 'orchestrator';
+  let resolvedModel = model;
+  let modelSource: HelperRoutingFieldSource = model ? 'request' : 'cli_default';
   let resolvedEffort = effort;
   let effortSource: HelperRoutingFieldSource = effort ? 'request' : 'cli_default';
   let fallback: HelperRoutingFallback = 'none';
@@ -274,27 +245,6 @@ export async function planHelperStart(request: StartPlanRequest): Promise<StartP
     }
   }
 
-  // A persona's model comes unchecked, and it may not be one this CLI runs (`opus` on Codex).
-  if (modelSource === 'persona' && resolvedModel) {
-    const check = await checkHelperModel(provider, resolvedModel, projectPath);
-    if (check.ok === false) {
-      // A preset was asked for and can't be honoured. Otherwise it's the persona's call, as before: say so.
-      if (validDifficulty) {
-        return {
-          ok: false,
-          code: 'no_valid_mapping',
-          message: `This helper's persona sets the model "${resolvedModel}", which ${provider} doesn't offer: ${check.message} ` +
-            'Name a CLI and model yourself, or use another persona.',
-          userReason: `its persona sets the model "${resolvedModel}", which ${provider} doesn't offer.`,
-        };
-      }
-      warning = check.message;
-    } else if (check.warning) {
-      warning = check.warning;
-      if (validDifficulty) fallback = 'model_unverified';
-    }
-  }
-
   const usedPreset = modelSource === 'custom_mapping' || modelSource === 'builtin_mapping';
   // 'default' passes no --model, and is saved as no model.
   const passedModel = resolvedModel && resolvedModel !== 'default' ? resolvedModel : undefined;
@@ -304,18 +254,16 @@ export async function planHelperStart(request: StartPlanRequest): Promise<StartP
       ...(provider && { provider }),
       ...(passedModel && { model: passedModel }),
       ...(resolvedEffort && { effort: resolvedEffort }),
-      keep: [...(namedCli ? ['orchestrator' as const] : []), ...(model || otherCli ? ['model' as const] : [])],
       ...(warning && { warning }),
       routing: {
-        mode: wantsAuto ? 'auto' : validDifficulty ? 'preset' : 'explicit',
+        mode: validDifficulty ? 'preset' : 'explicit',
         balanced: false,
         decidedAt: new Date().toISOString(),
         policyVersion: HELPER_ROUTING_POLICY_VERSION,
         requested: { provider: cli ?? null, model: model ?? null, effort: effort ?? null, difficulty: validDifficulty },
         resolved: { provider: provider ?? null, model: passedModel ?? null, effort: resolvedEffort ?? null, difficulty: validDifficulty },
         source: { provider: providerSource, model: modelSource, effort: effortSource },
-        reason: wantsAuto && (pinned.orchestrator || pinned.model) ? 'persona_pinned'
-          : usedPreset ? 'preset_on_cli' : namedCli || model || effort ? 'explicit_request' : 'persona_pinned',
+        reason: usedPreset ? 'preset_on_cli' : 'explicit_request',
         fallback,
         context: { status: 'none' },
       },
@@ -387,7 +335,6 @@ async function prepareAuto(request: StartPlanRequest): Promise<StartPlanResult> 
     ok: true,
     plan: {
       pendingAuto: { options, skipped, difficulty, ...(orchestratorCli && { orchestratorCli }) },
-      keep: ['orchestrator', 'model'],
       routing: {} as HelperRouting,
     },
   };
@@ -621,7 +568,6 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, Au
       provider: decision.provider,
       model: cell.cell.model,
       ...(effort && { effort }),
-      keep: ['orchestrator', 'model'],
       routing,
       decision: autoDecisionRecord({ decisionId, now, difficulty, orchestratorCli, options, skipped, load, decision, routing }),
       ...(cell.warning && { warning: cell.warning }),
@@ -630,8 +576,8 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, Au
 }
 
 /**
- * Whether `cli: "auto"` is allowed, at the scope asked about. A project or a
- * persona can turn it off and never on, so a cloned repository can't spend another
+ * Whether `cli: "auto"` is allowed, at the scope asked about. A project can
+ * turn it off and never on, so a cloned repository can't spend another
  * provider's quota. Then the orchestrator's own choice, then the app's.
  */
 export async function readHelperAuto(context: {
@@ -655,7 +601,8 @@ export async function readHelperAuto(context: {
       app: { value: app, editable: true },
       ...(projectPath && { project: { value: projectOff ? 'off' as const : null, choices: ['off', null] as ['off', null], editable: true } }),
       ...(agent && {
-        persona: { value: policy?.personaAutoOff ? false as const : null, editable: false as const },
+        // Personas were retired (#2901): always null, kept for clients that read it.
+        persona: { value: null, editable: false as const },
         agent: { value: stored, editable: true },
       }),
     },

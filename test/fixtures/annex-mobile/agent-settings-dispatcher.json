@@ -111,18 +111,7 @@
             "unavailableReason": "Codex CLI not found"
           }
         ],
-        "personas": [
-          {
-            "id": "qa",
-            "name": "QA",
-            "source": "builtin"
-          },
-          {
-            "id": "architect",
-            "name": "Architect",
-            "source": "project"
-          }
-        ]
+        "personas": []
       },
       "orchestration": null,
       "projectId": "__dispatcher__",
@@ -219,7 +208,7 @@
         },
         "persona": {
           "editable": "never",
-          "value": "dispatcher"
+          "value": null
         },
         "runtime": {
           "editable": "always",

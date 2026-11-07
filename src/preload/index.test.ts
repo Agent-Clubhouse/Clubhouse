@@ -225,7 +225,6 @@ describe('preload IPC bridge', () => {
         false,
         ['mcp-1'],
         { 'mcp-1': { mode: 'safe' } },
-        'persona',
         { folderName: 'builder', branchName: 'builder/work', branchFrom: 'main' },
       )).resolves.toBe('bridge-result');
 
@@ -240,7 +239,6 @@ describe('preload IPC bridge', () => {
         false,
         ['mcp-1'],
         { 'mcp-1': { mode: 'safe' } },
-        'persona',
         { folderName: 'builder', branchName: 'builder/work', branchFrom: 'main' },
       );
     });

@@ -25,9 +25,8 @@ import { normalizeIdleSleep } from '../../shared/idle-sleep';
 import { setAgentIdleSleep } from './chat-idle-settings';
 import { assertAgentGitName, validateAgentGitName } from '../../shared/agent-name';
 import { ACCESS_LEVELS, type AgentAccessLevel, type OrchestrationPolicyConfig } from '../../shared/orchestration-policy';
-import { notifyPersonaChanged } from './persona-change-hook';
 import { uncommittedPorcelain } from './clubhouse-owned-files';
-import { DISPATCHER_PERSONA, isDispatcherPath } from './dispatcher/dispatcher-paths';
+import { isDispatcherPath } from './dispatcher/dispatcher-paths';
 import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedMigration, type ManagedMigrationFailure } from '../../shared/managed-agents-types';
 import { noteManagedSettingsChanged } from './managed-agents/changed-notice';
 
@@ -1174,23 +1173,6 @@ export async function peekDurableConfigs(projectPath: string): Promise<readonly 
   return [];
 }
 
-/**
- * The hidden dispatcher persona belongs to the Dispatcher, and the Dispatcher
- * keeps it (#2535, #2551). Every persona write checks this: creation, and
- * updateDurableConfig (so Apply persona and every settings path too).
- * `persona` is the persona the agent would end up with; '' or undefined is
- * none. Throws tagged `validation`.
- */
-export function assertPersonaAllowed(projectPath: string, persona: string | undefined): void {
-  if (isDispatcherPath(projectPath)) {
-    if (persona !== DISPATCHER_PERSONA) {
-      throw tagError(new Error("The Dispatcher's persona can't be changed."), 'validation');
-    }
-  } else if (persona === DISPATCHER_PERSONA) {
-    throw tagError(new Error('The Dispatcher persona is only for the Dispatcher.'), 'validation');
-  }
-}
-
 /** What the catalog said about a saved context choice, checked before an update touches the agent. */
 interface ContextWindowPreflight {
   /** The project's CLI, for an agent with none of its own. */
@@ -1254,7 +1236,6 @@ const AGENT_AUDIT_KEYS: Record<keyof DurableConfigUpdates, AuditKeyFormat | 'boo
   mcpOverride: 'value',
   runtimeMode: 'value',
   idleSleep: 'value',
-  persona: 'value',
   mission: 'value',
   sourceControlProvider: 'value',
   // These can hold commands, env or credentials, so never their values.
@@ -1288,7 +1269,6 @@ async function updateDurableConfigInner(
   updates: DurableConfigUpdates,
   beforeCommit?: () => void | Promise<void>,
 ): Promise<void> {
-  if (updates.persona !== undefined) assertPersonaAllowed(projectPath, updates.persona);
   const preflight = await preflightContextWindow(projectPath, agentId, updates);
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
@@ -1296,7 +1276,6 @@ async function updateDurableConfigInner(
   if (beforeCommit) await beforeCommit();
   const rollbackProvider = beforeCommit && updates.orchestrator !== undefined ? structuredClone(agent) : undefined;
   const auditBefore = pickAudited(agent, AGENT_AUDIT_CATALOG);
-  const previousPersona = agent.persona;
   if (updates.quickAgentDefaults !== undefined) {
     agent.quickAgentDefaults = updates.quickAgentDefaults;
   }
@@ -1413,13 +1392,6 @@ async function updateDurableConfigInner(
     if (updates.mcpOverride === null) delete agent.mcpOverride;
     else agent.mcpOverride = updates.mcpOverride;
   }
-  if (updates.persona !== undefined) {
-    if (updates.persona) {
-      agent.persona = updates.persona;
-    } else {
-      delete agent.persona;
-    }
-  }
   if (updates.buildCommand !== undefined) {
     if (updates.buildCommand) {
       agent.buildCommand = updates.buildCommand;
@@ -1471,17 +1443,6 @@ async function updateDurableConfigInner(
   await auditChanges('agent', 'agent', agentId, auditBefore, pickAudited(agent, AGENT_AUDIT_CATALOG), AGENT_AUDIT_CATALOG);
   // A running chat session picks the new timeout up now.
   if (updates.idleSleep !== undefined) setAgentIdleSleep(agentId, agent.idleSleep);
-  if (agent.persona !== previousPersona) {
-    // The orchestration policy re-checks its persona defaults (#2228).
-    try {
-      await notifyPersonaChanged(projectPath, agentId, previousPersona);
-    } catch (err) {
-      // telemetry-exempt: logged; the persona change itself is saved
-      appLog('core:agent-config', 'warn', 'Persona change hook failed', {
-        meta: { agentId, error: err instanceof Error ? err.message : String(err) },
-      });
-    }
-  }
 }
 
 /** Persist the last CLI session ID for a durable agent */
@@ -1749,7 +1710,7 @@ export interface DurableCreationRunOptions {
    * createDurable removes it because its caller gets the error instead.
    */
   keepFailedRecord?: boolean;
-  /** Extra injection into the new worktree after the project defaults (e.g. a persona). Failures are logged, not fatal, unless `injectRequired`. */
+  /** Extra injection into the new worktree after the project defaults (e.g. a managed helper's setup). Failures are logged, not fatal, unless `injectRequired`. */
   inject?: (config: DurableAgentConfig) => Promise<void>;
   /** An inject failure fails the creation: the agent can't work without it (a managed helper's setup, #2899). */
   injectRequired?: boolean;
@@ -1955,30 +1916,14 @@ async function foreignParentProject(projectPath: string, params: StartDurableCre
 }
 
 /**
- * Refuse a persona id that resolves to nothing in the target project
- * (project > user > built-in), so no agent records an id with no content
- * (#2511), or one the agent may not have (assertPersonaAllowed). Throws
- * tagged `validation`.
- */
-async function assertPersonaExists(projectPath: string, persona: string | undefined): Promise<void> {
-  assertPersonaAllowed(projectPath, persona);
-  if (!persona) return;
-  const { readLayeredPersonaRaw } = await import('./materialization-service');
-  if (await readLayeredPersonaRaw(projectPath, persona) === undefined) {
-    throw tagError(new Error(`Unknown persona "${persona}". Use a persona id from this project, your user personas or the built-in ones.`), 'validation');
-  }
-}
-
-/**
  * Run a creation's up-front checks without creating anything: the name,
- * folder, branch and base rules, the persona id, and whether the parent,
+ * folder, branch and base rules, and whether the parent,
  * folder or branch is free right now. Throws (tagged `validation`) with the
  * message the creation itself would refuse with. A later creation checks
  * everything again.
  */
 export async function checkDurableCreation(projectPath: string, params: StartDurableCreationParams): Promise<void> {
   const plan = params.useWorktree !== false ? planDurableWorktree(projectPath, params.name, params) : undefined;
-  await assertPersonaExists(projectPath, params.persona);
   const folderOnDisk = plan ? await pathExists(plan.wtPath) : false;
   const agents = await readAgents(projectPath);
   const parentProject = await foreignParentProject(projectPath, params);
@@ -1998,11 +1943,10 @@ export async function beginDurableCreation(
   params: StartDurableCreationParams,
   options: DurableCreationRunOptions = {},
 ): Promise<DurableCreationHandle> {
-  const { name, color, model, effort, routing, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona } = params;
+  const { name, color, model, effort, routing, orchestrator, freeAgentMode, mcpIds, mcpConfigs } = params;
   const useWorktree = params.useWorktree !== false;
   // The folder and branch come from the request; refuse bad ones before anything touches disk.
   const plan = useWorktree ? planDurableWorktree(projectPath, name, params) : undefined;
-  await assertPersonaExists(projectPath, persona);
   const parentProject = await foreignParentProject(projectPath, params);
   const parentAgents = parentProject ? await readAgents(parentProject) : undefined;
 
@@ -2041,6 +1985,8 @@ export async function beginDurableCreation(
     color,
     ...(plan ? { branch: plan.branch, worktreePath: plan.wtPath, branchOwned: false } : {}),
     createdAt: startedAt,
+    // A new agent never had the retired persona layer, so there is nothing to carry onto it (D62).
+    personaLayerCarriedAt: startedAt,
     ...(model && model !== 'default' ? { model } : {}),
     ...(effort ? { effort } : {}),
     ...(routing ? { routing } : {}),
@@ -2048,7 +1994,6 @@ export async function beginDurableCreation(
     ...(effectiveFreeAgent ? { freeAgentMode: effectiveFreeAgent } : {}),
     ...(mcpIds && mcpIds.length > 0 ? { mcpIds } : {}),
     ...(mcpConfigs && Object.keys(mcpConfigs).length > 0 ? { mcpConfigs } : {}),
-    ...(persona ? { persona } : {}),
     // Helpers (#2224): a new agent can start life as a helper of another.
     ...(parentAgentId !== undefined ? { parentAgentId } : {}),
     ...(parentAgentId !== undefined && parentProject ? { parentProjectPath: parentProject } : {}),
@@ -2445,12 +2390,11 @@ export async function createDurable(
   freeAgentMode?: boolean,
   mcpIds?: string[],
   mcpConfigs?: Record<string, Record<string, string>>,
-  persona?: string,
   worktreeOptions: DurableWorktreeOptions = {},
 ): Promise<DurableAgentConfig> {
   const handle = await beginDurableCreation(projectPath, {
     ...worktreeOptions,
-    name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona,
+    name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs,
   }, { keepFailedRecord: false });
   // The caller gets the error, so a failed agent leaves no record behind.
   return handle.done;

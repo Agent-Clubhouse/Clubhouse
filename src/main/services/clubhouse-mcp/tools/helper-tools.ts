@@ -387,7 +387,7 @@ async function restoreTask(projectPath: string, helperId: string, task: string):
  * the helper until a spawn delivers it, so a helper left asleep (a restart,
  * a failed spawn, a check below) gets it on its next wake. Everything that
  * decides the spawn is read again here, after the wait: the helper's
- * config (a persona may have changed its CLI), the orchestrator's gate and
+ * config (its CLI may have changed meanwhile), the orchestrator's gate and
  * liveness, and the access, ranked for the helper's CLI. The helper is in
  * `spawning` from the record write until this settles. Never throws.
  *
@@ -431,7 +431,7 @@ async function finishHelperStart(
     const provider = config.orchestrator ?? orchestrator.orchestrator;
     const launch = await resolveLaunchFor(homePath, orchestrator.id, provider, requestedAccess);
     config = await agentConfig.getDurableConfig(helperPath, helperId).catch((): null => null);
-    // A persona applied during creation may have switched the CLI: rank again for it.
+    // The CLI may have changed while the worktree was made: rank again for it.
     const finalProvider = config?.orchestrator ?? provider;
     const finalLaunch = finalProvider === provider
       ? launch
@@ -470,7 +470,7 @@ async function finishHelperStart(
       missionRouted: [{ sender: { agentId: orchestrator.id, name: orchestrator.name }, text: task }],
       orchestrator: finalProvider as OrchestratorId | undefined,
       // Both explicitly: an unset mode would be filled from project settings
-      // at spawn, and a persona may have written freeAgentMode on the config.
+      // at spawn, and the config may hold another freeAgentMode.
       freeAgentMode: finalLaunch.freeAgentMode,
       permissionMode: finalLaunch.permissionMode,
     });
@@ -481,10 +481,10 @@ async function finishHelperStart(
       meta: { orchestratorId: orchestrator.id, helperId, access: finalLaunch.level },
     });
     const branch = config.branch ? ` on branch ${config.branch}` : '';
-    // A persona applied during creation may have set another model or CLI, which clears the level.
+    // A model or CLI changed during creation clears the level.
     await noteContextOutcome(helperPath, helperId, finalProvider, config);
     const effortNote = requestedEffort && !config.effort
-      ? ` Its persona changed its model or CLI, so the effort you asked for (${requestedEffort}) was not used.`
+      ? ` Its model or CLI changed, so the effort you asked for (${requestedEffort}) was not used.`
       : '';
     notifyOrchestrator(orchestrator.id,
       `Helper "${helperName}" (${helperId}) is ready${branch} with ${finalLaunch.level} access and has started its task.${effortNote}`);
@@ -516,8 +516,8 @@ async function finishHelperStart(
 }
 
 /**
- * Record on the helper's `routing` what became of a context choice a persona
- * brought, using #2660's own check. Only a code: the words are #2660's notices.
+ * Record on the helper's `routing` what became of its context choice, using
+ * #2660's own check. Only a code: the words are #2660's notices.
  * Never throws.
  */
 async function noteContextOutcome(helperPath: string, helperId: string, provider: string | undefined, config: DurableAgentConfig): Promise<void> {
@@ -609,7 +609,7 @@ function noticeApprovalNeeded(orchestrator: DurableAgentConfig, args: HelperStar
  * The start path, for start_helper and for a start the user approved
  * (#2234). Every check runs both ways: orchestration on and the orchestrator
  * running, the limits under the start lock, the target project (#2515), the
- * name, folder, branch and persona rules of the creation, and access clamped
+ * name, folder and branch rules of the creation, and access clamped
  * to the orchestrator's ceiling and to what was asked. `approvedIn` (the
  * request's project) skips only the control-level gate, and requires the
  * orchestrator to run in that project.
@@ -659,7 +659,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     return check.ok && !check.warning;
   });
   if (templateModel) args = { ...args, model: templateModel };
-  const { name, task, persona, cli, model, effort, difficulty, access, branchFrom, folder } = args;
+  const { name, task, cli, model, effort, difficulty, access, branchFrom, folder } = args;
 
   // Model and effort are checked before the start lock: listing models can take a CLI handshake (#2569).
   let modelWarning: string | undefined;
@@ -675,7 +675,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     }
     const auto = cli === AUTO_CLI ? await autoStateFor(homePath, modelProject, orchestrator) : undefined;
     const planned = await planHelperStart({
-      cli, model, effort, difficulty, persona, projectPath: modelProject, orchestratorId,
+      cli, model, effort, difficulty, projectPath: modelProject, orchestratorId,
       ...(auto && { auto }),
       orchestratorCli: orchestrator.orchestrator ?? agentRegistry.get(orchestratorId)?.orchestrator,
     });
@@ -733,7 +733,6 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     const creation: StartDurableCreationParams = {
       name,
       color: pickColor(limit.helperCount),
-      ...(persona && { persona }),
       parentAgentId: orchestratorId,
       ...(target.cross && { parentProjectPath: homePath }),
       disposable: true,
@@ -745,7 +744,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
       const policy = await getOrchestrationPolicy(homePath, orchestratorId);
       if (policy && policy.control !== 'hands-off') {
         // Refuse now what the start would refuse after approval (a bad or taken
-        // name, folder or branch, or an unknown persona), so the user is never
+        // name, folder or branch), so the user is never
         // asked about one that can't start. Approving runs every check again.
         try {
           await agentConfig.checkDurableCreation(target.path, creation);
@@ -820,7 +819,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
         { inject: async (created) => { await managedAgents().saveSetup(target.path, created.id, setup); }, injectRequired: true });
     } catch (err) {
       // telemetry-exempt: the refusal reaches the calling agent as the tool result
-      // Refused up front: a bad or taken name, folder, branch or base, or an unknown persona.
+      // Refused up front: a bad or taken name, folder, branch or base.
       abandonDecision();
       return { kind: 'refused', message: `Could not start helper "${name}": ${errorText(err)}`, reason: asReason(errorText(err)) };
     }
@@ -1103,7 +1102,6 @@ export async function describeHelper({ projectPath, config: helper }: HelperEntr
     ...(helper.model && { model: helper.model }),
     ...(helper.effort && { effort: helper.effort }),
     ...(helper.routing && { routing: helper.routing }),
-    ...(helper.persona && { persona: helper.persona }),
     branch: helper.branch ?? null,
     worktreePath: helper.worktreePath ?? null,
     lastActivity: lastActivity(helper) ?? null,

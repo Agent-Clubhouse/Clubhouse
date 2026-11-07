@@ -1,5 +1,29 @@
 import type { DurableAgentConfig } from '../../../shared/types';
-import { getPersonaTemplate } from '../personas';
+
+/**
+ * Display names of the built-in personas an agent may still name (#2901).
+ * Personas were retired, so this is only for the line that offers the switch;
+ * any other id shows as it is.
+ */
+const LEGACY_PERSONA_NAMES: Readonly<Record<string, string>> = {
+  'project-manager': 'Project Manager',
+  'group-project-pm': 'Group Project PM',
+  'qa': 'Quality Assurance',
+  'ui-lead': 'UI/Design Lead',
+  'quality-auditor': 'Quality Auditor',
+  'executor-pr-only': 'Executor (PR Only)',
+  'executor-merge': 'Executor (Full Merge)',
+  'doc-updater': 'Documentation Updater',
+  'judge': 'Judge',
+  'researcher': 'Researcher',
+  'orchestrator': 'Orchestrator',
+  'workhorse': 'Workhorse',
+};
+
+/** A legacy persona id as people read it. */
+export function legacyPersonaName(id: string): string {
+  return LEGACY_PERSONA_NAMES[id] ?? id;
+}
 
 /**
  * What an unmanaged agent uses from the older ways of configuring agents
@@ -17,7 +41,7 @@ type LegacyFields = Pick<DurableAgentConfig, 'managed' | 'clubhouseModeOverride'
 export function legacyUse(config: LegacyFields, clubhouseModeOnForProject: boolean): LegacyUse | null {
   if (config.managed) return null;
   const clubhouseMode = clubhouseModeOnForProject && !config.clubhouseModeOverride;
-  const persona = config.persona ? getPersonaTemplate(config.persona)?.name ?? config.persona : null;
+  const persona = config.persona ? legacyPersonaName(config.persona) : null;
   return clubhouseMode || persona ? { clubhouseMode, persona } : null;
 }
 

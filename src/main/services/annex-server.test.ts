@@ -5312,7 +5312,7 @@ describe('annex-server', () => {
       expect(body.id).toBe('durable_new');
       expect(body.name).toBe('my-agent');
       expect(agentConfigModule.createDurable).toHaveBeenCalledWith(
-        '/test/path', 'my-agent', 'emerald', 'opus', true, undefined, undefined, undefined, undefined,
+        '/test/path', 'my-agent', 'emerald', 'opus', true, undefined, undefined, undefined,
       );
     }, 10_000);
 

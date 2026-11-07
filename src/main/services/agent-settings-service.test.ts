@@ -1,7 +1,6 @@
 import { setRoutingPolicyListener } from './helper-routing-changes';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as path from 'path';
-import * as os from 'os';
 
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
@@ -23,7 +22,6 @@ vi.mock('./log-service', () => ({
 import * as fsp from 'fs/promises';
 import { pathExists } from './fs-utils';
 import { appLog } from './log-service';
-import { setPersonaChangeHook } from './persona-change-hook';
 import {
   readClaudeMd, writeClaudeMd, readPermissions, writePermissions,
   readSkillContent, writeSkillContent, deleteSkill,
@@ -35,8 +33,6 @@ import {
   readMcpConfigs, writeMcpConfigs,
   listSourceMissions, readSourceMissionContent,
   writeSourceMissionContent, deleteSourceMission,
-  listSourcePersonaFiles, readSourcePersonaContent,
-  writeSourcePersonaContent, deleteSourcePersona,
   SettingsConventions,
 } from './agent-settings-service';
 import type { WrapperCatalogSnapshot } from '../../shared/types';
@@ -302,101 +298,6 @@ describe('deleteSourceMission', () => {
   });
 });
 
-describe('listSourcePersonaFiles', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
-
-  it('lists .md files from .clubhouse/personas/ with id derived from filename', async () => {
-    vi.mocked(fsp.readdir).mockResolvedValue([
-      { name: 'qa.md', isFile: () => true, isDirectory: () => false } as any,
-      { name: 'reviewer.md', isFile: () => true, isDirectory: () => false } as any,
-      { name: 'notes.txt', isFile: () => true, isDirectory: () => false } as any, // ignored — no .md
-      { name: 'sub', isFile: () => false, isDirectory: () => true } as any,        // ignored — directory
-    ]);
-    const personas = await listSourcePersonaFiles('/project');
-    expect(personas.map((p) => p.id).sort()).toEqual(['qa', 'reviewer']);
-  });
-
-  it('returns empty array when personas dir is missing', async () => {
-    vi.mocked(fsp.readdir).mockRejectedValue(makeEnoent('/project/.clubhouse/personas'));
-    expect(await listSourcePersonaFiles('/project')).toEqual([]);
-  });
-});
-
-describe('readSourcePersonaContent', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
-
-  it('reads the persona .md file body', async () => {
-    vi.mocked(fsp.readFile).mockResolvedValue('# Persona body');
-    const result = await readSourcePersonaContent('/project', 'qa');
-    expect(result).toBe('# Persona body');
-    expect(fsp.readFile).toHaveBeenCalledWith(
-      path.join('/project', '.clubhouse', 'personas', 'qa.md'),
-      'utf-8',
-    );
-  });
-
-  it('returns empty string when persona file does not exist', async () => {
-    vi.mocked(fsp.readFile).mockRejectedValue(makeEnoent('/project/.clubhouse/personas/missing.md'));
-    expect(await readSourcePersonaContent('/project', 'missing')).toBe('');
-  });
-
-  it('returns empty string for empty persona id without touching disk', async () => {
-    expect(await readSourcePersonaContent('/project', '')).toBe('');
-    expect(fsp.readFile).not.toHaveBeenCalled();
-  });
-
-  it('reads from the user-global library under the home dir for scope "user"', async () => {
-    vi.mocked(fsp.readFile).mockResolvedValue('# User persona');
-    const result = await readSourcePersonaContent('/project', 'qa', 'user');
-    expect(result).toBe('# User persona');
-    expect(fsp.readFile).toHaveBeenCalledWith(
-      path.join(os.homedir(), '.clubhouse', 'personas', 'qa.md'),
-      'utf-8',
-    );
-  });
-});
-
-describe('writeSourcePersonaContent', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
-
-  it('creates the project personas dir and writes <id>.md', async () => {
-    await writeSourcePersonaContent('/project', 'qa', '# Persona body');
-    expect(fsp.mkdir).toHaveBeenCalledWith(path.join('/project', '.clubhouse', 'personas'), { recursive: true });
-    expect(fsp.writeFile).toHaveBeenCalledWith(
-      path.join('/project', '.clubhouse', 'personas', 'qa.md'),
-      '# Persona body',
-      'utf-8',
-    );
-  });
-
-  it('writes to the user-global library under the home dir for scope "user"', async () => {
-    await writeSourcePersonaContent('/project', 'qa', '# User persona', 'user');
-    const userDir = path.join(os.homedir(), '.clubhouse', 'personas');
-    expect(fsp.mkdir).toHaveBeenCalledWith(userDir, { recursive: true });
-    expect(fsp.writeFile).toHaveBeenCalledWith(path.join(userDir, 'qa.md'), '# User persona', 'utf-8');
-  });
-});
-
-describe('deleteSourcePersona', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
-
-  it('removes the project persona file with force (no-op when missing)', async () => {
-    await deleteSourcePersona('/project', 'qa');
-    expect(fsp.rm).toHaveBeenCalledWith(
-      path.join('/project', '.clubhouse', 'personas', 'qa.md'),
-      { force: true },
-    );
-  });
-
-  it('removes the user-global persona file for scope "user"', async () => {
-    await deleteSourcePersona('/project', 'qa', 'user');
-    expect(fsp.rm).toHaveBeenCalledWith(
-      path.join(os.homedir(), '.clubhouse', 'personas', 'qa.md'),
-      { force: true },
-    );
-  });
-});
-
 describe('readSkillContent', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
@@ -648,7 +549,7 @@ describe('writeProjectAgentDefaults', () => {
     expect(projectSettingsMutationState(PROJECT).pending).toBe(false);
   });
 
-  it('tells helper routing when a project\'s Auto or default persona changes, and not otherwise (#2671)', async () => {
+  it('tells helper routing when a project\'s Auto changes, and not for a legacy persona default (#2671, #2901)', async () => {
     const listener = vi.fn();
     setRoutingPolicyListener(listener);
     try {
@@ -660,7 +561,7 @@ describe('writeProjectAgentDefaults', () => {
       await writeProjectAgentDefaults(PROJECT, { persona: 'qa', helperAuto: 'off', buildCommand: 'make' });
       expect(listener).not.toHaveBeenCalled();
       await writeProjectAgentDefaults(PROJECT, { persona: 'other', helperAuto: 'off' });
-      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).not.toHaveBeenCalled();
     } finally {
       setRoutingPolicyListener(null);
     }
@@ -684,22 +585,6 @@ describe('writeProjectAgentDefaults', () => {
     const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
     expect(written.agentDefaults.instructions).toBe('# Template');
     expect(written.agentDefaults.permissions.allow).toEqual(['Read']);
-  });
-
-  it('tells the persona hook when the default persona changes (#2228)', async () => {
-    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({ defaults: {}, quickOverrides: {}, agentDefaults: { persona: 'orchestrator' } }));
-    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
-    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
-    const hook = vi.fn(async () => undefined);
-    setPersonaChangeHook(hook);
-    try {
-      await writeProjectAgentDefaults(PROJECT, { persona: 'orchestrator', instructions: 'x' });
-      expect(hook).not.toHaveBeenCalled();
-      await writeProjectAgentDefaults(PROJECT, { persona: 'developer' });
-      expect(hook).toHaveBeenCalledWith({ kind: 'project-default', projectPath: PROJECT, previousDefault: 'orchestrator' });
-    } finally {
-      setPersonaChangeHook(null);
-    }
   });
 });
 

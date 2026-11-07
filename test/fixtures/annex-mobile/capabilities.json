@@ -93,7 +93,6 @@
         "autoOffReasons": [
           "not_enabled",
           "project_off",
-          "persona_off",
           "orchestration_off",
           "mcp_off",
           "dispatcher_locked"

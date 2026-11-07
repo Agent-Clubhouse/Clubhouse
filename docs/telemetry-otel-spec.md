@@ -293,7 +293,7 @@ Both flows start in the IPC handlers, so the git and config work below them (`ag
 
 | Span | Children | Attributes / result | Level |
 |---|---|---|---|
-| `c.agent.create` | `c.git.worktree_create` (Phase 5, in `agent-config.ts`), `c.agent.persona_inject` | `c.agent.uses_worktree`, orchestrator; `error.type ∈ {worktree_failed, write_failed}`. A persona failure is non-fatal: the child span records it, the create stays `ok` | S |
+| `c.agent.create` | `c.git.worktree_create` (Phase 5, in `agent-config.ts`) | `c.agent.uses_worktree`, orchestrator; `error.type ∈ {worktree_failed, write_failed}`. Personas were retired (#2901), so its `c.agent.persona_inject` child span is gone | S |
 | `c.agent.delete` | `c.git.worktree_remove` (Phase 5) | `c.agent.delete.mode` (`standard`/`commit_push`/`cleanup_branch`/`save_patch`/`force`/`unregister`); a throw or a result with `ok: false` is `error.type = delete_failed` (cancelling the save-patch dialog returns before the flow and is not recorded) | S |
 
 Quick agents have no main-process create step. The renderer `spawnQuickAgent` (`agentLifecycleSlice.ts:25`) starts a renderer span `c.agent.quick_launch` that is propagated into `SPAWN_AGENT` (§6.2). That is how the renderer-side work (summary instruction fetch, template expansion) gets measured.

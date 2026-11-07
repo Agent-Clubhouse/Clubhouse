@@ -2742,7 +2742,6 @@ async function handleDurableCreationRoute(ctx: AnnexRouteContext, match: RegExpM
         body.orchestrator as string | undefined,
         body.freeAgentMode as boolean | undefined,
         body.mcpIds as string[] | undefined,
-        undefined,
       );
       broadcastSnapshotRefresh();
       sendJson(ctx.res, 201, config);

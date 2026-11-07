@@ -2,7 +2,8 @@
  * A helper with Clubhouse MCP off has a bridge, so it can start and report, and
  * nothing else. Older phones may offer it switches, so this proves the writes have
  * no authority, now or when MCP comes back: through the real agent.update and the
- * desktop's policy service, with the real gates, tools and a persona on disk.
+ * desktop's policy service, with the real gates and tools, and a retired
+ * persona file on disk that no longer decides anything (#2901).
  */
 import fs from 'fs';
 import path from 'path';
@@ -232,8 +233,8 @@ describe('a helper with Clubhouse MCP off', () => {
     });
   });
 
-  describe('a persona with orchestrate: true', () => {
-    it('opens no gate at start with MCP off, and follows the same rule when MCP returns', async () => {
+  describe('a retired persona with orchestrate: true (#2901)', () => {
+    it('opens no gate, with MCP off or after it returns: the persona no longer decides', async () => {
       await appOff();
       await start(PERSONA_HELPER);
       expect(isOrchestrationEnabled(PERSONA_HELPER)).toBe(false);
@@ -247,8 +248,8 @@ describe('a helper with Clubhouse MCP off', () => {
 
       agentRegistry.untrack(PERSONA_HELPER);
       await start(PERSONA_HELPER);
-      expect(isOrchestrationEnabled(PERSONA_HELPER)).toBe(true);
-      expect(toolNames(PERSONA_HELPER)).toContain('start_helper');
+      expect(isOrchestrationEnabled(PERSONA_HELPER)).toBe(false);
+      expect(toolNames(PERSONA_HELPER)).not.toContain('start_helper');
     });
   });
 

@@ -43,7 +43,6 @@ import { listDurable, onAgentConfigChanged } from './agent-config';
 import { pathExists } from './fs-utils';
 import { resolveOrchestrationPolicies } from './orchestration-policy';
 import { onMcpEnablementChanged } from './mcp-settings';
-import { onPersonaChanged } from './persona-change-hook';
 import * as projectStore from './project-store';
 import { isDispatcherEnabled, isDispatcherPath, onDispatcherChanged } from './dispatcher/dispatcher-service';
 import {
@@ -682,7 +681,7 @@ export type DispatcherWatchWorkObserver = (kind: DispatcherWatchWorkKind, termin
 
 /**
  * Keep the store and the wires in step: the user removing or drawing a pair, and
- * any change that can move a link's status (an agent's policy, its persona, MCP,
+ * any change that can move a link's status (an agent's policy, MCP,
  * the Dispatcher, the project list). Returns an unsubscribe function.
  */
 export function watchDispatcherConnections(onChanged: () => unknown, observeWork?: DispatcherWatchWorkObserver): () => void {
@@ -747,7 +746,6 @@ export function watchDispatcherConnections(onChanged: () => unknown, observeWork
 
   const unsubscribers = [
     onAgentConfigChanged(projectChanged),
-    onPersonaChanged((change) => projectChanged(change.projectPath)),
     onDispatcherChanged(changed),
     onMcpEnablementChanged(changed),
     projectStore.onProjectsChanged(changed),

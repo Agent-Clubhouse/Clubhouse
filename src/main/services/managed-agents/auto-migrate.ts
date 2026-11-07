@@ -15,6 +15,10 @@
  * keeps starting on its old setup. It isn't tried again at its spawns until
  * the app restarts, or it is switched by hand. An agent switched once, by
  * hand or on its own, is never switched on its own again.
+ *
+ * An agent that stays unmanaged, because it is plain, isn't switched on its
+ * own, or its switch failed, keeps what the retired persona layer gave its
+ * orchestration (D62): see carryPersonaLayer.
  */
 import * as os from 'os';
 import * as path from 'path';
@@ -33,6 +37,7 @@ import type { ManagedMigrationFrom } from '../../../shared/managed-agents-types'
 import { beforeManagedDir, clearPendingSwitch, readPendingSwitch, switchedBefore } from './before-managed';
 import { codeOf } from './log-code';
 import { ManagedError } from './service';
+import { createManagedStateStore, managedStateDir } from './state-store';
 
 /**
  * What makes an agent legacy-configured: Clubhouse Mode on for its project
@@ -146,7 +151,7 @@ function migrate(projectPath: string, agent: DurableAgentConfig, from: ManagedMi
       await withSettingsSurface('system', undefined, () => convertToManaged(projectPath, agent.id, { keep: true }));
     } catch (err) {
       const code = codeOf(err);
-      // A failure after the setup was saved (the reconcile, say): the agent is managed, so the switch stands.
+      // A failure after the setup was saved (an unexpected one, say): the agent is managed, so the switch stands.
       if (!(await managedNow(projectPath, agent.id).catch((): null => null))) {
         failedThisRun.add(agent.id);
         appLog('core:managed', 'warn', 'Automatic switch to managed failed; the agent keeps its current setup', { meta: { agentId: agent.id, from, code } });
@@ -154,6 +159,8 @@ function migrate(projectPath: string, agent: DurableAgentConfig, from: ManagedMi
           // telemetry-exempt: logged; the agent still isn't tried again until the app restarts.
           appLog('core:managed', 'warn', 'Could not record the failed automatic switch to managed', { meta: { agentId: agent.id, code: codeOf(recordErr) } });
         });
+        // It stays unmanaged, so it keeps what the persona layer gave it (D62), as a plain agent does.
+        await carryPersonaLayer(projectPath, agent.id, { duringSpawnOrSwitch: true });
         broadcastToAllWindows(IPC.MANAGED.CHANGED);
         return false;
       }
@@ -177,13 +184,24 @@ function migrate(projectPath: string, agent: DurableAgentConfig, from: ManagedMi
 }
 
 /**
- * Spawn path, before Clubhouse Mode would materialize: switch a
- * legacy-configured agent first. Returns its config whenever it is managed
- * now (even when the switch reported a failure after its save), or null to
- * start it as it is (nothing to switch, the switch failed, or it
- * failed earlier since the app started).
+ * Spawn path, before Clubhouse Mode would materialize and before the
+ * orchestration gate syncs: switch a legacy-configured agent first. Returns
+ * its config whenever it is managed now (even when the switch reported a
+ * failure after its save), or null to start it as it is (nothing to switch,
+ * the switch failed, or it failed earlier since the app started). An agent
+ * that starts unmanaged first keeps what the persona layer gave its
+ * orchestration, if the startup pass hasn't done that yet (D62), so this
+ * session already runs with it.
  */
 export async function migrateAtSpawn(projectPath: string, agent: DurableAgentConfig): Promise<DurableAgentConfig | null> {
+  const managed = await switchAtSpawn(projectPath, agent);
+  if (managed) return managed;
+  // As the startup pass: only projects registered on this machine.
+  if (await isLocalProject(projectPath).catch(() => false)) await carryPersonaLayer(projectPath, agent.id, { duringSpawnOrSwitch: true });
+  return null;
+}
+
+async function switchAtSpawn(projectPath: string, agent: DurableAgentConfig): Promise<DurableAgentConfig | null> {
   try {
     if (!autoMigrateFrom(projectPath, agent)) return null;
     // A startup pass may be switching it right now.
@@ -223,29 +241,82 @@ export interface StartupMigrationResult {
   failed: number;
   /** Running or waking: they switch at their next spawn. */
   deferred: number;
-  /** Plain agents whose persona layer was checked and kept as their own fields (D62). */
+  /** Agents staying unmanaged whose persona layer was checked and kept as their own fields (D62). */
   carried: number;
 }
 
+/** In managed state's `migrations`: when the persona layer carry first ran (D62). Agents created from then on have no layer to keep. */
+export const PERSONA_LAYER_CARRY_CUTOFF = 'persona-layer-carry-cutoff';
+
+let carryCutoff: Promise<number | null> | null = null;
+
 /**
- * A plain agent stays unmanaged, so it would lose what a project or user
- * `orchestrator.md` (or a project default persona) gives its orchestration
- * once the persona layer is removed. Keep the fields that layer decides as
- * its own, once (D62). Agents that switch get the same from the switch.
+ * When the carry first ran, recorded the first time it is asked for and kept
+ * from then on. Only agents created before it are carried, so an agent made
+ * after the upgrade never gets a retired layer written onto it (new agents are
+ * also stamped at creation). Null when the state can't be read or written:
+ * nothing is carried this time, and the next start tries again.
  */
-async function carryPersonaLayer(projectPath: string, agent: DurableAgentConfig): Promise<boolean> {
-  if (agent.managed || agent.personaLayerCarriedAt || isDispatcherPath(projectPath)) return false;
-  if (agent.parentAgentId || isDisposedAgent(agent) || agent.creation) return false;
-  if (legacyConfiguredFrom(projectPath, agent)) return false;
-  if (agentTransitionBusy(agent.id)) return false;
+function personaLayerCarryCutoff(): Promise<number | null> {
+  if (!carryCutoff) {
+    carryCutoff = (async () => {
+      const state = createManagedStateStore(managedStateDir());
+      let at = (await state.read()).migrations?.[PERSONA_LAYER_CARRY_CUTOFF];
+      if (!at) {
+        at = await state.update((s) => {
+          const recorded = s.migrations?.[PERSONA_LAYER_CARRY_CUTOFF];
+          if (recorded) return recorded;
+          const now = new Date().toISOString();
+          s.migrations = { ...(s.migrations ?? {}), [PERSONA_LAYER_CARRY_CUTOFF]: now };
+          return now;
+        });
+      }
+      const ms = Date.parse(at);
+      if (!Number.isFinite(ms)) throw Object.assign(new Error('unreadable cutoff'), { code: 'invalid_cutoff' });
+      return ms;
+    })().catch((err): null => {
+      carryCutoff = null;
+      // telemetry-exempt: logged; nothing is carried until the cutoff can be read, and the next try reads it again.
+      appLog('core:managed', 'warn', 'Could not read when the persona layer carry started', { meta: { code: codeOf(err) } });
+      return null;
+    });
+  }
+  return carryCutoff;
+}
+
+/**
+ * An agent that stays unmanaged would lose what a project or user
+ * `orchestrator.md`, or its persona or the project's default one, gave its
+ * orchestration, since the persona layer is retired. Keep the fields that
+ * layer decided as its own, once (D62), and stamp it. Idempotent: a stamped
+ * agent, or one whose layer decides nothing new, is left as it is.
+ *
+ * Run by the startup pass for every unmanaged agent Clubhouse doesn't switch
+ * (plain ones, ones it never switches, ones switched before), after a failed
+ * automatic switch, and at spawn for an unmanaged agent not stamped yet. A
+ * switch that succeeds carries the same itself (convertToManaged). Only
+ * agents created before the cutoff (personaLayerCarryCutoff). The startup
+ * pass leaves an agent mid-change for later; a spawn or switch is that
+ * change, so `duringSpawnOrSwitch` skips that check.
+ */
+async function carryPersonaLayer(projectPath: string, agentId: string, opts: { duringSpawnOrSwitch?: boolean } = {}): Promise<boolean> {
   try {
+    const agent = await agentConfig.getDurableConfig(projectPath, agentId);
+    if (!agent || agent.managed || agent.personaLayerCarriedAt || isDispatcherPath(projectPath)) return false;
+    if (agent.parentAgentId || isDisposedAgent(agent) || agent.creation) return false;
+    if (!opts.duringSpawnOrSwitch && agentTransitionBusy(agent.id)) return false;
+    const cutoff = await personaLayerCarryCutoff();
+    if (cutoff === null) return false;
+    // An unreadable createdAt counts as old: it predates the cutoff's own record.
+    const created = Date.parse(agent.createdAt);
+    if (Number.isFinite(created) && created >= cutoff) return false;
     const { carryPersonaOrchestration } = await import('../orchestration-policy');
     await carryPersonaOrchestration(projectPath, agent.id, 'plain');
     await agentConfig.setManagedMigration(projectPath, agent.id, { layerCarriedAt: new Date().toISOString() });
     return true;
   } catch (err) {
-    // telemetry-exempt: logged; the persona layer still applies, and the next start tries again.
-    appLog('core:managed', 'warn', 'Could not keep the persona layer\'s orchestration on a plain agent', { meta: { agentId: agent.id, code: codeOf(err) } });
+    // telemetry-exempt: logged; the next start or spawn tries again.
+    appLog('core:managed', 'warn', 'Could not keep the persona layer\'s orchestration on an unmanaged agent', { meta: { agentId, code: codeOf(err) } });
     return false;
   }
 }
@@ -332,10 +403,13 @@ async function startupMigration(): Promise<StartupMigrationResult> {
       }
       const from = autoMigrateFrom(project.path, agent);
       if (!from) {
-        if (await carryPersonaLayer(project.path, agent)) result.carried++;
+        if (await carryPersonaLayer(project.path, agent.id)) result.carried++;
         continue;
       }
-      if (await switchedEarlier(agent).catch(() => true)) continue;
+      if (await switchedEarlier(agent).catch(() => true)) {
+        if (await carryPersonaLayer(project.path, agent.id)) result.carried++;
+        continue;
+      }
       // Running, waking or mid-change: never under a session. Its next spawn switches it.
       if (isAgentRunning(agent.id) || agentTransitionBusy(agent.id) || switchInProgress(agent.id)) {
         result.deferred++;
@@ -358,4 +432,5 @@ export function _resetAutoMigrateForTesting(): void {
   switching.clear();
   startupPass = null;
   settingsPass = null;
+  carryCutoff = null;
 }

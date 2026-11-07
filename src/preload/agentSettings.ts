@@ -30,7 +30,7 @@ export const agentSettings = {
     ipcRenderer.invoke(IPC.AGENT.WRITE_SOURCE_AGENT_TEMPLATE_CONTENT, projectPath, agentName, content),
   deleteSourceAgentTemplate: (projectPath: string, agentName: string) =>
     ipcRenderer.invoke(IPC.AGENT.DELETE_SOURCE_AGENT_TEMPLATE, projectPath, agentName),
-  // Clubhouse-mode wildcard library (missions + personas) + per-agent actuals
+  // Clubhouse-mode wildcard library (missions) + per-agent actuals
   getAgentWildcards: (projectPath: string, agentId: string): Promise<AgentWildcardSettings | null> =>
     ipcRenderer.invoke(IPC.AGENT.GET_AGENT_WILDCARDS, projectPath, agentId),
   listSourceMissions: (projectPath: string): Promise<Array<{ id: string; path: string }>> =>
@@ -41,18 +41,6 @@ export const agentSettings = {
     ipcRenderer.invoke(IPC.AGENT.WRITE_SOURCE_MISSION_CONTENT, projectPath, missionId, content),
   deleteSourceMission: (projectPath: string, missionId: string): Promise<void> =>
     ipcRenderer.invoke(IPC.AGENT.DELETE_SOURCE_MISSION, projectPath, missionId),
-  listSourcePersonas: (projectPath: string): Promise<Array<{ id: string; name: string; source: 'builtin' | 'user' | 'project' }>> =>
-    ipcRenderer.invoke(IPC.AGENT.LIST_SOURCE_PERSONAS, projectPath),
-  readSourcePersonaContent: (projectPath: string, personaId: string): Promise<string> =>
-    ipcRenderer.invoke(IPC.AGENT.READ_SOURCE_PERSONA_CONTENT, projectPath, personaId),
-  writeSourcePersonaContent: (projectPath: string, personaId: string, content: string, scope?: 'project' | 'user'): Promise<void> =>
-    ipcRenderer.invoke(IPC.AGENT.WRITE_SOURCE_PERSONA_CONTENT, projectPath, personaId, content, scope),
-  deleteSourcePersona: (projectPath: string, personaId: string, scope?: 'project' | 'user'): Promise<void> =>
-    ipcRenderer.invoke(IPC.AGENT.DELETE_SOURCE_PERSONA, projectPath, personaId, scope),
-  applyPersonaToAgent: (projectPath: string, agentId: string, personaId: string): Promise<void> =>
-    ipcRenderer.invoke(IPC.AGENT.APPLY_PERSONA_TO_AGENT, projectPath, agentId, personaId),
-  extractAgentPersona: (projectPath: string, agentId: string): Promise<{ content: string; settings: import('../shared/persona-pattern').PatternSettings; sources: string[] } | null> =>
-    ipcRenderer.invoke(IPC.AGENT.EXTRACT_AGENT_PERSONA, projectPath, agentId),
   createSkill: (basePath: string, name: string, isSource: boolean, projectPath?: string) =>
     ipcRenderer.invoke(IPC.AGENT.CREATE_SKILL, basePath, name, isSource, projectPath),
   createAgentTemplate: (basePath: string, name: string, isSource: boolean, projectPath?: string) =>

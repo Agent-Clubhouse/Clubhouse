@@ -29,7 +29,7 @@ vi.mock('./agent-system', () => ({
   }),
   resolveProfileEnv: vi.fn(),
 }));
-vi.mock('./agent-creation', () => ({ parseStartCreationParams: vi.fn(), personaInjection: vi.fn(), startDurableCreation: vi.fn() }));
+vi.mock('./agent-creation', () => ({ parseStartCreationParams: vi.fn(), startDurableCreation: vi.fn() }));
 vi.mock('./agent-runtime/chat-drivers', () => ({ resolveChatDriver: () => ({}) }));
 vi.mock('./agent-runtime', () => ({ isChatAgent: () => false }));
 vi.mock('./git-service', () => ({ isInsideGitRepo: vi.fn(), getBranchChanges: vi.fn() }));
@@ -605,11 +605,11 @@ describe('values and sources', () => {
     resetAllSettingsStoresForTests();
   });
 
-  it('inherits persona, mission, MCP ids and orchestrator from the project', async () => {
+  it('inherits mission, MCP ids and orchestrator from the project, and reads a retired persona as null (#2901)', async () => {
     writeProjectSettings(one, { orchestrator: 'codex-cli', defaultMcps: ['ado'], agentDefaults: { persona: 'qa', mission: 'ship' } });
     const { targets } = await read(ordinary(), { select: ['agent.persona', 'agent.mcp.mcp_ids', 'agent.cli.orchestrator'], detail: true });
     expect(targets[0].settings).toMatchObject({
-      'agent.persona.persona': { stored: null, effective: 'qa', source: 'project' },
+      'agent.persona.persona': { stored: null, effective: null, source: 'default' },
       'agent.persona.mission': { stored: null, effective: 'ship', source: 'project' },
       'agent.mcp.mcp_ids': { stored: null, effective: ['ado'], source: 'project' },
       'agent.cli.orchestrator': { stored: null, effective: 'codex-cli', source: 'project' },
@@ -617,21 +617,23 @@ describe('values and sources', () => {
     writeAgents(one, [agent('a1', { persona: 'dev', mission: 'mine', mcpIds: [], orchestrator: 'claude-code' })]);
     const own = await read(ordinary(), { select: ['agent.persona', 'agent.mcp.mcp_ids', 'agent.cli.orchestrator'] });
     expect(own.targets[0].settings).toMatchObject({
-      'agent.persona.persona': { effective: 'dev', source: 'agent' },
+      'agent.persona.persona': { effective: null, source: 'default' },
       'agent.persona.mission': { effective: 'mine', source: 'agent' },
       'agent.mcp.mcp_ids': { effective: [], source: 'agent' },
       'agent.cli.orchestrator': { effective: 'claude-code', source: 'agent' },
     });
+    const project = (await read(ordinary(), { select: ['project.defaults.persona'], detail: true })).targets.find((t) => t.target === 'project');
+    expect(project?.settings['project.defaults.persona']).toEqual({ stored: null, effective: null, source: 'default' });
   });
 
-  it('reports orchestration with the policy\'s own sources, persona included', async () => {
+  it('reports orchestration with the policy\'s own sources, and a retired persona file decides nothing (#2901)', async () => {
     fs.mkdirSync(path.join(one, '.clubhouse', 'personas'), { recursive: true });
     fs.writeFileSync(path.join(one, '.clubhouse', 'personas', 'lead.md'), '---\norchestration: {"orchestrate": true, "maxHelpers": 3}\n---\nLead.\n');
     writeAgents(one, [agent('a1', { persona: 'lead', orchestration: { control: 'ask-everything' } })]);
     const { targets } = await read(ordinary(), { select: ['agent.orchestration'], detail: true });
     expect(targets[0].settings).toMatchObject({
-      'agent.orchestration.orchestrate': { stored: null, effective: true, source: 'persona' },
-      'agent.orchestration.max_helpers': { stored: null, effective: 3, source: 'persona' },
+      'agent.orchestration.orchestrate': { stored: null, effective: false, source: 'default' },
+      'agent.orchestration.max_helpers': { stored: null, effective: 5, source: 'default' },
       'agent.orchestration.control': { stored: 'ask-everything', effective: 'ask-everything', source: 'agent' },
       'agent.orchestration.access': { stored: null, effective: 'same', source: 'default' },
     });

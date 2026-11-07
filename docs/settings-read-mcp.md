@@ -65,13 +65,13 @@ Only the keys below ever come out. Each is read by name from its source, never b
 | --- | --- |
 | `agent.identity` | `name`, `color`, `emoji`, `has_image` |
 | `agent.cli` | `orchestrator`, `model`, `runtime` |
-| `agent.persona` | `persona`, `mission` (ids) |
+| `agent.persona` | `persona` (always null), `mission` (id) |
 | `agent.access` | `free_agent_mode`, `permission_mode` |
 | `agent.mcp` | `clubhouse_mcp`, `clubhouse_bridge`, `clubhouse_mode`, `mcp_ids` (ids) |
 | `agent.idle` | `idle_sleep` |
 | `agent.orchestration` | `orchestrate`, `access`, `control`, `max_helpers`, `cross_project_helpers`, `connect_to_dispatcher`, `auto_helpers` |
 | `project.identity` | `name`, `display_name`, `color`, `emoji`, `has_image` |
-| `project.defaults` | `orchestrator`, `persona`, `mission`, `free_agent_mode`, `profile_id`, `source_control_provider`, `default_mcps` |
+| `project.defaults` | `orchestrator`, `persona` (always null), `mission`, `free_agent_mode`, `profile_id`, `source_control_provider`, `default_mcps` |
 | `project.modes` | `clubhouse_mode`, `mcp`, `permission_mode` |
 | `app.defaults` | `idle_timeout_minutes`, `chat_enabled`, `provider_runtime`, `mcp_enabled`, `clubhouse_mode_enabled`, `permission_mode`, `global_helper_cap`, `enabled_orchestrators` |
 | `app.system` | `dispatcher_enabled`, `experimental_chat`, `experimental_copilot_sdk`, `experimental_copilot_legacy_acp`, `annex_server_enabled`, `annex_client_enabled` |
@@ -85,13 +85,15 @@ Only the keys below ever come out. Each is read by name from its source, never b
 - **Session and work data:** session ids and history, `pendingTask`, handoff notes.
 - **Editor, Goobers and security settings.** Nothing an agent needs to explain its own behavior. `allowLocalFileWebviews` lives behind the IPC layer, which this service shouldn't import.
 
-`mission` is an id, the basename of `.clubhouse/missions/<id>.md`, and its text is never read. Like `persona`, it isn't validated when written, so a hand-edited `agents.json` could put any string there.
+`mission` is an id, the basename of `.clubhouse/missions/<id>.md`, and its text is never read. It isn't validated when written, so a hand-edited `agents.json` could put any string there.
+
+Personas were retired (#2901). `agent.persona.persona` and `project.defaults.persona` stay in the allowlist so a reader's keys don't vanish, but they always read `stored: null`, `effective: null`, `source: default`, whatever an old config still holds. Only the switch to managed reads a saved persona id.
 
 ## Values and sources
 
 Each value has `effective` and `source`, and `stored` with `detail`.
 
-- `effective` comes from the resolvers the app itself uses: `buildAgentSettings`, `resolveOrchestrationPolicies`, `resolveMcpEnabled`, `resolvePersonaId` and so on. For an awake agent it's what the agent runs with now, and for a sleeping one it's what the next start uses.
+- `effective` comes from the resolvers the app itself uses: `buildAgentSettings`, `resolveOrchestrationPolicies`, `resolveMcpEnabled`, `resolveMissionId` and so on. For an awake agent it's what the agent runs with now, and for a sleeping one it's what the next start uses.
 - `stored` is what is saved at the level the key belongs to, or `null`.
 - `applies: false` marks a setting with no effect on this target. Only chat agents idle-sleep, so `idle_sleep` on a terminal agent has it.
 - `reason` is there when a value is derived off, and `stored` is what comes back when that clears. See [Derived off](#derived-off).
@@ -100,7 +102,6 @@ Each value has `effective` and `source`, and `stored` with `detail`.
 | --- | --- |
 | `agent` | Set on the agent. |
 | `project` | From the project's `.clubhouse/settings.json`, or its entry in an app-wide project override. |
-| `persona` | From the `orchestration:` front-matter of a persona. |
 | `app` | The key is present in the app's settings file. |
 | `default` | Nothing is saved, so a built-in value or a fixed rule decides. |
 | `uncertain` | The app's settings file exists but can't be read or parsed, so nothing proves whether the value is saved. |

@@ -88,6 +88,7 @@ describe('settings audit inventory', () => {
     expect(read('services/clubhouse-mcp/tool-registry.ts')).toContain("withSettingsSurface('mcp', agentId");
     expect(read('services/mobile-control.ts')).toContain("withSettingsSurface('mobile'");
     expect(read('services/cli-endpoint.ts')).toContain("withSettingsSurface('cli'");
-    expect(read('services/persona-application.ts')).toContain("withSettingsSurface('persona'");
+    // Personas were retired (#2901): the 'persona' surface stays for the orchestration fields carried from the old persona layer.
+    expect(read('services/orchestration-policy.ts')).toContain("surface: 'persona'");
   });
 });

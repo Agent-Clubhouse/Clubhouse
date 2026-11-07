@@ -984,9 +984,8 @@ export const SPANS = {
   'clubhouse.ipc.invoke': { level: 'detailed', root: true },
   /** pre_tool → post_tool / tool_error from the hook server. Detailed only. */
   'clubhouse.agent.tool_call': { level: 'detailed', root: true },
-  /** Durable agent creation (IPC entry → config written, persona applied). */
+  /** Durable agent creation (IPC entry → config written). */
   'clubhouse.agent.create': { level: 'standard', root: true },
-  'clubhouse.agent.persona_inject': { level: 'standard', root: false },
   /** Durable agent deletion, any mode. */
   'clubhouse.agent.delete': { level: 'standard', root: true },
   /** spawnAgent entry → process launched (or the throw). */

@@ -341,6 +341,11 @@ describe('createDurable', () => {
     expect(config.id).toMatch(/^durable_/);
   });
 
+  it('stamps a new agent as carried: it never had the retired persona layer (D62)', async () => {
+    const config = await createDurable(PROJECT_PATH, 'my-agent', 'indigo');
+    expect(config.personaLayerCarriedAt).toBe(config.createdAt);
+  });
+
   it('branch = {name}/standby', async () => {
     const config = await createDurable(PROJECT_PATH, 'my-agent', 'indigo');
     expect(config.branch).toBe('my-agent/standby');
@@ -1659,33 +1664,7 @@ describe('updateDurableConfig', () => {
     expect(result!.mission).toBeUndefined();
   });
 
-  it('persists persona field and round-trips', async () => {
-    const agents = [
-      { id: 'durable_persona', name: 'pers', color: 'indigo', createdAt: '2024-01-01' },
-    ];
-    const writtenData: Record<string, string> = {};
-    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
-    writtenData[agentsJsonPath] = JSON.stringify(agents);
-
-    vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('agents.json'));
-    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => writtenData[String(p)] || '[]');
-    vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
-      writtenData[String(p)] = String(data);
-    });
-    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
-      writtenData[String(dest)] = writtenData[String(src)] || '';
-      delete writtenData[String(src)];
-    });
-    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
-
-    await updateDurableConfig(PROJECT_PATH, 'durable_persona', { persona: 'qa' });
-
-    const result = await getDurableConfig(PROJECT_PATH, 'durable_persona');
-    expect(result).not.toBeNull();
-    expect(result!.persona).toBe('qa');
-  });
-
-  it('removes persona field when set to empty string', async () => {
+  it('keeps a legacy persona field and no longer writes it (#2901)', async () => {
     const agents = [
       { id: 'durable_clearpersona', name: 'clearper', color: 'indigo', persona: 'qa', createdAt: '2024-01-01' },
     ];
@@ -1704,11 +1683,12 @@ describe('updateDurableConfig', () => {
     });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
 
-    await updateDurableConfig(PROJECT_PATH, 'durable_clearpersona', { persona: '' });
+    await updateDurableConfig(PROJECT_PATH, 'durable_clearpersona', { persona: '', model: 'opus' } as never);
 
     const result = await getDurableConfig(PROJECT_PATH, 'durable_clearpersona');
     expect(result).not.toBeNull();
-    expect(result!.persona).toBeUndefined();
+    expect(result!.persona).toBe('qa');
+    expect(result!.model).toBe('opus');
   });
 
   it('persists per-agent command + provider wildcard overrides', async () => {

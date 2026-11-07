@@ -11,7 +11,7 @@ import {
   validateOrchestrationPatch,
   type AgentAccessLevel,
 } from '../../../shared/orchestration-policy';
-import { parsePersonaFile } from '../../../shared/persona-pattern';
+import { frontMatterLaunchSettings } from '../../../shared/front-matter';
 import type {
   AssetAgentMetadata,
   AssetKind,
@@ -381,8 +381,8 @@ function validateBlock(raw: Record<string, unknown>, issues: Issues): BlockAsset
   }
   if (Buffer.byteLength(content, 'utf8') > MAX_BLOCK_BYTES) issues.add('too_large', 'content');
   if (containsSecretToken(content)) issues.add('secret_value', 'content');
-  // Persona front matter carries model and orchestrator. An import splits them out, so a block can't smuggle them in.
-  if (Object.keys(parsePersonaFile(content).settings).length > 0) issues.add('launch_settings_in_instruction', 'content');
+  // Front matter like the old persona files' carries model and orchestrator. An import splits them out, so a block can't smuggle them in.
+  if (frontMatterLaunchSettings(content).length > 0) issues.add('launch_settings_in_instruction', 'content');
   return { content };
 }
 
