@@ -14,9 +14,8 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { composeInstructions } from '../asset-catalog/composer';
 import { canonicalHash } from '../asset-catalog/planner';
-import { replaceWildcards } from '../../../shared/wildcard-replacer';
-import { buildWildcardContext, resolveAgentCommands, resolveSourceControlProvider } from '../agent-wildcards';
-import { readProjectAgentDefaults } from '../agent-settings-service';
+import { replaceManagedWildcards } from '../../../shared/wildcard-replacer';
+import { buildWildcardContext } from '../agent-wildcards';
 import { appLog } from '../log-service';
 import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
 import type { OrchestratorProvider } from '../../orchestrators/types';
@@ -28,6 +27,8 @@ import {
   type ManagedSkillContent,
 } from '../../../shared/managed-agents-types';
 import { withClubhouseSetup, type ManagedAgentsService } from './service';
+import { withWorkingIdentity } from './builtins';
+import { skillsFolderOf } from '../../../shared/skills-folder';
 
 /** Written beside the managed skills so a later start removes only what Clubhouse put there. */
 const SKILLS_MANIFEST = '.clubhouse-managed-skills.json';
@@ -67,21 +68,20 @@ async function resolveSetup(service: ManagedAgentsService, saved: ManagedAgentSe
 
 /**
  * The wildcard context for a managed agent's text, the same for delivery and
- * Preview. replaceWildcards leaves @@If blocks (D10) and @@Mission and
- * @@Persona (D60) as written.
+ * Preview. Only @@AgentName, @@StandbyBranch and @@Path are filled
+ * (MANAGED_WILDCARDS): @@SourceControlProvider, @@BuildCommand, @@TestCommand
+ * and @@LintCommand stay as written (#2902), like @@If blocks (D10) and
+ * @@Mission and @@Persona (D60).
  */
-async function wildcardContextFor(projectPath: string, agent: DurableAgentConfig) {
-  const defaults = await readProjectAgentDefaults(projectPath);
-  const scp = await resolveSourceControlProvider(projectPath, agent);
-  return buildWildcardContext(agent, projectPath, scp, resolveAgentCommands(agent, defaults));
+function wildcardContextFor(projectPath: string, agent: DurableAgentConfig) {
+  return buildWildcardContext(agent, projectPath);
 }
 
 /** What the setup renders to, with wildcards filled in for this agent. */
 export async function renderManagedInstructions(projectPath: string, agent: DurableAgentConfig, resolved: Resolved): Promise<string> {
   const composed = composeInstructions(resolved.blocks.map((b) => ({ content: b.content })));
   if (composed.ok === false) throw new Error(composed.code);
-  const ctx = await wildcardContextFor(projectPath, agent);
-  return replaceWildcards(composed.text, ctx);
+  return replaceManagedWildcards(composed.text, wildcardContextFor(projectPath, agent));
 }
 
 /** The MCP servers a managed agent gets, as the providers' launch code takes them. The Clubhouse bridge is separate. */
@@ -201,7 +201,7 @@ interface OtherSkillFolders {
  */
 async function otherSkillFolders(worktree: string, provider: OrchestratorProvider, current: string[]): Promise<OtherSkillFolders> {
   const conv = provider.conventions;
-  const root = path.join(worktree, conv.configDir, conv.skillsDir);
+  const root = path.join(worktree, skillsFolderOf(conv));
   let names: string[] = [];
   try {
     names = (await fsp.readdir(root, { withFileTypes: true }))
@@ -211,7 +211,7 @@ async function otherSkillFolders(worktree: string, provider: OrchestratorProvide
   } catch { /* telemetry-exempt: no skills folder yet, so nothing else is loaded from it */ }
   if (names.length === 0) return { tracked: [], untracked: [], kept: [] };
   if (!(await insideWithoutLinks(worktree, root))) return { tracked: [], untracked: [], kept: names, keptReason: 'link' };
-  const rel = path.join(conv.configDir, conv.skillsDir).replace(/\\/g, '/');
+  const rel = skillsFolderOf(conv);
   const listed = await trackedFiles(worktree, names.map((n) => `${rel}/${n}`));
   if (listed.ok === false) return { tracked: [], untracked: [], kept: names, keptReason: 'git', gitErrorCode: listed.code };
   // A submodule (gitlink) is listed as the folder itself, with no trailing slash.
@@ -219,9 +219,37 @@ async function otherSkillFolders(worktree: string, provider: OrchestratorProvide
   return { tracked, untracked: names.filter((n) => !tracked.includes(n)), kept: [] };
 }
 
+/**
+ * Remove the skills Clubhouse delivered to a folder the CLI no longer reads
+ * (Codex's `.codex/skills`, now `.agents/skills`): exactly the folders that
+ * folder's managed-skills manifest lists, then the manifest. Anything else
+ * there is left alone, and nothing is removed through a link.
+ */
+async function removePreviousManagedSkills(worktree: string, provider: OrchestratorProvider): Promise<void> {
+  for (const rel of provider.conventions.previousSkillsRoots ?? []) {
+    const root = path.join(worktree, rel);
+    let listed: string[];
+    try {
+      const raw = JSON.parse(await fsp.readFile(path.join(root, SKILLS_MANIFEST), 'utf-8'));
+      listed = Array.isArray(raw?.skills) ? raw.skills.filter((x: unknown): x is string => typeof x === 'string') : [];
+    } catch { continue; /* telemetry-exempt: Clubhouse never delivered skills there */ }
+    if (!(await insideWithoutLinks(worktree, root))) {
+      appLog('core:managed', 'warn', 'The previous skills folder is a link; its managed skills were left in place', { meta: { folders: listed.length } });
+      continue;
+    }
+    for (const name of listed) {
+      // Only a plain folder name in the manifest: never the folder itself or anything outside it.
+      if (!name || name !== path.basename(name) || name === '.' || name === '..') continue;
+      await fsp.rm(insideDir(root, name), { recursive: true, force: true });
+    }
+    await fsp.rm(path.join(root, SKILLS_MANIFEST), { force: true });
+  }
+}
+
 async function writeSkills(worktree: string, provider: OrchestratorProvider, skills: Resolved['skills'], backupRoot?: string): Promise<void> {
+  await removePreviousManagedSkills(worktree, provider);
   const conv = provider.conventions;
-  const root = path.join(worktree, conv.configDir, conv.skillsDir);
+  const root = path.join(worktree, skillsFolderOf(conv));
   await fsp.mkdir(root, { recursive: true });
   // A linked skills folder (or .claude) leads outside the agent's folder: nothing is moved out of it (D48).
   const safeToMove = await insideWithoutLinks(worktree, root);
@@ -620,7 +648,8 @@ export async function quickManagedLaunch(params: {
   // setupFromTemplate keeps only the parts that still exist, so what it dropped
   // is what's missing: the template's own list minus what came back.
   const template = await params.service.getTemplate(params.templateId);
-  const { setup } = await params.service.setupFromTemplate(params.templateId);
+  const { setup: fromTemplate } = await params.service.setupFromTemplate(params.templateId);
+  const setup = withWorkingIdentity(fromTemplate);
   const resolved = await resolveSetup(params.service, setup);
   const partCount = (s: { blocks: string[]; skills: string[]; mcps: string[] }) => s.blocks.length + s.skills.length + s.mcps.length;
   const dropped = partCount(template.setup) - partCount(setup);
@@ -630,13 +659,13 @@ export async function quickManagedLaunch(params: {
   };
   const composed = composeInstructions(resolved.blocks.map((b) => ({ content: b.content })));
   if (composed.ok === false) throw new Error(composed.code);
-  const ctx = await wildcardContextFor(params.projectPath, agent);
+  const ctx = wildcardContextFor(params.projectPath, agent);
   const rel = path.relative(params.projectPath, params.cwd).replace(/\\/g, '/');
   ctx.agentPath = rel ? `${rel}/` : './';
   if (!params.branch) ctx.standbyBranch = 'the checked-out branch';
   return {
     templateId: params.templateId,
-    instructions: replaceWildcards(composed.text, ctx),
+    instructions: replaceManagedWildcards(composed.text, ctx),
     servers: mcpServersOf(resolved),
     skippedSkills: resolved.skills.length,
     missing: dropped + resolved.missing.length,
@@ -655,18 +684,18 @@ export async function previewManagedSetup(params: {
   if (!setup) return { instructions: '', blocks: [], skills: [], mcps: [], missing: [] };
   const resolved = await resolveSetup(params.service, setup);
   const instructions = await renderManagedInstructions(params.projectPath, params.agent, resolved);
-  const ctx = await wildcardContextFor(params.projectPath, params.agent);
+  const ctx = wildcardContextFor(params.projectPath, params.agent);
   const usage = new Map<string, number>();
   for (const b of resolved.blocks) usage.set(b.id, (await params.service.consumers(b.id)).length);
   let line = 1;
   const blocks = resolved.blocks.map((b) => {
-    const lines = replaceWildcards(b.content, ctx).split('\n').length;
+    const lines = replaceManagedWildcards(b.content, ctx).split('\n').length;
     const entry = { id: b.id, name: b.name, builtin: b.builtin, usedBy: usage.get(b.id) ?? 0, startLine: line, endLine: line + lines - 1 };
     line += lines + 1;
     return entry;
   });
   const conv = params.provider?.conventions;
-  const folderRoot = conv ? path.join(conv.configDir, conv.skillsDir) : 'skills';
+  const folderRoot = conv ? skillsFolderOf(conv) : 'skills';
   const extra = await outsideTheSetup(params.projectPath, params.agent, params.provider, resolved.skills.map((s) => s.content.skillName));
   return {
     ...extra,
@@ -689,7 +718,7 @@ async function outsideTheSetup(projectPath: string, agent: DurableAgentConfig, p
   const worktree = agent.worktreePath;
   if (!worktree || !provider) return {};
   const conv = provider.conventions;
-  const folderRoot = forwardSlashes(path.join(conv.configDir, conv.skillsDir));
+  const folderRoot = skillsFolderOf(conv);
   const { tracked, kept, keptReason } = await otherSkillFolders(worktree, provider, skillNames);
   const out: OutsideTheSetup = { cliName: provider.displayName };
   if (tracked.length > 0) out.repoSkills = tracked.map((n) => `${folderRoot}/${n}`);

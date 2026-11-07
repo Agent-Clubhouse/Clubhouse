@@ -8,6 +8,7 @@ import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedTemplateSett
 import type { ManagedAgentsService } from './service';
 import { ensureBuiltinsOnceFor } from './builtins-once';
 import { appLog } from '../log-service';
+import { withWorkingIdentity } from './builtins';
 
 export const HELPER_KEEPS_CLUBHOUSE_PART = 'Helpers always keep the Clubhouse MCP part so they can reach their orchestrator.';
 
@@ -60,7 +61,7 @@ export async function managedHelperSetup(
     if (!inTemplate.has(id)) throw new Error(`"${live[id].name}" (${id}) isn't in template "${templateId}", so there is nothing to remove.`);
   }
   const setup = {
-    blocks: base.setup.blocks.filter((id) => !drop.has(id)),
+    blocks: withWorkingIdentity(base.setup).blocks.filter((id) => !drop.has(id)),
     skills: base.setup.skills.filter((id) => !drop.has(id)),
     mcps: base.setup.mcps.filter((id) => !drop.has(id)),
   };

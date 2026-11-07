@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { replaceWildcards, WildcardContext } from './wildcard-replacer';
+import { MANAGED_WILDCARDS, replaceManagedWildcards, replaceWildcards, WildcardContext } from './wildcard-replacer';
 
 const ctx: WildcardContext = {
   agentName: 'bold-falcon',
@@ -119,5 +119,21 @@ describe('@@BuildCommand / @@TestCommand / @@LintCommand replacement', () => {
     };
     const input = '1. @@BuildCommand\n2. @@TestCommand\n3. @@LintCommand';
     expect(replaceWildcards(input, ctxWithCmds)).toBe('1. make build\n2. make test\n3. make lint');
+  });
+});
+
+describe('replaceManagedWildcards (#2902)', () => {
+  const full: WildcardContext = { ...ctx, sourceControlProvider: 'github', buildCommand: 'cargo build', testCommand: 'cargo test', lintCommand: 'cargo clippy' };
+
+  it('fills only @@AgentName, @@StandbyBranch and @@Path', () => {
+    expect(MANAGED_WILDCARDS).toEqual(['AgentName', 'StandbyBranch', 'Path']);
+    expect(replaceManagedWildcards('@@AgentName on @@StandbyBranch at @@Path', full)).toBe(
+      'bold-falcon on bold-falcon/standby at .clubhouse/agents/bold-falcon/',
+    );
+  });
+
+  it('leaves the source control provider and build, test and lint commands as written', () => {
+    const input = '@@SourceControlProvider: @@BuildCommand, @@TestCommand, @@LintCommand. @@Mission @@Persona';
+    expect(replaceManagedWildcards(input, full)).toBe(input);
   });
 });

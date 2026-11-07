@@ -18,6 +18,7 @@ import { ensureBuiltinsOnceFor } from './builtins-once';
 import { MCP_BACKUP_DIR } from './mcp-backup';
 import { keepInstructionsAtFirstStart } from './before-managed';
 import * as path from 'path';
+import { skillsFolderOf } from '../../../shared/skills-folder';
 import {
   deliverManagedSetup,
   EXCLUDES_MANIFEST,
@@ -134,7 +135,7 @@ async function excludeManagedFiles(projectPath: string, worktreePath: string | u
     await gitExclude.replaceExclusions(projectPath, `clubhouse-managed-${provider.id}`, [
       ...(instructions ? [instructions] : []),
       conv.mcpConfigFile,
-      `${conv.configDir}/${conv.skillsDir}/`,
+      `${skillsFolderOf(conv)}/`,
       // Where Claude Code's claudeMdExcludes go (D49).
       ...(provider.id === 'claude-code' ? [`${conv.configDir}/${conv.localSettingsFile || 'settings.local.json'}`] : []),
       // Which of those excludes Clubhouse added, so it replaces only its own.

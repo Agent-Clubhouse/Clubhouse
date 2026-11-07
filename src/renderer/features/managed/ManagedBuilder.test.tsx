@@ -262,7 +262,12 @@ describe('PartDialog', () => {
     const create = vi.spyOn(m(), 'createPart').mockResolvedValue({ ok: true, value: created } as never);
     const onCreated = vi.fn();
     render(<PartDialog open kind="block" agentName="cool-gazelle" onClose={vi.fn()} onCreated={onCreated} />);
-    expect(screen.getByTestId('managed-wildcards').textContent).toContain('@@AgentName');
+    const bar = screen.getByTestId('managed-wildcards').textContent ?? '';
+    expect(bar).toContain('@@AgentName');
+    expect(bar).toContain('@@Path');
+    expect(bar).toContain('@@StandbyBranch');
+    // The built-in build, test, lint and validate skills replace these (#2902).
+    for (const gone of ['@@BuildCommand', '@@TestCommand', '@@LintCommand', '@@SourceControlProvider']) expect(bar).not.toContain(gone);
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Rules' } });
     fireEvent.change(screen.getByLabelText('Block text'), { target: { value: 'Use strict mode.' } });
     expect(screen.getByText(/added to cool-gazelle/)).toBeTruthy();

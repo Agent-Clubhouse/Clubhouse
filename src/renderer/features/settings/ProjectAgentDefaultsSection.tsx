@@ -454,7 +454,7 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
 
         <SettingsField
           label="Source control provider"
-          help={<>Replaces <Code>@@SourceControlProvider</Code> in skill templates.</>}
+          help={<>Fills <Code>@@SourceControlProvider</Code> for agents that aren't Clubhouse-managed. Managed agents work out the host from the repository.</>}
           htmlFor={`${idBase}-scp`}
         >
           <select
@@ -537,8 +537,8 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
 
       <SettingsSection title="Project commands">
         <p className={`${settingsHelp} mb-2`}>
-          Commands agents use to build, test and lint the project. They replace <Code>@@BuildCommand</Code>,{' '}
-          <Code>@@TestCommand</Code> and <Code>@@LintCommand</Code> in skills.
+          Commands that fill <Code>@@BuildCommand</Code>, <Code>@@TestCommand</Code> and{' '}
+          <Code>@@LintCommand</Code> for agents that aren't Clubhouse-managed. Managed agents use their build, test, lint and validate skills.
         </p>
         <SettingsField label="Build" htmlFor={`${idBase}-build`}>
           <input

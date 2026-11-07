@@ -8,6 +8,12 @@
       "file": "identity.md"
     },
     {
+      "id": "builtin-block-identity-helper",
+      "name": "Identity (working)",
+      "description": "Name, workspace and working branch. Used for helpers and quick agents, which work on the branch they were given.",
+      "file": "identity-helper.md"
+    },
+    {
       "id": "builtin-block-clubhouse-basics",
       "name": "Clubhouse basics",
       "description": "How to work inside Clubhouse.",
@@ -102,6 +108,64 @@
       "file": "group-projects.md"
     }
   ],
+  "skills": [
+    {
+      "id": "builtin-skill-build",
+      "name": "Build",
+      "skillName": "build",
+      "description": "Finds the project's own build command from its scripts, task runner, CI workflow or docs, runs it, and reports the exact command and result. Use when a task, reviewer or failing check calls for a build, or before handing off code that has to compile or bundle.",
+      "file": "skills/build/SKILL.md"
+    },
+    {
+      "id": "builtin-skill-test",
+      "name": "Test",
+      "skillName": "test",
+      "description": "Finds how the project runs its tests from its scripts, task runner, CI workflow or docs, runs them, and reports the exact command, counts and failures. Use after changing behavior, when a task or reviewer asks for tests, or to check whether a change broke anything.",
+      "file": "skills/test/SKILL.md"
+    },
+    {
+      "id": "builtin-skill-lint",
+      "name": "Lint",
+      "skillName": "lint",
+      "description": "Finds the project's own lint, type-check and format-check commands from its scripts, task runner, CI workflow or docs, runs them, and reports the exact commands and results. Use when a task or reviewer asks for lint or type checks, or before handing off a change.",
+      "file": "skills/lint/SKILL.md"
+    },
+    {
+      "id": "builtin-skill-validate",
+      "name": "Validate",
+      "skillName": "validate",
+      "description": "Checks that a change is ready by running the build, test and lint skills in order and reporting each result. Use before pushing, opening or updating a pull request, or calling a task done.",
+      "file": "skills/validate/SKILL.md"
+    },
+    {
+      "id": "builtin-skill-post-result",
+      "name": "Post result",
+      "skillName": "post-result",
+      "description": "Delivers a finished result or review verdict to the right place, choosing between the parent agent, the Clubhouse group project board, the pull request and the conversation. Use when a task or review is done and its result needs reporting.",
+      "file": "skills/post-result/SKILL.md"
+    },
+    {
+      "id": "builtin-skill-post-result-parent",
+      "name": "Post result to parent",
+      "skillName": "post-result",
+      "description": "Sends a finished result or review verdict to the agent that started you, using the Clubhouse message_parent tool. Use when you are a helper agent and your task or review is done.",
+      "file": "skills/post-result-parent/SKILL.md"
+    },
+    {
+      "id": "builtin-skill-post-result-board",
+      "name": "Post result to the board",
+      "skillName": "post-result",
+      "description": "Posts a finished result or review verdict on the Clubhouse group project board with the post_bulletin tool, in the channel where the work was assigned or the requester's inbox. Use when your task or review in a group project is done.",
+      "file": "skills/post-result-board/SKILL.md"
+    },
+    {
+      "id": "builtin-skill-post-result-pr",
+      "name": "Post result to the pull request",
+      "skillName": "post-result",
+      "description": "Posts a review verdict or a finished task's outcome as a comment on its pull request on GitHub or Azure DevOps, starting with Approve or Reject. Use when you reviewed a pull request, or finished work that has one.",
+      "file": "skills/post-result-pr/SKILL.md"
+    }
+  ],
   "templates": [
     {
       "id": "builtin-template-orchestrator",
@@ -150,6 +214,13 @@
         "builtin-block-clubhouse-basics",
         "builtin-block-quality-assurance"
       ],
+      "skills": [
+        "builtin-skill-build",
+        "builtin-skill-test",
+        "builtin-skill-lint",
+        "builtin-skill-validate",
+        "builtin-skill-post-result"
+      ],
       "settings": {}
     },
     {
@@ -163,6 +234,12 @@
         "builtin-block-pull-requests",
         "builtin-block-merging"
       ],
+      "skills": [
+        "builtin-skill-build",
+        "builtin-skill-test",
+        "builtin-skill-lint",
+        "builtin-skill-validate"
+      ],
       "settings": {}
     },
     {
@@ -174,6 +251,12 @@
         "builtin-block-clubhouse-basics",
         "builtin-block-developer",
         "builtin-block-pull-requests"
+      ],
+      "skills": [
+        "builtin-skill-build",
+        "builtin-skill-test",
+        "builtin-skill-lint",
+        "builtin-skill-validate"
       ],
       "settings": {}
     },
@@ -221,7 +304,7 @@
       "name": "Helper",
       "description": "A generic helper: one task, then report back.",
       "blocks": [
-        "builtin-block-identity",
+        "builtin-block-identity-helper",
         "builtin-block-clubhouse-basics",
         "builtin-block-helper"
       ],
@@ -232,10 +315,16 @@
       "name": "Developer helper",
       "description": "A helper that implements one task and pushes a branch.",
       "blocks": [
-        "builtin-block-identity",
+        "builtin-block-identity-helper",
         "builtin-block-clubhouse-basics",
         "builtin-block-helper",
         "builtin-block-developer"
+      ],
+      "skills": [
+        "builtin-skill-build",
+        "builtin-skill-test",
+        "builtin-skill-lint",
+        "builtin-skill-validate"
       ],
       "settings": {}
     },
@@ -244,7 +333,7 @@
       "name": "Research helper",
       "description": "A helper that investigates one question and reports cited findings.",
       "blocks": [
-        "builtin-block-identity",
+        "builtin-block-identity-helper",
         "builtin-block-clubhouse-basics",
         "builtin-block-helper",
         "builtin-block-researcher"
@@ -256,10 +345,17 @@
       "name": "QA helper",
       "description": "A helper that reviews one change and approves or rejects it.",
       "blocks": [
-        "builtin-block-identity",
+        "builtin-block-identity-helper",
         "builtin-block-clubhouse-basics",
         "builtin-block-helper",
         "builtin-block-quality-assurance"
+      ],
+      "skills": [
+        "builtin-skill-build",
+        "builtin-skill-test",
+        "builtin-skill-lint",
+        "builtin-skill-validate",
+        "builtin-skill-post-result-parent"
       ],
       "settings": {}
     }

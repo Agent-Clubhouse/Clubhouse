@@ -11,6 +11,7 @@ import { carryPersonaOrchestration, setOrchestrationPolicy } from '../orchestrat
 import { resolveOrchestrator } from '../agent-system';
 import { legacyClubhouseModeEnabled, materializedDefaults, materializedInstructions, type MaterializedDefaults } from './legacy-migration';
 import type { DurableAgentConfig } from '../../../shared/types';
+import { MANAGED_WILDCARDS } from '../../../shared/wildcard-replacer';
 import type {
   ManagedAgentSetup,
   ManagedConvertPreview,
@@ -39,6 +40,7 @@ import {
 } from './before-managed';
 import { backupMcpFile, hasMcpFileToKeep, MCP_BACKUP_DIR, mcpBackupPath } from './mcp-backup';
 import { appLog } from '../log-service';
+import { skillsFolderOf } from '../../../shared/skills-folder';
 
 export interface CreateManagedAgentInput {
   name: string;
@@ -179,13 +181,13 @@ function usesClubhouseMode(projectPath: string, agent: DurableAgentConfig): bool
   return !agent.managed && !agent.clubhouseModeOverride && legacyClubhouseModeEnabled(projectPath);
 }
 
-/** The wildcards a managed start fills in; any other `@@` token stays as written (#2901). */
-const MANAGED_WILDCARDS = new Set(['AgentName', 'StandbyBranch', 'Path', 'SourceControlProvider', 'BuildCommand', 'TestCommand', 'LintCommand']);
+/** The wildcards a managed start fills in; any other `@@` token stays as written (#2901, #2902). */
+const FILLED_WILDCARDS = new Set<string>(MANAGED_WILDCARDS);
 
-/** `@@` tokens in a block that a managed start leaves as they are, such as @@Persona, @@Mission and @@If. */
+/** `@@` tokens in a block that a managed start leaves as they are, such as @@Persona, @@Mission, @@If and @@BuildCommand. */
 export function leftoverWildcards(text: string): string[] {
   const found = new Set<string>();
-  for (const m of text.matchAll(/@@([A-Za-z]+)/g)) if (!MANAGED_WILDCARDS.has(m[1])) found.add(`@@${m[1]}`);
+  for (const m of text.matchAll(/@@([A-Za-z]+)/g)) if (!FILLED_WILDCARDS.has(m[1])) found.add(`@@${m[1]}`);
   return [...found];
 }
 
@@ -233,17 +235,20 @@ async function planConvert(projectPath: string, agent: DurableAgentConfig, workt
     if (checked.ok === false) { notes.push(`The ${folder} skill isn't brought over because ${refusal(checked.issues)}.`); return; }
     skills.push({ folder, from, content: { kind: 'skill', skillName: checked.payload.skillName, files: checked.payload.files.map((f) => ({ ...f })) } });
   };
-  const skillsRoot = path.join(worktreePath, conv.configDir, conv.skillsDir);
-  let folders: string[] = [];
-  try {
-    folders = (await fsp.readdir(skillsRoot, { withFileTypes: true }))
-      .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
-      .map((e) => e.name)
-      .sort((a, b) => a.localeCompare(b));
-  } catch { /* telemetry-exempt: no skills folder, so no skills to bring over */ }
+  // The skills folder, then any the CLI used before (Codex's .codex/skills); the current one wins a clash.
+  const found = new Map<string, string>();
+  for (const root of [skillsFolderOf(conv), ...(conv.previousSkillsRoots ?? [])]) {
+    const skillsRoot = path.join(worktreePath, root);
+    try {
+      for (const e of await fsp.readdir(skillsRoot, { withFileTypes: true })) {
+        if (e.isDirectory() && !e.name.startsWith('.') && !found.has(e.name)) found.set(e.name, path.join(skillsRoot, e.name));
+      }
+    } catch { /* telemetry-exempt: no skills folder there, so no skills to bring over from it */ }
+  }
+  const folders = [...found.keys()].sort((a, b) => a.localeCompare(b));
   const inFolder = new Map<string, ManagedSkillContent['files'] | null>();
   for (const folder of folders) {
-    const read = await readSkillFolder(path.join(skillsRoot, folder));
+    const read = await readSkillFolder(found.get(folder)!);
     inFolder.set(folder, 'problem' in read ? null : read.files);
     if ('problem' in read) { notes.push(`The ${folder} skill isn't brought over because ${read.problem}.`); continue; }
     await addSkill(folder, read.files, 'folder');

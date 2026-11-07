@@ -173,5 +173,17 @@ describe('the managed exclude block (D16)', () => {
     const [, , again] = replaceExclusions.mock.calls[1] as unknown as [string, string, string[]];
     expect(again.some((p) => p.includes('CLAUDE.md'))).toBe(false);
     expect(again).toContain('.mcp.json');
+    expect(again).toContain('.claude/skills/');
+  });
+
+  it('excludes Codex\'s .agents/skills folder', async () => {
+    add('excl-codex', true);
+    const codex = { id: 'codex-cli', conventions: { configDir: '.codex', skillsDir: 'skills', skillsRoot: '.agents/skills', mcpConfigFile: '.codex/config.toml', legacyInstructionsFile: 'AGENTS.md', localSettingsFile: 'config.toml' } } as unknown as OrchestratorProvider;
+    await deliverForSpawn('/p', state.agents.get('excl-codex')!, codex);
+    await vi.waitFor(() => expect(replaceExclusions).toHaveBeenCalledTimes(1));
+    const [, tag, patterns] = replaceExclusions.mock.calls[0] as unknown as [string, string, string[]];
+    expect(tag).toBe('clubhouse-managed-codex-cli');
+    expect(patterns).toContain('.agents/skills/');
+    expect(patterns).not.toContain('.codex/skills/');
   });
 });

@@ -12,26 +12,37 @@
  * Built-ins the maintainer cut are retired, not deleted (D71): they stay
  * installed and are still delivered to agents and templates that list them,
  * but the UI hides them from the library and from new choices.
+ *
+ * Built-in skills (build, test, lint, validate and the post-result skills)
+ * come from the builder too: each is `builtin-text/skills/<name>/SKILL.md`,
+ * delivered into the CLI's skills folder like any skill part. Like built-in
+ * blocks they are read-only: people fork them in the library to make their own.
  */
 import manifestJson from './builtin-text/manifest.json';
-import { BUILTIN_TEXT } from './builtin-text/index';
+import { BUILTIN_SKILL_TEXT, BUILTIN_TEXT } from './builtin-text/index';
 import { CLUBHOUSE_MCP_PART_ID, type ManagedTemplate, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
-import type { BlockAssetPayload, McpAssetPayload } from '../../../shared/asset-catalog-types';
+import type { BlockAssetPayload, McpAssetPayload, SkillAssetPayload } from '../../../shared/asset-catalog-types';
 
 export interface BuiltinPart {
   id: string;
-  kind: 'block' | 'mcp';
+  kind: 'block' | 'skill' | 'mcp';
   name: string;
   description: string;
   /** Cut by the maintainer: still installed and delivered, hidden from new choices. */
   retired?: true;
-  payload: BlockAssetPayload | McpAssetPayload;
+  payload: BlockAssetPayload | SkillAssetPayload | McpAssetPayload;
 }
 
 /** The shape of `builtin-text/manifest.json`. */
 export interface BuiltinManifest {
   blocks: Array<{ id: string; name: string; description: string; file: string; retired?: boolean }>;
-  templates: Array<{ id: string; name: string; description: string; blocks: string[]; settings: ManagedTemplateSettings; retired?: boolean }>;
+  /**
+   * `name` is the library name and `skillName` the folder the CLI gets (its
+   * SKILL.md front matter `name`). Variants can share a folder, so `file` is
+   * by id: `skills/<id without builtin-skill->/SKILL.md`.
+   */
+  skills: Array<{ id: string; name: string; skillName: string; description: string; file: string; retired?: boolean }>;
+  templates: Array<{ id: string; name: string; description: string; blocks: string[]; skills?: string[]; settings: ManagedTemplateSettings; retired?: boolean }>;
 }
 
 export const BUILTIN_MANIFEST = manifestJson as BuiltinManifest;
@@ -42,6 +53,7 @@ export const BUILTIN_MANIFEST = manifestJson as BuiltinManifest;
  */
 export const BUILTIN_BLOCK_IDS = {
   identity: 'builtin-block-identity',
+  identityHelper: 'builtin-block-identity-helper',
   basics: 'builtin-block-clubhouse-basics',
   orchestrator: 'builtin-block-orchestrator',
   productOwner: 'builtin-block-product-owner',
@@ -60,10 +72,38 @@ export const BUILTIN_BLOCK_IDS = {
   reviewer: 'builtin-block-code-reviewer',
 } as const;
 
+/** Built-in skill ids code refers to. The manifest is the full list; a test checks each is in it. */
+export const BUILTIN_SKILL_IDS = {
+  build: 'builtin-skill-build',
+  test: 'builtin-skill-test',
+  lint: 'builtin-skill-lint',
+  validate: 'builtin-skill-validate',
+  postResult: 'builtin-skill-post-result',
+  postResultParent: 'builtin-skill-post-result-parent',
+  postResultBoard: 'builtin-skill-post-result-board',
+  postResultPr: 'builtin-skill-post-result-pr',
+} as const;
+
+/**
+ * Helpers and quick agents work on the branch they were given, so they get the
+ * working Identity instead of the durable one, whose standby-branch wording
+ * tells an agent to start each task on a new branch (#2902).
+ */
+export function withWorkingIdentity<T extends { blocks: string[] }>(setup: T): T {
+  if (!setup.blocks.includes(BUILTIN_BLOCK_IDS.identity)) return setup;
+  return { ...setup, blocks: setup.blocks.map((id) => (id === BUILTIN_BLOCK_IDS.identity ? BUILTIN_BLOCK_IDS.identityHelper : id)) };
+}
+
 function blockText(file: string): string {
   const text = BUILTIN_TEXT[file];
   if (text === undefined) throw new Error(`Built-in block text ${file} is missing; run scripts/sync-builtin-text.mjs`);
   return text.trim();
+}
+
+function skillText(file: string): string {
+  const text = BUILTIN_SKILL_TEXT[file];
+  if (text === undefined) throw new Error(`Built-in skill file ${file} is missing; run scripts/sync-builtin-text.mjs`);
+  return text;
 }
 
 export function builtinParts(): BuiltinPart[] {
@@ -72,6 +112,11 @@ export function builtinParts(): BuiltinPart[] {
       id: b.id, kind: 'block', name: b.name, description: b.description,
       ...(b.retired && { retired: true as const }),
       payload: { content: blockText(b.file) },
+    })),
+    ...BUILTIN_MANIFEST.skills.map((sk): BuiltinPart => ({
+      id: sk.id, kind: 'skill', name: sk.name, description: sk.description,
+      ...(sk.retired && { retired: true as const }),
+      payload: { skillName: sk.skillName, files: [{ path: 'SKILL.md', content: skillText(sk.file) }] },
     })),
     {
       id: CLUBHOUSE_MCP_PART_ID,
@@ -89,7 +134,7 @@ export function builtinTemplates(): ManagedTemplate[] {
   return BUILTIN_MANIFEST.templates.map((t): ManagedTemplate => ({
     id: t.id, name: t.name, description: t.description, builtin: true,
     ...(t.retired && { retired: true as const }),
-    setup: { blocks: [...t.blocks], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] },
+    setup: { blocks: [...t.blocks], skills: [...(t.skills ?? [])], mcps: [CLUBHOUSE_MCP_PART_ID] },
     settings: structuredClone(t.settings),
   }));
 }
