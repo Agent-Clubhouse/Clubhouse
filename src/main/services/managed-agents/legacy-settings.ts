@@ -1,6 +1,6 @@
 /**
  * Settings migrations for the move away from Clubhouse Mode (#2901), run by
- * the startup pass with the `managedAgents` flag on. Each makes explicit
+ * the startup pass. Each makes explicit
  * something that today only follows from Clubhouse Mode, so that removing
  * Clubhouse Mode later changes nothing for the person. Nothing is removed
  * here: the old fallbacks stay until the legacy runtime goes.

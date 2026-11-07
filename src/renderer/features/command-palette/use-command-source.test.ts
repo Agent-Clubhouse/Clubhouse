@@ -272,7 +272,9 @@ describe('useCommandSource', () => {
     expect(item).toBeDefined();
     expect(item.label).toBe('Agent config');
     expect(item.category).toBe('Commands');
-    expect(item.keywords).toContain('clubhouse');
+    expect(item.keywords).toContain('orchestrator');
+    // Clubhouse Mode isn't offered there (#2901).
+    expect(item.keywords).not.toContain('clubhouse');
   });
 
   it('agent config navigates to orchestrators settings', () => {

@@ -1,6 +1,6 @@
 /**
- * Builder tools (#2900), in the `dispatcher` tool group and behind the
- * `managedAgents` flag: every builder action as a Clubhouse MCP tool, so the
+ * Builder tools (#2900), in the `dispatcher` tool group: every builder
+ * action as a Clubhouse MCP tool, so the
  * Dispatcher can manage agent parts, templates and managed agents for the
  * person. They call the same service the UI does. Shared edits, deleting a
  * part in use and template pushes are preview-then-commit: the first call
@@ -13,7 +13,6 @@ import { appLog } from '../../log-service';
 import * as projectStore from '../../project-store';
 import * as agentConfig from '../../agent-config';
 import { withDispatcherCatalogWrites } from '../../asset-catalog/store';
-import { getSettings as getExperimentalSettings } from '../../experimental-settings';
 import { managedAgents, restartManagedAgent, statusFor } from '../../managed-agents';
 import { applyManagedSettings, createManagedAgent } from '../../managed-agents/agents';
 import { previewManagedSetup } from '../../managed-agents/delivery';
@@ -25,11 +24,6 @@ import type { Project } from '../../../../shared/types';
 
 const ACTOR = 'Dispatcher';
 const KINDS: ManagedPartKind[] = ['block', 'skill', 'mcp'];
-
-export const MANAGED_TOOLS_OFF_MESSAGE =
-  'Clubhouse-managed agents are off. Ask the person to turn them on in Settings > Experimental to use the builder tools.';
-
-const managedOn = (): boolean => getExperimentalSettings().managedAgents === true;
 
 function json(value: unknown): McpToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
@@ -148,8 +142,6 @@ type Handler = (callerId: string, args: Record<string, unknown>) => Promise<McpT
 
 function tool(name: string, description: string, properties: Record<string, unknown>, required: string[], handler: Handler): void {
   registerGlobalTool(name, { description, inputSchema: { type: 'object', properties, required } }, async (callerId, args) => {
-    // The registry refuses these while the flag is off; checked here too, so no handler runs without it.
-    if (!managedOn()) return fail(MANAGED_TOOLS_OFF_MESSAGE);
     try {
       // Writes run under asDispatcher, which attributes them to the calling Dispatcher (#2900).
       return await handler(callerId, args);
@@ -160,7 +152,7 @@ function tool(name: string, description: string, properties: Record<string, unkn
       appLog('core:mcp', 'warn', `${name} failed`, { meta: { callerId, error: err instanceof Error ? err.message : String(err) } });
       return fail(err instanceof Error ? err.message : String(err));
     }
-  }, { group: 'dispatcher', when: { isOn: managedOn, refusal: MANAGED_TOOLS_OFF_MESSAGE } });
+  }, { group: 'dispatcher' });
 }
 
 const S = { type: 'string' } as const;

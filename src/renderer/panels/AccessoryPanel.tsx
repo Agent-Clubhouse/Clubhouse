@@ -22,7 +22,7 @@ export interface SettingsCategory {
   part?: boolean;
 }
 
-/** Clubhouse-managed agents (#2819): the group that follows About and Agents & providers when the flag is on. */
+/** Clubhouse-managed agents (#2819): the group that follows About and Agents & providers. */
 const MANAGED_PAGES: SettingsCategory[] = [
   { label: 'Instruction blocks', page: 'managed-blocks', group: 'managed', part: true },
   { label: 'Skills', page: 'managed-skills', group: 'managed', part: true },
@@ -42,7 +42,6 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
   const [showExperimental, setShowExperimental] = useState(false);
   const [showAnnex, setShowAnnex] = useState(false);
   const [showGoobers, setShowGoobers] = useState(false);
-  const [showManaged, setShowManaged] = useState(false);
   const initFeedback = useFeedbackStore((s) => s.init);
   useEffect(() => { void initFeedback(); }, [initFeedback]);
   useEffect(() => {
@@ -53,14 +52,13 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
     });
     window.clubhouse.app.getExperimentalSettings().then((s) => {
       setShowGoobers(!!s.goobers);
-      setShowManaged(s.managedAgents === true);
     });
   }, [previewChannel]);
 
   const app: SettingsCategory[] = [
     { label: 'About', page: 'about' },
     { label: 'Agents & providers', page: 'orchestrators' },
-    ...(showManaged ? MANAGED_PAGES : [{ label: 'Helpers', page: 'helpers' as SettingsSubPage }]),
+    ...MANAGED_PAGES,
     { label: 'Dispatcher', page: 'dispatcher' },
     { label: 'Profiles', page: 'profiles' },
     { label: 'Display & UI', page: 'display' },

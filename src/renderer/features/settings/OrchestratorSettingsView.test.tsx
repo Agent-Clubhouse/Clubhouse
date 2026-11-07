@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore } from '../../stores/headlessStore';
@@ -10,7 +10,6 @@ import { OrchestratorSettingsView } from './OrchestratorSettingsView';
 import { loadChatFlag, resetChatFlag } from '../agents/chat/chat-flag';
 import { loadRichChatContentFlag, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
 import { useUIStore } from '../../stores/uiStore';
-import { loadManagedFlag, resetManagedFlag } from '../managed/managed-flag';
 
 // Mock ProjectAgentDefaultsSection to avoid deep component tree
 vi.mock('./ProjectAgentDefaultsSection', () => ({
@@ -83,12 +82,6 @@ describe('OrchestratorSettingsView', () => {
       expect(screen.getByText('Configure agent providers and agent behavior.')).toBeInTheDocument();
     });
 
-    it('renders Clubhouse Mode toggle', () => {
-      render(<OrchestratorSettingsView />);
-      expect(screen.getByText('Clubhouse Mode')).toBeInTheDocument();
-      expect(screen.getByText(/Manage agent instructions, permissions and MCP config/)).toBeInTheDocument();
-    });
-
     it('renders Default quick agent mode dropdown', () => {
       render(<OrchestratorSettingsView />);
       expect(screen.getByText('Default quick agent mode')).toBeInTheDocument();
@@ -121,83 +114,6 @@ describe('OrchestratorSettingsView', () => {
       render(<OrchestratorSettingsView />);
       expect(screen.getByText('Agent providers')).toBeInTheDocument();
       expect(screen.getByText('Claude Code')).toBeInTheDocument();
-    });
-
-    describe('clubhouse mode toggle', () => {
-      it('shows confirmation dialog when enabling', () => {
-        render(<OrchestratorSettingsView />);
-        // Find the toggle button for Clubhouse Mode
-        const clubhouseToggle = screen.getByRole('switch', { name: 'Clubhouse Mode' });
-        expect(clubhouseToggle).toHaveAttribute('aria-checked', 'false');
-        fireEvent.click(clubhouseToggle);
-
-        expect(screen.getByText('Enable Clubhouse Mode?')).toBeInTheDocument();
-        expect(screen.getByText(/overwrite agent settings/)).toBeInTheDocument();
-      });
-
-      it('enables on confirmation', () => {
-        const setEnabled = vi.fn();
-        useClubhouseModeStore.setState({ setEnabled });
-
-        render(<OrchestratorSettingsView />);
-        const clubhouseToggle = screen.getByRole('switch', { name: 'Clubhouse Mode' });
-        expect(clubhouseToggle).toHaveAttribute('aria-checked', 'false');
-        fireEvent.click(clubhouseToggle);
-        fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
-
-        expect(setEnabled).toHaveBeenCalledWith(true);
-      });
-
-      it('cancels confirmation dialog', () => {
-        render(<OrchestratorSettingsView />);
-        const clubhouseToggle = screen.getByRole('switch', { name: 'Clubhouse Mode' });
-        expect(clubhouseToggle).toHaveAttribute('aria-checked', 'false');
-        fireEvent.click(clubhouseToggle);
-        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-
-        expect(screen.queryByText('Enable Clubhouse Mode?')).not.toBeInTheDocument();
-      });
-
-      it('disables without confirmation when already enabled, if MCP stays on', async () => {
-        const setEnabled = vi.fn();
-        useClubhouseModeStore.setState({ enabled: true, setEnabled });
-
-        render(<OrchestratorSettingsView />);
-        fireEvent.click(screen.getByRole('switch', { name: 'Clubhouse Mode' }));
-
-        await waitFor(() => expect(setEnabled).toHaveBeenCalledWith(false));
-        expect(screen.queryByText('Enable Clubhouse Mode?')).not.toBeInTheDocument();
-      });
-
-      it('shows wildcard info banner when enabled', () => {
-        useClubhouseModeStore.setState({ enabled: true });
-        render(<OrchestratorSettingsView />);
-
-        expect(screen.getByText('@@AgentName')).toBeInTheDocument();
-        expect(screen.getByText('@@StandbyBranch')).toBeInTheDocument();
-        expect(screen.getByText('@@Path')).toBeInTheDocument();
-        // Newly surfaced wildcards
-        expect(screen.getByText('@@SourceControlProvider')).toBeInTheDocument();
-        expect(screen.getByText('@@BuildCommand')).toBeInTheDocument();
-        expect(screen.getByText('@@TestCommand')).toBeInTheDocument();
-        expect(screen.getByText('@@LintCommand')).toBeInTheDocument();
-        expect(screen.getByText('@@Mission')).toBeInTheDocument();
-        expect(screen.getByText('@@Persona')).toBeInTheDocument();
-      });
-
-      it('references the self-edit guide path when enabled', () => {
-        useClubhouseModeStore.setState({ enabled: true });
-        render(<OrchestratorSettingsView />);
-
-        expect(screen.getByText('.clubhouse/clubhouse-mode.md')).toBeInTheDocument();
-      });
-
-      it('hides wildcard banner when disabled', () => {
-        useClubhouseModeStore.setState({ enabled: false });
-        render(<OrchestratorSettingsView />);
-
-        expect(screen.queryByText('@@AgentName')).not.toBeInTheDocument();
-      });
     });
 
     describe('orchestrator list', () => {
@@ -687,11 +603,6 @@ describe('OrchestratorSettingsView', () => {
       expect(screen.getByText('Configure the agent provider and agent behavior for this project.')).toBeInTheDocument();
     });
 
-    it('renders Clubhouse Mode dropdown', () => {
-      render(<OrchestratorSettingsView projectId="proj-1" />);
-      expect(screen.getByText('Clubhouse Mode')).toBeInTheDocument();
-    });
-
     it('renders Quick Agent Mode dropdown', () => {
       render(<OrchestratorSettingsView projectId="proj-1" />);
       expect(screen.getByText('Quick agent mode')).toBeInTheDocument();
@@ -748,7 +659,7 @@ describe('OrchestratorSettingsView', () => {
       it('each project override select is labelled by its row', () => {
         useMcpSettingsStore.setState({ enabled: true });
         render(<OrchestratorSettingsView projectId="proj-1" />);
-        for (const name of ['Quick agent mode', 'Free agent permission mode', 'Session name on quit', 'Clubhouse Mode', 'MCP override']) {
+        for (const name of ['Quick agent mode', 'Free agent permission mode', 'Session name on quit', 'MCP override']) {
           expect(screen.getByLabelText(name).tagName).toBe('SELECT');
         }
       });
@@ -791,58 +702,18 @@ describe('OrchestratorSettingsView', () => {
           await waitFor(() => expect(screen.queryByTestId('mcp-off-dialog')).toBeNull());
         });
 
-        it('asks when turning Clubhouse mode off for the project would take MCP with it', async () => {
-          const setProjectOverride = vi.fn();
-          useClubhouseModeStore.setState({ enabled: true, setProjectOverride });
-          window.clubhouse.app.getMcpOffImpact = vi.fn(async () => losing);
-          render(<OrchestratorSettingsView projectId="proj-1" />);
-          fireEvent.change(screen.getByLabelText('Clubhouse Mode'), { target: { value: 'off' } });
-          await screen.findByTestId('mcp-off-dialog');
-          expect(window.clubhouse.app.getMcpOffImpact).toHaveBeenCalledWith({ clubhouseMode: { projectOverrides: { '/home/user/my-app': false } } });
-          expect(setProjectOverride).not.toHaveBeenCalled();
-        });
-
-        it('asks when turning Clubhouse mode off at app level would take MCP with it', async () => {
-          const setEnabled = vi.fn(async (enabled: boolean) => { useClubhouseModeStore.setState({ enabled }); });
-          useClubhouseModeStore.setState({ enabled: true, setEnabled });
-          window.clubhouse.app.getMcpOffImpact = vi.fn(async () => ({ ...losing, appLoses: true, dispatcherGoesOff: true }));
-          render(<OrchestratorSettingsView />);
-          fireEvent.click(screen.getByRole('switch', { name: 'Clubhouse Mode' }));
-          await screen.findByTestId('mcp-off-dialog');
-          expect(setEnabled).not.toHaveBeenCalled();
-          fireEvent.click(screen.getByTestId('mcp-off-confirm'));
-          await waitFor(() => expect(setEnabled).toHaveBeenCalledWith(false));
-        });
       });
 
-      it('Clubhouse Mode dropdown responds to change events when clubhouse is on', async () => {
-        const setProjectOverride = vi.fn();
-        useClubhouseModeStore.setState({ enabled: true, setProjectOverride });
-
-        render(<OrchestratorSettingsView projectId="proj-1" />);
-        const select = screen.getByLabelText('Clubhouse Mode');
-        fireEvent.change(select, { target: { value: 'on' } });
-        await waitFor(() => expect(setProjectOverride).toHaveBeenCalledWith('/home/user/my-app', true));
-      });
     });
   });
 
-  describe('with Clubhouse-managed agents on (#2901)', () => {
-    let flag: ReturnType<typeof vi.spyOn>;
-    beforeEach(async () => {
-      flag = vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
-      resetManagedFlag();
-      await loadManagedFlag();
+  describe('without Clubhouse Mode settings (#2901)', () => {
+    beforeEach(() => {
       useProjectStore.setState({
         projects: [{ id: 'proj-1', name: 'my-app', path: '/home/user/my-app' }],
         updateProject: vi.fn(),
       });
     });
-    afterEach(() => {
-      flag.mockRestore();
-      resetManagedFlag();
-    });
-
     it('offers no Clubhouse Mode switch, wildcards or its source control default app-wide, even with it on', () => {
       useClubhouseModeStore.setState({ enabled: true });
       render(<OrchestratorSettingsView />);

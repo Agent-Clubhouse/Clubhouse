@@ -162,7 +162,7 @@ test('base template, a new skill, a skill from another agent, an MCP server, and
   projectDir = makeProject();
   app = await launchApp({
     label: 'managed-agents-acceptance',
-    experimental: { chat: true, managedAgents: true },
+    experimental: { chat: true },
     userDataFiles: {
       // The provider is installed (the fake), so no first-run CLI probe.
       'orchestrator-settings.json': { enabled: ['claude-code'], autoDetected: true },

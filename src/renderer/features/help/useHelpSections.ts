@@ -3,7 +3,6 @@ import { usePluginStore } from '../../plugins/plugin-store';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import { getHelpSections, HelpSection, HelpTopic } from './help-content';
 import { getPluginHelpTopics } from './plugin-help';
-import { useManagedFlag } from '../managed/managed-flag';
 
 export interface HelpSections {
   /** The active shell's built-in sections. */
@@ -46,9 +45,7 @@ export function useHelpSections(): HelpSections {
   }, [projectEnabled, appEnabled, plugins]);
 
   // getHelpSections reads the shell flag itself; newChrome is listed so the memo follows it.
-  // With Clubhouse-managed agents on, Clubhouse Mode and personas leave Help (#2901).
-  const managed = useManagedFlag();
-  const builtIn = useMemo(() => getHelpSections({ annex, managed }), [annex, newChrome, managed]);
+  const builtIn = useMemo(() => getHelpSections({ annex }), [annex, newChrome]);
   const all = useMemo(() => [...builtIn, ...pluginSections], [builtIn, pluginSections]);
   return { builtIn, plugins: pluginSections, all };
 }

@@ -86,7 +86,7 @@ export interface AgentLifecycleSlice {
     pluginMetadata?: Record<string, string>,
     /** Run in this directory instead of the parent's worktree (e.g. retry in the same worktree). */
     cwdOverride?: string,
-    /** Clubhouse-managed agents (#2893): start it from this template. Needs the preview flag. */
+    /** Clubhouse-managed agents (#2893): start it from this template. */
     options?: { managedTemplateId?: string },
   ) => Promise<string>;
   spawnDurableAgent: (

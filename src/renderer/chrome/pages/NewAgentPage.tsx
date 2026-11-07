@@ -9,20 +9,17 @@ import { useUIStore } from '../../stores/uiStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { useModelOptions } from '../../hooks/useModelOptions';
-import { PERSONA_TEMPLATES } from '../../features/personas';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
 import { Toggle } from '../../components/Toggle';
 import { Button } from '../../components/Button';
 import { Tooltip } from '../../components/Tooltip';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
 import { createDurableAgent } from '../../features/agents/create-agent';
-import { useManagedFlag } from '../../features/managed/managed-flag';
 import { ManagedUiError, useManagedTemplates } from '../../features/managed/managedApi';
 import { createManagedDurableAgent, type ManagedAgentInput } from '../../features/managed/create-managed-agent';
 import type { SetupDraft } from '../../features/managed/ManagedBuilder';
 import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { useChromeStore, settleNewAgent, type NewAgentRequest } from '../chromeStore';
-import { useChromeDialogStore } from '../sidebar/ChromeAgentDialogs';
 import { openCreatedAgent } from '../startPage';
 import { ProjectPicker } from './ProjectPicker';
 import { reportChromeActionFailed, reportChromeFeature } from '../telemetry';
@@ -35,11 +32,11 @@ import { BuilderStep, CopyStep, SCRATCH_SEED, TemplateStep, draftFromSeed, templ
  * Kind (Durable by default, or Quick), then the fields AddAgentDialog had.
  * Quick swaps the durable-only rows for a required Mission and Runs in.
  *
- * With the managedAgents preview flag (#2893), a durable agent asks for
- * identity (adding an optional image), then Clubhouse managed. On, the
- * runtime rows give way to Build from scratch, Start with template and Copy
- * another agent, which are steps of this page. Off, the form stays as it was
- * without Persona, plus the Clubhouse features opt-out.
+ * A durable agent asks for identity (adding an optional image), then
+ * Clubhouse managed (#2893). On, the runtime rows give way to Build from
+ * scratch, Start with template and Copy another agent, which are steps of
+ * this page. Off, it is a plain agent with the runtime rows, plus the
+ * Clubhouse features opt-out.
  */
 
 const MANAGED_PREF_KEY = 'clubhouse.newAgent.managed';
@@ -162,7 +159,6 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const resolvedOrchestrator = orchestrator || effectiveOrchestrators[0]?.id || 'claude-code';
   const [model, setModel] = useState('default');
   const [customModel, setCustomModel] = useState('');
-  const [persona, setPersona] = useState('');
   const [useWorktree, setUseWorktree] = useState(true);
   const [isGit, setIsGit] = useState<boolean | null>(null);
   const [freeAgentMode, setFreeAgentMode] = useState(false);
@@ -171,14 +167,13 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const [mission, setMission] = useState('');
   const [parentAgentId, setParentAgentId] = useState('');
   const [quickTemplateId, setQuickTemplateId] = useState('');
-  // Clubhouse-managed agents (#2893), behind the preview flag.
-  const managedFlag = useManagedFlag();
+  // Clubhouse-managed agents (#2893).
   const remote = isRemoteProjectId(projectId);
   const [managedPref, setManagedPref] = useState(readManagedPref);
-  const isManaged = managedFlag && durable && !remote && managedPref;
+  const isManaged = durable && !remote && managedPref;
   // A quick agent can start from a template (D25). It stays a quick agent: the
   // runtime rows stay, and the template only fills them in.
-  const quickTemplates = managedFlag && !durable && !remote;
+  const quickTemplates = !durable && !remote;
   const [clubhouseFeatures, setClubhouseFeatures] = useState(true);
   const [image, setImage] = useState<string | null>(null);
   const [cropUrl, setCropUrl] = useState<string | null>(null);
@@ -341,8 +336,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
           orchestrator: resolvedOrchestrator,
           freeAgentMode: (supportsPermissions && freeAgentMode) || undefined,
           mcpIds: selectedMcps.length > 0 ? selectedMcps : undefined,
-          persona: (!managedFlag && persona) || undefined,
-          clubhouseFeatures: managedFlag && !remote && !clubhouseFeatures ? false : undefined,
+          clubhouseFeatures: !remote && !clubhouseFeatures ? false : undefined,
         },
         { onError: (message) => failed(`Couldn't create the agent: ${message}`) },
       ).then(async (id) => {
@@ -403,16 +397,6 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
       .then((added) => { if (added && stillOpen()) setProjectId(added.id); })
       .catch((err) => reportChromeActionFailed('add_project', err))
       .finally(() => { if (stillOpen()) setBusy(false); else settleNewAgent(request, null); });
-  };
-
-  // The template dialogs take over the opener's callbacks: an agent made from
-  // a template is reported like one made here.
-  const openTemplates = () => {
-    if (!project || busy) return;
-    const handed = useChromeStore.getState().handOffNewAgent();
-    if (!handed) return;
-    useChromeDialogStore.getState().openGallery(project.id, { onCreated: handed.onCreated, onClosed: handed.onClosed, stayInView: handed.stayInView });
-    reportChromeFeature('new_agent_open');
   };
 
   const projectName = project ? project.displayName || project.name : '';
@@ -542,28 +526,24 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
                 ))}
               </div>
             </Row>
-            {managedFlag && (
-              <Row label="Image" help={image ? undefined : 'Optional. Shown in place of the initials.'}>
-                {image && <img src={image} alt="" className="w-5 h-5 rounded-full object-cover" />}
-                <Button kind="ghost" data-testid="new-agent-image" onClick={pickImage} disabled={busy} className="focus-ring">{image ? 'Change…' : 'Choose…'}</Button>
-                {image && <Button kind="quiet" onClick={() => setImage(null)} disabled={busy} className="focus-ring">Remove</Button>}
-              </Row>
-            )}
+            <Row label="Image" help={image ? undefined : 'Optional. Shown in place of the initials.'}>
+              {image && <img src={image} alt="" className="w-5 h-5 rounded-full object-cover" />}
+              <Button kind="ghost" data-testid="new-agent-image" onClick={pickImage} disabled={busy} className="focus-ring">{image ? 'Change…' : 'Choose…'}</Button>
+              {image && <Button kind="quiet" onClick={() => setImage(null)} disabled={busy} className="focus-ring">Remove</Button>}
+            </Row>
             <Rule />
-            {managedFlag && (
-              <Row
-                label="Clubhouse managed"
-                help={remote
-                  ? 'Not available yet for a project on another computer.'
-                  : isManaged
-                    ? 'Clubhouse builds its instructions, skills, MCP servers and settings from parts you choose, and keeps them up to date. It gets its own worktree.'
-                    : 'A plain agent. You manage its instructions, skills and MCP servers yourself.'}
-              >
-                <Toggle checked={isManaged} onChange={setManaged} disabled={remote || busy} aria-label="Clubhouse managed" />
-                <span className={`text-[13px] ${remote ? 'text-ctp-overlay1' : 'text-ctp-text'}`}>Clubhouse managed</span>
-              </Row>
-            )}
-            {managedFlag && !isManaged && !remote && (
+            <Row
+              label="Clubhouse managed"
+              help={remote
+                ? 'Not available yet for a project on another computer.'
+                : isManaged
+                  ? 'Clubhouse builds its instructions, skills, MCP servers and settings from parts you choose, and keeps them up to date. It gets its own worktree.'
+                  : 'A plain agent. You manage its instructions, skills and MCP servers yourself.'}
+            >
+              <Toggle checked={isManaged} onChange={setManaged} disabled={remote || busy} aria-label="Clubhouse managed" />
+              <span className={`text-[13px] ${remote ? 'text-ctp-overlay1' : 'text-ctp-text'}`}>Clubhouse managed</span>
+            </Row>
+            {!isManaged && !remote && (
               <Row
                 label="Clubhouse features"
                 help={clubhouseFeatures
@@ -574,7 +554,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
                 <span className="text-[13px] text-ctp-text">Clubhouse features</span>
               </Row>
             )}
-            {managedFlag && <Rule />}
+            <Rule />
           </>
         ) : (
           <>
@@ -643,15 +623,6 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
           )}
         </Row>}
 
-        {durable && !managedFlag && (
-          <Row label="Persona" htmlFor="new-agent-persona">
-            <select id="new-agent-persona" data-testid="new-agent-persona" value={persona} onChange={(e) => setPersona(e.target.value)} className={`${selectClass} w-[288px]`}>
-              <option value="">Project default</option>
-              {PERSONA_TEMPLATES.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </Row>
-        )}
-
         {durable && !isManaged && <Rule />}
 
         {durable && !isManaged && isGit && (
@@ -698,11 +669,6 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
           <p role="alert" data-testid="new-agent-error" className="mt-3 pl-32 text-xs leading-normal text-ctp-error">{error}</p>
         )}
         <div className="mt-[18px] pl-32 flex items-center gap-2">
-          {durable && !managedFlag && (
-            <button type="button" onClick={openTemplates} disabled={busy} className={footerLinkClass}>
-              From a template…
-            </button>
-          )}
           {isManaged && (
             <button type="button" data-testid="new-agent-copy" onClick={() => openStep('copy')} disabled={!canSubmit} className={footerLinkClass}>
               Copy another agent…

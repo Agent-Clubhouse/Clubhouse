@@ -1,6 +1,5 @@
 /**
- * The automatic switch to managed (D59, #2901). With the `managedAgents` flag
- * on, an unmanaged agent that uses Clubhouse Mode or a persona switches to
+ * The automatic switch to managed (D59, #2901). An unmanaged agent that uses Clubhouse Mode or a persona switches to
  * managed on its own, keeping what it has now. It is the reviewed
  * `convertToManaged` with Keep: Clubhouse Mode's instructions and defaults,
  * the persona's orchestration, backups, and removing what a failed switch
@@ -34,11 +33,6 @@ import type { ManagedMigrationFrom } from '../../../shared/managed-agents-types'
 import { beforeManagedDir, clearPendingSwitch, readPendingSwitch, switchedBefore } from './before-managed';
 import { codeOf } from './log-code';
 import { ManagedError } from './service';
-
-async function flagOn(): Promise<boolean> {
-  const { getSettings } = await import('../experimental-settings');
-  return getSettings().managedAgents === true;
-}
 
 /**
  * What makes an agent legacy-configured: Clubhouse Mode on for its project
@@ -186,12 +180,11 @@ function migrate(projectPath: string, agent: DurableAgentConfig, from: ManagedMi
  * Spawn path, before Clubhouse Mode would materialize: switch a
  * legacy-configured agent first. Returns its config whenever it is managed
  * now (even when the switch reported a failure after its save), or null to
- * start it as it is (flag off, nothing to switch, the switch failed, or it
+ * start it as it is (nothing to switch, the switch failed, or it
  * failed earlier since the app started).
  */
 export async function migrateAtSpawn(projectPath: string, agent: DurableAgentConfig): Promise<DurableAgentConfig | null> {
   try {
-    if (!(await flagOn())) return null;
     if (!autoMigrateFrom(projectPath, agent)) return null;
     // A startup pass may be switching it right now.
     const pending = inflight.get(agent.id);
@@ -285,7 +278,6 @@ export function runStartupMigration(): Promise<StartupMigrationResult> {
 
 async function startupMigration(): Promise<StartupMigrationResult> {
   const result: StartupMigrationResult = { switched: 0, failed: 0, deferred: 0, carried: 0 };
-  if (!(await flagOn())) return result;
   // Settings that only follow from Clubhouse Mode today become explicit first (D61, D63).
   const { migrateLegacySettings } = await import('./legacy-settings');
   await migrateLegacySettings();

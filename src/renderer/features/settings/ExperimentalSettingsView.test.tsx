@@ -55,6 +55,7 @@ describe('ExperimentalSettingsView', () => {
     expect(screen.queryByText('Theme gradients & fonts')).not.toBeInTheDocument();
     expect(screen.queryByText('Chat')).not.toBeInTheDocument();
     expect(screen.queryByText('Rich chat content')).not.toBeInTheDocument();
+    expect(screen.queryByText('Clubhouse-managed agents')).not.toBeInTheDocument();
     // Removed features no longer have toggles
     expect(screen.queryByText('Structured Mode')).not.toBeInTheDocument();
     expect(screen.queryByText('Assistant')).not.toBeInTheDocument();

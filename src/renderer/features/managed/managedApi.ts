@@ -47,7 +47,7 @@ export const managed = () => window.clubhouse.managed;
 
 /**
  * Refetch on mount and whenever main broadcasts a managed change. Disabled
- * (an unmanaged row, the flag off, ids not known yet), it loads nothing and
+ * (an unmanaged row, ids not known yet), it loads nothing and
  * doesn't listen, so a list of agent rows adds no listeners.
  */
 function useLive<T>(load: () => Promise<T>, deps: unknown[], enabled = true): { value: T | null; error: string | null; reload: () => void } {

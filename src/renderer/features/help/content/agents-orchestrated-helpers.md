@@ -30,7 +30,7 @@ If you turn it off while the agent has helpers, Clubhouse asks what to do with t
 
 Turn on **Cross-project helpers** to let the agent start helpers in other projects you have added to Clubhouse. It sits with the other orchestration settings, is off by default, and only shows while orchestration is on. Turning it off stops new starts in other projects. Helpers already started there keep running, and the orchestrator can still manage them.
 
-Agents using the **Orchestrator** persona start with the switch on. The persona also tells the agent how to plan, start helpers, hand off and dispose. Give helpers the **Workhorse** persona when no other role fits.
+A Clubhouse managed agent gets it from **Can start helpers** in its setup. An agent that uses the **Orchestrator** persona has the switch on, and keeps it on when it switches to managed. The persona also tells the agent how to plan, start helpers, hand off and dispose. Give helpers the **Workhorse** persona when no other role fits.
 
 While the Dispatcher is turned on, a **Connect to Dispatcher** switch shows in the same places, with orchestration on or off. It lets the Dispatcher message the agent and get its reports. Agents that orchestrate are connected by default. Turn the switch off and the agent stays off. You can also turn it on for an agent that doesn't orchestrate, which adds no helper tools. Helpers talk only to their orchestrator, so they never connect to the Dispatcher and don't have this switch.
 
@@ -146,7 +146,7 @@ The **Connections** card in an agent's details lists its wires. Wires made by th
 
 ## Setting the defaults for a project
 
-Policy for an agent comes from its own settings first, then its persona's front-matter, then the **Orchestrator** persona, then the built-in defaults. To ship a policy with a project, add `.clubhouse/personas/orchestrator.md` with an `orchestration` line in its front-matter:
+For an unmanaged agent, policy comes from its own settings first, then its persona's front-matter, then the **Orchestrator** persona, then the built-in defaults. A Clubhouse managed agent has no persona layer: its own settings, then the built-in defaults. Switching to managed copies what the persona layer gave it into its own settings, so its policy stays the same. To ship a policy with a project, add `.clubhouse/personas/orchestrator.md` with an `orchestration` line in its front-matter:
 
 ```
 ---

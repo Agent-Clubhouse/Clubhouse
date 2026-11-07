@@ -6,8 +6,6 @@ import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { AgentListItem } from './AgentListItem';
 import { AddAgentDialog } from './AddAgentDialog';
-import { AgentGalleryDialog } from './AgentGalleryDialog';
-import { TemplateConfigDialog, type TemplateConfig } from './TemplateConfigDialog';
 import { DeleteAgentDialog } from './DeleteAgentDialog';
 import { ApplyPersonaDialog } from './ApplyPersonaDialog';
 import { ExtractPersonaDialog } from './ExtractPersonaDialog';
@@ -19,16 +17,14 @@ import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../
 import { useToastStore } from '../../stores/toastStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
-import type { PersonaTemplate } from '../personas';
 import { EmptyState } from '../../components/EmptyState';
 import { requestLeaveAgentSettings } from './agentSettingsPages';
-import { createDurableAgent, createDurableAgentFromTemplate } from './create-agent';
+import { createDurableAgent } from './create-agent';
 import { buildAgentForest, forestSiblingGroups, helperRollup, localParentId, moveWithinGroup, type AgentNode } from '../../chrome/sidebar/treeModel';
 import { OtherProjectParentLine } from './helpers/OtherProjectParentLine';
 import { useAgentStatuses } from './agent-status-store';
 import { useChromeStore, syncCollapsedAgentsWithAgents, ensureChromeStateLoaded } from '../../chrome/chromeStore';
 import { ManagedRestartHost } from '../managed/restart';
-import { useManagedFlag } from '../managed/managed-flag';
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
 const EMPTY_AGENTS: Agent[] = [];
@@ -138,10 +134,6 @@ function AgentListInner() {
   const clearCompleted = useQuickAgentStore((s) => s.clearCompleted);
   const selectCompleted = useQuickAgentStore((s) => s.selectCompleted);
   const [showDialog, setShowDialog] = useState(false);
-  const [showGallery, setShowGallery] = useState(false);
-  // With Clubhouse-managed agents on, persona templates aren't offered (#2901).
-  const managedFlag = useManagedFlag();
-  const [pendingTemplate, setPendingTemplate] = useState<{ persona: PersonaTemplate; color: string } | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showMissionInput, setShowMissionInput] = useState(false);
   const [quickTargetParentId, setQuickTargetParentId] = useState<string | null>(null);
@@ -381,17 +373,6 @@ function AgentListInner() {
       { id: activeProject.id, path: activeProject.path },
       { name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, persona },
     );
-  };
-
-  const handleGallerySelect = (persona: PersonaTemplate, color: string) => {
-    setShowGallery(false);
-    setPendingTemplate({ persona, color });
-  };
-
-  const handleCreateFromTemplate = async (templateConfig: TemplateConfig) => {
-    if (!activeProject) return;
-    setPendingTemplate(null);
-    await createDurableAgentFromTemplate({ id: activeProject.id, path: activeProject.path }, templateConfig);
   };
 
   const isThinking = useCallback((id: string) => {
@@ -755,19 +736,6 @@ function AgentListInner() {
                   </svg>
                   Quick Agent
                 </button>
-                {!managedFlag && <div className="border-t border-surface-0/50 my-1" />}
-                {!managedFlag && <button
-                  onClick={() => { setShowDropdown(false); setShowGallery(true); }}
-                  className="w-full px-3 py-1.5 text-xs text-left text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer flex items-center gap-2 whitespace-nowrap"
-                >
-                  <svg className="flex-shrink-0" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="7" height="7" rx="1" />
-                    <rect x="14" y="3" width="7" height="7" rx="1" />
-                    <rect x="3" y="14" width="7" height="7" rx="1" />
-                    <rect x="14" y="14" width="7" height="7" rx="1" />
-                  </svg>
-                  From Template
-                </button>}
               </div>
             );
           })()}
@@ -875,21 +843,6 @@ function AgentListInner() {
           onClose={() => setShowDialog(false)}
           onCreate={handleCreateDurable}
           projectPath={activeProject?.path}
-        />
-      )}
-      {showGallery && (
-        <AgentGalleryDialog
-          onClose={() => setShowGallery(false)}
-          onCreate={handleGallerySelect}
-        />
-      )}
-      {pendingTemplate && (
-        <TemplateConfigDialog
-          persona={pendingTemplate.persona}
-          personaColor={pendingTemplate.color}
-          projectPath={activeProject?.path}
-          onClose={() => setPendingTemplate(null)}
-          onCreate={handleCreateFromTemplate}
         />
       )}
       {deleteDialogAgent && <DeleteAgentDialog />}

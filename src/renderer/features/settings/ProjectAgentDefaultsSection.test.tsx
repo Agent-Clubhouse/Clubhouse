@@ -1,7 +1,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
-import { loadManagedFlag, resetManagedFlag } from '../managed/managed-flag';
 
 function renderSection(overrides: Partial<React.ComponentProps<typeof ProjectAgentDefaultsSection>> = {}) {
   return render(
@@ -145,9 +144,9 @@ describe('ProjectAgentDefaultsSection', () => {
       expect(await screen.findByText(/snapshots when new durable agents/)).toBeInTheDocument();
     });
 
-    it('shows clubhouse mode active banner when on', async () => {
+    it('says agents still on Clubhouse Mode get these, with the wildcards, when it is on', async () => {
       renderSection({ clubhouseMode: true });
-      expect(await screen.findByText(/Clubhouse Mode is on/)).toBeInTheDocument();
+      expect(await screen.findByText(/still use Clubhouse Mode/)).toBeInTheDocument();
       expect(screen.getByText('@@AgentName')).toBeInTheDocument();
       expect(screen.getByText('@@StandbyBranch')).toBeInTheDocument();
       expect(screen.getByText('@@Path')).toBeInTheDocument();
@@ -155,7 +154,7 @@ describe('ProjectAgentDefaultsSection', () => {
 
     it('lists @@Mission and @@Persona in the active banner', async () => {
       renderSection({ clubhouseMode: true });
-      await screen.findByText(/Clubhouse Mode is on/);
+      await screen.findByText(/still use Clubhouse Mode/);
       // Both tokens are mentioned in the banner *and* in helper text under
       // their respective inputs — just assert presence.
       expect(screen.getAllByText('@@Mission').length).toBeGreaterThanOrEqual(1);
@@ -164,7 +163,7 @@ describe('ProjectAgentDefaultsSection', () => {
 
     it('references the self-edit guide path when clubhouse mode is on', async () => {
       renderSection({ clubhouseMode: true });
-      await screen.findByText(/Clubhouse Mode is on/);
+      await screen.findByText(/still use Clubhouse Mode/);
       // Referenced in the banner and again in the persona helper text.
       expect(screen.getAllByText('.clubhouse/clubhouse-mode.md').length).toBeGreaterThanOrEqual(1);
     });
@@ -220,61 +219,6 @@ describe('ProjectAgentDefaultsSection', () => {
       await waitFor(() => {
         const call = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0];
         expect(call[1].mission).toBeUndefined();
-      });
-    });
-  });
-
-  describe('default persona', () => {
-    it('renders the Default Persona dropdown', async () => {
-      renderSection();
-      expect(await screen.findByText('Default persona')).toBeInTheDocument();
-    });
-
-    it('loads a saved persona value', async () => {
-      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({
-        instructions: 'test',
-        persona: 'qa',
-      });
-      window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockResolvedValue({
-        userInstructions: 'test',
-        pluginInstructionBlocks: [],
-        allowRules: [],
-        denyRules: [],
-        skills: [],
-        agentTemplates: [],
-        mcpServers: [],
-        orphanedPluginIds: [],
-      });
-      renderSection();
-      await waitFor(() => {
-        expect(screen.getByDisplayValue('Quality Assurance')).toBeInTheDocument();
-      });
-    });
-
-    it('saves persona when set', async () => {
-      renderSection();
-      await screen.findByText('Default persona');
-      const select = screen.getByDisplayValue('None') as HTMLSelectElement;
-      fireEvent.change(select, { target: { value: 'qa' } });
-      fireEvent.click(screen.getByText('Save defaults'));
-
-      await waitFor(() => {
-        const call = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0];
-        expect(call[1].persona).toBe('qa');
-      });
-    });
-
-    it('omits persona when left as None', async () => {
-      renderSection();
-      await screen.findByText('Default persona');
-      // Trigger dirty without changing persona
-      const textarea = screen.getByDisplayValue('Default instructions');
-      fireEvent.change(textarea, { target: { value: 'Updated' } });
-      fireEvent.click(screen.getByText('Save defaults'));
-
-      await waitFor(() => {
-        const call = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0];
-        expect(call[1].persona).toBeUndefined();
       });
     });
   });
@@ -503,18 +447,7 @@ describe('ProjectAgentDefaultsSection', () => {
     });
   });
 
-  describe('with Clubhouse-managed agents on (#2901)', () => {
-    let flag: ReturnType<typeof vi.spyOn>;
-    beforeEach(async () => {
-      flag = vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
-      resetManagedFlag();
-      await loadManagedFlag();
-    });
-    afterEach(() => {
-      flag.mockRestore();
-      resetManagedFlag();
-    });
-
+  describe('without personas and conditional blocks (#2901)', () => {
     it('offers no default persona or conditional blocks, and keeps a saved persona on save', async () => {
       window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({ instructions: 'Default instructions', persona: 'qa' });
       renderSection({ clubhouseMode: true });

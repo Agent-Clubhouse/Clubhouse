@@ -7,7 +7,6 @@ import { openDispatcherSettings } from '../dispatcher/dispatcherNav';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { wakeDurableAgent, type WakeMode } from './wake-durable-agent';
-import { useManagedFlag } from '../managed/managed-flag';
 import { useManagedStatus } from '../managed/managedApi';
 import { requestManagedRestart } from '../managed/restart';
 
@@ -120,8 +119,6 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
   const removeAgent = useAgentStore((s) => s.removeAgent);
   const openAgentSettings = useAgentStore((s) => s.openAgentSettings);
   const openDeleteDialog = useAgentStore((s) => s.openDeleteDialog);
-  const openApplyPersonaDialog = useAgentStore((s) => s.openApplyPersonaDialog);
-  const openExtractPersonaDialog = useAgentStore((s) => s.openExtractPersonaDialog);
   const sendAgentWake = useAnnexClientStore((s) => s.sendAgentWake);
   const sendAgentKill = useAnnexClientStore((s) => s.sendAgentKill);
   // The agent's own project: the new chrome's tree shows rows from every project.
@@ -133,8 +130,7 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
   const isDurable = agent.kind === 'durable';
 
   // Clubhouse-managed agents (#2896): a running one can restart onto its current setup.
-  const managedFlag = useManagedFlag();
-  const managedEligible = managedFlag && isDurable && !isRemote && agent.status === 'running' && !!activeProject;
+  const managedEligible = isDurable && !isRemote && agent.status === 'running' && !!activeProject;
   const { value: managedStatus } = useManagedStatus(managedEligible ? activeProject?.path : undefined, managedEligible ? agent.id : undefined);
   const canRestartManaged = managedEligible && !!managedStatus?.managed && managedStatus.running;
 
@@ -169,14 +165,6 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
   const handleDelete = useCallback(() => {
     openDeleteDialog(agent.id);
   }, [agent.id, openDeleteDialog]);
-
-  const handleApplyPersona = useCallback(() => {
-    openApplyPersonaDialog(agent.id);
-  }, [agent.id, openApplyPersonaDialog]);
-
-  const handleExtractPersona = useCallback(() => {
-    openExtractPersonaDialog(agent.id);
-  }, [agent.id, openExtractPersonaDialog]);
 
   const handlePopOut = useCallback(async () => {
     await window.clubhouse.window.createPopout({
@@ -315,41 +303,6 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
       });
     }
 
-    // Priority 4b: Apply persona / Extract pattern (local durable agents).
-    // The Dispatcher's persona is built in and can't be changed (#2533).
-    // With Clubhouse-managed agents on, personas aren't offered (#2901).
-    if (isDurable && !isRemote && !isDispatcher && !managedFlag) {
-      list.push({
-        id: 'apply-persona',
-        label: 'Apply persona…',
-        icon: (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-            <circle cx="9" cy="7" r="4" />
-            <line x1="19" y1="8" x2="19" y2="14" />
-            <line x1="22" y1="11" x2="16" y2="11" />
-          </svg>
-        ),
-        hoverColor: 'hover:text-ctp-accent',
-        visible: true,
-        handler: handleApplyPersona,
-      });
-      list.push({
-        id: 'extract-persona',
-        label: 'Extract persona…',
-        icon: (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-        ),
-        hoverColor: 'hover:text-ctp-accent',
-        visible: true,
-        handler: handleExtractPersona,
-      });
-    }
-
     // Priority 5: Delete / Remove (lowest — collapses first). The Dispatcher
     // can't be deleted; turning it off in Settings is how it goes away.
     if (isDurable && agent.status !== 'running' && !isDispatcher) {
@@ -373,7 +326,7 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
     }
 
     return list;
-  }, [agent.status, agent.kind, isDurable, isRemote, isDispatcher, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeNewSession, handlePopOut, handleSpawnChild, handleSettings, canRestartManaged, handleRestart, handleRestartFresh, handleDelete, handleApplyPersona, handleExtractPersona, managedFlag]);
+  }, [agent.status, agent.kind, isDurable, isRemote, isDispatcher, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeNewSession, handlePopOut, handleSpawnChild, handleSettings, canRestartManaged, handleRestart, handleRestartFresh, handleDelete]);
 
   return actions;
 }

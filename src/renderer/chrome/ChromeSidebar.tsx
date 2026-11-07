@@ -26,7 +26,6 @@ import { HelpNav } from './sidebar/HelpNav';
 import { SidebarBreadcrumb } from './sidebar/SidebarBreadcrumb';
 import { useSidebarMode } from './listTabs';
 import { SCOPE_FOLLOWING_TABS } from './scope';
-import { useChromeDialogStore } from './sidebar/ChromeAgentDialogs';
 import { selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './sidebar/treeModel';
 import { useHelperDisposeRequestStore, describeHelperDispose } from '../stores/helperDisposeRequestStore';
 import { useHelperStartRequestStore, startRequestsByOrchestrator, describeHelperStarts } from '../stores/helperStartRequestStore';
@@ -45,7 +44,6 @@ import { DispatcherRow } from './sidebar/DispatcherRow';
 import { isDispatcherAgent, useDispatcherAgentId, useDispatcherStore } from '../features/dispatcher/dispatcherStore';
 import { requestCloseProject } from '../features/projects/close-project';
 import { closeDispatcher, openDispatcher } from '../features/dispatcher/dispatcherNav';
-import { useManagedFlag } from '../features/managed/managed-flag';
 
 /**
  * Sidebar for the new chrome (docs/chrome-redesign-spec.md §2, §4.2): the host
@@ -623,8 +621,6 @@ export function ChromeSidebar() {
     pickAndAddProject().catch((err) => reportChromeActionFailed('add_project', err));
   };
 
-  const templateProjectId = activeProjectId ?? projects[0]?.id;
-  const managedFlag = useManagedFlag();
   const newItems = [
     {
       label: 'Durable agent…',
@@ -632,8 +628,6 @@ export function ChromeSidebar() {
       onSelect: () => { openNewAgentOrDialog('durable'); reportChromeFeature('new_agent_open'); },
     },
     { label: 'Quick agent…', onSelect: () => { openNewAgentOrDialog('quick'); reportChromeFeature('new_agent_open'); } },
-    // With Clubhouse-managed agents on, New agent's templates take its place (#2901).
-    ...(templateProjectId && !managedFlag ? [{ label: 'Agent from a template…', onSelect: () => useChromeDialogStore.getState().openGallery(templateProjectId) }] : []),
   ];
 
   // The breadcrumb, or Esc inside the sidebar, returns from a list or Settings to Agents (spec §4.6).

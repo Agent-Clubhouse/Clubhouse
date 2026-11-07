@@ -8,7 +8,6 @@ const state = vi.hoisted(() => ({
   base: '',
   agents: new Map<string, DurableAgentConfig>(),
   running: new Set<string>(),
-  flags: {} as Record<string, boolean>,
   restartOrigins: [] as string[],
 }));
 
@@ -18,10 +17,6 @@ vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../dispatcher-gate', async (importOriginal) => ({
   ...await importOriginal<typeof import('../dispatcher-gate')>(),
   isDispatcherAgent: (id: string) => id === 'dispatcher',
-}));
-vi.mock('../../experimental-settings', async (original) => ({
-  ...await original<typeof import('../../experimental-settings')>(),
-  getSettings: () => state.flags,
 }));
 vi.mock('../../project-store', () => ({ peekProjects: async () => [{ id: 'p1', name: 'Clubhouse', path: '/proj' }] }));
 vi.mock('../../agent-config', () => ({
@@ -57,7 +52,7 @@ vi.mock('../../managed-agents', async () => {
 });
 
 import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry';
-import { CONFIRM_TTL_MS, MANAGED_TOOLS_OFF_MESSAGE, registerManagedTools, _resetConfirmTokensForTesting } from './managed-tools';
+import { CONFIRM_TTL_MS, registerManagedTools, _resetConfirmTokensForTesting } from './managed-tools';
 import { managedAgents, restartManagedAgent } from '../../managed-agents';
 import { _resetSettingsAuditForTesting } from '../../settings-audit';
 import { CLUBHOUSE_MCP_PART_ID } from '../../../../shared/managed-agents-types';
@@ -72,7 +67,6 @@ beforeEach(async () => {
   state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-tools-'));
   state.agents = new Map();
   state.running = new Set();
-  state.flags = { managedAgents: true };
   state.restartOrigins = [];
   vi.mocked(restartManagedAgent).mockClear();
   _resetSettingsAuditForTesting(false);
@@ -141,17 +135,10 @@ function managedAgent(id: string, setup: Partial<NonNullable<DurableAgentConfig[
   return a;
 }
 
-describe('the managedAgents flag', () => {
-  it('hides every builder tool while it is off, and refuses a call from a stale list', async () => {
-    expect(getScopedToolList('dispatcher').map((t) => t.name)).toContain('list_agent_parts');
-    state.flags = {};
+describe('the builder tools', () => {
+  it('are listed in the dispatcher group', () => {
     const names = getScopedToolList('dispatcher').map((t) => t.name);
-    for (const name of ['list_agent_parts', 'update_agent_part', 'push_agent_template', 'restart_agent']) expect(names).not.toContain(name);
-    const r = await call('list_agent_parts', { kind: 'block' });
-    expect(r.isError).toBe(true);
-    expect(r.content[0].text).toBe(MANAGED_TOOLS_OFF_MESSAGE);
-    state.flags = { managedAgents: true };
-    expect(getScopedToolList('dispatcher').map((t) => t.name)).toContain('list_agent_parts');
+    for (const name of ['list_agent_parts', 'update_agent_part', 'push_agent_template', 'restart_agent']) expect(names).toContain(name);
   });
 });
 

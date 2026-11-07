@@ -35,7 +35,6 @@ Right-click a row, or use its **⋯** button, for:
 - **Stop**, **Wake**, or **Wake & Resume** to continue the last session;
 - **Pop Out**, which opens the agent in its own window and stays in sync with the main one;
 - **Settings**, for a durable agent's name, model, instructions and more;
-- **Apply persona…** and **Extract persona…**;
 - **Delete** for a stopped durable agent, or **Remove** for a quick one that has stopped;
 - **Move up** and **Move down**, which reorder durable agents within their project.
 
