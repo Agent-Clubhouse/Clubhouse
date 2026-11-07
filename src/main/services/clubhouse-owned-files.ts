@@ -2,7 +2,7 @@
  * Clubhouse writes its own config into an agent's worktree when it starts the
  * agent: the MCP bridge entry (`.mcp.json` and the like) and, with the hook
  * server on, its hook entries (`.claude/settings.local.json` and the like).
- * Outside Clubhouse mode nothing git-excludes these files, so `git status`
+ * For an unmanaged agent nothing git-excludes these files, so `git status`
  * shows them and a helper that did nothing read as having uncommitted work.
  *
  * Why the dispose checks filter instead of adding info/exclude entries:

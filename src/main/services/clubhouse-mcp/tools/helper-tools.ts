@@ -43,7 +43,7 @@ import * as path from 'path';
 import { registerGlobalTool } from '../tool-registry';
 import { isOrchestrationEnabled, onOrchestrationGateChange } from '../orchestration-gate';
 import { waitReady as waitBridgeReady } from '../bridge-server';
-import { ensureMcpBridgeForAgent } from '../../mcp-settings';
+import { ensureMcpBridge } from '../../mcp-bridge-starter';
 import type { McpToolResult } from '../types';
 import * as agentConfig from '../../agent-config';
 import { agentRegistry } from '../../agent-registry';
@@ -722,7 +722,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     }
     // A helper can't work without reaching its parent (#2610): refuse rather than start one that can't report.
     try {
-      ensureMcpBridgeForAgent();
+      ensureMcpBridge();
       await waitBridgeReady();
     } catch (err) {
       // telemetry-exempt: the refusal reaches the calling agent as the tool result

@@ -12,7 +12,7 @@ Auto applies only where it is selected, and only to a new helper. It never write
 
 **Is Auto allowed?** Asked only for `cli: "auto"`. The first of these that is set wins:
 
-1. `dispatcher_locked` or `mcp_off`: always off. See [Where Auto is off](#where-auto-is-off).
+1. `dispatcher_locked`: always off. (`mcp_off` is kept as a code for older saved decisions and is never sent: the Clubhouse MCP always runs.) See [Where Auto is off](#where-auto-is-off).
 2. Project `off`. It can only turn it off, so a cloned repository can't spend another provider's quota. (A persona's `off` did the same until personas were retired in #2901; `scopes.persona` is always null now.)
 3. The orchestrator's `orchestration.autoHelpers`.
 4. The app setting.
@@ -192,7 +192,7 @@ Stable codes:
 - `fallback`: `none`, `builtin_preset`, `candidate_skipped`, `model_unverified`, `retried_after_spawn_failure`.
 - `source`: `request`, `persona`, `auto`, `orchestrator`, `custom_mapping`, `builtin_mapping`, `cli_default`.
 - `skipped`, per provider: `cli_disabled`, `cli_unavailable`, `auto_not_supported`, `no_valid_mapping`, `cooling_down`, `quota_near_limit`, `quota_exhausted`.
-- `auto.reason`, when Auto is off: `not_enabled`, `project_off`, `orchestration_off`, `mcp_off`, `dispatcher_locked`.
+- `auto.reason`, when Auto is off: `not_enabled`, `project_off`, `orchestration_off`, `dispatcher_locked`. `mcp_off` stays in `autoOffReasons` as a code only and is never sent.
 
 MCP calls the provider `cli`, as `start_helper` does.
 
@@ -375,7 +375,7 @@ App-wide preset editing from the phone is in scope.
   "copilot-cli":{"autoEligible":false,"reason":"auto_not_supported","quota":{"state":"unknown","unknownReason":"not_supported","asOf":null},"cells":null}}}
 ```
 
-A cell with nothing valid has `effective: null`. Until the `auto` mode is advertised, `autoEligible` only says whether a provider has presets. With `agentId`, stage 2 also returns `agent:{usable,reason?}`, where `reason` is `dispatcher_locked`, `mcp_off` or `orchestration_off`. The `auto` block appears from stage 4 and `quota` from stage 3. `source` under `auto` is `agent`, `project`, `app`, `default`, `mcp_off` or `dispatcher_locked`, and `auto.reason` is set whenever `effective` is false.
+A cell with nothing valid has `effective: null`. Until the `auto` mode is advertised, `autoEligible` only says whether a provider has presets. With `agentId`, stage 2 also returns `agent:{usable,reason?}`, where `reason` is `dispatcher_locked` or `orchestration_off`. The `auto` block appears from stage 4 and `quota` from stage 3. `source` under `auto` is `agent`, `project`, `app`, `default`, `mcp_off` or `dispatcher_locked`, and `auto.reason` is set whenever `effective` is false.
 
 **Revisions.** The full snapshot has `helperRoutingRevision`, and a `helper_routing:changed` event carries `{revision}`, so an open or cached page knows to refetch. The revision moves when a saved value changes, when an app-wide read finds that a cell's state changed, or when something that decides Auto changes: a project's `off` from any surface, an orchestrator's switch, or Clubhouse MCP. It doesn't move for a quota sample, and no snapshot is broadcast for one. It is opaque to a client. A list changing doesn't make a write stale: only a saved value does.
 
@@ -434,7 +434,7 @@ A cell with nothing valid has `effective: null`. Until the `auto` mode is advert
 
 **Held starts.** The helper request gets `requestedRouting`, with no resolved choice. `no_valid_mapping` is checked before holding, so the person isn't asked about a start that can't run, and again at approval, since a cell can go stale meanwhile. If it fails at approval, `helper.approve` returns 409 with `status: "rejected"`, because nothing was created, `error.code: "no_valid_mapping"`, a sentence for a person in `error.message`, and no `routing`. The request is used up, the orchestrator is told why, and a snapshot without the row is sent, in either order with the receipt. A phone shows the sentence and offers no retry. The same `commandId` replays the receipt, and a new one gets 404 `helper_request_not_found`, so nothing can be created twice. Only a helper that starts gets `routing`.
 
-**Fixtures:** the capability at each stage, and absent; each quota state, including `near_limit` with quota remaining, `exhausted` as reported, and `unknown` with and without a stale `asOf`; a limiting window with another window unreadable; an explicit override (Sol, `explicit_request`, `balanced: false`); a preset on a CLI; a persona pin; project-disabled; `mcp_off`; `dispatcher_locked`; a stale preset falling back to built-in; stale with nothing valid; Copilot excluded; a held approval failing with `no_valid_mapping`; context `reset` and `not_applied`; a stale-write 409 and reset results; labels, including an unknown code; the revision in the snapshot and the changed event.
+**Fixtures:** the capability at each stage, and absent; each quota state, including `near_limit` with quota remaining, `exhausted` as reported, and `unknown` with and without a stale `asOf`; a limiting window with another window unreadable; an explicit override (Sol, `explicit_request`, `balanced: false`); a preset on a CLI; a persona pin; project-disabled; `dispatcher_locked`; a stale preset falling back to built-in; stale with nothing valid; Copilot excluded; a held approval failing with `no_valid_mapping`; context `reset` and `not_applied`; a stale-write 409 and reset results; labels, including an unknown code; the revision in the snapshot and the changed event.
 
 ## Where Auto is off
 
@@ -442,7 +442,7 @@ From stage 4 these are `auto` states, as below. At stage 2 they are the `agent` 
 
 **Dispatcher (`dispatcher_locked`).** The Dispatcher doesn't start helpers, and this feature doesn't expand its authority. It gets no `start_helper`, no write tools and no routing inputs. For the Dispatcher's agent, `auto` is `{effective: false, source: "dispatcher_locked", reason: "dispatcher_locked"}`, with every scope `editable: false`, and `orchestration.autoHelpers` in `agent.update` stays refused as its other orchestration fields are. App-wide preset editing is a person's action from Settings or a phone, never the Dispatcher's. There are no MCP write tools for any of this.
 
-**No Clubhouse MCP (`mcp_off`).** No MCP means no orchestration (#2589), so the agent can't call `start_helper`. `auto` is `{effective: false, source: "mcp_off", reason: "mcp_off"}`, and saved values stay and come back with MCP. Turning `autoHelpers` on while MCP is off is refused with the existing `mcpRequired` result. Clearing or turning it off still works. Helpers already running keep their `routing`.
+**No Clubhouse MCP (`mcp_off`).** Retired: the Clubhouse MCP always runs (managed-agents D69), so nothing sends `mcp_off` and `mcpRequired` is gone. The code and its label stay so an older saved decision still reads.
 
 ## Orchestrator guidance
 

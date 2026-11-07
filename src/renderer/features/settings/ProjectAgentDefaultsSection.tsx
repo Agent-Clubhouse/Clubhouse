@@ -233,14 +233,11 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
   const [buildCommand, setBuildCommand] = useState('');
   const [testCommand, setTestCommand] = useState('');
   const [lintCommand, setLintCommand] = useState('');
-  const [mission, setMission] = useState('');
   const [profileId, setProfileId] = useState<string | undefined>(undefined);
   const [commandPrefix, setCommandPrefix] = useState('');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [resetting, setResetting] = useState(false);
   const profiles = useProfileStore((s) => s.profiles);
   const loadProfiles = useProfileStore((s) => s.loadProfiles);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
@@ -272,7 +269,6 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
       setBuildCommand(d.buildCommand || '');
       setTestCommand(d.testCommand || '');
       setLintCommand(d.lintCommand || '');
-      setMission(d.mission || '');
       setProfileId(d.profileId);
       setCommandPrefix(d.commandPrefix || '');
       setLoaded(true);
@@ -349,8 +345,8 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
     if (buildCommand.trim()) newDefaults.buildCommand = buildCommand.trim();
     if (testCommand.trim()) newDefaults.testCommand = testCommand.trim();
     if (lintCommand.trim()) newDefaults.lintCommand = lintCommand.trim();
-    if (mission.trim()) newDefaults.mission = mission.trim();
-    // Personas aren't offered (#2901); a saved default stays for agents that still use one.
+    // Personas and missions aren't offered (#2901); a saved default stays for the switch to managed to read.
+    if (defaults.mission) newDefaults.mission = defaults.mission;
     if (defaults.persona) newDefaults.persona = defaults.persona;
     if (profileId) newDefaults.profileId = profileId;
     if (commandPrefix.trim()) newDefaults.commandPrefix = commandPrefix.trim();
@@ -358,15 +354,6 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
     await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, newDefaults);
     setDirty(false);
     setSaving(false);
-    await loadBreakdown();
-  };
-
-  const handleReset = async () => {
-    setResetting(true);
-    await window.clubhouse.agentSettings.resetProjectAgentDefaults(projectPath);
-    setShowResetConfirm(false);
-    setResetting(false);
-    await loadDefaults();
     await loadBreakdown();
   };
 
@@ -447,9 +434,6 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
         title="Default agent settings"
         actions={
           <>
-            <Button onClick={() => setShowResetConfirm(true)} kind="quiet">
-              Reset to defaults
-            </Button>
             <Button onClick={handleSave} disabled={!dirty || saving} kind="primary">
               {saving ? 'Saving…' : 'Save defaults'}
             </Button>
@@ -521,27 +505,6 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
             value={commandPrefix}
             onChange={(e) => { setCommandPrefix(e.target.value); markDirty(); }}
             placeholder=". ./init.sh"
-            className={TEXT_INPUT_CLASS}
-            spellCheck={false}
-          />
-        </SettingsField>
-
-        <SettingsField
-          label="Default mission"
-          help={
-            <>
-              ID of a markdown file in <Code>.clubhouse/missions/</Code>, like <Code>implement-and-ship</Code>. Its content
-              replaces <Code>@@Mission</Code> in instructions, skills and permissions. An agent&apos;s own <Code>mission</Code> in{' '}
-              <Code>.clubhouse/agents.json</Code> wins. Leave blank for no mission.
-            </>
-          }
-          htmlFor={`${idBase}-mission`}
-        >
-          <input
-            id={`${idBase}-mission`}
-            value={mission}
-            onChange={(e) => { setMission(e.target.value); markDirty(); }}
-            placeholder="implement-and-ship"
             className={TEXT_INPUT_CLASS}
             spellCheck={false}
           />
@@ -733,18 +696,6 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
           </SettingsBlock>
         )}
       </SettingsSection>
-
-      <ConfirmDialog
-        open={showResetConfirm}
-        title="Reset to defaults?"
-        message="This replaces every project-level agent default (instructions, permissions and commands) with the built-in defaults. Plugin-injected configs stay. Your customizations will be lost."
-        onConfirm={handleReset}
-        onCancel={() => setShowResetConfirm(false)}
-        confirming={resetting}
-        confirmLabel="Reset"
-        confirmingLabel="Resetting…"
-        testId="reset-defaults-confirm"
-      />
 
       <ConfirmDialog
         open={removeTarget !== null}

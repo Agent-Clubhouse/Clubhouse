@@ -54,13 +54,8 @@ export function useDispatcherState(): DispatcherState | null {
   return useDispatcherRead().state;
 }
 
-/**
- * The "Connect to Dispatcher" row. It shows while the Dispatcher is on, and while
- * it is off only because of Clubhouse MCP: then it reads off and can't change,
- * and the agent's saved value comes back with MCP.
- */
-export function useDispatcherConnection(): { show: boolean; offForMcp: boolean } {
+/** The "Connect to Dispatcher" row. It shows while the Dispatcher is on. */
+export function useDispatcherConnection(): { show: boolean } {
   const state = useDispatcherState();
-  const offForMcp = !!state && state.offReason === 'mcp_off';
-  return { show: !!state?.enabled || offForMcp, offForMcp };
+  return { show: !!state?.enabled };
 }

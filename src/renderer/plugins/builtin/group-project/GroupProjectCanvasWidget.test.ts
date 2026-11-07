@@ -194,27 +194,13 @@ describe('GroupProjectCanvasWidget — polling toggle', () => {
   });
 });
 
-// ── MCP gating ──────────────────────────────────────────────────────
+// ── No MCP gate ─────────────────────────────────────────────────────
 
-describe('GroupProjectCanvasWidget — MCP required gate', () => {
-  it('imports useMcpSettingsStore for MCP check', () => {
-    expect(source).toContain("from '../../../stores/mcpSettingsStore'");
-    expect(source).toContain('useMcpSettingsStore');
-  });
-
-  it('reads mcpEnabled from the store', () => {
-    expect(source).toContain('useMcpSettingsStore((s) => s.enabled)');
-  });
-
-  it('renders an MCP-required placeholder when MCP is disabled', () => {
-    expect(source).toContain('!mcpEnabled');
-    expect(source).toContain('group-project-mcp-disabled');
-    expect(source).toContain('MCP required');
-  });
-
-  it('directs user to enable MCP in settings', () => {
-    expect(source).toContain('Settings');
-    expect(source).toContain('MCP');
+describe('GroupProjectCanvasWidget — no MCP gate', () => {
+  it('has no MCP-required placeholder: the Clubhouse MCP always runs', () => {
+    expect(source).not.toContain('mcpSettingsStore');
+    expect(source).not.toContain('mcpEnabled');
+    expect(source).not.toContain('group-project-mcp-disabled');
   });
 });
 
@@ -400,11 +386,6 @@ describe('GroupProjectCanvasWidget — Annex remote support', () => {
   it('uses useGroupProjectContext hook for data abstraction', () => {
     expect(source).toContain('useGroupProjectContext');
     expect(source).toContain('ctx');
-  });
-
-  it('MCP check only applies to local mode', () => {
-    // MCP gate should be conditioned on !isRemote
-    expect(source).toContain('!isRemote && !mcpEnabled');
   });
 
   it('context hook reads from remote store when isRemote', () => {

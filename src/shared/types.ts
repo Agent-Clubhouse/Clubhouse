@@ -254,7 +254,7 @@ export interface ProjectAgentDefaults {
   helperAuto?: 'off';
   /** Shell command prefix prepended before the CLI binary (e.g. ". ./init.ps1 &&") */
   commandPrefix?: string;
-  /** Default mission ID. Resolved at materialization to .clubhouse/missions/<id>.md content; substituted for @@mission. */
+  /** Default mission ID. Only Clubhouse Mode filled @@Mission with it; retired (#2901), read only by the switch to managed. */
   mission?: string;
   /**
    * @deprecated Personas were retired (#2901). A project default persona id
@@ -303,6 +303,7 @@ export interface DurableAgentConfig {
   quickAgentDefaults?: QuickAgentDefaults;
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;
+  /** Clubhouse Mode turned off for this agent. Clubhouse Mode was retired (#2901); read only by the switch to managed. */
   clubhouseModeOverride?: boolean;
   /** Last CLI session ID, used to resume previous session on wake */
   lastSessionId?: string;
@@ -324,8 +325,6 @@ export interface DurableAgentConfig {
   mcpIds?: string[];
   /** Per-MCP configuration values keyed by MCP ID then flag name */
   mcpConfigs?: Record<string, Record<string, string>>;
-  /** Per-agent override for the Clubhouse MCP bridge feature. A helper always gets the bridge: see clubhouseMcpOverride. */
-  mcpOverride?: boolean;
   /**
    * @deprecated Personas were retired (#2901). The persona id an agent had
    * before then, kept as a legacy field: the switch to managed reads it
@@ -742,13 +741,10 @@ export interface DurableConfigUpdates {
   /** A provider's choice for this model; null clears it. Refused when the model doesn't offer it. */
   contextWindow?: string | null;
   freeAgentMode?: boolean;
-  clubhouseModeOverride?: boolean;
   lastSessionId?: string | null;
   lastSleep?: AgentSleepInfo | null;
   mcpIds?: string[] | null;
   mcpConfigs?: Record<string, Record<string, string>> | null;
-  /** Per-agent Clubhouse MCP bridge override; null clears it (project and app settings decide). */
-  mcpOverride?: boolean | null;
   /** Per-agent Chat / CLI override; null clears it (provider default). */
   runtimeMode?: import('./chat').AgentRuntimeMode | null;
   /** Per-agent auto-sleep; 'inherit' or null clears it (app default). */
@@ -758,70 +754,6 @@ export interface DurableConfigUpdates {
   testCommand?: string;
   lintCommand?: string;
   sourceControlProvider?: SourceControlProvider | null;
-}
-
-/**
- * A single per-agent wildcard override, paired with the effective resolved value.
- * `override` is the value stored on the agent record (null when inheriting);
- * `resolved` is what the wildcard actually substitutes to (override → project
- * default → built-in fallback).
- */
-export interface WildcardOverride {
-  override: string | null;
-  resolved: string;
-}
-
-/**
- * Resolved wildcard actuals for a single agent, used to populate the per-agent
- * simple settings form when Clubhouse Mode manages the agent. Identity fields
- * are read-only computed actuals; command/provider fields carry per-agent
- * overrides; mission exposes the override, the project default, and the
- * lists of authorable library items.
- */
-export interface AgentWildcardSettings {
-  agentName: string;
-  standbyBranch: string;
-  agentPath: string;
-  sourceControlProvider: { override: SourceControlProvider | null; resolved: SourceControlProvider };
-  buildCommand: WildcardOverride;
-  testCommand: WildcardOverride;
-  lintCommand: WildcardOverride;
-  mission: { override: string | null; projectDefault: string | null; resolved: string | null };
-  missions: Array<{ id: string }>;
-}
-
-export interface ClubhouseModeSettings {
-  enabled: boolean;
-  projectOverrides?: Record<string, boolean>;
-  sourceControlProvider?: SourceControlProvider;
-}
-
-export type ConfigDiffCategory = 'instructions' | 'permissions-allow' | 'permissions-deny' | 'mcp' | 'skills' | 'agent-templates';
-export type ConfigDiffAction = 'added' | 'removed' | 'modified';
-
-export interface ConfigDiffItem {
-  id: string;                    // e.g. "permissions-allow:Read(.clubhouse/agents/x/**)"
-  category: ConfigDiffCategory;
-  action: ConfigDiffAction;
-  label: string;                 // Human-readable
-  agentValue?: string;           // Current agent value (resolved)
-  defaultValue?: string;         // Project default value (resolved)
-  rawAgentValue?: string;        // Agent value with wildcards re-applied (for propagation)
-}
-
-export interface ConfigDiffResult {
-  agentId: string;
-  agentName: string;
-  hasDiffs: boolean;
-  items: ConfigDiffItem[];
-}
-
-export interface MaterializationPreview {
-  instructions: string;
-  permissions: PermissionsConfig;
-  mcpJson: string | null;
-  skills: string[];
-  agentTemplates: string[];
 }
 
 /** Provenance of a config item — who added it */
@@ -1015,7 +947,7 @@ export interface SoundSettings {
   }>;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'mcp' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher'
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher'
   // Clubhouse-managed agents (#2819).
   | 'managed-blocks' | 'managed-skills' | 'managed-mcp' | 'managed-templates' | 'managed-orchestration' | 'managed-switch';
 
@@ -1027,12 +959,6 @@ export interface ChatIdleSettings {
 }
 
 // --- MCP settings ---
-
-export interface McpSettings {
-  enabled: boolean;
-  projectDefault?: boolean;
-  projectOverrides?: Record<string, boolean>;
-}
 
 /** An agent's connection to the Clubhouse MCP: when it finished the handshake and how many tools it was last given. */
 export interface AgentMcpConnection {
@@ -1048,7 +974,7 @@ export interface DispatcherLink {
   targetName: string;
   /** `active` is bound now. `suspended` is saved but not bound; `reason` says why. */
   status: 'active' | 'suspended';
-  reason?: 'dispatcher_off' | 'store_unwritable' | 'mcp_off' | 'orchestration_off' | 'not_connected_to_dispatcher';
+  reason?: 'dispatcher_off' | 'store_unwritable' | 'orchestration_off' | 'not_connected_to_dispatcher';
 }
 
 // --- Editor settings ---

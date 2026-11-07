@@ -67,10 +67,6 @@ vi.mock('./useGroupProjectContext', () => ({
   }),
 }));
 
-vi.mock('../../../stores/mcpSettingsStore', () => ({
-  useMcpSettingsStore: (sel: (s: unknown) => unknown) => sel({ enabled: true }),
-}));
-
 vi.mock('../../../hooks/useRemoteProject', () => ({
   useRemoteProject: () => ({ isRemote: false, satelliteId: null }),
 }));

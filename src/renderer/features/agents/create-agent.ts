@@ -24,19 +24,11 @@ export interface DurableAgentInput {
   freeAgentMode?: boolean;
   mcpIds?: string[];
   /**
-   * False turns Clubhouse's hooks, permission prompts and MCP bridge off
-   * (#2893), set before the first session starts so it never gets them.
+   * False turns Clubhouse's hooks and permission prompts off (#2893, D70),
+   * set before the first session starts so it never gets them. The Clubhouse
+   * MCP always runs (D69).
    */
   clubhouseFeatures?: false;
-}
-
-/**
- * A plain agent keeps its own files (#2901): in a project with Clubhouse Mode
- * on, Clubhouse Mode is turned off for it before its first start.
- */
-async function plainAgentSkipsClubhouseMode(projectPath: string): Promise<boolean> {
-  const settings = await window.clubhouse.app.getClubhouseModeSettings();
-  return !!(settings?.projectOverrides?.[projectPath] ?? settings?.enabled);
 }
 
 /** Delete an agent that was created but never started. A failure is logged; the caller reports its own error. */
@@ -101,15 +93,6 @@ export async function createDurableAgent(
       project.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds,
     );
     if (tempId) removeAgent(tempId);
-    if (await plainAgentSkipsClubhouseMode(project.path)) {
-      try {
-        await window.clubhouse.agent.updateDurableConfig(project.path, config.id, { clubhouseModeOverride: true });
-      } catch (err) {
-        // Leave no agent that would start under Clubhouse Mode: it never started, so remove it before saying why.
-        await removeUnstartedAgent(project.path, config.id);
-        throw new Error(`Couldn't turn Clubhouse Mode off for it: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
     if (clubhouseFeatures === false) {
       const off = await window.clubhouse.managed.setClubhouseFeatures(project.path, config.id, false);
       if (off.ok === false) {

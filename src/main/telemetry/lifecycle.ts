@@ -227,7 +227,6 @@ async function snapshotAttrs(): Promise<TelAttr[]> {
     const theme = await import('../services/theme-service');
     return ATTR.themeKind(String(theme.getSettings().themeId).startsWith('plugin:') ? 'plugin' : 'builtin');
   });
-  await add(async () => ATTR.clubhouseMode((await import('../services/clubhouse-mode-settings')).getSettings().enabled === true));
   await add(async () => {
     const annex = (await import('../services/annex-settings')).getSettings();
     return ATTR.annexServer(annex.enableServer === true);

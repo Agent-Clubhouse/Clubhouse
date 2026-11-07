@@ -85,7 +85,7 @@ export function useClubhouseMcpConnection(agent: Agent, spawnedAt: number | unde
       const current = ++request;
       Promise.resolve().then(() => window.clubhouse.mcpBinding.getAgentConnection(agent.id)).then(
         (c) => { if (alive && current === request) setConn(c && (spawnedAt === undefined || c.connectedAt >= spawnedAt) ? c : null); },
-        // telemetry-exempt: with the Clubhouse MCP off everywhere its handlers aren't registered; the card lists no connection.
+        // telemetry-exempt: a failed read lists no connection.
         () => { if (alive && current === request) setConn(null); },
       );
     };

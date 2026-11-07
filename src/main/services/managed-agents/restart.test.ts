@@ -15,11 +15,14 @@ vi.mock('../agent-config', () => ({
   setManagedSetup: async () => undefined,
 }));
 const deliver = vi.hoisted(() => vi.fn(async (): Promise<unknown> => null));
+const instructionsPattern = vi.hoisted(() => vi.fn(async (): Promise<string | null> => '/CLAUDE.md'));
 vi.mock('./delivery', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./delivery')>()),
   deliverManagedSetup: deliver,
+  instructionsExcludePattern: instructionsPattern,
 }));
-vi.mock('../git-exclude-manager', () => ({ addExclusions: vi.fn(async () => {}) }));
+const replaceExclusions = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('../git-exclude-manager', () => ({ addExclusions: vi.fn(async () => {}), replaceExclusions }));
 vi.mock('../agent-system', () => ({
   isAgentRunning: (id: string) => state.running.has(id),
   killAgent,
@@ -97,5 +100,78 @@ describe('delivery failure status (#2819)', () => {
     await deliverForSpawn('/p', state.agents.get('broken')!, provider);
     expect(await statusFor('/p', 'broken')).toMatchObject({ waiting: false });
     expect((await statusFor('/p', 'broken')).deliveryFailed).toBeUndefined();
+  });
+});
+
+describe('a setup saved before the Clubhouse MCP part was required (D69)', () => {
+  const provider = { id: 'claude-code', conventions: { configDir: '.claude', skillsDir: 'skills', mcpConfigFile: '.mcp.json', legacyInstructionsFile: 'CLAUDE.md', localSettingsFile: 'settings.local.json' }, writeInstructions: async () => {} } as unknown as OrchestratorProvider;
+
+  it('shows no changes waiting after a start, before or after its first save adds the part', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const { createAssetCatalogStore } = await import('../asset-catalog/store');
+    const { createManagedStateStore } = await import('./state-store');
+    const { createManagedAgentsService } = await import('./service');
+    const { _setManagedAgentsForTesting } = await import('./index');
+    const { _resetSettingsAuditForTesting } = await import('../settings-audit');
+    const { CLUBHOUSE_MCP_PART_ID } = await import('../../../shared/managed-agents-types');
+    const actual = await vi.importActual<typeof import('./delivery')>('./delivery');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-old-setup-'));
+    _resetSettingsAuditForTesting(false);
+    const svc = createManagedAgentsService({
+      catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
+      state: createManagedStateStore(path.join(root, 'managed')),
+      listProjects: async () => [],
+      listAgents: async () => [],
+      getAgent: async (_p, id) => state.agents.get(id) ?? null,
+      setManagedSetup: async () => undefined,
+      isRunning: (id) => state.running.has(id),
+    });
+    await svc.ensureBuiltins();
+    _setManagedAgentsForTesting(svc);
+    try {
+      const worktreePath = path.join(root, 'wt');
+      fs.mkdirSync(worktreePath);
+      state.agents.set('old', { id: 'old', name: 'old', color: 'indigo', createdAt: '', worktreePath, managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+      state.running.add('old');
+      deliver.mockImplementationOnce(actual.deliverManagedSetup as never);
+      await deliverForSpawn('/p', state.agents.get('old')!, provider);
+      expect(await statusFor('/p', 'old')).toMatchObject({ waiting: false, changes: [] });
+      // The first save writes the part in; the session still has what it needs.
+      state.agents.get('old')!.managed = { version: 1, blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] };
+      expect(await statusFor('/p', 'old')).toMatchObject({ waiting: false, changes: [] });
+    } finally {
+      _setManagedAgentsForTesting(null);
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the managed exclude block (D16)', () => {
+  const provider = { id: 'claude-code', conventions: { configDir: '.claude', skillsDir: 'skills', mcpConfigFile: '.mcp.json', legacyInstructionsFile: 'CLAUDE.md', localSettingsFile: 'settings.local.json' } } as unknown as OrchestratorProvider;
+
+  beforeEach(() => {
+    replaceExclusions.mockClear();
+    instructionsPattern.mockClear();
+  });
+
+  it('lists the instructions file as the agent\'s worktree gives it, anchored, and leaves it out when the worktree tracks it', async () => {
+    add('excl', true);
+    const agent = state.agents.get('excl')!;
+    await deliverForSpawn('/p', agent, provider);
+    await vi.waitFor(() => expect(replaceExclusions).toHaveBeenCalledTimes(1));
+    expect(instructionsPattern).toHaveBeenCalledWith(agent.worktreePath, provider);
+    const [, tag, patterns] = replaceExclusions.mock.calls[0] as unknown as [string, string, string[]];
+    expect(tag).toBe('clubhouse-managed-claude-code');
+    expect(patterns).toContain('/CLAUDE.md');
+    expect(patterns).not.toContain('CLAUDE.md');
+
+    instructionsPattern.mockResolvedValueOnce(null);
+    await deliverForSpawn('/p', agent, provider);
+    await vi.waitFor(() => expect(replaceExclusions).toHaveBeenCalledTimes(2));
+    const [, , again] = replaceExclusions.mock.calls[1] as unknown as [string, string, string[]];
+    expect(again.some((p) => p.includes('CLAUDE.md'))).toBe(false);
+    expect(again).toContain('.mcp.json');
   });
 });

@@ -65,15 +65,16 @@ beforeEach(() => {
 });
 
 describe('managed setup audit (D13)', () => {
-  it('records managing an agent: the template and switches as values, the part lists as changed', async () => {
+  it('records managing an agent: the template as a value, the part lists as changed', async () => {
     await setManagedSetup(PROJECT_PATH, 'a1', { version: 1, blocks: ['b1'], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID], templateId: 'builtin-template-helper' });
     const audit = lastAudit();
     expect(audit).toMatchObject({ scope: 'agent', prefix: 'agent', targetId: 'a1' });
-    expect(audit.before).toMatchObject({ managed: false, persona: 'qa', mcpOverride: undefined });
-    expect(audit.after).toMatchObject({ managed: true, 'managed.templateId': 'builtin-template-helper', 'managed.blocks': ['b1'], mcpOverride: true, persona: undefined });
+    expect(audit.before).toMatchObject({ managed: false, persona: 'qa' });
+    expect(audit.after).toMatchObject({ managed: true, 'managed.templateId': 'builtin-template-helper', 'managed.blocks': ['b1'], persona: undefined });
+    expect(audit.after).not.toHaveProperty('mcpOverride');
     expect(audit.catalog).toEqual({
       managed: 'value', 'managed.templateId': 'value', 'managed.blocks': 'changed', 'managed.skills': 'changed', 'managed.mcps': 'changed',
-      mcpOverride: 'value', clubhouseFeatures: 'value', persona: 'value',
+      clubhouseFeatures: 'value', persona: 'value',
     });
   });
 
@@ -89,9 +90,18 @@ describe('managed setup audit (D13)', () => {
   it('records the Clubhouse features switch with its values', async () => {
     await setClubhouseFeatures(PROJECT_PATH, 'a1', false);
     expect(lastAudit()).toMatchObject({
-      targetId: 'a1', before: { clubhouseFeatures: undefined, mcpOverride: undefined }, after: { clubhouseFeatures: false, mcpOverride: false },
-      catalog: { clubhouseFeatures: 'value', mcpOverride: 'value' },
+      targetId: 'a1', before: { clubhouseFeatures: undefined }, after: { clubhouseFeatures: false },
+      catalog: { clubhouseFeatures: 'value' },
     });
+    // Hooks only: an agent's Clubhouse MCP is never turned off (D70).
+    expect(await getDurableConfig(PROJECT_PATH, 'a1')).not.toHaveProperty('mcpOverride');
+  });
+
+  it('adds the Clubhouse MCP part first when a setup leaves it out (D69)', async () => {
+    await setManagedSetup(PROJECT_PATH, 'a1', { version: 1, blocks: ['b1'], skills: [], mcps: ['m1'] });
+    expect((await getDurableConfig(PROJECT_PATH, 'a1'))?.managed?.mcps).toEqual([CLUBHOUSE_MCP_PART_ID, 'm1']);
+    await setManagedSetup(PROJECT_PATH, 'a1', { version: 1, blocks: ['b1'], skills: [], mcps: ['m1', CLUBHOUSE_MCP_PART_ID] });
+    expect((await getDurableConfig(PROJECT_PATH, 'a1'))?.managed?.mcps).toEqual(['m1', CLUBHOUSE_MCP_PART_ID]);
   });
 });
 

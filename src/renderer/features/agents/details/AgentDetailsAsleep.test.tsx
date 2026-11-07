@@ -3,7 +3,6 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import type { Agent } from '../../../../shared/types';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useChatIdleSettingsStore } from '../../../stores/chatIdleSettingsStore';
-import { useClubhouseModeStore } from '../../../stores/clubhouseModeStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { useProfileStore } from '../../../stores/profileStore';
 import { useProjectStore } from '../../../stores/projectStore';
@@ -41,7 +40,6 @@ beforeEach(() => {
   useOrchestratorStore.setState({
     allOrchestrators: [{ id: 'claude-code', displayName: 'Claude Code', shortName: 'CC', capabilities: { permissions: true } }] as never,
   });
-  useClubhouseModeStore.setState({ enabled: true, projectOverrides: {}, loadSettings: vi.fn(async () => {}) } as never);
   window.clubhouse.app.getExperimentalSettings = vi.fn(async () => ({ chat: chatFlag })) as never;
   window.clubhouse.app.isPreviewEligible = vi.fn(async () => true) as never;
   // Main's answer for a sleeping agent: the runtime its next wake starts in.
@@ -282,7 +280,7 @@ describe('Agent details for a sleeping agent (#2281)', () => {
     render(<AgentDetails agent={sleeping} />);
     await waitFor(() => expect(settings().getByRole('combobox', { name: 'Model' })).toBeInTheDocument());
     expect(settings().getByRole('switch', { name: 'Free agent mode' })).toBeInTheDocument();
-    // Clubhouse Mode isn't offered here; an agent that uses it is offered the switch to managed (#2901).
+    // Clubhouse Mode was retired (#2901): nothing offers it.
     expect(settings().queryByRole('switch', { name: 'Clubhouse mode for this agent' })).not.toBeInTheDocument();
     await waitFor(() => expect(settings().getByRole('combobox', { name: 'Runs in' })).toBeInTheDocument());
     expect(settings().getByTestId('details-settings-next-wake')).toHaveTextContent(NEXT_WAKE_NOTE);

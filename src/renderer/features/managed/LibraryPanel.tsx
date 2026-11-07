@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Button } from '../../components/Button';
 import { Toggle } from '../../components/Toggle';
 import { inputClass, selectClass } from '../agents/agentSettingsUi';
-import type { ManagedPartKind, ManagedPartSummary } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_NOTE, type ManagedPartKind, type ManagedPartSummary } from '../../../shared/managed-agents-types';
 import { partKindLabel, sourceLabel } from './managedApi';
 import { CheckIcon, DroppedEnvNote } from './parts-ui';
 import type { BuilderAgent } from './BlockList';
@@ -129,7 +129,9 @@ export function PartToggleList({ kind, parts, selected, agent, onToggle, onFork,
       </div>
       <ul className="border-t border-surface-0">
         {shown.map((p) => {
-          const on = selected.includes(p.id);
+          // The Clubhouse MCP part is in every setup: always on, and it can't be turned off or copied.
+          const always = kind === 'mcp' && p.id === CLUBHOUSE_MCP_PART_ID;
+          const on = always || selected.includes(p.id);
           return (
             <li key={p.id} data-testid="managed-part-row" data-part-id={p.id} className="flex items-center gap-3.5 py-2.5 border-b border-surface-0">
               <div className="flex-1 min-w-0">
@@ -137,13 +139,15 @@ export function PartToggleList({ kind, parts, selected, agent, onToggle, onFork,
                   <span className="font-medium text-ctp-text truncate">{p.name}</span>
                   <span className="text-xs text-ctp-overlay1" data-testid="managed-part-source">{sourceLabel(p, agent?.agentId, agent?.agentName)}</span>
                 </div>
-                <div className="text-xs text-ctp-overlay1 mt-0.5 truncate">{p.description || p.preview}</div>
+                {always
+                  ? <div className="text-xs text-ctp-overlay1 mt-0.5" data-testid="managed-clubhouse-part-note">{CLUBHOUSE_PART_NOTE}</div>
+                  : <div className="text-xs text-ctp-overlay1 mt-0.5 truncate">{p.description || p.preview}</div>}
                 <DroppedEnvNote names={p.droppedEnvValues} testId={`managed-part-dropped-env-${p.id}`} className="mt-0.5 truncate" />
               </div>
               <div className="flex items-center gap-1">
                 {!p.builtin && <Button kind="quiet" aria-label={`Edit ${p.name}`} onClick={() => onEdit(p.id)} disabled={disabled}>Edit</Button>}
-                <Button kind="quiet" aria-label={p.builtin ? `Make your copy of ${p.name}` : `Fork ${p.name}`} onClick={() => onFork(p.id)} disabled={disabled}>{p.builtin ? 'Make your copy' : 'Fork'}</Button>
-                <Toggle checked={on} onChange={(v) => onToggle(p.id, v)} disabled={disabled} aria-label={p.name} data-testid={`managed-part-toggle-${p.id}`} />
+                {!always && <Button kind="quiet" aria-label={p.builtin ? `Make your copy of ${p.name}` : `Fork ${p.name}`} onClick={() => onFork(p.id)} disabled={disabled}>{p.builtin ? 'Make your copy' : 'Fork'}</Button>}
+                <Toggle checked={on} onChange={(v) => onToggle(p.id, v)} disabled={disabled || always} aria-label={p.name} data-testid={`managed-part-toggle-${p.id}`} />
               </div>
             </li>
           );

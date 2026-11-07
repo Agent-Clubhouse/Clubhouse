@@ -3,14 +3,12 @@ import { useOrchestratorStore, DEFAULT_HOOK_SERVER_ORCHESTRATOR } from '../../st
 import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore, SpawnMode } from '../../stores/headlessStore';
 import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
-import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import { useFreeAgentSettingsStore } from '../../stores/freeAgentSettingsStore';
 import { Toggle } from '../../components/Toggle';
 import { useUIStore } from '../../stores/uiStore';
 import { resetChatFlagCache } from '../agents/chat/AgentRuntimePane';
 import { RICH_CHAT_CONTENT_FLAG, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
-import { useMcpOffConfirm } from './McpOffConfirm';
 import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsHelp, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
 import type { FreeAgentPermissionMode, SourceControlProvider } from '../../../shared/types';
 import { type AgentRuntimeMode, type ChatRuntimeSettings } from '../../../shared/chat';
@@ -470,8 +468,6 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const setProjectMode = useHeadlessStore((s) => s.setProjectMode);
   const clearProjectMode = useHeadlessStore((s) => s.clearProjectMode);
 
-  const { requestMcpChange, mcpOffDialog } = useMcpOffConfirm();
-
   const sessionPromptGlobal = useSessionSettingsStore((s) => s.promptForName);
   const sessionOverrides = useSessionSettingsStore((s) => s.projectOverrides);
   const setSessionOverride = useSessionSettingsStore((s) => s.setProjectOverride);
@@ -484,22 +480,14 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const clearFreeAgentProjectMode = useFreeAgentSettingsStore((s) => s.clearProjectMode);
   const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
 
-  const mcpGlobalEnabled = useMcpSettingsStore((s) => s.enabled);
-  const mcpProjectOverrides = (useMcpSettingsStore((s) => s.projectOverrides) ?? {}) as Record<string, boolean>;
-  const mcpSaveSettings = useMcpSettingsStore((s) => s.saveSettings);
-  const mcpLoaded = useMcpSettingsStore((s) => s.loaded);
-  const loadMcpSettings = useMcpSettingsStore((s) => s.loadSettings);
-
   useEffect(() => {
     loadSessionSettings();
     loadFreeAgentSettings();
-    loadMcpSettings();
-  }, [loadSessionSettings, loadFreeAgentSettings, loadMcpSettings]);
+  }, [loadSessionSettings, loadFreeAgentSettings]);
 
   if (!project) return null;
 
   const projectPath = project.path;
-  const projectName = project.displayName || project.name;
   const currentOrchestrator = project.orchestrator || 'claude-code';
 
   // Headless mode
@@ -525,24 +513,6 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const handleFreeAgentModeChange = (value: string) => {
     if (value === 'global') clearFreeAgentProjectMode(projectPath);
     else setFreeAgentProjectMode(projectPath, value as FreeAgentPermissionMode);
-  };
-
-  // MCP override
-  const mcpOverride = mcpProjectOverrides[projectPath];
-  const currentMcpMode = mcpOverride === undefined ? 'global' : (mcpOverride ? 'on' : 'off');
-  const handleMcpModeChange = (value: string) => {
-    const updated: Record<string, boolean> = { ...mcpProjectOverrides };
-    if (value === 'global') {
-      delete updated[projectPath];
-    } else {
-      updated[projectPath] = value === 'on';
-    }
-    void requestMcpChange({
-      proposal: { mcp: { projectOverrides: updated } },
-      projectName,
-      apply: () => mcpSaveSettings({ projectOverrides: Object.keys(updated).length > 0 ? updated : undefined }),
-      saved: () => (useMcpSettingsStore.getState().projectOverrides as Record<string, boolean> | undefined)?.[projectPath] === updated[projectPath],
-    });
   };
 
   const onOff = (v: boolean) => (v ? 'On' : 'Off');
@@ -603,25 +573,8 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
             <option value="off">Off</option>
           </select>
         </SettingsField>
-
-        {/* Shown with the app-wide MCP bridge off too: an override keeps working then, and this is where to see it. */}
-        {mcpLoaded && (
-          <SettingsField label="MCP override" help="Override MCP bridge injection for this project. An override here doesn’t keep the Dispatcher on." htmlFor={`${idBase}-mcp`}>
-            <select
-              id={`${idBase}-mcp`}
-              value={currentMcpMode}
-              onChange={(e) => handleMcpModeChange(e.target.value)}
-              className={SELECT_CLASS}
-            >
-              <option value="global">Global default ({onOff(mcpGlobalEnabled)})</option>
-              <option value="on">On</option>
-              <option value="off">Off</option>
-            </select>
-          </SettingsField>
-        )}
       </SettingsSection>
 
-      {mcpOffDialog}
       <ProjectAgentDefaultsSection projectPath={project.path} />
     </>
   );

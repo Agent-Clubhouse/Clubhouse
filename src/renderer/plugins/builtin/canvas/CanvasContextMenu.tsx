@@ -8,7 +8,6 @@ import {
 import { usePluginStore } from '../../plugin-store';
 import { PopupMenu, type MenuEntry } from '../../../components/PopupMenu';
 import { sanitizeSvg } from '../../../utils/sanitize-svg';
-import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { AGENT_ICON, ANCHOR_ICON, ZONE_ICON } from './canvas-icons';
 
 /** A menu item can either be a built-in view type or a qualified plugin widget type string. */
@@ -47,8 +46,6 @@ function svgIcon(svg: string) {
 }
 
 export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMenuProps) {
-  const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
-  const plugins = usePluginStore((s) => s.plugins);
   const appEnabled = usePluginStore((s) => s.appEnabled);
   const [pluginWidgets, setPluginWidgets] = useState<RegisteredCanvasWidget[]>(() => getRegisteredWidgetTypes());
 
@@ -60,12 +57,8 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
   }, []);
 
   const appEnabledSet = new Set(appEnabled);
-  const visibleWidgets = pluginWidgets.filter((w) => {
-    if (!appEnabledSet.has(w.pluginId)) return false;
-    const manifest = plugins[w.pluginId]?.manifest;
-    if (manifest?.requiresMcp && !mcpEnabled) return false;
-    return true;
-  });
+  // Plugins that require MCP always show: the Clubhouse MCP always runs.
+  const visibleWidgets = pluginWidgets.filter((w) => appEnabledSet.has(w.pluginId));
   // The shared menu closes on an outside click or Esc; a canvas menu also
   // closes when the window loses focus, as before.
   useEffect(() => {

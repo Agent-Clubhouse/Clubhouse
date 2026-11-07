@@ -18,6 +18,7 @@ import { appLog } from '../log-service';
 import {
   deliverManagedSetup,
   EXCLUDES_MANIFEST,
+  instructionsExcludePattern,
   isSameFolder,
   parentInstructionFiles,
   previewManagedSetup,
@@ -155,7 +156,8 @@ describe('deliverManagedSetup', () => {
   it('skips a part that no longer exists instead of failing the start', async () => {
     agent.managed = { version: 1, blocks: [BUILTIN_BLOCK_IDS.identity, 'gone'], skills: [], mcps: [] };
     const record = await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
-    expect(Object.keys(record!.parts)).toEqual([BUILTIN_BLOCK_IDS.identity]);
+    // The Clubhouse MCP part reads as in every setup, saved before it was required or not (D69).
+    expect(Object.keys(record!.parts)).toEqual([BUILTIN_BLOCK_IDS.identity, CLUBHOUSE_MCP_PART_ID]);
     expect(record!.missing).toBe(1);
   });
 });
@@ -187,7 +189,8 @@ describe('quickManagedLaunch (D25)', () => {
     }));
     expect(launch.instructions).toBe('You are swift-otter, an agent working in Clubhouse.\nYour workspace is ./ and your branch is main.');
     expect(launch.servers).toEqual({ workiq: { command: 'npx', env_vars: ['WORKIQ_TENANT'] } });
-    expect(launch).toMatchObject({ templateId: template.id, bridge: true, skippedSkills: 1, missing: 0 });
+    expect(launch).toMatchObject({ templateId: template.id, skippedSkills: 1, missing: 0 });
+    expect(launch).not.toHaveProperty('bridge');
     expect(listing(project)).toEqual(before);
   });
 
@@ -196,14 +199,13 @@ describe('quickManagedLaunch (D25)', () => {
       service, projectPath: project, cwd: agent.worktreePath!, agentId: 'quick_2', agentName: 'calm-heron', templateId: 'builtin-template-researcher',
     }));
     expect(launch.instructions.split('\n')[1]).toBe('Your workspace is .clubhouse/agents/cool-gazelle/ and your branch is the checked-out branch.');
-    expect(launch.bridge).toBe(true);
     expect(launch.servers).toEqual({});
   });
 
-  it('reports no bridge for a template without the Clubhouse MCP part', async () => {
+  it('gives a template saved without the Clubhouse part no extra server: the bridge is added at launch (D69)', async () => {
     const template = await user(() => service.saveTemplate({ name: 'Plain', description: '', settings: {}, setup: { blocks: [], skills: [], mcps: [] } }));
     const launch = await user(() => quickManagedLaunch({ service, projectPath: project, cwd: project, agentId: 'q', agentName: 'q', templateId: template.id }));
-    expect(launch).toMatchObject({ bridge: false, instructions: '' });
+    expect(launch).toMatchObject({ instructions: '', servers: {}, missing: 0 });
   });
 
   it('counts the parts the template names that no longer exist', async () => {
@@ -247,6 +249,46 @@ describe('quickLaunchFor (D25)', () => {
 function git(cwd: string, ...args: string[]) {
   execFileSync('git', args, { cwd, stdio: 'ignore' });
 }
+
+describe('instructionsExcludePattern (D16)', () => {
+  function ignored(cwd: string, rel: string): boolean {
+    try {
+      execFileSync('git', ['check-ignore', '-q', '--', rel], { cwd, stdio: 'ignore' });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  it('anchors the instructions file to the root, so an untracked one in a subfolder still shows', async () => {
+    const wt = agent.worktreePath!;
+    git(wt, 'init', '-q');
+    const pattern = await instructionsExcludePattern(wt, provider());
+    expect(pattern).toBe('/CLAUDE.md');
+    fs.writeFileSync(path.join(wt, '.git', 'info', 'exclude'), `${pattern}\n`);
+    expect(ignored(wt, 'CLAUDE.md')).toBe(true);
+    expect(ignored(wt, 'docs/CLAUDE.md')).toBe(false);
+  });
+
+  it('uses Copilot\'s path in its config folder', async () => {
+    const wt = agent.worktreePath!;
+    git(wt, 'init', '-q');
+    const copilot = provider({ configDir: '.github', legacyInstructionsFile: 'copilot-instructions.md', mcpConfigFile: '.github/mcp.json' }, 'copilot-cli');
+    expect(await instructionsExcludePattern(wt, copilot)).toBe('/.github/copilot-instructions.md');
+  });
+
+  it('adds nothing when the worktree tracks the file', async () => {
+    const wt = agent.worktreePath!;
+    git(wt, 'init', '-q');
+    fs.writeFileSync(path.join(wt, 'CLAUDE.md'), '# theirs');
+    git(wt, 'add', 'CLAUDE.md');
+    expect(await instructionsExcludePattern(wt, provider())).toBeNull();
+  });
+
+  it('still excludes it outside a git checkout', async () => {
+    expect(await instructionsExcludePattern(agent.worktreePath!, provider())).toBe('/CLAUDE.md');
+  });
+});
 
 describe('exactly its parts (#2819)', () => {
   it('moves every untracked skill folder the setup does not list to app data, and leaves tracked ones for Preview (D48)', async () => {

@@ -87,10 +87,7 @@ import * as agentSystem from '../agent-system';
 import * as svc from './dispatcher-service';
 import { getSettings, updateSettings } from './dispatcher-settings';
 import { agentRegistry } from '../agent-registry';
-import { notifyMcpEnablementChanged, isMcpEnabledForAny, saveSettings as saveMcp } from '../mcp-settings';
-import { getSettings as getClubhouseMode, saveSettings as saveClubhouseMode } from '../clubhouse-mode-settings';
 import { DISPATCHER_CLASSIC_MESSAGE } from '../../../shared/dispatcher-types';
-import { MCP_REQUIRED_MESSAGE } from '../../../shared/orchestration-policy';
 
 const dispatcherDir = () => path.join(h.baseDir, 'dispatcher');
 
@@ -114,8 +111,6 @@ beforeEach(async () => {
   ];
   svc._resetDispatcherForTesting();
   await updateSettings(() => ({}));
-  await saveMcp({ enabled: true });
-  await saveClubhouseMode({ enabled: false });
   for (const agentId of agentRegistry.getAllRegistrations().keys()) agentRegistry.untrack(agentId);
   vi.mocked(agentConfig.createDurable).mockClear();
   vi.mocked(agentSystem.killAgent).mockClear();
@@ -125,20 +120,6 @@ beforeEach(async () => {
 afterEach(() => {
   fs.rmSync(h.baseDir, { recursive: true, force: true });
 });
-
-/** MCP off at app level: its switch saved off and the global Clubhouse mode off. */
-async function mcpOffAtApp(): Promise<void> {
-  await saveMcp({ enabled: false });
-  await saveClubhouseMode({ enabled: false });
-  notifyMcpEnablementChanged();
-  await settle();
-}
-
-async function mcpBackAtApp(): Promise<void> {
-  await saveMcp({ enabled: true });
-  notifyMcpEnablementChanged();
-  await settle();
-}
 
 describe('gating', () => {
   it('is on by default in the new layout: creates and connects, and never starts it', async () => {
@@ -228,117 +209,11 @@ describe('gating', () => {
   });
 });
 
-describe('Clubhouse MCP at app level', () => {
-  it('creates nothing and starts no bridge for a user with MCP saved off (#2589)', async () => {
-    await saveMcp({ enabled: false });
+describe('Clubhouse MCP', () => {
+  it('never turns it off: an old saved MCP switch means nothing, and phones always read flagOn', async () => {
     await svc.initDispatcher();
-    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, savedOn: true, offReason: 'mcp_off', mcpOff: true, agentId: null });
-    expect(fs.existsSync(dispatcherDir())).toBe(false);
-    expect(isMcpEnabledForAny()).toBe(false);
-    expect(getSettings().enabled).toBeUndefined();
-  });
-
-  it('a project override keeps its own agents on MCP and does not keep the Dispatcher on', async () => {
-    await saveMcp({ enabled: false, projectOverrides: { '/some/project': true } });
-    await svc.initDispatcher();
-    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, offReason: 'mcp_off' });
-    // The override is why the bridge starts, not the Dispatcher.
-    expect(isMcpEnabledForAny()).toBe(true);
-  });
-
-  it('the global Clubhouse mode counts as MCP on, with its own switch off', async () => {
-    await saveMcp({ enabled: false });
-    await saveClubhouseMode({ ...getClubhouseMode(), enabled: true });
-    await svc.initDispatcher();
-    expect(svc.getDispatcherState()).toMatchObject({ enabled: true, mcpOff: false, agentId: 'durable_1' });
-  });
-
-  it('a Clubhouse mode override on a project does not keep the Dispatcher on', async () => {
-    await saveMcp({ enabled: false });
-    await saveClubhouseMode({ enabled: false, projectOverrides: { '/some/project': true } });
-    await svc.initDispatcher();
-    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, offReason: 'mcp_off' });
-  });
-
-  it('never stops a running Dispatcher: it stays running, derived off, with the saved value kept', async () => {
-    await svc.setDispatcherEnabled(true);
-    h.running.add('durable_1');
-    agentRegistry.register('durable_1', { projectPath: dispatcherDir(), orchestrator: 'claude-code', runtime: 'chat' } as never);
-    const changed = vi.fn();
-    svc.onDispatcherChanged(changed);
-
-    await mcpOffAtApp();
-
-    expect(agentSystem.killAgent).not.toHaveBeenCalled();
-    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, savedOn: true, offReason: 'mcp_off', running: true, agentId: 'durable_1' });
-    expect(getSettings().enabled).toBe(true);
-    expect(changed).toHaveBeenCalledWith(expect.objectContaining({ enabled: false, running: true }));
-  });
-
-  it('the state follows it stopping, so its row and view go then', async () => {
-    await svc.setDispatcherEnabled(true);
-    const changed = vi.fn();
-    svc.onDispatcherChanged(changed);
-    agentRegistry.register('durable_1', { projectPath: dispatcherDir(), orchestrator: 'claude-code', runtime: 'chat' } as never);
-    agentRegistry.setNonce('durable_1', 'n1');
-    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ running: true }));
-    await mcpOffAtApp();
-    agentRegistry.untrack('durable_1');
-    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false, running: false }));
-  });
-
-  it('refuses turning it on with MCP off, and saves nothing', async () => {
-    await saveMcp({ enabled: false });
-    await expect(svc.setDispatcherEnabled(true)).rejects.toThrow(MCP_REQUIRED_MESSAGE);
-    expect(getSettings().enabled).toBeUndefined();
-    expect(agentConfig.createDurable).not.toHaveBeenCalled();
-  });
-
-  it('the direct switch still stops a running one with MCP off', async () => {
-    await svc.setDispatcherEnabled(true);
-    h.running.add('durable_1');
-    await mcpOffAtApp();
-    expect(agentSystem.killAgent).not.toHaveBeenCalled();
-    await svc.setDispatcherEnabled(false);
-    expect(agentSystem.killAgent).toHaveBeenCalledTimes(1);
-    expect(getSettings().enabled).toBe(false);
-  });
-
-  it('the stop in the turn-off dialog stops it and changes nothing saved', async () => {
-    await svc.setDispatcherEnabled(true);
-    h.running.add('durable_1');
-    await mcpOffAtApp();
-    await svc.stopDispatcherNow();
-    expect(agentSystem.killAgent).toHaveBeenCalledWith('durable_1', dispatcherDir(), 'claude-code');
-    expect(getSettings().enabled).toBe(true);
-  });
-
-  it('MCP back returns it to its saved state without starting it, and keeps its folder and notes', async () => {
-    await svc.setDispatcherEnabled(true);
-    fs.writeFileSync(path.join(dispatcherDir(), 'notes', 'plan.md'), 'keep me');
-    await mcpOffAtApp();
-    expect(svc.getDispatcherState().enabled).toBe(false);
-
-    await mcpBackAtApp();
-
-    expect(svc.getDispatcherState()).toMatchObject({ enabled: true, agentId: 'durable_1', running: false });
-    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
-    expect(agentConfig.createDurable).toHaveBeenCalledTimes(1);
-    expect(fs.readFileSync(path.join(dispatcherDir(), 'notes', 'plan.md'), 'utf-8')).toBe('keep me');
-  });
-
-  it('MCP back leaves a saved false off, and a never-created one is created then, not before', async () => {
-    await saveMcp({ enabled: false });
-    await svc.initDispatcher();
-    expect(agentConfig.createDurable).not.toHaveBeenCalled();
-    await mcpBackAtApp();
-    expect(agentConfig.createDurable).toHaveBeenCalledTimes(1);
-    expect(svc.getDispatcherState().enabled).toBe(true);
-
-    await svc.setDispatcherEnabled(false);
-    await mcpOffAtApp();
-    await mcpBackAtApp();
-    expect(svc.getDispatcherState()).toMatchObject({ enabled: false, offReason: 'switch_off' });
+    expect(svc.getDispatcherState()).toMatchObject({ enabled: true, flagOn: true, offReason: null });
+    expect(svc.getDispatcherState()).not.toHaveProperty('mcpOff');
   });
 });
 
@@ -357,7 +232,8 @@ describe('turning it on', () => {
     expect(freeAgentMode).toBe(true);
     // No persona (#2901): the Dispatcher is known by its folder and id.
     expect(call).toHaveLength(7);
-    expect(state.config).toMatchObject({ idleSleep: 'never', runtimeMode: 'chat', mcpOverride: true });
+    expect(state.config).toMatchObject({ idleSleep: 'never', runtimeMode: 'chat' });
+    expect(state.config).not.toHaveProperty('mcpOverride');
     expect(state.config?.persona).toBeUndefined();
   });
 

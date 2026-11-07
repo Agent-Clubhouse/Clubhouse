@@ -12,7 +12,6 @@ import { DISPATCHER_PROJECT_ID, type DispatcherState } from '../../shared/dispat
 import * as dispatcher from './dispatcher/dispatcher-service';
 import { newChromeEnabled } from '../window-chrome';
 import { MobileControlError } from './mobile-control';
-import { MCP_REQUIRED_MESSAGE } from '../../shared/orchestration-policy';
 
 export { DISPATCHER_PROJECT_ID };
 
@@ -27,38 +26,31 @@ export function dispatcherProject(): Project {
 
 type DurableConfig = NonNullable<DispatcherState['config']>;
 
-type OffReason = 'mcp_off' | 'switched_off' | 'classic_layout';
+/**
+ * Why it is off, as a phone reads it. The phone's `mcp_off` is never sent any
+ * more: the Clubhouse MCP always runs.
+ */
+type OffReason = 'switched_off' | 'classic_layout';
 
-/** Why it is off, as a phone reads it. `switched_off` wins over `mcp_off`, as the desktop's reasons do. */
 function offReasonOf(state: DispatcherState): OffReason | null {
   if (state.enabled) return null;
-  if (state.offReason === 'mcp_off') return 'mcp_off';
   return state.offReason === 'classic_layout' ? 'classic_layout' : 'switched_off';
 }
 
-/**
- * Its routes answer while it is on, and with Clubhouse MCP off, so a running
- * session can still be seen and its history read after it ends. Switched off or
- * on the classic layout they answer as they always have.
- */
+/** Its routes answer while it is on. Switched off or on the classic layout they answer as they always have. */
 function isReachable(state: DispatcherState): boolean {
-  return state.enabled || state.offReason === 'mcp_off';
+  return state.enabled;
 }
 
-/** What a phone may send for the Dispatcher with MCP off and a session running. */
-const COMMANDS_WHILE_RUNNING = ['agent.stop', 'chat.interrupt', 'chat.permission', 'chat.queue.remove', 'chat.question', 'chat.send', 'dispatcher.setEnabled'] as const;
-const COMMANDS_WHILE_STOPPED = ['dispatcher.setEnabled'] as const;
+const COMMANDS_WHILE_OFF = ['dispatcher.setEnabled'] as const;
 
 /**
  * The commands accepted while it is off, advertised as `commandsWhileOff` and
  * enforced by assertDispatcherCommand: this one list is both. Empty while it is
- * on, when the usual rules apply. Some are limited by payload there:
- * dispatcher.setEnabled turns it off, and chat.permission and chat.question answer
- * a pending request.
+ * on, when the usual rules apply.
  */
 export function dispatcherCommandsWhileOff(state: DispatcherState): readonly string[] {
-  if (state.enabled) return [];
-  return offReasonOf(state) === 'mcp_off' && state.running ? COMMANDS_WHILE_RUNNING : COMMANDS_WHILE_STOPPED;
+  return state.enabled ? [] : COMMANDS_WHILE_OFF;
 }
 
 /** Refuse what the list doesn't hold for the Dispatcher's id. No new authority comes from being off. */
@@ -66,18 +58,7 @@ export function assertDispatcherCommand(type: string, agentId: unknown): void {
   if (!dispatcher.isDispatcherAgentId(typeof agentId === 'string' ? agentId : undefined)) return;
   const state = dispatcher.getDispatcherState();
   if (state.enabled || dispatcherCommandsWhileOff(state).includes(type)) return;
-  throw offReasonOf(state) === 'mcp_off'
-    ? new MobileControlError('mcp_off', 409, 'rejected', MCP_OFF_MESSAGE)
-    : new MobileControlError('dispatcher_off', 409, 'rejected', 'The Dispatcher is turned off.');
-}
-
-const MCP_OFF_MESSAGE = 'Clubhouse MCP is off, so the Dispatcher can only be stopped or answered from a phone. Turn on Clubhouse MCP on the desktop.';
-
-/** A pending-only command that found nothing pending, while MCP is off. */
-export function dispatcherNothingPending(agentId: string, err: unknown): MobileControlError | null {
-  if (!dispatcher.isDispatcherAgentId(agentId) || !(err instanceof MobileControlError) || err.code !== 'pending_request_not_found') return null;
-  const state = dispatcher.getDispatcherState();
-  return !state.enabled && offReasonOf(state) === 'mcp_off' ? new MobileControlError('mcp_off', 409, 'rejected', MCP_OFF_MESSAGE) : null;
+  throw new MobileControlError('dispatcher_off', 409, 'rejected', 'The Dispatcher is turned off.');
 }
 
 /** The record, whatever state it is in: the snapshot keeps it, so history isn't lost. */
@@ -124,9 +105,7 @@ type AgentView = (config: DurableConfig) => { status?: string } | DurableConfig;
 export function dispatcherOffFields(state: DispatcherState, view: AgentView) {
   const offReason = offReasonOf(state);
   if (!offReason) return {};
-  const detail = offReason === 'mcp_off'
-    ? (state.running ? 'MCP off; session running' : 'MCP off')
-    : offReason === 'classic_layout' ? 'Needs the new layout' : 'Turned off';
+  const detail = offReason === 'classic_layout' ? 'Needs the new layout' : 'Turned off';
   const agent = state.config ? view(state.config) : null;
   return {
     offReason,
@@ -139,13 +118,13 @@ export function dispatcherOffFields(state: DispatcherState, view: AgentView) {
   };
 }
 
-/** The snapshot's `enabled` and `flagOn`, both false while it is off with MCP off. */
+/** The snapshot's `enabled` and `flagOn`. `flagOn` is always true: the Clubhouse MCP always runs. */
 export function dispatcherSnapshotFlags() {
   const { enabled, flagOn } = dispatcher.getDispatcherState();
   return { enabled, flagOn };
 }
 
-/** The capabilities' `dispatcher`. Turning it on needs `flagOn`, which is false while Clubhouse MCP is off at app level, and `newLayout`; off always works. */
+/** The capabilities' `dispatcher`. Turning it on needs `newLayout`; off always works. `flagOn` is always true. */
 export function dispatcherCapability(view: AgentView = (config) => config) {
   const state = dispatcher.getDispatcherState();
   return {
@@ -156,16 +135,13 @@ export function dispatcherCapability(view: AgentView = (config) => config) {
 }
 
 /**
- * dispatcher.setEnabled: Settings > Dispatcher's switch. On needs Clubhouse MCP
- * at app level and the new layout (its view is in the new layout only, #2565); one
- * that is still on can always be turned off, in every state.
+ * dispatcher.setEnabled: Settings > Dispatcher's switch. On needs the new layout
+ * (its view is in the new layout only, #2565); one that is still on can always
+ * be turned off, in every state.
  */
 export async function setDispatcherEnabledFromPhone(enabled: boolean, assertAuthorized: () => void): Promise<MobileDispatcherChange> {
   const state = dispatcher.getDispatcherState();
   if (enabled && state.enabled) return dispatcherChange(state);
-  if (enabled && offReasonOf(state) === 'mcp_off') throw new MobileControlError('mcp_off', 409, 'rejected', MCP_OFF_MESSAGE);
-  // Switched off as well as no MCP: an existing path with its existing code, and `message` says what to do now.
-  if (enabled && !state.flagOn) throw new MobileControlError('dispatcher_flag_off', 409, 'rejected', MCP_REQUIRED_MESSAGE);
   if (enabled && !state.savedOn && !newChromeEnabled()) {
     throw new MobileControlError('dispatcher_layout_off', 409, 'rejected', 'The Dispatcher needs the new layout. Turn off Classic layout in Settings > Display & UI on the desktop, then restart Clubhouse.');
   }

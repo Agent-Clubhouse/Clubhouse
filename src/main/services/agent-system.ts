@@ -15,14 +15,13 @@ import * as headlessManager from './headless-manager';
 import * as headlessSettings from './headless-settings';
 import * as freeAgentSettings from './free-agent-settings';
 import * as orchestratorSettings from './orchestrator-settings';
-import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as configPipeline from './config-pipeline';
 import { getDurableConfig, addSessionEntry, updateDurableConfig } from './agent-config';
 import type { QuickManagedLaunch } from './managed-agents/delivery';
-import { clubhouseMcpOverride, isDisposedAgent, isEffortValue } from '../../shared/agent-helpers';
-import { materializeAgent, cleanupStaleJsonInTomlConfigs } from './materialization-service';
+import { isDisposedAgent, isEffortValue } from '../../shared/agent-helpers';
+import { cleanupStaleJsonInTomlConfigs } from './toml-config-cleanup';
 import * as profileSettings from './profile-settings';
-import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs, UnsupportedPermissionRulesError } from './agent-settings-service';
+import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
 import { applyLaunchWrapper, validateWrapperConfig } from '../orchestrators/shared';
 import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode } from '../../shared/types';
 import type { RoutedMessagePart } from '../../shared/chat';
@@ -34,7 +33,7 @@ import { setMcpCaller, setMcpCallerQuick, setMcpCallerUnreadable } from './clubh
 import { isDispatcherPath } from './dispatcher/dispatcher-paths';
 import { dispatcherEnablement } from './dispatcher/dispatcher-settings';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
-import { ensureMcpBridgeForAgent, isMcpEnabled } from './mcp-settings';
+import { ensureMcpBridge } from './mcp-bridge-starter';
 import { resolveHelperLaunchSettings, syncOrchestrationGate } from './orchestration-policy';
 import { findParent } from './helper-index';
 import {
@@ -44,7 +43,6 @@ import {
   rankHelperLaunch,
   type AgentLaunchAccess,
   type HelperLaunch,
-  MCP_REQUIRED_MESSAGE,
 } from '../../shared/orchestration-policy';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
@@ -191,12 +189,11 @@ function helperMcpError(err: unknown): Error {
 }
 
 /**
- * The bridge runs for any durable agent that resolves MCP on, even with MCP off
- * in the app and its project (#2610). A helper can't start without it.
+ * The bridge always runs; this retries one that failed to start at app start.
+ * A helper can't start without it (#2610).
  */
-async function prepareMcpBridge(projectPath: string, config: DurableAgentConfig | null | undefined): Promise<void> {
-  if (!isMcpEnabled(projectPath, clubhouseMcpOverride(config))) return;
-  ensureMcpBridgeForAgent();
+async function prepareMcpBridge(config: DurableAgentConfig | null | undefined): Promise<void> {
+  ensureMcpBridge();
   if (!config?.parentAgentId) return;
   await waitMcpBridgeReady().catch((err: unknown) => { throw helperMcpError(err); });
 }
@@ -292,13 +289,12 @@ async function spawnAgentTracked(params: SpawnAgentParams, managed: ManagedLaunc
 /**
  * The Dispatcher starts only while it is on. Every way of starting one comes
  * through here, so a wake from a view, a phone, a tool or an update resume is
- * refused alike. Its own `mcpOverride` says nothing about this.
+ * refused alike.
  */
 function assertDispatcherCanStart({ kind, projectPath }: SpawnAgentParams): void {
   if (kind !== 'durable' || !isDispatcherPath(projectPath)) return;
-  const { enabled, reason } = dispatcherEnablement();
-  if (enabled) return;
-  throw tagError(new Error(reason === 'mcp_off' ? MCP_REQUIRED_MESSAGE : 'The Dispatcher is turned off.'), 'preflight_failed');
+  if (dispatcherEnablement().enabled) return;
+  throw tagError(new Error('The Dispatcher is turned off.'), 'preflight_failed');
 }
 
 async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, managed: ManagedLaunchLease | null): Promise<void> {
@@ -374,9 +370,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     }
 
     // Clubhouse-managed agents (#2896): write the agent's setup into its folder
-    // before every start. Managed agents never take the Clubhouse Mode path.
-    let managedSetup = false;
-    // An agent that uses Clubhouse Mode or a
+    // before every start. An agent that used Clubhouse Mode or a
     // persona switches to managed first, keeping what it has, and this start is
     // its first managed one (D59). A failed switch starts it as it is.
     if (params.kind === 'durable' && !managed && firstConfig && !firstConfig.managed) {
@@ -387,7 +381,6 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     if (params.kind === 'durable' && !managed) {
       const config = firstConfig;
       if (config?.managed) {
-        managedSetup = true;
         try {
           const { deliverForSpawn } = await import('./managed-agents');
           await tel.step('clubhouse.agent.materialize', () =>
@@ -413,34 +406,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       quickManaged = await tel.step('clubhouse.agent.materialize', () =>
         withErrorType('materialize_failed', () => quickLaunchFor(params.projectPath, params.cwd, params.agentId, template, provider)),
       );
-      // No Clubhouse part, no bridge (D25). Not injecting it isn't enough: the
-      // folder may be a durable agent's worktree whose MCP file names the bridge,
-      // and this agent's env carries its own identity and nonce. The bridge
-      // server refuses it; hooks keep the nonce.
-      if (!quickManaged.bridge) agentRegistry.setMcpBridgeOff(params.agentId);
       const instructions = quickManaged.instructions;
       params = { ...params, systemPrompt: [instructions, params.systemPrompt].filter(Boolean).join('\n\n') };
-    }
-
-    // Clubhouse Mode: materialize project defaults into worktree before spawn
-    facts.clubhouseMode = params.kind === 'durable' && clubhouseModeSettings.isClubhouseModeEnabled(params.projectPath);
-    if (facts.clubhouseMode && !managed && !managedSetup) {
-      try {
-        const config = await getDurableConfig(params.projectPath, params.agentId);
-        // Never on a managed agent, even one a switch made managed after this spawn read its config.
-        if (config && !config.managed && !config.clubhouseModeOverride && config.worktreePath) {
-          await tel.step('clubhouse.agent.materialize', () =>
-            withErrorType('materialize_failed', () => materializeAgent({ projectPath: params.projectPath, agent: config, provider })),
-          );
-        }
-      } catch (err) {
-        if (err instanceof UnsupportedPermissionRulesError) throw err;
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        appLog('core:agent', 'warn', 'Clubhouse mode materialization failed, continuing spawn', {
-          meta: { agentId: params.agentId, error: errorMessage },
-        });
-        broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, errorMessage);
-      }
     }
 
     const allowedTools = params.allowedTools
@@ -515,7 +482,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       params = { ...params, freeAgentMode: capped.freeAgentMode, permissionMode: capped.permissionMode };
       permissionMode = capped.permissionMode;
     }
-    if (params.kind === 'durable') await prepareMcpBridge(params.projectPath, durableConfig);
+    // Every spawn retries a bridge that failed at app start; only a helper waits for it.
+    await prepareMcpBridge(durableConfig);
     // The final launch access, the ceiling for this agent's helpers (#2228).
     // Every runtime below starts with exactly these values.
     agentRegistry.setLaunchCap(params.agentId, { freeAgentMode: params.freeAgentMode === true, permissionMode });
@@ -660,11 +628,32 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         // Plugin-enabled lookup is treated as always-true: plugins live renderer-side,
         // main has no real-time view. Binary-on-PATH check still catches the common case.
         let { binary: headlessBin, args: headlessArgs } = headlessResult;
-        // A quick agent's template servers (D25), as the terminal path passes them. Only
-        // CLIs with launch flags have any here (quickLaunchFor empties them otherwise),
-        // and their headless commands take options after the prompt.
-        if (quickManaged && provider.buildMcpArgs && Object.keys(quickManaged.servers).length > 0) {
-          headlessArgs = [...headlessArgs, ...provider.buildMcpArgs(quickManaged.servers)];
+        // The Clubhouse MCP always runs, so a headless quick agent gets the
+        // bridge as a terminal one does: in the folder's MCP config (snapshot
+        // first, restored on exit), which Claude reads, and in the launch flags
+        // for CLIs that take MCP servers only that way (Codex, Copilot).
+        const mcpPort = await waitMcpBridgeReady().catch(() => 0);
+        if (mcpPort > 0) {
+          const mcpConfigPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
+          configPipeline.snapshotFile(params.agentId, mcpConfigPath);
+          await tel.step('clubhouse.mcp.inject', () => injectClubhouseMcp(params.cwd, params.agentId, mcpPort, provider.conventions)).catch((err) => {
+            appLog('core:mcp', 'warn', 'MCP bridge injection skipped', {
+              meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+            });
+          });
+        }
+        // A quick agent's template servers (D25) and the bridge, as the terminal path
+        // passes them. Only CLIs with launch flags have template servers here
+        // (quickLaunchFor empties them otherwise), and their headless commands take
+        // options after the prompt.
+        if (provider.buildMcpArgs) {
+          const { buildClubhouseMcpDef } = await import('./clubhouse-mcp/injection');
+          const servers = {
+            ...quickManaged?.servers,
+            // The bridge is last so a template server of the same name can't shadow it.
+            ...(mcpPort > 0 ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId) } : {}),
+          };
+          if (Object.keys(servers).length > 0) headlessArgs = [...headlessArgs, ...provider.buildMcpArgs(servers)];
         }
         let wrapperApplied = false;
         if (wrapperConfig) {
@@ -684,7 +673,6 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         // agent), and the bridge there takes both from this env (#2222).
         const nonce = randomUUID();
         agentRegistry.setNonce(params.agentId, nonce);
-        const mcpPort = await waitMcpBridgeReady().catch(() => 0);
         const spawnEnv: Record<string, string> = {
           ...headlessResult.env,
           ...profileEnv,
@@ -752,27 +740,20 @@ async function spawnPtyAgent(
     configPipeline.snapshotFile(params.agentId, hookConfigPath);
   }
 
-  // Snapshot MCP config before injection so we can restore on exit
-  // Only snapshot when the MCP feature is enabled
+  // Snapshot MCP config before injection so we can restore on exit.
+  // The Clubhouse MCP always runs, so every agent gets the bridge.
   const mcpJsonPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
-  let agentMcpOverride: boolean | undefined;
-  // Also reused below to resolve the project's MCP servers with agent-scoped
+  // Reused below to resolve the project's MCP servers with agent-scoped
   // wildcards applied — fetch it once.
   let durableConfig: Awaited<ReturnType<typeof getDurableConfig>> | undefined;
   if (params.kind === 'durable') {
     try {
       durableConfig = await getDurableConfig(params.projectPath, params.agentId);
-      agentMcpOverride = clubhouseMcpOverride(durableConfig);
     } catch { /* config not available */ }
   }
-  // A quick agent built from a template without the Clubhouse MCP part gets no bridge (D25).
-  // With the part, it follows the project's MCP setting as any quick agent does.
-  if (quickManaged && !quickManaged.bridge) agentMcpOverride = false;
-  const mcpEnabledForSpawn = isMcpEnabled(params.projectPath, agentMcpOverride);
-  facts.mcpEnabled = mcpEnabledForSpawn;
   // Snapshot MCP config for all formats — TOML injection is now supported
   // and the config-pipeline restore logic handles both JSON and TOML files.
-  if (mcpEnabledForSpawn && !managed) {
+  if (!managed) {
     configPipeline.snapshotFile(params.agentId, mcpJsonPath);
   }
 
@@ -797,7 +778,7 @@ async function spawnPtyAgent(
     })),
     managed ? Promise.resolve() : waitMcpBridgeReady().then((port) => tel.step('clubhouse.mcp.inject', async () => {
       mcpPort = port;
-      await injectClubhouseMcp(params.cwd, params.agentId, port, provider.conventions, { projectPath: params.projectPath, agentOverride: agentMcpOverride });
+      await injectClubhouseMcp(params.cwd, params.agentId, port, provider.conventions);
     })).catch((err) => {
       // A helper without the bridge couldn't report to its parent, so it doesn't start (#2610).
       if (durableConfig?.parentAgentId) throw helperMcpError(err);
@@ -834,18 +815,13 @@ async function spawnPtyAgent(
     args = [...args, '--append-system-prompt-file', managed.instructionFile,
       ...(managed.pluginDir ? ['--plugin-dir', managed.pluginDir] : [])];
   }
-  // Only when MCP is on for this agent (agent > project > global): an agent
-  // with it turned off gets neither the bridge nor project servers (#2223). A
-  // helper always gets the bridge; project servers keep following the settings
-  // (#2610).
-  // A managed agent's MCP parts reach it even with the Clubhouse bridge off (#2896):
-  // the bridge follows its Clubhouse part, its other servers follow its setup.
-  // A quick agent's template servers likewise (D25), in place of the project's.
-  const managedSetupServers = !!durableConfig?.managed || !!quickManaged;
-  const bridgeOn = mcpEnabledForSpawn && mcpPort > 0;
-  if ((bridgeOn || managedSetupServers) && provider.buildMcpArgs) {
+  // Every agent gets the bridge (the Clubhouse MCP always runs) and its MCP
+  // servers: the project's, a managed agent's setup (#2896), or a quick agent's
+  // template servers in place of the project's (D25).
+  const bridgeOn = mcpPort > 0;
+  if (provider.buildMcpArgs) {
     const { buildClubhouseMcpDef } = await import('./clubhouse-mcp/injection');
-    const { resolveProjectMcpServers } = await import('./materialization-service');
+    const { resolveProjectMcpServers } = await import('./agent-mcp-servers');
 
     // Codex and Copilot read MCP only from their own user-level config, so the
     // project MCP file materialised into the worktree never reaches them.
@@ -853,9 +829,9 @@ async function spawnPtyAgent(
     // alongside the Clubhouse bridge.
     const projectServers = quickManaged
       ? quickManaged.servers
-      : managedSetupServers || isMcpEnabled(params.projectPath, durableConfig?.mcpOverride)
-        ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined)
-        : {};
+      : await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined, (message) => {
+        broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, message);
+      });
     const servers = {
       ...projectServers,
       // The bridge is last so a project server of the same name can't shadow it.

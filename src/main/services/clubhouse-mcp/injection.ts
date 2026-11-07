@@ -27,7 +27,6 @@ import { existsSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { appLog } from '../log-service';
 import { pathExists } from '../fs-utils';
-import { isMcpEnabled } from '../mcp-settings';
 import { injectMcpServerSection, stripMcpServerSection } from '../toml-utils';
 import type { McpServerDef } from '../../../shared/types';
 
@@ -194,32 +193,21 @@ function withInjectionLock<T>(fn: () => Promise<T>): Promise<T> {
   });
 }
 
-/** What decides whether the Clubhouse MCP entry is injected for a spawn. */
-export interface McpEnablementScope {
-  projectPath?: string;
-  /** The agent's own MCP setting; when set it wins over project and global. */
-  agentOverride?: boolean;
-}
-
 /**
  * Inject the Clubhouse MCP server entry into the agent's MCP config.
  * The bridge script path is resolved relative to the app bundle.
  *
- * Whether it injects follows isMcpEnabled's precedence: the agent's own
- * setting (`agentOverride`, from DurableAgentConfig.mcpOverride) wins, then
- * the project override for `projectPath`, then the global toggle, then
- * Clubhouse mode. Callers pass both so project-only enablement injects and an
- * agent with MCP turned off never gets the entry (#2223).
+ * Every agent gets it: the Clubhouse MCP always runs, and no setting turns it
+ * off for an app, a project or an agent.
  */
 export function injectClubhouseMcp(
   cwd: string,
   agentId: string,
   mcpPort: number,
   conventions?: Partial<SettingsConventions>,
-  scope?: McpEnablementScope,
 ): Promise<void> {
   return withInjectionLock(() =>
-    injectClubhouseMcpImpl(cwd, agentId, mcpPort, conventions, scope),
+    injectClubhouseMcpImpl(cwd, agentId, mcpPort, conventions),
   );
 }
 
@@ -228,12 +216,7 @@ async function injectClubhouseMcpImpl(
   agentId: string,
   mcpPort: number,
   conventions?: Partial<SettingsConventions>,
-  scope?: McpEnablementScope,
 ): Promise<void> {
-  if (!isMcpEnabled(scope?.projectPath, scope?.agentOverride)) {
-    return; // Feature not enabled
-  }
-
   validateBridgeScript();
 
   const conv = { ...DEFAULT_CONVENTIONS, ...conventions };

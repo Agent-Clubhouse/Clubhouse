@@ -23,15 +23,11 @@ test.beforeAll(async () => {
   fs.rmSync(FIXTURE_STATE, { recursive: true, force: true });
   ({ electronApp, window, userDataDir } = await launchApp({
     experimental: { newChrome: false },
+    // An old saved "off" is ignored: the Clubhouse MCP always runs, so group projects work.
     userDataFiles: {
       'mcp-settings.json': { enabled: false, projectDefault: false },
     },
   }));
-  await window.evaluate(async () => {
-    await window.clubhouse.settings.save('mcp', { enabled: true, projectDefault: true });
-  });
-  await window.reload();
-  await window.waitForLoadState('load');
   await addProject(electronApp, window, FIXTURE_PROJECT);
   await navigateToCanvas(window);
 });

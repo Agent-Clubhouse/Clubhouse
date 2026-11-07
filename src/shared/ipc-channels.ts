@@ -121,7 +121,6 @@ export const IPC = {
     REPORT_DISPOSE_DECISION: 'agent:report-dispose-decision',
     /** Main → renderer: a project's agents.json changed (parent links, creation, disposal, handoff). Payload: the project path. */
     CONFIGS_CHANGED: 'agent:configs-changed',
-    MCP_ENABLEMENT_CHANGED: 'agent:mcp-enablement-changed',
     /** Main → renderer (#2234): a helper start waiting on the user's approval. */
     HELPER_START_REQUEST: 'agent:helper-start-request',
     /** Main → renderer (#2234): start requests that were answered, expired or dropped. */
@@ -146,8 +145,6 @@ export const IPC = {
     GET_DURABLE_CONFIG: 'agent:get-durable-config',
     UPDATE_DURABLE_CONFIG: 'agent:update-durable-config',
     LIST_AGENT_TEMPLATES: 'agent:list-agent-templates',
-    LIST_SOURCE_SKILLS: 'agent:list-source-skills',
-    LIST_SOURCE_AGENT_TEMPLATES: 'agent:list-source-agent-templates',
     CREATE_SKILL: 'agent:create-skill',
     CREATE_AGENT_TEMPLATE: 'agent:create-agent-template',
     SPAWN_AGENT: 'agent:spawn-agent',
@@ -192,26 +189,14 @@ export const IPC = {
     WRITE_MCP_RAW_JSON: 'agent:write-mcp-raw-json',
     READ_PROJECT_AGENT_DEFAULTS: 'agent:read-project-agent-defaults',
     WRITE_PROJECT_AGENT_DEFAULTS: 'agent:write-project-agent-defaults',
-    RESET_PROJECT_AGENT_DEFAULTS: 'agent:reset-project-agent-defaults',
     GET_CONVENTIONS: 'agent:get-conventions',
-    MATERIALIZE_AGENT: 'agent:materialize-agent',
-    PREVIEW_MATERIALIZATION: 'agent:preview-materialization',
-    READ_SOURCE_SKILL_CONTENT: 'agent:read-source-skill-content',
+    // Project source skills and agent templates: only the plugin agentConfig API's inject and remove (#2901).
     WRITE_SOURCE_SKILL_CONTENT: 'agent:write-source-skill-content',
     DELETE_SOURCE_SKILL: 'agent:delete-source-skill',
-    READ_SOURCE_AGENT_TEMPLATE_CONTENT: 'agent:read-source-agent-template-content',
     WRITE_SOURCE_AGENT_TEMPLATE_CONTENT: 'agent:write-source-agent-template-content',
     DELETE_SOURCE_AGENT_TEMPLATE: 'agent:delete-source-agent-template',
-    // Clubhouse-mode wildcard library (missions) and per-agent actuals
-    GET_AGENT_WILDCARDS: 'agent:get-agent-wildcards',
-    LIST_SOURCE_MISSIONS: 'agent:list-source-missions',
-    READ_SOURCE_MISSION_CONTENT: 'agent:read-source-mission-content',
-    WRITE_SOURCE_MISSION_CONTENT: 'agent:write-source-mission-content',
-    DELETE_SOURCE_MISSION: 'agent:delete-source-mission',
     GET_PROJECT_CONFIG_BREAKDOWN: 'agent:get-project-config-breakdown',
     REMOVE_PLUGIN_INJECTION_ITEM: 'agent:remove-plugin-injection-item',
-    COMPUTE_CONFIG_DIFF: 'agent:compute-config-diff',
-    PROPAGATE_CONFIG_CHANGES: 'agent:propagate-config-changes',
     LIST_SESSIONS: 'agent:list-sessions',
     UPDATE_SESSION_NAME: 'agent:update-session-name',
     READ_SESSION_TRANSCRIPT: 'agent:read-session-transcript',
@@ -367,10 +352,6 @@ export const IPC = {
     SAVE_CLIPBOARD_SETTINGS: 'app:save-clipboard-settings',
     READ_CLIPBOARD_TEXT: 'app:read-clipboard-text',
     READ_CLIPBOARD_IMAGE: 'app:read-clipboard-image',
-    GET_CLUBHOUSE_MODE_SETTINGS: 'app:get-clubhouse-mode-settings',
-    /** What a proposed MCP or Clubhouse mode change would turn off, before it is saved. */
-    GET_MCP_OFF_IMPACT: 'app:get-mcp-off-impact',
-    SAVE_CLUBHOUSE_MODE_SETTINGS: 'app:save-clubhouse-mode-settings',
     GET_SOUND_SETTINGS: 'app:get-sound-settings',
     SAVE_SOUND_SETTINGS: 'app:save-sound-settings',
     LIST_SOUND_PACKS: 'app:list-sound-packs',
@@ -633,8 +614,6 @@ export const IPC = {
   DISPATCHER: {
     GET: 'dispatcher:get',
     SET_ENABLED: 'dispatcher:set-enabled',
-    /** Stop its running agent and keep every saved value. */
-    STOP: 'dispatcher:stop',
     /** Main → renderer broadcast: DispatcherState after any change. */
     CHANGED: 'dispatcher:changed',
   },

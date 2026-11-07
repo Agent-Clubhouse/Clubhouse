@@ -85,7 +85,7 @@ afterEach(() => {
   useProjectStore.setState({ projects: [] });
 });
 
-function Harness({ orchestrating = true, agentOverride, mcpOff }: { orchestrating?: boolean; agentOverride?: Agent; mcpOff?: boolean }) {
+function Harness({ orchestrating = true, agentOverride }: { orchestrating?: boolean; agentOverride?: Agent }) {
   const { helpers: list, reload } = useHelpersEverywhere(PROJECT, 'lead');
   const approvals = useHelperStartApprovals('lead', PROJECT, reload);
   const [open, setOpen] = useState(true);
@@ -97,7 +97,6 @@ function Harness({ orchestrating = true, agentOverride, mcpOff }: { orchestratin
       helpers={list}
       maxHelpers={5}
       orchestrating={orchestrating}
-      mcpOff={mcpOff}
       open={open}
       onToggle={() => setOpen((o) => !o)}
       approvals={approvals}
@@ -435,18 +434,11 @@ describe('HelpersCard with a helper in another project (#2514)', () => {
   });
 });
 
-describe('Helpers card with Clubhouse MCP off (#2589)', () => {
-  it('says running helpers keep running and shows them', async () => {
-    configs = [config('h1', 'merge-1', { parentAgentId: 'lead' })];
-    render(<Harness orchestrating={false} mcpOff />);
-    expect(await screen.findByTestId('helpers-mcp-off')).toHaveTextContent('These helpers keep running.');
-    expect(screen.getByTestId('helpers-list')).toHaveTextContent('merge-1');
-  });
-
-  it('says why it can\'t start helpers when it has none', async () => {
+describe('Helpers card when the agent doesn\'t orchestrate', () => {
+  it('says orchestration is off, never Clubhouse MCP, when it has none', async () => {
     configs = [];
-    render(<Harness orchestrating={false} mcpOff />);
-    expect(await screen.findByText('Clubhouse MCP is off, so epic-lead can’t start helpers.')).toBeInTheDocument();
-    expect(screen.queryByTestId('helpers-mcp-off')).not.toBeInTheDocument();
+    render(<Harness orchestrating={false} />);
+    expect(await screen.findByText('Orchestration is off, so epic-lead can’t start helpers.')).toBeInTheDocument();
+    expect(screen.queryByText(/Clubhouse MCP is off/)).not.toBeInTheDocument();
   });
 });

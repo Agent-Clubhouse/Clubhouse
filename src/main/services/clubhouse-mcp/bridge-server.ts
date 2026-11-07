@@ -318,15 +318,6 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     res.end();
     return;
   }
-  // An agent started without the Clubhouse MCP part (D25) gets no tools, even
-  // when its folder's MCP file names the bridge. Its hooks still use the nonce.
-  if (agentRegistry.get(agentId)?.mcpBridgeOff === true) {
-    appLog('core:mcp', 'info', 'Refused MCP request: this agent runs without the Clubhouse MCP part', { meta: { agentId } });
-    res.writeHead(403);
-    res.end();
-    return;
-  }
-
   // SSE endpoint for the stdio bridge script.
   if (req.method === 'GET' && action === 'events') {
     handleSSE(agentId, res);
@@ -479,7 +470,19 @@ let unsubscribeBindingChanges: (() => void) | null = null;
 let unsubscribeOrchestrationGate: (() => void) | null = null;
 let unsubscribeAgentAuth: (() => void) | null = null;
 
+/** Drop the change subscriptions, so a restart doesn't notify each change twice. */
+function unsubscribeAll(): void {
+  unsubscribeBindingChanges?.();
+  unsubscribeBindingChanges = null;
+  unsubscribeAgentAuth?.();
+  unsubscribeAgentAuth = null;
+  unsubscribeOrchestrationGate?.();
+  unsubscribeOrchestrationGate = null;
+}
+
 export function start(): Promise<number> {
+  // A retry after a failed start: the last attempt's subscriptions go first.
+  unsubscribeAll();
   // Subscribe to binding changes to notify agents
   unsubscribeBindingChanges = bindingManager.onChange((agentId) => {
     notifyToolsChanged(agentId);
@@ -523,14 +526,7 @@ export function start(): Promise<number> {
 }
 
 export function stop(): void {
-  if (unsubscribeBindingChanges) {
-    unsubscribeBindingChanges();
-    unsubscribeBindingChanges = null;
-  }
-  unsubscribeAgentAuth?.();
-  unsubscribeAgentAuth = null;
-  unsubscribeOrchestrationGate?.();
-  unsubscribeOrchestrationGate = null;
+  unsubscribeAll();
 
   // Close all SSE connections
   for (const connections of sseConnections.values()) {

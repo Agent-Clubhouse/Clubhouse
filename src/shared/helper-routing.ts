@@ -287,7 +287,7 @@ export interface HelperRoutingSettings {
   labels: typeof HELPER_ROUTING_LABELS;
   providers: Record<string, ProviderRoutingView>;
   /** With an agent in the request: whether it can use presets, and why not. */
-  agent?: { usable: boolean; reason?: 'dispatcher_locked' | 'mcp_off' | 'orchestration_off' };
+  agent?: { usable: boolean; reason?: 'dispatcher_locked' | 'orchestration_off' };
   auto: HelperAutoView;
 }
 

@@ -57,7 +57,6 @@ vi.mock('./orchestration-policy', () => ({
   resolveOrchestrationPolicies: async (_project: string, agents: DurableAgentConfig[]) =>
     new Map(agents.map((agent) => [agent.id, { orchestrate: true, connectToDispatcher: true }])),
 }));
-vi.mock('./mcp-settings', () => ({ onMcpEnablementChanged: (): (() => void) => (): void => undefined }));
 vi.mock('./dispatcher/dispatcher-service', () => ({
   isDispatcherEnabled: () => true,
   isDispatcherPath: () => false,

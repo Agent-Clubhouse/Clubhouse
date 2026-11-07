@@ -1,8 +1,7 @@
 /**
  * App settings, Dispatcher (#2535): the switch that turns the app-wide
- * Dispatcher on, and its agent settings once it exists. Always listed. Clubhouse
- * MCP off at app level shows the switch off and disabled, with the saved value
- * kept. Its row and view are in the new layout only, so on the classic layout a
+ * Dispatcher on, and its agent settings once it exists. Always listed. Its row
+ * and view are in the new layout only, so on the classic layout a
  * switch that's off stays off (#2565). Its instructions, orchestration settings and
  * folder can't change here or anywhere else.
  */
@@ -27,17 +26,7 @@ const TITLE = 'Dispatcher';
 const DESCRIPTION = 'One agent for the whole app that coordinates the orchestrators in your projects.';
 
 /** The line under the switch: what it is doing, and which setting to change if it can't be turned on here. */
-export function dispatcherSwitchHelp({ enabled, savedOn, mcpOff, classic }: Pick<DispatcherState, 'enabled' | 'savedOn' | 'mcpOff' | 'classic'>): string {
-  const mcpReturn = 'Turning it back on restores your settings and doesn’t start any session.';
-  if (mcpOff && classic && !savedOn) {
-    return `On by default in the new layout only, and it needs Clubhouse MCP. To turn it on, turn on Clubhouse MCP in Settings and turn off Classic layout in Settings > Display & UI, then restart Clubhouse. ${mcpReturn}`;
-  }
-  if (mcpOff && classic) {
-    return `Off because Clubhouse MCP is off. Turn on Clubhouse MCP in Settings. ${mcpReturn} Its view is in the new layout only. To use it, turn off Classic layout in Settings > Display & UI, then restart Clubhouse.`;
-  }
-  if (mcpOff) {
-    return `${savedOn ? 'Off because Clubhouse MCP is off.' : 'It needs Clubhouse MCP, which is off.'} Turn on Clubhouse MCP in Settings. ${mcpReturn}`;
-  }
+export function dispatcherSwitchHelp({ enabled, classic }: Pick<DispatcherState, 'enabled' | 'classic'>): string {
   if (classic && enabled) {
     return 'On because you turned it on before. It has no row here because its row and view are in the new layout only. To use it, turn off Classic layout in Settings > Display & UI, then restart Clubhouse. You can turn it off here, and on the classic layout it can’t be turned back on.';
   }
@@ -143,12 +132,12 @@ export function DispatcherSettingsView() {
             <span id="dispatcher-enabled-help">{dispatcherSwitchHelp(state)}</span>
           )}
         >
-          {/* On the classic layout one that's still on can be turned off, not on (#2565). Without MCP it reads off whatever is saved. */}
+          {/* On the classic layout one that's still on can be turned off, not on (#2565). */}
           <Toggle
             aria-label="Turn on Dispatcher"
             aria-describedby="dispatcher-enabled-help"
             checked={state.enabled}
-            disabled={switching || state.mcpOff || (state.classic && !state.enabled)}
+            disabled={switching || (state.classic && !state.enabled)}
             onChange={(on) => void turn(on)}
             data-testid="dispatcher-enabled"
           />
@@ -156,7 +145,7 @@ export function DispatcherSettingsView() {
         {switchError && <p className={`${settingsError} mt-1.5`} role="alert" data-testid="dispatcher-enabled-error">{switchError}</p>}
         {state.running && !state.enabled && (
           <p className={`${settingsHelp} mt-2`} data-testid="dispatcher-still-running">
-            It is still running. It can’t use Clubhouse tools or be started again until Clubhouse MCP is back. Older Clubhouse Go versions may not show a Dispatcher that’s still running with MCP off. You can stop it from its view.
+            It is still running. You can stop it from its view.
           </p>
         )}
         {state.path && <p className={`${settingsHelp} mt-2`} data-testid="dispatcher-folder">Its folder is {state.path}</p>}

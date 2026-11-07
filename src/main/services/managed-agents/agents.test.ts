@@ -27,8 +27,6 @@ const h = vi.hoisted(() => ({
   personaPolicy: {} as Record<string, Record<string, unknown>>,
   /** Calls into orchestration-policy, in order. */
   policyCalls: [] as string[],
-  /** The MCP settings isMcpEnabled reads. */
-  mcp: { enabled: true, projectOverrides: {} as Record<string, boolean> },
 }));
 
 vi.mock('../agent-config', () => ({
@@ -50,12 +48,10 @@ vi.mock('../orchestration-policy', () => ({
     return carried;
   }),
 }));
-vi.mock('../clubhouse-mode-settings', () => ({ isClubhouseModeEnabled: () => h.clubhouseMode }));
-/** isMcpEnabled's chain: the agent's override, then the project's, then the app switch. */
-vi.mock('../mcp-settings', () => ({
-  isMcpEnabled: vi.fn((projectPath?: string, agentOverride?: boolean) => agentOverride ?? (projectPath ? h.mcp.projectOverrides[projectPath] : undefined) ?? h.mcp.enabled),
-}));
-vi.mock('../materialization-service', () => ({
+// Clubhouse Mode's old settings and what it would write (legacy-migration.test covers the real ones).
+vi.mock('./legacy-migration', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./legacy-migration')>(),
+  legacyClubhouseModeEnabled: () => h.clubhouseMode,
   materializedInstructions: vi.fn(async () => h.materialized),
   materializedDefaults: vi.fn(async () => h.modeDefaults),
 }));
@@ -67,7 +63,7 @@ vi.mock('../agent-system', () => ({
   }),
 }));
 vi.mock('./index', () => ({ managedAgents: () => h.service }));
-vi.mock('../git-exclude-manager', () => ({ addExclusions: vi.fn(async () => {}) }));
+vi.mock('../git-exclude-manager', () => ({ addExclusions: vi.fn(async () => {}), replaceExclusions: vi.fn(async () => {}) }));
 vi.mock('./state-store', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./state-store')>()),
   managedStateDir: () => h.stateDir,
@@ -79,7 +75,7 @@ import { createManagedStateStore } from './state-store';
 import { createManagedAgentsService, type ManagedAgentsService } from './service';
 import * as agentConfig from '../agent-config';
 import * as orchestrationPolicy from '../orchestration-policy';
-import * as materialization from '../materialization-service';
+import * as materialization from './legacy-migration';
 import { convertToManaged, leftoverWildcards, previewConvert, settingsForConvert } from './agents';
 import { keepInstructionsAtFirstStart } from './before-managed';
 
@@ -111,7 +107,6 @@ beforeEach(async () => {
   h.personaPolicy = {};
   h.policyCalls = [];
   h.conventions = { configDir: '.claude', skillsDir: 'skills', mcpConfigFile: '.mcp.json', legacyInstructionsFile: 'CLAUDE.md', settingsFormat: 'json' };
-  h.mcp = { enabled: true, projectOverrides: {} };
   h.agents.clear();
   h.agents.set('ada', { id: 'ada', name: 'ada', color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: wt });
   service = createManagedAgentsService({
@@ -127,7 +122,6 @@ beforeEach(async () => {
       if (setup) {
         if (!a.managed && !a.switchedToManagedAt) a.switchedToManagedAt = new Date().toISOString();
         a.managed = setup;
-        a.mcpOverride = setup.mcps.includes(CLUBHOUSE_MCP_PART_ID);
         delete a.clubhouseFeatures;
         delete a.persona;
       } else delete a.managed;
@@ -236,28 +230,10 @@ describe('convertToManaged with keep', () => {
     expect((await user(() => service.getPart(setup.skills[0]))).name).toBe('notes, ada 2');
   });
 
-  it('keeps the Clubhouse part off for an agent with its bridge off', async () => {
-    h.agents.get('ada')!.mcpOverride = false;
+  it('always adds the Clubhouse part, whatever an old mcpOverride says (D69)', async () => {
+    (h.agents.get('ada') as unknown as Record<string, unknown>).mcpOverride = false;
     const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
-    expect(setup).toMatchObject({ blocks: [], skills: [], mcps: [] });
-  });
-
-  it('adds the Clubhouse part only where MCP is on for the agent today: not with MCP off for the app', async () => {
-    h.mcp = { enabled: false, projectOverrides: {} };
-    const setup = await user(() => convertToManaged('/p', 'ada', { keep: true }));
-    expect(setup.mcps).toEqual([]);
-    expect(h.agents.get('ada')!.mcpOverride).toBe(false);
-  });
-
-  it('nor with an MCP project override of false, even with MCP on for the app', async () => {
-    h.mcp = { enabled: true, projectOverrides: { '/p': false } };
-    expect((await user(() => convertToManaged('/p', 'ada', { keep: true }))).mcps).toEqual([]);
-  });
-
-  it('an agent turned on for MCP keeps the bridge where its project has MCP off', async () => {
-    h.mcp = { enabled: false, projectOverrides: { '/p': false } };
-    h.agents.get('ada')!.mcpOverride = true;
-    expect((await user(() => convertToManaged('/p', 'ada', { keep: true }))).mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+    expect(setup).toMatchObject({ blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] });
   });
 });
 

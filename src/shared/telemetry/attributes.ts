@@ -251,7 +251,7 @@ export type GitOp = (typeof GIT_OPS)[number];
  */
 export const SETTINGS_KEYS = [
   'clipboard', 'editor', 'mcp', 'security', 'goobers', 'annex', 'notifications', 'orchestrators', 'headless',
-  'free_agent', 'badge', 'update', 'logging', 'sound', 'session', 'clubhouse_mode', 'experimental', 'marketplace', 'theme', 'chat_idle', 'orchestration',
+  'free_agent', 'badge', 'update', 'logging', 'sound', 'session', 'experimental', 'marketplace', 'theme', 'chat_idle', 'orchestration',
   'source_control',
 ] as const;
 
@@ -400,7 +400,6 @@ export const ATTR = {
   // Config snapshot (§5.4): counts and switches only, never names.
   projectsCount: intAttr('clubhouse.projects.count'),
   themeKind: enumAttr('clubhouse.theme.kind', ['builtin', 'plugin']),
-  clubhouseMode: boolAttr('clubhouse.clubhouse_mode'),
   annexServer: boolAttr('clubhouse.annex.server'),
   annexClient: boolAttr('clubhouse.annex.client'),
   loggingEnabled: boolAttr('clubhouse.logging.enabled'),
@@ -545,12 +544,11 @@ export const ATTR = {
    * Why the tool registry refused a call before any handler ran (#2308). Only on
    * `clubhouse.mcp.tool_call` spans whose result is `tool_error`.
    */
-  mcpRefusalReason: enumAttr('clubhouse.mcp.refusal.reason', ['group_off', 'unparseable', 'no_binding', 'unknown_tool', 'invalid_args', 'tool_denied', 'mcp_off']),
+  mcpRefusalReason: enumAttr('clubhouse.mcp.refusal.reason', ['group_off', 'unparseable', 'no_binding', 'unknown_tool', 'invalid_args', 'tool_denied', 'caller_unknown']),
   binaryLookupTier: enumAttr('clubhouse.binary.lookup_tier', ['cache', 'well_known', 'path_scan', 'login_shell', 'not_found']),
   // Phase 4b: spawn, create, delete, kill, shoulder taps
   agentResume: boolAttr('clubhouse.agent.resume'),
   usesWorktree: boolAttr('clubhouse.agent.uses_worktree'),
-  mcpEnabled: boolAttr('clubhouse.mcp.enabled'),
   hooksEnabled: boolAttr('clubhouse.hooks.enabled'),
   profileActive: boolAttr('clubhouse.profile.active'),
   wrapperApplied: boolAttr('clubhouse.wrapper.applied'),

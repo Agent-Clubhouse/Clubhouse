@@ -318,7 +318,7 @@ function initAgentWakingListener(): () => void {
   });
   const removeMaterializationFailedListener = window.clubhouse.agent.onAgentMaterializationFailed((agentId: string, errorMessage: string) => {
     useToastStore.getState().addToast(
-      `Agent ${agentId} started without the latest Clubhouse Mode settings: ${errorMessage}`,
+      `Agent ${agentId} started without its latest setup: ${errorMessage}`,
       'error',
     );
   });

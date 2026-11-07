@@ -38,7 +38,7 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 - `agent.stop`: `{agentId}`; stops agent process, including a start in progress.
 - `agent.spawn`: `{projectId, prompt, model?, orchestrator?}`; quick agent under registered project with ask-first permission mode.
 - `agent.create`: `{projectId, name, color, orchestrator?, model?, persona? (a value is refused), freeAgentMode?, useWorktree?, mcpIds?, branchName?, branchFrom?, folderName?, orchestration?}`; durable agent, as the desktop New agent page makes one. See [Durable agents](#durable-agents).
-- `agent.update`: `{agentId, name?, color?, emoji?, orchestrator?, model?, runtime?, persona? (a value is refused, `null` is a no-op), clubhouseMode?, freeAgentMode?, idleSleep?, contextWindow?, orchestration?}`; at least one setting. See [Durable agents](#durable-agents).
+- `agent.update`: `{agentId, name?, color?, emoji?, orchestrator?, model?, runtime?, persona? (a value is refused, `null` is a no-op), clubhouseMode? (refused), freeAgentMode?, idleSleep?, contextWindow?, orchestration?}`; at least one setting. See [Durable agents](#durable-agents).
 - `project.setPinned`: `{projectId, pinned}`; pin or unpin a project in the desktop sidebar. See [Project state](#project-state).
 - `project.setInactive`: `{projectId, inactive}`; mark a project inactive (idle until marked active) or active. See [Project state](#project-state).
 - `quick.dismiss`: `{projectId, agentId}`; dismiss one finished quick agent. See [Finished quick agents](#finished-quick-agents).
@@ -620,7 +620,7 @@ The snapshot (via `snapshot:refresh`) shows the agent, then its creation ending 
 
 ### Settings
 
-We chose a route rather than snapshot fields. The settings need disk and CLI reads: model lists, CLI availability, the Clubhouse mode state. The snapshot is rebuilt on every refresh for every client, and an agent's settings change rarely.
+We chose a route rather than snapshot fields. The settings need disk and CLI reads: model lists and CLI availability. The snapshot is rebuilt on every refresh for every client, and an agent's settings change rarely.
 
 `GET /api/v1/mobile/agents/:agentId/settings` (404 `agent_not_found`; durable agents only):
 
@@ -636,7 +636,7 @@ We chose a route rather than snapshot fields. The settings need disk and CLI rea
   "model":{"value":"default","editable":"sleeping"},
   "runtime":{"value":"default"|"chat"|"terminal","resolved":"chat"|"terminal","editable":"sleeping"|"never"},
   "persona":{"value":null,"editable":"never"},
-  "clubhouseMode":{"value":true|false|null,"projectEnabled":true,"editable":"sleeping"|"never"},
+  "clubhouseMode":{"value":null,"projectEnabled":false,"editable":"never"},
   "freeAgentMode":{"value":false,"editable":"sleeping"|"never"},
   "idleSleep":{"value":"inherit"|"never"|30,"minutes":30,"source":"agent"|"app","applies":true,"editable":"always"}},
  "orchestration":{…},
@@ -664,7 +664,7 @@ Field notes:
 
 - **orchestrator**: `value` null means the project default. `resolved` is what it runs on. `changeStartsNewSession` is true when the agent has a saved session that a new CLI can't resume. Warn before sending the change, as the desktop does: "<Agent> starts a new session on <CLI> the next time it wakes. Its current conversation can't move to another CLI." Older desktops omit the field.
 - **runtime**: `resolved` is the runtime the agent runs in now (awake), or the one its next wake uses (asleep). It is `never` when chat isn't available for the agent's CLI.
-- **clubhouseMode**: `true` means Clubhouse mode manages the agent. `false` means it keeps local overrides. `null` with `never` means the project isn't in Clubhouse mode. `projectEnabled` is always the project's setting. A Clubhouse-managed agent never uses Clubhouse mode, so it reads `false` with `never` in a Clubhouse mode project.
+- **clubhouseMode**: always `null` with `never`, and `projectEnabled` always `false`. Clubhouse Mode was retired (#2901); the keys stay for phones that read them.
 - **persona**: always `null` with `never`. Personas were retired (#2901); the key stays for phones that read it.
 - **idleSleep**: `minutes` and `source` are the resolved timeout, where 0 means never. An inherited value follows the app's chat idle timeout (`options.idleSleep.appMinutes`). Desktop copy: "After 30 min idle" / "Never", summary "Sleeps after 30 min" / "Never sleeps". Only chat agents idle-sleep (`applies`), but the value is kept either way.
 - **freeAgentMode**: `sleeping` when the agent's orchestrator has permission support, else `never` (the Settings card's Access row: "Free agent" / "Ask before edits").
@@ -681,8 +681,7 @@ Send only what changed:
 - **model**: `"default"` clears it.
 - **contextWindow**: a `choices[].id`, or `null` to clear it. See [Context choice](#context-choice).
 - **runtime**: `default`, `chat` or `terminal`. `chat` and `terminal` need chat to be available (409 `runtime_unavailable`).
-- **clubhouseMode**: boolean. Needs a Clubhouse mode project (409 `clubhouse_mode_unavailable`).
-- Every agent refuses a **persona** value, and a Clubhouse-managed agent refuses **clubhouseMode**, with 409 `managed_agent` and a sentence in the receipt's message. Nothing in the command is saved. `persona: null` changes nothing, so it is accepted, also while the agent runs, and the rest of the command applies.
+- Every agent refuses a **persona** value and any **clubhouseMode**, with 409 `managed_agent` and a sentence in the receipt's message. Nothing in the command is saved. `persona: null` changes nothing, so it is accepted, also while the agent runs, and the rest of the command applies.
 - **freeAgentMode**: boolean. `true` needs an orchestrator with permission support (409 `free_agent_mode_unavailable`).
 - **idleSleep**: `"inherit"`, `"never"`, or one of `options.idleSleep.minutes`.
 - **orchestration**: a partial policy, or `null` to clear every override ([Orchestration](#orchestration)). It changes at any time, also while the agent runs, and is written first: a refused policy change saves nothing else.
@@ -753,9 +752,9 @@ Every durable agent in the snapshot (`agents[projectId][]`), `GET /api/v1/projec
 - **control**: one of `controls` (hands-off, ask before starting helpers, ask about everything).
 - **maxHelpers**: "Helpers at once", a whole number from 1 to `maxHelpersCap` (the app-wide helper cap, at most 100).
 - **crossProjectHelpers**: "Cross-project helpers" (#2512): the agent may start helpers in other registered projects. The desktop shows it while `orchestrate` is on; turning it off leaves helpers already running elsewhere alone.
-- **mcpReportOnly**: present and `true` on a helper whose own MCP setting resolves off. It describes what the helper can do, apart from its bridge: `mcpEnabled` stays `true` because its bridge is always injected, but its only working Clubhouse tool is `message_parent`. Treat its orchestration switches as off. Turning `orchestrate`, `crossProjectHelpers`, `connectToDispatcher` or `autoHelpers` on is refused with 409 `mcp_off`, with nothing saved. Turning one off or clearing it still works. A value it already had stays, and applies again when MCP is back.
-- **connectToDispatcher**: "Connect to Dispatcher" (#2534): the Dispatcher may message this agent and get its reports. The desktop shows it while the [Dispatcher](#dispatcher) is on, with `orchestrate` on or off; turning it on while the Dispatcher is off is 409 `dispatcher_off`, or `mcp_off` when Clubhouse MCP at app level is why it is off. Unset (source `default`), it follows `orchestrate` (#2578). A helper (an agent with `parentAgentId`) talks only to its parent, so on a helper it is always `false` with source `default`, and a value sent for one has no effect while it is a helper. Don't offer the switch on a helper. So an agent can report `true` with the Dispatcher off: send this field only when the user changes it.
-- **mcpEnabled**: whether Clubhouse MCP is on for this agent (#2589), following its own setting, then its project's, then the app's. A helper always has it (#2610). No Clubhouse MCP means no orchestration: while it is `false`, `orchestrate`, `crossProjectHelpers` and `connectToDispatcher` read `false`, the agent gets no Dispatcher wire and isn't in the Dispatcher's `list_agents`. Their `sources` still describe the saved settings, which are kept and come back when MCP does. Disable those switches and say they need Clubhouse MCP. Helpers already running keep running. The snapshot refreshes when an MCP setting changes.
+- **mcpReportOnly**: no longer sent. The Clubhouse MCP always runs, so a helper is never report-only.
+- **connectToDispatcher**: "Connect to Dispatcher" (#2534): the Dispatcher may message this agent and get its reports. The desktop shows it while the [Dispatcher](#dispatcher) is on, with `orchestrate` on or off; turning it on while the Dispatcher is off is 409 `dispatcher_off`. Unset (source `default`), it follows `orchestrate` (#2578). A helper (an agent with `parentAgentId`) talks only to its parent, so on a helper it is always `false` with source `default`, and a value sent for one has no effect while it is a helper. Don't offer the switch on a helper. So an agent can report `true` with the Dispatcher off: send this field only when the user changes it.
+- **mcpEnabled**: always `true`. The Clubhouse MCP always runs, and no setting turns it off for an app, a project or an agent (the maintainer, 2026-11-07). It stays in the payload so older phones keep working; never disable the orchestration switches on its account.
 - **sources**: where each field comes from. `agent` is an override on the agent, which `null` clears; `default` is the built-in default. (A `persona` source, from a persona's front matter, was retired in #2901.)
 
 `agent.update` takes `orchestration` as a partial object: `{"orchestrate"?: bool|null, "access"?: string|null, "control"?: string|null, "maxHelpers"?: int|null, "crossProjectHelpers"?: bool|null, "connectToDispatcher"?: bool|null}`. Each key sets that field; `null` clears it back to the default. `"orchestration": null` clears all six. Phones gate `crossProjectHelpers` and `connectToDispatcher` on the payload having them (and Connect to Dispatcher on `dispatcher.enabled`); a phone that doesn't know them ignores them. `agent.create` takes the same object without nulls. Writes go through the desktop's own policy service, so the desktop UI updates live.
@@ -765,7 +764,7 @@ Rejections:
 - 400 `invalid_orchestration`, with the reason in `message`: an unknown field, a bad `access` or `control`, `maxHelpers` outside 1 to `maxHelpersCap`, an empty object, or a null on create.
 - 409 `orchestration_has_helpers`: turning `orchestrate` off while the agent has live helpers. Nothing changes; the desktop asks whether to keep or dispose them.
 - 409 `dispatcher_off`: `connectToDispatcher: true` while the Dispatcher's switch is off.
-- 409 `mcp_off`: `orchestrate`, `crossProjectHelpers` or `connectToDispatcher` set to `true` while `mcpEnabled` is `false` or `mcpReportOnly` is `true` (on `agent.create`, while Clubhouse MCP is off for the project), with the reason in `message`. Nothing is created or changed. Setting them to `false`, clearing them with `null`, and the other fields are still accepted.
+- 409 `mcp_off` is no longer returned: the Clubhouse MCP always runs. Tolerate it from an older desktop.
 - A non-object `orchestration` (or `null` on create) is 400 `invalid_command`.
 
 ## Helper presets
@@ -805,7 +804,7 @@ Gate on `helperRouting` in capabilities. It lists only what works now, so don't 
 - **cells**: `effective` is what a start uses now. `custom` is the saved choice, or null. `state` is that of the saved choice, or of the built-in without one: `valid`, `unverified` (the list may be out of date, so it couldn't be checked) or `stale` (no longer offered, with `staleReason` `model_unavailable` or `effort_unavailable`). A stale saved choice stays saved. `effective` is then the built-in, with `fallback: "builtin_preset"`, or null if that is stale too, and a start with that difficulty is refused. Offer Reset whenever `custom` is set.
 - **autoEligible**: whether a provider has presets and Auto can pick it. Copilot can't: its list reports no per-model efforts, and it has no quota source.
 - **choices**: what the pickers offer, per model, with `source` `live` or `fallback`. Always the app-wide list, even with `projectId` or `agentId`, because a write is checked against it. `default` isn't offered, since a preset has to name a model. Cells do follow that profile: a cell can read `stale` there while its model is in `choices`, which means a start in that project would be refused or fall back.
-- **agent**: with `agentId` only. `{usable: true}`, or `{usable: false, reason}` with `dispatcher_locked`, `mcp_off` or `orchestration_off`, for presets. The Dispatcher doesn't start helpers, and this gives it no new authority.
+- **agent**: with `agentId` only. `{usable: true}`, or `{usable: false, reason}` with `dispatcher_locked` or `orchestration_off`, for presets. The Dispatcher doesn't start helpers, and this gives it no new authority.
 - **auto**: whether `cli: "auto"` is allowed at the scope asked about. See [Auto provider](#auto-provider).
 
 The built-in presets are starting choices, not measured best ones. Don't present them as a recommendation.
@@ -852,10 +851,10 @@ Lets an orchestrator's `cli: "auto"` pick between Claude Code and Codex for a he
   "agent":{"value":null,"editable":true}}}
 ```
 
-- **effective**: whether it would work now. **reason**, when it wouldn't, is one of `autoOffReasons`, with words in `labels.autoOff`. **source** is the level that decided: `agent`, `project`, `app`, `default`, `mcp_off` or `dispatcher_locked`, with words in `labels.autoSource`.
+- **effective**: whether it would work now. **reason**, when it wouldn't, is one of `autoOffReasons`, with words in `labels.autoOff`. **source** is the level that decided: `agent`, `project`, `app`, `default` or `dispatcher_locked`, with words in `labels.autoSource`. `mcp_off` stays in `autoOffReasons` and the labels as a code only, for an older saved decision, and is never sent.
 - **scopes**: each level's say, for the scope asked about: `app` always, `project` with `projectId` or `agentId`, and `persona` and `agent` with `agentId`. `persona` is always `{"value":null,"editable":false}`: personas were retired (#2901). For the Dispatcher nothing is `editable`.
-- **The order:** `dispatcher_locked` and `mcp_off` are always off. Then a project's `off`, which can never be `on`. Then the agent's own, then the app's.
-- **The agent's own:** `orchestration.autoHelpers` in `agent.update`, offered only when `modes` has `auto`. `true` or `false` sets it, at any time, also while the agent runs. `null` clears it, so the agent inherits the app's setting again. On a row or in settings, `orchestration.autoHelpers` is that switch, `true`, `false` or `null` while it inherits, and `orchestration.autoHelpersEffective` says whether Auto would work, with the app and the project included. Show the effective one. `true` while Clubhouse MCP is off is 409 `mcp_off`, while `false` and `null` still work. A non-boolean is 400 `invalid_orchestration`.
+- **The order:** `dispatcher_locked` is always off. Then a project's `off`, which can never be `on`. Then the agent's own, then the app's.
+- **The agent's own:** `orchestration.autoHelpers` in `agent.update`, offered only when `modes` has `auto`. `true` or `false` sets it, at any time, also while the agent runs. `null` clears it, so the agent inherits the app's setting again. On a row or in settings, `orchestration.autoHelpers` is that switch, `true`, `false` or `null` while it inherits, and `orchestration.autoHelpersEffective` says whether Auto would work, with the app and the project included. Show the effective one. A non-boolean is 400 `invalid_orchestration`.
 
 To change it, send `helperRouting.update` with `auto`: `true` or `false` at `scope: "app"`, or `"off"` or `null` at `scope: "project"` with `projectId` (404 `project_not_found`). A project scope takes nothing else. A project's `null` removes its override, and never turns Auto on: the levels below it decide. A stale write at project scope returns that project's fresh values.
 
@@ -899,7 +898,7 @@ A value missing from a fallback list is accepted, and shows as `unverified`.
 
 ### Staying current
 
-The snapshot's `helperRoutingRevision` and the `helper_routing:changed` event (`{revision}`) tell an open or cached page to refetch. The revision is opaque. It moves when a saved value changes, when an app-wide read finds a cell's state changed, or when something that decides Auto changes anywhere: a project's `off`, including from the desktop, an orchestrator's switch, or Clubhouse MCP. A list changing never makes your write stale: only a saved value does.
+The snapshot's `helperRoutingRevision` and the `helper_routing:changed` event (`{revision}`) tell an open or cached page to refetch. The revision is opaque. It moves when a saved value changes, when an app-wide read finds a cell's state changed, or when something that decides Auto changes anywhere: a project's `off`, including from the desktop, or an orchestrator's switch. A list changing never makes your write stale: only a saved value does.
 
 ### A helper's routing
 
@@ -922,7 +921,7 @@ A held start's helper request has `requestedRouting:{provider,model,effort,diffi
 
 ## Dispatcher
 
-The app-wide Dispatcher (#2533): one durable agent that coordinates the orchestrators in every project. It lives in its own folder under the Clubhouse base dir, which is no git repo, and is in no project, so it never appears in `projects`, `agents{}`, `GET /api/v1/projects` or `GET /api/v1/projects/:id/agents`. It is on by default in the new layout, unless the switch in Settings > Dispatcher is saved off. In the classic layout it is on only if that switch was saved on. It is off whenever Clubhouse MCP is off at app level: that changes nothing saved, stops nothing, and turning MCP back on restores it without starting anything. Gated on `dispatcher.version >= 1` in capabilities:
+The app-wide Dispatcher (#2533): one durable agent that coordinates the orchestrators in every project. It lives in its own folder under the Clubhouse base dir, which is no git repo, and is in no project, so it never appears in `projects`, `agents{}`, `GET /api/v1/projects` or `GET /api/v1/projects/:id/agents`. It is on by default in the new layout, unless the switch in Settings > Dispatcher is saved off. In the classic layout it is on only if that switch was saved on. The Clubhouse MCP always runs, so it never turns the Dispatcher off. Gated on `dispatcher.version >= 1` in capabilities:
 
 ```json
 "dispatcher":{"version":1,"enabled":false,"flagOn":true,"newLayout":true,"projectId":"__dispatcher__",
@@ -930,7 +929,7 @@ The app-wide Dispatcher (#2533): one durable agent that coordinates the orchestr
 ```
 
 - **enabled**: it is on now.
-- **flagOn**: `false` while Clubhouse MCP is off at app level. The experimental flag it once reported is gone. See [While it is off](#while-it-is-off).
+- **flagOn**: always `true`. It was `false` while Clubhouse MCP was off at app level, which can no longer happen. The experimental flag it once reported is gone.
 - **newLayout**: the desktop runs the New layout this session. The Dispatcher's view is in the new layout only, so turning it on needs it; one that is still on can always be turned off.
 
 ### Snapshot
@@ -956,37 +955,33 @@ Optional fields on the snapshot's `dispatcher`, `dispatcher:changed` and the cap
 
 | Field | Meaning |
 | --- | --- |
-| `offReason` | `switched_off` (its switch is off, which wins over `mcp_off`), `mcp_off` (Clubhouse MCP is off at app level) or `classic_layout` (the classic layout with nothing saved on). Saved on with the classic layout is on. Tolerate other values. |
-| `running` | Whether its session is running. MCP going off stops nothing. |
+| `offReason` | `switched_off` (its switch is off) or `classic_layout` (the classic layout with nothing saved on). Saved on with the classic layout is on. `mcp_off` is no longer sent. Tolerate other values. |
+| `running` | Whether its session is running. |
 | `status` | The same as `agent.status`, which for a desktop agent is `running` or `sleeping`. |
-| `detail` | Plain text to show. `MCP off; session running`, `MCP off`, `Turned off` or `Needs the new layout`. |
+| `detail` | Plain text to show. `Turned off` or `Needs the new layout`. |
 | `commandsWhileOff` | What is accepted for its id now. |
 | `agent` | The record, in the same shape as `agents[projectId][]`, or `null` before it was first created. The snapshot's `dispatcher` keeps it while it is off, so history isn't lost. |
 
 | State | `commandsWhileOff` | Reads | Anything else |
 | --- | --- | --- | --- |
-| `mcp_off`, running | `agent.stop`, `chat.interrupt`, `chat.send`, `chat.queue.remove`, `chat.permission`, `chat.question`, `dispatcher.setEnabled` | Answer | 409 `mcp_off` |
-| `mcp_off`, stopped | `dispatcher.setEnabled` | Answer, as history | 409 `mcp_off` |
 | `switched_off` | `dispatcher.setEnabled` | 404 `agent_not_found`, as ever | 409 `dispatcher_off`, as ever |
 | `classic_layout` | `dispatcher.setEnabled` | 404 `agent_not_found`, as ever | 409 `dispatcher_off`, as ever |
 
 - `dispatcher.setEnabled` with `enabled: false` always works. With `true` it answers as under [dispatcher.setEnabled](#dispatchersetenabled).
-- `chat.permission` and `chat.question` are for requests already pending. With nothing pending, 409 `mcp_off`.
-- `chat.send` goes to the running session, as the desktop's composer does. It never wakes: with no session it is refused.
 - A shell in its folder is only for while it is on.
-- When MCP is back, `enabled` is `true`, these fields are gone, and nothing has been started.
+- The `mcp_off` states are gone: the Clubhouse MCP always runs.
 
-Fixtures: `snapshot-dispatcher-mcp-off-running.json`, and `dispatcher-off-states.json` and `dispatcher-off-routes.json` for every state. Fixtures from before these fields show the older shape: they are what a phone that doesn't know the fields reads.
+Fixtures: `dispatcher-off-states.json` and `dispatcher-off-routes.json` for every state. Fixtures from before these fields show the older shape: they are what a phone that doesn't know the fields reads.
 
 ### dispatcher.setEnabled
 
-`{type:"dispatcher.setEnabled", enabled:bool}` is Settings > Dispatcher's switch. Result `{enabled, flagOn, agentId}`, as `dispatcher:changed`. Turning it off stops the agent and keeps its folder, notes and config, so turning it on again carries on. Refusals (409): `mcp_off` (turning it on while its switch is on and Clubhouse MCP is off at app level), `dispatcher_flag_off` (turning it on while its switch is off and Clubhouse MCP is off too) and `dispatcher_layout_off` (turning it on while the desktop runs the classic layout, unless its switch is already saved on). Turning on one that is on, or off one that is off, succeeds with the current state.
+`{type:"dispatcher.setEnabled", enabled:bool}` is Settings > Dispatcher's switch. Result `{enabled, flagOn, agentId}`, as `dispatcher:changed`. Turning it off stops the agent and keeps its folder, notes and config, so turning it on again carries on. Refusals (409): `dispatcher_layout_off` (turning it on while the desktop runs the classic layout, unless its switch is already saved on). Turning on one that is on, or off one that is off, succeeds with the current state.
 
 ### Its agent
 
 While it is on, its id works wherever an agent id does: the chat snapshot, chat history pages, `/chat/sessions`, `/content`, attachments, `/settings`, every `chat.*` command, `agent.start`, `agent.stop`, `agent.update`, `pty:attach`, and `GET /api/v1/agents/:id/sessions…` with `projectId=__dispatcher__`. While it is off and stopped, GET routes answer 404 `agent_not_found` and commands 409 `dispatcher_off`.
 
-See [While it is off](#while-it-is-off) for what changes with Clubhouse MCP off.
+See [While it is off](#while-it-is-off) for what changes while it is off.
 
 - **Shells.** `pty:spawn-shell` with `projectId: "__dispatcher__"` (with or without its `agentId`) opens a shell in its folder while it is on; otherwise `project_not_found`.
 - **No git.** Git routes for `__dispatcher__` answer 409 `{"error":"not_git_repo"}`. Its settings' `details.changes`, `branch` and `worktree` are null.
@@ -1177,7 +1172,7 @@ The paired phone retains its existing manual controller authority. Dispatcher MC
 `preview_provider` and `change_provider` use existing target control policy, not a
 new grant: the caller must be an enabled, running Dispatcher with open MCP and a
 current permitted wire to an opted-in durable orchestrator. User removals,
-disabled tools, target MCP off, helper/self targets and denied control still block.
+disabled tools, helper/self targets and denied control still block.
 `hands-off` and `ask-before-start` allow saved provider changes; `ask-everything`
 returns `control_requires_user` for manual settings. Wake remains separately gated.
 Preview and commit resolve the same target policy, with revocation rechecks and

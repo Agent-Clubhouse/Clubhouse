@@ -29,7 +29,6 @@ import { WhatsNewSettingsView } from '../features/settings/WhatsNewSettingsView'
 import { KeyboardShortcutsSettingsView } from '../features/settings/KeyboardShortcutsSettingsView';
 import { EditorSettingsView } from '../features/settings/EditorSettingsView';
 import { ExperimentalSettingsView } from '../features/settings/ExperimentalSettingsView';
-import { McpSettingsView } from '../features/settings/McpSettingsView';
 import { GoobersSettingsView } from '../features/settings/GoobersSettingsView';
 import { HelpersSettingsView } from '../features/settings/HelpersSettingsView';
 import { DispatcherSettingsView } from '../features/settings/DispatcherSettingsView';
@@ -281,7 +280,6 @@ export function MainContentView() {
     if (settingsSubPage === 'updates') return <UpdateSettingsView />;
     if (settingsSubPage === 'whats-new') return <WhatsNewSettingsView />;
     if (settingsSubPage === 'keyboard-shortcuts') return <KeyboardShortcutsSettingsView />;
-    if (settingsSubPage === 'mcp') return <McpSettingsView />;
     if (settingsSubPage === 'experimental') return <ExperimentalSettingsView />;
     if (settingsSubPage === 'goobers') return <GoobersSettingsView />;
     if (settingsSubPage === 'helpers') return <HelpersSettingsView />;

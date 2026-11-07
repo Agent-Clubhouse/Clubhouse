@@ -10,7 +10,6 @@ import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { useAgentStore } from '../../../stores/agentStore';
 import { pollingNudgeMsg } from '../../../../shared/polling-messages';
 import { getProjectAdmins, isProjectAdmin, addAdmin, removeAdmin } from '../../../../shared/group-project-admin';
-import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { useGroupProjectContext, type GroupProjectContextValue, type GroupProjectMember } from './useGroupProjectContext';
 import { useUIStore } from '../../../stores/uiStore';
@@ -53,29 +52,6 @@ export function GroupProjectCanvasWidget({
   const isRemote = remote.isRemote || isRemoteApp;
   const satelliteId = remote.isRemote ? remote.satelliteId : isRemoteApp ? activeHostId : null;
 
-  const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
-
-  // MCP check — only relevant for local (remote satellites manage their own MCP)
-  if (!isRemote && !mcpEnabled) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-3 p-4 text-center" data-testid="group-project-mcp-disabled">
-        <div className="w-10 h-10 rounded-lg bg-surface-1 flex items-center justify-center">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-ctp-overlay1">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-            <line x1="12" y1="9" x2="12" y2="13" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
-        </div>
-        <div className="space-y-1">
-          <div className="text-[13px] font-medium text-ctp-text">MCP required</div>
-          <div className="text-xs text-ctp-overlay1 max-w-[220px]">
-            Group projects need MCP. Turn it on in Settings, under MCP.
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const groupProjectId = metadata.groupProjectId as string | undefined;
 
   if (!groupProjectId && !isRemote) {
@@ -101,7 +77,7 @@ export function GroupProjectCanvasWidget({
 
 
 /**
- * Members whose polling stopped because Clubhouse MCP went off, once it is back.
+ * Members whose polling stopped because they lost Clubhouse tools, once they have them again.
  * Nothing restarts a loop by itself, since main can't tell it from one someone has
  * since ended, so each gets a Resume. Main decides who is offered it, and checks
  * again on the click. Local group projects only.

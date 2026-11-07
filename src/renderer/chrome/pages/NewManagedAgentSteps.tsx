@@ -281,8 +281,6 @@ export function draftFromSeed(seed: BuilderSeed): BuilderDraft {
   };
 }
 
-export const NEEDS_CLUBHOUSE_MCP = 'Needs the Clubhouse MCP server.';
-
 export function BuilderStep({ name, projectName, projectPath, seed, draft, onDraftChange, busy, error, canCreate, onCreate, onBack, onCancel }: {
   name: string;
   projectName: string;
@@ -313,9 +311,8 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
   const selectedOrch = allOrchestrators.find((o) => o.id === resolvedOrchestrator);
   const supportsPermissions = selectedOrch?.capabilities?.permissions ?? false;
   const avail = availability[resolvedOrchestrator];
-  // Helpers go through the Clubhouse MCP server: without it, orchestration can't work.
-  const hasClubhouseMcp = setup.mcps.includes(CLUBHOUSE_MCP_PART_ID);
-  const orchestrating = orchestrate && hasClubhouseMcp;
+  // Helpers go through the Clubhouse MCP server, which is in every setup.
+  const orchestrating = orchestrate;
   const limit = /^\d+$/.test(helperLimit.trim()) ? Number(helperLimit.trim()) : NaN;
   const limitProblem = orchestrating && !(limit >= 1 && limit <= MAX_HELPER_LIMIT) ? `Enter a number from 1 to ${MAX_HELPER_LIMIT}.` : null;
   const cliChoices = effectiveOrchestrators.some((o) => o.id === resolvedOrchestrator)
@@ -390,9 +387,9 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
               <span className={`text-[13px] ${supportsPermissions ? 'text-ctp-text' : 'text-ctp-overlay1'}`}>Free Agent Mode</span>
             </Row>
             <Rule />
-            <Row label="Orchestration" help={!hasClubhouseMcp ? NEEDS_CLUBHOUSE_MCP : orchestrating ? 'It can start helpers and give them work.' : 'It works alone.'}>
-              <Toggle checked={orchestrating} onChange={(on) => change({ orchestrate: on })} disabled={!hasClubhouseMcp} aria-label="Can start helpers" />
-              <span className={`text-[13px] ${hasClubhouseMcp ? 'text-ctp-text' : 'text-ctp-overlay1'}`}>Can start helpers</span>
+            <Row label="Orchestration" help={orchestrating ? 'It can start helpers and give them work.' : 'It works alone.'}>
+              <Toggle checked={orchestrating} onChange={(on) => change({ orchestrate: on })} aria-label="Can start helpers" />
+              <span className="text-[13px] text-ctp-text">Can start helpers</span>
             </Row>
             {orchestrating && (
               <Row

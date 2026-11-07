@@ -10,10 +10,6 @@ import {
   providerAccessLevel,
   rankHelperLaunch,
   normalizeOrchestrationConfig,
-  patchTurnsOnMcpSwitch,
-  savedOrchestrate,
-  asShownPolicy,
-  isMcpDependentOff,
   resolveHelperAccess,
   resolveOrchestrationPolicy,
   validateOrchestrationPatch,
@@ -272,40 +268,6 @@ describe('rankHelperLaunch', () => {
   });
 });
 
-describe('no Clubhouse MCP, no orchestration (#2589)', () => {
-  const saved = { orchestrate: true, crossProjectHelpers: true, connectToDispatcher: true, maxHelpers: 3 };
-
-  it('reads the switches off and keeps what is saved', () => {
-    const policy = resolveOrchestrationPolicy(saved, { mcpOff: true });
-    expect(policy).toMatchObject({ orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false, maxHelpers: 3 });
-    expect(policy.mcpOff).toEqual({ orchestrate: true, crossProjectHelpers: true, connectToDispatcher: true, autoHelpers: false });
-    expect(savedOrchestrate(policy)).toBe(true);
-    // Sources describe the saved settings, which can still be cleared.
-    expect(policy.sources.orchestrate).toBe('agent');
-  });
-
-  it('saves a Connect to Dispatcher that follows orchestrate as it would resolve', () => {
-    const policy = resolveOrchestrationPolicy({ orchestrate: true }, { mcpOff: true });
-    expect(policy.connectToDispatcher).toBe(false);
-    expect(policy.mcpOff?.connectToDispatcher).toBe(true);
-  });
-
-  it('adds nothing while MCP is on', () => {
-    const policy = resolveOrchestrationPolicy(saved, { mcpOff: false });
-    expect(policy).not.toHaveProperty('mcpOff');
-    expect(policy.orchestrate).toBe(true);
-    expect(savedOrchestrate(policy)).toBe(true);
-  });
-
-  it('counts only setting a switch to on as turning it on', () => {
-    expect(patchTurnsOnMcpSwitch({ orchestrate: true })).toBe(true);
-    expect(patchTurnsOnMcpSwitch({ crossProjectHelpers: true })).toBe(true);
-    expect(patchTurnsOnMcpSwitch({ connectToDispatcher: true })).toBe(true);
-    expect(patchTurnsOnMcpSwitch({ orchestrate: false, connectToDispatcher: null })).toBe(false);
-    expect(patchTurnsOnMcpSwitch({})).toBe(false);
-  });
-});
-
 describe('autoHelpers (#2671)', () => {
   it('keeps a boolean, and is off unless set', () => {
     expect(normalizeOrchestrationConfig({ autoHelpers: true })).toEqual({ autoHelpers: true });
@@ -316,12 +278,11 @@ describe('autoHelpers (#2671)', () => {
   });
 
   describe('decideHelperAuto: the outcome, at every level', () => {
-    const decide = (app: boolean, projectOff: boolean, agent: object, options?: object) =>
-      decideHelperAuto({ app, projectOff, policy: resolveOrchestrationPolicy({ orchestrate: true, ...agent }, options) });
+    const decide = (app: boolean, projectOff: boolean, agent: object) =>
+      decideHelperAuto({ app, projectOff, policy: resolveOrchestrationPolicy({ orchestrate: true, ...agent }) });
 
-    it('a project\'s off beats everything but MCP', () => {
+    it('a project\'s off beats everything', () => {
       expect(decide(true, true, { autoHelpers: true })).toEqual({ effective: false, source: 'project', reason: 'project_off' });
-      expect(decide(true, true, { autoHelpers: true }, { mcpOff: true })).toEqual({ effective: false, source: 'mcp_off', reason: 'mcp_off' });
     });
 
     it('the agent\'s switch beats the app, both ways', () => {
@@ -337,33 +298,5 @@ describe('autoHelpers (#2671)', () => {
     it('an agent that doesn\'t orchestrate can\'t use it', () => {
       expect(decide(true, false, { orchestrate: false, autoHelpers: true })).toMatchObject({ effective: false, reason: 'orchestration_off' });
     });
-  });
-
-  it('needs Clubhouse MCP to turn on, and reads off without it, keeping what is saved', () => {
-    expect(patchTurnsOnMcpSwitch({ autoHelpers: true })).toBe(true);
-    expect(patchTurnsOnMcpSwitch({ autoHelpers: false })).toBe(false);
-    expect(resolveOrchestrationPolicy({ autoHelpers: true }, { mcpOff: true })).toMatchObject({ autoHelpers: false, mcpOff: { autoHelpers: true } });
-  });
-});
-
-describe('a report-only helper', () => {
-  const saved = { orchestrate: true, crossProjectHelpers: true, connectToDispatcher: true, autoHelpers: true };
-
-  it('counts as off, and reads off with what is saved kept', () => {
-    const policy = resolveOrchestrationPolicy(saved, { mcpReportOnly: true });
-    expect(isMcpDependentOff(policy)).toBe(true);
-    expect(asShownPolicy(policy)).toMatchObject({ orchestrate: false, crossProjectHelpers: false, autoHelpers: false, mcpOff: { orchestrate: true, crossProjectHelpers: true, autoHelpers: true } });
-    expect(savedOrchestrate(asShownPolicy(policy))).toBe(true);
-  });
-
-  it('leaves anyone else as it was', () => {
-    const policy = resolveOrchestrationPolicy(saved);
-    expect(isMcpDependentOff(policy)).toBe(false);
-    expect(asShownPolicy(policy)).toBe(policy);
-  });
-
-  it('has Auto off for good', () => {
-    const policy = resolveOrchestrationPolicy(saved, { mcpReportOnly: true });
-    expect(decideHelperAuto({ app: true, projectOff: false, policy })).toEqual({ effective: false, source: 'mcp_off', reason: 'mcp_off' });
   });
 });

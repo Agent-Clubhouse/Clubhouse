@@ -33,9 +33,8 @@ Clubhouse keeps its configuration in a `.clubhouse/` folder in the project root:
 | `agents.json` | Your durable agent definitions |
 | `agents/` | Each durable agent's worktree, where its files and uncommitted work live |
 | `settings.json` | Project settings |
-| `skills/` | Custom skills |
+| `skills/`, `missions/` | Skills and missions Clubhouse Mode used before it was retired. Only the switch to managed reads them. |
 | `personas/` | Personas saved before they were retired. Only the switch to managed reads them. |
-| `missions/` | Mission files |
 | `plugin-data/` | Data plugins store for this project |
 
 Deleting `.clubhouse/`, which is what **Reset project** does, also deletes every durable agent's worktree in `agents/`. Anything an agent hasn't committed and pushed is lost. Your main checkout is not touched.

@@ -10,12 +10,12 @@ import { legacyLine, migratedLine, migrationFailedLine, type LegacyUse } from '.
 /**
  * General › Setup for an agent (#2893). Managed: which template it came from,
  * Save as template, Stop managing. Unmanaged: the switch to managed, and the
- * Clubhouse features opt-out for a plain CLI. An unmanaged agent that uses
- * Clubhouse Mode or a persona says so, as the offer to switch (#2901), with
- * the reason when the automatic switch failed. An agent Clubhouse switched on
+ * Clubhouse features opt-out, which turns off hooks only. An unmanaged agent that still
+ * names a persona says so, as the offer to switch (#2901), and one whose
+ * automatic switch failed gives the reason. An agent Clubhouse switched on
  * its own says so until the notice is dismissed (D59).
  */
-export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, clubhouseFeatures, onClubhouseFeaturesChange, isRunning, legacy, onClubhouseModeOff }: {
+export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, clubhouseFeatures, onClubhouseFeaturesChange, isRunning, legacy }: {
   projectPath: string;
   agentId: string;
   agentName: string;
@@ -24,16 +24,11 @@ export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, 
   /** Called with the saved value once the switch's change is saved. */
   onClubhouseFeaturesChange?: (on: boolean) => void;
   isRunning: boolean;
-  /** What the unmanaged agent uses from Clubhouse Mode and personas, if anything. */
+  /** The persona the unmanaged agent still names, if any. */
   legacy?: LegacyUse | null;
-  /**
-   * Turns Clubhouse Mode off for this agent only, so it keeps its own files
-   * without switching to managed (#2901). Offered while it still uses Clubhouse Mode.
-   */
-  onClubhouseModeOff?: () => Promise<void>;
 }) {
   const templates = useManagedTemplates();
-  const { value: status } = useManagedStatus(setup || legacy ? projectPath : undefined, agentId);
+  const { value: status } = useManagedStatus(projectPath, agentId);
   const [convertOpen, setConvertOpen] = useState(false);
   const [saveAsOpen, setSaveAsOpen] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
@@ -66,35 +61,21 @@ export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, 
         <>
           <Field
             label="Clubhouse managed"
-            help={legacy
-              ? <span data-testid="managed-general-legacy">
-                {legacyLine(agentName, legacy)} Switch to managed keeps what it has now.
-                {status?.migrationFailed && <span className="block mt-px" data-testid="managed-general-migration-failed">{migrationFailedLine(status.migrationFailed)}</span>}
-              </span>
-              : `Off. ${agentName} uses the instructions, skills and MCP config in its folder, and Clubhouse doesn't change them.`}
+            help={<>
+              {legacy
+                ? <span data-testid="managed-general-legacy">{legacyLine(agentName, legacy)} Switch to managed keeps what it has now.</span>
+                : `Off. ${agentName} uses the instructions, skills and MCP config in its folder, and Clubhouse doesn't change them.`}
+              {status?.migrationFailed && <span className="block mt-px" data-testid="managed-general-migration-failed">{migrationFailedLine(status.migrationFailed)}</span>}
+            </>}
             testId="managed-general-off"
           >
             <Button onClick={() => setConvertOpen(true)} disabled={busy}>Switch to managed…</Button>
           </Field>
-          {legacy?.clubhouseMode && onClubhouseModeOff && (
-            <Field
-              label="Clubhouse Mode"
-              help={`On for ${agentName}: it gets the project's default instructions, skills and MCP servers when it wakes. Turn it off to keep its own files.`}
-              testId="managed-clubhouse-mode"
-            >
-              <Toggle
-                checked
-                onChange={(on) => { if (!on) void run(onClubhouseModeOff); }}
-                disabled={busy || isRunning}
-                aria-label="Clubhouse Mode for this agent"
-              />
-            </Field>
-          )}
           <Field
             label="Clubhouse features"
             help={clubhouseFeatures
-              ? 'Status, permission prompts and Clubhouse tools (helpers, messages, Dispatcher).'
-              : <span className="text-ctp-warning">Off: Clubhouse can't show this agent's status, permission prompts or changes, and it can't use helpers, messages or the Dispatcher.</span>}
+              ? 'Status and permission prompts. Clubhouse tools (helpers, messages, Dispatcher) are always on.'
+              : <span className="text-ctp-warning">Off: Clubhouse can't show this agent's status, permission prompts or changes.</span>}
             testId="managed-clubhouse-features"
           >
             <Toggle

@@ -18,7 +18,6 @@ import { _settleHelperRoutingForTesting } from './helper-routing';
 import type { HelperStartWarning } from '../../shared/helper-routing';
 import { QUOTA_STALE_MS, quotaRefetchDelaySeconds } from '../../shared/helper-routing';
 import { CLAUDE_WORKING_WINDOW_NOTE } from '../../shared/context-window';
-import { MCP_REQUIRED_MESSAGE } from '../../shared/orchestration-policy';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -57,7 +56,7 @@ const W = vi.hoisted(() => ({
   projectStateReady: true,
   finishedReady: true,
   // The app-wide Dispatcher (#2533): off unless a test turns it on.
-  dispatcher: { flagOn: false, enabled: false, newLayout: true, running: false, classicUnsaved: false },
+  dispatcher: { enabled: false, newLayout: true, running: false, classicUnsaved: false },
   dispatcherListeners: new Set<(state: any) => void>(),
   // What the CLI offers for the model (#2660); a case sets it, else Claude's.
   contextOptions: null as null | Record<string, unknown>,
@@ -67,8 +66,8 @@ const DISPATCHER_PATH = vi.hoisted(() => '/Users/me/.clubhouse/dispatcher');
 
 vi.mock('./dispatcher/dispatcher-service', () => {
   const config = () => (W.durables[DISPATCHER_PATH] ?? [])[0] ?? null;
-  const enabled = () => W.dispatcher.flagOn && W.dispatcher.enabled;
-  const state = () => ({ enabled: enabled(), flagOn: W.dispatcher.flagOn, savedOn: W.dispatcher.enabled, mcpOff: !W.dispatcher.flagOn, classic: !W.dispatcher.newLayout, offReason: enabled() ? null : W.dispatcher.enabled ? 'mcp_off' : W.dispatcher.classicUnsaved ? 'classic_layout' : 'switch_off', running: W.dispatcher.running, agentId: config()?.id ?? null,
+  const enabled = () => W.dispatcher.enabled;
+  const state = () => ({ enabled: enabled(), flagOn: true, savedOn: W.dispatcher.enabled, classic: !W.dispatcher.newLayout, offReason: enabled() ? null : W.dispatcher.classicUnsaved ? 'classic_layout' : 'switch_off', running: W.dispatcher.running, agentId: config()?.id ?? null,
     path: config() ? DISPATCHER_PATH : null, config: config() ? { ...config() } : null });
   return {
     DISPATCHER_NAME: 'Dispatcher',
@@ -85,11 +84,11 @@ vi.mock('./dispatcher/dispatcher-service', () => {
   };
 });
 vi.mock('./dispatcher/dispatcher-settings', () => ({
-  isDispatcherEnabled: () => W.dispatcher.flagOn && W.dispatcher.enabled,
+  isDispatcherEnabled: () => W.dispatcher.enabled,
   dispatcherEnablement: () => ({
     savedOn: W.dispatcher.enabled,
-    enabled: W.dispatcher.flagOn && W.dispatcher.enabled,
-    reason: !W.dispatcher.enabled ? 'switch_off' : W.dispatcher.flagOn ? null : 'mcp_off',
+    enabled: W.dispatcher.enabled,
+    reason: W.dispatcher.enabled ? null : 'switch_off',
   }),
 }));
 vi.mock('../window-chrome', () => ({ newChromeEnabled: () => W.dispatcher.newLayout }));
@@ -348,7 +347,6 @@ vi.mock('./agent-settings-service', () => ({
   ],
   readDefaultMcps: async () => ['github'],
 }));
-vi.mock('./materialization-service', () => ({}));
 vi.mock('./orchestration-settings', () => ({
   getSettings: () => ({ globalHelperCap: 20 }),
   getGlobalHelperCap: () => 20,
@@ -370,7 +368,6 @@ vi.mock('../orchestrators', async (importOriginal) => {
 });
 vi.mock('./orchestrator-settings', () => ({ getSettings: () => ({ enabled: ['claude-code', 'codex-cli'] }) }));
 vi.mock('./profile-settings', () => ({ getProfile: () => undefined }));
-vi.mock('./clubhouse-mode-settings', () => ({ isClubhouseModeEnabled: () => false }));
 vi.mock('./chat-idle-settings', () => ({ chatIdleSettings: { getSettings: () => ({ idleTimeoutMinutes: 30 }) } }));
 vi.mock('./chat-runtime-settings', () => ({
   isChatEnabled: () => true,
@@ -468,7 +465,7 @@ const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
  * how many UUIDs the desktop happens to draw.
  */
 /** Files for the fields a Dispatcher adds while it is off. Every other file keeps the shape phones vendored. */
-const DISPATCHER_OFF_FIXTURES = new Set(['snapshot-dispatcher-mcp-off-running.json', 'dispatcher-off-states.json', 'dispatcher-off-routes.json']);
+const DISPATCHER_OFF_FIXTURES = new Set(['dispatcher-off-states.json', 'dispatcher-off-routes.json']);
 
 /**
  * What a phone that doesn't know those fields reads: they are optional and it
@@ -587,10 +584,10 @@ function resetWorld() {
       { id: 'durable_dispatcher', name: 'Dispatcher', color: 'indigo', orchestrator: 'claude-code', freeAgentMode: true,
         // A Dispatcher created before #2901 still has this legacy field; nothing reads it.
         persona: 'dispatcher',
-        idleSleep: 'never', runtimeMode: 'chat', mcpOverride: true, createdAt: '2026-10-07T09:00:00.000Z', lastSessionId: 'sess_dispatch' },
+        idleSleep: 'never', runtimeMode: 'chat', createdAt: '2026-10-07T09:00:00.000Z', lastSessionId: 'sess_dispatch' },
     ],
   };
-  W.dispatcher = { flagOn: false, enabled: false, newLayout: true, running: false, classicUnsaved: false };
+  W.dispatcher = { enabled: false, newLayout: true, running: false, classicUnsaved: false };
   W.running = new Set(['durable_term']);
   W.revert = new Set();
   W.transcripts = {
@@ -865,12 +862,8 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(helper.response.body).toMatchObject({ parentAgentId: 'durable_chat', orchestration: { connectToDispatcher: false } });
     fixtures.set('agent-settings-helper.json', helper);
     fixtures.set('agent-settings-errors.json', { agentNotFound: await exchange('GET', '/api/v1/mobile/agents/missing/settings') });
-    // Clubhouse MCP off for the agent (#2589): its switches read off, with the reason.
-    W.durables[APP][0].mcpOverride = false;
-    const mcpOff = await exchange('GET', '/api/v1/mobile/agents/durable_chat/settings');
-    delete W.durables[APP][0].mcpOverride;
-    expect(mcpOff.response.body.orchestration).toMatchObject({ mcpEnabled: false, orchestrate: false });
-    fixtures.set('agent-settings-mcp-off.json', mcpOff);
+    // The Clubhouse MCP always runs (D69): mcpEnabled stays in the contract, always true.
+    expect(settings.response.body.orchestration).toMatchObject({ mcpEnabled: true });
   });
 
   describe('chat.question ids and the 1 MiB request body limit (#2676)', () => {
@@ -1134,7 +1127,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('orchestrator_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'copilot-cli' });
     await command('runtime_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'codex-cli', runtime: 'chat' });
     await command('free_agent_mode_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', orchestrator: 'codex-cli', freeAgentMode: true });
-    await command('clubhouse_mode_unavailable', { type: 'agent.update', agentId: 'durable_sleepy', clubhouseMode: true });
+    await command('managed_agent (clubhouseMode)', { type: 'agent.update', agentId: 'durable_sleepy', clubhouseMode: true });
     await command('managed_agent (persona)', { type: 'agent.update', agentId: 'durable_sleepy', persona: 'qa' });
     // Clearing a persona is a no-op: there is none to clear.
     await command('accepted persona clear (no-op)', { type: 'agent.update', agentId: 'durable_sleepy', persona: null });
@@ -1429,11 +1422,6 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
 
   it('the Dispatcher (#2533)', async () => {
     const off = { type: 'dispatcher.setEnabled', enabled: true };
-    const flagOff = await command('dispatcher_flag_off', off);
-    expect(flagOff.body.error).toMatchObject({ code: 'dispatcher_flag_off', message: MCP_REQUIRED_MESSAGE });
-    // The words phones vendored: the code is the contract, and `message` can change (docs/mobile-control-v1.md).
-    flagOff.body.error.message = 'Turn on Dispatcher in Settings > Experimental on the desktop first.';
-    W.dispatcher.flagOn = true;
     W.dispatcher.newLayout = false;
     const layoutOff = await command('dispatcher_layout_off', off);
     expect(layoutOff.body.error.message).toContain('Turn off Classic layout in Settings > Display & UI');
@@ -1494,7 +1482,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const seq = (f: any) => ({ ...f, seq: 1000 });
     fixtures.set('dispatcher-changed.json', { direction: 'desktop-to-phone', note: 'seq is the replay sequence; a snapshot follows each.', frames: [seq(changedOn), seq(changedOff)] });
     fixtures.set('dispatcher-routes.json', routes);
-    W.dispatcher = { flagOn: false, enabled: false, newLayout: true, running: false, classicUnsaved: false };
+    W.dispatcher = { enabled: false, newLayout: true, running: false, classicUnsaved: false };
     W.durables[DISPATCHER_PATH][0] = { ...W.durables[DISPATCHER_PATH][0], model: undefined, orchestrator: 'claude-code' };
   });
 
@@ -1502,16 +1490,16 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const route = '/api/v1/icons/agent/durable_dispatcher';
     const saved = W.durables[DISPATCHER_PATH][0];
     W.durables[DISPATCHER_PATH][0] = { ...saved, icon: 'durable_dispatcher.abc.png' };
-    W.dispatcher = { flagOn: true, enabled: true, newLayout: true, running: false, classicUnsaved: false };
+    W.dispatcher = { enabled: true, newLayout: true, running: false, classicUnsaved: false };
     expect((await send('GET', route)).status).toBe(200);
-    W.dispatcher = { flagOn: false, enabled: false, newLayout: true, running: false, classicUnsaved: false };
+    W.dispatcher = { enabled: false, newLayout: true, running: false, classicUnsaved: false };
     expect((await send('GET', route)).status).toBe(404);
     W.durables[DISPATCHER_PATH][0] = saved;
   });
 
   it('sender identity: every kind of sender, drawn from the snapshot alone', async () => {
     resetWorld();
-    W.dispatcher = { flagOn: true, enabled: true, newLayout: true, running: false, classicUnsaved: false };
+    W.dispatcher = { enabled: true, newLayout: true, running: false, classicUnsaved: false };
     W.durables[DISPATCHER_PATH][0] = { ...W.durables[DISPATCHER_PATH][0], icon: 'durable_dispatcher.abc.png' };
     // A disposed helper keeps its config row; a helper in another project shares a name with one here.
     W.durables[APP].push({ id: 'durable_gone', name: 'old-helper', color: 'rose', parentAgentId: 'durable_chat', disposedAt: '2026-10-09T09:00:00.000Z', createdAt: '2026-10-08T09:00:00.000Z' });
@@ -1711,12 +1699,6 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     });
   });
 
-  it('Clubhouse MCP off refuses turning orchestration on (#2589)', async () => {
-    W.durables[APP][0].mcpOverride = false;
-    await command('mcp_off', { type: 'agent.update', agentId: 'durable_chat', orchestration: { orchestrate: true } });
-    delete W.durables[APP][0].mcpOverride;
-  });
-
   it('helper presets (#2671)', async () => {
     // Quota and serverTime are read from the clock, and the file has to be the same on every run.
     vi.spyOn(Date, 'now').mockReturnValue(NOW);
@@ -1754,12 +1736,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     cases.project = await exchange('GET', `${ROUTE}?projectId=proj_app`);
     expect(Object.keys((cases.project as typeof bare).response.body.labels)).toEqual(FAMILIES);
     cases.agent = await exchange('GET', `${ROUTE}?agentId=durable_chat`);
-    W.durables[APP][0].mcpOverride = false;
-    cases.mcpOff = await exchange('GET', `${ROUTE}?agentId=durable_chat`);
-    expect((cases.mcpOff as typeof bare).response.body.agent).toEqual({ usable: false, reason: 'mcp_off' });
-    delete W.durables[APP][0].mcpOverride;
     cases.orchestrationOff = await exchange('GET', `${ROUTE}?agentId=durable_sleepy`);
-    W.dispatcher.flagOn = true;
     W.dispatcher.enabled = true;
     W.dispatcher.newLayout = true;
     cases.dispatcher = await exchange('GET', `${ROUTE}?agentId=durable_dispatcher`);
@@ -1958,16 +1935,12 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     W.projectDefaults = projectDefaults;
     autoCases.agentFollowingApp = await autoOf(`${ROUTE}?agentId=durable_chat`);
     autoCases.notOrchestrating = await autoOf(`${ROUTE}?agentId=durable_sleepy`);
-    W.durables[APP][0].mcpOverride = false;
-    autoCases.mcpOff = await autoOf(`${ROUTE}?agentId=durable_chat`);
-    delete W.durables[APP][0].mcpOverride;
     W.dispatcher.enabled = true;
     autoCases.dispatcherLocked = await autoOf(`${ROUTE}?agentId=durable_dispatcher`);
     W.dispatcher.enabled = false;
     expect(autoCases.offByDefault).toMatchObject({ effective: false, source: 'default', reason: 'not_enabled' });
     expect(autoCases.onAppWide).toMatchObject({ effective: true, source: 'app' });
     expect(autoCases.projectOff).toMatchObject({ effective: false, source: 'project', reason: 'project_off', scopes: { project: { value: 'off', choices: ['off', null] } } });
-    expect(autoCases.mcpOff).toMatchObject({ effective: false, source: 'mcp_off', reason: 'mcp_off' });
     expect(autoCases.dispatcherLocked).toMatchObject({ effective: false, source: 'dispatcher_locked', reason: 'dispatcher_locked', scopes: { agent: { editable: false } } });
     expect(autoCases.notOrchestrating).toMatchObject({ effective: false, reason: 'orchestration_off' });
 
@@ -2015,9 +1988,6 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     await command('accepted autoHelpers cleared (inherits)', { type: 'agent.update', agentId: 'durable_chat', orchestration: { autoHelpers: null } });
     expect(W.durables[APP][0].orchestration).not.toHaveProperty('autoHelpers');
     await command('invalid_orchestration (autoHelpers)', { type: 'agent.update', agentId: 'durable_chat', orchestration: { autoHelpers: 'yes' } });
-    W.durables[APP][0].mcpOverride = false;
-    await command('mcp_off (autoHelpers)', { type: 'agent.update', agentId: 'durable_chat', orchestration: { autoHelpers: true } });
-    delete W.durables[APP][0].mcpOverride;
 
     const autoDecision = (fields: Record<string, unknown>) => decision({
       mode: 'auto', balanced: true, requested: field('auto', null, null, 'hard'), resolved: field('codex-cli', 'gpt-6.1-sol', 'high', 'hard'),
@@ -2139,8 +2109,8 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     W.contextOptions = null;
 
     // The Dispatcher: changes at any time, for the next start, and nothing else unlocks.
-    const wasFlag = W.dispatcher.flagOn; const wasOn = W.dispatcher.enabled;
-    W.dispatcher.flagOn = true; W.dispatcher.enabled = true;
+    const wasOn = W.dispatcher.enabled;
+    W.dispatcher.enabled = true;
     const dispatcherAgent = W.durables[DISPATCHER_PATH][0];
     const wasCli = dispatcherAgent.orchestrator; const wasModel = dispatcherAgent.model;
     dispatcherAgent.orchestrator = 'claude-code'; dispatcherAgent.model = 'opus';
@@ -2152,7 +2122,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const locked = await command('dispatcher_locked (name, with contextWindow)', { type: 'agent.update', agentId: 'durable_dispatcher', contextWindow: '300000', name: 'Boss' });
     expect(locked.status).toBe(409);
     Object.assign(dispatcherAgent, { orchestrator: wasCli, model: wasModel });
-    W.dispatcher.flagOn = wasFlag; W.dispatcher.enabled = wasOn;
+    W.dispatcher.enabled = wasOn;
 
     fixtures.set('agent-settings-context-window.json', {
       direction: 'desktop-to-phone',
@@ -2167,7 +2137,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
   it('icon refs: the snapshot forms, changes, removals and the routes', async () => {
     const saved = W.durables[DISPATCHER_PATH][0];
     W.durables[DISPATCHER_PATH][0] = { ...saved, icon: 'durable_dispatcher.png' };
-    W.dispatcher = { flagOn: true, enabled: true, newLayout: true, running: false, classicUnsaved: false };
+    W.dispatcher = { enabled: true, newLayout: true, running: false, classicUnsaved: false };
     const refsSocket = () => connect('mtls', { iconRefs: true });
     const firstSnapshot = async () => frames(await refsSocket()).find((f) => f.type === 'snapshot').payload;
     const SHA = /^[0-9a-f]{64}$/;
@@ -2328,7 +2298,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     fixtures.set('icon-images.json', { note: 'One real image of each type, as the real code describes it.', images });
 
     W.durables[DISPATCHER_PATH][0] = saved;
-    W.dispatcher = { flagOn: false, enabled: false, newLayout: true, running: false, classicUnsaved: false };
+    W.dispatcher = { enabled: false, newLayout: true, running: false, classicUnsaved: false };
   }, TEST_TIMEOUT_MS);
 
   afterAll(() => {
@@ -2571,11 +2541,10 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
   }, TEST_TIMEOUT_MS);
 
   describe('a Dispatcher that is off', () => {
+    // Clubhouse MCP is never why it is off (D69): it always runs.
     const OFF_STATES = {
-      mcpOffRunning: { flagOn: false, enabled: true, newLayout: true, running: true, classicUnsaved: false },
-      mcpOffStopped: { flagOn: false, enabled: true, newLayout: true, running: false, classicUnsaved: false },
-      switchedOff: { flagOn: true, enabled: false, newLayout: true, running: false, classicUnsaved: false },
-      classicLayout: { flagOn: true, enabled: false, newLayout: false, running: false, classicUnsaved: true },
+      switchedOff: { enabled: false, newLayout: true, running: false, classicUnsaved: false },
+      classicLayout: { enabled: false, newLayout: false, running: false, classicUnsaved: true },
     };
     let serial = 0;
     /** Apart from `command`, so the fixtures before this keep their ids. */
@@ -2605,14 +2574,12 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       const ws = await connect();
       const states: Record<string, unknown> = {};
       const expected = {
-        mcpOffRunning: { offReason: 'mcp_off', running: true, status: 'running', detail: 'MCP off; session running' },
-        mcpOffStopped: { offReason: 'mcp_off', running: false, status: 'sleeping', detail: 'MCP off', commandsWhileOff: ['dispatcher.setEnabled'] },
         switchedOff: { offReason: 'switched_off', running: false, status: 'sleeping', detail: 'Turned off', commandsWhileOff: ['dispatcher.setEnabled'] },
         classicLayout: { offReason: 'classic_layout', running: false, status: 'sleeping', detail: 'Needs the new layout', commandsWhileOff: ['dispatcher.setEnabled'] },
       };
       for (const [name, state] of Object.entries(OFF_STATES)) {
         // Off the state it left, so the event has something to report.
-        enter({ ...OFF_STATES.mcpOffRunning, running: !state.running, enabled: state.running ? false : true, flagOn: state.running ? true : false });
+        enter({ enabled: true, newLayout: true, running: false, classicUnsaved: false });
         for (const listener of W.dispatcherListeners) listener(getDispatcherState());
         enter(state);
         const { capabilities, changed, snapshot } = await payloads(ws);
@@ -2627,20 +2594,6 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
         states[name] = { capabilities, 'dispatcher:changed': changed, snapshot };
       }
       fixtures.set('dispatcher-off-states.json', { direction: 'desktop-to-phone', note: 'The fields added while the Dispatcher is off, the same in all three payloads.', states });
-      fixtures.set('snapshot-dispatcher-mcp-off-running.json', { direction: 'desktop-to-phone', field: 'dispatcher', value: (states.mcpOffRunning as { snapshot: unknown }).snapshot });
-    }, TEST_TIMEOUT_MS);
-
-    it('adds nothing, and starts nothing, when MCP is back', async () => {
-      const ws = await connect();
-      enter(OFF_STATES.mcpOffStopped);
-      for (const listener of W.dispatcherListeners) listener(getDispatcherState());
-      W.dispatcher = { ...OFF_STATES.mcpOffStopped, flagOn: true };
-      const { capabilities, changed, snapshot } = await payloads(ws);
-      for (const payload of [capabilities, changed, snapshot]) {
-        expect(payload).toMatchObject({ enabled: true, flagOn: true });
-        for (const field of ['offReason', 'running', 'status', 'detail', 'commandsWhileOff']) expect(payload).not.toHaveProperty(field);
-      }
-      expect(W.running.has('durable_dispatcher')).toBe(false);
     }, TEST_TIMEOUT_MS);
 
     it('accepts exactly what it advertises, and holds the payload limits', async () => {
@@ -2667,7 +2620,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
         enter(state);
         registerChatRuntime(runtime as never);
         const advertised: string[] = (await send('GET', '/api/v1/mobile/capabilities')).body.dispatcher.commandsWhileOff;
-        const refusal = name.startsWith('mcpOff') ? 'mcp_off' : 'dispatcher_off';
+        const refusal = 'dispatcher_off';
         const accepted: string[] = [];
         for (const [type, fields] of Object.entries(COMMANDS)) {
           enter(state);
@@ -2687,43 +2640,15 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
         expect(off.status, name).toBe(200);
       }
 
-      // On is refused where it can't take effect. Switched off with MCP on it is the normal way to turn it on.
-      enter(OFF_STATES.mcpOffRunning);
-      const onMcpOff = await offCommand({ type: 'dispatcher.setEnabled', enabled: true });
-      record('mcpOffRunning', 'dispatcher.setEnabled true', { type: 'dispatcher.setEnabled', enabled: true }, onMcpOff);
-      expect(onMcpOff.body.error.code).toBe('mcp_off');
-      enter(OFF_STATES.mcpOffStopped);
-      expect((await offCommand({ type: 'dispatcher.setEnabled', enabled: true })).body.error.code).toBe('mcp_off');
+      // On is refused where it can't take effect. Switched off, it is the normal way to turn it on.
       enter(OFF_STATES.classicLayout);
       const onClassic = await offCommand({ type: 'dispatcher.setEnabled', enabled: true });
       record('classicLayout', 'dispatcher.setEnabled true', { type: 'dispatcher.setEnabled', enabled: true }, onClassic);
       expect(onClassic.body.error.code).toBe('dispatcher_layout_off');
 
-      // Only for requests already pending.
-      enter(OFF_STATES.mcpOffRunning);
-      registerChatRuntime(runtime as never);
-      for (const [type, fields] of [
-        ['chat.permission', { ...COMMANDS['chat.permission'], requestId: 'perm_gone' }],
-        ['chat.question', { ...COMMANDS['chat.question'], requestId: 'q_gone' }],
-      ] as const) {
-        const res = await offCommand(fields);
-        record('mcpOffRunning', `${type} with nothing pending`, fields, res);
-        expect(res.status, type).toBe(409);
-        expect(res.body.error.code, type).toBe('mcp_off');
-      }
-      expect((await offCommand(COMMANDS['chat.permission'])).body.error?.code).not.toBe('mcp_off');
-      unregisterChatRuntime('durable_dispatcher');
-
-      // chat.send goes to a session. With none it is refused and wakes nothing.
-      enter(OFF_STATES.mcpOffStopped);
-      const asleep = await offCommand(COMMANDS['chat.send']);
-      record('mcpOffStopped', 'chat.send', COMMANDS['chat.send'], asleep);
-      expect(asleep.body.error.code).toBe('mcp_off');
-      expect(W.running.has('durable_dispatcher')).toBe(false);
-
-      // Reads: history stays for MCP off, even stopped. Switched off they answer as they always have.
+      // Reads: switched off they answer as they always have.
       const routes = ['/api/v1/mobile/agents/durable_dispatcher/chat', '/api/v1/mobile/agents/durable_dispatcher/chat/sessions'];
-      for (const [name, state, status] of [['mcpOffRunning', OFF_STATES.mcpOffRunning, 200], ['mcpOffStopped', OFF_STATES.mcpOffStopped, 200], ['switchedOff', OFF_STATES.switchedOff, 404], ['classicLayout', OFF_STATES.classicLayout, 404]] as const) {
+      for (const [name, state, status] of [['switchedOff', OFF_STATES.switchedOff, 404], ['classicLayout', OFF_STATES.classicLayout, 404]] as const) {
         enter(state);
         for (const route of routes) {
           const res = await send('GET', route);
@@ -2735,7 +2660,7 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
 
       fixtures.set('dispatcher-off-routes.json', { note: 'What each state accepts for the Dispatcher\'s id. An accepted command can still answer with its own rules.', cases });
       W.running.delete('durable_dispatcher');
-      W.dispatcher = { flagOn: false, enabled: false, newLayout: true, running: false, classicUnsaved: false };
+      W.dispatcher = { enabled: false, newLayout: true, running: false, classicUnsaved: false };
     }, TEST_TIMEOUT_MS);
   });
 

@@ -157,7 +157,7 @@ function TemplateEditor({ initial, onDone }: { initial: TemplateDraft; onDone: (
       </SettingsSection>
 
       <SettingsSection title="Settings">
-        <SettingsField label="Orchestration" help="Agents made from this template can start helpers. They need the Clubhouse MCP server.">
+        <SettingsField label="Orchestration" help="Agents made from this template can start helpers.">
           <Toggle checked={orchestrate} onChange={(v) => setOrch({ orchestrate: v })} aria-label="Orchestration" data-testid="managed-template-orchestrate" />
         </SettingsField>
         <SettingsField label="Most helpers at once" htmlFor="managed-template-max-helpers" disabled={!orchestrate}>

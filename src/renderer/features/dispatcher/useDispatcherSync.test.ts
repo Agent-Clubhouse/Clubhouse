@@ -50,16 +50,16 @@ describe('useDispatcherSync', () => {
     expect(findLocalProject(DISPATCHER_PROJECT_ID)).toBeUndefined();
   });
 
-  it('keeps the agent and its view while it runs with MCP off, and drops them once it stops', async () => {
+  it('keeps the agent and its view while it runs turned off, and drops them once it stops', async () => {
     window.clubhouse.dispatcher.get = vi.fn().mockResolvedValue({ ...ON, running: true });
     renderHook(() => useDispatcherSync());
     await waitFor(() => expect(useAgentStore.getState().agents.disp).toBeTruthy());
     act(() => useUIStore.setState({ dispatcherOpen: true }));
-    act(() => emit?.({ ...ON, enabled: false, offReason: 'mcp_off', mcpOff: true, running: true }));
+    act(() => emit?.({ ...ON, enabled: false, savedOn: false, offReason: 'switch_off', running: true }));
     expect(useAgentStore.getState().agents.disp).toBeTruthy();
     expect(useUIStore.getState().dispatcherOpen).toBe(true);
     expect(findLocalProject(DISPATCHER_PROJECT_ID)).toBeTruthy();
-    act(() => emit?.({ ...ON, enabled: false, offReason: 'mcp_off', mcpOff: true, running: false }));
+    act(() => emit?.({ ...ON, enabled: false, savedOn: false, offReason: 'switch_off', running: false }));
     expect(useAgentStore.getState().agents.disp).toBeUndefined();
     expect(useUIStore.getState().dispatcherOpen).toBe(false);
   });

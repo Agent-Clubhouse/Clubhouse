@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { replaceWildcards, unreplaceWildcards, WildcardContext } from './wildcard-replacer';
+import { replaceWildcards, WildcardContext } from './wildcard-replacer';
 
 const ctx: WildcardContext = {
   agentName: 'bold-falcon',
@@ -77,125 +77,14 @@ describe('@@SourceControlProvider replacement', () => {
   });
 });
 
-describe('@@If(value)...@@EndIf conditional blocks', () => {
-  it('keeps block content when sourceControlProvider matches', () => {
-    const ctxWithScp = { ...ctx, sourceControlProvider: 'github' };
-    const input = '@@If(github)\nUse gh CLI\n@@EndIf';
-    expect(replaceWildcards(input, ctxWithScp)).toBe('Use gh CLI\n');
-  });
-
-  it('strips block when sourceControlProvider does not match', () => {
-    const ctxWithScp = { ...ctx, sourceControlProvider: 'azure-devops' };
-    const input = '@@If(github)\nUse gh CLI\n@@EndIf';
-    expect(replaceWildcards(input, ctxWithScp)).toBe('');
-  });
-
-  it('strips block when sourceControlProvider is not set', () => {
-    const input = '@@If(github)\nUse gh CLI\n@@EndIf';
-    expect(replaceWildcards(input, ctx)).toBe('');
-  });
-
-  it('handles multiple conditional blocks', () => {
-    const ctxWithScp = { ...ctx, sourceControlProvider: 'github' };
-    const input = [
-      '@@If(github)',
-      'GitHub section',
-      '@@EndIf',
-      '@@If(azure-devops)',
-      'Azure section',
-      '@@EndIf',
-    ].join('\n');
-    expect(replaceWildcards(input, ctxWithScp)).toBe('GitHub section\n');
-  });
-
-  it('preserves text outside conditional blocks', () => {
-    const ctxWithScp = { ...ctx, sourceControlProvider: 'github' };
-    const input = 'Before\n@@If(github)\nInside\n@@EndIf\nAfter';
-    expect(replaceWildcards(input, ctxWithScp)).toBe('Before\nInside\nAfter');
-  });
-
-  it('handles multiline content in conditional blocks', () => {
-    const ctxWithScp = { ...ctx, sourceControlProvider: 'github' };
-    const input = '@@If(github)\nLine 1\nLine 2\nLine 3\n@@EndIf';
-    expect(replaceWildcards(input, ctxWithScp)).toBe('Line 1\nLine 2\nLine 3\n');
-  });
-
-  it('replaces wildcards inside conditional blocks', () => {
-    const ctxWithScp = { ...ctx, sourceControlProvider: 'github' };
-    // Note: wildcards are replaced before conditional blocks are processed,
-    // so @@AgentName is already replaced
+describe('what stays as written (D10, D60)', () => {
+  it('leaves @@If / @@EndIf blocks alone: only Clubhouse Mode resolved them (managed-agents/legacy-migration)', () => {
     const input = 'Agent: @@AgentName\n@@If(github)\nPR for @@AgentName\n@@EndIf';
-    // @@AgentName is replaced first, then conditionals are processed
-    expect(replaceWildcards(input, ctxWithScp)).toBe(
-      'Agent: bold-falcon\nPR for bold-falcon\n',
-    );
-  });
-});
-
-describe('unreplaceWildcards', () => {
-  it('reverses agentName back to @@AgentName', () => {
-    expect(unreplaceWildcards('Hello bold-falcon!', ctx)).toBe('Hello @@AgentName!');
+    expect(replaceWildcards(input, { ...ctx, sourceControlProvider: 'github' })).toBe('Agent: bold-falcon\n@@If(github)\nPR for bold-falcon\n@@EndIf');
   });
 
-  it('reverses agentPath back to @@Path', () => {
-    expect(unreplaceWildcards('Read(.clubhouse/agents/bold-falcon/**)', ctx)).toBe(
-      'Read(@@Path**)',
-    );
-  });
-
-  it('reverses standbyBranch back to @@StandbyBranch', () => {
-    expect(unreplaceWildcards('Branch: bold-falcon/standby', ctx)).toBe(
-      'Branch: @@StandbyBranch',
-    );
-  });
-
-  it('uses longest-match-first to avoid partial replacements', () => {
-    // agentPath contains agentName, so agentPath should be replaced first
-    const input = 'Scope to .clubhouse/agents/bold-falcon/ and name bold-falcon';
-    const result = unreplaceWildcards(input, ctx);
-    expect(result).toBe('Scope to @@Path and name @@AgentName');
-  });
-
-  it('reverses sourceControlProvider', () => {
-    const ctxWithScp = { ...ctx, sourceControlProvider: 'github' };
-    expect(unreplaceWildcards('Provider: github', ctxWithScp)).toBe(
-      'Provider: @@SourceControlProvider',
-    );
-  });
-
-  it('returns text unchanged when no agent values are present', () => {
-    const input = 'No agent-specific values here';
-    expect(unreplaceWildcards(input, ctx)).toBe(input);
-  });
-
-  it('handles multiple occurrences', () => {
-    const input = 'bold-falcon and bold-falcon again';
-    expect(unreplaceWildcards(input, ctx)).toBe('@@AgentName and @@AgentName again');
-  });
-
-  it('handles empty string', () => {
-    expect(unreplaceWildcards('', ctx)).toBe('');
-  });
-
-  it('round-trips with replaceWildcards for simple values', () => {
-    const template = 'Read(@@Path**)';
-    const resolved = replaceWildcards(template, ctx);
-    expect(unreplaceWildcards(resolved, ctx)).toBe(template);
-  });
-
-  it('reverses buildCommand back to @@BuildCommand', () => {
-    const ctxWithCmd = { ...ctx, buildCommand: 'cargo build' };
-    expect(unreplaceWildcards('Run: cargo build', ctxWithCmd)).toBe('Run: @@BuildCommand');
-  });
-
-  it('reverses testCommand back to @@TestCommand', () => {
-    const ctxWithCmd = { ...ctx, testCommand: 'cargo test' };
-    expect(unreplaceWildcards('Run: cargo test', ctxWithCmd)).toBe('Run: @@TestCommand');
-  });
-
-  it('reverses lintCommand back to @@LintCommand', () => {
-    const ctxWithCmd = { ...ctx, lintCommand: 'cargo clippy' };
-    expect(unreplaceWildcards('Run: cargo clippy', ctxWithCmd)).toBe('Run: @@LintCommand');
+  it('leaves @@Mission and @@Persona exactly as written', () => {
+    expect(replaceWildcards('@@AgentName: @@Mission / @@Persona', ctx)).toBe('bold-falcon: @@Mission / @@Persona');
   });
 });
 
@@ -230,89 +119,5 @@ describe('@@BuildCommand / @@TestCommand / @@LintCommand replacement', () => {
     };
     const input = '1. @@BuildCommand\n2. @@TestCommand\n3. @@LintCommand';
     expect(replaceWildcards(input, ctxWithCmds)).toBe('1. make build\n2. make test\n3. make lint');
-  });
-});
-
-describe('@@Mission replacement', () => {
-  it('substitutes mission content body', () => {
-    const ctxWithMission = { ...ctx, mission: '# Steps\n1. Investigate\n2. Report' };
-    expect(replaceWildcards('Mission:\n@@Mission', ctxWithMission)).toBe(
-      'Mission:\n# Steps\n1. Investigate\n2. Report',
-    );
-  });
-
-  it('resolves to empty string when mission is unset', () => {
-    expect(replaceWildcards('Mission:\n@@Mission', ctx)).toBe('Mission:\n');
-  });
-
-  it('resolves to empty string when mission is empty string', () => {
-    expect(replaceWildcards('@@Mission', { ...ctx, mission: '' })).toBe('');
-  });
-
-  it('substitutes multiple occurrences', () => {
-    const ctxWithMission = { ...ctx, mission: 'do the thing' };
-    expect(replaceWildcards('@@Mission and @@Mission', ctxWithMission)).toBe(
-      'do the thing and do the thing',
-    );
-  });
-
-  it('does not substitute lowercase @@mission (case-sensitive token)', () => {
-    const ctxWithMission = { ...ctx, mission: 'X' };
-    expect(replaceWildcards('@@mission and @@Mission', ctxWithMission)).toBe('@@mission and X');
-  });
-
-  it('does not consume the @@ prefix of other tokens', () => {
-    const ctxWithMission = { ...ctx, mission: 'X' };
-    expect(replaceWildcards('@@Mission and @@AgentName', ctxWithMission)).toBe('X and bold-falcon');
-  });
-
-  it('unreplaceWildcards reverses mission content back to @@Mission', () => {
-    const ctxWithMission = { ...ctx, mission: 'unique-mission-marker-12345' };
-    expect(unreplaceWildcards('Here: unique-mission-marker-12345', ctxWithMission)).toBe(
-      'Here: @@Mission',
-    );
-  });
-});
-
-describe('@@Persona replacement', () => {
-  it('substitutes persona content body', () => {
-    const ctxWithPersona = { ...ctx, persona: '## Quality Assurance\nReview the diff.' };
-    expect(replaceWildcards('Persona:\n@@Persona', ctxWithPersona)).toBe(
-      'Persona:\n## Quality Assurance\nReview the diff.',
-    );
-  });
-
-  it('resolves to empty string when persona is unset', () => {
-    expect(replaceWildcards('@@Persona', ctx)).toBe('');
-  });
-
-  it('substitutes multiple occurrences', () => {
-    const ctxWithPersona = { ...ctx, persona: 'P' };
-    expect(replaceWildcards('@@Persona and @@Persona', ctxWithPersona)).toBe('P and P');
-  });
-
-  it('mission and persona can coexist in the same template', () => {
-    const ctxBoth = { ...ctx, mission: 'M body', persona: 'P body' };
-    expect(replaceWildcards('# Header\n@@Mission\n---\n@@Persona', ctxBoth)).toBe(
-      '# Header\nM body\n---\nP body',
-    );
-  });
-
-  it('unreplaceWildcards reverses persona content back to @@Persona', () => {
-    const ctxWithPersona = { ...ctx, persona: 'unique-persona-marker-zzzzz' };
-    expect(unreplaceWildcards('X: unique-persona-marker-zzzzz', ctxWithPersona)).toBe(
-      'X: @@Persona',
-    );
-  });
-});
-
-describe('replaceWildcards for managed agents (D60)', () => {
-  const ctx = { agentName: 'ada', standbyBranch: 'ada/standby', agentPath: '.clubhouse/agents/ada/', mission: 'Ship it.', persona: 'Be careful.' };
-  it('leaves @@Mission and @@Persona exactly as written with missionAndPersona: false', () => {
-    expect(replaceWildcards('@@AgentName: @@Mission / @@Persona', ctx, { conditionals: false, missionAndPersona: false })).toBe('ada: @@Mission / @@Persona');
-  });
-  it('fills them otherwise, as Clubhouse Mode does', () => {
-    expect(replaceWildcards('@@Mission / @@Persona', ctx)).toBe('Ship it. / Be careful.');
-    expect(replaceWildcards('[@@Mission]', { ...ctx, mission: undefined })).toBe('[]');
   });
 });

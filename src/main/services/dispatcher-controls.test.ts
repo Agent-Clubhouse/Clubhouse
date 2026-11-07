@@ -82,7 +82,6 @@ vi.mock('./agent-config', () => ({
     return () => state.agentListeners.delete(listener);
   }),
 }));
-vi.mock('./mcp-settings', () => ({ onMcpEnablementChanged: vi.fn((): (() => void) => (): undefined => undefined) }));
 vi.mock('./helper-index', () => ({
   listHelpersEverywhere: vi.fn(async (_p: string, id: string) => state.helpers.get(id) ?? []),
 }));
@@ -91,14 +90,12 @@ vi.mock('./orchestration-settings', () => ({
 vi.mock('./orchestration-policy', () => {
   const resolve = (id: string) => {
     const stored = state.policies.get(id) ?? {};
-    const mcpOff = stored.mcpOff === true;
     const policy = {
-      orchestrate: !mcpOff && (stored.orchestrate ?? true),
-      connectToDispatcher: !mcpOff && (stored.connectToDispatcher ?? true),
+      orchestrate: stored.orchestrate ?? true,
+      connectToDispatcher: stored.connectToDispatcher ?? true,
       crossProjectHelpers: stored.crossProjectHelpers ?? false,
       maxHelpers: stored.maxHelpers ?? 5,
       sources: { crossProjectHelpers: stored.crossProjectHelpers === undefined ? 'default' : 'agent', maxHelpers: stored.maxHelpers === undefined ? 'default' : 'agent' },
-      ...(mcpOff && { mcpOff: { orchestrate: true, crossProjectHelpers: false, connectToDispatcher: true } }),
     };
     return policy;
   };
@@ -405,9 +402,7 @@ describe('set_orchestrator_helpers', () => {
     expect(lastAudit()).toMatchObject({ outcome: 'refused', code });
   });
 
-  it('refuses an orchestrator connected in name only: MCP off, or the switch off', async () => {
-    state.policies.set('a', { mcpOff: true });
-    expect((await call('set_orchestrator_helpers', { agent_id: 'a', max_helpers: 3 })).isError).toBe(true);
+  it('refuses an orchestrator connected in name only: the switch off', async () => {
     state.policies.set('a', { connectToDispatcher: false });
     expect((await call('set_orchestrator_helpers', { agent_id: 'a', max_helpers: 3 })).isError).toBe(true);
     expect(state.policies.get('a')?.maxHelpers).toBeUndefined();
@@ -1161,7 +1156,6 @@ describe('suspended links', () => {
   it.each([
     ['orchestration off', { orchestrate: false, connectToDispatcher: true }, 'orchestration_off'],
     ['Connect to Dispatcher off', { connectToDispatcher: false }, 'not_connected_to_dispatcher'],
-    ['MCP off', { mcpOff: true }, 'mcp_off'],
   ])('%s: the binding goes, the entry stays, readback says why, and it returns', async (_name, policy, reason) => {
     state.policies.set('b', policy);
     agentChanged();

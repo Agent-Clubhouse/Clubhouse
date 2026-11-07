@@ -6,9 +6,14 @@ import type { DurableAgentConfig, ProjectAgentDefaults } from '../../../shared/t
 
 const h = vi.hoisted(() => ({
   home: '',
+  userData: '',
   defaults: {} as ProjectAgentDefaults,
   defaultsFail: false,
+  skills: [] as Array<{ name: string; path: string }>,
+  missions: {} as Record<string, string>,
 }));
+
+vi.mock('electron', () => ({ app: { getPath: () => h.userData } }));
 
 vi.mock('os', async (importOriginal) => {
   const actual = await importOriginal<typeof import('os')>();
@@ -20,10 +25,24 @@ vi.mock('../agent-settings-service', () => ({
     if (h.defaultsFail) throw new Error('unreadable');
     return h.defaults;
   }),
+  listSourceSkills: vi.fn(async () => h.skills),
+  readSourceMissionContent: vi.fn(async (_project: string, id: string) => h.missions[id] ?? ''),
 }));
+vi.mock('../source-control-settings', () => ({ effectiveAppSourceControlProvider: () => 'github' }));
 
 import { appLog } from '../log-service';
-import { legacyPersonaBody, legacyPersonaId, legacyPersonaOrchestration, orchestrationToCarry } from './legacy-migration';
+import {
+  legacyClubhouseModeEnabled,
+  legacyPersonaBody,
+  legacyPersonaId,
+  legacyPersonaOrchestration,
+  materializedDefaults,
+  materializedInstructions,
+  orchestrationToCarry,
+  processConditionalBlocks,
+  readLegacyClubhouseModeSettings,
+  _resetLegacyReadWarningsForTesting,
+} from './legacy-migration';
 
 let root: string;
 let project: string;
@@ -43,10 +62,14 @@ beforeEach(() => {
   root = fs.mkdtempSync(path.join(nodeOs.tmpdir(), 'legacy-migration-'));
   project = path.join(root, 'project');
   h.home = path.join(root, 'home');
+  h.userData = path.join(root, 'user-data');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(h.home, { recursive: true });
+  fs.mkdirSync(h.userData, { recursive: true });
   h.defaults = {};
   h.defaultsFail = false;
+  h.skills = [];
+  h.missions = {};
 });
 
 afterEach(() => {
@@ -173,5 +196,113 @@ describe('orchestrationToCarry', () => {
     expect(orchestrationToCarry({ orchestrate: false }, undefined)).toBeUndefined();
     expect(orchestrationToCarry({ orchestrate: false }, { orchestrate: true })).toBeUndefined();
     expect(orchestrationToCarry(undefined, {})).toBeUndefined();
+  });
+});
+
+describe('readLegacyClubhouseModeSettings', () => {
+  const write = (content: string) => fs.writeFileSync(path.join(h.userData, 'clubhouse-mode-settings.json'), content);
+
+  it('is Clubhouse Mode off with no overrides when the file is absent', () => {
+    expect(readLegacyClubhouseModeSettings()).toEqual({ enabled: false });
+    expect(legacyClubhouseModeEnabled(project)).toBe(false);
+    expect(legacyClubhouseModeEnabled()).toBe(false);
+  });
+
+  it('reads the saved switch, project overrides and source control provider as plain JSON', () => {
+    write(JSON.stringify({ enabled: true, projectOverrides: { [project]: false, '/other': true }, sourceControlProvider: 'azure-devops' }));
+    expect(readLegacyClubhouseModeSettings()).toEqual({ enabled: true, projectOverrides: { [project]: false, '/other': true }, sourceControlProvider: 'azure-devops' });
+    expect(legacyClubhouseModeEnabled(project)).toBe(false);
+    expect(legacyClubhouseModeEnabled('/other')).toBe(true);
+    expect(legacyClubhouseModeEnabled('/third')).toBe(true);
+    expect(legacyClubhouseModeEnabled()).toBe(true);
+  });
+
+  it('leaves out values of the wrong type, and treats a file that isn\'t JSON as off', () => {
+    write(JSON.stringify({ enabled: 'yes', projectOverrides: { [project]: 'on', '/b': true }, sourceControlProvider: 'gitlab' }));
+    expect(readLegacyClubhouseModeSettings()).toEqual({ enabled: false, projectOverrides: { '/b': true } });
+    write('{ not json');
+    expect(readLegacyClubhouseModeSettings()).toEqual({ enabled: false });
+    write('[true]');
+    expect(readLegacyClubhouseModeSettings()).toEqual({ enabled: false });
+  });
+});
+
+describe('readLegacyClubhouseModeSettings warnings', () => {
+  it('logs a file that isn\'t JSON once per process, however often it is read', () => {
+    _resetLegacyReadWarningsForTesting();
+    fs.writeFileSync(path.join(h.userData, 'clubhouse-mode-settings.json'), '{ not json');
+    vi.mocked(appLog).mockClear();
+    for (let i = 0; i < 3; i++) expect(readLegacyClubhouseModeSettings()).toEqual({ enabled: false });
+    expect(legacyClubhouseModeEnabled(project)).toBe(false);
+    const warnings = vi.mocked(appLog).mock.calls.filter((c) => String(c[2]).includes('not valid JSON'));
+    expect(warnings).toHaveLength(1);
+  });
+});
+
+describe('processConditionalBlocks', () => {
+  it('keeps the blocks for the agent\'s provider and drops the rest', () => {
+    const text = 'Start\n@@If(github)\nOpen a PR.\n@@EndIf\n@@If(azure-devops)\nOpen an ADO PR.\n@@EndIf\nEnd';
+    expect(processConditionalBlocks(text, 'github')).toBe('Start\nOpen a PR.\nEnd');
+    expect(processConditionalBlocks(text, 'azure-devops')).toBe('Start\nOpen an ADO PR.\nEnd');
+    expect(processConditionalBlocks(text, undefined)).toBe('Start\nEnd');
+  });
+});
+
+describe('materializedInstructions (#2901)', () => {
+  const template = 'Agent @@AgentName\n@@If(github)\nOpen a PR.\n@@EndIf\n@@If(azure-devops)\nOpen an ADO PR.\n@@EndIf\n@@Mission\n@@Persona';
+  const worktree = () => path.join(project, '.clubhouse', 'agents', 'ada');
+
+  it('resolves wildcards, @@If, the mission and a legacy persona\'s @@Persona', async () => {
+    h.defaults = { instructions: template, mission: 'ship' };
+    h.missions = { ship: 'Ship it.' };
+    const text = await materializedInstructions(project, agent({ worktreePath: worktree(), persona: 'qa' }));
+    expect(text).toContain('Agent ada');
+    expect(text).toContain('Open a PR.');
+    expect(text).not.toContain('Open an ADO PR.');
+    expect(text).toContain('Ship it.');
+    expect(text).toContain('Quality Assurance');
+    expect(text).not.toMatch(/@@/);
+  });
+
+  it('follows the agent\'s own source control provider for @@If', async () => {
+    h.defaults = { instructions: template };
+    const text = await materializedInstructions(project, agent({ worktreePath: worktree(), sourceControlProvider: 'azure-devops' }));
+    expect(text).toContain('Open an ADO PR.');
+    expect(text).not.toContain('Open a PR.');
+  });
+
+  it('adds a project persona file\'s body, front matter removed, after a template without @@Persona', async () => {
+    h.defaults = { instructions: 'Agent @@AgentName', persona: 'house' };
+    writePersona(project, 'house', '---\nmodel: "x"\n---\nHouse style for @@AgentName');
+    await expect(materializedInstructions(project, agent())).resolves.toBe('Agent ada\n\nHouse style for ada');
+  });
+
+  it('leaves a managed agent\'s old persona alone', async () => {
+    h.defaults = { instructions: 'Agent @@AgentName' };
+    const managed = agent({ persona: 'qa', managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+    await expect(materializedInstructions(project, managed)).resolves.toBe('Agent ada');
+  });
+
+  it('is null when Clubhouse Mode wrote no instructions', async () => {
+    await expect(materializedInstructions(project, agent())).resolves.toBeNull();
+  });
+});
+
+describe('materializedDefaults', () => {
+  const mcpJson = JSON.stringify({ mcpServers: { linear: { command: 'npx', args: ['linear', '@@AgentName'] } } });
+
+  it('lists the source skills in name order and resolves the MCP config and text, without writing', async () => {
+    h.skills = [{ name: 'review', path: path.join(project, '.clubhouse', 'skills', 'review') }, { name: 'go-standby', path: path.join(project, '.clubhouse', 'skills', 'go-standby') }];
+    h.defaults = { mcpJson };
+    const result = await materializedDefaults(project, agent());
+    expect(result.skills.map((s) => s.name)).toEqual(['go-standby', 'review']);
+    expect(JSON.parse(result.mcpJson!).mcpServers.linear.args).toEqual(['linear', 'ada']);
+    expect(result.resolveText('For @@AgentName on @@StandbyBranch.@@If(github) Via GitHub.@@EndIf')).toBe('For ada on ada/standby.Via GitHub.');
+    expect(fs.readdirSync(project)).toEqual([]);
+  });
+
+  it('has no MCP config for an agent that turned Clubhouse Mode off', async () => {
+    h.defaults = { mcpJson };
+    expect((await materializedDefaults(project, agent({ clubhouseModeOverride: true }))).mcpJson).toBeNull();
   });
 });

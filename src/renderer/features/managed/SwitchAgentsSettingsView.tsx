@@ -5,7 +5,6 @@ import type { ManagedConvertPreview } from '../../../shared/managed-agents-types
 import { Button } from '../../components/Button';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
-import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { SettingsPage, SettingsSection, settingsError, settingsHelp } from '../settings/SettingsLayout';
 import { convertSummary } from './ManagedGeneralSection';
@@ -25,10 +24,11 @@ const keyOf = (projectPath: string, agentId: string) => `${projectPath}\n${agent
 
 /**
  * Settings › Managed agents › Switch agents (#2901): every unmanaged agent in
- * every local project, with what it uses. Agents that use Clubhouse Mode or a
- * persona switch on their own (D59), so the list is mostly plain agents,
- * agents whose automatic switch failed (with the reason), and running ones
- * waiting for their next start. Legacy-configured agents are ticked; Switch
+ * every local project, with the persona it still names, if any. Agents that
+ * used Clubhouse Mode or a persona switch on their own (D59), so the list is
+ * mostly plain agents, agents whose automatic switch failed (with the
+ * reason), and running ones waiting for their next start. Agents with a
+ * persona or a failed automatic switch are ticked; Switch
  * converts the ticked ones one at a time, keeping what each has now. Plain
  * agents are switched only when the person ticks them. Helpers, disposed
  * agents and agents still being created aren't listed. A running agent starts
@@ -37,9 +37,6 @@ const keyOf = (projectPath: string, agentId: string) => `${projectPath}\n${agent
  */
 export function SwitchAgentsSettingsView() {
   const projects = useProjectStore((s) => s.projects);
-  const clubhouseEnabled = useClubhouseModeStore((s) => s.enabled);
-  const clubhouseOverrides = useClubhouseModeStore((s) => s.projectOverrides);
-  const loadClubhouse = useClubhouseModeStore((s) => s.loadSettings);
   const statuses = useAgentStore((s) => s.agents);
   const [configs, setConfigs] = useState<Array<{ projectPath: string; projectName: string; agents: DurableAgentConfig[] }> | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -47,8 +44,6 @@ export function SwitchAgentsSettingsView() {
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ switched: number; failed: Array<{ key: string; name: string; message: string }> } | null>(null);
-
-  useEffect(() => { void loadClubhouse(); }, [loadClubhouse]);
 
   const load = useCallback(async () => {
     const local = projects.filter((p) => !isRemoteProjectId(p.id));
@@ -68,8 +63,6 @@ export function SwitchAgentsSettingsView() {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => managed().onChanged(() => { void load(); }), [load]);
 
-  // As the store's isEnabledForProject decides it, read here so the list follows a change.
-  const clubhouseOn = (projectPath: string) => clubhouseOverrides[projectPath] ?? clubhouseEnabled;
   const candidates: Candidate[] = (configs ?? []).flatMap((p) => p.agents
     .filter((a) => !a.managed && !isDisposedAgent(a) && !a.creation && !a.parentAgentId)
     .map((agent) => ({
@@ -77,7 +70,7 @@ export function SwitchAgentsSettingsView() {
       projectPath: p.projectPath,
       projectName: p.projectName,
       agent,
-      legacy: legacyUse(agent, clubhouseOn(p.projectPath)),
+      legacy: legacyUse(agent),
     })));
   const statusOf = (c: Candidate) => statuses[c.agent.id]?.status;
   const isRunning = (c: Candidate) => statusOf(c) === 'running';
@@ -86,7 +79,9 @@ export function SwitchAgentsSettingsView() {
     return status === 'waking' || status === 'spawning' || status === 'creating';
   };
   const canSwitch = (c: Candidate) => !!c.agent.worktreePath && !isStarting(c);
-  const isTicked = (c: Candidate) => canSwitch(c) && (ticks[c.key] ?? (!!c.legacy && !isRunning(c)));
+  /** Names a persona, or its automatic switch failed. These start ticked. */
+  const legacyConfigured = (c: Candidate) => !!c.legacy || !!c.agent.managedMigrationFailure;
+  const isTicked = (c: Candidate) => canSwitch(c) && (ticks[c.key] ?? (legacyConfigured(c) && !isRunning(c)));
   const ticked = candidates.filter(isTicked);
 
   const switchTicked = async () => {

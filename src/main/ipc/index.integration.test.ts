@@ -129,12 +129,6 @@ vi.mock('../services/headless-settings', () => ({
   saveSettings: vi.fn(),
 }));
 
-vi.mock('../services/clubhouse-mode-settings', () => ({
-  getSettings: vi.fn(() => ({ enabled: false })),
-  saveSettings: vi.fn(),
-  isClubhouseModeEnabled: vi.fn(() => false),
-}));
-
 vi.mock('../services/badge-settings', () => ({
   getSettings: vi.fn(() => ({ showBadge: true })),
   saveSettings: vi.fn(),
@@ -175,15 +169,6 @@ vi.mock('../services/log-service', () => ({
 vi.mock('../services/log-settings', () => ({
   getSettings: vi.fn(() => ({ enabled: true, namespaces: {} })),
   saveSettings: vi.fn(),
-}));
-
-vi.mock('../services/materialization-service', () => ({
-  ensureDefaultTemplates: vi.fn(),
-  enableExclusions: vi.fn(),
-  disableExclusions: vi.fn(),
-  materializeAgent: vi.fn(),
-  previewMaterialization: vi.fn(),
-  resetProjectAgentDefaults: vi.fn(),
 }));
 
 vi.mock('../services/agent-system', () => ({
@@ -334,11 +319,6 @@ vi.mock('../services/agent-settings-service', () => ({
   deleteSourceAgentTemplate: vi.fn(),
 }));
 
-vi.mock('../services/config-diff-service', () => ({
-  computeConfigDiff: vi.fn(() => ({})),
-  propagateChanges: vi.fn(),
-}));
-
 // ── Service mocks (plugin-handlers deps) ───────────────────────────────
 vi.mock('../services/plugin-storage', () => ({
   read: vi.fn(() => null),
@@ -405,11 +385,10 @@ vi.mock('../title-bar-colors', () => ({
   getThemeColorsForTitleBar: vi.fn(() => ({ bg: '#000', mantle: '#111', text: '#fff' })),
 }));
 
-// ── MCP settings: real behaviour by default; the composition test turns the
-// MCP flag on to check the flag-gated binding handlers.
-vi.mock('../services/mcp-settings', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../services/mcp-settings')>();
-  return { ...actual, isMcpEnabledForAny: vi.fn(actual.isMcpEnabledForAny), setMcpBridgeStarter: vi.fn(actual.setMcpBridgeStarter) };
+// ── The bridge starter: real behaviour, watched to check the IPC layer hands its starter in.
+vi.mock('../services/mcp-bridge-starter', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/mcp-bridge-starter')>();
+  return { ...actual, setMcpBridgeStarter: vi.fn(actual.setMcpBridgeStarter) };
 });
 
 // ── Imports ────────────────────────────────────────────────────────────
@@ -420,8 +399,8 @@ import * as notificationService from '../services/notification-service';
 import * as projectStore from '../services/project-store';
 import * as profileSettings from '../services/profile-settings';
 import { getAllowedCommands } from '../services/plugin-manifest-registry';
-import { isMcpEnabledForAny, setMcpBridgeStarter } from '../services/mcp-settings';
-import { registerMcpBindingHandlers, startMcpBridgeForAgent } from './mcp-binding-handlers';
+import { setMcpBridgeStarter } from '../services/mcp-bridge-starter';
+import { ensureMcpBridgeStarted } from './mcp-binding-handlers';
 import { registerTelemetryRendererHandlers } from './telemetry-renderer-handlers';
 
 // ════════════════════════════════════════════════════════════════════════
@@ -436,8 +415,8 @@ describe('registerAllHandlers — integration', () => {
     registerAllHandlers();
   });
 
-  it('lets a starting agent bring up the MCP bridge, whatever the settings say (#2610)', () => {
-    expect(setMcpBridgeStarter).toHaveBeenCalledWith(startMcpBridgeForAgent);
+  it('lets a starting agent bring up the MCP bridge (#2610)', () => {
+    expect(setMcpBridgeStarter).toHaveBeenCalledWith(ensureMcpBridgeStarted);
   });
 
   // ── Smoke: handlers are actually registered ─────────────────────────
@@ -621,12 +600,8 @@ const KNOWN_UNHANDLED_INVOKES = new Set<string>([
 const KNOWN_UNHANDLED_SENDS = new Set<string>([
 ]);
 
-/**
- * Registered only while the MCP bridge is enabled for some project
- * (registerMcpBindingHandlers checks isMcpEnabledForAny). The renderer only
- * uses them in that state; a test below checks they register once enabled.
- */
-const MCP_FLAG_GATED_INVOKES = new Set<string>([
+/** The MCP binding channels, registered at startup: the Clubhouse MCP always runs. */
+const MCP_BINDING_INVOKES = new Set<string>([
   IPC.MCP_BINDING.BIND,
   IPC.MCP_BINDING.GET_BINDINGS,
   IPC.MCP_BINDING.REGISTER_WEBVIEW,
@@ -661,7 +636,7 @@ describe('preload ↔ main composition', () => {
   });
 
   it('every channel the preload invokes has an ipcMain.handle handler', () => {
-    const missing = [...preloadInvoked].filter((ch) => !everHandled.has(ch) && !MCP_FLAG_GATED_INVOKES.has(ch)).sort();
+    const missing = [...preloadInvoked].filter((ch) => !everHandled.has(ch)).sort();
     expect(missing).toEqual([...KNOWN_UNHANDLED_INVOKES].sort());
   });
 
@@ -670,18 +645,9 @@ describe('preload ↔ main composition', () => {
     expect(missing).toEqual([...KNOWN_UNHANDLED_SENDS].sort());
   });
 
-  it('the flag-gated MCP binding channels are all used by the preload, and register once MCP is enabled', () => {
-    for (const ch of MCP_FLAG_GATED_INVOKES) expect(preloadInvoked.has(ch)).toBe(true);
-    const flag = vi.mocked(isMcpEnabledForAny);
-    const realFlag = flag.getMockImplementation();
-    flag.mockReturnValue(true);
-    try {
-      registerMcpBindingHandlers();
-    } finally {
-      // Scoped to this test, so no other test depends on run order.
-      flag.mockImplementation(realFlag!);
-    }
-    const missing = [...MCP_FLAG_GATED_INVOKES].filter((ch) => !everHandled.has(ch));
+  it('the MCP binding channels are all used by the preload, and registered at startup', () => {
+    for (const ch of MCP_BINDING_INVOKES) expect(preloadInvoked.has(ch)).toBe(true);
+    const missing = [...MCP_BINDING_INVOKES].filter((ch) => !everHandled.has(ch));
     expect(missing).toEqual([]);
   });
 

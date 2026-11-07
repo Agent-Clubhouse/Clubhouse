@@ -1,7 +1,6 @@
 import type { HelperRoutingReadOptions, HelperRoutingSettings, HelperRoutingUpdate, HelperRoutingUpdateResult } from '../shared/helper-routing';
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { McpOffImpact } from '../shared/mcp-off-impact';
 import type { CliInstallStatus, NotificationSettings, BadgeSettings, ResolvedProtocolAction, TerminalColors, ThemeColors, ThemeGradients } from '../shared/types';
 
 export const app = {
@@ -163,12 +162,6 @@ export const app = {
     ipcRenderer.invoke(IPC.APP.GET_SESSION_SETTINGS),
   saveSessionSettings: (settings: { promptForName: boolean; projectOverrides?: Record<string, boolean> }) =>
     ipcRenderer.invoke(IPC.APP.SAVE_SESSION_SETTINGS, settings),
-  getClubhouseModeSettings: () =>
-    ipcRenderer.invoke(IPC.APP.GET_CLUBHOUSE_MODE_SETTINGS),
-  saveClubhouseModeSettings: (settings: { enabled: boolean; projectOverrides?: Record<string, boolean>; sourceControlProvider?: 'github' | 'azure-devops' }, projectPath?: string) =>
-    ipcRenderer.invoke(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS, settings, projectPath),
-  getMcpOffImpact: (proposal: { mcp?: { enabled?: boolean; projectOverrides?: Record<string, boolean> }; clubhouseMode?: { enabled?: boolean; projectOverrides?: Record<string, boolean> } }): Promise<McpOffImpact> =>
-    ipcRenderer.invoke(IPC.APP.GET_MCP_OFF_IMPACT, proposal),
   getSoundSettings: () =>
     ipcRenderer.invoke(IPC.APP.GET_SOUND_SETTINGS),
   saveSoundSettings: (settings: {

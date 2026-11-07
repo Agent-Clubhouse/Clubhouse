@@ -26,7 +26,6 @@ vi.mock('fs', () => ({
 
 import * as fs from 'fs';
 import { resetAllSettingsStoresForTests } from '../services/settings-store';
-import { isMcpEnabled } from '../services/mcp-settings';
 import {
   clipboardSettings,
   CLIPBOARD_SETTINGS,
@@ -141,16 +140,3 @@ describe('settings-handlers', () => {
   });
 });
 
-describe('MCP settings (#2589)', () => {
-  it('a save from the Settings page reaches isMcpEnabled at once', async () => {
-    const project = path.join('/work', 'app');
-    registerSettingsHandlers();
-    const save = registeredHandlers.get('settings:mcp:save')!;
-    await save({}, { enabled: true, projectDefault: true, projectOverrides: { [project]: false } });
-    expect(isMcpEnabled(project)).toBe(false);
-    await save({}, { enabled: false, projectDefault: true });
-    expect(isMcpEnabled()).toBe(false);
-    await save({}, { enabled: true, projectDefault: true });
-    expect(isMcpEnabled(project)).toBe(true);
-  });
-});

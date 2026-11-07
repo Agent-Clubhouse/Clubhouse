@@ -85,10 +85,10 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
     expect(screen.getByText('External editor')).toBeInTheDocument();
   });
 
-  it('always shows Clubhouse MCP nav item (no longer experimental)', async () => {
+  it('has no Clubhouse MCP page: the Clubhouse MCP always runs, so there is nothing to set', async () => {
     window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
     render(<AccessoryPanel />);
-    expect(screen.getByText('Clubhouse MCP')).toBeInTheDocument();
+    expect(screen.queryByText('Clubhouse MCP')).toBeNull();
   });
 
   it('hides Goobers nav item when the goobers experimental flag is off', async () => {

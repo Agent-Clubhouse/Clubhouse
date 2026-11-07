@@ -16,6 +16,7 @@ import type { AssetPayload, BlockAssetPayload, CatalogEntry, McpAssetPayload, Sk
 import type { DurableAgentConfig } from '../../../shared/types';
 import {
   CLUBHOUSE_MCP_PART_ID,
+  CLUBHOUSE_PART_ALWAYS_ON,
   type ManagedAgentSetup,
   type ManagedErrorCode,
   type ManagedPart,
@@ -61,6 +62,27 @@ function isKind(kind: string): kind is ManagedPartKind {
 
 export function emptySetup(): ManagedAgentSetup {
   return { version: 1, blocks: [], skills: [], mcps: [] };
+}
+
+/**
+ * The Clubhouse MCP part is in every managed setup and template, first, and
+ * can't be left out: the Clubhouse MCP always runs (the maintainer, 2026-11-07).
+ */
+export function withClubhousePart(mcps: readonly string[]): string[] {
+  return mcps.includes(CLUBHOUSE_MCP_PART_ID) ? [...mcps] : [CLUBHOUSE_MCP_PART_ID, ...mcps];
+}
+
+/**
+ * A saved setup as every reader sees it: one saved before the part was
+ * required reads as having it, so the delivery fingerprint, status, "used
+ * by" counts and get_agent_setup all agree with what the next save writes.
+ */
+export function withClubhouseSetup(setup: ManagedAgentSetup): ManagedAgentSetup {
+  return setup.mcps.includes(CLUBHOUSE_MCP_PART_ID) ? setup : { ...setup, mcps: withClubhousePart(setup.mcps) };
+}
+
+function withClubhousePartIn<T extends { setup: { blocks: string[]; skills: string[]; mcps: string[] } }>(t: T): T {
+  return t.setup.mcps.includes(CLUBHOUSE_MCP_PART_ID) ? t : { ...t, setup: { ...t.setup, mcps: withClubhousePart(t.setup.mcps) } };
 }
 
 function listOf(setup: ManagedAgentSetup, kind: ManagedPartKind): string[] {
@@ -217,7 +239,9 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         continue;
       }
       for (const agent of agents) {
-        if (agent.managed && !agent.disposedAt) out.push({ projectPath: project.path, projectName: project.name, agent });
+        if (agent.managed && !agent.disposedAt) {
+          out.push({ projectPath: project.path, projectName: project.name, agent: { ...agent, managed: withClubhouseSetup(agent.managed) } });
+        }
       }
     }
     return out;
@@ -234,7 +258,8 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
 
   async function allTemplates(): Promise<ManagedTemplate[]> {
     const s = await state.read();
-    return [...BUILTIN_TEMPLATES.values(), ...Object.values(s.templates)];
+    // A custom template saved before the Clubhouse part was required reads as having it.
+    return [...BUILTIN_TEMPLATES.values(), ...Object.values(s.templates).map(withClubhousePartIn)];
   }
 
   async function summarize(entry: CatalogEntry, consumers?: ManagedPartConsumer[], templates?: ManagedTemplate[]): Promise<ManagedPartSummary> {
@@ -389,6 +414,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
      * copy and the copy is named after it. Forks don't follow their source.
      */
     async forkPart(input: { id: string; agent?: { projectPath: string; agentId: string }; name?: string; actor?: string }): Promise<ManagedPartSummary> {
+      if (input.id === CLUBHOUSE_MCP_PART_ID) throw new ManagedError('invalid', CLUBHOUSE_PART_ALWAYS_ON);
       const entry = await entryOf(input.id);
       const content = await contentOf(entry);
       const kind = entry.kind as ManagedPartKind;
@@ -485,7 +511,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     async getSetup(projectPath: string, agentId: string): Promise<ManagedAgentSetup | null> {
       const agent = await deps.getAgent(projectPath, agentId);
       if (!agent) throw new ManagedError('not_found');
-      return agent.managed ?? null;
+      return agent.managed ? withClubhouseSetup(agent.managed) : null;
     },
 
     /**
@@ -500,6 +526,11 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       const clean = (ids: string[], kind: ManagedPartKind) => {
         const out: string[] = [];
         for (const id of ids) {
+          // Always in the setup, installed by Clubhouse: not refused before the startup install has run.
+          if (id === CLUBHOUSE_MCP_PART_ID && kind === 'mcp') {
+            if (!out.includes(id)) out.push(id);
+            continue;
+          }
           const entry = live[id];
           if (!entry || entry.kind !== kind) throw new ManagedError('not_found', `A ${kind} in this setup no longer exists.`);
           if (!out.includes(id)) out.push(id);
@@ -510,7 +541,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         version: 1,
         blocks: clean(setup.blocks, 'block'),
         skills: clean(setup.skills, 'skill'),
-        mcps: clean(setup.mcps, 'mcp'),
+        mcps: clean(withClubhousePart(setup.mcps), 'mcp'),
         ...(setup.templateId && { templateId: setup.templateId }),
       };
       // Two skills that deliver to one folder can't both reach the agent.
@@ -529,7 +560,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       return next;
     },
 
-    /** Save what an agent is built from, after checkSetup's checks. */
+    /** Save what an agent is built from, after checkSetup's checks. The Clubhouse MCP part is added when it's missing. */
     async saveSetup(projectPath: string, agentId: string, setup: Omit<ManagedAgentSetup, 'version'>): Promise<ManagedAgentSetup> {
       const agent = await deps.getAgent(projectPath, agentId);
       if (!agent) throw new ManagedError('not_found');
@@ -579,7 +610,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         if (clash) throw new ManagedError('name_taken', `A template called ${name} already exists.`);
         const t: ManagedTemplate = {
           id, name, description: input.description?.trim() ?? '', builtin: false,
-          setup: { blocks: keep(input.setup.blocks), skills: keep(input.setup.skills), mcps: keep(input.setup.mcps) },
+          setup: { blocks: keep(input.setup.blocks), skills: keep(input.setup.skills), mcps: withClubhousePart(keep(input.setup.mcps)) },
           settings: { ...input.settings },
           updatedAt: new Date().toISOString(),
         };
@@ -614,7 +645,9 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     },
 
     /** The changes an edit makes to a template, and the agents made from it. */
-    async previewTemplatePush(id: string, next: Pick<ManagedTemplate, 'setup' | 'settings'>): Promise<{ changes: ManagedTemplateChange[]; targets: ManagedTemplatePushTarget[] }> {
+    async previewTemplatePush(id: string, edited: Pick<ManagedTemplate, 'setup' | 'settings'>): Promise<{ changes: ManagedTemplateChange[]; targets: ManagedTemplatePushTarget[] }> {
+      // Removing the Clubhouse part is no change: it stays in every template.
+      const next = withClubhousePartIn(edited);
       const current = await api.getTemplate(id);
       const live = await liveEntries();
       const changes = diffTemplates(current, next, (pid) => live[pid]?.name ?? pid);
@@ -637,7 +670,8 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
      * result, with `changed` false when none of the changes applied to it.
      * Agents not made from the template are left out.
      */
-    async pushTemplate(id: string, next: Pick<ManagedTemplate, 'setup' | 'settings'>, agents: Array<{ projectPath: string; agentId: string }>): Promise<TemplatePushResult[]> {
+    async pushTemplate(id: string, edited: Pick<ManagedTemplate, 'setup' | 'settings'>, agents: Array<{ projectPath: string; agentId: string }>): Promise<TemplatePushResult[]> {
+      const next = withClubhousePartIn(edited);
       const current = await api.getTemplate(id);
       const live = await liveEntries();
       // Every part the edit names must still exist, as its kind.
@@ -729,7 +763,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       const live = await liveEntries();
       const keep = (ids: string[]) => ids.filter((x) => live[x]);
       return {
-        setup: { version: 1, blocks: keep(t.setup.blocks), skills: keep(t.setup.skills), mcps: keep(t.setup.mcps), templateId: t.id },
+        setup: { version: 1, blocks: keep(t.setup.blocks), skills: keep(t.setup.skills), mcps: withClubhousePart(keep(t.setup.mcps)), templateId: t.id },
         settings: { ...t.settings },
       };
     },

@@ -1,13 +1,12 @@
 /**
- * The automatic switch to managed (D59, #2901). An unmanaged agent that uses Clubhouse Mode or a persona switches to
+ * The automatic switch to managed (D59, #2901). An unmanaged agent that used Clubhouse Mode or a persona switches to
  * managed on its own, keeping what it has now. It is the reviewed
  * `convertToManaged` with Keep: Clubhouse Mode's instructions and defaults,
  * the persona's orchestration, backups, and removing what a failed switch
  * made all come from there.
  *
  * It runs at two points, never under a running session:
- * - at spawn, before Clubhouse Mode would materialize, so the agent starts as
- *   managed and never runs on the legacy runtime again;
+ * - at spawn, before the agent starts, so it starts as managed;
  * - once after app ready, for sleeping agents in local projects, one at a
  *   time. Running and waking agents are left for their next spawn.
  *
@@ -24,7 +23,6 @@ import * as os from 'os';
 import * as path from 'path';
 import * as agentConfig from '../agent-config';
 import * as projectStore from '../project-store';
-import { isClubhouseModeEnabled } from '../clubhouse-mode-settings';
 import { isDispatcherPath } from '../dispatcher/dispatcher-paths';
 import { agentTransitionBusy } from '../agent-transition';
 import { withSettingsSurface } from '../settings-audit';
@@ -36,6 +34,7 @@ import type { DurableAgentConfig } from '../../../shared/types';
 import type { ManagedMigrationFrom } from '../../../shared/managed-agents-types';
 import { beforeManagedDir, clearPendingSwitch, readPendingSwitch, switchedBefore } from './before-managed';
 import { codeOf } from './log-code';
+import { legacyClubhouseModeEnabled } from './legacy-migration';
 import { ManagedError } from './service';
 import { createManagedStateStore, managedStateDir } from './state-store';
 
@@ -45,7 +44,7 @@ import { createManagedStateStore, managedStateDir } from './state-store';
  */
 export function legacyConfiguredFrom(projectPath: string, agent: DurableAgentConfig): ManagedMigrationFrom | null {
   if (agent.managed) return null;
-  if (!agent.clubhouseModeOverride && isClubhouseModeEnabled(projectPath)) return 'clubhouse-mode';
+  if (!agent.clubhouseModeOverride && legacyClubhouseModeEnabled(projectPath)) return 'clubhouse-mode';
   if (agent.persona) return 'persona';
   return null;
 }
@@ -184,8 +183,8 @@ function migrate(projectPath: string, agent: DurableAgentConfig, from: ManagedMi
 }
 
 /**
- * Spawn path, before Clubhouse Mode would materialize and before the
- * orchestration gate syncs: switch a legacy-configured agent first. Returns
+ * Spawn path, before the agent starts and before the orchestration gate
+ * syncs: switch a legacy-configured agent first. Returns
  * its config whenever it is managed now (even when the switch reported a
  * failure after its save), or null to start it as it is (nothing to switch,
  * the switch failed, or it failed earlier since the app started). An agent
@@ -339,13 +338,13 @@ let startupPass: Promise<StartupMigrationResult> | null = null;
 let settingsPass: Promise<unknown> | null = null;
 
 /**
- * Once per app start: make the settings that only follow from Clubhouse Mode
- * explicit (D61, D63). Never throws. A second call returns the first call's.
+ * Once per app start: make the settings that only followed from Clubhouse Mode
+ * explicit (D61). Never throws. A second call returns the first call's.
  */
 export function runLegacySettingsMigration(): Promise<unknown> {
   if (!settingsPass) {
     settingsPass = import('./legacy-settings').then(({ migrateLegacySettings }) => migrateLegacySettings()).catch((err) => {
-      // telemetry-exempt: logged; the Clubhouse Mode fallbacks still apply, and the next start tries again.
+      // telemetry-exempt: logged; the next start tries again.
       appLog('core:managed', 'warn', 'Could not run the settings migration at startup', { meta: { code: codeOf(err) } });
     });
   }
@@ -384,7 +383,7 @@ export function runStartupMigration(): Promise<StartupMigrationResult> {
 
 async function startupMigration(): Promise<StartupMigrationResult> {
   const result: StartupMigrationResult = { switched: 0, failed: 0, deferred: 0, carried: 0 };
-  // Settings that only follow from Clubhouse Mode today become explicit first (D61, D63).
+  // Settings that only followed from Clubhouse Mode become explicit first (D61).
   await runLegacySettingsMigration();
   const { isAgentRunning } = await import('../agent-system');
   for (const project of await projectStore.peekProjects()) {

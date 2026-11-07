@@ -18,7 +18,6 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'rea
 import type { Agent, DurableConfigUpdates } from '../../../../shared/types';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { useAgentStore } from '../../../stores/agentStore';
-import { useClubhouseModeStore } from '../../../stores/clubhouseModeStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { isRemoteProjectId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { Button } from '../../../components/Button';
@@ -202,14 +201,12 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
   const appMinutes = useAppIdleMinutes();
   const orchestrator = agent.orchestrator ?? 'claude-code';
   const permissionsSupported = useOrchestratorStore((s) => s.allOrchestrators.find((o) => o.id === orchestrator)?.capabilities.permissions ?? true);
-  const clubhouseOn = useClubhouseModeStore((s) => (projectPath ? s.isEnabledForProject(projectPath) : false));
-  const loadClubhouse = useClubhouseModeStore((s) => s.loadSettings);
-  useEffect(() => { if (local) void loadClubhouse(); }, [local, loadClubhouse]);
-  // Clubhouse Mode isn't offered, and an agent that still uses it or a
-  // persona is offered the switch instead (#2901).
-  const legacy = local && loaded && config && !isDispatcherAgent(agent) ? legacyUse(config, clubhouseOn) : null;
+  // An unmanaged agent that still names a persona is offered the switch (#2901).
+  const unmanaged = local && loaded && !!config && !config.managed && !isDispatcherAgent(agent);
+  const legacy = unmanaged ? legacyUse(config) : null;
   // Why the automatic switch didn't happen, if it was tried (D59).
-  const { value: managedStatus } = useManagedStatus(legacy ? projectPath : undefined, agent.id);
+  const { value: managedStatus } = useManagedStatus(unmanaged ? projectPath : undefined, agent.id);
+  const migrationFailed = unmanaged ? managedStatus?.migrationFailed : undefined;
   const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
   const host = remote ? Object.values(satelliteProjects).flat().find((p) => p.id === agent.projectId)?.satelliteName : undefined;
 
@@ -420,11 +417,11 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
       {remote && agent.kind === 'durable' && (
         <CardNote><span data-testid="details-settings-remote">Change on {host ?? 'the other machine'}</span></CardNote>
       )}
-      {legacy && (
+      {(legacy || migrationFailed) && (
         <div className="pr-3.5 pl-[33px] pt-1 pb-1.5 flex items-center gap-2" data-testid="details-settings-legacy">
           <span className="flex-1 min-w-0 text-xs leading-normal text-ctp-subtext1">
-            {legacyLine(agent.name, legacy)}
-            {managedStatus?.migrationFailed && <span className="block" data-testid="details-settings-migration-failed">{migrationFailedLine(managedStatus.migrationFailed)}</span>}
+            {legacy && legacyLine(agent.name, legacy)}
+            {migrationFailed && <span className="block" data-testid="details-settings-migration-failed">{migrationFailedLine(migrationFailed)}</span>}
           </span>
           <Button kind="ghost" onClick={() => openAllSettings(agent.id)} data-testid="details-settings-switch">Switch to managed…</Button>
         </div>

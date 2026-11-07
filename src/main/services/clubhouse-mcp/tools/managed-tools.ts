@@ -19,11 +19,16 @@ import { previewManagedSetup } from '../../managed-agents/delivery';
 import { ManagedError } from '../../managed-agents/service';
 import { resolveOrchestrator } from '../../agent-system';
 import { optionalBoolean, optionalString, requireString } from './validation';
-import type { ManagedPartContent, ManagedPartKind, ManagedTemplateSettings } from '../../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_ALWAYS_ON, type ManagedPartContent, type ManagedPartKind, type ManagedTemplateSettings } from '../../../../shared/managed-agents-types';
 import type { Project } from '../../../../shared/types';
 
 const ACTOR = 'Dispatcher';
 const KINDS: ManagedPartKind[] = ['block', 'skill', 'mcp'];
+
+/** A saved result, with a note when the call left out the Clubhouse part, which is kept anyway. */
+function keptClubhousePart<T extends object>(asked: string[], saved: T): T | (T & { note: string }) {
+  return asked.includes(CLUBHOUSE_MCP_PART_ID) ? saved : { ...saved, note: CLUBHOUSE_PART_ALWAYS_ON };
+}
 
 function json(value: unknown): McpToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
@@ -251,14 +256,16 @@ export function registerManagedTools(): void {
     });
 
   tool('set_agent_setup',
-    'Replace a managed agent\'s parts: blocks in the order it reads them, skills and MCP servers. Applies at its next start; use restart_agent for a running one.',
+    'Replace a managed agent\'s parts: blocks in the order it reads them, skills and MCP servers. The Clubhouse MCP part always stays in the setup. Applies at its next start; use restart_agent for a running one.',
     { project: PROJECT, agent: AGENT, blocks: IDS, skills: IDS, mcps: IDS }, ['project', 'agent', 'blocks', 'skills', 'mcps'],
     async (callerId, args) => {
       const t = await resolveAgent(args);
       const current = await svc().getSetup(t.project.path, t.agentId);
       if (!current) throw new ArgError(`${t.agentName} isn't Clubhouse managed.`);
       const next = { ...current, blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') };
-      return json(await asDispatcher(callerId, () => svc().saveSetup(t.project.path, t.agentId, next)));
+      const saved = await asDispatcher(callerId, () => svc().saveSetup(t.project.path, t.agentId, next));
+      // Leaving the Clubhouse part out is ignored: saveSetup keeps it, and the result says so.
+      return json(keptClubhousePart(next.mcps, saved));
     });
 
   tool('preview_agent_setup',
@@ -288,7 +295,7 @@ export function registerManagedTools(): void {
           setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') },
           settings: settings ?? {},
         };
-        return json(await asDispatcher(callerId, () => svc().saveTemplate(input)));
+        return json(keptClubhousePart(input.setup.mcps, await asDispatcher(callerId, () => svc().saveTemplate(input))));
       }
       // An edit merges what the call gave into the saved template.
       const current = await svc().getTemplate(id);
@@ -303,7 +310,7 @@ export function registerManagedTools(): void {
         },
         settings: settings ?? current.settings,
       };
-      return json(await asDispatcher(callerId, () => svc().saveTemplate(input)));
+      return json(keptClubhousePart(input.setup.mcps, await asDispatcher(callerId, () => svc().saveTemplate(input))));
     });
 
   tool('push_agent_template',

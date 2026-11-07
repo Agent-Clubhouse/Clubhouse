@@ -24,7 +24,7 @@
  * join bulletin, polling start and lead bootstrap for it
  * ({@link consumeRestoredBinding}).
  *
- * The rebuild runs again when MCP settings or Clubhouse Mode change. A wire
+ * The rebuild runs again when MCP settings change. A wire
  * the user removed this session may still be in a store whose save hasn't
  * landed (or is blocked), so pairs removed through the renderer are skipped
  * until the user draws them again ({@link markBindingRemovedByUser}).

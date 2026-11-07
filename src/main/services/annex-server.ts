@@ -27,7 +27,7 @@ import { agentFolders } from './agent-runtime/chat-files';
 import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, buildCreateOptions, createMobileAgent, mobileOrchestration, updateMobileAgent, updateMobileDispatcher } from './mobile-agents';
 import {
   DISPATCHER_CHANGED_EVENT, DISPATCHER_PROJECT_ID, activeDispatcher, assertDispatcherCommand, dispatcherCapability, dispatcherChange, dispatcherFolderProject,
-  dispatcherNothingPending, dispatcherOffFields, dispatcherRecord, dispatcherShellProject, dispatcherSnapshotFlags, isDisabledDispatcherId, isDispatcherProjectId,
+  dispatcherOffFields, dispatcherRecord, dispatcherShellProject, dispatcherSnapshotFlags, isDisabledDispatcherId, isDispatcherProjectId,
   setDispatcherEnabledFromPhone,
 } from './mobile-dispatcher';
 import { getDispatcherState, onDispatcherChanged } from './dispatcher/dispatcher-service';
@@ -35,7 +35,6 @@ import { helperRoutingRevision, onHelperRoutingChanged } from './helper-routing'
 import { HELPER_ROUTING_CHANGED_EVENT, helperRoutingCapability, mobileHelperRouting, runHelperRoutingUpdate } from './mobile-helper-routing';
 import { minimalRouting } from '../../shared/helper-routing';
 import { resolveOrchestrationPolicies } from './orchestration-policy';
-import { onMcpEnablementChanged } from './mcp-settings';
 import { MOBILE_SLASH_COMMANDS_MAX, latestSlashCommands, remoteChatEvent } from './annex-chat-echo';
 import { buildMobileHelperRequests, runHelperCommand } from './mobile-helper-requests';
 import { onStartRequestsChanged } from './helper-start-requests';
@@ -3355,9 +3354,7 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
     return executeChatCommand(command, runtime, async () => !await isRevertRunning(command.agentId), () => {
       assertAuthorized();
       if (getAgentRuntime(command.agentId) !== runtime) throw new MobileControlError('session_mismatch');
-    }, (ids, caps) => mobileAttachments.resolveFor(principal, command.agentId, ids, caps)).catch((err: unknown) => {
-      throw dispatcherNothingPending(command.agentId, err) ?? err;
-    });
+    }, (ids, caps) => mobileAttachments.resolveFor(principal, command.agentId, ids, caps));
   }
   if (command.type === 'project.setPinned' || command.type === 'project.setInactive') {
     const project = await findProjectById(command.projectId);
@@ -4566,8 +4563,6 @@ export function start(): void {
   // Helper starts and disposes waiting on the user (#159) are in the snapshot.
   const offStarts = onStartRequestsChanged(() => broadcastSnapshotRefresh());
   const offDisposes = onDisposeRequestsChanged(() => broadcastSnapshotRefresh());
-  // Where Clubhouse MCP is off, the switches that need it read off (#2589).
-  const offMcp = onMcpEnablementChanged(() => broadcastSnapshotRefresh());
   // A project's name, color or image, wherever it changed, or one added or removed. A burst is one snapshot.
   let projectsChangedTimer: ReturnType<typeof setTimeout> | null = null;
   const offProjects = projectStore.onProjectsChanged(() => {
@@ -4581,7 +4576,6 @@ export function start(): void {
   unsubHelperRequests = () => {
     offStarts();
     offDisposes();
-    offMcp();
     offProjects();
     if (projectsChangedTimer) clearTimeout(projectsChangedTimer);
     projectsChangedTimer = null;

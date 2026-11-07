@@ -55,7 +55,7 @@ import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry'
 import { CONFIRM_TTL_MS, registerManagedTools, _resetConfirmTokensForTesting } from './managed-tools';
 import { managedAgents, restartManagedAgent } from '../../managed-agents';
 import { _resetSettingsAuditForTesting } from '../../settings-audit';
-import { CLUBHOUSE_MCP_PART_ID } from '../../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_ALWAYS_ON } from '../../../../shared/managed-agents-types';
 import { BUILTIN_BLOCK_IDS } from '../../managed-agents/builtins';
 
 const call = async (name: string, args: Record<string, unknown>, caller = 'dispatcher') => {
@@ -109,8 +109,19 @@ describe('builder tools for the Dispatcher (#2900)', () => {
     expect(r.content[0].text).toMatch(/builtin_read_only/);
     state.agents.set('a', { id: 'a', name: 'release-lead', color: 'indigo', createdAt: '', worktreePath: '/w/a', managed: { version: 1, blocks: [], skills: [], mcps: [] } });
     const set = await call('set_agent_setup', { project: 'Clubhouse', agent: 'release-lead', blocks: ['builtin-block-identity'], skills: [], mcps: [] });
-    expect(set.json).toMatchObject({ blocks: ['builtin-block-identity'] });
+    expect(set.json).toMatchObject({ blocks: ['builtin-block-identity'], mcps: [CLUBHOUSE_MCP_PART_ID], note: CLUBHOUSE_PART_ALWAYS_ON });
     expect(state.agents.get('a')!.managed!.blocks).toEqual(['builtin-block-identity']);
+    expect(state.agents.get('a')!.managed!.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+    // Naming it gives no note.
+    const kept = await call('set_agent_setup', { project: 'Clubhouse', agent: 'release-lead', blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] });
+    expect(kept.json).not.toHaveProperty('note');
+  });
+
+  it('keeps the Clubhouse MCP part in a template saved without it, and says so (D69)', async () => {
+    const t = (await call('save_agent_template', { name: 'No bridge', blocks: [], mcps: [] })).json;
+    expect(t).toMatchObject({ setup: { mcps: [CLUBHOUSE_MCP_PART_ID] }, note: CLUBHOUSE_PART_ALWAYS_ON });
+    const edited = (await call('save_agent_template', { id: t.id, mcps: [] })).json;
+    expect(edited).toMatchObject({ setup: { mcps: [CLUBHOUSE_MCP_PART_ID] }, note: CLUBHOUSE_PART_ALWAYS_ON });
   });
 
   it('refuses literal env values, so a part only ever holds names (D46)', async () => {
@@ -120,6 +131,17 @@ describe('builder tools for the Dispatcher (#2900)', () => {
     const created = await call('create_agent_part', { kind: 'mcp', name: 'Env svc', content: { kind: 'mcp', serverKey: 'envsvc', transport: 'stdio', command: 'svc', envVars: ['MODE'] } });
     const read = await call('get_agent_part', { id: created.json.id });
     expect(read.json.content).toEqual({ kind: 'mcp', serverKey: 'envsvc', transport: 'stdio', command: 'svc', envVars: ['MODE'] });
+  });
+
+  it('reads a setup saved before the Clubhouse MCP part was required as having it (D69)', async () => {
+    state.agents.set('old', { id: 'old', name: 'old-timer', color: 'indigo', createdAt: '', worktreePath: '/w/old', managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+    const r = await call('get_agent_setup', { project: 'Clubhouse', agent: 'old-timer' });
+    expect(r.json.setup.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+    // And the part's "used by" counts it.
+    const part = (await call('get_agent_part', { id: CLUBHOUSE_MCP_PART_ID })).json;
+    expect(part.usedBy.map((c: { agentName: string }) => c.agentName)).toContain('old-timer');
+    // Reading never writes.
+    expect(state.agents.get('old')!.managed!.mcps).toEqual([]);
   });
 
   it('says plainly when the project or agent is unknown', async () => {

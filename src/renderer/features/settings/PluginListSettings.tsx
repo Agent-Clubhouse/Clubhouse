@@ -5,7 +5,6 @@ import { useProjectStore } from '../../stores/projectStore';
 import { usePluginUpdateStore } from '../../stores/pluginUpdateStore';
 import { activatePlugin, deactivatePlugin, refreshCommunityPlugins } from '../../plugins/plugin-loader';
 import { CANVAS_SUB_PLUGIN_IDS } from '../../plugins/builtin';
-import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import type { PluginRegistryEntry } from '../../../shared/plugin-types';
 import type { CustomMarketplace } from '../../../shared/marketplace-types';
 import { PluginMarketplaceDialog } from './PluginMarketplaceDialog';
@@ -576,7 +575,6 @@ export function PluginListSettings() {
   const settingsContext = useUIStore((s) => s.settingsContext);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const projects = useProjectStore((s) => s.projects);
-  const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
   const { isEnabled, toggle: handleToggle } = usePluginEnableToggle();
 
   // Plugin update state
@@ -623,13 +621,12 @@ export function PluginListSettings() {
   });
 
   // Split into builtin and external sections (local computation, safe from Zustand gotcha)
-  // Hide canvas sub-plugins (group-project, sticky-note) unless canvas is enabled;
-  // also hide plugins that require MCP when MCP is off
+  // Hide canvas sub-plugins (group-project, sticky-note) unless canvas is enabled.
+  // Plugins that require MCP always show: the Clubhouse MCP always runs.
   const canvasEnabled = appEnabled.includes('canvas');
   const builtinPlugins = filteredPlugins.filter((e) => {
     if (e.source !== 'builtin') return false;
     if (CANVAS_SUB_PLUGIN_IDS.has(e.manifest.id) && !canvasEnabled) return false;
-    if (e.manifest.requiresMcp && !mcpEnabled) return false;
     return true;
   });
   const externalPlugins = filteredPlugins.filter((e) => e.source === 'community' || e.source === 'marketplace');

@@ -99,14 +99,14 @@
       "name": "dispatcher_off",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_122",
+        "commandId": "cmd_121",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.start",
         "version": 1
       },
       "response": {
         "body": {
-          "commandId": "cmd_122",
+          "commandId": "cmd_121",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "dispatcher_off",
@@ -122,7 +122,7 @@
       "name": "accepted (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_133",
+        "commandId": "cmd_132",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "resume": true,
         "type": "agent.start",
@@ -130,7 +130,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_133",
+          "commandId": "cmd_132",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_dispatcher",
@@ -146,7 +146,7 @@
       "name": "guided: no cross-provider resume",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_181",
+        "commandId": "cmd_178",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "expectedProvider": "codex-cli",
         "expectedSessionId": "claude-native",
@@ -156,7 +156,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_181",
+          "commandId": "cmd_178",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "resume_unverified",
@@ -172,7 +172,7 @@
       "name": "guided: explicit fresh start",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_182",
+        "commandId": "cmd_179",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "expectedProvider": "codex-cli",
         "resume": false,
@@ -181,7 +181,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_182",
+          "commandId": "cmd_179",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_term",

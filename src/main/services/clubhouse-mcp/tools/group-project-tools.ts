@@ -761,7 +761,7 @@ export function registerGroupProjectTools(): void {
 
       if (!canPoll(targetAgentId)) {
         return {
-          content: [{ type: 'text', text: `Agent ${targetAgentId} has Clubhouse MCP off, so it can't poll and wasn't nudged.` }],
+          content: [{ type: 'text', text: `Agent ${targetAgentId} can't use Clubhouse tools right now, so it can't poll and wasn't nudged.` }],
           isError: true,
         };
       }

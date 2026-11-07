@@ -83,7 +83,7 @@ A restart rebuilds stored pairs through a pruning binding source, registered aft
 | `unverified` | An end's project can't be read. | Left as it is | Kept |
 | `gone` | An end was disposed or deleted, became a helper, or its project was unregistered. | Removed | Dropped for good |
 
-A suspended link has a `reason`: `dispatcher_off`, `store_unwritable`, `mcp_off`, `orchestration_off` or `not_connected_to_dispatcher`. It comes back by itself when the reason ends. So that this is never unseen, readback and the Connections card both show suspended links, and the user can remove one from the card.
+A suspended link has a `reason`: `dispatcher_off`, `store_unwritable`, `orchestration_off` or `not_connected_to_dispatcher`. `mcp_off` is gone: the Clubhouse MCP always runs (managed-agents D69). It comes back by itself when the reason ends. So that this is never unseen, readback and the Connections card both show suspended links, and the user can remove one from the card.
 
 ## User removal
 

@@ -21,7 +21,6 @@ vi.mock('./agent-system', () => ({
   resolveProfileEnv: vi.fn(async () => undefined),
 }));
 vi.mock('./dispatcher/dispatcher-settings', () => ({ dispatcherEnablement: vi.fn(() => ({ savedOn: false, enabled: false, reason: 'switch_off' })) }));
-vi.mock('./mcp-settings', () => ({ isMcpEnabled: vi.fn((_projectPath?: string, agentOverride?: boolean) => agentOverride ?? true) }));
 vi.mock('./agent-settings-service', () => ({
   readProjectAgentDefaults: vi.fn(async () => ({})),
   readMcpCatalog: vi.fn(async () => [{ id: 'ado', name: 'Azure DevOps', description: 'Work items', args: [{ name: 'org' }] }]),
@@ -29,7 +28,6 @@ vi.mock('./agent-settings-service', () => ({
 }));
 vi.mock('./orchestrator-settings', () => ({ getSettings: vi.fn(() => ({ enabled: ['claude-code', 'codex-cli'] })) }));
 vi.mock('./profile-settings', () => ({ getProfile: vi.fn() }));
-vi.mock('./clubhouse-mode-settings', () => ({ isClubhouseModeEnabled: vi.fn(() => false) }));
 vi.mock('./chat-idle-settings', () => ({ chatIdleSettings: { getSettings: () => ({ idleTimeoutMinutes: 30 }) } }));
 vi.mock('./chat-runtime-settings', () => ({
   isChatEnabled: vi.fn(() => true),
@@ -45,7 +43,7 @@ vi.mock('./orchestration-policy', async () => {
   const shared = await import('../../shared/orchestration-policy');
   return {
     resolveOrchestrationPolicies: vi.fn(async (_path: string, agents: DurableAgentConfig[]) =>
-      new Map(agents.map((a) => [a.id, shared.resolveOrchestrationPolicy(a.orchestration, { mcpOff: a.mcpOverride === false })]))),
+      new Map(agents.map((a) => [a.id, shared.resolveOrchestrationPolicy(a.orchestration)]))),
     setOrchestrationPolicy: vi.fn(async () => ({ ok: true, message: 'Saved' })),
   };
 });
@@ -54,10 +52,8 @@ import * as agentConfig from './agent-config';
 import { startDurableCreation } from './agent-creation';
 import { checkAvailability, getAvailableOrchestrators, resolveProfileEnv } from './agent-system';
 import { dispatcherEnablement } from './dispatcher/dispatcher-settings';
-import { isMcpEnabled } from './mcp-settings';
 import { readProjectAgentDefaults } from './agent-settings-service';
 import { getProfile } from './profile-settings';
-import { isClubhouseModeEnabled } from './clubhouse-mode-settings';
 import { isChatEnabled } from './chat-runtime-settings';
 import { isChatAgent } from './agent-runtime';
 import { getBranchChanges, isInsideGitRepo } from './git-service';
@@ -202,13 +198,14 @@ describe('Free Agent Mode from a phone (#2462)', () => {
   it('reads as never editable on a CLI without permission support', async () => {
     expect((await buildAgentSettings(project, agent({ orchestrator: 'codex-cli' }), undefined)).settings.freeAgentMode).toEqual({ value: false, editable: 'never' });
   });
-  it('refuses persona and Clubhouse mode for a Clubhouse-managed agent, with words, and writes nothing (#2901)', async () => {
-    vi.mocked(isClubhouseModeEnabled).mockReturnValue(true);
+  it('refuses persona and Clubhouse mode, with words, and writes nothing (#2901)', async () => {
     const managed = agent({ managed: { version: 1, blocks: [], skills: [], mcps: [] } });
-    for (const change of [{ clubhouseMode: true }, { clubhouseMode: false }]) {
-      expect(await refusal(updateMobileAgent(project, managed, { agentId: 'durable_1', freeAgentMode: true, ...change }, live))).toMatchObject({
-        code: 'managed_agent', statusCode: 409, detail: expect.stringContaining('is Clubhouse managed'),
-      });
+    for (const cfg of [managed, agent(), agent({ clubhouseModeOverride: true })]) {
+      for (const change of [{ clubhouseMode: true }, { clubhouseMode: false }]) {
+        expect(await refusal(updateMobileAgent(project, cfg, { agentId: 'durable_1', freeAgentMode: true, ...change }, live))).toMatchObject({
+          code: 'managed_agent', statusCode: 409, detail: expect.stringContaining('Clubhouse Mode was retired'),
+        });
+      }
     }
     expect(await refusal(updateMobileAgent(project, managed, { agentId: 'durable_1', freeAgentMode: true, persona: 'qa' }, live))).toMatchObject({
       code: 'managed_agent', statusCode: 409, detail: expect.stringContaining('Personas were retired'),
@@ -217,7 +214,6 @@ describe('Free Agent Mode from a phone (#2462)', () => {
     // Its other settings still change.
     await updateMobileAgent(project, managed, { agentId: 'durable_1', freeAgentMode: true }, live);
     expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith(project.path, 'durable_1', { freeAgentMode: true });
-    vi.mocked(isClubhouseModeEnabled).mockReturnValue(false);
   });
 });
 
@@ -252,25 +248,23 @@ describe('agent settings', () => {
       },
     });
   });
-  it('has no Clubhouse Mode switch for a Clubhouse-managed agent, even in a Clubhouse Mode project (#2901)', async () => {
-    vi.mocked(isClubhouseModeEnabled).mockReturnValue(true);
-    const result = await buildAgentSettings(project, agent({ managed: { version: 1, blocks: [], skills: [], mcps: [] } }), 'sleeping');
-    expect(result.settings.clubhouseMode).toEqual({ value: false, editable: 'never', projectEnabled: true });
-    expect(result.settings.persona).toEqual({ value: null, editable: 'never' });
-    vi.mocked(isClubhouseModeEnabled).mockReturnValue(false);
+  it('has no Clubhouse Mode switch for any agent: Clubhouse Mode was retired (#2901)', async () => {
+    for (const cfg of [agent({ managed: { version: 1, blocks: [], skills: [], mcps: [] } }), agent(), agent({ clubhouseModeOverride: true })]) {
+      const result = await buildAgentSettings(project, cfg, 'sleeping');
+      expect(result.settings.clubhouseMode).toEqual({ value: null, editable: 'never', projectEnabled: false });
+      expect(result.settings.persona).toEqual({ value: null, editable: 'never' });
+    }
   });
   it('resolves inherited auto-sleep from the app setting, and runtime from the live agent', async () => {
-    vi.mocked(isClubhouseModeEnabled).mockReturnValue(true);
     const result = await buildAgentSettings(project, agent({ orchestrator: 'codex-cli', clubhouseModeOverride: true }), 'running');
     expect(result).toMatchObject({ state: 'running', sleeping: false });
     expect(result.settings).toMatchObject({
       runtime: { value: 'default', editable: 'never', resolved: 'terminal' },
-      clubhouseMode: { value: false, editable: 'sleeping', projectEnabled: true },
+      clubhouseMode: { value: null, editable: 'never', projectEnabled: false },
       idleSleep: { value: 'inherit', minutes: 30, source: 'app', applies: false },
     });
     vi.mocked(isChatAgent).mockReturnValueOnce(true);
     expect((await buildAgentSettings(project, agent(), 'running')).settings.runtime.resolved).toBe('chat');
-    vi.mocked(isClubhouseModeEnabled).mockReturnValue(false);
   });
   it('reports creating and failed agents', async () => {
     expect(await buildAgentSettings(project, agent({ creation: { state: 'creating', startedAt: 'now' } }), undefined)).toMatchObject({ state: 'creating', sleeping: false });
@@ -350,10 +344,9 @@ describe('agent.update', () => {
     expect(await updateMobileAgent(project, agent(), { agentId: 'durable_1', orchestrator: 'codex-cli' }, live)).not.toHaveProperty('sessionReset');
   });
   it('clears with null, default and inherit', async () => {
-    vi.mocked(isClubhouseModeEnabled).mockReturnValueOnce(true);
-    await updateMobileAgent(project, agent(), { agentId: 'durable_1', emoji: null, runtime: 'default', model: 'default', idleSleep: 'inherit', clubhouseMode: true }, live);
+    await updateMobileAgent(project, agent(), { agentId: 'durable_1', emoji: null, runtime: 'default', model: 'default', idleSleep: 'inherit' }, live);
     expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/work/app', 'durable_1',
-      { model: 'default', runtimeMode: null, clubhouseModeOverride: false, idleSleep: null });
+      { model: 'default', runtimeMode: null, idleSleep: null });
     expect(agentConfig.updateDurable).toHaveBeenCalledWith('/work/app', 'durable_1', { emoji: null });
   });
   it('changes auto-sleep while the agent runs, but nothing read at spawn', async () => {
@@ -364,7 +357,7 @@ describe('agent.update', () => {
     const command = { version: 1, epoch: 'e', commandId: 'c', type: 'agent.update', agentId: 'durable_1', idleSleep: 30 } as const;
     await updateMobileAgent(project, agent(), command, running);
     expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith('/work/app', 'durable_1', { idleSleep: 30 });
-    for (const change of [{ name: 'calm-otter' }, { model: 'opus' }, { color: 'rose' }, { idleSleep: 15 as const, clubhouseMode: true }]) {
+    for (const change of [{ name: 'calm-otter' }, { model: 'opus' }, { color: 'rose' }, { idleSleep: 15 as const, model: 'opus' }]) {
       const err = await refusal(updateMobileAgent(project, agent(), { agentId: 'durable_1', ...change }, running));
       expect(err).toMatchObject({ code: 'agent_running', statusCode: 409, detail: 'Sleep the agent to change these' });
     }
@@ -381,7 +374,7 @@ describe('agent.update', () => {
     // Personas were retired (#2901): any persona is refused. Clearing one (null) is a no-op, tested below.
     for (const persona of ['qa', 'pirate', 'dispatcher']) expect(await refuse({ persona })).toBe('managed_agent');
     expect(await refuse({ persona: 'qa' }, agent({ persona: 'qa' }))).toBe('managed_agent');
-    expect(await refuse({ clubhouseMode: false })).toBe('clubhouse_mode_unavailable');
+    expect(await refuse({ clubhouseMode: false })).toBe('managed_agent');
     expect(await refuse({}, agent({ creation: { state: 'creating', startedAt: 'now' } }))).toBe('agent_creating');
     vi.mocked(isChatEnabled).mockReturnValueOnce(false);
     expect(await refuse({ runtime: 'chat' })).toBe('runtime_unavailable');
@@ -505,64 +498,23 @@ describe('cross-project helpers and Connect to Dispatcher (#2512, #2534)', () =>
   });
 });
 
-describe('no Clubhouse MCP, no orchestration (#2589)', () => {
+describe('the Clubhouse MCP always runs', () => {
   beforeEach(() => {
     vi.mocked(agentConfig.getDurableConfig).mockResolvedValue(null);
     vi.mocked(setOrchestrationPolicy).mockClear();
-    vi.mocked(startDurableCreation).mockClear();
-    vi.mocked(dispatcherEnablement).mockReturnValue({ savedOn: true, enabled: true, reason: null });
-  });
-  afterEach(() => {
-    vi.mocked(dispatcherEnablement).mockReturnValue({ savedOn: false, enabled: false, reason: 'switch_off' });
-    vi.mocked(isMcpEnabled).mockImplementation((_projectPath?: string, agentOverride?: boolean) => agentOverride ?? true);
   });
 
-  const off = { mcpOverride: false };
-  const update = (config: Parameters<typeof agent>[0], orchestration: unknown) =>
-    updateMobileAgent(project, agent(config), { agentId: 'durable_1', orchestration } as never, { live: undefined, assertAuthorized: allow });
+  const legacyOff = { mcpOverride: false } as never;
 
-  it('shows the switches off with the reason, keeping where the saved values come from', async () => {
-    const { orchestration } = await buildAgentSettings(project, agent({ ...off, orchestration: { orchestrate: true, crossProjectHelpers: true, connectToDispatcher: true } }), undefined);
-    expect(orchestration).toMatchObject({
-      mcpEnabled: false, orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false,
-      sources: { orchestrate: 'agent', connectToDispatcher: 'agent' },
-    });
+  it('shows mcpEnabled true and the switches as saved, whatever an old mcpOverride says', async () => {
+    const { orchestration } = await buildAgentSettings(project, agent({ ...(legacyOff as object), orchestration: { orchestrate: true, crossProjectHelpers: true } }), undefined);
+    expect(orchestration).toMatchObject({ mcpEnabled: true, orchestrate: true, crossProjectHelpers: true, sources: { orchestrate: 'agent' } });
+    expect(orchestration).not.toHaveProperty('mcpReportOnly');
   });
 
-  it.each(['orchestrate', 'crossProjectHelpers', 'connectToDispatcher'])('refuses turning %s on with the agent\'s own MCP off, telling the phone why', async (key) => {
-    const err = await refusal(update(off, { [key]: true }));
-    expect(err).toMatchObject({ code: 'mcp_off', statusCode: 409, detail: expect.stringContaining('Clubhouse MCP') });
-    expect(setOrchestrationPolicy).not.toHaveBeenCalled();
-  });
-
-  it('refuses with MCP off at project or app level, reading the agent\'s own override', async () => {
-    vi.mocked(isMcpEnabled).mockImplementation((_projectPath?: string, agentOverride?: boolean) => agentOverride ?? false);
-    expect(await refusal(update({}, { orchestrate: true }))).toMatchObject({ code: 'mcp_off' });
-    expect(isMcpEnabled).toHaveBeenLastCalledWith('/work/app', undefined);
-    // An agent turned on keeps it, whatever its project says.
-    await update({ mcpOverride: true }, { orchestrate: true });
+  it('takes turning a switch on, whatever an old mcpOverride says', async () => {
+    await updateMobileAgent(project, agent(legacyOff), { agentId: 'durable_1', orchestration: { orchestrate: true } } as never, { live: undefined, assertAuthorized: allow });
     expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { orchestrate: true }, { surface: 'mobile' });
-  });
-
-  it('refuses a create that turns one on before anything is made', async () => {
-    vi.mocked(isMcpEnabled).mockImplementation(() => false);
-    const err = await refusal(createMobileAgent(project, { projectId: 'p1', name: 'calm-otter', color: 'indigo', orchestration: { orchestrate: true } }, allow));
-    expect(err).toMatchObject({ code: 'mcp_off', statusCode: 409 });
-    expect(startDurableCreation).not.toHaveBeenCalled();
-  });
-
-  it('still takes turning off, clearing and the other fields', async () => {
-    for (const patch of [{ orchestrate: false }, { connectToDispatcher: null }, { maxHelpers: 2 }]) {
-      await update(off, patch);
-      expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', patch, { surface: 'mobile' });
-    }
-    await update(off, null);
-    expect(setOrchestrationPolicy).toHaveBeenCalledTimes(4);
-  });
-
-  it('maps a refusal from the service, when MCP went off after the check', async () => {
-    vi.mocked(setOrchestrationPolicy).mockResolvedValueOnce({ ok: false, message: 'no', mcpRequired: true });
-    expect(await refusal(update({}, { orchestrate: true }))).toMatchObject({ code: 'mcp_off', statusCode: 409 });
   });
 });
 

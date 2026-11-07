@@ -7,7 +7,8 @@ let window: Page;
 let userDataDir: string | undefined;
 
 test.beforeAll(async () => {
-  ({ electronApp, window, userDataDir } = await launchApp({ experimental: {} }));
+  // An old saved "off" is ignored: the Clubhouse MCP always runs.
+  ({ electronApp, window, userDataDir } = await launchApp({ experimental: {}, userDataFiles: { 'mcp-settings.json': { enabled: false } } }));
 });
 
 test.afterAll(async () => {
@@ -15,12 +16,8 @@ test.afterAll(async () => {
   if (userDataDir) fs.rmSync(userDataDir, { recursive: true, force: true });
 });
 
-test('fresh install registers MCP bindings using the shared enabled default', async () => {
+test('registers MCP bindings at startup, whatever an old MCP setting says', async () => {
   const result = await window.evaluate(async () => {
-    const settings = await window.clubhouse.settings.get('mcp') as {
-      enabled?: boolean;
-      projectDefault?: boolean;
-    };
     const groupProject = await window.clubhouse.groupProject.create('Fresh MCP Project') as {
       id: string;
       name: string;
@@ -33,10 +30,9 @@ test('fresh install registers MCP bindings using the shared enabled default', as
       targetName: groupProject.name,
     });
     const bindings = await window.clubhouse.mcpBinding.getBindings();
-    return { settings, groupProject, bindings };
+    return { groupProject, bindings };
   });
 
-  expect(result.settings).toMatchObject({ enabled: true, projectDefault: true });
   expect(result.bindings).toContainEqual(expect.objectContaining({
     agentId: 'copilot-fresh-agent',
     targetId: result.groupProject.id,

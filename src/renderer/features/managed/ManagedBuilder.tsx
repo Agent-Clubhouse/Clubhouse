@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
-import type { ManagedAgentSetup, ManagedPartKind, ManagedPreview, ManagedPartSummary } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedPartKind, type ManagedPreview, type ManagedPartSummary } from '../../../shared/managed-agents-types';
 import { BlockList, type BuilderAgent } from './BlockList';
 import { LibraryPanel, PartToggleList } from './LibraryPanel';
 import { PartDialog } from './PartDialog';
@@ -91,6 +91,8 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
 
   const update = (kind: ManagedPartKind, ids: string[]) => { void save({ ...setup, [listKey(kind)]: ids }); };
   const toggle = (kind: ManagedPartKind, id: string, on: boolean) => {
+    // The Clubhouse MCP part is always on (saveSetup adds it back anyway).
+    if (kind === 'mcp' && id === CLUBHOUSE_MCP_PART_ID && !on) return;
     const list = setup[listKey(kind)];
     update(kind, on ? (list.includes(id) ? list : [...list, id]) : list.filter((x) => x !== id));
   };

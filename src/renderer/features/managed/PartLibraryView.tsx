@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ManagedPart, ManagedPartKind, ManagedPartSummary } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, type ManagedPart, type ManagedPartKind, type ManagedPartSummary } from '../../../shared/managed-agents-types';
 import { Button } from '../../components/Button';
 import { Modal } from '../../components/Modal';
 import { Toggle } from '../../components/Toggle';
@@ -135,7 +135,8 @@ function PartDetail({ part, onEdit, onFork, onDelete }: {
       ) : (
         <div className="flex items-center gap-1 flex-wrap">
           {!part.builtin && <Button aria-label={`Edit ${part.name}`} onClick={onEdit}>Edit</Button>}
-          <Button aria-label={part.builtin ? `Make your copy of ${part.name}` : `Fork ${part.name}`} onClick={onFork}>{part.builtin ? 'Make your copy' : 'Fork'}</Button>
+          {/* The Clubhouse MCP part is in every setup, so a copy of it would never be used. */}
+          {part.id !== CLUBHOUSE_MCP_PART_ID && <Button aria-label={part.builtin ? `Make your copy of ${part.name}` : `Fork ${part.name}`} onClick={onFork}>{part.builtin ? 'Make your copy' : 'Fork'}</Button>}
           {!part.builtin && <Button kind="quiet" aria-label={`Rename ${part.name}`} onClick={() => setRenaming(true)}>Rename</Button>}
           {!part.builtin && <Button kind="danger" aria-label={`Delete ${part.name}`} onClick={onDelete}>Delete</Button>}
           {part.builtin && <span className={`${settingsHelp} ml-1`}>Built-in parts are read-only and update with Clubhouse.</span>}

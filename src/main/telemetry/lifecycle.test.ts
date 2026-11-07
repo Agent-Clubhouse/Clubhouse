@@ -11,7 +11,6 @@ vi.mock('electron', () => ({
 }));
 vi.mock('../services/project-store', () => ({ list: async () => [{}, {}, {}] }));
 vi.mock('../services/theme-service', () => ({ getSettings: () => ({ themeId: 'plugin:ocean-themes:reef' }) }));
-vi.mock('../services/clubhouse-mode-settings', () => ({ getSettings: () => ({ enabled: true }) }));
 vi.mock('../services/annex-settings', () => ({ getSettings: () => ({ enableServer: false, enableClient: true }) }));
 vi.mock('../services/log-settings', () => ({ getSettings: () => ({ enabled: true }) }));
 
@@ -180,11 +179,12 @@ describe('config snapshot', () => {
       ATTR.installKind('dev'),
       ATTR.projectsCount(3),
       ATTR.themeKind('plugin'),
-      ATTR.clubhouseMode(true),
       ATTR.annexServer(false),
       ATTR.annexClient(true),
       ATTR.loggingEnabled(true),
     ]));
     expect(JSON.stringify(attrs)).not.toContain('ocean');
+    // Clubhouse Mode was retired (#2901), so the snapshot no longer reports it.
+    expect(JSON.stringify(attrs)).not.toContain('clubhouse_mode');
   });
 });
