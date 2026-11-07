@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CLUBHOUSE_MCP_PART_ID, type ManagedPart, type ManagedPartKind, type ManagedPartSummary } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, isListed, type ManagedPart, type ManagedPartKind, type ManagedPartSummary } from '../../../shared/managed-agents-types';
 import { Button } from '../../components/Button';
 import { Modal } from '../../components/Modal';
 import { Toggle } from '../../components/Toggle';
@@ -261,7 +261,8 @@ export function PartLibraryView({ kind }: { kind: ManagedPartKind }) {
 
   const { shown, hidden } = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const matching = (parts ?? []).filter((p) =>
+    // Retired built-ins (D71) aren't offered: agents that use one still get it.
+    const matching = (parts ?? []).filter(isListed).filter((p) =>
       (source === 'all' || (source === 'builtin' ? p.builtin : !p.builtin))
       && (!q || p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)));
     const single = matching.filter(usedByOneAgent);

@@ -84,11 +84,11 @@ describe('helper routing', () => {
   });
 
   it('the built-in Orchestrator block makes no claims of cost or preference', () => {
+    // The text comes from the maintainer's builder (#2902), so check what it must not say, not its wording.
     const text = fs.readFileSync(path.join(__dirname, '../main/services/managed-agents/builtin-text/orchestrator.md'), 'utf8');
-    expect(text).toContain('`difficulty` keeps the helper on its CLI.');
-    expect(text).toContain('Don\'t claim a choice is cheapest, best or preferred');
-    expect(text).toContain('Unknown quota means unknown, not available.');
-    expect(text).toContain('A helper stays on its provider for its whole task.');
+    expect(text).toContain('difficulty');
+    expect(text).toContain('cli: "auto"');
+    expect(text).not.toMatch(/\b(cheap|cheaper|cheapest|best provider|preferred provider|free tier)\b/i);
   });
 });
 

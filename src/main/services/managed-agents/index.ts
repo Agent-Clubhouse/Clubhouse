@@ -21,7 +21,7 @@ import * as path from 'path';
 import {
   deliverManagedSetup,
   EXCLUDES_MANIFEST,
-  instructionsExcludePattern,
+  managedSkillExcludes,
   mcpServersOf,
   quickManagedLaunch,
   removeManagedClaudeExcludes,
@@ -119,28 +119,32 @@ export async function deliverForSpawn(projectPath: string, agent: DurableAgentCo
 }
 
 /**
- * Keep Clubhouse's managed files out of commits, as Clubhouse Mode's own
- * exclude block did. That block stays where it was written, but nothing adds
- * one any more (#2901), so the instructions file is listed here too, anchored
- * to the root and only when the agent's worktree doesn't track it. A file the
- * project tracks shows as modified either way (D16). The block is rewritten
- * each time, so it lists exactly what this start excludes.
+ * Keep what Clubhouse delivered out of commits. `.git/info/exclude` covers the
+ * main checkout and every worktree, so the block lists only paths Clubhouse
+ * alone writes: each delivered skill folder and the skills manifest (D73),
+ * and its own bookkeeping files. The block is rewritten each time, so it
+ * lists exactly what this start excludes, and old-format lines for the tag
+ * come out (D76).
  */
 async function excludeManagedFiles(projectPath: string, worktreePath: string | undefined, provider: OrchestratorProvider): Promise<void> {
   try {
-    const conv = provider.conventions;
-    const instructions = worktreePath ? await instructionsExcludePattern(worktreePath, provider) : null;
+    // Only the skill folders Clubhouse delivered, in any of this project's managed agents (D73).
+    const worktrees = (await agentConfig.peekDurableConfigs(projectPath)).filter((a) => a.managed && a.worktreePath).map((a) => a.worktreePath!);
+    const skills = await managedSkillExcludes(worktreePath ? [worktreePath, ...worktrees] : worktrees, provider);
     const gitExclude = await import('../git-exclude-manager');
+    // The root files (the MCP file, the instructions file, Claude Code's settings.local.json) aren't
+    // listed: those names are the person's too, and excluding them would hide their own untracked
+    // copies in the main checkout. That waits on a maintainer decision (D76).
     await gitExclude.replaceExclusions(projectPath, `clubhouse-managed-${provider.id}`, [
-      ...(instructions ? [instructions] : []),
-      conv.mcpConfigFile,
-      `${conv.configDir}/${conv.skillsDir}/`,
-      // Where Claude Code's claudeMdExcludes go (D49).
-      ...(provider.id === 'claude-code' ? [`${conv.configDir}/${conv.localSettingsFile || 'settings.local.json'}`] : []),
-      // Which of those excludes Clubhouse added, so it replaces only its own.
-      EXCLUDES_MANIFEST,
-      `${MCP_BACKUP_DIR}/`,
+      ...skills,
+      // Which claudeMdExcludes Clubhouse added (D49), and the MCP file it kept aside (D54): names only Clubhouse writes.
+      `/${EXCLUDES_MANIFEST}`,
+      `/${MCP_BACKUP_DIR}/`,
     ]);
+    // Blocks nothing writes any more, in the old `<pattern> # <tag>` form git never matched: Clubhouse
+    // Mode's (retired in #2901) and the kept MCP file's own tag, now in the block above (D76).
+    await gitExclude.removeExclusions(projectPath, 'clubhouse-mode');
+    await gitExclude.removeExclusions(projectPath, 'clubhouse-managed-backup');
   } catch (err) {
     // telemetry-exempt: not a git project, or the exclude file is read-only; delivery already succeeded.
     appLog('core:managed', 'warn', 'Could not add managed files to git excludes', { meta: { error: err instanceof Error ? err.message : String(err) } });

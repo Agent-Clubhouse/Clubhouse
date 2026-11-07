@@ -288,7 +288,7 @@ function AppAgentSettings() {
         </SettingsField>
         <SettingsField
           label="Source control provider"
-          help={<>Replaces <code className={CODE_CLASS}>@@SourceControlProvider</code> for agents whose project and own settings don’t set one.</>}
+          help={<>Fills <code className={CODE_CLASS}>@@SourceControlProvider</code> for agents that aren’t Clubhouse-managed, when their project and own settings don’t set one.</>}
           htmlFor={`${idBase}-source-control`}
         >
           <select

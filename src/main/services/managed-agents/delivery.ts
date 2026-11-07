@@ -14,9 +14,8 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { composeInstructions } from '../asset-catalog/composer';
 import { canonicalHash } from '../asset-catalog/planner';
-import { replaceWildcards } from '../../../shared/wildcard-replacer';
-import { buildWildcardContext, resolveAgentCommands, resolveSourceControlProvider } from '../agent-wildcards';
-import { readProjectAgentDefaults } from '../agent-settings-service';
+import { replaceManagedWildcards } from '../../../shared/wildcard-replacer';
+import { buildWildcardContext } from '../agent-wildcards';
 import { appLog } from '../log-service';
 import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
 import type { OrchestratorProvider } from '../../orchestrators/types';
@@ -28,6 +27,8 @@ import {
   type ManagedSkillContent,
 } from '../../../shared/managed-agents-types';
 import { withClubhouseSetup, type ManagedAgentsService } from './service';
+import { withWorkingIdentity } from './builtins';
+import { skillsFolderOf } from '../../../shared/skills-folder';
 
 /** Written beside the managed skills so a later start removes only what Clubhouse put there. */
 const SKILLS_MANIFEST = '.clubhouse-managed-skills.json';
@@ -36,7 +37,7 @@ export const EXCLUDES_MANIFEST = '.clubhouse-managed-excludes.json';
 
 interface Resolved {
   blocks: Array<{ id: string; name: string; builtin: boolean; revision: number; content: string }>;
-  skills: Array<{ id: string; name: string; revision: number; content: ManagedSkillContent }>;
+  skills: Array<{ id: string; name: string; revision: number; builtin: boolean; content: ManagedSkillContent }>;
   /** `droppedEnvValues`: env names the part stored literal values for, which now come from the environment (D46). */
   mcps: Array<{ id: string; name: string; revision: number; builtin: boolean; content: ManagedMcpContent; droppedEnvValues: string[] }>;
   missing: string[];
@@ -55,7 +56,7 @@ async function resolveSetup(service: ManagedAgentsService, saved: ManagedAgentSe
   for (const id of setup.skills) {
     const head = await service.headContent(id);
     if (!head || head.content.kind !== 'skill') { out.missing.push(id); continue; }
-    out.skills.push({ id, name: head.entry.name, revision: head.entry.headRevision, content: head.content });
+    out.skills.push({ id, name: head.entry.name, revision: head.entry.headRevision, builtin: head.entry.source.kind === 'builtin', content: head.content });
   }
   for (const id of setup.mcps) {
     const head = await service.headContent(id);
@@ -67,21 +68,20 @@ async function resolveSetup(service: ManagedAgentsService, saved: ManagedAgentSe
 
 /**
  * The wildcard context for a managed agent's text, the same for delivery and
- * Preview. replaceWildcards leaves @@If blocks (D10) and @@Mission and
- * @@Persona (D60) as written.
+ * Preview. Only @@AgentName, @@StandbyBranch and @@Path are filled
+ * (MANAGED_WILDCARDS): @@SourceControlProvider, @@BuildCommand, @@TestCommand
+ * and @@LintCommand stay as written (#2902), like @@If blocks (D10) and
+ * @@Mission and @@Persona (D60).
  */
-async function wildcardContextFor(projectPath: string, agent: DurableAgentConfig) {
-  const defaults = await readProjectAgentDefaults(projectPath);
-  const scp = await resolveSourceControlProvider(projectPath, agent);
-  return buildWildcardContext(agent, projectPath, scp, resolveAgentCommands(agent, defaults));
+function wildcardContextFor(projectPath: string, agent: DurableAgentConfig) {
+  return buildWildcardContext(agent, projectPath);
 }
 
 /** What the setup renders to, with wildcards filled in for this agent. */
 export async function renderManagedInstructions(projectPath: string, agent: DurableAgentConfig, resolved: Resolved): Promise<string> {
   const composed = composeInstructions(resolved.blocks.map((b) => ({ content: b.content })));
   if (composed.ok === false) throw new Error(composed.code);
-  const ctx = await wildcardContextFor(projectPath, agent);
-  return replaceWildcards(composed.text, ctx);
+  return replaceManagedWildcards(composed.text, wildcardContextFor(projectPath, agent));
 }
 
 /** The MCP servers a managed agent gets, as the providers' launch code takes them. The Clubhouse bridge is separate. */
@@ -201,7 +201,7 @@ interface OtherSkillFolders {
  */
 async function otherSkillFolders(worktree: string, provider: OrchestratorProvider, current: string[]): Promise<OtherSkillFolders> {
   const conv = provider.conventions;
-  const root = path.join(worktree, conv.configDir, conv.skillsDir);
+  const root = path.join(worktree, skillsFolderOf(conv));
   let names: string[] = [];
   try {
     names = (await fsp.readdir(root, { withFileTypes: true }))
@@ -211,7 +211,7 @@ async function otherSkillFolders(worktree: string, provider: OrchestratorProvide
   } catch { /* telemetry-exempt: no skills folder yet, so nothing else is loaded from it */ }
   if (names.length === 0) return { tracked: [], untracked: [], kept: [] };
   if (!(await insideWithoutLinks(worktree, root))) return { tracked: [], untracked: [], kept: names, keptReason: 'link' };
-  const rel = path.join(conv.configDir, conv.skillsDir).replace(/\\/g, '/');
+  const rel = skillsFolderOf(conv);
   const listed = await trackedFiles(worktree, names.map((n) => `${rel}/${n}`));
   if (listed.ok === false) return { tracked: [], untracked: [], kept: names, keptReason: 'git', gitErrorCode: listed.code };
   // A submodule (gitlink) is listed as the folder itself, with no trailing slash.
@@ -219,23 +219,140 @@ async function otherSkillFolders(worktree: string, provider: OrchestratorProvide
   return { tracked, untracked: names.filter((n) => !tracked.includes(n)), kept: [] };
 }
 
-async function writeSkills(worktree: string, provider: OrchestratorProvider, skills: Resolved['skills'], backupRoot?: string): Promise<void> {
+/**
+ * Remove the skills Clubhouse delivered to a folder the CLI no longer reads
+ * (Codex's `.codex/skills`, now `.agents/skills`): exactly the folders that
+ * folder's managed-skills manifest lists, then the manifest. Anything else
+ * there is left alone, and nothing is removed through a link.
+ */
+async function removePreviousManagedSkills(worktree: string, provider: OrchestratorProvider): Promise<void> {
+  for (const rel of provider.conventions.previousSkillsRoots ?? []) {
+    const root = path.join(worktree, rel);
+    let listed: string[];
+    try {
+      const raw = JSON.parse(await fsp.readFile(path.join(root, SKILLS_MANIFEST), 'utf-8'));
+      listed = Array.isArray(raw?.skills) ? raw.skills.filter((x: unknown): x is string => typeof x === 'string') : [];
+    } catch { continue; /* telemetry-exempt: Clubhouse never delivered skills there */ }
+    if (!(await insideWithoutLinks(worktree, root))) {
+      appLog('core:managed', 'warn', 'The previous skills folder is a link; its managed skills were left in place', { meta: { folders: listed.length } });
+      continue;
+    }
+    // One the project has since committed is the project's now; when git can't say, nothing goes.
+    const tracked = await trackedFiles(worktree, [rel.replace(/\\/g, '/')]);
+    if (tracked.ok === false) {
+      appLog('core:managed', 'warn', 'git could not list tracked skill folders; the previous folder\'s managed skills were left in place', { meta: { code: tracked.code } });
+      continue;
+    }
+    const committed = new Set(tracked.files.map((f) => f.slice(rel.length + 1).split('/')[0].toLowerCase()));
+    for (const name of listed) {
+      // Only a plain folder name in the manifest: never the folder itself or anything outside it.
+      if (!name || name !== path.basename(name) || name === '.' || name === '..') continue;
+      if (committed.has(name.toLowerCase())) continue;
+      await fsp.rm(insideDir(root, name), { recursive: true, force: true });
+    }
+    await fsp.rm(path.join(root, SKILLS_MANIFEST), { force: true });
+  }
+}
+
+/**
+ * Exactly what Clubhouse wrote into skills folders, as anchored exclude
+ * patterns: each delivered skill folder and the manifest, in the current
+ * skills folder and any the provider used before (until that folder's
+ * cleanup has removed its manifest). Read from each worktree's manifests,
+ * since `.git/info/exclude` covers the main checkout and every worktree: a
+ * whole-folder pattern would hide the person's own skills there (D73).
+ */
+export async function managedSkillExcludes(worktrees: string[], provider: OrchestratorProvider): Promise<string[]> {
+  const roots = [skillsFolderOf(provider.conventions), ...(provider.conventions.previousSkillsRoots ?? [])];
+  const out = new Set<string>();
+  for (const worktree of new Set(worktrees)) {
+    for (const rel of roots) {
+      const root = path.join(worktree, rel);
+      let names: string[];
+      try {
+        const raw = JSON.parse(await fsp.readFile(path.join(root, SKILLS_MANIFEST), 'utf-8'));
+        names = Array.isArray(raw?.skills) ? raw.skills.filter((x: unknown): x is string => typeof x === 'string') : [];
+      } catch { continue; /* telemetry-exempt: Clubhouse wrote nothing here */ }
+      out.add(`/${rel}/${SKILLS_MANIFEST}`);
+      for (const name of names) {
+        // A plain folder name only, so a pattern can't reach past the skill.
+        if (name && name === path.basename(name) && name !== '.' && name !== '..' && !/[*?[\]!#\\]/.test(name)) out.add(`/${rel}/${name}/`);
+      }
+    }
+  }
+  return [...out].sort();
+}
+
+/** The skill folders a previous delivery wrote here, from its manifest. */
+async function deliveredBefore(root: string): Promise<string[]> {
+  try {
+    const raw = JSON.parse(await fsp.readFile(path.join(root, SKILLS_MANIFEST), 'utf-8'));
+    if (Array.isArray(raw?.skills)) return raw.skills.filter((x: unknown): x is string => typeof x === 'string');
+  } catch { /* telemetry-exempt: first managed start, or the manifest was removed */ }
+  return [];
+}
+
+type TrackedSkillFolders = { ok: true; names: Set<string> } | { ok: false; code: string };
+
+/** The top-level folders git tracks in the agent's skills folder, lowercased (file systems may ignore case). */
+async function trackedSkillFolders(worktree: string, provider: OrchestratorProvider): Promise<TrackedSkillFolders> {
+  const rel = skillsFolderOf(provider.conventions);
+  const listed = await trackedFiles(worktree, [rel]);
+  if (listed.ok === false) return listed;
+  return { ok: true, names: new Set(listed.files.filter((f) => f.startsWith(`${rel}/`)).map((f) => f.slice(rel.length + 1).split('/')[0].toLowerCase())) };
+}
+
+/**
+ * Built-in skills the project has its own copy of (D74): git tracks a folder
+ * by that name in the agent's skills folder. Clubhouse leaves it in place and
+ * doesn't deliver the built-in, so the CLI loads the project's. Names match
+ * ignoring case, since macOS and Windows file systems do: a tracked `Build/`
+ * is the project's `build` skill. When git can't say, a folder on disk that
+ * Clubhouse didn't write counts as the project's too, so nothing tracked is
+ * ever overwritten. Custom skills aren't checked: they replace the folder as
+ * before (D48). Returns the setup's folder names that are the project's.
+ */
+async function projectOwnSkills(worktree: string, provider: OrchestratorProvider, skills: Resolved['skills'], previous: string[], tracked?: TrackedSkillFolders): Promise<Set<string>> {
+  const builtins = skills.filter((s) => s.builtin).map((s) => s.content.skillName);
+  if (builtins.length === 0) return new Set();
+  const rel = skillsFolderOf(provider.conventions);
+  const known = tracked ?? await trackedSkillFolders(worktree, provider);
+  if (known.ok === true) return new Set(builtins.filter((n) => known.names.has(n.toLowerCase())));
+  appLog('core:managed', 'warn', 'git could not list tracked skill folders; built-in skills in the way were left in place', { meta: { code: known.code } });
+  let onDisk: string[] = [];
+  try {
+    onDisk = (await fsp.readdir(path.join(worktree, rel), { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name.toLowerCase());
+  } catch { /* telemetry-exempt: no skills folder, so nothing is in the way */ }
+  const wrote = new Set(previous.map((n) => n.toLowerCase()));
+  return new Set(builtins.filter((n) => onDisk.includes(n.toLowerCase()) && !wrote.has(n.toLowerCase())));
+}
+
+/** The note for a built-in skill the project's own copy replaces (D74). */
+export function projectOwnSkillNote(folder: string): string {
+  return `Using the project's own ${folder} skill`;
+}
+
+/** Writes the setup's skills; returns the built-in skill folders left to the project's own copy (D74). */
+async function writeSkills(worktree: string, provider: OrchestratorProvider, skills: Resolved['skills'], backupRoot?: string): Promise<string[]> {
+  await removePreviousManagedSkills(worktree, provider);
   const conv = provider.conventions;
-  const root = path.join(worktree, conv.configDir, conv.skillsDir);
+  const root = path.join(worktree, skillsFolderOf(conv));
   await fsp.mkdir(root, { recursive: true });
   // A linked skills folder (or .claude) leads outside the agent's folder: nothing is moved out of it (D48).
   const safeToMove = await insideWithoutLinks(worktree, root);
-  let previous: string[] = [];
-  try {
-    const raw = JSON.parse(await fsp.readFile(path.join(root, SKILLS_MANIFEST), 'utf-8'));
-    if (Array.isArray(raw?.skills)) previous = raw.skills.filter((x: unknown): x is string => typeof x === 'string');
-  } catch { /* telemetry-exempt: first managed start, or the manifest was removed */ }
-  const current = skills.map((s) => s.content.skillName);
+  const previous = await deliveredBefore(root);
+  const tracked = await trackedSkillFolders(worktree, provider);
+  // Never written, recorded or cleaned up: the folder is the project's (D74).
+  const projectOwn = await projectOwnSkills(worktree, provider, skills, previous, tracked);
+  const delivered = skills.filter((s) => !projectOwn.has(s.content.skillName));
+  const current = delivered.map((s) => s.content.skillName);
   for (const name of previous) {
-    if (current.includes(name)) continue;
+    if (current.includes(name) || projectOwn.has(name)) continue;
+    // One Clubhouse wrote that the project has since committed is the project's now; when git can't say, it stays.
+    if (tracked.ok === false || tracked.names.has(name.toLowerCase())) continue;
     await fsp.rm(insideDir(root, name), { recursive: true, force: true });
   }
-  for (const skill of skills) {
+  for (const skill of delivered) {
     const dir = insideDir(root, skill.content.skillName);
     let exists = false;
     try { exists = (await fsp.stat(dir)).isDirectory(); } catch { /* telemetry-exempt: not there yet */ }
@@ -257,7 +374,7 @@ async function writeSkills(worktree: string, provider: OrchestratorProvider, ski
   await fsp.writeFile(path.join(root, SKILLS_MANIFEST), JSON.stringify({ skills: current }, null, 2), 'utf-8');
   // Exactly its skills: anything else here would load too, so it moves to app data (D48).
   if (backupRoot) {
-    const other = await otherSkillFolders(worktree, provider, current);
+    const other = await otherSkillFolders(worktree, provider, [...current, ...projectOwn]);
     if (other.keptReason === 'link') {
       appLog('core:managed', 'warn', 'The skills folder is a link; no skill folders were moved', { meta: { folders: other.kept.length } });
     } else if (other.keptReason === 'git') {
@@ -265,6 +382,7 @@ async function writeSkills(worktree: string, provider: OrchestratorProvider, ski
     }
     for (const name of other.untracked) await moveAside(insideDir(root, name), backupRoot);
   }
+  return [...projectOwn];
 }
 
 // ── Instruction files the CLI reads besides Clubhouse's ────────────────
@@ -579,7 +697,11 @@ export async function deliverManagedSetup(params: {
   }
   const instructions = await renderManagedInstructions(projectPath, agent, resolved);
   await provider.writeInstructions(agent.worktreePath, instructions);
-  await writeSkills(agent.worktreePath, provider, resolved.skills, params.backupRoot);
+  const projectOwn = await writeSkills(agent.worktreePath, provider, resolved.skills, params.backupRoot);
+  for (const folder of projectOwn) {
+    // A built-in skill folder name, never project content.
+    appLog('core:managed', 'info', `${projectOwnSkillNote(folder)}; its built-in isn't delivered`, { meta: { agentId: agent.id, folder } });
+  }
   await writeMcpFile(agent.worktreePath, provider, mcpServersOf(resolved));
   if (provider.id === CLAUDE_CODE_ID) await writeClaudeExcludes(agent.worktreePath, provider);
   // Another CLI doesn't read them, so the entries Clubhouse added for Claude Code come out.
@@ -620,23 +742,24 @@ export async function quickManagedLaunch(params: {
   // setupFromTemplate keeps only the parts that still exist, so what it dropped
   // is what's missing: the template's own list minus what came back.
   const template = await params.service.getTemplate(params.templateId);
-  const { setup } = await params.service.setupFromTemplate(params.templateId);
+  const { setup: fromTemplate } = await params.service.setupFromTemplate(params.templateId);
+  const setup = withWorkingIdentity(fromTemplate);
   const resolved = await resolveSetup(params.service, setup);
   const partCount = (s: { blocks: string[]; skills: string[]; mcps: string[] }) => s.blocks.length + s.skills.length + s.mcps.length;
-  const dropped = partCount(template.setup) - partCount(setup);
+  const dropped = partCount(template.setup) - partCount(fromTemplate);
   const agent: DurableAgentConfig = {
     id: params.agentId, name: params.agentName, color: 'gray', createdAt: new Date().toISOString(),
     worktreePath: params.cwd, ...(params.branch && { branch: params.branch }),
   };
   const composed = composeInstructions(resolved.blocks.map((b) => ({ content: b.content })));
   if (composed.ok === false) throw new Error(composed.code);
-  const ctx = await wildcardContextFor(params.projectPath, agent);
+  const ctx = wildcardContextFor(params.projectPath, agent);
   const rel = path.relative(params.projectPath, params.cwd).replace(/\\/g, '/');
   ctx.agentPath = rel ? `${rel}/` : './';
   if (!params.branch) ctx.standbyBranch = 'the checked-out branch';
   return {
     templateId: params.templateId,
-    instructions: replaceWildcards(composed.text, ctx),
+    instructions: replaceManagedWildcards(composed.text, ctx),
     servers: mcpServersOf(resolved),
     skippedSkills: resolved.skills.length,
     missing: dropped + resolved.missing.length,
@@ -655,24 +778,31 @@ export async function previewManagedSetup(params: {
   if (!setup) return { instructions: '', blocks: [], skills: [], mcps: [], missing: [] };
   const resolved = await resolveSetup(params.service, setup);
   const instructions = await renderManagedInstructions(params.projectPath, params.agent, resolved);
-  const ctx = await wildcardContextFor(params.projectPath, params.agent);
+  const ctx = wildcardContextFor(params.projectPath, params.agent);
   const usage = new Map<string, number>();
   for (const b of resolved.blocks) usage.set(b.id, (await params.service.consumers(b.id)).length);
   let line = 1;
   const blocks = resolved.blocks.map((b) => {
-    const lines = replaceWildcards(b.content, ctx).split('\n').length;
+    const lines = replaceManagedWildcards(b.content, ctx).split('\n').length;
     const entry = { id: b.id, name: b.name, builtin: b.builtin, usedBy: usage.get(b.id) ?? 0, startLine: line, endLine: line + lines - 1 };
     line += lines + 1;
     return entry;
   });
   const conv = params.provider?.conventions;
-  const folderRoot = conv ? path.join(conv.configDir, conv.skillsDir) : 'skills';
+  const folderRoot = conv ? skillsFolderOf(conv) : 'skills';
   const extra = await outsideTheSetup(params.projectPath, params.agent, params.provider, resolved.skills.map((s) => s.content.skillName));
+  const worktree = params.agent.worktreePath;
+  const projectOwn = worktree && params.provider
+    ? await projectOwnSkills(worktree, params.provider, resolved.skills, await deliveredBefore(path.join(worktree, skillsFolderOf(params.provider.conventions))))
+    : new Set<string>();
   return {
     ...extra,
     instructions,
     blocks,
-    skills: resolved.skills.map((s) => ({ id: s.id, name: s.name, skillName: s.content.skillName, files: s.content.files.length, folder: `${folderRoot}/${s.content.skillName}`.replace(/\\/g, '/') })),
+    skills: resolved.skills.map((s) => ({
+      id: s.id, name: s.name, skillName: s.content.skillName, files: s.content.files.length, folder: `${folderRoot}/${s.content.skillName}`.replace(/\\/g, '/'),
+      ...(projectOwn.has(s.content.skillName) && { projectOwn: projectOwnSkillNote(s.content.skillName) }),
+    })),
     mcps: resolved.mcps.map((m) => ({ id: m.id, name: m.name, serverKey: m.content.serverKey, builtin: m.builtin, ...(m.droppedEnvValues.length > 0 && { droppedEnvValues: m.droppedEnvValues }) })),
     missing: resolved.missing,
   };
@@ -689,7 +819,7 @@ async function outsideTheSetup(projectPath: string, agent: DurableAgentConfig, p
   const worktree = agent.worktreePath;
   if (!worktree || !provider) return {};
   const conv = provider.conventions;
-  const folderRoot = forwardSlashes(path.join(conv.configDir, conv.skillsDir));
+  const folderRoot = skillsFolderOf(conv);
   const { tracked, kept, keptReason } = await otherSkillFolders(worktree, provider, skillNames);
   const out: OutsideTheSetup = { cliName: provider.displayName };
   if (tracked.length > 0) out.repoSkills = tracked.map((n) => `${folderRoot}/${n}`);

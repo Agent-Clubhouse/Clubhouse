@@ -12,6 +12,7 @@ import { validateCommandPrefix } from './command-prefix-validation';
 const LOG_NS = 'core:agent-settings';
 
 import { UnsupportedPermissionRulesError } from './permission-rules-error';
+import { skillsFolderOf } from '../../shared/skills-folder';
 export { UnsupportedPermissionRulesError } from './permission-rules-error';
 
 /** Check whether an error is a filesystem "file not found" (ENOENT). */
@@ -26,6 +27,7 @@ function isEnoent(err: unknown): boolean {
 export interface SettingsConventions {
   configDir: string;           // e.g. '.claude', '.github', '.codex'
   skillsDir: string;           // e.g. 'skills'
+  skillsRoot?: string;         // e.g. '.agents/skills' (Codex); see skillsFolderOf
   agentTemplatesDir: string;   // e.g. 'agents'
   mcpConfigFile: string;       // e.g. '.mcp.json', '.github/mcp.json'
   localSettingsFile: string;   // e.g. 'settings.local.json', 'hooks/hooks.json'
@@ -119,7 +121,7 @@ export async function readMcpConfig(worktreePath: string, conv?: SettingsConvent
 
 export async function listSkills(worktreePath: string, conv?: SettingsConventions): Promise<SkillEntry[]> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const skillsDir = path.join(worktreePath, c.configDir, c.skillsDir);
+  const skillsDir = path.join(worktreePath, skillsFolderOf(c));
   try {
     const entries = await fsp.readdir(skillsDir, { withFileTypes: true });
     const dirs = entries.filter((e) => e.isDirectory());
@@ -382,7 +384,7 @@ export async function createSkillDir(basePath: string, name: string, isSource: b
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   const dir = isSource
     ? path.join(basePath, name)
-    : path.join(basePath, c.configDir, c.skillsDir, name);
+    : path.join(basePath, skillsFolderOf(c), name);
   await fsp.mkdir(dir, { recursive: true });
   const readmePath = path.join(dir, 'README.md');
   if (!(await pathExists(readmePath))) {
@@ -465,7 +467,7 @@ export async function readPermissions(worktreePath: string, conv?: SettingsConve
  */
 export async function readSkillContent(worktreePath: string, skillName: string, conv?: SettingsConventions): Promise<string> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const filePath = path.join(worktreePath, c.configDir, c.skillsDir, skillName, 'SKILL.md');
+  const filePath = path.join(worktreePath, skillsFolderOf(c), skillName, 'SKILL.md');
   try {
     return await fsp.readFile(filePath, 'utf-8');
   } catch (err) {
@@ -479,7 +481,7 @@ export async function readSkillContent(worktreePath: string, skillName: string, 
  */
 export async function writeSkillContent(worktreePath: string, skillName: string, content: string, conv?: SettingsConventions): Promise<void> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const dir = path.join(worktreePath, c.configDir, c.skillsDir, skillName);
+  const dir = path.join(worktreePath, skillsFolderOf(c), skillName);
   await fsp.mkdir(dir, { recursive: true });
   await fsp.writeFile(path.join(dir, 'SKILL.md'), content, 'utf-8');
 }
@@ -489,7 +491,7 @@ export async function writeSkillContent(worktreePath: string, skillName: string,
  */
 export async function deleteSkill(worktreePath: string, skillName: string, conv?: SettingsConventions): Promise<void> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const dir = path.join(worktreePath, c.configDir, c.skillsDir, skillName);
+  const dir = path.join(worktreePath, skillsFolderOf(c), skillName);
   await fsp.rm(dir, { recursive: true, force: true });
 }
 

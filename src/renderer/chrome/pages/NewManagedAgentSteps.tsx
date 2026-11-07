@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Agent, Project } from '../../../shared/types';
-import { CLUBHOUSE_MCP_PART_ID, type ManagedTemplate, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, isListed, type ManagedTemplate, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
 import { DEFAULT_MAX_HELPERS, MAX_HELPER_LIMIT, type OrchestrationPolicyConfig } from '../../../shared/orchestration-policy';
 import { Button } from '../../components/Button';
 import { Toggle } from '../../components/Toggle';
@@ -96,7 +96,8 @@ export function TemplateStep({ name, projectName, busy, error, onCreate, onCusto
   const templates = useManagedTemplates();
   const [pending, setPending] = useState<string | null>(null);
   useEffect(() => { if (!busy) setPending(null); }, [busy]);
-  const all = templates.value ?? [];
+  // Retired built-in templates (D71) aren't offered for new agents.
+  const all = (templates.value ?? []).filter(isListed);
   const sections = [
     { title: 'Built-in', list: all.filter((t) => t.builtin), empty: 'No built-in templates.' },
     { title: 'Your templates', list: all.filter((t) => !t.builtin), empty: 'None yet. Save an agent\'s setup as a template from its General settings.' },

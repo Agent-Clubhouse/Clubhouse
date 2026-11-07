@@ -3,7 +3,7 @@ import { Button } from '../../components/Button';
 import { Modal } from '../../components/Modal';
 import { Toggle } from '../../components/Toggle';
 import { Field, SectionHeading, inputClass, selectClass } from '../agents/agentSettingsUi';
-import type { ManagedAgentSetup, ManagedConvertPreview } from '../../../shared/managed-agents-types';
+import { isListed, type ManagedAgentSetup, type ManagedConvertPreview } from '../../../shared/managed-agents-types';
 import { errorText, managed, unwrap, useManagedStatus, useManagedTemplates } from './managedApi';
 import { legacyLine, migratedLine, migrationFailedLine, type LegacyUse } from './legacy';
 
@@ -97,7 +97,7 @@ export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, 
           projectPath={projectPath}
           agentId={agentId}
           agentName={agentName}
-          templates={(templates.value ?? []).map((t) => ({ id: t.id, name: t.name }))}
+          templates={(templates.value ?? []).filter(isListed).map((t) => ({ id: t.id, name: t.name }))}
           busy={busy}
           error={error}
           onCancel={() => setConvertOpen(false)}

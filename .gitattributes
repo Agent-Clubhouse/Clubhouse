@@ -17,3 +17,6 @@ test/chat-media/*.png binary
 test/chat-media/*.pdf binary
 test/chat-media/*.wav binary
 test/chat-media/*.webm binary
+
+# Built-in agent text, manifest and index (scripts/sync-builtin-text.mjs); keep LF so the manifest and delivered text match on Windows.
+src/main/services/managed-agents/builtin-text/** eol=lf

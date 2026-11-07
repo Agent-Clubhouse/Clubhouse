@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { TabList, tabPanelProps } from '../../components/TabList';
-import type { ManagedTemplate, ManagedTemplateChange, ManagedTemplatePushTarget } from '../../../shared/managed-agents-types';
+import { isListed, type ManagedTemplate, type ManagedTemplateChange, type ManagedTemplatePushTarget } from '../../../shared/managed-agents-types';
 import { DEFAULT_MAX_HELPERS, MAX_HELPER_LIMIT } from '../../../shared/orchestration-policy';
 import { Button } from '../../components/Button';
 import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAction';
@@ -209,7 +209,8 @@ export function TemplatesSettingsView() {
     return <TemplateEditor key={editing.id ?? 'new'} initial={editing} onDone={(n) => { setEditing(null); setNotice(n ?? null); }} />;
   }
 
-  const all = templates ?? [];
+  // Retired built-in templates (D71) aren't listed; agents made from one keep working.
+  const all = (templates ?? []).filter(isListed);
   const yours = all.filter((t) => !t.builtin);
   const builtin = all.filter((t) => t.builtin);
 

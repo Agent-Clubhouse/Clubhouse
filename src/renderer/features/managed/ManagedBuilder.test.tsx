@@ -223,6 +223,55 @@ describe('ManagedBuilder', () => {
   });
 });
 
+describe('ManagedBuilder skill folder clashes (#2902)', () => {
+  const skills = [
+    part('builtin-skill-post-result-pr', { kind: 'skill', name: 'Post result to the pull request', builtin: true, skillName: 'post-result' }),
+    part('builtin-skill-post-result-board', { kind: 'skill', name: 'Post result to the board', builtin: true, skillName: 'post-result' }),
+    part('my-post', { kind: 'skill', name: 'My post', skillName: 'post-result', forkedFrom: 'builtin-skill-post-result-pr' }),
+    part('notes', { kind: 'skill', name: 'Notes', skillName: 'notes' }),
+  ];
+  beforeEach(() => {
+    vi.spyOn(m(), 'listParts').mockImplementation(async (kind: string) => ({ ok: true, value: kind === 'skill' ? skills : [] }) as never);
+  });
+
+  it('warns, and adds nothing, when a skill would install to a folder the setup already uses', async () => {
+    const onChange = vi.fn();
+    render(<ManagedBuilder target={{ kind: 'draft', value: { blocks: [], skills: ['builtin-skill-post-result-pr'], mcps: [] }, onChange, agentName: 'cool-gazelle' }} tab="skills" />);
+    fireEvent.click(await screen.findByRole('switch', { name: 'Post result to the board' }));
+    expect(screen.getByTestId('managed-skill-clash').textContent).toBe('Post result to the pull request and Post result to the board both install to post-result/. Pick one.');
+    expect(onChange).not.toHaveBeenCalled();
+    // Another skill clears it and is added as usual.
+    fireEvent.click(screen.getByRole('switch', { name: 'Notes' }));
+    expect(screen.queryByTestId('managed-skill-clash')).toBeNull();
+    expect(onChange).toHaveBeenCalledWith({ blocks: [], skills: ['builtin-skill-post-result-pr', 'notes'], mcps: [] });
+  });
+
+  it('swaps a fork in for the part it came from', async () => {
+    const onChange = vi.fn();
+    render(<ManagedBuilder target={{ kind: 'draft', value: { blocks: [], skills: ['notes', 'builtin-skill-post-result-pr'], mcps: [] }, onChange }} tab="skills" />);
+    fireEvent.click(await screen.findByRole('switch', { name: 'My post' }));
+    expect(screen.queryByTestId('managed-skill-clash')).toBeNull();
+    expect(onChange).toHaveBeenCalledWith({ blocks: [], skills: ['notes', 'my-post'], mcps: [] });
+  });
+
+  it('still checks the folder after a swap: a fork moved to another folder can clash there', async () => {
+    vi.spyOn(m(), 'listParts').mockImplementation(async (kind: string) => ({ ok: true, value: kind === 'skill' ? [
+      ...skills,
+      part('my-notes-post', { kind: 'skill', name: 'Renamed post', skillName: 'notes', forkedFrom: 'builtin-skill-post-result-pr' }),
+    ] : [] }) as never);
+    const onChange = vi.fn();
+    render(<ManagedBuilder target={{ kind: 'draft', value: { blocks: [], skills: ['builtin-skill-post-result-pr', 'notes'], mcps: [] }, onChange }} tab="skills" />);
+    fireEvent.click(await screen.findByRole('switch', { name: 'Renamed post' }));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId('managed-skill-clash').textContent).toBe('Renamed post and Notes both install to notes/. Pick one.');
+  });
+
+  it('says so for a setup that was saved with a clash', async () => {
+    render(<ManagedBuilder target={{ kind: 'draft', value: { blocks: [], skills: ['builtin-skill-post-result-board', 'my-post'], mcps: [] }, onChange: vi.fn() }} tab="skills" />);
+    expect((await screen.findByTestId('managed-skill-clash')).textContent).toBe('Post result to the board and My post both install to post-result/. Pick one.');
+  });
+});
+
 describe('ManagedBuilder setup loading', () => {
   it('loads once per agent, not on every render', async () => {
     const getSetup = vi.spyOn(m(), 'getSetup').mockResolvedValue({ ok: true, value: { version: 1, blocks: [], skills: [], mcps: [] } } as never);
@@ -262,7 +311,12 @@ describe('PartDialog', () => {
     const create = vi.spyOn(m(), 'createPart').mockResolvedValue({ ok: true, value: created } as never);
     const onCreated = vi.fn();
     render(<PartDialog open kind="block" agentName="cool-gazelle" onClose={vi.fn()} onCreated={onCreated} />);
-    expect(screen.getByTestId('managed-wildcards').textContent).toContain('@@AgentName');
+    const bar = screen.getByTestId('managed-wildcards').textContent ?? '';
+    expect(bar).toContain('@@AgentName');
+    expect(bar).toContain('@@Path');
+    expect(bar).toContain('@@StandbyBranch');
+    // The built-in build, test, lint and validate skills replace these (#2902).
+    for (const gone of ['@@BuildCommand', '@@TestCommand', '@@LintCommand', '@@SourceControlProvider']) expect(bar).not.toContain(gone);
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Rules' } });
     fireEvent.change(screen.getByLabelText('Block text'), { target: { value: 'Use strict mode.' } });
     expect(screen.getByText(/added to cool-gazelle/)).toBeTruthy();
@@ -425,6 +479,16 @@ describe('focus and announcements (#2819)', () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('managed-write-block')));
   });
 
+  it('the block library hides a retired built-in unless the setup still uses it (D71)', () => {
+    const parts = [part('a'), part('pm', { name: 'Project manager', builtin: true, retired: true })];
+    const { rerender } = render(<LibraryPanel parts={parts} inUse={[]} onAdd={vi.fn()} onNew={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Add a' })).toBeTruthy();
+    expect(screen.queryByText('Project manager')).toBeNull();
+    rerender(<LibraryPanel parts={parts} inUse={['pm']} onAdd={vi.fn()} onNew={vi.fn()} />);
+    expect(screen.getByText('Project manager')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add Project manager' })).toBeNull();
+  });
+
   it('Add in the library moves focus to the next block that can be added, then the search box', async () => {
     function Library() {
       const [inUse, setInUse] = useState<string[]>([]);
@@ -466,6 +530,19 @@ describe('focus and announcements (#2819)', () => {
 });
 
 describe('Preview: what the CLI reads besides the setup (#2819)', () => {
+  it('says when the project\'s own skill folder replaces a built-in (D74)', async () => {
+    vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value: {
+      instructions: 'x', blocks: [], mcps: [], missing: [],
+      skills: [
+        { id: 'builtin-skill-build', name: 'Build', skillName: 'build', files: 1, folder: '.claude/skills/build', projectOwn: "Using the project's own build skill" },
+        { id: 'builtin-skill-test', name: 'Test', skillName: 'test', files: 1, folder: '.claude/skills/test' },
+      ],
+    } } as never);
+    render(<PreviewPane agent={agent} />);
+    expect((await screen.findByTestId('managed-preview-project-own-builtin-skill-build')).textContent).toBe("Using the project's own build skill");
+    expect(screen.getByText('.claude/skills/test · 1 file')).toBeTruthy();
+  });
+
   it('lists tracked repo skills, files Claude Code is told not to read, and files it reads anyway', async () => {
     vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value: {
       instructions: 'x', blocks: [], skills: [], mcps: [], missing: [],

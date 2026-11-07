@@ -235,6 +235,10 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
     legacyInstructionsFile: 'AGENTS.md',
     mcpConfigFile: '.codex/config.toml',
     skillsDir: 'skills',
+    // Codex documents .agents/skills for repository skills (Copilot reads it too);
+    // .codex/skills is undocumented and may need a trusted project.
+    skillsRoot: '.agents/skills',
+    previousSkillsRoots: ['.codex/skills'],
     agentTemplatesDir: 'agents',
     localSettingsFile: 'config.toml',
     // Codex reads hooks from .codex/hooks.json, not from config.toml

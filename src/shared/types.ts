@@ -47,6 +47,8 @@ export interface OrchestratorInfo {
     legacyInstructionsFile: string;
     mcpConfigFile: string;
     skillsDir: string;
+    /** The skills folder relative to the worktree, when it isn't `<configDir>/<skillsDir>`. */
+    skillsRoot?: string;
     agentTemplatesDir: string;
     localSettingsFile: string;
     permissionRules?: boolean;

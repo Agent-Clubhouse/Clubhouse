@@ -20,7 +20,7 @@ import { addProject } from './smoke-helpers';
 
 const AGENT = 'managed-smoke';
 const TEMPLATE_ID = 'builtin-template-researcher';
-// builtinTemplates() in src/main/services/managed-agents/builtins.ts.
+// builtin-text/manifest.json, read by src/main/services/managed-agents/builtins.ts.
 const TEMPLATE_BLOCKS = ['builtin-block-identity', 'builtin-block-clubhouse-basics', 'builtin-block-researcher'];
 const CLUBHOUSE_MCP = 'builtin-mcp-clubhouse';
 const IDENTITY_LINE = `You are ${AGENT}, an agent working in Clubhouse.`;

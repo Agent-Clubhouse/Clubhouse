@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { McpCatalogEntry, Project } from '../../../shared/types';
-import { CLUBHOUSE_MCP_PART_ID, type ManagedTemplate, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, isListed, type ManagedTemplate, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
 import { AGENT_COLORS, generateDurableName } from '../../../shared/name-generator';
 import { validateAgentGitName } from '../../../shared/agent-name';
 import { useProjectStore } from '../../stores/projectStore';
@@ -101,7 +101,7 @@ function QuickTemplateRow({ value, onChange, disabled, mcpLaunchFlags, cliName }
         className={`${selectClass} w-[288px]`}
       >
         <option value="">None</option>
-        {(templates ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}{t.builtin ? '' : ' (yours)'}</option>)}
+        {(templates ?? []).filter((t) => isListed(t) || t.id === value).map((t) => <option key={t.id} value={t.id}>{t.name}{t.builtin ? '' : ' (yours)'}</option>)}
       </select>
     </Row>
   );

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Button } from '../../components/Button';
 import { Toggle } from '../../components/Toggle';
 import { inputClass, selectClass } from '../agents/agentSettingsUi';
-import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_NOTE, type ManagedPartKind, type ManagedPartSummary } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_NOTE, isListed, type ManagedPartKind, type ManagedPartSummary } from '../../../shared/managed-agents-types';
 import { partKindLabel, sourceLabel } from './managedApi';
 import { CheckIcon, DroppedEnvNote } from './parts-ui';
 import type { BuilderAgent } from './BlockList';
@@ -50,7 +50,8 @@ export function LibraryPanel({ parts, inUse, onAdd, onNew, disabled }: {
 }) {
   const [query, setQuery] = useState('');
   const [source, setSource] = useState<SourceFilter>('all');
-  const shown = filterParts(parts, query, source);
+  // A retired built-in (D71) shows only while this setup still uses it.
+  const shown = filterParts(parts.filter((p) => isListed(p) || inUse.includes(p.id)), query, source);
   const addButtons = useRef(new Map<string, HTMLButtonElement>());
   const search = useRef<HTMLInputElement | null>(null);
   /** Add, then move focus off the button that goes away: to the next block that can be added, the one before, or the search box. */
