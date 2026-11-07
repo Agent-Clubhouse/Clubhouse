@@ -488,6 +488,18 @@ describe('exactly its parts (#2819)', () => {
     expect(preview.skills.find((sk) => sk.id === BUILTIN_SKILL_IDS.validate)!.projectOwn).toBeUndefined();
   });
 
+  it('says the same in a New agent draft\'s Preview, from the project checkout its worktree comes from (#2895)', async () => {
+    git(project, 'init', '-q');
+    fs.mkdirSync(path.join(project, '.claude', 'skills', 'build'), { recursive: true });
+    fs.writeFileSync(path.join(project, '.claude', 'skills', 'build', 'SKILL.md'), '# ours');
+    git(project, 'add', '.claude/skills/build/SKILL.md');
+    const draft: DurableAgentConfig = { id: 'new-agent', name: 'keen-heron', color: 'gray', createdAt: '2026-11-07T00:00:00.000Z' };
+    const setup = { version: 1 as const, blocks: [], skills: [BUILTIN_SKILL_IDS.build, BUILTIN_SKILL_IDS.validate], mcps: [] };
+    const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent: draft, provider: provider(), setup, projectOwnFrom: project }));
+    expect(preview.skills.find((sk) => sk.id === BUILTIN_SKILL_IDS.build)!.projectOwn).toBe("Using the project's own build skill");
+    expect(preview.skills.find((sk) => sk.id === BUILTIN_SKILL_IDS.validate)!.projectOwn).toBeUndefined();
+  });
+
   it('matches a tracked folder to a built-in ignoring case, so a tracked Build/ is the project\'s build skill (D74)', async () => {
     const wt = agent.worktreePath!;
     const skills = path.join(wt, '.claude', 'skills');

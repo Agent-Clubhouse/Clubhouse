@@ -6,6 +6,7 @@
  * setting, stored where it always is.
  */
 import { useEffect, useState } from 'react';
+import { isListed } from '../../../shared/managed-agents-types';
 import { AGENT_IDLE_SLEEP_MINUTES, formatIdleMinutes, normalizeIdleSleep, resolveIdleSleep, type AgentIdleSleep } from '../../../shared/idle-sleep';
 import { effortWord } from '../agents/chat/Composer';
 import { useAppIdleMinutes } from '../agents/details/AutoSleepRow';
@@ -111,7 +112,7 @@ export function useDefaultHelperTemplate(): string | null {
   return id;
 }
 
-/** "Helper template": which template its helpers start from when start_helper names none. Empty is the app's default. */
+/** "Helper template": which template its helpers start from when start_helper names none. Empty is the app's default. A retired built-in shows only while chosen. */
 export function HelperTemplateSelect({ id, value, disabled, className, onChange, testId }: {
   id?: string;
   value: string;
@@ -130,7 +131,7 @@ export function HelperTemplateSelect({ id, value, disabled, className, onChange,
     <select id={id} aria-label="Helper template" value={current} disabled={disabled} onChange={(e) => onChange(e.target.value)} className={className} data-testid={testId}>
       <option value="">{defaultName ? `App default (${defaultName})` : 'App default'}</option>
       {value && templates.value === null && <option value={value}>{value}</option>}
-      {all.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+      {all.filter((t) => isListed(t) || t.id === current).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
     </select>
   );
 }

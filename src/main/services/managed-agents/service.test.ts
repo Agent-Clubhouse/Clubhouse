@@ -663,7 +663,7 @@ describe('template settings beyond parts (#2898)', () => {
       { kind: 'setting', key: 'effort', from: 'high', to: 'CLI default' },
       { kind: 'setting', key: 'orchestration.maxHelpers', from: '5', to: '3' },
       { kind: 'setting', key: 'idleSleep', from: 'app default', to: '15 min' },
-      { kind: 'setting', key: 'helperTemplateId', from: 'app default', to: 'Quality Assurance' },
+      { kind: 'setting', key: 'helperTemplateId', from: 'app default', to: 'Quality Assurance (pull request)' },
     ]);
     // b already has three of the four; a has none of them.
     expect(preview.targets.find((x) => x.agentId === 'a')).toMatchObject({ applicable: 4, total: 4 });
