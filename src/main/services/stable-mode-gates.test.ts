@@ -47,7 +47,7 @@ import { NEW_CHROME_FLAG } from '../../shared/chrome-flag';
 import { COPILOT_SDK_FLAG, RICH_CHAT_CONTENT_FLAG } from '../../shared/chat';
 import { isGraduatedFlagOn } from '../../shared/graduated-flags';
 import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
-import { PREVIEW_ONLY_EXPERIMENTAL_FLAGS, STRUCTURED_MODE_REMOVED_NOTICE_KEY } from '../../shared/types';
+import { COPILOT_ACP_REMOVED_NOTICE_KEY, PREVIEW_ONLY_EXPERIMENTAL_FLAGS, STRUCTURED_MODE_REMOVED_NOTICE_KEY } from '../../shared/types';
 
 const ALL_SAVED = {
   newChrome: true,
@@ -165,6 +165,18 @@ describe('the preview-only list', () => {
     expect([...PREVIEW_ONLY_EXPERIMENTAL_FLAGS].sort()).toEqual([
       'goobers', COPILOT_SDK_FLAG,
     ].sort());
+  });
+});
+
+describe('the removed legacy Copilot ACP opt-in, in a packaged stable build (#2868)', () => {
+  it.each([false, true])('Preview %s: the flag is dropped, with a notice only when it selected ACP', (previewChannel) => {
+    write(UPDATE_FILE, { autoUpdate: false, previewChannel, lastCheck: null, dismissedVersion: null, lastSeenVersion: null });
+    write(EXPERIMENTAL_FILE, { goobers: true, copilotLegacyAcp: true });
+    relaunch();
+    const stored = getStoredSettings();
+    expect(stored).not.toHaveProperty('copilotLegacyAcp');
+    expect(stored.goobers).toBe(true);
+    expect(stored[COPILOT_ACP_REMOVED_NOTICE_KEY] === true).toBe(previewChannel);
   });
 });
 

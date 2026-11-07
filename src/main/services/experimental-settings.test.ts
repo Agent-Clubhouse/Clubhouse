@@ -48,18 +48,24 @@ describe('experimental-settings', () => {
       });
     });
 
-    it('drops the legacy Copilot ACP opt-in, leaving a notice only when it was on (#2868)', () => {
-      expect(migrateExperimentalSettings({ copilotLegacyAcp: true, copilotSdk: false })).toEqual({
+    it('drops the legacy Copilot ACP opt-in, leaving a notice only when it was on and in effect (#2868)', () => {
+      const eligible = () => true;
+      expect(migrateExperimentalSettings({ copilotLegacyAcp: true, copilotSdk: false }, eligible)).toEqual({
         copilotSdk: false,
         [COPILOT_ACP_REMOVED_NOTICE_KEY]: true,
       });
-      expect(migrateExperimentalSettings({ copilotLegacyAcp: false })).toEqual({});
+      expect(migrateExperimentalSettings({ copilotLegacyAcp: false }, eligible)).toEqual({});
+      // Outside Preview the opt-in never selected ACP, so a leftover true is dropped without a notice.
+      expect(migrateExperimentalSettings({ copilotLegacyAcp: true, goobers: true }, () => false)).toEqual({ goobers: true });
       // An old SDK = false was never an ACP opt-in, so it gets no notice.
       expect(migrateExperimentalSettings({ copilotSdk: false })).toEqual({ copilotSdk: false });
     });
 
-    it('handles both removed flags at once', () => {
-      expect(migrateExperimentalSettings({ structuredMode: true, copilotLegacyAcp: true })).toEqual({
+    it('handles both removed flags at once, and only the preview-only one depends on Preview', () => {
+      expect(migrateExperimentalSettings({ structuredMode: true, copilotLegacyAcp: true }, () => false)).toEqual({
+        [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true,
+      });
+      expect(migrateExperimentalSettings({ structuredMode: true, copilotLegacyAcp: true }, () => true)).toEqual({
         [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true,
         [COPILOT_ACP_REMOVED_NOTICE_KEY]: true,
       });

@@ -5,23 +5,29 @@ import { RICH_CHAT_CONTENT_FLAG } from '../../shared/chat';
 import { NEW_CHROME_FLAG } from '../../shared/chrome-flag';
 import { isGraduatedFlagOn } from '../../shared/graduated-flags';
 
-/** Flags that were removed, and the marker each leaves when it was on. */
-const REMOVED_FLAGS: ReadonlyArray<[flag: string, notice: string]> = [
+/**
+ * Flags that were removed, the marker each leaves when it was on, and whether
+ * it was in effect: a preview-only flag did nothing outside Preview, so a
+ * leftover `true` there gets no notice.
+ */
+const REMOVED_FLAGS: ReadonlyArray<{ flag: string; notice: string; previewOnly: boolean }> = [
   // Agents that used structured mode now run in Chat or the terminal.
-  ['structuredMode', STRUCTURED_MODE_REMOVED_NOTICE_KEY],
+  { flag: 'structuredMode', notice: STRUCTURED_MODE_REMOVED_NOTICE_KEY, previewOnly: false },
   // The legacy Copilot ACP opt-in (#2868): Copilot chat now always uses the SDK.
-  ['copilotLegacyAcp', COPILOT_ACP_REMOVED_NOTICE_KEY],
+  // It only selected ACP in a preview-eligible build.
+  { flag: 'copilotLegacyAcp', notice: COPILOT_ACP_REMOVED_NOTICE_KEY, previewOnly: true },
 ];
 
 /**
- * Drop removed flags. If one was on, leave a marker so the renderer can tell
- * the user once. Saving the migrated settings removes the old key from disk.
+ * Drop removed flags. If one was on and in effect, leave a marker so the
+ * renderer can tell the user once. Saving the migrated settings removes the
+ * old key from disk either way.
  */
-export function migrateExperimentalSettings(raw: Record<string, unknown>): ExperimentalSettings {
+export function migrateExperimentalSettings(raw: Record<string, unknown>, previewEligible: () => boolean = isPreviewEligible): ExperimentalSettings {
   const settings = { ...raw };
-  for (const [flag, notice] of REMOVED_FLAGS) {
+  for (const { flag, notice, previewOnly } of REMOVED_FLAGS) {
     if (!(flag in settings)) continue;
-    if (settings[flag] === true) settings[notice] = true;
+    if (settings[flag] === true && (!previewOnly || previewEligible())) settings[notice] = true;
     delete settings[flag];
   }
   return settings as ExperimentalSettings;

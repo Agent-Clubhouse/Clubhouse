@@ -77,8 +77,10 @@ function modelEntry(list: ModelList, model: string | undefined): ModelInfo | und
  * default), as checkHelperModel checks a model: a live list refuses a level the
  * model doesn't have, and a fallback list only warns. A warning, never a
  * refusal, when nothing says what the model takes: the list can't be read, it
- * has no levels at all (Copilot's doesn't report them), or it doesn't have the
- * model (an alias the CLI accepts). Never throws.
+ * has no levels at all (Copilot's fallback `--help` list, say), or it doesn't
+ * have the model (an alias the CLI accepts). Copilot's live list, from the
+ * SDK's models.list, reports each model's levels, so it refuses like the
+ * others (#2868). Never throws.
  */
 export async function checkHelperEffort(cli: string | undefined, model: string | undefined, effort: string, projectPath: string | undefined): Promise<ModelCheck> {
   const unchecked = (why: string): ModelCheck => ({
