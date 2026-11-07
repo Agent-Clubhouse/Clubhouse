@@ -40,7 +40,6 @@ import { useAgentDetailsStore } from './detailsStore';
 import { useDurableConfig } from './useDurableConfig';
 import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
 import { openDispatcherSettings } from '../../dispatcher/dispatcherNav';
-import { useManagedFlag } from '../../managed/managed-flag';
 import { useManagedSetup, useManagedStatus } from '../../managed/managedApi';
 import { legacyLine, legacyUse, migrationFailedLine } from '../../managed/legacy';
 import { SetupCard } from './SetupCard';
@@ -181,15 +180,14 @@ interface SettingsCardProps {
 }
 
 /**
- * Settings, or Setup for a Clubhouse-managed agent with the preview flag on
- * (#2896). An unmanaged agent, or any agent with the flag off, keeps Settings.
+ * Settings, or Setup for a Clubhouse-managed agent (#2896). An unmanaged
+ * agent keeps Settings.
  */
 export function SettingsCard(props: SettingsCardProps) {
   const { agent, chat, projectPath, provider } = props;
-  const flag = useManagedFlag();
   const local = agent.kind === 'durable' && !isRemoteProjectId(agent.projectId) && !!projectPath;
-  const { value: setup } = useManagedSetup(flag && local ? projectPath : undefined, flag && local ? agent.id : undefined);
-  if (!flag || !local || !setup || !projectPath) return <AgentSettingsCard {...props} />;
+  const { value: setup } = useManagedSetup(local ? projectPath : undefined, local ? agent.id : undefined);
+  if (!local || !setup || !projectPath) return <AgentSettingsCard {...props} />;
   const awake = agent.status !== 'sleeping' && agent.status !== 'error';
   const runsOn = `${provider} · ${modelLabel(chat && awake ? chat.model : agent.model, awake ? chat : undefined)}`;
   return <SetupCard agent={agent} projectPath={projectPath} setup={setup} runsOn={runsOn} />;
@@ -209,10 +207,9 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
   const clubhouseOn = useClubhouseModeStore((s) => (projectPath ? s.isEnabledForProject(projectPath) : false));
   const loadClubhouse = useClubhouseModeStore((s) => s.loadSettings);
   useEffect(() => { if (local) void loadClubhouse(); }, [local, loadClubhouse]);
-  // With Clubhouse-managed agents on, Clubhouse Mode isn't offered, and an agent that
-  // still uses it or a persona is offered the switch instead (#2901).
-  const managedFlag = useManagedFlag();
-  const legacy = managedFlag && local && loaded && config && !isDispatcherAgent(agent) ? legacyUse(config, clubhouseOn) : null;
+  // Clubhouse Mode isn't offered, and an agent that still uses it or a
+  // persona is offered the switch instead (#2901).
+  const legacy = local && loaded && config && !isDispatcherAgent(agent) ? legacyUse(config, clubhouseOn) : null;
   // Why the automatic switch didn't happen, if it was tried (D59).
   const { value: managedStatus } = useManagedStatus(legacy ? projectPath : undefined, agent.id);
   const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
@@ -393,22 +390,6 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
       id: 'auto-sleep', label: 'Auto-sleep', editable: 'always' as const,
       render: () => <AutoSleepRow key="auto-sleep" idle={idle} onChange={(next) => update({ idleSleep: next === 'inherit' ? null : next })} />,
     }] : []),
-    ...(local && !managedFlag ? [
-      {
-        id: 'clubhouse-mode', label: 'Clubhouse mode', editable: 'sleeping' as const,
-        value: !clubhouseOn ? 'Off' : config?.clubhouseModeOverride ? 'Off for this agent' : 'On',
-        // Only an agent in a Clubhouse mode project can opt out of it.
-        control: editing && clubhouseOn ? (
-          <ToggleControl
-            label="Clubhouse mode for this agent"
-            text={config?.clubhouseModeOverride ? 'Off for this agent' : 'On'}
-            checked={!config?.clubhouseModeOverride}
-            disabled={busy('clubhouse-mode')}
-            onChange={(v) => void save('clubhouse-mode', { clubhouseModeOverride: !v })}
-          />
-        ) : undefined,
-      },
-    ] : []),
     ...(local ? [
       { id: 'mcp', label: 'MCP servers', editable: 'never' as const, value: readText(mcp, (names) => (names.length === 0 ? 'None' : `${names.length} configured`)) },
       { id: 'instructions', label: 'Instructions', editable: 'never' as const, value: readText(instructions, (text) => instructionsLabel(config?.persona, typeof text === 'string' ? text : null) ?? 'None') },

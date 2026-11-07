@@ -9,7 +9,6 @@ import { useAgentSettingsPages } from '../agents/agentSettingsPages';
 import { useAgentRowActions } from '../agents/useAgentRowActions';
 import { SettingsCard } from '../agents/details/SettingsCard';
 import { useAgentDetailsStore } from '../agents/details/detailsStore';
-import { resetManagedFlag } from './managed-flag';
 import { CLI_CHANGED_NOTE, RESUME_NOTE, resetSetupBarDismissals, SetupChangedBar, setupChangedText } from './SetupChangedBar';
 import { ALREADY_PENDING, ManagedRestartHost, PENDING_RESTART_NOTE, requestManagedRestart, resetPendingRestarts, useManagedRestartRequests } from './restart';
 
@@ -26,11 +25,6 @@ function status(over: Partial<ManagedAgentStatus> = {}): ManagedAgentStatus {
     managed: true, running: true, waiting: true, changes: ['Coding standards was edited', 'Playwright was added'],
     deliveredAt: '2026-11-07T10:00:00Z', cliChanged: false, ...over,
   };
-}
-
-function setFlag(on: boolean) {
-  resetManagedFlag();
-  vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: on } as never);
 }
 
 function mockStatus(s: ManagedAgentStatus) {
@@ -64,7 +58,6 @@ afterEach(() => {
   useAgentStore.setState({ openAgentSettings: realOpenAgentSettings });
   useAgentSettingsPages.getState().reset();
   useAgentSettingsPages.getState().setRequestedPage(null);
-  resetManagedFlag();
 });
 
 describe('setupChangedText', () => {
@@ -78,7 +71,6 @@ describe('setupChangedText', () => {
 
 describe('SetupChangedBar', () => {
   it('shows what changed for a running managed agent that is waiting, with the resume note', async () => {
-    setFlag(true);
     mockStatus(status());
     render(<SetupChangedBar agent={agent} variant="dock" />);
     expect(await screen.findByTestId('setup-changed-text')).toHaveTextContent(
@@ -90,21 +82,7 @@ describe('SetupChangedBar', () => {
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeTruthy();
   });
 
-  it('shows nothing with the flag off, and never asks for the status or listens for changes', async () => {
-    setFlag(false);
-    const read = mockStatus(status());
-    const listen = vi.spyOn(m(), 'onChanged');
-    render(<SetupChangedBar agent={agent} variant="dock" />);
-    renderHook(() => useAgentRowActions(agent));
-    render(<SettingsCard agent={agent} projectPath="/work/proj" provider="Claude Code" />);
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-    expect(screen.queryByTestId('setup-changed-bar')).toBeNull();
-    expect(read).not.toHaveBeenCalled();
-    expect(listen).not.toHaveBeenCalled();
-  });
-
   it('shows nothing when nothing is waiting', async () => {
-    setFlag(true);
     const read = mockStatus(status({ waiting: false, changes: [] }));
     render(<SetupChangedBar agent={agent} variant="strip" />);
     await waitFor(() => expect(read).toHaveBeenCalledWith('/work/proj', 'a1'));
@@ -113,7 +91,6 @@ describe('SetupChangedBar', () => {
   });
 
   it('says a CLI change starts a new conversation, and restarts fresh', async () => {
-    setFlag(true);
     mockStatus(status({ cliChanged: true, changes: ['The CLI changed to Codex'] }));
     mockWorking(false);
     const restart = vi.spyOn(m(), 'restart').mockResolvedValue({ ok: true, value: { resumed: false } } as never);
@@ -124,7 +101,6 @@ describe('SetupChangedBar', () => {
   });
 
   it('restarts straight away when the agent is not working', async () => {
-    setFlag(true);
     mockStatus(status());
     const working = mockWorking(false);
     const restart = vi.spyOn(m(), 'restart').mockResolvedValue({ ok: true, value: { resumed: true } } as never);
@@ -136,7 +112,6 @@ describe('SetupChangedBar', () => {
   });
 
   it('asks first while the agent is working, and "when this turn ends" passes whenTurnEnds', async () => {
-    setFlag(true);
     mockStatus(status());
     mockWorking(true);
     const restart = vi.spyOn(m(), 'restart').mockResolvedValue({ ok: true, value: { resumed: true } } as never);
@@ -152,7 +127,6 @@ describe('SetupChangedBar', () => {
   });
 
   it('"when this turn ends" closes the confirm at once, says it is waiting, and a second Restart is told so', async () => {
-    setFlag(true);
     mockStatus(status());
     mockWorking(true);
     const held = holdRestart();
@@ -173,7 +147,6 @@ describe('SetupChangedBar', () => {
   });
 
   it('a waiting restart that fails shows why in the bar', async () => {
-    setFlag(true);
     mockStatus(status());
     mockWorking(true);
     const held = holdRestart();
@@ -186,7 +159,6 @@ describe('SetupChangedBar', () => {
   });
 
   it('"Restart now" from the confirm restarts without waiting, and Cancel does nothing', async () => {
-    setFlag(true);
     mockStatus(status());
     mockWorking(true);
     const restart = vi.spyOn(m(), 'restart').mockResolvedValue({ ok: true, value: { resumed: true } } as never);
@@ -201,7 +173,6 @@ describe('SetupChangedBar', () => {
   });
 
   it('shows a failed restart in the bar', async () => {
-    setFlag(true);
     mockStatus(status());
     mockWorking(false);
     vi.spyOn(m(), 'restart').mockResolvedValue({ ok: false, code: 'failed', message: 'The CLI did not stop.' } as never);
@@ -211,7 +182,6 @@ describe('SetupChangedBar', () => {
   });
 
   it('dismiss hides it until the next change', async () => {
-    setFlag(true);
     let current = status();
     vi.spyOn(m(), 'status').mockImplementation(async () => ({ ok: true, value: current }) as never);
     let changed: () => void = () => {};
@@ -228,7 +198,6 @@ describe('SetupChangedBar', () => {
   });
 
   it('What changed opens the agent settings on Preview', async () => {
-    setFlag(true);
     mockStatus(status());
     const open = vi.fn();
     useAgentStore.setState({ openAgentSettings: open } as never);
@@ -242,8 +211,7 @@ describe('SetupChangedBar', () => {
 describe('⋯ menu restart items', () => {
   const ids = (actions: Array<{ id: string }>) => actions.map((a) => a.id);
 
-  it('appear for a running managed agent with the flag on', async () => {
-    setFlag(true);
+  it('appear for a running managed agent', async () => {
     mockStatus(status({ waiting: false, changes: [] }));
     const { result } = renderHook(() => useAgentRowActions(agent));
     await waitFor(() => expect(ids(result.current)).toContain('restart'));
@@ -252,17 +220,7 @@ describe('⋯ menu restart items', () => {
     expect(labels).toContain('Restart with a new conversation');
   });
 
-  it('stay hidden with the flag off', async () => {
-    setFlag(false);
-    const read = mockStatus(status());
-    const { result } = renderHook(() => useAgentRowActions(agent));
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-    expect(ids(result.current)).not.toContain('restart');
-    expect(read).not.toHaveBeenCalled();
-  });
-
   it('stay hidden for an unmanaged agent', async () => {
-    setFlag(true);
     const read = mockStatus(status({ managed: false, waiting: false, changes: [] }));
     const { result } = renderHook(() => useAgentRowActions(agent));
     await waitFor(() => expect(read).toHaveBeenCalled());
@@ -272,7 +230,6 @@ describe('⋯ menu restart items', () => {
   });
 
   it('stay hidden for a sleeping agent', async () => {
-    setFlag(true);
     const read = mockStatus(status());
     const { result } = renderHook(() => useAgentRowActions({ ...agent, status: 'sleeping' }));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
@@ -281,7 +238,6 @@ describe('⋯ menu restart items', () => {
   });
 
   it('Restart resumes and "a new conversation" passes fresh', async () => {
-    setFlag(true);
     mockStatus(status());
     mockWorking(false);
     const restart = vi.spyOn(m(), 'restart').mockResolvedValue({ ok: true, value: { resumed: true } } as never);
@@ -294,7 +250,6 @@ describe('⋯ menu restart items', () => {
   });
 
   it('asks through the host while the agent is working', async () => {
-    setFlag(true);
     mockStatus(status());
     mockWorking(true);
     const restart = vi.spyOn(m(), 'restart').mockResolvedValue({ ok: true, value: { resumed: true } } as never);
@@ -350,7 +305,6 @@ describe('Setup card', () => {
   });
 
   it('replaces Settings for a managed agent, with the setup rows and what is waiting', async () => {
-    setFlag(true);
     mockStatus(status());
     render(<SettingsCard agent={agent} projectPath="/work/proj" provider="Claude Code" />);
     expect(await screen.findByRole('region', { name: 'Setup' })).toBeTruthy();
@@ -368,7 +322,6 @@ describe('Setup card', () => {
   });
 
   it('says a restart is waiting for the turn to end', async () => {
-    setFlag(true);
     mockStatus(status());
     mockWorking(true);
     const held = holdRestart();
@@ -382,7 +335,6 @@ describe('Setup card', () => {
   });
 
   it('has no Waiting row, note or Restart when nothing is waiting, and Open builder goes to Instructions', async () => {
-    setFlag(true);
     mockStatus(status({ waiting: false, changes: [] }));
     vi.spyOn(m(), 'getSetup').mockResolvedValue({ ok: true, value: { ...setup, templateId: undefined, skills: [], mcps: [] } } as never);
     const open = vi.fn();
@@ -402,7 +354,6 @@ describe('Setup card', () => {
   });
 
   it('says an agent Clubhouse switched on its own was switched, until the line is dismissed (D59)', async () => {
-    setFlag(true);
     let listener: (() => void) | null = null;
     vi.spyOn(m(), 'onChanged').mockImplementation((fn) => { listener = fn; return () => {}; });
     let current = status({ waiting: false, changes: [], migrated: { from: 'clubhouse-mode', backup: '~/.clubhouse/managed-agents/before-managed/a1' } });
@@ -421,18 +372,7 @@ describe('Setup card', () => {
     await waitFor(() => expect(screen.queryByTestId('details-setup-migrated')).toBeNull());
   });
 
-  it('keeps Settings with the flag off', async () => {
-    setFlag(false);
-    const read = vi.spyOn(m(), 'getSetup');
-    render(<SettingsCard agent={agent} projectPath="/work/proj" provider="Claude Code" />);
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-    expect(screen.getByRole('region', { name: 'Settings' })).toBeTruthy();
-    expect(screen.queryByRole('region', { name: 'Setup' })).toBeNull();
-    expect(read).not.toHaveBeenCalled();
-  });
-
   it('keeps Settings for an unmanaged agent', async () => {
-    setFlag(true);
     const read = vi.spyOn(m(), 'getSetup').mockResolvedValue({ ok: true, value: null } as never);
     render(<SettingsCard agent={agent} projectPath="/work/proj" provider="Claude Code" />);
     await waitFor(() => expect(read).toHaveBeenCalledWith('/work/proj', 'a1'));

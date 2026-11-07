@@ -1,9 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ManagedPartConsumer, ManagedPartSummary, ManagedTemplate } from '../../../shared/managed-agents-types';
 import { HELPER_ROUTING_LABELS } from '../../../shared/helper-routing';
 import { HelpersSettingsView } from '../settings/HelpersSettingsView';
-import { resetManagedFlag } from './managed-flag';
 import { PartLibraryView } from './PartLibraryView';
 import { TemplatesSettingsView } from './TemplatesSettingsView';
 
@@ -26,11 +25,6 @@ function template(id: string, over: Partial<ManagedTemplate> = {}): ManagedTempl
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  resetManagedFlag();
-});
-
-afterEach(() => {
-  resetManagedFlag();
 });
 
 describe('Agent parts library page', () => {
@@ -213,7 +207,6 @@ describe('Helpers page with managed agents', () => {
   });
 
   it('saves the default helper template and names Smart helper selection', async () => {
-    vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
     vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [template('builtin-template-helper', { name: 'Helper', builtin: true }), template('qa', { name: 'Quality Assurance', builtin: true })] });
     const set = vi.spyOn(m(), 'setDefaultHelperTemplate').mockResolvedValue({ ok: true, value: undefined });
     render(<HelpersSettingsView />);
@@ -229,7 +222,6 @@ describe('Helpers page with managed agents', () => {
   });
 
   it('lets orchestrators choose helper templates only when turned on, off by default (D31)', async () => {
-    vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
     vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [template('builtin-template-helper', { name: 'Helper', builtin: true })] });
     const set = vi.spyOn(m(), 'setHelperTemplateChoice').mockResolvedValue({ ok: true, value: undefined });
     render(<HelpersSettingsView />);
@@ -247,7 +239,6 @@ describe('Helpers page with managed agents', () => {
   });
 
   it('puts the toggle back and says why when saving it fails', async () => {
-    vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
     vi.spyOn(m(), 'getHelperTemplateChoice').mockResolvedValue({ ok: true, value: true });
     vi.spyOn(m(), 'setHelperTemplateChoice').mockResolvedValue({ ok: false, code: 'failed', message: 'disk full' });
     render(<HelpersSettingsView />);
@@ -258,11 +249,4 @@ describe('Helpers page with managed agents', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('true');
   });
 
-  it('looks as before with the flag off', async () => {
-    render(<HelpersSettingsView />);
-    expect(await screen.findByRole('heading', { name: 'Presets by difficulty' })).toBeTruthy();
-    expect(screen.queryByTestId('helpers-default-template')).toBeNull();
-    expect(screen.queryByRole('switch', { name: 'Let orchestrators choose helper templates' })).toBeNull();
-    expect(screen.queryByTestId('helper-presets-footer')).toBeNull();
-  });
 });

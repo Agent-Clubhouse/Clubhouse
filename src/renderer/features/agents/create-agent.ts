@@ -4,7 +4,6 @@ import { useToastStore } from '../../stores/toastStore';
 import { isRemoteProjectId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import type { TemplateConfig } from './TemplateConfigDialog';
 import { ATTR, tel } from '../../telemetry';
-import { loadManagedFlag } from '../managed/managed-flag';
 
 /**
  * Durable-agent creation shared by the legacy agent list and the new chrome's
@@ -34,12 +33,10 @@ export interface DurableAgentInput {
 }
 
 /**
- * With Clubhouse-managed agents on (#2901), a plain agent keeps its own files:
- * in a project with Clubhouse Mode on, Clubhouse Mode is turned off for it
- * before its first start. With the flag off, nothing changes.
+ * A plain agent keeps its own files (#2901): in a project with Clubhouse Mode
+ * on, Clubhouse Mode is turned off for it before its first start.
  */
 async function plainAgentSkipsClubhouseMode(projectPath: string): Promise<boolean> {
-  if (!await loadManagedFlag()) return false;
   const settings = await window.clubhouse.app.getClubhouseModeSettings();
   return !!(settings?.projectOverrides?.[projectPath] ?? settings?.enabled);
 }

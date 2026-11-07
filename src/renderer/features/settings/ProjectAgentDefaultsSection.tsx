@@ -6,8 +6,6 @@ import { SourceAgentTemplatesSection } from './SourceAgentTemplatesSection';
 import { useProfileStore } from '../../stores/profileStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { usePluginStore } from '../../plugins/plugin-store';
-import { PERSONA_TEMPLATES } from '../personas';
-import { useManagedFlag } from '../managed/managed-flag';
 import { Toggle } from '../../components/Toggle';
 import { Modal } from '../../components/Modal';
 import {
@@ -243,9 +241,8 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
   const [lintCommand, setLintCommand] = useState('');
   const [mission, setMission] = useState('');
   const [persona, setPersona] = useState('');
-  // With Clubhouse-managed agents on, personas, Clubhouse Mode and conditional
-  // blocks aren't offered (#2901). The saved values stay for agents that still use them.
-  const managedFlag = useManagedFlag();
+  // Personas, Clubhouse Mode and conditional blocks aren't offered (#2901).
+  // The saved values stay for agents that still use them.
   const [profileId, setProfileId] = useState<string | undefined>(undefined);
   const [commandPrefix, setCommandPrefix] = useState('');
   const [dirty, setDirty] = useState(false);
@@ -469,11 +466,9 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
         }
       >
         <p className={`${settingsHelp} mb-2`}>
-          {clubhouseMode && managedFlag
+          {clubhouseMode
             ? 'Agents here that still use Clubhouse Mode get these settings each time they wake. Managed agents don\'t use them.'
-            : clubhouseMode
-              ? 'Clubhouse Mode is on. These settings are live-managed and pushed to agent worktrees each time an agent wakes.'
-              : 'These settings are applied as snapshots when new durable agents are created. Changes here do not affect existing agents.'}
+            : 'These settings are applied as snapshots when new durable agents are created. Changes here do not affect existing agents.'}
         </p>
         {clubhouseMode && (
           <div className="mb-2">
@@ -496,9 +491,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
 
         <SettingsField
           label="Source control provider"
-          help={managedFlag
-            ? <>Replaces <Code>@@SourceControlProvider</Code> in skill templates.</>
-            : <>Replaces <Code>@@SourceControlProvider</Code> in skill templates and controls conditional blocks.</>}
+          help={<>Replaces <Code>@@SourceControlProvider</Code> in skill templates.</>}
           htmlFor={`${idBase}-scp`}
         >
           <select
@@ -573,30 +566,6 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             spellCheck={false}
           />
         </SettingsField>
-
-        {!managedFlag && <SettingsField
-          label="Default persona"
-          help={
-            <>
-              Used by every agent in this project that has no persona of its own. Override it in agent settings or in{' '}
-              <Code>.clubhouse/agents.json</Code> (see <Code>.clubhouse/clubhouse-mode.md</Code>). Resolves
-              to <Code>@@Persona</Code>, and is appended to CLAUDE.md when the template lacks that token.
-            </>
-          }
-          htmlFor={`${idBase}-persona`}
-        >
-          <select
-            id={`${idBase}-persona`}
-            value={persona}
-            onChange={(e) => { setPersona(e.target.value); markDirty(); }}
-            className={SELECT_CLASS}
-          >
-            <option value="">None</option>
-            {PERSONA_TEMPLATES.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </SettingsField>}
 
         <SettingsField
           label="Free agent mode by default"

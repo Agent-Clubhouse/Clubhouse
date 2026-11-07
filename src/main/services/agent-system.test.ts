@@ -125,12 +125,6 @@ const mockMigrateAtSpawn = vi.fn(async (..._args: unknown[]): Promise<unknown> =
 vi.mock('./managed-agents/auto-migrate', () => ({
   migrateAtSpawn: (...args: unknown[]) => mockMigrateAtSpawn(...args),
 }));
-// Clubhouse-managed quick agents (D25) read the preview flag; null keeps the real settings.
-const experimentalFlags = vi.hoisted(() => ({ value: null as Record<string, boolean> | null }));
-vi.mock('./experimental-settings', async (original) => {
-  const actual = await original<typeof import('./experimental-settings')>();
-  return { ...actual, getSettings: () => experimentalFlags.value ?? actual.getSettings() };
-});
 
 vi.mock('./materialization-service', () => ({
   resolveProjectMcpServers: vi.fn(async () => ({})),
@@ -1154,12 +1148,10 @@ describe('agent-system', () => {
         mission: 'Fix it', systemPrompt: 'Write a summary.', managedTemplate: { id: 'tpl', agentName: 'swift-otter' }, ...extra,
       });
       beforeEach(() => {
-        experimentalFlags.value = { managedAgents: true };
         mockQuickLaunchFor.mockReset().mockResolvedValue(launch());
         (mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mockClear();
       });
       afterEach(() => {
-        experimentalFlags.value = null;
         untrackAgent('quick-1');
       });
 
@@ -1188,13 +1180,6 @@ describe('agent-system', () => {
       it('leaves the bridge on for a template with the Clubhouse MCP part', async () => {
         await quick();
         expect(agentRegistry.get('quick-1')?.mcpBridgeOff).toBeUndefined();
-      });
-
-      it('refuses with the preview flag off, starting nothing', async () => {
-        experimentalFlags.value = {};
-        await expect(quick()).rejects.toThrow(/only with Clubhouse-managed agents on/);
-        expect(mockQuickLaunchFor).not.toHaveBeenCalled();
-        expect(mockPtySpawn).not.toHaveBeenCalled();
       });
 
       it('fails the start when the template can\'t be read', async () => {

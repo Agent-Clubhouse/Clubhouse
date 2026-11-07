@@ -277,7 +277,7 @@ app.on('ready', () => {
   // E2E only: a no-op unless unpackaged and asked for (#2490).
   installHelperDeliverySeam();
   // Built-in agent parts (#2902): install or update them in the background. Never blocks startup.
-  // Then, with Clubhouse-managed agents on, switch sleeping legacy-configured agents once (D59).
+  // Then switch sleeping legacy-configured agents to managed once (D59).
   void import('./services/managed-agents').then(({ ensureBuiltinsOnce }) => ensureBuiltinsOnce()).then(
     () => import('./services/managed-agents/auto-migrate').then(({ runStartupMigration }) => runStartupMigration()).catch((err) => {
       appLog('core:managed', 'warn', 'The automatic switch to managed at startup stopped', { meta: { code: codeOf(err) } });

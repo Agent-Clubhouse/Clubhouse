@@ -11,7 +11,6 @@ import { Button } from '../../components/Button';
 import { Modal } from '../../components/Modal';
 import { rendererLog } from '../../plugins/renderer-logger';
 import { settingsError, settingsHelp } from './SettingsLayout';
-import { useManagedFlag } from '../managed/managed-flag';
 
 export type McpProposal = Parameters<typeof window.clubhouse.app.getMcpOffImpact>[0];
 
@@ -24,15 +23,13 @@ function join(items: string[]): string {
 
 /**
  * What stops working, in one sentence. `projectName` narrows it to a project.
- * With Clubhouse-managed agents on (`managed`), the Clubhouse mode setting
- * isn't offered (#2901), so the lead doesn't point at it.
+ * The Clubhouse mode setting isn't offered (#2901), so the lead doesn't
+ * point at it.
  */
-export function mcpOffLead(impact: McpOffImpact | null, projectName?: string, { managed = false }: { managed?: boolean } = {}): string {
+export function mcpOffLead(impact: McpOffImpact | null, projectName?: string): string {
   if (!impact) return 'Helpers, orchestration and connections to the Dispatcher stop working where Clubhouse MCP goes off.';
   if (impact.appKeptByClubhouseMode && !projectName) {
-    return managed
-      ? 'Clubhouse mode, which agents made before Clubhouse-managed agents still use, keeps Clubhouse MCP on at app level, so nothing stops working yet.'
-      : 'Clubhouse mode keeps Clubhouse MCP on at app level, so nothing stops working yet. Turning off Clubhouse mode would turn it off.';
+    return 'Clubhouse mode, which agents made before Clubhouse-managed agents still use, keeps Clubhouse MCP on at app level, so nothing stops working yet.';
   }
   if (projectName) return `In ${projectName}, helpers, orchestration and connections to the Dispatcher stop working.`;
   return impact.dispatcherGoesOff
@@ -83,7 +80,6 @@ export const MCP_OFF_STOP_FAILED = 'Clubhouse MCP is off, but the Dispatcher cou
  * `mcpOffDialog` once.
  */
 export function useMcpOffConfirm() {
-  const managedFlag = useManagedFlag();
   const [pending, setPending] = useState<Pending | null>(null);
   const [stopDispatcher, setStopDispatcher] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -171,7 +167,7 @@ export function useMcpOffConfirm() {
       )}
     >
       <div className={`${settingsHelp} flex flex-col gap-2`}>
-        <p data-testid="mcp-off-lead">{mcpOffLead(impact, pending?.projectName, { managed: managedFlag })}</p>
+        <p data-testid="mcp-off-lead">{mcpOffLead(impact, pending?.projectName)}</p>
         {impact?.turnsOff && <p data-testid="mcp-off-counts">{mcpOffCounts(impact)}</p>}
         {impact && mcpOffKeeps(impact) && <p data-testid="mcp-off-keeps">{mcpOffKeeps(impact)}</p>}
         {!!impact?.unreadableProjects.length && <p data-testid="mcp-off-unread">These counts leave out {join(impact.unreadableProjects)}, which couldn’t be read.</p>}

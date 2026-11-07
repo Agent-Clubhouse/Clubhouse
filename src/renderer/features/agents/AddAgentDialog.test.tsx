@@ -1,7 +1,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AddAgentDialog } from './AddAgentDialog';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
-import { loadManagedFlag, resetManagedFlag } from '../managed/managed-flag';
 
 vi.mock('../../../shared/name-generator', () => ({
   generateDurableName: () => 'test-agent',
@@ -100,7 +99,7 @@ describe('AddAgentDialog', () => {
     render(<AddAgentDialog {...defaultProps} />);
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledWith(
-      'test-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, undefined,
+      'test-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined,
     );
   });
 
@@ -131,7 +130,7 @@ describe('AddAgentDialog', () => {
     fireEvent.change(input, { target: { value: 'my-custom-agent' } });
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledWith(
-      'my-custom-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, undefined,
+      'my-custom-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined,
     );
   });
 
@@ -141,7 +140,7 @@ describe('AddAgentDialog', () => {
     fireEvent.click(checkbox);
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledWith(
-      'test-agent', 'indigo', 'default', true, 'claude-code', undefined, undefined, undefined,
+      'test-agent', 'indigo', 'default', true, 'claude-code', undefined, undefined,
     );
   });
 
@@ -165,56 +164,15 @@ describe('AddAgentDialog', () => {
     expect(screen.queryByTestId('add-agent-name-error')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledWith(
-      'My Agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, undefined,
+      'My Agent', 'indigo', 'default', false, 'claude-code', undefined, undefined,
     );
   });
 
-  describe('persona selector (#1565)', () => {
-    it('renders a persona select defaulting to Project default', () => {
-      render(<AddAgentDialog {...defaultProps} />);
-      const select = screen.getByTestId('add-agent-persona-select') as HTMLSelectElement;
-      expect(select.value).toBe('');
-      expect(screen.getByText('Project default')).toBeInTheDocument();
-    });
-
-    it('lists the known persona templates as options', () => {
-      render(<AddAgentDialog {...defaultProps} />);
-      expect(screen.getByText('Quality Assurance')).toBeInTheDocument();
-      expect(screen.getByText('Researcher')).toBeInTheDocument();
-    });
-
-    it('does not propagate a persona by default', () => {
-      render(<AddAgentDialog {...defaultProps} />);
-      fireEvent.click(screen.getByText('Create Agent'));
-      const callArgs = (defaultProps.onCreate as any).mock.calls[0];
-      expect(callArgs[callArgs.length - 1]).toBeUndefined();
-    });
-
-    it('propagates the selected persona id on submit', () => {
-      render(<AddAgentDialog {...defaultProps} />);
-      fireEvent.change(screen.getByTestId('add-agent-persona-select'), { target: { value: 'qa' } });
-      fireEvent.click(screen.getByText('Create Agent'));
-      expect(defaultProps.onCreate).toHaveBeenCalledWith(
-        'test-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, 'qa',
-      );
-    });
-  });
-
-  describe('with Clubhouse-managed agents on (#2901)', () => {
-    it('offers no persona and creates the agent without one', async () => {
-      const spy = vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
-      resetManagedFlag();
-      try {
-        await loadManagedFlag();
-        render(<AddAgentDialog {...defaultProps} />);
-        expect(screen.queryByTestId('add-agent-persona-select')).not.toBeInTheDocument();
-        fireEvent.click(screen.getByText('Create Agent'));
-        expect(defaultProps.onCreate).toHaveBeenCalledWith('test-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, undefined);
-      } finally {
-        spy.mockRestore();
-        resetManagedFlag();
-      }
-    });
+  it('offers no persona and creates the agent without one (#2901)', () => {
+    render(<AddAgentDialog {...defaultProps} />);
+    expect(screen.queryByTestId('add-agent-persona-select')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Create Agent'));
+    expect(defaultProps.onCreate).toHaveBeenCalledWith('test-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined);
   });
 
   describe('error surfacing (#1564)', () => {
@@ -262,9 +220,9 @@ describe('AddAgentDialog', () => {
     expect(screen.queryByText('Use Structured Mode')).not.toBeInTheDocument();
   });
 
-  it('calls onCreate with exactly eight positional args (no structuredMode slot)', () => {
+  it('calls onCreate with exactly seven positional args (no structuredMode or persona slot)', () => {
     render(<AddAgentDialog {...defaultProps} />);
     fireEvent.click(screen.getByText('Create Agent'));
-    expect((defaultProps.onCreate as any).mock.calls[0]).toHaveLength(8);
+    expect((defaultProps.onCreate as any).mock.calls[0]).toHaveLength(7);
   });
 });

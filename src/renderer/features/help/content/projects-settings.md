@@ -24,10 +24,6 @@ Select which AI backend powers agents in this project:
 
 The selected orchestrator applies to new and restarted agents. Only orchestrators enabled in global settings and detected on your system appear as options.
 
-## Clubhouse Mode
-
-When enabled, project-level agent defaults (instructions, permissions, MCP config, skills) are automatically synced to durable agents on wake. See the **Clubhouse Mode** help topic for details.
-
 ## Per-Project Plugin Enablement
 
 Toggle plugins on/off for this specific project. A plugin must first be enabled at the app level. Changes take effect immediately.

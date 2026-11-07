@@ -25,7 +25,6 @@ import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
 import { isDispatcherAgent } from '../dispatcher/dispatcherStore';
 import { closeDispatcher, openDispatcher } from '../dispatcher/dispatcherNav';
-import { useManagedFlag } from '../managed/managed-flag';
 
 /** Canvas metadata loaded from storage for non-active projects */
 interface CrossProjectCanvas {
@@ -59,7 +58,6 @@ export function useCommandSource(): CommandItem[] {
   const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
   const setSettingsContext = useUIStore((s) => s.setSettingsContext);
   const toggleHelp = useUIStore((s) => s.toggleHelp);
-  const managedFlag = useManagedFlag();
   const openAbout = useUIStore((s) => s.openAbout);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const pluginsMap = usePluginStore((s) => s.plugins);
@@ -528,8 +526,7 @@ export function useCommandSource(): CommandItem[] {
       id: 'action:agent-config',
       label: 'Agent config',
       category: CATEGORY.commands,
-      // With Clubhouse-managed agents on, Clubhouse Mode isn't offered there (#2901).
-      keywords: managedFlag ? ['durable', 'agents', 'orchestrator', 'config'] : ['clubhouse', 'mode', 'durable', 'agents', 'orchestrator', 'config'],
+      keywords: ['durable', 'agents', 'orchestrator', 'config'],
       execute: () => {
         const uiState = useUIStore.getState();
         if (uiState.explorerTab !== 'settings') toggleSettings();
@@ -595,7 +592,7 @@ export function useCommandSource(): CommandItem[] {
   }, [
     shortcuts, activeProjectId, annexEnabled, annexSettings, annexStatus,
     toggleSettings, toggleExplorerCollapse, toggleAccessoryCollapse,
-    removeProject, setSettingsContext, setSettingsSubPage, managedFlag,
+    removeProject, setSettingsContext, setSettingsSubPage,
   ]);
 
   const pluginCommandItems = useMemo((): CommandItem[] =>

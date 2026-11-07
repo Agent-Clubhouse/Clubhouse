@@ -186,7 +186,7 @@ describe('McpSettingsView', () => {
 
   it('says so plainly when Clubhouse mode keeps MCP on, with no counts of nothing', async () => {
     await openDialog({ ...IMPACT, turnsOff: false, appLoses: false, appKeptByClubhouseMode: true, dispatcherGoesOff: false, agentsLosing: 0, keeps: { projects: [], agents: [] } });
-    expect(screen.getByTestId('mcp-off-lead')).toHaveTextContent('Clubhouse mode keeps Clubhouse MCP on at app level');
+    expect(screen.getByTestId('mcp-off-lead')).toHaveTextContent('keeps Clubhouse MCP on at app level, so nothing stops working yet');
     expect(screen.queryByTestId('mcp-off-counts')).toBeNull();
     expect(screen.queryByText(/Stops new Clubhouse tool calls/)).toBeNull();
     expect(screen.queryByTestId('mcp-off-stop-dispatcher')).toBeNull();
@@ -205,14 +205,8 @@ describe('McpSettingsView', () => {
 });
 
 describe('the dialog copy', () => {
-  it('does not imply all MCP is off while Clubhouse mode keeps it on', () => {
-    expect(mcpOffLead({ ...IMPACT, turnsOff: false, appLoses: false, appKeptByClubhouseMode: true, dispatcherGoesOff: false })).toBe(
-      'Clubhouse mode keeps Clubhouse MCP on at app level, so nothing stops working yet. Turning off Clubhouse mode would turn it off.',
-    );
-  });
-
-  it('with Clubhouse-managed agents on, does not send people to the Clubhouse mode setting it hides (#2901)', () => {
-    const lead = mcpOffLead({ ...IMPACT, turnsOff: false, appLoses: false, appKeptByClubhouseMode: true, dispatcherGoesOff: false }, undefined, { managed: true });
+  it('does not imply all MCP is off while Clubhouse mode keeps it on, or send people to the setting it hides (#2901)', () => {
+    const lead = mcpOffLead({ ...IMPACT, turnsOff: false, appLoses: false, appKeptByClubhouseMode: true, dispatcherGoesOff: false });
     expect(lead).toBe('Clubhouse mode, which agents made before Clubhouse-managed agents still use, keeps Clubhouse MCP on at app level, so nothing stops working yet.');
     expect(lead).not.toMatch(/Turning off Clubhouse mode/);
   });

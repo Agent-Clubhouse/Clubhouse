@@ -5,11 +5,11 @@ Durable agents are for ongoing work. Each keeps its own Git worktree and branch,
 ## Creating one
 
 1. Click **New** at the top of the sidebar and choose **Durable agent…**. Or hover a project and click its **+** button.
-2. Set the **Name**, **Color**, **Runs on** and **Model**. Optionally pick a **Persona**, **MCPs** and **Free Agent Mode**.
+2. Set the **Name** and **Color**. With **Clubhouse managed** on, choose **Start with template** or **Build from scratch** to pick its instructions, skills and MCP servers. Turn it off for a plain agent: set its **Runs on** and **Model**, and optionally its **MCP servers** and **Free Agent Mode**. A plain agent keeps its own files, so Clubhouse Mode is off for it.
 3. Leave **Use git worktree** on to give the agent its own branch.
 4. Click **Create agent**. The agent appears under its project and starts right away. Select it to give it work.
 
-To start from a saved setup, choose **Agent from a template…** under **New**.
+Templates are in **Settings > Managed agents > Templates**.
 
 ## Waking a sleeping agent
 
@@ -37,13 +37,12 @@ Open **Settings** from the agent's row menu or hover card.
 | **Appearance** | Name, color and icon |
 | **Runs on** and **Model** | The CLI and model the agent uses. Changes apply the next time it starts or wakes. |
 | **Runtime** | Chat or CLI. Hidden when **Chat view** is off in **Settings > Agents & providers**. |
-| **Persona** | A role the agent takes on, such as reviewer or researcher |
 | **Instructions** | Markdown that guides the agent: style, limits, how to work |
 | **Permissions** | Tools the agent may use without asking, and tools it's always denied |
 | **MCP** | The agent's Model Context Protocol servers |
 | **Quick agent defaults** | What quick agents started from this agent inherit |
 
-With **Clubhouse mode** on, project defaults sync to the agent when it wakes. See **Clubhouse mode**.
+An agent that used Clubhouse Mode or a persona switches to managed on its own at its next start, keeping what it has now, and says so in its settings under **General > Setup**. Any other agent made before Clubhouse-managed agents can switch there, or with others in **Settings > Managed agents > Switch agents**.
 
 ## Deleting
 

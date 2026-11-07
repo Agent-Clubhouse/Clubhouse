@@ -72,7 +72,7 @@ test('parts library, New agent from a template, its builder pages and Preview, a
   projectDir = makeProject();
   app = await launchApp({
     label: 'managed-agents',
-    experimental: { chat: true, managedAgents: true },
+    experimental: { chat: true },
     userDataFiles: {
       // The provider is installed (the fake), so no first-run CLI probe.
       'orchestrator-settings.json': { enabled: ['claude-code'], autoDetected: true },

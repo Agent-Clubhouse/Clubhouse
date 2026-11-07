@@ -282,7 +282,8 @@ describe('Agent details for a sleeping agent (#2281)', () => {
     render(<AgentDetails agent={sleeping} />);
     await waitFor(() => expect(settings().getByRole('combobox', { name: 'Model' })).toBeInTheDocument());
     expect(settings().getByRole('switch', { name: 'Free agent mode' })).toBeInTheDocument();
-    expect(settings().getByRole('switch', { name: 'Clubhouse mode for this agent' })).toBeInTheDocument();
+    // Clubhouse Mode isn't offered here; an agent that uses it is offered the switch to managed (#2901).
+    expect(settings().queryByRole('switch', { name: 'Clubhouse mode for this agent' })).not.toBeInTheDocument();
     await waitFor(() => expect(settings().getByRole('combobox', { name: 'Runs in' })).toBeInTheDocument());
     expect(settings().getByTestId('details-settings-next-wake')).toHaveTextContent(NEXT_WAKE_NOTE);
     expect(settings().queryByText(LOCKED_HINT)).not.toBeInTheDocument();
@@ -301,13 +302,10 @@ describe('Agent details for a sleeping agent (#2281)', () => {
     await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1', { freeAgentMode: true }));
     await waitFor(() => expect(settings().getByTestId('details-setting-access')).toHaveTextContent('Free agent'));
 
-    fireEvent.click(settings().getByRole('switch', { name: 'Clubhouse mode for this agent' }));
-    await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1', { clubhouseModeOverride: true }));
-
     const runsIn = await settings().findByRole('combobox', { name: 'Runs in' });
     fireEvent.change(runsIn, { target: { value: 'terminal' } });
     await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1', { runtimeMode: 'terminal' }));
-    expect(saved).toMatchObject({ model: 'opus', freeAgentMode: true, clubhouseModeOverride: true, runtimeMode: 'terminal' });
+    expect(saved).toMatchObject({ model: 'opus', freeAgentMode: true, runtimeMode: 'terminal' });
     // Waking into the terminal: no idle sleep, so the Auto-sleep row goes.
     await waitFor(() => expect(settings().queryByTestId('details-setting-auto-sleep')).not.toBeInTheDocument());
   });

@@ -18,7 +18,6 @@ import { sameProjectPath } from '../../utils/project-path';
 import { parseHelperCount, useGlobalHelperCap } from '../agents/helpers/orchestration-hooks';
 import { HelperPresetsSection } from './HelperPresetsSection';
 import { SettingsBlock, SettingsField, SettingsPage, SettingsSection, settingsHelp, settingsInput } from './SettingsLayout';
-import { useManagedFlag } from '../managed/managed-flag';
 import { errorText, managed, unwrap, useManagedTemplates } from '../managed/managedApi';
 
 interface OrphanRow {
@@ -133,7 +132,6 @@ function DefaultHelperTemplateSection() {
 }
 
 export function HelpersSettingsView() {
-  const managedFlag = useManagedFlag();
   const { cap, loaded } = useGlobalHelperCap();
   const [draft, setDraft] = useState('');
   const [capError, setCapError] = useState<string | null>(null);
@@ -236,16 +234,14 @@ export function HelpersSettingsView() {
         </SettingsField>
       </SettingsSection>
 
-      {managedFlag && <DefaultHelperTemplateSection />}
+      <DefaultHelperTemplateSection />
 
-      {managedFlag ? (
-        <HelperPresetsSection
-          title="Smart helper selection"
-          autoLabel="Smart helper selection"
-          toggleText="Let orchestrators use it"
-          footer="Smart helper selection balances load across your providers. Built-in templates ask orchestrators to use it."
-        />
-      ) : <HelperPresetsSection />}
+      <HelperPresetsSection
+        title="Smart helper selection"
+        autoLabel="Smart helper selection"
+        toggleText="Let orchestrators use it"
+        footer="Smart helper selection balances load across your providers. Built-in templates ask orchestrators to use it."
+      />
 
       <SettingsSection title="Disposed helpers without an orchestrator" meta={orphans && orphans.length > 0 ? String(orphans.length) : undefined}>
         <SettingsBlock>

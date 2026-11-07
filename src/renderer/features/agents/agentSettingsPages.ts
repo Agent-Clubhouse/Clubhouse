@@ -192,12 +192,12 @@ export function useAgentSettingsTarget(explorerTab: string): Agent | null {
 export function hiddenAgentSettingsPages(
   agent: Pick<Agent, 'parentAgentId' | 'projectId'>,
   remote: boolean,
-  managed?: { flag: boolean; on: boolean },
+  managed: boolean,
 ): AgentSettingsPage[] {
   const hidden: AgentSettingsPage[] = agent.parentAgentId || remote ? ['helpers'] : [];
   // Clubhouse-managed agents (#2893): the builder takes over the file pages for
   // a managed agent; an unmanaged agent keeps one basic page plus orchestration.
-  if (!managed?.flag || remote) return [...hidden, 'preview'];
-  if (managed.on) return [...hidden, 'definitions', 'permissions'];
+  if (remote) return [...hidden, 'preview'];
+  if (managed) return [...hidden, 'definitions', 'permissions'];
   return [...hidden, 'instructions', 'skills', 'definitions', 'mcp', 'permissions', 'preview'];
 }

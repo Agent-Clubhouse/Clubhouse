@@ -14,7 +14,6 @@ import {
   accessLabel, instructionsLabel, isRowLocked, LOCKED_HINT, modelLabel, settingsSummary,
 } from './SettingsCard';
 import { useAgentDetailsStore } from './detailsStore';
-import { loadManagedFlag, resetManagedFlag } from '../../managed/managed-flag';
 
 const agent: Agent = {
   id: 'a1', projectId: 'p1', name: 'faithful-urchin', kind: 'durable', status: 'running', color: 'teal',
@@ -130,9 +129,7 @@ describe('Settings card (#2280)', () => {
     expect(card.getByTestId('details-setting-model')).toHaveTextContent('Opus 5.5');
     expect(card.getByTestId('details-setting-effort')).toHaveTextContent('High');
     expect(card.getByTestId('details-setting-access')).toHaveTextContent('Full access');
-    expect(card.getByTestId('details-setting-clubhouse-mode')).toHaveTextContent('On');
-    // With Clubhouse-managed agents off, nothing offers the switch (#2901).
-    expect(card.queryByTestId('details-settings-legacy')).not.toBeInTheDocument();
+    expect(card.queryByTestId('details-setting-clubhouse-mode')).not.toBeInTheDocument();
     // github from the wrapper (the agent's own pick) plus playwright from .mcp.json.
     await waitFor(() => expect(card.getByTestId('details-setting-mcp')).toHaveTextContent('2 configured'));
     expect(window.clubhouse.project.readDefaultMcps).not.toHaveBeenCalled();
@@ -141,7 +138,7 @@ describe('Settings card (#2280)', () => {
     // Spawn settings are locked while it runs, with one hint tied to them.
     const hint = card.getByTestId('details-settings-locked-hint');
     expect(hint).toHaveTextContent(LOCKED_HINT);
-    for (const id of ['cli', 'runs-in', 'model', 'access', 'clubhouse-mode']) {
+    for (const id of ['cli', 'runs-in', 'model', 'access']) {
       const row = card.getByTestId(`details-setting-${id}`);
       expect(row).toHaveAttribute('data-locked', 'true');
       expect(row).toHaveAttribute('aria-describedby', hint.id);
@@ -193,12 +190,11 @@ describe('Settings card (#2280)', () => {
     expect(window.clubhouse.project.readDefaultMcps).toHaveBeenCalledWith('/work/proj');
   });
 
-  it('shows Free agent mode for a terminal Claude agent and Clubhouse mode off for this agent', async () => {
+  it('shows Free agent mode for a terminal Claude agent', async () => {
     saved = { freeAgentMode: true, clubhouseModeOverride: true };
     render(<AgentDetails agent={agent} />);
     const card = openSettings();
     await waitFor(() => expect(card.getByTestId('details-setting-access')).toHaveTextContent('Free agent'));
-    expect(card.getByTestId('details-setting-clubhouse-mode')).toHaveTextContent('Off for this agent');
   });
 
   it('has no hint and no locked rows when the agent isn\'t running', async () => {
@@ -291,16 +287,8 @@ describe('Settings card edge cases', () => {
   });
 });
 
-describe('Settings card with Clubhouse-managed agents on (#2901)', () => {
-  let flag: ReturnType<typeof vi.spyOn>;
-  beforeEach(async () => {
-    flag = vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
-    resetManagedFlag();
-    await loadManagedFlag();
-  });
+describe('Settings card for legacy configuration (#2901)', () => {
   afterEach(() => {
-    flag.mockRestore();
-    resetManagedFlag();
     useAgentSettingsPages.getState().reset();
   });
 

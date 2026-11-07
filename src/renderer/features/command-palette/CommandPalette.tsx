@@ -6,8 +6,7 @@ import { CommandPaletteList, optionId } from './CommandPaletteList';
 import { useCommandSource } from './use-command-source';
 import { fuzzyFilter, FuzzyFilterItem } from './fuzzy-match';
 import { CATEGORY, CommandItem } from './command-registry';
-import { HELP_SECTIONS, MANAGED_CLASSIC_HELP_EDITS, managedHelpSections, type HelpSection } from '../help/help-content';
-import { useManagedFlag } from '../managed/managed-flag';
+import { HELP_SECTIONS, type HelpSection } from '../help/help-content';
 import { searchHelpTopics } from '../help/help-search';
 import { pushModal, removeModal } from '../../components/layers';
 
@@ -28,9 +27,6 @@ function stripPrefix(query: string): string {
   }
   return query;
 }
-
-// With Clubhouse-managed agents on, Clubhouse Mode and personas leave Help (#2901).
-const MANAGED_HELP_SECTIONS = managedHelpSections(HELP_SECTIONS, MANAGED_CLASSIC_HELP_EDITS);
 
 function helpItems(sections: HelpSection[], query: string): FuzzyFilterItem<CommandItem>[] {
   return searchHelpTopics(sections, query).slice(0, HELP_RESULTS).map((r) => ({
@@ -68,7 +64,6 @@ export function CommandPalette() {
   const recordRecent = useCommandPaletteStore((s) => s.recordRecent);
   const isRecent = useCommandPaletteStore((s) => s.isRecent);
   const allCommands = useCommandSource();
-  const managedFlag = useManagedFlag();
   const dialogRef = useRef<HTMLDivElement>(null);
 
   // Focus goes back where it was when the palette closes. While open the
@@ -127,8 +122,8 @@ export function CommandPalette() {
 
     // Re-sort with boosted scores
     const ranked = [...recents, ...rest].sort((a, b) => b.score - a.score);
-    return mode === 'all' ? [...ranked, ...helpItems(managedFlag ? MANAGED_HELP_SECTIONS : HELP_SECTIONS, searchQuery)] : ranked;
-  }, [modeFiltered, query, mode, isRecent, managedFlag]);
+    return mode === 'all' ? [...ranked, ...helpItems(HELP_SECTIONS, searchQuery)] : ranked;
+  }, [modeFiltered, query, mode, isRecent]);
 
   const executeItem = useCallback((item: CommandItem) => {
     recordRecent(item.id);

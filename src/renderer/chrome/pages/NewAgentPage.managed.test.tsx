@@ -10,7 +10,6 @@ vi.mock('../../features/agents/create-agent', () => ({ createDurableAgent: (...a
 
 import { NewAgentPage, quickTemplateHelp } from './NewAgentPage';
 import { templateSummary } from './NewManagedAgentSteps';
-import { resetManagedFlag } from '../../features/managed/managed-flag';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
@@ -50,14 +49,10 @@ const openWith = (over: Partial<NewAgentRequest> = {}) => {
   useChromeStore.setState({ newAgent: request, newAgentBusy: false, newAgentKnownIds: null });
   return render(<NewAgentPage request={request} />);
 };
-const flagOn = () => {
-  vi.spyOn(window.clubhouse.app, 'getExperimentalSettings').mockResolvedValue({ managedAgents: true } as never);
-};
 const managedSwitch = () => screen.findByRole('switch', { name: 'Clubhouse managed' });
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  resetManagedFlag();
   window.localStorage.clear();
   createDurableAgent.mockReset().mockResolvedValue('a-new');
   spawnDurableAgent = vi.fn().mockResolvedValue('m-new');
@@ -81,20 +76,8 @@ beforeEach(() => {
 });
 
 describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
-  it('with the flag off, the form is unchanged', async () => {
-    openWith();
-    await waitFor(() => expect(screen.getByLabelText('Own worktree and branch')).toBeTruthy());
-    expect(screen.queryByRole('switch', { name: 'Clubhouse managed' })).toBeNull();
-    expect(screen.queryByRole('switch', { name: 'Clubhouse features' })).toBeNull();
-    expect(screen.queryByTestId('new-agent-image')).toBeNull();
-    expect(screen.getByTestId('new-agent-persona')).toBeTruthy();
-    expect(screen.getByText('From a template…')).toBeTruthy();
-    expect(screen.queryByText('Copy another agent…')).toBeNull();
-    expect(screen.getByTestId('new-agent-submit').textContent).toBe('Create');
-  });
 
   it('managed is on by default and swaps the runtime rows for the managed footer', async () => {
-    flagOn();
     openWith();
     const toggle = await managedSwitch();
     expect(toggle.getAttribute('aria-checked')).toBe('true');
@@ -120,7 +103,6 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
   });
 
   it('remembers the last managed choice', async () => {
-    flagOn();
     const first = openWith();
     fireEvent.click(await managedSwitch());
     first.unmount();
@@ -129,7 +111,6 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
   });
 
   it('Start with template lists built-in and custom templates, and Create makes the agent from one', async () => {
-    flagOn();
     vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [builtinTemplate, customTemplate] } as never);
     const create = vi.spyOn(m(), 'createAgent').mockResolvedValue({ ok: true, value: { id: 'm-new', name: 'keen-heron', color: 'emerald' } } as never);
     openWith();
@@ -152,7 +133,6 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
   });
 
   it('Customize opens the builder from the template, and Create agent sends the setup and settings', async () => {
-    flagOn();
     vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [builtinTemplate] } as never);
     const create = vi.spyOn(m(), 'createAgent').mockResolvedValue({ ok: true, value: { id: 'm-new' } } as never);
     openWith();
@@ -188,7 +168,6 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
   });
 
   it('Build from scratch starts the builder with the identity block and the Clubhouse MCP server', async () => {
-    flagOn();
     const create = vi.spyOn(m(), 'createAgent').mockResolvedValue({ ok: true, value: { id: 'm-new' } } as never);
     openWith();
     await managedSwitch();
@@ -202,7 +181,6 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
   });
 
   it('keeps the builder open with the error inline when creation fails', async () => {
-    flagOn();
     vi.spyOn(m(), 'createAgent').mockResolvedValue({ ok: false, code: 'name_taken' } as never);
     openWith();
     await managedSwitch();
@@ -214,7 +192,6 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
   });
 
   it('Back returns to the form with the identity kept', async () => {
-    flagOn();
     openWith();
     await managedSwitch();
     fireEvent.change(screen.getByTestId('new-agent-name'), { target: { value: 'keen-heron' } });
@@ -224,7 +201,6 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
   });
 
   it('Copy another agent lists managed agents and opens the builder with its setup, model, CLI and Free Agent Mode', async () => {
-    flagOn();
     vi.spyOn(m(), 'getSetup').mockImplementation(async (_path: string, id: string) => ({
       ok: true,
       value: id === 'a1' ? { version: 1, blocks: ['b-identity'], skills: ['s-notes'], mcps: [], templateId: 'custom-release' } : null,
@@ -248,7 +224,6 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
   });
 
   it('Copy another agent brings its orchestration from its config', async () => {
-    flagOn();
     vi.spyOn(m(), 'getSetup').mockImplementation(async (_path: string, id: string) => ({
       ok: true, value: id === 'a1' ? { version: 1, blocks: ['b-identity'], skills: [], mcps: ['builtin-mcp-clubhouse'] } : null,
     }) as never);
@@ -270,7 +245,6 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
   });
 
   it('Back then forward to the same start keeps the builder draft, and the name can be fixed meanwhile', async () => {
-    flagOn();
     vi.spyOn(m(), 'createAgent')
       .mockResolvedValueOnce({ ok: false, code: 'name_taken' } as never)
       .mockResolvedValueOnce({ ok: true, value: { id: 'm-new' } } as never);
@@ -296,7 +270,6 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
   });
 
   it('Esc in a field of the builder doesn\'t go Back; Esc elsewhere does', async () => {
-    flagOn();
     openWith();
     await managedSwitch();
     fireEvent.click(screen.getByTestId('new-agent-scratch'));
@@ -311,7 +284,6 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
   });
 
   it('⌘↵ inside the part dialog doesn\'t create the agent', async () => {
-    flagOn();
     const create = vi.spyOn(m(), 'createAgent').mockResolvedValue({ ok: true, value: { id: 'm-new' } } as never);
     openWith();
     await managedSwitch();
@@ -326,7 +298,6 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
   });
 
   it('helpers need the Clubhouse MCP server', async () => {
-    flagOn();
     vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [{ ...builtinTemplate, setup: { ...builtinTemplate.setup, mcps: [] } }] } as never);
     const create = vi.spyOn(m(), 'createAgent').mockResolvedValue({ ok: true, value: { id: 'm-new' } } as never);
     openWith();
@@ -346,7 +317,6 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
   });
 
   it('turning Clubhouse features off warns what stops working and creates the agent with them off', async () => {
-    flagOn();
     openWith();
     fireEvent.click(await managedSwitch());
     fireEvent.click(screen.getByRole('switch', { name: 'Clubhouse features' }));
@@ -357,13 +327,13 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     fireEvent.click(screen.getByTestId('new-agent-submit'));
     expect(createDurableAgent).toHaveBeenCalledWith(
       { id: 'p1', path: '/tmp/ch' },
-      expect.objectContaining({ clubhouseFeatures: false, persona: undefined }),
+      expect.objectContaining({ clubhouseFeatures: false }),
       expect.anything(),
     );
+    expect(createDurableAgent.mock.calls[0][1]).not.toHaveProperty('persona');
   });
 
   it('a project on another computer can\'t be managed, and says why', async () => {
-    flagOn();
     useProjectStore.setState({ projects: [...projects, { id: 'remote||sat||p9', name: 'Far', path: '/far' }] as never });
     openWith({ projectId: 'remote||sat||p9' });
     const toggle = await managedSwitch();
@@ -394,18 +364,7 @@ describe('NewAgentPage, a quick agent from a template (D25)', () => {
   });
   const typeMission = () => fireEvent.change(screen.getByTestId('new-agent-mission'), { target: { value: 'Summarize the inbox' } });
 
-  it('with the flag off, a quick agent has no Template row and starts as before', async () => {
-    openWith({ kind: 'quick' });
-    await screen.findByTestId('new-agent-mission');
-    expect(screen.queryByTestId('new-agent-quick-template')).toBeNull();
-    typeMission();
-    fireEvent.click(screen.getByTestId('new-agent-submit'));
-    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalled());
-    expect(spawnQuickAgent.mock.calls[0][9]).toBeUndefined();
-  });
-
   it('shows None and the templates under the mission box, keeps the mission, and starts from the one picked', async () => {
-    flagOn();
     vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [builtinTemplate, serverTemplate] } as never);
     openWith({ kind: 'quick' });
     const select = await screen.findByTestId('new-agent-quick-template') as HTMLSelectElement;
@@ -432,7 +391,6 @@ describe('NewAgentPage, a quick agent from a template (D25)', () => {
   });
 
   it('leaves the model alone when the template\'s model is for a CLI that won\'t run', async () => {
-    flagOn();
     const otherCli = { ...serverTemplate, id: 'custom-codex', name: 'Codex reader', settings: { orchestrator: 'codex-cli', model: 'gpt-5-codex', freeAgentMode: true } };
     const noCli = { ...serverTemplate, id: 'custom-nocli', name: 'Loose', settings: { model: 'gpt-5-codex' } };
     vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [otherCli, noCli] } as never);
@@ -454,7 +412,6 @@ describe('NewAgentPage, a quick agent from a template (D25)', () => {
   });
 
   it('None starts a quick agent with no template', async () => {
-    flagOn();
     vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [serverTemplate] } as never);
     openWith({ kind: 'quick' });
     const select = await screen.findByTestId('new-agent-quick-template') as HTMLSelectElement;
