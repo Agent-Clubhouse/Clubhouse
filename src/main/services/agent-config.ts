@@ -28,6 +28,7 @@ import { ACCESS_LEVELS, type AgentAccessLevel, type OrchestrationPolicyConfig } 
 import { notifyPersonaChanged } from './persona-change-hook';
 import { uncommittedPorcelain } from './clubhouse-owned-files';
 import { DISPATCHER_PERSONA, isDispatcherPath } from './dispatcher/dispatcher-paths';
+import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup } from '../../shared/managed-agents-types';
 
 /**
  * Non-blocking git command execution. Prevents UI freezes in large repos.
@@ -3067,6 +3068,42 @@ async function setOrchestrationConfigInner(
   await writeAgents(projectPath, agents);
 }
 
+/**
+ * Clubhouse-managed agents (#2819): set or clear what an agent is built from.
+ * Written only by services/managed-agents. Clearing leaves the files the last
+ * managed start wrote, now the person's to manage. A missing agent throws.
+ */
+async function setManagedSetupInner(projectPath: string, agentId: string, setup: ManagedAgentSetup | null): Promise<void> {
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) throw new Error('Agent not found');
+  if (setup) {
+    agent.managed = { version: 1, blocks: [...setup.blocks], skills: [...setup.skills], mcps: [...setup.mcps], ...(setup.templateId ? { templateId: setup.templateId } : {}) };
+    // A managed agent's Clubhouse MCP bridge follows its Clubhouse MCP part.
+    agent.mcpOverride = setup.mcps.includes(CLUBHOUSE_MCP_PART_ID);
+    delete agent.clubhouseFeatures;
+    delete agent.persona;
+  } else {
+    delete agent.managed;
+  }
+  await writeAgents(projectPath, agents);
+}
+
+/** Unmanaged agents (#2893): false turns off Clubhouse hooks and the MCP bridge. */
+async function setClubhouseFeaturesInner(projectPath: string, agentId: string, on: boolean): Promise<void> {
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) throw new Error('Agent not found');
+  if (on) {
+    delete agent.clubhouseFeatures;
+    if (agent.mcpOverride === false) delete agent.mcpOverride;
+  } else {
+    agent.clubhouseFeatures = false;
+    agent.mcpOverride = false;
+  }
+  await writeAgents(projectPath, agents);
+}
+
 /** What start_helper keeps on a helper (#2227). null clears a field; undefined leaves it. */
 export interface HelperStartFields {
   pendingTask?: string | null;
@@ -3719,6 +3756,14 @@ export async function updateDurable(projectPath: string, agentId: string, update
 
 export async function setOrchestrationConfig(projectPath: string, agentId: string, config: OrchestrationPolicyConfig | undefined): Promise<void> {
   return withAgentActivity(agentId, () => setOrchestrationConfigInner(projectPath, agentId, config));
+}
+
+export async function setManagedSetup(projectPath: string, agentId: string, setup: ManagedAgentSetup | null): Promise<void> {
+  return withAgentActivity(agentId, () => setManagedSetupInner(projectPath, agentId, setup));
+}
+
+export async function setClubhouseFeatures(projectPath: string, agentId: string, on: boolean): Promise<void> {
+  return withAgentActivity(agentId, () => setClubhouseFeaturesInner(projectPath, agentId, on));
 }
 
 export async function setHelperStartFields(projectPath: string, agentId: string, fields: HelperStartFields): Promise<void> {

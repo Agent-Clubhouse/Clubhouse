@@ -299,10 +299,13 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
   assertDispatcherCanStart(params);
   // An agent still being created has no worktree yet, and a failed one never
   // will (#2226): refuse before anything touches its folder.
+  // Read once here; the managed delivery step below uses the same read.
+  let firstConfig: DurableAgentConfig | null = null;
   if (params.kind === 'durable') {
     let creation: DurableAgentConfig['creation'];
     try {
-      creation = (await getDurableConfig(params.projectPath, params.agentId))?.creation;
+      firstConfig = await getDurableConfig(params.projectPath, params.agentId);
+      creation = firstConfig?.creation;
     } catch {
       // telemetry-exempt: config not available; the spawn proceeds as before.
     }
@@ -363,9 +366,31 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       }
     }
 
+    // Clubhouse-managed agents (#2896): write the agent's setup into its folder
+    // before every start. Managed agents never take the Clubhouse Mode path.
+    let managedSetup = false;
+    if (params.kind === 'durable' && !managed) {
+      const config = firstConfig;
+      if (config?.managed) {
+        managedSetup = true;
+        try {
+          const { deliverForSpawn } = await import('./managed-agents');
+          await tel.step('clubhouse.agent.materialize', () =>
+            withErrorType('materialize_failed', () => deliverForSpawn(params.projectPath, config, provider)),
+          );
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          appLog('core:agent', 'warn', 'Managed setup delivery failed, continuing spawn', {
+            meta: { agentId: params.agentId, error: errorMessage },
+          });
+          broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, errorMessage);
+        }
+      }
+    }
+
     // Clubhouse Mode: materialize project defaults into worktree before spawn
     facts.clubhouseMode = params.kind === 'durable' && clubhouseModeSettings.isClubhouseModeEnabled(params.projectPath);
-    if (facts.clubhouseMode && !managed) {
+    if (facts.clubhouseMode && !managed && !managedSetup) {
       try {
         const config = await getDurableConfig(params.projectPath, params.agentId);
         if (config && !config.clubhouseModeOverride && config.worktreePath) {

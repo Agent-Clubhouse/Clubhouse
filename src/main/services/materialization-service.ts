@@ -536,6 +536,11 @@ export async function resolveProjectMcpServers(
   projectPath: string,
   agent?: DurableAgentConfig,
 ): Promise<Record<string, McpServerDef>> {
+  // Managed agents (#2896) get exactly their MCP server parts, never project defaults.
+  if (agent?.managed) {
+    const { managedMcpServersFor } = await import('./managed-agents');
+    return managedMcpServersFor(agent);
+  }
   const defaults = await readProjectAgentDefaults(projectPath);
   if (!defaults.mcpJson) return {};
   let json = defaults.mcpJson;
@@ -557,6 +562,7 @@ export async function resolveAgentMcpServers(
   agent: DurableAgentConfig | undefined,
   local: { cwd: string; conventions: SettingsConventions; onNotice?: (message: string) => void },
 ): Promise<Record<string, McpServerDef>> {
+  if (agent?.managed) return resolveProjectMcpServers(projectPath, agent);
   const managed = clubhouseModeSettings.isClubhouseModeEnabled(projectPath) && !!agent && !agent.clubhouseModeOverride;
   // No TOML reader exists here. Preserve canonical delivery and make the limitation visible.
   if (local.conventions.settingsFormat === 'toml') {

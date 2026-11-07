@@ -43,6 +43,7 @@ import { marketplace } from './marketplace';
 import { file } from './file';
 import { agentSettings } from './agentSettings';
 import { skillBundle } from './skillBundle';
+import { managedAgents } from './managedAgents';
 import { pty } from './pty';
 import { agent } from './agent';
 import { canvas } from './canvas';
@@ -65,6 +66,7 @@ describe('preload IPC bridge', () => {
       git,
       agentSettings,
       skillBundle,
+      managedAgents,
       file,
       blueprint,
       plugin,

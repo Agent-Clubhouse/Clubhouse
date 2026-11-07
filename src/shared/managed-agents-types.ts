@@ -1,0 +1,152 @@
+/**
+ * Clubhouse-managed agents (#2819). A managed agent is built from agent parts
+ * (instruction blocks, skills, MCP servers) kept once in the agent part
+ * library and used by reference, plus ordinary agent settings. Clubhouse
+ * delivers the result into the agent's own folder when each session starts.
+ *
+ * Parts are asset catalog entries (src/main/services/asset-catalog). Templates
+ * are unlinked starting points: an agent remembers which one it came from, so
+ * a template edit can be pushed to the agents a person ticks.
+ */
+import type { OrchestratorId } from './types';
+import type { OrchestrationPolicyConfig } from './orchestration-policy';
+
+export type ManagedPartKind = 'block' | 'skill' | 'mcp';
+
+/** What a managed agent is built from, by catalog asset id. Settings live on the agent config itself. */
+export interface ManagedAgentSetup {
+  version: 1;
+  /** Instruction blocks in the order the agent reads them. */
+  blocks: string[];
+  skills: string[];
+  mcps: string[];
+  /** The template the agent was made from, for display and for pushing template edits. Not a live link. */
+  templateId?: string;
+}
+
+/** The built-in Clubhouse MCP part. Present in a setup means the Clubhouse MCP bridge is on for the agent. */
+export const CLUBHOUSE_MCP_PART_ID = 'builtin-mcp-clubhouse';
+
+export interface ManagedPartSummary {
+  id: string;
+  kind: ManagedPartKind;
+  name: string;
+  description: string;
+  builtin: boolean;
+  revision: number;
+  updatedAt: string;
+  /** Who last changed it, when not the person: for example "Dispatcher". */
+  updatedBy?: string;
+  /** For a fork: the part it was copied from, when that part still exists. */
+  forkedFrom?: string;
+  /** Agents that use this part, across every registered project. */
+  usedBy: ManagedPartConsumer[];
+  /** Templates that list this part. */
+  templates: Array<{ id: string; name: string }>;
+  /** A short one-line preview of the content (block text, skill file list, MCP command). */
+  preview: string;
+}
+
+export interface ManagedPartConsumer {
+  projectPath: string;
+  projectName: string;
+  agentId: string;
+  agentName: string;
+  color: string;
+  running: boolean;
+}
+
+export interface ManagedBlockContent { kind: 'block'; content: string }
+export interface ManagedSkillContent {
+  kind: 'skill';
+  skillName: string;
+  files: Array<{ path: string; content: string; encoding?: 'utf8' | 'base64'; executable?: boolean }>;
+}
+export interface ManagedMcpContent {
+  kind: 'mcp';
+  serverKey: string;
+  transport: 'stdio' | 'http' | 'sse';
+  command?: string;
+  args?: string[];
+  url?: string;
+  /** Names of variables forwarded from the signed-in environment. Never values. */
+  envVars?: string[];
+}
+export type ManagedPartContent = ManagedBlockContent | ManagedSkillContent | ManagedMcpContent;
+
+export interface ManagedPart extends ManagedPartSummary {
+  content: ManagedPartContent;
+}
+
+/** Settings a template carries besides its parts. Unset means "leave as the person chose". */
+export interface ManagedTemplateSettings {
+  orchestrator?: OrchestratorId;
+  model?: string;
+  freeAgentMode?: boolean;
+  orchestration?: OrchestrationPolicyConfig;
+}
+
+export interface ManagedTemplate {
+  id: string;
+  name: string;
+  description: string;
+  builtin: boolean;
+  setup: Omit<ManagedAgentSetup, 'version' | 'templateId'>;
+  settings: ManagedTemplateSettings;
+  updatedAt?: string;
+}
+
+/** One difference between a template's saved version and an edit, for the push dialog. */
+export type ManagedTemplateChange =
+  | { kind: 'add'; part: ManagedPartKind; id: string; name: string }
+  | { kind: 'remove'; part: ManagedPartKind; id: string; name: string }
+  | { kind: 'order' }
+  | { kind: 'setting'; key: string; from: string; to: string };
+
+export interface ManagedTemplatePushTarget {
+  projectPath: string;
+  agentId: string;
+  agentName: string;
+  color: string;
+  running: boolean;
+  /** How many of the template's changes still apply to this agent. */
+  applicable: number;
+  total: number;
+  /** Why some don't apply, e.g. "already has no Playwright". */
+  note?: string;
+}
+
+/** What a running managed agent is waiting on. */
+export interface ManagedAgentStatus {
+  managed: boolean;
+  running: boolean;
+  /** True when the setup changed after the running session started. */
+  waiting: boolean;
+  /** Human-readable summary of what changed, e.g. "Coding standards was edited". */
+  changes: string[];
+  deliveredAt?: string;
+  /** True when the CLI changed since the session started, so a restart can't resume it. */
+  cliChanged: boolean;
+}
+
+/** The exact result an agent gets at its next start. */
+export interface ManagedPreview {
+  instructions: string;
+  blocks: Array<{ id: string; name: string; builtin: boolean; usedBy: number; startLine: number; endLine: number }>;
+  skills: Array<{ id: string; name: string; skillName: string; files: number; folder: string }>;
+  mcps: Array<{ id: string; name: string; serverKey: string; builtin: boolean }>;
+  missing: string[];
+}
+
+export type ManagedErrorCode =
+  | 'not_found'
+  | 'stale'
+  | 'invalid'
+  | 'builtin_read_only'
+  | 'in_use'
+  | 'not_managed'
+  | 'not_permitted'
+  | 'name_taken'
+  | 'failed';
+
+export type ManagedResult<T> = { ok: true; value: T } | { ok: false; code: ManagedErrorCode; message?: string };

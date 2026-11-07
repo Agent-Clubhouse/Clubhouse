@@ -248,6 +248,18 @@ describe('getOrchestrationPolicy', () => {
     expect((await getOrchestrationPolicy(PROJECT, 'helper'))?.orchestrate).toBe(false);
   });
 
+  it('gives a managed agent no persona layer: only its own settings decide (#2899)', async () => {
+    state.projectDefaults = { persona: 'lead' };
+    state.personas.set('lead', persona({ orchestrate: true, maxHelpers: 2 }));
+    state.personas.set('orchestrator', persona({ orchestrate: true, maxHelpers: 2 }));
+    const managed = { version: 1 as const, blocks: [], skills: [], mcps: [] };
+    setAgents(PROJECT, [agent('m', { managed }), agent('n', { managed, orchestration: { orchestrate: true } })]);
+    expect(await getOrchestrationPolicy(PROJECT, 'm')).toMatchObject({ orchestrate: false, maxHelpers: 5 });
+    expect((await getOrchestrationPolicy(PROJECT, 'n'))?.orchestrate).toBe(true);
+    const all = await resolveOrchestrationPolicies(PROJECT, [agent('m', { managed })]);
+    expect(all.get('m')).toMatchObject({ orchestrate: false, maxHelpers: 5 });
+  });
+
   it('follows the project default persona when the agent has none', async () => {
     state.projectDefaults = { persona: 'lead' };
     state.personas.set('lead', persona({ orchestrate: true }));
