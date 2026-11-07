@@ -41,12 +41,13 @@ export function missingEnvNotice(problem: ManagedMcpProblem): string {
 /**
  * A CLI's error text for a failed server, cut to its first line: an exit code
  * and the first stderr line where the CLI gives them. URL query strings are
- * removed, since they can carry tokens.
+ * removed, since they can carry tokens. `redact` runs before the cut, so a
+ * token that crosses the 200th character still matches its pattern.
  */
-export function mcpErrorLine(error: string | null | undefined): string | undefined {
+export function mcpErrorLine(error: string | null | undefined, redact: (text: string) => string = (t) => t): string | undefined {
   if (typeof error !== 'string') return undefined;
   const first = error.split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 0);
   if (!first) return undefined;
-  const stripped = first.replace(/(https?:\/\/[^\s?#]+)\?[^\s#]*/g, '$1?…');
+  const stripped = redact(first.replace(/(https?:\/\/[^\s?#]+)\?[^\s#]*/g, '$1?…'));
   return stripped.length > 200 ? `${stripped.slice(0, 200)}…` : stripped;
 }

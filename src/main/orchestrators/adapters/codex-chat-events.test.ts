@@ -705,6 +705,16 @@ describe('MCP startup status', () => {
     expect(notice.type === 'notice' && notice.data.message.length).toBeLessThan(260);
   });
 
+  it('redacts tokens in the chat notice as well as the server list (#2896)', () => {
+    const events = status('failed', 'auth failed: Bearer abcdefghijklmnopqrstuv for ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaa\nsecond line');
+    const notice = events.find((e) => e.type === 'notice')!;
+    const text = notice.type === 'notice' ? notice.data.message : '';
+    expect(text).toMatch(/^MCP server remote failed to start: auth failed: Bearer /);
+    expect(JSON.stringify(events)).not.toContain('abcdefghijklmnopqrstuv');
+    expect(JSON.stringify(events)).not.toContain('ghp_aaaa');
+    expect(text).not.toContain('second line');
+  });
+
   it('lists servers as they start and once they are ready, with no notice, and each change once', () => {
     const mapper = new CodexChatEventMapper();
     const update = (name: string, s: 'starting' | 'ready' | 'failed', error: string | null = null) => mapper.mapNotification({

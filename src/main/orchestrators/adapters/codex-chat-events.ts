@@ -234,7 +234,8 @@ export class CodexChatEventMapper {
         if (status !== 'failed') return listed;
         return [...listed, {
           type: 'notice',
-          data: { level: 'warn', code: 'mcp_server_failed', message: `MCP server ${name} failed to start${error ? `: ${safeErrorText(error)}` : ''}` },
+          // The same redacted first line Details shows: the notice reaches the chat and its transcript.
+          data: { level: 'warn', code: 'mcp_server_failed', message: `MCP server ${name} failed to start${line ? `: ${line}` : ''}` },
         }];
       }
       case 'thread/name/updated': {
@@ -959,12 +960,3 @@ const HTTP_TYPES: ReadonlySet<string> = new Set(['http', 'streamable_http', 'str
 
 /** Codex's MCP startup states as the chat names them. */
 const CODEX_MCP_STATUS: Record<string, ChatMcpServerStatus> = { starting: 'pending', ready: 'connected', failed: 'failed', cancelled: 'disabled' };
-
-/**
- * Codex's error text for a failed MCP server, shortened and with URL query
- * strings removed (they can carry tokens).
- */
-function safeErrorText(error: string): string {
-  const stripped = error.replace(/(https?:\/\/[^\s?#]+)\?[^\s#]*/g, '$1?…');
-  return stripped.length > 200 ? `${stripped.slice(0, 200)}…` : stripped;
-}

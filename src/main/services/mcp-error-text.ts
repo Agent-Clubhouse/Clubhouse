@@ -9,6 +9,6 @@ import { mcpErrorLine } from '../../shared/mcp-start-problems';
 import { redactSecretValues } from '../telemetry/diag-redaction';
 
 export function safeMcpErrorLine(error: string | null | undefined): string | undefined {
-  const line = mcpErrorLine(error);
-  return line ? redactSecretValues(line) : undefined;
+  // Redacted before the cut: a token cut short no longer matches its pattern.
+  return mcpErrorLine(error, redactSecretValues);
 }
