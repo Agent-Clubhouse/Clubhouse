@@ -64,11 +64,30 @@ export interface ManagedPartSummary {
   templates: Array<{ id: string; name: string }>;
   /** A short one-line preview of the content (block text, skill file list, MCP command). */
   preview: string;
+  /** Skills only: the folder it installs to (its SKILL.md front matter name). */
+  skillName?: string;
   /**
    * MCP only: env names that were stored with literal values. Clubhouse no
    * longer uses the values, so each must be set in the person's environment (D46).
    */
   droppedEnvValues?: string[];
+}
+
+/** Why two skills can't share a setup: they install to one folder. Builder, setup checks and templates all say this. */
+export function skillFolderClashMessage(a: string, b: string, folder: string): string {
+  return `${a} and ${b} both install to ${folder}/. Pick one.`;
+}
+
+/** The first pair of skills that install to the same folder (compared without case), or null. */
+export function findSkillFolderClash(skills: ReadonlyArray<{ name: string; skillName: string }>): { a: string; b: string; folder: string } | null {
+  const seen = new Map<string, string>();
+  for (const s of skills) {
+    const key = s.skillName.toLowerCase();
+    const other = seen.get(key);
+    if (other !== undefined) return { a: other, b: s.name, folder: s.skillName };
+    seen.set(key, s.name);
+  }
+  return null;
 }
 
 export interface ManagedPartConsumer {
@@ -197,7 +216,12 @@ export interface ManagedAgentStatus {
 export interface ManagedPreview {
   instructions: string;
   blocks: Array<{ id: string; name: string; builtin: boolean; usedBy: number; startLine: number; endLine: number }>;
-  skills: Array<{ id: string; name: string; skillName: string; files: number; folder: string }>;
+  /**
+   * `projectOwn`: a built-in skill whose folder git tracks in the agent's
+   * folder isn't delivered; the CLI loads the project's copy, and this says
+   * so (D74).
+   */
+  skills: Array<{ id: string; name: string; skillName: string; files: number; folder: string; projectOwn?: string }>;
   /** `droppedEnvValues`: env names stored with literal values, which must now come from the environment (D46). */
   mcps: Array<{ id: string; name: string; serverKey: string; builtin: boolean; droppedEnvValues?: string[] }>;
   missing: string[];

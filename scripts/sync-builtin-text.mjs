@@ -18,7 +18,8 @@
  *     `description` isn't empty. The export's `name` is the library name.
  *     Variants can share a folder (the post-result skills all install as
  *     `post-result/`), so no template lists two skills with one folder.
- *     A cut skill keeps the file it shipped with.
+ *     A cut skill keeps the file it shipped with, and so does a shipped
+ *     skill the export no longer has: both become retired built-ins (D71).
  *   - `manifest.json`: block names, descriptions and files, skill names,
  *     folders, descriptions and files, and template names, descriptions,
  *     blocks, skills and settings, which builtins.ts reads.
@@ -254,6 +255,14 @@ export function plan(exp, { current = null, textDir = DEFAULT_TEXT_DIR } = {}) {
     skills.push({ id: doc.id, name: doc.name, skillName, description, file, ...(cut && { retired: true }) });
   }
 
+  // A shipped skill the export no longer has was cut: it stays, retired (D71), with the file it shipped with.
+  for (const sk of current?.skills ?? []) {
+    if (knownSkills.has(sk.id)) continue;
+    if (!existsSync(path.join(textDir, sk.file))) problems.push(`skill ${sk.id}: cut from the export, but its shipped ${sk.file} is missing`);
+    knownSkills.set(sk.id, { cut: true, skillName: sk.skillName });
+    skills.push({ id: sk.id, name: sk.name, skillName: sk.skillName, description: sk.description, file: sk.file, retired: true });
+  }
+
   const templates = [];
   const seen = new Set();
   for (const doc of [...exp.templates].sort(byOrder)) {
@@ -296,7 +305,6 @@ export function plan(exp, { current = null, textDir = DEFAULT_TEXT_DIR } = {}) {
   }
 
   for (const b of current?.blocks ?? []) if (!known.has(b.id)) problems.push(`block ${b.id} is built in but missing from the export; built-in ids never disappear`);
-  for (const sk of current?.skills ?? []) if (!knownSkills.has(sk.id)) problems.push(`skill ${sk.id} is built in but missing from the export; built-in ids never disappear`);
   for (const t of current?.templates ?? []) if (!seen.has(t.id)) problems.push(`template ${t.id} is built in but missing from the export; built-in ids never disappear`);
 
   const manifest = { $comment: MANIFEST_COMMENT, blocks, skills, templates };

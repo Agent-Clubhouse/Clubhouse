@@ -20,10 +20,10 @@ import buildSkillText from './skills/build/SKILL.md';
 import testSkillText from './skills/test/SKILL.md';
 import lintSkillText from './skills/lint/SKILL.md';
 import validateSkillText from './skills/validate/SKILL.md';
-import postResultSkillText from './skills/post-result/SKILL.md';
 import postResultParentSkillText from './skills/post-result-parent/SKILL.md';
 import postResultBoardSkillText from './skills/post-result-board/SKILL.md';
 import postResultPrSkillText from './skills/post-result-pr/SKILL.md';
+import postResultSkillText from './skills/post-result/SKILL.md';
 
 /** Every built-in block's text, by its file in manifest.json. */
 export const BUILTIN_TEXT: Record<string, string> = {
@@ -52,8 +52,8 @@ export const BUILTIN_SKILL_TEXT: Record<string, string> = {
   'skills/test/SKILL.md': testSkillText,
   'skills/lint/SKILL.md': lintSkillText,
   'skills/validate/SKILL.md': validateSkillText,
-  'skills/post-result/SKILL.md': postResultSkillText,
   'skills/post-result-parent/SKILL.md': postResultParentSkillText,
   'skills/post-result-board/SKILL.md': postResultBoardSkillText,
   'skills/post-result-pr/SKILL.md': postResultPrSkillText,
+  'skills/post-result/SKILL.md': postResultSkillText,
 };

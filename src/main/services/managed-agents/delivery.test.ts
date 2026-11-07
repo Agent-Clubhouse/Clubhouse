@@ -127,6 +127,12 @@ describe('deliverManagedSetup', () => {
     expect(launch.instructions.split('\n').slice(0, 4)).toEqual(['Host: @@SourceControlProvider', 'Build: @@BuildCommand', 'Test: @@TestCommand', 'Lint: @@LintCommand']);
   });
 
+  it('still delivers the cut Post result skill to an agent that has it (D71)', async () => {
+    agent.managed = { version: 1, blocks: [], skills: [BUILTIN_SKILL_IDS.postResult], mcps: [] };
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(fs.readFileSync(path.join(agent.worktreePath!, '.claude', 'skills', 'post-result', 'SKILL.md'), 'utf-8')).toBe(BUILTIN_SKILL_TEXT['skills/post-result/SKILL.md']);
+  });
+
   it('still delivers a retired built-in to an agent that uses it (D71)', async () => {
     const { setup } = await user(() => service.setupFromTemplate('builtin-template-project-manager'));
     agent.managed = setup;
@@ -402,6 +408,73 @@ describe('exactly its parts (#2819)', () => {
     expect(fs.readFileSync(path.join(skills, 'repo-skill', 'SKILL.md'), 'utf-8')).toBe('# tracked');
     const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider() }));
     expect(preview.repoSkills).toEqual(['.claude/skills/repo-skill']);
+  });
+
+  it('leaves a built-in skill folder git tracks to the project, and never writes, records or removes it (D74)', async () => {
+    const wt = agent.worktreePath!;
+    const skills = path.join(wt, '.claude', 'skills');
+    git(wt, 'init', '-q');
+    fs.mkdirSync(path.join(skills, 'build'), { recursive: true });
+    fs.writeFileSync(path.join(skills, 'build', 'SKILL.md'), '# ours');
+    git(wt, 'add', '.claude/skills/build/SKILL.md');
+    agent.managed = { version: 1, blocks: [], skills: [BUILTIN_SKILL_IDS.build, BUILTIN_SKILL_IDS.validate], mcps: [] };
+    const backupRoot = path.join(root, 'backup');
+    vi.mocked(appLog).mockClear();
+    for (let start = 0; start < 2; start++) {
+      await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot }));
+      expect(fs.readFileSync(path.join(skills, 'build', 'SKILL.md'), 'utf-8')).toBe('# ours');
+      expect(fs.readFileSync(path.join(skills, 'validate', 'SKILL.md'), 'utf-8')).toBe(BUILTIN_SKILL_TEXT['skills/validate/SKILL.md']);
+      expect(JSON.parse(fs.readFileSync(path.join(skills, '.clubhouse-managed-skills.json'), 'utf-8'))).toEqual({ skills: ['validate'] });
+    }
+    expect(fs.existsSync(backupRoot)).toBe(false);
+    expect(appLog).toHaveBeenCalledWith('core:managed', 'info', "Using the project's own build skill; its built-in isn't delivered", { meta: { agentId: agent.id, folder: 'build' } });
+    const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(preview.skills.find((sk) => sk.id === BUILTIN_SKILL_IDS.build)!.projectOwn).toBe("Using the project's own build skill");
+    expect(preview.skills.find((sk) => sk.id === BUILTIN_SKILL_IDS.validate)!.projectOwn).toBeUndefined();
+  });
+
+  it('still replaces an untracked folder in a built-in skill\'s way, and leaves one it delivered once git tracks it (D74)', async () => {
+    const wt = agent.worktreePath!;
+    const skills = path.join(wt, '.claude', 'skills');
+    git(wt, 'init', '-q');
+    fs.mkdirSync(path.join(skills, 'build'), { recursive: true });
+    fs.writeFileSync(path.join(skills, 'build', 'SKILL.md'), '# stray');
+    agent.managed = { version: 1, blocks: [], skills: [BUILTIN_SKILL_IDS.build], mcps: [] };
+    const backupRoot = path.join(root, 'backup');
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot }));
+    const builtin = BUILTIN_SKILL_TEXT['skills/build/SKILL.md'];
+    expect(fs.readFileSync(path.join(skills, 'build', 'SKILL.md'), 'utf-8')).toBe(builtin);
+    const [moved] = fs.readdirSync(backupRoot);
+    expect(fs.readFileSync(path.join(backupRoot, moved, 'SKILL.md'), 'utf-8')).toBe('# stray');
+
+    // The project commits Clubhouse's copy and edits it: from then on it's the project's.
+    fs.writeFileSync(path.join(skills, 'build', 'SKILL.md'), '# committed');
+    git(wt, 'add', '.claude/skills/build/SKILL.md');
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot }));
+    expect(fs.readFileSync(path.join(skills, 'build', 'SKILL.md'), 'utf-8')).toBe('# committed');
+    expect(JSON.parse(fs.readFileSync(path.join(skills, '.clubhouse-managed-skills.json'), 'utf-8'))).toEqual({ skills: [] });
+    // Dropped from the setup, it's still never removed.
+    agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot }));
+    expect(fs.readFileSync(path.join(skills, 'build', 'SKILL.md'), 'utf-8')).toBe('# committed');
+  });
+
+  it('keeps today\'s behavior for a custom skill whose folder git tracks: the folder moves aside and the skill takes its place (D48, D74)', async () => {
+    const wt = agent.worktreePath!;
+    const skills = path.join(wt, '.claude', 'skills');
+    git(wt, 'init', '-q');
+    fs.mkdirSync(path.join(skills, 'build'), { recursive: true });
+    fs.writeFileSync(path.join(skills, 'build', 'SKILL.md'), '# ours');
+    git(wt, 'add', '.claude/skills/build/SKILL.md');
+    const mine = await user(() => service.createPart({ name: 'My build', content: { kind: 'skill', skillName: 'build', files: [{ path: 'SKILL.md', content: '# mine' }] } }));
+    agent.managed = { version: 1, blocks: [], skills: [mine.id], mcps: [] };
+    const backupRoot = path.join(root, 'backup');
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider(), backupRoot }));
+    expect(fs.readFileSync(path.join(skills, 'build', 'SKILL.md'), 'utf-8')).toBe('# mine');
+    const [moved] = fs.readdirSync(backupRoot);
+    expect(fs.readFileSync(path.join(backupRoot, moved, 'SKILL.md'), 'utf-8')).toBe('# ours');
+    const preview = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(preview.skills[0].projectOwn).toBeUndefined();
   });
 
   it('never delivers literal env values, even from a part stored with them (D46)', async () => {

@@ -23,7 +23,7 @@ You need the Clubhouse MCP tools `start_helper`, `list_helpers`, `sleep_helper`,
 - Your settings decide how many helpers you can run and whether you can start them in other projects. If `start_helper` refuses for any other reason, read it and tell the user instead of retrying.
 - You own your helpers' lifecycle. Dispose of each one once its work is accepted. Disposing deletes its workspace and can't be undone, so make sure anything worth keeping is pushed or written down first. Don't let idle helpers pile up.
 
-- Have work reviewed before it becomes a pull request. When a task needs review, start a QA helper on the helper's branch, and open the pull request, or have the helper open it, only after it passes.
+- Have work reviewed before it becomes a pull request. When a task needs review, start a helper from the QA helper template on the helper's branch (pass `template`, found with `list_agent_templates`). If choosing a template is refused, start a default helper and make the review its task. Open the pull request, or have the helper open it, only after it passes.
 
 ## Track and talk
 

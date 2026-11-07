@@ -167,16 +167,24 @@ describe('sync-builtin-text', () => {
       'template builtin-template-orchestrator: skills ["builtin-skill-build","builtin-skill-validate"] -> ["builtin-skill-validate"]',
     ]);
 
-    // A skill dropped from the export is a problem; one that's cut keeps its shipped file.
+    // A shipped skill dropped from the export is cut: retired, with its shipped file and folder (D71).
+    const retired = { id: 'builtin-skill-build', name: 'build skill', skillName: 'build', description: 'Use when you need build.', file: 'skills/build/SKILL.md', retired: true };
     rmSync(path.join(exportDir, 'skills', 'builtin-skill-build.json'));
-    expect(syncBuiltinText(exportDir, { textDir }).problems).toEqual(expect.arrayContaining([
-      'skill builtin-skill-build is built in but missing from the export; built-in ids never disappear',
-    ]));
+    const dropped = syncBuiltinText(exportDir, { textDir, write: true });
+    expect(dropped.problems).toEqual([]);
+    expect(dropped.differences).toContain('skill builtin-skill-build: retired undefined -> true');
+    expect(dropped.manifest.skills.find((sk: { id: string }) => sk.id === 'builtin-skill-build')).toEqual(retired);
+    expect(readFileSync(path.join(textDir, 'skills', 'build', 'SKILL.md'), 'utf8')).toBe(skillMd('build'));
+    expect(syncBuiltinText(exportDir, { textDir })).toMatchObject({ problems: [], differences: [] });
+    // So is one the export marks cut, whatever its text says now.
     writeDoc('skills', skill('build', { status: 'cut', text: 'gone' }));
     const cut = syncBuiltinText(exportDir, { textDir, write: true });
     expect(cut.problems).toEqual([]);
-    expect(cut.manifest.skills[0]).toEqual({ id: 'builtin-skill-build', name: 'build skill', skillName: 'build', description: 'Use when you need build.', file: 'skills/build/SKILL.md', retired: true });
+    expect(cut.manifest.skills[0]).toEqual(retired);
     expect(readFileSync(path.join(textDir, 'skills', 'build', 'SKILL.md'), 'utf8')).toBe(skillMd('build'));
+    // A template can't list a cut skill.
+    writeDoc('templates', template('builtin-template-orchestrator', ['builtin-block-identity'], { name: 'Orchestrator', order: 0, skills: ['builtin-skill-build'] }));
+    expect(syncBuiltinText(exportDir, { textDir }).problems).toEqual(['template builtin-template-orchestrator: lists cut skill builtin-skill-build']);
   });
 
   it('lets variants share a folder, stored by id, but never two of them in one template (#2902)', async () => {

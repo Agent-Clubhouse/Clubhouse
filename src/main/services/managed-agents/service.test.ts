@@ -76,7 +76,8 @@ describe('built-ins', () => {
     ].sort());
     const templates = await user(() => service.listTemplates());
     expect(templates.filter(isListed).map((t) => t.name)).toEqual([
-      'Orchestrator', 'Group Project Lead', 'Quality Assurance', 'Developer (Full Merge)', 'Developer (No Merge)',
+      'Orchestrator', 'Group Project Lead', 'Quality Assurance (pull request)', 'Quality Assurance (group project)',
+      'Developer (Full Merge)', 'Developer (No Merge)',
       'Product Owner', 'Researcher', 'Helper', 'Developer helper', 'Research helper', 'QA helper',
     ]);
     expect(templates.filter((t) => t.retired).map((t) => t.id)).toEqual(['builtin-template-project-manager']);
@@ -104,10 +105,11 @@ describe('built-ins', () => {
 
   it('installs the built-in skills and lists them as built-in and read-only, forkable (#2902)', async () => {
     const skills = (await user(() => service.listParts('skill'))).filter((p) => p.builtin);
-    expect(skills.map((p) => p.name)).toEqual([
-      'Build', 'Lint', 'Post result', 'Post result to parent', 'Post result to the board', 'Post result to the pull request', 'Test', 'Validate',
+    expect(skills.filter(isListed).map((p) => p.name)).toEqual([
+      'Build', 'Lint', 'Post result to parent', 'Post result to the board', 'Post result to the pull request', 'Test', 'Validate',
     ]);
-    expect(skills.every(isListed)).toBe(true);
+    // The generic Post result was cut: hidden, still installed and delivered to agents that have it (D71).
+    expect(skills.filter((p) => p.retired).map((p) => p.id)).toEqual([BUILTIN_SKILL_IDS.postResult]);
     const validate = await user(() => service.getPart(BUILTIN_SKILL_IDS.validate));
     expect(validate).toMatchObject({ builtin: true, kind: 'skill' });
     expect(validate.description).not.toBe('');
@@ -143,13 +145,41 @@ describe('built-ins', () => {
       'builtin-template-developer-full-merge': dev,
       'builtin-template-developer-no-merge': dev,
       'builtin-template-developer-helper': dev,
-      'builtin-template-quality-assurance': [...dev, S.postResult],
+      'builtin-template-quality-assurance': [...dev, S.postResultPr],
+      'builtin-template-qa-group-project': [...dev, S.postResultBoard],
       'builtin-template-qa-helper': [...dev, S.postResultParent],
     };
     const templates = await user(() => service.listTemplates());
     for (const t of templates.filter((x) => x.builtin)) expect(t.setup.skills, t.id).toEqual(expected[t.id] ?? []);
     const { setup } = await user(() => service.setupFromTemplate('builtin-template-quality-assurance'));
     expect(setup.skills).toEqual(expected['builtin-template-quality-assurance']);
+  });
+
+  it('gives each QA template exactly one post-result variant, the one for where it reports (#2902)', async () => {
+    const S = BUILTIN_SKILL_IDS;
+    const variants = new Set<string>([S.postResult, S.postResultParent, S.postResultBoard, S.postResultPr]);
+    const want: Record<string, string> = {
+      'builtin-template-quality-assurance': S.postResultPr,
+      'builtin-template-qa-group-project': S.postResultBoard,
+      'builtin-template-qa-helper': S.postResultParent,
+    };
+    // The pull request one keeps the id Quality Assurance shipped with, so its agents keep their template.
+    expect((await user(() => service.getTemplate('builtin-template-quality-assurance'))).name).toBe('Quality Assurance (pull request)');
+    for (const [id, variant] of Object.entries(want)) {
+      const t = await user(() => service.getTemplate(id));
+      expect(t.setup.blocks, id).toContain(BUILTIN_BLOCK_IDS.qa);
+      expect(t.setup.skills.filter((sk) => variants.has(sk)), id).toEqual([variant]);
+      // It saves as a setup: one skill per folder.
+      const { setup } = await user(() => service.setupFromTemplate(id));
+      agent(`qa-${id}`, {});
+      await user(() => service.saveSetup('/p', `qa-${id}`, setup));
+    }
+    const groupQa = await user(() => service.getTemplate('builtin-template-qa-group-project'));
+    expect(groupQa.setup.blocks).toContain(BUILTIN_BLOCK_IDS.groupProjects);
+    // No other template carries a post-result variant.
+    for (const t of (await user(() => service.listTemplates())).filter((x) => x.builtin && !(x.id in want))) {
+      expect(t.setup.skills.filter((sk) => variants.has(sk)), t.id).toEqual([]);
+    }
   });
 
   it('installs every post-result variant as post-result/, so a setup carries only one (#2902)', async () => {
@@ -163,12 +193,32 @@ describe('built-ins', () => {
       const part = await user(() => service.getPart(id));
       expect(part.content.kind === 'skill' && part.content.skillName, id).toBe(id.slice('builtin-skill-'.length));
     }
-    agent('qa', { skills: [S.postResult] });
-    await expectCode(user(() => service.saveSetup('/p', 'qa', { blocks: [], skills: [S.postResult, S.postResultPr], mcps: [] })), 'invalid');
-    // A fork keeps the folder too, so it can't sit beside the built-in it came from.
+    agent('qa', { skills: [S.postResultPr] });
+    const refused = async (skills: string[], message: string) => {
+      const save = user(() => service.saveSetup('/p', 'qa', { blocks: [], skills, mcps: [] }));
+      await expectCode(save, 'invalid');
+      await expect(save).rejects.toThrow(message);
+      // A template is refused the same way.
+      await expect(user(() => service.saveTemplate({ name: `Clash ${skills.join(' ')}`, description: '', setup: { blocks: [], skills, mcps: [] }, settings: {} }))).rejects.toThrow(message);
+    };
+    // Built-in and built-in.
+    await refused([S.postResultParent, S.postResultPr], 'Post result to parent and Post result to the pull request both install to post-result/. Pick one.');
+    // Built-in and a fork: a fork keeps the folder, so it can't sit beside the built-in it came from.
     const fork = await user(() => service.forkPart({ id: S.postResultPr }));
-    await expectCode(user(() => service.saveSetup('/p', 'qa', { blocks: [], skills: [S.postResult, fork.id], mcps: [] })), 'invalid');
+    await refused([S.postResultPr, fork.id], `Post result to the pull request and ${fork.name} both install to post-result/. Pick one.`);
+    // Fork and fork, of different built-ins.
+    const other = await user(() => service.forkPart({ id: S.postResultBoard }));
+    await refused([fork.id, other.id], `${fork.name} and ${other.name} both install to post-result/. Pick one.`);
+    // A user skill that happens to use the folder.
+    const mine = await user(() => service.createPart({ name: 'Mine', content: { kind: 'skill', skillName: 'post-result', files: [{ path: 'SKILL.md', content: '# mine' }] } }));
+    await refused([S.postResultBoard, mine.id], 'Post result to the board and Mine both install to post-result/. Pick one.');
+    // One at a time is fine, and the library says which folder each uses.
     await user(() => service.saveSetup('/p', 'qa', { blocks: [], skills: [fork.id], mcps: [] }));
+    expect((await user(() => service.getPart(fork.id))).skillName).toBe('post-result');
+    // Forking for an agent swaps the fork in for the part it came from: a replace, not a clash.
+    agent('qa2', { skills: [S.build, S.postResultPr] });
+    const swapped = await user(() => service.forkPart({ id: S.postResultPr, agent: { projectPath: '/p', agentId: 'qa2' } }));
+    expect(agents.get('qa2')!.managed!.skills).toEqual([S.build, swapped.id]);
   });
 
   it('keeps the Identity line the E2E specs look for', () => {
@@ -420,7 +470,7 @@ describe('templates', () => {
     const results = await user(() => service.pushTemplate(t.id, next, [{ projectPath: '/p', agentId: 'a' }, { projectPath: '/p', agentId: 'b' }]));
     const a = results.find((r) => r.agentId === 'a')!;
     expect(a.settings).toEqual({ model: 'default', orchestration: { orchestrate: null, maxHelpers: 3, autoHelpers: true } });
-    expect(results.find((r) => r.agentId === 'b')!.failed).toMatch(/folder name deploy/);
+    expect(results.find((r) => r.agentId === 'b')!.failed).toBe('One and Two both install to deploy/. Pick one.');
     expect(agents.get('b')!.managed!.skills).toEqual([one.id]);
     await expectCode(user(() => service.pushTemplate(t.id, { setup: { blocks: ['gone'], skills: [], mcps: [] }, settings: {} }, [])), 'not_found');
   });
@@ -476,7 +526,7 @@ describe('managed helpers (#2899)', () => {
     // A helper works on the branch it was given: the working Identity, never the durable one (#2902).
     expect(qa.blocks[0]).toBe(BUILTIN_BLOCK_IDS.identityHelper);
     expect(qa.blocks).not.toContain(BUILTIN_BLOCK_IDS.identity);
-    expect(qa.skills).toContain(BUILTIN_SKILL_IDS.postResult);
+    expect(qa.skills).toContain(BUILTIN_SKILL_IDS.postResultPr);
     await expect(user(() => managedHelperSetup(service, { template: 'nope' }))).rejects.toThrow(/no template "nope"/);
     await expect(user(() => managedHelperSetup(service, { addParts: ['nope'] }))).rejects.toThrow(/no agent part "nope"/);
     await expect(user(() => managedHelperSetup(service, { removeParts: ['nope'] }))).rejects.toThrow(/no agent part "nope"/);

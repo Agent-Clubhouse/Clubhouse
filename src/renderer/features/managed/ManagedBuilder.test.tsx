@@ -223,6 +223,43 @@ describe('ManagedBuilder', () => {
   });
 });
 
+describe('ManagedBuilder skill folder clashes (#2902)', () => {
+  const skills = [
+    part('builtin-skill-post-result-pr', { kind: 'skill', name: 'Post result to the pull request', builtin: true, skillName: 'post-result' }),
+    part('builtin-skill-post-result-board', { kind: 'skill', name: 'Post result to the board', builtin: true, skillName: 'post-result' }),
+    part('my-post', { kind: 'skill', name: 'My post', skillName: 'post-result', forkedFrom: 'builtin-skill-post-result-pr' }),
+    part('notes', { kind: 'skill', name: 'Notes', skillName: 'notes' }),
+  ];
+  beforeEach(() => {
+    vi.spyOn(m(), 'listParts').mockImplementation(async (kind: string) => ({ ok: true, value: kind === 'skill' ? skills : [] }) as never);
+  });
+
+  it('warns, and adds nothing, when a skill would install to a folder the setup already uses', async () => {
+    const onChange = vi.fn();
+    render(<ManagedBuilder target={{ kind: 'draft', value: { blocks: [], skills: ['builtin-skill-post-result-pr'], mcps: [] }, onChange, agentName: 'cool-gazelle' }} tab="skills" />);
+    fireEvent.click(await screen.findByRole('switch', { name: 'Post result to the board' }));
+    expect(screen.getByTestId('managed-skill-clash').textContent).toBe('Post result to the pull request and Post result to the board both install to post-result/. Pick one.');
+    expect(onChange).not.toHaveBeenCalled();
+    // Another skill clears it and is added as usual.
+    fireEvent.click(screen.getByRole('switch', { name: 'Notes' }));
+    expect(screen.queryByTestId('managed-skill-clash')).toBeNull();
+    expect(onChange).toHaveBeenCalledWith({ blocks: [], skills: ['builtin-skill-post-result-pr', 'notes'], mcps: [] });
+  });
+
+  it('swaps a fork in for the part it came from', async () => {
+    const onChange = vi.fn();
+    render(<ManagedBuilder target={{ kind: 'draft', value: { blocks: [], skills: ['notes', 'builtin-skill-post-result-pr'], mcps: [] }, onChange }} tab="skills" />);
+    fireEvent.click(await screen.findByRole('switch', { name: 'My post' }));
+    expect(screen.queryByTestId('managed-skill-clash')).toBeNull();
+    expect(onChange).toHaveBeenCalledWith({ blocks: [], skills: ['notes', 'my-post'], mcps: [] });
+  });
+
+  it('says so for a setup that was saved with a clash', async () => {
+    render(<ManagedBuilder target={{ kind: 'draft', value: { blocks: [], skills: ['builtin-skill-post-result-board', 'my-post'], mcps: [] }, onChange: vi.fn() }} tab="skills" />);
+    expect((await screen.findByTestId('managed-skill-clash')).textContent).toBe('Post result to the board and My post both install to post-result/. Pick one.');
+  });
+});
+
 describe('ManagedBuilder setup loading', () => {
   it('loads once per agent, not on every render', async () => {
     const getSetup = vi.spyOn(m(), 'getSetup').mockResolvedValue({ ok: true, value: { version: 1, blocks: [], skills: [], mcps: [] } } as never);
@@ -481,6 +518,19 @@ describe('focus and announcements (#2819)', () => {
 });
 
 describe('Preview: what the CLI reads besides the setup (#2819)', () => {
+  it('says when the project\'s own skill folder replaces a built-in (D74)', async () => {
+    vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value: {
+      instructions: 'x', blocks: [], mcps: [], missing: [],
+      skills: [
+        { id: 'builtin-skill-build', name: 'Build', skillName: 'build', files: 1, folder: '.claude/skills/build', projectOwn: "Using the project's own build skill" },
+        { id: 'builtin-skill-test', name: 'Test', skillName: 'test', files: 1, folder: '.claude/skills/test' },
+      ],
+    } } as never);
+    render(<PreviewPane agent={agent} />);
+    expect((await screen.findByTestId('managed-preview-project-own-builtin-skill-build')).textContent).toBe("Using the project's own build skill");
+    expect(screen.getByText('.claude/skills/test · 1 file')).toBeTruthy();
+  });
+
   it('lists tracked repo skills, files Claude Code is told not to read, and files it reads anyway', async () => {
     vi.spyOn(m(), 'preview').mockResolvedValue({ ok: true, value: {
       instructions: 'x', blocks: [], skills: [], mcps: [], missing: [],

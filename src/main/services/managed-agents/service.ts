@@ -17,6 +17,7 @@ import type { DurableAgentConfig } from '../../../shared/types';
 import {
   CLUBHOUSE_MCP_PART_ID,
   CLUBHOUSE_PART_ALWAYS_ON,
+  findSkillFolderClash,
   isListed,
   type ManagedAgentSetup,
   type ManagedErrorCode,
@@ -29,6 +30,7 @@ import {
   type ManagedTemplateChange,
   type ManagedTemplatePushTarget,
   type ManagedTemplateSettings,
+  skillFolderClashMessage,
 } from '../../../shared/managed-agents-types';
 import { builtinParts, builtinTemplates, DEFAULT_HELPER_TEMPLATE_ID, type BuiltinPart } from './builtins';
 import type { ManagedStateStore } from './state-store';
@@ -287,8 +289,19 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       usedBy,
       templates: tpls.map((t) => ({ id: t.id, name: t.name })),
       preview: previewOf(content),
+      ...(content.kind === 'skill' && { skillName: content.skillName }),
       ...(droppedEnvValues.length > 0 && { droppedEnvValues }),
     };
+  }
+
+  /** Each skill's library name and the folder it installs to. */
+  async function skillFolders(ids: string[], live: Record<string, CatalogEntry>): Promise<Array<{ name: string; skillName: string }>> {
+    const out: Array<{ name: string; skillName: string }> = [];
+    for (const id of ids) {
+      const content = await contentOf(live[id]);
+      if (content.kind === 'skill') out.push({ name: live[id].name, skillName: content.skillName });
+    }
+    return out;
   }
 
   async function uniqueName(kind: ManagedPartKind, wanted: string, exceptId?: string): Promise<string> {
@@ -546,19 +559,10 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         mcps: clean(withClubhousePart(setup.mcps), 'mcp'),
         ...(setup.templateId && { templateId: setup.templateId }),
       };
-      // Two skills that deliver to one folder can't both reach the agent.
-      const folders = new Set<string>();
-      for (const id of next.skills) {
-        const content = await contentOf(live[id]);
-        const folder = content.kind === 'skill' ? content.skillName.toLowerCase() : id;
-        if (folders.has(folder)) throw new ManagedError('invalid', `Two skills use the folder name ${folder}. Remove one, or rename a copy.`);
-        folders.add(folder);
-      }
-      for (const name of planned.skillFolders ?? []) {
-        const folder = name.toLowerCase();
-        if (folders.has(folder)) throw new ManagedError('invalid', `Two skills use the folder name ${folder}. Remove one, or rename a copy.`);
-        folders.add(folder);
-      }
+      // Two skills that deliver to one folder can't both reach the agent, and Clubhouse never picks one.
+      const named = await skillFolders(next.skills, live);
+      for (const name of planned.skillFolders ?? []) named.push({ name, skillName: name });
+      refuseSkillFolderClash(named);
       return next;
     },
 
@@ -605,6 +609,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       if (!name) throw new ManagedError('invalid', 'Give it a name.');
       const live = await liveEntries();
       const keep = (ids: string[]) => ids.filter((id) => live[id]);
+      refuseSkillFolderClash(await skillFolders(keep(input.setup.skills), live));
       const template = await state.update((s) => {
         const id = input.id ?? `template-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
         if (input.id && !s.templates[input.id]) throw new ManagedError('not_found');
@@ -878,6 +883,11 @@ function describeAlready(change: ManagedTemplateChange): string {
   if (change.kind === 'remove') return `already has no ${change.name}`;
   if (change.kind === 'order') return 'order not pushed';
   return `${change.key} already ${change.to}`;
+}
+
+function refuseSkillFolderClash(skills: Array<{ name: string; skillName: string }>): void {
+  const clash = findSkillFolderClash(skills);
+  if (clash) throw new ManagedError('invalid', skillFolderClashMessage(clash.a, clash.b, clash.folder));
 }
 
 /** A retired built-in part (D71): its name is free for new parts, since nothing lists it. */

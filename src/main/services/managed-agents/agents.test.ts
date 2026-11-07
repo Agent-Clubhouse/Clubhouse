@@ -566,14 +566,14 @@ describe('a switch that fails (#2901)', () => {
     // A case-insensitive file system has only one of the two.
     if (fs.readdirSync(path.join(wt, '.claude', 'skills')).length < 2) return;
     h.instructions = 'Ship small PRs.';
-    await expect(user(() => convertToManaged('/p', 'ada', { keep: true }))).rejects.toThrow('Two skills use the folder name ship');
+    await expect(user(() => convertToManaged('/p', 'ada', { keep: true }))).rejects.toThrow(/^(Ship and ship|ship and Ship) both install to (ship|Ship)\/\. Pick one\.$/);
     expect((await user(() => service.listParts('block'))).filter((p) => !p.builtin)).toEqual([]);
     expect((await user(() => service.listParts('skill'))).filter((p) => !p.builtin)).toEqual([]);
     expect(h.policyCalls).toEqual([]);
   });
 
   it('checkSetup counts the planned skill folders, ignoring case', async () => {
-    await expect(user(() => service.checkSetup({ blocks: [], skills: [], mcps: [] }, { skillFolders: ['Ship', 'ship'] }))).rejects.toThrow('Two skills use the folder name ship');
+    await expect(user(() => service.checkSetup({ blocks: [], skills: [], mcps: [] }, { skillFolders: ['Ship', 'ship'] }))).rejects.toThrow('Ship and ship both install to ship/. Pick one.');
     await expect(user(() => service.checkSetup({ blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, { skillFolders: ['ship', 'review'] }))).resolves.toMatchObject({ mcps: [CLUBHOUSE_MCP_PART_ID] });
   });
 

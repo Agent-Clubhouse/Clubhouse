@@ -113,21 +113,21 @@
       "id": "builtin-skill-build",
       "name": "Build",
       "skillName": "build",
-      "description": "Finds the project's own build command from its scripts, task runner, CI workflow or docs, runs it, and reports the exact command and result. Use when a task, reviewer or failing check calls for a build, or before handing off code that has to compile or bundle.",
+      "description": "Runs the project's build the way the project does and reports the result. Use when a task or check needs a build.",
       "file": "skills/build/SKILL.md"
     },
     {
       "id": "builtin-skill-test",
       "name": "Test",
       "skillName": "test",
-      "description": "Finds how the project runs its tests from its scripts, task runner, CI workflow or docs, runs them, and reports the exact command, counts and failures. Use after changing behavior, when a task or reviewer asks for tests, or to check whether a change broke anything.",
+      "description": "Runs the project's tests the way the project does and reports the result. Use after changing behavior or when a task asks for tests.",
       "file": "skills/test/SKILL.md"
     },
     {
       "id": "builtin-skill-lint",
       "name": "Lint",
       "skillName": "lint",
-      "description": "Finds the project's own lint, type-check and format-check commands from its scripts, task runner, CI workflow or docs, runs them, and reports the exact commands and results. Use when a task or reviewer asks for lint or type checks, or before handing off a change.",
+      "description": "Runs the project's lint and type checks the way the project does and reports the result. Use before handing off a change or when a task asks for lint.",
       "file": "skills/lint/SKILL.md"
     },
     {
@@ -136,13 +136,6 @@
       "skillName": "validate",
       "description": "Checks that a change is ready by running the build, test and lint skills in order and reporting each result. Use before pushing, opening or updating a pull request, or calling a task done.",
       "file": "skills/validate/SKILL.md"
-    },
-    {
-      "id": "builtin-skill-post-result",
-      "name": "Post result",
-      "skillName": "post-result",
-      "description": "Delivers a finished result or review verdict to the right place, choosing between the parent agent, the Clubhouse group project board, the pull request and the conversation. Use when a task or review is done and its result needs reporting.",
-      "file": "skills/post-result/SKILL.md"
     },
     {
       "id": "builtin-skill-post-result-parent",
@@ -164,6 +157,14 @@
       "skillName": "post-result",
       "description": "Posts a review verdict or a finished task's outcome as a comment on its pull request on GitHub or Azure DevOps, starting with Approve or Reject. Use when you reviewed a pull request, or finished work that has one.",
       "file": "skills/post-result-pr/SKILL.md"
+    },
+    {
+      "id": "builtin-skill-post-result",
+      "name": "Post result",
+      "skillName": "post-result",
+      "description": "Delivers a finished result or review verdict to the right place, choosing between the parent agent, the Clubhouse group project board, the pull request and the conversation. Use when a task or review is done and its result needs reporting.",
+      "file": "skills/post-result/SKILL.md",
+      "retired": true
     }
   ],
   "templates": [
@@ -207,8 +208,8 @@
     },
     {
       "id": "builtin-template-quality-assurance",
-      "name": "Quality Assurance",
-      "description": "Reviews changes and runs tests. Never merges.",
+      "name": "Quality Assurance (pull request)",
+      "description": "Reviews a pull request and posts its verdict as a comment on it. Never merges.",
       "blocks": [
         "builtin-block-identity",
         "builtin-block-clubhouse-basics",
@@ -219,7 +220,26 @@
         "builtin-skill-test",
         "builtin-skill-lint",
         "builtin-skill-validate",
-        "builtin-skill-post-result"
+        "builtin-skill-post-result-pr"
+      ],
+      "settings": {}
+    },
+    {
+      "id": "builtin-template-qa-group-project",
+      "name": "Quality Assurance (group project)",
+      "description": "Reviews changes assigned on a group project board and posts its verdict there.",
+      "blocks": [
+        "builtin-block-identity",
+        "builtin-block-clubhouse-basics",
+        "builtin-block-group-projects",
+        "builtin-block-quality-assurance"
+      ],
+      "skills": [
+        "builtin-skill-build",
+        "builtin-skill-test",
+        "builtin-skill-lint",
+        "builtin-skill-validate",
+        "builtin-skill-post-result-board"
       ],
       "settings": {}
     },

@@ -1,16 +1,12 @@
 ---
 name: build
-description: Finds the project's own build command from its scripts, task runner, CI workflow or docs, runs it, and reports the exact command and result. Use when a task, reviewer or failing check calls for a build, or before handing off code that has to compile or bundle.
+description: Runs the project's build the way the project does and reports the result. Use when a task or check needs a build.
 ---
 
 # Build
 
-Run the build the way this project runs it. Never guess a command.
+1. Find the build command in the project's scripts, CI workflow or README. If they disagree, use what CI runs.
+2. If dependencies are missing, install them the way the project does.
+3. Run it. Report the exact command and whether it passed, and on failure the first error with its file and line.
 
-1. Find the command. Look at the project's scripts or task runner (for example `package.json` scripts, a Makefile, justfile, Taskfile, Gradle or Cargo), then its CI workflow, then its README or CONTRIBUTING.
-2. If these sources disagree, use what CI runs, since that is what has to pass, and mention the difference.
-3. If dependencies aren't installed, install them the way the project does and report that step too.
-4. Run the build from the directory the project expects.
-5. Report the exact command, where you ran it, and whether it passed. If it failed, give the first error with its file and line.
-
-If the project has no build step, say so. If you can't find how it builds, say so and list where you looked.
+If there's no build step, or you can't find one, say so.

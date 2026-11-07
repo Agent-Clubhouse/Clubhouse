@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
-import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedPartKind, type ManagedPreview, type ManagedPartSummary } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, findSkillFolderClash, skillFolderClashMessage, type ManagedAgentSetup, type ManagedPartKind, type ManagedPreview, type ManagedPartSummary } from '../../../shared/managed-agents-types';
 import { BlockList, type BuilderAgent } from './BlockList';
 import { LibraryPanel, PartToggleList } from './LibraryPanel';
 import { PartDialog } from './PartDialog';
@@ -66,6 +66,14 @@ export function useBuilderSetup(target: BuilderTarget): { setup: SetupDraft | nu
   return { setup: loaded, error, reload, save };
 }
 
+/** The skills among `ids` that the library knows, with the folder each installs to. */
+function skillsIn(ids: string[], parts: ManagedPartSummary[]): Array<{ name: string; skillName: string }> {
+  return ids.flatMap((id) => {
+    const p = parts.find((x) => x.id === id);
+    return p?.skillName ? [{ name: p.name, skillName: p.skillName }] : [];
+  });
+}
+
 const listKey = (kind: ManagedPartKind): 'blocks' | 'skills' | 'mcps' => (kind === 'block' ? 'blocks' : kind === 'skill' ? 'skills' : 'mcps');
 
 /**
@@ -82,6 +90,7 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
   const [dialog, setDialog] = useState<{ kind: ManagedPartKind; editId?: string } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; seq: number } | undefined>(undefined);
+  const [skillClash, setSkillClash] = useState<string | null>(null);
   const agent = target.kind === 'agent' ? target.agent : undefined;
   const agentName = agent?.agentName ?? (target.kind === 'draft' ? target.agentName : undefined);
 
@@ -90,12 +99,27 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
   }
 
   const update = (kind: ManagedPartKind, ids: string[]) => { void save({ ...setup, [listKey(kind)]: ids }); };
+  const skillParts = skills.value ?? [];
   const toggle = (kind: ManagedPartKind, id: string, on: boolean) => {
     // The Clubhouse MCP part is always on (saveSetup adds it back anyway).
     if (kind === 'mcp' && id === CLUBHOUSE_MCP_PART_ID && !on) return;
     const list = setup[listKey(kind)];
+    if (kind === 'skill') {
+      setSkillClash(null);
+      if (on && !list.includes(id)) {
+        const part = skillParts.find((p) => p.id === id);
+        // A fork takes the place of the part it came from: a swap, not a clash.
+        if (part?.forkedFrom && list.includes(part.forkedFrom)) { update(kind, list.map((x) => (x === part.forkedFrom ? id : x))); return; }
+        // Two skills that install to one folder: say so, and let the person pick (never pick one for them).
+        const clash = part && findSkillFolderClash([...skillsIn(list, skillParts), ...skillsIn([id], skillParts)]);
+        if (clash) { setSkillClash(skillFolderClashMessage(clash.a, clash.b, clash.folder)); return; }
+      }
+    }
     update(kind, on ? (list.includes(id) ? list : [...list, id]) : list.filter((x) => x !== id));
   };
+  // A setup saved with a clash (before this check) says so too.
+  const savedClash = findSkillFolderClash(skillsIn(setup.skills, skillParts));
+  const skillWarning = skillClash ?? (savedClash && skillFolderClashMessage(savedClash.a, savedClash.b, savedClash.folder));
   const fork = async (kind: ManagedPartKind, id: string): Promise<string | undefined> => {
     setActionError(null);
     try {
@@ -150,6 +174,7 @@ export function ManagedBuilder({ target, tab }: { target: BuilderTarget; tab: Bu
           />
         </div>
       )}
+      {tab === 'skills' && skillWarning && <p role="alert" className="text-xs text-ctp-warning" data-testid="managed-skill-clash">{skillWarning}</p>}
       {tab === 'skills' && (
         <PartToggleList
           kind="skill"
@@ -225,7 +250,14 @@ export function PreviewPane({ agent, setup }: { agent: BuilderAgent; setup?: Set
           <h3 className="text-[13px] font-semibold text-ctp-text mb-1">Skills</h3>
           {preview.skills.length === 0 ? <p className="text-xs text-ctp-overlay1">None.</p> : (
             <dl className="grid grid-cols-[140px_minmax(0,1fr)] gap-x-3.5 gap-y-1 text-xs">
-              {preview.skills.map((s) => <Fragment key={s.id}><dt className="text-ctp-overlay1">{s.name}</dt><dd className="text-ctp-text font-mono truncate">{s.folder} · {s.files} file{s.files === 1 ? '' : 's'}</dd></Fragment>)}
+              {preview.skills.map((s) => (
+                <Fragment key={s.id}>
+                  <dt className="text-ctp-overlay1">{s.name}</dt>
+                  {s.projectOwn
+                    ? <dd className="text-ctp-text truncate" data-testid={`managed-preview-project-own-${s.id}`}>{s.projectOwn}</dd>
+                    : <dd className="text-ctp-text font-mono truncate">{s.folder} · {s.files} file{s.files === 1 ? '' : 's'}</dd>}
+                </Fragment>
+              ))}
             </dl>
           )}
         </section>

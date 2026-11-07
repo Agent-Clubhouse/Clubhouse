@@ -37,7 +37,7 @@ export const EXCLUDES_MANIFEST = '.clubhouse-managed-excludes.json';
 
 interface Resolved {
   blocks: Array<{ id: string; name: string; builtin: boolean; revision: number; content: string }>;
-  skills: Array<{ id: string; name: string; revision: number; content: ManagedSkillContent }>;
+  skills: Array<{ id: string; name: string; revision: number; builtin: boolean; content: ManagedSkillContent }>;
   /** `droppedEnvValues`: env names the part stored literal values for, which now come from the environment (D46). */
   mcps: Array<{ id: string; name: string; revision: number; builtin: boolean; content: ManagedMcpContent; droppedEnvValues: string[] }>;
   missing: string[];
@@ -56,7 +56,7 @@ async function resolveSetup(service: ManagedAgentsService, saved: ManagedAgentSe
   for (const id of setup.skills) {
     const head = await service.headContent(id);
     if (!head || head.content.kind !== 'skill') { out.missing.push(id); continue; }
-    out.skills.push({ id, name: head.entry.name, revision: head.entry.headRevision, content: head.content });
+    out.skills.push({ id, name: head.entry.name, revision: head.entry.headRevision, builtin: head.entry.source.kind === 'builtin', content: head.content });
   }
   for (const id of setup.mcps) {
     const head = await service.headContent(id);
@@ -246,24 +246,65 @@ async function removePreviousManagedSkills(worktree: string, provider: Orchestra
   }
 }
 
-async function writeSkills(worktree: string, provider: OrchestratorProvider, skills: Resolved['skills'], backupRoot?: string): Promise<void> {
+/** The skill folders a previous delivery wrote here, from its manifest. */
+async function deliveredBefore(root: string): Promise<string[]> {
+  try {
+    const raw = JSON.parse(await fsp.readFile(path.join(root, SKILLS_MANIFEST), 'utf-8'));
+    if (Array.isArray(raw?.skills)) return raw.skills.filter((x: unknown): x is string => typeof x === 'string');
+  } catch { /* telemetry-exempt: first managed start, or the manifest was removed */ }
+  return [];
+}
+
+/**
+ * Built-in skills the project has its own copy of (D74): the folder is
+ * already in the agent's skills folder and git tracks it. Clubhouse leaves
+ * it in place and doesn't deliver the built-in, so the CLI loads the
+ * project's. When git can't say, a folder Clubhouse didn't write counts as
+ * the project's too, so nothing tracked is ever overwritten. Custom skills
+ * aren't checked: they replace the folder as before (D48).
+ */
+async function projectOwnSkills(worktree: string, provider: OrchestratorProvider, skills: Resolved['skills'], previous: string[]): Promise<Set<string>> {
+  const rel = skillsFolderOf(provider.conventions);
+  const root = path.join(worktree, rel);
+  const present: string[] = [];
+  for (const skill of skills) {
+    if (!skill.builtin) continue;
+    try {
+      if ((await fsp.stat(insideDir(root, skill.content.skillName))).isDirectory()) present.push(skill.content.skillName);
+    } catch { /* telemetry-exempt: not there, so the built-in is delivered */ }
+  }
+  if (present.length === 0) return new Set();
+  const listed = await trackedFiles(worktree, present.map((n) => `${rel}/${n}`));
+  if (listed.ok === false) {
+    appLog('core:managed', 'warn', 'git could not list tracked skill folders; built-in skills in the way were left in place', { meta: { code: listed.code } });
+    return new Set(present.filter((n) => !previous.includes(n)));
+  }
+  return new Set(present.filter((n) => listed.files.some((f) => f === `${rel}/${n}` || f.startsWith(`${rel}/${n}/`))));
+}
+
+/** The note for a built-in skill the project's own copy replaces (D74). */
+export function projectOwnSkillNote(folder: string): string {
+  return `Using the project's own ${folder} skill`;
+}
+
+/** Writes the setup's skills; returns the built-in skill folders left to the project's own copy (D74). */
+async function writeSkills(worktree: string, provider: OrchestratorProvider, skills: Resolved['skills'], backupRoot?: string): Promise<string[]> {
   await removePreviousManagedSkills(worktree, provider);
   const conv = provider.conventions;
   const root = path.join(worktree, skillsFolderOf(conv));
   await fsp.mkdir(root, { recursive: true });
   // A linked skills folder (or .claude) leads outside the agent's folder: nothing is moved out of it (D48).
   const safeToMove = await insideWithoutLinks(worktree, root);
-  let previous: string[] = [];
-  try {
-    const raw = JSON.parse(await fsp.readFile(path.join(root, SKILLS_MANIFEST), 'utf-8'));
-    if (Array.isArray(raw?.skills)) previous = raw.skills.filter((x: unknown): x is string => typeof x === 'string');
-  } catch { /* telemetry-exempt: first managed start, or the manifest was removed */ }
-  const current = skills.map((s) => s.content.skillName);
+  const previous = await deliveredBefore(root);
+  // Never written, recorded or cleaned up: the folder is the project's (D74).
+  const projectOwn = await projectOwnSkills(worktree, provider, skills, previous);
+  const delivered = skills.filter((s) => !projectOwn.has(s.content.skillName));
+  const current = delivered.map((s) => s.content.skillName);
   for (const name of previous) {
-    if (current.includes(name)) continue;
+    if (current.includes(name) || projectOwn.has(name)) continue;
     await fsp.rm(insideDir(root, name), { recursive: true, force: true });
   }
-  for (const skill of skills) {
+  for (const skill of delivered) {
     const dir = insideDir(root, skill.content.skillName);
     let exists = false;
     try { exists = (await fsp.stat(dir)).isDirectory(); } catch { /* telemetry-exempt: not there yet */ }
@@ -285,7 +326,7 @@ async function writeSkills(worktree: string, provider: OrchestratorProvider, ski
   await fsp.writeFile(path.join(root, SKILLS_MANIFEST), JSON.stringify({ skills: current }, null, 2), 'utf-8');
   // Exactly its skills: anything else here would load too, so it moves to app data (D48).
   if (backupRoot) {
-    const other = await otherSkillFolders(worktree, provider, current);
+    const other = await otherSkillFolders(worktree, provider, [...current, ...projectOwn]);
     if (other.keptReason === 'link') {
       appLog('core:managed', 'warn', 'The skills folder is a link; no skill folders were moved', { meta: { folders: other.kept.length } });
     } else if (other.keptReason === 'git') {
@@ -293,6 +334,7 @@ async function writeSkills(worktree: string, provider: OrchestratorProvider, ski
     }
     for (const name of other.untracked) await moveAside(insideDir(root, name), backupRoot);
   }
+  return [...projectOwn];
 }
 
 // ── Instruction files the CLI reads besides Clubhouse's ────────────────
@@ -607,7 +649,11 @@ export async function deliverManagedSetup(params: {
   }
   const instructions = await renderManagedInstructions(projectPath, agent, resolved);
   await provider.writeInstructions(agent.worktreePath, instructions);
-  await writeSkills(agent.worktreePath, provider, resolved.skills, params.backupRoot);
+  const projectOwn = await writeSkills(agent.worktreePath, provider, resolved.skills, params.backupRoot);
+  for (const folder of projectOwn) {
+    // A built-in skill folder name, never project content.
+    appLog('core:managed', 'info', `${projectOwnSkillNote(folder)}; its built-in isn't delivered`, { meta: { agentId: agent.id, folder } });
+  }
   await writeMcpFile(agent.worktreePath, provider, mcpServersOf(resolved));
   if (provider.id === CLAUDE_CODE_ID) await writeClaudeExcludes(agent.worktreePath, provider);
   // Another CLI doesn't read them, so the entries Clubhouse added for Claude Code come out.
@@ -697,11 +743,18 @@ export async function previewManagedSetup(params: {
   const conv = params.provider?.conventions;
   const folderRoot = conv ? skillsFolderOf(conv) : 'skills';
   const extra = await outsideTheSetup(params.projectPath, params.agent, params.provider, resolved.skills.map((s) => s.content.skillName));
+  const worktree = params.agent.worktreePath;
+  const projectOwn = worktree && params.provider
+    ? await projectOwnSkills(worktree, params.provider, resolved.skills, await deliveredBefore(path.join(worktree, skillsFolderOf(params.provider.conventions))))
+    : new Set<string>();
   return {
     ...extra,
     instructions,
     blocks,
-    skills: resolved.skills.map((s) => ({ id: s.id, name: s.name, skillName: s.content.skillName, files: s.content.files.length, folder: `${folderRoot}/${s.content.skillName}`.replace(/\\/g, '/') })),
+    skills: resolved.skills.map((s) => ({
+      id: s.id, name: s.name, skillName: s.content.skillName, files: s.content.files.length, folder: `${folderRoot}/${s.content.skillName}`.replace(/\\/g, '/'),
+      ...(projectOwn.has(s.content.skillName) && { projectOwn: projectOwnSkillNote(s.content.skillName) }),
+    })),
     mcps: resolved.mcps.map((m) => ({ id: m.id, name: m.name, serverKey: m.content.serverKey, builtin: m.builtin, ...(m.droppedEnvValues.length > 0 && { droppedEnvValues: m.droppedEnvValues }) })),
     missing: resolved.missing,
   };
