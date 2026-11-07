@@ -12,7 +12,6 @@ import { isBindingRemovedByUser } from './persisted-bindings';
 import { readAgentCensus, isConnectedOrchestrator } from './dispatcher-connections';
 import { appendAudit, auditString } from './dispatcher-audit';
 import { MobileControlError } from './mobile-control';
-import { isMcpEnabled } from './mcp-settings';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 
@@ -34,7 +33,6 @@ export async function dispatcherProviderControl(callerId: string, targetId: stri
     const entry = (await readAgentCensus()).agents.get(targetId);
     syncCheck();
     if (!entry || !isConnectedOrchestrator(entry.agent, entry.policy)) refuse('not_connected_orchestrator');
-    if (!isMcpEnabled(entry!.projectPath, entry!.agent.mcpOverride)) refuse('mcp_off');
     if (entry!.policy.control === 'ask-everything') refuse('control_requires_user');
     if (projectPath && projectPath !== entry!.projectPath) refuse('stale_state');
     projectPath = entry!.projectPath;

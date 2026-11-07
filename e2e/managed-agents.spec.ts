@@ -67,7 +67,7 @@ async function openAgentSettingsPage(w: Page, page: string): Promise<void> {
   await expect(w.locator(`[data-testid="agent-settings-page-${page}"]`)).toBeVisible();
 }
 
-test('parts library, New agent from a template, its builder pages and Preview, a part switch that persists', async () => {
+test('parts library, New agent from a template, its builder pages and Preview, the Clubhouse part always on', async () => {
   fakes = await installFakeClis({ claude: 'session-info' });
   projectDir = makeProject();
   app = await launchApp({
@@ -127,15 +127,16 @@ test('parts library, New agent from a template, its builder pages and Preview, a
   await expect(preview).toContainText(IDENTITY_LINE);
   await expect(preview).not.toContainText('@@AgentName');
 
-  // MCP servers: switching the Clubhouse part off saves it, and it stays off after leaving settings.
+  // MCP servers: the Clubhouse part is always on, its switch disabled with why, and it stays saved (D69).
   await openAgentSettingsPage(w, 'mcp');
-  const mcpSwitch = () => w.locator(`[data-testid="agent-settings-page-mcp"] [data-testid="managed-part-toggle-${CLUBHOUSE_MCP}"]`);
+  const mcpPage = w.locator('[data-testid="agent-settings-page-mcp"]');
+  const mcpSwitch = () => mcpPage.locator(`[data-testid="managed-part-toggle-${CLUBHOUSE_MCP}"]`);
   await expect(mcpSwitch()).toHaveAttribute('aria-checked', 'true');
-  await mcpSwitch().click();
-  await expect(mcpSwitch()).toHaveAttribute('aria-checked', 'false');
-  await expect.poll(async () => (await savedAgent())?.managed?.mcps).toEqual([]);
+  await expect(mcpSwitch()).toBeDisabled();
+  await expect(mcpPage.locator('[data-testid="managed-clubhouse-part-note"]')).toHaveText('Always on. Clubhouse uses it for status, helpers, messages and the Dispatcher.');
+  await expect.poll(async () => (await savedAgent())?.managed?.mcps).toContain(CLUBHOUSE_MCP);
   await w.locator('[data-testid="list-breadcrumb"] button').click();
   await expect(w.locator('[data-testid="agent-settings-nav"]')).toBeHidden();
   await openAgentSettingsPage(w, 'mcp');
-  await expect(mcpSwitch()).toHaveAttribute('aria-checked', 'false');
+  await expect(mcpSwitch()).toHaveAttribute('aria-checked', 'true');
 });

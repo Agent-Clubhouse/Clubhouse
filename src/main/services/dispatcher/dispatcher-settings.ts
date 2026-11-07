@@ -1,6 +1,5 @@
 import { createSettingsStore } from '../settings-store';
 import * as experimentalSettings from '../experimental-settings';
-import { isMcpOnAtAppLevel } from '../mcp-settings';
 import { newChromeEnabled } from '../../window-chrome';
 import { resolveDispatcherEnablement, type DispatcherEnablement } from '../../../shared/dispatcher-types';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
@@ -25,7 +24,6 @@ export function dispatcherEnablement(): DispatcherEnablement {
     saved: typeof saved === 'boolean' ? saved : undefined,
     graduatedFlagOn: isGraduatedFlagOn(experimentalSettings.getSettings(), DISPATCHER_FLAG),
     newLayout: newChromeEnabled(),
-    appMcp: isMcpOnAtAppLevel(),
   });
 }
 

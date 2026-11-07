@@ -38,7 +38,7 @@ export function settingsChannels(key: string) {
 // Concrete definitions — importable from both main and renderer
 // ---------------------------------------------------------------------------
 
-import type { ChatIdleSettings, ClipboardSettings, EditorSettings, GoobersSettings, McpSettings, SecuritySettings, SourceControlSettings } from './types';
+import type { ChatIdleSettings, ClipboardSettings, EditorSettings, GoobersSettings, SecuritySettings, SourceControlSettings } from './types';
 import type { TelemetrySettingsFile } from './telemetry/settings-types';
 
 export const CLIPBOARD_COMPAT_DEFAULT = false;
@@ -54,12 +54,6 @@ export const EDITOR_SETTINGS: SettingsDefinition<EditorSettings> = {
   key: 'editor',
   filename: 'editor-settings.json',
   defaults: { editorCommand: 'code', editorName: 'VS Code' },
-};
-
-export const MCP_SETTINGS: SettingsDefinition<McpSettings> = {
-  key: 'mcp',
-  filename: 'mcp-settings.json',
-  defaults: { enabled: true, projectDefault: true },
 };
 
 /** Choices offered for the chat idle timeout, in minutes; 0 is Never. */

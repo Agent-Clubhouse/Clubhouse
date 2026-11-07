@@ -25,7 +25,6 @@ const h = vi.hoisted(() => ({
   projectLayer: {} as Record<string, unknown>,
   policyCalls: [] as string[],
   /** Projects with MCP off. */
-  mcpOff: new Set<string>(),
 }));
 
 const agentsOf = (projectPath: string) => {
@@ -79,7 +78,6 @@ vi.mock('../orchestration-policy', () => ({
     return carried;
   }),
 }));
-vi.mock('../mcp-settings', () => ({ isMcpEnabled: (p: string, agentOverride?: boolean) => agentOverride ?? !h.mcpOff.has(p) }));
 vi.mock('../agent-system', () => ({
   isAgentRunning: (id: string) => h.running.has(id),
   resolveOrchestrator: async () => ({
@@ -93,7 +91,7 @@ vi.mock('./index', () => ({
   ensureBuiltinsOnce: async () => (h.service as { ensureBuiltins(): Promise<void> }).ensureBuiltins(),
 }));
 vi.mock('../git-exclude-manager', () => ({ addExclusions: vi.fn(async () => {}), replaceExclusions: vi.fn(async () => {}) }));
-vi.mock('./legacy-settings', () => ({ migrateLegacySettings: vi.fn(async () => ({ mcp: false, sourceControl: false })) }));
+vi.mock('./legacy-settings', () => ({ migrateLegacySettings: vi.fn(async () => ({ sourceControl: false })) }));
 vi.mock('./state-store', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./state-store')>()),
   managedStateDir: () => h.stateDir,
@@ -146,7 +144,6 @@ beforeEach(async () => {
   h.personaPolicy = {};
   h.projectLayer = {};
   h.policyCalls = [];
-  h.mcpOff = new Set();
   service = createManagedAgentsService({
     catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
     state: createManagedStateStore(h.stateDir),
@@ -160,7 +157,6 @@ beforeEach(async () => {
       if (setup) {
         if (!a.managed && !a.switchedToManagedAt) a.switchedToManagedAt = new Date().toISOString();
         a.managed = setup;
-        a.mcpOverride = setup.mcps.includes(CLUBHOUSE_MCP_PART_ID);
         delete a.clubhouseFeatures;
         delete a.persona;
         delete a.managedMigrationFailure;
@@ -420,7 +416,8 @@ describe('the startup pass (D59)', () => {
     const spy = vi.spyOn(service, 'saveSetup').mockImplementation(async (p, id, setup) => { await gate; return saveSetup(p, id, setup); });
 
     const pass = runStartupMigration();
-    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    // The pass reads every project and plans the switch first, which can be slow under a loaded full suite.
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled(), { timeout: 10_000 });
     const spawn = migrateAtSpawn('alpha', sleepy);
     release();
     const [result, managed] = await Promise.all([pass, spawn]);
@@ -580,12 +577,11 @@ describe('switched once, by hand or on its own (#2901)', () => {
 });
 
 describe('the bridge at the automatic switch (#2901)', () => {
-  it('a Clubhouse Mode agent in a project with MCP off gets no Clubhouse part', async () => {
+  it('a Clubhouse Mode agent always gets the Clubhouse part (D69)', async () => {
     h.clubhouseMode.add('alpha');
-    h.mcpOff.add('alpha');
     const managed = await migrateAtSpawn('alpha', agent('alpha', 'ada'));
-    expect(managed!.managed!.mcps).toEqual([]);
-    expect(get('alpha', 'ada').mcpOverride).toBe(false);
+    expect(managed!.managed!.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+    expect(get('alpha', 'ada')).not.toHaveProperty('mcpOverride');
   });
 });
 

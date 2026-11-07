@@ -188,7 +188,8 @@ describe('quickManagedLaunch (D25)', () => {
     }));
     expect(launch.instructions).toBe('You are swift-otter, an agent working in Clubhouse.\nYour workspace is ./ and your branch is main.');
     expect(launch.servers).toEqual({ workiq: { command: 'npx', env_vars: ['WORKIQ_TENANT'] } });
-    expect(launch).toMatchObject({ templateId: template.id, bridge: true, skippedSkills: 1, missing: 0 });
+    expect(launch).toMatchObject({ templateId: template.id, skippedSkills: 1, missing: 0 });
+    expect(launch).not.toHaveProperty('bridge');
     expect(listing(project)).toEqual(before);
   });
 
@@ -197,14 +198,13 @@ describe('quickManagedLaunch (D25)', () => {
       service, projectPath: project, cwd: agent.worktreePath!, agentId: 'quick_2', agentName: 'calm-heron', templateId: 'builtin-template-researcher',
     }));
     expect(launch.instructions.split('\n')[1]).toBe('Your workspace is .clubhouse/agents/cool-gazelle/ and your branch is the checked-out branch.');
-    expect(launch.bridge).toBe(true);
     expect(launch.servers).toEqual({});
   });
 
-  it('reports no bridge for a template without the Clubhouse MCP part', async () => {
+  it('gives a template saved without the Clubhouse part no extra server: the bridge is added at launch (D69)', async () => {
     const template = await user(() => service.saveTemplate({ name: 'Plain', description: '', settings: {}, setup: { blocks: [], skills: [], mcps: [] } }));
     const launch = await user(() => quickManagedLaunch({ service, projectPath: project, cwd: project, agentId: 'q', agentName: 'q', templateId: template.id }));
-    expect(launch).toMatchObject({ bridge: false, instructions: '' });
+    expect(launch).toMatchObject({ instructions: '', servers: {}, missing: 0 });
   });
 
   it('counts the parts the template names that no longer exist', async () => {

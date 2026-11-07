@@ -55,13 +55,10 @@ vi.mock('./hook-server', () => ({
   waitReady: vi.fn(() => Promise.resolve(12345)),
 }));
 
-// Most agent-system tests target non-MCP behavior. Enable MCP explicitly only
-// in tests that exercise MCP injection so snapshot assertions stay focused.
-const mockIsMcpEnabled = vi.fn(() => false);
+// The Clubhouse MCP always runs: every spawn asks for the bridge.
 const mockEnsureMcpBridge = vi.fn();
-vi.mock('./mcp-settings', () => ({
-  isMcpEnabled: (...args: unknown[]) => mockIsMcpEnabled(...args),
-  ensureMcpBridgeForAgent: (...args: unknown[]) => mockEnsureMcpBridge(...args),
+vi.mock('./mcp-bridge-starter', () => ({
+  ensureMcpBridge: (...args: unknown[]) => mockEnsureMcpBridge(...args),
 }));
 
 // The real gate, watched, so a test can see what it held when a nonce was set.
@@ -362,7 +359,6 @@ function notSessionCapable(provider: Record<string, unknown>): void {
 describe('agent-system', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockIsMcpEnabled.mockReturnValue(false);
     mockHeadlessSpawn.mockImplementation((agentId: string) => {
       mockIsHeadless.mockImplementation((trackedAgentId: string) => trackedAgentId === agentId);
     });
@@ -955,7 +951,6 @@ describe('agent-system', () => {
       ['claude-code', undefined],
       ['codex-cli', 'codex-cli'],
     ] as const)('%s PTY: the nonce is in the spawn env, not in the config or argv', async (_label, orchestrator) => {
-      mockIsMcpEnabled.mockReturnValue(true);
       mockMcpWaitReady.mockResolvedValueOnce(23456);
       await spawnAgent({
         agentId: 'agent-1',
@@ -969,12 +964,12 @@ describe('agent-system', () => {
       const [, , , args, env] = mockPtySpawn.mock.calls[0] as unknown as [string, string, string, string[], Record<string, string>];
       expect(env).toMatchObject({ CLUBHOUSE_AGENT_ID: 'agent-1', CLUBHOUSE_HOOK_NONCE: nonce, CLUBHOUSE_MCP_PORT: '23456' });
       expect(args.join(' ')).not.toContain(nonce);
-      // injectClubhouseMcp(cwd, agentId, port, conventions, scope): no nonce argument.
+      // injectClubhouseMcp(cwd, agentId, port, conventions): no nonce argument.
       expect(mockInjectClubhouseMcp).toHaveBeenCalledTimes(1);
       const injectArgs = (mockInjectClubhouseMcp.mock.calls[0] as unknown[]);
       expect(injectArgs.slice(0, 3)).toEqual(['/project/worktree', 'agent-1', 23456]);
-      // The project path rides along so project-only MCP enablement counts (#2223).
-      expect(injectArgs[4]).toEqual({ projectPath: '/project', agentOverride: undefined });
+      // Nothing decides whether it's injected: every agent gets the bridge.
+      expect(injectArgs).toHaveLength(4);
       expect(JSON.stringify(injectArgs)).not.toContain(nonce);
       // Codex takes MCP servers as `-c` launch flags built from this definition.
       if (orchestrator === 'codex-cli') expect(mockBuildClubhouseMcpDef).toHaveBeenCalled();
@@ -1019,8 +1014,6 @@ describe('agent-system', () => {
   });
 
   describe('MCP arg injection ordering (spawnPtyAgent)', () => {
-    beforeEach(() => { mockIsMcpEnabled.mockReturnValue(true); });
-
     it('inserts buildMcpArgs output before trailingArgs so a positional mission stays last', async () => {
       mockMcpWaitReady.mockResolvedValueOnce(23456);
       (mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
@@ -1076,9 +1069,7 @@ describe('agent-system', () => {
     });
   });
 
-  describe('Clubhouse MCP for helpers and agent overrides (#2610)', () => {
-    /** MCP off in the app and project, with isMcpEnabled's real precedence. */
-    const mcpOffEverywhere = () => mockIsMcpEnabled.mockImplementation(((_p: string, agentOverride?: boolean) => agentOverride ?? false) as never);
+  describe('the Clubhouse MCP for every agent (#2610)', () => {
     const spawn = () => spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', orchestrator: 'codex-cli' });
     const withConfig = (config: Record<string, unknown>) =>
       mockGetDurableConfig.mockImplementation((async () => ({ id: 'agent-1', ...config })) as never);
@@ -1089,7 +1080,6 @@ describe('agent-system', () => {
       (mockCodexProvider.buildMcpArgs as ReturnType<typeof vi.fn>).mockClear();
       mockInjectClubhouseMcp.mockClear();
       mockPtySpawn.mockClear();
-      mcpOffEverywhere();
       mockMcpWaitReady.mockResolvedValue(23456);
       (mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mockResolvedValue({ binary: '/usr/local/bin/codex', args: ['--full-auto'] });
       vi.mocked(resolveProjectMcpServers).mockResolvedValue({ github: { command: 'gh' } } as never);
@@ -1098,7 +1088,6 @@ describe('agent-system', () => {
     afterEach(() => {
       mockGetDurableConfig.mockReset();
       mockGetDurableConfig.mockImplementation(() => null);
-      mockIsMcpEnabled.mockReset();
       mockMcpWaitReady.mockReset();
       mockMcpWaitReady.mockImplementation(() => Promise.reject(new Error('MCP bridge server not started')));
       vi.mocked(resolveProjectMcpServers).mockReset();
@@ -1108,18 +1097,18 @@ describe('agent-system', () => {
     });
 
     it.each([
-      ['no setting of its own', {}],
-      ['its own setting off', { mcpOverride: false }],
-    ])('gives a helper the bridge in an MCP-off project, with %s, and no project servers', async (_label, own) => {
-      withConfig({ parentAgentId: 'orch-1', ...own });
+      ['a plain agent', {}],
+      ['a helper', { parentAgentId: 'orch-1' }],
+      ['an agent with a saved mcpOverride false from before', { mcpOverride: false }],
+    ])('gives %s the bridge and its project servers', async (_label, own) => {
+      withConfig(own);
       await spawn();
       expect(mockEnsureMcpBridge).toHaveBeenCalled();
-      expect(mockInjectClubhouseMcp.mock.calls[0][4]).toEqual({ projectPath: '/project', agentOverride: true });
-      expect(Object.keys(flagsFromBuild()!)).toEqual(['clubhouse']);
+      expect(mockInjectClubhouseMcp).toHaveBeenCalledTimes(1);
+      expect(Object.keys(flagsFromBuild()!).sort()).toEqual(['clubhouse', 'github']);
     });
 
     it('tells the person through the setup notice when project MCP servers were left out (D10)', async () => {
-      mockIsMcpEnabled.mockImplementation((() => true) as never);
       withConfig({});
       vi.mocked(resolveProjectMcpServers).mockImplementation((async (_p: string, _a: unknown, onNotice?: (m: string) => void) => {
         onNotice?.('left out');
@@ -1130,15 +1119,8 @@ describe('agent-system', () => {
       expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, 'agent-1', 'left out');
     });
 
-    it('gives a managed agent without the Clubhouse part its own MCP servers and no bridge (#2896)', async () => {
+    it('gives a managed agent its own MCP servers and the bridge, a saved mcpOverride from before ignored (#2896)', async () => {
       withConfig({ mcpOverride: false, worktreePath: '/project/wt', managed: { version: 1, blocks: [], skills: [], mcps: ['part-github'] } });
-      await spawn();
-      expect(Object.keys(flagsFromBuild()!)).toEqual(['github']);
-    });
-
-    it('gives a helper its project servers too where MCP is on for them', async () => {
-      mockIsMcpEnabled.mockImplementation(((_p: string, agentOverride?: boolean) => agentOverride ?? true) as never);
-      withConfig({ parentAgentId: 'orch-1' });
       await spawn();
       expect(Object.keys(flagsFromBuild()!).sort()).toEqual(['clubhouse', 'github']);
     });
@@ -1146,7 +1128,7 @@ describe('agent-system', () => {
     describe('a quick agent started from a template (D25)', () => {
       const PROJECT = path.join(path.sep, 'work', 'project');
       const launch = (over: Record<string, unknown> = {}) => ({
-        templateId: 'tpl', instructions: 'You are swift-otter.', servers: { workiq: { command: 'workiq' } }, bridge: true, skippedSkills: 0, missing: 0, ...over,
+        templateId: 'tpl', instructions: 'You are swift-otter.', servers: { workiq: { command: 'workiq' } }, skippedSkills: 0, missing: 0, ...over,
       });
       const quick = (extra: Record<string, unknown> = {}) => spawnAgent({
         agentId: 'quick-1', projectPath: PROJECT, cwd: PROJECT, kind: 'quick', orchestrator: 'codex-cli',
@@ -1161,7 +1143,6 @@ describe('agent-system', () => {
       });
 
       it('puts the template\'s instructions first in the system prompt and its servers in the launch flags, in place of the project\'s', async () => {
-        mockIsMcpEnabled.mockImplementation(((_p: string, agentOverride?: boolean) => agentOverride ?? true) as never);
         await quick();
         expect(mockQuickLaunchFor).toHaveBeenCalledWith(PROJECT, PROJECT, 'quick-1', { id: 'tpl', agentName: 'swift-otter' }, expect.objectContaining({ id: 'codex-cli' }));
         expect((mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0].systemPrompt).toBe('You are swift-otter.\n\nWrite a summary.');
@@ -1169,22 +1150,12 @@ describe('agent-system', () => {
         expect(resolveProjectMcpServers).not.toHaveBeenCalled();
       });
 
-      it('gives no bridge when the template has no Clubhouse MCP part', async () => {
-        mockIsMcpEnabled.mockImplementation(((_p: string, agentOverride?: boolean) => agentOverride ?? true) as never);
-        mockQuickLaunchFor.mockResolvedValue(launch({ bridge: false }));
+      it('always gets the bridge, which its hooks share the nonce with', async () => {
         await quick();
-        expect(mockInjectClubhouseMcp.mock.calls.at(-1)?.[4]).toEqual({ projectPath: PROJECT, agentOverride: false });
-        expect(Object.keys(flagsFromBuild()!)).toEqual(['workiq']);
-        // Its folder's MCP file may still name the bridge (another agent's worktree):
-        // the bridge server refuses it by this mark, and its hooks keep the nonce.
-        expect(agentRegistry.get('quick-1')?.mcpBridgeOff).toBe(true);
+        expect(mockInjectClubhouseMcp).toHaveBeenCalled();
+        expect(Object.keys(flagsFromBuild()!).sort()).toEqual(['clubhouse', 'workiq']);
         const env = mockPtySpawn.mock.calls.at(-1)![4] as Record<string, string>;
         expect(env.CLUBHOUSE_HOOK_NONCE).toBe(agentRegistry.get('quick-1')?.nonce);
-      });
-
-      it('leaves the bridge on for a template with the Clubhouse MCP part', async () => {
-        await quick();
-        expect(agentRegistry.get('quick-1')?.mcpBridgeOff).toBeUndefined();
       });
 
       it('fails the start when the template can\'t be read', async () => {
@@ -1229,54 +1200,14 @@ describe('agent-system', () => {
       expect(mockPtySpawn).not.toHaveBeenCalled();
     });
 
-    it('starts the bridge for an agent turned on with everything else off', async () => {
-      withConfig({ mcpOverride: true });
-      await spawn();
-      expect(mockEnsureMcpBridge).toHaveBeenCalled();
-      expect(mockInjectClubhouseMcp.mock.calls[0][4]).toEqual({ projectPath: '/project', agentOverride: true });
-      expect(Object.keys(flagsFromBuild()!).sort()).toEqual(['clubhouse', 'github']);
-    });
-
-    it('leaves the bridge alone for an agent with MCP off, and still starts it without', async () => {
+    it('still starts a plain agent whose bridge couldn\'t start, without the bridge', async () => {
       withConfig({});
       mockMcpWaitReady.mockReset();
       mockMcpWaitReady.mockImplementation(() => Promise.reject(new Error('MCP bridge server not started')));
       await spawn();
-      expect(mockEnsureMcpBridge).not.toHaveBeenCalled();
+      expect(mockEnsureMcpBridge).toHaveBeenCalled();
       expect(mockPtySpawn).toHaveBeenCalled();
-    });
-
-    it('a helper handed off goes back to the normal settings', async () => {
-      withConfig({ parentAgentId: undefined });
-      await spawn();
-      expect(mockEnsureMcpBridge).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('per-agent MCP setting (#2223)', () => {
-    it.each([
-      [false, false],
-      [true, true],
-    ] as const)('mcpOverride=%s reaches the injection check and decides the launch flags', async (override, flagged) => {
-      mockGetDurableConfig.mockImplementation((async () => ({ id: 'agent-1', mcpOverride: override })) as never);
-      mockIsMcpEnabled.mockImplementation(((_p: string, agentOverride?: boolean) => agentOverride ?? !override) as never);
-      mockMcpWaitReady.mockResolvedValueOnce(23456);
-      (mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        binary: '/usr/local/bin/codex',
-        args: ['--full-auto'],
-      });
-      try {
-        await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', orchestrator: 'codex-cli' });
-
-        expect(mockIsMcpEnabled).toHaveBeenCalledWith('/project', override);
-        expect(mockInjectClubhouseMcp.mock.calls[0][4]).toEqual({ projectPath: '/project', agentOverride: override });
-        const args = (mockPtySpawn.mock.calls[0] as unknown as unknown[])[3];
-        expect(args).toEqual(flagged ? ['--full-auto', '-c', 'mcp_servers.clubhouse.command=node'] : ['--full-auto']);
-      } finally {
-        mockGetDurableConfig.mockReset();
-        mockGetDurableConfig.mockImplementation(() => null);
-        mockIsMcpEnabled.mockReset();
-      }
+      expect(Object.keys(flagsFromBuild()!)).toEqual(['github']);
     });
   });
 
@@ -2268,7 +2199,7 @@ describe('agent-system', () => {
   describe('config pipeline integration', () => {
     it('calls snapshotFile before writeHooksConfig', async () => {
       const callOrder: string[] = [];
-      mockSnapshotFile.mockImplementation(() => { callOrder.push('snapshot'); });
+      mockSnapshotFile.mockImplementation((_agentId: string, file: string) => { callOrder.push(file.endsWith('settings.local.json') ? 'snapshot' : 'snapshot-mcp'); });
       mockProvider.writeHooksConfig.mockImplementation(() => {
         callOrder.push('writeHooks');
         return Promise.resolve();
@@ -2282,7 +2213,7 @@ describe('agent-system', () => {
       });
 
       expect(mockSnapshotFile).toHaveBeenCalledWith('agent-1', '/project/.claude/settings.local.json');
-      expect(callOrder).toEqual(['snapshot', 'writeHooks']);
+      expect(callOrder.filter((c) => c !== 'snapshot-mcp')).toEqual(['snapshot', 'writeHooks']);
     });
 
     it('passes onExit callback to pty spawn that calls restoreForAgent', async () => {
@@ -2424,7 +2355,7 @@ describe('agent-system', () => {
       expect(mockRestoreForAgent).toHaveBeenCalledWith('test-headless');
     });
 
-    it('skips snapshot when provider does not support hooks', async () => {
+    it('skips the hooks snapshot when provider does not support hooks, and still snapshots the MCP file', async () => {
       mockGetHooksConfigPath.mockReturnValueOnce(null);
 
       await spawnAgent({
@@ -2434,7 +2365,8 @@ describe('agent-system', () => {
         kind: 'durable',
       });
 
-      expect(mockSnapshotFile).not.toHaveBeenCalled();
+      // The Clubhouse MCP always runs, so only the MCP file is snapshotted.
+      expect(mockSnapshotFile.mock.calls.map(([, file]) => path.basename(file as string))).toEqual(['.mcp.json']);
     });
   });
 
@@ -3275,7 +3207,6 @@ describe('helper launch ceiling on the normal spawn path', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockIsMcpEnabled.mockReturnValue(false);
     mockMcpWaitReady.mockResolvedValue(23456);
     mockGetPermissionMode.mockReturnValue('skip-all');
     orchestratorLive = launchAccessFor('auto');
@@ -3407,7 +3338,6 @@ describe('the MCP call gate is set before anything can call a tool', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     atNonce = [];
-    mockIsMcpEnabled.mockImplementation(((_path: unknown, override: unknown) => override ?? true) as never);
     mockMcpWaitReady.mockResolvedValue(23456);
     const real = agentRegistry.setNonce.bind(agentRegistry);
     setNonce = vi.spyOn(agentRegistry, 'setNonce').mockImplementation((agentId: string, nonce: string) => {
@@ -3419,34 +3349,23 @@ describe('the MCP call gate is set before anything can call a tool', () => {
   afterEach(() => {
     setNonce.mockRestore();
     untrackAgent(id);
-    mockIsMcpEnabled.mockReset();
     mockGetDurableConfig.mockReset();
     mockGetDurableConfig.mockImplementation(() => null);
   });
 
-  it('an agent saved off reads closed when its nonce arrives: with no entry it would read open', async () => {
-    mockGetDurableConfig.mockImplementation((async () => ({ id, name: 'off', mcpOverride: false })) as never);
-    await start();
-    expect(atNonce.length).toBeGreaterThan(0);
-    expect(atNonce.every((access) => access === 'closed')).toBe(true);
-  });
-
-  it('a helper saved off keeps message_parent when its nonce arrives', async () => {
-    mockGetDurableConfig.mockImplementation((async () => ({ id, name: 'helper', parentAgentId: 'lead', mcpOverride: false })) as never);
-    await start();
-    expect(atNonce.length).toBeGreaterThan(0);
-    expect(atNonce.every((access) => access === 'report_only')).toBe(true);
-  });
-
-  it('an agent saved on reads open when its nonce arrives, with its project off', async () => {
-    mockIsMcpEnabled.mockImplementation(((_path: unknown, override: unknown) => override ?? false) as never);
-    mockGetDurableConfig.mockImplementation((async () => ({ id, name: 'on', mcpOverride: true })) as never);
-    await start();
-    expect(atNonce.every((access) => access === 'open')).toBe(true);
+  it('an agent reads open when its nonce arrives, a helper and a saved mcpOverride false from before included', async () => {
+    for (const config of [{ id, name: 'plain' }, { id, name: 'helper', parentAgentId: 'lead' }, { id, name: 'old', mcpOverride: false }]) {
+      atNonce = [];
+      mockGetDurableConfig.mockImplementation((async () => config) as never);
+      await start();
+      untrackAgent(id);
+      expect(atNonce.length).toBeGreaterThan(0);
+      expect(atNonce.every((access) => access === 'open')).toBe(true);
+    }
   });
 
   it('goes before the chat runtime, which sets its nonce inside', async () => {
-    mockGetDurableConfig.mockImplementation((async () => ({ id, name: 'off', mcpOverride: false })) as never);
+    mockGetDurableConfig.mockImplementation((async () => { throw new Error('unreadable'); }) as never);
     const atChat: string[] = [];
     // Stands in for the runtime, and goes on to the terminal as the real one can.
     mockTryStartChatAgent.mockImplementationOnce(async () => {
@@ -3481,7 +3400,7 @@ describe('the MCP call gate is set before anything can call a tool', () => {
     expect(mockPtySpawn).toHaveBeenCalled();
   });
 
-  it('a missing row isn\'t unreadable: no config, so it follows its project', async () => {
+  it('a missing row isn\'t unreadable: no config, and it is open', async () => {
     mockGetDurableConfig.mockImplementation((async () => null) as never);
     await start();
     expect(mockSetMcpCaller).toHaveBeenCalledWith('config', id, projectPath, null);
@@ -3498,7 +3417,6 @@ import { withAgentActivity } from './agent-transition';
 describe('managed instructions in the real terminal launch seam', () => {
   let lease: ManagedLaunchLease;
   beforeEach(() => {
-    mockIsMcpEnabled.mockReturnValue(false);
     mockPtyIsRunning.mockReturnValue(false);
     mockGetDurableConfig.mockResolvedValue({ id: 'managed-launch', name: 'managed', worktreePath: '/workspace', orchestrator: 'claude-code', model: 'opus', runtimeMode: 'terminal' } as never);
     lease = { attemptId: 'attempt-fixture', instructionFile: '/private/generation/instructions.txt', pluginDir: '/private/generation/plugin', binary: '/usr/local/bin/claude',

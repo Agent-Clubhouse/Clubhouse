@@ -18,7 +18,7 @@ import * as orchestratorSettings from './orchestrator-settings';
 import * as configPipeline from './config-pipeline';
 import { getDurableConfig, addSessionEntry, updateDurableConfig } from './agent-config';
 import type { QuickManagedLaunch } from './managed-agents/delivery';
-import { clubhouseMcpOverride, isDisposedAgent, isEffortValue } from '../../shared/agent-helpers';
+import { isDisposedAgent, isEffortValue } from '../../shared/agent-helpers';
 import { cleanupStaleJsonInTomlConfigs } from './toml-config-cleanup';
 import * as profileSettings from './profile-settings';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
@@ -33,7 +33,7 @@ import { setMcpCaller, setMcpCallerQuick, setMcpCallerUnreadable } from './clubh
 import { isDispatcherPath } from './dispatcher/dispatcher-paths';
 import { dispatcherEnablement } from './dispatcher/dispatcher-settings';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
-import { ensureMcpBridgeForAgent, isMcpEnabled } from './mcp-settings';
+import { ensureMcpBridge } from './mcp-bridge-starter';
 import { resolveHelperLaunchSettings, syncOrchestrationGate } from './orchestration-policy';
 import { findParent } from './helper-index';
 import {
@@ -43,7 +43,6 @@ import {
   rankHelperLaunch,
   type AgentLaunchAccess,
   type HelperLaunch,
-  MCP_REQUIRED_MESSAGE,
 } from '../../shared/orchestration-policy';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
@@ -190,12 +189,11 @@ function helperMcpError(err: unknown): Error {
 }
 
 /**
- * The bridge runs for any durable agent that resolves MCP on, even with MCP off
- * in the app and its project (#2610). A helper can't start without it.
+ * The bridge always runs; this retries one that failed to start at app start.
+ * A helper can't start without it (#2610).
  */
-async function prepareMcpBridge(projectPath: string, config: DurableAgentConfig | null | undefined): Promise<void> {
-  if (!isMcpEnabled(projectPath, clubhouseMcpOverride(config))) return;
-  ensureMcpBridgeForAgent();
+async function prepareMcpBridge(config: DurableAgentConfig | null | undefined): Promise<void> {
+  ensureMcpBridge();
   if (!config?.parentAgentId) return;
   await waitMcpBridgeReady().catch((err: unknown) => { throw helperMcpError(err); });
 }
@@ -291,13 +289,12 @@ async function spawnAgentTracked(params: SpawnAgentParams, managed: ManagedLaunc
 /**
  * The Dispatcher starts only while it is on. Every way of starting one comes
  * through here, so a wake from a view, a phone, a tool or an update resume is
- * refused alike. Its own `mcpOverride` says nothing about this.
+ * refused alike.
  */
 function assertDispatcherCanStart({ kind, projectPath }: SpawnAgentParams): void {
   if (kind !== 'durable' || !isDispatcherPath(projectPath)) return;
-  const { enabled, reason } = dispatcherEnablement();
-  if (enabled) return;
-  throw tagError(new Error(reason === 'mcp_off' ? MCP_REQUIRED_MESSAGE : 'The Dispatcher is turned off.'), 'preflight_failed');
+  if (dispatcherEnablement().enabled) return;
+  throw tagError(new Error('The Dispatcher is turned off.'), 'preflight_failed');
 }
 
 async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, managed: ManagedLaunchLease | null): Promise<void> {
@@ -409,11 +406,6 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       quickManaged = await tel.step('clubhouse.agent.materialize', () =>
         withErrorType('materialize_failed', () => quickLaunchFor(params.projectPath, params.cwd, params.agentId, template, provider)),
       );
-      // No Clubhouse part, no bridge (D25). Not injecting it isn't enough: the
-      // folder may be a durable agent's worktree whose MCP file names the bridge,
-      // and this agent's env carries its own identity and nonce. The bridge
-      // server refuses it; hooks keep the nonce.
-      if (!quickManaged.bridge) agentRegistry.setMcpBridgeOff(params.agentId);
       const instructions = quickManaged.instructions;
       params = { ...params, systemPrompt: [instructions, params.systemPrompt].filter(Boolean).join('\n\n') };
     }
@@ -490,7 +482,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       params = { ...params, freeAgentMode: capped.freeAgentMode, permissionMode: capped.permissionMode };
       permissionMode = capped.permissionMode;
     }
-    if (params.kind === 'durable') await prepareMcpBridge(params.projectPath, durableConfig);
+    if (params.kind === 'durable') await prepareMcpBridge(durableConfig);
     // The final launch access, the ceiling for this agent's helpers (#2228).
     // Every runtime below starts with exactly these values.
     agentRegistry.setLaunchCap(params.agentId, { freeAgentMode: params.freeAgentMode === true, permissionMode });
@@ -727,27 +719,20 @@ async function spawnPtyAgent(
     configPipeline.snapshotFile(params.agentId, hookConfigPath);
   }
 
-  // Snapshot MCP config before injection so we can restore on exit
-  // Only snapshot when the MCP feature is enabled
+  // Snapshot MCP config before injection so we can restore on exit.
+  // The Clubhouse MCP always runs, so every agent gets the bridge.
   const mcpJsonPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
-  let agentMcpOverride: boolean | undefined;
-  // Also reused below to resolve the project's MCP servers with agent-scoped
+  // Reused below to resolve the project's MCP servers with agent-scoped
   // wildcards applied — fetch it once.
   let durableConfig: Awaited<ReturnType<typeof getDurableConfig>> | undefined;
   if (params.kind === 'durable') {
     try {
       durableConfig = await getDurableConfig(params.projectPath, params.agentId);
-      agentMcpOverride = clubhouseMcpOverride(durableConfig);
     } catch { /* config not available */ }
   }
-  // A quick agent built from a template without the Clubhouse MCP part gets no bridge (D25).
-  // With the part, it follows the project's MCP setting as any quick agent does.
-  if (quickManaged && !quickManaged.bridge) agentMcpOverride = false;
-  const mcpEnabledForSpawn = isMcpEnabled(params.projectPath, agentMcpOverride);
-  facts.mcpEnabled = mcpEnabledForSpawn;
   // Snapshot MCP config for all formats — TOML injection is now supported
   // and the config-pipeline restore logic handles both JSON and TOML files.
-  if (mcpEnabledForSpawn && !managed) {
+  if (!managed) {
     configPipeline.snapshotFile(params.agentId, mcpJsonPath);
   }
 
@@ -772,7 +757,7 @@ async function spawnPtyAgent(
     })),
     managed ? Promise.resolve() : waitMcpBridgeReady().then((port) => tel.step('clubhouse.mcp.inject', async () => {
       mcpPort = port;
-      await injectClubhouseMcp(params.cwd, params.agentId, port, provider.conventions, { projectPath: params.projectPath, agentOverride: agentMcpOverride });
+      await injectClubhouseMcp(params.cwd, params.agentId, port, provider.conventions);
     })).catch((err) => {
       // A helper without the bridge couldn't report to its parent, so it doesn't start (#2610).
       if (durableConfig?.parentAgentId) throw helperMcpError(err);
@@ -809,16 +794,11 @@ async function spawnPtyAgent(
     args = [...args, '--append-system-prompt-file', managed.instructionFile,
       ...(managed.pluginDir ? ['--plugin-dir', managed.pluginDir] : [])];
   }
-  // Only when MCP is on for this agent (agent > project > global): an agent
-  // with it turned off gets neither the bridge nor project servers (#2223). A
-  // helper always gets the bridge; project servers keep following the settings
-  // (#2610).
-  // A managed agent's MCP parts reach it even with the Clubhouse bridge off (#2896):
-  // the bridge follows its Clubhouse part, its other servers follow its setup.
-  // A quick agent's template servers likewise (D25), in place of the project's.
-  const managedSetupServers = !!durableConfig?.managed || !!quickManaged;
-  const bridgeOn = mcpEnabledForSpawn && mcpPort > 0;
-  if ((bridgeOn || managedSetupServers) && provider.buildMcpArgs) {
+  // Every agent gets the bridge (the Clubhouse MCP always runs) and its MCP
+  // servers: the project's, a managed agent's setup (#2896), or a quick agent's
+  // template servers in place of the project's (D25).
+  const bridgeOn = mcpPort > 0;
+  if (provider.buildMcpArgs) {
     const { buildClubhouseMcpDef } = await import('./clubhouse-mcp/injection');
     const { resolveProjectMcpServers } = await import('./agent-mcp-servers');
 
@@ -828,11 +808,9 @@ async function spawnPtyAgent(
     // alongside the Clubhouse bridge.
     const projectServers = quickManaged
       ? quickManaged.servers
-      : managedSetupServers || isMcpEnabled(params.projectPath, durableConfig?.mcpOverride)
-        ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined, (message) => {
-          broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, message);
-        })
-        : {};
+      : await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined, (message) => {
+        broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, message);
+      });
     const servers = {
       ...projectServers,
       // The bridge is last so a project server of the same name can't shadow it.

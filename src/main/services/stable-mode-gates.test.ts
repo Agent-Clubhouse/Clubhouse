@@ -27,7 +27,7 @@ vi.mock('./dispatcher/dispatcher-service', async () => {
   return {
     getDispatcherState: () => {
       const { enabled, savedOn, reason } = settings.dispatcherEnablement();
-      return { enabled, savedOn, offReason: reason, flagOn: reason !== 'mcp_off', mcpOff: reason === 'mcp_off', classic: false, running: false, agentId: null, path: null, config: null };
+      return { enabled, savedOn, offReason: reason, flagOn: true, classic: false, running: false, agentId: null, path: null, config: null };
     },
     isDispatcherAgentId: () => false,
     onDispatcherChanged: () => () => {},
@@ -39,7 +39,6 @@ import { getSettings, getSettingsForRenderer, getStoredSettings, isGraduatedFeat
 import { isPreviewEligible } from './preview-eligible';
 import { isChatEnabled, isCopilotSdkEnabled, resolveRuntimeMode } from './chat-runtime-settings';
 import { dispatcherEnablement, isDispatcherEnabled } from './dispatcher/dispatcher-settings';
-import { isMcpEnabledForAny, isMcpOnAtAppLevel } from './mcp-settings';
 import { dispatcherCapability } from './mobile-dispatcher';
 import { applyExportGraduation, getTelemetrySettings } from '../telemetry/settings';
 import { isTelemetryConfigured, uiChrome } from '../telemetry/bootstrap';
@@ -174,23 +173,16 @@ describe('the Dispatcher on the real default layout and the real Classic setting
   const CLASSIC = { enabled: false, savedOn: false, reason: 'classic_layout' };
   const exists = (name: string) => fs.existsSync(path.join(h.userData, name));
 
-  it.each([false, true])('a fresh profile has it on, with MCP and nothing saved (Preview %s)', (previewChannel) => {
+  it.each([false, true])('a fresh profile has it on, with nothing saved (Preview %s)', (previewChannel) => {
     if (previewChannel) write(UPDATE_FILE, { autoUpdate: false, previewChannel, lastCheck: null, dismissedVersion: null, lastSeenVersion: null });
     relaunch();
     expect(newChromeEnabled()).toBe(true);
-    expect(isMcpOnAtAppLevel()).toBe(true);
-    expect(isMcpEnabledForAny()).toBe(true);
     expect(dispatcherEnablement()).toEqual(ON);
     for (const name of [EXPERIMENTAL_FILE, DISPATCHER_FILE, 'mcp-settings.json']) expect(exists(name)).toBe(false);
   });
 
-  it('MCP saved off derives it off on the default layout, and it returns to on without a save of its own', async () => {
+  it('ignores an MCP switch saved off before the Clubhouse MCP was always on', () => {
     write('mcp-settings.json', { enabled: false, projectDefault: false });
-    relaunch();
-    expect(dispatcherEnablement()).toEqual({ enabled: false, savedOn: true, reason: 'mcp_off' });
-    expect(exists(DISPATCHER_FILE)).toBe(false);
-
-    write('mcp-settings.json', { enabled: true, projectDefault: false });
     relaunch();
     expect(dispatcherEnablement()).toEqual(ON);
     expect(exists(DISPATCHER_FILE)).toBe(false);
@@ -299,12 +291,11 @@ describe('a packaged stable build with Preview off', () => {
     expect(bytes(CHAT_RUNTIME_FILE)).toBe(saved);
   });
 
-  it('keeps the Dispatcher off with MCP off, without changing its saved switch, and starts no bridge for it', () => {
+  it('keeps the Dispatcher on with an MCP switch saved off from before, without changing its saved switch', () => {
     write('mcp-settings.json', { enabled: false, projectDefault: false });
     relaunch();
     const saved = bytes(DISPATCHER_FILE);
-    expect(isDispatcherEnabled()).toBe(false);
-    expect(isMcpEnabledForAny()).toBe(false);
+    expect(isDispatcherEnabled()).toBe(true);
     expect(bytes(DISPATCHER_FILE)).toBe(saved);
   });
 

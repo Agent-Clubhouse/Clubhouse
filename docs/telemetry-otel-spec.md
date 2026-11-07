@@ -309,7 +309,7 @@ Quick agents have no main-process create step. The renderer `spawnQuickAgent` (`
   - `c.chat.driver` (`claude_agent_sdk`/`claude_stream_json`/`codex_app_server`/`copilot_acp`/`acp` for other ACP agents, later `copilot_sdk`), from chat's capability record, added by the chat telemetry work (§9.1). Claude chat is designed to default to the Agent SDK, with raw `-p` stream-json as a second mode.
   - `c.agent.resume` (bool)
   - `c.model.family` (bucketed from the model string: `opus`/`sonnet`/`haiku`/`gpt-5`/`default`/`other`; the raw model is never sent)
-  - `c.mcp.enabled`, `c.hooks.enabled`, `c.profile.active`, `c.wrapper.applied` (all bool; each only once the spawn reached the step that decides it)
+  - `c.hooks.enabled`, `c.profile.active`, `c.wrapper.applied` (all bool; each only once the spawn reached the step that decides it)
   - Not recorded: `c.agent.runtime.reason` (the fallback decision is implicit in the runtime) and per-agent hashed IDs on spawn spans.
 - **`error.type`:** `orchestrator_unknown`, `preflight_failed` (CLI missing or unauthenticated), `cwd_invalid`, `pty_spawn_failed` (or, when the spawn error names one, its errno: `ENOENT`, `EACCES`, `EPERM`, `ENOTDIR`, `EISDIR`, `EMFILE`, `ENOSPC`; #2306), `headless_no_pid` (the span ends `error` though the call returns), `chat_start_failed`; `materialize_failed` on the non-fatal child only. Errors are typed with `tagError` / `withErrorType` at the throw site (§6.5); anything untagged is `unknown`.
 - **Metrics:** `c.agent.spawns` (counter: kind, orchestrator, runtime, outcome, `error.type`) and `c.agent.spawn.duration` (histogram, s, successful spawns only).
@@ -428,7 +428,7 @@ The trigger is recorded where the caller is known, before the runtime manager is
 | Instrument | Boundaries / attributes | Level |
 |---|---|---|
 | `c.mcp.bridge.start` span | `bridge-server.ts:302` | S |
-| `c.mcp.tool_call` span | `handleToolsCall` → JSON-RPC return. Attributes: `c.mcp.tool_kind` (`clubhouse`/`browser`/`terminal`/`group`/`plugin`/`global`/`other`, from the tool-name prefix or global-tool membership), `c.mcp.tool` (the **built-in Clubhouse tool suffix or global tool name only**, from a fixed list kept in sync with `clubhouse-mcp/tools` by a test; plugin tools are always `other`; the binding segment of the name is never sent), `c.mcp.result` (`ok`/`tool_error`/`threw`), `error.type ∈ {mcp_tool_error, mcp_tool_threw}`, `c.agent.id_hash` (the calling agent), `c.mcp.refusal.reason` (`group_off`/`unparseable`/`no_binding`/`unknown_tool`/`invalid_args`/`tool_denied`, only when the registry refused the call before a handler ran) (#2308). Tool arguments are never recorded in any tier; the local `core:mcp` line keeps only their names. | S |
+| `c.mcp.tool_call` span | `handleToolsCall` → JSON-RPC return. Attributes: `c.mcp.tool_kind` (`clubhouse`/`browser`/`terminal`/`group`/`plugin`/`global`/`other`, from the tool-name prefix or global-tool membership), `c.mcp.tool` (the **built-in Clubhouse tool suffix or global tool name only**, from a fixed list kept in sync with `clubhouse-mcp/tools` by a test; plugin tools are always `other`; the binding segment of the name is never sent), `c.mcp.result` (`ok`/`tool_error`/`threw`), `error.type ∈ {mcp_tool_error, mcp_tool_threw}`, `c.agent.id_hash` (the calling agent), `c.mcp.refusal.reason` (`group_off`/`unparseable`/`no_binding`/`unknown_tool`/`invalid_args`/`tool_denied`/`caller_unknown`, only when the registry refused the call before a handler ran; `caller_unknown` is a caller the call gate doesn't know, such as an agent whose settings couldn't be read at start) (#2308). Tool arguments are never recorded in any tier; the local `core:mcp` line keeps only their names. | S |
 | `c.mcp.tool_calls` counter | tool kind, tool, result | S |
 | `c.mcp.tool_call.duration` histogram | tool kind | S |
 | `c.mcp.auth_rejected` counter | nonce 403s (`:71-82`) | E |
@@ -761,7 +761,7 @@ Explicitly **not set**: `host.name`, `os.description`, `process.command_args`, `
 | Counts | `c.projects.count`, `c.projects.git.count`, `c.projects.remote.count`, `c.agents.durable.count`, `c.profiles.count` |
 | Orchestrators | `c.orchestrators.used` (sorted CSV from the enum) |
 | Theme | `c.theme.kind`, `c.theme.builtin_id` |
-| Feature flags | `c.headless.enabled`, `c.mcp.enabled`, `c.annex.server`, `c.annex.client`, `c.annex.satellites.count` |
+| Feature flags | `c.headless.enabled`, `c.annex.server`, `c.annex.client`, `c.annex.satellites.count` |
 | Experimental | `c.experimental.*` (known keys only: `goobers`, `themeGradients`, plus chat's flag once it exists) |
 | Plugins | `c.plugins.builtin_enabled` (CSV of built-in IDs), `c.plugins.community.count`, `c.marketplace.custom.count`, `c.plugins.external_enabled` |
 | Logging | `c.logging.enabled`, `c.logging.min_level` |

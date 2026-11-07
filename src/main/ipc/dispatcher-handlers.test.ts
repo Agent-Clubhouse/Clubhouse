@@ -18,12 +18,12 @@ vi.mock('../services/dispatcher/dispatcher-service', () => ({
   initDispatcher: vi.fn(async () => undefined),
 }));
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
-vi.mock('./mcp-binding-handlers', () => ({ onMcpSettingsChanged: vi.fn() }));
+vi.mock('./mcp-binding-handlers', () => ({ restorePersistedBindings: vi.fn(async () => {}) }));
 
 import { IPC } from '../../shared/ipc-channels';
 import * as dispatcher from '../services/dispatcher/dispatcher-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { onMcpSettingsChanged } from './mcp-binding-handlers';
+import { restorePersistedBindings } from './mcp-binding-handlers';
 import { registerDispatcherHandlers, _resetDispatcherHandlersForTesting } from './dispatcher-handlers';
 
 beforeEach(() => {
@@ -45,11 +45,11 @@ describe('dispatcher handlers', () => {
     await expect(Promise.resolve().then(() => h.handlers.get(IPC.DISPATCHER.SET_ENABLED)!({}, 'yes'))).rejects.toThrow();
   });
 
-  it('broadcasts changes and turns MCP on only while enabled', () => {
+  it('broadcasts changes and rebuilds its wires only while enabled', () => {
     h.listener!(ON);
     expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.DISPATCHER.CHANGED, ON);
-    expect(onMcpSettingsChanged).toHaveBeenCalledTimes(1);
+    expect(restorePersistedBindings).toHaveBeenCalledTimes(1);
     h.listener!({ ...ON, enabled: false });
-    expect(onMcpSettingsChanged).toHaveBeenCalledTimes(1);
+    expect(restorePersistedBindings).toHaveBeenCalledTimes(1);
   });
 });

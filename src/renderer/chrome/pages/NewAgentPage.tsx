@@ -71,7 +71,6 @@ export function quickTemplateHelp(t: Pick<ManagedTemplate, 'setup'> | undefined,
     else parts.push(`${noun} ${servers === 1 ? 'is' : 'are'} passed at launch.`);
   }
   if (t.setup.skills.length > 0) parts.push(`${t.setup.skills.length === 1 ? 'Its skill isn’t' : 'Its skills aren’t'} used, since a quick agent has no folder of its own.`);
-  if (!t.setup.mcps.includes(CLUBHOUSE_MCP_PART_ID)) parts.push('Without the Clubhouse MCP part it gets no Clubhouse tools.');
   return parts.join(' ');
 }
 
@@ -547,8 +546,8 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
               <Row
                 label="Clubhouse features"
                 help={clubhouseFeatures
-                  ? 'Status, permission prompts and Clubhouse tools (helpers, messages, Dispatcher).'
-                  : <span data-testid="new-agent-features-warning" className="text-ctp-warning">Off: Clubhouse can't show this agent's status, permission prompts or changes, and the agent can't use helpers, messages or the Dispatcher.</span>}
+                  ? 'Status and permission prompts. Clubhouse tools (helpers, messages, Dispatcher) are always on.'
+                  : <span data-testid="new-agent-features-warning" className="text-ctp-warning">Off: Clubhouse can't show this agent's status, permission prompts or changes.</span>}
               >
                 <Toggle checked={clubhouseFeatures} onChange={setClubhouseFeatures} disabled={busy} aria-label="Clubhouse features" />
                 <span className="text-[13px] text-ctp-text">Clubhouse features</span>

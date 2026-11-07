@@ -4,7 +4,6 @@
  * them), custom templates, and app-wide managed settings. One small JSON
  * file, written atomically and one write at a time.
  */
-import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
@@ -32,30 +31,6 @@ const EMPTY: ManagedState = { version: 1, parts: {}, templates: {} };
 
 export function managedStateDir(): string {
   return path.join(getBaseDirPath(), 'managed-agents');
-}
-
-/**
- * The `migrations` record, read synchronously for the startup pass's MCP step
- * (legacy-settings), which must finish before anything reads MCP enablement.
- * An empty record when there is no file yet; null when it can't be read.
- */
-export function readManagedMigrationsSync(dir: string = managedStateDir()): Record<string, string> | null {
-  let raw: string;
-  try {
-    raw = fs.readFileSync(path.join(dir, 'state.json'), 'utf-8');
-  } catch (err) {
-    // telemetry-exempt: null tells the caller to leave it to the async pass, which logs a failure
-    return (err as NodeJS.ErrnoException).code === 'ENOENT' ? {} : null;
-  }
-  try {
-    const parsed = JSON.parse(raw) as Partial<ManagedState>;
-    if (parsed.version !== 1) return null;
-    const migrations = parsed.migrations && typeof parsed.migrations === 'object' && !Array.isArray(parsed.migrations) ? parsed.migrations : {};
-    return Object.fromEntries(Object.entries(migrations).filter((e): e is [string, string] => typeof e[1] === 'string'));
-  } catch {
-    // telemetry-exempt: null tells the caller to leave it to the async pass, which logs a failure
-    return null;
-  }
 }
 
 export interface ManagedStateStore {

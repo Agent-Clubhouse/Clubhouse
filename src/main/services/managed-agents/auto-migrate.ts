@@ -339,7 +339,7 @@ let settingsPass: Promise<unknown> | null = null;
 
 /**
  * Once per app start: make the settings that only followed from Clubhouse Mode
- * explicit (D61, D63). Never throws. A second call returns the first call's.
+ * explicit (D61). Never throws. A second call returns the first call's.
  */
 export function runLegacySettingsMigration(): Promise<unknown> {
   if (!settingsPass) {
@@ -383,7 +383,7 @@ export function runStartupMigration(): Promise<StartupMigrationResult> {
 
 async function startupMigration(): Promise<StartupMigrationResult> {
   const result: StartupMigrationResult = { switched: 0, failed: 0, deferred: 0, carried: 0 };
-  // Settings that only followed from Clubhouse Mode become explicit first (D61, D63).
+  // Settings that only followed from Clubhouse Mode become explicit first (D61).
   await runLegacySettingsMigration();
   const { isAgentRunning } = await import('../agent-system');
   for (const project of await projectStore.peekProjects()) {

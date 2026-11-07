@@ -4,7 +4,6 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { CanvasContextMenu } from './CanvasContextMenu';
 import * as widgetRegistry from '../../canvas-widget-registry';
 import { usePluginStore } from '../../plugin-store';
-import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 
 vi.mock('../../canvas-widget-registry', () => ({
   getRegisteredWidgetTypes: vi.fn(),
@@ -19,7 +18,6 @@ vi.mock('../../canvas-widget-registry', () => ({
 describe('CanvasContextMenu arrow keys', () => {
   beforeEach(() => {
     vi.mocked(widgetRegistry.getRegisteredWidgetTypes).mockReturnValue([]);
-    useMcpSettingsStore.setState({ enabled: true, loaded: true } as never);
     usePluginStore.setState({ plugins: {}, appEnabled: [] } as never);
   });
 

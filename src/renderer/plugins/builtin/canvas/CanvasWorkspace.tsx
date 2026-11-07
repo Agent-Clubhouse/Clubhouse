@@ -22,7 +22,6 @@ import type { ZoneWireDefinition } from './zone-wire-store';
 import { expandZoneWires, diffZoneBindings, type ExpandedBinding } from './zone-wire-expansion';
 import { MCP_UNBIND_CANVAS_CLEANUP } from '../../../../shared/mcp-unbind';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
-import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../../../stores/remoteProjectStore';
 import { useProjectStore } from '../../../stores/projectStore';
@@ -111,7 +110,6 @@ interface CanvasViewCardProps {
   dragOffset?: { dx: number; dy: number };
   attention: CanvasViewAttention | null;
   allViews: CanvasView[];
-  mcpEnabled: boolean;
   zoneThemeId?: string;
   onStartWireDrag: (view: AgentCanvasViewType) => void;
   onRemoveView: (viewId: string) => void;
@@ -141,7 +139,6 @@ const CanvasViewCard = React.memo(function CanvasViewCard({
   dragOffset,
   attention,
   allViews,
-  mcpEnabled,
   zoneThemeId,
   onStartWireDrag,
   onRemoveView,
@@ -186,7 +183,6 @@ const CanvasViewCard = React.memo(function CanvasViewCard({
         dragOffset={dragOffset}
         attention={attention}
         allViews={allViews}
-        mcpEnabled={mcpEnabled}
         zoneThemeId={zoneThemeId}
         onStartWireDrag={onStartWireDrag}
         onClose={onClose}
@@ -257,7 +253,6 @@ export function CanvasWorkspace({
   const [containerSize, setContainerSize] = useState<Size>({ width: 0, height: 0 });
 
   // ── MCP / wire store subscriptions ───────────────────────────────
-  const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
   const mcpBindings = useMcpBindingStore((s) => s.bindings);
   const mcpBind = useMcpBindingStore((s) => s.bind);
 
@@ -281,7 +276,6 @@ export function CanvasWorkspace({
   // hydration, re-deriving runtime bindings from the persisted zone wires.
   const prevExpandedRef = useRef<ExpandedBinding[]>([]);
   useEffect(() => {
-    if (!mcpEnabled) return;
     const desired = expandZoneWires(zoneWireDefinitions, views);
     const currentKeys = new Set(
       useMcpBindingStore.getState().bindings.map((b) => `${b.agentId}:${b.targetId}`),
@@ -301,7 +295,7 @@ export function CanvasWorkspace({
       // A member leaving a zone is cleanup: main keeps helper wires (#2225).
       void useMcpBindingStore.getState().unbind(b.agentId, b.targetId, MCP_UNBIND_CANVAS_CLEANUP);
     }
-  }, [zoneWireDefinitions, views, mcpEnabled, mcpBind]);
+  }, [zoneWireDefinitions, views, mcpBind]);
 
   const handleAddWireDef = useCallback((entry: { agentId: string; targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }) => {
     onAddWireDefinition(entry as McpBindingEntry);
@@ -394,11 +388,6 @@ export function CanvasWorkspace({
   }, []);
 
   const handleWirePopoverClose = useCallback(() => setWirePopover(null), []);
-
-  // Load MCP settings on mount
-  useEffect(() => {
-    useMcpSettingsStore.getState().loadSettings();
-  }, []);
 
   // ── Attention system ───────────────────────────────────────────
   const attentionMap = useCanvasAttention(views, api);
@@ -662,28 +651,26 @@ export function CanvasWorkspace({
         ))}
 
         {/* Layer 2: MCP wire overlay */}
-        {mcpEnabled && (
-          <div
-            data-testid="wire-layer"
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              zIndex: zones.reduce((max, z) => Math.max(max, z.zIndex), -1) + 1,
-            }}
-          >
-            <WireOverlay
-              views={views}
-              bindings={mergedWireBindings}
-              zoneWireDefinitions={zoneWireDefinitions}
-              viewPositions={wireViewPositions}
-              sleepingAgentIds={sleepingAgentIds}
-              onWireClick={handleWireClick}
-              onZoneWireClick={onRemoveZoneWireDefinition}
-              forceBidirectional={bidirectionalWires}
-            />
-          </div>
-        )}
+        <div
+          data-testid="wire-layer"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            zIndex: zones.reduce((max, z) => Math.max(max, z.zIndex), -1) + 1,
+          }}
+        >
+          <WireOverlay
+            views={views}
+            bindings={mergedWireBindings}
+            zoneWireDefinitions={zoneWireDefinitions}
+            viewPositions={wireViewPositions}
+            sleepingAgentIds={sleepingAgentIds}
+            onWireClick={handleWireClick}
+            onZoneWireClick={onRemoveZoneWireDefinition}
+            forceBidirectional={bidirectionalWires}
+          />
+        </div>
 
         {/* Layer 3: Non-zone views */}
         {nonZoneViews.map((view) => {
@@ -705,7 +692,6 @@ export function CanvasWorkspace({
               }
               attention={attentionMap.get(view.id) ?? null}
               allViews={views}
-              mcpEnabled={mcpEnabled}
               zoneThemeId={themeOverride}
               onStartWireDrag={startWireDrag}
               onRemoveView={onRemoveView}
@@ -733,7 +719,6 @@ export function CanvasWorkspace({
           <ZoneCard
             key={`zone-card-${zone.id}`}
             zone={zone}
-            mcpEnabled={mcpEnabled}
             dragOffset={zoneDrag?.zoneId === zone.id ? zoneDragDelta : undefined}
             onRename={(name) => onUpdateView(zone.id, { displayName: name, title: name })}
             onThemeChange={(themeId) => onUpdateZoneTheme(zone.id, themeId)}

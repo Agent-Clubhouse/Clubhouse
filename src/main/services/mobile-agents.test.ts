@@ -21,7 +21,6 @@ vi.mock('./agent-system', () => ({
   resolveProfileEnv: vi.fn(async () => undefined),
 }));
 vi.mock('./dispatcher/dispatcher-settings', () => ({ dispatcherEnablement: vi.fn(() => ({ savedOn: false, enabled: false, reason: 'switch_off' })) }));
-vi.mock('./mcp-settings', () => ({ isMcpEnabled: vi.fn((_projectPath?: string, agentOverride?: boolean) => agentOverride ?? true) }));
 vi.mock('./agent-settings-service', () => ({
   readProjectAgentDefaults: vi.fn(async () => ({})),
   readMcpCatalog: vi.fn(async () => [{ id: 'ado', name: 'Azure DevOps', description: 'Work items', args: [{ name: 'org' }] }]),
@@ -44,7 +43,7 @@ vi.mock('./orchestration-policy', async () => {
   const shared = await import('../../shared/orchestration-policy');
   return {
     resolveOrchestrationPolicies: vi.fn(async (_path: string, agents: DurableAgentConfig[]) =>
-      new Map(agents.map((a) => [a.id, shared.resolveOrchestrationPolicy(a.orchestration, { mcpOff: a.mcpOverride === false })]))),
+      new Map(agents.map((a) => [a.id, shared.resolveOrchestrationPolicy(a.orchestration)]))),
     setOrchestrationPolicy: vi.fn(async () => ({ ok: true, message: 'Saved' })),
   };
 });
@@ -53,7 +52,6 @@ import * as agentConfig from './agent-config';
 import { startDurableCreation } from './agent-creation';
 import { checkAvailability, getAvailableOrchestrators, resolveProfileEnv } from './agent-system';
 import { dispatcherEnablement } from './dispatcher/dispatcher-settings';
-import { isMcpEnabled } from './mcp-settings';
 import { readProjectAgentDefaults } from './agent-settings-service';
 import { getProfile } from './profile-settings';
 import { isChatEnabled } from './chat-runtime-settings';
@@ -500,64 +498,23 @@ describe('cross-project helpers and Connect to Dispatcher (#2512, #2534)', () =>
   });
 });
 
-describe('no Clubhouse MCP, no orchestration (#2589)', () => {
+describe('the Clubhouse MCP always runs', () => {
   beforeEach(() => {
     vi.mocked(agentConfig.getDurableConfig).mockResolvedValue(null);
     vi.mocked(setOrchestrationPolicy).mockClear();
-    vi.mocked(startDurableCreation).mockClear();
-    vi.mocked(dispatcherEnablement).mockReturnValue({ savedOn: true, enabled: true, reason: null });
-  });
-  afterEach(() => {
-    vi.mocked(dispatcherEnablement).mockReturnValue({ savedOn: false, enabled: false, reason: 'switch_off' });
-    vi.mocked(isMcpEnabled).mockImplementation((_projectPath?: string, agentOverride?: boolean) => agentOverride ?? true);
   });
 
-  const off = { mcpOverride: false };
-  const update = (config: Parameters<typeof agent>[0], orchestration: unknown) =>
-    updateMobileAgent(project, agent(config), { agentId: 'durable_1', orchestration } as never, { live: undefined, assertAuthorized: allow });
+  const legacyOff = { mcpOverride: false } as never;
 
-  it('shows the switches off with the reason, keeping where the saved values come from', async () => {
-    const { orchestration } = await buildAgentSettings(project, agent({ ...off, orchestration: { orchestrate: true, crossProjectHelpers: true, connectToDispatcher: true } }), undefined);
-    expect(orchestration).toMatchObject({
-      mcpEnabled: false, orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false,
-      sources: { orchestrate: 'agent', connectToDispatcher: 'agent' },
-    });
+  it('shows mcpEnabled true and the switches as saved, whatever an old mcpOverride says', async () => {
+    const { orchestration } = await buildAgentSettings(project, agent({ ...(legacyOff as object), orchestration: { orchestrate: true, crossProjectHelpers: true } }), undefined);
+    expect(orchestration).toMatchObject({ mcpEnabled: true, orchestrate: true, crossProjectHelpers: true, sources: { orchestrate: 'agent' } });
+    expect(orchestration).not.toHaveProperty('mcpReportOnly');
   });
 
-  it.each(['orchestrate', 'crossProjectHelpers', 'connectToDispatcher'])('refuses turning %s on with the agent\'s own MCP off, telling the phone why', async (key) => {
-    const err = await refusal(update(off, { [key]: true }));
-    expect(err).toMatchObject({ code: 'mcp_off', statusCode: 409, detail: expect.stringContaining('Clubhouse MCP') });
-    expect(setOrchestrationPolicy).not.toHaveBeenCalled();
-  });
-
-  it('refuses with MCP off at project or app level, reading the agent\'s own override', async () => {
-    vi.mocked(isMcpEnabled).mockImplementation((_projectPath?: string, agentOverride?: boolean) => agentOverride ?? false);
-    expect(await refusal(update({}, { orchestrate: true }))).toMatchObject({ code: 'mcp_off' });
-    expect(isMcpEnabled).toHaveBeenLastCalledWith('/work/app', undefined);
-    // An agent turned on keeps it, whatever its project says.
-    await update({ mcpOverride: true }, { orchestrate: true });
+  it('takes turning a switch on, whatever an old mcpOverride says', async () => {
+    await updateMobileAgent(project, agent(legacyOff), { agentId: 'durable_1', orchestration: { orchestrate: true } } as never, { live: undefined, assertAuthorized: allow });
     expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', { orchestrate: true }, { surface: 'mobile' });
-  });
-
-  it('refuses a create that turns one on before anything is made', async () => {
-    vi.mocked(isMcpEnabled).mockImplementation(() => false);
-    const err = await refusal(createMobileAgent(project, { projectId: 'p1', name: 'calm-otter', color: 'indigo', orchestration: { orchestrate: true } }, allow));
-    expect(err).toMatchObject({ code: 'mcp_off', statusCode: 409 });
-    expect(startDurableCreation).not.toHaveBeenCalled();
-  });
-
-  it('still takes turning off, clearing and the other fields', async () => {
-    for (const patch of [{ orchestrate: false }, { connectToDispatcher: null }, { maxHelpers: 2 }]) {
-      await update(off, patch);
-      expect(setOrchestrationPolicy).toHaveBeenLastCalledWith('/work/app', 'durable_1', patch, { surface: 'mobile' });
-    }
-    await update(off, null);
-    expect(setOrchestrationPolicy).toHaveBeenCalledTimes(4);
-  });
-
-  it('maps a refusal from the service, when MCP went off after the check', async () => {
-    vi.mocked(setOrchestrationPolicy).mockResolvedValueOnce({ ok: false, message: 'no', mcpRequired: true });
-    expect(await refusal(update({}, { orchestrate: true }))).toMatchObject({ code: 'mcp_off', statusCode: 409 });
   });
 });
 

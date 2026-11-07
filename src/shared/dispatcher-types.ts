@@ -7,9 +7,10 @@ import type { DurableAgentConfig } from './types';
  *   `dispatcher: false` from before the flag was removed.
  * - `classic_layout`: nothing on its switch, and the classic layout, which has
  *   no way to reach it.
- * - `mcp_off`: Clubhouse MCP is off at app level.
+ *
+ * Clubhouse MCP is never a reason: it always runs.
  */
-export type DispatcherOffReason = 'switch_off' | 'experimental_off' | 'classic_layout' | 'mcp_off';
+export type DispatcherOffReason = 'switch_off' | 'experimental_off' | 'classic_layout';
 
 /** The saved values and session facts that decide whether the Dispatcher is on. */
 export interface DispatcherEnablementInput {
@@ -18,12 +19,10 @@ export interface DispatcherEnablementInput {
   /** isGraduatedFlagOn for `dispatcher` in experimental-settings.json: only a saved false reads off. */
   graduatedFlagOn: boolean;
   newLayout: boolean;
-  /** MCP at app level: the MCP switch. Project and agent overrides don't count. */
-  appMcp: boolean;
 }
 
 export interface DispatcherEnablement {
-  /** What the saved values say, MCP aside. This is what comes back with MCP. */
+  /** What the saved values say. The same as `enabled`, kept for the readers that ask for it. */
   savedOn: boolean;
   enabled: boolean;
   reason: DispatcherOffReason | null;
@@ -31,17 +30,15 @@ export interface DispatcherEnablement {
 
 /**
  * On by default in the new layout. An explicit switch value wins over every
- * default, so a saved true stays on in the classic layout too. MCP going off
- * at app level derives it off and changes nothing saved.
+ * default, so a saved true stays on in the classic layout too.
  */
-export function resolveDispatcherEnablement({ saved, graduatedFlagOn, newLayout, appMcp }: DispatcherEnablementInput): DispatcherEnablement {
+export function resolveDispatcherEnablement({ saved, graduatedFlagOn, newLayout }: DispatcherEnablementInput): DispatcherEnablement {
   let reason: DispatcherOffReason | null = null;
   if (saved === false) reason = 'switch_off';
   else if (saved !== true && !graduatedFlagOn) reason = 'experimental_off';
   else if (saved !== true && !newLayout) reason = 'classic_layout';
   const savedOn = reason === null;
-  if (savedOn && !appMcp) reason = 'mcp_off';
-  return { savedOn, enabled: reason === null, reason };
+  return { savedOn, enabled: savedOn, reason };
 }
 
 /** The refusal for turning the Dispatcher on in the classic layout (#2565). */
@@ -55,20 +52,18 @@ export const DISPATCHER_CLASSIC_MESSAGE = 'The Dispatcher needs the new layout. 
 export interface DispatcherState {
   /** Whether it is on now: see resolveDispatcherEnablement. */
   enabled: boolean;
-  /** For phones, which read this as "can it be turned on": false while Clubhouse MCP is off at app level. The experimental flag it once was is gone. */
+  /**
+   * For phones, which read this as "can it be turned on". Always true: the
+   * Clubhouse MCP always runs, and the experimental flag it once was is gone.
+   */
   flagOn: boolean;
-  /** What its saved values say, MCP aside. It returns to this when MCP does. */
+  /** What its saved values say. */
   savedOn: boolean;
   /** Why `enabled` is false, or null while it is on. */
   offReason: DispatcherOffReason | null;
-  /** Clubhouse MCP is off at app level. */
-  mcpOff: boolean;
   /** This session runs the classic layout. */
   classic: boolean;
-  /**
-   * Its agent is running. It can be while `enabled` is false: MCP going off stops
-   * nothing, so the row and view stay until it stops.
-   */
+  /** Its agent is running. It can be while `enabled` is false, until it stops. */
   running: boolean;
   agentId: string | null;
   path: string | null;
@@ -82,5 +77,5 @@ export interface DispatcherState {
 export const DISPATCHER_PROJECT_ID = '__dispatcher__';
 
 export const DISPATCHER_OFF: DispatcherState = {
-  enabled: false, flagOn: true, savedOn: false, offReason: 'switch_off', mcpOff: false, classic: false, running: false, agentId: null, path: null, config: null,
+  enabled: false, flagOn: true, savedOn: false, offReason: 'switch_off', classic: false, running: false, agentId: null, path: null, config: null,
 };

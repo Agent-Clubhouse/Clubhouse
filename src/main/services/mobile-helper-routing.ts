@@ -62,7 +62,6 @@ async function agentUse(agentId: string, info: AgentLookup): Promise<HelperRouti
   if (activeDispatcher(agentId) || isDisabledDispatcherId(agentId)) return { usable: false, reason: 'dispatcher_locked' };
   if (!info) return { usable: false };
   const policy = (await resolveOrchestrationPolicies(info.project.path, [info.config])).get(info.config.id);
-  if (policy?.mcpOff) return { usable: false, reason: 'mcp_off' };
   if (!policy?.orchestrate) return { usable: false, reason: 'orchestration_off' };
   return { usable: true };
 }

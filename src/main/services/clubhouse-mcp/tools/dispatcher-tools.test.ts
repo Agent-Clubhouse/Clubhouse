@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// What the gate decides is covered in mcp-call-gate.test.ts and test/mcp-off.
+// What the gate decides is covered in mcp-call-gate.test.ts.
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
 import type { DurableAgentConfig } from '../../../../shared/types';
 import type { ChatEvent } from '../../../../shared/chat';
@@ -620,17 +620,3 @@ describe('list_projects for the Dispatcher', () => {
   });
 });
 
-describe('list_agents with Clubhouse MCP off (#2589)', () => {
-  it('leaves out an agent whose saved switch is on but MCP is off, and lists it again when MCP is back', async () => {
-    await runDispatcher();
-    addAgent(PROJECT_A, { id: 'lead-a', name: 'Lead A' });
-    policies.set('lead-a', {
-      ...policy({ orchestrate: false, connectToDispatcher: false }),
-      mcpOff: { orchestrate: true, crossProjectHelpers: false, connectToDispatcher: true },
-    });
-    expect(parse(await callTool('dispatcher', 'list_agents', {})).agents).toEqual([]);
-
-    policies.set('lead-a', policy({ connectToDispatcher: true }));
-    expect(parse(await callTool('dispatcher', 'list_agents', {})).agents.map((a: { id: string }) => a.id)).toEqual(['lead-a']);
-  });
-});

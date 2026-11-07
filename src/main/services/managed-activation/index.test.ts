@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 const W = vi.hoisted(() => ({ home: '', binary: '', config: null as DurableAgentConfig | null,
   // Supported fixture has preexisting user choices. Activation never saves these settings.
-  hooks: false, mcp: false, runtime: 'terminal', wrapper: undefined as unknown,
+  hooks: false, runtime: 'terminal', wrapper: undefined as unknown,
   execute: vi.fn(), settingsSave: vi.fn() }));
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => W.home } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
@@ -13,7 +13,6 @@ vi.mock('../agent-config', () => ({ peekDurableConfigs: async () => W.config ? [
 vi.mock('../agent-registry', () => ({ agentRegistry: { getAllRegistrations: () => new Map() }, resolveOrchestrator: async () => ({ id: W.config?.orchestrator, getBinaryPath: () => W.binary }) }));
 vi.mock('../chat-runtime-settings', () => ({ resolveRuntimeMode: () => ({ mode: W.runtime }) }));
 vi.mock('../orchestrator-settings', () => ({ isHookServerEnabled: () => W.hooks, saveSettings: W.settingsSave }));
-vi.mock('../mcp-settings', () => ({ isMcpEnabled: () => W.mcp, saveSettings: W.settingsSave }));
 vi.mock('../agent-settings-service', () => ({ readLaunchWrapper: async () => W.wrapper, readProjectAgentDefaults: async () => ({}) }));
 vi.mock('child_process', () => ({ execFile: (...args: unknown[]) => W.execute(...args) }));
 import { createAssetCatalogStore } from '../asset-catalog/store';
@@ -31,7 +30,7 @@ beforeEach(async () => {
   await fs.mkdir(workspacePath, { recursive: true });
   W.binary = path.join(W.home, 'fake-claude-A'); await fs.writeFile(W.binary, 'fake binary A');
   W.config = { id: 'agent-1', name: 'agent', worktreePath: workspacePath, orchestrator: 'claude-code', model: 'sonnet', lastSessionId: 'untouched-session', runtimeMode: 'terminal' } as DurableAgentConfig;
-  W.hooks = false; W.mcp = false; W.runtime = 'terminal'; W.wrapper = undefined;
+  W.hooks = false; W.runtime = 'terminal'; W.wrapper = undefined;
   W.execute.mockImplementation((_binary: string, args: string[], _options: unknown, callback: (error: unknown, stdout: string) => void) => callback(null, args[0] === '--version' ? '2.1.316 (Claude Code)' : '  --append-system-prompt-file <path>\n  --plugin-dir <path>'));
   const catalog = createAssetCatalogStore({ dir: path.join(W.home, '.clubhouse-dev', 'asset-catalog') });
   const block = await catalog.createAsset({ kind: 'block', name: 'Identity', owner: { kind: 'agent', agentId: 'agent-1' }, payload: { content: 'literal @@AgentName' } });
@@ -79,8 +78,8 @@ describe('guarded production activation entry points with fake CLI flag evidence
     await expect(withManagedActivationLaunch(params(), () => false, runtime)).rejects.toMatchObject({ code: 'activation_capability_stale' });
     expect(runtime).not.toHaveBeenCalled(); expect(await fs.readdir(workspacePath)).toEqual([]);
   });
-  it.each(['hooks', 'mcp'] as const)('refuses existing enabled %s instead of changing it', async (setting) => {
-    W[setting] = true;
+  it('refuses existing enabled hooks instead of changing them', async () => {
+    W.hooks = true;
     await expect(preview()).rejects.toMatchObject({ code: 'activation_incompatible_config' });
     expect(W.execute).not.toHaveBeenCalled(); expect(W.settingsSave).not.toHaveBeenCalled();
   });
@@ -93,12 +92,11 @@ describe('guarded production activation entry points with fake CLI flag evidence
     await expect(withManagedActivationLaunch({ ...start, ...(kind === 'resume' ? { resume: true, sessionId: 'old' } : {}), ...(kind === 'systemPrompt' ? { systemPrompt: 'extra hidden text' } : {}) }, () => false, runtime)).rejects.toMatchObject({ code: kind === 'resume' ? 'activation_resume_unproven' : 'activation_unsupported' });
     expect(runtime).not.toHaveBeenCalled();
   });
-  it.each(['hooks', 'mcp', 'runtime', 'binary'] as const)('rechecks %s synchronously after intent save, at actual process-create boundary', async (setting) => {
+  it.each(['hooks', 'runtime', 'binary'] as const)('rechecks %s synchronously after intent save, at actual process-create boundary', async (setting) => {
     const delivery = await preview(); await adoptManagedActivation('agent-1', delivery.token);
     await withManagedActivationLaunch(params(), () => false, async (lease) => {
       await lease!.beforeStart(W.binary);
       if (setting === 'hooks') W.hooks = true;
-      if (setting === 'mcp') W.mcp = true;
       if (setting === 'runtime') W.runtime = 'chat';
       if (setting === 'binary') { W.binary = path.join(W.home, 'late-B'); await fs.writeFile(W.binary, 'late binary B'); }
       expect(() => lease!.assertCanCreate()).toThrow(setting === 'binary' ? 'activation_capability_stale' : setting === 'runtime' ? 'activation_unsupported' : 'activation_incompatible_config');

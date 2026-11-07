@@ -45,7 +45,6 @@ vi.mock('./settings-store', () => ({
     return { get: () => value, save: async (next: T) => { value = next; }, update: async (fn: (v: T) => T) => (value = fn(value)) };
   },
 }));
-vi.mock('./mcp-settings', () => ({ onMcpEnablementChanged: () => () => undefined }));
 vi.mock('./orchestration-settings', () => ({
   getPresets: () => W.saved,
   getPresetsRevision: () => W.revision,
@@ -704,7 +703,7 @@ describe('Auto (#2671)', () => {
 
   describe('readHelperAuto', () => {
     const config = (autoHelpers?: boolean) => ({ id: 'a', orchestration: autoHelpers === undefined ? {} : { autoHelpers } }) as never;
-    const policy = (agent: object = { orchestrate: true }, options: object = {}) => resolveOrchestrationPolicy(agent, options);
+    const policy = (agent: object = { orchestrate: true }) => resolveOrchestrationPolicy(agent);
     const read = (autoHelpers: boolean | undefined, p = policy(), projectPath?: string) => readHelperAuto({ agent: { config: config(autoHelpers), policy: p }, ...(projectPath && { projectPath }) });
 
     it('is off by default, and follows the app', async () => {
@@ -733,11 +732,6 @@ describe('Auto (#2671)', () => {
     it('keeps the retired persona scope, always null (#2901)', async () => {
       W.appAuto = true;
       expect(await read(undefined, policy({ orchestrate: true }))).toMatchObject({ effective: true, source: 'app', scopes: { persona: { value: null, editable: false } } });
-    });
-
-    it('no MCP, no Auto, whatever is saved', async () => {
-      W.appAuto = true;
-      expect(await read(true, policy({ orchestrate: true, autoHelpers: true }, { mcpOff: true }))).toMatchObject({ effective: false, source: 'mcp_off', reason: 'mcp_off', scopes: { agent: { value: true, editable: true } } });
     });
 
     it('an agent that doesn\'t orchestrate can\'t use it', async () => {

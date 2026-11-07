@@ -121,7 +121,6 @@ export const IPC = {
     REPORT_DISPOSE_DECISION: 'agent:report-dispose-decision',
     /** Main → renderer: a project's agents.json changed (parent links, creation, disposal, handoff). Payload: the project path. */
     CONFIGS_CHANGED: 'agent:configs-changed',
-    MCP_ENABLEMENT_CHANGED: 'agent:mcp-enablement-changed',
     /** Main → renderer (#2234): a helper start waiting on the user's approval. */
     HELPER_START_REQUEST: 'agent:helper-start-request',
     /** Main → renderer (#2234): start requests that were answered, expired or dropped. */
@@ -353,8 +352,6 @@ export const IPC = {
     SAVE_CLIPBOARD_SETTINGS: 'app:save-clipboard-settings',
     READ_CLIPBOARD_TEXT: 'app:read-clipboard-text',
     READ_CLIPBOARD_IMAGE: 'app:read-clipboard-image',
-    /** What a proposed MCP change would turn off, before it is saved. */
-    GET_MCP_OFF_IMPACT: 'app:get-mcp-off-impact',
     GET_SOUND_SETTINGS: 'app:get-sound-settings',
     SAVE_SOUND_SETTINGS: 'app:save-sound-settings',
     LIST_SOUND_PACKS: 'app:list-sound-packs',
@@ -617,8 +614,6 @@ export const IPC = {
   DISPATCHER: {
     GET: 'dispatcher:get',
     SET_ENABLED: 'dispatcher:set-enabled',
-    /** Stop its running agent and keep every saved value. */
-    STOP: 'dispatcher:stop',
     /** Main → renderer broadcast: DispatcherState after any change. */
     CHANGED: 'dispatcher:changed',
   },

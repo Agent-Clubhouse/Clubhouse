@@ -67,7 +67,6 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
     { label: 'Notifications & alerts', page: 'notifications' },
     { label: 'Plugins', page: 'plugins' },
     ...(showAnnex ? [{ label: 'Annex', page: 'annex' as SettingsSubPage }, { label: 'Annex control', page: 'annex-control' as SettingsSubPage }] : []),
-    { label: 'Clubhouse MCP', page: 'mcp' },
     ...(showGoobers ? [{ label: 'Goobers', page: 'goobers' as SettingsSubPage }] : []),
     { label: 'Updates', page: 'updates' },
     { label: 'Logging', page: 'logging' },

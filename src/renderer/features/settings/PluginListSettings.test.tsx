@@ -5,7 +5,6 @@ import { usePluginStore } from '../../plugins/plugin-store';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { usePluginUpdateStore } from '../../stores/pluginUpdateStore';
-import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 
 // Mock plugin-loader to avoid side effects
 const mockRefreshCommunityPlugins = vi.fn(async () => ({ discovered: [] as string[], refreshed: [] as string[], activated: [] as string[], incompatible: [] as string[] }));
@@ -68,11 +67,6 @@ beforeEach(() => {
     updateErrors: {},
     dismissed: false,
   });
-
-  useMcpSettingsStore.setState({
-    enabled: true,
-    loaded: true,
-  } as any);
 });
 
 describe('PluginListSettings', () => {
@@ -567,24 +561,10 @@ describe('PluginListSettings', () => {
       } as any);
     };
 
-    it('shows MCP-dependent plugins when MCP is enabled', () => {
+    it('shows MCP-dependent plugins: the Clubhouse MCP always runs', () => {
       setupMcpPlugin();
-      useMcpSettingsStore.setState({ enabled: true, loaded: true } as any);
       render(<PluginListSettings />);
       expect(screen.getByText('Group Project')).toBeInTheDocument();
-    });
-
-    it('hides MCP-dependent plugins when MCP is disabled', () => {
-      setupMcpPlugin();
-      useMcpSettingsStore.setState({ enabled: false, loaded: true } as any);
-      render(<PluginListSettings />);
-      expect(screen.queryByText('Group Project')).not.toBeInTheDocument();
-    });
-
-    it('still shows non-MCP plugins when MCP is disabled', () => {
-      setupMcpPlugin();
-      useMcpSettingsStore.setState({ enabled: false, loaded: true } as any);
-      render(<PluginListSettings />);
       expect(screen.getByText('Test Builtin')).toBeInTheDocument();
     });
   });

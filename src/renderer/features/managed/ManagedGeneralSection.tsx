@@ -10,7 +10,7 @@ import { legacyLine, migratedLine, migrationFailedLine, type LegacyUse } from '.
 /**
  * General › Setup for an agent (#2893). Managed: which template it came from,
  * Save as template, Stop managing. Unmanaged: the switch to managed, and the
- * Clubhouse features opt-out for a plain CLI. An unmanaged agent that still
+ * Clubhouse features opt-out, which turns off hooks only. An unmanaged agent that still
  * names a persona says so, as the offer to switch (#2901), and one whose
  * automatic switch failed gives the reason. An agent Clubhouse switched on
  * its own says so until the notice is dismissed (D59).
@@ -74,8 +74,8 @@ export function ManagedGeneralSection({ projectPath, agentId, agentName, setup, 
           <Field
             label="Clubhouse features"
             help={clubhouseFeatures
-              ? 'Status, permission prompts and Clubhouse tools (helpers, messages, Dispatcher).'
-              : <span className="text-ctp-warning">Off: Clubhouse can't show this agent's status, permission prompts or changes, and it can't use helpers, messages or the Dispatcher.</span>}
+              ? 'Status and permission prompts. Clubhouse tools (helpers, messages, Dispatcher) are always on.'
+              : <span className="text-ctp-warning">Off: Clubhouse can't show this agent's status, permission prompts or changes.</span>}
             testId="managed-clubhouse-features"
           >
             <Toggle

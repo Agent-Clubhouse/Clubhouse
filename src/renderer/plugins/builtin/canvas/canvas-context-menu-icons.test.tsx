@@ -5,7 +5,6 @@ import { CanvasContextMenu } from './CanvasContextMenu';
 import * as widgetRegistry from '../../canvas-widget-registry';
 import type { RegisteredCanvasWidget } from '../../canvas-widget-registry';
 import { usePluginStore } from '../../plugin-store';
-import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 
 // ── Mock the canvas-widget-registry ──────────────────────────────────
 
@@ -54,7 +53,6 @@ describe('CanvasContextMenu plugin widget icons', () => {
     onSelect.mockReset();
     onDismiss.mockReset();
     vi.mocked(widgetRegistry.getRegisteredWidgetTypes).mockReturnValue([]);
-    useMcpSettingsStore.setState({ enabled: true, loaded: true } as any);
     setupPluginStore([]);
   });
 
@@ -168,18 +166,7 @@ describe('CanvasContextMenu MCP gating', () => {
     setupPluginStore(['group-project', 'terminal'], { requiresMcp: { 'group-project': true } });
   });
 
-  it('hides group-project widget when MCP is disabled', () => {
-    useMcpSettingsStore.setState({ enabled: false, loaded: true } as any);
-    vi.mocked(widgetRegistry.getRegisteredWidgetTypes).mockReturnValue([groupProjectWidget, terminalWidget]);
-
-    render(<CanvasContextMenu x={100} y={100} onSelect={onSelect} onDismiss={onDismiss} />);
-
-    expect(screen.queryByTestId('canvas-context-menu-plugin:group-project:group-project')).toBeNull();
-    expect(screen.getByTestId('canvas-context-menu-plugin:terminal:shell')).toBeTruthy();
-  });
-
-  it('shows group-project widget when MCP is enabled', () => {
-    useMcpSettingsStore.setState({ enabled: true, loaded: true } as any);
+  it('shows a widget whose plugin requires MCP: the Clubhouse MCP always runs', () => {
     vi.mocked(widgetRegistry.getRegisteredWidgetTypes).mockReturnValue([groupProjectWidget, terminalWidget]);
 
     render(<CanvasContextMenu x={100} y={100} onSelect={onSelect} onDismiss={onDismiss} />);
@@ -191,7 +178,6 @@ describe('CanvasContextMenu MCP gating', () => {
   it('hides widgets from plugins not in appEnabled', () => {
     // Only terminal is enabled, group-project is not
     setupPluginStore(['terminal']);
-    useMcpSettingsStore.setState({ enabled: true, loaded: true } as any);
     vi.mocked(widgetRegistry.getRegisteredWidgetTypes).mockReturnValue([groupProjectWidget, terminalWidget]);
 
     render(<CanvasContextMenu x={100} y={100} onSelect={onSelect} onDismiss={onDismiss} />);

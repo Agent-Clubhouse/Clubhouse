@@ -295,7 +295,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
   });
 
-  it('helpers need the Clubhouse MCP server', async () => {
+  it('can always start helpers: the Clubhouse MCP part is in every setup', async () => {
     vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [{ ...builtinTemplate, setup: { ...builtinTemplate.setup, mcps: [] } }] } as never);
     const create = vi.spyOn(m(), 'createAgent').mockResolvedValue({ ok: true, value: { id: 'm-new' } } as never);
     openWith();
@@ -304,22 +304,24 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Customize Orchestrator' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
     const helpers = screen.getByRole('switch', { name: 'Can start helpers' });
-    expect(helpers).toBeDisabled();
-    expect(helpers.getAttribute('aria-checked')).toBe('false');
-    expect(screen.getByText('Needs the Clubhouse MCP server.')).toBeTruthy();
-    expect(screen.queryByLabelText('Helper limit')).toBeNull();
+    expect(helpers).not.toBeDisabled();
+    expect(screen.queryByText('Needs the Clubhouse MCP server.')).toBeNull();
+    const before = helpers.getAttribute('aria-checked');
+    fireEvent.click(helpers);
+    const after = before === 'true' ? 'false' : 'true';
+    expect(screen.getByRole('switch', { name: 'Can start helpers' }).getAttribute('aria-checked')).toBe(after);
     fireEvent.click(screen.getByTestId('new-agent-builder-create'));
     await waitFor(() => expect(create).toHaveBeenCalledWith('/tmp/ch', expect.objectContaining({
-      settings: expect.objectContaining({ orchestration: expect.objectContaining({ orchestrate: false }) }),
+      settings: expect.objectContaining({ orchestration: expect.objectContaining({ orchestrate: after === 'true' }) }),
     })));
   });
 
-  it('turning Clubhouse features off warns what stops working and creates the agent with them off', async () => {
+  it('turning Clubhouse features off warns that hooks stop, not MCP, and creates the agent with them off', async () => {
     openWith();
     fireEvent.click(await managedSwitch());
     fireEvent.click(screen.getByRole('switch', { name: 'Clubhouse features' }));
     expect(screen.getByTestId('new-agent-features-warning').textContent).toBe(
-      "Off: Clubhouse can't show this agent's status, permission prompts or changes, and the agent can't use helpers, messages or the Dispatcher.",
+      "Off: Clubhouse can't show this agent's status, permission prompts or changes.",
     );
     await waitFor(() => expect(screen.getByTestId('new-agent-submit')).not.toBeDisabled());
     fireEvent.click(screen.getByTestId('new-agent-submit'));
@@ -431,9 +433,9 @@ describe('quickTemplateHelp', () => {
     expect(quickTemplateHelp(setup(['builtin-mcp-clubhouse', 'a', 'b']), opts)).toBe('Its instructions lead the agent’s prompt. Its 2 MCP servers are passed at launch.');
   });
 
-  it('says what can\'t reach the agent: servers on a CLI without launch flags, skills, and Clubhouse tools without the part', () => {
+  it('says what can\'t reach the agent: servers on a CLI without launch flags and skills, never Clubhouse tools', () => {
     expect(quickTemplateHelp(setup(['a'], ['s1', 's2']), { mcpLaunchFlags: false, cliName: 'Claude Code' })).toBe(
-      'Its instructions lead the agent’s prompt. Its MCP server can’t reach Claude Code, which reads them only from the folder’s own MCP file. Its skills aren’t used, since a quick agent has no folder of its own. Without the Clubhouse MCP part it gets no Clubhouse tools.',
+      'Its instructions lead the agent’s prompt. Its MCP server can’t reach Claude Code, which reads them only from the folder’s own MCP file. Its skills aren’t used, since a quick agent has no folder of its own.',
     );
     expect(quickTemplateHelp(undefined, opts)).toBe('Optional. Starts the agent with a template’s instructions and MCP servers.');
   });

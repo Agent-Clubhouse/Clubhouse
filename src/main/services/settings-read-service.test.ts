@@ -242,20 +242,6 @@ describe('settings derived off, with a reason', () => {
     expect(await dispatcherEnabled()).toEqual({ stored: false, effective: false, source: 'app', reason: 'switch_off' });
   });
 
-  it('names MCP at app level, and keeps the saved value, with MCP off', async () => {
-    writeApp('dispatcher-settings.json', { enabled: true });
-    writeApp('mcp-settings.json', { enabled: false, projectOverrides: { [one]: true } });
-    layout(true);
-    expect(await dispatcherEnabled()).toEqual({ stored: true, effective: false, source: 'app', reason: 'mcp_off' });
-  });
-
-  it('no longer counts the old Clubhouse mode setting as MCP on (#2901)', async () => {
-    writeApp('mcp-settings.json', { enabled: false });
-    writeApp('clubhouse-mode-settings.json', { enabled: true });
-    layout(true);
-    expect(await dispatcherEnabled()).toEqual({ stored: null, effective: false, source: 'app', reason: 'mcp_off' });
-  });
-
   it('reads a saved experimental false', async () => {
     writeApp('experimental-settings.json', { newChrome: true, dispatcher: false });
     resetNewChromeCacheForTests();
@@ -270,35 +256,6 @@ describe('settings derived off, with a reason', () => {
   const orchestrated = () => agent('a1', { orchestration: { orchestrate: true, crossProjectHelpers: true, autoHelpers: true, connectToDispatcher: true } });
   const policy = async () => (await read(ordinary('a1'), { select: ['agent.orchestration'], detail: true })).targets[0].settings;
 
-  it('reads orchestration off with MCP off at app level, keeping what is stored', async () => {
-    writeAgents(one, [orchestrated()]);
-    writeApp('mcp-settings.json', { enabled: false });
-    layout(true);
-    const off = { effective: false, source: 'app', reason: 'mcp_off' };
-    expect(await policy()).toMatchObject({
-      'agent.orchestration.orchestrate': { stored: true, ...off },
-      'agent.orchestration.cross_project_helpers': { stored: true, ...off },
-      'agent.orchestration.connect_to_dispatcher': { stored: true, ...off },
-      'agent.orchestration.auto_helpers': { stored: true, ...off },
-    });
-  });
-
-  it('names the project level when a project override turned MCP off', async () => {
-    writeAgents(one, [orchestrated()]);
-    writeApp('mcp-settings.json', { enabled: true, projectOverrides: { [one]: false } });
-    layout(true);
-    expect((await policy())['agent.orchestration.orchestrate']).toEqual({ stored: true, effective: false, source: 'project', reason: 'mcp_off' });
-  });
-
-  it('with its own MCP, an agent orchestrates, and its Dispatcher connection reads off for want of MCP at app level', async () => {
-    writeAgents(one, [{ ...orchestrated(), mcpOverride: true }]);
-    writeApp('mcp-settings.json', { enabled: false });
-    layout(true);
-    const settings = await policy();
-    expect(settings['agent.orchestration.orchestrate']).toEqual({ stored: true, effective: true, source: 'agent' });
-    expect(settings['agent.orchestration.connect_to_dispatcher']).toEqual({ stored: true, effective: false, source: 'app', reason: 'mcp_off' });
-  });
-
   it('with MCP on, reads the connection off while the Dispatcher\'s switch is', async () => {
     writeAgents(one, [orchestrated()]);
     writeApp('dispatcher-settings.json', { enabled: false });
@@ -306,9 +263,9 @@ describe('settings derived off, with a reason', () => {
     expect((await policy())['agent.orchestration.connect_to_dispatcher']).toEqual({ stored: true, effective: false, source: 'app', reason: 'dispatcher_off' });
   });
 
-  it('applies every saved value again with MCP back', async () => {
-    writeAgents(one, [orchestrated()]);
-    writeApp('mcp-settings.json', { enabled: true });
+  it('applies every saved value, whatever an old MCP setting or mcpOverride says', async () => {
+    writeAgents(one, [{ ...orchestrated(), mcpOverride: false } as never]);
+    writeApp('mcp-settings.json', { enabled: false, projectOverrides: { [one]: false } });
     layout(true);
     const settings = await policy();
     for (const key of ['orchestrate', 'cross_project_helpers', 'connect_to_dispatcher']) {
@@ -316,13 +273,13 @@ describe('settings derived off, with a reason', () => {
     }
   });
 
-  it('a helper with MCP off reads report-only, its orchestration off with the same reason, and is never connected', async () => {
+  it('a helper orchestrates as saved and is never connected', async () => {
     writeAgents(one, [agent('a1'), agent('h1', { parentAgentId: 'a1', orchestration: { orchestrate: true, connectToDispatcher: true } })]);
     writeApp('mcp-settings.json', { enabled: false });
     layout(true);
     const { settings } = (await read(ordinary('h1'), { select: ['agent.mcp.clubhouse_mcp', 'agent.orchestration.orchestrate', 'agent.orchestration.connect_to_dispatcher'], detail: true })).targets[0];
-    expect(settings['agent.mcp.clubhouse_mcp']).toEqual({ stored: null, effective: false, source: 'app', reason: 'helper_report_only' });
-    expect(settings['agent.orchestration.orchestrate']).toEqual({ stored: true, effective: false, source: 'app', reason: 'helper_report_only' });
+    expect(settings['agent.mcp.clubhouse_mcp']).toEqual({ stored: null, effective: true, source: 'default' });
+    expect(settings['agent.orchestration.orchestrate']).toEqual({ stored: true, effective: true, source: 'agent' });
     expect(settings['agent.orchestration.connect_to_dispatcher']).toMatchObject({ effective: false });
   });
 });
@@ -565,26 +522,18 @@ describe('values and sources', () => {
     });
   });
 
-  it('follows the MCP fallback chain: agent, project, app', async () => {
-    const mcp = async () => (await read(ordinary(), { select: ['agent.mcp.clubhouse_mcp'] })).targets[0].settings['agent.mcp.clubhouse_mcp'];
-    expect(await mcp()).toEqual({ effective: true, source: 'default' });
-    writeApp('mcp-settings.json', { enabled: true });
-    resetAllSettingsStoresForTests();
-    expect(await mcp()).toEqual({ effective: true, source: 'app' });
+  it('reads every Clubhouse MCP key as always on, whatever old settings say (D69)', async () => {
     writeApp('mcp-settings.json', { enabled: false, projectOverrides: { [one]: false } });
+    writeAgents(one, [agent('a1', { mcpOverride: false } as never)]);
     resetAllSettingsStoresForTests();
-    expect(await mcp()).toEqual({ effective: false, source: 'project' });
-    writeAgents(one, [agent('a1', { mcpOverride: true })]);
-    expect(await mcp()).toEqual({ effective: true, source: 'agent' });
-    writeApp('mcp-settings.json', { enabled: false });
-    writeAgents(one, [agent('a1')]);
+    const on = { stored: null, effective: true, source: 'default' };
+    const { targets } = await read(ordinary(), { select: ['agent.mcp.clubhouse_mcp', 'agent.mcp.clubhouse_bridge', 'project.modes.mcp', 'app.defaults.mcp_enabled'], detail: true });
+    const all = Object.assign({}, ...targets.map((t) => t.settings));
+    for (const key of ['agent.mcp.clubhouse_mcp', 'agent.mcp.clubhouse_bridge', 'project.modes.mcp', 'app.defaults.mcp_enabled']) {
+      expect(all[key], key).toEqual(on);
+    }
+    fs.rmSync(path.join(dirs.userData, 'mcp-settings.json'), { force: true });
     resetAllSettingsStoresForTests();
-    expect(await mcp()).toEqual({ effective: false, source: 'app' });
-    // The old Clubhouse Mode setting decides nothing (#2901): the startup pass made it explicit (D63).
-    writeApp('clubhouse-mode-settings.json', { enabled: true });
-    resetAllSettingsStoresForTests();
-    expect(await mcp()).toEqual({ effective: false, source: 'app' });
-    fs.rmSync(path.join(dirs.userData, 'clubhouse-mode-settings.json'), { force: true });
   });
 
   it('reads the retired Clubhouse Mode and mission keys as null, whatever an old config holds (#2901)', async () => {
@@ -598,25 +547,6 @@ describe('values and sources', () => {
       expect(all[key], key).toEqual(retired);
     }
     fs.rmSync(path.join(dirs.userData, 'clubhouse-mode-settings.json'), { force: true });
-  });
-
-  it('reports what a helper can call apart from whether its bridge is there', async () => {
-    const both = async (id: string) => {
-      const { settings } = (await read(ordinary(id), { select: ['agent.mcp.clubhouse_mcp', 'agent.mcp.clubhouse_bridge'], detail: true })).targets[0];
-      return [settings['agent.mcp.clubhouse_mcp'], settings['agent.mcp.clubhouse_bridge']];
-    };
-    const bridge = { stored: null, effective: true, source: 'default' };
-    writeAgents(one, [agent('off', { parentAgentId: 'a1', mcpOverride: false }), agent('on', { parentAgentId: 'a1', mcpOverride: true }), agent('unset', { parentAgentId: 'a1' }), agent('plain')]);
-    expect(await both('off')).toEqual([{ stored: false, effective: false, source: 'agent', reason: 'helper_report_only' }, bridge]);
-    expect(await both('on')).toEqual([{ stored: true, effective: true, source: 'agent' }, bridge]);
-    expect(await both('unset')).toEqual([{ stored: null, effective: true, source: 'default' }, bridge]);
-    writeApp('mcp-settings.json', { enabled: false });
-    resetAllSettingsStoresForTests();
-    expect(await both('unset')).toEqual([{ stored: null, effective: false, source: 'app', reason: 'helper_report_only' }, bridge]);
-    // Anyone else's bridge goes with its MCP: there is no second answer.
-    expect((await both('plain'))[1]).toEqual({ stored: null, effective: false, source: 'app' });
-    fs.rmSync(path.join(dirs.userData, 'mcp-settings.json'), { force: true });
-    resetAllSettingsStoresForTests();
   });
 
   it('inherits MCP ids and orchestrator from the project, and reads a retired persona and mission as null (#2901)', async () => {

@@ -72,7 +72,7 @@ describe('settings audit inventory', () => {
     const read = (rel: string) => fs.readFileSync(path.join(MAIN, rel), 'utf8');
     // Every setup write, whoever makes it (the builder, a push, a fork, a helper's start, unmanage).
     expect(read('services/agent-config.ts')).toContain("auditChanges('agent', 'agent', agentId, managedBefore, managedAuditFields(agent), MANAGED_AUDIT_CATALOG)");
-    expect(read('services/agent-config.ts')).toContain("{ clubhouseFeatures: 'value', mcpOverride: 'value' }");
+    expect(read('services/agent-config.ts')).toContain("{ clubhouseFeatures: 'value' }");
     // managed-agents/state.json isn't a settings store: its writers report by key.
     const service = read('services/managed-agents/service.ts');
     for (const key of ['managed.part.created', 'managed.part.updated', 'managed.part.deleted', 'managed.template.saved', 'managed.template.deleted', 'managed.template.pushed']) {

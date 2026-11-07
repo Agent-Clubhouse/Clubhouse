@@ -29,10 +29,6 @@ vi.mock('./project-store', () => ({
   list: vi.fn(async () => [{ id: 'p', name: 'project', path: state.project }]),
   onProjectsChanged: vi.fn(() => () => undefined),
 }));
-vi.mock('./mcp-settings', () => ({
-  isMcpEnabled: () => true,
-  onMcpEnablementChanged: vi.fn(() => () => undefined),
-}));
 vi.mock('./orchestration-settings', () => ({
   getAutoHelpers: vi.fn(() => false), getGlobalHelperCap: () => 20 }));
 vi.mock('./dispatcher/dispatcher-service', () => ({

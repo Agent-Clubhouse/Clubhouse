@@ -22,17 +22,9 @@ import { parseHelperCount } from './orchestration-hooks';
 /** The help line under the "Connect to Dispatcher" switch (#2534). */
 export const DISPATCHER_HELP = 'Let the Dispatcher message this agent and get its reports.';
 
-/** The same line while the Dispatcher is off because of Clubhouse MCP. */
-export const DISPATCHER_MCP_OFF_HELP = 'The Dispatcher is off because Clubhouse MCP is off. Turn on Clubhouse MCP in Settings. Your setting here is kept.';
-
 /** The help line under the "Cross-project helpers" switch (#2512). */
 export const CROSS_PROJECT_HELP = 'Let this agent start helpers in other projects.';
 export const AUTO_HELPERS_HELP = 'Let Clubhouse pick between Claude Code and Codex for a helper, from helper counts and plan limits. This balances counts, not cost.';
-
-/** Why the controls are disabled where Clubhouse MCP is off (#2589). Saved settings come back with MCP. */
-export function mcpOffNote(name: string): string {
-  return `Orchestration and Connect to Dispatcher need Clubhouse MCP, which is off for ${name}. Turn it on to use them. Your settings here are kept.`;
-}
 
 /** The note under the access control: the live ceiling, or the rule when it isn't running. */
 export function accessNote(access: HelperAccessResolution | null, running: boolean, name: string): string {
@@ -134,7 +126,6 @@ export function HelperCountInput({ id, value, ceiling, disabled, className, onCo
 /** Why Auto is off where this agent's own switch can't change that. */
 const AUTO_LOCKED_NOTES: Partial<Record<HelperAutoOffReason, string>> = {
   project_off: 'This project turned it off.',
-  mcp_off: 'Clubhouse MCP is off for this agent.',
 };
 
 /**

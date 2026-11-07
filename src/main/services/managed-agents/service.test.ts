@@ -252,12 +252,14 @@ describe('templates', () => {
     agent('c', { blocks: [BUILTIN_BLOCK_IDS.identity], mcps: [CLUBHOUSE_MCP_PART_ID], templateId: t.id });
     const next = { setup: { blocks: [BUILTIN_BLOCK_IDS.identity], skills: [skill.id], mcps: [] }, settings: { orchestration: { maxHelpers: 3 } } };
     const preview = await user(() => service.previewTemplatePush(t.id, next));
-    expect(preview.changes.map((c) => c.kind)).toEqual(['add', 'remove', 'setting']);
-    expect(preview.targets.find((x) => x.agentId === 'b')).toMatchObject({ applicable: 2, total: 3 });
+    // Leaving the Clubhouse part out is no change: it stays in every template (D69).
+    expect(preview.changes.map((c) => c.kind)).toEqual(['add', 'setting']);
+    expect(preview.targets.find((x) => x.agentId === 'b')).toMatchObject({ applicable: 1, total: 2 });
     const settings = await user(() => service.pushTemplate(t.id, next, [{ projectPath: '/p', agentId: 'a' }, { projectPath: '/p', agentId: 'b' }]));
     expect(agents.get('a')!.managed!.skills).toEqual([skill.id]);
-    expect(agents.get('a')!.managed!.mcps).toEqual([]);
+    expect(agents.get('a')!.managed!.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
     expect(agents.get('c')!.managed!.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+    expect((await user(() => service.getTemplate(t.id))).setup.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
     expect(settings.map((x) => [x.agentId, x.changed])).toEqual([['a', true], ['b', true]]);
     expect((await user(() => service.getTemplate(t.id))).setup.skills).toEqual([skill.id]);
   });
@@ -405,8 +407,38 @@ describe('checkSetup', () => {
   it('runs saveSetup\'s checks without saving anything', async () => {
     agent('a', {});
     const checked = await user(() => service.checkSetup({ blocks: [BUILTIN_BLOCK_IDS.identity, BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [] }));
-    expect(checked).toEqual({ version: 1, blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [] });
+    expect(checked).toEqual({ version: 1, blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] });
     expect(agents.get('a')!.managed!.blocks).toEqual([]);
     await expectCode(user(() => service.checkSetup({ blocks: ['no-such-part'], skills: [], mcps: [] })), 'not_found');
+  });
+});
+
+describe('the Clubhouse MCP part is in every setup and template (D69)', () => {
+  it('saveSetup and checkSetup add it first when it is left out', async () => {
+    agent('a', {});
+    const other = await user(() => service.createPart({ name: 'Docs', content: { kind: 'mcp', serverKey: 'docs', transport: 'http', url: 'https://docs.example.com/mcp' } }));
+    const saved = await user(() => service.saveSetup('/p', 'a', { blocks: [], skills: [], mcps: [other.id] }));
+    expect(saved.mcps).toEqual([CLUBHOUSE_MCP_PART_ID, other.id]);
+    expect(agents.get('a')!.managed!.mcps).toEqual([CLUBHOUSE_MCP_PART_ID, other.id]);
+    // Where the setup already has it, its place is kept.
+    expect((await user(() => service.checkSetup({ blocks: [], skills: [], mcps: [other.id, CLUBHOUSE_MCP_PART_ID] }))).mcps).toEqual([other.id, CLUBHOUSE_MCP_PART_ID]);
+  });
+
+  it('saveTemplate adds it, and setupFromTemplate gives it', async () => {
+    const t = await user(() => service.saveTemplate({ name: 'Bare', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: {} }));
+    expect(t.setup.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+    expect((await user(() => service.setupFromTemplate(t.id))).setup.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+  });
+
+  it('reads a custom template saved without it as having it', async () => {
+    await createManagedStateStore(path.join(root, 'managed')).update((s) => {
+      s.templates['template-old'] = { id: 'template-old', name: 'Old', description: '', builtin: false, setup: { blocks: [], skills: [], mcps: [] }, settings: {}, updatedAt: '2026-01-01T00:00:00.000Z' };
+    });
+    expect((await user(() => service.getTemplate('template-old'))).setup.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+    expect((await user(() => service.setupFromTemplate('template-old'))).setup.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+  });
+
+  it('refuses to copy it', async () => {
+    await expectCode(user(() => service.forkPart({ id: CLUBHOUSE_MCP_PART_ID })), 'invalid');
   });
 });

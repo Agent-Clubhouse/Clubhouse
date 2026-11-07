@@ -1,7 +1,7 @@
 {
   "cases": [
     {
-      "name": "dispatcher_flag_off",
+      "name": "dispatcher_layout_off",
       "request": {
         "commandId": "cmd_120",
         "enabled": true,
@@ -12,29 +12,6 @@
       "response": {
         "body": {
           "commandId": "cmd_120",
-          "epoch": "00000000-0000-4000-8000-000000000001",
-          "error": {
-            "code": "dispatcher_flag_off",
-            "message": "Turn on Dispatcher in Settings > Experimental on the desktop first."
-          },
-          "status": "rejected",
-          "version": 1
-        },
-        "status": 409
-      }
-    },
-    {
-      "name": "dispatcher_layout_off",
-      "request": {
-        "commandId": "cmd_121",
-        "enabled": true,
-        "epoch": "00000000-0000-4000-8000-000000000001",
-        "type": "dispatcher.setEnabled",
-        "version": 1
-      },
-      "response": {
-        "body": {
-          "commandId": "cmd_121",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "dispatcher_layout_off",
@@ -48,6 +25,30 @@
     },
     {
       "name": "accepted",
+      "request": {
+        "commandId": "cmd_124",
+        "enabled": true,
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "dispatcher.setEnabled",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_124",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_dispatcher",
+            "enabled": true,
+            "flagOn": true
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted unchanged",
       "request": {
         "commandId": "cmd_125",
         "enabled": true,
@@ -71,33 +72,9 @@
       }
     },
     {
-      "name": "accepted unchanged",
-      "request": {
-        "commandId": "cmd_126",
-        "enabled": true,
-        "epoch": "00000000-0000-4000-8000-000000000001",
-        "type": "dispatcher.setEnabled",
-        "version": 1
-      },
-      "response": {
-        "body": {
-          "commandId": "cmd_126",
-          "epoch": "00000000-0000-4000-8000-000000000001",
-          "result": {
-            "agentId": "durable_dispatcher",
-            "enabled": true,
-            "flagOn": true
-          },
-          "status": "completed",
-          "version": 1
-        },
-        "status": 200
-      }
-    },
-    {
       "name": "accepted off",
       "request": {
-        "commandId": "cmd_138",
+        "commandId": "cmd_137",
         "enabled": false,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "dispatcher.setEnabled",
@@ -105,7 +82,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_138",
+          "commandId": "cmd_137",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": null,

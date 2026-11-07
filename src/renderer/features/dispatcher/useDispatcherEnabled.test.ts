@@ -57,14 +57,12 @@ describe('useDispatcherState', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it('shows the Connect row while it is on, and while it is off only because of MCP', async () => {
+  it('shows the Connect row only while it is on', async () => {
     window.clubhouse.dispatcher.get = vi.fn().mockResolvedValue({ ...ON, enabled: false, offReason: 'switch_off' });
     const { result } = renderHook(() => useDispatcherConnection());
     await waitFor(() => expect(window.clubhouse.dispatcher.get).toHaveBeenCalled());
-    await waitFor(() => expect(result.current).toEqual({ show: false, offForMcp: false }));
-    act(() => listener?.({ ...ON, enabled: false, offReason: 'mcp_off', mcpOff: true }));
-    expect(result.current).toEqual({ show: true, offForMcp: true });
+    await waitFor(() => expect(result.current).toEqual({ show: false }));
     act(() => listener?.(ON));
-    expect(result.current).toEqual({ show: true, offForMcp: false });
+    expect(result.current).toEqual({ show: true });
   });
 });

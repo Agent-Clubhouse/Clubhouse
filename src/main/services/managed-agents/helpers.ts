@@ -48,6 +48,9 @@ export async function managedHelperSetup(
     throw new Error(`there is no template "${templateId}". Call list_agent_templates, or leave template out for the default helper template.`);
   }
   const live = await service.liveEntries();
+  // checkSetup lets the Clubhouse part through before it is installed (a saved setup always has it),
+  // but a helper's setup is built from the built-in parts, so a start whose built-ins didn't install is refused here.
+  if (!live[CLUBHOUSE_MCP_PART_ID]) throw new Error('the built-in agent parts aren\'t installed yet. Try again.');
   const drop = new Set(args.removeParts ?? []);
   // A helper reports to its orchestrator through the Clubhouse MCP part.
   if (drop.has(CLUBHOUSE_MCP_PART_ID)) throw new Error(HELPER_KEEPS_CLUBHOUSE_PART);

@@ -49,8 +49,7 @@ import type { OrchestratorId } from '../orchestrators';
 import { helperPresetsChanged } from '../telemetry/feature-events';
 import { appLog } from './log-service';
 import { forceProviderQuota, isProviderCoolingDown, readProviderQuota } from './provider-quota';
-import { noteRoutingPolicyChanged, setRoutingPolicyListener } from './helper-routing-changes';
-import { onMcpEnablementChanged } from './mcp-settings';
+import { setRoutingPolicyListener } from './helper-routing-changes';
 import { checkHelperEffort, checkHelperModel, modelListFor } from './model-check';
 import * as orchestrationSettings from './orchestration-settings';
 import { appendSettingsAudit, type SettingsAuditSurface } from './settings-audit';
@@ -939,11 +938,6 @@ setRoutingPolicyListener(() => {
     appLog('core:orchestration', 'warn', 'Could not move the helper routing revision', { meta: { error: errorText(err) } });
   });
 });
-
-/** MCP going on or off decides Auto for every agent under it. Returns the unsubscribe function. */
-export function watchRoutingPolicy(): () => void {
-  return onMcpEnablementChanged(() => noteRoutingPolicyChanged());
-}
 
 /** For testing: wait for writes and revision moves to settle. */
 export function _settleHelperRoutingForTesting(): Promise<unknown> {

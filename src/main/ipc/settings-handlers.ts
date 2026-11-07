@@ -22,17 +22,14 @@ import {
   CLIPBOARD_SETTINGS,
   EDITOR_SETTINGS,
   isClipboardCompatPlatform,
-  MCP_SETTINGS,
   SECURITY_SETTINGS,
   SOURCE_CONTROL_SETTINGS,
 } from '../../shared/settings-definitions';
-import { onMcpSettingsChanged } from './mcp-binding-handlers';
-import { mcpSettingsStore } from '../services/mcp-settings';
 import { goobersService } from '../services/goobers-service';
 import { chatIdleSettings } from '../services/chat-idle-settings';
 import { effectiveAppSourceControlProvider, sourceControlSettingsStore } from '../services/source-control-settings';
 
-export { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, MCP_SETTINGS, SECURITY_SETTINGS };
+export { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, SECURITY_SETTINGS };
 
 export const getClipboardCompatDefault = (platform: string = process.platform): boolean =>
   isClipboardCompatPlatform(platform);
@@ -44,11 +41,6 @@ export const clipboardSettings = createManagedSettings(CLIPBOARD_SETTINGS, {
 });
 
 export const editorSettings = createManagedSettings(EDITOR_SETTINGS);
-
-export const mcpSettings = createManagedSettings(MCP_SETTINGS, {
-  store: mcpSettingsStore,
-  onSave: () => onMcpSettingsChanged(),
-});
 
 export const securitySettings = createManagedSettings(SECURITY_SETTINGS);
 
@@ -75,7 +67,6 @@ export const sourceControlSettings = createManagedSettings(SOURCE_CONTROL_SETTIN
 export function registerSettingsHandlers(): void {
   clipboardSettings.register();
   editorSettings.register();
-  mcpSettings.register();
   securitySettings.register();
   sourceControlSettings.register();
   chatIdleSettings.register();

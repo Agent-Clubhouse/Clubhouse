@@ -14,7 +14,6 @@ export function OrchestrationSettingsView() {
         <SettingsBlock className="flex flex-col gap-2">
           <p className="text-[13px] text-ctp-subtext1">
             Any agent can start helpers. Turn on orchestration in the agent's own settings, on its Helpers page, and set how many helpers it may run.
-            A managed agent also needs the Clubhouse MCP server in its setup.
           </p>
           <p className={settingsHelp}>Templates can turn it on for the agents made from them.</p>
         </SettingsBlock>

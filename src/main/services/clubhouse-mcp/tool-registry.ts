@@ -12,8 +12,8 @@ import { deniedGroupProjectTools } from '../../../shared/group-project-admin';
 import { appLog } from '../log-service';
 import { isCrossProjectEnabled, isOrchestrationEnabled, onOrchestrationGateChange } from './orchestration-gate';
 import { isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
-import { HELPER_REPORT_TOOL, mcpCallAccess } from './mcp-call-gate';
-import { CROSS_PROJECT_OFF_MESSAGE, MCP_OFF_HELPER_TOOL_MESSAGE, MCP_OFF_TOOL_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
+import { mcpCallAccess } from './mcp-call-gate';
+import { CROSS_PROJECT_OFF_MESSAGE, MCP_CALLER_UNKNOWN_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
 import { getProvider } from '../../orchestrators';
 
 /** The refusal a Dispatcher tool returns for any other agent. */
@@ -393,10 +393,6 @@ function wakeKey(bindings: McpBinding[]): string {
 export function getScopedToolList(agentId: string): McpToolDefinition[] {
   const access = mcpCallAccess(agentId, agentRegistry.get(agentId)?.projectPath);
   if (access === 'closed') return [];
-  if (access === 'report_only') {
-    const report = globalTools.get(HELPER_REPORT_TOOL);
-    return report ? [report.definition] : [];
-  }
   const currentVersion = bindingManager.getVersion();
   const bindings = bindingManager.getBindingsForAgent(agentId);
   const allWireTools = keepsFirstToolList(agentId);
@@ -490,10 +486,9 @@ export async function callTool(
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<McpToolResult> {
-  // Before everything else: without MCP, no tool is reached, whatever list the client holds.
+  // Before everything else: a caller the gate doesn't know reaches no tool, whatever list the client holds.
   const access = mcpCallAccess(agentId, agentRegistry.get(agentId)?.projectPath);
-  if (access === 'closed') return refuse('mcp_off', MCP_OFF_TOOL_MESSAGE);
-  if (access === 'report_only' && toolName !== HELPER_REPORT_TOOL) return refuse('mcp_off', MCP_OFF_HELPER_TOOL_MESSAGE);
+  if (access === 'closed') return refuse('caller_unknown', MCP_CALLER_UNKNOWN_MESSAGE);
 
   // Check global tools first (no binding required)
   const globalTool = globalTools.get(toolName);

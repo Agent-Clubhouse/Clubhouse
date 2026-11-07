@@ -14,8 +14,8 @@ import { registerPluginMcpHandlers } from './plugin-mcp-handlers';
 import { registerProcessHandlers } from './process-handlers';
 import { registerWindowHandlers } from './window-handlers';
 import { registerAnnexHandlers, maybeStartAnnex, maybeStartAnnexClient } from './annex-handlers';
-import { registerMcpBindingHandlers, maybeStartMcpBridge, restorePersistedBindings, startMcpBridgeForAgent } from './mcp-binding-handlers';
-import { setMcpBridgeStarter } from '../services/mcp-settings';
+import { registerMcpBindingHandlers, startMcpBridge, restorePersistedBindings, ensureMcpBridgeStarted } from './mcp-binding-handlers';
+import { setMcpBridgeStarter } from '../services/mcp-bridge-starter';
 import { registerCanvasIndexHandlers } from './canvas-index-handlers';
 import { registerGroupProjectHandlers } from './group-project-handlers';
 import { registerAnnexClientHandlers } from './annex-client-handlers';
@@ -82,7 +82,7 @@ export function registerAllHandlers(): void {
   registerMarketplaceHandlers();
   registerProfileHandlers();
   registerSettingsHandlers();
-  setMcpBridgeStarter(startMcpBridgeForAgent);
+  setMcpBridgeStarter(ensureMcpBridgeStarted);
   registerMcpBindingHandlers();
   registerGroupProjectHandlers();
   registerCanvasIndexHandlers();
@@ -123,6 +123,6 @@ export function registerAllHandlers(): void {
   // Conditionally start Annex client (Bonjour discovery) for satellite detection
   maybeStartAnnexClient();
 
-  // Conditionally start MCP bridge server for agent-widget interaction
-  maybeStartMcpBridge();
+  // The Clubhouse MCP bridge always runs: no setting turns it off.
+  startMcpBridge();
 }

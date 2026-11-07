@@ -82,9 +82,6 @@ vi.mock('../services/annex-event-bus', () => ({
   emitBulletinMessage: vi.fn(),
 }));
 
-vi.mock('../services/mcp-settings', () => ({
-  isMcpEnabledForAny: vi.fn(() => true),
-}));
 
 vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
@@ -100,7 +97,6 @@ import { groupProjectRegistry } from '../services/group-project-registry';
 import { getBulletinBoard, destroyBulletinBoard } from '../services/group-project-bulletin';
 import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import * as annexEventBus from '../services/annex-event-bus';
-import { isMcpEnabledForAny } from '../services/mcp-settings';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { registerGroupProjectHandlers, _resetHandlersForTesting } from './group-project-handlers';
 import { digestSinceArg } from './validation';
@@ -163,12 +159,9 @@ describe('group-project-handlers', () => {
     expect(vi.mocked(ipcMain.handle).mock.calls.length).toBe(callCount);
   });
 
-  it('registers handlers even when MCP is disabled (regression: fresh-Mac silent create failure)', () => {
-    // Group-project creation is a local feature and must not depend on the MCP
-    // bridge being enabled. Previously this early-returned, leaving
-    // group-project:create unregistered so the renderer's invoke() rejected and
-    // creation silently no-op'd on fresh installs.
-    vi.mocked(isMcpEnabledForAny).mockReturnValue(false);
+  it('registers handlers on their own (regression: fresh-Mac silent create failure)', () => {
+    // Group-project creation is a local feature registered on its own, apart
+    // from the MCP tools.
     handlers.clear();
     vi.mocked(ipcMain.handle).mockClear();
     _resetHandlersForTesting();

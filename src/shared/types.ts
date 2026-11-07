@@ -325,8 +325,6 @@ export interface DurableAgentConfig {
   mcpIds?: string[];
   /** Per-MCP configuration values keyed by MCP ID then flag name */
   mcpConfigs?: Record<string, Record<string, string>>;
-  /** Per-agent override for the Clubhouse MCP bridge feature. A helper always gets the bridge: see clubhouseMcpOverride. */
-  mcpOverride?: boolean;
   /**
    * @deprecated Personas were retired (#2901). The persona id an agent had
    * before then, kept as a legacy field: the switch to managed reads it
@@ -747,8 +745,6 @@ export interface DurableConfigUpdates {
   lastSleep?: AgentSleepInfo | null;
   mcpIds?: string[] | null;
   mcpConfigs?: Record<string, Record<string, string>> | null;
-  /** Per-agent Clubhouse MCP bridge override; null clears it (project and app settings decide). */
-  mcpOverride?: boolean | null;
   /** Per-agent Chat / CLI override; null clears it (provider default). */
   runtimeMode?: import('./chat').AgentRuntimeMode | null;
   /** Per-agent auto-sleep; 'inherit' or null clears it (app default). */
@@ -951,7 +947,7 @@ export interface SoundSettings {
   }>;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'mcp' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher'
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher'
   // Clubhouse-managed agents (#2819).
   | 'managed-blocks' | 'managed-skills' | 'managed-mcp' | 'managed-templates' | 'managed-orchestration' | 'managed-switch';
 
@@ -963,12 +959,6 @@ export interface ChatIdleSettings {
 }
 
 // --- MCP settings ---
-
-export interface McpSettings {
-  enabled: boolean;
-  projectDefault?: boolean;
-  projectOverrides?: Record<string, boolean>;
-}
 
 /** An agent's connection to the Clubhouse MCP: when it finished the handshake and how many tools it was last given. */
 export interface AgentMcpConnection {
@@ -984,7 +974,7 @@ export interface DispatcherLink {
   targetName: string;
   /** `active` is bound now. `suspended` is saved but not bound; `reason` says why. */
   status: 'active' | 'suspended';
-  reason?: 'dispatcher_off' | 'store_unwritable' | 'mcp_off' | 'orchestration_off' | 'not_connected_to_dispatcher';
+  reason?: 'dispatcher_off' | 'store_unwritable' | 'orchestration_off' | 'not_connected_to_dispatcher';
 }
 
 // --- Editor settings ---

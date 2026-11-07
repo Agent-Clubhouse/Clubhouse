@@ -33,9 +33,7 @@ import { AGENT_COLORS } from '../../../shared/name-generator';
 import type { DispatcherState } from '../../../shared/dispatcher-types';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { agentRegistry } from '../agent-registry';
-import { isMcpOnAtAppLevel, onMcpEnablementChanged } from '../mcp-settings';
 import { newChromeEnabled } from '../../window-chrome';
-import { MCP_REQUIRED_MESSAGE } from '../../../shared/orchestration-policy';
 import { DISPATCHER_CLASSIC_MESSAGE } from '../../../shared/dispatcher-types';
 import { getDispatcherNotesPath, getDispatcherPath, isDispatcherPath } from './dispatcher-paths';
 import { dispatcherEnablement, getSettings as getDispatcherSettings, isDispatcherEnabled, updateSettings } from './dispatcher-settings';
@@ -74,10 +72,9 @@ export function getDispatcherState(): DispatcherState {
   const { enabled, savedOn, reason } = dispatcherEnablement();
   return {
     enabled,
-    flagOn: isMcpOnAtAppLevel(),
+    flagOn: true,
     savedOn,
     offReason: reason,
-    mcpOff: !isMcpOnAtAppLevel(),
     classic: !newChromeEnabled(),
     running: !!config && !!agentRegistry.get(config.id),
     agentId: config?.id ?? null,
@@ -158,7 +155,7 @@ async function ensureCreated(): Promise<DurableAgentConfig> {
     orchestrator,
     true, // free agent mode
   );
-  await agentConfig.updateDurableConfig(dir, created.id, { idleSleep: 'never', runtimeMode: 'chat', mcpOverride: true });
+  await agentConfig.updateDurableConfig(dir, created.id, { idleSleep: 'never', runtimeMode: 'chat' });
   appLog(NS, 'info', 'Dispatcher created', { meta: { agentId: created.id, orchestrator } });
   return (await agentConfig.getDurableConfig(dir, created.id)) ?? created;
 }
@@ -217,15 +214,7 @@ function watchChanges(): void {
       });
     });
   }),
-  // MCP at app level turns it off and on, without touching what is saved.
-  onMcpEnablementChanged(() => {
-    void enqueue(reconcile).catch((err) => {
-      appLog(NS, 'warn', 'Dispatcher update after an MCP change failed', {
-        meta: { error: err instanceof Error ? err.message : String(err) },
-      });
-    });
-  }),
-  // Its row and view stay while it runs, whatever MCP does.
+  // Its row and view stay while it runs.
   agentRegistry.onAuthChange((agentId) => { if (agentId === config?.id) emitChanged(); })];
   stopWatching = () => { for (const unsubscribe of unsubscribers) unsubscribe(); };
 }
@@ -246,26 +235,15 @@ export function initDispatcher(): Promise<void> {
 /**
  * Turn the Dispatcher on or off from Settings > Dispatcher or a phone. Resolves
  * with the new state. Off always works. On is refused, with nothing saved, where
- * it couldn't take effect: without MCP at app level, and in the classic layout
- * unless its saved value is already on (#2565).
+ * it couldn't take effect: in the classic layout unless its saved value is
+ * already on (#2565).
  */
 export async function setDispatcherEnabled(on: boolean): Promise<DispatcherState> {
   if (on && getDispatcherSettings().enabled !== true) {
-    if (!isMcpOnAtAppLevel()) throw new Error(MCP_REQUIRED_MESSAGE);
     if (!newChromeEnabled()) throw new Error(DISPATCHER_CLASSIC_MESSAGE);
   }
   await updateSettings((current) => ({ ...current, enabled: on }));
   await enqueue(reconcile);
-  return getDispatcherState();
-}
-
-/** Stop the running agent and keep every saved value. For the choice in the MCP turn-off dialog. */
-export async function stopDispatcherNow(): Promise<DispatcherState> {
-  await enqueue(async () => {
-    config = await readConfig();
-    if (config) await stopAgent(config);
-    emitChanged();
-  });
   return getDispatcherState();
 }
 

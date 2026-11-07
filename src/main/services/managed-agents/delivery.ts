@@ -589,10 +589,8 @@ export interface QuickManagedLaunch {
   templateId: string;
   /** The template's blocks, joined and filled in for this quick agent. Goes in the system prompt. */
   instructions: string;
-  /** The template's MCP servers, for the launch flags. The Clubhouse bridge is separate. */
+  /** The template's MCP servers, for the launch flags. The Clubhouse bridge is separate, and always added. */
   servers: Record<string, McpServerDef>;
-  /** Whether the template lists the Clubhouse MCP part. Without it the agent gets no bridge. */
-  bridge: boolean;
   /** Skills in the template. Not delivered: a quick agent's folder is the project's or another agent's. */
   skippedSkills: number;
   /** Parts the template lists that no longer exist. */
@@ -637,7 +635,6 @@ export async function quickManagedLaunch(params: {
     templateId: params.templateId,
     instructions: replaceWildcards(composed.text, ctx),
     servers: mcpServersOf(resolved),
-    bridge: setup.mcps.includes(CLUBHOUSE_MCP_PART_ID),
     skippedSkills: resolved.skills.length,
     missing: dropped + resolved.missing.length,
   };

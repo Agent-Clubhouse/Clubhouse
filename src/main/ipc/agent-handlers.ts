@@ -19,7 +19,6 @@ import * as orchestrationPolicy from '../services/orchestration-policy';
 import * as dispatcher from '../services/dispatcher/dispatcher-service';
 import * as projectStore from '../services/project-store';
 import { listHelpersEverywhere } from '../services/helper-index';
-import { onMcpEnablementChanged } from '../services/mcp-settings';
 import * as permissionQueue from '../services/annex-permission-queue';
 import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanArg } from './validation';
 import { ATTR } from '../../shared/telemetry/attributes';
@@ -156,7 +155,6 @@ function forwardConfigChanges(): void {
       void refreshSnapshotOnDisplayChange(projectPath);
     }, CONFIG_CHANGE_DEBOUNCE_MS));
   });
-  onMcpEnablementChanged(() => broadcastToAllWindows(IPC.AGENT.MCP_ENABLEMENT_CHANGED));
 }
 
 // --- Dispatcher singleton guards (#2535) ---

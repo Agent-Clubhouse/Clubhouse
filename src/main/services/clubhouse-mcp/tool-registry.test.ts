@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const gate = vi.hoisted(() => ({ access: 'open' as 'open' | 'report_only' | 'closed' }));
+const gate = vi.hoisted(() => ({ access: 'open' as 'open' | 'closed' }));
 vi.mock('./mcp-call-gate', async (original) => ({ ...await original<typeof import('./mcp-call-gate')>(), mcpCallAccess: () => gate.access }));
 
 vi.mock('electron', () => ({
@@ -21,6 +21,7 @@ vi.mock('../dispatcher/dispatcher-settings', () => ({
 
 import { registerToolTemplate, registerGlobalTool, setTargetToolTemplates, getScopedToolList, callTool, refusalReasonOf, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, agentsWiredTo, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
+import { MCP_CALLER_UNKNOWN_MESSAGE } from '../../../shared/orchestration-policy';
 import { registerBuiltinProviders } from '../../orchestrators';
 import {
   closeCrossProject,
@@ -1419,7 +1420,7 @@ describe('ToolRegistry', () => {
   });
 });
 
-describe('with Clubhouse MCP off for the caller', () => {
+describe('for a caller the call gate does not know', () => {
   beforeEach(() => {
     _resetForTesting();
     registerGlobalTool('message_parent', { description: 'report', inputSchema: { type: 'object', properties: {} } }, async () => ({ content: [{ type: 'text', text: 'reported' }] }));
@@ -1431,8 +1432,8 @@ describe('with Clubhouse MCP off for the caller', () => {
     gate.access = 'closed';
     for (const name of ['message_parent', 'list_settings', 'clubhouse__p_a_1__send_message', 'not a tool at all']) {
       const result = await callTool('agent-1', name, {});
-      expect(result).toEqual({ isError: true, content: [{ type: 'text', text: 'Clubhouse MCP is off for this agent, so Clubhouse tools are unavailable. Tell the user.' }] });
-      expect(refusalReasonOf(result)).toBe('mcp_off');
+      expect(result).toEqual({ isError: true, content: [{ type: 'text', text: MCP_CALLER_UNKNOWN_MESSAGE }] });
+      expect(refusalReasonOf(result)).toBe('caller_unknown');
     }
   });
 
@@ -1445,12 +1446,4 @@ describe('with Clubhouse MCP off for the caller', () => {
     expect(getScopedToolList('agent-1').length).toBe(2);
   });
 
-  it('leaves a helper message_parent alone, in the list and to call', async () => {
-    gate.access = 'report_only';
-    expect(getScopedToolList('helper-1').map((t) => t.name)).toEqual(['message_parent']);
-    expect(await callTool('helper-1', 'message_parent', {})).toMatchObject({ content: [{ text: 'reported' }] });
-    const refused = await callTool('helper-1', 'list_settings', {});
-    expect(refusalReasonOf(refused)).toBe('mcp_off');
-    expect(refused.content[0]).toMatchObject({ text: 'Clubhouse MCP is off for this agent, so the only Clubhouse tool available is message_parent. Tell your parent or the user.' });
-  });
 });

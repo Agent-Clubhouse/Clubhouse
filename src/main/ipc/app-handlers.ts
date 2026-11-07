@@ -27,7 +27,6 @@ import * as chatRuntimeSettings from '../services/chat-runtime-settings';
 import * as projectStore from '../services/project-store';
 import * as agentConfig from '../services/agent-config';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, arrayArg } from './validation';
-import type { McpProposal } from '../services/mcp-settings';
 import { getLiveAgentsForUpdate, loadPendingResume, clearPendingResume, captureSessionState } from '../services/restart-session-service';
 import * as ptyManager from '../services/pty-manager';
 import * as headlessManager from '../services/headless-manager';
@@ -496,15 +495,6 @@ export function registerAppHandlers(): void {
     async (_event, settings) => {
       await sessionSettings.saveSettings(settings);
       settingsChanged('session');
-    },
-  ));
-
-  ipcMain.handle(IPC.APP.GET_MCP_OFF_IMPACT, withValidatedArgs(
-    [objectArg<McpProposal>()],
-    async (_event, proposal) => {
-      // Loaded on use, as below: the service pulls in the agent system.
-      const { readMcpOffImpact } = await import('../services/mcp-off-impact');
-      return readMcpOffImpact(proposal);
     },
   ));
 

@@ -30,13 +30,6 @@ export interface AgentRegistration {
   launchCap?: Readonly<LaunchAccess>;
   /** The last level the user set in chat (#2228); the only thing that may lift the record above `launchCap`. */
   userAccess?: Readonly<LaunchAccess>;
-  /**
-   * No Clubhouse MCP tools for this run (D25): a quick agent from a template
-   * without the Clubhouse part. Its folder's MCP file may still name the bridge
-   * (a durable agent's worktree), so the bridge server refuses it. Hooks keep
-   * the nonce and keep working.
-   */
-  mcpBridgeOff?: boolean;
 }
 
 export interface LaunchAccess {
@@ -79,14 +72,6 @@ class AgentRegistry {
     const changed = registration.nonce !== nonce;
     registration.nonce = nonce;
     if (changed) this.emitAuthChange(agentId);
-  }
-
-  /** Refuse this run's MCP bridge connections (D25). Cleared by the next register. */
-  setMcpBridgeOff(agentId: string): void {
-    const registration = this.registrations.get(agentId);
-    if (!registration || registration.mcpBridgeOff) return;
-    registration.mcpBridgeOff = true;
-    this.emitAuthChange(agentId);
   }
 
   setRuntime(agentId: string, runtime: AgentRuntime): void {

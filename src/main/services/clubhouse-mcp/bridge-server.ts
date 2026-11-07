@@ -318,15 +318,6 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     res.end();
     return;
   }
-  // An agent started without the Clubhouse MCP part (D25) gets no tools, even
-  // when its folder's MCP file names the bridge. Its hooks still use the nonce.
-  if (agentRegistry.get(agentId)?.mcpBridgeOff === true) {
-    appLog('core:mcp', 'info', 'Refused MCP request: this agent runs without the Clubhouse MCP part', { meta: { agentId } });
-    res.writeHead(403);
-    res.end();
-    return;
-  }
-
   // SSE endpoint for the stdio bridge script.
   if (req.method === 'GET' && action === 'events') {
     handleSSE(agentId, res);

@@ -5,7 +5,7 @@ import * as path from 'path';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { OrchestratorProvider } from '../../orchestrators';
 
-const fixture = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], enabled: true }));
+const fixture = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[] }));
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() }, app: { getPath: () => '/unused-synthetic-app' } }));
 vi.mock('../agent-config', () => ({
   peekDurableConfigs: vi.fn(async () => fixture.agents),
@@ -13,7 +13,6 @@ vi.mock('../agent-config', () => ({
   touchSessionEntry: vi.fn(async () => {}), updateDurableConfig: vi.fn(async () => {}),
 }));
 vi.mock('../agent-system', () => ({ resolveOrchestrator: vi.fn(async (_p: string, id?: string) => id === 'copilot-cli' ? copilot : claude) }));
-vi.mock('../mcp-settings', () => ({ isMcpEnabled: vi.fn(() => fixture.enabled) }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../agent-registry', () => ({ agentRegistry: { setNonce: vi.fn(), setRuntime: vi.fn(), get: vi.fn(), setLaunchCap: vi.fn(), setUserLaunchAccess: vi.fn(), reportLaunchAccess: vi.fn() }, untrackAgent: vi.fn() }));
 vi.mock('../config-pipeline', () => ({ snapshotFile: vi.fn(), restoreForAgent: vi.fn() }));
@@ -60,7 +59,6 @@ const raw = (servers: object) => JSON.stringify({ mcpServers: servers });
 
 beforeEach(async () => {
   vi.clearAllMocks(); clearChatDrivers(); clearChatRuntimes(); clearDriverHealth();
-  fixture.enabled = true;
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'clubhouse-2849-'));
   cwd = path.join(root, 'agent'); localPath = path.join(cwd, conventions.mcpConfigFile);
   settingsPath = path.join(root, '.clubhouse/settings.json');
@@ -114,10 +112,9 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
     expect(await save(raw({ repaired: { command: 'never-run-repaired' } }))).toEqual({ ok: true });
     expect(await start()).toHaveProperty('repaired');
   });
-  it('cannot deliver a configured bridge collision when MCP is off, or shadow the live bridge when on', async () => {
+  it('cannot shadow the live bridge with a configured one of the same name', async () => {
     await save(raw({ clubhouse: { command: 'stale-do-not-run' }, custom: { command: 'never' } }));
-    fixture.enabled = false; expect(await start()).toEqual({});
-    fixture.enabled = true; expect(await start()).toEqual({ custom: { command: 'never' }, clubhouse: { command: 'synthetic-live-bridge' } });
+    expect(await start()).toEqual({ custom: { command: 'never' }, clubhouse: { command: 'synthetic-live-bridge' } });
   });
   it('reserves Save before its first await against provider changes, starts and remaps', async () => {
     let release!: () => void;

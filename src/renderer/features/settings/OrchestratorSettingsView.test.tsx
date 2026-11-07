@@ -4,7 +4,6 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore } from '../../stores/headlessStore';
 import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
-import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import { OrchestratorSettingsView } from './OrchestratorSettingsView';
 import { loadChatFlag, resetChatFlag } from '../agents/chat/chat-flag';
 import { loadRichChatContentFlag, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
@@ -16,8 +15,6 @@ vi.mock('./ProjectAgentDefaultsSection', () => ({
     <div data-testid="project-agent-defaults" data-path={projectPath} />
   ),
 }));
-
-const originalMcpOffImpact = window.clubhouse.app.getMcpOffImpact;
 
 function resetStores() {
   useOrchestratorStore.setState({
@@ -50,15 +47,6 @@ function resetStores() {
     setPromptForName: vi.fn(),
     setProjectOverride: vi.fn(),
     clearProjectOverride: vi.fn(),
-  });
-  window.clubhouse.app.getMcpOffImpact = originalMcpOffImpact;
-  useMcpSettingsStore.setState({
-    enabled: false,
-    projectDefault: true,
-    projectOverrides: undefined,
-    loaded: true,
-    loadSettings: vi.fn().mockResolvedValue(undefined),
-    saveSettings: vi.fn().mockResolvedValue(undefined),
   });
 }
 
@@ -639,53 +627,16 @@ describe('OrchestratorSettingsView', () => {
       });
 
       it('each project override select is labelled by its row', () => {
-        useMcpSettingsStore.setState({ enabled: true });
         render(<OrchestratorSettingsView projectId="proj-1" />);
-        for (const name of ['Quick agent mode', 'Free agent permission mode', 'Session name on quit', 'MCP override']) {
+        for (const name of ['Quick agent mode', 'Free agent permission mode', 'Session name on quit']) {
           expect(screen.getByLabelText(name).tagName).toBe('SELECT');
         }
       });
 
-      describe('turning MCP off for the project', () => {
-        const losing = {
-          turnsOff: true, appLoses: false, projectsLosing: ['my-app'], agentsLosing: 2, quickAgentsLosing: 0, agentsKeeping: 1, helpersReportOnly: 1, orchestratorsLosing: 1, connectedLosing: 1,
-          runningLosing: 1, runningOrchestratorsWithHelpers: 1, dispatcherGoesOff: false, dispatcherRunning: true, keeps: { projects: [], agents: [{ name: 'lead', project: 'my-app' }] }, unreadableProjects: [],
-        };
-
-        it('shows the MCP override with the app-wide bridge off: it still works then', () => {
-          render(<OrchestratorSettingsView projectId="proj-1" />);
-          expect(screen.getByLabelText('MCP override')).toBeInTheDocument();
-        });
-
-        it('asks before saving an override off, names what stays, and Cancel leaves it', async () => {
-          const saveSettings = vi.fn().mockResolvedValue(undefined);
-          useMcpSettingsStore.setState({ enabled: true, saveSettings } as never);
-          window.clubhouse.app.getMcpOffImpact = vi.fn(async () => losing);
-          render(<OrchestratorSettingsView projectId="proj-1" />);
-          fireEvent.change(screen.getByLabelText('MCP override'), { target: { value: 'off' } });
-          expect(await screen.findByTestId('mcp-off-dialog')).toBeInTheDocument();
-          expect(window.clubhouse.app.getMcpOffImpact).toHaveBeenCalledWith({ mcp: { projectOverrides: { '/home/user/my-app': false } } });
-          expect(screen.getByTestId('mcp-off-lead')).toHaveTextContent('In my-app, helpers, orchestration and connections to the Dispatcher stop working.');
-          expect(screen.getByTestId('mcp-off-keeps')).toHaveTextContent('These keep Clubhouse MCP: lead in my-app (its own setting).');
-          // App-level only: a project going off leaves the Dispatcher alone.
-          expect(screen.queryByTestId('mcp-off-stop-dispatcher')).toBeNull();
-          fireEvent.click(screen.getByTestId('mcp-off-cancel'));
-          expect(saveSettings).not.toHaveBeenCalled();
-        });
-
-        it('saves once confirmed', async () => {
-          const saveSettings = vi.fn(async (updates: object) => { useMcpSettingsStore.setState(updates as never); });
-          useMcpSettingsStore.setState({ enabled: true, saveSettings } as never);
-          window.clubhouse.app.getMcpOffImpact = vi.fn(async () => losing);
-          render(<OrchestratorSettingsView projectId="proj-1" />);
-          fireEvent.change(screen.getByLabelText('MCP override'), { target: { value: 'off' } });
-          fireEvent.click(await screen.findByTestId('mcp-off-confirm'));
-          await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ projectOverrides: { '/home/user/my-app': false } }));
-          await waitFor(() => expect(screen.queryByTestId('mcp-off-dialog')).toBeNull());
-        });
-
+      it('has no MCP override: the Clubhouse MCP always runs', () => {
+        render(<OrchestratorSettingsView projectId="proj-1" />);
+        expect(screen.queryByLabelText('MCP override')).toBeNull();
       });
-
     });
   });
 

@@ -11,7 +11,7 @@
  * What an entry is worth now ({@link statusOf}):
  * - `active`: both ends are connected orchestrators, so it is bound.
  * - `suspended`: an end stopped being one (orchestration or Connect to
- *   Dispatcher off, Clubhouse MCP off), or the Dispatcher is off. The entry stays
+ *   Dispatcher off), or the Dispatcher is off. The entry stays
  *   and the binding goes; it comes back when the end qualifies again. Readback
  *   and the Connections card show this state, so a return is never unseen.
  * - `unverified`: an end's project can't be read. Entry and binding stay as they are.
@@ -42,7 +42,6 @@ import { getBaseDirPath } from './base-dir';
 import { listDurable, onAgentConfigChanged } from './agent-config';
 import { pathExists } from './fs-utils';
 import { resolveOrchestrationPolicies } from './orchestration-policy';
-import { onMcpEnablementChanged } from './mcp-settings';
 import * as projectStore from './project-store';
 import { isDispatcherEnabled, isDispatcherPath, onDispatcherChanged } from './dispatcher/dispatcher-service';
 import {
@@ -533,7 +532,7 @@ export function isConnectedOrchestrator(agent: DurableAgentConfig, policy: Resol
 }
 
 export type LinkStatus = 'active' | 'suspended' | 'unverified' | 'gone';
-export type SuspensionReason = 'dispatcher_off' | 'store_unwritable' | 'mcp_off' | 'orchestration_off' | 'not_connected_to_dispatcher';
+export type SuspensionReason = 'dispatcher_off' | 'store_unwritable' | 'orchestration_off' | 'not_connected_to_dispatcher';
 
 function endStatus(id: string, projectPath: string, census: AgentCensus): LinkStatus {
   if (!census.registered.has(projectPath)) return 'gone';
@@ -553,7 +552,6 @@ export function statusOf(c: DispatcherConnection, census: AgentCensus, dispatche
 }
 
 function endReason({ policy }: OrchestratorEntry): SuspensionReason {
-  if (policy.mcpOff) return 'mcp_off';
   return policy.orchestrate ? 'not_connected_to_dispatcher' : 'orchestration_off';
 }
 
@@ -747,7 +745,6 @@ export function watchDispatcherConnections(onChanged: () => unknown, observeWork
   const unsubscribers = [
     onAgentConfigChanged(projectChanged),
     onDispatcherChanged(changed),
-    onMcpEnablementChanged(changed),
     projectStore.onProjectsChanged(changed),
     onBindingRemovedByUser((agentId, targetId) => {
       accepted('user-removal', recordUserRemoval({ agentId, targetId }).then((recorded) => {

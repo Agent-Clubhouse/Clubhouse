@@ -9,8 +9,6 @@ import * as path from 'path';
 import * as agentConfig from '../agent-config';
 import { carryPersonaOrchestration, setOrchestrationPolicy } from '../orchestration-policy';
 import { resolveOrchestrator } from '../agent-system';
-import { isMcpEnabled } from '../mcp-settings';
-import { clubhouseMcpOverride } from '../../../shared/agent-helpers';
 import { legacyClubhouseModeEnabled, materializedDefaults, materializedInstructions, type MaterializedDefaults } from './legacy-migration';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type {
@@ -461,8 +459,8 @@ export async function convertToManaged(projectPath: string, agentId: string, opt
     }, () => applyManagedSettings(projectPath, agentId, settingsForConvert(provider.id, settings)));
   }
   const plan = await planConvert(projectPath, agent, agent.worktreePath, provider);
-  // The bridge as it is today: on only where MCP is on for this agent now (the same check its spawn makes).
-  const bridge = isMcpEnabled(projectPath, clubhouseMcpOverride(agent)) ? [CLUBHOUSE_MCP_PART_ID] : [];
+  // The Clubhouse part is in every managed setup: the Clubhouse MCP always runs.
+  const bridge = [CLUBHOUSE_MCP_PART_ID];
   // Before any part is made, so a setup that can't be saved leaves nothing behind.
   await service.checkSetup({ blocks: [], skills: [], mcps: bridge }, { skillFolders: plan.skills.map((s) => s.content.skillName) });
   return switchWith(projectPath, agent, provider, plan.onDisk, async (make) => {

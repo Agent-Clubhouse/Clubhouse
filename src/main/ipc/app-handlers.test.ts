@@ -157,10 +157,6 @@ vi.mock('../services/plugin-theme-store', () => ({
   syncPluginThemes: (...a: unknown[]) => mockSyncPluginThemes(...a),
 }));
 
-vi.mock('./mcp-binding-handlers', () => ({
-  onMcpSettingsChanged: vi.fn(),
-}));
-
 const mockFlushAllAgentConfigs = vi.fn(async () => {});
 vi.mock('../services/agent-config', () => ({
   flushAllAgentConfigs: () => mockFlushAllAgentConfigs(),

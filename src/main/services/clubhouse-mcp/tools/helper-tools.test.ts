@@ -214,7 +214,7 @@ vi.mock('../bridge-server', async (importOriginal) => ({
   ...await importOriginal<typeof import('../bridge-server')>(),
   waitReady: () => mockBridgeReady(),
 }));
-vi.mock('../../mcp-settings', () => ({ ensureMcpBridgeForAgent: () => mockEnsureBridge() }));
+vi.mock('../../mcp-bridge-starter', () => ({ ensureMcpBridge: () => mockEnsureBridge() }));
 
 import { AgentStoppingError } from '../../agent-runtime/agent-stopping';
 import {

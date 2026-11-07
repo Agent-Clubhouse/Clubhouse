@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ManagedPartConsumer, ManagedPartSummary } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, type ManagedPartConsumer, type ManagedPartSummary } from '../../../shared/managed-agents-types';
 import { BlockList } from './BlockList';
 import { LibraryPanel, PartToggleList } from './LibraryPanel';
 import { ImpactDialog } from './ImpactDialog';
@@ -174,6 +174,24 @@ describe('PartToggleList', () => {
     ]} selected={[]} agent={agent} onToggle={vi.fn()} onFork={vi.fn()} onEdit={vi.fn()} onNew={vi.fn()} />);
     expect(screen.getByTestId('managed-part-dropped-env-old').textContent).toBe('Set MODE, REGION and TIER in your environment. Clubhouse no longer stores these values.');
     expect(screen.queryByTestId('managed-part-dropped-env-clean')).toBeNull();
+  });
+
+  it('shows the Clubhouse MCP part always on, its switch disabled, with why, and no copy (D69)', () => {
+    const onToggle = vi.fn();
+    const onFork = vi.fn();
+    render(<PartToggleList kind="mcp" parts={[
+      part(CLUBHOUSE_MCP_PART_ID, { kind: 'mcp', name: 'Clubhouse', builtin: true }),
+      part('github', { kind: 'mcp', name: 'GitHub' }),
+    ]} selected={[]} agent={agent} onToggle={onToggle} onFork={onFork} onEdit={vi.fn()} onNew={vi.fn()} />);
+    const toggle = screen.getByRole('switch', { name: 'Clubhouse' });
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(toggle).toBeDisabled();
+    fireEvent.click(toggle);
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(screen.getByTestId('managed-clubhouse-part-note').textContent).toBe('Always on. Clubhouse uses it for status, helpers, messages and the Dispatcher.');
+    expect(screen.queryByRole('button', { name: 'Make your copy of Clubhouse' })).toBeNull();
+    // Other servers keep their switch.
+    expect(screen.getByRole('switch', { name: 'GitHub' })).not.toBeDisabled();
   });
 });
 
@@ -380,9 +398,11 @@ describe('ManagedGeneralSection', () => {
     expect(screen.getByRole('button', { name: 'Switch to managed…' })).toBeTruthy();
   });
 
-  it('warns what stops working when Clubhouse features go off', () => {
+  it('warns that only hooks stop when Clubhouse features go off (D70)', () => {
     render(<ManagedGeneralSection projectPath="/p" agentId="ada" agentName="ada" setup={null} clubhouseFeatures={false} isRunning={false} />);
-    expect(screen.getByTestId('managed-clubhouse-features').textContent).toMatch(/can't show this agent's status/);
+    const text = screen.getByTestId('managed-clubhouse-features').textContent;
+    expect(text).toContain("Off: Clubhouse can't show this agent's status, permission prompts or changes.");
+    expect(text).not.toMatch(/helpers, messages or the Dispatcher\./);
   });
 });
 

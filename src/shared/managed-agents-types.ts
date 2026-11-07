@@ -24,8 +24,17 @@ export interface ManagedAgentSetup {
   templateId?: string;
 }
 
-/** The built-in Clubhouse MCP part. Present in a setup means the Clubhouse MCP bridge is on for the agent. */
+/**
+ * The built-in Clubhouse MCP part. It is in every managed setup and template
+ * and can't be removed: the Clubhouse MCP always runs, for every agent.
+ */
 export const CLUBHOUSE_MCP_PART_ID = 'builtin-mcp-clubhouse';
+
+/** What the builder's MCP page says beside the Clubhouse part's disabled switch. */
+export const CLUBHOUSE_PART_NOTE = 'Always on. Clubhouse uses it for status, helpers, messages and the Dispatcher.';
+
+/** Why a request to remove or copy the Clubhouse part changes nothing. */
+export const CLUBHOUSE_PART_ALWAYS_ON = 'The Clubhouse MCP part is always on, so it stays in every setup.';
 
 export interface ManagedPartSummary {
   id: string;

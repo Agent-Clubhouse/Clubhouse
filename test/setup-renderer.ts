@@ -334,10 +334,6 @@ vi.stubGlobal('clubhouse', {
     readClipboardImage: async () => null,
     getSessionSettings: async () => ({ promptForName: false, projectOverrides: {} }),
     saveSessionSettings: asyncNoop,
-    getMcpOffImpact: async () => ({
-      turnsOff: false, appLoses: false, projectsLosing: [], agentsLosing: 0, quickAgentsLosing: 0, agentsKeeping: 0, helpersReportOnly: 0, orchestratorsLosing: 0, connectedLosing: 0,
-      runningLosing: 0, runningOrchestratorsWithHelpers: 0, dispatcherGoesOff: false, dispatcherRunning: false, keeps: { projects: [], agents: [] }, unreadableProjects: [],
-    }),
     getSoundSettings: async () => ({ activePack: null, slotAssignments: {}, eventSettings: {}, projectOverrides: {} }),
     saveSoundSettings: asyncNoop,
     listSoundPacks: async () => [],
@@ -538,7 +534,6 @@ vi.stubGlobal('clubhouse', {
   dispatcher: {
     get: async () => DISPATCHER_OFF,
     setEnabled: async () => DISPATCHER_OFF,
-    stop: async () => DISPATCHER_OFF,
     onChanged: () => noop,
   },
   feedback: {
