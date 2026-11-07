@@ -81,11 +81,14 @@
             "better_quota_tier": "This provider has more of its limit left",
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
+            "fair_rotation": "Its turn among providers with the same usage",
             "lower_load": "Fewer helpers running on this provider",
+            "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
             "persona_pinned": "Set by the persona",
             "preset_on_cli": "From the helper settings for this difficulty",
-            "sticky": "Stayed on the provider chosen last"
+            "sticky": "Stayed on the provider chosen last",
+            "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
             "auto_not_supported": "Auto doesn’t support this provider yet",
@@ -396,11 +399,14 @@
             "better_quota_tier": "This provider has more of its limit left",
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
+            "fair_rotation": "Its turn among providers with the same usage",
             "lower_load": "Fewer helpers running on this provider",
+            "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
             "persona_pinned": "Set by the persona",
             "preset_on_cli": "From the helper settings for this difficulty",
-            "sticky": "Stayed on the provider chosen last"
+            "sticky": "Stayed on the provider chosen last",
+            "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
             "auto_not_supported": "Auto doesn’t support this provider yet",
@@ -707,11 +713,14 @@
             "better_quota_tier": "This provider has more of its limit left",
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
+            "fair_rotation": "Its turn among providers with the same usage",
             "lower_load": "Fewer helpers running on this provider",
+            "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
             "persona_pinned": "Set by the persona",
             "preset_on_cli": "From the helper settings for this difficulty",
-            "sticky": "Stayed on the provider chosen last"
+            "sticky": "Stayed on the provider chosen last",
+            "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
             "auto_not_supported": "Auto doesn’t support this provider yet",
@@ -1030,11 +1039,14 @@
             "better_quota_tier": "This provider has more of its limit left",
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
+            "fair_rotation": "Its turn among providers with the same usage",
             "lower_load": "Fewer helpers running on this provider",
+            "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
             "persona_pinned": "Set by the persona",
             "preset_on_cli": "From the helper settings for this difficulty",
-            "sticky": "Stayed on the provider chosen last"
+            "sticky": "Stayed on the provider chosen last",
+            "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
             "auto_not_supported": "Auto doesn’t support this provider yet",
@@ -1353,11 +1365,14 @@
             "better_quota_tier": "This provider has more of its limit left",
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
+            "fair_rotation": "Its turn among providers with the same usage",
             "lower_load": "Fewer helpers running on this provider",
+            "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
             "persona_pinned": "Set by the persona",
             "preset_on_cli": "From the helper settings for this difficulty",
-            "sticky": "Stayed on the provider chosen last"
+            "sticky": "Stayed on the provider chosen last",
+            "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
             "auto_not_supported": "Auto doesn’t support this provider yet",
@@ -1664,11 +1679,14 @@
             "better_quota_tier": "This provider has more of its limit left",
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
+            "fair_rotation": "Its turn among providers with the same usage",
             "lower_load": "Fewer helpers running on this provider",
+            "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
             "persona_pinned": "Set by the persona",
             "preset_on_cli": "From the helper settings for this difficulty",
-            "sticky": "Stayed on the provider chosen last"
+            "sticky": "Stayed on the provider chosen last",
+            "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
             "auto_not_supported": "Auto doesn’t support this provider yet",
@@ -1979,11 +1997,14 @@
             "better_quota_tier": "This provider has more of its limit left",
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
+            "fair_rotation": "Its turn among providers with the same usage",
             "lower_load": "Fewer helpers running on this provider",
+            "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
             "persona_pinned": "Set by the persona",
             "preset_on_cli": "From the helper settings for this difficulty",
-            "sticky": "Stayed on the provider chosen last"
+            "sticky": "Stayed on the provider chosen last",
+            "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
             "auto_not_supported": "Auto doesn’t support this provider yet",
@@ -2287,11 +2308,14 @@
             "better_quota_tier": "This provider has more of its limit left",
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
+            "fair_rotation": "Its turn among providers with the same usage",
             "lower_load": "Fewer helpers running on this provider",
+            "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
             "persona_pinned": "Set by the persona",
             "preset_on_cli": "From the helper settings for this difficulty",
-            "sticky": "Stayed on the provider chosen last"
+            "sticky": "Stayed on the provider chosen last",
+            "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
             "auto_not_supported": "Auto doesn’t support this provider yet",
@@ -2579,11 +2603,14 @@
             "better_quota_tier": "This provider has more of its limit left",
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
+            "fair_rotation": "Its turn among providers with the same usage",
             "lower_load": "Fewer helpers running on this provider",
+            "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
             "persona_pinned": "Set by the persona",
             "preset_on_cli": "From the helper settings for this difficulty",
-            "sticky": "Stayed on the provider chosen last"
+            "sticky": "Stayed on the provider chosen last",
+            "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
             "auto_not_supported": "Auto doesn’t support this provider yet",
@@ -2887,11 +2914,14 @@
             "better_quota_tier": "This provider has more of its limit left",
             "default_order": "No reason to switch",
             "explicit_request": "You or the orchestrator chose this",
+            "fair_rotation": "Its turn among providers with the same usage",
             "lower_load": "Fewer helpers running on this provider",
+            "lower_pressure": "Less of this provider’s weekly limit is used",
             "only_candidate": "The only provider available",
             "persona_pinned": "Set by the persona",
             "preset_on_cli": "From the helper settings for this difficulty",
-            "sticky": "Stayed on the provider chosen last"
+            "sticky": "Stayed on the provider chosen last",
+            "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
           },
           "skipped": {
             "auto_not_supported": "Auto doesn’t support this provider yet",
