@@ -8,7 +8,6 @@ const W = vi.hoisted(() => ({
   listCalls: [] as Array<{ provider: string; refresh: boolean }>,
   forcedQuota: [] as string[],
   forcedOutcome: 'ok' as string,
-  personas: new Map<string, string>(),
   saved: {} as Record<string, Record<string, { model: string; effort: string | null }>>,
   revision: 0,
   audit: [] as Array<Record<string, unknown>>,
@@ -47,7 +46,6 @@ vi.mock('./settings-store', () => ({
   },
 }));
 vi.mock('./mcp-settings', () => ({ onMcpEnablementChanged: () => () => undefined }));
-vi.mock('./materialization-service', () => ({ readLayeredPersonaRaw: async (_p: string, id: string) => W.personas.get(id) }));
 vi.mock('./orchestration-settings', () => ({
   getPresets: () => W.saved,
   getPresetsRevision: () => W.revision,
@@ -120,7 +118,6 @@ beforeEach(() => {
   W.forcedQuota = [];
   W.forcedOutcome = 'ok';
   vi.mocked(appLog).mockClear();
-  W.personas = new Map();
   W.saved = {};
   W.revision = 0;
   W.audit = [];
@@ -139,14 +136,11 @@ afterEach(() => { vi.restoreAllMocks(); });
 describe('planHelperStart: precedence', () => {
   it('a start that asks for nothing has no plan: today\'s path, and it records nothing', async () => {
     expect(await plan({})).toBeNull();
-    // A persona alone doesn't make one either.
-    W.personas.set('pinned', '---\nmodel: opus\n---\nBody');
-    expect(await plan({ persona: 'pinned' })).toBeNull();
   });
 
   it('a difficulty alone stays on the orchestrator\'s CLI and uses the built-in', async () => {
     const result = await plan({ difficulty: 'hard', orchestratorCli: 'codex-cli' });
-    expect(result).toMatchObject({ provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', keep: [] });
+    expect(result).toMatchObject({ provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high' });
     expect(result!.routing).toMatchObject({
       mode: 'preset', balanced: false, policyVersion: 2, reason: 'preset_on_cli', fallback: 'none',
       requested: { provider: null, model: null, effort: null, difficulty: 'hard' },
@@ -157,7 +151,7 @@ describe('planHelperStart: precedence', () => {
 
   it('a difficulty with a named CLI uses that CLI\'s preset, and never moves away from it', async () => {
     const result = await plan({ difficulty: 'easy', cli: 'codex-cli' });
-    expect(result).toMatchObject({ provider: 'codex-cli', model: 'gpt-6-luna', effort: 'low', keep: ['orchestrator'] });
+    expect(result).toMatchObject({ provider: 'codex-cli', model: 'gpt-6-luna', effort: 'low' });
     expect(result!.routing.source.provider).toBe('request');
   });
 
@@ -170,7 +164,7 @@ describe('planHelperStart: precedence', () => {
 
   it('an explicit model stays authoritative, and a preset\'s effort isn\'t applied to it', async () => {
     const result = await plan({ difficulty: 'hard', model: 'sonnet', cli: 'claude-code' });
-    expect(result).toMatchObject({ model: 'sonnet', keep: ['orchestrator', 'model'] });
+    expect(result).toMatchObject({ model: 'sonnet' });
     expect(result!.effort).toBeUndefined();
     expect(result!.routing).toMatchObject({ reason: 'explicit_request', source: { model: 'request', effort: 'cli_default' } });
   });
@@ -184,84 +178,12 @@ describe('planHelperStart: precedence', () => {
   it('explicit Sol is what runs, whatever the presets say, and is recorded as asked', async () => {
     W.saved = { 'codex-cli': { hard: { model: 'gpt-6-luna', effort: 'low' } } };
     const result = await plan({ cli: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high' });
-    expect(result).toMatchObject({ provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', keep: ['orchestrator', 'model'] });
+    expect(result).toMatchObject({ provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high' });
     expect(result!.routing).toMatchObject({
       mode: 'explicit', balanced: false, reason: 'explicit_request',
       requested: { provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', difficulty: null },
       source: { provider: 'request', model: 'request', effort: 'request' },
     });
-  });
-
-  it('a persona\'s pins fill what the request left open, and beat a preset', async () => {
-    W.personas.set('pinned', '---\nmodel: sonnet\norchestrator: claude-code\n---\nBody');
-    const result = await plan({ difficulty: 'easy', persona: 'pinned', orchestratorCli: 'codex-cli' });
-    expect(result).toMatchObject({ provider: 'claude-code', model: 'sonnet', keep: [] });
-    expect(result!.effort).toBeUndefined();
-    expect(result!.routing).toMatchObject({ reason: 'persona_pinned', source: { provider: 'persona', model: 'persona', effort: 'cli_default' } });
-  });
-
-  it('a persona pinning a CLI only: the preset comes from that CLI', async () => {
-    W.personas.set('pinned', '---\norchestrator: codex-cli\n---\nBody');
-    const result = await plan({ difficulty: 'easy', persona: 'pinned' });
-    expect(result).toMatchObject({ provider: 'codex-cli', model: 'gpt-6-luna', effort: 'low' });
-    expect(result!.routing.source).toMatchObject({ provider: 'persona', model: 'builtin_mapping' });
-  });
-
-  it('explicit fields keep what the persona would set, and say so to the persona step', async () => {
-    W.personas.set('pinned', '---\nmodel: sonnet\norchestrator: codex-cli\n---\nBody');
-    const result = await plan({ cli: 'claude-code', model: 'opus', persona: 'pinned' });
-    expect(result).toMatchObject({ provider: 'claude-code', model: 'opus', keep: ['orchestrator', 'model'] });
-  });
-
-  it('a persona\'s model isn\'t run on another CLI the request named', async () => {
-    W.personas.set('pinned', '---\nmodel: gpt-6.1-sol\norchestrator: codex-cli\n---\nBody');
-    const plain = await plan({ cli: 'claude-code', persona: 'pinned' });
-    expect(plain).toMatchObject({ provider: 'claude-code', keep: ['orchestrator', 'model'] });
-    expect(plain!.model).toBeUndefined();
-    expect(plain!.routing).toMatchObject({ reason: 'explicit_request', source: { model: 'cli_default' } });
-
-    const preset = await plan({ cli: 'claude-code', difficulty: 'easy', persona: 'pinned' });
-    expect(preset).toMatchObject({ provider: 'claude-code', model: 'haiku', effort: 'low', keep: ['orchestrator', 'model'] });
-  });
-
-  it('refuses a persona\'s model the helper\'s CLI doesn\'t list, in preset mode, instead of launching it', async () => {
-    W.personas.set('pinned', '---\nmodel: opus\n---\nBody');
-    const result = await planHelperStart({ ...base, orchestratorCli: 'codex-cli', difficulty: 'hard', persona: 'pinned' });
-    expect(result).toMatchObject({ ok: false, code: 'no_valid_mapping' });
-    if (result.ok === false) {
-      expect(result.message).toContain('persona');
-      expect(result.message).toContain('opus');
-      expect(result.userReason).toContain('persona');
-    }
-  });
-
-  it('a persona\'s model the list may just not know yet is used, and says so', async () => {
-    W.personas.set('pinned', '---\nmodel: new-model\n---\nBody');
-    W.lists.set('codex-cli', fallback([m('gpt-5')]));
-    const result = await plan({ orchestratorCli: 'codex-cli', difficulty: 'hard', persona: 'pinned' });
-    expect(result).toMatchObject({ model: 'new-model' });
-    expect(result!.routing).toMatchObject({ reason: 'persona_pinned', fallback: 'model_unverified' });
-    expect(result!.warning).toContain('fallback model list');
-  });
-
-  it('outside preset mode, a persona\'s model the CLI doesn\'t list only warns: the request didn\'t ask for a preset', async () => {
-    W.personas.set('pinned', '---\nmodel: opus\n---\nBody');
-    const result = await plan({ cli: 'codex-cli', persona: 'pinned' });
-    expect(result).toMatchObject({ provider: 'codex-cli', model: 'opus' });
-    expect(result!.warning).toContain('opus');
-  });
-
-  it('a persona\'s model the CLI lists is used with no warning', async () => {
-    W.personas.set('pinned', '---\nmodel: sonnet\n---\nBody');
-    const result = await plan({ difficulty: 'hard', persona: 'pinned' });
-    expect(result).toMatchObject({ model: 'sonnet' });
-    expect(result!.warning).toBeUndefined();
-    expect(result!.routing.fallback).toBe('none');
-  });
-
-  it('a persona that can\'t be read pins nothing', async () => {
-    const result = await plan({ difficulty: 'easy', persona: 'missing' });
-    expect(result).toMatchObject({ provider: 'claude-code', model: 'haiku' });
   });
 
   it('refuses a difficulty on a CLI with no presets, with a reason', async () => {
@@ -631,7 +553,7 @@ describe('Auto (#2671)', () => {
 
   it('records the whole decision', async () => {
     const plan = await decided({ 'claude-code': 2 });
-    expect(plan).toMatchObject({ provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', keep: ['orchestrator', 'model'] });
+    expect(plan).toMatchObject({ provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high' });
     expect(plan.routing).toMatchObject({
       mode: 'auto', balanced: true, policyVersion: 2, reason: 'lower_load', fallback: 'none', quotaBasis: 'known',
       decisionId: expect.stringMatching(/^[0-9a-f-]{36}$/),
@@ -680,15 +602,6 @@ describe('Auto (#2671)', () => {
     const plan = await decided();
     expect(plan.provider).toBe('claude-code');
     expect(plan.routing).toMatchObject({ reason: 'unknown_fallback', quotaBasis: 'unknown_fallback', quota: { 'claude-code': { state: 'unknown', unknownReason: 'read_failed', asOf: null } } });
-  });
-
-  it('a persona\'s pin decides, so nothing claims Auto balanced it', async () => {
-    W.personas.set('pinned', '---\nmodel: gpt-6.1-terra\norchestrator: codex-cli\n---\nBody');
-    const result = await auto({ persona: 'pinned' });
-    if (result.ok === false) throw new Error('refused');
-    expect(result.plan!.pendingAuto).toBeUndefined();
-    expect(result.plan).toMatchObject({ provider: 'codex-cli', model: 'gpt-6.1-terra' });
-    expect(result.plan!.routing).toMatchObject({ mode: 'auto', balanced: false, reason: 'persona_pinned', requested: { provider: 'auto' }, source: { provider: 'persona', model: 'persona' } });
   });
 
   it.each([
@@ -791,7 +704,7 @@ describe('Auto (#2671)', () => {
 
   describe('readHelperAuto', () => {
     const config = (autoHelpers?: boolean) => ({ id: 'a', orchestration: autoHelpers === undefined ? {} : { autoHelpers } }) as never;
-    const policy = (agent: object = { orchestrate: true }, persona: object = {}, options: object = {}) => resolveOrchestrationPolicy(agent, persona, options);
+    const policy = (agent: object = { orchestrate: true }, options: object = {}) => resolveOrchestrationPolicy(agent, options);
     const read = (autoHelpers: boolean | undefined, p = policy(), projectPath?: string) => readHelperAuto({ agent: { config: config(autoHelpers), policy: p }, ...(projectPath && { projectPath }) });
 
     it('is off by default, and follows the app', async () => {
@@ -817,16 +730,14 @@ describe('Auto (#2671)', () => {
       expect(await readHelperAuto({ projectPath: '/p' })).toMatchObject({ effective: false, source: 'default' });
     });
 
-    it('a persona can turn it off and never on', async () => {
+    it('keeps the retired persona scope, always null (#2901)', async () => {
       W.appAuto = true;
-      expect(await read(undefined, policy({ orchestrate: true }, { autoHelpers: false }))).toMatchObject({ effective: false, source: 'persona', reason: 'persona_off', scopes: { persona: { value: false, editable: false } } });
-      W.appAuto = false;
-      expect(await read(undefined, policy({ orchestrate: true }, { autoHelpers: true }))).toMatchObject({ effective: false, source: 'default' });
+      expect(await read(undefined, policy({ orchestrate: true }))).toMatchObject({ effective: true, source: 'app', scopes: { persona: { value: null, editable: false } } });
     });
 
     it('no MCP, no Auto, whatever is saved', async () => {
       W.appAuto = true;
-      expect(await read(true, policy({ orchestrate: true, autoHelpers: true }, {}, { mcpOff: true }))).toMatchObject({ effective: false, source: 'mcp_off', reason: 'mcp_off', scopes: { agent: { value: true, editable: true } } });
+      expect(await read(true, policy({ orchestrate: true, autoHelpers: true }, { mcpOff: true }))).toMatchObject({ effective: false, source: 'mcp_off', reason: 'mcp_off', scopes: { agent: { value: true, editable: true } } });
     });
 
     it('an agent that doesn\'t orchestrate can\'t use it', async () => {
@@ -837,11 +748,6 @@ describe('Auto (#2671)', () => {
     it('the Dispatcher is locked', async () => {
       W.appAuto = true;
       expect(await readHelperAuto({ dispatcher: true })).toMatchObject({ effective: false, source: 'dispatcher_locked', reason: 'dispatcher_locked', scopes: { app: { editable: false }, agent: { value: null, editable: false } } });
-    });
-
-    it('a persona\'s off beats the agent\'s own on, whose value stays', async () => {
-      const result = await read(true, policy({ orchestrate: true, autoHelpers: true }, { autoHelpers: false }));
-      expect(result).toMatchObject({ effective: false, source: 'persona', reason: 'persona_off', scopes: { persona: { value: false }, agent: { value: true } } });
     });
   });
 

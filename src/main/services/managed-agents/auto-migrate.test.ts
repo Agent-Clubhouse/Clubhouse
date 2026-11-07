@@ -26,8 +26,6 @@ const h = vi.hoisted(() => ({
   policyCalls: [] as string[],
   /** Projects with MCP off. */
   mcpOff: new Set<string>(),
-  /** Make the reconcile after the save fail once. */
-  failReconcile: false,
 }));
 
 const agentsOf = (projectPath: string) => {
@@ -62,7 +60,7 @@ vi.mock('../project-store', () => ({
 vi.mock('../clubhouse-mode-settings', () => ({ isClubhouseModeEnabled: (p: string) => h.clubhouseMode.has(p) }));
 vi.mock('../dispatcher/dispatcher-paths', () => ({ isDispatcherPath: (p: string) => p === h.dispatcherPath }));
 vi.mock('../agent-transition', () => ({ agentTransitionBusy: (id: string) => h.busy.has(id) }));
-/** A stand-in for the persona layer, as agents.test has it; orchestration-policy.test covers the real carry. */
+/** A stand-in for the retired persona layer's carry, as agents.test has it; orchestration-policy.test and legacy-migration.test cover the real one. */
 vi.mock('../orchestration-policy', () => ({
   setOrchestrationPolicy: vi.fn(async () => ({ ok: true })),
   carryPersonaOrchestration: vi.fn(async (_p: string, id: string, why = 'managed') => {
@@ -70,18 +68,9 @@ vi.mock('../orchestration-policy', () => ({
     const a = find(id)!;
     const layer = (a.persona ? h.personaPolicy[a.persona] : h.projectLayer) || {};
     const carried = Object.fromEntries(Object.entries(layer).filter(([k]) => (a.orchestration as Record<string, unknown> | undefined)?.[k] === undefined));
-    const before = a.orchestration && { ...a.orchestration };
-    if (Object.keys(carried).length > 0) a.orchestration = { ...before, ...carried };
-    return { previousPersona: a.persona, before, carried: Object.keys(carried).length > 0 ? carried : undefined };
-  }),
-  restorePersonaOrchestration: vi.fn(async (_p: string, id: string, carry: { before?: DurableAgentConfig['orchestration'] }) => {
-    h.policyCalls.push('restore');
-    const a = find(id)!;
-    if (carry.before) a.orchestration = carry.before; else delete a.orchestration;
-  }),
-  reconcileAfterPersonaChange: vi.fn(async () => {
-    h.policyCalls.push('reconcile');
-    if (h.failReconcile) { h.failReconcile = false; throw Object.assign(new Error('reconcile broke'), { code: 'reconcile_failed' }); }
+    if (Object.keys(carried).length === 0) return undefined;
+    a.orchestration = { ...a.orchestration, ...carried };
+    return carried;
   }),
 }));
 vi.mock('../mcp-settings', () => ({ isMcpEnabled: (p: string, agentOverride?: boolean) => agentOverride ?? !h.mcpOff.has(p) }));
@@ -155,7 +144,6 @@ beforeEach(async () => {
   h.projectLayer = {};
   h.policyCalls = [];
   h.mcpOff = new Set();
-  h.failReconcile = false;
   service = createManagedAgentsService({
     catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
     state: createManagedStateStore(h.stateDir),
@@ -251,7 +239,7 @@ describe('the switch at spawn (D59)', () => {
     expect(managed?.managed).toBeDefined();
     expect(get('beta', 'ada').persona).toBeUndefined();
     expect(get('beta', 'ada').orchestration).toEqual({ orchestrate: true });
-    expect(h.policyCalls).toEqual(['carry', 'save', 'reconcile']);
+    expect(h.policyCalls).toEqual(['carry', 'save']);
     expect(get('beta', 'ada').managedMigration?.from).toBe('persona');
   });
 
@@ -314,6 +302,7 @@ describe('the startup pass (D59)', () => {
     agent('alpha', 'gone', { disposedAt: '2026-11-07T01:00:00.000Z' } as never);
     agent('alpha', 'new', { creation: { state: 'creating' } as never });
     agent('alpha', 'stopped', { managedMigration: { at: 'x', from: 'clubhouse-mode', backup: 'b' } });
+    agent('beta', 'kept', { persona: 'orchestrator', worktreePath: undefined });
     agent('beta', 'plain');
     agent('beta', 'persona', { persona: 'qa' });
     agent('dispatcher', 'disp', { persona: 'orchestrator' });
@@ -338,13 +327,17 @@ describe('the startup pass (D59)', () => {
     const result = await runStartupMigration();
 
     expect(order).toEqual(['sleepy', 'persona']);
-    expect(result).toEqual({ switched: 2, failed: 0, deferred: 2, carried: 1 });
+    // plain, plus the legacy agents Clubhouse doesn't switch on its own: stopped (switched once), kept (in the project folder).
+    expect(result).toEqual({ switched: 2, failed: 0, deferred: 2, carried: 3 });
     expect(legacySettings.migrateLegacySettings).toHaveBeenCalledTimes(1);
-    for (const [p, id] of [['alpha', 'busy-one'], ['alpha', 'waking'], ['alpha', 'helper'], ['alpha', 'gone'], ['alpha', 'new'], ['alpha', 'stopped'], ['beta', 'plain'], ['dispatcher', 'disp'], ['remote-1', 'far']]) {
+    for (const [p, id] of [['alpha', 'busy-one'], ['alpha', 'waking'], ['alpha', 'helper'], ['alpha', 'gone'], ['alpha', 'new'], ['alpha', 'stopped'], ['beta', 'plain'], ['beta', 'kept'], ['dispatcher', 'disp'], ['remote-1', 'far']]) {
       expect(get(p, id).managed, id).toBeUndefined();
     }
     expect(get('alpha', 'sleepy').managedMigration?.from).toBe('clubhouse-mode');
     expect(get('beta', 'persona').managedMigration?.from).toBe('persona');
+    for (const id of ['plain', 'kept']) expect(get('beta', id).personaLayerCarriedAt, id).toEqual(expect.any(String));
+    expect(get('alpha', 'stopped').personaLayerCarriedAt).toEqual(expect.any(String));
+    expect(get('alpha', 'helper').personaLayerCarriedAt).toBeUndefined();
   });
 
   it('runs once, and switches nothing twice even if run again', async () => {
@@ -448,7 +441,8 @@ describe('switched once, by hand or on its own (#2901)', () => {
     const save = vi.spyOn(service, 'saveSetup');
 
     expect(await migrateAtSpawn('alpha', structuredClone(get('alpha', 'ada')))).toBeNull();
-    expect(await runStartupMigration()).toEqual({ switched: 0, failed: 0, deferred: 0, carried: 0 });
+    // It stays unmanaged, so the startup pass keeps its persona layer (D62), and switches nothing.
+    expect(await runStartupMigration()).toEqual({ switched: 0, failed: 0, deferred: 0, carried: 1 });
 
     expect(save).not.toHaveBeenCalled();
     expect(get('alpha', 'ada').managed).toBeUndefined();
@@ -506,7 +500,11 @@ describe('the bridge at the automatic switch (#2901)', () => {
 describe('a switch that fails after its save (#2901)', () => {
   it('counts as switched: the spawn gets the managed config and the agent is marked, not recorded as failed', async () => {
     h.clubhouseMode.add('alpha');
-    h.failReconcile = true;
+    const saveSetup = service.saveSetup.bind(service);
+    vi.spyOn(service, 'saveSetup').mockImplementationOnce(async (p, id, setup) => {
+      await saveSetup(p, id, setup);
+      throw Object.assign(new Error('a later step broke'), { code: 'late_failure' });
+    });
 
     const managed = await migrateAtSpawn('alpha', agent('alpha', 'ada'));
 
@@ -515,7 +513,7 @@ describe('a switch that fails after its save (#2901)', () => {
     expect(get('alpha', 'ada').managedMigration).toEqual({ at: expect.any(String), from: 'clubhouse-mode', backup: backupLocation('ada') });
     expect(get('alpha', 'ada').switchedToManagedAt).toEqual(expect.any(String));
     const warn = vi.mocked(appLog).mock.calls.find((c) => c[2].startsWith('Automatic switch to managed was saved'))!;
-    expect(warn[3]).toEqual({ meta: { agentId: 'ada', from: 'clubhouse-mode', code: 'reconcile_failed' } });
+    expect(warn[3]).toEqual({ meta: { agentId: 'ada', from: 'clubhouse-mode', code: 'late_failure' } });
   });
 });
 

@@ -21,9 +21,6 @@ vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../experimental-settings', () => ({ getSettings: () => h.experimental }));
 vi.mock('../../window-chrome', () => ({ newChromeEnabled: () => h.newLayout }));
 vi.mock('../orchestrator-settings', () => ({ getSettings: () => ({ enabled: h.enabledProviders }), whenDefaultsDetected: () => h.detection }));
-vi.mock('../materialization-service', () => ({
-  resolvePersonaContent: vi.fn(async (_dir: string, id: string) => (id === 'dispatcher' ? 'You are the Dispatcher.' : undefined)),
-}));
 
 // In-memory settings, so nothing touches userData.
 vi.mock('../settings-store', () => ({
@@ -56,34 +53,27 @@ vi.mock('../../orchestrators', () => ({
 function notify(projectPath: string) {
   for (const l of h.configListeners) l(projectPath);
 }
-// Creation and updates run the real persona rule, so the Dispatcher's own create is checked against it (#2551).
-vi.mock('../agent-config', async () => {
-  const { assertPersonaAllowed } = await vi.importActual<typeof import('../agent-config')>('../agent-config');
-  return {
-  assertPersonaAllowed,
+vi.mock('../agent-config', () => ({
   listDurable: vi.fn(async (dir: string) => (h.agents.get(dir) ?? []).map((a) => ({ ...a }))),
   getDurableConfig: vi.fn(async (dir: string, id: string) => h.agents.get(dir)?.find((a) => a.id === id) ?? null),
-  createDurable: vi.fn(async (dir: string, name: string, color: string, model: string | undefined, _wt: boolean, orchestrator: string | undefined, freeAgentMode: boolean | undefined, _m: unknown, _c: unknown, persona: string | undefined) => {
-    assertPersonaAllowed(dir, persona);
+  createDurable: vi.fn(async (dir: string, name: string, color: string, model: string | undefined, _wt: boolean, orchestrator: string | undefined, freeAgentMode: boolean | undefined) => {
     const config: DurableAgentConfig = {
       id: `durable_${h.nextId++}`, name, color, createdAt: 'now',
       ...(model ? { model } : {}), ...(orchestrator ? { orchestrator } : {}),
-      ...(freeAgentMode ? { freeAgentMode } : {}), ...(persona ? { persona } : {}),
+      ...(freeAgentMode ? { freeAgentMode } : {}),
     };
     h.agents.set(dir, [...(h.agents.get(dir) ?? []), config]);
     notify(dir);
     return config;
   }),
   updateDurableConfig: vi.fn(async (dir: string, id: string, updates: DurableConfigUpdates) => {
-    if (updates.persona !== undefined) assertPersonaAllowed(dir, updates.persona);
     const agent = h.agents.get(dir)?.find((a) => a.id === id);
     if (!agent) return;
     Object.assign(agent, updates);
     notify(dir);
   }),
   onAgentConfigChanged: (l: (p: string) => void) => { h.configListeners.add(l); return () => { h.configListeners.delete(l); }; },
-  };
-});
+}));
 
 // Every way an agent starts goes through spawnAgent, so "never called" means no tokens.
 vi.mock('../agent-system', () => ({
@@ -155,7 +145,7 @@ describe('gating', () => {
     await svc.initDispatcher();
     expect(svc.getDispatcherState()).toMatchObject({ enabled: true, savedOn: true, flagOn: true, offReason: null, running: false, agentId: 'durable_1', path: dispatcherDir() });
     expect(agentConfig.createDurable).toHaveBeenCalledTimes(1);
-    expect(fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf-8')).toBe('You are the Dispatcher.');
+    expect(fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf-8')).toBe(svc.DISPATCHER_INSTRUCTIONS);
     // What default-on must not do: start the agent, so no tokens are spent.
     expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
     expect(agentRegistry.get('durable_1')).toBeUndefined();
@@ -173,7 +163,7 @@ describe('gating', () => {
     finish();
     await init;
     expect(svc.getDispatcherState().config?.orchestrator).toBe('codex-cli');
-    expect(fs.readFileSync(path.join(dispatcherDir(), 'AGENTS.md'), 'utf-8')).toBe('You are the Dispatcher.');
+    expect(fs.readFileSync(path.join(dispatcherDir(), 'AGENTS.md'), 'utf-8')).toBe(svc.DISPATCHER_INSTRUCTIONS);
   });
 
   it('is off on the classic layout with nothing saved, and creates nothing at start-up', async () => {
@@ -357,15 +347,18 @@ describe('turning it on', () => {
     const state = await svc.setDispatcherEnabled(true);
     expect(fs.statSync(path.join(dispatcherDir(), 'notes')).isDirectory()).toBe(true);
     expect(agentConfig.createDurable).toHaveBeenCalledTimes(1);
-    const [dir, name, , model, useWorktree, orchestrator, freeAgentMode, , , persona] = vi.mocked(agentConfig.createDurable).mock.calls[0];
+    const call = vi.mocked(agentConfig.createDurable).mock.calls[0];
+    const [dir, name, , model, useWorktree, orchestrator, freeAgentMode] = call;
     expect(dir).toBe(dispatcherDir());
     expect(name).toBe('Dispatcher');
     expect(model).toBeUndefined();
     expect(useWorktree).toBe(false);
     expect(orchestrator).toBe('claude-code');
     expect(freeAgentMode).toBe(true);
-    expect(persona).toBe('dispatcher');
-    expect(state.config).toMatchObject({ idleSleep: 'never', runtimeMode: 'chat', mcpOverride: true, persona: 'dispatcher' });
+    // No persona (#2901): the Dispatcher is known by its folder and id.
+    expect(call).toHaveLength(7);
+    expect(state.config).toMatchObject({ idleSleep: 'never', runtimeMode: 'chat', mcpOverride: true });
+    expect(state.config?.persona).toBeUndefined();
   });
 
   it('is idempotent across toggles and restarts', async () => {
@@ -382,18 +375,33 @@ describe('turning it on', () => {
     h.enabledProviders = ['codex-cli'];
     const state = await svc.setDispatcherEnabled(true);
     expect(state.config?.orchestrator).toBe('codex-cli');
-    expect(fs.readFileSync(path.join(dispatcherDir(), 'AGENTS.md'), 'utf-8')).toBe('You are the Dispatcher.');
+    expect(fs.readFileSync(path.join(dispatcherDir(), 'AGENTS.md'), 'utf-8')).toBe(svc.DISPATCHER_INSTRUCTIONS);
     expect(fs.existsSync(path.join(dispatcherDir(), 'CLAUDE.md'))).toBe(false);
   });
 
-  it('writes the persona instructions at create and again on start-up', async () => {
+  it('writes its own instructions at create and again on start-up', async () => {
     await svc.setDispatcherEnabled(true);
     const file = path.join(dispatcherDir(), 'CLAUDE.md');
-    expect(fs.readFileSync(file, 'utf-8')).toBe('You are the Dispatcher.');
+    expect(fs.readFileSync(file, 'utf-8')).toBe(svc.DISPATCHER_INSTRUCTIONS);
     fs.writeFileSync(file, 'stale');
     svc._resetDispatcherForTesting();
     await svc.initDispatcher();
-    expect(fs.readFileSync(file, 'utf-8')).toBe('You are the Dispatcher.');
+    expect(fs.readFileSync(file, 'utf-8')).toBe(svc.DISPATCHER_INSTRUCTIONS);
+  });
+
+  it('ships its instructions from dispatcher-instructions.md', () => {
+    expect(svc.DISPATCHER_INSTRUCTIONS).toContain('Dispatcher');
+    expect(svc.DISPATCHER_INSTRUCTIONS).not.toMatch(/^---/);
+  });
+
+  it('keeps working with a config from before #2901 that still has persona: dispatcher', async () => {
+    fs.mkdirSync(path.join(dispatcherDir(), 'notes'), { recursive: true });
+    h.agents.set(dispatcherDir(), [{ id: 'durable_old', name: 'Dispatcher', color: 'indigo', createdAt: 'then', orchestrator: 'claude-code', persona: 'dispatcher' }]);
+    await svc.setDispatcherEnabled(true);
+    expect(agentConfig.createDurable).not.toHaveBeenCalled();
+    expect(svc.getDispatcherAgentId()).toBe('durable_old');
+    expect(svc.isDispatcherAgentId('durable_old')).toBe(true);
+    expect(fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf-8')).toBe(svc.DISPATCHER_INSTRUCTIONS);
   });
 
   it('rewrites instructions for a new CLI', async () => {
@@ -403,7 +411,7 @@ describe('turning it on', () => {
     await agentConfig.updateDurableConfig(dispatcherDir(), 'durable_1', { orchestrator: 'copilot-cli' });
     await settle();
     const file = path.join(dispatcherDir(), '.github', 'copilot-instructions.md');
-    expect(fs.readFileSync(file, 'utf-8')).toBe('You are the Dispatcher.');
+    expect(fs.readFileSync(file, 'utf-8')).toBe(svc.DISPATCHER_INSTRUCTIONS);
     expect(changed).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ orchestrator: 'copilot-cli' }) }));
   });
 });

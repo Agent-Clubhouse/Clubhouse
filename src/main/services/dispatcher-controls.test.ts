@@ -83,7 +83,6 @@ vi.mock('./agent-config', () => ({
   }),
 }));
 vi.mock('./mcp-settings', () => ({ onMcpEnablementChanged: vi.fn((): (() => void) => (): undefined => undefined) }));
-vi.mock('./persona-change-hook', () => ({ onPersonaChanged: vi.fn((): (() => void) => (): undefined => undefined) }));
 vi.mock('./helper-index', () => ({
   listHelpersEverywhere: vi.fn(async (_p: string, id: string) => state.helpers.get(id) ?? []),
 }));

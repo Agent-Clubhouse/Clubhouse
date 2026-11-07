@@ -95,7 +95,7 @@ describe.each(TABLE)('$name', (r) => {
   });
 
   it('derives switches off where the agent has no MCP, and keeps them', () => {
-    const policy = resolveOrchestrationPolicy({ orchestrate: true, crossProjectHelpers: true, connectToDispatcher: true, autoHelpers: true }, undefined, { mcpOff: !r.own });
+    const policy = resolveOrchestrationPolicy({ orchestrate: true, crossProjectHelpers: true, connectToDispatcher: true, autoHelpers: true }, { mcpOff: !r.own });
     expect(policy.orchestrate).toBe(r.own);
     expect(policy.connectToDispatcher).toBe(r.own);
     expect(policy.crossProjectHelpers).toBe(r.own);

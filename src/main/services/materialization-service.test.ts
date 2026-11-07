@@ -84,15 +84,9 @@ import {
   resetDefaultSkills,
   resetProjectAgentDefaults,
   resolveMissionId,
-  resolvePersonaId,
-  resolvePersonaContent,
-  readPersonaForEdit,
-  extractAgentPersona,
-  writeResolvedPersonaInstructions,
   resolveAgentCommands,
   resolveProjectMcpServers,
   resolveAgentMcpServers,
-  listAvailablePersonas,
   getAgentWildcards,
   getDefaultAgentTemplates,
   resolveSourceControlProvider,
@@ -277,21 +271,6 @@ describe('materialization-service', () => {
     });
   });
 
-  describe('resolvePersonaId', () => {
-    it('returns per-agent persona when set', () => {
-      const agent = { ...testAgent, persona: 'qa' };
-      expect(resolvePersonaId(agent, { persona: 'project-manager' })).toBe('qa');
-    });
-
-    it('falls back to project default when agent persona unset', () => {
-      expect(resolvePersonaId(testAgent, { persona: 'project-manager' })).toBe('project-manager');
-    });
-
-    it('returns undefined when neither is set', () => {
-      expect(resolvePersonaId(testAgent, {})).toBeUndefined();
-    });
-  });
-
   describe('resolveSourceControlProvider', () => {
     it('returns project-level setting when set', async () => {
       mockSettingsFile(JSON.stringify({
@@ -376,141 +355,6 @@ describe('materialization-service', () => {
     });
   });
 
-  describe('persona pattern front-matter + apply/extract', () => {
-    it('resolvePersonaContent strips pattern front-matter to the body', async () => {
-      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
-        const fp = String(p).replace(/\\/g, '/');
-        if (fp.startsWith('/project') && fp.endsWith('.clubhouse/personas/qa.md')) {
-          return '---\nmodel: "claude-opus-4-8"\n---\n# Role: QA';
-        }
-        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
-      });
-      expect(await resolvePersonaContent('/project', 'qa')).toBe('# Role: QA');
-    });
-
-    it('readPersonaForEdit returns the raw file including front-matter', async () => {
-      const raw = '---\nmodel: "claude-opus-4-8"\n---\n# Role: QA';
-      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
-        const fp = String(p).replace(/\\/g, '/');
-        if (fp.startsWith('/project') && fp.endsWith('.clubhouse/personas/qa.md')) return raw;
-        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
-      });
-      expect(await readPersonaForEdit('/project', 'qa')).toBe(raw);
-    });
-
-    it('extractAgentPersona re-genericizes wildcards and captures settings', async () => {
-      mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {} }));
-      const agent = { ...testAgent, model: 'claude-opus-4-8', mcpIds: ['github'], freeAgentMode: true };
-      const provider = {
-        ...mockProvider,
-        inspectInstructions: vi.fn(async () => 'Agent bold-falcon at .clubhouse/agents/bold-falcon/'),
-      };
-      const { content, settings } = await extractAgentPersona({ projectPath: '/project', agent, provider });
-      expect(content).toBe('Agent @@AgentName at @@Path');
-      expect(settings).toEqual({ model: 'claude-opus-4-8', mcpIds: ['github'], freeAgentMode: true });
-    });
-
-    it('extractAgentPersona keeps orchestration access, control and limits but never orchestrate (#2228)', async () => {
-      mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {} }));
-      const provider = { ...mockProvider, inspectInstructions: vi.fn(async () => 'body') };
-      const on = { ...testAgent, orchestration: { orchestrate: true, control: 'ask-everything' as const, maxHelpers: 3 } };
-      expect((await extractAgentPersona({ projectPath: '/project', agent: on, provider })).settings.orchestration)
-        .toEqual({ control: 'ask-everything', maxHelpers: 3 });
-      const onlyToggle = { ...testAgent, orchestration: { orchestrate: true } };
-      expect((await extractAgentPersona({ projectPath: '/project', agent: onlyToggle, provider })).settings).not.toHaveProperty('orchestration');
-    });
-
-    it('writeResolvedPersonaInstructions writes the resolved persona body', async () => {
-      const agent = { ...testAgent, persona: 'qa' };
-      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
-        const fp = String(p).replace(/\\/g, '/');
-        if (fp.endsWith('settings.json')) return JSON.stringify({ defaults: {}, quickOverrides: {} });
-        if (fp.endsWith('.clubhouse/personas/qa.md')) return '---\nmodel: "x"\n---\nPersona for @@AgentName';
-        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
-      });
-      const provider = { ...mockProvider, writeInstructions: vi.fn() };
-      await writeResolvedPersonaInstructions({ projectPath: '/project', agent, provider });
-      expect(provider.writeInstructions).toHaveBeenCalledWith(agent.worktreePath, 'Persona for bold-falcon');
-    });
-  });
-
-  describe('resolvePersonaContent', () => {
-    it('returns undefined for an empty persona id', async () => {
-      expect(await resolvePersonaContent('/project', undefined)).toBeUndefined();
-    });
-
-    it('prefers the project on-disk persona file when present', async () => {
-      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
-        const fp = String(p).replace(/\\/g, '/');
-        if (fp.startsWith('/project') && fp.endsWith('.clubhouse/personas/qa.md')) return 'PROJECT QA PERSONA';
-        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
-      });
-      expect(await resolvePersonaContent('/project', 'qa')).toBe('PROJECT QA PERSONA');
-    });
-
-    it('falls back to the user-global persona when no project file exists', async () => {
-      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
-        const fp = String(p).replace(/\\/g, '/');
-        // Project layer (under /project) misses; user-global layer (under home) hits.
-        if (!fp.startsWith('/project') && fp.endsWith('.clubhouse/personas/qa.md')) return 'USER QA PERSONA';
-        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
-      });
-      expect(await resolvePersonaContent('/project', 'qa')).toBe('USER QA PERSONA');
-    });
-
-    it('project layer wins over user-global layer for the same id', async () => {
-      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
-        const fp = String(p).replace(/\\/g, '/');
-        if (!fp.endsWith('.clubhouse/personas/qa.md')) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
-        return fp.startsWith('/project') ? 'PROJECT QA PERSONA' : 'USER QA PERSONA';
-      });
-      expect(await resolvePersonaContent('/project', 'qa')).toBe('PROJECT QA PERSONA');
-    });
-
-    it('falls back to the built-in template when no disk file exists', async () => {
-      vi.mocked(fsp.readFile).mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
-      const content = await resolvePersonaContent('/project', 'qa');
-      expect(content).toContain('Quality Assurance');
-    });
-
-    it('returns undefined for an unknown persona with no disk file', async () => {
-      vi.mocked(fsp.readFile).mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
-      expect(await resolvePersonaContent('/project', 'nonexistent')).toBeUndefined();
-    });
-  });
-
-  describe('listAvailablePersonas', () => {
-    it('returns the built-in templates when no disk personas exist', async () => {
-      vi.mocked(fsp.readdir).mockResolvedValue([]);
-      const personas = await listAvailablePersonas('/project');
-      expect(personas.length).toBeGreaterThan(0);
-      expect(personas.every((p) => p.source === 'builtin')).toBe(true);
-      expect(personas.map((p) => p.id)).toContain('qa');
-    });
-
-    it('tags a user-global persona and lets a project persona shadow it', async () => {
-      vi.mocked(fsp.readdir).mockImplementation(async (p: unknown) => {
-        const fp = String(p).replace(/\\/g, '/');
-        if (!fp.endsWith('.clubhouse/personas')) return [] as any;
-        if (fp.startsWith('/project')) {
-          // Project layer defines only "qa" (shadows built-in + user)
-          return [{ name: 'qa.md', isFile: () => true, isDirectory: () => false }] as any;
-        }
-        // User-global layer defines "qa" and a brand-new "my-reviewer"
-        return [
-          { name: 'qa.md', isFile: () => true, isDirectory: () => false },
-          { name: 'my-reviewer.md', isFile: () => true, isDirectory: () => false },
-        ] as any;
-      });
-      const personas = await listAvailablePersonas('/project');
-      const qa = personas.filter((p) => p.id === 'qa');
-      expect(qa).toHaveLength(1);
-      expect(qa[0].source).toBe('project'); // project layer wins the source tag
-      const reviewer = personas.find((p) => p.id === 'my-reviewer');
-      expect(reviewer?.source).toBe('user'); // only in user-global layer
-    });
-  });
-
   describe('getAgentWildcards', () => {
     it('builds resolved actuals, overrides, and library lists for an agent', async () => {
       mockSettingsFile(JSON.stringify({
@@ -532,11 +376,10 @@ describe('materialization-service', () => {
       expect(w.lintCommand).toEqual({ override: null, resolved: 'npm run lint' });
       // Mission: per-agent override wins for resolved; project default surfaced
       expect(w.mission).toEqual({ override: 'agent-mission', projectDefault: 'project-mission', resolved: 'agent-mission' });
-      // Persona: inherits project default
-      expect(w.persona).toEqual({ override: null, projectDefault: 'qa', resolved: 'qa' });
-      // Library lists present
+      // Library lists present; personas were retired (#2901), so none are listed
       expect(Array.isArray(w.missions)).toBe(true);
-      expect(w.personas.map((p) => p.id)).toContain('qa');
+      expect(w).not.toHaveProperty('persona');
+      expect(w).not.toHaveProperty('personas');
     });
   });
 
@@ -596,7 +439,7 @@ describe('materialization-service', () => {
       );
     });
 
-    it('explicit instruction/persona materialization preserves a local-override MCP map (#2849)', async () => {
+    it('explicit instruction materialization preserves a local-override MCP map (#2849)', async () => {
       mockSettingsFile(JSON.stringify({ agentDefaults: { instructions: 'Chosen persona for @@AgentName', mcpJson: '{"mcpServers":{"inherited":{"command":"project"}}}' } }));
       await materializeAgent({ projectPath: '/project', agent: { ...testAgent, clubhouseModeOverride: true }, provider: mockProvider });
       expect(mockProvider.writeInstructions).toHaveBeenCalledWith(testAgent.worktreePath, 'Chosen persona for bold-falcon');
@@ -846,149 +689,24 @@ describe('materialization-service', () => {
       expect(tomlContent).toContain('[mcp_servers.test]');
       expect(tomlContent).toContain('command = "node"');
     });
-    it('appends persona instructions after project defaults', async () => {
-      const agentWithPersona = { ...testAgent, persona: 'qa' };
+    it('no longer applies a persona, its own or the project default, and @@Persona resolves empty (#2901)', async () => {
       mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
-        agentDefaults: {
-          instructions: 'Agent @@AgentName at @@Path',
-        },
+        agentDefaults: { instructions: 'Agent @@AgentName\n@@Persona', persona: 'project-manager' },
       }));
 
-      await materializeAgent({ projectPath: '/project', agent: agentWithPersona, provider: mockProvider });
+      await materializeAgent({ projectPath: '/project', agent: { ...testAgent, persona: 'qa' }, provider: mockProvider });
 
-      expect(mockProvider.writeInstructions).toHaveBeenCalledTimes(1);
-      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
-      // Should contain both project defaults (with wildcards resolved) and persona content
-      expect(written).toContain('Agent bold-falcon at .clubhouse/agents/bold-falcon/');
-      expect(written).toContain('Quality Assurance');
+      expect(mockProvider.writeInstructions).toHaveBeenCalledWith(testAgent.worktreePath, 'Agent bold-falcon\n');
     });
 
-    it('writes only persona instructions when no project defaults exist', async () => {
-      const agentWithPersona = { ...testAgent, persona: 'project-manager' };
-      mockSettingsFile(JSON.stringify({
-        defaults: {},
-        quickOverrides: {},
-      }));
+    it('writes no instructions without project defaults, even for an agent with a legacy persona', async () => {
+      mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {} }));
 
-      await materializeAgent({ projectPath: '/project', agent: agentWithPersona, provider: mockProvider });
-
-      expect(mockProvider.writeInstructions).toHaveBeenCalledTimes(1);
-      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
-      expect(written).toContain('Project Manager');
-      expect(written).toContain('delegator');
-    });
-
-    it('skips persona injection for unknown persona ID', async () => {
-      const agentWithBadPersona = { ...testAgent, persona: 'nonexistent' };
-      mockSettingsFile(JSON.stringify({
-        defaults: {},
-        quickOverrides: {},
-        agentDefaults: {
-          instructions: 'Agent @@AgentName',
-        },
-      }));
-
-      await materializeAgent({ projectPath: '/project', agent: agentWithBadPersona, provider: mockProvider });
-
-      // Should still write project defaults, just without persona content
-      expect(mockProvider.writeInstructions).toHaveBeenCalledTimes(1);
-      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
-      expect(written).toContain('Agent bold-falcon');
-      expect(written).not.toContain('Quality Assurance');
-    });
-
-    it('does not write persona instructions when agent has no persona', async () => {
-      mockSettingsFile(JSON.stringify({
-        defaults: {},
-        quickOverrides: {},
-      }));
-
-      await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
+      await materializeAgent({ projectPath: '/project', agent: { ...testAgent, persona: 'qa' }, provider: mockProvider });
 
       expect(mockProvider.writeInstructions).not.toHaveBeenCalled();
-    });
-
-    it('substitutes @@Persona inline and skips the auto-append (no double-injection)', async () => {
-      const agentWithPersona = { ...testAgent, persona: 'qa' };
-      mockSettingsFile(JSON.stringify({
-        defaults: {},
-        quickOverrides: {},
-        agentDefaults: {
-          instructions: 'Agent @@AgentName\n\n## Role\n@@Persona\n\n## Done',
-        },
-      }));
-
-      await materializeAgent({ projectPath: '/project', agent: agentWithPersona, provider: mockProvider });
-
-      expect(mockProvider.writeInstructions).toHaveBeenCalledTimes(1);
-      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
-      // Persona content appears after the ## Role section header (inline substitution)...
-      const personaMarker = written.indexOf('Quality Assurance');
-      const roleMarker = written.indexOf('## Role');
-      const doneMarker = written.lastIndexOf('## Done');
-      expect(personaMarker).toBeGreaterThan(roleMarker);
-      // ...and before the ## Done section, proving no auto-append happens after it.
-      expect(personaMarker).toBeLessThan(doneMarker);
-      // The trailing ## Done section is preserved at the end.
-      expect(written.endsWith('## Done')).toBe(true);
-      // Persona body should appear exactly once — no double injection.
-      expect(written.match(/Quality Assurance/g)?.length).toBe(1);
-    });
-
-    it('still auto-appends persona when @@Persona is NOT in the template (backwards compat)', async () => {
-      const agentWithPersona = { ...testAgent, persona: 'qa' };
-      mockSettingsFile(JSON.stringify({
-        defaults: {},
-        quickOverrides: {},
-        agentDefaults: {
-          // No @@Persona token — preserve the pre-feature behavior.
-          instructions: 'Agent @@AgentName at @@Path',
-        },
-      }));
-
-      await materializeAgent({ projectPath: '/project', agent: agentWithPersona, provider: mockProvider });
-
-      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
-      expect(written.startsWith('Agent bold-falcon at .clubhouse/agents/bold-falcon/')).toBe(true);
-      expect(written).toContain('Quality Assurance'); // appended at the end
-    });
-
-    it('applies project-default persona when the agent has none of its own', async () => {
-      // Agent with NO persona; project default sets qa.
-      mockSettingsFile(JSON.stringify({
-        defaults: {},
-        quickOverrides: {},
-        agentDefaults: {
-          instructions: 'Agent @@AgentName',
-          persona: 'qa',
-        },
-      }));
-
-      await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
-
-      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
-      expect(written).toContain('Agent bold-falcon');
-      expect(written).toContain('Quality Assurance');
-    });
-
-    it('per-agent persona overrides project-default persona', async () => {
-      const agentWithPersona = { ...testAgent, persona: 'project-manager' };
-      mockSettingsFile(JSON.stringify({
-        defaults: {},
-        quickOverrides: {},
-        agentDefaults: {
-          instructions: 'Agent @@AgentName',
-          persona: 'qa', // project default — should be overridden
-        },
-      }));
-
-      await materializeAgent({ projectPath: '/project', agent: agentWithPersona, provider: mockProvider });
-
-      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
-      expect(written).toContain('Project Manager');
-      expect(written).not.toContain('Quality Assurance');
     });
 
     it('substitutes @@Mission with project default mission file content', async () => {
@@ -1121,8 +839,8 @@ describe('materialization-service', () => {
       expect(preview.mcpJson).toBeNull();
     });
 
-    it('includes persona instructions in preview', async () => {
-      const agentWithPersona = { ...testAgent, persona: 'quality-auditor' };
+    it('leaves a legacy persona out of the preview (#2901)', async () => {
+      const agentWithPersona = { ...testAgent, persona: 'qa' };
       mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
@@ -1137,27 +855,45 @@ describe('materialization-service', () => {
         provider: mockProvider,
       });
 
-      expect(preview.instructions).toContain('Agent bold-falcon');
-      expect(preview.instructions).toContain('Quality Auditor');
+      expect(preview.instructions).toBe('Agent bold-falcon');
     });
   });
 
   describe('materializedInstructions (#2901)', () => {
     const template = 'Agent @@AgentName\n@@If(github)\nOpen a PR.\n@@EndIf\n@@If(azure-devops)\nOpen an ADO PR.\n@@EndIf\n@@Persona';
 
-    it('resolves wildcards, @@If and @@Persona as materializeAgent writes them, without writing', async () => {
-      const agent = { ...testAgent, persona: 'quality-auditor' };
+    it('resolves wildcards, @@If and a legacy persona\'s @@Persona, without writing', async () => {
+      const agent = { ...testAgent, persona: 'qa' };
       mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {}, agentDefaults: { instructions: template } }));
       const text = await materializedInstructions('/project', agent);
       expect(text).toContain('Agent bold-falcon');
       expect(text).toContain('Open a PR.');
       expect(text).not.toContain('Open an ADO PR.');
-      expect(text).toContain('Quality Auditor');
+      expect(text).toContain('Quality Assurance');
       expect(text).not.toMatch(/@@/);
       expect(mockProvider.writeInstructions).not.toHaveBeenCalled();
 
+      // A wake no longer applies the persona: only the switch keeps its text.
       await materializeAgent({ projectPath: '/project', agent, provider: mockProvider });
-      expect(mockProvider.writeInstructions).toHaveBeenCalledWith(agent.worktreePath, text);
+      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
+      expect(written).toContain('Open a PR.');
+      expect(written).not.toContain('Quality Assurance');
+    });
+
+    it('keeps a project persona file\'s body, front matter removed, after the template', async () => {
+      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
+        const fp = String(p).replace(/\\/g, '/');
+        if (fp.endsWith('settings.json')) return JSON.stringify({ agentDefaults: { instructions: 'Agent @@AgentName', persona: 'house' } });
+        if (fp.startsWith('/project') && fp.endsWith('.clubhouse/personas/house.md')) return '---\nmodel: "x"\n---\nHouse style for @@AgentName';
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      });
+      await expect(materializedInstructions('/project', testAgent)).resolves.toBe('Agent bold-falcon\n\nHouse style for bold-falcon');
+    });
+
+    it('leaves a managed agent\'s old persona alone', async () => {
+      mockSettingsFile(JSON.stringify({ agentDefaults: { instructions: 'Agent @@AgentName' } }));
+      const managed = { ...testAgent, persona: 'qa', managed: { version: 1 as const, blocks: [], skills: [], mcps: [] } };
+      await expect(materializedInstructions('/project', managed)).resolves.toBe('Agent bold-falcon');
     });
 
     it('is null when Clubhouse Mode would write no instructions', async () => {
@@ -1314,18 +1050,13 @@ describe('materialization-service', () => {
   });
 
   describe('CLUBHOUSE_MODE_README_CONTENT', () => {
-    it('documents the personas surface and per-agent command/provider overrides', () => {
-      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('.clubhouse/personas/');
-      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('@@Persona');
+    it('documents per-agent command/provider overrides, and no persona surface (#2901)', () => {
+      expect(CLUBHOUSE_MODE_README_CONTENT).not.toContain('.clubhouse/personas/');
+      expect(CLUBHOUSE_MODE_README_CONTENT).not.toContain('"persona"');
       expect(CLUBHOUSE_MODE_README_CONTENT).toContain('buildCommand');
       expect(CLUBHOUSE_MODE_README_CONTENT).toContain('testCommand');
       expect(CLUBHOUSE_MODE_README_CONTENT).toContain('lintCommand');
       expect(CLUBHOUSE_MODE_README_CONTENT).toContain('sourceControlProvider');
-    });
-
-    it('documents the user-global persona library and precedence', () => {
-      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('~/.clubhouse/personas/');
-      expect(CLUBHOUSE_MODE_README_CONTENT).toContain('user-global → built-in');
     });
   });
 

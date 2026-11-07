@@ -88,10 +88,6 @@ vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
 
-vi.mock('../services/persona-application', () => ({
-  applyPersonaToAgent: vi.fn(async () => undefined),
-}));
-
 vi.mock('../services/materialization-service', () => ({
   refreshClubhouseModeReadme: vi.fn(async () => undefined),
 }));
@@ -125,7 +121,6 @@ vi.mock('../services/finished-quick-agents-store', () => ({
 }));
 
 vi.mock('../services/dispatcher/dispatcher-service', () => ({
-  DISPATCHER_PERSONA: 'dispatcher',
   isDispatcherPath: (p: string) => p === 'dispatcher-folder',
   isDispatcherAgentId: (id: string) => id === 'disp',
 }));
@@ -141,7 +136,6 @@ import * as headlessManager from '../services/headless-manager';
 import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
 import { appLog } from '../services/log-service';
 import { refreshClubhouseModeReadme } from '../services/materialization-service';
-import { applyPersonaToAgent } from '../services/persona-application';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as orchestrationPolicy from '../services/orchestration-policy';
 import { getAgentRuntime } from '../services/agent-runtime';
@@ -226,8 +220,8 @@ describe('agent-handlers', () => {
 
   it('CREATE_DURABLE delegates to agentConfig.createDurable', async () => {
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
-    const result = await handler({}, '/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined, undefined);
-    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined, undefined, undefined);
+    const result = await handler({}, '/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined);
+    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined, undefined);
     expect(result).toEqual({ id: 'agent-1', name: 'Test' });
   });
 
@@ -242,14 +236,14 @@ describe('agent-handlers', () => {
   it('CREATE_DURABLE lets a non-worktree agent keep a free-form display name', async () => {
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
     await handler({}, '/project', 'My Bot', '#ff0000', undefined, false);
-    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'My Bot', '#ff0000', undefined, false, undefined, undefined, undefined, undefined, undefined, undefined);
+    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'My Bot', '#ff0000', undefined, false, undefined, undefined, undefined, undefined, undefined);
   });
 
   it('CREATE_DURABLE passes folder, branch and branch-from options through (#2226)', async () => {
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
-    await handler({}, '/project', 'Helper one', '#ff0000', undefined, true, undefined, undefined, undefined, undefined, undefined,
+    await handler({}, '/project', 'Helper one', '#ff0000', undefined, true, undefined, undefined, undefined, undefined,
       { folderName: 'helper-1', branchName: 'helper-1/work', branchFrom: 'orch/standby', extra: 'ignored' });
-    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'Helper one', '#ff0000', undefined, true, undefined, undefined, undefined, undefined, undefined,
+    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'Helper one', '#ff0000', undefined, true, undefined, undefined, undefined, undefined,
       { folderName: 'helper-1', branchName: 'helper-1/work', branchFrom: 'orch/standby' });
   });
 
@@ -261,17 +255,17 @@ describe('agent-handlers', () => {
       expect(agentCreation.startDurableCreation).toHaveBeenCalledWith(
         '/project',
         expect.objectContaining({ name: 'Helper', color: 'indigo', folderName: 'helper-1', branchFrom: 'main' }),
-        expect.objectContaining({ inject: undefined }),
       );
       const params = vi.mocked(agentCreation.startDurableCreation).mock.calls[0][1];
       expect(params).not.toHaveProperty('model');
     });
 
-    it('passes a persona injection when a persona is given', async () => {
+    it('ignores a persona it is given: personas were retired (#2901)', async () => {
       const handler = handlers.get(IPC.AGENT.START_DURABLE_CREATION)!;
       await handler({}, '/project', { name: 'Helper', color: 'indigo', persona: 'qa' });
-      const opts = vi.mocked(agentCreation.startDurableCreation).mock.calls[0][2];
-      expect(typeof opts?.inject).toBe('function');
+      const [, params, opts] = vi.mocked(agentCreation.startDurableCreation).mock.calls[0];
+      expect(params).not.toHaveProperty('persona');
+      expect(opts).toBeUndefined();
     });
 
     it.each([
@@ -312,7 +306,6 @@ describe('agent-handlers', () => {
       expect(orchestrationPolicy.turnOffOrchestration).not.toHaveBeenCalled();
     });
 
-    // The persona rules run in agentConfig.assertPersonaAllowed (#2551); see agent-config.test.
     it('refuses a duplicate in its folder', async () => {
       const start = handlers.get(IPC.AGENT.START_DURABLE_CREATION)!;
       await expect(start({}, 'dispatcher-folder', { name: 'copy', color: 'indigo' })).rejects.toThrow(/duplicated/);
@@ -932,59 +925,6 @@ describe('agent-handlers', () => {
   it('rejects non-integer offset for READ_TRANSCRIPT_PAGE', () => {
     const handler = handlers.get(IPC.AGENT.READ_TRANSCRIPT_PAGE)!;
     expect(() => handler({}, 'a1', 1.5, 10)).toThrow('must be an integer');
-  });
-
-  // --- Persona on CREATE_DURABLE (#2223) ---
-
-  it('CREATE_DURABLE with persona applies it via the shared layered lookup, keeping project defaults', async () => {
-    vi.mocked(agentConfig.createDurable).mockResolvedValueOnce({
-      id: 'agent-qa', name: 'qa-bot', color: 'red', worktreePath: '/wt/qa',
-    } as any);
-    // Front-matter settings applied by the persona show up in the returned config.
-    vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce({
-      id: 'agent-qa', name: 'qa-bot', color: 'red', worktreePath: '/wt/qa', persona: 'reviewer', model: 'opus',
-    } as any);
-
-    const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
-    const result = await handler({}, '/project', 'qa-bot', 'red', undefined, true, 'claude-code', false, undefined, undefined, 'reviewer');
-
-    expect(applyPersonaToAgent).toHaveBeenCalledWith('/project', 'agent-qa', 'reviewer', { appendToExisting: true });
-    expect(result).toEqual(expect.objectContaining({ id: 'agent-qa', persona: 'reviewer', model: 'opus' }));
-  });
-
-  it('CREATE_DURABLE with persona skips it when no worktree', async () => {
-    vi.mocked(agentConfig.createDurable).mockResolvedValueOnce({
-      id: 'agent-pm', name: 'pm-bot', color: 'indigo',
-    } as any);
-
-    const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
-    await handler({}, '/project', 'pm-bot', 'indigo', undefined, false, undefined, false, undefined, undefined, 'qa');
-
-    expect(applyPersonaToAgent).not.toHaveBeenCalled();
-  });
-
-  it('CREATE_DURABLE without persona does not apply one', async () => {
-    vi.mocked(agentConfig.createDurable).mockResolvedValueOnce({
-      id: 'agent-x', name: 'x-bot', color: 'blue', worktreePath: '/wt/x',
-    } as any);
-
-    const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
-    await handler({}, '/project', 'x-bot', 'blue', undefined, true, undefined, false, undefined, undefined, undefined);
-
-    expect(applyPersonaToAgent).not.toHaveBeenCalled();
-  });
-
-  it('CREATE_DURABLE still returns the agent when applying the persona fails', async () => {
-    vi.mocked(agentConfig.createDurable).mockResolvedValueOnce({
-      id: 'agent-qa2', name: 'qa-bot', color: 'red', worktreePath: '/wt/qa2',
-    } as any);
-    vi.mocked(applyPersonaToAgent).mockRejectedValueOnce(new Error('EACCES'));
-
-    const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
-    const result = await handler({}, '/project', 'qa-bot', 'red', undefined, true, 'claude-code', false, undefined, undefined, 'qa');
-
-    expect(result).toEqual(expect.objectContaining({ id: 'agent-qa2' }));
-    expect(appLog).toHaveBeenCalledWith('agents', 'warn', 'Failed to inject persona instructions on create', expect.anything());
   });
 
   // ── Durable permission queue (issue #1553) ─────────────────────────

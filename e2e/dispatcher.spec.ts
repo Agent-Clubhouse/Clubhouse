@@ -225,7 +225,8 @@ test('on by default, wire an orchestrator, restart, switch off and on, MCP off a
   await expect.poll(async () => (await dispatcherConfigs()).length).toBe(1);
   const [config] = await dispatcherConfigs();
   const dispatcherId = config.id;
-  expect(config.persona).toBe('dispatcher');
+  // Known by its folder and id, never a persona (#2901): the only agent in its folder, with no persona.
+  expect(config.persona).toBeUndefined();
   expect(fs.existsSync(path.join(dispatcherDir(), 'notes'))).toBe(true);
   expect(await fs.promises.readFile(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf8')).toContain('Dispatcher');
   expect(await promptsConsumed()).toBe(0);

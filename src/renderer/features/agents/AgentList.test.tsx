@@ -36,10 +36,10 @@ vi.mock('./AddAgentDialog', () => ({
     <div data-testid="add-agent-dialog">
       <button onClick={onClose}>Close</button>
       <button
-        onClick={() => onCreate('new-durable', 'indigo', 'default', false, 'claude-code', undefined, undefined, 'qa')}
-        data-testid="add-agent-dialog-submit-with-persona"
+        onClick={() => onCreate('new-durable', 'indigo', 'default', false, 'claude-code', undefined, undefined)}
+        data-testid="add-agent-dialog-submit"
       >
-        Submit with persona
+        Submit
       </button>
     </div>
   ),
@@ -161,7 +161,7 @@ describe('AgentList dropdown', () => {
     expect(screen.queryByText('From Template')).not.toBeInTheDocument();
   });
 
-  it('passes persona through from the plain New Agent dialog (#1565)', async () => {
+  it('creates a durable agent from the plain New Agent dialog, with no persona (#2901)', async () => {
     const createDurableSpy = vi.fn().mockResolvedValue({
       id: 'agent-new', name: 'new-durable', color: 'indigo',
     });
@@ -172,11 +172,11 @@ describe('AgentList dropdown', () => {
     expect(screen.getByTestId('add-agent-dialog')).toBeInTheDocument();
 
     await act(async () => {
-      fireEvent.click(screen.getByTestId('add-agent-dialog-submit-with-persona'));
+      fireEvent.click(screen.getByTestId('add-agent-dialog-submit'));
     });
 
     expect(createDurableSpy).toHaveBeenCalledWith(
-      '/project', 'new-durable', 'indigo', undefined, false, 'claude-code', undefined, undefined, undefined, 'qa',
+      '/project', 'new-durable', 'indigo', undefined, false, 'claude-code', undefined, undefined,
     );
   });
 });

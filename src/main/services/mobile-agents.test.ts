@@ -27,9 +27,6 @@ vi.mock('./agent-settings-service', () => ({
   readMcpCatalog: vi.fn(async () => [{ id: 'ado', name: 'Azure DevOps', description: 'Work items', args: [{ name: 'org' }] }]),
   readDefaultMcps: vi.fn(async () => ['ado']),
 }));
-vi.mock('./materialization-service', () => ({
-  listAvailablePersonas: vi.fn(async () => [{ id: 'qa', name: 'QA', source: 'builtin' }]),
-}));
 vi.mock('./orchestrator-settings', () => ({ getSettings: vi.fn(() => ({ enabled: ['claude-code', 'codex-cli'] })) }));
 vi.mock('./profile-settings', () => ({ getProfile: vi.fn() }));
 vi.mock('./clubhouse-mode-settings', () => ({ isClubhouseModeEnabled: vi.fn(() => false) }));
@@ -41,7 +38,6 @@ vi.mock('./chat-runtime-settings', () => ({
 vi.mock('./agent-runtime/chat-drivers', () => ({ resolveChatDriver: vi.fn((provider: string) => (provider === 'claude-code' ? {} : undefined)) }));
 vi.mock('./agent-runtime', () => ({ isChatAgent: vi.fn(() => false) }));
 vi.mock('./git-service', () => ({ isInsideGitRepo: vi.fn(async () => true), getBranchChanges: vi.fn() }));
-vi.mock('./persona-application', () => ({ applyPersonaToAgent: vi.fn(async () => undefined) }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./orchestration-settings', () => ({
   getAutoHelpers: vi.fn(() => false), getGlobalHelperCap: vi.fn(() => 8) }));
@@ -49,7 +45,7 @@ vi.mock('./orchestration-policy', async () => {
   const shared = await import('../../shared/orchestration-policy');
   return {
     resolveOrchestrationPolicies: vi.fn(async (_path: string, agents: DurableAgentConfig[]) =>
-      new Map(agents.map((a) => [a.id, shared.resolveOrchestrationPolicy(a.orchestration, { maxHelpers: 3 }, { mcpOff: a.mcpOverride === false })]))),
+      new Map(agents.map((a) => [a.id, shared.resolveOrchestrationPolicy(a.orchestration, { mcpOff: a.mcpOverride === false })]))),
     setOrchestrationPolicy: vi.fn(async () => ({ ok: true, message: 'Saved' })),
   };
 });
@@ -65,7 +61,6 @@ import { isClubhouseModeEnabled } from './clubhouse-mode-settings';
 import { isChatEnabled } from './chat-runtime-settings';
 import { isChatAgent } from './agent-runtime';
 import { getBranchChanges, isInsideGitRepo } from './git-service';
-import { applyPersonaToAgent } from './persona-application';
 import { MobileControlError } from './mobile-control';
 import { setOrchestrationPolicy } from './orchestration-policy';
 import * as orchestrationSettings from './orchestration-settings';
@@ -100,7 +95,7 @@ describe('create options', () => {
       { id: 'codex-cli', displayName: 'codex-cli', shortName: 'co', available: false, unavailableReason: 'Codex not found', permissions: false, chat: false, models: [{ id: 'default', label: 'Default' }] },
     ]);
     expect(options).toMatchObject({
-      projectId: 'p1', personas: [{ id: 'qa', name: 'QA', source: 'builtin' }], isGitRepo: true,
+      projectId: 'p1', personas: [], isGitRepo: true,
       mcp: { catalog: [{ id: 'ado', name: 'Azure DevOps', description: 'Work items' }], defaults: ['ado'] },
       defaults: { orchestrator: 'claude-code', color: 'indigo', model: 'default', useWorktree: true },
       freeAgentMode: { allowed: true },
@@ -126,18 +121,26 @@ describe('agent.create', () => {
 
   it('starts a durable creation with the New agent page defaults and returns the receipt', async () => {
     const result = await createMobileAgent(project, create(), allow);
-    expect(startDurableCreation).toHaveBeenCalledWith('/work/app', expect.objectContaining({ name: 'brave-otter', color: 'indigo', useWorktree: true, orchestrator: 'claude-code' }), { inject: undefined });
+    expect(startDurableCreation).toHaveBeenCalledWith('/work/app', expect.objectContaining({ name: 'brave-otter', color: 'indigo', useWorktree: true, orchestrator: 'claude-code' }));
     const params = vi.mocked(startDurableCreation).mock.calls[0][1];
     expect(params.freeAgentMode).toBeUndefined();
     expect(params.model).toBeUndefined();
     expect(result).toEqual({ agentId: 'durable_new', projectId: 'p1', name: 'brave-otter', branch: 'brave-otter/standby', worktreePath: '/work/app/.clubhouse/agents/brave-otter', state: 'creating' });
   });
-  it('injects the persona into the new worktree', async () => {
-    await createMobileAgent(project, create({ persona: 'qa', model: 'opus', mcpIds: ['ado'], branchName: 'feat/otter', branchFrom: 'main' }), allow);
-    const [, params, options] = vi.mocked(startDurableCreation).mock.calls[0];
-    expect(params).toMatchObject({ persona: 'qa', model: 'opus', mcpIds: ['ado'], branchName: 'feat/otter', branchFrom: 'main' });
-    await options!.inject!({ id: 'durable_new', worktreePath: '/wt' } as DurableAgentConfig);
-    expect(applyPersonaToAgent).toHaveBeenCalledWith('/work/app', 'durable_new', 'qa', { appendToExisting: true });
+  it('passes the model, MCP servers and branch through, with no persona and nothing injected', async () => {
+    await createMobileAgent(project, create({ model: 'opus', mcpIds: ['ado'], branchName: 'feat/otter', branchFrom: 'main' }), allow);
+    const call = vi.mocked(startDurableCreation).mock.calls[0];
+    expect(call[1]).toMatchObject({ model: 'opus', mcpIds: ['ado'], branchName: 'feat/otter', branchFrom: 'main' });
+    expect(call[1]).not.toHaveProperty('persona');
+    expect(call[2]).toBeUndefined();
+  });
+  it('refuses any persona with 409 managed_agent, before creating anything (#2901)', async () => {
+    for (const persona of ['qa', 'pirate', 'dispatcher']) {
+      expect(await refusal(createMobileAgent(project, create({ persona }), allow))).toMatchObject({
+        code: 'managed_agent', statusCode: 409, detail: expect.stringContaining('Personas were retired'),
+      });
+    }
+    expect(startDurableCreation).not.toHaveBeenCalled();
   });
   it('refuses a name that cannot be a folder and branch, with the reason', async () => {
     const err = await refusal(createMobileAgent(project, create({ name: 'my agent' }), allow));
@@ -152,9 +155,6 @@ describe('agent.create', () => {
   it('refuses options the desktop would not offer', async () => {
     expect((await refusal(createMobileAgent(project, create({ color: '#ff0000' }), allow))).code).toBe('invalid_color');
     expect((await refusal(createMobileAgent(project, create({ orchestrator: 'gemini' }), allow))).code).toBe('orchestrator_unavailable');
-    expect((await refusal(createMobileAgent(project, create({ persona: 'pirate' }), allow))).code).toBe('unknown_persona');
-    // The hidden dispatcher persona is never listed (#2551); agentConfig refuses it as well.
-    expect((await refusal(createMobileAgent(project, create({ persona: 'dispatcher' }), allow))).code).toBe('unknown_persona');
     expect((await refusal(createMobileAgent(project, create({ mcpIds: ['kusto'] }), allow))).code).toBe('unknown_mcp');
     expect((await refusal(createMobileAgent(project, create({ useWorktree: false, branchName: 'x' }), allow))).code).toBe('worktree_options_require_worktree');
     vi.mocked(isInsideGitRepo).mockResolvedValueOnce(false);
@@ -200,9 +200,14 @@ describe('Free Agent Mode from a phone (#2462)', () => {
   it('refuses persona and Clubhouse mode for a Clubhouse-managed agent, with words, and writes nothing (#2901)', async () => {
     vi.mocked(isClubhouseModeEnabled).mockReturnValue(true);
     const managed = agent({ managed: { version: 1, blocks: [], skills: [], mcps: [] } });
-    for (const change of [{ persona: 'qa' }, { persona: null }, { clubhouseMode: true }, { clubhouseMode: false }]) {
+    for (const change of [{ clubhouseMode: true }, { clubhouseMode: false }]) {
       expect(await refusal(updateMobileAgent(project, managed, { agentId: 'durable_1', freeAgentMode: true, ...change }, live))).toMatchObject({
         code: 'managed_agent', statusCode: 409, detail: expect.stringContaining('is Clubhouse managed'),
+      });
+    }
+    for (const change of [{ persona: 'qa' }, { persona: null }]) {
+      expect(await refusal(updateMobileAgent(project, managed, { agentId: 'durable_1', freeAgentMode: true, ...change }, live))).toMatchObject({
+        code: 'managed_agent', statusCode: 409, detail: expect.stringContaining('Personas were retired'),
       });
     }
     expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
@@ -219,7 +224,7 @@ describe('agent settings', () => {
     expect(await buildAgentSettings(project, agent(), undefined)).not.toHaveProperty('parentAgentId');
   });
 
-  it('reads each setting with when it can change', async () => {
+  it('reads each setting with when it can change, persona always null (#2901)', async () => {
     const result = await buildAgentSettings(project, agent({ idleSleep: 60, persona: 'qa', model: 'opus', freeAgentMode: true }), undefined);
     expect(result).toEqual({
       agentId: 'durable_1', projectId: 'p1', state: 'sleeping', sleeping: true,
@@ -231,15 +236,15 @@ describe('agent settings', () => {
         orchestrator: { value: null, editable: 'sleeping', resolved: 'claude-code', changeStartsNewSession: false },
         model: { value: 'opus', editable: 'sleeping' },
         runtime: { value: 'default', editable: 'sleeping', resolved: 'chat' },
-        persona: { value: 'qa', editable: 'sleeping' },
+        persona: { value: null, editable: 'never' },
         clubhouseMode: { value: null, editable: 'never', projectEnabled: false },
         freeAgentMode: { value: true, editable: 'sleeping' },
         idleSleep: { value: 60, editable: 'always', minutes: 60, source: 'agent', applies: true },
         contextWindow: expect.objectContaining({ value: null, configurable: false, editable: 'never', kind: null, applies: ['launch', 'resume'] }),
       },
       orchestration: {
-        orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 3, crossProjectHelpers: false, connectToDispatcher: false, autoHelpers: null, autoHelpersEffective: false, mcpEnabled: true,
-        sources: { orchestrate: 'default', access: 'default', control: 'default', maxHelpers: 'persona', crossProjectHelpers: 'default', connectToDispatcher: 'default', autoHelpers: 'default' },
+        orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5, crossProjectHelpers: false, connectToDispatcher: false, autoHelpers: null, autoHelpersEffective: false, mcpEnabled: true,
+        sources: { orchestrate: 'default', access: 'default', control: 'default', maxHelpers: 'default', crossProjectHelpers: 'default', connectToDispatcher: 'default', autoHelpers: 'default' },
         maxHelpersCap: 8, controls: ['hands-off', 'ask-before-start', 'ask-everything'], accessLevels: ['same', 'standard', 'auto', 'bypass'],
       },
     });
@@ -318,9 +323,9 @@ describe('agent.update', () => {
   it('saves spawn settings through updateDurableConfig and identity through updateDurable', async () => {
     vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce(agent({ name: 'calm-otter', model: 'opus', idleSleep: 'never' }));
     const result = await updateMobileAgent(project, agent(), { agentId: 'durable_1', name: ' calm-otter ', color: 'rose', emoji: '🦦',
-      orchestrator: 'claude-code', model: 'opus', runtime: 'terminal', persona: 'qa', idleSleep: 'never' }, live);
+      orchestrator: 'claude-code', model: 'opus', runtime: 'terminal', idleSleep: 'never' }, live);
     expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/work/app', 'durable_1',
-      { orchestrator: 'claude-code', model: 'opus', runtimeMode: 'terminal', persona: 'qa', idleSleep: 'never' });
+      { orchestrator: 'claude-code', model: 'opus', runtimeMode: 'terminal', idleSleep: 'never' });
     expect(agentConfig.updateDurable).toHaveBeenCalledWith('/work/app', 'durable_1', { name: 'calm-otter', color: 'rose', emoji: '🦦' });
     expect(result.settings).toMatchObject({ name: { value: 'calm-otter' }, model: { value: 'opus' }, idleSleep: { value: 'never', minutes: 0 } });
   });
@@ -343,9 +348,9 @@ describe('agent.update', () => {
   });
   it('clears with null, default and inherit', async () => {
     vi.mocked(isClubhouseModeEnabled).mockReturnValueOnce(true);
-    await updateMobileAgent(project, agent(), { agentId: 'durable_1', emoji: null, persona: null, runtime: 'default', model: 'default', idleSleep: 'inherit', clubhouseMode: true }, live);
+    await updateMobileAgent(project, agent(), { agentId: 'durable_1', emoji: null, runtime: 'default', model: 'default', idleSleep: 'inherit', clubhouseMode: true }, live);
     expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/work/app', 'durable_1',
-      { model: 'default', runtimeMode: null, persona: '', clubhouseModeOverride: false, idleSleep: null });
+      { model: 'default', runtimeMode: null, clubhouseModeOverride: false, idleSleep: null });
     expect(agentConfig.updateDurable).toHaveBeenCalledWith('/work/app', 'durable_1', { emoji: null });
   });
   it('changes auto-sleep while the agent runs, but nothing read at spawn', async () => {
@@ -356,7 +361,7 @@ describe('agent.update', () => {
     const command = { version: 1, epoch: 'e', commandId: 'c', type: 'agent.update', agentId: 'durable_1', idleSleep: 30 } as const;
     await updateMobileAgent(project, agent(), command, running);
     expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith('/work/app', 'durable_1', { idleSleep: 30 });
-    for (const change of [{ name: 'calm-otter' }, { model: 'opus' }, { color: 'rose' }, { idleSleep: 15 as const, persona: 'qa' }]) {
+    for (const change of [{ name: 'calm-otter' }, { model: 'opus' }, { color: 'rose' }, { idleSleep: 15 as const, clubhouseMode: true }]) {
       const err = await refusal(updateMobileAgent(project, agent(), { agentId: 'durable_1', ...change }, running));
       expect(err).toMatchObject({ code: 'agent_running', statusCode: 409, detail: 'Sleep the agent to change these' });
     }
@@ -370,8 +375,9 @@ describe('agent.update', () => {
     expect(await refuse({ color: 'plaid' })).toBe('invalid_color');
     expect(await refuse({ orchestrator: 'gemini' })).toBe('orchestrator_unavailable');
     expect(await refuse({ orchestrator: 'codex-cli', runtime: 'chat' })).toBe('runtime_unavailable');
-    expect(await refuse({ persona: 'pirate' })).toBe('unknown_persona');
-    expect(await refuse({ persona: 'dispatcher' })).toBe('unknown_persona');
+    // Personas were retired (#2901): any persona, set or cleared, is refused.
+    for (const persona of ['qa', 'pirate', 'dispatcher', null]) expect(await refuse({ persona })).toBe('managed_agent');
+    expect(await refuse({ persona: 'qa' }, agent({ persona: 'qa' }))).toBe('managed_agent');
     expect(await refuse({ clubhouseMode: false })).toBe('clubhouse_mode_unavailable');
     expect(await refuse({}, agent({ creation: { state: 'creating', startedAt: 'now' } }))).toBe('agent_creating');
     vi.mocked(isChatEnabled).mockReturnValueOnce(false);
@@ -396,8 +402,8 @@ describe('orchestration policy from a phone (#2228)', () => {
   it('shows the resolved policy, which fields the agent overrides, and the choices', async () => {
     const { orchestration } = await buildAgentSettings(project, agent({ orchestration: { orchestrate: true, control: 'ask-everything' } }), undefined);
     expect(orchestration).toMatchObject({
-      orchestrate: true, control: 'ask-everything', access: 'same', maxHelpers: 3, maxHelpersCap: 8,
-      sources: { orchestrate: 'agent', control: 'agent', access: 'default', maxHelpers: 'persona' },
+      orchestrate: true, control: 'ask-everything', access: 'same', maxHelpers: 5, maxHelpersCap: 8,
+      sources: { orchestrate: 'agent', control: 'agent', access: 'default', maxHelpers: 'default' },
     });
   });
 
@@ -555,7 +561,7 @@ describe('model options use the profile env (#2569)', () => {
 describe('the Dispatcher from a phone (#2533)', () => {
   const folder = { id: '__dispatcher__', path: '/Users/me/.clubhouse/dispatcher' };
   const dispatcherAgent = (extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig =>
-    ({ id: 'durable_d', name: 'Dispatcher', color: 'indigo', createdAt: '2026-01-01', orchestrator: 'claude-code', persona: 'dispatcher', freeAgentMode: true, ...extra });
+    ({ id: 'durable_d', name: 'Dispatcher', color: 'indigo', createdAt: '2026-01-01', orchestrator: 'claude-code', freeAgentMode: true, ...extra });
   const update = (command: Record<string, unknown>, live: 'running' | undefined = undefined, config = dispatcherAgent()) =>
     updateMobileDispatcher(folder, config, { agentId: 'durable_d', ...command }, { live, assertAuthorized: allow });
 
@@ -570,6 +576,12 @@ describe('the Dispatcher from a phone (#2533)', () => {
       runtime: { editable: 'always' }, freeAgentMode: { editable: 'always' }, idleSleep: { editable: 'always' },
     });
     expect((await buildAgentSettings(project, agent(), undefined))).not.toHaveProperty('isDispatcher');
+  });
+
+  it('reads the same with a config from before #2901 that still has persona: dispatcher', async () => {
+    const settings = await buildAgentSettings(folder, dispatcherAgent({ persona: 'dispatcher' }), undefined, { dispatcher: true });
+    expect(settings).toMatchObject({ isDispatcher: true, orchestration: null });
+    expect(settings.settings.persona).toEqual({ value: null, editable: 'never' });
   });
 
   it('has no changes to show: its folder is no git repo', async () => {

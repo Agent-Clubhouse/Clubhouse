@@ -46,13 +46,13 @@ vi.mock('./agent-config', () => ({
   }),
 }));
 // The policy resolves from the agent's own orchestration config here, with the
-// real resolver; the persona layer is covered by orchestration-policy's own tests.
+// real resolver.
 vi.mock('./orchestration-policy', async () => {
   const { resolveOrchestrationPolicy } = await import('../../shared/orchestration-policy');
   return {
     resolveOrchestrationPolicies: vi.fn(async (projectPath: string, agents: DurableAgentConfig[]) => {
-      if (unreadablePolicies.has(projectPath)) throw new Error('persona unreadable');
-      return new Map(agents.map((a) => [a.id, resolveOrchestrationPolicy(a.orchestration, undefined, {
+      if (unreadablePolicies.has(projectPath)) throw new Error('policy unreadable');
+      return new Map(agents.map((a) => [a.id, resolveOrchestrationPolicy(a.orchestration, {
         helper: !!a.parentAgentId,
         mcpOff: !(a.mcpOverride ?? mcp.projects.get(projectPath) ?? mcp.app),
       })]));
@@ -95,7 +95,6 @@ import {
   _resetDispatcherWireSourceForTesting,
 } from './dispatcher-wire-source';
 import { helperWireBindingSource, _resetHelperWireSourceForTesting } from './helper-wire-source';
-import { notifyPersonaChanged, notifyProjectDefaultPersonaChanged } from './persona-change-hook';
 import { listDurable } from './agent-config';
 import { resolveOrchestrationPolicies } from './orchestration-policy';
 
@@ -168,7 +167,7 @@ beforeEach(() => {
 const stops: Array<() => void> = [];
 
 afterEach(() => {
-  // The persona hook's listeners outlive a test, so every watcher is stopped.
+  // Listeners outlive a test, so every watcher is stopped.
   for (const stop of stops.splice(0)) stop();
   vi.useRealTimers();
 });
@@ -447,16 +446,6 @@ describe('watchDispatcherWires', () => {
     expect(boundPairs()).toEqual([`${DISPATCHER}->durable_lead`, `durable_lead->${DISPATCHER}`]);
   });
 
-  it('rebuilds after a persona change turns the policy on', async () => {
-    const { onChange, flush } = await watched();
-    // The persona's defaults moved; agents.json itself is untouched, so only the persona hook says so.
-    configs.set(projectPath, [agent('durable_lead', { orchestration: connected }), agent('durable_quiet', { orchestration: connected })]);
-    await notifyPersonaChanged(projectPath, 'durable_quiet', undefined);
-    await flush();
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(boundPairs()).toContain(`${DISPATCHER}->durable_quiet`);
-  });
-
   it('rebuilds when a project with a connected orchestrator is removed, and when one is added', async () => {
     configs.set(otherProjectPath, [agent('durable_o1', { orchestration: connected })]);
     const { onChange, flush } = await watched();
@@ -529,15 +518,6 @@ describe('watchDispatcherWires', () => {
       expect(onChange).not.toHaveBeenCalled();
       expect(vi.mocked(listDurable).mock.calls.map(([p]) => p)).toEqual([projectPath]);
       expect(vi.mocked(resolveOrchestrationPolicies).mock.calls.map(([p]) => p)).toEqual([projectPath]);
-    });
-
-    it('a persona change reads only its project', async () => {
-      const { flush } = await watchedAndCleared();
-      await notifyPersonaChanged(projectPath, 'durable_quiet', undefined);
-      await notifyProjectDefaultPersonaChanged(projectPath, undefined);
-      await flush();
-      expect(readPaths()).not.toContain(otherProjectPath);
-      expect(readPaths()).toContain(projectPath);
     });
 
     it('a write to the Dispatcher\'s own folder reads nothing', async () => {

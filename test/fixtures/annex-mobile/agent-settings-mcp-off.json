@@ -121,18 +121,7 @@
             "unavailableReason": "Codex CLI not found"
           }
         ],
-        "personas": [
-          {
-            "id": "qa",
-            "name": "QA",
-            "source": "builtin"
-          },
-          {
-            "id": "architect",
-            "name": "Architect",
-            "source": "project"
-          }
-        ]
+        "personas": []
       },
       "orchestration": {
         "access": "same",
@@ -259,7 +248,7 @@
           "value": "claude-code"
         },
         "persona": {
-          "editable": "sleeping",
+          "editable": "never",
           "value": null
         },
         "runtime": {

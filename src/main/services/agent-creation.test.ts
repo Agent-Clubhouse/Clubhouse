@@ -54,9 +54,6 @@ vi.mock('./git-service', () => ({ isInsideGitRepo: vi.fn(async () => true) }));
 vi.mock('./agent-settings-service', () => ({
   applyAgentDefaults: vi.fn(async () => undefined),
   readProjectAgentDefaults: vi.fn(async () => ({})),
-  // Project personas only; the in-memory fs has no user personas.
-  readSourcePersonaContent: vi.fn(async (projectPath: string, personaId: string, scope: string) =>
-    (scope === 'project' && files.get(path.join(projectPath, '.clubhouse', 'personas', `${personaId}.md`))) || ''),
 }));
 vi.mock('./agent-system', () => ({
   resolveOrchestrator: vi.fn(async () => ({ writeInstructions: vi.fn(), conventions: {} })),
@@ -165,7 +162,7 @@ describe('createDurable worktree options (#2226)', () => {
   });
 
   it('resolves branch-from to a commit and passes folder, branch and SHA as separate arguments', async () => {
-    const config = await createDurable(PROJECT_PATH, 'Helper for #12', 'indigo', undefined, true, undefined, undefined, undefined, undefined, undefined, {
+    const config = await createDurable(PROJECT_PATH, 'Helper for #12', 'indigo', undefined, true, undefined, undefined, undefined, undefined, {
       folderName: 'helper-12', branchName: 'helpers/helper-12', branchFrom: 'orchestrator/standby',
     });
     expect(config.name).toBe('Helper for #12');
@@ -189,7 +186,7 @@ describe('createDurable worktree options (#2226)', () => {
     ['a base with a control character', { branchFrom: 'main\u0001' }, /spaces or control characters/],
     ['a base with a newline', { branchFrom: 'main\n--evil' }, /spaces or control characters/],
   ])('refuses %s before touching git or disk', async (_label, options, message) => {
-    await expect(createDurable(PROJECT_PATH, 'ok-name', 'indigo', undefined, true, undefined, undefined, undefined, undefined, undefined, options))
+    await expect(createDurable(PROJECT_PATH, 'ok-name', 'indigo', undefined, true, undefined, undefined, undefined, undefined, options))
       .rejects.toThrow(message);
     expect(execFile).not.toHaveBeenCalled();
     expect(files.has(CONFIG_PATH)).toBe(false);
@@ -201,7 +198,7 @@ describe('createDurable worktree options (#2226)', () => {
 
   it('refuses a base git cannot resolve, before any branch is made', async () => {
     gitImpl = (args, opts, cb) => (isResolve(args) ? cb(new Error('exit 1'), '') : defaultGit(args, opts, cb));
-    await expect(createDurable(PROJECT_PATH, 'based', 'indigo', undefined, true, undefined, undefined, undefined, undefined, undefined, { branchFrom: 'nope' }))
+    await expect(createDurable(PROJECT_PATH, 'based', 'indigo', undefined, true, undefined, undefined, undefined, undefined, { branchFrom: 'nope' }))
       .rejects.toThrow(/Could not find "nope" to start the branch from/);
     await flushAgentConfig(PROJECT_PATH);
     expect(diskAgents()).toEqual([]);
@@ -211,7 +208,7 @@ describe('createDurable worktree options (#2226)', () => {
 
   it('refuses a named branch that already exists, and never deletes it', async () => {
     gitImpl = (args, opts, cb) => (isBranchCreate(args) ? cb(new Error("fatal: a branch named 'user/feature' already exists"), '') : defaultGit(args, opts, cb));
-    await expect(createDurable(PROJECT_PATH, 'adopt', 'indigo', undefined, true, undefined, undefined, undefined, undefined, undefined, { branchName: 'user/feature' }))
+    await expect(createDurable(PROJECT_PATH, 'adopt', 'indigo', undefined, true, undefined, undefined, undefined, undefined, { branchName: 'user/feature' }))
       .rejects.toThrow(/Could not create the branch "user\/feature".*does not exist yet/);
     expect(branchDeletes()).toEqual([]);
     expect(gitArgv().some(isWorktreeAdd)).toBe(false);
@@ -596,77 +593,20 @@ describe('helpers in another project (#2511)', () => {
   });
 });
 
-describe('persona ids (#2511)', () => {
-  it('refuses an unknown persona id by name, before anything is created', async () => {
-    const params = { name: 'agent', color: 'indigo', persona: 'no-such-persona' };
-    await expect(checkDurableCreation(PROJECT_PATH, params)).rejects.toThrow(/Unknown persona "no-such-persona"/);
-    await expect(startDurableCreation(PROJECT_PATH, params)).rejects.toThrow(/Unknown persona "no-such-persona"/);
-    await expect(createDurable(PROJECT_PATH, 'agent', 'indigo', undefined, true, undefined, undefined, undefined, undefined, 'no-such-persona'))
-      .rejects.toThrow(/Unknown persona/);
-    expect(execFile).not.toHaveBeenCalled();
-    expect(diskAgents()).toEqual([]);
+describe('the Dispatcher without a persona (#2901)', () => {
+  it('creates the Dispatcher in its own folder with no persona', async () => {
+    const created = await createDurable(getDispatcherPath(), 'Dispatcher', 'indigo', undefined, false, undefined, true);
+    expect(created).not.toHaveProperty('persona');
   });
 
-  it('accepts a built-in persona id', async () => {
-    const params = { name: 'agent', color: 'indigo', persona: 'qa' };
-    await expect(checkDurableCreation(PROJECT_PATH, params)).resolves.toBeUndefined();
-    const started = await startDurableCreation(PROJECT_PATH, params);
-    expect(await started.done).toBe('ready');
-    expect(diskAgents().find((a) => a.id === started.agentId)?.persona).toBe('qa');
-  });
-
-  it('accepts a persona defined in the project', async () => {
-    files.set(path.join(PROJECT_PATH, '.clubhouse', 'personas', 'house-style.md'), '# House style');
-    await expect(checkDurableCreation(PROJECT_PATH, { name: 'agent', color: 'indigo', persona: 'house-style' })).resolves.toBeUndefined();
-  });
-});
-
-describe('the dispatcher persona (#2551)', () => {
-  const DISPATCHER = 'dispatcher';
-  const PARENT_PROJECT = path.resolve('test-parent-project');
-
-  it('refuses it for any other agent, before anything is created', async () => {
-    const params = { name: 'imposter', color: 'indigo', persona: DISPATCHER };
-    await expect(checkDurableCreation(PROJECT_PATH, params)).rejects.toThrow('The Dispatcher persona is only for the Dispatcher.');
-    await expect(startDurableCreation(PROJECT_PATH, params)).rejects.toThrow(/only for the Dispatcher/);
-    await expect(createDurable(PROJECT_PATH, 'imposter', 'indigo', undefined, true, undefined, undefined, undefined, undefined, DISPATCHER))
-      .rejects.toThrow(/only for the Dispatcher/);
-    expect(execFile).not.toHaveBeenCalled();
-    expect(diskAgents()).toEqual([]);
-  });
-
-  it('refuses it for a helper started from another project (start_helper, cross-project)', async () => {
-    const orch = await createDurable(PARENT_PROJECT, 'orch', 'indigo', undefined, false);
-    const params = { name: 'helper', color: 'indigo', persona: DISPATCHER, parentAgentId: orch.id, parentProjectPath: PARENT_PROJECT, disposable: true };
-    await expect(checkDurableCreation(PROJECT_PATH, params)).rejects.toThrow(/only for the Dispatcher/);
-    await expect(startDurableCreation(PROJECT_PATH, params)).rejects.toThrow(/only for the Dispatcher/);
-    expect(gitArgv().some(isWorktreeAdd)).toBe(false);
-    expect(diskAgents()).toEqual([]);
-  });
-
-  it('creates the Dispatcher with it in its own folder, and nothing else there', async () => {
+  it('keeps an old Dispatcher record that still says persona: dispatcher, and saves its other settings', async () => {
     const dir = getDispatcherPath();
-    const created = await createDurable(dir, 'Dispatcher', 'indigo', undefined, false, undefined, true, undefined, undefined, DISPATCHER);
-    expect(created.persona).toBe(DISPATCHER);
-    await expect(createDurable(dir, 'other', 'indigo', undefined, false, undefined, undefined, undefined, undefined, 'qa'))
-      .rejects.toThrow("The Dispatcher's persona can't be changed.");
-    await expect(createDurable(dir, 'bare', 'indigo', undefined, false)).rejects.toThrow(/persona can't be changed/);
-  });
-
-  it('refuses a config update that gives it to another agent, or changes or clears the Dispatcher\'s', async () => {
-    const agent = await createDurable(PROJECT_PATH, 'agent', 'indigo', undefined, false, undefined, undefined, undefined, undefined, 'qa');
-    await expect(updateDurableConfig(PROJECT_PATH, agent.id, { persona: DISPATCHER })).rejects.toThrow(/only for the Dispatcher/);
-    expect((await getDurableConfig(PROJECT_PATH, agent.id))?.persona).toBe('qa');
-
-    const dir = getDispatcherPath();
-    const disp = await createDurable(dir, 'Dispatcher', 'indigo', undefined, false, undefined, true, undefined, undefined, DISPATCHER);
-    await expect(updateDurableConfig(dir, disp.id, { persona: 'orchestrator' })).rejects.toThrow("The Dispatcher's persona can't be changed.");
-    await expect(updateDurableConfig(dir, disp.id, { persona: '' })).rejects.toThrow(/persona can't be changed/);
-    expect((await getDurableConfig(dir, disp.id))?.persona).toBe(DISPATCHER);
-
-    // Its other settings, and re-saving its own persona, still go through.
-    await updateDurableConfig(dir, disp.id, { persona: DISPATCHER, model: 'opus', idleSleep: 'never' });
-    expect(await getDurableConfig(dir, disp.id)).toMatchObject({ persona: DISPATCHER, model: 'opus' });
+    const disp = await createDurable(dir, 'Dispatcher', 'indigo', undefined, false, undefined, true);
+    const configPath = path.join(dir, '.clubhouse', 'agents.json');
+    files.set(configPath, JSON.stringify([{ ...(await getDurableConfig(dir, disp.id)), persona: 'dispatcher' }]));
+    clearAgentConfigCache();
+    await updateDurableConfig(dir, disp.id, { model: 'opus', idleSleep: 'never' });
+    expect(await getDurableConfig(dir, disp.id)).toMatchObject({ persona: 'dispatcher', model: 'opus' });
   });
 });
 

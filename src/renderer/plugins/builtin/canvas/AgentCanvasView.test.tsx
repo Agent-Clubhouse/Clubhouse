@@ -28,7 +28,7 @@ vi.mock('../../../features/agents/AddAgentDialog', () => ({
   AddAgentDialog: ({ onCreate, error }: {
     onCreate: (
       name: string, color: string, model: string, useWorktree: boolean,
-      orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], persona?: string,
+      orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[],
     ) => void;
     error?: string | null;
   }) => (
@@ -45,12 +45,6 @@ vi.mock('../../../features/agents/AddAgentDialog', () => ({
         onClick={() => onCreate('NewAgent', 'emerald', 'default', false, 'claude-code', true)}
       >
         Submit (free agent)
-      </button>
-      <button
-        data-testid="stub-add-agent-submit-with-persona"
-        onClick={() => onCreate('NewAgent', 'emerald', 'default', false, 'claude-code', undefined, undefined, 'qa')}
-      >
-        Submit (persona)
       </button>
     </div>
   ),
@@ -424,48 +418,22 @@ describe('AgentCanvasView', () => {
     });
   });
 
-  // ── #1565: persona pass-through ─────────────────────────────────────
-
-  describe('persona pass-through (#1565)', () => {
-    it('passes the selected persona through to api.agents.createDurable', async () => {
-      const view = makeView({ agentId: null });
-      const onUpdate = vi.fn();
-      const createDurableSpy = vi.fn(async () => 'agent-new-id');
-      const api = stubApi({
-        projects: [{ id: 'proj-1', name: 'Proj', path: '/tmp/proj' }],
-        createDurable: createDurableSpy,
-      });
-
-      render(<AgentCanvasView view={view} api={api} onUpdate={onUpdate} />);
-
-      fireEvent.click(screen.getByTestId('canvas-create-agent'));
-      fireEvent.click(screen.getByTestId('stub-add-agent-submit-with-persona'));
-
-      await waitFor(() => expect(onUpdate).toHaveBeenCalled());
-      expect(createDurableSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ persona: 'qa' }),
-      );
+  it('creates the agent with no persona: personas were retired (#2901)', async () => {
+    const view = makeView({ agentId: null });
+    const onUpdate = vi.fn();
+    const createDurableSpy = vi.fn(async () => 'agent-new-id');
+    const api = stubApi({
+      projects: [{ id: 'proj-1', name: 'Proj', path: '/tmp/proj' }],
+      createDurable: createDurableSpy,
     });
 
-    it('omits persona when none is selected', async () => {
-      const view = makeView({ agentId: null });
-      const onUpdate = vi.fn();
-      const createDurableSpy = vi.fn(async () => 'agent-new-id');
-      const api = stubApi({
-        projects: [{ id: 'proj-1', name: 'Proj', path: '/tmp/proj' }],
-        createDurable: createDurableSpy,
-      });
+    render(<AgentCanvasView view={view} api={api} onUpdate={onUpdate} />);
 
-      render(<AgentCanvasView view={view} api={api} onUpdate={onUpdate} />);
+    fireEvent.click(screen.getByTestId('canvas-create-agent'));
+    fireEvent.click(screen.getByTestId('stub-add-agent-submit'));
 
-      fireEvent.click(screen.getByTestId('canvas-create-agent'));
-      fireEvent.click(screen.getByTestId('stub-add-agent-submit'));
-
-      await waitFor(() => expect(onUpdate).toHaveBeenCalled());
-      expect(createDurableSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ persona: undefined }),
-      );
-    });
+    await waitFor(() => expect(onUpdate).toHaveBeenCalled());
+    expect(createDurableSpy.mock.calls[0]).not.toHaveProperty('0.persona');
   });
 
   it('renames a card titled with the raw agent id once the agent shows up', () => {

@@ -200,7 +200,6 @@ import {
   updateDurable,
   updateDurableConfig,
 } from './agent-config';
-import { setPersonaChangeHook } from './persona-change-hook';
 import { _resetHelperAutoStateForTesting, commitAutoDecision, reservationSummary, reservedLoad, reserveAutoDecision, settleAutoDecision } from './helper-auto-state';
 import type { DurableAgentConfig } from '../../shared/types';
 
@@ -574,21 +573,12 @@ describe('orchestration config (#2228)', () => {
     expect((await listDurable(PROJECT_PATH))[0]).not.toHaveProperty('orchestration');
   });
 
-  it('tells the persona hook about a persona change, with the old persona', async () => {
+  it('never writes a persona: a legacy one stays as it was for the switch to read (#2901)', async () => {
     seed([agent('durable_1_orch', { persona: 'orchestrator' })]);
-    const hook = vi.fn(async () => undefined);
-    setPersonaChangeHook(hook);
-    try {
-      await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { model: 'opus' });
-      expect(hook).not.toHaveBeenCalled();
-      await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { persona: 'developer' });
-      expect(hook).toHaveBeenCalledWith({ kind: 'agent', projectPath: PROJECT_PATH, agentId: 'durable_1_orch', previousPersona: 'orchestrator' });
-      // A failing hook doesn't fail the update.
-      hook.mockRejectedValueOnce(new Error('boom'));
-      await expect(updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { persona: 'qa' })).resolves.toBeUndefined();
-    } finally {
-      setPersonaChangeHook(null);
-    }
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { persona: 'developer', model: 'opus' } as never);
+    expect((await listDurable(PROJECT_PATH))[0]).toMatchObject({ persona: 'orchestrator', model: 'opus' });
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { persona: '' } as never);
+    expect((await listDurable(PROJECT_PATH))[0].persona).toBe('orchestrator');
   });
 
   it('throws for an unknown agent', async () => {

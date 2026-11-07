@@ -146,7 +146,7 @@ function migrate(projectPath: string, agent: DurableAgentConfig, from: ManagedMi
       await withSettingsSurface('system', undefined, () => convertToManaged(projectPath, agent.id, { keep: true }));
     } catch (err) {
       const code = codeOf(err);
-      // A failure after the setup was saved (the reconcile, say): the agent is managed, so the switch stands.
+      // A failure after the setup was saved (an unexpected one, say): the agent is managed, so the switch stands.
       if (!(await managedNow(projectPath, agent.id).catch((): null => null))) {
         failedThisRun.add(agent.id);
         appLog('core:managed', 'warn', 'Automatic switch to managed failed; the agent keeps its current setup', { meta: { agentId: agent.id, from, code } });

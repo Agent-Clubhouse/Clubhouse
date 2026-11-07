@@ -11,7 +11,7 @@
             "provider": "codex-cli"
           }
         ],
-        "commandId": "cmd_139",
+        "commandId": "cmd_140",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r1.3",
         "scope": "app",
@@ -20,7 +20,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_139",
+          "commandId": "cmd_140",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -40,7 +40,6 @@
                 "mcp_off": "Clubhouse MCP is off for this agent",
                 "not_enabled": "It isn’t turned on",
                 "orchestration_off": "This agent doesn’t orchestrate",
-                "persona_off": "This agent’s persona turned it off",
                 "project_off": "This project turned it off"
               },
               "autoSource": {
@@ -49,7 +48,6 @@
                 "default": "Off unless turned on",
                 "dispatcher_locked": "Not for the Dispatcher",
                 "mcp_off": "Clubhouse MCP is off for this agent",
-                "persona": "Set by this agent’s persona",
                 "project": "Set for this project"
               },
               "cell": {
@@ -337,7 +335,7 @@
             "provider": "codex-cli"
           }
         ],
-        "commandId": "cmd_140",
+        "commandId": "cmd_141",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r1.3",
         "scope": "app",
@@ -346,7 +344,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_140",
+          "commandId": "cmd_141",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_routing_stale",
@@ -371,7 +369,6 @@
                 "mcp_off": "Clubhouse MCP is off for this agent",
                 "not_enabled": "It isn’t turned on",
                 "orchestration_off": "This agent doesn’t orchestrate",
-                "persona_off": "This agent’s persona turned it off",
                 "project_off": "This project turned it off"
               },
               "autoSource": {
@@ -380,7 +377,6 @@
                 "default": "Off unless turned on",
                 "dispatcher_locked": "Not for the Dispatcher",
                 "mcp_off": "Clubhouse MCP is off for this agent",
-                "persona": "Set by this agent’s persona",
                 "project": "Set for this project"
               },
               "cell": {
@@ -668,7 +664,7 @@
             "provider": "codex-cli"
           }
         ],
-        "commandId": "cmd_141",
+        "commandId": "cmd_142",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r2.3",
         "scope": "app",
@@ -677,7 +673,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_141",
+          "commandId": "cmd_142",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "model_unavailable",
@@ -700,7 +696,7 @@
             "provider": "codex-cli"
           }
         ],
-        "commandId": "cmd_142",
+        "commandId": "cmd_143",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r2.3",
         "scope": "app",
@@ -709,7 +705,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_142",
+          "commandId": "cmd_143",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "effort_unavailable",
@@ -732,7 +728,7 @@
             "provider": "copilot-cli"
           }
         ],
-        "commandId": "cmd_143",
+        "commandId": "cmd_144",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r2.3",
         "scope": "app",
@@ -741,7 +737,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_143",
+          "commandId": "cmd_144",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_helper_routing",
@@ -756,7 +752,7 @@
     {
       "name": "invalid_helper_routing (project scope)",
       "request": {
-        "commandId": "cmd_144",
+        "commandId": "cmd_145",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "reset": {},
         "revision": "r2.3",
@@ -766,7 +762,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_144",
+          "commandId": "cmd_145",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_helper_routing",
@@ -781,7 +777,7 @@
     {
       "name": "invalid_command (nothing to do)",
       "request": {
-        "commandId": "cmd_145",
+        "commandId": "cmd_146",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r2.3",
         "scope": "app",
@@ -804,7 +800,7 @@
     {
       "name": "accepted reset one cell",
       "request": {
-        "commandId": "cmd_146",
+        "commandId": "cmd_147",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "reset": {
           "difficulty": "easy",
@@ -817,7 +813,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_146",
+          "commandId": "cmd_147",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -837,7 +833,6 @@
                 "mcp_off": "Clubhouse MCP is off for this agent",
                 "not_enabled": "It isn’t turned on",
                 "orchestration_off": "This agent doesn’t orchestrate",
-                "persona_off": "This agent’s persona turned it off",
                 "project_off": "This project turned it off"
               },
               "autoSource": {
@@ -846,7 +841,6 @@
                 "default": "Off unless turned on",
                 "dispatcher_locked": "Not for the Dispatcher",
                 "mcp_off": "Clubhouse MCP is off for this agent",
-                "persona": "Set by this agent’s persona",
                 "project": "Set for this project"
               },
               "cell": {
@@ -1137,7 +1131,7 @@
             "provider": "codex-cli"
           }
         ],
-        "commandId": "cmd_147",
+        "commandId": "cmd_148",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r3.3",
         "scope": "app",
@@ -1146,7 +1140,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_147",
+          "commandId": "cmd_148",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -1166,7 +1160,6 @@
                 "mcp_off": "Clubhouse MCP is off for this agent",
                 "not_enabled": "It isn’t turned on",
                 "orchestration_off": "This agent doesn’t orchestrate",
-                "persona_off": "This agent’s persona turned it off",
                 "project_off": "This project turned it off"
               },
               "autoSource": {
@@ -1175,7 +1168,6 @@
                 "default": "Off unless turned on",
                 "dispatcher_locked": "Not for the Dispatcher",
                 "mcp_off": "Clubhouse MCP is off for this agent",
-                "persona": "Set by this agent’s persona",
                 "project": "Set for this project"
               },
               "cell": {
@@ -1458,7 +1450,7 @@
     {
       "name": "accepted reset one provider",
       "request": {
-        "commandId": "cmd_148",
+        "commandId": "cmd_149",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "reset": {
           "provider": "claude-code"
@@ -1470,7 +1462,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_148",
+          "commandId": "cmd_149",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -1490,7 +1482,6 @@
                 "mcp_off": "Clubhouse MCP is off for this agent",
                 "not_enabled": "It isn’t turned on",
                 "orchestration_off": "This agent doesn’t orchestrate",
-                "persona_off": "This agent’s persona turned it off",
                 "project_off": "This project turned it off"
               },
               "autoSource": {
@@ -1499,7 +1490,6 @@
                 "default": "Off unless turned on",
                 "dispatcher_locked": "Not for the Dispatcher",
                 "mcp_off": "Clubhouse MCP is off for this agent",
-                "persona": "Set by this agent’s persona",
                 "project": "Set for this project"
               },
               "cell": {
@@ -1779,7 +1769,7 @@
     {
       "name": "accepted reset all",
       "request": {
-        "commandId": "cmd_149",
+        "commandId": "cmd_150",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "reset": {},
         "revision": "r5.3",
@@ -1789,7 +1779,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_149",
+          "commandId": "cmd_150",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -1809,7 +1799,6 @@
                 "mcp_off": "Clubhouse MCP is off for this agent",
                 "not_enabled": "It isn’t turned on",
                 "orchestration_off": "This agent doesn’t orchestrate",
-                "persona_off": "This agent’s persona turned it off",
                 "project_off": "This project turned it off"
               },
               "autoSource": {
@@ -1818,7 +1807,6 @@
                 "default": "Off unless turned on",
                 "dispatcher_locked": "Not for the Dispatcher",
                 "mcp_off": "Clubhouse MCP is off for this agent",
-                "persona": "Set by this agent’s persona",
                 "project": "Set for this project"
               },
               "cell": {
@@ -2096,7 +2084,7 @@
       "name": "accepted auto off app-wide",
       "request": {
         "auto": false,
-        "commandId": "cmd_150",
+        "commandId": "cmd_151",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r6.3",
         "scope": "app",
@@ -2105,7 +2093,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_150",
+          "commandId": "cmd_151",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -2125,7 +2113,6 @@
                 "mcp_off": "Clubhouse MCP is off for this agent",
                 "not_enabled": "It isn’t turned on",
                 "orchestration_off": "This agent doesn’t orchestrate",
-                "persona_off": "This agent’s persona turned it off",
                 "project_off": "This project turned it off"
               },
               "autoSource": {
@@ -2134,7 +2121,6 @@
                 "default": "Off unless turned on",
                 "dispatcher_locked": "Not for the Dispatcher",
                 "mcp_off": "Clubhouse MCP is off for this agent",
-                "persona": "Set by this agent’s persona",
                 "project": "Set for this project"
               },
               "cell": {
@@ -2412,7 +2398,7 @@
       "name": "accepted auto off for a project",
       "request": {
         "auto": "off",
-        "commandId": "cmd_151",
+        "commandId": "cmd_152",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "proj_app",
         "revision": "r7.3",
@@ -2422,7 +2408,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_151",
+          "commandId": "cmd_152",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -2450,7 +2436,6 @@
                 "mcp_off": "Clubhouse MCP is off for this agent",
                 "not_enabled": "It isn’t turned on",
                 "orchestration_off": "This agent doesn’t orchestrate",
-                "persona_off": "This agent’s persona turned it off",
                 "project_off": "This project turned it off"
               },
               "autoSource": {
@@ -2459,7 +2444,6 @@
                 "default": "Off unless turned on",
                 "dispatcher_locked": "Not for the Dispatcher",
                 "mcp_off": "Clubhouse MCP is off for this agent",
-                "persona": "Set by this agent’s persona",
                 "project": "Set for this project"
               },
               "cell": {
@@ -2737,7 +2721,7 @@
       "name": "accepted project override removed (null, which never enables)",
       "request": {
         "auto": null,
-        "commandId": "cmd_152",
+        "commandId": "cmd_153",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "proj_app",
         "revision": "r8.3",
@@ -2747,7 +2731,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_152",
+          "commandId": "cmd_153",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -2775,7 +2759,6 @@
                 "mcp_off": "Clubhouse MCP is off for this agent",
                 "not_enabled": "It isn’t turned on",
                 "orchestration_off": "This agent doesn’t orchestrate",
-                "persona_off": "This agent’s persona turned it off",
                 "project_off": "This project turned it off"
               },
               "autoSource": {
@@ -2784,7 +2767,6 @@
                 "default": "Off unless turned on",
                 "dispatcher_locked": "Not for the Dispatcher",
                 "mcp_off": "Clubhouse MCP is off for this agent",
-                "persona": "Set by this agent’s persona",
                 "project": "Set for this project"
               },
               "cell": {
@@ -3062,7 +3044,7 @@
       "name": "invalid_helper_routing (project can't turn it on)",
       "request": {
         "auto": true,
-        "commandId": "cmd_153",
+        "commandId": "cmd_154",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "proj_app",
         "revision": "r9.3",
@@ -3072,7 +3054,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_153",
+          "commandId": "cmd_154",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_helper_routing",
@@ -3088,7 +3070,7 @@
       "name": "invalid_helper_routing (app-wide off value)",
       "request": {
         "auto": "off",
-        "commandId": "cmd_154",
+        "commandId": "cmd_155",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r9.3",
         "scope": "app",
@@ -3097,7 +3079,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_154",
+          "commandId": "cmd_155",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_helper_routing",
@@ -3113,7 +3095,7 @@
       "name": "project_not_found",
       "request": {
         "auto": "off",
-        "commandId": "cmd_155",
+        "commandId": "cmd_156",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "missing",
         "revision": "r9.3",
@@ -3123,7 +3105,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_155",
+          "commandId": "cmd_156",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "project_not_found",
@@ -3139,7 +3121,7 @@
       "name": "helper_routing_stale (a desktop project change)",
       "request": {
         "auto": true,
-        "commandId": "cmd_156",
+        "commandId": "cmd_157",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r9.3",
         "scope": "app",
@@ -3148,7 +3130,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_156",
+          "commandId": "cmd_157",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_routing_stale",
@@ -3173,7 +3155,6 @@
                 "mcp_off": "Clubhouse MCP is off for this agent",
                 "not_enabled": "It isn’t turned on",
                 "orchestration_off": "This agent doesn’t orchestrate",
-                "persona_off": "This agent’s persona turned it off",
                 "project_off": "This project turned it off"
               },
               "autoSource": {
@@ -3182,7 +3163,6 @@
                 "default": "Off unless turned on",
                 "dispatcher_locked": "Not for the Dispatcher",
                 "mcp_off": "Clubhouse MCP is off for this agent",
-                "persona": "Set by this agent’s persona",
                 "project": "Set for this project"
               },
               "cell": {
@@ -3460,7 +3440,7 @@
       "name": "helper_routing_stale (project scope, fresh values for that project)",
       "request": {
         "auto": null,
-        "commandId": "cmd_157",
+        "commandId": "cmd_158",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "proj_app",
         "revision": "r10.3",
@@ -3470,7 +3450,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_157",
+          "commandId": "cmd_158",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_routing_stale",
@@ -3503,7 +3483,6 @@
                 "mcp_off": "Clubhouse MCP is off for this agent",
                 "not_enabled": "It isn’t turned on",
                 "orchestration_off": "This agent doesn’t orchestrate",
-                "persona_off": "This agent’s persona turned it off",
                 "project_off": "This project turned it off"
               },
               "autoSource": {
@@ -3512,7 +3491,6 @@
                 "default": "Off unless turned on",
                 "dispatcher_locked": "Not for the Dispatcher",
                 "mcp_off": "Clubhouse MCP is off for this agent",
-                "persona": "Set by this agent’s persona",
                 "project": "Set for this project"
               },
               "cell": {

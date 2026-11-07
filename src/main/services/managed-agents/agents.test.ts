@@ -37,7 +37,7 @@ vi.mock('../agent-config', () => ({
   createDurable: vi.fn(),
   deleteUnregister: vi.fn(),
 }));
-/** A stand-in for the persona layer; orchestration-policy.test covers the real carry. */
+/** A stand-in for the retired persona layer's carry; orchestration-policy.test and legacy-migration.test cover the real one. */
 vi.mock('../orchestration-policy', () => ({
   setOrchestrationPolicy: vi.fn(async () => ({ ok: true })),
   carryPersonaOrchestration: vi.fn(async (_p: string, id: string) => {
@@ -45,16 +45,10 @@ vi.mock('../orchestration-policy', () => ({
     const a = h.agents.get(id)!;
     const layer = (a.persona && h.personaPolicy[a.persona]) || {};
     const carried = Object.fromEntries(Object.entries(layer).filter(([k]) => (a.orchestration as Record<string, unknown> | undefined)?.[k] === undefined));
-    const before = a.orchestration && { ...a.orchestration };
-    if (Object.keys(carried).length > 0) a.orchestration = { ...before, ...carried };
-    return { previousPersona: a.persona, before, carried: Object.keys(carried).length > 0 ? carried : undefined };
+    if (Object.keys(carried).length === 0) return undefined;
+    a.orchestration = { ...a.orchestration, ...carried };
+    return carried;
   }),
-  restorePersonaOrchestration: vi.fn(async (_p: string, id: string, carry: { before?: DurableAgentConfig['orchestration'] }) => {
-    h.policyCalls.push('restore');
-    const a = h.agents.get(id)!;
-    if (carry.before) a.orchestration = carry.before; else delete a.orchestration;
-  }),
-  reconcileAfterPersonaChange: vi.fn(async () => { h.policyCalls.push('reconcile'); }),
 }));
 vi.mock('../clubhouse-mode-settings', () => ({ isClubhouseModeEnabled: () => h.clubhouseMode }));
 /** isMcpEnabled's chain: the agent's override, then the project's, then the app switch. */
@@ -403,14 +397,14 @@ describe('convertToManaged for an agent with a persona or Clubhouse Mode (#2901)
     expect(vi.mocked(agentConfig.updateDurableConfig)).not.toHaveBeenCalledWith('/p', 'ada', expect.objectContaining({ clubhouseModeOverride: expect.anything() }));
   });
 
-  it('an Orchestrator-persona agent with no own orchestration keeps orchestrate: true, and the reconcile runs after the save', async () => {
+  it('an Orchestrator-persona agent with no own orchestration keeps orchestrate: true, carried before the save', async () => {
     h.personaPolicy = { orchestrator: { orchestrate: true } };
     h.agents.set('ada', { ...h.agents.get('ada')!, persona: 'orchestrator' });
     await user(() => convertToManaged('/p', 'ada', { keep: true }));
     expect(h.agents.get('ada')!.persona).toBeUndefined();
     expect(h.agents.get('ada')!.orchestration).toEqual({ orchestrate: true });
-    expect(h.policyCalls).toEqual(['carry', 'save', 'reconcile']);
-    expect(orchestrationPolicy.reconcileAfterPersonaChange).toHaveBeenCalledWith('/p', 'ada', 'orchestrator');
+    expect(h.policyCalls).toEqual(['carry', 'save']);
+    expect(orchestrationPolicy.carryPersonaOrchestration).toHaveBeenCalledWith('/p', 'ada');
   });
 
   it('does the same with a template', async () => {
@@ -419,7 +413,7 @@ describe('convertToManaged for an agent with a persona or Clubhouse Mode (#2901)
     const t = await user(() => service.saveTemplate({ name: 'Plain', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: {} }));
     await user(() => convertToManaged('/p', 'ada', { keep: false, templateId: t.id }));
     expect(h.agents.get('ada')!.orchestration).toEqual({ orchestrate: true });
-    expect(h.policyCalls).toEqual(['carry', 'save', 'reconcile']);
+    expect(h.policyCalls).toEqual(['carry', 'save']);
   });
 
   it('builds the block from what Clubhouse Mode would write, for one that never woke, and backs up the raw file', async () => {
@@ -590,7 +584,7 @@ describe('a switch that fails (#2901)', () => {
     await expect(user(() => service.checkSetup({ blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, { skillFolders: ['ship', 'review'] }))).resolves.toMatchObject({ mcps: [CLUBHOUSE_MCP_PART_ID] });
   });
 
-  it('removes the parts it made and puts the policy back when the save fails', async () => {
+  it('removes the parts it made when the save fails, and keeps the carried fields: no persona layer would give them back', async () => {
     seedAgentFiles();
     h.personaPolicy = { orchestrator: { orchestrate: true } };
     h.agents.set('ada', { ...h.agents.get('ada')!, persona: 'orchestrator' });
@@ -604,9 +598,9 @@ describe('a switch that fails (#2901)', () => {
     for (const kind of ['block', 'skill', 'mcp'] as const) {
       expect((await user(() => service.listParts(kind))).filter((p) => !p.builtin)).toEqual([]);
     }
-    expect(h.agents.get('ada')!.orchestration).toBeUndefined();
+    expect(h.agents.get('ada')!.orchestration).toEqual({ orchestrate: true });
     expect(h.agents.get('ada')!.managed).toBeUndefined();
-    expect(h.policyCalls).toEqual(['carry', 'restore']);
+    expect(h.policyCalls).toEqual(['carry']);
     expect(fs.existsSync(path.join(h.stateDir, 'before-managed', 'ada', '.awaiting-first-start'))).toBe(false);
   });
 });

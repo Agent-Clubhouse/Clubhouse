@@ -92,11 +92,10 @@ describe('settings helpers', () => {
     expect(accessLabel(undefined, true, true)).toBe('Free agent');
     expect(accessLabel(undefined, false, true)).toBe('Ask before edits');
     expect(accessLabel(undefined, true, false)).toBe('Set by the CLI');
-    expect(instructionsLabel('project-manager', null)).toBe('Project Manager');
-    expect(instructionsLabel('dispatcher', null)).toBe('Dispatcher');
-    expect(instructionsLabel(undefined, 'a\nb\n')).toBe('Custom, 2 lines');
-    expect(instructionsLabel(undefined, 'a')).toBe('Custom, 1 line');
-    expect(instructionsLabel(undefined, '  \n')).toBeNull();
+    expect(instructionsLabel(true, 'whatever Clubhouse wrote')).toBe('Dispatcher');
+    expect(instructionsLabel(false, 'a\nb\n')).toBe('Custom, 2 lines');
+    expect(instructionsLabel(false, 'a')).toBe('Custom, 1 line');
+    expect(instructionsLabel(false, '  \n')).toBeNull();
   });
 });
 
@@ -133,7 +132,8 @@ describe('Settings card (#2280)', () => {
     // github from the wrapper (the agent's own pick) plus playwright from .mcp.json.
     await waitFor(() => expect(card.getByTestId('details-setting-mcp')).toHaveTextContent('2 configured'));
     expect(window.clubhouse.project.readDefaultMcps).not.toHaveBeenCalled();
-    await waitFor(() => expect(card.getByTestId('details-setting-instructions')).toHaveTextContent('Project Manager'));
+    // A legacy persona no longer names the instructions (#2901): the file's own text decides.
+    await waitFor(() => expect(card.getByTestId('details-setting-instructions')).toHaveTextContent('Custom, 3 lines'));
 
     // Spawn settings are locked while it runs, with one hint tied to them.
     const hint = card.getByTestId('details-settings-locked-hint');

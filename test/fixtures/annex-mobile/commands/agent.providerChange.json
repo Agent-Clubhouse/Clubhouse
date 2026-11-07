@@ -4,7 +4,7 @@
       "name": "guided: explicit save",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_178",
+        "commandId": "cmd_179",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "expectedState": "52cb5597a48445ec1ae91f4c590eb2d6468adaa7cbe0da6d0529cb3143c7bb9c",
         "provider": "codex-cli",
@@ -13,7 +13,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_178",
+          "commandId": "cmd_179",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "activeProvider": null,
@@ -50,7 +50,7 @@
       "name": "guided: stale preview",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_179",
+        "commandId": "cmd_180",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "expectedState": "52cb5597a48445ec1ae91f4c590eb2d6468adaa7cbe0da6d0529cb3143c7bb9c",
         "provider": "codex-cli",
@@ -59,7 +59,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_179",
+          "commandId": "cmd_180",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "stale_state",
@@ -75,7 +75,7 @@
       "name": "guided: capture refuses save",
       "request": {
         "agentId": "durable_term",
-        "commandId": "cmd_185",
+        "commandId": "cmd_186",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "expectedState": "109bea6012b5f4334461e7453beb3589d9537efc54dcc7d29729f78953b90b5e",
         "provider": "codex-cli",
@@ -84,7 +84,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_185",
+          "commandId": "cmd_186",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "session_capture_failed",
