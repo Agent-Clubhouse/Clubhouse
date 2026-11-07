@@ -219,11 +219,11 @@ function BlockCard({ index, id, part, agent, disabled, handleRef, onDragStart, o
         </button>
         <span className="w-4 text-xs text-ctp-overlay0 tabular-nums">{index + 1}</span>
         <span className="text-[13px] font-semibold text-ctp-text truncate">{part.name}</span>
-        <span className="text-xs text-ctp-overlay1 truncate">{sourceLabel(part, agent?.agentId, agent?.agentName)}</span>
+        <span className="text-xs text-ctp-overlay1 truncate" data-testid="managed-block-source">{sourceLabel(part, agent?.agentId, agent?.agentName)}</span>
         <span className="ml-auto flex items-center gap-0.5">
-          {!editing && !part.builtin && <Button kind="quiet" aria-label={`Edit ${part.name}`} onClick={() => void startEdit()} disabled={disabled || busy}>Edit</Button>}
+          {!editing && !part.builtin && <Button kind="quiet" aria-label={`Edit ${part.name}`} onClick={() => void startEdit()} disabled={disabled || busy} data-testid="managed-block-edit">Edit</Button>}
           {!editing && (
-            <Button kind="quiet" aria-label={part.builtin ? `Make your copy of ${part.name}` : `Fork ${part.name}`} onClick={() => void onFork()} disabled={disabled || busy}>
+            <Button kind="quiet" aria-label={part.builtin ? `Make your copy of ${part.name}` : `Fork ${part.name}`} onClick={() => void onFork()} disabled={disabled || busy} data-testid="managed-block-fork">
               {part.builtin ? 'Make your copy' : 'Fork'}
             </Button>
           )}
@@ -241,6 +241,7 @@ function BlockCard({ index, id, part, agent, disabled, handleRef, onDragStart, o
           <label className="sr-only" htmlFor={`block-edit-${id}`}>{part.name} text</label>
           <textarea
             id={`block-edit-${id}`}
+            data-testid="managed-block-text"
             className={`${textareaClass} min-h-28`}
             value={editing.text}
             onChange={(e) => setEditing({ ...editing, text: e.target.value })}
