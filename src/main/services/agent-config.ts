@@ -1744,6 +1744,12 @@ export interface CreationCompositionReservation {
   assertCurrent(): void;
 }
 
+const issuedCompositionReservations = new WeakSet<CreationCompositionReservation>();
+export function assertCreationCompositionReservation(reservation: CreationCompositionReservation, agentId: string): void {
+  if (!issuedCompositionReservations.has(reservation) || reservation.agentId !== agentId) throw new CreationCompositionRetainedError();
+  reservation.assertCurrent();
+}
+
 export class CreationCompositionRetainedError extends Error {
   constructor() { super('Creation stopped with a composition save pending reconciliation. The failed record and catalog assets were retained.'); }
 }
@@ -2292,6 +2298,7 @@ async function runDurableCreation(
           if (activeCreations.get(id) !== active) throw new DurableCreationCancelledError();
         },
       });
+      issuedCompositionReservations.add(reservation);
       await commitCreationComposition({
         assertCurrent: reservation.assertCurrent,
         prepare: async () => {
