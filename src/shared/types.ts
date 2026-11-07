@@ -548,6 +548,14 @@ export interface DurableAgentCreation {
   stage?: DurableCreationStage;
   /** Why creation failed, as a sentence for the user. */
   reason?: string;
+  /** Main-owned journal: a composition save may have committed; retain on failure. */
+  composition?: {
+    reservationId: string;
+    agentId: string;
+    beforeRevision: 0;
+    expectedRevision: 1;
+    phase: 'prepared' | 'committed';
+  };
   /** True once this creation made the agent's folder itself, so cleanup after a quit may delete it. */
   folderOwned?: boolean;
   /** The Clubhouse process running the creation, so another instance leaves it alone. */
