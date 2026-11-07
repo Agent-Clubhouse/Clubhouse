@@ -53,6 +53,16 @@ function contentShape(value: unknown): void {
   }
 }
 
+/**
+ * Who made a change is never the renderer's to say: only the MCP tools set an
+ * actor, under the Dispatcher's surface (D90). Anything else the window sends
+ * as `actor` is dropped.
+ */
+export function withoutActor<T extends object>(input: T): Omit<T, 'actor'> {
+  const { actor: _ignored, ...rest } = input as T & { actor?: unknown };
+  return rest;
+}
+
 async function result<T>(fn: () => Promise<T>): Promise<ManagedResult<T>> {
   try {
     return { ok: true, value: await fn() };
@@ -71,15 +81,17 @@ export function registerManagedAgentsHandlers(): void {
   ipcMain.handle(IPC.MANAGED.GET_PART, withValidatedArgs([idArg()], (_e, id) => result(() => s().getPart(id))));
   ipcMain.handle(IPC.MANAGED.CREATE_PART, withValidatedArgs(
     [objectArg<{ name: string; description?: string; content: ManagedPartContent }>({ validate: (v) => { stringArg({ maxLength: 200 })(v.name, 'name'); contentShape(v.content); } })],
-    (_e, input) => result(() => s().createPart(input)),
+    (_e, input) => result(() => s().createPart(withoutActor(input))),
   ));
   ipcMain.handle(IPC.MANAGED.UPDATE_PART, withValidatedArgs(
-    [objectArg<{ id: string; expectedRevision: number; name?: string; description?: string; content?: ManagedPartContent }>({ validate: (v) => {
+    [objectArg<{ id: string; expectedRevision: number; expectedName?: string; expectedDescription?: string; name?: string; description?: string; content?: ManagedPartContent }>({ validate: (v) => {
       idArg()(v.id, 'id');
       numberArg()(v.expectedRevision, 'expectedRevision');
+      if (v.expectedName !== undefined) stringArg({ minLength: 0, maxLength: 200 })(v.expectedName, 'expectedName');
+      if (v.expectedDescription !== undefined) stringArg({ minLength: 0, maxLength: 2000 })(v.expectedDescription, 'expectedDescription');
       if (v.content !== undefined) contentShape(v.content);
     } })],
-    (_e, input) => result(() => s().updatePart(input)),
+    (_e, input) => result(() => s().updatePart(withoutActor(input))),
   ));
   ipcMain.handle(IPC.MANAGED.FORK_PART, withValidatedArgs(
     [idArg(), objectArg<{ projectPath: string; agentId: string }>({ optional: true }), stringArg({ optional: true, maxLength: 200 })],
@@ -106,7 +118,7 @@ export function registerManagedAgentsHandlers(): void {
   ipcMain.handle(IPC.MANAGED.GET_TEMPLATE, withValidatedArgs([idArg()], (_e, id) => result(() => s().getTemplate(id))));
   ipcMain.handle(IPC.MANAGED.SAVE_TEMPLATE, withValidatedArgs(
     [objectArg<Omit<ManagedTemplate, 'builtin' | 'updatedAt' | 'id'> & { id?: string }>({ validate: (v) => { stringArg({ maxLength: 200 })(v.name, 'name'); setupShape(v.setup); } })],
-    (_e, input) => result(() => s().saveTemplate(input)),
+    (_e, input) => result(() => s().saveTemplate(withoutActor(input))),
   ));
   ipcMain.handle(IPC.MANAGED.DELETE_TEMPLATE, withValidatedArgs([idArg()], (_e, id) => result(() => s().deleteTemplate(id))));
   ipcMain.handle(IPC.MANAGED.TEMPLATE_FROM_AGENT, withValidatedArgs([stringArg(), idArg(), stringArg({ maxLength: 200 }), stringArg({ optional: true, maxLength: 2000 })],
