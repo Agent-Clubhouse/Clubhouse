@@ -34,7 +34,7 @@ Clubhouse keeps its configuration in a `.clubhouse/` folder in the project root:
 | `agents/` | Each durable agent's worktree, where its files and uncommitted work live |
 | `settings.json` | Project settings |
 | `skills/` | Custom skills |
-| `personas/` | Personas you've saved |
+| `personas/` | Personas saved before they were retired. Only the switch to managed reads them. |
 | `missions/` | Mission files |
 | `plugin-data/` | Data plugins store for this project |
 

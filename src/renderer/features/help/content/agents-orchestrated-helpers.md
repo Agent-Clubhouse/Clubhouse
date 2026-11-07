@@ -30,7 +30,7 @@ If you turn it off while the agent has helpers, Clubhouse asks what to do with t
 
 Turn on **Cross-project helpers** to let the agent start helpers in other projects you have added to Clubhouse. It sits with the other orchestration settings, is off by default, and only shows while orchestration is on. Turning it off stops new starts in other projects. Helpers already started there keep running, and the orchestrator can still manage them.
 
-A Clubhouse managed agent gets it from **Can start helpers** in its setup. The built-in Orchestrator template has it on, and its blocks tell the agent how to plan, start helpers, hand off and dispose. An agent that used the Orchestrator persona had the switch on, and keeps it on when it switches to managed.
+A Clubhouse managed agent gets it from **Can start helpers** in its setup. The built-in Orchestrator template has it on, and its blocks tell the agent how to plan, start helpers, hand off and dispose. An agent that used the Orchestrator persona keeps the switch on when it switches to managed.
 
 While the Dispatcher is turned on, a **Connect to Dispatcher** switch shows in the same places, with orchestration on or off. It lets the Dispatcher message the agent and get its reports. Agents that orchestrate are connected by default. Turn the switch off and the agent stays off. You can also turn it on for an agent that doesn't orchestrate, which adds no helper tools. Helpers talk only to their orchestrator, so they never connect to the Dispatcher and don't have this switch.
 
@@ -146,21 +146,15 @@ These tools only reach the orchestrator and its own helpers, in any project. Con
 
 The **Connections** card in an agent's details lists its wires. Wires made by the connection tools have **Disconnect**. Others are read-only. A connection you remove stays removed, even after a restart.
 
-## Setting the defaults for a project
+## Where an agent's policy comes from
 
-For an unmanaged agent, policy comes from its own settings first, then its persona's front-matter, then the **Orchestrator** persona, then the built-in defaults. A Clubhouse managed agent has no persona layer: its own settings, then the built-in defaults. Switching to managed copies what the persona layer gave it into its own settings, so its policy stays the same. To ship a policy with a project, add `.clubhouse/personas/orchestrator.md` with an `orchestration` line in its front-matter:
+An agent's orchestration settings come from its own settings, then the built-in defaults. A project used to set defaults with `.clubhouse/personas/orchestrator.md` and an agent's persona could set some too. Personas are retired: when an agent switches to managed, or at the first start after the update for one that stays unmanaged, Clubhouse copies what those files gave it into its own settings, so its policy stays the same. Editing those files changes nothing after that.
 
-```
----
-orchestration: {"orchestrate": true, "access": "same", "control": "hands-off", "maxHelpers": 5}
----
-```
-
-| Key | Values |
+| Setting | Values |
 |-----|--------|
-| `orchestrate` | `true` or `false`. From the Orchestrator persona, it only applies to agents using that persona. |
+| `orchestrate` | `true` or `false` |
 | `access` | `same`, `standard`, `auto` or `bypass` |
 | `control` | `hands-off`, `ask-before-start` or `ask-everything` |
 | `maxHelpers` | How many helpers at once |
 | `crossProjectHelpers` | `true` or `false`. Whether the agent can start helpers in other projects. |
-| `connectToDispatcher` | `true` or `false`. Whether the Dispatcher can message the agent and get its reports. If it isn't set, it follows `orchestrate`. A helper is never connected, whatever this says. Like `orchestrate`, from the Orchestrator persona it only applies to agents using that persona. |
+| `connectToDispatcher` | `true` or `false`. Whether the Dispatcher can message the agent and get its reports. If it isn't set, it follows `orchestrate`. A helper is never connected, whatever this says. |
