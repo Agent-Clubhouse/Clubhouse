@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
 import type { DurableAgentConfig } from '../../../../shared/types';
 import type { ModelList } from '../../../orchestrators/types';
+import type { McpToolResult } from '../types';
 import { IPC } from '../../../../shared/ipc-channels';
 import { resolveHelperAccess, type AgentLaunchAccess } from '../../../../shared/orchestration-policy';
 
@@ -26,8 +27,8 @@ vi.mock('../../../telemetry/helper-usage', () => ({
   recordHelperDecision: (...args: unknown[]) => mockRecordDecision(...args),
   recordHelperSpawnResult: (...args: unknown[]) => mockRecordSpawnResult(...args),
   recordHelperReuse: (...args: unknown[]) => mockRecordReuse(...args),
-  recordHelperDisposed: () => undefined,
-  recordQuotaSample: () => undefined,
+  recordHelperDisposed: (): void => undefined,
+  recordQuotaSample: (): void => undefined,
 }));
 
 const mockCheckDurableCreation = vi.fn(async (_projectPath: string, _params: Record<string, unknown>) => {});
@@ -242,8 +243,11 @@ function runAgent(id: string, orchestrate = false): void {
   setOrchestrationEnabled(id, orchestrate);
 }
 
-function parse(result: { content: Array<{ text: string }> }): Record<string, unknown> {
-  return JSON.parse(result.content[0].text);
+/** A tool's JSON reply. A first block that isn't text fails the test instead of being parsed as nothing. */
+function parse(result: McpToolResult): Record<string, unknown> {
+  const [first] = result.content;
+  if (first?.type !== 'text' || typeof first.text !== 'string') throw new Error(`expected a text result, got ${JSON.stringify(result)}`);
+  return JSON.parse(first.text);
 }
 
 /** A creation the test finishes by hand. */
