@@ -778,7 +778,7 @@ Gate on `helperRouting` in capabilities. It lists only what works now, so don't 
  "quotaStates":["known","low","near_limit","exhausted","unknown"],"unknownReasons":["not_read","stale","not_applicable","read_failed","not_supported"],"quotaSources":["cli_query","session_event","none"],
  "commands":["helperRouting.update"],"snapshotField":"helperRoutingRevision","event":"helper_routing:changed",
  "difficulties":["easy","medium","hard"],
- "reasons":["explicit_request","persona_pinned","preset_on_cli","only_candidate","lower_load","better_quota_tier","sticky","default_order"],
+ "reasons":["explicit_request","persona_pinned","preset_on_cli","only_candidate","lower_pressure","lower_load","fair_rotation","better_quota_tier","unknown_fallback","sticky","default_order"],
  "fallbacks":["none","builtin_preset","candidate_skipped","model_unverified"],
  "skipped":["cli_disabled","cli_unavailable","auto_not_supported","no_valid_mapping","cooling_down","quota_near_limit","quota_exhausted"],
  "autoOffReasons":["not_enabled","project_off","persona_off","orchestration_off","mcp_off","dispatcher_locked"],
@@ -882,7 +882,7 @@ A helper Auto chose has this in its settings' `routing`, as of `decidedAt`, not 
 ```
 
 - **balanced** is true only when Auto chose among providers. A persona's pin decides without it: `mode: "auto"`, `balanced: false`, `reason: "persona_pinned"`.
-- **quotaBasis**: diagnostic only, with no labels: don't show it. `unknown_scored_as_healthy` means the chosen provider's quota was unknown, and scored the same as `known` so a login that can't report isn't starved. Show `quota[provider].state` instead, which stays `unknown`. Never word it as healthy or available.
+- **quotaBasis**: diagnostic only, with no labels: don't show it. `unknown_fallback` means the chosen provider's quota was unknown, and it was used only because every measured provider was close to its limit. `unknown_scored_as_healthy` is the same on an older decision, from a policy that scored unknown as known. Show `quota[provider].state` instead, which stays `unknown`. Never word it as healthy or available.
 - **skipped**: why a provider wasn't considered, with words in `labels.skipped`.
 
 The snapshot's row has the same codes as any helper: `routing:{mode:"auto",difficulty,provider,model,effort,reason}`.

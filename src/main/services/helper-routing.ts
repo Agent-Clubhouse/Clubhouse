@@ -9,6 +9,7 @@
  * refused. Nothing falls back to the CLI's default model.
  */
 
+import { createHash, randomUUID } from 'crypto';
 import { parsePersonaFile } from '../../shared/persona-pattern';
 import {
   BUILTIN_PRESETS,
@@ -27,6 +28,7 @@ import {
   type HelperRoutingSkip,
   type QuotaDecisionView,
   type QuotaView,
+  type QuotaWindowView,
   type HelperRoutingFieldSource,
   type HelperRoutingSettings,
   type HelperRoutingUpdate,
@@ -51,7 +53,9 @@ import { readLayeredPersonaRaw } from './materialization-service';
 import { checkHelperEffort, checkHelperModel, modelListFor } from './model-check';
 import * as orchestrationSettings from './orchestration-settings';
 import { appendSettingsAudit, type SettingsAuditSurface } from './settings-audit';
-import { AUTO_RESERVATION_MS, AUTO_STICKY_MS, decideAutoProvider, type AutoCandidate } from './helper-auto-policy';
+import { AUTO_TIERS, decideAutoProvider, type AutoCandidate, type AutoDecision } from './helper-auto-policy';
+import { _resetHelperAutoStateForTesting, reserveAutoDecision, rotationCursors } from './helper-auto-state';
+import type { DecisionCandidate, DecisionQuota, DecisionQuotaWindow, HelperDecisionRecord } from '../../shared/telemetry/helper-usage-contract';
 import { getSettings as getOrchestratorSettings } from './orchestrator-settings';
 import { readProjectAgentDefaults, writeProjectAgentDefaults } from './agent-settings-service';
 import type { DurableAgentConfig } from '../../shared/types';
@@ -144,7 +148,7 @@ export const AUTO_CLI = 'auto';
 export interface StartPlanRequest {
   /** Whether this orchestrator may use Auto, for `cli: "auto"`. */
   auto?: HelperAutoView;
-  /** Who is asking, for Auto's sticky choice. */
+  /** Who is asking. Auto doesn't use it: no orchestrator's choice is favored. */
   orchestratorId?: string;
   cli?: string;
   model?: string;
@@ -161,12 +165,16 @@ export interface StartPlanRequest {
 interface AutoOption {
   provider: PresetProvider;
   cell: ResolvedCell;
-  quota: QuotaDecisionView;
+  quota: QuotaView;
+  /** Provider and profile: see candidateKey. */
+  key: string;
 }
 
 export interface StartPlan {
   /** Auto, waiting to be decided under the start lock: see decideAutoPlan. */
-  pendingAuto?: { options: AutoOption[]; skipped: Record<string, HelperRoutingSkip>; difficulty: HelperDifficulty; orchestratorId: string; orchestratorCli?: string };
+  pendingAuto?: { options: AutoOption[]; skipped: Record<string, HelperRoutingSkip>; difficulty: HelperDifficulty; orchestratorCli?: string };
+  /** An Auto decision's record, once made. Its id is the reservation's; the caller adds the helper id. */
+  decision?: HelperDecisionRecord;
   provider?: string;
   model?: string;
   effort?: string;
@@ -180,7 +188,7 @@ export interface StartPlan {
 export type StartPlanResult =
   | { ok: true; plan: StartPlan | null }
   /** `message` is for the orchestrator. `userReason` follows "because" in what a person who approved the start reads. */
-  | { ok: false; code: 'no_valid_mapping' | 'auto_not_supported' | 'auto_off' | 'no_candidate'; message: string; userReason: string };
+  | { ok: false; code: 'no_valid_mapping' | 'auto_not_supported' | 'auto_off' | 'no_candidate'; message: string; userReason: string; decision?: HelperDecisionRecord };
 
 /** What a persona's front-matter sets for a CLI and model. Unreadable means nothing: the creation refuses a missing persona. */
 async function personaPins(projectPath: string, persona: string | undefined): Promise<{ orchestrator?: string; model?: string }> {
@@ -336,6 +344,16 @@ async function providerUsable(provider: string, projectPath: string): Promise<bo
 }
 
 /**
+ * What a candidate runs under: its provider and the project's profile. A proxy
+ * for a subscription, never more: two profiles on one account can't be told
+ * apart without reading credentials, which this never does.
+ */
+async function candidateKey(provider: string, projectPath: string): Promise<string> {
+  const profileId = await readProjectAgentDefaults(projectPath).then((d) => d?.profileId, (): undefined => undefined);
+  return `${provider}:${profileId ?? 'default'}`;
+}
+
+/**
  * What Auto can choose from, read before the start lock, because a list or a
  * quota read can take a CLI handshake. The choice waits for the lock, so a burst
  * of starts sees each other's.
@@ -356,23 +374,29 @@ async function prepareAuto(request: StartPlanRequest): Promise<StartPlanResult> 
     const { resolved } = await resolveCell(provider, difficulty, projectPath);
     if (!resolved) { skipped[provider] = 'no_valid_mapping'; return; }
     const quota = await readProviderQuota(provider, projectPath, { model: resolved.cell.model });
-    options.push({ provider, cell: resolved, quota: decisionQuota(quota) });
+    options.push({ provider, cell: resolved, quota, key: await candidateKey(provider, projectPath) });
   }));
-  // Registration order, whichever read finished first.
-  options.sort((a, b) => PRESET_PROVIDERS.indexOf(a.provider) - PRESET_PROVIDERS.indexOf(b.provider));
+  // A stable order for what's shown. The choice doesn't depend on it.
+  options.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   const usable = options.filter((o) => o.quota.state !== 'exhausted' && o.quota.state !== 'near_limit');
-  if (usable.length === 0) return noCandidate(difficulty, skipped, options);
+  if (usable.length === 0) return noCandidate(difficulty, skipped, options, orchestratorCli);
   return {
     ok: true,
     plan: {
-      pendingAuto: { options, skipped, difficulty, orchestratorId: request.orchestratorId ?? '', ...(orchestratorCli && { orchestratorCli }) },
+      pendingAuto: { options, skipped, difficulty, ...(orchestratorCli && { orchestratorCli }) },
       keep: ['orchestrator', 'model'],
       routing: {} as HelperRouting,
     },
   };
 }
 
-function noCandidate(difficulty: HelperDifficulty, skipped: Record<string, HelperRoutingSkip>, options: readonly AutoOption[]): StartPlanResult {
+function noCandidate(
+  difficulty: HelperDifficulty,
+  skipped: Record<string, HelperRoutingSkip>,
+  options: readonly AutoOption[],
+  orchestratorCli: string | undefined,
+  context: { load?: Readonly<Record<string, AutoLoad>>; decision?: AutoDecision } = {},
+): Extract<StartPlanResult, { ok: false }> {
   const all = { ...skipped };
   for (const option of options) {
     if (option.quota.state === 'exhausted') all[option.provider] = 'quota_exhausted';
@@ -384,71 +408,170 @@ function noCandidate(difficulty: HelperDifficulty, skipped: Record<string, Helpe
     code: 'no_candidate',
     message: `Auto has no provider for a ${difficulty} task right now (${reasons}). Tell the user, or name a CLI. Don't retry in a loop.`,
     userReason: `no provider can take a ${difficulty} task right now (${reasons}).`,
+    decision: autoDecisionRecord({ decisionId: randomUUID(), now: Date.now(), difficulty, orchestratorCli, options, skipped: all, load: context.load ?? {}, ...(context.decision && { decision: context.decision }) }),
   };
 }
 
-const stickyChoices = new Map<string, { provider: string; at: number }>();
-
-function stickyFor(orchestratorId: string, difficulty: string): string | undefined {
-  const key = `${orchestratorId}\0${difficulty}`;
-  const choice = stickyChoices.get(key);
-  if (!choice) return undefined;
-  if (Date.now() - choice.at > AUTO_STICKY_MS) {
-    stickyChoices.delete(key);
-    return undefined;
-  }
-  return choice.provider;
+/** Helpers on a provider: those running or starting, and reservations not yet seen live. */
+export interface AutoLoad {
+  live: number;
+  reserved: number;
 }
 
-/** Helpers Auto has chosen and hasn't yet seen live, by id. Counted in load so a burst spreads out. */
-const reservations = new Map<string, { provider: string; expires: number }>();
+const percentBp = (percent: number | null | undefined): number | undefined => (typeof percent === 'number' && Number.isFinite(percent) ? Math.round(percent * 100) : undefined);
+const epochOf = (iso: string | null | undefined): number | undefined => {
+  const ms = iso ? Date.parse(iso) : NaN;
+  return Number.isFinite(ms) ? ms : undefined;
+};
 
-/** Add a chosen helper's reservation, once its id is known. Called under the start lock. */
-export function reserveAutoHelper(helperId: string, provider: string): void {
-  reservations.set(helperId, { provider, expires: Date.now() + AUTO_RESERVATION_MS });
+function decisionWindow(name: DecisionQuotaWindow['name'], window: QuotaWindowView): DecisionQuotaWindow {
+  const usedBp = percentBp(window.usedPercent);
+  const resetsAtMs = epochOf(window.resetsAt);
+  return { name, ...(usedBp !== undefined && { usedBp }), ...(resetsAtMs !== undefined && { resetsAtMs }) };
 }
 
-/** The start has settled, one way or the other: its row counts for itself now. */
-export function releaseAutoHelper(helperId: string): void {
-  reservations.delete(helperId);
+/** A quota view as the decision record keeps it: basis points and epoch ms, with nothing unavailable filled in. */
+function recordQuota(quota: QuotaView): DecisionQuota {
+  const asOfMs = epochOf(quota.asOf);
+  const windows = [
+    ...(quota.weekly ? [decisionWindow('weekly', quota.weekly)] : []),
+    ...(quota.fiveHour ? [decisionWindow('fiveHour', quota.fiveHour)] : []),
+    ...(quota.modelWindows ?? []).map((w) => decisionWindow('model', w)),
+  ];
+  return {
+    state: quota.state,
+    source: quota.source,
+    ...(asOfMs !== undefined && { asOfMs }),
+    ...(quota.unknownReason && { unknownReason: quota.unknownReason }),
+    quality: quota.state !== 'unknown' ? 'fresh' : quota.unknownReason === 'stale' ? 'stale' : 'unknown',
+    ...(windows.length > 0 && { windows }),
+  };
 }
 
-/** Reservations as load, without double counting a helper already seen live. */
-export function reservedLoad(liveIds: ReadonlySet<string>): Record<string, number> {
-  const now = Date.now();
-  const load: Record<string, number> = {};
-  for (const [id, reservation] of reservations) {
-    if (reservation.expires <= now) reservations.delete(id);
-    else if (!liveIds.has(id)) load[reservation.provider] = (load[reservation.provider] ?? 0) + 1;
-  }
-  return load;
+/** Which cells the options used, so two decisions on the same mapping compare equal. */
+function mappingFingerprint(options: readonly AutoOption[]): string {
+  const cells = options.map((o) => [o.provider, o.cell.cell.model, o.cell.cell.effort, o.cell.source]).sort();
+  return createHash('sha256').update(JSON.stringify(cells)).digest('hex').slice(0, 16);
+}
+
+/**
+ * The record of an Auto decision, for #2747's ledger: every registered provider,
+ * what each was seen as, and how the choice was made. A refusal gets one too.
+ */
+function autoDecisionRecord(args: {
+  decisionId: string;
+  now: number;
+  difficulty: HelperDifficulty;
+  orchestratorCli: string | undefined;
+  options: readonly AutoOption[];
+  skipped: Readonly<Record<string, HelperRoutingSkip>>;
+  load: Readonly<Record<string, AutoLoad>>;
+  decision?: AutoDecision;
+  routing?: HelperRouting;
+}): HelperDecisionRecord {
+  const { decisionId, now, difficulty, orchestratorCli, options, skipped, load, decision, routing } = args;
+  const evaluations = new Map((decision?.evaluations ?? []).map((e) => [e.provider, e]));
+  const chosen = decision?.ok ? decision.provider : undefined;
+  const loadOf = (provider: string) => load[provider] ?? { live: 0, reserved: 0 };
+  const candidates: DecisionCandidate[] = getAllProviders().map(({ id }) => {
+    const option = options.find((o) => o.provider === id);
+    const evaluation = evaluations.get(id);
+    const excluded = evaluation?.excluded ?? skipped[id];
+    if (!option) return { provider: id, eligible: false, ...(excluded && { excluded }), load: loadOf(id) };
+    const effort = option.cell.cell.effort;
+    return {
+      provider: id,
+      eligible: !excluded,
+      ...(excluded && { excluded }),
+      mapped: { model: option.cell.cell.model, effort, source: option.cell.source, verified: option.cell.fallback !== 'model_unverified' },
+      load: loadOf(id),
+      quota: recordQuota(option.quota),
+      accountKnown: false,
+      ...(evaluation?.tier && { tier: AUTO_TIERS.indexOf(evaluation.tier) }),
+      ...(evaluation && {
+        score: {
+          basis: evaluation.score.basis,
+          ...(evaluation.score.weeklyUsedBp !== undefined && { weeklyUsedBp: evaluation.score.weeklyUsedBp }),
+          ...(evaluation.score.cyclePhaseBp !== undefined && { cyclePhaseBp: evaluation.score.cyclePhaseBp }),
+          ...(evaluation.score.targetBp !== undefined && { targetBp: evaluation.score.targetBp }),
+          ...(evaluation.score.pressureBp !== undefined && { pressureBp: evaluation.score.pressureBp }),
+          ...(evaluation.rank !== undefined && { rank: evaluation.rank }),
+        },
+      }),
+      ...(id === chosen && { chosen: true }),
+    };
+  });
+  const sources = new Set(options.map((o) => o.cell.source));
+  const tie = decision?.ok ? decision.tie : undefined;
+  const enabled = getOrchestratorSettings().enabled ?? [];
+  return {
+    decisionId,
+    decidedAtMs: now,
+    policyVersion: HELPER_ROUTING_POLICY_VERSION,
+    mode: 'auto',
+    outcome: routing ? 'chosen' : 'refused',
+    ...(!routing && { refusalCode: 'no_candidate' as const }),
+    ...(orchestratorCli && { orchestratorProvider: orchestratorCli }),
+    requested: { provider: AUTO_CLI, model: null, effort: null, difficulty },
+    resolved: routing?.resolved ?? { provider: null, model: null, effort: null, difficulty },
+    // A refusal chose nothing, so it has no sources and no reason of its own: its candidates say why.
+    ...(routing && { source: routing.source, reason: routing.reason }),
+    fallback: routing?.fallback ?? 'candidate_skipped',
+    mappingRevision: helperRoutingRevision(),
+    mappingFingerprint: mappingFingerprint(options),
+    mappingKind: sources.size === 0 ? 'none' : sources.size > 1 ? 'mixed' : sources.has('custom_mapping') ? 'custom' : 'builtin',
+    settings: { autoEnabled: true, enabledProviders: enabled.length > 0 ? enabled.length : getAllProviders().length },
+    candidates,
+    ...(tie && {
+      tie: {
+        setSize: tie.set.length,
+        bandBp: tie.bandBp,
+        reason: tie.cursorKey ? 'rotation' as const : tie.byLoad ? 'lower_load' as const : 'none' as const,
+        byLoad: tie.byLoad,
+        ...(tie.cursorKey && { cursorKey: tie.cursorKey }),
+        ...(tie.cursorBefore !== undefined && { cursorBefore: tie.set.indexOf(tie.cursorBefore) }),
+        ...(tie.cursorAfter !== undefined && { cursorAfter: tie.set.indexOf(tie.cursorAfter) }),
+      },
+    }),
+  };
 }
 
 /**
  * Make Auto's choice, under the start lock, from what prepareAuto read and the
- * load right now. Decided once: nothing moves this helper later.
+ * load right now, and hold the provider for it. Decided once: nothing moves this
+ * helper later. The caller commits the reservation once the helper exists and
+ * settles it when the start ends: see helper-auto-state.
  */
-export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, number>>): StartPlanResult {
+export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, AutoLoad>>, now = Date.now()): StartPlanResult {
   const pending = plan.pendingAuto;
   if (!pending) return { ok: true, plan };
-  const { options, skipped, difficulty, orchestratorId, orchestratorCli } = pending;
-  const unverified = new Set(options.filter((o) => o.cell.fallback === 'model_unverified').map((o) => o.provider));
-  const candidates: AutoCandidate[] = options.map((o) => ({ provider: o.provider, quotaState: o.quota.state, ...(unverified.has(o.provider) && { unverified: true }) }));
-  const decision = decideAutoProvider({
-    candidates, load, ...(orchestratorCli && { orchestratorCli }),
-    ...(orchestratorId && { sticky: stickyFor(orchestratorId, difficulty) }),
+  const { options, skipped, difficulty, orchestratorCli } = pending;
+  const total = (provider: string) => (load[provider]?.live ?? 0) + (load[provider]?.reserved ?? 0);
+  const candidates: AutoCandidate[] = options.map((o) => {
+    const weekly = o.quota.weekly;
+    return {
+      key: o.key,
+      provider: o.provider,
+      quotaState: o.quota.state,
+      ...(weekly && { weekly: { usedPercent: weekly.usedPercent, resetsAtMs: epochOf(weekly.resetsAt) ?? null } }),
+      verified: o.cell.fallback !== 'model_unverified',
+      load: total(o.provider),
+    };
   });
-  if (decision.ok === false) return noCandidate(difficulty, skipped, options);
-  const chosen = options.find((o) => o.provider === decision.provider)!;
-  if (orchestratorId) stickyChoices.set(`${orchestratorId}\0${difficulty}`, { provider: decision.provider, at: Date.now() });
-  const allSkipped = { ...skipped, ...decision.skipped };
+  const decision = decideAutoProvider({ now, candidates, cursors: rotationCursors() });
+  if (decision.ok === false) return noCandidate(difficulty, skipped, options, orchestratorCli, { load, decision });
+  const chosen = options.find((o) => o.key === decision.key)!;
+  const allSkipped: Record<string, HelperRoutingSkip> = { ...skipped };
+  for (const e of decision.evaluations) if (e.excluded) allSkipped[e.provider] = e.excluded;
   const { cell } = chosen;
   const effort = cell.cell.effort ?? undefined;
+  const decisionId = randomUUID();
   const routing: HelperRouting = {
     mode: 'auto',
     balanced: true,
-    decidedAt: new Date(Date.now()).toISOString(),
+    decidedAt: new Date(now).toISOString(),
     policyVersion: HELPER_ROUTING_POLICY_VERSION,
+    decisionId,
     requested: { provider: AUTO_CLI, model: null, effort: null, difficulty },
     resolved: { provider: decision.provider, model: cell.cell.model, effort: effort ?? null, difficulty },
     source: { provider: 'auto', model: cell.source, effort: effort ? cell.source : 'cli_default' },
@@ -456,11 +579,13 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, nu
     // Copilot can never be chosen, so its being skipped isn't a fallback.
     fallback: cell.fallback !== 'none' ? cell.fallback : Object.values(allSkipped).some((code) => code !== 'auto_not_supported') ? 'candidate_skipped' : 'none',
     context: { status: 'none' },
-    load: Object.fromEntries(options.map((o) => [o.provider, load[o.provider] ?? 0])),
-    quota: Object.fromEntries(options.map((o) => [o.provider, o.quota])),
-    quotaBasis: chosen.quota.state === 'unknown' ? 'unknown_scored_as_healthy' : 'known',
+    load: Object.fromEntries(options.map((o) => [o.provider, total(o.provider)])),
+    quota: Object.fromEntries(options.map((o) => [o.provider, decisionQuota(o.quota)])),
+    quotaBasis: decision.tier === 'unmeasured' ? 'unknown_fallback' : 'known',
     ...(Object.keys(allSkipped).length > 0 && { skipped: allSkipped }),
   };
+  const { cursorKey, cursorAfter } = decision.tie;
+  reserveAutoDecision(decisionId, { provider: decision.provider, key: decision.key, ...(cursorKey && cursorAfter && { rotation: { cursorKey, key: cursorAfter } }) }, now);
   return {
     ok: true,
     plan: {
@@ -469,6 +594,7 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, nu
       ...(effort && { effort }),
       keep: ['orchestrator', 'model'],
       routing,
+      decision: autoDecisionRecord({ decisionId, now, difficulty, orchestratorCli, options, skipped, load, decision, routing }),
       ...(cell.warning && { warning: cell.warning }),
     },
   };
@@ -853,8 +979,7 @@ export function _resetHelperRoutingForTesting(): void {
   stateEpoch = 0;
   lastStateSignature = null;
   lastEmitted = null;
-  stickyChoices.clear();
-  reservations.clear();
+  _resetHelperAutoStateForTesting();
   writeChain = Promise.resolve();
   listeners.clear();
 }

@@ -40,6 +40,12 @@ vi.mock('../orchestrators', () => {
 });
 vi.mock('./agent-system', () => ({ resolveProfileEnv: vi.fn(async () => undefined) }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+vi.mock('./settings-store', () => ({
+  createSettingsStore: <T>(_file: string, defaults: T) => {
+    let value = JSON.parse(JSON.stringify(defaults)) as T;
+    return { get: () => value, save: async (next: T) => { value = next; }, update: async (fn: (v: T) => T) => (value = fn(value)) };
+  },
+}));
 vi.mock('./mcp-settings', () => ({ onMcpEnablementChanged: () => () => undefined }));
 vi.mock('./materialization-service', () => ({ readLayeredPersonaRaw: async (_p: string, id: string) => W.personas.get(id) }));
 vi.mock('./orchestration-settings', () => ({
@@ -87,12 +93,9 @@ import {
   planHelperStart,
   readHelperAuto,
   readHelperRouting,
-  releaseAutoHelper,
-  reserveAutoHelper,
-  reservedLoad,
   updateHelperPresets,
 } from './helper-routing';
-import { AUTO_RESERVATION_MS, AUTO_STICKY_MS } from './helper-auto-policy';
+import { commitAutoDecision, reservedLoad, rotationCursors, settleAutoDecision } from './helper-auto-state';
 import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import { resolveOrchestrationPolicy } from '../../shared/orchestration-policy';
 
@@ -594,11 +597,15 @@ describe('Auto (#2671)', () => {
   const auto = (extra: Record<string, unknown> = {}) => planHelperStart({
     ...base, cli: 'auto', difficulty: 'hard', auto: on, orchestratorId: 'orch', orchestratorCli: 'claude-code', ...extra,
   });
-  const known = { state: 'known', source: 'cli_query', asOf: '2027-01-15T08:00:00.000Z', limitingWindow: 'weekly' };
+  const known = {
+    state: 'known', source: 'cli_query', asOf: '2027-01-15T08:00:00.000Z', limitingWindow: 'weekly',
+    weekly: { usedPercent: 20, resetsAt: '2027-01-20T08:00:00.000Z' },
+  };
+  const asLoad = (live: Record<string, number>) => Object.fromEntries(Object.entries(live).map(([p, n]) => [p, { live: n, reserved: 0 }]));
   const decided = async (load: Record<string, number> = {}, extra: Record<string, unknown> = {}) => {
     const prepared = await auto(extra);
     if (prepared.ok === false) throw new Error(prepared.message);
-    const result = decideAutoPlan(prepared.plan!, load);
+    const result = decideAutoPlan(prepared.plan!, asLoad(load));
     if (result.ok === false) throw new Error(result.message);
     return result.plan!;
   };
@@ -625,7 +632,8 @@ describe('Auto (#2671)', () => {
     const plan = await decided({ 'claude-code': 2 });
     expect(plan).toMatchObject({ provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', keep: ['orchestrator', 'model'] });
     expect(plan.routing).toMatchObject({
-      mode: 'auto', balanced: true, policyVersion: 1, reason: 'lower_load', fallback: 'none', quotaBasis: 'known',
+      mode: 'auto', balanced: true, policyVersion: 2, reason: 'lower_load', fallback: 'none', quotaBasis: 'known',
+      decisionId: expect.stringMatching(/^[0-9a-f-]{36}$/),
       requested: { provider: 'auto', model: null, effort: null, difficulty: 'hard' },
       resolved: { provider: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high', difficulty: 'hard' },
       source: { provider: 'auto', model: 'builtin_mapping', effort: 'builtin_mapping' },
@@ -634,11 +642,43 @@ describe('Auto (#2671)', () => {
     });
   });
 
-  it('unknown quota can win, says so, and is never recorded as anything else', async () => {
+  it('its record has every provider, the readings in basis points, the scores and the tie', async () => {
+    const plan = await decided({ 'claude-code': 2 });
+    const record = plan.decision!;
+    expect(record).toMatchObject({
+      decisionId: plan.routing.decisionId, policyVersion: 2, mode: 'auto', outcome: 'chosen', orchestratorProvider: 'claude-code',
+      requested: { provider: 'auto', difficulty: 'hard' }, resolved: { provider: 'codex-cli', model: 'gpt-6.1-sol' },
+      reason: 'lower_load', mappingKind: 'builtin', mappingRevision: helperRoutingRevision(),
+      tie: { setSize: 2, bandBp: 0, reason: 'lower_load', byLoad: true },
+    });
+    expect(record.mappingFingerprint).toMatch(/^[0-9a-f]{16}$/);
+    expect(record.candidates.map((c) => c.provider)).toEqual(['claude-code', 'codex-cli', 'copilot-cli']);
+    expect(record.candidates[1]).toMatchObject({
+      eligible: true, chosen: true, accountKnown: false, load: { live: 0, reserved: 0 },
+      mapped: { model: 'gpt-6.1-sol', effort: 'high', source: 'builtin_mapping', verified: true },
+      quota: { state: 'known', source: 'cli_query', asOfMs: Date.parse(known.asOf), quality: 'fresh', windows: [{ name: 'weekly', usedBp: 2000, resetsAtMs: Date.parse(known.weekly.resetsAt) }] },
+      score: { basis: 'weekly_used', weeklyUsedBp: 2000, pressureBp: 2000 },
+    });
+    expect(record.candidates[0]).toMatchObject({ load: { live: 2, reserved: 0 } });
+    expect(record.candidates[0].chosen).toBeUndefined();
+    expect(record.candidates[2]).toEqual({ provider: 'copilot-cli', eligible: false, excluded: 'auto_not_supported', load: { live: 0, reserved: 0 } });
+  });
+
+  it('unknown quota waits behind measured headroom and is never scored', async () => {
     W.quota.set('claude-code', { state: 'unknown', unknownReason: 'read_failed', source: 'none', asOf: null });
     const plan = await decided();
+    expect(plan.provider).toBe('codex-cli');
+    expect(plan.decision!.candidates[0]).toMatchObject({ quota: { state: 'unknown', unknownReason: 'read_failed', quality: 'unknown' }, score: { basis: 'unmeasured' } });
+    expect(plan.decision!.candidates[0].quota!.asOfMs).toBeUndefined();
+    expect(plan.decision!.candidates[0].score!.pressureBp).toBeUndefined();
+  });
+
+  it('unknown quota is used once the measured ones are past the low mark, and says so', async () => {
+    W.quota.set('claude-code', { state: 'unknown', unknownReason: 'read_failed', source: 'none', asOf: null });
+    W.quota.set('codex-cli', { ...known, state: 'low', weekly: { usedPercent: 85, resetsAt: known.weekly.resetsAt } });
+    const plan = await decided();
     expect(plan.provider).toBe('claude-code');
-    expect(plan.routing).toMatchObject({ quotaBasis: 'unknown_scored_as_healthy', quota: { 'claude-code': { state: 'unknown', unknownReason: 'read_failed', asOf: null } } });
+    expect(plan.routing).toMatchObject({ reason: 'unknown_fallback', quotaBasis: 'unknown_fallback', quota: { 'claude-code': { state: 'unknown', unknownReason: 'read_failed', asOf: null } } });
   });
 
   it('a persona\'s pin decides, so nothing claims Auto balanced it', async () => {
@@ -689,43 +729,51 @@ describe('Auto (#2671)', () => {
     expect(plan.routing).toMatchObject({ fallback: 'builtin_preset', resolved: { model: 'gpt-6.1-sol' } });
   });
 
-  describe('sticky', () => {
-    it('holds for the same orchestrator and difficulty, then expires', async () => {
-      vi.useFakeTimers({ now: 1_800_000_000_000 });
-      try {
-        expect((await decided({ 'claude-code': 2 })).provider).toBe('codex-cli');
-        const held = await decided({ 'claude-code': 2, 'codex-cli': 1 });
-        expect(held).toMatchObject({ provider: 'codex-cli', routing: { reason: 'sticky' } });
-        // Another orchestrator or difficulty isn't held.
-        expect((await decided({}, { orchestratorId: 'other' })).provider).toBe('claude-code');
-        expect((await decided({}, { difficulty: 'easy' })).provider).toBe('claude-code');
-        vi.setSystemTime(1_800_000_000_000 + AUTO_STICKY_MS + 1);
-        expect((await decided()).provider).toBe('claude-code');
-      } finally {
-        vi.useRealTimers();
+  describe('no anchor', () => {
+    it('who asks, and from which CLI, changes nothing', async () => {
+      const a = await decided({}, { orchestratorId: 'one', orchestratorCli: 'codex-cli' });
+      _resetHelperRoutingForTesting();
+      const b = await decided({}, { orchestratorId: 'two', orchestratorCli: 'claude-code' });
+      expect(a.provider).toBe(b.provider);
+    });
+
+    it('equal readings take turns across starts, whoever asks, once each decision commits', async () => {
+      const picks: string[] = [];
+      for (const orchestratorId of ['one', 'two', 'one', 'two']) {
+        const plan = await decided({}, { orchestratorId });
+        commitAutoDecision(plan.routing.decisionId!, `h-${picks.length}`);
+        settleAutoDecision(plan.routing.decisionId!, 'spawn_failed');
+        picks.push(plan.provider!);
       }
+      expect(picks).toEqual(['claude-code', 'codex-cli', 'claude-code', 'codex-cli']);
+      expect(Object.values(rotationCursors())).toEqual(['codex-cli:default']);
+    });
+
+    it('a decision that never commits doesn\'t take a turn', async () => {
+      const first = await decided();
+      settleAutoDecision(first.routing.decisionId!, 'creation_refused');
+      expect((await decided()).provider).toBe(first.provider);
     });
   });
 
   describe('reservations', () => {
-    it('counts a chosen helper until it is seen live or released, without counting it twice', () => {
-      reserveAutoHelper('h1', 'codex-cli');
-      reserveAutoHelper('h2', 'codex-cli');
-      expect(reservedLoad(new Set())).toEqual({ 'codex-cli': 2 });
-      expect(reservedLoad(new Set(['h1']))).toEqual({ 'codex-cli': 1 });
-      releaseAutoHelper('h2');
-      expect(reservedLoad(new Set())).toEqual({ 'codex-cli': 1 });
+    it('a decision holds its provider until it settles', async () => {
+      const plan = await decided();
+      expect(reservedLoad(new Set())).toEqual({ [plan.provider!]: 1 });
+      settleAutoDecision(plan.routing.decisionId!, 'creation_refused');
+      expect(reservedLoad(new Set())).toEqual({});
     });
 
-    it('has a backstop', () => {
-      vi.useFakeTimers({ now: 1_800_000_000_000 });
-      try {
-        reserveAutoHelper('h1', 'codex-cli');
-        vi.setSystemTime(1_800_000_000_000 + AUTO_RESERVATION_MS);
-        expect(reservedLoad(new Set())).toEqual({});
-      } finally {
-        vi.useRealTimers();
+    it('a refusal holds nothing, and has a record', async () => {
+      W.cooling.add('claude-code');
+      W.quota.set('codex-cli', { ...known, state: 'near_limit' });
+      const result = await auto();
+      expect(result).toMatchObject({ ok: false, decision: { outcome: 'refused', refusalCode: 'no_candidate', fallback: 'candidate_skipped' } });
+      if (result.ok === false) {
+        expect(result.decision!.reason).toBeUndefined();
+        expect(result.decision!.candidates.find((c) => c.provider === 'codex-cli')).toMatchObject({ eligible: false, excluded: 'quota_near_limit' });
       }
+      expect(reservedLoad(new Set())).toEqual({});
     });
   });
 

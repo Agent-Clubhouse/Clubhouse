@@ -102,7 +102,7 @@ Read token-free, with no prompt. Checked on one login on Claude Code 2.1.312 and
 | `low` | 80% up to 95% used | Used only if nothing better is left |
 | `near_limit` | 95% or more used, and the provider hasn't said the limit is reached. Quota remains. | Skipped, our own reserve: `quota_near_limit` |
 | `exhausted` | The provider reported the limit reached: a `rejected` status, `rateLimitReachedType`, or a `rate_limited` error | Skipped: `quota_exhausted` |
-| `unknown` | No current reading. `unknownReason`: `not_read`, `stale` (over 15 minutes old), `not_applicable` (for example an API key), `read_failed`, `not_supported` | Scored as `known`, shown as unknown |
+| `unknown` | No current reading. `unknownReason`: `not_read`, `stale` (over 15 minutes old), `not_applicable` (for example an API key), `read_failed`, `not_supported` | Never scored. Used only once every measured provider is `low` or out |
 
 The UI and telemetry never say exhausted while quota remains. Used percent alone never produces `exhausted`, even at 100%.
 
@@ -110,31 +110,35 @@ The UI and telemetry never say exhausted while quota remains. Used percent alone
 
 Every state has `asOf`, and a stale reading keeps its.
 
-`unknown` scores the same as `known`, so an API-key login isn't starved, but it stays `unknown` in the UI, the phone and telemetry and never reads as available capacity. The decision carries `quotaBasis: "unknown_scored_as_healthy"`.
+`unknown` is never scored, never 0 and never healthy. A provider without a weekly reading waits while a measured one has headroom, and takes work once every measured one is `low` or out, labeled `unknown_fallback` in `reason` and `quotaBasis`. The risk is stated, not hidden: when it does get work it may already be spent, and a failed start puts it on the cooldown below. Policy 1 scored unknown as known and recorded `unknown_scored_as_healthy`; old records keep that value.
 
 Percent used is only compared within a provider's own plan. There is no claim of equal cost across providers, and dollar fields aren't used.
 
 ### Load
 
-A provider's helpers, across all orchestrators, that are creating, starting or have a live process, plus unexpired reservations. Sleeping, failed and disposed helpers don't count, nor do non-helper agents. Sleeping helpers still count toward the global helper cap.
+A provider's helpers, across all orchestrators, that are creating, starting or have a live process, plus reservations not yet seen live, recorded as `live` and `reserved` apart. Sleeping, failed and disposed helpers don't count, nor do non-helper agents. Sleeping helpers still count toward the global helper cap. Load is helpers, not consumption: it breaks ties and never outweighs a measured difference in use.
 
 ## Selection
 
 A pure function, one decision per start. Inputs that need a CLI are read before the global start lock, and the decision runs under it.
 
-1. Candidates: enabled, available, Auto-eligible, a valid mapping cell, not cooling down.
-2. Drop `exhausted` and `near_limit`.
-3. Keep the best tier: `known` and `unknown` together, otherwise `low`.
-4. **Anchor:** the sticky provider if it survived, else the orchestrator's own CLI if it survived, else the first by registration order.
-5. **Margin 2:** leave the anchor only if some provider in the tier has a load at least 2 lower. Among those, pick the lowest load, then registration order.
+Policy 2 (#2887) balances plan consumption. Nothing in it knows who asked, which provider was chosen last, or the order providers were registered in.
 
-The margin applies only between providers in the same tier. A worse tier always loses, and it has no part in explicit or preset starts.
+1. Candidates: enabled, available, Auto-eligible, a valid mapping cell, not cooling down. Each runs the user's mapped model and effort for the difficulty; Auto picks the provider only.
+2. Drop `exhausted` and `near_limit`. That includes the five-hour window and the mapped model's own window: they are constraints, never added to the weekly figure.
+3. **Tier:** `headroom` (a weekly reading, and every counted window under 80%), then `unmeasured` (no weekly reading), then `low` (some counted window at 80% to 95%). A mapping that couldn't be checked ranks behind one that could, within a tier.
+4. **Pressure:** the weekly percent used, in basis points. Lowest wins. An `unmeasured` tier has no pressure: all of it ties.
+5. **Ties:** pressures within the tie band, 0 by default, so only equal readings. Among them the lowest load wins, then the rotation.
 
-**Sticky.** The key is orchestrator plus difficulty, and the value is a provider, never a model or effort; the cell is always read fresh. Each Auto decision sets it, and it expires 30 minutes after the last one for that key. It is in memory only, never overrides steps 1 to 3, and doesn't touch running helpers.
+**Rotation.** Keyed by the sorted set of tied candidates, each a provider plus the project's profile. The next one after the key this same set chose last, in sorted order. Saved in `helper-auto-rotation.json`, so a restart doesn't hand the next tie to the first provider. It moves only when a decision commits, once the helper exists, so a refused start doesn't take a turn. If the save fails, this run rotates from memory; after a restart at most one turn per set repeats. Equal ties differ by at most one across each complete rotation.
 
-**Reservations.** Added under the lock at decision time, so a burst sees earlier picks without depending on disk or the helper-index cache. Released when the helper counts as live, or the start fails or is cancelled, with a 5 minute backstop. A held approval doesn't reserve, because it decides when approved.
+**Profiles, not accounts.** A candidate's key is its provider and the project's profile. That's a proxy for a subscription: two profiles signed in to one account can't be told apart without reading credentials, which this never does, so the record says `accountKnown: false` and claims no per-account accounting.
 
-From 0/0 with the orchestrator on A, seven starts go A A B B B B A. The spread stays within 2. That balances helper counts, not cost.
+**Reset-relative scoring** (`reset_schedule`) is built but off. It subtracts the share of the week gone from the percent used, so a plan that resets sooner is used first. It needs every measured candidate to have a provider-declared seven-day window (Claude's `seven_day`, Codex's 10080 minutes) with a reset inside the coming week, and falls back to weekly use otherwise. The replay tests compare it with the default; it isn't on until that comparison is reviewed.
+
+**Reservations.** Held from the decision, under the lock, by decision id. Bound to the helper once it exists. Counted only while that helper isn't already counted live, so never twice. Released when the start ends: refused, cancelled, failed, or left asleep. A started one is dropped by the next count, which sees the helper live or not running. They never expire by age. In memory only: a quit interrupts every creation and start, live helpers are counted again from their rows, and an interrupted creation is marked failed at launch, so a restart never counts a helper twice. A held approval doesn't reserve, because it decides when approved.
+
+A burst on equal readings spreads by load; a burst on unequal readings goes to the lower one until a newer reading says otherwise, since running sessions report their limits as they go.
 
 **No candidate:** an immediate refusal naming each provider's reason. Nothing is queued. Explicit starts are never blocked by quota or a cooldown, only warned: `start_helper` returns `quotaWarning`, from what is already known, without asking a CLI. A person sees the same words in Needs you, on the Helpers card and in the helper header, and a phone in `startWarning`, `warning` and `routing.warning`.
 
@@ -187,7 +191,8 @@ Effort follows the same idea more simply: any change of model or CLI clears it, 
 
 Stable codes:
 
-- `reason`: `explicit_request`, `persona_pinned`, `preset_on_cli`, `only_candidate`, `lower_load`, `better_quota_tier`, `sticky`, `default_order`.
+- `reason`: `explicit_request`, `persona_pinned`, `preset_on_cli`, `only_candidate`, `lower_pressure`, `lower_load`, `fair_rotation`, `better_quota_tier`, `unknown_fallback`. Policy 1's `sticky` and `default_order` stay readable on old records.
+- `decisionId`: for an Auto decision, its id, shared by its reservation and its #2747 decision record.
 - `fallback`: `none`, `builtin_preset`, `candidate_skipped`, `model_unverified`, `retried_after_spawn_failure`.
 - `source`: `request`, `persona`, `auto`, `orchestrator`, `custom_mapping`, `builtin_mapping`, `cli_default`.
 - `skipped`, per provider: `cli_disabled`, `cli_unavailable`, `auto_not_supported`, `no_valid_mapping`, `cooling_down`, `quota_near_limit`, `quota_exhausted`.
@@ -285,8 +290,11 @@ A cell with nothing valid has `effective: null`. Until the `auto` mode is advert
 | reason | `persona_pinned` | Set by the persona |
 | reason | `preset_on_cli` | From the helper settings for this difficulty |
 | reason | `only_candidate` | The only provider available |
+| reason | `lower_pressure` | Less of this provider's weekly limit is used |
 | reason | `lower_load` | Fewer helpers running on this provider |
+| reason | `fair_rotation` | Its turn among providers with the same usage |
 | reason | `better_quota_tier` | This provider has more of its limit left |
+| reason | `unknown_fallback` | Its usage couldn't be checked, and the others are getting close to their limits |
 | reason | `sticky` | Stayed on the provider chosen last |
 | reason | `default_order` | No reason to switch |
 | fallback | `builtin_preset` | The saved choice is no longer offered, so the default was used |
@@ -360,5 +368,5 @@ One PR each.
 1. Explicit `effort` on `start_helper`. Built.
 2. Built. Mapping and `difficulty` in `preset` mode: settings, validation, reset, UI, explanation, telemetry, phone read and write including app-wide preset editing, restoring explicit fields after a persona applies, first audit rows.
 3. Built. Quota service: read-only, shown in Settings and on the phone. Routing doesn't use it yet.
-4. Built. `cli: "auto"`: routing, load, sticky, reservations, cooldowns, retry, tool and persona guidance.
+4. Built. `cli: "auto"`: routing, load, sticky, reservations, cooldowns, retry, tool and persona guidance. Sticky and the anchor were replaced by policy 2 (#2887).
 5. Built. Wider audit.

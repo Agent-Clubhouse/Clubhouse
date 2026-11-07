@@ -26,6 +26,7 @@ import type { UsageLimit } from '../../shared/chat/events';
 import { getProvider } from '../orchestrators';
 import type { OrchestratorId } from '../orchestrators';
 import { helperAutoCooldown, helperQuotaRead } from '../telemetry/feature-events';
+import { recordQuotaSample } from '../telemetry/helper-usage';
 import { isLoginRequiredError } from './agent-runtime/login-error';
 import { AUTO_COOLDOWN_AUTH_MS, AUTO_COOLDOWN_AVAILABILITY_MS, AUTO_COOLDOWN_QUOTA_MS } from './helper-auto-policy';
 import { onChatEvent } from './agent-runtime/chat-event-bus';
@@ -82,7 +83,8 @@ async function entryFor(providerId: string, projectPath: string | undefined): Pr
   return { entry, ...(env && { env }) };
 }
 
-function startRead(providerId: string, entry: QuotaEntry, env: Record<string, string> | undefined): Promise<SettledRead> {
+/** `trigger` says who asked for the read that starts here; one already going is shared, and keeps its own. */
+function startRead(providerId: string, entry: QuotaEntry, env: Record<string, string> | undefined, trigger: 'read' | 'refresh'): Promise<SettledRead> {
   if (entry.inFlight) return entry.inFlight;
   const provider = getProvider(providerId as OrchestratorId);
   const startedAt = Date.now();
@@ -95,7 +97,9 @@ function startRead(providerId: string, entry: QuotaEntry, env: Record<string, st
       entry.source = 'cli_query';
       entry.notApplicable = reading.kind === 'not_applicable';
       entry.windows = reading.kind === 'windows' ? reading.windows : [];
-      helperQuotaRead(providerId, viewOf(entry, now).state, true);
+      const view = viewOf(entry, now);
+      helperQuotaRead(providerId, view.state, true);
+      recordQuotaSample(providerId, view, trigger);
       return { startedAt, outcome: reading.kind };
     })
     .catch((err: unknown): SettledRead => {
@@ -149,7 +153,7 @@ export async function readProviderQuota(providerId: string, projectPath?: string
     const fresh = entry.readAt !== undefined && now - entry.readAt < QUOTA_CACHE_MS;
     const backingOff = entry.failedAt !== undefined && now - entry.failedAt < QUOTA_FAILURE_BACKOFF_MS;
     if (!fresh && !backingOff) {
-      const read = startRead(providerId, entry, env);
+      const read = startRead(providerId, entry, env, 'read');
       let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([read, new Promise<void>((resolve) => { timer = setTimeout(resolve, options.budgetMs ?? QUOTA_READ_BUDGET_MS); })]);
       clearTimeout(timer);
@@ -180,7 +184,7 @@ export async function forceProviderQuota(providerId: string, projectPath?: strin
   try {
     const { entry, env } = await entryFor(providerId, projectPath);
     let outcome: ForcedQuotaOutcome = 'timed_out';
-    const read = startRead(providerId, entry, env).then((settled) => {
+    const read = startRead(providerId, entry, env, 'refresh').then((settled) => {
       outcome = settled.outcome === 'failed' ? 'failed' : 'ok';
       const auth = entry.cooldowns.auth;
       if (settled.outcome === 'windows' && auth && auth.at <= settled.startedAt) delete entry.cooldowns.auth;
