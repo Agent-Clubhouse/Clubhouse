@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
   bound: new Set<string>(),
   links: [] as Array<{ agentId: string; targetId: string; agentName: string; targetName: string; status: 'active' | 'suspended'; reason?: string }>,
   calls: [] as string[],
+  unsaved: false,
 }));
 
 vi.mock('./persisted-bindings', () => ({
@@ -15,17 +16,20 @@ vi.mock('./persisted-bindings', () => ({
   releaseSourceBinding: (sourceId: string, a: string, t: string) => { state.calls.push(`release:${sourceId}:${a}>${t}`); return 'unbound'; },
   rebuildPersistedBindings: async () => { state.calls.push('rebuild'); },
   markBindingRemovedByUser: (a: string, t: string) => { state.calls.push(`removed-by-user:${a}>${t}`); },
+  markSourceRemovedByUser: (id: string, a: string, t: string) => { state.calls.push(`source-removed:${id}:${a}>${t}`); },
 }));
 vi.mock('./clubhouse-mcp/binding-manager', () => ({
   bindingManager: {
     getAllBindings: () => [...state.bound].map((k) => { const [agentId, targetId] = k.split('\u0000'); return { agentId, targetId, targetKind: 'agent' }; }),
     getBindingsForAgent: (a: string) => [...state.bound].filter((k) => k.startsWith(`${a}\u0000`)).map((k) => ({ targetId: k.split('\u0000')[1] })),
+    unbind: (a: string, t: string) => { state.calls.push(`unbind:${a}>${t}`); state.bound.delete(key(a, t)); },
   },
 }));
 vi.mock('./dispatcher/dispatcher-service', () => ({ getDispatcherAgentId: () => 'disp' }));
 vi.mock('./dispatcher-connections', () => ({
   DISPATCHER_CONNECTION_SOURCE_ID: 'dispatcher-connections',
   listDispatcherLinksForUser: async () => state.links,
+  isRemovalUnsaved: async () => state.unsaved,
   recordUserRemoval: async (p: { agentId: string; targetId: string }) => {
     state.calls.push(`tombstone:${p.agentId}>${p.targetId}`);
     state.bySource.get('dispatcher-connections')?.delete(key(p.agentId, p.targetId));
@@ -35,7 +39,11 @@ vi.mock('./dispatcher-connections', () => ({
 }));
 vi.mock('./dispatcher-wire-source', () => ({
   DISPATCHER_WIRE_SOURCE_ID: 'dispatcher-wires',
-  saveWireRemoval: async (id: string) => { state.calls.push(`connect-to-dispatcher-off:${id}`); },
+  saveWireRemoval: async (id: string) => {
+    state.calls.push(`connect-to-dispatcher-off:${id}`);
+    state.bySource.delete('dispatcher-wires');
+    return true;
+  },
 }));
 vi.mock('./helper-wire-source', () => ({ HELPER_WIRE_SOURCE_ID: 'helper-wires' }));
 vi.mock('./orchestrator-connections', () => ({
@@ -60,6 +68,7 @@ beforeEach(() => {
   state.bound = new Set();
   state.links = [];
   state.calls = [];
+  state.unsaved = false;
 });
 
 describe('the sources behind a connection (#2744)', () => {
@@ -100,7 +109,10 @@ describe('removing one source (#2744)', () => {
     expect(state.calls).toContain('drop-tool-link:lead>rev');
     expect(state.calls).toContain('release:orchestrator-connections:lead>rev');
     expect(result).toMatchObject({ ok: true, stillConnected: true, remaining: [{ kind: 'canvas' }] });
-    expect(state.calls.some((c) => c.startsWith('removed-by-user'))).toBe(false);
+    expect(state.calls.some((c) => c.startsWith('removed-by-user') || c.startsWith('unbind'))).toBe(false);
+    // The orchestrator can't add its link back this session.
+    expect(state.calls).toContain('source-removed:orchestrator-connections:lead>rev');
+    expect(state.calls).toContain('rebuild');
   });
 
   it('the last source gone counts as the user\'s removal, so it can\'t be made again this session', async () => {
@@ -108,7 +120,30 @@ describe('removing one source (#2744)', () => {
     state.links = [{ agentId: 'lead', targetId: 'rev', agentName: 'lead', targetName: 'rev', status: 'active' }];
     state.bound = new Set([key('lead', 'rev')]);
     const result = await removeConnectionSource('lead', 'rev', 'dispatcher_link');
-    expect(state.calls).toEqual(expect.arrayContaining(['tombstone:lead>rev', 'release:dispatcher-connections:lead>rev', 'removed-by-user:lead>rev']));
+    expect(state.calls).toEqual(expect.arrayContaining(['tombstone:lead>rev', 'release:dispatcher-connections:lead>rev', 'removed-by-user:lead>rev', 'unbind:lead>rev']));
+    expect(result).toMatchObject({ ok: true, stillConnected: false });
+    expect(result).not.toHaveProperty('notSaved');
+  });
+
+  it('says when a Dispatcher link removal couldn\'t be saved', async () => {
+    holds('dispatcher-connections', ['lead', 'rev']);
+    state.unsaved = true;
+    expect(await removeConnectionSource('lead', 'rev', 'dispatcher_link')).toMatchObject({ ok: true, notSaved: true });
+  });
+
+  it('a source that couldn\'t be read may still hold it: no user removal, and it says so', async () => {
+    holds('orchestrator-connections', ['lead', 'rev']);
+    state.failed = ['canvas-wires'];
+    state.bound = new Set([key('lead', 'rev')]);
+    const result = await removeConnectionSource('lead', 'rev', 'tool_link');
+    expect(result).toMatchObject({ ok: true, unreadable: ['canvas-wires'] });
+    expect(state.calls.some((c) => c.startsWith('removed-by-user') || c.startsWith('unbind'))).toBe(false);
+  });
+
+  it('a suspended Dispatcher link doesn\'t count as still connected', async () => {
+    holds('orchestrator-connections', ['lead', 'rev']);
+    state.links = [{ agentId: 'lead', targetId: 'rev', agentName: 'lead', targetName: 'rev', status: 'suspended', reason: 'dispatcher_off' }];
+    const result = await removeConnectionSource('lead', 'rev', 'tool_link');
     expect(result).toMatchObject({ ok: true, stillConnected: false });
   });
 
@@ -139,5 +174,6 @@ describe('source ids', () => {
     ]);
     expect([HELPER_WIRE_SOURCE_ID, DISPATCHER_WIRE_SOURCE_ID, ORCHESTRATOR_CONNECTION_SOURCE_ID, DISPATCHER_CONNECTION_SOURCE_ID])
       .toEqual(['helper-wires', 'dispatcher-wires', 'orchestrator-connections', 'dispatcher-connections']);
-  });
+    // Loading the real source modules transforms a large part of main on a cold run.
+  }, 60_000);
 });

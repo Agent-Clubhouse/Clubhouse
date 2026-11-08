@@ -91,6 +91,8 @@ async function readGroupProjectNames(): Promise<Map<string, string> | null> {
 
 export const canvasWireBindingSource: PersistedBindingSource = {
   id: 'canvas-wires',
+  // Reads the canvas stores and nothing else: the Connections card may ask it now (#2744).
+  readOnlyCollect: true,
   async collect() {
     const [snapshots, groupProjects] = await Promise.all([readAllCanvasStores(), readGroupProjectNames()]);
     return bindingsFromCanvasStores(snapshots, groupProjects);

@@ -103,6 +103,24 @@ describe('Connections card (#2232)', () => {
     expect(await within(dialog).findByTestId('connection-source-result')).toHaveTextContent('Still connected through: Canvas wire.');
   });
 
+  it('turns off Connect to Dispatcher once for both directions, after confirming, and warns when a removal couldn\'t be saved', async () => {
+    const src = { kind: 'dispatcher_auto' as const, sourceId: 'dispatcher-wires' };
+    useMcpBindingStore.setState({ bindings: [wire('lead', 'rev', ['epic-lead', 'reviewer']), wire('rev', 'lead', ['reviewer', 'epic-lead'])] });
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+      pairs: [{ agentId: 'lead', targetId: 'rev', bound: true, sources: [src] }, { agentId: 'rev', targetId: 'lead', bound: true, sources: [src] }],
+      unreadable: ['canvas-wires'],
+    }));
+    const removeConnectionSource = vi.fn(async () => ({ ok: true as const, remaining: [], stillConnected: false, notSaved: true }));
+    window.clubhouse.mcpBinding.removeConnectionSource = removeConnectionSource;
+    render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('connection-sources'));
+    expect(screen.getByTestId('connection-source-unreadable')).toHaveTextContent('Couldn\u2019t check: Canvas wire');
+    fireEvent.click(screen.getByTestId('connection-source-remove-dispatcher_auto'));
+    fireEvent.click(screen.getByTestId('connection-source-confirm-dispatcher_auto'));
+    await waitFor(() => expect(removeConnectionSource).toHaveBeenCalledTimes(1));
+    expect(await screen.findByTestId('connection-source-result')).toHaveTextContent('may come back after a restart');
+  });
+
   it('a helper link says to dispose the helper; it can\'t be removed here', async () => {
     window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
       pairs: [{ agentId: 'lead', targetId: 'h1', bound: true, sources: [{ kind: 'helper' as const, sourceId: 'helper-wires' }] }],
@@ -143,7 +161,7 @@ describe('Connections card (#2232)', () => {
     useProjectStore.setState({ projects: [] });
     // The dynamic import of AgentDetails transforms its whole card tree on a
     // cold run, which can take longer than the default 5s on its own.
-  }, 30_000);
+  }, 60_000);
 
   describe('links the Dispatcher made (#2661)', () => {
     const link = (agentId: string, targetId: string, extra: Partial<DispatcherLink> = {}): DispatcherLink => ({
@@ -165,6 +183,9 @@ describe('Connections card (#2232)', () => {
       expect(screen.getByTestId('connection-meta')).toHaveTextContent('Dispatcher, two-way');
       expect(screen.getByTestId('connection-source-dispatcher_link')).toHaveTextContent('can\'t connect them again unless you draw the wire yourself');
       fireEvent.click(screen.getByTestId('connection-source-remove-dispatcher_link'));
+      // It can't be drawn back by the Dispatcher, so it's confirmed first.
+      expect(removeConnectionSource).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByTestId('connection-source-confirm-dispatcher_link'));
       await waitFor(() => expect(removeConnectionSource).toHaveBeenCalledTimes(2));
       expect(removeConnectionSource).toHaveBeenCalledWith('rev', 'lead', 'dispatcher_link');
       expect(await screen.findByTestId('connection-source-result')).toHaveTextContent('They aren\u2019t connected now.');
@@ -189,6 +210,7 @@ describe('Connections card (#2232)', () => {
       fireEvent.click(await screen.findByTestId('connection-sources'));
       expect(screen.getByTestId('connection-source-dispatcher_link')).toHaveTextContent('Not connected now: Orchestration is off');
       fireEvent.click(screen.getByTestId('connection-source-remove-dispatcher_link'));
+      fireEvent.click(screen.getByTestId('connection-source-confirm-dispatcher_link'));
       await waitFor(() => expect(screen.queryByTestId('connection-meta')).not.toBeInTheDocument());
     });
 

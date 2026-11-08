@@ -72,5 +72,14 @@ export const CONNECTION_SOURCE_LABELS: Readonly<Record<ConnectionSourceKind, str
 };
 
 export type RemoveConnectionSourceResult =
-  | { ok: true; remaining: ConnectionSource[]; stillConnected: boolean }
+  | {
+    ok: true;
+    remaining: ConnectionSource[];
+    /** A source that isn't suspended still holds it. */
+    stillConnected: boolean;
+    /** Sources that couldn't be read, so they may still hold it. */
+    unreadable?: string[];
+    /** The removal is kept for now but couldn't be saved: it may come back after a restart. */
+    notSaved?: boolean;
+  }
   | { ok: false; error: string };

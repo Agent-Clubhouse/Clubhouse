@@ -215,6 +215,7 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
         otherName={managing.name}
         dispatcherEnd={isDispatcherAgent(agent) ? managing.name : rail[managing.id] && isDispatcherAgent(rail[managing.id]) ? agent.name : undefined}
         pairs={pairSources(managing)}
+        unreadable={sources?.unreadable ?? []}
         onClose={() => setManaging(null)}
         onRemoved={() => setRemovals((n) => n + 1)}
       />
@@ -259,7 +260,7 @@ function useToolConnectionPairs(active: boolean, bindings: readonly McpBindingEn
 /** "From: Canvas wire, Connect to Dispatcher", for a row's tooltip (#2744). */
 export function sourcesNote(pairs: readonly ConnectionPairSources[]): string | undefined {
   const kinds = [...new Set(pairs.flatMap((p) => p.sources.map((s) => s.kind)))];
-  if (kinds.length === 0) return pairs.some((p) => p.unresolved) ? 'Not saved by any source: it goes when Clubhouse restarts.' : undefined;
+  if (kinds.length === 0) return pairs.some((p) => p.unresolved) ? 'Connected now, but no saved source lists it.' : undefined;
   return `From: ${kinds.map((k) => CONNECTION_SOURCE_LABELS[k]).join(', ')}`;
 }
 

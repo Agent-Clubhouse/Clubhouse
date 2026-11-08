@@ -39,27 +39,43 @@ export function sourcesByKind(pairs: readonly ConnectionPairSources[]): Array<{ 
   return [...out.values()];
 }
 
-export function ConnectionSourcesDialog({ agentName, otherName, dispatcherEnd, pairs, onClose, onRemoved }: {
+const KIND_BY_ID: Readonly<Record<string, ConnectionSourceKind>> = {
+  'canvas-wires': 'canvas', 'helper-wires': 'helper', 'dispatcher-wires': 'dispatcher_auto',
+  'orchestrator-connections': 'tool_link', 'dispatcher-connections': 'dispatcher_link',
+};
+
+/** Removals that change a setting or can't be undone by drawing again: confirmed first. */
+const CONFIRMED: ReadonlySet<ConnectionSourceKind> = new Set(['dispatcher_auto', 'dispatcher_link']);
+
+export function ConnectionSourcesDialog({ agentName, otherName, dispatcherEnd, pairs, unreadable = [], onClose, onRemoved }: {
   agentName: string;
   otherName: string;
   /** For a wire to the Dispatcher: the other agent's name, whose switch goes off. */
   dispatcherEnd?: string;
   pairs: ConnectionPairSources[];
+  /** Sources that couldn't be read: they may hold it too. */
+  unreadable?: readonly string[];
   onClose: () => void;
   /** After a removal went through, to re-read the sources. */
   onRemoved: () => void;
 }) {
   const [busy, setBusy] = useState<ConnectionSourceKind | null>(null);
+  const [confirming, setConfirming] = useState<ConnectionSourceKind | null>(null);
   const [result, setResult] = useState<{ kind: ConnectionSourceKind; text: string; error?: boolean } | null>(null);
   const entries = sourcesByKind(pairs);
   const direction = pairs.length > 1 ? 'both directions' : 'one direction';
 
   const remove = async (kind: ConnectionSourceKind, held: ConnectionPairSources[]) => {
+    setConfirming(null);
     setBusy(kind);
     setResult(null);
     try {
       let still = false;
-      for (const p of held) {
+      let notSaved = false;
+      let remaining: string[] = [];
+      // Connect to Dispatcher is one switch for both directions: turned off once.
+      const targets = kind === 'dispatcher_auto' ? held.slice(0, 1) : held;
+      for (const p of targets) {
         const r = await window.clubhouse.mcpBinding.removeConnectionSource(p.agentId, p.targetId, kind);
         if (r.ok === false) {
           setResult({ kind, text: r.error, error: true });
@@ -68,9 +84,13 @@ export function ConnectionSourcesDialog({ agentName, otherName, dispatcherEnd, p
           return;
         }
         if (r.stillConnected) still = true;
+        if (r.notSaved) notSaved = true;
+        remaining = [...new Set([...remaining, ...r.remaining.filter((s) => !s.suspended).map((s) => CONNECTION_SOURCE_LABELS[s.kind])])];
       }
-      const others = entries.filter((e) => e.kind !== kind).map((e) => CONNECTION_SOURCE_LABELS[e.kind]);
-      setResult({ kind, text: still && others.length > 0 ? `Removed. Still connected through: ${others.join(', ')}.` : 'Removed. They aren’t connected now.' });
+      const text = still && remaining.length > 0 ? `Removed. Still connected through: ${remaining.join(', ')}.` : 'Removed. They aren’t connected now.';
+      setResult(notSaved
+        ? { kind, text: `${text} Clubhouse couldn’t save the removal yet, so it may come back after a restart.`, error: true }
+        : { kind, text });
       onRemoved();
     } catch (err) {
       reportChromeActionFailed('agent_settings_save', err);
@@ -82,7 +102,9 @@ export function ConnectionSourcesDialog({ agentName, otherName, dispatcherEnd, p
   return (
     <Modal open onClose={onClose} title={`${agentName} and ${otherName}`} width="w-[460px]" testId="connection-sources-dialog">
       <p className="text-xs text-ctp-overlay1 mb-3">
-        {entries.length === 0 ? 'Nothing connects them now.' : `Connected in ${direction}. Each source below keeps them connected on its own; removing one leaves the others.`}
+        {entries.length === 0
+          ? (pairs.some((p) => p.unresolved) ? 'Connected now, but no saved source lists it.' : 'Nothing connects them now.')
+          : `Connected in ${direction}. Each source below keeps them connected on its own; removing one leaves the others.`}
       </p>
       {result && (
         <p role={result.error ? 'alert' : 'status'} className={`mb-3 text-xs ${result.error ? 'text-ctp-error' : 'text-ctp-subtext1'}`} data-testid="connection-source-result">{result.text}</p>
@@ -95,19 +117,31 @@ export function ConnectionSourcesDialog({ agentName, otherName, dispatcherEnd, p
               <span className="text-ctp-text">{CONNECTION_SOURCE_LABELS[kind]}{held.length < pairs.length ? ', one direction' : ''}</span>
               {source.suspended && <span className="text-xs text-ctp-overlay1">Not connected now: {source.suspended}</span>}
               <span className="text-xs text-ctp-overlay1">{removalEffect(kind, { agent: agentName, other: otherName, dispatcherEnd })}</span>
-              {route === 'here' && (
+              {route === 'here' && confirming !== kind && (
                 <div>
-                  <Button onClick={() => void remove(kind, held)} disabled={busy !== null} data-testid={`connection-source-remove-${kind}`}>
+                  <Button
+                    onClick={() => (CONFIRMED.has(kind) ? setConfirming(kind) : void remove(kind, held))}
+                    disabled={busy !== null}
+                    data-testid={`connection-source-remove-${kind}`}
+                  >
                     {busy === kind ? 'Removing…' : 'Remove'}
                   </Button>
+                </div>
+              )}
+              {route === 'here' && confirming === kind && (
+                <div className="flex items-center gap-2">
+                  <Button kind="danger" onClick={() => void remove(kind, held)} disabled={busy !== null} data-testid={`connection-source-confirm-${kind}`}>
+                    {kind === 'dispatcher_auto' ? 'Turn it off' : 'Remove it'}
+                  </Button>
+                  <Button kind="quiet" onClick={() => setConfirming(null)} data-testid={`connection-source-cancel-${kind}`}>Cancel</Button>
                 </div>
               )}
             </li>
           );
         })}
-        {pairs.some((p) => p.unresolved) && (
-          <li className="text-xs text-ctp-overlay1" data-testid="connection-source-unresolved">
-            Connected now, but no saved source lists it, so it goes when Clubhouse restarts.
+        {unreadable.length > 0 && (
+          <li className="text-xs text-ctp-overlay1" data-testid="connection-source-unreadable">
+            Couldn’t check: {unreadable.map((id) => CONNECTION_SOURCE_LABELS[KIND_BY_ID[id] ?? 'other']).join(', ')}. It may hold this connection too.
           </li>
         )}
       </ul>
