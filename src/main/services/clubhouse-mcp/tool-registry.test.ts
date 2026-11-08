@@ -14,6 +14,12 @@ vi.mock('fs/promises', () => ({
   writeFile: vi.fn().mockResolvedValue(undefined),
 }));
 
+const forwarded = vi.hoisted(() => ({ calls: [] as unknown[][] }));
+vi.mock('../annex-agent-calls', () => ({
+  remoteMachineOf: (id: string) => (id.includes('@') ? id.slice(id.indexOf('@') + 1) : null),
+  forwardAgentCall: async (...args: unknown[]) => { forwarded.calls.push(args); return { content: [{ type: 'text', text: 'sent there' }] }; },
+}));
+
 const dispatcherState = vi.hoisted(() => ({ enabled: true }));
 vi.mock('../dispatcher/dispatcher-settings', () => ({
   isDispatcherEnabled: () => dispatcherState.enabled,
@@ -457,6 +463,25 @@ describe('ToolRegistry', () => {
       expect(refusalReasonOf(result)).toBeUndefined();
       expect(handler).toHaveBeenCalledWith('agent-2', 'agent-1', { message: 'hello' });
       agentRegistry.untrack('agent-2');
+    });
+
+    it('sends a wire call to an agent on another machine there instead of running it here (#3064)', async () => {
+      const handler = vi.fn();
+      registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, handler);
+      const far = `agent-9@${Array(16).fill('bb').join(':')}`;
+      bindingManager.bind('agent-1', { targetId: far, targetKind: 'agent', label: 'Far', targetName: 'far' });
+      const toolName = buildToolName(makeBinding({ agentId: 'agent-1', targetId: far, targetKind: 'agent', targetName: 'far' }), 'send_message');
+      forwarded.calls.length = 0;
+      const result = await callTool('agent-1', toolName, { message: 'hello' });
+      expect(result.content[0].text).toBe('sent there');
+      expect(handler).not.toHaveBeenCalled();
+      expect(forwarded.calls).toEqual([['agent-1', far, 'far', 'send_message', { message: 'hello' }]]);
+      // Listed in full though it's in no registry here: its machine knows whether it's awake (#3064).
+      expect(getScopedToolList('agent-1').some((t) => t.name === toolName)).toBe(true);
+      // A tool turned off on the wire is refused here first.
+      bindingManager.setDisabledTools('agent-1', far, ['send_message']);
+      expect(refusalReasonOf(await callTool('agent-1', toolName, { message: 'again' }))).toBe('tool_denied');
+      expect(forwarded.calls).toHaveLength(1);
     });
 
     it('returns error for unknown tool', async () => {

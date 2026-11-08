@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import { settingsChanged } from '../telemetry/feature-events';
 import { IPC } from '../../shared/ipc-channels';
 import type { AnnexSettings } from '../../shared/types';
@@ -15,6 +15,7 @@ import { onDevicesChanged } from '../services/annex-device-signal';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, objectArg, stringArg, booleanArg } from './validation';
+import { setDeviceToolHost } from '../services/clubhouse-mcp/tools/device-tools';
 
 function broadcastStatusChanged(): void {
   const status = annexServer.getStatus();
@@ -26,6 +27,24 @@ function broadcastPeersChanged(): void {
 }
 
 export function registerAnnexHandlers(): void {
+  // See devices and Manage devices (#3068): what the agent tools act through.
+  setDeviceToolHost({
+    list: () => annexDevices.listDevices(),
+    rename: (fingerprint, name) => membership.renameMember(fingerprint, name),
+    reconnect: (fingerprint) => annexClient.retry(fingerprint),
+    remove: (fingerprint) => {
+      const removed = annexDevices.removeDevice(fingerprint);
+      if (removed) broadcastPeersChanged();
+      return removed;
+    },
+    // Only opens the page for a person: no code, link or certificate goes back to the agent.
+    openAddDevice: () => {
+      if (!BrowserWindow.getAllWindows().some((w) => !w.isDestroyed())) return false;
+      broadcastToAllWindows(IPC.APP.OPEN_SETTINGS, 'annex');
+      return true;
+    },
+    canConnect: () => !!annexSettings.getSettings().enableClient,
+  });
   // Annex Network membership (#3061): what members tell each other, and what to do about it.
   membership.initNetworkMembership({
     connect: (fingerprint) => annexClient.connect(fingerprint),

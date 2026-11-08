@@ -10,6 +10,16 @@ export function hexToRgbChannels(hex: string): string {
   return `${r} ${g} ${b}`;
 }
 
+/**
+ * The chevron every native select draws (#2443), in the theme's overlay1 color.
+ * A data URI can't read a CSS variable, so each theme sets its own.
+ */
+export function selectChevron(hex: string | undefined): string {
+  const color = `rgb(${hexToRgbChannels(hex ?? '#7f849c').split(' ').join(',')})`;
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='${color}' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+}
+
 /** The mascot brand tints (#2019); each is optional on a theme. */
 function brandColorMap(theme: ThemeDefinition): Record<string, string | undefined> {
   return {
@@ -61,6 +71,10 @@ export function applyTheme(theme: ThemeDefinition, options?: ApplyThemeOptions):
     s.setProperty(varName, rgb);
     cache[varName] = rgb;
   }
+
+  const chevron = selectChevron(theme.colors.overlay1);
+  s.setProperty('--select-chevron', chevron);
+  cache['--select-chevron'] = chevron;
 
   // Optional brand tints: clear an unset one so the previous theme's value
   // doesn't linger and the index.css default applies.
@@ -221,6 +235,7 @@ export function themeToStyleVars(theme: ThemeDefinition): Record<string, string>
   for (const [varName, hex] of Object.entries(brandColorMap(theme))) {
     if (hex !== undefined) vars[varName] = hexToRgbChannels(hex);
   }
+  vars['--select-chevron'] = selectChevron(theme.colors.overlay1);
   // A zone's own text color, so Codex flips with the zone's theme.
   if (theme.colors.brandCodex === undefined && theme.colors.text) {
     vars['--brand-codex'] = hexToRgbChannels(theme.colors.text);

@@ -27,7 +27,7 @@ Object.defineProperty(globalThis, 'localStorage', {
   writable: true,
 });
 
-import { applyTheme, hexToRgbChannels, themeToStyleVars } from './apply-theme';
+import { applyTheme, hexToRgbChannels, selectChevron, themeToStyleVars } from './apply-theme';
 
 function makeTheme(overrides?: Partial<ThemeDefinition>): ThemeDefinition {
   return {
@@ -221,6 +221,25 @@ describe('applyTheme', () => {
     });
   });
 
+  describe('select chevron (#2443)', () => {
+    it('draws the chevron in the theme\'s overlay1 color, and caches it', () => {
+      const theme = makeTheme();
+      theme.colors.overlay1 = '#4c4f69';
+      applyTheme(theme);
+      const chevron = selectChevron('#4c4f69');
+      expect(decodeURIComponent(chevron)).toContain("stroke='rgb(76,79,105)'");
+      expect(chevron).toMatch(/^url\("data:image\/svg\+xml,[^"]+"\)$/);
+      expect(mockSetProperty).toHaveBeenCalledWith('--select-chevron', chevron);
+      expect(JSON.parse(mockLocalStorage.get('clubhouse-theme-vars')!)['--select-chevron']).toBe(chevron);
+    });
+
+    it('sets it for a zone too, so a zone with another theme draws its own', () => {
+      const theme = makeTheme();
+      theme.colors.overlay1 = '#9ca0b0';
+      expect(themeToStyleVars(theme)['--select-chevron']).toBe(selectChevron('#9ca0b0'));
+    });
+  });
+
   describe('shadow CSS variables (theme-aware)', () => {
     it('sets dark theme shadows for dark themes', () => {
       applyTheme(makeTheme({ type: 'dark' }));
@@ -249,9 +268,9 @@ describe('applyTheme', () => {
   });
 
   describe('total variable count', () => {
-    it('sets exactly 39 CSS variables for a plain theme (19 colors + on-accent + 16 hljs + 3 shadows)', () => {
+    it('sets exactly 40 CSS variables for a plain theme (19 colors + on-accent + select chevron + 16 hljs + 3 shadows)', () => {
       applyTheme(makeTheme());
-      expect(mockSetProperty).toHaveBeenCalledTimes(39);
+      expect(mockSetProperty).toHaveBeenCalledTimes(40);
     });
   });
 

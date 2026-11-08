@@ -45,6 +45,21 @@ describe('the Dispatcher\'s defaults (#3050, #3034)', () => {
     }
   });
 
+  it('sees the Annex Network\'s devices, and asks before changing any; no other agent gets either (#3068)', () => {
+    const app = { kind: 'app' } as const;
+    expect(mode(dispatcher, 'device.read', app)).toBe('allow');
+    expect(mode(dispatcher, 'device.manage', app)).toBe('ask');
+    for (const facts of [
+      { dispatcher: false, helper: false, orchestrates: false, crossProject: false },
+      { dispatcher: false, helper: true, orchestrates: false, crossProject: false },
+      { dispatcher: false, helper: false, orchestrates: true, crossProject: true },
+      { dispatcherChat: true, dispatcher: false, helper: false, orchestrates: false, crossProject: false },
+    ]) {
+      const grants = defaultGrants(facts);
+      expect(grants.some((g) => g.action === 'device.read' || g.action === 'device.manage')).toBe(false);
+    }
+  });
+
   it('creates agents in any project and grants up to its own level', () => {
     expect(mode(dispatcher, 'agent.create', anyProject)).toBe('allow');
     expect(mode(dispatcher, 'agent.grant', { kind: 'any' })).toBe('allow');

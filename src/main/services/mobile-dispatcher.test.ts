@@ -19,6 +19,8 @@ vi.mock('./dispatcher/dispatcher-service', () => {
     getDispatcherChatConfig: () => S.config,
     isDispatcherAgentId: (id?: string) => !!id && !!S.config && id === S.coordinatorId,
     isDispatcherChatAgentId: (id?: string) => !!id && id === S.config?.id,
+    getDispatcherAgentId: () => (S.config ? S.coordinatorId : null),
+    getDispatcherChatAgentId: () => (S.config?.id as string) ?? null,
     isDispatcherEnabled: () => S.enabled,
     getDispatcherState: state,
     setDispatcherEnabled: vi.fn(async (on: boolean) => { S.enabled = on; return state(); }),
@@ -29,8 +31,9 @@ vi.mock('../window-chrome', () => ({ newChromeEnabled: () => S.newLayout }));
 import * as dispatcher from './dispatcher/dispatcher-service';
 import {
   activeDispatcher, assertDispatcherCommand, dispatcherCapability, dispatcherChange, dispatcherCommandsWhileOff, dispatcherFolderProject,
-  dispatcherOffFields, dispatcherShellProject, isDisabledDispatcherId, setDispatcherEnabledFromPhone,
+  dispatcherOffFields, dispatcherShellProject, isDisabledDispatcherId, phoneChatEvent, phoneChatEvents, setDispatcherEnabledFromPhone,
 } from './mobile-dispatcher';
+import type { ChatEvent } from '../../shared/chat';
 
 const allow = () => {};
 async function refusal(promise: Promise<unknown>) {
@@ -187,5 +190,34 @@ describe('dispatcher.setEnabled', () => {
     const revoked = () => { throw new Error('authorization_revoked'); };
     await expect(setDispatcherEnabledFromPhone(true, revoked)).rejects.toThrow('authorization_revoked');
     expect(dispatcher.setDispatcherEnabled).not.toHaveBeenCalled();
+  });
+});
+
+describe('the Dispatcher\'s chat on a phone (#3043)', () => {
+  const ev = (agentId: string, seq: number, type: string, data: Record<string, unknown>) => ({ v: 2, agentId, sessionId: 's', seq, ts: seq, type, data }) as ChatEvent;
+  const tool = (agentId: string) => ev(agentId, 1, 'tool_call', { toolCallId: 't', kind: 'other', title: 'list_agents', status: 'pending' });
+  const fromCoordinator = (agentId: string) => ev(agentId, 2, 'user_message', {
+    messageId: 'm', source: 'mcp', delivery: 'prompt', content: [{ type: 'text', text: 'x' }], routed: [{ sender: { agentId: 'durable_coordinator', name: 'Dispatcher' }, text: 'x' }],
+  });
+
+  it('sends its chat\'s and its coordinator\'s events as the group chat shows them', () => {
+    for (const id of ['durable_d', 'durable_coordinator']) {
+      expect(phoneChatEvent(tool(id))).toBeNull();
+      // A message from its own coordinator is never an interjection.
+      expect(phoneChatEvent(fromCoordinator(id))).toBeNull();
+    }
+    expect(phoneChatEvents('durable_d', [tool('durable_d'), ev('durable_d', 3, 'turn_ended', { stopReason: 'end_turn' })]).map((e) => e.type)).toEqual(['turn_ended']);
+  });
+
+  it('sends every other agent\'s events as they are', () => {
+    const events = [tool('durable_other'), fromCoordinator('durable_other')];
+    for (const event of events) expect(phoneChatEvent(event)).toBe(event);
+    expect(phoneChatEvents('durable_other', events)).toBe(events);
+  });
+
+  it('sends everything before the Dispatcher was first created', () => {
+    S.config = null;
+    const event = tool('durable_d');
+    expect(phoneChatEvent(event)).toBe(event);
   });
 });

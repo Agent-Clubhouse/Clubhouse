@@ -27,6 +27,8 @@ import { CONNECTION_SOURCE_LABELS, type AgentConnectionSources, type ConnectionP
 import { ConnectionSourcesDialog } from './ConnectionSourcesDialog';
 import type { ConnectionDirection as SavedDirection } from '../../../../shared/connection-grants';
 import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
+import { parseAgentAddress } from '../../../../shared/agent-address';
+import { RemoteConnections, remoteConnections } from './RemoteConnections';
 
 export type ConnectionDirection = 'two-way' | 'to' | 'from';
 
@@ -76,6 +78,8 @@ export function agentConnections(
     .map((l) => ({ agentId: l.agentId, targetId: l.targetId, targetKind: 'agent', label: l.targetName, agentName: l.agentName, targetName: l.targetName }));
   const familyOf = (id: string): Connection['family'] => (family.helperIds.has(id) ? 'helper' : id === family.parentId ? 'parent' : null);
   for (const b of [...bindings, ...suspended]) {
+    // A wire to an agent on another machine is listed with those (#3064).
+    if (parseAgentAddress(b.targetId).machine) continue;
     if (b.agentId === agentId) {
       const existing = rows.get(b.targetId);
       if (existing) {
@@ -163,6 +167,12 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
   // Where each connection comes from (#2744), re-read with the bindings and after a removal.
   const sources = useConnectionSources(open && !!onDisconnect, agent.id, bindings, removals);
   const grants = useConnectionGrants(open && !!onDisconnect, agent.id, bindings, removals);
+  // A connection another computer made or changed changes no binding here, so its change re-reads the store (#3064).
+  useEffect(() => {
+    if (!open || !onDisconnect) return undefined;
+    return window.clubhouse.mcpBinding.onConnectionGrantsChanged(() => setRemovals((n) => n + 1));
+  }, [open, onDisconnect]);
+  const remoteCount = useMemo(() => remoteConnections(grants, agent.id).length, [grants, agent.id]);
   // The row being managed, by the other end's id: looked up each render so a new direction shows (#2972).
   const [managingId, setManagingId] = useState<string | null>(null);
   const managing = managingId ? connections.find((c) => c.id === managingId) ?? null : null;
@@ -174,11 +184,11 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
     <DetailsCard
       id="connections"
       title="Connections"
-      summary={connections.length === 0 ? 'none' : String(connections.length)}
+      summary={connections.length + remoteCount === 0 ? 'none' : String(connections.length + remoteCount)}
       open={open}
       onToggle={onToggle}
     >
-      {connections.length === 0 ? (
+      {connections.length === 0 && remoteCount > 0 ? null : connections.length === 0 ? (
         <CardNote>No Clubhouse MCP wires. Wires drawn on a canvas, and the ones between an orchestrator and its helpers, show here.</CardNote>
       ) : (
         <ul className="flex flex-col" data-testid="connections-list">
@@ -212,6 +222,7 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
           })}
         </ul>
       )}
+      {onDisconnect && <RemoteConnections agent={agent} grants={grants} onChanged={() => setRemovals((n) => n + 1)} />}
     </DetailsCard>
     {managing && (
       <ConnectionSourcesDialog

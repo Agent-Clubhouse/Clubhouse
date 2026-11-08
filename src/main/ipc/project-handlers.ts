@@ -6,6 +6,7 @@ import * as path from 'path';
 import { IPC } from '../../shared/ipc-channels';
 import { ICON_DATA_URL_MAX_LENGTH } from '../../shared/icon-limits';
 import * as projectStore from '../services/project-store';
+import { repoKeysFor } from '../services/project-repo-keys';
 import { ensureGitignore } from '../services/agent-config';
 import { readLaunchWrapper, writeLaunchWrapper, readMcpCatalog, writeMcpCatalog, readDefaultMcps, writeDefaultMcps, readMcpConfigs, writeMcpConfigs, readWrapperCatalogSnapshot, writeWrapperCatalogSnapshot } from '../services/agent-settings-service';
 import { appLog } from '../services/log-service';
@@ -83,6 +84,8 @@ export function registerProjectHandlers(): void {
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
   });
+
+  ipcMain.handle(IPC.PROJECT.REPO_KEYS, async () => repoKeysFor(await projectStore.list()));
 
   ipcMain.handle(IPC.PROJECT.CHECK_GIT, withValidatedArgs([stringArg()], async (_event, dirPath: string) => {
     return isInsideGitRepo(dirPath);

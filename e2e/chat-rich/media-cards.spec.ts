@@ -1,6 +1,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import * as path from 'path';
 import { CHAT_MEDIA, md, type ScriptStep } from '../../src/main/orchestrators/adapters/testing/chat-script';
+import { clickExplorerTab } from '../smoke-helpers';
 import { chatDom, openRichChat, TURN_TIMEOUT, type RichChat } from './harness';
 
 /**
@@ -240,12 +241,12 @@ test('claude: a playing card that leaves the transcript stops, and resumes where
   const playedTo2 = (await playerState(card))!.at;
 
   // Closing the transcript (another tab) unmounts it too.
-  await session.window.getByTestId('explorer-tab-plugin:files').click();
-  await expect(session.window.getByTestId('chat-view')).toHaveCount(0, { timeout: TURN_TIMEOUT });
+  await clickExplorerTab(session.electronApp, session.window, 'explorer-tab-plugin:files');
+  await expect(session.chat).toHaveCount(0, { timeout: TURN_TIMEOUT });
   expect(await playingMedia(session.window)).toBe(0);
 
-  await session.window.getByTestId('explorer-tab-agents').click();
-  await expect(session.window.getByTestId('chat-view')).toBeVisible({ timeout: TURN_TIMEOUT });
+  await clickExplorerTab(session.electronApp, session.window, 'explorer-tab-agents');
+  await expect(session.chat).toBeVisible({ timeout: TURN_TIMEOUT });
   // A fresh stream opens on the latest messages; turn 1 is in the older window.
   await session.window.getByTestId('chat-window-older').click();
   await expect(card).toHaveCount(1, { timeout: TURN_TIMEOUT });

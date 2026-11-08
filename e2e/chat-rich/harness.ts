@@ -6,7 +6,8 @@ import * as path from 'path';
 import { installFakeClis, ORCHESTRATOR_FOR_CLI, type FakeClis } from '../chat-fake-cli';
 import { launchApp, type ElectronApp } from '../launch';
 import { assertReviewReceipt, type ReviewEntry } from '../review-entry';
-import { addProject } from '../smoke-helpers';
+import { isNewLayout } from '../layout';
+import { addProject, assertRunLayout, createDurableAgent } from '../smoke-helpers';
 import { reportActionFailure } from '../renderer-diagnostics';
 import type { ChatFixtureCli } from '../../src/main/orchestrators/adapters/testing/fake-cli';
 import { buildChatScript, writeChatScript, type ChatScript } from '../../src/main/orchestrators/adapters/testing/chat-script';
@@ -21,7 +22,9 @@ import { SDK_FIXTURE_ENV, writeAuthenticatedSdkFixture } from './copilot-sdk-fix
  * `openRichChat` builds a scripted fixture (chat-script.ts) for one provider,
  * installs it as the fake CLI, launches the app with Chat and rich content on
  * by default, saves any flags the test asks for through the settings IPC, then
- * adds a project and opens a durable agent's chat. Every wait is on the DOM or the fake's report: no sleeps.
+ * adds a project and opens a durable agent's chat, on the run's layout (new by
+ * default, classic in the Classic layout E2E job). Every wait is on the DOM or
+ * the fake's report: no sleeps.
  */
 
 /** Every provider enabled and in chat mode; Claude on stream-json, which the fixtures speak. */
@@ -205,13 +208,13 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
   try {
     const app = await launchApp({
       ...(opts.reviewEntry && { executablePath: opts.reviewEntry.executablePath, args: [opts.reviewEntry.bootstrapPath] }),
-      experimental: { newChrome: false },
       userDataFiles: USER_DATA_FILES,
       env: { ...fakes.env, ...sdkEnv, ...(opts.reviewEntry && { CLUBHOUSE_REVIEW_GUARD_RECEIPT: opts.reviewEntry.receiptPath }), CLUBHOUSE_TEST_HELPER_SEAM: '1', [GITHUB_REFS_ENV]: githubRefsDir, ...(copilotHome && { COPILOT_HOME: copilotHome }) },
     });
     electronApp = app.electronApp;
     const { window } = app;
     rendererWindow = window;
+    await assertRunLayout(window);
     if (opts.reviewEntry) {
       // Bootstrap enforces installation before product load; this verifies its
       // owned receipt and live accounting before any fixture project/agent work.
@@ -229,17 +232,20 @@ export async function openRichChat(opts: RichChatOptions): Promise<RichChat> {
 
     await addProject(electronApp, window, projectDir);
     const name = `rich-${opts.cli}-${Date.now()}`;
-    await window.locator('button:has-text("+ Agent")').first().click();
-    await expect(window.locator('h2:has-text("New Agent")')).toBeVisible({ timeout: 5_000 });
-    await window.locator('input[type="text"]').first().fill(name);
-    await window.locator('label:has-text("Runs on") select').selectOption(ORCHESTRATOR_FOR_CLI[opts.cli]);
-    await window.locator('button:has-text("Create Agent")').click();
-    const item = window.locator(`[data-agent-name="${name}"][data-testid^="agent-item-durable_"]`);
-    await expect(item).toBeVisible({ timeout: 20_000 });
-    const agentId = (await item.getAttribute('data-testid'))!.slice('agent-item-'.length);
-    await item.click();
+    const agentId = await createDurableAgent(window, {
+      projectName: path.basename(projectDir), name, orchestrator: ORCHESTRATOR_FOR_CLI[opts.cli],
+    });
+    const item = window.getByTestId(`agent-item-${agentId}`);
+    if (await isNewLayout(window)) {
+      // The New agent page opens the agent it created. Clicking the row too
+      // would leave the pointer on it, and its hover card over the pane.
+      await expect(item).toHaveAttribute('data-active', 'true', { timeout: 10_000 });
+    } else {
+      await item.click();
+    }
 
-    const chat = window.locator('[data-testid="chat-view"]');
+    // This agent's chat in the main pane: popouts, canvas cards and plugins have chat views of their own.
+    const chat = window.locator(`[data-testid="chat-view"][data-agent-pane="${agentId}"][data-view-context="main"]`);
     await expect(chat).toBeVisible({ timeout: 20_000 });
     await expect(chat).toHaveAttribute('data-state', 'idle', { timeout: 20_000 });
     // The app spawned the fake, not a real CLI: its report exists and the handshake replayed.

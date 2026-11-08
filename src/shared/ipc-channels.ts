@@ -70,6 +70,8 @@ export const IPC = {
     REMOVE: 'project:remove',
     PICK_DIR: 'project:pick-dir',
     CHECK_GIT: 'project:check-git',
+    /** Each project's git remote as a key, for suggesting links across machines (#3066). */
+    REPO_KEYS: 'project:repo-keys',
     GIT_INIT: 'project:git-init',
     UPDATE: 'project:update',
     PICK_ICON: 'project:pick-icon',
@@ -610,6 +612,12 @@ export const IPC = {
     CONNECTION_GRANTS_CHANGED: 'mcp-binding:connection-grants-changed',
     /** The user's own link for the other direction of a one-way connection (#2972). */
     MAKE_TWO_WAY: 'mcp-binding:make-two-way',
+    /** Connect an agent here with one on another machine, one way or both (#3064). */
+    CONNECT_ACROSS_MACHINES: 'mcp-binding:connect-across-machines',
+    /** Remove the user's links between an agent here and one on another machine (#3064). */
+    DISCONNECT_ACROSS_MACHINES: 'mcp-binding:disconnect-across-machines',
+    /** Set the tools turned off on one direction with an agent on another machine (#3064). */
+    SET_TOOLS_ACROSS_MACHINES: 'mcp-binding:set-tools-across-machines',
     /** Remove one source of one connection (#2744). */
     REMOVE_CONNECTION_SOURCE: 'mcp-binding:remove-connection-source',
     /** Main→renderer: the agent id whose connection or tool count changed. */

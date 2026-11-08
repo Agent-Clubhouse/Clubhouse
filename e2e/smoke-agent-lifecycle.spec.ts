@@ -17,6 +17,7 @@ import {
   assertNotBlankScreen,
   assertRunLayout,
   navigateToSmokeProject,
+  openNewAgentPage,
   projectIdFor,
   revealAgent,
   writeAgentsJson,
@@ -254,10 +255,7 @@ test.describe('Agent Lifecycle — New Agent Page', () => {
 
   test('the project row opens the New agent page with its fields', async () => {
     await navigateToSmokeProject(window);
-    const projectId = await projectIdFor(window, FIXTURE_SMOKE);
-    await window.locator(`[data-testid="project-${projectId}"]`).hover();
-    await window.getByRole('button', { name: 'New agent in project-smoke', exact: true }).click();
-    await expect(page()).toBeVisible({ timeout: 10_000 });
+    await openNewAgentPage(window, 'project-smoke');
 
     await expect(window.locator('[data-testid="new-agent-kind-durable"]')).toHaveAttribute('aria-checked', 'true');
     await expect(window.locator('[data-testid="new-agent-name"]')).toBeVisible();

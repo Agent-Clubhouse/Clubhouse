@@ -23,6 +23,7 @@ import {
   settingsHelp,
 } from './SettingsLayout';
 import { Button } from '../../components/Button';
+import { LinkedProjectsSection } from './LinkedProjectsSection';
 
 function NameField({ projectId }: { projectId: string }) {
   const { projects, updateProject } = useProjectStore();
@@ -578,6 +579,7 @@ export function ProjectSettings({ projectId }: { projectId?: string }) {
       {/* Pending wrapper work belongs to the project where it started. */}
       <LaunchWrapperSection key={project.id} projectId={project.id} projectPath={project.path} />
       <BlueprintBundleSection projectId={project.id} projectPath={project.path} projectName={name} />
+      <LinkedProjectsSection projectId={project.id} />
       <RemoveProjectSection projectId={project.id} projectPath={project.path} projectName={name} />
     </SettingsPage>
   );

@@ -136,12 +136,15 @@ describe('grant check parity (#2968)', () => {
     }
     // message_parent was listed for every agent and refused by its handler without a parent.
     // set_helper_presets (#2785) is new, and needs settings.app.write, which no agent holds with Allow yet.
+    // The device tools (#3068) are new: only the Dispatcher sees devices, and it asks before changing any.
+    const deviceTools = ['list_devices', 'reconnect_device', 'remove_device', 'rename_device', 'start_adding_device'];
+    const manage = deviceTools.filter((t) => t !== 'list_devices');
     expect(diffs.sort()).toEqual([
-      'dispatcher: message_parent', 'dispatcher: set_helper_presets',
-      'helper: set_helper_presets',
-      'orchestrator: message_parent', 'orchestrator: set_helper_presets',
-      'plain: message_parent', 'plain: set_helper_presets',
-    ]);
+      'dispatcher: message_parent', ...manage.map((t) => `dispatcher: ${t}`), 'dispatcher: set_helper_presets',
+      ...deviceTools.map((t) => `helper: ${t}`), 'helper: set_helper_presets',
+      ...deviceTools.slice(0, 1).map((t) => `orchestrator: ${t}`), 'orchestrator: message_parent', ...deviceTools.slice(1).map((t) => `orchestrator: ${t}`), 'orchestrator: set_helper_presets',
+      ...deviceTools.slice(0, 1).map((t) => `plain: ${t}`), 'plain: message_parent', ...deviceTools.slice(1).map((t) => `plain: ${t}`), 'plain: set_helper_presets',
+    ].sort());
   });
 });
 

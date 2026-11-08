@@ -57,6 +57,11 @@ describe('tool grant declarations (#2967)', () => {
     expect(listToolGrants()).toEqual([{ kind: 'plugin', name: 'lookup', grant: 'plugin' }]);
   });
 
+  it('no tool finishes a pairing: none pairs, takes a code or confirms a certificate (#3068)', () => {
+    const names = registerAll().map((t) => t.name);
+    expect(names.filter((n) => /pair|pin|certificate|confirm_device|join/i.test(n))).toEqual([]);
+  });
+
   it('the whole map: every tool and its declaration', () => {
     const table = registerAll().map((t) => `${t.kind === 'global' ? '' : `${t.kind} `}${t.name}: ${describeToolGrant(t.grant)}`);
     expect(table.join('\n')).toMatchInlineSnapshot(`
@@ -153,7 +158,12 @@ describe('tool grant declarations (#2967)', () => {
       read_helper_presets: settings.app.read on app
       set_helper_presets: settings.app.write on app
       request_grant: grant.request on self
-      update_my_card: agent.display on self"
+      update_my_card: agent.display on self
+      list_devices: device.read on app
+      rename_device: device.manage on app
+      reconnect_device: device.manage on app
+      remove_device: device.manage on app
+      start_adding_device: device.manage on app"
     `);
   });
 });

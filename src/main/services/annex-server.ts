@@ -31,7 +31,7 @@ import { buildAgentDetails, buildAgentSettings, buildAgentSettingsOptions, build
 import {
   DISPATCHER_CHANGED_EVENT, DISPATCHER_PROJECT_ID, activeDispatcher, assertDispatcherCommand, dispatcherCapability, dispatcherChange, dispatcherFolderProject,
   dispatcherOffFields, dispatcherRecord, dispatcherShellProject, dispatcherSnapshotFlags, isDisabledDispatcherId, isDispatcherProjectId,
-  setDispatcherEnabledFromPhone,
+  phoneChatEvent, phoneChatEvents, setDispatcherEnabledFromPhone,
 } from './mobile-dispatcher';
 import { getDispatcherState, onDispatcherChanged } from './dispatcher/dispatcher-service';
 import { helperRoutingRevision, onHelperRoutingChanged } from './helper-routing';
@@ -51,6 +51,8 @@ import { createBonjour } from './annex-mdns';
 import { withReachableAs } from './annex-reach';
 import * as networkChannel from './annex-network-channel';
 import * as membership from './annex-network-membership';
+import * as agentCalls from './annex-agent-calls';
+import { cachedRepoKeys } from './project-repo-keys';
 import { NETWORK_MESSAGE_MAX_BYTES, NETWORK_PROTOCOL_VERSION, parseNetworkMessage } from '../../shared/annex-network-protocol';
 import { parseAgentAddress, routeOf } from '../../shared/agent-address';
 import * as annexEventBus from './annex-event-bus';
@@ -1153,6 +1155,9 @@ async function readSnapshotSourcesData() {
   }));
 
   const iconSet = await buildSnapshotIcons(projects, durablesByProject, dispatcherRecord() ?? undefined);
+  // Each project's git remote as a key, so another machine can suggest linking the same project (#3066).
+  // Whatever is known now: the snapshot never waits on git, and the rest arrive with a later one.
+  const repoKeys = cachedRepoKeys(projects);
 
   // Read per-project canvas state in parallel (including wires)
   const canvasState: Record<string, CanvasStateWire> = {};
@@ -1176,7 +1181,7 @@ async function readSnapshotSourcesData() {
     }
   }));
 
-  return { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, bulletinDigests };
+  return { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, bulletinDigests, repoKeys };
 }
 
 /**
@@ -1187,7 +1192,7 @@ async function readSnapshotSourcesData() {
  * what changes it asks for another refresh, which follows this one.
  */
 function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
-  const { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, bulletinDigests } = sources;
+  const { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, bulletinDigests, repoKeys } = sources;
   const { projectIcons, agentIcons, stats: icons, iconRefs } = iconSet;
   const agents: Record<string, unknown[]> = {};
   const quickAgents: Record<string, unknown[]> = {};
@@ -1260,7 +1265,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     protocolVersion: ANNEX_PROTOCOL_VERSION,
     // Which machine this is (#3063): its agents' addresses are `<agentId>@<fingerprint>`.
     ...thisMachine(),
-    projects,
+    projects: projects.map((p) => (repoKeys?.[p.id] ? { ...p, repoKey: repoKeys[p.id] } : p)),
     agents,
     quickAgents,
     agentsMeta,
@@ -3452,6 +3457,50 @@ async function handleMobileNetworkMembersRoute(ctx: AnnexRouteContext): Promise<
   sendJson(ctx.res, 200, membership.vouchFromPhone(ctx.mobilePrincipal, parsed.message.members));
 }
 
+/**
+ * Another computer's agents calling this one's, and the connections between
+ * them (#3064): only a computer in this machine's network (D238), never a phone
+ * or a one-to-one pairing.
+ */
+function agentCallPeer(ctx: AnnexRouteContext): string | null {
+  const fp = ctx.mobilePrincipal;
+  if (!fp || mobileSessionPeers.has(fp)) return null;
+  return agentCalls.isNetworkComputer(fp) ? fp : null;
+}
+
+async function readAgentCallBody(ctx: AnnexRouteContext): Promise<unknown | undefined> {
+  let raw: string;
+  try { raw = (await readCappedBody(ctx.req, agentCalls.AGENT_CALL_MAX_BYTES)).toString(); } catch (err) {
+    if (isBodyTooLarge(err)) { refuseOversizedBody(ctx.req, ctx.res); return undefined; }
+    sendJson(ctx.res, 400, { error: 'invalid_json' }); return undefined;
+  }
+  try { return JSON.parse(raw); } catch { sendJson(ctx.res, 400, { error: 'invalid_json' }); return undefined; }
+}
+
+async function handleNetworkAgentCallRoute(ctx: AnnexRouteContext): Promise<void> {
+  const machine = agentCallPeer(ctx);
+  if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only a computer in this Annex Network can call agents here.' }); return; }
+  const body = await readAgentCallBody(ctx);
+  if (body === undefined) return;
+  // Checked again once the body is here: the peer may have been removed meanwhile.
+  if (ctx.requireMtls()) return;
+  const outcome = await agentCalls.receiveAgentCall(machine, body);
+  if ('result' in outcome) sendJson(ctx.res, 200, { result: outcome.result });
+  else sendJson(ctx.res, outcome.status, { error: outcome.error, message: outcome.message });
+}
+
+async function handleNetworkConnectionsRoute(ctx: AnnexRouteContext): Promise<void> {
+  const machine = agentCallPeer(ctx);
+  if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only a computer in this Annex Network can share connections here.' }); return; }
+  const body = await readAgentCallBody(ctx);
+  if (body === undefined) return;
+  if (ctx.requireMtls()) return;
+  const outcome = await agentCalls.receiveDirections(machine, body);
+  // Answered with this machine's own share, so the sender has it even if this one can't reach it.
+  if ('applied' in outcome) sendJson(ctx.res, 200, { ...outcome, directions: await agentCalls.shareForAnswer(machine) });
+  else sendJson(ctx.res, outcome.status, { error: outcome.error, message: outcome.message });
+}
+
 /** Sends a phone its network view on every connection it has open here, at once. */
 function tellPhoneNow(fingerprint: string): void {
   const frame = JSON.stringify({ type: 'network:changed', payload: networkForPhone(fingerprint) });
@@ -3631,7 +3680,9 @@ async function handleMobileChatRoute(ctx: AnnexRouteContext, match: RegExpMatchA
     const sessionId = requestedSession ?? (live ? liveSessionId : events[events.length - 1]?.sessionId);
     live = live && getAgentRuntime(agentId) === runtime && runtime.isRunning() && runtime.getSessionId?.() === sessionId;
     const current = events.filter((e) => e.sessionId === sessionId);
-    const eligible = beforeSeq === undefined ? current : current.filter((e) => e.seq < beforeSeq);
+    // The Dispatcher's chat comes as its group chat shows it (#3043); the cursor and what's pending still read it all.
+    const shown = phoneChatEvents(agentId, current);
+    const eligible = beforeSeq === undefined ? shown : shown.filter((e) => e.seq < beforeSeq);
     // The agent's folders (#2457): relative paths resolve against the first. Older phones
     // link only absolute paths under them; `contentAnyPath` says any readable path is served (#2478).
     const richContent = isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG);
@@ -3731,7 +3782,9 @@ async function handleMobileFullEventRoute(ctx: AnnexRouteContext, match: RegExpM
     const runtime = getAgentRuntime(agentId);
     const live = runtime?.kind === 'chat' && runtime.isRunning() && runtime.getSessionId?.() === sessionId;
     const events = live ? (await runtime.readTranscript()).events ?? [] : await readChatTranscript(agentId, { sessionId });
-    const event = findFullEvent(events, sessionId, seq);
+    const found = findFullEvent(events, sessionId, seq);
+    // An event the Dispatcher's group chat doesn't show isn't there for a phone either (#3043).
+    const event = found ? phoneChatEvent(found) : undefined;
     if (!authorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
     if (!event || event.agentId !== agentId) { sendJson(ctx.res, 404, { error: 'event_not_found' }); return; }
     const body = JSON.stringify({ version: 1, agentId, sessionId, seq, digest: fullEventDigest(event), event });
@@ -4146,6 +4199,8 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/capabilities$/, handler: handleMobileCapabilitiesRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/network$/, handler: handleMobileNetworkRoute },
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/network\/members$/, handler: handleMobileNetworkMembersRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/agent-call$/, handler: handleNetworkAgentCallRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/connections$/, handler: handleNetworkConnectionsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas$/, handler: handleMobileCanvasRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas\/([^/]+)$/, handler: handleMobileCanvasRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/mobile\/pairing$/, handler: handleMobilePairingDeleteRoute },
@@ -4971,8 +5026,10 @@ export function start(): void {
   unsubChatEvent = onChatEvent((event) => {
     noteAgentActivity(event.agentId, event.ts);
     if (event.type === 'session_ended') forgetAppendedNotes(event.agentId, event.sessionId);
+    // The Dispatcher's chat goes as its group chat shows it (#3043): fewer events, the same shape.
+    const shown = phoneChatEvent(event);
     // Remote clients never get desktop paths or inline image bytes (#2453).
-    broadcastAndBuffer('chat:event', { agentId: event.agentId, event: remoteChatEvent(event) }, chatEventTraceparent(event));
+    if (shown) broadcastAndBuffer('chat:event', { agentId: event.agentId, event: remoteChatEvent(shown) }, chatEventTraceparent(event));
     pushChatStatus(event);
   });
 

@@ -24,7 +24,7 @@ import { AccessSelect, ControlSelect, DISPATCHER_HELP } from '../agents/helpers/
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 
-const selectClass = `${settingsInput} pr-6 cursor-pointer`;
+const selectClass = `${settingsInput} cursor-pointer`;
 
 type ListedTemplate = ManagedTemplate & { usedBy: number };
 type TemplateDraft = Pick<ManagedTemplate, 'name' | 'description' | 'setup' | 'settings'> & { id?: string };

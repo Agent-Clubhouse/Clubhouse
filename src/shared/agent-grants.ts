@@ -58,6 +58,9 @@ export const GRANT_ACTIONS = [
   'browser.read',
   'browser.act',
   'grant.request', // ask for a grant for itself
+  // Annex Network (#3068): this machine's devices. No action lets an agent finish a pairing.
+  'device.read', // names, and whether each is online
+  'device.manage', // rename, reconnect, remove, and start adding one (a person finishes it)
 ] as const;
 
 export type GrantAction = (typeof GRANT_ACTIONS)[number];

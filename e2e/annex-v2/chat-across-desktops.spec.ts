@@ -14,7 +14,8 @@ import * as path from 'path';
 import { installFakeClis, type FakeClis } from '../chat-fake-cli';
 import { launchApp, type LaunchedApp } from '../launch';
 import { untrackOpenApp } from '../e2e-cleanup';
-import { addProject } from '../smoke-helpers';
+import { addProject, assertRunLayout, createDurableAgent } from '../smoke-helpers';
+import { isNewLayout } from '../layout';
 import { enableAnnexViaPreload } from './helpers';
 
 let fakes: FakeClis | undefined;
@@ -43,8 +44,6 @@ test('a controller reads and drives a chat agent on another desktop', async () =
   satellite = await launchApp({
     label: 'satellite',
     args: ['--disable-gpu'],
-    // The classic layout's agent list and New Agent dialog, as the chat E2E drives them.
-    experimental: { newChrome: false },
     userDataFiles: {
       'orchestrator-settings.json': { enabled: ['claude-code'], autoDetected: true },
       'chat-runtime-settings.json': { 'claude-code': { mode: 'chat', driver: 'claude_stream_json' } },
@@ -53,20 +52,15 @@ test('a controller reads and drives a chat agent on another desktop', async () =
   });
   controller = await launchApp({ label: 'controller', args: ['--disable-gpu'] });
   const sat = satellite.window;
+  await assertRunLayout(sat);
 
   // A durable chat agent on the satellite.
   await addProject(satellite.electronApp, sat, projectDir);
   const name = `remote-chat-${Date.now()}`;
-  await sat.locator('button:has-text("+ Agent")').first().click();
-  await expect(sat.locator('h2:has-text("New Agent")')).toBeVisible({ timeout: 5_000 });
-  await sat.locator('input[type="text"]').first().fill(name);
-  await sat.locator('label:has-text("Runs on") select').selectOption('claude-code');
-  await sat.locator('button:has-text("Create Agent")').click();
-  const item = sat.locator(`[data-agent-name="${name}"][data-testid^="agent-item-durable_"]`);
-  await expect(item).toBeVisible({ timeout: 20_000 });
-  const agentId = (await item.getAttribute('data-testid'))!.replace(/^agent-item-/, '');
-  await item.click();
-  const chat = sat.locator('[data-testid="chat-view"]');
+  const agentId = await createDurableAgent(sat, { projectName: path.basename(projectDir), name, orchestrator: 'claude-code' });
+  // Classic opens the agent from its row; the new layout opens a created agent itself.
+  if (!(await isNewLayout(sat))) await sat.locator(`[data-testid="agent-item-${agentId}"]`).click();
+  const chat = sat.locator(`[data-testid="chat-view"][data-agent-pane="${agentId}"][data-view-context="main"]`);
   await expect(chat).toHaveAttribute('data-state', 'idle', { timeout: 20_000 });
 
   // The controller pairs with the satellite.
