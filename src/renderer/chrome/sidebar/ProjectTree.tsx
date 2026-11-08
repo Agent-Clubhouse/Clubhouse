@@ -5,7 +5,7 @@ import { ProjectGroup } from './ProjectGroup';
 import { buildProjectTree, holdOrder, isInSleepingFold, localParentId, moveProject } from './treeModel';
 import { sidebarProjectGroups } from './sidebarProjectOrder';
 import { useAgentStore } from '../../stores/agentStore';
-import { PopupMenu, type MenuEntry } from '../../components/PopupMenu';
+import { PopupMenu, type MenuEntry, type MenuItem } from '../../components/PopupMenu';
 import { useToastStore } from '../../stores/toastStore';
 import { reportChromeFeature } from '../telemetry';
 import { Tooltip } from '../../components/Tooltip';
@@ -56,6 +56,16 @@ export interface ProjectTreeProps {
   onOpenSettings?: (projectId: string) => void;
   onCloseProject?: (projectId: string) => void;
   onReorderAgents?: (projectId: string, orderedIds: string[]) => void;
+  /**
+   * A project on another machine (#3065): it's shown with this machine's, and
+   * the actions that change a project here (new agent, settings, close,
+   * reordering, marking inactive, the terminal) are left out for it.
+   */
+  isRemoteProject?: (projectId: string) => boolean;
+  /** For an agent on another machine: a short label for it, and whether that machine is offline. */
+  agentMachine?: (agent: Agent) => { label?: string; offline?: boolean } | undefined;
+  /** More items for a project's menu: Merge with… and Split per machine. */
+  projectMenuItems?: (projectId: string) => MenuItem[];
 }
 
 const SortIcon = (
@@ -389,6 +399,7 @@ export function ProjectTree(props: ProjectTreeProps) {
         : activeProjectId ? `project:${activeProjectId}` : null;
   const keyboard = useTreeKeyboard(treeRef, selectedKey);
 
+  const remoteOf = (projectId: string) => props.isRemoteProject?.(projectId) ?? false;
   const renderGroup = (project: Project, underIdle = false) => (
     <ProjectGroup
       level={underIdle ? 2 : 1}
@@ -414,25 +425,27 @@ export function ProjectTree(props: ProjectTreeProps) {
       onToggleFold={onToggleFold}
       onCloseFold={onCloseFold}
       onToggleSleepingPinned={onToggleSleepingPinned}
-      onNewAgent={props.onNewAgent}
-      draggable={!!props.onReorder}
+      onNewAgent={remoteOf(project.id) ? undefined : props.onNewAgent}
+      draggable={!!props.onReorder && !remoteOf(project.id)}
       onSelectAgent={props.onSelectAgent}
-      onOpenTerminal={props.terminalProjectIds?.has(project.id) ? props.onOpenTerminal : undefined}
+      onOpenTerminal={props.terminalProjectIds?.has(project.id) && !remoteOf(project.id) ? props.onOpenTerminal : undefined}
       onSelectCompleted={props.onSelectCompleted}
       onDismissCompleted={props.onDismissCompleted}
       onClearCompleted={props.onClearCompleted}
       dragHandlers={dragHandlers}
       dropIndicator={overId === project.id && dragId !== null && dragId !== project.id}
-      onMoveProject={onReorder ? onMoveProject : undefined}
+      onMoveProject={onReorder && !remoteOf(project.id) ? onMoveProject : undefined}
       sortedByRecent={!!props.onReorder && !onReorder}
       inSection={underIdle ? 'idle' : sectionOf.get(project.id) ?? 'active'}
-      onSetInactive={props.onReorder ? onSetInactive : undefined}
-      onAgentReorderHint={props.onReorderAgents && !onReorderAgents ? onAgentReorderHint : undefined}
+      onSetInactive={props.onReorder && !remoteOf(project.id) ? onSetInactive : undefined}
+      onAgentReorderHint={props.onReorderAgents && !onReorderAgents && !remoteOf(project.id) ? onAgentReorderHint : undefined}
       canMoveUp={neighbour(project.id, -1) !== null}
       canMoveDown={neighbour(project.id, 1) !== null}
-      onOpenSettings={props.onOpenSettings}
-      onCloseProject={props.onCloseProject}
-      onReorderAgents={onReorderAgents}
+      onOpenSettings={remoteOf(project.id) ? undefined : props.onOpenSettings}
+      onCloseProject={remoteOf(project.id) ? undefined : props.onCloseProject}
+      onReorderAgents={remoteOf(project.id) ? undefined : onReorderAgents}
+      agentMachine={props.agentMachine}
+      extraMenuItems={props.projectMenuItems?.(project.id)}
       collapsedAgentIds={collapsedAgentSet}
       onToggleAgentCollapsed={onToggleAgentCollapsed}
     />

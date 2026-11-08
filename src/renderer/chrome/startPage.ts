@@ -5,6 +5,7 @@ import { useAgentStore } from '../stores/agentStore';
 import { useChromeStore, type NewAgentOptions } from './chromeStore';
 import { isNewChromeEnabled } from './chromeFlag';
 import { useQuickPromptStore } from './quickPromptStore';
+import { returnToThisMachine } from './hosts';
 
 /**
  * Open a project's start page: the project header selected with the Agents tab
@@ -55,6 +56,8 @@ export function openNewAgentPage(kind: 'durable' | 'quick', projectId?: string, 
 
 /** The New agent page, or the Quick Agent dialog where the page can't open. For the app's own entry points. */
 export function openNewAgentOrDialog(kind: 'durable' | 'quick', projectId?: string): void {
+  // A new agent is made on this machine (#3065): with another machine shown, come back first.
+  if (isNewChromeEnabled()) returnToThisMachine(projectId);
   if (!openNewAgentPage(kind, projectId)) useUIStore.getState().openQuickAgentDialog();
 }
 
@@ -69,6 +72,7 @@ export function openNewAgentFromShortcut(): void {
  * projects) the Quick Agent dialog, as before.
  */
 export function openQuickPrompt(): void {
+  if (isNewChromeEnabled()) returnToThisMachine();
   if (!canOpenNewAgentPage()) { useUIStore.getState().openQuickAgentDialog(); return; }
   useQuickPromptStore.getState().openPrompt();
 }

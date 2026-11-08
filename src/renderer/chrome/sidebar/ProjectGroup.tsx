@@ -127,6 +127,10 @@ export interface ProjectGroupProps {
   onSetInactive?: (projectId: string, inactive: boolean) => void;
   /** Agents are in Recent order: dragging a row says how to reorder instead (#2116). */
   onAgentReorderHint?: () => void;
+  /** For an agent on another machine: a short label for it, and whether that machine is offline (#3065). */
+  agentMachine?: (agent: Agent) => { label?: string; offline?: boolean } | undefined;
+  /** More project menu items, after the project's own: Merge with… and Split per machine (#3065). */
+  extraMenuItems?: MenuItem[];
   /** Tree depth of the header: 1, or 2 inside the idle row. */
   level?: number;
   /** Agents whose helpers are folded away (#2231). */
@@ -175,7 +179,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     onSelectProject, onToggleCollapsed, onTogglePinned, onToggleFold, onCloseFold, onToggleSleepingPinned, onNewAgent,
     onSelectAgent, onOpenTerminal, onSelectCompleted, onDismissCompleted, onClearCompleted, dragHandlers, dropIndicator, draggable = true,
     onMoveProject, canMoveUp, canMoveDown, onOpenSettings, onCloseProject, onReorderAgents, level = 1, parentKey,
-    sortedByRecent, inSection, onSetInactive, onAgentReorderHint,
+    sortedByRecent, inSection, onSetInactive, onAgentReorderHint, agentMachine, extraMenuItems,
   } = props;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const armRefocus = useRefocusAfterMove();
@@ -200,7 +204,8 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
   // group's new order goes back into the saved order at the same places
   // (moveWithinGroup). Memoized on the order, sleep and parent links, so
   // memoized rows don't re-render on every status change.
-  const durableKey = JSON.stringify(agents.filter((a) => a.kind === 'durable').map((a) => [a.id, a.status === 'sleeping', localParentId(a) ?? null]));
+  // Only this project's own agents reorder: a linked group's others are another project's, maybe on another machine (#3066).
+  const durableKey = JSON.stringify(agents.filter((a) => a.kind === 'durable' && a.projectId === project.id).map((a) => [a.id, a.status === 'sleeping', localParentId(a) ?? null]));
   const reorder = useMemo(() => {
     const entries = (JSON.parse(durableKey) as [string, boolean, string | null][]).map(([id, sleeping, parent]) => ({
       id, kind: 'durable' as const, status: sleeping ? 'sleeping' as const : 'running' as const, parentAgentId: parent ?? undefined,
@@ -293,16 +298,20 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
         onToggleHelpers={hasHelpers ? onToggleAgentCollapsed : undefined}
         dot={agentDot(agent, detailed[agent.id])}
         detailed={detailed[agent.id]}
-        projectPath={project.path}
-        onOpenTerminal={onOpenTerminal}
-        active={agent.id === activeAgentId && isActiveProject}
+        // A linked group's agents from another project have that project's folder and terminal, not this one's.
+        projectPath={agent.projectId === project.id ? project.path : undefined}
+        onOpenTerminal={agent.projectId === project.id ? onOpenTerminal : undefined}
+        // A linked group's agents are in other projects too (#3066): each is active by its own project.
+        active={agent.id === activeAgentId && (isActiveProject || agent.projectId === activeProjectId)}
+        machine={agentMachine?.(agent)?.label}
+        offline={agentMachine?.(agent)?.offline}
         indent={indent}
         level={level + depth}
         parentKey={parentKey}
         extraActions={moveActions(agent)}
         onSelect={onSelectAgent}
         drag={reorder.actions.has(agent.id) && reorder.groupOf.get(agent.id)!.length > 1 ? agentDragHandlers
-          : agent.kind === 'durable' ? hintDragHandlers : undefined}
+          : agent.kind === 'durable' && agent.projectId === project.id ? hintDragHandlers : undefined}
         dropEdge={dropEdge(agent.id)}
       />
     );
@@ -344,6 +353,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     ...(onNewAgent ? [{ id: 'new-agent', label: 'New agent…', onSelect: () => onNewAgent(project.id) }] : []),
     ...(onOpenSettings ? [{ id: 'settings', label: 'Project settings', onSelect: () => onOpenSettings(project.id) }] : []),
     ...(onCloseProject ? [{ id: 'close-project', label: 'Close project', onSelect: () => onCloseProject(project.id) }] : []),
+    ...(extraMenuItems ?? []),
   ];
   const openMenu = (x: number, y: number) => {
     setMenu({ x, y });
