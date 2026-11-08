@@ -269,6 +269,8 @@ describe('as telemetry audit events (#2920)', () => {
       enableSettingsAudit();
       const store = createSettingsStore('audit-secret-test.json', { apiToken: 'none', theme: 'dark', enabled: false }, undefined, { audit: { key: 'store_test', keys: ['apiToken', 'theme'] } });
       await store.save({ apiToken: secrets[0], theme: 'light', enabled: true });
+      // The store doesn't wait for its audit: wait for the last of its rows before reading the record.
+      await vi.waitFor(async () => expect((await rows()).some((r) => r.key === 'store_test.enabled')).toBe(true));
       await recorder.flush();
     } finally {
       setLocalSink(null);
