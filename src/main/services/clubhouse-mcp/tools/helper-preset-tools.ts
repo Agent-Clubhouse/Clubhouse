@@ -6,10 +6,10 @@
  * Reading is an app settings read (`settings.app.read`), which every agent
  * holds: presets hold no secrets. Changing them is an app settings write
  * (`settings.app.write`), checked by the grant check on every call (#2968).
- * No agent holds it with Allow by default: the Dispatcher's is Ask first,
- * which needs the requests in Needs you (#2970), so until a person grants it
- * every change is refused and the tool isn't listed. Agent text can't grant it,
- * and helpers never inherit it.
+ * No agent holds it with Allow by default: the Dispatcher's is Ask first, so
+ * each change waits for the user in Needs you (#2970), and other agents are
+ * refused until a person grants it. Agent text can't grant it, and helpers
+ * never inherit it.
  */
 
 import { registerGlobalTool } from '../tool-registry';

@@ -1,6 +1,7 @@
 import { useAgentStore } from '../../stores/agentStore';
 import { DeleteAgentDialog } from '../../features/agents/DeleteAgentDialog';
 import { HelperDisposeRequestDialog } from '../../features/agents/helpers/HelperDisposeRequestDialog';
+import { GrantRequestDialog } from '../../features/agents/GrantRequestDialog';
 import { ManagedRestartHost } from '../../features/managed/restart';
 
 /**
@@ -17,6 +18,7 @@ export function ChromeAgentDialogs() {
       {deleteDialogAgent && <DeleteAgentDialog />}
       <ManagedRestartHost />
       <HelperDisposeRequestDialog />
+      <GrantRequestDialog />
     </>
   );
 }

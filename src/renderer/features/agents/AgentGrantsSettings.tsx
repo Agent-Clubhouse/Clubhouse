@@ -15,6 +15,8 @@ import {
 import { Button } from '../../components/Button';
 import { reportChromeActionFailed } from '../../chrome/telemetry';
 import { Field, SectionHeading } from './agentSettingsUi';
+import { GrantRequestList } from './GrantRequestList';
+import { useGrantRequestStore } from '../../stores/grantRequestStore';
 
 const MODES: ReadonlyArray<{ mode: GrantChangeMode; label: string }> = [
   { mode: 'off', label: 'Off' },
@@ -179,8 +181,8 @@ export function AgentGrantsSettings({ agent, projectPath, refreshKey = 0 }: {
   return (
     <div data-testid="agent-grants-settings">
       {intro}
-      <div className="flex items-center gap-3 min-h-[28px]">
-        <p className="flex-1 min-w-0 text-xs text-ctp-overlay1">Ask first refuses for now, until Clubhouse can ask you in Needs you.</p>
+      <WaitingRequests agentId={agent.id} agentName={agent.name} onAnswered={() => setLoadAttempt((n) => n + 1)} />
+      <div className="flex items-center justify-end gap-3 min-h-[28px]">
         {changed && (
           <Button onClick={() => void reset()} disabled={resetting} data-testid="agent-grants-reset">Reset to defaults</Button>
         )}
@@ -210,6 +212,18 @@ export function AgentGrantsSettings({ agent, projectPath, refreshKey = 0 }: {
         </section>
       ))}
     </div>
+  );
+}
+
+/** Requests waiting on the user (#2970), above the rows they'd change. */
+function WaitingRequests({ agentId, agentName, onAnswered }: { agentId: string; agentName: string; onAnswered: () => void }) {
+  const waiting = useGrantRequestStore((s) => Object.values(s.requests).some((r) => r.agentId === agentId));
+  if (!waiting) return null;
+  return (
+    <section aria-label="Waiting for you" data-testid="agent-grants-waiting">
+      <SectionHeading title="Waiting for you" />
+      <GrantRequestList agentId={agentId} agentName={agentName} onAnswered={onAnswered} />
+    </section>
   );
 }
 

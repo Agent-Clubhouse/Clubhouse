@@ -6,6 +6,7 @@ import { usePanelStore } from '../stores/panelStore';
 import { useUIStore } from '../stores/uiStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { HelperDisposeRequestDialog } from '../features/agents/helpers/HelperDisposeRequestDialog';
+import { GrantRequestDialog } from '../features/agents/GrantRequestDialog';
 
 /**
  * The three-panel project layout (explorer │ accessory │ main content) of the
@@ -59,6 +60,7 @@ export function ProjectPanelLayout() {
       </div>
       {/* An orchestrator's dispose request, opened from the helper's row (#2229). The new chrome mounts its own. */}
       <HelperDisposeRequestDialog />
+      <GrantRequestDialog />
     </div>
   );
 }
