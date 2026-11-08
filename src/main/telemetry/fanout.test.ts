@@ -151,6 +151,22 @@ describe('multi-destination fan-out', () => {
     expect(a.logs.getFinishedLogRecords()[0].attributes['service.version']).toBeUndefined();
   });
 
+  it('drops chosen attributes for one destination only (#2526)', async () => {
+    const a = sink();
+    const b = sink();
+    const installId = '0f1e2d3c-4b5a-4968-8776-655443322110';
+    const r = start([dest('azure', 'azure', a, 'standard'), dest('fb', 'otlp', b, 'standard', 'all', { dropAttributes: ['enduser.pseudo.id'] })], {
+      resourceAttributes: { 'service.name': 'clubhouse', 'enduser.pseudo.id': installId },
+    });
+    r.flow('clubhouse.agent.spawn', {}, () => undefined);
+    r.event('clubhouse.ui.feature_used');
+    await r.forceFlush(1000);
+    expect(a.spans.getFinishedSpans()[0].attributes['enduser.pseudo.id']).toBe(installId);
+    expect(a.logs.getFinishedLogRecords()[0].attributes['enduser.pseudo.id']).toBe(installId);
+    expect(b.spans.getFinishedSpans()[0].attributes).not.toHaveProperty('enduser.pseudo.id');
+    expect(b.logs.getFinishedLogRecords()[0].attributes).not.toHaveProperty('enduser.pseudo.id');
+  });
+
   it('tracks health per destination: one failing does not stop or taint the other', async () => {
     const good = sink();
     const failing: SpanExporter = {

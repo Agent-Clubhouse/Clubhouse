@@ -34,6 +34,7 @@ import {
   getTelemetrySettings,
   applyExportGraduation,
   exportPermitted,
+  findDestination,
   hasDestinationConfigured,
   migrateLegacySecrets,
   normalizeSampleRate,
@@ -47,6 +48,7 @@ import type { ExportRecord } from './types';
 import { loadSdk } from './lazy-chunks';
 import type { SdkDestination } from './destinations/types';
 import { getAdapter, resolveEntry } from './destinations/registry';
+import { getFramebriarTelemetrySource } from './destinations/framebriar-source';
 import { recordingLevel } from './filters';
 import type { TelemetryLevel } from '../../shared/telemetry/attributes';
 import type { TelemetryDestinationKind } from '../../shared/telemetry/settings-types';
@@ -239,6 +241,7 @@ async function start(): Promise<boolean> {
           exporters,
           filter: { level: entry.level, preset: entry.preset },
           copyResourceAttributes: adapter.copyResourceAttributes,
+          dropAttributes: adapter.dropAttributes,
         };
       } catch (err) {
         errors.set(entry.id, 'This destination failed to start. See the local log for details.');
@@ -364,7 +367,10 @@ export function initTelemetry(): void {
   if (graduation) finishExportGraduation(graduation);
   try {
     if (getTelemetrySettings().legacyDestination) void migrateLegacySecretsOnReady();
-    if (!isTelemetryConfigured()) return;
+    if (!isTelemetryConfigured()) {
+      if (awaitingFramebriar(getTelemetrySettings())) holdForFramebriar();
+      return;
+    }
   } catch {
     return;
   }
@@ -372,6 +378,37 @@ export function initTelemetry(): void {
   starting = start().finally(() => {
     starting = null;
   });
+}
+
+/** How long startup signals wait for Feedback to restore its enrollment (#2522). */
+export const FRAMEBRIAR_STARTUP_HOLD_MS = 120_000;
+let framebriarHoldTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * The developer destination is the one that would export, and only Feedback
+ * is missing: consent recorded, a confirmed host, not switched off by the
+ * user. Feedback restores its enrollment long after init (#2522).
+ */
+function awaitingFramebriar(settings: TelemetrySettings): boolean {
+  const entry = findDestination(settings, 'framebriar');
+  return !!entry && exportPermitted(settings) && !!entry.confirmedHost && !entry.framebriar?.userOff
+    && getFramebriarTelemetrySource()?.() == null;
+}
+
+/**
+ * Buffer startup signals (app.startup, app.sessions, early exceptions) for
+ * Feedback. When it connects, syncFramebriarDestination starts the runtime,
+ * which replays them. If it doesn't connect in time, they are dropped, as
+ * when any destination fails to start.
+ */
+function holdForFramebriar(): void {
+  beginPending();
+  if (framebriarHoldTimer) clearTimeout(framebriarHoldTimer);
+  framebriarHoldTimer = setTimeout(() => {
+    framebriarHoldTimer = null;
+    if (!getRuntime() && !starting) abortPending();
+  }, FRAMEBRIAR_STARTUP_HOLD_MS);
+  framebriarHoldTimer.unref?.();
 }
 
 /**

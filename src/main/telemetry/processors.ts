@@ -393,6 +393,8 @@ export class ObservedMetricExporter implements PushMetricExporter {
 export interface DestinationStamp {
   attributes: Record<string, string>;
   copyResourceAttributes: readonly string[];
+  /** Keys removed from the item's own attributes for this destination. */
+  dropAttributes?: readonly string[];
 }
 
 function stampAttributes(
@@ -406,6 +408,7 @@ function stampAttributes(
     if (v !== undefined && !(k in out)) out[k] = v;
   }
   for (const [k, v] of Object.entries(stamp.attributes)) if (!(k in out)) out[k] = v;
+  for (const k of stamp.dropAttributes ?? []) delete out[k];
   return out;
 }
 
