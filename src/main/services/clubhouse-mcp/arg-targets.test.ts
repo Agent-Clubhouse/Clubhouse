@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 
@@ -130,6 +131,32 @@ describe('targets named in the arguments (#2974)', () => {
   it('an agent elsewhere is found by id', async () => {
     const [targets] = [...(await resolveArgTargets('dispatcher', configure, { agent_id: 'faraway' })).values()];
     expect(targets).toEqual([expect.objectContaining({ kind: 'agent', projectPath: '/far' })]);
+  });
+
+  it('a folder being added is checked by its path, even though it isn\'t a project yet (#3050)', async () => {
+    const add: ToolGrant = { actions: ['project.add'], target: 'project_arg', from: { args: ['path'] } };
+    // Resolved as main resolves it, so on Windows it is a drive path too.
+    const folder = path.resolve('/new/repo');
+    const other = path.resolve('/other');
+    const [targets] = [...(await resolveArgTargets('dispatcher', add, { path: folder })).values()];
+    expect(targets).toEqual([{ kind: 'project', projectPath: folder }]);
+    // A name it can't place, or no folder at all, is still checked: only a grant on every project covers it.
+    for (const args of [{ path: 'somewhere' }, {}]) {
+      const [unplaced] = [...(await resolveArgTargets('dispatcher', add, args)).values()];
+      expect(unplaced, JSON.stringify(args)).toEqual([{ kind: 'project' }]);
+    }
+    expect(await check('dispatcher', add, { path: folder })).toMatchObject({ ok: false, reason: 'ask_first' });
+    expect(await check('plain', add, { path: folder })).toMatchObject({ ok: false, reason: 'no_grant' });
+    expect(await check('plain', add, { path: 'somewhere' })).toMatchObject({ ok: false, reason: 'no_grant' });
+    // Opening one that is already a project is checked on that project.
+    expect(await check('dispatcher', add, { path: 'Far' })).toMatchObject({ ok: false, reason: 'ask_first' });
+    await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'project.add', target: { kind: 'project', project: { path: folder } }, mode: 'allow' }] }));
+    try {
+      expect((await check('plain', add, { path: folder })).ok).toBe(true);
+      expect((await check('plain', add, { path: other })).ok).toBe(false);
+    } finally {
+      await updateAgentGrantChanges('plain', () => undefined);
+    }
   });
 
   it('a person\'s change on the permissions page now reaches these tools', async () => {

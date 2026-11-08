@@ -345,6 +345,25 @@ describe('Ask first (#2970)', () => {
     expect(checkToolGrant('dispatcher', { actions: ['settings.app.write'], target: 'app' }, {})).toMatchObject({ reason: 'ask_first', asks: [{ where: 'the app' }] });
   });
 
+  it('the Dispatcher asks first to add or open a project; no one else can (#3050)', () => {
+    const add: ToolGrant = { actions: ['project.add'], target: 'all_projects' };
+    expect(checkToolGrant('dispatcher', add, {})).toMatchObject({ reason: 'ask_first', asks: [{ action: 'project.add', where: 'projects' }] });
+    for (const caller of ['plain', 'orchestrator', 'helper']) expect(checkToolGrant(caller, add, {}), caller).toMatchObject({ ok: false, reason: 'no_grant' });
+  });
+
+  it('a person can switch the Dispatcher\'s project.add to Allow or Off (#3050)', async () => {
+    const add: ToolGrant = { actions: ['project.add'], target: 'all_projects' };
+    const target = { kind: 'project', project: 'any' } as const;
+    try {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'project.add', target, mode: 'allow' }] }));
+      expect(checkToolGrant('dispatcher', add, {}).ok).toBe(true);
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'project.add', target, mode: 'off' }] }));
+      expect(checkToolGrant('dispatcher', add, {})).toMatchObject({ ok: false, reason: 'no_grant' });
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+    }
+  });
+
   it('every agent can ask for a permission for itself', () => {
     const request = registerAll().find((t) => t.name === 'request_grant')!;
     for (const caller of CALLERS) expect(checkToolGrant(caller, request.grant, {}).ok).toBe(true);

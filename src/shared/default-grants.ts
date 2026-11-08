@@ -103,8 +103,11 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
     for (const a of ['agent.read', 'agent.display', 'agent.grant', 'agent.restart', 'library.read', 'library.write', 'template.write', 'template.push', 'action.read', 'action.write', 'action.run'] as const) {
       out.push(structural(a, ANY));
     }
+    // Creating agents and connections replaces #2576's no-create rule (#3034, #3050). Adding or opening
+    // a project, changing project defaults and changing app settings ask first.
     out.push(
       structural('agent.create', ANY_PROJECT), structural('project.read', ANY_PROJECT), structural('project.display', ANY_PROJECT),
+      structural('project.add', ANY_PROJECT, 'ask'),
       structural('project.configure', ANY_PROJECT, 'ask'), structural('settings.app.write', APP, 'ask'),
     );
   }

@@ -79,6 +79,8 @@ Your templates can set permissions too, under **Clubhouse permissions** in the t
 
 For an orchestrator, **Create agents** and **Remove helpers** follow its approval setting on the Helpers page, and changing either here changes that setting.
 
+The Dispatcher can do the most by default. It can read, message, wake, put to sleep, reset, rename and configure the agents connected to it, create agents in any project, change an agent's setup up to its own level, make and remove connections, and create and run Actions. It asks first before it adds or opens a project (**Add or open projects**), changes project defaults or changes app settings. Its Clubhouse permissions page works like any other agent's, so you can set each of these to Off, Ask first or Allow.
+
 These permissions are a guardrail on Clubhouse, not a sandbox. Other programs running as you aren't limited by them.
 
 ## Deleting

@@ -7,7 +7,8 @@
  * Only call time resolves them: a listing passes no arguments. A reference
  * that doesn't resolve (an unknown id, a name it can't place) is left to the
  * tool, which says it wasn't found, so a refusal never says whether a target
- * exists.
+ * exists. The one exception is `project.add` (#3050), whose folder isn't a
+ * project yet: it is checked by its path instead.
  */
 
 import * as path from 'path';
@@ -168,11 +169,19 @@ async function resolveDeclaration(lookup: Lookup, d: ToolGrantDeclaration, args:
   }
   const refs = from.args.flatMap((a) => refsOf(args[a]));
   if (d.target === 'project_arg') {
-    if (refs.length === 0) return from.missing === 'caller' && lookup.callerProject ? [{ kind: 'project', projectPath: lookup.callerProject }] : null;
+    // Adding or opening a project (#3050): the folder usually isn't a project yet, so it can't be left
+    // to the tool like an unknown project. A path is checked as that folder; anything else (or nothing)
+    // as a project no single-path grant covers, so only a grant on every project does.
+    const adds = d.actions.includes('project.add');
+    if (refs.length === 0) {
+      if (from.missing === 'caller' && lookup.callerProject) return [{ kind: 'project', projectPath: lookup.callerProject }];
+      return adds ? [{ kind: 'project' }] : null;
+    }
     const out: GrantCallTarget[] = [];
     for (const ref of refs) {
       const p = await lookup.project(ref);
       if (p) out.push({ kind: 'project', projectPath: p.path });
+      else if (adds) out.push(path.isAbsolute(ref) ? { kind: 'project', projectPath: path.resolve(ref) } : { kind: 'project' });
     }
     return out;
   }

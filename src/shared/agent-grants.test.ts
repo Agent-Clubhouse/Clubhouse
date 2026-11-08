@@ -47,6 +47,31 @@ describe('agent grants (#2966)', () => {
     });
   });
 
+  describe('project.add (#3050)', () => {
+    const folder: GrantCallTarget = { kind: 'project', projectPath: '/new/repo' };
+    it.each<[Grant['target'], GrantCallTarget, boolean]>([
+      [{ kind: 'project', project: 'any' }, folder, true],
+      [{ kind: 'project', project: 'any' }, { kind: 'project' }, true],
+      [{ kind: 'project', project: { path: '/new/repo/' } }, folder, true],
+      [{ kind: 'project', project: { path: '/other' } }, folder, false],
+      [{ kind: 'project', project: { path: '/new/repo' } }, { kind: 'project' }, false],
+      // Its own project is already added; an agent target isn't a folder to add.
+      [{ kind: 'project', project: 'own' }, { kind: 'project', projectPath: '/p' }, false],
+      [{ kind: 'project', project: 'any' }, { kind: 'agent', projectPath: '/p' }, false],
+      [{ kind: 'app' }, folder, false],
+      [{ kind: 'any' }, folder, true],
+    ])('%j covers %j: %s', (grant, target, covered) => {
+      expect(targetCovers(grant, agent, target, 'project.add')).toBe(covered);
+    });
+
+    it('sits next to project.read, and asks first on an Ask first grant', () => {
+      expect(GRANT_ACTIONS.indexOf('project.add')).toBe(GRANT_ACTIONS.indexOf('project.read') + 1);
+      expect(evaluateGrant(call('project.add', folder), [ask('project.add', { kind: 'project', project: 'any' })]).outcome).toBe('ask');
+      expect(evaluateGrant(call('project.add', folder), [allow('project.read', { kind: 'project', project: 'any' })]))
+        .toEqual({ outcome: 'refuse', reason: 'no_grant' });
+    });
+  });
+
   describe('modes', () => {
     it('refuses what no grant covers, with no word on whether the target exists', () => {
       expect(evaluateGrant(call('agent.reset', { kind: 'agent', relations: ['parent'] }), [allow('agent.message', { kind: 'parent' })]))
