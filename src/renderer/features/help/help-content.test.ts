@@ -12,9 +12,9 @@ describe('help-content', () => {
     expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting']);
   });
 
-  it('has 24 total topics', () => {
+  it('has 23 total topics', () => {
     const total = HELP_SECTIONS.reduce((sum, s) => sum + s.topics.length, 0);
-    expect(total).toBe(24);
+    expect(total).toBe(23);
   });
 
   it('each section has at least 1 topic', () => {
@@ -41,9 +41,9 @@ describe('help-content', () => {
     }
   });
 
-  it('General section has 7 topics', () => {
+  it('General section has 5 topics', () => {
     const general = HELP_SECTIONS.find((s) => s.id === 'general');
-    expect(general?.topics).toHaveLength(6);
+    expect(general?.topics).toHaveLength(5);
   });
 
   it('Agents & Orchestrators section has 6 topics', () => {
@@ -56,11 +56,18 @@ describe('help-content', () => {
     expect(settings?.topics).toHaveLength(4);
   });
 
+  it('no classic article points at the removed Home or Dashboard', () => {
+    for (const t of HELP_SECTIONS.flatMap((s) => s.topics)) {
+      expect(t.content, t.id).not.toMatch(/Dashboard|Go (to )?home|Cmd\+Shift\+H/i);
+    }
+  });
+
   it('includes key new topics', () => {
     const allTopicIds = HELP_SECTIONS.flatMap((s) => s.topics.map((t) => t.id));
     expect(allTopicIds).toContain('command-palette');
     expect(allTopicIds).not.toContain('hub');
-    expect(allTopicIds).toContain('dashboard');
+    // Home and its Dashboard topic were removed for v1.
+    expect(allTopicIds).not.toContain('dashboard');
     // Clubhouse Mode and personas left Help when Clubhouse-managed agents graduated (#2901).
     expect(allTopicIds).not.toContain('agents-clubhouse-mode');
     expect(allTopicIds.some((id) => id.startsWith('persona-'))).toBe(false);
@@ -145,7 +152,7 @@ describe('help-content in the new shell', () => {
     expect(getHelpSections().map((s) => s.id)).toEqual(CHROME_HELP_SECTIONS.map((s) => s.id));
   });
 
-  it('keeps the classic section ids and drops Dashboard', () => {
+  it('keeps the classic section ids, with no Dashboard in either shell', () => {
     expect(CHROME_HELP_SECTIONS.map((s) => s.id)).toEqual(HELP_SECTIONS.map((s) => s.id));
     const ids = topics().map((t) => t.id);
     expect(ids).not.toContain('dashboard');

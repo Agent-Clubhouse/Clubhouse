@@ -1,5 +1,4 @@
 import gettingStarted from './content/general-getting-started.md';
-import dashboard from './content/general-dashboard.md';
 import commandPalette from './content/general-command-palette.md';
 import navigation from './content/general-navigation.md';
 import keyboardShortcuts from './content/general-keyboard-shortcuts.md';
@@ -61,7 +60,6 @@ export const HELP_SECTIONS: HelpSection[] = [
     title: 'General',
     topics: [
       { id: 'getting-started', title: 'Getting Started', content: gettingStarted },
-      { id: 'dashboard', title: 'Dashboard', content: dashboard },
       { id: 'command-palette', title: 'Command Palette', content: commandPalette },
       { id: 'navigation', title: 'Navigation & Layout', content: navigation },
       { id: 'keyboard-shortcuts', title: 'Keyboard Shortcuts', content: keyboardShortcuts },
@@ -122,7 +120,7 @@ export const HELP_SECTIONS: HelpSection[] = [
 /**
  * The new shell's articles (#2017, decided 2026-10-17): one version per shell.
  * Articles that describe the layout are rewritten for the sidebar and title
- * bar, titles are sentence case, and Dashboard is gone with Home. Topic ids
+ * bar and titles are sentence case. Topic ids
  * match the classic set so links and saved selections carry over.
  */
 export const CHROME_HELP_SECTIONS: HelpSection[] = [

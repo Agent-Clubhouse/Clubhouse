@@ -40,7 +40,7 @@ async function addProject(dirPath: string) {
 
 /** Move the mouse off the rail and wait out its collapse, which takes longer than its 200ms on a busy runner. */
 async function moveOffRail() {
-  const innerRail = window.locator('[data-testid="nav-home"]').locator('..').locator('..').locator('> div').first();
+  const innerRail = window.locator('[data-testid="rail-container"]').locator('> div').first();
   await window.locator('[data-testid="title-bar"]').hover();
   await expect(async () => {
     const w = await innerRail.evaluate((el) => el.getBoundingClientRect().width);
@@ -80,7 +80,7 @@ test.describe('Rail Hover Flyout', () => {
   test('rail expands beyond collapsed width on hover', async () => {
     // Locate the rail outer container (parent of the inner styled rail)
     // The ProjectRail root is the first child of the grid, with class "relative"
-    const railOuter = window.locator('[data-testid="nav-home"]').locator('..').locator('..');
+    const railOuter = window.locator('[data-testid="rail-container"]');
 
     // Measure collapsed width of the inner rail div
     const innerRail = railOuter.locator('> div').first();
@@ -106,7 +106,7 @@ test.describe('Rail Hover Flyout', () => {
 
   test('project labels are visible when rail is expanded', async () => {
     // The project label spans should be visible when expanded
-    const railOuter = window.locator('[data-testid="nav-home"]').locator('..').locator('..');
+    const railOuter = window.locator('[data-testid="rail-container"]');
 
     // Hover to expand — poll until expansion completes
     await railOuter.hover();

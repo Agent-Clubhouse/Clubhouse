@@ -30,7 +30,3 @@ Clubhouse creates a `.clubhouse/` folder in your project root to store its confi
 - Safe to commit to Git for team sharing, or add to `.gitignore` for local-only use
 - Deleting `.clubhouse/` resets all Clubhouse config for that project (your source code is unaffected)
 - Clubhouse never modifies your source files outside of agent-driven actions you initiate
-
-## Dashboard View
-
-Each project appears as a card on the Dashboard with agent status pills, quick-action buttons, and recent activity. See the **Dashboard** help topic for details.
