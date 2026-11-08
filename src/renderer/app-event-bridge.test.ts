@@ -96,6 +96,10 @@ vi.stubGlobal('window', {
       onPermissionPending: vi.fn(() => mockRemovers.onPermissionPending),
       onPermissionSettled: vi.fn(() => mockRemovers.onPermissionSettled),
     },
+    actions: {
+      onNotice: vi.fn(() => () => undefined),
+      onChanged: vi.fn(() => () => undefined),
+    },
     annex: {
       onAgentSpawned: vi.fn(() => mockRemovers.onAgentSpawned),
       onAgentUpdated: vi.fn(() => mockRemovers.onAgentUpdated),
