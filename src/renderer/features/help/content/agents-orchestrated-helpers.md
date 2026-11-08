@@ -30,7 +30,11 @@ Turn on **Cross-project helpers** to let the agent start helpers in other projec
 
 A Clubhouse managed agent gets it from **Can start helpers** in its setup. The built-in Orchestrator template has it on, and its blocks tell the agent how to plan, start helpers, hand off and dispose. An agent that used the Orchestrator persona keeps the switch on when it switches to managed.
 
-While the Dispatcher is turned on, a **Connect to Dispatcher** switch shows in the same places, with orchestration on or off. It lets the Dispatcher message the agent and get its reports. Agents that orchestrate are connected by default. Turn the switch off and the agent stays off. You can also turn it on for an agent that doesn't orchestrate, which adds no helper tools. Helpers talk only to their orchestrator, so they never connect to the Dispatcher and don't have this switch.
+While the Dispatcher is turned on, an agent's details have a card titled with the Dispatcher's name. Its switch is **Connect to Dispatcher**: it lets the Dispatcher message the agent and get its reports, with orchestration on or off. Agents that orchestrate are connected by default. Turn the switch off and the agent stays off. You can also turn it on for an agent that doesn't orchestrate, which adds no helper tools. Helpers talk only to their orchestrator, so they never connect to the Dispatcher and don't have this card.
+
+When you turn it on, the Dispatcher asks the agent what it does, and the card shows "Asking what it does…" until the agent answers. Then it shows **When to reach it** and **Owns**, and what the Dispatcher can do to the agent. If the agent doesn't answer, the card says "No description yet". **Edit** changes both fields in place; your edit replaces what the agent wrote, and the agent can update it again later. **Permissions** shows the Dispatcher's Clubhouse permissions that reach this agent, each Off, Ask or Allow. These apply to every agent connected to the Dispatcher. Turning the switch off takes effect at once, with **Undo** in a notice. The description is kept, so turning it back on is instant.
+
+On templates and New agent, **Connect to Dispatcher** sets the default for agents made from them.
 
 ## Starting helpers
 

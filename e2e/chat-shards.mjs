@@ -14,6 +14,7 @@ export const CHAT_SHARDS = {
     'chat-rich/context-menu.spec.ts',
     'chat-rich/link-tokens.spec.ts',
     'chat-rich/question-dock.spec.ts',
+    'dispatcher-card.spec.ts',
   ],
   2: [
     'actions.spec.ts',
