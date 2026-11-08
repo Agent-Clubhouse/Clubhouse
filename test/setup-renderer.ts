@@ -70,6 +70,9 @@ vi.stubGlobal('clubhouse', {
     writeWrapperCatalogSnapshot: asyncNoop,
   },
   agent: {
+    getGrants: async () => ({ rows: [], helper: false, dispatcher: false, orchestrates: false }),
+    setGrant: async () => ({ rows: [], helper: false, dispatcher: false, orchestrates: false }),
+    resetGrants: async () => ({ rows: [], helper: false, dispatcher: false, orchestrates: false }),
     onConfigsChanged: () => noop,
     listDurable: async () => [],
     getRunningStatuses: async () => [],
