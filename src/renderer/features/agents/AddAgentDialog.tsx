@@ -241,7 +241,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
             <button
               type="submit"
               disabled={!!nameProblem}
-              className="px-4 py-1.5 text-xs rounded bg-ctp-accent text-white
+              className="px-4 py-1.5 text-xs rounded bg-ctp-accent text-ctp-on-accent
                 hover:bg-ctp-accent/80 cursor-pointer font-medium
                 disabled:opacity-50 disabled:cursor-not-allowed"
             >

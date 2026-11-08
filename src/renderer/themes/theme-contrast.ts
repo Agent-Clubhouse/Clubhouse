@@ -71,6 +71,17 @@ export function contrastRatio(a: string, b: string): number {
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 }
 
+/**
+ * The text color for something filled with the accent (#3086): whichever of
+ * the theme's crust, its text color and white reads best on the accent. No
+ * single one works everywhere: white fails on a light accent in a dark theme
+ * (1.4:1 on Terminal), and crust is weaker than white on most light themes.
+ */
+export function onAccentColor(colors: { accent: string; crust: string; text: string }): string {
+  const candidates = [colors.crust, colors.text, '#ffffff'];
+  return candidates.reduce((best, c) => (contrastRatio(c, colors.accent) > contrastRatio(best, colors.accent) ? c : best));
+}
+
 /** The `#rrggbb` color stops of a CSS gradient. */
 export function gradientStops(gradient: string | undefined): string[] {
   return gradient ? (gradient.match(/#[0-9a-fA-F]{6}\b/g) ?? []) : [];

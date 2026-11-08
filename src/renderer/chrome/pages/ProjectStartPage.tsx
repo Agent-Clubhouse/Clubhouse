@@ -139,7 +139,7 @@ function Composer({ project }: { project: Project }) {
           data-testid="start-page-start"
           disabled={!canStart}
           onClick={() => void start()}
-          className="h-7 px-3 rounded-md bg-ctp-accent text-white text-xs font-medium cursor-pointer hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="h-7 px-3 rounded-md bg-ctp-accent text-ctp-on-accent text-xs font-medium cursor-pointer hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {isQuick ? 'Start' : 'Wake'}
         </button>

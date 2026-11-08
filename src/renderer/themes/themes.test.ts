@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { THEMES, THEME_IDS, PACK_THEMES, registerTheme, unregisterTheme, getTheme, getAllThemeIds, onRegistryChange } from './index';
 import {
   SYNTAX_COMMENT_FLOOR, SYNTAX_FLOOR, TERMINAL_COLOR_FLOOR, TERMINAL_COLOR_KEYS, TERMINAL_DARK_ONLY_KEYS,
-  TERMINAL_FOREGROUND_FLOOR, UI_FLOORS, gradientStops, contrastRatio as floorRatio,
+  TERMINAL_FOREGROUND_FLOOR, UI_FLOORS, gradientStops, contrastRatio as floorRatio, onAccentColor,
 } from './theme-contrast';
 import { ThemeId, ThemeDefinition } from '../../shared/types';
 import { NEON_CYBERPUNK_THEME } from '../../shared/__fixtures__/neon-cyberpunk-theme';
@@ -316,6 +316,23 @@ describe('Workshop pack themes (#2753)', () => {
       });
     });
   }
+});
+
+describe('text on the accent (#3086)', () => {
+  it('picks whichever of crust, text and white reads best on the accent', () => {
+    expect(onAccentColor({ accent: '#5ee6a8', crust: '#050e14', text: '#e3f1ef' })).toBe('#050e14');
+    expect(onAccentColor({ accent: '#1e66f5', crust: '#dce0e8', text: '#4c4f69' })).toBe('#ffffff');
+    expect(onAccentColor({ accent: '#e0a060', crust: '#f2e8dc', text: '#3a2a2a' })).toBe('#3a2a2a');
+  });
+
+  it('reads at 3:1 or better on every built-in, never worse than the white it replaced', () => {
+    for (const id of THEME_IDS) {
+      const { colors } = THEMES[id];
+      const onAccent = floorRatio(onAccentColor(colors), colors.accent);
+      expect(onAccent, id).toBeGreaterThanOrEqual(3);
+      expect(onAccent, id).toBeGreaterThanOrEqual(floorRatio('#ffffff', colors.accent));
+    }
+  });
 });
 
 describe('registerTheme color fallbacks (#2472)', () => {
