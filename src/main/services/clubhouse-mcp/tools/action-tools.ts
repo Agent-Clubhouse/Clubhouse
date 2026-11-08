@@ -19,7 +19,6 @@
 
 import { registerGlobalTool } from '../tool-registry';
 import { registerActionOwnerLookup } from '../grant-check';
-import { ACCESS_LEVELS } from '../../../../shared/agent-access';
 import type { McpToolDefinition, McpToolResult } from '../types';
 import { isDispatcherAgent, isTrackedDispatcher } from '../dispatcher-gate';
 import { mcpCallerKind } from '../mcp-call-gate';
@@ -385,7 +384,7 @@ const STEPS_SCHEMA = {
     '- {"kind":"wake","agentId":...,"prompt"?:...} wakes an agent, resuming its last session, with an optional first message.\n' +
     '- {"kind":"message","agentId":...,"text":...} messages an agent. A busy agent gets it on its next turn; a sleeping one is woken with it.\n' +
     '- {"kind":"quick","projectId"?:...,"worktreeAgentId"?:...,"prompt":...} starts a quick agent in a project\'s root, or in another agent\'s worktree. ' +
-    'Optional overrides: orchestrator, model, access (an Access level). It never runs above your own Access level, which is also the default.\n' +
+    'Optional overrides: orchestrator, model. It runs headless with Full access, so only an agent that itself runs at Full access may have quick steps.\n' +
     '- {"kind":"sleep","agentId":...} puts an agent to sleep.\n' +
     '- {"kind":"notify","text":...} sends the person a Clubhouse notification, following their notification settings.\n' +
     'agentId "self" means you. An agent\'s actions may act on itself, its helpers and agents it is connected to, and start quick agents ' +
@@ -401,7 +400,6 @@ const STEPS_SCHEMA = {
       projectId: { type: 'string', description: 'quick: the project to run in, by id, name or path. Left out: the worktree agent\'s project, or your own.' },
       worktreeAgentId: { type: 'string', description: 'quick: run in this agent\'s worktree instead of the project root.' },
       orchestrator: { type: 'string', description: 'quick: which CLI to use. Default: the project\'s provider.' },
-      access: { type: 'string', enum: [...ACCESS_LEVELS], description: 'quick: the Access level it starts at, at most your own. Default: your own level.' },
       model: { type: 'string', description: 'quick: which model to use.' },
     },
     required: ['kind'],

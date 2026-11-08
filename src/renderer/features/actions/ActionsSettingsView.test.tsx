@@ -28,6 +28,15 @@ describe('Settings > Actions', () => {
     expect(await screen.findByTestId('action-form')).toBeTruthy();
   });
 
+  it('says a quick agent step runs with Full access, with no Access choice', async () => {
+    render(<ActionsSettingsView />);
+    fireEvent.click(await screen.findByTestId('actions-new'));
+    const form = await screen.findByTestId('action-form');
+    fireEvent.change(within(form).getByLabelText('Step 1 type'), { target: { value: 'quick' } });
+    expect(within(form).getByTestId('action-form-quick-access').textContent).toBe('Agent steps run with Full access, so they never stop to ask.');
+    expect(within(form).queryByLabelText('Access')).toBeNull();
+  });
+
   it('lists actions in plain words, with owner, last run and the reason a row needs attention', async () => {
     list = [
       action({}),
