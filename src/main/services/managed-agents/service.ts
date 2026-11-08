@@ -8,8 +8,8 @@
  * Everything the UI and the builder MCP tools do goes through here, so the
  * two can't drift (#2900).
  */
-import { ACCESS_LEVELS, DEFAULT_ACCESS, accessLabel, isAccessLevel, withAccess } from '../../../shared/agent-access';
-import { agentAccess, getPermissionMode } from '../free-agent-settings';
+import { ACCESS_LEVELS, accessLabel, isAccessLevel, withAccess } from '../../../shared/agent-access';
+import { agentAccess, getDefaultAccess, getPermissionMode } from '../free-agent-settings';
 import { canonicalHash } from '../asset-catalog/planner';
 import { AssetCatalogError, installBuiltinAsset, removeBuiltinAsset, type AssetCatalogStore } from '../asset-catalog/store';
 import { auditChanged, auditChanges, currentSettingsOrigin, withSettingsSurface } from '../settings-audit';
@@ -1175,6 +1175,8 @@ function labelerFor(templateName: (id: string) => string | undefined): SettingLa
   const unset: Record<string, string> = { effort: 'CLI default', idleSleep: 'app default', helperTemplateId: 'app default' };
   return (key, value) => {
     if ((value === undefined || value === null) && unset[key]) return unset[key];
+    // A template without a level gives agents the Default access (#2998), as creation does.
+    if (key === 'access' && (value === undefined || value === null)) return `${accessLabel(getDefaultAccess())} (Default access)`;
     if (key === 'helperTemplateId' && typeof value === 'string') return templateName(value) ?? value;
     if (key === 'idleSleep' && typeof value === 'number') return `${value} min`;
     if (key === 'access' && isAccessLevel(value)) return accessLabel(value);
@@ -1210,7 +1212,7 @@ function grantByKey(settings: ManagedTemplateSettings | undefined, key: string):
 /**
  * Add one changed setting to what gets applied. A setting the template no
  * longer sets goes back to the default: null for orchestration fields, the
- * effort, auto-sleep and helper template, the CLI default model, Ask first. The CLI is never unset.
+ * effort, auto-sleep and helper template, the CLI default model, the Default access (#2998). The CLI is never unset.
  */
 function mergeSetting(out: ManagedTemplateSettings, from: ManagedTemplateSettings, key: string, before?: ManagedTemplateSettings): void {
   if (key.startsWith('grants.')) {
@@ -1229,7 +1231,7 @@ function mergeSetting(out: ManagedTemplateSettings, from: ManagedTemplateSetting
   }
   if (key === 'model') out.model = from.model ?? 'default';
   else if (key === 'effort') out.effort = from.effort ?? null;
-  else if (key === 'access') out.access = withAccess(from, getPermissionMode()).access ?? DEFAULT_ACCESS;
+  else if (key === 'access') out.access = withAccess(from, getPermissionMode()).access ?? getDefaultAccess();
   else if (key === 'idleSleep') out.idleSleep = from.idleSleep ?? null;
   else if (key === 'helperTemplateId') out.helperTemplateId = from.helperTemplateId ?? null;
   else if (key === 'orchestrator' && from.orchestrator) out.orchestrator = from.orchestrator;
@@ -1267,6 +1269,8 @@ function applies(change: ManagedTemplateChange, agent: DurableAgentConfig, label
   if (change.kind === 'add') return !listOf(setup, change.part).includes(change.id);
   if (change.kind === 'remove') return listOf(setup, change.part).includes(change.id);
   if (change.kind === 'order') return false;
+  // Back to no level: the agent goes to the Default access, so one already there doesn't change.
+  if (change.key === 'access' && change.to === label('access', undefined)) return agentAccess(agent, projectPath) !== getDefaultAccess();
   // A permission is compared with what the agent's template layer sets, not with the person's own change over it (#2971).
   const flat = change.key.startsWith('grants.')
     ? flattenSettings({ grants: templateGrantsOf(agent.id) })

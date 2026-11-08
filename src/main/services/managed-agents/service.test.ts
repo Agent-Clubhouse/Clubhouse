@@ -782,6 +782,28 @@ describe('an effort goes only with the model it is for (D81)', () => {
     expect(results.find((r) => r.agentId === 'own')!.changed).toBe(false);
   });
 
+  it('pushing a template whose Access is no longer set gives agents the Default access, and leaves one already there (#2998)', async () => {
+    const fas = await import('../free-agent-settings');
+    const spy = vi.spyOn(fas, 'getDefaultAccess').mockReturnValue('auto_edit');
+    try {
+      const t = await user(() => service.saveTemplate({ name: 'Leveled', description: '', setup: empty, settings: { access: 'auto' } }));
+      const on = agent('on', { templateId: t.id });
+      Object.assign(on, { access: 'auto' });
+      const there = agent('there', { templateId: t.id });
+      Object.assign(there, { access: 'auto_edit' });
+      const next = { setup: empty, settings: {} };
+      const preview = await user(() => service.previewTemplatePush(t.id, next));
+      expect(preview.changes).toEqual([{ kind: 'setting', key: 'access', from: 'Auto', to: 'Auto-accept edits (Default access)' }]);
+      expect(preview.targets.find((x) => x.agentId === 'on')).toMatchObject({ applicable: 1 });
+      expect(preview.targets.find((x) => x.agentId === 'there')).toMatchObject({ applicable: 0 });
+      const results = await user(() => service.pushTemplate(t.id, next, [{ projectPath: '/p', agentId: 'on' }, { projectPath: '/p', agentId: 'there' }]));
+      expect(results.find((r) => r.agentId === 'on')!.settings).toEqual({ access: 'auto_edit' });
+      expect(results.find((r) => r.agentId === 'there')!.changed).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('refuses a push whose settings a setting doesn\'t take before any agent is written', async () => {
     const skill = await user(() => service.createPart({ name: 'Notes', content: { kind: 'skill', skillName: 'notes', files: [{ path: 'SKILL.md', content: '# n' }] } }));
     const t = await user(() => service.saveTemplate({ name: 'Team', description: '', setup: empty, settings: {} }));
