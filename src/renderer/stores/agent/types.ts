@@ -1,3 +1,4 @@
+import type { AccessLevel } from '../../../shared/agent-access';
 import {
   Agent,
   AgentSleepInfo,
@@ -70,7 +71,8 @@ export interface AgentLifecycleSlice {
     model?: string,
     parentAgentId?: string,
     orchestrator?: string,
-    freeAgentMode?: boolean,
+    /** Access (#2761): a level, or the legacy Free Agent Mode on/off. Unset uses the parent's quick agent defaults. */
+    access?: boolean | AccessLevel,
     pluginMetadata?: Record<string, string>,
     /** Run in this directory instead of the parent's worktree (e.g. retry in the same worktree). */
     cwdOverride?: string,
@@ -93,7 +95,7 @@ export interface AgentLifecycleSlice {
     name: string,
     color: string,
     orchestrator?: string,
-    freeAgentMode?: boolean,
+    access?: AccessLevel,
   ) => string;
   /** Clear the resuming flag for an agent (called when session replay finishes) */
   clearResuming: (id: string) => void;

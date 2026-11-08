@@ -8,6 +8,8 @@
  * Everything the UI and the builder MCP tools do goes through here, so the
  * two can't drift (#2900).
  */
+import { ACCESS_LEVELS, DEFAULT_ACCESS, accessLabel, isAccessLevel, withAccess } from '../../../shared/agent-access';
+import { agentAccess, getPermissionMode } from '../free-agent-settings';
 import { canonicalHash } from '../asset-catalog/planner';
 import { AssetCatalogError, installBuiltinAsset, removeBuiltinAsset, type AssetCatalogStore } from '../asset-catalog/store';
 import { auditChanged, auditChanges, currentSettingsOrigin, withSettingsSurface } from '../settings-audit';
@@ -300,7 +302,9 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     const s = await state.read();
     // A custom template saved before the Clubhouse part was required reads as having it.
     // Retired built-in templates are gone: what used one has its own copy (D99).
-    return [...BUILTIN_TEMPLATES.values()].filter(isListed).concat(Object.values(s.templates).map(withClubhousePartIn));
+    // A template saved before #2761 keeps its level: Free Agent Mode on reads with the app's old mode.
+    return [...BUILTIN_TEMPLATES.values()].filter(isListed).concat(Object.values(s.templates).map(withClubhousePartIn))
+      .map((t) => ({ ...t, settings: withAccess(t.settings, getPermissionMode()) }));
   }
 
   async function summarize(entry: CatalogEntry, consumers?: ManagedPartConsumer[], templates?: ManagedTemplate[]): Promise<ManagedPartSummary> {
@@ -934,7 +938,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       return api.saveTemplate({
         name, description,
         setup: { blocks: agent.managed.blocks, skills: agent.managed.skills, mcps: agent.managed.mcps },
-        settings: settingsOf(agent),
+        settings: settingsOf(agent, projectPath),
       });
     },
 
@@ -1102,12 +1106,13 @@ export interface TemplatePushResult {
   failed?: string;
 }
 
-export function settingsOf(agent: DurableAgentConfig): ManagedTemplateSettings {
+/** An agent's settings as a template carries them. `projectPath` turns a pre-#2761 Free Agent Mode into its level. */
+export function settingsOf(agent: DurableAgentConfig, projectPath?: string): ManagedTemplateSettings {
   return {
     ...(agent.orchestrator && { orchestrator: agent.orchestrator }),
     ...(agent.model && { model: agent.model }),
     ...(agent.effort && { effort: agent.effort }),
-    ...(agent.freeAgentMode !== undefined && { freeAgentMode: agent.freeAgentMode }),
+    ...((agent.access !== undefined || agent.freeAgentMode !== undefined) && { access: agentAccess(agent, projectPath) }),
     ...(agent.orchestration && Object.keys(agent.orchestration).length > 0 && { orchestration: { ...agent.orchestration } }),
     ...(agent.idleSleep !== undefined && { idleSleep: agent.idleSleep }),
     ...(agent.helperTemplateId && { helperTemplateId: agent.helperTemplateId }),
@@ -1121,7 +1126,7 @@ export function settingsOf(agent: DurableAgentConfig): ManagedTemplateSettings {
  */
 export function templateSettingsToKeep(settings: ManagedTemplateSettings): ManagedTemplateSettings {
   const { effort, idleSleep, helperTemplateId, ...rest } = settings;
-  const out: ManagedTemplateSettings = { ...rest };
+  const out: ManagedTemplateSettings = withAccess({ ...rest }, getPermissionMode());
   if (isEffortValue(effort)) out.effort = effort;
   const idle = normalizeIdleSleep(idleSleep);
   if (idle !== 'inherit') out.idleSleep = idle;
@@ -1144,6 +1149,7 @@ function labelerFor(templateName: (id: string) => string | undefined): SettingLa
     if ((value === undefined || value === null) && unset[key]) return unset[key];
     if (key === 'helperTemplateId' && typeof value === 'string') return templateName(value) ?? value;
     if (key === 'idleSleep' && typeof value === 'number') return `${value} min`;
+    if (key === 'access' && isAccessLevel(value)) return accessLabel(value);
     return settingLabel(value);
   };
 }
@@ -1153,7 +1159,8 @@ function flattenSettings(settings: ManagedTemplateSettings): Record<string, unkn
   if (settings.orchestrator !== undefined) out.orchestrator = settings.orchestrator;
   if (settings.model !== undefined) out.model = settings.model;
   if (settings.effort !== undefined && settings.effort !== null) out.effort = settings.effort;
-  if (settings.freeAgentMode !== undefined) out.freeAgentMode = settings.freeAgentMode;
+  const access = withAccess(settings, getPermissionMode()).access;
+  if (access !== undefined) out.access = access;
   for (const [k, v] of Object.entries(settings.orchestration ?? {})) out[`orchestration.${k}`] = v;
   if (settings.idleSleep !== undefined && settings.idleSleep !== null) out.idleSleep = settings.idleSleep;
   if (settings.helperTemplateId) out.helperTemplateId = settings.helperTemplateId;
@@ -1163,8 +1170,7 @@ function flattenSettings(settings: ManagedTemplateSettings): Record<string, unkn
 /**
  * Add one changed setting to what gets applied. A setting the template no
  * longer sets goes back to the default: null for orchestration fields, the
- * effort, auto-sleep and helper template, the CLI default model, Free Agent
- * Mode off. The CLI is never unset.
+ * effort, auto-sleep and helper template, the CLI default model, Ask first. The CLI is never unset.
  */
 function mergeSetting(out: ManagedTemplateSettings, from: ManagedTemplateSettings, key: string): void {
   if (key.startsWith('orchestration.')) {
@@ -1175,7 +1181,7 @@ function mergeSetting(out: ManagedTemplateSettings, from: ManagedTemplateSetting
   }
   if (key === 'model') out.model = from.model ?? 'default';
   else if (key === 'effort') out.effort = from.effort ?? null;
-  else if (key === 'freeAgentMode') out.freeAgentMode = from.freeAgentMode ?? false;
+  else if (key === 'access') out.access = withAccess(from, getPermissionMode()).access ?? DEFAULT_ACCESS;
   else if (key === 'idleSleep') out.idleSleep = from.idleSleep ?? null;
   else if (key === 'helperTemplateId') out.helperTemplateId = from.helperTemplateId ?? null;
   else if (key === 'orchestrator' && from.orchestrator) out.orchestrator = from.orchestrator;
@@ -1228,7 +1234,8 @@ export function checkTemplateSettings(raw: unknown): ManagedTemplateSettings {
   if (s.orchestrator !== undefined && (typeof s.orchestrator !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(s.orchestrator))) bad('CLI isn\'t a CLI id');
   if (s.model !== undefined && (typeof s.model !== 'string' || !s.model || s.model.length > 200)) bad('model isn\'t a model id');
   if (s.effort !== undefined && s.effort !== null && !isEffortValue(s.effort)) bad('effort isn\'t an effort level such as low, medium or high');
-  if (s.freeAgentMode !== undefined && typeof s.freeAgentMode !== 'boolean') bad('Free Agent Mode must be on or off');
+  if (s.freeAgentMode !== undefined && typeof s.freeAgentMode !== 'boolean') bad('freeAgentMode must be true or false');
+  if (s.access !== undefined && !isAccessLevel(s.access)) bad(`access isn't one of ${ACCESS_LEVELS.join(', ')}`);
   if (s.idleSleep !== undefined && s.idleSleep !== null && s.idleSleep !== 'never'
     && !(typeof s.idleSleep === 'number' && Number.isInteger(s.idleSleep) && s.idleSleep > 0)) bad('auto-sleep must be "never" or whole minutes');
   if (s.helperTemplateId !== undefined && s.helperTemplateId !== null

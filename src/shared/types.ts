@@ -123,6 +123,8 @@ export interface Agent {
   /** Execution mode: 'pty' (terminal) or 'headless' (feed) */
   executionMode?: AgentExecutionMode;
   freeAgentMode?: boolean;
+  /** Access (#2761); `freeAgentMode` is the legacy field derived from it. */
+  access?: import('./agent-access').AccessLevel;
   /** MCP IDs active for this agent via launch wrapper */
   mcpIds?: string[];
   /** Set when the agent is resuming a previous CLI session (spinner overlay) */
@@ -213,6 +215,8 @@ export interface QuickAgentDefaults {
   allowedTools?: string[];
   defaultModel?: string;
   freeAgentMode?: boolean;
+  /** Access (#2761); `freeAgentMode` is the legacy field derived from it. */
+  access?: import('./agent-access').AccessLevel;
 }
 
 export type SourceControlProvider = 'github' | 'azure-devops';
@@ -292,6 +296,8 @@ export interface DurableAgentConfig {
   quickAgentDefaults?: QuickAgentDefaults;
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;
+  /** Access (#2761): the level its CLI starts at. `freeAgentMode` is still written beside it, derived, for older phones and a rollback. */
+  access?: import('./agent-access').AccessLevel;
   /** Clubhouse Mode turned off for this agent. Clubhouse Mode was retired (#2901); read only by the switch to managed. */
   clubhouseModeOverride?: boolean;
   /** Last CLI session ID, used to resume previous session on wake */
@@ -658,6 +664,8 @@ export interface StartDurableCreationParams extends DurableWorktreeOptions {
   useWorktree?: boolean;
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;
+  /** Access (#2761); `freeAgentMode` is the legacy field derived from it. */
+  access?: import('./agent-access').AccessLevel;
   mcpIds?: string[];
   mcpConfigs?: Record<string, Record<string, string>>;
   /** Helpers (#2224): make the new agent a helper of this durable agent. */
@@ -737,6 +745,8 @@ export interface DurableConfigUpdates {
   /** A provider's choice for this model; null clears it. Refused when the model doesn't offer it. */
   contextWindow?: string | null;
   freeAgentMode?: boolean;
+  /** Access (#2761). Also sets the legacy `freeAgentMode`. A `freeAgentMode` alone maps to the nearest level. */
+  access?: import('./agent-access').AccessLevel;
   lastSessionId?: string | null;
   lastSleep?: AgentSleepInfo | null;
   mcpIds?: string[] | null;
@@ -1517,6 +1527,8 @@ export interface SpawnAgentParams {
   allowedTools?: string[];
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;
+  /** The level to start at (#2761); wins over `freeAgentMode` and `permissionMode`. */
+  access?: import('./agent-access').AccessLevel;
   /** When true, attempt to resume the previous CLI session instead of starting fresh */
   resume?: boolean;
   /** Specific session ID to resume (provider-specific format) */
@@ -1663,6 +1675,8 @@ export interface RestartSessionEntry {
   permissionMode?: FreeAgentPermissionMode;
   /** Whether the agent was running in free-agent (dangerously skip permissions) mode */
   freeAgentMode?: boolean;
+  /** Access (#2761); `freeAgentMode` is the legacy field derived from it. */
+  access?: import('./agent-access').AccessLevel;
 }
 
 export interface RestartSessionState {

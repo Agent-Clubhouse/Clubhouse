@@ -154,6 +154,9 @@ export interface ManagedTemplateSettings {
   model?: string;
   /** The reasoning effort level, for the model these settings run (the agent's `effort`). */
   effort?: string | null;
+  /** Access (#2761): the level agents made from it start at. */
+  access?: import('./agent-access').AccessLevel;
+  /** Legacy Free Agent Mode, derived from `access` and still written for a rollback. Read only when `access` is missing. */
   freeAgentMode?: boolean;
   orchestration?: OrchestrationPolicyConfig;
   /** Auto-sleep: minutes idle before a chat session sleeps, or `never` (the agent's `idleSleep`). */

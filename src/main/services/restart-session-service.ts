@@ -106,6 +106,7 @@ export async function captureSessionState(
       model: meta?.model,
       permissionMode,
       freeAgentMode: config?.freeAgentMode,
+      ...(config ? { access: freeAgentSettings.agentAccess(config, reg.projectPath) } : {}),
     });
   }
 

@@ -8,6 +8,7 @@
  * already reads (the provider's instructions file, skills folder and MCP
  * file) and hands the MCP servers to the existing launch merge points.
  */
+import { agentAccess } from '../free-agent-settings';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -96,8 +97,8 @@ export async function renderManagedInstructions(projectPath: string, agent: Dura
 }
 
 /**
- * Preview's settings summary for an agent: CLI, model, effort, Free Agent
- * Mode, orchestration and helpers. The helper template is named only when
+ * Preview's settings summary for an agent: CLI, model, effort, Access,
+ * orchestration and helpers. The helper template is named only when
  * it orchestrates; a template that can't be read is left out.
  */
 export async function managedSettingsRows(service: ManagedAgentsService, agent: DurableAgentConfig, provider: OrchestratorProvider | undefined): Promise<ManagedSettingsRow[]> {
@@ -115,7 +116,7 @@ export async function managedSettingsRows(service: ManagedAgentsService, agent: 
     cliName: provider?.displayName ?? agent.orchestrator,
     model: agent.model,
     effort: agent.effort,
-    freeAgentMode: agent.freeAgentMode,
+    access: agentAccess(agent),
     orchestration: agent.orchestration,
     helperTemplateName,
     helper,
@@ -722,6 +723,9 @@ export function setupFingerprint(agent: DurableAgentConfig, resolved: Resolved):
     parts, order,
     orchestrator: agent.orchestrator ?? null, model: agent.model ?? null, effort: agent.effort ?? null,
     freeAgentMode: agent.freeAgentMode ?? null, orchestration: agent.orchestration ?? null,
+    // Access (#2761). Left out at Ask first, and for an agent saved before it,
+    // so a fingerprint from before the upgrade still matches.
+    ...(agent.access !== undefined && agent.access !== 'ask' && { access: agent.access }),
   });
   return { fingerprint, deliveredAt: new Date().toISOString(), ...(agent.orchestrator && { orchestrator: agent.orchestrator }), parts, order };
 }

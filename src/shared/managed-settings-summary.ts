@@ -4,6 +4,7 @@
  * and for what a running session started with, so all three read the same.
  */
 import type { ManagedSettingsRow } from './managed-agents-types';
+import { accessLabel, type AccessLevel } from './agent-access';
 import { resolveOrchestrationPolicy, type OrchestrationControl, type OrchestrationPolicyConfig } from './orchestration-policy';
 
 const APPROVALS: Readonly<Record<OrchestrationControl, string>> = {
@@ -17,7 +18,8 @@ export interface ManagedSettingsSummaryInput {
   cliName?: string;
   model?: string;
   effort?: string;
-  freeAgentMode?: boolean;
+  /** Access (#2761). Unset reads as Ask first. */
+  access?: AccessLevel;
   orchestration?: OrchestrationPolicyConfig;
   /** The helper template's name: the agent's own, else the app's default. */
   helperTemplateName?: string;
@@ -31,7 +33,7 @@ export function managedSettingsSummary(input: ManagedSettingsSummaryInput): Mana
     { key: 'cli', label: 'CLI', value: input.cliName || 'The project\'s CLI' },
     { key: 'model', label: 'Model', value: input.model && input.model !== 'default' ? input.model : 'CLI default' },
     { key: 'effort', label: 'Effort', value: input.effort || 'CLI default' },
-    { key: 'freeAgentMode', label: 'Free Agent Mode', value: input.freeAgentMode ? 'On' : 'Off' },
+    { key: 'access', label: 'Access', value: accessLabel(input.access ?? 'ask') },
     { key: 'orchestration', label: 'Orchestration', value: policy.orchestrate ? 'Can start helpers' : 'Off' },
   ];
   if (policy.orchestrate) {

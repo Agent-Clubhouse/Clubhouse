@@ -11,7 +11,9 @@ import type { DurableAgentCreation, DurableCreationEvent, DurableCreationStage, 
 import { isDisposedAgent, isEffortValue, parentLinkError } from '../../shared/agent-helpers';
 import { appLog } from './log-service';
 import { forgetAutoHelper } from './helper-auto-state';
-import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
+import { applyAgentDefaults } from './agent-settings-service';
+import { accessForNewAgent, agentAccess, getPermissionMode } from './free-agent-settings';
+import { accessForLegacyToggle, isAccessLevel, legacyFreeAgentMode, type AccessLevel } from '../../shared/agent-access';
 import { tagError } from '../telemetry/types';
 import { resolveOrchestrator } from './agent-system';
 import type { HelperContextStatus } from '../../shared/helper-routing';
@@ -1404,6 +1406,7 @@ const AGENT_AUDIT_KEYS: Record<keyof DurableConfigUpdates, AuditKeyFormat | 'boo
   model: 'value',
   contextWindow: 'value',
   freeAgentMode: 'value',
+  access: 'value',
   runtimeMode: 'value',
   idleSleep: 'value',
   effort: 'value',
@@ -1513,12 +1516,15 @@ async function updateDurableConfigInner(
     delete agent.contextWindow;
     agent.contextWindowNotice = preflight.refused.message;
   }
-  if (updates.freeAgentMode !== undefined) {
-    if (updates.freeAgentMode) {
-      agent.freeAgentMode = true;
-    } else {
-      delete agent.freeAgentMode;
-    }
+  // Access (#2761): the level is saved, and the legacy flag is written beside it.
+  // A legacy on/off alone (an older phone) moves to the nearest level.
+  if (updates.access !== undefined || updates.freeAgentMode !== undefined) {
+    const level = isAccessLevel(updates.access)
+      ? updates.access
+      : accessForLegacyToggle(agentAccess(agent, projectPath), updates.freeAgentMode === true, getPermissionMode(projectPath));
+    agent.access = level;
+    if (legacyFreeAgentMode(level)) agent.freeAgentMode = true;
+    else delete agent.freeAgentMode;
   }
   if (updates.lastSleep !== undefined) {
     if (updates.lastSleep) {
@@ -1618,7 +1624,7 @@ async function updateDurableConfigInner(
   if (updates.orchestrator !== undefined) noteProviderSelection(agentId, updates.orchestrator);
   // A managed agent's setup-changed bar compares these with what its session started on.
   // Auto-sleep and the helper template apply at once, but Settings and Preview show them, so they refresh too.
-  if (agent.managed && (updates.orchestrator !== undefined || updates.model !== undefined || updates.freeAgentMode !== undefined
+  if (agent.managed && (updates.orchestrator !== undefined || updates.model !== undefined || updates.freeAgentMode !== undefined || updates.access !== undefined
     || updates.effort !== undefined || updates.idleSleep !== undefined || updates.helperTemplateId !== undefined)) noteManagedSettingsChanged();
   await auditChanges('agent', 'agent', agentId, auditBefore, pickAudited(agent, AGENT_AUDIT_CATALOG), AGENT_AUDIT_CATALOG);
   // A running chat session picks the new timeout up now.
@@ -2124,7 +2130,7 @@ export async function beginDurableCreation(
   params: StartDurableCreationParams,
   options: DurableCreationRunOptions = {},
 ): Promise<DurableCreationHandle> {
-  const { name, color, model, effort, routing, orchestrator, freeAgentMode, mcpIds, mcpConfigs } = params;
+  const { name, color, model, effort, routing, orchestrator, mcpIds, mcpConfigs } = params;
   const useWorktree = params.useWorktree !== false;
   // The folder and branch come from the request; refuse bad ones before anything touches disk.
   const plan = useWorktree ? planDurableWorktree(projectPath, name, params) : undefined;
@@ -2135,9 +2141,8 @@ export async function beginDurableCreation(
   // The Dispatcher's folder is no repo, so it gets no .gitignore (#2535).
   if (!isDispatcherPath(projectPath)) await ensureGitignore(projectPath);
 
-  // Inherit freeAgentMode from project defaults if not explicitly set
-  const projectDefaults = await readProjectAgentDefaults(projectPath);
-  const effectiveFreeAgent = freeAgentMode ?? (projectDefaults.freeAgentMode || undefined);
+  // Access (#2761): the caller's level, else the app's Default access.
+  const access = accessForNewAgent(params, projectPath);
   const folderOnDisk = plan ? await pathExists(plan.wtPath) : false;
   const agents = await readAgents(projectPath);
 
@@ -2172,7 +2177,8 @@ export async function beginDurableCreation(
     ...(effort ? { effort } : {}),
     ...(routing ? { routing } : {}),
     ...(orchestrator ? { orchestrator } : {}),
-    ...(effectiveFreeAgent ? { freeAgentMode: effectiveFreeAgent } : {}),
+    access,
+    ...(legacyFreeAgentMode(access) ? { freeAgentMode: true } : {}),
     ...(mcpIds && mcpIds.length > 0 ? { mcpIds } : {}),
     ...(mcpConfigs && Object.keys(mcpConfigs).length > 0 ? { mcpConfigs } : {}),
     // Helpers (#2224): a new agent can start life as a helper of another.
@@ -2571,14 +2577,16 @@ export async function createDurable(
   model?: string,
   useWorktree: boolean = true,
   orchestrator?: OrchestratorId,
-  freeAgentMode?: boolean,
+  /** Access (#2761): a level, or the legacy Free Agent Mode on/off. Unset gives the Default access. */
+  access?: boolean | AccessLevel,
   mcpIds?: string[],
   mcpConfigs?: Record<string, Record<string, string>>,
   worktreeOptions: DurableWorktreeOptions = {},
 ): Promise<DurableAgentConfig> {
   const handle = await beginDurableCreation(projectPath, {
     ...worktreeOptions,
-    name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs,
+    name, color, model, useWorktree, orchestrator, mcpIds, mcpConfigs,
+    ...(typeof access === 'boolean' ? { freeAgentMode: access } : access !== undefined ? { access } : {}),
   }, { keepFailedRecord: false });
   // The caller gets the error, so a failed agent leaves no record behind.
   return handle.done;
