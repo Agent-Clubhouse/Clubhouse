@@ -59,10 +59,26 @@ function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
  * - `actions` (#2952): the Actions tools, on for every agent that can own an
  *   action: not for quick agents, which end with their task, not for the
  *   Dispatcher while it is turned off, and never for its chat.
+ * - `dispatcherConnected` (#3041): tools for agents connected to the
+ *   Dispatcher (update_my_card), on while the agent has its wire to the
+ *   Dispatcher. Also listed for agents whose CLI keeps its first tool list,
+ *   which can't pick the tool up when they connect later; the tool itself
+ *   refuses an agent that isn't connected. Never for the Dispatcher's agents.
  *
  * A tool may name several groups; it is available when any of them is on.
  */
-export type ToolGroup = 'orchestration' | 'crossProject' | 'dispatcher' | 'dispatcherChat' | 'fixedToolList' | 'actions';
+export type ToolGroup = 'orchestration' | 'crossProject' | 'dispatcher' | 'dispatcherChat' | 'fixedToolList' | 'actions' | 'dispatcherConnected';
+
+/**
+ * Whether an agent has its wire to the Dispatcher. Set by the agent card tools
+ * when they register (the check needs the Dispatcher's id, which this module
+ * can't import); until then nobody is connected, so the group fails closed.
+ */
+let connectedToDispatcher: (agentId: string) => boolean = () => false;
+
+export function setDispatcherConnectionCheck(check: ((agentId: string) => boolean) | null): void {
+  connectedToDispatcher = check ?? (() => false);
+}
 
 /** One group, or several (any one of them opens the tool). */
 export type ToolGroups = ToolGroup | readonly ToolGroup[];
@@ -86,6 +102,10 @@ const toolGroupGates: Record<ToolGroup, ToolGroupGate> = {
   actions: {
     isEnabled: (agentId) => (isTrackedDispatcher(agentId) ? isDispatcherAgent(agentId) : mcpCallerKind(agentId) !== 'quick'),
     refusal: 'Actions aren’t available to you: quick agents can’t own actions, and the Dispatcher can’t use them while it is turned off.',
+  },
+  dispatcherConnected: {
+    isEnabled: (agentId) => !isTrackedDispatcher(agentId) && (connectedToDispatcher(agentId) || keepsFirstToolList(agentId)),
+    refusal: 'Only agents connected to the Dispatcher can use this tool.',
   },
   fixedToolList: {
     isEnabled: keepsFirstToolList,
@@ -724,6 +744,7 @@ onOrchestrationGateChange((agentId) => { toolListCache.delete(agentId); });
 
 /** For testing: clear all registered templates and global tools. */
 export function _resetForTesting(): void {
+  connectedToDispatcher = () => false;
   toolTemplates.clear();
   targetTemplates.clear();
   globalTools.clear();
