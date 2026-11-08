@@ -640,6 +640,8 @@ export class ActionsEngine {
   }
 
   private matchesSource(trigger: EventTrigger, occ: Occurrence): boolean {
+    // A fetch that moved many branches arrives as one event with branch `*`
+    // (#2955): it can't satisfy a filter for one branch.
     if (trigger.branch && occ.branch !== trigger.branch) return false;
     const src = trigger.source;
     if (src.kind === 'app') return true;
@@ -648,7 +650,8 @@ export class ActionsEngine {
   }
 
   private onMatch(action: Action, trigger: EventTrigger, occ: Occurrence, chain: string[]): void {
-    const detail = `${occ.subject} ${eventPhrase(occ.kind)}${occ.branch ? ` (${occ.branch})` : ''}`;
+    const branchText = occ.branch === '*' ? 'many branches' : occ.branch;
+    const detail = `${occ.subject} ${eventPhrase(occ.kind)}${branchText ? ` (${branchText})` : ''}`;
     this.deps.hooks?.observe?.({ type: 'trigger', actionId: action.id, trigger: 'event' });
     if (!trigger.delayMinutes) {
       this.fire(action, { kind: 'event', at: this.now(), detail }, chain);

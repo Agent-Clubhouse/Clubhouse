@@ -258,6 +258,12 @@ describe('events', () => {
     await flush();
     expect(history(a.id)).toHaveLength(1);
     expect(history(b.id)).toMatchObject([{ trigger: { detail: 'release-lead’s worktree gets a new commit (feature)' } }]);
+    // A fetch that moved many branches matches no single-branch filter, and reads plainly.
+    const c = engine.create({ trigger: { kind: 'event', event: 'git.remote_updated', source: { kind: 'project', projectId: 'p1' } }, steps: [notify] }, user);
+    event({ type: 'git.remote_updated', repoPath: '/p1', branch: '*', remote: 'origin' });
+    await flush();
+    expect(history(a.id)).toHaveLength(1);
+    expect(history(c.id)).toMatchObject([{ trigger: { detail: 'web is pushed, pulled or fetched (many branches)' } }]);
   });
 });
 
