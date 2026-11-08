@@ -79,6 +79,8 @@ Your templates can set permissions too, under **Clubhouse permissions** in the t
 
 For an orchestrator, **Create agents** and **Remove helpers** follow its approval setting on the Helpers page, and changing either here changes that setting.
 
+A wire on a canvas goes one way: the agent it starts from sends, and each direction has its own permissions, under the wire's tool permissions. A new wire between two agents lets the sender read the other agent and message it. **Clear** and **Compact** start off; turn them on there if the sender should be able to reset the other agent. Wires drawn before this keep what they had.
+
 These permissions are a guardrail on Clubhouse, not a sandbox. Other programs running as you aren't limited by them.
 
 ## Deleting

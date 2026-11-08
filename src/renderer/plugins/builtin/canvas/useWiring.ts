@@ -6,6 +6,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import type { CanvasView, AgentCanvasView as AgentCanvasViewType, PluginCanvasView as PluginCanvasViewType, ZoneCanvasView as ZoneCanvasViewType, Position, Viewport } from './canvas-types';
 import { screenToCanvas } from './canvas-operations';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
+import { NEW_AGENT_WIRE_DISABLED_TOOLS } from '../../../../shared/wire-defaults';
 
 export interface WireDragState {
   /** The view initiating the drag (agent or zone). */
@@ -74,12 +75,13 @@ export function useWiring(
   containerRef: React.RefObject<HTMLDivElement | null>,
   onZoneWire?: ZoneWireCallback,
   /** Callback to persist a wire definition in the canvas store. */
-  onAddWireDefinition?: (entry: { agentId: string; targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }) => void,
+  onAddWireDefinition?: (entry: { agentId: string; targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string; disabledTools?: string[] }) => void,
   /** When true (default), agent-to-agent wires auto-create the reverse direction. */
   createBidirectional = true,
 ) {
   const [wireDrag, setWireDrag] = useState<WireDragState | null>(null);
   const bind = useMcpBindingStore((s) => s.bind);
+  const setDisabledTools = useMcpBindingStore((s) => s.setDisabledTools);
   const onAddWireDefRef = useRef(onAddWireDefinition);
   onAddWireDefRef.current = onAddWireDefinition;
   const onZoneWireRef = useRef(onZoneWire);
@@ -176,8 +178,12 @@ export function useWiring(
               targetName: targetLabel,
               projectName,
             };
-            bind(sourceAgentId, fwdTarget);
-            onAddWireDefRef.current?.({ agentId: sourceAgentId, ...fwdTarget });
+            // A new agent wire lets its sender read and message; reset needs turning on (#2969).
+            const disabledTools = kind === 'agent' ? [...NEW_AGENT_WIRE_DISABLED_TOOLS] : undefined;
+            void bind(sourceAgentId, fwdTarget).then(() => {
+              if (disabledTools) return setDisabledTools(sourceAgentId, resolvedTargetId, disabledTools);
+            });
+            onAddWireDefRef.current?.({ agentId: sourceAgentId, ...fwdTarget, ...(disabledTools && { disabledTools }) });
 
             // Agent-to-agent wires: optionally create reverse direction
             if (kind === 'agent' && createBidirectional) {
@@ -189,8 +195,8 @@ export function useWiring(
                 targetName: sourceLabel,
                 projectName,
               };
-              bind(resolvedTargetId, revTarget);
-              onAddWireDefRef.current?.({ agentId: resolvedTargetId, ...revTarget });
+              void bind(resolvedTargetId, revTarget).then(() => setDisabledTools(resolvedTargetId, sourceAgentId, [...NEW_AGENT_WIRE_DISABLED_TOOLS]));
+              onAddWireDefRef.current?.({ agentId: resolvedTargetId, ...revTarget, disabledTools: [...NEW_AGENT_WIRE_DISABLED_TOOLS] });
             }
           }
         }

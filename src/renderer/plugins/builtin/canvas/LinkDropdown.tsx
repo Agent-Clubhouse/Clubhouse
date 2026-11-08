@@ -6,6 +6,7 @@
 import React, { useMemo, useRef, useEffect } from 'react';
 import type { CanvasView, AgentCanvasView as AgentCanvasViewType, PluginCanvasView as PluginCanvasViewType } from './canvas-types';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
+import { NEW_AGENT_WIRE_DISABLED_TOOLS } from '../../../../shared/wire-defaults';
 import { CANVAS_Z } from './canvas-chrome';
 
 interface LinkDropdownProps {
@@ -37,6 +38,7 @@ export function LinkDropdown({ agentView, views, onClose }: LinkDropdownProps) {
   const bindings = useMcpBindingStore((s) => s.bindings);
   const bind = useMcpBindingStore((s) => s.bind);
   const unbind = useMcpBindingStore((s) => s.unbind);
+  const setDisabledTools = useMcpBindingStore((s) => s.setDisabledTools);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const agentId = agentView.agentId;
@@ -83,6 +85,8 @@ export function LinkDropdown({ agentView, views, onClose }: LinkDropdownProps) {
         targetName: target.displayName || target.title,
         projectName,
       });
+      // A new agent wire lets its sender read and message; reset needs turning on (#2969).
+      if (targetKind(target) === 'agent') await setDisabledTools(agentId, resolveTargetId(target), [...NEW_AGENT_WIRE_DISABLED_TOOLS]);
     }
   };
 
