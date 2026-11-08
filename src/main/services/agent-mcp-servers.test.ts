@@ -16,7 +16,7 @@ vi.mock('./agent-settings-service', async (importOriginal) => ({
 }));
 
 import { appLog } from './log-service';
-import { PROJECT_MCP_JSON_INVALID_NOTICE, resolveAgentMcpServers, resolveProjectMcpServers, tomlListsMcpServers } from './agent-mcp-servers';
+import { PROJECT_MCP_JSON_INVALID_NOTICE, resolveAgentMcpServers, resolveProjectMcpServers, tomlMcpServerNames } from './agent-mcp-servers';
 
 const conventions = { configDir: '.claude', mcpConfigFile: '.mcp.json', localSettingsFile: 'settings.local.json' } as never;
 let worktree: string;
@@ -85,20 +85,26 @@ describe('project MCP JSON that is not JSON (D10)', () => {
   });
 });
 
-describe('tomlListsMcpServers (#2849)', () => {
-  it('finds a server table, quoted or bare, other than the Clubhouse bridge', () => {
-    expect(tomlListsMcpServers('[mcp_servers.linear]\ncommand = "npx"\n')).toBe(true);
-    expect(tomlListsMcpServers('model = "o3"\n\n  [ mcp_servers."my server" ]\n')).toBe(true);
-    expect(tomlListsMcpServers('[mcp_servers.docs.env]\nKEY = "v"\n')).toBe(true);
-    expect(tomlListsMcpServers('[mcp_servers]\nlinear = { command = "npx" }\n')).toBe(true);
-    expect(tomlListsMcpServers('mcp_servers = { linear = { command = "npx" } }\n')).toBe(true);
-    expect(tomlListsMcpServers('[mcp_servers.clubhouse]\ncommand = "node"\n[mcp_servers.linear]\ncommand = "npx"\n')).toBe(true);
+describe('tomlMcpServerNames (#2849)', () => {
+  const names = (toml: string) => tomlMcpServerNames(toml);
+  it('reads server names from tables, quoted or bare, and from dotted keys', () => {
+    expect(names('[mcp_servers.linear]\ncommand = "npx"\n')).toEqual({ names: ['linear'], unknown: false });
+    expect(names('model = "o3"\r\n\r\n  [ mcp_servers."my server" ]\r\n').names).toEqual(['my server']);
+    expect(names('[mcp_servers.docs.env]\nKEY = "v"\n[mcp_servers.docs]\n').names).toEqual(['docs']);
+    expect(names('mcp_servers.linear.command = "npx"\n').names).toEqual(['linear']);
+    expect(names('["mcp_servers".linear]\ncommand = "npx"\n').names).toEqual(['linear']);
+    expect(names('\uFEFF[mcp_servers.linear]\ncommand = "npx"\n').names).toEqual(['linear']);
+    expect(names('[mcp_servers.clubhouse]\ncommand = "node"\n[mcp_servers.linear]\n').names).toEqual(['clubhouse', 'linear']);
   });
 
-  it('ignores the bridge alone, other tables and comments', () => {
-    expect(tomlListsMcpServers('')).toBe(false);
-    expect(tomlListsMcpServers('model = "o3"\n[profiles.fast]\nmodel = "o4"\n')).toBe(false);
-    expect(tomlListsMcpServers('[mcp_servers.clubhouse]\ncommand = "node"\n[mcp_servers.clubhouse.env]\nX = "1"\n')).toBe(false);
-    expect(tomlListsMcpServers('# [mcp_servers.linear]\n')).toBe(false);
+  it('says when servers are listed in a form whose names it does not read', () => {
+    expect(names('[mcp_servers]\nlinear = { command = "npx" }\n')).toEqual({ names: [], unknown: true });
+    expect(names('mcp_servers = { linear = { command = "npx" } }\n')).toEqual({ names: [], unknown: true });
+  });
+
+  it('finds nothing in other tables, keys or comments', () => {
+    expect(names('')).toEqual({ names: [], unknown: false });
+    expect(names('model = "o3"\n[profiles.fast]\nmodel = "o4"\nmcp_servers_note = "x"\n')).toEqual({ names: [], unknown: false });
+    expect(names('# [mcp_servers.linear]\n')).toEqual({ names: [], unknown: false });
   });
 });

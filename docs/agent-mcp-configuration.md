@@ -51,13 +51,15 @@ trusted folder's `mcp_servers` show in the effective config, and an untrusted
 one's layer is disabled. So whether those servers reach a chat depends on
 Codex's trust setting, which Clubhouse doesn't check.
 
-When the agent's `.codex/config.toml` lists an MCP server other than the
-Clubhouse bridge (which older versions wrote there), chat shows an
-`mcp_configuration` notice saying so (#2849). A Codex agent without such a
-file gets no notice. Chat preparation leaves the file's bytes, including
-unrelated settings, untouched, and the live bridge goes to the driver
-directly. A managed Codex agent gets exactly its MCP parts as `-c` launch
-flags and session config, so none of this applies to it.
+Clubhouse writes the project MCP defaults into a new Codex worktree's
+`.codex/config.toml` itself, and older versions wrote the bridge there. So
+chat shows an `mcp_configuration` notice only when that file lists a server
+that is neither the bridge nor one of the project servers chat delivers,
+naming those servers (#2849). Chat preparation leaves the file's bytes,
+including unrelated settings, untouched, and the live bridge goes to the
+driver directly. A managed Codex agent gets its MCP parts as `-c` launch
+flags in the terminal and session config in chat. Codex can still add a
+trusted folder's project-layer servers on top of those.
 
 The same JSON configuration rules apply on macOS, Linux and Windows. Validation
 uses synthetic configuration and an in-memory driver, with no provider/server
