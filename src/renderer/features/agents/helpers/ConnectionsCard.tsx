@@ -23,6 +23,9 @@ import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBin
 import { useAgentStore } from '../../../stores/agentStore';
 import { CardNote, DetailsCard } from '../details/DetailsCard';
 import { openAgent } from './orchestration-hooks';
+import { CONNECTION_SOURCE_LABELS, type AgentConnectionSources, type ConnectionPairSources } from '../../../../shared/connection-sources';
+import { ConnectionSourcesDialog } from './ConnectionSourcesDialog';
+import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
 
 export type ConnectionDirection = 'two-way' | 'to' | 'from';
 
@@ -156,6 +159,11 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
     [bindings, agent.id, helperIds, parentId, toolPairs, dispatcherLinks],
   );
   const [confirming, setConfirming] = useState<Connection | null>(null);
+  // Where each connection comes from (#2744), re-read with the bindings and after a removal.
+  const sources = useConnectionSources(open && !!onDisconnect, agent.id, bindings, removals);
+  const [managing, setManaging] = useState<Connection | null>(null);
+  const pairSources = (c: Connection): ConnectionPairSources[] =>
+    c.pairs.map((p) => sources?.pairs.find((s) => s.agentId === p.agentId && s.targetId === p.targetId)).filter((s): s is ConnectionPairSources => !!s);
 
   return (
     <>
@@ -176,9 +184,14 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
               <li key={c.id}>
                 <div className="w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md hover:bg-surface-0" data-testid="connection-row">
                   <span className="text-[12.5px] text-ctp-text truncate">{c.name}</span>
-                  <span className="text-xs text-ctp-overlay1 whitespace-nowrap" title={suspendedNote(c)} data-testid="connection-meta">{connectionMeta(c)}</span>
+                  <span className="text-xs text-ctp-overlay1 whitespace-nowrap" title={sourcesNote(pairSources(c)) ?? suspendedNote(c)} data-testid="connection-meta">{connectionMeta(c)}</span>
                   <span className="ml-auto flex items-center gap-2.5">
-                    {onDisconnect && c.toolMade && (
+                    {onDisconnect && c.kind === 'agent' && pairSources(c).length > 0 && (
+                      <button type="button" onClick={() => setManaging(c)} className="text-xs text-ctp-overlay1 hover:text-ctp-text cursor-pointer" data-testid="connection-sources">
+                        Sources
+                      </button>
+                    )}
+                    {onDisconnect && c.toolMade && c.kind !== 'agent' && (
                       <button type="button" onClick={() => setConfirming(c)} className="text-xs text-ctp-overlay1 hover:text-ctp-text cursor-pointer" data-testid="connection-disconnect">
                         Disconnect
                       </button>
@@ -196,6 +209,16 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
         </ul>
       )}
     </DetailsCard>
+    {managing && (
+      <ConnectionSourcesDialog
+        agentName={agent.name}
+        otherName={managing.name}
+        dispatcherEnd={isDispatcherAgent(agent) ? managing.name : rail[managing.id] && isDispatcherAgent(rail[managing.id]) ? agent.name : undefined}
+        pairs={pairSources(managing)}
+        onClose={() => setManaging(null)}
+        onRemoved={() => setRemovals((n) => n + 1)}
+      />
+    )}
     <ConfirmDestructiveAction
       open={confirming !== null}
       title={`Disconnect ${confirming?.name ?? ''}?`}
@@ -231,6 +254,29 @@ function useToolConnectionPairs(active: boolean, bindings: readonly McpBindingEn
     return () => { alive = false; };
   }, [active, bindings]);
   return pairs;
+}
+
+/** "From: Canvas wire, Connect to Dispatcher", for a row's tooltip (#2744). */
+export function sourcesNote(pairs: readonly ConnectionPairSources[]): string | undefined {
+  const kinds = [...new Set(pairs.flatMap((p) => p.sources.map((s) => s.kind)))];
+  if (kinds.length === 0) return pairs.some((p) => p.unresolved) ? 'Not saved by any source: it goes when Clubhouse restarts.' : undefined;
+  return `From: ${kinds.map((k) => CONNECTION_SOURCE_LABELS[k]).join(', ')}`;
+}
+
+/** The sources behind the agent's connections, re-read like the tool pairs. Null until read, or when they can't be. */
+function useConnectionSources(active: boolean, agentId: string, bindings: readonly McpBindingEntry[], removals: number): AgentConnectionSources | null {
+  const [sources, setSources] = useState<AgentConnectionSources | null>(null);
+  useEffect(() => {
+    if (!active) { setSources(null); return; }
+    let alive = true;
+    Promise.resolve().then(() => window.clubhouse.mcpBinding.getConnectionSources(agentId)).then(
+      (list) => { if (alive) setSources(list ?? null); },
+      // telemetry-exempt: the card shows its rows without sources.
+      () => { if (alive) setSources(null); },
+    );
+    return () => { alive = false; };
+  }, [active, agentId, bindings, removals]);
+  return sources;
 }
 
 /** The Dispatcher's links, re-read like the tool pairs. Empty when they can't be read. */

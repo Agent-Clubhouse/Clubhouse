@@ -253,6 +253,35 @@ export function keepHeldBinding(agentId: string, targetId: string): boolean {
 }
 
 /**
+ * Which sources list each pair now (#2744): every registered source's own
+ * collect, read-only, so the answer comes from what is saved, not from the
+ * live bindings. A source whose collect fails is reported, and pairs it
+ * could not check count as listed by it.
+ */
+export async function collectSourcesByPair(): Promise<{ bySource: Map<string, Set<string>>; failed: string[] }> {
+  const bySource = new Map<string, Set<string>>();
+  const failed: string[] = [];
+  for (const source of [...sources.values()]) {
+    try {
+      const collected = await source.collect();
+      const bindings = Array.isArray(collected) ? collected : collected.bindings;
+      const keys = new Set(bindings.map((b) => pairKey(b.agentId, b.targetId)));
+      if (!Array.isArray(collected)) for (const u of collected.unverified ?? []) keys.add(pairKey(u.agentId, u.targetId));
+      bySource.set(source.id, keys);
+    } catch {
+      // telemetry-exempt: reported to the caller as a source that couldn't be read
+      failed.push(source.id);
+    }
+  }
+  return { bySource, failed };
+}
+
+/** The key collectSourcesByPair uses for a pair. */
+export function persistedPairKey(agentId: string, targetId: string): string {
+  return pairKey(agentId, targetId);
+}
+
+/**
  * The pairs `sourceId` created and still owns, that no other pruning source
  * lists (#2232). A pair a canvas, a zone, the user or another source made, or
  * also lists, is not here: removing it is not only that source's business.

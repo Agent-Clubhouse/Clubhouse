@@ -4,6 +4,7 @@ import type { Agent, DispatcherLink } from '../../../../shared/types';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { ConnectionsCard, agentConnections, connectionMeta } from './ConnectionsCard';
+import type { ConnectionSourceKind } from '../../../../shared/connection-sources';
 
 const lead: Agent = { id: 'lead', projectId: 'p1', name: 'epic-lead', kind: 'durable', status: 'running', color: 'teal' };
 
@@ -74,27 +75,43 @@ describe('Connections card (#2232)', () => {
     expect(useAgentStore.getState().activeAgentId).toBe('h1');
   });
 
-  it('offers Disconnect only for wires the connection tools alone made, and confirms first (#2253)', async () => {
-    // reviewer (one way) and docs-bot (one way in) are tool-made; the helper wire and the browser aren't.
-    window.clubhouse.mcpBinding.getToolConnections = vi.fn(async () => [
-      { agentId: 'lead', targetId: 'rev' },
-      { agentId: 'docs', targetId: 'lead' },
-      // A tool also claimed one direction of the helper wire: it stays read-only.
-      { agentId: 'lead', targetId: 'h1' },
-    ]);
-    const onDisconnect = vi.fn();
-    render(<ConnectionsCard agent={lead} helperIds={new Set(['h1'])} open onToggle={() => {}} onDisconnect={onDisconnect} />);
-    await waitFor(() => expect(screen.getAllByTestId('connection-disconnect')).toHaveLength(2));
+  it('offers Sources for agent rows, and removes one source at a time, saying what keeps them connected (#2744)', async () => {
+    const pair = (agentId: string, targetId: string, kinds: ConnectionSourceKind[]) => ({ agentId, targetId, bound: true, sources: kinds.map((kind) => ({ kind, sourceId: kind })) });
+    let reviewerSources: ConnectionSourceKind[] = ['tool_link', 'canvas'];
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+      pairs: [pair('lead', 'h1', ['helper']), pair('h1', 'lead', ['helper']), pair('lead', 'rev', reviewerSources), pair('docs', 'lead', ['canvas'])],
+      unreadable: [],
+    }));
+    const removeConnectionSource = vi.fn(async () => {
+      reviewerSources = ['canvas'];
+      return { ok: true as const, remaining: [{ kind: 'canvas' as const, sourceId: 'canvas-wires' }], stillConnected: true };
+    });
+    window.clubhouse.mcpBinding.removeConnectionSource = removeConnectionSource;
+    render(<ConnectionsCard agent={lead} helperIds={new Set(['h1'])} open onToggle={() => {}} onDisconnect={vi.fn()} />);
+    await waitFor(() => expect(screen.getAllByTestId('connection-sources')).toHaveLength(3));
     const rows = screen.getAllByTestId('connection-row');
-    expect(within(rows[0]).queryByTestId('connection-disconnect')).not.toBeInTheDocument(); // impl-ipc, helper
-    expect(within(rows[1]).queryByTestId('connection-disconnect')).not.toBeInTheDocument(); // group project
-    expect(within(rows[2]).queryByTestId('connection-disconnect')).not.toBeInTheDocument(); // browser
+    expect(within(rows[0]).getByTestId('connection-meta').getAttribute('title')).toBe('From: Helper');
+    expect(within(rows[4]).getByTestId('connection-meta').getAttribute('title')).toBe('From: Made by an orchestrator, Canvas wire');
 
-    fireEvent.click(within(rows[4]).getByTestId('connection-disconnect'));
-    expect(screen.getByText('Disconnect reviewer?')).toBeInTheDocument();
-    expect(onDisconnect).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
-    expect(onDisconnect).toHaveBeenCalledWith(expect.objectContaining({ id: 'rev', toolMade: true, pairs: [{ agentId: 'lead', targetId: 'rev' }] }));
+    fireEvent.click(within(rows[4]).getByTestId('connection-sources'));
+    const dialog = screen.getByTestId('connection-sources-dialog');
+    // A canvas wire is removed on its canvas: no button here.
+    expect(within(dialog).getByTestId('connection-source-canvas')).toHaveTextContent('Remove it on its canvas');
+    expect(within(dialog).queryByTestId('connection-source-remove-canvas')).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByTestId('connection-source-remove-tool_link'));
+    await waitFor(() => expect(removeConnectionSource).toHaveBeenCalledWith('lead', 'rev', 'tool_link'));
+    expect(await within(dialog).findByTestId('connection-source-result')).toHaveTextContent('Still connected through: Canvas wire.');
+  });
+
+  it('a helper link says to dispose the helper; it can\'t be removed here', async () => {
+    window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+      pairs: [{ agentId: 'lead', targetId: 'h1', bound: true, sources: [{ kind: 'helper' as const, sourceId: 'helper-wires' }] }],
+      unreadable: [],
+    }));
+    render(<ConnectionsCard agent={lead} helperIds={new Set(['h1'])} open onToggle={() => {}} onDisconnect={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('connection-sources'));
+    expect(screen.getByTestId('connection-source-helper')).toHaveTextContent('dispose the helper from the Helpers card');
+    expect(screen.queryByTestId('connection-source-remove-helper')).not.toBeInTheDocument();
   });
 
   it('stays read-only for a two-way wire when only one direction is tool-made', async () => {
@@ -105,7 +122,7 @@ describe('Connections card (#2232)', () => {
     expect(screen.queryByTestId('connection-disconnect')).not.toBeInTheDocument();
   });
 
-  it('disconnects in Agent details through the plain unbind, with no cause', async () => {
+  it('disconnects a tool-made group project wire in Agent details through the plain unbind, with no cause', async () => {
     const { AgentDetails } = await import('../details/AgentDetails');
     const { useProjectStore } = await import('../../../stores/projectStore');
     const { useAgentDetailsStore } = await import('../details/detailsStore');
@@ -113,16 +130,16 @@ describe('Connections card (#2232)', () => {
     useAgentDetailsStore.setState({ open: true, focus: null });
     window.clubhouse.git.branchChanges = vi.fn(async () => ({ available: false, files: [] }));
     window.clubhouse.agent.listDurable = vi.fn(async () => [{ id: 'lead', name: 'epic-lead', color: 'teal', createdAt: '' }]) as never;
-    window.clubhouse.mcpBinding.getToolConnections = vi.fn(async () => [{ agentId: 'lead', targetId: 'rev' }]);
+    window.clubhouse.mcpBinding.getToolConnections = vi.fn(async () => [{ agentId: 'lead', targetId: 'gp1' }]);
     const unbind = vi.fn(async () => ({ kept: false }));
     window.clubhouse.mcpBinding.unbind = unbind as never;
     render(<AgentDetails agent={lead} />);
     fireEvent.click(await screen.findByTestId('details-card-connections-toggle'));
     fireEvent.click(await screen.findByTestId('connection-disconnect'));
     fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
-    await waitFor(() => expect(unbind).toHaveBeenCalledWith('lead', 'rev'));
+    await waitFor(() => expect(unbind).toHaveBeenCalledWith('lead', 'gp1'));
     expect(unbind.mock.calls[0]).toHaveLength(2);
-    await waitFor(() => expect(useMcpBindingStore.getState().bindings.some((b) => b.agentId === 'lead' && b.targetId === 'rev')).toBe(false));
+    await waitFor(() => expect(useMcpBindingStore.getState().bindings.some((b) => b.agentId === 'lead' && b.targetId === 'gp1')).toBe(false));
     useProjectStore.setState({ projects: [] });
     // The dynamic import of AgentDetails transforms its whole card tree on a
     // cold run, which can take longer than the default 5s on its own.
@@ -133,30 +150,45 @@ describe('Connections card (#2232)', () => {
       agentId, targetId, agentName: agentId, targetName: targetId, status: 'active', ...extra,
     });
 
-    it('marks an active link as the Dispatcher\'s and offers Disconnect with its own wording', async () => {
+    it('marks an active link as the Dispatcher\'s, and its source removal says the Dispatcher can\'t redraw it', async () => {
       useMcpBindingStore.setState({ bindings: [wire('lead', 'rev', ['epic-lead', 'reviewer']), wire('rev', 'lead', ['reviewer', 'epic-lead'])] });
       window.clubhouse.mcpBinding.getDispatcherLinks = vi.fn(async () => [link('lead', 'rev'), link('rev', 'lead')]);
-      const onDisconnect = vi.fn();
-      render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={onDisconnect} />);
-      fireEvent.click(await screen.findByTestId('connection-disconnect'));
+      const linkSource = { kind: 'dispatcher_link' as const, sourceId: 'dispatcher-connections' };
+      window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+        pairs: [{ agentId: 'lead', targetId: 'rev', bound: true, sources: [linkSource] }, { agentId: 'rev', targetId: 'lead', bound: true, sources: [linkSource] }],
+        unreadable: [],
+      }));
+      const removeConnectionSource = vi.fn(async () => ({ ok: true as const, remaining: [], stillConnected: false }));
+      window.clubhouse.mcpBinding.removeConnectionSource = removeConnectionSource;
+      render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={vi.fn()} />);
+      fireEvent.click(await screen.findByTestId('connection-sources'));
       expect(screen.getByTestId('connection-meta')).toHaveTextContent('Dispatcher, two-way');
-      expect(screen.getByText(/The Dispatcher made this connection/)).toBeInTheDocument();
-      fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
-      expect(onDisconnect).toHaveBeenCalledWith(expect.objectContaining({ dispatcherMade: true, pairs: expect.arrayContaining([{ agentId: 'lead', targetId: 'rev' }, { agentId: 'rev', targetId: 'lead' }]) }));
+      expect(screen.getByTestId('connection-source-dispatcher_link')).toHaveTextContent('can\'t connect them again unless you draw the wire yourself');
+      fireEvent.click(screen.getByTestId('connection-source-remove-dispatcher_link'));
+      await waitFor(() => expect(removeConnectionSource).toHaveBeenCalledTimes(2));
+      expect(removeConnectionSource).toHaveBeenCalledWith('rev', 'lead', 'dispatcher_link');
+      expect(await screen.findByTestId('connection-source-result')).toHaveTextContent('They aren\u2019t connected now.');
     });
 
     it('shows a suspended link with no binding, says why, and re-reads after removing it', async () => {
       useMcpBindingStore.setState({ bindings: [] });
       const getDispatcherLinks = vi.fn(async () => [link('lead', 'rev', { targetName: 'reviewer', status: 'suspended', reason: 'orchestration_off' })] as DispatcherLink[]);
       window.clubhouse.mcpBinding.getDispatcherLinks = getDispatcherLinks;
-      const onDisconnect = vi.fn(async () => { getDispatcherLinks.mockResolvedValue([]); });
-      render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={onDisconnect} />);
+      window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+        pairs: [{ agentId: 'lead', targetId: 'rev', bound: false, sources: [{ kind: 'dispatcher_link' as const, sourceId: 'dispatcher-connections', suspended: 'Orchestration is off for one of these agents.' }] }],
+        unreadable: [],
+      }));
+      window.clubhouse.mcpBinding.removeConnectionSource = vi.fn(async () => {
+        getDispatcherLinks.mockResolvedValue([]);
+        return { ok: true as const, remaining: [], stillConnected: false };
+      });
+      render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={vi.fn()} />);
       const meta = await screen.findByTestId('connection-meta');
       expect(meta).toHaveTextContent('Dispatcher, sends to it, suspended');
-      expect(meta.getAttribute('title')).toContain('Orchestration is off for one of these agents.');
       expect(screen.getByText('reviewer')).toBeInTheDocument();
-      fireEvent.click(screen.getByTestId('connection-disconnect'));
-      fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
+      fireEvent.click(await screen.findByTestId('connection-sources'));
+      expect(screen.getByTestId('connection-source-dispatcher_link')).toHaveTextContent('Not connected now: Orchestration is off');
+      fireEvent.click(screen.getByTestId('connection-source-remove-dispatcher_link'));
       await waitFor(() => expect(screen.queryByTestId('connection-meta')).not.toBeInTheDocument());
     });
 

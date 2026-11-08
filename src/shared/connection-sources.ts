@@ -1,0 +1,76 @@
+/**
+ * Where a connection between two agents comes from (#2744). A pair (one
+ * direction) can be held by several sources at once; removing one leaves the
+ * others, and the connection stays while any source still lists it.
+ */
+export type ConnectionSourceKind =
+  /** A wire drawn on a canvas (or a zone wire there). Removed on the canvas. */
+  | 'canvas'
+  /** A helper and its orchestrator: always connected while the helper exists. */
+  | 'helper'
+  /** "Connect to Dispatcher" on the agent: the Dispatcher's automatic wire. */
+  | 'dispatcher_auto'
+  /** A link an orchestrator made with connect_agents (or a group project it added to). */
+  | 'tool_link'
+  /** A link the Dispatcher made between two orchestrators. */
+  | 'dispatcher_link'
+  /** A source this build doesn't know. */
+  | 'other';
+
+export interface ConnectionSource {
+  kind: ConnectionSourceKind;
+  /** The persisted source's id, for logs. */
+  sourceId: string;
+  /** A Dispatcher link that isn't active: why. */
+  suspended?: string;
+}
+
+/** One direction of a connection and what holds it. */
+export interface ConnectionPairSources {
+  agentId: string;
+  targetId: string;
+  /** Live now (a binding exists). A suspended Dispatcher link isn't. */
+  bound: boolean;
+  sources: ConnectionSource[];
+  /**
+   * Bound, but no source lists it: from a source that couldn't be read this
+   * time, or not saved anywhere (it goes at the next restart). Shown as
+   * unresolved, never guessed.
+   */
+  unresolved?: boolean;
+}
+
+export interface AgentConnectionSources {
+  pairs: ConnectionPairSources[];
+  /** Sources that couldn't be read: their part may be missing. */
+  unreadable: string[];
+}
+
+/** Which sources can be removed from the Connections card, and how. */
+export function removalRoute(kind: ConnectionSourceKind): 'here' | 'canvas' | 'helpers' | 'none' {
+  switch (kind) {
+    case 'tool_link':
+    case 'dispatcher_link':
+    case 'dispatcher_auto':
+      return 'here';
+    case 'canvas':
+      return 'canvas';
+    case 'helper':
+      return 'helpers';
+    default:
+      return 'none';
+  }
+}
+
+export const CONNECTION_SOURCE_LABELS: Readonly<Record<ConnectionSourceKind, string>> = {
+  canvas: 'Canvas wire',
+  helper: 'Helper',
+  dispatcher_auto: 'Connect to Dispatcher',
+  tool_link: 'Made by an orchestrator',
+  dispatcher_link: 'Made by the Dispatcher',
+  other: 'Other',
+};
+
+export type RemoveConnectionSourceResult =
+  | { ok: true; remaining: ConnectionSource[]; stillConnected: boolean }
+  | { ok: false; error: string };

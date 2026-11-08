@@ -188,7 +188,8 @@ export const dispatcherWireBindingSource: PersistedBindingSource = {
 };
 
 /** The user removed a Dispatcher wire: save Connect to Dispatcher off, so a restart doesn't bring it back. */
-async function saveWireRemoval(agentId: string): Promise<void> {
+/** Turn off Connect to Dispatcher for the agent at the other end of a removed Dispatcher wire. */
+export async function saveWireRemoval(agentId: string): Promise<void> {
   for (const { path } of await registeredProjects()) {
     if (isDispatcherPath(path)) continue;
     const agent = (await listDurable(path)).find((a) => a.id === agentId);
