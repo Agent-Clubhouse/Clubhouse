@@ -97,4 +97,18 @@ describe('TelemetryBackfillOffer (#2920)', () => {
     expect(await screen.findByText('History sent to OTLP: 120 spans, 4 events, 1 metric point.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
   });
+
+  it("says plainly when the destination isn't reachable, both on start and when sending stopped for it", async () => {
+    vi.spyOn(api(), 'backfillOffer').mockResolvedValue(offer(2 * DAY));
+    const statusSpy = vi.spyOn(api(), 'backfillStatus').mockResolvedValue(null);
+    vi.spyOn(api(), 'backfillStart').mockResolvedValue({ ok: false, reason: 'not_reachable' });
+    const { unmount } = render(<TelemetryBackfillOffer destinationId="azure" label="Azure Application Insights" on />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Send' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent("Azure Application Insights isn't reachable right now, so nothing was sent. Try again once it's receiving live data.");
+    unmount();
+    statusSpy.mockResolvedValue(status('failed', { destinationId: 'azure', reason: 'not_reachable' }));
+    render(<TelemetryBackfillOffer destinationId="azure" label="Azure Application Insights" on />);
+    expect(await screen.findByText("Sending stopped: Azure Application Insights isn't reachable right now. What was sent stays sent.")).toBeInTheDocument();
+  });
 });
+

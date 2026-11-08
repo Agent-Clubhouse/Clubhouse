@@ -91,7 +91,12 @@ export function TelemetryBackfillOffer({ destinationId, label, on }: { destinati
   const send = async () => {
     setError(null);
     const result = await api().backfillStart(destinationId, range);
-    if (!result.ok) { setError("Couldn't start sending. Try again."); return; }
+    if (!result.ok) {
+      setError(result.reason === 'not_reachable'
+        ? `${label} isn't reachable right now, so nothing was sent. Try again once it's receiving live data.`
+        : "Couldn't start sending. Try again.");
+      return;
+    }
     setStatus(await api().backfillStatus(destinationId));
   };
 
@@ -114,7 +119,9 @@ export function TelemetryBackfillOffer({ destinationId, label, on }: { destinati
   const outcome = status ? (
     <p className="text-xs text-ctp-subtext1" role="status">
       {status.state === 'done' && `History sent to ${label}: ${sentText(status)}.`}
-      {status.state === 'failed' && `Sending stopped: ${label} didn't accept part of it. What was sent stays sent.`}
+      {status.state === 'failed' && (status.reason === 'not_reachable'
+        ? `Sending stopped: ${label} isn't reachable right now. What was sent stays sent.`
+        : `Sending stopped: ${label} didn't accept part of it. What was sent stays sent.`)}
       {status.state === 'cancelled' && `Sending stopped. What was sent stays sent.`}
     </p>
   ) : null;

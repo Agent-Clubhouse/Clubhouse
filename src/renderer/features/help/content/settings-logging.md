@@ -101,6 +101,7 @@ When you turn on a telemetry destination under **Telemetry export** in **Setting
 - **What doesn't:** history from before your telemetry ID was last reset isn't sent. Neither is history the destination already received, so turning it off and on again never sends anything twice.
 - **Stopping and resuming:** **Cancel** stops partway through. If sending stops, **Send the rest** picks up where it left off.
 - **Where it's offered:** for Application Insights and other OTLP destinations, never for Feedback. Application Insights gets spans and events only, not metrics: it would stamp old metrics with today's time.
+- **Application Insights has to be reachable.** History is sent only while Application Insights is receiving live data, and sending stops if it stops receiving. Batches it can't take wait in its offline queue, which holds at most 20 MB for up to 48 hours, so history never pushes that queue past its limits.
 
 ## Feedback reports
 

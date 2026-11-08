@@ -23,6 +23,9 @@ vi.mock('./bootstrap', () => ({
   }),
 }));
 vi.mock('./local-control', () => ({ getLogDir: () => state.dir }));
+const azure = vi.hoisted(() => ({ health: {} as Record<string, { lastSuccessAt?: number; lastFailureAt?: number }>, queued: [0] as number[] }));
+vi.mock('./facade', () => ({ getRuntime: () => ({ destinationHealth: () => azure.health }) }));
+vi.mock('./offline', () => ({ getOfflineDir: () => '/offline', countOfflineItems: async () => (azure.queued.length > 1 ? azure.queued.shift()! : azure.queued[0]) }));
 const salt = vi.hoisted(() => ({ since: 0 as number | undefined }));
 vi.mock('./local-salt', () => ({ localSaltSince: () => salt.since }));
 vi.mock('../services/log-settings', () => ({ getSettings: () => ({ retention: 'medium' }) }));
@@ -54,6 +57,8 @@ beforeEach(() => {
   state.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'backfill-'));
   state.destinations = [{ id: 'otlp', kind: 'otlp', backfilledThrough: undefined, backfillProgress: undefined }];
   salt.since = 0;
+  azure.health = {};
+  azure.queued = [0];
   state.gate = undefined;
   state.identity = undefined;
   state.sent = [];
@@ -248,6 +253,47 @@ describe('backfill on connect (#2920)', () => {
     // 256 sent, then a slice told it may send 44 more, then nothing.
     expect(state.sent).toHaveLength(2);
     expect(getBackfillStatus('otlp')?.filtered).toBe(88);
+  });
+
+  describe('Azure, which queues what it can\'t send to its own disk', () => {
+    beforeEach(() => {
+      state.destinations = [{ id: 'azure', kind: 'azure', backfilledThrough: undefined, backfillProgress: undefined } as never];
+      writeRun(NOW - 2 * DAY, [session(NOW - 2 * DAY), event(NOW - 2 * DAY + 1000), metric(NOW - 2 * DAY + 2000), event(NOW - 2 * DAY + 3000)]);
+      noteDestinationEnabled('azure', 'azure', NOW);
+    });
+
+    it('refuses to start unless a live export succeeded recently, none failed since, and nothing is queued', async () => {
+      expect(await startBackfill('azure', 7)).toEqual({ ok: false, reason: 'not_reachable' });
+      azure.health = { azure: { lastSuccessAt: Date.now() - 60 * 60 * 1000 } };
+      expect(await startBackfill('azure', 7)).toEqual({ ok: false, reason: 'not_reachable' });
+      azure.health = { azure: { lastSuccessAt: Date.now() - 1000, lastFailureAt: Date.now() } };
+      expect(await startBackfill('azure', 7)).toEqual({ ok: false, reason: 'not_reachable' });
+      azure.health = { azure: { lastSuccessAt: Date.now() - 1000 } };
+      azure.queued = [3];
+      expect(await startBackfill('azure', 7)).toEqual({ ok: false, reason: 'not_reachable' });
+      expect(state.sent).toEqual([]);
+      // The offer stays for when it's reachable.
+      expect(await getBackfillOffer('azure')).not.toBeNull();
+    });
+
+    it('stops as soon as a slice goes to the disk queue instead of out, and resumes after it later', async () => {
+      azure.health = { azure: { lastSuccessAt: Date.now() - 1000 } };
+      // Empty at the check and before the first slice, then one item queued after it.
+      azure.queued = [0, 0, 1, 1];
+      await startBackfill('azure', 7);
+      await until(() => getBackfillStatus('azure')?.state === 'failed');
+      expect(getBackfillStatus('azure')?.reason).toBe('not_reachable');
+      expect(state.sent).toHaveLength(1);
+      // The queued slice will reach Azure when it's back, so it isn't sent again.
+      expect(state.destinations[0].backfillProgress).toEqual({ log: { t: NOW - 2 * DAY + 1000, n: 1 } });
+    });
+
+    it('sends everything while Azure keeps accepting', async () => {
+      azure.health = { azure: { lastSuccessAt: Date.now() - 1000 } };
+      await startBackfill('azure', 7);
+      await until(() => getBackfillStatus('azure')?.state === 'done');
+      expect(state.sent).toHaveLength(3);
+    });
   });
 });
 
