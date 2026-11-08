@@ -24,7 +24,7 @@ If Clubhouse was closed or the machine was asleep at a schedule time, the action
 
 - **Wake an agent**, with an optional prompt. It resumes the agent's last session, the same as waking it by hand.
 - **Message an agent.** If it's busy, the message waits for its next turn. If it's asleep, it's woken with the message.
-- **Start a quick agent** in a project folder or in another agent's worktree. It shows in the sidebar named after the action. It starts at the Access level you pick, or your Default access. An action an agent made never starts one above that agent's own access, and only an agent allowed to start helpers can have its actions start quick agents.
+- **Start a quick agent** in a project folder or in another agent's worktree. It shows in the sidebar named after the action. Agent steps run with Full access and without a window, even if the project starts quick agents in a terminal, so a scheduled run never stops to ask. An agent can have actions that start quick agents only if it runs with Full access itself and is allowed to start helpers. The Dispatcher's actions can't start them.
 - **Put an agent to sleep.** A chat agent in the middle of a turn gets up to 10 minutes to finish first.
 - **Notify me.** A Clubhouse notification, following Settings > Notifications & alerts.
 
