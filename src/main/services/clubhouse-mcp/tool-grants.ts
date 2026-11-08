@@ -52,6 +52,12 @@ export const TOOL_GRANT_TARGETS = [
   'app',
   /** The managed agents library: shared parts and templates (#2819). */
   'library',
+  /**
+   * An action (#2918) named in the arguments. Its owner (the caller, a
+   * person, another agent or the Dispatcher) decides which grant covers it:
+   * changing or running a person's action acts at the person's access.
+   */
+  'action_arg',
 ] as const;
 
 export type ToolGrantTarget = (typeof TOOL_GRANT_TARGETS)[number];

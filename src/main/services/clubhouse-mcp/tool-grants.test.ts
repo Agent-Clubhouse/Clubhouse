@@ -141,10 +141,10 @@ describe('tool grant declarations (#2967)', () => {
       disconnect_agents: connection.manage on agent_arg
       create_action: action.write on app
       list_actions: action.read on app
-      update_action: action.write on app
-      delete_action: action.write on app
-      run_action: action.run on app
-      action_history: action.read on app"
+      update_action: action.write on action_arg
+      delete_action: action.write on action_arg
+      run_action: action.run on action_arg
+      action_history: action.read on action_arg"
     `);
   });
 });

@@ -65,7 +65,10 @@ export interface ActionScope {
   /** Owner of the actions this caller creates. */
   owner: ActionOwner;
   /** Whether the caller may see and change this action. */
+  /** Whether the caller may read this action (list, history). */
   canSee(action: Pick<Action, 'owner'>): boolean;
+  /** Whether the caller may change, delete or run it. */
+  canChange(action: Pick<Action, 'owner'>): boolean;
 }
 
 /**
@@ -83,7 +86,7 @@ export interface ActionScope {
  */
 export function actionScope(callerId: string): ActionScope {
   if (isDispatcherAgent(callerId)) {
-    return { owner: { kind: 'dispatcher' }, canSee: (a) => a.owner.kind !== 'app' };
+    return { owner: { kind: 'dispatcher' }, canSee: (a) => a.owner.kind !== 'app', canChange: (a) => a.owner.kind !== 'app' };
   }
   if (isTrackedDispatcher(callerId)) {
     throw new ActionError('not_allowed', 'The Dispatcher is turned off, so it can’t manage actions.');
@@ -95,7 +98,10 @@ export function actionScope(callerId: string): ActionScope {
   const helper = kind === 'helper' || !!knownAgent(callerId)?.parentAgentId;
   return {
     owner: { kind: 'agent', agentId: callerId, ...(helper && { helper: true }) },
-    canSee: (a) => a.owner.kind === 'agent' && a.owner.agentId === callerId,
+    // Agents read every action people and agents can see, but change and run
+    // only their own: running a person's action would act at the person's access.
+    canSee: (a) => a.owner.kind !== 'app',
+    canChange: (a) => a.owner.kind === 'agent' && a.owner.agentId === callerId,
   };
 }
 
@@ -120,6 +126,15 @@ const NOT_FOUND = 'No action with that id.';
 function findVisible(scope: ActionScope, id: string): ActionView {
   const view = actions.getAction(id);
   if (!view || !scope.canSee(view)) throw new ActionError('not_found', NOT_FOUND);
+  return view;
+}
+
+/** One action the caller may change or run: its own (the Dispatcher: any). */
+function findChangeable(scope: ActionScope, id: string): ActionView {
+  const view = findVisible(scope, id);
+  if (!scope.canChange(view)) {
+    throw new ActionError('not_allowed', 'You can only change, delete or run actions you made. Ask the person to change this one.');
+  }
   return view;
 }
 
@@ -255,7 +270,7 @@ function listActions(scope: ActionScope): unknown {
 
 function updateAction(scope: ActionScope, args: Obj): unknown {
   const id = idArg(args);
-  const current = findVisible(scope, id);
+  const current = findChangeable(scope, id);
   const changes = INPUT_FIELDS.filter((key) => args[key] !== undefined);
   if (changes.length === 0) throw new ActionError('invalid_input', 'Nothing to change. Pass the fields to change: name, trigger, steps, overlap or enabled.');
   // Only turning it on or off: the same as the switch in Settings.
@@ -280,14 +295,14 @@ function updateAction(scope: ActionScope, args: Obj): unknown {
 
 function deleteAction(scope: ActionScope, args: Obj): unknown {
   const id = idArg(args);
-  const current = findVisible(scope, id);
+  const current = findChangeable(scope, id);
   actions.deleteAction(id);
   return { deleted: { id, name: current.name } };
 }
 
 function runAction(scope: ActionScope, args: Obj): unknown {
   const id = idArg(args);
-  findVisible(scope, id);
+  findChangeable(scope, id);
   const { runId } = actions.runActionNow(id);
   const view = actions.getAction(id);
   return {
@@ -435,13 +450,18 @@ async function guarded(tool: ActionToolName, callerId: string, args: Obj, handle
 
 /** Listed for agents that can own actions: not quick agents, nor a turned-off Dispatcher. */
 /**
- * Grant declarations (#2967): actions are the app's, so every target is
- * `app`. Who may see or change which action is still the interim rule in
- * actionScope and rights.ts until the evaluator reads these (#2921).
+ * Grant declarations (#2967): listing and creating are on `app`; reading,
+ * changing and running one action are on that action (`action_arg`), so the
+ * evaluator can tell the caller's own actions from a person's or another
+ * agent's. Until it reads these (#2921), actionScope and rights.ts enforce
+ * the same: read all, change and run only your own.
  */
-const READ = { group: 'actions', grant: { actions: ['action.read'], target: 'app' } } as const;
-const WRITE = { group: 'actions', grant: { actions: ['action.write'], target: 'app' } } as const;
-const RUN = { group: 'actions', grant: { actions: ['action.run'], target: 'app' } } as const;
+const LIST = { group: 'actions', grant: { actions: ['action.read'], target: 'app' } } as const;
+const CREATE = { group: 'actions', grant: { actions: ['action.write'], target: 'app' } } as const;
+// The action named in the arguments: its owner tells the caller's own from others'.
+const READ_ONE = { group: 'actions', grant: { actions: ['action.read'], target: 'action_arg' } } as const;
+const WRITE_ONE = { group: 'actions', grant: { actions: ['action.write'], target: 'action_arg' } } as const;
+const RUN_ONE = { group: 'actions', grant: { actions: ['action.run'], target: 'action_arg' } } as const;
 
 function schema(properties: Obj, required: string[] = []): McpToolDefinition['inputSchema'] {
   return { type: 'object', properties, ...(required.length > 0 && { required }) };
@@ -459,18 +479,18 @@ export function registerActionTools(): void {
       inputSchema: schema(ACTION_FIELDS, ['trigger', 'steps']),
     },
     (callerId, args) => guarded('create_action', callerId, args, createAction),
-    WRITE,
+    CREATE,
   );
   registerGlobalTool(
     'list_actions',
     {
       description:
         'List the actions you can manage, each with its trigger, steps, on or off state (with the reason when Clubhouse turned it off), ' +
-        'any problem from its last run, next run time and last run. Agents see the actions they created. ' + RESULT_NOTE,
+        'any problem from its last run, next run time and last run. You see every action; you can change and run only those you made. ' + RESULT_NOTE,
       inputSchema: schema({}),
     },
     (callerId, args) => guarded('list_actions', callerId, args, (scope) => listActions(scope)),
-    READ,
+    LIST,
   );
   registerGlobalTool(
     'update_action',
@@ -482,7 +502,7 @@ export function registerActionTools(): void {
       inputSchema: schema({ ...ID_FIELD, ...ACTION_FIELDS }, ['id']),
     },
     (callerId, args) => guarded('update_action', callerId, args, updateAction),
-    WRITE,
+    WRITE_ONE,
   );
   registerGlobalTool(
     'delete_action',
@@ -493,7 +513,7 @@ export function registerActionTools(): void {
       inputSchema: schema(ID_FIELD, ['id']),
     },
     (callerId, args) => guarded('delete_action', callerId, args, deleteAction),
-    WRITE,
+    WRITE_ONE,
   );
   registerGlobalTool(
     'run_action',
@@ -504,7 +524,7 @@ export function registerActionTools(): void {
       inputSchema: schema(ID_FIELD, ['id']),
     },
     (callerId, args) => guarded('run_action', callerId, args, runAction),
-    RUN,
+    RUN_ONE,
   );
   registerGlobalTool(
     'action_history',
@@ -515,6 +535,6 @@ export function registerActionTools(): void {
       inputSchema: schema(ID_FIELD, ['id']),
     },
     (callerId, args) => guarded('action_history', callerId, args, actionHistory),
-    READ,
+    READ_ONE,
   );
 }

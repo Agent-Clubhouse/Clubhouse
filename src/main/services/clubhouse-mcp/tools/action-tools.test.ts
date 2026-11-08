@@ -210,10 +210,9 @@ describe('action tools', () => {
       expect(() => actionScope('dispatcher')).toThrow(/turned off/);
     });
 
-    it('an agent lists only its own actions', async () => {
+    it('an agent lists every action people and agents can see', async () => {
       const r = await call('agent-a', 'list_actions');
-      expect(r.body.actions.map((a: Action) => a.id)).toEqual([ids['own-a']]);
-      expect(r.body.count).toBe(1);
+      expect(r.body.actions.map((a: Action) => a.id).sort()).toEqual([ids['by-dispatcher'], ids['by-user'], ids['own-a'], ids['own-b']].sort());
     });
 
     it('the Dispatcher lists every visible action, never Clubhouse’s own', async () => {
@@ -221,17 +220,24 @@ describe('action tools', () => {
       expect(r.body.actions.map((a: Action) => a.id).sort()).toEqual([ids['by-dispatcher'], ids['by-user'], ids['own-a'], ids['own-b']].sort());
     });
 
-    it('another agent’s action reads as not found, the same as a missing one', async () => {
-      for (const tool of ['update_action', 'delete_action', 'run_action', 'action_history']) {
-        const args = tool === 'update_action' ? { id: ids['own-b'], enabled: false } : { id: ids['own-b'] };
-        const theirs = await call('agent-a', tool, args);
-        const missing = await call('agent-a', tool, { ...args, id: 'nope' });
-        expect(theirs).toEqual({ isError: true, body: { error: { code: 'not_found', message: 'No action with that id.' } } });
-        expect(theirs).toEqual(missing);
+    it('an agent can’t change, delete or run a person’s action or another agent’s, but can read it', async () => {
+      // Running a person's action would start its quick agents at the person's Access level.
+      for (const target of [ids['by-user'], ids['own-b'], ids['by-dispatcher']]) {
+        for (const tool of ['update_action', 'delete_action', 'run_action']) {
+          const args = tool === 'update_action' ? { id: target, enabled: false } : { id: target };
+          const r = await call('agent-a', tool, args);
+          expect(r.body.error.code).toBe('not_allowed');
+          expect(r.body.error.message).toMatch(/only change, delete or run actions you made/);
+        }
+        expect((await call('agent-a', 'action_history', { id: target })).isError).toBe(false);
       }
       expect(actions.setActionEnabled).not.toHaveBeenCalled();
       expect(actions.deleteAction).not.toHaveBeenCalled();
       expect(actions.runActionNow).not.toHaveBeenCalled();
+      // A missing id is still not found.
+      expect((await call('agent-a', 'run_action', { id: 'nope' })).body.error.code).toBe('not_found');
+      // Its own action it may run.
+      expect((await call('agent-a', 'run_action', { id: ids['own-a'] })).body.runId).toBeTruthy();
     });
 
     it('the Dispatcher changes, runs, reads and deletes anyone’s action', async () => {
@@ -414,7 +420,7 @@ describe('action tools', () => {
       expect(r.body.action.description).toContain('Notify you');
     });
 
-    it('its owner and the Dispatcher read a one-time action’s runs after it deleted itself; no one else does', async () => {
+    it('anyone reads a one-time action’s runs after it deleted itself', async () => {
       const made = await call('agent-a', 'create_action', { trigger: { kind: 'once', at: Date.now() + 60_000 }, steps: [NOTIFY] });
       const id = made.body.action.id as string;
       vi.useFakeTimers({ now: Date.now() + 120_000, toFake: ['Date'] });
@@ -427,9 +433,8 @@ describe('action tools', () => {
       expect(engine().get(id)).toBeUndefined();
       expect((await call('agent-a', 'action_history', { id })).body.runs).toHaveLength(1);
       expect((await call('dispatcher', 'action_history', { id })).body.runs).toHaveLength(1);
-      const other = await call('agent-b', 'action_history', { id });
-      expect(other.body.error.code).toBe('not_found');
-      expect(other).toEqual(await call('agent-b', 'action_history', { id: 'never' }));
+      expect((await call('agent-b', 'action_history', { id })).body.runs).toHaveLength(1);
+      expect((await call('agent-b', 'action_history', { id: 'never' })).body.error.code).toBe('not_found');
     });
   });
 });
