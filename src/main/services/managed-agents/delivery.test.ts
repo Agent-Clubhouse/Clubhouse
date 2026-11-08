@@ -249,9 +249,18 @@ describe('previewManagedSetup', () => {
     Object.assign(agent, { orchestrator: 'copilot-cli', access: 'auto', freeAgentMode: true, runtimeMode: 'terminal' });
     const copilot = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider({}, 'copilot-cli') }));
     expect(copilot.settings.find((r) => r.key === 'access')!.value).toBe('Auto, starts at Ask first in the terminal');
-    Object.assign(agent, { orchestrator: 'claude-code' });
+    // In chat, Copilot's driver asks first for a level it doesn't have.
+    Object.assign(agent, { runtimeMode: 'chat' });
+    const chat = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider({}, 'copilot-cli') }));
+    expect(chat.settings.find((r) => r.key === 'access')!.value).toBe('Auto, starts at Ask first in chat');
+    Object.assign(agent, { orchestrator: 'claude-code', runtimeMode: 'terminal' });
     const claude = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider() }));
     expect(claude.settings.find((r) => r.key === 'access')!.value).toBe('Auto');
+    // A record from before #2761 starts as it always did: no note.
+    delete agent.access;
+    Object.assign(agent, { orchestrator: 'copilot-cli' });
+    const legacy = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider({}, 'copilot-cli') }));
+    expect(legacy.settings.find((r) => r.key === 'access')!.value).not.toContain('starts at');
   });
 
   it('gives the text with wildcards as written for "Show wildcards", and a settings summary (#2895)', async () => {
