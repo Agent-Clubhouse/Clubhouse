@@ -6,7 +6,7 @@ import * as path from 'path';
 const dir = vi.hoisted(() => ({ path: '' }));
 vi.mock('electron', () => ({ app: { getPath: () => dir.path } }));
 
-import { deleteLocalSalt, identityForNewInstall, localSalt, peekLocalSalt } from './local-salt';
+import { adoptIdentity, deleteLocalSalt, localSalt, peekLocalSalt } from './local-salt';
 
 beforeEach(() => { dir.path = fs.mkdtempSync(path.join(os.tmpdir(), 'local-salt-')); });
 afterEach(() => { fs.rmSync(dir.path, { recursive: true, force: true }); });
@@ -38,10 +38,13 @@ describe('local record salt (#2920)', () => {
     expect(localSalt()).toHaveLength(32);
   });
 
-  it('is adopted by the first identity, and after a delete a later destination gets a fresh salt, never the old one', () => {
+  it('is adopted by the first identity, and after a delete a later destination gets a fresh salt, never the old one', async () => {
+    const saved: string[] = [];
+    const save = async (id: { hashSalt: string }) => { saved.push(id.hashSalt); };
     const recorded = localSalt().toString('base64');
-    const first = identityForNewInstall();
+    const first = await adoptIdentity(save);
     expect(first.hashSalt).toBe(recorded);
+    expect(saved).toEqual([recorded]);
     // The identity is now the only place it lives.
     expect(peekLocalSalt()).toBeUndefined();
     // "Delete local telemetry data": the identity and any local salt go, and recording restarts on a new one.
@@ -49,16 +52,22 @@ describe('local record salt (#2920)', () => {
     const afterDelete = localSalt().toString('base64');
     expect(afterDelete).not.toBe(recorded);
     // A destination added later adopts the new salt, not the deleted one.
-    const second = identityForNewInstall();
+    const second = await adoptIdentity(save);
     expect(second.hashSalt).toBe(afterDelete);
     expect(second.hashSalt).not.toBe(first.hashSalt);
     expect(second.installId).not.toBe(first.installId);
   });
 
-  it('gives the first identity a fresh salt when nothing was recorded', () => {
-    const identity = identityForNewInstall();
+  it('keeps the salt file when saving the identity fails, so the next try adopts it again', async () => {
+    const recorded = localSalt().toString('base64');
+    await expect(adoptIdentity(async () => { throw new Error('disk full'); })).rejects.toThrow('disk full');
+    expect(peekLocalSalt()).toBe(recorded);
+    expect((await adoptIdentity(async () => {})).hashSalt).toBe(recorded);
+  });
+
+  it('gives the first identity a fresh salt when nothing was recorded', async () => {
+    const identity = await adoptIdentity(async () => {});
     expect(Buffer.from(identity.hashSalt, 'base64')).toHaveLength(32);
     expect(peekLocalSalt()).toBeUndefined();
   });
 });
-

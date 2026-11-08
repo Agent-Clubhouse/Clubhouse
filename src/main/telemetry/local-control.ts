@@ -5,6 +5,7 @@
  * telemetry signals, and is installed in the facade, only while
  * `telemetryRecording` is on too. No OpenTelemetry imports.
  */
+import { randomBytes } from 'crypto';
 import { localSalt } from './local-salt';
 import * as os from 'os';
 import * as path from 'path';
@@ -150,7 +151,8 @@ function start(level: LocalTelemetryLevel, signals: boolean): void {
     fileBase: now.toISOString().replace(/:/g, '-').replace(/Z$/, ''),
     level,
     signals,
-    hashSalt: hashSalt(),
+    // A diag-only recorder hashes nothing, so it needs no saved salt (#2920).
+    hashSalt: signals ? hashSalt() : randomBytes(32),
     scrub: createScrubber({ homeDir: os.homedir(), username, hostname: os.hostname() }),
     session: { appVersion: app.getVersion(), platform: process.platform, arch: process.arch, uiChrome: newChromeEnabled() ? 'v2' : 'legacy' },
     onRotate: () => void runRetention(),
@@ -217,19 +219,23 @@ export async function restartLocalRecording(): Promise<void> {
   }
 }
 
-/** The salt this run's local record hashes ids with (#2920), so a reader can match a known id to its hash. */
-export function localRecordSalt(): Buffer {
-  return hashSalt();
+/**
+ * The salt the running recorder hashes ids with (#2920), so a reader can match a
+ * known id to its hash. None while signals aren't recorded. Never creates one.
+ */
+export function localRecordSalt(): Buffer | undefined {
+  return recorder?.signals ? recorder.hashSalt : undefined;
 }
 
 /**
  * The newest recorded events of one name, newest first (#2920). Queued lines are
- * flushed first, so a call reads what was just recorded. Empty while signals
- * aren't recorded: there's no record to read.
+ * written first (without ending the metric window), so a call reads what was just
+ * recorded. Empty while signals aren't recorded, as the setting says.
  */
 export async function readLocalEvents(name: EventName, limit: number): Promise<RecordedEvent[]> {
+  if (!recorder?.signals) return [];
   try {
-    if (recorder?.signals) await recorder.flush();
+    await recorder.flushQueued();
   } catch {
     // Read what's on disk.
   }

@@ -146,6 +146,10 @@ export interface LocalRecorder extends LocalTelemetrySink, DiagSink {
   stop(): Promise<void>;
   /** This run's files still on disk, oldest first; the last is being written. */
   files(): string[];
+  /** Write the queued lines, without ending the metric window (#2920: a reader of the record). */
+  flushQueued(): Promise<void>;
+  /** The salt this recorder hashes ids with, so a reader can match a known id to its hash. */
+  readonly hashSalt: Buffer;
 }
 
 type Attrs = Record<string, AttrValue>;
@@ -396,7 +400,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
   function detailOf(evOpts: EventOptions | undefined): Record<string, unknown> | undefined {
     if (!evOpts?.detail && !evOpts?.detailIds) return undefined;
     try {
-      const out: Record<string, unknown> = { ...sanitizeLocalDetail(evOpts.detail) };
+      const out: Record<string, unknown> = { ...sanitizeLocalDetail(evOpts.detail, (s) => opts.scrub(s) === s) };
       for (const [key, ids] of Object.entries(evOpts.detailIds ?? {}).slice(0, 8)) {
         if (/^[A-Za-z][\w.-]{0,63}$/.test(key) && Array.isArray(ids)) out[key] = ids.slice(0, 8).map((id) => hashId(opts.hashSalt, String(id)));
       }
@@ -784,7 +788,9 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
         severity: evOpts?.severity ?? 'info',
         attrs: attrsOf(attrs),
         ...(detail && { detail }),
-      }, evOpts?.trace && /^[0-9a-f]{32}$/.test(evOpts.trace.traceId) && /^[0-9a-f]{16}$/.test(evOpts.trace.spanId) ? evOpts.trace : als.getStore()), audit);
+      }, evOpts?.trace && /^[0-9a-f]{32}$/.test(evOpts.trace.traceId) && /^[0-9a-f]{16}$/.test(evOpts.trace.spanId) ? evOpts.trace : als.getStore()),
+      // Past the pending limit too, but bounded: twice the limit, then dropped and counted like any line.
+      audit && pending.length - pendingDiag < maxPending * 2);
     },
 
     exception(error, exOpts) {
@@ -811,6 +817,12 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
     activeTraceIds() {
       const ids = als.getStore();
       return ids && activeSpans.has(ids) ? ids : undefined;
+    },
+
+    hashSalt: opts.hashSalt,
+
+    async flushQueued() {
+      await flushLines();
     },
 
     async flush() {

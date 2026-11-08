@@ -698,5 +698,34 @@ describe('audit events (#2920)', () => {
     expect(h.raw()).not.toContain('agent-a');
     expect(h.raw()).not.toContain('a sentence');
   });
+
+  it('flushQueued writes queued lines without ending the metric window, and exposes its salt', async () => {
+    const h = harness();
+    h.rec.count('clubhouse.app.sessions', 1);
+    h.rec.event('clubhouse.audit.setting', [ATTR.auditOutcome('ok')], { detail: { key: 'theme' } });
+    await h.rec.flushQueued();
+    expect(h.records().some((r) => r.name === 'clubhouse.audit.setting')).toBe(true);
+    expect(h.records().some((r) => r.t === 'metric')).toBe(false);
+    expect(h.rec.hashSalt.equals(SALT)).toBe(true);
+  });
+
+  it('bounds queued audit lines at twice the pending limit, counting the rest as dropped', async () => {
+    const h = harness({ maxPendingLines: 3, flushIntervalMs: 60_000 });
+    // Keep the queue from draining while the burst arrives.
+    for (let i = 0; i < 20; i++) h.rec.event('clubhouse.audit.setting', [ATTR.auditOutcome('refused')], { detail: { key: 'theme' } });
+    await h.rec.flush();
+    const audits = h.records().filter((r) => r.name === 'clubhouse.audit.setting').length;
+    // The session line shares the queue: twice the limit (6) holds it and five audit lines.
+    expect(audits).toBeGreaterThan(3);
+    expect(audits).toBeLessThan(20);
+  });
+
+  it('scrubs detail strings: a username or hostname is left out', async () => {
+    const h = harness();
+    h.rec.event('clubhouse.audit.setting', [], { detail: { key: 'theme', who: 'sam-tester', host: 'sams-laptop', fine: 'light' } });
+    await h.rec.flush();
+    const [event] = h.records().filter((r) => r.name === 'clubhouse.audit.setting');
+    expect(event.detail).toEqual({ key: 'theme', fine: 'light' });
+  });
 });
 

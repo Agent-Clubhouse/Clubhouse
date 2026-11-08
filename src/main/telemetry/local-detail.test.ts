@@ -22,4 +22,19 @@ describe('sanitizeLocalDetail (#2920)', () => {
     expect(sanitizeLocalDetail('text')).toBeUndefined();
     expect(sanitizeLocalDetail([1])).toBeUndefined();
   });
+
+  it('leaves out token-shaped secrets the short-id format would let through', () => {
+    expect(sanitizeLocalDetail({
+      a: 'sk-live-abc123', b: 'ghp_abcdefghijklmnopqrstuvwxyz0123456789', c: 'AKIAABCDEFGHIJKLMNOP', d: 'eyJhbGciOiJIUzI1NiJ9',
+      e: 'xoxb-1234', f: 'a'.repeat(40), key: 'orchestration.crossProjectHelpers', ok: 'claude-code',
+    })).toEqual({ key: 'orchestration.crossProjectHelpers', ok: 'claude-code' });
+  });
+
+  it("leaves out a string the recorder's scrubber would change", () => {
+    const keep = (s: string) => !s.includes('sams-laptop');
+    expect(sanitizeLocalDetail({ host: 'sams-laptop.local', list: ['ok', 'sams-laptop'], fine: 'opus' }, keep)).toEqual({ fine: 'opus' });
+    // The check applies to that call only.
+    expect(sanitizeLocalDetail({ host: 'sams-laptop.local' })).toEqual({ host: 'sams-laptop.local' });
+  });
 });
+

@@ -54,11 +54,13 @@ export function localSalt(): Buffer {
 
 /**
  * The first install identity: it adopts the local record's salt, if there is
- * one, and the file goes, so the identity is the one place the salt lives. A
- * delete of the identity then leaves nothing to bring it back.
+ * one. Once `save` has stored it, the file goes, so the identity is the one
+ * place the salt lives and a delete of the identity leaves nothing to bring it
+ * back. If saving fails, the file stays and the next try adopts it again.
  */
-export function identityForNewInstall(): TelemetryIdentity {
+export async function adoptIdentity(save: (identity: TelemetryIdentity) => Promise<void>): Promise<TelemetryIdentity> {
   const identity = createIdentity(peekLocalSalt());
+  await save(identity);
   deleteLocalSalt();
   return identity;
 }

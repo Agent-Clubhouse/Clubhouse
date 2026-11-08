@@ -6,6 +6,7 @@
  * Several destinations can be enabled at once, each with its own switch,
  * level and preset. Consent names every host that will receive data.
  */
+import { restartLocalRecording } from './local-control';
 import { deleteLocalSalt } from './local-salt';
 import { app } from 'electron';
 import {
@@ -621,9 +622,10 @@ export async function setAdvanced(input: AdvancedInput): Promise<TelemetryAction
 export async function resetInstallId(): Promise<TelemetryActionResult> {
   await prepare();
   await updateTelemetrySettings((s) => ({ ...s, ...createIdentity() }));
-  // A reset salt must not come back from the local record's (#2920).
+  // A reset salt must not come back from the local record's (#2920), and local recording moves to the new one.
   deleteLocalSalt();
   if (isRunning()) await restartTelemetry({ clearOffline: true });
+  await restartLocalRecording();
   return done();
 }
 
@@ -641,9 +643,8 @@ export async function deleteLocalData(): Promise<TelemetryActionResult> {
     ...s,
     destinations: s.destinations.map((d) => ({ ...d, enabled: false, ...(d.kind === 'framebriar' ? { framebriar: { userOff: true } } : {}) })),
   }));
+  // Also removes the local record's salt before the recorder restarts (#2920), so a destination added later starts from a fresh one.
   await disableTelemetry({ deleteLocalData: true });
-  // And the local record's salt (#2920): a destination added later starts from a fresh one.
-  deleteLocalSalt();
   return done();
 }
 

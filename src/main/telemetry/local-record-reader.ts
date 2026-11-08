@@ -35,14 +35,24 @@ export async function recordFilesNewestFirst(dir: string): Promise<string[]> {
     .map((f) => path.join(dir, f.name));
 }
 
-/** Up to `limit` events named `name`, newest first. Unreadable files and torn lines are skipped. */
-export async function readRecordedEvents(dir: string, name: EventName, limit: number): Promise<RecordedEvent[]> {
+/** The most a read looks through: a few runs' files, not the whole retention folder. */
+export const MAX_READ_BYTES = 32 * 1024 * 1024;
+
+/**
+ * Up to `limit` events named `name`, newest first, from the newest files totalling
+ * at most `maxBytes`. Unreadable files and torn lines are skipped.
+ */
+export async function readRecordedEvents(dir: string, name: EventName, limit: number, maxBytes = MAX_READ_BYTES): Promise<RecordedEvent[]> {
   const out: RecordedEvent[] = [];
   if (limit <= 0) return out;
   const needle = `"name":${JSON.stringify(name)}`;
+  let budget = maxBytes;
   for (const file of await recordFilesNewestFirst(dir)) {
     let raw: string;
     try {
+      const size = (await fsp.stat(file)).size;
+      if (size > budget) break;
+      budget -= size;
       raw = await fsp.readFile(file, 'utf-8');
     } catch {
       continue;

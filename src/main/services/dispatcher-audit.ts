@@ -106,15 +106,19 @@ const flatOf = (v: unknown): Flat | undefined => (v && typeof v === 'object' && 
 export async function readAuditFromRecord(limit: number, knownIds: Iterable<string>): Promise<AuditRow[]> {
   const wanted = Math.min(Math.max(Math.floor(limit), 0), MAX_AUDIT_READ);
   if (wanted === 0) return [];
-  const events = await readLocalEvents('clubhouse.audit.dispatcher_control', wanted);
   const salt = localRecordSalt();
+  if (!salt) return [];
+  // Read past rows hashed under another salt (another build, or before a reset), which can't be matched.
+  const events = await readLocalEvents('clubhouse.audit.dispatcher_control', MAX_AUDIT_READ * 4);
   const byHash = new Map<string, string>();
   for (const id of knownIds) byHash.set(hashId(salt, id), id);
   const idOf = (hash: unknown) => (typeof hash === 'string' ? byHash.get(hash) ?? `hash:${hash}` : 'unknown');
-  return events.map((e) => {
+  const matched = events.filter((e) => byHash.has(String(e.attrs['clubhouse.audit.actor.id_hash'])));
+  return matched.slice(0, wanted).map((e) => {
     const detail = e.detail ?? {};
     const targets = Array.isArray(detail.targets) ? detail.targets.map(idOf) : [];
     const outcome = e.attrs['clubhouse.audit.outcome'];
+    // A row without a recognised outcome is not taken as a success.
     const requested = flatOf(detail.requested) as AuditRow['requested'];
     const before = flatOf(detail.before);
     const after = flatOf(detail.after);
@@ -126,7 +130,7 @@ export async function readAuditFromRecord(limit: number, knownIds: Iterable<stri
       ...(requested && { requested }),
       ...(before && { before }),
       ...(after && { after }),
-      outcome: outcome === 'refused' || outcome === 'error' ? outcome : 'ok',
+      outcome: outcome === 'ok' || outcome === 'refused' ? outcome : 'error',
       ...(typeof detail.code === 'string' && { code: detail.code }),
     };
   });

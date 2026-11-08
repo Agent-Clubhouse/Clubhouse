@@ -1359,6 +1359,7 @@ The local record is also the record of who changed what. There's no separate aud
 **Decisions**, with the defaults taken. They're open to the maintainer:
 - **Rich locally, filtered on export** (#2920 item 4). An event may carry a `detail` object that's written to the local record only. The facade never hands it to the SDK, so no export destination or backfill gets it. It holds what the export schema can't, such as a setting's key and its old and new values.
   - It's held to the settings audit's rule (`local-detail.ts`): booleans, whole numbers, null, short words or ids (`^[\w.:[\]-]{1,64}$`), lists of up to 8 of those, and one level of nesting.
+  - A string the recorder's scrubber would change (a username, hostname, address or home path) is left out. So is a token-shaped secret: well-known key prefixes, JWTs, and any run of 32 or more characters with no dot.
   - Anything else is left out, so names, paths, commands and free text never reach the file.
   - Ids in the detail are hashed like `hash` attributes (`detailIds`).
   - **Secret and content values are never recorded, even locally.** The token format doesn't keep secrets out: an API key, bearer token or header value can look like a short id. So `clubhouse.audit.setting` carries a setting's old and new values only when two checks pass (`eventKeepsValues` in `settings-audit.ts`):
@@ -1370,11 +1371,18 @@ The local record is also the record of who changed what. There's no separate aud
 - **Ids stay hashed locally.** Without an install identity, local recording keeps one salt from run to run in `telemetry-local-salt.json`: 0600, next to `telemetry-settings.json`, and holding the salt only, never an install id.
   - The first install identity adopts that salt and the file is removed, so hashes recorded before export was set up match exported ones, and a later backfill needs no rehashing.
   - Resetting the install id and "Delete local telemetry data" both remove it.
-  - Readers match a hash back by hashing the ids they know with the record's salt (`localRecordSalt()`). An id that matches none, such as an agent since removed, shows as `hash:<hash>`.
-- **Audit events aren't lost locally.** `EventDef.audit` marks them. Local recording keeps them at every level, outside the hourly event cap and the pending-line limit. Export follows their `standard` level like any event.
+  - Readers match a hash back by hashing the ids they know with the running recorder's salt (`localRecordSalt()`, which never creates one).
+    - An id that matches none, such as an agent since removed, shows as `hash:<hash>`.
+    - A Dispatcher row whose actor doesn't match was hashed under another salt (another build's, or from before a reset), so it's left out.
+  - A diag-only recorder (signals off) hashes nothing, so it makes no salt file. Resetting the install id restarts local recording, so the recorder moves to the new salt. The salt file is removed only once the new identity is saved, so a failed save adopts it again next time.
+- **Audit events aren't capped locally.** `EventDef.audit` marks them. Local recording keeps them at every level and outside the hourly event cap. They may also go past the pending-line limit, up to twice that limit; past that they're dropped and counted like any line. Retention and the per-run budget still apply. Export follows their `standard` level like any event.
+  - Only main records them: the renderer protocol refuses audit events, so a renderer can't write the record of who changed what.
   - With **Record locally** or **Record telemetry signals** off they aren't recorded: the switch still turns local recording off completely, as #2920 recommends. Then `list_orchestrator_controls` returns no audit rows.
 
-**Reading back.** `readLocalEvents(name, limit)` (`local-control.ts`, on `local-record-reader.ts`) flushes queued lines, then reads `telemetry-*.jsonl` newest file first and stops once it has `limit` events. `list_orchestrator_controls` with `audit: N` uses it. Its rows keep the old shape: `ts`, `tool`, `actorId`, `targets`, `requested`, `before`, `after`, `outcome` and `code`.
+**Reading back.** `readLocalEvents(name, limit)` (`local-control.ts`, on `local-record-reader.ts`) does three things:
+- It writes the queued lines (`flushQueued`, which doesn't end the metric window).
+- It reads `telemetry-*.jsonl` newest file first, up to 32 MB of files, and stops once it has `limit` events.
+- It returns nothing while signals aren't recorded. `list_orchestrator_controls` with `audit: N` uses it. Its rows keep the old shape: `ts`, `tool`, `actorId`, `targets`, `requested`, `before`, `after`, `outcome` and `code`.
 
 ## 7. Annex satellites and controllers
 

@@ -8,7 +8,7 @@
  * chunk is never imported. When on, it starts buffering facade calls and
  * loads the SDK asynchronously so it never blocks `ready`.
  */
-import { deleteLocalSalt, identityForNewInstall } from './local-salt';
+import { adoptIdentity, deleteLocalSalt } from './local-salt';
 import * as os from 'os';
 import { telemetryInstanceId as instanceId } from './instance';
 import { app } from 'electron';
@@ -183,9 +183,7 @@ export function checkConfirmedHost(confirmedHost: string | undefined, host: stri
 async function ensureIdentity(settings: TelemetrySettings): Promise<TelemetryIdentity> {
   if (isValidIdentity(settings)) return { installId: settings.installId, hashSalt: settings.hashSalt };
   // The local record's salt carries over (#2920): what's recorded keeps its hashes.
-  const identity = identityForNewInstall();
-  await updateTelemetrySettings((s) => ({ ...s, ...identity }));
-  return identity;
+  return adoptIdentity(async (identity) => { await updateTelemetrySettings((s) => ({ ...s, ...identity })); });
 }
 
 function startOfflinePrune(): void {

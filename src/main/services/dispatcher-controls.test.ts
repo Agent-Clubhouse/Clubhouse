@@ -1315,6 +1315,10 @@ describe('readback', () => {
       expect(audit[0]).toMatchObject({ tool: 'set_orchestrator_helpers', actorId: 'dispatcher', targets: ['b'], outcome: 'ok', requested: { max_helpers: 3 } });
       const both = (await controls({ audit: 5 })).audit;
       expect(both.map((r: AuditRow) => r.targets[0])).toEqual(['b', 'a']);
+      // A row hashed under another salt (another build's, or from before a reset) can't be matched, so it's left out.
+      fs.writeFileSync(path.join(state.base, 'telemetry-record', 'telemetry-2026-11-09T00-00-00.000.jsonl'),
+        `${JSON.stringify({ t: 'event', ts: 'later', name: 'clubhouse.audit.dispatcher_control', severity: 'info', attrs: { 'clubhouse.audit.actor.id_hash': '0123456789abcdef', 'clubhouse.audit.outcome': 'ok' }, detail: { tool: 'connect_orchestrators', targets: [] } })}\n`);
+      expect((await controls({ audit: 5 })).audit.map((r: AuditRow) => r.targets[0])).toEqual(['b', 'a']);
       // The ids are hashed in the file; only a known agent's hash maps back to it.
       const files = fs.readdirSync(path.join(state.base, 'telemetry-record'));
       const text = files.map((f) => fs.readFileSync(path.join(state.base, 'telemetry-record', f), 'utf-8')).join('');
