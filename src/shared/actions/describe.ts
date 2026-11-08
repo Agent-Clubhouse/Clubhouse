@@ -111,6 +111,11 @@ const EVENT_PHRASES: Record<ActionEventKind, string> = {
   'project.removed': 'is removed',
 };
 
+/** "goes to sleep", "gets a new commit": the event as the end of a sentence about its subject. */
+export function eventPhrase(kind: ActionEventKind): string {
+  return EVENT_PHRASES[kind];
+}
+
 /** Labels for the grouped event menu. */
 export const EVENT_LABELS: Record<ActionEventKind, string> = {
   'agent.woke': 'Wakes',

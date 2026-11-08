@@ -26,6 +26,7 @@ import { registerGoobersHandlers } from './goobers-handlers';
 import { registerTelemetrySettingsHandlers } from './telemetry-settings-handlers';
 import { registerFeedbackHandlers } from './feedback-handlers';
 import { registerDispatcherHandlers } from './dispatcher-handlers';
+import { registerActionsHandlers } from './actions-handlers';
 import * as hookServer from '../services/hook-server';
 import { publishCliEndpoint } from '../services/cli-endpoint';
 import { refreshInstalledCli } from '../services/cli-install';
@@ -85,6 +86,7 @@ export function registerAllHandlers(): void {
   registerGroupProjectHandlers();
   registerCanvasIndexHandlers();
   registerDispatcherHandlers();
+  registerActionsHandlers();
   // After the group-project lifecycle listener is attached, so restored
   // group-project wires post their joins and start polling.
   restorePersistedBindings();

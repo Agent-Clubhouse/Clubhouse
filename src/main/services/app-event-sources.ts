@@ -14,10 +14,11 @@ import { forgetHookTurn, onAppEvent, publishAppEvent, publishFromChatEvent } fro
 import { appLog } from './log-service';
 import * as projectStore from './project-store';
 
-interface KnownAgent {
+export interface KnownAgent {
   projectPath: string;
   name?: string;
   parentAgentId?: string;
+  worktreePath?: string;
 }
 
 /** Agents that exist (created, not disposed), per project, from the last read. */
@@ -34,7 +35,12 @@ function snapshot(projectPath: string, configs: DurableAgentConfig[]): Map<strin
   const out = new Map<string, KnownAgent>();
   for (const c of configs) {
     if (!exists(c)) continue;
-    out.set(c.id, { projectPath, ...(c.name && { name: c.name }), ...(c.parentAgentId && { parentAgentId: c.parentAgentId }) });
+    out.set(c.id, {
+      projectPath,
+      ...(c.name && { name: c.name }),
+      ...(c.parentAgentId && { parentAgentId: c.parentAgentId }),
+      ...(c.worktreePath && { worktreePath: c.worktreePath }),
+    });
   }
   return out;
 }
@@ -79,9 +85,14 @@ function forgetProject(projectPath: string): void {
   projectAgents.delete(projectPath);
 }
 
-/** An agent's last known name, also after it was deleted from the read. */
-export function knownAgentName(agentId: string): string | undefined {
-  return agents.get(agentId)?.name;
+/** A durable agent that exists, from the last read of its project. */
+export function knownAgent(agentId: string): KnownAgent | undefined {
+  return agents.get(agentId);
+}
+
+/** Every durable agent that exists, by id. */
+export function knownAgents(): ReadonlyMap<string, KnownAgent> {
+  return agents;
 }
 
 /** The parent of a helper, from the last read of its project. */

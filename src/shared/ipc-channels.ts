@@ -620,6 +620,20 @@ export const IPC = {
      */
     OPEN_AND_READ: 'blueprint:open-and-read',
   },
+  /** Actions (#2918): workflows that run on a schedule, on events, or once. */
+  ACTIONS: {
+    LIST: 'actions:list',
+    CREATE: 'actions:create',
+    UPDATE: 'actions:update',
+    SET_ENABLED: 'actions:set-enabled',
+    DELETE: 'actions:delete',
+    RUN_NOW: 'actions:run-now',
+    HISTORY: 'actions:history',
+    /** Main → renderer: the actions or a run changed. No payload; the renderer re-lists. */
+    CHANGED: 'actions:changed',
+    /** Main → renderer: a mechanical failure or an action Clubhouse turned off, for a toast. */
+    NOTICE: 'actions:notice',
+  },
   /** The app-wide Dispatcher agent (#2533). */
   DISPATCHER: {
     GET: 'dispatcher:get',
