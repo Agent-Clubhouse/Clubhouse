@@ -112,7 +112,8 @@ The three E2E shards, the Annex E2E job, the Chat E2E job and the Stable-mode E2
 ## Caching and skipped downloads
 
 - **npm:** `actions/setup-node` caches it.
-- **Electron binary:** the jobs that launch Electron cache the roughly 100 MB binary in its default cache directory, keyed by the lockfile.
+- **Electron binary:** the build job and the jobs that launch Electron cache the roughly 100 MB binary in its default cache directory, keyed by the lockfile. `electron-forge package` still downloads Electron's `SHASUMS256.txt` on every run, since `@electron/get` never caches it, so the build job retries the package step once when it fails on a GitHub 5xx.
+- **actionlint:** the release tarball is cached by version and checksum, and the download retries.
 - **Skipped downloads:** lint, typecheck, unit and macOS unit set `ELECTRON_SKIP_BINARY_DOWNLOAD=1`, because vitest aliases `electron` to a mock and these jobs never launch it.
 
 ## Measurements
