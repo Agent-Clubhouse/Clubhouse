@@ -573,17 +573,19 @@ jobs:
   e2e-classic:
     needs: [changes, build]
     if: ${{ !cancelled() && needs.build.result == 'success' }}
-    name: Classic layout E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/4)
+    name: Classic layout E2E Tests (${{ matrix.os }}, ${{ matrix.shard }}/5)
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-2022]
-        # Four shards, so the classic run never outlasts the E2E shards.
-        shard: [1, 2, 3, 4]
+        # One explicit list per shard (e2e/classic-specs.mjs), balanced by hand
+        # from measured times so no shard outlasts the E2E shards.
+        shard: [1, 2, 3, 4, 5]
     env:
       PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
       CLUBHOUSE_E2E_LAYOUT: classic
+      PLAYWRIGHT_CLASSIC_SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -610,10 +612,10 @@ jobs:
           path: .webpack/
       - name: Run classic layout E2E tests
         if: runner.os != 'Linux'
-        run: npx playwright test --shard=${{ matrix.shard }}/4 --reporter=line,junit
+        run: npx playwright test --reporter=line,junit
       - name: Run classic layout E2E tests (Linux — requires virtual display)
         if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum npx playwright test --shard=${{ matrix.shard }}/4 --reporter=line,junit
+        run: xvfb-run --auto-servernum npx playwright test --reporter=line,junit
         env:
           # chrome-sandbox is not SUID root on GitHub runners
           ELECTRON_DISABLE_SANDBOX: '1'

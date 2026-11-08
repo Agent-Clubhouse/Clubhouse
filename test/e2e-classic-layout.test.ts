@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import * as path from 'path';
 import { classicRunSeedOver } from '../e2e/layout';
-import { CLASSIC_RUN_SPECS, LAYOUT_SWITCH_SPECS, PINNED_CLASSIC_SPECS, classicTestMatch } from '../e2e/classic-specs.mjs';
+import { CLASSIC_SHARDS, CLASSIC_RUN_SPECS, LAYOUT_SWITCH_SPECS, PINNED_CLASSIC_SPECS, classicTestMatch } from '../e2e/classic-specs.mjs';
 
 const E2E_DIR = path.resolve(__dirname, '..', 'e2e');
 const PIN = /newChrome:\s*false/;
@@ -46,13 +46,20 @@ describe('E2E classic layout lists (#2843)', () => {
     expect(start).toBeGreaterThan(-1);
     const job = workflow.slice(start, workflow.indexOf('\n  # ', start + 1));
     expect(job).toMatch(/CLUBHOUSE_E2E_LAYOUT: classic/);
-    expect(job).toMatch(/npx playwright test --shard=\$\{\{ matrix\.shard \}\}\/4 --reporter/);
-    expect(job).toMatch(/shard: \[1, 2, 3, 4\]/);
+    expect(job).toMatch(/PLAYWRIGHT_CLASSIC_SHARD: \$\{\{ matrix\.shard \}\}/);
+    const matrix = /\n\s+shard: \[([^\]]*)\]/.exec(job)?.[1];
+    expect(matrix?.split(',').map((x) => x.trim())).toEqual(Object.keys(CLASSIC_SHARDS));
   });
 
-  it('turn the list into globs, and refuse an empty one', () => {
-    expect(classicTestMatch(['a.spec.ts'])).toEqual(['**/a.spec.ts']);
-    expect(() => classicTestMatch([])).toThrow(/no specs/);
+  it('put each classic spec in exactly one shard, with no shard empty', () => {
+    for (const [shard, specs] of Object.entries(CLASSIC_SHARDS)) expect(specs.length, `shard ${shard}`).toBeGreaterThan(0);
+    expect(new Set(CLASSIC_RUN_SPECS).size).toBe(CLASSIC_RUN_SPECS.length);
+  });
+
+  it('turn a shard into globs, and refuse one that does not exist or is empty', () => {
+    expect(classicTestMatch('1', { 1: ['a.spec.ts'] })).toEqual(['**/a.spec.ts']);
+    expect(() => classicTestMatch('2', { 1: ['a.spec.ts'] })).toThrow(/has shards 1/);
+    expect(() => classicTestMatch('1', { 1: [] })).toThrow(/no specs/);
   });
 
   it('seed classic over a reused profile by merging, and leave an unreadable or chosen file alone', () => {
