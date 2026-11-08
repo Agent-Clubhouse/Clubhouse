@@ -31,6 +31,9 @@ export const CLASSIC_RUN_SPECS = [
   'navigation.spec.ts',
   'start-agent.spec.ts',
   'agent-real-cli.spec.ts',
+  'command-palette.spec.ts',
+  'terminal.spec.ts',
+  'terminal-e2e.spec.ts',
 ];
 
 /** Still pinned to classic, waiting to move. */
@@ -45,7 +48,6 @@ export const PINNED_CLASSIC_SPECS = [
   'canvas-startup-bindings.spec.ts',
   'chat-fake-cli.spec.ts',
   'chat-rich/harness.ts',
-  'command-palette.spec.ts',
   'find-replace.spec.ts',
   'mermaid-preview.spec.ts',
   'onboarding.spec.ts',
@@ -54,8 +56,6 @@ export const PINNED_CLASSIC_SPECS = [
   'rail-hover-flyout.spec.ts',
   'rail-pin.spec.ts',
   'telemetry-export.spec.ts',
-  'terminal-e2e.spec.ts',
-  'terminal.spec.ts',
 ];
 
 /** Test the layout switch itself, so they seed both layouts. */
