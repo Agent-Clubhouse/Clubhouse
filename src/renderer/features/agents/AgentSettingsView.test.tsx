@@ -677,6 +677,14 @@ describe('AgentSettingsView', () => {
       });
     });
 
+    it('an agent with no CLI of its own uses the project default, as main does (#2929)', async () => {
+      useProjectStore.setState({ projects: [{ id: 'proj-1', name: 'my-app', path: '/project', orchestrator: 'codex-cli' }], activeProjectId: 'proj-1' });
+      renderSettings({ orchestrator: undefined });
+      await waitFor(() => {
+        expect((window.clubhouse.agent as any).getModelOptions).toHaveBeenCalledWith('/project', 'codex-cli');
+      });
+    });
+
     it('persists custom model on blur', async () => {
       const mockUpdate = vi.fn().mockResolvedValue(undefined);
       (window.clubhouse.agent as any).updateDurableConfig = mockUpdate;
