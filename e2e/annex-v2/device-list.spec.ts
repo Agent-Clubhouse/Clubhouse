@@ -1,8 +1,9 @@
 /**
  * Annex Network stage 1 (#3057): one device list, instant removal, clear errors.
  *
- * Two desktops pair for real: the controller pastes the satellite's pairing
- * link (pointed at loopback). Both then show the other in the one device list.
+ * Two desktops pair for real, one-to-one (Annex Network off on the controller;
+ * network joins are network-join.spec.ts): the controller pastes the
+ * satellite's pairing link (pointed at loopback). Both then show the other in the one device list.
  * Removing the controller on the satellite cuts its connection at once, and the
  * controller's list says what happened and what to do.
  */
@@ -26,7 +27,17 @@ test.beforeAll(async () => {
   handles = await launchDual();
   await enableAnnexViaPreload(handles.satellite.window);
   await enableAnnexViaPreload(handles.controller.window);
+  await turnOffAnnexNetwork(handles.controller.window);
 });
+
+/** One-to-one pairing, as before Annex Network (#3061): this spec is about that path. */
+async function turnOffAnnexNetwork(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const settings = await (window as any).clubhouse.annex.getSettings();
+    await (window as any).clubhouse.annex.saveSettings({ ...settings, networkEnabled: false });
+  });
+}
+
 
 test.afterAll(async () => {
   if (handles) await cleanupDual(handles);

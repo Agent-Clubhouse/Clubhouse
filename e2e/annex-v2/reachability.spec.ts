@@ -63,6 +63,11 @@ test('a satellite reachable only by a typed host connects, and again after the c
 
   await enableAnnexViaPreload(satellite.window);
   await enableAnnexViaPreload(controller.window);
+  // One-to-one (Annex Network off on the controller): this spec is about reaching a satellite.
+  await controller.window.evaluate(async () => {
+    const settings = await (window as any).clubhouse.annex.getSettings();
+    await (window as any).clubhouse.annex.saveSettings({ ...settings, networkEnabled: false });
+  });
 
   let link: string | undefined;
   await expect.poll(async () => { link = (await status(satellite!.window)).pairingUrl; return !!link; }, { timeout: 15_000 }).toBe(true);
