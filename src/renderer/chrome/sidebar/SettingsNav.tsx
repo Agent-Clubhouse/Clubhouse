@@ -1,5 +1,8 @@
+import { useMemo } from 'react';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { useChromeStore } from '../chromeStore';
+import { orderProjects } from './treeModel';
 import { useSettingsCategories, isSettingsPageActive, type SettingsCategory } from '../../panels/AccessoryPanel';
 import type { SettingsSubPage } from '../../../shared/types';
 
@@ -26,8 +29,15 @@ export function SettingsNav() {
   const settingsSubPage = useUIStore((s) => s.settingsSubPage);
   const setSettingsContext = useUIStore((s) => s.setSettingsContext);
   const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
-  // Persisted manual order stays stable here; Recent and pin/idle groups belong to the agent tree.
-  const projects = useProjectStore((s) => s.projects);
+  // The sidebar's manual order (#2853): pinned projects first, then the saved
+  // order. Recent sorting and the idle group follow activity, so they stay in
+  // the sidebar and this list doesn't move while someone is editing.
+  const savedOrder = useProjectStore((s) => s.projects);
+  const pinnedIds = useChromeStore((s) => s.pinnedProjectIds);
+  const projects = useMemo(() => {
+    const { pinned, rest } = orderProjects(savedOrder, pinnedIds);
+    return [...pinned, ...rest];
+  }, [savedOrder, pinnedIds]);
   const { app, project } = useSettingsCategories();
   const isApp = settingsContext === 'app';
 
@@ -77,7 +87,7 @@ export function SettingsNav() {
           <div className="px-1.5 pb-1 flex items-center text-xs font-semibold text-ctp-subtext0">
             Projects<span className="ml-auto font-normal text-ctp-overlay1">{projects.length}</span>
           </div>
-          <p className="px-1.5 pb-1 text-xs text-ctp-overlay1">Saved manual order. Sidebar activity and groups do not change this list.</p>
+          <p className="px-1.5 pb-1 text-xs text-ctp-overlay1">Pinned first, then your saved order. Recent activity doesn't reorder this list.</p>
           {projects.map((p) => {
             const expanded = !isApp && settingsContext === p.id;
             return (
