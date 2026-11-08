@@ -60,6 +60,15 @@ describe('request_grant (#2970)', () => {
     expect(listGrantRequests()).toEqual([]);
   });
 
+  it('refuses starting and removing helpers, which follow the approval setting', async () => {
+    for (const [action, target] of [['agent.create', 'own_project'], ['agent.dispose', 'my_helpers']]) {
+      const r = await requestGrant('a1', { action, target, reason: 'x' });
+      expect(r.isError).toBe(true);
+      expect(text(r)).toContain('approval setting');
+    }
+    expect(listGrantRequests()).toEqual([]);
+  });
+
   it('refuses an agent with no saved settings', async () => {
     mocks.config = null;
     expect((await requestGrant('a1', { action: 'settings.app.write', target: 'app', reason: 'x' })).isError).toBe(true);
@@ -92,6 +101,15 @@ describe('answering a request (#2970)', () => {
     expect(await answerGrantRequest(id, true)).toEqual({ ok: false, error: 'Agent not found' });
     expect(listGrantRequests().map((r) => r.requestId)).toEqual([id]);
     expect(mocks.deliver).not.toHaveBeenCalled();
+  });
+
+  it('two answers at once: the first one counts, and the other is told it was already answered', async () => {
+    const id = grantRequest();
+    const [allowed, declined] = await Promise.all([answerGrantRequest(id, true), answerGrantRequest(id, false)]);
+    expect(allowed).toEqual({ ok: true });
+    expect(declined).toMatchObject({ ok: false });
+    expect(mocks.setAgentGrant).toHaveBeenCalledTimes(1);
+    expect(mocks.deliver).toHaveBeenCalledTimes(1);
   });
 
   it('an unknown or answered request says so', async () => {

@@ -83,6 +83,23 @@ describe('helper presets over MCP (#2785)', () => {
     expect(mocks.update).toHaveBeenCalledTimes(1);
   });
 
+  it('a call with bad arguments fails on them, without asking the user', async () => {
+    const r = await callTool('dispatcher', 'set_helper_presets', { reset: {} });
+    expect(r.content[0].text).toContain('Missing required argument: revision');
+    expect(listGrantRequests()).toEqual([]);
+  });
+
+  it('shows the user every argument, and doesn\'t ask about a call too long to review', async () => {
+    const cells = Array.from({ length: 3 }, (_, i) => ({ provider: 'claude-code', difficulty: 'easy', model: `m${i}`, effort: null }));
+    await callTool('dispatcher', 'set_helper_presets', { revision: 'r1', cells });
+    expect(JSON.parse(listGrantRequests()[0].details ?? '{}')).toEqual({ revision: 'r1', cells });
+
+    const huge = Array.from({ length: 400 }, (_, i) => ({ provider: 'claude-code', difficulty: 'easy', model: `model-${i}`, effort: null }));
+    const r = await callTool('dispatcher', 'set_helper_presets', { revision: 'r1', cells: huge });
+    expect(r.content[0].text).toContain('too long for them to review');
+    expect(listGrantRequests()).toHaveLength(1);
+  });
+
   it('a declined call stays refused', async () => {
     const args = { revision: 'r1', reset: {} };
     await callTool('dispatcher', 'set_helper_presets', args);

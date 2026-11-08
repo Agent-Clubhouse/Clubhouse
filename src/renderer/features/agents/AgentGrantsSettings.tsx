@@ -181,7 +181,7 @@ export function AgentGrantsSettings({ agent, projectPath, refreshKey = 0 }: {
   return (
     <div data-testid="agent-grants-settings">
       {intro}
-      <WaitingRequests agentId={agent.id} agentName={agent.name} />
+      <WaitingRequests agentId={agent.id} agentName={agent.name} onAnswered={() => setLoadAttempt((n) => n + 1)} />
       <div className="flex items-center justify-end gap-3 min-h-[28px]">
         {changed && (
           <Button onClick={() => void reset()} disabled={resetting} data-testid="agent-grants-reset">Reset to defaults</Button>
@@ -216,13 +216,13 @@ export function AgentGrantsSettings({ agent, projectPath, refreshKey = 0 }: {
 }
 
 /** Requests waiting on the user (#2970), above the rows they'd change. */
-function WaitingRequests({ agentId, agentName }: { agentId: string; agentName: string }) {
+function WaitingRequests({ agentId, agentName, onAnswered }: { agentId: string; agentName: string; onAnswered: () => void }) {
   const waiting = useGrantRequestStore((s) => Object.values(s.requests).some((r) => r.agentId === agentId));
   if (!waiting) return null;
   return (
     <section aria-label="Waiting for you" data-testid="agent-grants-waiting">
       <SectionHeading title="Waiting for you" />
-      <GrantRequestList agentId={agentId} agentName={agentName} />
+      <GrantRequestList agentId={agentId} agentName={agentName} onAnswered={onAnswered} />
     </section>
   );
 }

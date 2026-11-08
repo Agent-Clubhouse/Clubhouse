@@ -27,7 +27,7 @@ export interface GrantRequest {
   target?: GrantTarget;
   /** `call`: the tool it called. */
   toolName?: string;
-  /** `call`: the call's arguments, shortened for display. */
+  /** `call`: the call's arguments, in full: Allow covers exactly these. */
   details?: string;
   /** The agent's reason, in its words. */
   reason?: string;
@@ -39,7 +39,10 @@ export const GRANT_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_PENDING_GRANT_REQUESTS_PER_AGENT = 3;
 /** Longest reason kept, in characters. */
 export const GRANT_REQUEST_REASON_MAX = 500;
-/** Longest argument preview kept, in characters. */
-export const GRANT_REQUEST_DETAILS_MAX = 600;
+/**
+ * Longest arguments a call request shows, in characters. Allow covers the
+ * whole call, so the user sees all of it; a longer call isn't asked about.
+ */
+export const GRANT_REQUEST_DETAILS_MAX = 20_000;
 
 export type GrantRequestAnswer = { ok: true } | { ok: false; error: string };

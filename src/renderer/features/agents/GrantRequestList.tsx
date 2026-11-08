@@ -25,7 +25,12 @@ function outcome(request: GrantRequest): string {
     : `Allow adds this to its Clubhouse permissions, where you can remove it later.`;
 }
 
-export function GrantRequestList({ agentId, agentName }: { agentId: string; agentName: string }) {
+export function GrantRequestList({ agentId, agentName, onAnswered }: {
+  agentId: string;
+  agentName: string;
+  /** After an answer went through, so a page showing the agent's permissions can reload them. */
+  onAnswered?: () => void;
+}) {
   const all = useGrantRequestStore((s) => s.requests);
   const requests = useMemo(() => grantRequestsFor(all, agentId), [all, agentId]);
   const remove = useGrantRequestStore((s) => s.remove);
@@ -37,7 +42,10 @@ export function GrantRequestList({ agentId, agentName }: { agentId: string; agen
     setError(null);
     try {
       const result = await window.clubhouse.agent.answerGrantRequest(request.requestId, allow);
-      if (result.ok === true) remove([request.requestId]);
+      if (result.ok === true) {
+        remove([request.requestId]);
+        onAnswered?.();
+      }
       else setError({ id: request.requestId, message: result.error });
     } catch (err) {
       reportChromeActionFailed('agent_settings_save', err);

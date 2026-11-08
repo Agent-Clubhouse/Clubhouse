@@ -26,7 +26,7 @@ import { isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
 import { mcpCallerParent } from './mcp-call-gate';
 import { getAgentGrantChanges } from '../agent-grants-store';
 import { applyGrantChanges } from '../../../shared/agent-grant-changes';
-import { isCrossProjectEnabled, isOrchestrationEnabled } from './orchestration-gate';
+import { isCrossProjectEnabled, isOrchestrationEnabled, orchestrationControl } from './orchestration-gate';
 import { toolGrantDeclarations, type ToolGrant, type ToolGrantTarget } from './tool-grants';
 import type { McpBinding } from './types';
 
@@ -150,6 +150,7 @@ export function callerGrants(agentId: string): Grant[] {
     helper: mcpCallerParent(agentId) !== undefined,
     orchestrates: !tracked && isOrchestrationEnabled(agentId),
     crossProject: !tracked && isCrossProjectEnabled(agentId),
+    control: orchestrationControl(agentId),
   }), getAgentGrantChanges(agentId));
 }
 
@@ -174,7 +175,7 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
     for (const action of d.actions) {
       const decision = evaluateGrant({ caller, action, target }, grants);
       if (decision.outcome === 'refuse') return { ok: false, reason: decision.reason, message: refusalMessage(decision.reason, action, target) };
-      if (decision.outcome === 'ask' && !d.askedByTool) asks.push({ action, where: whereText(target) });
+      if (decision.outcome === 'ask' && !d.askHandledByTool) asks.push({ action, where: whereText(target) });
     }
   }
   if (asks.length > 0) {

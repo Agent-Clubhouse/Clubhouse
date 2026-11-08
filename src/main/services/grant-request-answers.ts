@@ -14,7 +14,7 @@ import { GRANT_ACTION_LABELS } from '../../shared/agent-grant-changes';
 import type { GrantRequest, GrantRequestAnswer } from '../../shared/grant-requests';
 import { setAgentGrant } from './agent-grants-service';
 import { deliverHelperUpdate } from './clubhouse-mcp/tools/helper-delivery';
-import { peekGrantRequest, takeGrantRequest } from './grant-requests';
+import { grantRequestKey, restoreGrantRequest, takeGrantRequest } from './grant-requests';
 import { appLog } from './log-service';
 
 function errorText(err: unknown): string {
@@ -37,17 +37,19 @@ function what(request: GrantRequest): string {
 }
 
 export async function answerGrantRequest(requestId: string, allow: boolean): Promise<GrantRequestAnswer> {
-  const request = peekGrantRequest(requestId);
-  if (!request) return { ok: false, error: 'This request has expired or was already answered.' };
+  // Used up before anything is saved, so a second answer, or the expiry, can't land meanwhile.
+  const key = grantRequestKey(requestId);
+  const request = takeGrantRequest(requestId, allow);
+  if (!request || key === null) return { ok: false, error: 'This request has expired or was already answered.' };
   if (allow && request.kind === 'grant' && request.target) {
     try {
       await setAgentGrant(request.projectPath, request.agentId, { action: request.actions[0], target: request.target, mode: 'allow' });
     } catch (err) {
-      // The request stays, so the user can decline it or change the permissions page instead.
+      // Put back, so the user can decline it or change the permissions page instead.
+      restoreGrantRequest(request, key);
       return { ok: false, error: errorText(err) };
     }
   }
-  if (!takeGrantRequest(requestId, allow)) return { ok: false, error: 'This request has expired or was already answered.' };
   appLog('core:mcp', 'info', allow ? 'Permission request allowed' : 'Permission request declined', {
     meta: { agentId: request.agentId, requestId, kind: request.kind },
   });

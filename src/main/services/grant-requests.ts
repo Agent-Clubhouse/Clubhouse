@@ -113,6 +113,22 @@ export function peekGrantRequest(requestId: string, now = Date.now()): GrantRequ
 }
 
 /**
+ * Put back a request taken for an answer that then failed, so the user can
+ * try again or decline it. Not if it would already have expired.
+ */
+export function restoreGrantRequest(request: GrantRequest, key: string, now = Date.now()): void {
+  if (Date.parse(request.expiresAt) <= now || pending.has(request.requestId)) return;
+  pending.set(request.requestId, { request, key });
+  schedule();
+  emit({ kind: 'added', request });
+}
+
+/** The key a waiting request was recorded under; null when it isn't waiting. */
+export function grantRequestKey(requestId: string): string | null {
+  return pending.get(requestId)?.key ?? null;
+}
+
+/**
  * Use up a waiting request. A call request the user allowed becomes a
  * one-time approval for that call, until the request would have expired.
  */
@@ -141,11 +157,16 @@ export function listGrantRequests(now = Date.now()): GrantRequest[] {
   return [...pending.values()].map((e) => e.request).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
 }
 
-/** Drop an agent's waiting requests and approvals (it was deleted, or its permissions were reset). Returns their ids. */
+/** Drop an agent's one-time approvals: its permissions changed since the user gave them. */
+export function dropCallApprovalsFor(agentId: string): void {
+  for (const key of approvals.keys()) if (key.startsWith(`call\0${agentId}\0`)) approvals.delete(key);
+}
+
+/** Drop an agent's waiting requests and approvals (it was deleted). Returns their ids. */
 export function dropGrantRequestsFor(agentId: string): string[] {
   const ids = [...pending.values()].filter((e) => e.request.agentId === agentId).map((e) => e.request.requestId);
   for (const id of ids) pending.delete(id);
-  for (const key of approvals.keys()) if (key.startsWith(`call\0${agentId}\0`)) approvals.delete(key);
+  dropCallApprovalsFor(agentId);
   schedule();
   emit({ kind: 'closed', requestIds: ids });
   return ids;

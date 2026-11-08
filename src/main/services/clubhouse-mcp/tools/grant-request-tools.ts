@@ -62,6 +62,10 @@ export function registerGrantRequestTools(): void {
       const checked = normalizeGrantChanges({ changes: [{ action: args.action, target, mode: 'allow' }] })?.changes[0];
       if (!checked) return text(`Not a Clubhouse permission. action must be one of the listed actions.`, true);
       if (isFixedGrant(checked)) return text('That permission is fixed and can\'t be changed.', true);
+      if (checked.action === 'agent.create' || checked.action === 'agent.dispose') {
+        // These follow the orchestrator's approval setting, which only the user changes, on its Helpers page.
+        return text('Starting and removing helpers follow your approval setting, which only the user changes. Ask them in your reply.', true);
+      }
 
       const projectPath = agentRegistry.get(agentId)?.projectPath;
       const config = projectPath ? await getDurableConfig(projectPath, agentId).catch((): null => null) : null;

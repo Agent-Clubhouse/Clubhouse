@@ -549,9 +549,11 @@ export function ChromeSidebar() {
   }, [openAgent]);
 
   const selectNeedsYou = useCallback((agent: Agent) => {
-    // An agent asking for a Clubhouse permission opens the review dialog (#2970).
+    // An agent asking for a Clubhouse permission opens the review dialog (#2970),
+    // unless a dispose request comes first: Needs you lists that one, and one dialog opens at a time.
     const asking = Object.values(useGrantRequestStore.getState().requests).some((r) => r.agentId === agent.id);
-    if (asking) useGrantRequestStore.getState().review(agent.id);
+    const disposing = !!useHelperDisposeRequestStore.getState().requests[agent.id];
+    if (asking && !disposing) useGrantRequestStore.getState().review(agent.id);
     if (isDispatcherAgent(agent)) {
       openDispatcher();
       reportChromeFeature('needs_you_select');

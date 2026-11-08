@@ -13,12 +13,9 @@ import { callKey, consumeCallApproval, recordGrantRequest } from '../grant-reque
 import { appLog } from '../log-service';
 import type { AskedAction } from './grant-check';
 
-/** The arguments, shortened, for the user to see what the call would do. */
-function previewArgs(args: Record<string, unknown>): string | undefined {
-  const shown = Object.fromEntries(Object.entries(args).filter(([k]) => k !== 'reason'));
-  if (Object.keys(shown).length === 0) return undefined;
-  const text = JSON.stringify(shown, null, 2);
-  return text.length > GRANT_REQUEST_DETAILS_MAX ? `${text.slice(0, GRANT_REQUEST_DETAILS_MAX - 1)}…` : text;
+/** Every argument, for the user to see exactly what Allow would run. */
+function argsText(args: Record<string, unknown>): string | undefined {
+  return Object.keys(args).length === 0 ? undefined : JSON.stringify(args, null, 2);
 }
 
 export async function agentNameOf(agentId: string, projectPath: string | undefined): Promise<string> {
@@ -47,6 +44,10 @@ export async function askFirst(agentId: string, toolName: string, args: Record<s
   if (!projectPath) {
     return { kind: 'asked', text: 'This call needs the user\'s approval, and Clubhouse couldn\'t place your request. Ask the user directly.' };
   }
+  const details = argsText(args);
+  if (details && details.length > GRANT_REQUEST_DETAILS_MAX) {
+    return { kind: 'asked', text: 'This call needs the user\'s approval, and its arguments are too long for them to review. Make smaller calls, or ask the user directly.' };
+  }
   const reason = typeof args.reason === 'string' && args.reason.trim() ? args.reason.trim().slice(0, GRANT_REQUEST_REASON_MAX) : undefined;
   const recorded = recordGrantRequest(key, {
     kind: 'call',
@@ -56,7 +57,7 @@ export async function askFirst(agentId: string, toolName: string, args: Record<s
     actions: [...new Set(asks.map((a) => a.action))],
     where: [...new Set(asks.map((a) => a.where))].join(', '),
     toolName,
-    ...(previewArgs(args) && { details: previewArgs(args) }),
+    ...(details && { details }),
     ...(reason && { reason }),
   });
   if (recorded.ok === false) {

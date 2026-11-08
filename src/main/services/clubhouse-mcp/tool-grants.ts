@@ -79,11 +79,13 @@ export interface ToolGrantDeclaration {
    */
   ifArgs?: readonly string[];
   /**
-   * The tool asks the user itself when one of these actions is Ask first,
-   * with a request of its own (start_helper, dispose_helper), so the check
-   * lets the call reach it instead of asking (#2970).
+   * When one of these actions is Ask first, the tool decides itself whether
+   * and how to ask, so the check lets the call reach it instead of asking
+   * (#2970). start_helper and dispose_helper ask with requests of their own,
+   * from the orchestrator's approval setting; hand_off never asked under it
+   * (a handed-off helper's work is already taken), and still doesn't.
    */
-  askedByTool?: true;
+  askHandledByTool?: true;
 }
 
 /**

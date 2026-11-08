@@ -312,10 +312,22 @@ describe('Ask first (#2970)', () => {
   it('a tool that asks itself gets the call (start_helper, dispose_helper)', async () => {
     await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'agent.read', target: { kind: 'connected' }, mode: 'ask' }] }));
     try {
-      expect(checkToolGrant('plain', { ...read, askedByTool: true }, {}).ok).toBe(true);
+      expect(checkToolGrant('plain', { ...read, askHandledByTool: true }, {}).ok).toBe(true);
     } finally {
       await updateAgentGrantChanges('plain', () => undefined);
     }
+  });
+
+  it('an orchestrator\'s approval setting reaches the call (#2970), and the helper tools ask themselves', () => {
+    setOrchestrationEnabled('orchestrator', true, { crossProject: true, control: 'ask-everything' });
+    const tools = registerAll();
+    const dispose = { actions: ['agent.dispose'] as const, target: 'my_helpers' as const };
+    expect(checkToolGrant('orchestrator', dispose, {})).toMatchObject({ reason: 'ask_first', asks: [{ action: 'agent.dispose', where: 'your helpers' }] });
+    for (const name of ['dispose_helper', 'hand_off', 'start_helper']) {
+      expect(checkToolGrant('orchestrator', tools.find((t) => t.name === name)!.grant, {}).ok).toBe(true);
+    }
+    setOrchestrationEnabled('orchestrator', true, { crossProject: true, control: 'hands-off' });
+    expect(checkToolGrant('orchestrator', dispose, {}).ok).toBe(true);
   });
 
   it('the Dispatcher\'s app settings write asks by default', () => {

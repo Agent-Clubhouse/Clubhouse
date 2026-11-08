@@ -565,11 +565,6 @@ export async function callTool(
       appLog('core:mcp', 'info', 'Tool call refused: the tool is turned off', { meta: { agentId, toolName } });
       return refuse('group_off', globalTool.when.refusal);
     }
-    const granted = checkToolGrant(agentId, globalTool.grant, args);
-    if (granted.ok === false) {
-      const refused = await grantRefusal(agentId, toolName, granted, args);
-      if (refused) return refused;
-    }
     const schema = globalTool.definition.inputSchema;
     if (schema && typeof schema === 'object') {
       const required = (schema.required as string[]) || [];
@@ -585,6 +580,12 @@ export async function callTool(
           return refuse('invalid_args', `Invalid type for argument "${key}": expected ${propSchema.type}, got ${typeof value}`);
         }
       }
+    }
+    // After the argument checks, as for wire tools: the user is never asked about a call that would fail on its arguments.
+    const granted = checkToolGrant(agentId, globalTool.grant, args);
+    if (granted.ok === false) {
+      const refused = await grantRefusal(agentId, toolName, granted, args);
+      if (refused) return refused;
     }
     return withSettingsSurface('mcp', agentId, () => globalTool.handler(agentId, args));
   }
