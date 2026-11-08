@@ -85,6 +85,8 @@ export function recordGrantChange(input: {
   mode: 'off' | 'ask' | 'allow' | 'reset';
   action?: GrantAction;
   target?: GrantTarget;
+  /** A template push: every action it set or took away. */
+  actions?: readonly GrantAction[];
 }): void {
   try {
     const actor = currentSettingsOrigin().actorId;
@@ -92,11 +94,15 @@ export function recordGrantChange(input: {
       ATTR.auditSurface(surface()),
       ATTR.grantChangeLayer(input.layer),
       ATTR.grantChangeMode(input.mode),
-      ...(input.action ? [ATTR.grantAction(input.action)] : []),
+      ...(input.action ?? input.actions?.[0] ? [ATTR.grantAction((input.action ?? input.actions?.[0]) as GrantAction)] : []),
       ...(actor ? [ATTR.auditActorIdHash(actor)] : []),
       ATTR.auditTargetIdHash(input.agentId),
     ], {
-      detail: { ...(input.target && { target: input.target.kind }), ...(input.action && { action: input.action }) },
+      detail: {
+        ...(input.target && { target: input.target.kind }),
+        ...(input.action && { action: input.action }),
+        ...(input.actions && { actions: [...new Set(input.actions)].slice(0, 8) }),
+      },
     });
   } catch {
     // telemetry-exempt: recording must never fail the change

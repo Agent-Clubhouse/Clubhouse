@@ -14,7 +14,7 @@ beforeEach(() => { events.length = 0; });
 
 describe('Clubhouse permissions in the telemetry record (#2973)', () => {
   it('a refused call: enums and the caller\'s hash as attributes, the built-in tool name in the detail', () => {
-    recordGrantDecision({ agentId: 'agent-1', toolName: 'agent__reviewer_1234__clear_agent', decision: 'refused', reason: 'no_grant', actions: ['agent.reset'], targetKind: 'agent' });
+    recordGrantDecision({ agentId: 'agent-1', toolName: 'clubhouse__my-project_reviewer_a1b2c3__clear_agent', decision: 'refused', reason: 'no_grant', actions: ['agent.reset'], targetKind: 'agent' });
     expect(events[0].name).toBe('clubhouse.audit.grant_decision');
     expect(attrsOf()).toMatchObject({
       'clubhouse.grant.decision': 'refused', 'clubhouse.grant.refusal_reason': 'no_grant',

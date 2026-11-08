@@ -717,7 +717,8 @@ async function grantRefusal(agentId: string, toolName: string, check: Extract<Gr
   if (check.reason === 'ask_first') {
     const outcome = await askFirst(agentId, toolName, args, check.asks);
     if (outcome.kind === 'approved') return null;
-    recordGrantDecision({ agentId, toolName, decision: 'asked', reason: 'ask_first', actions: check.asks.map((a) => a.action) });
+    // Only a new request is recorded: a retry while it waits, or a request that couldn't be placed, isn't an ask.
+    if (outcome.created) recordGrantDecision({ agentId, toolName, decision: 'asked', reason: 'ask_first', actions: [...new Set(check.asks.map((a) => a.action))] });
     return refuse('ask_first', outcome.text);
   }
   appLog('core:mcp', 'info', 'Tool call refused: no Clubhouse permission covers it', { meta: { agentId, toolName, reason: check.reason } });

@@ -1762,7 +1762,7 @@ export const EVENTS = {
   /**
    * A Clubhouse MCP call the permissions refused or asked the user about (#2973). Attributes: action,
    * decision, refusal reason, target kind, the caller's id hash. Detail: the tool (its built-in name or
-   * suffix only), and `asked` actions when there are several. Allowed calls aren't events: the
+   * suffix only), and `actions` when there are several. Asked: only when a new request goes to the user. Allowed calls aren't events: the
    * `clubhouse.mcp.tool_call` span already counts every call.
    */
   'clubhouse.audit.grant_decision': { level: 'standard', audit: true },

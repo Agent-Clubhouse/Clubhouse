@@ -78,8 +78,11 @@ export async function applyConnectionTools(agentId: string, targetId: string, di
     return disabledTools;
   }
   // An edit (the canvas popover, the Connections card), or a sleeping agent's wire: the store, then the binding follows.
+  const before = deniedConnectionTools(local(agentId), local(targetId));
   await setConnectionTools(local(agentId), local(targetId), disabledTools);
-  recordConnectionChange({ fromAgentId: agentId, toAgentId: targetId, disabledTools });
+  // Recorded only when it changed something: the popover saving the same list again isn't a change.
+  const same = before !== undefined && before.length === new Set(disabledTools).size && disabledTools.every((t) => before.includes(t));
+  if (!same) recordConnectionChange({ fromAgentId: agentId, toAgentId: targetId, disabledTools });
   return disabledTools;
 }
 
@@ -136,8 +139,9 @@ export async function makeTwoWay(fromAgentId: string, toAgentId: string): Promis
 
 /** Remove the user's own link for one direction. */
 export async function removeUserLink(fromAgentId: string, toAgentId: string): Promise<void> {
+  const hadLink = !!getConnectionDirection(local(fromAgentId), local(toAgentId))?.link;
   await setConnectionLink(local(fromAgentId), local(toAgentId), false);
-  recordConnectionChange({ fromAgentId, toAgentId, disabledTools: getConnectionDirection(local(fromAgentId), local(toAgentId))?.disabledTools ?? [], link: false });
+  if (hadLink) recordConnectionChange({ fromAgentId, toAgentId, disabledTools: getConnectionDirection(local(fromAgentId), local(toAgentId))?.disabledTools ?? [], link: false });
   await rebuildPersistedBindings();
 }
 

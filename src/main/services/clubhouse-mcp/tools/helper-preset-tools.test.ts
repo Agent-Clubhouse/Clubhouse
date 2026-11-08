@@ -61,6 +61,8 @@ describe('helper presets over MCP (#2785)', () => {
     decisions.length = 0;
     await callTool('plain', 'set_helper_presets', { revision: 'r1', reset: {} });
     await callTool('dispatcher', 'set_helper_presets', { revision: 'r1', reset: {} });
+    // Asking again while the request waits isn't another ask.
+    await callTool('dispatcher', 'set_helper_presets', { revision: 'r1', reset: {} });
     await callTool('plain', 'read_helper_presets', {});
     expect(decisions).toEqual([
       expect.objectContaining({ agentId: 'plain', toolName: 'set_helper_presets', decision: 'refused', reason: 'no_grant', actions: ['settings.app.write'], targetKind: 'app' }),
