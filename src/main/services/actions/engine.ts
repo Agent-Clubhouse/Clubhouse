@@ -168,8 +168,23 @@ function hasStepTarget(step: ActionStep, agentId: string): boolean {
 /** Whether an action names this agent anywhere: trigger source or a step. */
 export function actionReferencesAgent(action: Action, agentId: string): boolean {
   const t = action.trigger;
-  if (t.kind === 'event' && t.source.kind === 'agent' && t.source.agentId === agentId) return true;
+  // "When X is deleted" is about X going: that isn't a reason to turn it off.
+  if (t.kind === 'event' && t.source.kind === 'agent' && t.source.agentId === agentId && t.event !== 'agent.deleted') return true;
   return action.steps.some((s) => hasStepTarget(s, agentId));
+}
+
+/**
+ * The latest `n` schedule times in [due, now], oldest first. Searches back
+ * from now in growing windows, so a long closure doesn't walk every time.
+ */
+export function latestMissedTimes(spec: Parameters<typeof cronTimesBetween>[0], due: number, now: number, n: number): number[] {
+  const WINDOWS = [HOUR_MS, 24 * HOUR_MS, 7 * 24 * HOUR_MS, 31 * 24 * HOUR_MS, 366 * 24 * HOUR_MS, 5 * 366 * 24 * HOUR_MS];
+  for (const w of WINDOWS) {
+    const from = Math.max(due - 1, now - w);
+    const times = cronTimesBetween(spec, from, now, 10_000);
+    if (times.length >= n || from === due - 1) return times.slice(-n);
+  }
+  return cronTimesBetween(spec, due - 1, now, n);
 }
 
 // ── Engine ──────────────────────────────────────────────────────────────────
@@ -269,6 +284,28 @@ export class ActionsEngine {
 
   // ── Writes ──
 
+  /** The agents and projects an action names must exist when it is saved. */
+  private checkTargets(trigger: Action['trigger'], steps: ActionStep[]): void {
+    const f = this.deps.facts;
+    const agent = (id: string) => {
+      if (!f.agentExists(id)) throw new ActionError('invalid_input', 'One of the agents it names isn’t in Clubhouse.');
+    };
+    const project = (id: string) => {
+      if (!f.projectName(id)) throw new ActionError('invalid_input', 'One of the projects it names isn’t in Clubhouse.');
+    };
+    if (trigger.kind === 'event') {
+      // A "when X is deleted" trigger may name an agent that is about to go.
+      if (trigger.source.kind === 'agent' && trigger.event !== 'agent.deleted') agent(trigger.source.agentId);
+      if (trigger.source.kind === 'project') project(trigger.source.projectId);
+    }
+    for (const s of steps) {
+      if (s.kind === 'quick') {
+        project(s.projectId);
+        if (s.worktreeAgentId) agent(s.worktreeAgentId);
+      } else if (s.kind !== 'notify') agent(s.agentId);
+    }
+  }
+
   private checkRights(owner: ActionOwner, steps: ActionStep[]): void {
     for (const step of steps) {
       const reason = this.deps.rights.checkStep(owner, step);
@@ -278,6 +315,7 @@ export class ActionsEngine {
 
   create(input: unknown, owner: ActionOwner): Action {
     const valid = assertActionInput(input);
+    this.checkTargets(valid.trigger, valid.steps);
     this.checkRights(owner, valid.steps);
     const now = this.now();
     const action: Action = {
@@ -301,14 +339,17 @@ export class ActionsEngine {
   update(id: string, input: unknown): Action {
     const current = this.require(id);
     const valid = assertActionInput(input);
+    this.checkTargets(valid.trigger, valid.steps);
     this.checkRights(current.owner, valid.steps);
+    // An edit that doesn't say keeps the on/off state: it never quietly turns back on.
+    const saysEnabled = typeof input === 'object' && input !== null && typeof (input as { enabled?: unknown }).enabled === 'boolean';
     const next: Action = {
       ...current,
       name: valid.name ?? suggestActionName(valid, this.names()),
       trigger: valid.trigger,
       steps: valid.steps,
       overlap: valid.overlap,
-      enabled: valid.enabled,
+      enabled: saysEnabled ? valid.enabled : current.enabled,
       updatedAt: this.now(),
     };
     // Edited: the old failure and the reason it was turned off no longer apply.
@@ -316,6 +357,7 @@ export class ActionsEngine {
     if (next.enabled) delete next.offReason;
     this.actions.set(id, next);
     this.dropWaits(id);
+    this.cancelQueued(id, 'The action was edited before this run started');
     delete this.state.nextAt[id];
     if (next.enabled && next.trigger.kind === 'schedule') this.armSchedule(next);
     this.persist();
@@ -332,6 +374,7 @@ export class ActionsEngine {
     this.actions.set(id, next);
     if (!enabled) {
       this.dropWaits(id);
+      this.cancelQueued(id, 'The action was turned off before this run started');
       delete this.state.nextAt[id];
     } else if (next.trigger.kind === 'schedule') {
       // Turning it back on doesn't run the times it was off for.
@@ -346,8 +389,18 @@ export class ActionsEngine {
     this.actions.delete(id);
     this.dropWaits(id);
     delete this.state.nextAt[id];
-    this.running.delete(id);
+    // A run going now finishes; nothing queued behind it starts.
+    const queue = this.running.get(id);
+    if (queue) queue.length = 0;
     this.persist();
+  }
+
+  /** Drop runs waiting behind a running one, recording them as cancelled. */
+  private cancelQueued(id: string, reason: string): void {
+    const queue = this.running.get(id);
+    const action = this.actions.get(id);
+    if (!queue?.length || !action) return;
+    for (const q of queue.splice(0)) this.recordOnly(action, q.trigger, q.chain, 'cancelled', reason);
   }
 
   /** Run now, as a normal run. Works on an action that is off. Returns the run id. */
@@ -367,6 +420,7 @@ export class ActionsEngine {
     const next: Action = { ...action, enabled: false, offReason: reason, updatedAt: this.now() };
     this.actions.set(action.id, next);
     this.dropWaits(action.id);
+    this.cancelQueued(action.id, reason);
     delete this.state.nextAt[action.id];
     this.persist();
     if (action.enabled && action.owner.kind !== 'app') this.deps.hooks?.turnedOff?.(next, reason);
@@ -460,7 +514,8 @@ export class ActionsEngine {
     }
     // Missed while the app was closed or the machine slept.
     const parsed = parseCron(action.trigger.cron);
-    const missed = parsed.ok ? cronTimesBetween(parsed.spec, due - 1, now, MAX_MISSED_RUNS) : [due];
+    // The most recent missed times, newest last: "once" runs the latest, "each" the last 10.
+    const missed = parsed.ok ? latestMissedTimes(parsed.spec, due, now, MAX_MISSED_RUNS) : [due];
     const rule = action.trigger.missed;
     this.deps.hooks?.observe?.({ type: 'catch_up', actionId: action.id, missed: missed.length, rule });
     if (rule === 'skip') {
@@ -705,11 +760,25 @@ export class ActionsEngine {
       return this.recordOnly(action, trigger, chain, 'skipped', `Ran ${MAX_RUNS_PER_HOUR} times in the last hour`);
     }
     this.running.set(action.id, []);
-    void this.execute(action, trigger, chain, runId);
+    this.execute(action, trigger, chain, runId).catch(() => {
+      // telemetry-exempt: execute settles its own run; this only keeps a rejection from going unhandled
+    });
     return runId;
   }
 
+  /** Run, then the next queued run. Whatever happens, the action never stays marked as running. */
   private async execute(action: Action, trigger: ActionRunTrigger, chain: string[], runId: string): Promise<void> {
+    let next: { action: Action; run: QueuedRun } | null = null;
+    try {
+      next = await this.runOnce(action, trigger, chain, runId);
+    } finally {
+      if (!next) this.running.delete(action.id);
+    }
+    if (next) await this.execute(next.action, next.run.trigger, next.run.chain, next.run.runId);
+  }
+
+  /** One run. Returns the queued run to start next, if any. */
+  private async runOnce(action: Action, trigger: ActionRunTrigger, chain: string[], runId: string): Promise<{ action: Action; run: QueuedRun } | null> {
     const actionId = action.id;
     const starts = this.recentStarts.get(actionId) ?? [];
     starts.push(this.now());
@@ -770,17 +839,18 @@ export class ActionsEngine {
     const queue = this.running.get(actionId);
     const nextRun = queue?.shift();
     const latest = this.actions.get(actionId);
-    if (nextRun && latest) {
-      if (!this.underHourlyLimit(actionId)) {
-        this.running.delete(actionId);
-        const reason = `Ran ${MAX_RUNS_PER_HOUR} times in the last hour`;
-        this.recordOnly(latest, nextRun.trigger, nextRun.chain, 'skipped', reason);
-        for (const rest of queue ?? []) this.recordOnly(latest, rest.trigger, rest.chain, 'skipped', reason);
-        return;
-      }
-      await this.execute(latest, nextRun.trigger, nextRun.chain, nextRun.runId);
-      return;
+    if (!nextRun || !latest) return null;
+    if (!latest.enabled && nextRun.trigger.kind !== 'manual') {
+      this.recordOnly(latest, nextRun.trigger, nextRun.chain, 'cancelled', 'The action was turned off before this run started');
+      for (const rest of queue?.splice(0) ?? []) this.recordOnly(latest, rest.trigger, rest.chain, 'cancelled', 'The action was turned off before this run started');
+      return null;
     }
-    this.running.delete(actionId);
+    if (!this.underHourlyLimit(actionId)) {
+      const reason = `Ran ${MAX_RUNS_PER_HOUR} times in the last hour`;
+      this.recordOnly(latest, nextRun.trigger, nextRun.chain, 'skipped', reason);
+      for (const rest of queue?.splice(0) ?? []) this.recordOnly(latest, rest.trigger, rest.chain, 'skipped', reason);
+      return null;
+    }
+    return { action: latest, run: nextRun };
   }
 }

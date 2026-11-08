@@ -508,8 +508,11 @@ function untrackQuickAgent(agentId: string): void {
 
 // Quick agents started through the shared service (#2951): from here, and
 // from Actions. Phones see them in the snapshot and get agent:spawned.
+// Only while the server runs: its exit cleanup untracks them, and a stopped
+// server would keep them as running forever.
 observeQuickAgents({
   starting(entry) {
+    if (!wss) return;
     setTrackedQuickAgent(entry.id, entry);
     broadcastAndBuffer('agent:spawned', quickAgentWireFields(entry));
   },

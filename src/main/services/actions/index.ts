@@ -86,16 +86,18 @@ const facts: EngineFacts & { parentOf(id: string): string | undefined; agentWork
   agentWorktree: (id) => knownAgent(id)?.worktreePath,
 };
 
-function parseToolResult(result: { content: Array<{ type: string; text?: string }>; isError?: boolean }): { ok: boolean; status?: string; text: string } {
+function parseToolResult(result: { content: Array<{ type: string; text?: string }>; isError?: boolean }): { ok: boolean; status?: string; messageDelivered?: boolean; text: string } {
   const text = result.content.map((c) => c.text ?? '').join(' ');
   let status: string | undefined;
+  let messageDelivered: boolean | undefined;
   try {
-    const parsed = JSON.parse(text) as { status?: unknown };
+    const parsed = JSON.parse(text) as { status?: unknown; messageDelivered?: unknown };
     if (typeof parsed.status === 'string') status = parsed.status;
+    if (typeof parsed.messageDelivered === 'boolean') messageDelivered = parsed.messageDelivered;
   } catch {
     // telemetry-exempt: a plain-text result (an error) has no status
   }
-  return { ok: !result.isError && status !== 'refused', ...(status && { status }), text };
+  return { ok: !result.isError && status !== 'refused', ...(status && { status }), ...(messageDelivered !== undefined && { messageDelivered }), text };
 }
 
 // ── Engine ──────────────────────────────────────────────────────────────────
