@@ -89,7 +89,7 @@ export function describeAnnexProblem(
       case 'not-found-yet':
         return [`${name} hasn't been found on the network yet.`, 'Check that Clubhouse is open there with Annex turned on.'];
       case 'client-off':
-        return ['Connecting to other computers is turned off here.', 'Turn on Connect to satellites in Annex control.'];
+        return ['Connecting to other computers is turned off here.', 'Turn on Annex Network in Settings.'];
       case 'connection-failed':
         return [`Couldn't connect to ${name}.`, 'Retry. If it keeps failing, check that Annex is on there.'];
     }
