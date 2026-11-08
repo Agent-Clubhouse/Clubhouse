@@ -1,5 +1,7 @@
 import { contextWindowOptionsFor } from '../services/context-window';
 import { readAgentGrants, resetAgentGrants, setAgentGrant } from '../services/agent-grants-service';
+import { listGrantRequests } from '../services/grant-requests';
+import { answerGrantRequest } from '../services/grant-request-answers';
 import type { GrantChange } from '../../shared/agent-grant-changes';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -332,6 +334,10 @@ export function registerAgentHandlers(): void {
     async (_event, projectPath, agentId, change) => setAgentGrant(projectPath, agentId, change)));
   ipcMain.handle(IPC.AGENT.RESET_GRANTS, withValidatedArgs([stringArg(), stringArg()],
     async (_event, projectPath, agentId) => resetAgentGrants(projectPath, agentId)));
+  // Permission requests in Needs you (#2970).
+  ipcMain.handle(IPC.AGENT.LIST_GRANT_REQUESTS, () => listGrantRequests());
+  ipcMain.handle(IPC.AGENT.ANSWER_GRANT_REQUEST, withValidatedArgs([stringArg({ maxLength: 200 }), booleanArg()],
+    async (_event, requestId, allow) => answerGrantRequest(requestId, allow)));
 
   ipcMain.handle(IPC.AGENT.GET_DURABLE_CONFIG, withValidatedArgs(
     [stringArg(), stringArg()],

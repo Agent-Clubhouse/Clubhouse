@@ -22,6 +22,7 @@ import { AgentDetails } from './details/AgentDetails';
 import { DetailsToggle } from './details/DetailsToggle';
 import { useAgentDetailsStore } from './details/detailsStore';
 import { useNarrow } from './pane/useNarrow';
+import { useEffectiveOrchestrator } from './effective-orchestrator';
 import {
   BranchIcon, FileRow, Kbd, ModelLabel, SectionHead, StateToolbar, ToolbarSeparator,
 } from './states/parts';
@@ -77,6 +78,7 @@ export function SleepingAgent({ agent, details = false }: {
   const openAgentSettings = useAgentStore((s) => s.openAgentSettings);
   const storeIconUrl = useAgentStore((s) => s.agentIcons[agent.id]);
   const isRemote = isRemoteAgentId(agent.id);
+  const cli = useEffectiveOrchestrator(agent);
   const remoteParts = useMemo(() => isRemote ? parseNamespacedId(agent.id) : null, [agent.id, isRemote]);
   // Use the agent's own project, not the globally-active project. The
   // Dispatcher (#2538) has its folder instead.
@@ -183,7 +185,7 @@ export function SleepingAgent({ agent, details = false }: {
   const subline = failed ? (
     <>
       <span className="font-mono text-xs text-ctp-subtext1" data-testid="launch-error">
-        {agent.errorMessage || `${cliName(agent.orchestrator)} exited before it started.`}
+        {agent.errorMessage || `${cliName(cli)} exited before it started.`}
       </span>{' '}
       Check that the CLI is installed and signed in, then retry.
     </>
@@ -207,7 +209,7 @@ export function SleepingAgent({ agent, details = false }: {
         testId="sleeping-toolbar"
         right={(
           <>
-            <ModelLabel orchestrator={agent.orchestrator} model={agent.model} />
+            <ModelLabel orchestrator={cli} model={agent.model} />
             {isDurable && !isRemote && agentProject && (
               <>
                 <ToolbarSeparator />
@@ -253,7 +255,7 @@ export function SleepingAgent({ agent, details = false }: {
             {hasOwnIcon ? (
               <AgentIconTile agent={agent} iconUrl={storeIconUrl} size={compact ? 40 : 56} />
             ) : (
-              <SleepingMascot orchestrator={agent.orchestrator} size={mascotSize} error={failed} />
+              <SleepingMascot orchestrator={cli} size={mascotSize} error={failed} />
             )}
 
             <h1 className="mt-2.5 text-xl font-semibold text-ctp-text" data-testid="sleeping-greeting">{headline}</h1>
@@ -266,7 +268,7 @@ export function SleepingAgent({ agent, details = false }: {
               >
                 {hasOwnIcon && !compact && (
                   <span className="absolute right-4 -top-[41px] pointer-events-none">
-                    <SleepingMascot orchestrator={agent.orchestrator} size={48} error={failed} />
+                    <SleepingMascot orchestrator={cli} size={48} error={failed} />
                   </span>
                 )}
                 <textarea
@@ -280,7 +282,7 @@ export function SleepingAgent({ agent, details = false }: {
                   className="block w-full min-h-[58px] max-h-48 resize-none bg-transparent px-3.5 pt-3 text-[13px] leading-normal text-ctp-text placeholder:text-ctp-overlay0 outline-none"
                 />
                 <div className="h-[42px] flex items-center gap-1.5 pl-3.5 pr-2">
-                  <ModelLabel orchestrator={agent.orchestrator} model={agent.model} />
+                  <ModelLabel orchestrator={cli} model={agent.model} />
                   <span className="ml-auto flex items-center"><Kbd>{shortcut}</Kbd></span>
                   {failed && !isRemote && (
                     <Button kind="ghost" onClick={() => (isDispatcher ? openDispatcherSettings() : openAgentSettings(agent.id))} data-testid="open-settings-button">
@@ -349,7 +351,7 @@ export function SleepingAgent({ agent, details = false }: {
         <SessionPickerDialog
           agentId={agent.id}
           projectPath={agentProject.path}
-          orchestrator={agent.orchestrator}
+          orchestrator={cli}
           onResume={handleResumeSession}
           onClose={() => setSessionPickerOpen(false)}
         />

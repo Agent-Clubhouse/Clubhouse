@@ -59,7 +59,6 @@ describe('Clubhouse permissions page (#2971)', () => {
     expect(helpers.getAllByText('Built in')).toHaveLength(2);
     expect(within(screen.getByRole('region', { name: 'Itself' })).getByText('Every agent')).toBeInTheDocument();
     expect(radios('See status, output and settings (Itself)').getByRole('radio', { name: 'Allow' })).toBeChecked();
-    expect(screen.getByText('Ask first refuses for now, until Clubhouse can ask you in Needs you.')).toBeInTheDocument();
     // Nothing differs from its default yet.
     expect(screen.queryByRole('button', { name: 'Reset to defaults' })).not.toBeInTheDocument();
   });

@@ -12,6 +12,7 @@ import { FileDiffInset, StopIcon, TerminalIcon, TranscriptInset } from './states
 import { ModelLabel, ToolbarSeparator } from './states/parts';
 import { Button } from '../../components/Button';
 import { Tooltip } from '../../components/Tooltip';
+import { useEffectiveOrchestrator } from './effective-orchestrator';
 
 interface Props {
   agent: Agent;
@@ -33,6 +34,7 @@ function livePhase(agent: Agent, hasOutput: boolean, finished: boolean): RunPhas
  */
 export function HeadlessAgentView({ agent, stacked }: Props) {
   const killAgent = useAgentStore((s) => s.killAgent);
+  const cli = useEffectiveOrchestrator(agent);
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
   const parentName = useAgentStore((s) => (agent.parentAgentId ? s.agents[agent.parentAgentId]?.name : undefined));
   const active = agent.status !== 'sleeping' && agent.status !== 'error';
@@ -49,7 +51,7 @@ export function HeadlessAgentView({ agent, stacked }: Props) {
   const run: RunInfo = {
     name: agent.name,
     mission: agent.mission ?? '',
-    orchestrator: agent.orchestrator,
+    orchestrator: cli,
     model: agent.model,
     parentName,
     phase,
@@ -61,7 +63,7 @@ export function HeadlessAgentView({ agent, stacked }: Props) {
 
   const actions = (
     <>
-      <ModelLabel orchestrator={agent.orchestrator} model={agent.model} />
+      <ModelLabel orchestrator={cli} model={agent.model} />
       <ToolbarSeparator />
       <Button
         kind="quiet"

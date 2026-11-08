@@ -1093,6 +1093,8 @@ export interface AnnexStatus {
   pairingUrl?: string;
   /** The hosts in pairingUrl, best first, for manual pairing. */
   pairingHosts?: string[];
+  /** Pairing is paused after too many wrong PINs, until allowed again in Settings. */
+  pairingPaused?: boolean;
 }
 
 // ── Annex peer types ──────────────────────────────────────────────────

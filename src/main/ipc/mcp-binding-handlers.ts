@@ -14,6 +14,7 @@ import { registerWebview, unregisterWebview } from '../services/clubhouse-mcp/to
 import { findMainWindow } from './window-handlers';
 import { watchHelperStartRequests } from '../services/clubhouse-mcp/tools/helper-tools';
 import { onDisposeRequestsChanged } from '../services/helper-dispose-requests';
+import { onGrantRequestsChanged } from '../services/grant-requests';
 import { agentRegistry } from '../services/agent-registry';
 import { bootstrapGroupProjectAdmin } from '../services/group-project-admin-service';
 import { appLog } from '../services/log-service';
@@ -91,6 +92,12 @@ export function registerMcpBindingHandlers(): void {
   // Held helper starts (#2234) go to the main window only, for Needs you.
   watchHelperStartRequests((channel, payload) => {
     findMainWindow()?.webContents.send(channel, payload);
+  });
+  // Permission requests (#2970) go to the main window only, for Needs you.
+  onGrantRequestsChanged((change) => {
+    const win = findMainWindow();
+    if (change.kind === 'added') win?.webContents.send(IPC.AGENT.GRANT_REQUEST, change.request);
+    else win?.webContents.send(IPC.AGENT.GRANT_REQUESTS_CLOSED, change.requestIds);
   });
   // A dispose request answered from a paired phone (#159) leaves Needs you too.
   onDisposeRequestsChanged((change) => {

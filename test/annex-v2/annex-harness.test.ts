@@ -14,6 +14,7 @@ import http from 'http';
 import https from 'https';
 import os from 'os';
 import path from 'path';
+import tls from 'tls';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import forge from 'node-forge';
 import { WebSocket } from 'ws';
@@ -108,6 +109,7 @@ import * as annexServer from '../../src/main/services/annex-server';
 import * as annexPeers from '../../src/main/services/annex-peers';
 import * as eventReplay from '../../src/main/services/annex-event-replay';
 import { clearChatRuntimes, publishChatEvent, registerChatRuntime } from '../../src/main/services/agent-runtime';
+import { agentRegistry } from '../../src/main/services/agent-registry';
 import { AnnexProtocolClient, UpgradeRefusedError } from '../../e2e/annex-v2/protocol-client';
 import { generateTestIdentity, signCertBinding, withNewCertificate } from '../../e2e/annex-v2/tls-test-utils';
 
@@ -465,6 +467,54 @@ describe('Annex harness', () => {
       const upgrade = await client.connect().catch((err: unknown) => err);
       expect(upgrade).toBeInstanceOf(UpgradeRefusedError);
       expect(upgrade).toMatchObject({ status: 401, body: notPaired });
+    }, 60_000);
+
+    it("cuts a removed peer's WebSocket and acts on nothing it sends, even when its client ignores the close", async () => {
+      const phone = phoneIdentity();
+      const fingerprint = crypto.createHash('sha256').update(Buffer.from(phone.publicKey, 'base64')).digest('hex').slice(0, 32).match(/.{2}/g)!.join(':');
+      expect((await pair(harness.port, annexServer.getStatus().pin, phone)).status).toBe(200);
+
+      // A bare client: it upgrades, then never answers a close frame and keeps sending.
+      const socket = tls.connect({ host: '127.0.0.1', port: harness.port, key: phone.key, cert: phone.cert, rejectUnauthorized: false });
+      await new Promise<void>((resolve, reject) => { socket.once('secureConnect', () => resolve()); socket.once('error', reject); });
+      let received = Buffer.alloc(0);
+      socket.on('data', (chunk: Buffer) => { received = Buffer.concat([received, chunk]); });
+      socket.on('error', () => { /* the server cuts it */ });
+      const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()));
+      socket.write(['GET /ws HTTP/1.1', 'Host: 127.0.0.1', 'Connection: Upgrade', 'Upgrade: websocket',
+        'Sec-WebSocket-Version: 13', `Sec-WebSocket-Key: ${crypto.randomBytes(16).toString('base64')}`, '', ''].join('\r\n'));
+      await vi.waitFor(() => expect(received.toString('latin1')).toContain('101 Switching Protocols'), { timeout: 10_000 });
+
+      const frame = (text: string) => {
+        const payload = Buffer.from(text);
+        const mask = crypto.randomBytes(4);
+        const header = payload.length < 126
+          ? Buffer.from([0x81, 0x80 | payload.length])
+          : Buffer.from([0x81, 0x80 | 126, payload.length >> 8, payload.length & 0xff]);
+        return Buffer.concat([header, mask, Buffer.from(payload.map((byte, i) => byte ^ mask[i % 4]))]);
+      };
+      // Every kill the server acts on looks the agent up; nothing sent after the revoke may get that far.
+      const lookups = vi.spyOn(agentRegistry, 'get');
+      const killLookups = () => lookups.mock.calls.filter(([id]) => id === 'not-an-agent').length;
+      try {
+        const kill = frame(JSON.stringify({ type: 'agent:kill', payload: { agentId: 'not-an-agent' } }));
+        socket.write(kill);
+        await vi.waitFor(() => expect(received.toString('latin1')).toContain('agent_not_found'), { timeout: 10_000 });
+        expect(killLookups()).toBe(1);
+
+        const revokedAt = Date.now();
+        expect(annexServer.revokePeer(fingerprint)).toBe(true);
+        socket.write(kill);
+        socket.write(kill);
+        // Cut by the server within moments, not left open until the close handshake times out.
+        const cut = await Promise.race([closed.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5_000))]);
+        expect(cut).toBe(true);
+        expect(Date.now() - revokedAt).toBeLessThan(5_000);
+        expect(killLookups()).toBe(1);
+      } finally {
+        lookups.mockRestore();
+        socket.destroy();
+      }
     }, 60_000);
 
     it('POST /pair on the plain pairing port is 410 update_required and adds no peer', async () => {
