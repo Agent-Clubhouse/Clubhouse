@@ -52,6 +52,7 @@ import { withReachableAs } from './annex-reach';
 import * as networkChannel from './annex-network-channel';
 import * as membership from './annex-network-membership';
 import * as agentCalls from './annex-agent-calls';
+import { cachedRepoKeys } from './project-repo-keys';
 import { NETWORK_MESSAGE_MAX_BYTES, NETWORK_PROTOCOL_VERSION, parseNetworkMessage } from '../../shared/annex-network-protocol';
 import { parseAgentAddress, routeOf } from '../../shared/agent-address';
 import * as annexEventBus from './annex-event-bus';
@@ -1154,6 +1155,9 @@ async function readSnapshotSourcesData() {
   }));
 
   const iconSet = await buildSnapshotIcons(projects, durablesByProject, dispatcherRecord() ?? undefined);
+  // Each project's git remote as a key, so another machine can suggest linking the same project (#3066).
+  // Whatever is known now: the snapshot never waits on git, and the rest arrive with a later one.
+  const repoKeys = cachedRepoKeys(projects);
 
   // Read per-project canvas state in parallel (including wires)
   const canvasState: Record<string, CanvasStateWire> = {};
@@ -1177,7 +1181,7 @@ async function readSnapshotSourcesData() {
     }
   }));
 
-  return { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, bulletinDigests };
+  return { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, bulletinDigests, repoKeys };
 }
 
 /**
@@ -1188,7 +1192,7 @@ async function readSnapshotSourcesData() {
  * what changes it asks for another refresh, which follows this one.
  */
 function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
-  const { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, bulletinDigests } = sources;
+  const { projects, durablesByProject, policiesByProject, iconSet, canvasState, appCanvasState, groupProjects, bulletinDigests, repoKeys } = sources;
   const { projectIcons, agentIcons, stats: icons, iconRefs } = iconSet;
   const agents: Record<string, unknown[]> = {};
   const quickAgents: Record<string, unknown[]> = {};
@@ -1261,7 +1265,7 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
     protocolVersion: ANNEX_PROTOCOL_VERSION,
     // Which machine this is (#3063): its agents' addresses are `<agentId>@<fingerprint>`.
     ...thisMachine(),
-    projects,
+    projects: projects.map((p) => (repoKeys?.[p.id] ? { ...p, repoKey: repoKeys[p.id] } : p)),
     agents,
     quickAgents,
     agentsMeta,

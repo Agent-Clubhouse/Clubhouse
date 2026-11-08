@@ -66,6 +66,11 @@ export interface Project {
   emoji?: string;       // single emoji character used as icon (mutually exclusive with icon)
   displayName?: string; // user-set display name (overrides `name` in UI)
   orchestrator?: OrchestratorId;
+  /**
+   * Its git remote as a key (`github.com/org/repo`), on a project from another
+   * machine's snapshot: for suggesting a link with the same project here (#3066).
+   */
+  repoKey?: string;
 }
 
 export type AgentStatus = 'running' | 'sleeping' | 'waking' | 'creating' | 'spawning' | 'error';

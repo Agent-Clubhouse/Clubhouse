@@ -31,9 +31,13 @@ import { useHelperDisposeRequestStore, describeHelperDispose } from '../stores/h
 import { useHelperStartRequestStore, startRequestsByOrchestrator, describeHelperStarts } from '../stores/helperStartRequestStore';
 import { describeGrantRequests, grantRequestsByAgent, useGrantRequestStore } from '../stores/grantRequestStore';
 import { useAgentDetailsStore } from '../features/agents/details/detailsStore';
-import { HostSwitcher, LOCAL_HOST } from './sidebar/HostSwitcher';
+import { ShowMenu, LOCAL_HOST } from './sidebar/ShowMenu';
+import { buildNetworkProjects } from './sidebar/networkTree';
+import { useNetworkSidebarStore } from './sidebar/networkSidebarStore';
+import { LinkSuggestionLine } from './sidebar/LinkSuggestionLine';
+import { PopupMenu, type MenuItem } from '../components/PopupMenu';
 import { useClickOutside } from './sidebar/useClickOutside';
-import { hostOf, switchHost } from './hosts';
+import { hostOf, returnToThisMachine, switchHost } from './hosts';
 import { openNewAgentOrDialog } from './startPage';
 import { useChromeStore, type AppLaunchParams } from './chromeStore';
 import { reportChromeFeature, reportChromeActionFailed } from './telemetry';
@@ -65,7 +69,6 @@ const PLUGIN_FALLBACK_ICON = (
 /** App-level items that get the inline buttons; every other top rail item goes in the overflow menu. */
 const INLINE_APP_ITEMS = ['canvas', 'review'];
 
-const NO_COMPLETED: Record<string, never[]> = {};
 
 const railIcon = (entry: PluginRegistryEntry) => {
   const icon = entry.manifest.contributes!.railItem!.icon;
@@ -285,6 +288,12 @@ function PaletteButton({ onOpen }: { onOpen: () => void }) {
   );
 }
 
+/** A machine's name, short enough for an agent row (#3065). */
+function shortMachineLabel(alias: string | undefined): string {
+  const name = (alias || 'Other computer').trim();
+  return name.length > 14 ? `${name.slice(0, 13)}…` : name;
+}
+
 export function ChromeSidebar() {
   const projects = useProjectStore((s) => s.projects);
   const projectIcons = useProjectStore((s) => s.projectIcons);
@@ -321,7 +330,9 @@ export function ChromeSidebar() {
   const remoteAgents = useRemoteProjectStore((s) => s.remoteAgents);
   const remoteDetailed = useRemoteProjectStore((s) => s.remoteAgentDetailedStatus);
   const remoteProjectIcons = useRemoteProjectStore((s) => s.remoteProjectIcons);
-  const isRemoteHost = activeHostId !== null;
+  // Every machine's projects and agents in one list (#3065); Show narrows it to one machine.
+  const show = useNetworkSidebarStore((s) => s.show);
+  const links = useNetworkSidebarStore((s) => s.links);
   // The Dispatcher's pinned row (#2538), while it's turned on.
   const dispatcherAgentId = useDispatcherAgentId();
   const dispatcherAgent = dispatcherAgentId ? agents[dispatcherAgentId] : undefined;
@@ -338,10 +349,16 @@ export function ChromeSidebar() {
     setFilter(value);
   }, [filter]);
 
-  // A satellite that was unpaired can't stay the host (as in the legacy rail).
+  // A satellite that was unpaired can't stay the host (as in the legacy rail), or what Show narrows to.
   useEffect(() => {
     if (activeHostId && satellites.length > 0 && !satellites.some((s) => s.id === activeHostId)) switchHost(null);
   }, [activeHostId, satellites]);
+  // Only once the paired list has loaded (it's empty at startup), so a saved choice survives a restart.
+  useEffect(() => {
+    if (show !== 'all' && show !== 'local' && satellites.length > 0 && !satellites.some((s) => s.id === show)) useNetworkSidebarStore.getState().setShow('all');
+  }, [show, satellites]);
+  // Meanwhile, a choice of a computer that isn't paired shows everything rather than nothing.
+  const effectiveShow = show === 'all' || show === 'local' || satellites.some((s) => s.id === show) ? show : 'all';
 
   // An unpaired satellite's pins, collapsed state and folds go with it. Only on
   // unpairing: a satellite that goes offline keeps them for when it is back.
@@ -351,7 +368,12 @@ export function ChromeSidebar() {
     const prev = prevSatelliteIdsRef.current;
     if (prev) {
       const current = new Set(ids);
-      for (const id of prev) if (!current.has(id)) useChromeStore.getState().forgetProjectsWithPrefix(satellitePrefix(id));
+      for (const id of prev) {
+        if (current.has(id)) continue;
+        useChromeStore.getState().forgetProjectsWithPrefix(satellitePrefix(id));
+        // Its projects leave any group they were linked into.
+        useNetworkSidebarStore.getState().prune((projectId) => !projectId.startsWith(satellitePrefix(id)));
+      }
     }
     if (ids.length > 0 || prev) prevSatelliteIdsRef.current = ids;
   }, [satellites]);
@@ -366,7 +388,11 @@ export function ChromeSidebar() {
       if (prev) {
         const current = new Set(ids);
         const removed = prev.filter((id) => !current.has(id));
-        if (removed.length > 0) forgetProjects(removed);
+        if (removed.length > 0) {
+          forgetProjects(removed);
+          const gone = new Set(removed);
+          useNetworkSidebarStore.getState().prune((projectId) => !gone.has(projectId));
+        }
       }
       prevProjectIdsRef.current = ids;
     }
@@ -390,23 +416,43 @@ export function ChromeSidebar() {
     };
   }, [appEnabled, plugins]);
 
-  // The tree shows the active host: local projects, or a satellite's (spec §2, hosts option 1).
-  const treeProjects = useMemo(
-    () => (activeHostId ? satelliteProjects[activeHostId] ?? [] : projects),
-    [activeHostId, satelliteProjects, projects],
+  // Every machine's projects, this one's first, grouped by project: linked projects show as one (#3065, #3066).
+  const machineOrder = useMemo(
+    () => [...satellites].sort((a, b) => a.alias.localeCompare(b.alias)).map((s) => s.id),
+    [satellites],
   );
-  const treeAgents = isRemoteHost ? remoteAgents : agents;
-  const treeDetailed = isRemoteHost ? remoteDetailed : detailed;
+  const network = useMemo(
+    () => buildNetworkProjects({ local: projects, remote: satelliteProjects, machineOrder, links, show: effectiveShow, machineOf: hostOf }),
+    [projects, satelliteProjects, machineOrder, links, effectiveShow],
+  );
+  const treeProjects = network.projects;
+  const treeAgents = useMemo(() => ({ ...agents, ...remoteAgents }), [agents, remoteAgents]);
+  const treeDetailed = useMemo(() => ({ ...detailed, ...remoteDetailed }), [detailed, remoteDetailed]);
+  const treeIcons = useMemo(() => ({ ...projectIcons, ...remoteProjectIcons }), [projectIcons, remoteProjectIcons]);
   const localProjectIds = useMemo(() => new Set(projects.map((p) => p.id)), [projects]);
   const agentsByProject = useMemo(() => {
-    const ids = new Set(treeProjects.map((p) => p.id));
+    // Each group's agents, from every project in it, each still on its own machine.
+    const groupOf = new Map<string, string>();
+    for (const [groupId, ids] of Object.entries(network.members)) for (const id of ids) groupOf.set(id, groupId);
     const map: Record<string, Agent[]> = {};
     for (const agent of Object.values(treeAgents)) {
-      if (!ids.has(agent.projectId) || agent.kind === 'companion') continue;
-      (map[agent.projectId] ??= []).push(agent);
+      const groupId = groupOf.get(agent.projectId);
+      if (!groupId || agent.kind === 'companion') continue;
+      (map[groupId] ??= []).push(agent);
     }
     return map;
-  }, [treeAgents, treeProjects]);
+  }, [treeAgents, network]);
+  const isRemoteProject = useCallback((projectId: string) => hostOf(projectId) !== null, []);
+  // A short label for an agent on another machine, and whether that machine is offline; none for this machine's.
+  // One object per machine, so rows (and the memoized groups) see the same value until that machine changes.
+  const machineInfo = useMemo(
+    () => new Map(satellites.map((s) => [s.id, { label: shortMachineLabel(s.alias), offline: s.state !== 'connected' }])),
+    [satellites],
+  );
+  const agentMachine = useCallback((agent: Agent) => {
+    const host = hostOf(agent.projectId);
+    return host ? machineInfo.get(host) ?? { label: shortMachineLabel(undefined), offline: true } : undefined;
+  }, [machineInfo]);
   // Manual or most-recent order (#2116), shared by the tree and the filter results.
   const ordered = useSidebarOrder(treeProjects, agentsByProject);
 
@@ -465,6 +511,8 @@ export function ChromeSidebar() {
 
   // Every open goes through launchApp, so a plain open ends a visit that Needs you started.
   const openAppItem = useCallback((id: string, params?: AppLaunchParams) => {
+    // App views are this machine's (#3065): nothing on screen would say they showed another one.
+    returnToThisMachine();
     useChromeStore.getState().launchApp(id, params);
     useChromeStore.getState().closeNewAgent();
     closeDispatcher();
@@ -492,6 +540,8 @@ export function ChromeSidebar() {
   const selectProject = useCallback((projectId: string) => {
     useChromeStore.getState().closeNewAgent();
     closeDispatcher();
+    // A project on another machine shows that machine's views; this machine's, this one's.
+    switchHost(hostOf(projectId));
     setActiveProject(projectId);
     setActiveAgent(null, projectId);
     setProjectScope(projectId);
@@ -522,7 +572,10 @@ export function ChromeSidebar() {
     reportChromeFeature('agent_select');
   }, [openAgent]);
 
-  const openProjectSettings = useCallback((projectId: string) => useUIStore.getState().openProjectSettings(projectId), []);
+  const openProjectSettings = useCallback((projectId: string) => {
+    returnToThisMachine(projectId);
+    useUIStore.getState().openProjectSettings(projectId);
+  }, []);
   const closeProject = useCallback((projectId: string) => { void requestCloseProject(projectId); }, []);
   const reorderProjectAgents = useCallback((projectId: string, orderedIds: string[]) => {
     const project = useProjectStore.getState().projects.find((p) => p.id === projectId);
@@ -584,18 +637,18 @@ export function ChromeSidebar() {
     reportChromeFeature('dispatcher_open');
   }, []);
 
-  const onSwitchHost = useCallback((hostId: string | null) => {
-    switchHost(hostId);
+  const onShow = useCallback((next: string) => {
+    useNetworkSidebarStore.getState().setShow(next);
     reportChromeFeature('host_switch');
   }, []);
   const onRetryHost = useCallback((sat: SatelliteConnection) => {
     void useAnnexClientStore.getState().retry(sat.fingerprint);
     reportChromeFeature('host_retry');
   }, []);
-  const openAnnexSettings = useCallback((page: 'annex' | 'annex-control') => {
+  const openAnnexSettings = useCallback(() => {
     const ui = useUIStore.getState();
     ui.setSettingsContext('app');
-    ui.setSettingsSubPage(page);
+    ui.setSettingsSubPage('annex');
     if (ui.explorerTab !== 'settings') ui.toggleSettings();
     reportChromeFeature('host_settings_open');
   }, []);
@@ -619,10 +672,42 @@ export function ChromeSidebar() {
     reportChromeFeature('completed_clear');
   }, []);
 
+  // The tree lists every machine's groups; only this machine's projects are reordered, each group in its place.
   const onReorder = useCallback((ids: string[]) => {
-    reorderProjects(ids).catch((err) => reportChromeActionFailed('reorder_projects', err));
+    const local = ids.flatMap((id) => (network.members[id] ?? [id]).filter((m) => hostOf(m) === null));
+    const rest = projects.map((p) => p.id).filter((id) => !local.includes(id));
+    reorderProjects([...local, ...rest]).catch((err) => reportChromeActionFailed('reorder_projects', err));
     reportChromeFeature('project_reorder');
-  }, [reorderProjects]);
+  }, [reorderProjects, network, projects]);
+
+  // Merge with… and Split per machine, in each project's menu (#3065): they change only the sidebar.
+  const [merging, setMerging] = useState<{ projectId: string; x: number; y: number } | null>(null);
+  const projectLabel = useCallback((projectId: string) => {
+    const project = [...projects, ...satellites.flatMap((s) => satelliteProjects[s.id] ?? [])].find((p) => p.id === projectId);
+    const name = project ? project.displayName || project.name : projectId;
+    const host = hostOf(projectId);
+    return host ? `${name} on ${satellites.find((s) => s.id === host)?.alias ?? 'another computer'}` : name;
+  }, [projects, satelliteProjects, satellites]);
+  // Built once per tree change, so each memoized group gets the same items until something changes.
+  const menuItemsByProject = useMemo(() => {
+    const build = (projectId: string): MenuItem[] => {
+      const items: MenuItem[] = [];
+      if (treeProjects.length > 1) {
+        items.push({
+          id: 'merge', label: 'Merge with…', onSelect: () => {
+            const rect = document.querySelector(`[data-testid="project-${CSS.escape(projectId)}"]`)?.getBoundingClientRect();
+            setMerging({ projectId, x: rect ? rect.left + 24 : 24, y: rect ? rect.bottom : 80 });
+          },
+        });
+      }
+      if ((network.members[projectId] ?? []).length > 1) {
+        items.push({ id: 'split', label: 'Split per machine', onSelect: () => { useNetworkSidebarStore.getState().split(projectId); } });
+      }
+      return items;
+    };
+    return new Map(treeProjects.map((p) => [p.id, build(p.id)]));
+  }, [treeProjects, network]);
+  const projectMenuItems = useCallback((projectId: string): MenuItem[] => menuItemsByProject.get(projectId) ?? [], [menuItemsByProject]);
 
   // A project's +, and each New menu item, open the New agent page with that kind chosen (#2031).
   const onNewAgent = useCallback((projectId: string) => {
@@ -679,19 +764,33 @@ export function ChromeSidebar() {
       className="h-full min-h-0 flex flex-col bg-ctp-mantle border-r border-surface-0 overflow-hidden"
     >
       <div className="flex-shrink-0 pt-2" />
-      <HostSwitcher
+      <ShowMenu
         satellites={satellites}
-        activeHostId={activeHostId}
+        show={effectiveShow}
         needsByHost={needsByHost}
-        onSwitch={onSwitchHost}
+        onShow={onShow}
         onRetry={onRetryHost}
-        onPair={() => openAnnexSettings('annex-control')}
-        onAnnexSettings={() => openAnnexSettings('annex')}
+        onAnnexSettings={openAnnexSettings}
       />
+      {merging && (
+        <PopupMenu
+          label={`Merge ${projectLabel(merging.projectId)} with`}
+          testId="project-merge-menu"
+          position={{ x: merging.x, y: merging.y }}
+          onClose={() => setMerging(null)}
+          items={treeProjects
+            .filter((p) => !(network.members[merging.projectId] ?? [merging.projectId]).includes(p.id))
+            .map((p) => ({
+              id: `merge-${p.id}`,
+              label: projectLabel(p.id),
+              onSelect: () => { useNetworkSidebarStore.getState().link(merging.projectId, p.id); setMerging(null); },
+            }))}
+        />
+      )}
       <div className="flex-shrink-0 px-2 pb-2 flex items-center gap-1.5">
         <SidebarFilter value={filter} onChange={changeFilter} />
         <PaletteButton onOpen={() => { useCommandPaletteStore.getState().open(); reportChromeFeature('search_open'); }} />
-        <MenuButton label="New agent" testId="chrome-new" items={newItems} disabled={projects.length === 0 || isRemoteHost}>
+        <MenuButton label="New agent" testId="chrome-new" items={newItems} disabled={projects.length === 0}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
           New
         </MenuButton>
@@ -726,13 +825,13 @@ export function ChromeSidebar() {
           <FilterResults
             query={filter}
             projects={ordered.projects}
-            projectIcons={isRemoteHost ? remoteProjectIcons : projectIcons}
+            projectIcons={treeIcons}
             agentsByProject={ordered.agentsByProject}
             detailed={treeDetailed}
             activeAgentId={isProjectTab ? activeAgentId : null}
             onSelectProject={selectProject}
             onSelectAgent={selectAgent}
-            onOpenTerminal={isRemoteHost ? undefined : openTerminal}
+            onOpenTerminal={openTerminal}
             terminalProjectIds={terminalProjectIds}
             onSearchEverything={searchEverything}
           />
@@ -750,25 +849,29 @@ export function ChromeSidebar() {
       )}
 
       <div className={`flex-1 min-h-0 flex-col ${mode === 'tree' && !filtering ? 'flex' : 'hidden'}`}>
+        <LinkSuggestionLine />
         <ProjectTree
           projectScopeId={projectScopeId}
           projects={ordered.projects}
-          projectIcons={isRemoteHost ? remoteProjectIcons : projectIcons}
+          projectIcons={treeIcons}
           agentsByProject={ordered.agentsByProject}
           detailed={treeDetailed}
-          completedByProject={isRemoteHost ? NO_COMPLETED : completedByProject}
+          completedByProject={completedByProject}
           activeProjectId={treeActiveProjectId}
           activeAgentId={treeActiveAgentId}
           selectedCompletedId={selectedCompletedId}
-          onReorder={isRemoteHost ? undefined : onReorder}
+          onReorder={onReorder}
           onSelectProject={selectProject}
-          onNewAgent={isRemoteHost ? undefined : onNewAgent}
+          onNewAgent={onNewAgent}
           onSelectAgent={selectAgent}
-          onOpenTerminal={isRemoteHost ? undefined : openTerminal}
+          onOpenTerminal={openTerminal}
           terminalProjectIds={terminalProjectIds}
-          onOpenSettings={isRemoteHost ? undefined : openProjectSettings}
-          onCloseProject={isRemoteHost ? undefined : closeProject}
-          onReorderAgents={isRemoteHost ? undefined : reorderProjectAgents}
+          onOpenSettings={openProjectSettings}
+          onCloseProject={closeProject}
+          onReorderAgents={reorderProjectAgents}
+          isRemoteProject={isRemoteProject}
+          agentMachine={agentMachine}
+          projectMenuItems={projectMenuItems}
           onSelectCompleted={selectCompleted}
           onDismissCompleted={dismissCompleted}
           onClearCompleted={clearCompleted}

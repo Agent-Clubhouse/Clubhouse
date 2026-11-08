@@ -86,8 +86,7 @@ describe('project Settings destination triage (#2854)', () => {
     fireEvent.contextMenu(screen.getByTestId(`project-${namespacedProjectId('sat', 'p1')}`));
     expect(screen.queryByTestId('project-menu-settings')).toBeNull();
     fireEvent.keyDown(document, { key: 'Escape' });
-    fireEvent.click(screen.getByTestId('host-switcher'));
-    fireEvent.click(screen.getByTestId('host-menu-local'));
+    // Every machine's projects are in one list (#3065): a local project's settings bring this machine back.
     openProjectMenu('p2');
     await expectProject('p2');
     await act(async () => { useRemoteProjectStore.getState().applySatelliteSnapshot('sat', 'Synthetic satellite', { ...snapshot, lastSeq: 2 }); });
