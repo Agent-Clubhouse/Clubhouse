@@ -52,6 +52,9 @@ export const annex = {
   /** Every paired device, whichever way it's paired, with where it stands (#3057). */
   listDevices: (): Promise<AnnexDevice[]> =>
     ipcRenderer.invoke(IPC.ANNEX.LIST_DEVICES),
+  /** Renames a network member everywhere; false for a device that isn't a member (#3067). */
+  renameDevice: (fingerprint: string, name: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.ANNEX.RENAME_DEVICE, fingerprint, name),
   /** Devices heard from on the Annex Network channel (#3060). */
   listNetworkMembers: (): Promise<AnnexNetworkMemberListing[]> =>
     ipcRenderer.invoke(IPC.ANNEX.LIST_NETWORK_MEMBERS),

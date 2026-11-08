@@ -387,6 +387,7 @@ vi.stubGlobal('clubhouse', {
     listPeers: async () => [],
     listDevices: async () => [],
     listNetworkMembers: async () => [],
+    renameDevice: async () => true,
     removeDevice: async () => false,
     onDevicesChanged: () => noop,
     removePeer: asyncNoop,

@@ -111,7 +111,7 @@ describe('annex device list', () => {
       peers: [peer({ alias: 'Studio', role: 'satellite', tlsCertificatePem: 'PEM' })],
       satellites: [satellite({ fingerprint: 'fp', state: 'discovering', host: '' })],
     });
-    expect(device).toMatchObject({ state: 'offline', problem: { code: 'client-off', action: 'Turn on Connect to satellites in Annex control.' } });
+    expect(device).toMatchObject({ state: 'offline', problem: { code: 'client-off', action: 'Turn on Annex Network in Settings.' } });
   });
 
   it('says where a satellite is reached and what was typed for it (#3058)', () => {
