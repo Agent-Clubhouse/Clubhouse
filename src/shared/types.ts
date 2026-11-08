@@ -382,7 +382,7 @@ export interface DurableAgentConfig {
    * "same"). Every later start resolves under it, so a wake
    * never raises the helper above what its start asked for.
    */
-  requestedAccess?: import('./orchestration-policy').AgentAccessLevel;
+  requestedAccess?: import('./orchestration-policy').HelperRequestedAccess;
   /**
    * True when Clubhouse created `branch` for this agent, so deleting the agent
    * may delete the branch (#2226). False for a branch that already existed.

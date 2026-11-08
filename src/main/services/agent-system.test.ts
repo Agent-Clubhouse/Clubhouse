@@ -3453,7 +3453,7 @@ describe('helper launch ceiling on the normal spawn path', () => {
     await wake();
     expect(mockResolveHelperLaunchSettings).toHaveBeenCalledWith(projectPath, 'orch-1', { helperProvider: 'claude-code' });
     expect(lastBuild()).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
-    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+    expect(getAgentLaunchAccess('helper-1')).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
   });
 
   it('a helper saved at Auto-accept edits starts at Ask first under a standard ceiling (#2761)', async () => {
@@ -3475,6 +3475,13 @@ describe('helper launch ceiling on the normal spawn path', () => {
     expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'skip-all', access: 'ask' });
   });
 
+  it('a helper of an orchestrator at Plan starts at Plan, whatever it was saved at (#3000)', async () => {
+    orchestratorLive = { ...launchAccessFor('standard'), access: 'plan' } as AgentLaunchAccess;
+    mockGetDurableConfig.mockImplementation((async () => helper({ freeAgentMode: undefined, access: 'auto_edit' })) as never);
+    await wake();
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, access: 'plan' });
+  });
+
   it('a helper saved at Plan stays at Plan when its ceiling lowers the legacy pair', async () => {
     orchestratorLive = undefined;
     mockGetDurableConfig.mockImplementation((async () => helper({ freeAgentMode: undefined, access: 'plan' })) as never);
@@ -3489,7 +3496,7 @@ describe('helper launch ceiling on the normal spawn path', () => {
     expect(mockFindParent).toHaveBeenCalledWith(projectPath, expect.objectContaining({ parentAgentId: 'orch-1', parentProjectPath: orchestratorProject }));
     expect(mockResolveHelperLaunchSettings).toHaveBeenCalledWith(orchestratorProject, 'orch-1', { helperProvider: 'claude-code' });
     expect(lastBuild()).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
-    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+    expect(getAgentLaunchAccess('helper-1')).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
   });
 
   it('starts at standard when the orchestrator can\'t be found in any project', async () => {
@@ -3511,7 +3518,7 @@ describe('helper launch ceiling on the normal spawn path', () => {
     mockGetDurableConfig.mockImplementation((async () => helper()) as never);
     await wake();
     expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
-    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+    expect(getAgentLaunchAccess('helper-1')).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
   });
 
   it('starts at standard when the orchestrator can\'t be read', async () => {
@@ -3544,7 +3551,7 @@ describe('helper launch ceiling on the normal spawn path', () => {
     const launch = lastBuild();
     expect(launch).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
     expect(providerAccessLevel('copilot-cli', launch as AgentLaunchAccess)).toBe('standard');
-    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+    expect(getAgentLaunchAccess('helper-1')).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
   });
 
   it('a Copilot helper with its orchestrator asleep starts at standard', async () => {
@@ -3558,7 +3565,7 @@ describe('helper launch ceiling on the normal spawn path', () => {
     mockGetDurableConfig.mockImplementation((async () => { throw new Error('agents.json is corrupt'); }) as never);
     await wake({ freeAgentMode: true, permissionMode: 'skip-all' });
     expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
-    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+    expect(getAgentLaunchAccess('helper-1')).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
   });
 
   it('hands the chat runtime the capped values', async () => {
@@ -3573,7 +3580,7 @@ describe('helper launch ceiling on the normal spawn path', () => {
     await wake();
     expect(mockResolveHelperLaunchSettings).not.toHaveBeenCalled();
     expect(lastBuild()).toMatchObject({ freeAgentMode: true, permissionMode: 'skip-all' });
-    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: true, permissionMode: 'skip-all' });
+    expect(getAgentLaunchAccess('helper-1')).toMatchObject({ freeAgentMode: true, permissionMode: 'skip-all' });
   });
 
   it('leaves quick agents alone', async () => {

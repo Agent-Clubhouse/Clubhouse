@@ -19,6 +19,7 @@
  * helpers.
  */
 
+import { holdsGrant } from '../grant-check';
 import { randomUUID } from 'crypto';
 import { registerGlobalTool } from '../tool-registry';
 import { mcpCallAccess } from '../mcp-call-gate';
@@ -113,6 +114,8 @@ export async function routeHelperQuestion(helperId: string, question: QuestionDa
     const parent = found.config;
     // It couldn't call answer_helper_question: the call gate doesn't know it (its settings couldn't be read).
     if (mcpCallAccess(parent.id, found.projectPath) !== 'open') return null;
+    // Nor without the permission to message its helpers (#2971): answering is a message.
+    if (!holdsGrant(parent.id, 'agent.message', { kind: 'agent', relations: ['my_helper'] })) return null;
     const policy = await getOrchestrationPolicy(found.projectPath, parent.id);
     if (!policy?.orchestrate || policy.control !== 'hands-off') return null;
     const runtime = getAgentRuntime(parent.id);
