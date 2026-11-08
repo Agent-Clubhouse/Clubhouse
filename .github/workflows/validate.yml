@@ -713,9 +713,8 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.full == 'true' }}
     name: Linux Package Smoke Test
-    # Pinned: ubuntu-26.04's rpmbuild runs %install in a per-package BUILD
-    # subdirectory, which breaks electron-installer-redhat's `cp -r usr/*`.
-    runs-on: ubuntu-24.04
+    # build/rpm.spec.ejs copies from an absolute path, so rpm 4.20 works (#2549).
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -738,3 +737,18 @@ jobs:
             echo "::error::No Linux packages were produced"
             exit 1
           fi
+      - name: Check the .rpm holds the app (#2549)
+        run: |
+          RPM=$(find out/make -name "*.rpm" -type f | head -n 1)
+          if [ -z "$RPM" ]; then
+            echo "::error::No .rpm was produced"
+            exit 1
+          fi
+          rpm -qlp "$RPM" > rpm-files.txt
+          echo "$(wc -l < rpm-files.txt) files in $RPM"
+          for f in /usr/bin/clubhouse /usr/lib/clubhouse/clubhouse /usr/share/applications/clubhouse.desktop; do
+            if ! grep -qx "$f" rpm-files.txt; then
+              echo "::error::$f is missing from $RPM"
+              exit 1
+            fi
+          done
