@@ -133,48 +133,142 @@ function network(names: Name[]) {
   for (const n of names) worlds[n].stored = { removals: [], confirmations: {}, renamedAt: {}, removedNames: {}, selfPairing: { id: PAIRING[n], joinedAt: T0 } };
 }
 
+/**
+ * Two desktops pair as the app does it (annex-client asks, annex-server answers): the client offers its
+ * pairing, the server keeps it or makes one, starts its own if it has none, and answers with both.
+ */
+function pairDesktops(client: Name, server: Name) {
+  const offered = as(client, () => worlds[client].mod!.ownPairing());
+  const joiner = as(server, () => worlds[server].mod!.pairingForJoiner(FPS[client], offered));
+  const own = as(server, () => worlds[server].mod!.ensureOwnPairing());
+  as(server, () => { worlds[server].peers.set(FPS[client], peer(client, joiner.joinedAt, server, joiner.id)); worlds[server].mod!.noteLocalJoin(FPS[client]); });
+  as(client, () => {
+    worlds[client].peers.set(FPS[server], peer(server, own.joinedAt, client, own.id));
+    worlds[client].mod!.adoptOwnPairing(joiner);
+    worlds[client].mod!.noteLocalJoin(FPS[server]);
+  });
+}
+
+const selfOf = (n: Name) => as(n, () => worlds[n].mod!.ownPairing());
+const removeOn = (who: Name, gone: Name) => as(who, () => { worlds[who].mod!.noteLocalRemoval(FPS[gone]); worlds[who].peers.delete(FPS[gone]); });
+const offline = (n: Name) => { for (const o of NAMES) if (o !== n) down.add(linkKey(n, o)); };
+
 describe('four desktops (#3107)', () => {
   it('a new desktop pairing with a member doesn\'t move that member\'s pairing, so a removal from a member that missed it still takes everywhere', () => {
     network(['P', 'A', 'C']);
-    // C is off.
-    down.add(linkKey('C', 'P')); down.add(linkKey('C', 'A')); down.add(linkKey('C', 'X'));
-    // X pairs with P. P makes X's pairing; X stamps P with its own clock and no id until P's own record arrives.
-    as('P', () => { worlds.P.peers.set(FPS.X, peer('X', '2026-11-08T10:00:00.000Z', 'P', PAIRING.X)); worlds.P.mod!.noteLocalJoin(FPS.X); });
-    as('X', () => { worlds.X.peers.set(FPS.P, peer('P', '2026-11-08T10:00:01.000Z', 'X')); worlds.X.mod!.noteLocalJoin(FPS.P); });
+    offline('C');
+    pairDesktops('X', 'P');
     open('P', 'X'); open('P', 'A'); open('A', 'X');
-    // Everyone has P's one pairing, X included.
-    expect(as('A', () => worlds.A.peers.get(FPS.P))).toMatchObject({ pairedAt: T0, pairingId: PAIRING.P });
-    expect(as('X', () => worlds.X.peers.get(FPS.P))).toMatchObject({ pairedAt: T0, pairingId: PAIRING.P });
+    for (const n of ['A', 'X'] as Name[]) expect(as(n, () => worlds[n].peers.get(FPS.P))).toMatchObject({ pairedAt: T0, pairingId: PAIRING.P });
     // C wakes, and the person removes P there before C has heard anything.
-    as('C', () => { worlds.C.mod!.noteLocalRemoval(FPS.P); worlds.C.peers.delete(FPS.P); });
+    removeOn('C', 'P');
     down.clear();
     open('C', 'A'); open('C', 'X');
-    expect(has('C', 'P')).toBe(false);
-    expect(has('A', 'P')).toBe(false);
-    expect(has('X', 'P')).toBe(false);
+    for (const n of ['C', 'A', 'X'] as Name[]) expect(has(n, 'P')).toBe(false);
+  });
+
+  it('an existing member pairing as the client with a new desktop keeps its pairing (it says which it has)', () => {
+    network(['P', 'A', 'C']);
+    offline('C');
+    pairDesktops('P', 'X');
+    open('P', 'X'); open('P', 'A'); open('A', 'X');
+    expect(selfOf('P')).toEqual({ id: PAIRING.P, joinedAt: T0 });
+    for (const n of ['A', 'X'] as Name[]) expect(as(n, () => worlds[n].peers.get(FPS.P)?.pairingId)).toBe(PAIRING.P);
+    removeOn('C', 'P');
+    down.clear();
+    open('C', 'A'); open('C', 'X');
+    for (const n of ['C', 'A', 'X'] as Name[]) expect(has(n, 'P')).toBe(false);
+  });
+
+  it('a new desktop pairing as the client gets one pairing, the one the member made, and a removal of it takes everywhere', () => {
+    network(['P', 'A', 'C']);
+    pairDesktops('X', 'P');
+    open('P', 'X');
+    // A hears of X from P, then is cut off.
+    open('P', 'A');
+    expect(selfOf('X')?.id).toBe(as('P', () => worlds.P.peers.get(FPS.X)?.pairingId));
+    expect(as('A', () => worlds.A.peers.get(FPS.X)?.pairingId)).toBe(selfOf('X')?.id);
+    removeOn('A', 'X');
+    open('A', 'P'); open('A', 'C');
+    expect(has('P', 'X')).toBe(false);
+    expect(has('C', 'X')).toBe(false);
   });
 
   it('a device paired again on a computer with a slow clock keeps its new pairing', () => {
     network(['P', 'A', 'C']);
-    // P is removed on A.
-    as('A', () => { worlds.A.mod!.noteLocalRemoval(FPS.P); worlds.A.peers.delete(FPS.P); });
+    offline('P');
+    removeOn('A', 'P');
     open('A', 'C');
     expect(has('C', 'P')).toBe(false);
-    // Then paired again on C moments later, but C's clock runs behind A's: the new pairing is stamped before A's
-    // removal (which carries A's clock), though after the pairing that removal ended.
+    // P, which was off, pairs again with C moments later; C's clock is a minute behind A's.
     const removedAt = as('A', () => worlds.A.mod!.currentView().removals[0].removedAt);
-    const stamped = new Date(Date.parse(removedAt) - 60_000).toISOString();
-    as('C', () => { worlds.C.peers.set(FPS.P, peer('P', stamped, 'C', 'pairing-p-000002')); worlds.C.mod!.noteLocalJoin(FPS.P); });
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date(Date.parse(removedAt) - 60_000));
+      down.clear();
+      pairDesktops('P', 'C');
+    } finally {
+      vi.useRealTimers();
+    }
+    open('P', 'C'); open('A', 'C'); open('A', 'P');
+    for (const n of ['C', 'A'] as Name[]) expect(has(n, 'P')).toBe(true);
+    expect(worlds.P.ended).toEqual([]);
+  });
+
+  it('a removed machine paired again as the server keeps its new pairing', () => {
+    network(['P', 'A', 'C']);
+    removeOn('A', 'P');
+    flush();
+    // P heard it and left; its pairing ended with it.
+    expect(selfOf('P')).toBeUndefined();
+    expect(has('C', 'P')).toBe(false);
+    pairDesktops('C', 'P');
+    open('C', 'P');
     open('A', 'C');
     expect(has('C', 'P')).toBe(true);
     expect(has('A', 'P')).toBe(true);
   });
 
+  it('a machine removed while off, paired again as the client, doesn\'t leave when the old removal reaches it first', () => {
+    network(['P', 'A', 'C']);
+    offline('P');
+    removeOn('A', 'P');
+    open('A', 'C');
+    down.clear();
+    down.add(linkKey('P', 'C'));
+    pairDesktops('P', 'C');
+    // A's view, with the old removal, reaches P before C's does.
+    as('P', () => worlds.P.listener!(FPS.A, { v: 1, type: 'members', ...as('A', () => worlds.A.provider!()) }));
+    expect(worlds.P.ended).toEqual([]);
+    down.clear();
+    open('P', 'C');
+    expect(has('C', 'P')).toBe(true);
+  });
+
+  it('a phone joining a new desktop to the network leaves every member\'s pairing as it is', () => {
+    network(['P', 'A', 'C']);
+    // The phone is a member of P, and pairs with new desktop Y, then vouches P's view to it.
+    const PHONE_FP = fp('0f');
+    as('X', () => {
+      worlds.X.peers.set(PHONE_FP, { ...peer('P', T0, 'X', 'pairing-phone-001'), fingerprint: PHONE_FP, kind: 'phone', alias: 'Phone' });
+      worlds.X.mod!.ensureOwnPairing();
+    });
+    const view = as('P', () => worlds.P.provider!()) as { members: Array<{ fingerprint: string }> };
+    as('X', () => worlds.X.mod!.vouchFromPhone(PHONE_FP, view.members as never));
+    for (const n of ['P', 'A', 'C'] as Name[]) expect(as('X', () => worlds.X.peers.get(FPS[n])?.pairingId)).toBe(PAIRING[n]);
+    offline('C');
+    open('X', 'P'); open('X', 'A');
+    for (const n of ['P', 'A', 'C'] as Name[]) expect(selfOf(n)?.id).toBe(PAIRING[n]);
+    removeOn('C', 'P');
+    down.clear();
+    open('C', 'A'); open('C', 'X');
+    for (const n of ['C', 'A', 'X'] as Name[]) expect(has(n, 'P')).toBe(false);
+  });
+
   it('a removed machine leaves quietly: a member that hadn\'t heard of the removal stays', () => {
     network(['A', 'C', 'X']);
-    // A can't reach C directly.
     down.add(linkKey('A', 'C'));
-    as('A', () => { worlds.A.mod!.noteLocalRemoval(FPS.X); worlds.A.peers.delete(FPS.X); });
+    removeOn('A', 'X');
     flush();
     expect(worlds.X.ended.sort()).toEqual(['A', 'C']);
     expect(worlds.C.ended).toEqual([]);

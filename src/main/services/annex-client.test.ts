@@ -42,7 +42,16 @@ vi.mock('bonjour-service', () => ({
 
 // The membership channel has its own tests (annex-network-channel.test.ts).
 vi.mock('./annex-network-channel', () => ({ connectTo: vi.fn(), closeFor: vi.fn(), closeAll: vi.fn() }));
-vi.mock('./annex-network-membership', () => ({ noteLocalJoin: vi.fn(), noteLocalRemoval: vi.fn() }));
+vi.mock('./annex-network-membership', () => ({
+  noteLocalJoin: vi.fn(),
+  noteLocalRemoval: vi.fn(),
+  // Pairing ids (#3107): fixed, so answers and fixtures don't change from run to run.
+  ownPairing: vi.fn(() => undefined),
+  readPairing: (v: { id?: unknown; joinedAt?: unknown } | null | undefined) => (v && typeof v.id === 'string' && typeof v.joinedAt === 'string' ? { id: v.id, joinedAt: v.joinedAt } : undefined),
+  pairingForJoiner: vi.fn((_fp: string, offered?: { id: string; joinedAt: string }) => offered ?? { id: '6f1c2a3e-0000-4000-8000-00000000j01n', joinedAt: '2026-11-08T10:00:00.000Z' }),
+  ensureOwnPairing: vi.fn(() => ({ id: '6f1c2a3e-0000-4000-8000-00000000aaaa', joinedAt: '2026-11-01T09:00:00.000Z' })),
+  adoptOwnPairing: vi.fn(),
+}));
 
 vi.mock('ws', () => ({
   WebSocket: WebSocketMock,
@@ -2830,11 +2839,22 @@ describe('annex-client', () => {
     });
 
     it('joins as a network member when the satellite agrees, and stays one-to-one when Annex Network is off (#3061)', async () => {
-      answerPair(200, { token: 't', fingerprint: SAT_FP, publicKey: 'sat-pk', alias: 'Mini', icon: 'server', color: 'teal', tlsCertificateFingerprint: CERT_COLONS, network: 1 });
-      await annexClient.pairWithLink(await link());
-      expect(annexPeers.addPeer).toHaveBeenLastCalledWith(expect.objectContaining({ role: 'member', kind: 'desktop', addedBy: LOCAL_IDENTITY.fingerprint }));
       const membershipMod = await import('./annex-network-membership');
+      const mine = { id: 'pairing-mine-0001', joinedAt: '2026-11-01T09:00:00.000Z' };
+      vi.mocked(membershipMod.ownPairing).mockReturnValue(mine);
+      answerPair(200, {
+        token: 't', fingerprint: SAT_FP, publicKey: 'sat-pk', alias: 'Mini', icon: 'server', color: 'teal', tlsCertificateFingerprint: CERT_COLONS, network: 1,
+        pairing: mine, serverPairing: { id: 'pairing-sat-00001', joinedAt: '2026-10-01T09:00:00.000Z' },
+      });
+      await annexClient.pairWithLink(await link());
+      // It offers the pairing it has (#3107), records the satellite by the satellite's own pairing, and keeps its answer.
+      expect(posted[0].body.selfPairing).toEqual(mine);
+      expect(annexPeers.addPeer).toHaveBeenLastCalledWith(expect.objectContaining({
+        role: 'member', kind: 'desktop', addedBy: LOCAL_IDENTITY.fingerprint, pairingId: 'pairing-sat-00001', pairedAt: '2026-10-01T09:00:00.000Z',
+      }));
+      expect(membershipMod.adoptOwnPairing).toHaveBeenCalledWith(mine);
       expect(membershipMod.noteLocalJoin).toHaveBeenCalledWith(SAT_FP);
+      vi.mocked(membershipMod.ownPairing).mockReturnValue(undefined);
 
       vi.mocked(annexSettings.getSettings).mockReturnValue({ enableClient: true, alias: 'Test Mac', icon: 'computer', color: 'indigo', networkEnabled: false } as any);
       posted = [];

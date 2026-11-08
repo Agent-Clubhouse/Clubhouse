@@ -91,6 +91,12 @@ vi.mock('./mobile-agents', () => ({
 const membershipMock = vi.hoisted(() => ({ onChange: null as null | (() => void) }));
 vi.mock('./annex-network-membership', () => ({
   noteLocalJoin: vi.fn(),
+  // Pairing ids (#3107): fixed, so answers and fixtures don't change from run to run.
+  ownPairing: vi.fn(() => undefined),
+  readPairing: (v: { id?: unknown; joinedAt?: unknown } | null | undefined) => (v && typeof v.id === 'string' && typeof v.joinedAt === 'string' ? { id: v.id, joinedAt: v.joinedAt } : undefined),
+  pairingForJoiner: vi.fn((_fp: string, offered?: { id: string; joinedAt: string }) => offered ?? { id: '6f1c2a3e-0000-4000-8000-00000000j01n', joinedAt: '2026-11-08T10:00:00.000Z' }),
+  ensureOwnPairing: vi.fn(() => ({ id: '6f1c2a3e-0000-4000-8000-00000000aaaa', joinedAt: '2026-11-01T09:00:00.000Z' })),
+  adoptOwnPairing: vi.fn(),
   noteLocalRemoval: vi.fn(),
   currentView: vi.fn(() => ({ members: [], removals: [] })),
   vouchFromPhone: vi.fn(() => ({ added: [], skipped: [] })),
@@ -2264,10 +2270,16 @@ describe('annex-server', () => {
       it('makes a desktop that asks a member, pinning its certificate both ways, and says so', async () => {
         await startServer();
         const computer = device();
-        const res = await pair(computer, { network: 1, icon: 'computer' });
+        const offered = { id: 'pairing-offer-001', joinedAt: '2026-10-01T09:00:00.000Z' };
+        const res = await pair(computer, { network: 1, icon: 'computer', selfPairing: offered });
         expect(res.status).toBe(200);
         expect(res.body.network).toBe(1);
-        expect(peers.get(computer.fingerprint)).toMatchObject({ role: 'member', kind: 'desktop', addedBy: 'AA:BB:CC:DD', tlsCertificatePem: expect.stringContaining('BEGIN CERTIFICATE') });
+        // It keeps the pairing it offered (no removal here ends it), and hears this machine's (#3107).
+        expect(res.body).toMatchObject({ pairing: offered, serverPairing: { id: expect.any(String), joinedAt: expect.any(String) } });
+        expect(peers.get(computer.fingerprint)).toMatchObject({
+          role: 'member', kind: 'desktop', addedBy: 'AA:BB:CC:DD', tlsCertificatePem: expect.stringContaining('BEGIN CERTIFICATE'),
+          pairingId: offered.id, pairedAt: offered.joinedAt,
+        });
         // The other members are told.
         const membershipMod = await import('./annex-network-membership');
         expect(membershipMod.noteLocalJoin).toHaveBeenCalledWith(computer.fingerprint);

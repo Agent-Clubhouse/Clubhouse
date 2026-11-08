@@ -236,11 +236,56 @@ function removedSince(member: Pairing & { fingerprint: string }, s: MembershipSt
 
 /** Learns which pairing put this machine in its network, from a member's record of it. */
 function learnSelfPairing(member: NetworkMember, s: MembershipState): boolean {
-  if (!member.pairingId) return false;
-  const known = s.selfPairing;
-  if (known && !laterPairing(member, { pairingId: known.id, joinedAt: known.joinedAt })) return false;
+  // Only when it isn't known: this machine's pairing comes from the pairing answer (or its own, for the
+  // first machine), and a member's record of it can't move it (#3107).
+  if (!member.pairingId || s.selfPairing) return false;
   s.selfPairing = { id: member.pairingId, joinedAt: member.joinedAt };
   return true;
+}
+
+/** A pairing as the pairing exchange carries it: an id and its join time. */
+export interface PairingRecord { id: string; joinedAt: string }
+
+const PAIRING_ID = /^[A-Za-z0-9-]{8,64}$/;
+
+/** A pairing record that holds together, from a pairing request or answer. */
+export function readPairing(value: unknown): PairingRecord | undefined {
+  const v = value as { id?: unknown; joinedAt?: unknown } | null;
+  if (!v || typeof v.id !== 'string' || !PAIRING_ID.test(v.id) || typeof v.joinedAt !== 'string' || Number.isNaN(Date.parse(v.joinedAt))) return undefined;
+  return { id: v.id, joinedAt: v.joinedAt };
+}
+
+/** This machine's own pairing into its network, if it has one. */
+export function ownPairing(): PairingRecord | undefined {
+  return state().selfPairing;
+}
+
+/** This machine's own pairing, made now when it has none: the first machine of a network starts it (#3107). */
+export function ensureOwnPairing(): PairingRecord {
+  const s = state();
+  if (s.selfPairing) return s.selfPairing;
+  s.selfPairing = { id: randomUUID(), joinedAt: new Date().toISOString() };
+  save(s);
+  return s.selfPairing;
+}
+
+/**
+ * The pairing a device joining here gets (#3107): the one it already has in the
+ * network, if it says so and no removal here ends it, so a member pairing with
+ * another desktop keeps its pairing; otherwise a new one, made here, once.
+ */
+export function pairingForJoiner(fingerprint: string, offered: PairingRecord | undefined): PairingRecord {
+  const removal = removalOf(fingerprint);
+  if (offered && !(removal && endsPairing(removal, { pairingId: offered.id, joinedAt: offered.joinedAt }))) return offered;
+  return { id: randomUUID(), joinedAt: new Date().toISOString() };
+}
+
+/** Takes this machine's own pairing from a pairing answer (#3107): what the member it paired with says it is. */
+export function adoptOwnPairing(pairing: PairingRecord): void {
+  const s = state();
+  if (s.selfPairing?.id === pairing.id) return;
+  s.selfPairing = pairing;
+  save(s);
 }
 
 function isSelf(fingerprint: string): boolean {
@@ -354,7 +399,7 @@ function applyRemoval(removal: NetworkRemoval, from: string, s: MembershipState)
   s.removals = [...s.removals.filter((r) => lower(r.fingerprint) !== lower(removal.fingerprint)), removal];
   if (lower(removal.fingerprint) in removalKeys(s)) confirm(s, `remove:${lower(removal.fingerprint)}`, from);
   if (isSelf(removal.fingerprint)) {
-    leaveNetwork(from);
+    leaveNetwork(from, s);
     return true;
   }
   // Only a member is removed by another member's word; a one-to-one pairing stays.
@@ -370,7 +415,7 @@ function applyRemoval(removal: NetworkRemoval, from: string, s: MembershipState)
 }
 
 /** This machine was removed: it stops being a member of every member it knew. */
-function leaveNetwork(from: string): void {
+function leaveNetwork(from: string, s: MembershipState): void {
   appLog('core:annex', 'warn', 'This computer was removed from its Annex Network', { meta: { from } });
   // Ending its pairings here is leaving, not removing anyone: nothing is recorded or told to the others.
   // Otherwise a member that hadn't heard of this machine's removal yet would be told to remove itself.
@@ -380,6 +425,8 @@ function leaveNetwork(from: string): void {
   } finally {
     leaving = false;
   }
+  // Its pairing ended with it: pairing again makes a new one (#3107). Cleared on the state the caller saves.
+  delete s.selfPairing;
 }
 
 /** While this machine leaves the network: the pairings it ends are its own, not removals to announce. */
@@ -466,9 +513,11 @@ export function vouchFromPhone(phone: string, members: NetworkMember[]): VouchRe
     if (existing && existing.role !== 'member') { result.skipped.push({ fingerprint: fp, reason: 'one-to-one' }); continue; }
     if (existing) { result.skipped.push({ fingerprint: fp, reason: 'member' }); continue; }
     if (!proves(input)) { result.skipped.push({ fingerprint: fp, reason: 'invalid' }); continue; }
+    // It keeps the pairing it has in the network; one a removal here ended (or none) is a new pairing, made here (#3107).
+    const removal = removalOf(fp, s);
+    const keeps = input.pairingId && !(removal && endsPairing(removal, input));
     s.removals = s.removals.filter((r) => lower(r.fingerprint) !== fp);
-    // A person joining it through the phone is a pairing of its own: a new id, made here (#3107).
-    if (addMember({ ...input, joinedAt: now, pairingId: randomUUID() }, phone, s)) {
+    if (addMember(keeps ? input : { ...input, joinedAt: now, pairingId: randomUUID() }, phone, s)) {
       result.added.push(fp);
       s.confirmations[`join:${fp}`] = [];
     }
@@ -496,8 +545,6 @@ export function noteLocalJoin(fingerprint: string): void {
   delete s.confirmations[`remove:${lower(fingerprint)}`];
   // This machine joined (or rejoined) now: any removal of it from before is stale.
   s.selfJoinedAt = new Date().toISOString();
-  // The first device paired here makes this machine a member too: its own pairing starts the network (#3107).
-  if (!s.selfPairing) s.selfPairing = { id: randomUUID(), joinedAt: s.selfJoinedAt };
   s.removals = s.removals.filter((r) => !isSelf(r.fingerprint));
   save(s);
   sendView();

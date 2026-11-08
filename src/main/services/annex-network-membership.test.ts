@@ -204,13 +204,46 @@ describe('Annex Network membership (#3061)', () => {
       expect(membership.currentView().removals).toEqual([{ fingerprint: N, removedAt: '2026-11-08T12:00:00.000Z', pairingId: NEW, joinedAt: '2026-11-08T11:00:00.000Z' }]);
     });
 
-    it('a device joining through a phone gets a pairing of its own', () => {
+    it('a device a phone vouches for keeps the pairing it has; one removed here gets a new pairing', () => {
       const PHONE = fp('0c');
       peers.set(PHONE.toLowerCase(), memberPeer(PHONE, '0c', 'Phone', { kind: 'phone' }));
       membership.vouchFromPhone(PHONE, [member(N, '0e', 'New Mac', { joinedAt: '2026-01-01T00:00:00.000Z', pairingId: OLD })]);
-      const added = peers.get(N.toLowerCase());
-      expect(added?.pairingId).toBeTruthy();
-      expect(added?.pairingId).not.toBe(OLD);
+      expect(peers.get(N.toLowerCase())).toMatchObject({ pairingId: OLD, pairedAt: '2026-01-01T00:00:00.000Z' });
+      // Removed here, then vouched for again: a person is joining it again, so it's a new pairing.
+      membership.noteLocalRemoval(N);
+      peers.delete(N.toLowerCase());
+      membership.vouchFromPhone(PHONE, [member(N, '0e', 'New Mac', { joinedAt: '2026-01-01T00:00:00.000Z', pairingId: OLD })]);
+      expect(peers.get(N.toLowerCase())?.pairingId).toBeTruthy();
+      expect(peers.get(N.toLowerCase())?.pairingId).not.toBe(OLD);
+    });
+
+    it('the pairing exchange: a joiner keeps the pairing it offers unless a removal here ends it, and this machine starts its own once', () => {
+      const offered = { id: OLD, joinedAt: '2026-11-01T09:00:00.000Z' };
+      expect(membership.pairingForJoiner(N, offered)).toEqual(offered);
+      expect(membership.pairingForJoiner(N, undefined).id).not.toBe(OLD);
+      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'New Mac', { pairedAt: offered.joinedAt, pairingId: OLD }));
+      membership.noteLocalRemoval(N);
+      expect(membership.pairingForJoiner(N, offered).id).not.toBe(OLD);
+      expect(membership.ownPairing()).toBeUndefined();
+      const own = membership.ensureOwnPairing();
+      expect(membership.ensureOwnPairing()).toEqual(own);
+      // A pairing answer sets this machine's own; a member's record of it afterwards can't move it.
+      membership.adoptOwnPairing({ id: NEW, joinedAt: '2026-11-08T10:00:00.000Z' });
+      listener!(A, view([member(SELF, '00', 'Me', { joinedAt: '2030-01-01T00:00:00.000Z', pairingId: 'pairing-later-03' })]));
+      expect(membership.ownPairing()).toEqual({ id: NEW, joinedAt: '2026-11-08T10:00:00.000Z' });
+    });
+
+    it('rejects a pairing record that doesn\'t hold together', () => {
+      expect(membership.readPairing({ id: OLD, joinedAt: '2026-11-01T09:00:00.000Z' })).toEqual({ id: OLD, joinedAt: '2026-11-01T09:00:00.000Z' });
+      for (const bad of [null, {}, { id: 'x', joinedAt: '2026-11-01T09:00:00.000Z' }, { id: OLD, joinedAt: 'soon' }, { id: 'has spaces in it', joinedAt: '2026-11-01T09:00:00.000Z' }]) {
+        expect(membership.readPairing(bad)).toBeUndefined();
+      }
+    });
+
+    it('leaving clears this machine\'s own pairing', () => {
+      membership.adoptOwnPairing({ id: NEW, joinedAt: '2026-11-08T10:00:00.000Z' });
+      listener!(A, { v: 1, type: 'member-removed', removal: { fingerprint: SELF, removedAt: '2026-11-08T12:00:00.000Z', pairingId: NEW, joinedAt: '2026-11-08T10:00:00.000Z' } });
+      expect(membership.ownPairing()).toBeUndefined();
     });
   });
 

@@ -65,8 +65,9 @@ export interface NetworkRemoval {
   removedAt: string;
   /**
    * The pairing it ended (#3107). A removal ends that pairing, and any older
-   * one, never a later one. Absent only in records from before it existed,
-   * which are compared by time.
+   * one, never a later one. Absent when the remover never learned the device's
+   * pairing (or in records from before it existed): then it ends a record with
+   * no id, and otherwise compares by time.
    */
   pairingId?: string;
   /** That pairing's `joinedAt`, to order it against a pairing a member hasn't heard of. */

@@ -34,7 +34,7 @@ Add `"network": 1` to the `POST /pair` body, with `"pairingMode": "persistent"` 
 { "pin": "123456", "publicKey": "…", "alias": "Mason’s iPhone", "icon": "iphone", "color": "emerald", "pairingMode": "persistent", "network": 1 }
 ```
 
-If the desktop agrees, the answer carries `"network": 1` beside the usual fields, and the phone is now a member of that desktop's network. Without it, the pairing is one-to-one, as before. The desktop tells its other members, and each of them accepts this phone's pinned certificate from then on: the phone can connect to any of them with no more pairing.
+If the desktop agrees, the answer carries `"network": 1` beside the usual fields, and the phone is now a member of that desktop's network. It also carries `pairing` (`{ "id", "joinedAt" }`: this phone's pairing into the network) and `serverPairing` (the desktop's own). Keep `pairing`; a phone needs nothing more from them today. A desktop pairing with another desktop sends its own pairing as `selfPairing` in the request, so it keeps it; a phone need not. Without it, the pairing is one-to-one, as before. The desktop tells its other members, and each of them accepts this phone's pinned certificate from then on: the phone can connect to any of them with no more pairing.
 
 A member phone still shows "Controlled by" on a desktop it connects to, like any phone.
 
@@ -103,7 +103,7 @@ Each answers which records were added, and why any weren't:
 
 `reason` is `member` (already a member there), `one-to-one` (paired with that desktop one-to-one; pair it again with `network: 1` to join it), `self` (the desktop itself) or `invalid` (the record doesn't hold together). Joining through the phone counts as a fresh join, so an earlier removal of those devices doesn't stop it. From there the desktops do the rest: `A` tells its other members about `D`, and each connects to `D`; `D` connects to the members it was given. The phone gets `network:changed` from each desktop as that happens.
 
-Each record must hold together, or it's ignored: its public key hashes to its fingerprint, and its `certPem` to its `certFingerprint`. Send members exactly as `GET /api/v1/mobile/network` lists them; `online` and `self` are ignored. The record is `fingerprint`, `publicKey`, `certFingerprint`, `certPem`, `name`, `icon`, `color`, `kind`, `hosts`, `port` and `joinedAt`; anything else is refused. Sending a member that's already known changes nothing.
+Each record must hold together, or it's ignored: its public key hashes to its fingerprint, and its `certPem` to its `certFingerprint`. Send members exactly as `GET /api/v1/mobile/network` lists them; `online` and `self` are ignored. The record is `fingerprint`, `publicKey`, `certFingerprint`, `certPem`, `name`, `icon`, `color`, `kind`, `hosts`, `port`, `joinedAt` and `pairingId`; anything else is refused. Send `pairingId` as listed: the device keeps that pairing, unless the desktop removed it, in which case joining it through the phone is a new pairing. Sending a member that's already known changes nothing.
 
 Refusals:
 
