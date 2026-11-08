@@ -179,8 +179,12 @@ describe('a setup the old gate held back ends up off', () => {
     seedGate(false, true);
     writeJson(SETTINGS_FILE, file(1, { ...otlp(true), level: 'detailed' }, framebriar()));
     await launchAndWaitForMarker();
-    await vi.waitFor(() => expect(JSON.parse(readText('logging-settings.json')).telemetryLevelMigrated).toBe(true));
-    expect(JSON.parse(readText('logging-settings.json')).telemetryLevel).not.toBe('detailed');
+    // Read inside the retry: the store writes in place, so a read can catch the file empty (#2985).
+    await vi.waitFor(() => {
+      const logging = JSON.parse(readText('logging-settings.json'));
+      expect(logging.telemetryLevelMigrated).toBe(true);
+      expect(logging.telemetryLevel).not.toBe('detailed');
+    });
   });
 });
 
@@ -400,7 +404,7 @@ describe('opting in after the migration', () => {
     expect(otlpEntry().enabled).toBe(true);
 
     await vi.waitFor(() => expect(readSaved().exportGraduation).toBe(1));
-    expect(JSON.parse(readText('experimental-settings.json')).telemetry).toBe(true);
+    await vi.waitFor(() => expect(JSON.parse(readText('experimental-settings.json')).telemetry).toBe(true));
     await launch();
     expect(otlpEntry()).toMatchObject({ enabled: true, confirmedHost: LOOPBACK_HOST });
     expect(exportAttempts()).toBe(1);
