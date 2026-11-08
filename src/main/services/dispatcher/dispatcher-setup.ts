@@ -6,8 +6,10 @@
  * - The personality and the setup state are saved in dispatcher-settings.json,
  *   not on either agent's record, so they are the same on every provider.
  *   dispatcher-service adds the personality to the chat's instructions.
- * - Whether setup is an upgrade is decided once, the first time the
- *   Dispatcher is turned on in a version that has setup, and saved.
+ * - Until the user finishes setup or puts it off, nothing is saved: setup is
+ *   pending whenever its agent exists. It is an upgrade when that agent was
+ *   there before this version (dispatcher-service tells by a marker it writes
+ *   only when it creates the agent).
  * - Try it out runs one prompt on the chosen model through the one-off
  *   runner (headless-prompt.ts): an empty folder, no session kept, no tools,
  *   no Clubhouse MCP. It never starts, wakes or messages an agent.
@@ -51,29 +53,42 @@ export async function saveDispatcherPersonality(value: unknown): Promise<boolean
   return true;
 }
 
-/** Whether its view shows setup. Nothing to show until it was first decided. */
-export function getDispatcherSetup(): DispatcherSetupState {
-  return normalizeSetupState(getSettings().setup) ?? NO_DISPATCHER_SETUP;
+/**
+ * Whether its agent was there before this version, as dispatcher-service last
+ * found it: true for an upgrade, false for one Clubhouse created with setup,
+ * null before the Dispatcher was first turned on here.
+ */
+let upgradeFound: boolean | null = null;
+
+/** Called by dispatcher-service each time it brings the Dispatcher's agent in line. */
+export function noteDispatcherOrigin(upgrade: boolean | null): void {
+  upgradeFound = upgrade;
 }
 
 /**
- * Called each time the Dispatcher is turned on (or found on at start-up).
- * The first time, saves setup as pending, and as an upgrade when its agent
- * existed before. Later calls change nothing.
+ * Whether its view shows setup. Nothing saved means not set up yet, so a new
+ * install writes nothing until the user acts: the default stays unwritten.
+ * Nothing to show before its agent exists.
  */
-export async function decideDispatcherSetup(existedBefore: boolean): Promise<boolean> {
-  if (normalizeSetupState(getSettings().setup)) return false;
-  await updateSettings((s) => ({ ...s, setup: { status: 'pending', upgrade: existedBefore } }));
-  appLog(NS, 'info', 'Dispatcher setup is waiting for its first open', { meta: { upgrade: existedBefore } });
-  return true;
+export function getDispatcherSetup(): DispatcherSetupState {
+  const saved = normalizeSetupState(getSettings().setup);
+  if (saved) return saved;
+  if (upgradeFound === null) return NO_DISPATCHER_SETUP;
+  return { status: 'pending', upgrade: upgradeFound };
 }
 
 /** Save where setup stands. Keeps whether it was an upgrade. Returns whether it changed. */
 export async function saveDispatcherSetupStatus(status: DispatcherSetupStatus): Promise<boolean> {
-  const current = normalizeSetupState(getSettings().setup);
-  if (current?.status === status) return false;
-  await updateSettings((s) => ({ ...s, setup: { status, upgrade: current?.upgrade ?? false } }));
+  const saved = normalizeSetupState(getSettings().setup);
+  if (saved?.status === status) return false;
+  const upgrade = saved?.upgrade ?? upgradeFound ?? false;
+  await updateSettings((s) => ({ ...s, setup: { status, upgrade } }));
   return true;
+}
+
+/** For tests. */
+export function _resetDispatcherSetupForTesting(): void {
+  upgradeFound = null;
 }
 
 export interface TryItOutDeps {

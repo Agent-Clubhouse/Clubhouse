@@ -42,6 +42,7 @@
  */
 import { withSavedAccess } from '../free-agent-settings';
 import * as fsp from 'fs/promises';
+import * as path from 'path';
 import * as agentConfig from '../agent-config';
 import * as agentSystem from '../agent-system';
 import { getAllProviders, getProvider, type OrchestratorId } from '../../orchestrators';
@@ -69,7 +70,7 @@ import { DEFAULT_DISPATCHER_NAME } from '../../../shared/dispatcher-name';
 import { personalityInstructions } from '../../../shared/dispatcher-personality';
 import type { DispatcherSetupInput, DispatcherSetupStatus } from '../../../shared/dispatcher-setup';
 import {
-  decideDispatcherSetup,
+  noteDispatcherOrigin,
   getDispatcherPersonality,
   getDispatcherSetup,
   saveDispatcherPersonality,
@@ -437,6 +438,36 @@ async function readConfig(dir: string = getDispatcherPath()): Promise<DurableAge
   return agents[0] ?? null;
 }
 
+/**
+ * A marker in its folder, written when Clubhouse creates its agent in a
+ * version that has setup (#3047). An agent without it was there before:
+ * setup is then an upgrade. In the folder, not dispatcher-settings.json, so
+ * a new install writes no settings until the user acts.
+ */
+function createdMarkerPath(): string {
+  return path.join(getDispatcherPath(), '.clubhouse', 'created-with-setup.json');
+}
+
+async function markCreatedWithSetup(): Promise<void> {
+  try {
+    await fsp.mkdir(path.dirname(createdMarkerPath()), { recursive: true });
+    await fsp.writeFile(createdMarkerPath(), `${JSON.stringify({ createdAt: new Date().toISOString() })}\n`);
+  } catch (err) {
+    // telemetry-exempt: logged; setup then reads as an upgrade, which only adds one line to it
+    appLog(NS, 'warn', 'Could not mark the Dispatcher as new', { meta: { error: err instanceof Error ? err.message : String(err) } });
+  }
+}
+
+async function createdWithSetup(): Promise<boolean> {
+  try {
+    await fsp.access(createdMarkerPath());
+    return true;
+  } catch {
+    // telemetry-exempt: no marker means its agent was there before this version
+    return false;
+  }
+}
+
 /** Create the Dispatcher the first time. Idempotent: an existing record is kept as it is. */
 async function ensureCreated(): Promise<DurableAgentConfig> {
   const dir = getDispatcherPath();
@@ -456,6 +487,7 @@ async function ensureCreated(): Promise<DurableAgentConfig> {
     true, // free agent mode
   );
   await agentConfig.updateDurableConfig(dir, created.id, { idleSleep: 'never', runtimeMode: 'chat' });
+  await markCreatedWithSetup();
   appLog(NS, 'info', 'Dispatcher created', { meta: { agentId: created.id, orchestrator } });
   return (await agentConfig.getDurableConfig(dir, created.id)) ?? created;
 }
@@ -546,16 +578,16 @@ async function reconcile(): Promise<void> {
   watchChanges();
   const { enabled, savedOn } = dispatcherEnablement();
   if (enabled) {
-    const existedBefore = !!(await readConfig());
     config = await ensureCreated();
-    // First-run setup (#3047): decided once, and an upgrade when its agent was already there.
-    await decideDispatcherSetup(existedBefore);
+    // First-run setup (#3047): an upgrade unless Clubhouse created its agent with setup.
+    noteDispatcherOrigin(!(await createdWithSetup()));
     chatConfig = await ensureChat(config);
     await writeInstructions(config);
     await writeInstructions(chatConfig, getDispatcherChatPath());
   } else {
     config = await readConfig();
     chatConfig = await readConfig(getDispatcherChatPath());
+    noteDispatcherOrigin(config ? !(await createdWithSetup()) : null);
     if (!savedOn) {
       if (chatConfig) await stopAgent(chatConfig, getDispatcherChatPath());
       if (config) await stopAgent(config);
@@ -660,6 +692,7 @@ export async function _whenIdleForTesting(): Promise<void> {
 /** For tests. */
 export function _resetDispatcherForTesting(): void {
   config = null;
+  noteDispatcherOrigin(null);
   chatConfig = null;
   instructionsWrittenFor.clear();
   // The chain is kept, so _whenIdleForTesting still waits for work queued before the reset.

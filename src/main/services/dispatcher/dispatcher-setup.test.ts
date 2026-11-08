@@ -26,7 +26,8 @@ import { runHeadlessPrompt } from '../headless-prompt';
 import { updateSettings, getSettings } from './dispatcher-settings';
 import {
   checkDispatcherBehavior,
-  decideDispatcherSetup,
+  noteDispatcherOrigin,
+  _resetDispatcherSetupForTesting,
   getDispatcherPersonality,
   getDispatcherSetup,
   saveDispatcherPersonality,
@@ -44,6 +45,7 @@ const MODELS: DispatcherBehaviorModels = {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  _resetDispatcherSetupForTesting();
   await updateSettings(() => ({}));
 });
 
@@ -64,20 +66,24 @@ describe('personality', () => {
 });
 
 describe('setup state', () => {
-  it('shows nothing until decided, then decides once', async () => {
+  it('shows nothing before its agent exists, then is pending with nothing saved', async () => {
     expect(getDispatcherSetup()).toEqual({ status: 'done', upgrade: false });
-    expect(await decideDispatcherSetup(true)).toBe(true);
+    noteDispatcherOrigin(false);
+    expect(getDispatcherSetup()).toEqual({ status: 'pending', upgrade: false });
+    noteDispatcherOrigin(true);
     expect(getDispatcherSetup()).toEqual({ status: 'pending', upgrade: true });
-    expect(await decideDispatcherSetup(false)).toBe(false);
-    expect(getDispatcherSetup()).toEqual({ status: 'pending', upgrade: true });
+    // A new install writes no settings until the user acts.
+    expect(getSettings()).toEqual({});
   });
 
   it('keeps whether it was an upgrade when the status moves on', async () => {
-    await decideDispatcherSetup(true);
+    noteDispatcherOrigin(true);
     await saveDispatcherSetupStatus('later');
     expect(getDispatcherSetup()).toEqual({ status: 'later', upgrade: true });
+    noteDispatcherOrigin(false);
     await saveDispatcherSetupStatus('done');
     expect(getSettings().setup).toEqual({ status: 'done', upgrade: true });
+    expect(await saveDispatcherSetupStatus('done')).toBe(false);
   });
 });
 

@@ -743,7 +743,13 @@ describe('personality and first-run setup (#3047)', () => {
     expect(workFile()).not.toContain(PERSONALITY_PRESET_TEXT.concise);
   });
 
-  it('an existing Dispatcher is an upgrade, decided once and kept across restarts', async () => {
+  it('a new install saves no settings for setup until the user acts', async () => {
+    await svc.setDispatcherEnabled(true);
+    expect(getSettings().setup).toBeUndefined();
+    expect(getSettings().personality).toBeUndefined();
+  });
+
+  it('an existing Dispatcher is an upgrade, and stays one across restarts', async () => {
     fs.mkdirSync(dispatcherDir(), { recursive: true });
     h.agents.set(dispatcherDir(), [{ id: 'durable_old', name: 'Rosie', color: 'rose', createdAt: 'then', orchestrator: 'codex-cli' }]);
     expect((await svc.setDispatcherEnabled(true)).setup).toEqual({ status: 'pending', upgrade: true });

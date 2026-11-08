@@ -112,7 +112,7 @@ describe('fixture format', () => {
   it('every committed fixture parses, and each CLI covers the shared scenarios', async () => {
     const shared = ['interrupt', 'model-list', 'multi-turn', 'permission-approve-edit', 'permission-deny', 'schema-drift', 'session-info', 'turn-error'];
     const extra: Record<string, string[]> = {
-      claude: ['ask-user-question', 'subagent-task'],
+      claude: ['ask-user-question', 'headless-answer', 'subagent-task'],
       codex: [],
       'copilot-sdk': ['died-mid-turn', 'elicitation-accept', 'elicitation-decline', 'exit-at-launch', 'handshake', 'hang-at-launch', 'no-answer', 'plan-approval', 'protocol-mismatch', 'slash-command', 'question', 'queue', 'resume', 'resume-not-found', 'steer', 'subagent'],
     };
