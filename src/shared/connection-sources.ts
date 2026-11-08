@@ -14,6 +14,8 @@ export type ConnectionSourceKind =
   | 'tool_link'
   /** A link the Dispatcher made between two orchestrators. */
   | 'dispatcher_link'
+  /** A link the user made on the Connections card (Make two-way, #2972). */
+  | 'user_link'
   /** A source this build doesn't know. */
   | 'other';
 
@@ -52,6 +54,7 @@ export function removalRoute(kind: ConnectionSourceKind): 'here' | 'canvas' | 'h
     case 'tool_link':
     case 'dispatcher_link':
     case 'dispatcher_auto':
+    case 'user_link':
       return 'here';
     case 'canvas':
       return 'canvas';
@@ -68,6 +71,7 @@ export const CONNECTION_SOURCE_LABELS: Readonly<Record<ConnectionSourceKind, str
   dispatcher_auto: 'Connect to Dispatcher',
   tool_link: 'Made by an orchestrator',
   dispatcher_link: 'Made by the Dispatcher',
+  user_link: 'Made by you',
   other: 'Other',
 };
 

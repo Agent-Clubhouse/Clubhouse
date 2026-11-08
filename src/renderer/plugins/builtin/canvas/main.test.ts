@@ -46,7 +46,8 @@ describe('canvas main', () => {
 
     canvasModule.activate(ctx, api);
 
-    expect(ctx.subscriptions).toHaveLength(7);
+    // One more: the connection store sync of wire copies (D129).
+    expect(ctx.subscriptions).toHaveLength(8);
     for (const sub of ctx.subscriptions) {
       expect(typeof sub.dispose).toBe('function');
     }

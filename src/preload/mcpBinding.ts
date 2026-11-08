@@ -3,6 +3,7 @@ import { IPC } from '../shared/ipc-channels';
 import type { AgentMcpConnection, DispatcherLink } from '../shared/types';
 import type { McpUnbindCause, McpUnbindResult } from '../shared/mcp-unbind';
 import type { AgentConnectionSources, ConnectionSourceKind, RemoveConnectionSourceResult } from '../shared/connection-sources';
+import type { ConnectionDirection } from '../shared/connection-grants';
 
 export const mcpBinding = {
   mcpBinding: {
@@ -20,8 +21,21 @@ export const mcpBinding = {
     ipcRenderer.invoke(IPC.MCP_BINDING.UNREGISTER_WEBVIEW, widgetId),
   setInstructions: (agentId: string, targetId: string, instructions: Record<string, string>) =>
     ipcRenderer.invoke(IPC.MCP_BINDING.SET_INSTRUCTIONS, agentId, targetId, instructions),
-  setDisabledTools: (agentId: string, targetId: string, disabledTools: string[]) =>
-    ipcRenderer.invoke(IPC.MCP_BINDING.SET_DISABLED_TOOLS, agentId, targetId, disabledTools),
+  /** One direction's disabled tools; agent-to-agent ones are saved in the connection store (D129). `restore`: a canvas wire bound again. */
+  setDisabledTools: (agentId: string, targetId: string, disabledTools: string[], options?: { restore?: boolean }) =>
+    ipcRenderer.invoke(IPC.MCP_BINDING.SET_DISABLED_TOOLS, agentId, targetId, disabledTools, ...(options ? [options] : [])),
+  /** Per-direction connection permissions touching an agent (D129, #2972). */
+  getConnectionGrants: (agentId: string): Promise<ConnectionDirection[]> =>
+    ipcRenderer.invoke(IPC.MCP_BINDING.GET_CONNECTION_GRANTS, agentId),
+  /** One direction's saved tools changed (D129): a canvas updates its own copy of that wire. */
+  onConnectionGrantsChanged: (callback: (from: string, to: string, disabledTools: string[]) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, from: string, to: string, disabledTools: string[]) => callback(from, to, disabledTools);
+    ipcRenderer.on(IPC.MCP_BINDING.CONNECTION_GRANTS_CHANGED, listener);
+    return () => { ipcRenderer.removeListener(IPC.MCP_BINDING.CONNECTION_GRANTS_CHANGED, listener); };
+  },
+  /** Make a one-way connection two-way: the user's own link for the other direction (#2972). */
+  makeTwoWay: (fromAgentId: string, toAgentId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.MCP_BINDING.MAKE_TWO_WAY, fromAgentId, toAgentId),
   /** Wires the orchestrator connection tools made and alone own; the user may remove these (#2232). */
   getToolConnections: (): Promise<Array<{ agentId: string; targetId: string }>> =>
     ipcRenderer.invoke(IPC.MCP_BINDING.GET_TOOL_CONNECTIONS),

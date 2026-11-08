@@ -79,6 +79,8 @@ Your templates can set permissions too, under **Clubhouse permissions** in the t
 
 For an orchestrator, **Create agents** and **Remove helpers** follow its approval setting on the Helpers page, and changing either here changes that setting.
 
+A connection between two agents goes each way on its own: in each direction, the agent that sends is limited to the tools that direction allows. Open a connection with **Manage** on the agent's **Connections** card to see both directions side by side, turn tools on or off for each, and use **Make two-way** when it only goes one way. A canvas wire's tool permissions change the same settings, for that wire's direction. A new connection lets the sender read the other agent and message it; **Clear** and **Compact** start off. Connections from before this, and the wires between an orchestrator and its helpers, keep what they had.
+
 The Dispatcher can do the most by default. It can read, message, wake, put to sleep, reset, rename and configure the agents connected to it, create agents in any project, change an agent's setup up to its own level, make and remove connections, and create and run Actions. It asks first before it adds or opens a project (**Add or open projects**), changes project defaults or changes app settings. Its Clubhouse permissions page works like any other agent's, so you can set each of these to Off, Ask first or Allow.
 
 These permissions are a guardrail on Clubhouse, not a sandbox. Other programs running as you aren't limited by them.

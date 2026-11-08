@@ -406,7 +406,8 @@ export function applyPersistedBinding(binding: PersistedBinding, options: { rela
     bindingManager.setInstructions(binding.agentId, binding.targetId, binding.instructions);
   }
   if (binding.disabledTools && binding.disabledTools.length > 0) {
-    bindingManager.setDisabledTools(binding.agentId, binding.targetId, binding.disabledTools);
+    // The connection store's list wins; one it doesn't have yet moves into it (D129).
+    bindingManager.restoreDisabledTools(binding.agentId, binding.targetId, binding.disabledTools);
   }
   return 'created';
 }
