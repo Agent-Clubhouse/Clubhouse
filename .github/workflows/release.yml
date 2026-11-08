@@ -418,8 +418,11 @@ jobs:
   build-linux:
     name: Build Linux (${{ matrix.arch }})
     needs: [verify-tag]
-    # build/rpm.spec.ejs copies from an absolute path, so rpm 4.20 works (#2549).
-    runs-on: ubuntu-latest
+    # Kept on 24.04 for the glibc floor, not for rpm: node-pty is compiled on the
+    # runner, and on 26.04 its pty.node needs GLIBC_2.42, which Ubuntu 24.04
+    # (2.39) and most current distros don't have. The step after the build
+    # checks the floor. (rpm 4.20 works since build/rpm.spec.ejs, #2549.)
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -448,6 +451,27 @@ jobs:
 
       - name: Build Linux packages
         run: npx electron-forge make --arch=${{ matrix.arch }}
+
+      - name: Check the glibc floor of native modules
+        # A newer runner image would raise the oldest Linux the app runs on.
+        env:
+          MAX_GLIBC: '2.39'
+        run: |
+          found=0
+          for f in $(find out -path '*node-pty*' -type f \( -name '*.node' -o -name spawn-helper \)); do
+            need=$(objdump -T "$f" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -uV | tail -n 1)
+            [ -z "$need" ] && continue
+            found=1
+            echo "$f needs glibc $need"
+            if [ "$(printf '%s\n%s\n' "$need" "$MAX_GLIBC" | sort -V | tail -n 1)" != "$MAX_GLIBC" ]; then
+              echo "::error::$f needs glibc $need, newer than $MAX_GLIBC. Build on an older runner."
+              exit 1
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "::error::No Linux node-pty module found to check"
+            exit 1
+          fi
 
       - name: Compute artifact hashes
         id: hash
