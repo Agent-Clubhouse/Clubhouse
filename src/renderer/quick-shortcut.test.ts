@@ -3,6 +3,8 @@ import { handleShortcutKeydown } from './shortcut-dispatch';
 import { buildShortcuts, CHROME_SHORTCUTS, LEGACY_SHORTCUTS, useKeyboardShortcutsStore } from './stores/keyboardShortcutsStore';
 import { useChromeFlagStore } from './chrome/chromeFlag';
 import { useChromeStore } from './chrome/chromeStore';
+import { useQuickPromptStore } from './chrome/quickPromptStore';
+import { pushModal, removeModal } from './components/layers';
 import { useProjectStore } from './stores/projectStore';
 import { useUIStore } from './stores/uiStore';
 import { useCommandPaletteStore } from './stores/commandPaletteStore';
@@ -23,6 +25,7 @@ beforeEach(() => {
   useUIStore.setState({ activeHostId: null, quickAgentDialogOpen: false });
   useCommandPaletteStore.setState({ isOpen: false });
   useChromeStore.setState({ newAgent: null, newAgentBusy: false });
+  useQuickPromptStore.setState({ open: false });
   window.addEventListener('keydown', handleShortcutKeydown);
 });
 afterEach(() => {
@@ -41,9 +44,11 @@ describe('new agent shortcuts', () => {
     expect(press('N', true)).toBe(true);
     expect(useChromeStore.getState().newAgent?.kind).toBe('durable');
   });
-  it('routes Cmd+N to quick and Cmd+Shift+N to durable', () => {
+  it('routes Cmd+N to the one-line quick prompt and Cmd+Shift+N to the durable page (#2812)', () => {
     expect(press('n')).toBe(true);
-    expect(useChromeStore.getState().newAgent?.kind).toBe('quick');
+    expect(useQuickPromptStore.getState().open).toBe(true);
+    expect(useChromeStore.getState().newAgent).toBeNull();
+    useQuickPromptStore.setState({ open: false });
     expect(press('N', true)).toBe(true);
     expect(useChromeStore.getState().newAgent?.kind).toBe('durable');
   });
@@ -52,13 +57,31 @@ describe('new agent shortcuts', () => {
     const event = new KeyboardEvent('keydown', { key: 'n', ctrlKey: true, bubbles: true, cancelable: true });
     document.body.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
-    expect(useChromeStore.getState().newAgent?.kind).toBe('quick');
+    expect(useQuickPromptStore.getState().open).toBe(true);
   });
   it('honors a saved durable override that claims the quick default', () => {
     useKeyboardShortcutsStore.setState({ shortcuts: buildShortcuts(CHROME_SHORTCUTS, { 'new-quick-agent': 'Meta+N' }, { resolveCollisions: true }) });
     expect(press('n')).toBe(true);
     expect(useChromeStore.getState().newAgent?.kind).toBe('durable');
     expect(useKeyboardShortcutsStore.getState().shortcuts['open-quick-agent'].currentBinding).toBe('');
+  });
+  it('opens the Quick Agent dialog instead where the prompt has no local project', () => {
+    useProjectStore.setState({ projects: [], activeProjectId: null });
+    expect(press('n')).toBe(true);
+    expect(useQuickPromptStore.getState().open).toBe(false);
+    expect(useUIStore.getState().quickAgentDialogOpen).toBe(true);
+  });
+  it('runs no shortcut while the prompt is open, and Cmd+N opens nothing over a dialog', () => {
+    expect(press('n')).toBe(true);
+    expect(press('N', true)).toBe(false);
+    expect(useChromeStore.getState().newAgent).toBeNull();
+    useQuickPromptStore.setState({ open: false });
+    const token = Symbol('dialog');
+    pushModal(token);
+    try {
+      press('n');
+      expect(useQuickPromptStore.getState().open).toBe(false);
+    } finally { removeModal(token); }
   });
   it('keeps the legacy Cmd+Shift+N quick dialog', () => {
     useChromeFlagStore.setState({ enabled: false });

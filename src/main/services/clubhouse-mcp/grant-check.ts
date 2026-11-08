@@ -20,13 +20,13 @@
  * Grants are a cooperative guardrail on the Clubhouse MCP, not a sandbox.
  */
 
-import { evaluateGrant, GRANT_REFUSAL_MESSAGES, widerOrSame, type Grant, type GrantAction, type GrantCallTarget, type GrantCaller, type GrantRefusal } from '../../../shared/agent-grants';
+import { evaluateGrant, GRANT_REFUSAL_MESSAGES, widerOrSame, type Grant, type GrantAction, type GrantCallTarget, type GrantCaller, type GrantDecision, type GrantRefusal } from '../../../shared/agent-grants';
 import { defaultGrants } from '../../../shared/default-grants';
 import { isProjectAdmin } from '../../../shared/group-project-admin';
 import { CROSS_PROJECT_OFF_MESSAGE, fiveLevelOf } from '../../../shared/orchestration-policy';
 import { agentRegistry } from '../agent-registry';
 import { bindingManager } from './binding-manager';
-import { isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
+import { isDispatcherAgent, isTrackedDispatcher, isTrackedDispatcherChat } from './dispatcher-gate';
 import { mcpCallerParent } from './mcp-call-gate';
 import { getAgentGrantChanges } from '../agent-grants-store';
 import { applyGrantChanges } from '../../../shared/agent-grant-changes';
@@ -191,6 +191,7 @@ export function callerGrants(agentId: string): Grant[] {
   const tracked = isTrackedDispatcher(agentId);
   return applyGrantChanges(defaultGrants({
     dispatcher: isDispatcherAgent(agentId),
+    dispatcherChat: isTrackedDispatcherChat(agentId),
     helper: mcpCallerParent(agentId) !== undefined,
     orchestrates: !tracked && isOrchestrationEnabled(agentId),
     crossProject: !tracked && isCrossProjectEnabled(agentId),
@@ -235,8 +236,12 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
  * group project's board.
  */
 export function holdsGrant(agentId: string, action: GrantAction, target: GrantCallTarget): boolean {
-  const caller = callerOf(agentId);
-  return evaluateGrant({ caller, action, target }, callerGrants(agentId)).outcome === 'allow';
+  return decideGrant(agentId, action, target).outcome === 'allow';
+}
+
+/** As holdsGrant, with the whole decision: allow, ask first, or refuse. */
+export function decideGrant(agentId: string, action: GrantAction, target: GrantCallTarget): GrantDecision {
+  return evaluateGrant({ caller: callerOf(agentId), action, target }, callerGrants(agentId));
 }
 
 /**

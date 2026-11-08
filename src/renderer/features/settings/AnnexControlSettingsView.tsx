@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
-import { useAnnexStore } from '../../stores/annexStore';
+import { useAnnexStore, subscribeAnnexDevices } from '../../stores/annexStore';
 import { Toggle } from '../../components/Toggle';
 import { PairedSatelliteList } from './PairedSatelliteList';
 import { PairingWizard, type RepairTarget } from './PairingWizard';
@@ -8,7 +8,8 @@ import { SettingsPage, SettingsSection, SettingsField } from './SettingsLayout';
 import { Button } from '../../components/Button';
 
 export function AnnexControlSettingsView() {
-  const satellites = useAnnexClientStore((s) => s.satellites);
+  const devices = useAnnexStore((s) => s.devices);
+  const loadDevices = useAnnexStore((s) => s.loadDevices);
   const loadSatellites = useAnnexClientStore((s) => s.loadSatellites);
   const scan = useAnnexClientStore((s) => s.scan);
   const forgetAllSatellites = useAnnexClientStore((s) => s.forgetAllSatellites);
@@ -23,6 +24,15 @@ export function AnnexControlSettingsView() {
     loadSatellites();
     loadAnnexSettings();
   }, [loadSatellites, loadAnnexSettings]);
+
+  // The devices this machine controls, from the one device list (#3057).
+  useEffect(() => {
+    loadDevices();
+    return subscribeAnnexDevices();
+  }, [loadDevices]);
+  // Older pairings with no role are listed on both pages, so either can pair them again.
+  // Network members are here too: this machine controls them (#3061).
+  const satellites = devices.filter((d) => d.role === 'satellite' || d.role === 'member' || d.role === null);
 
   return (
     <SettingsPage title="Annex control" description="Control other Clubhouse instances on your local network.">
@@ -61,7 +71,7 @@ export function AnnexControlSettingsView() {
           </p>
         ) : (
           <PairedSatelliteList
-            satellites={satellites}
+            devices={satellites}
             onPairAgain={(sat) => {
               setRepairTarget({ fingerprint: sat.fingerprint, alias: sat.alias });
               setShowPairing(true);

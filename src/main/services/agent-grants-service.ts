@@ -4,6 +4,9 @@
  * Dispatcher), a person's changes (agent-grants-store), and the rows to show.
  * A change reaches a running agent at its next call. Only the user's own
  * surfaces call this.
+ *
+ * The Dispatcher is one identity over two agents (#3036): its chat's id reads
+ * and changes the Dispatcher's own grants, the ones every action runs under.
  */
 
 import { applyGrantChanges, carriedGrants, shaped, grantKey, grantRows, isFixedGrant, normalizeGrantChanges, withGrantChange, withoutOwnChanges, withTemplateGrants, type AgentGrantsView, type GrantChange, type TemplateGrant } from '../../shared/agent-grant-changes';
@@ -15,7 +18,7 @@ import { getDurableConfig } from './agent-config';
 import { setOrchestrationPolicy } from './orchestration-policy';
 import { dropCallApprovalsFor } from './grant-requests';
 import { getAgentGrantChanges, updateAgentGrantChanges } from './agent-grants-store';
-import { isDispatcherAgentId } from './dispatcher/dispatcher-service';
+import { isDispatcherAgentId, resolveDispatcherIdentity } from './dispatcher/dispatcher-service';
 
 function factsOf(agentId: string, config: DurableAgentConfig) {
   const dispatcher = isDispatcherAgentId(agentId);
@@ -85,11 +88,13 @@ function viewOf(agentId: string, config: DurableAgentConfig): AgentGrantsView {
 }
 
 export async function readAgentGrants(projectPath: string, agentId: string): Promise<AgentGrantsView> {
+  ({ projectPath, agentId } = resolveDispatcherIdentity(projectPath, agentId));
   return viewOf(agentId, await configOf(projectPath, agentId));
 }
 
 /** The grants an agent holds now, defaults and changes together. */
 export async function effectiveAgentGrants(projectPath: string, agentId: string): Promise<Grant[]> {
+  ({ projectPath, agentId } = resolveDispatcherIdentity(projectPath, agentId));
   const config = await configOf(projectPath, agentId);
   return applyGrantChanges(defaultsFor(agentId, config), getAgentGrantChanges(agentId));
 }
@@ -100,6 +105,7 @@ export async function effectiveAgentGrants(projectPath: string, agentId: string)
  * allows, whose own setting would change nothing.
  */
 export async function setAgentGrant(projectPath: string, agentId: string, change: Omit<GrantChange, 'by' | 'at'>): Promise<AgentGrantsView> {
+  ({ projectPath, agentId } = resolveDispatcherIdentity(projectPath, agentId));
   const checked = normalizeGrantChanges({ changes: [{ action: change?.action, target: change?.target, mode: change?.mode }] })?.changes[0];
   if (!checked) throw new Error('Not a Clubhouse permission: an action, a target, and off, ask or allow');
   if (isFixedGrant(checked)) throw new Error('This permission is always on.');
@@ -123,6 +129,7 @@ export async function setAgentGrant(projectPath: string, agentId: string, change
 
 /** Reset to defaults: clears the person's changes, keeping what its template sets (#2971). */
 export async function resetAgentGrants(projectPath: string, agentId: string): Promise<AgentGrantsView> {
+  ({ projectPath, agentId } = resolveDispatcherIdentity(projectPath, agentId));
   const config = await configOf(projectPath, agentId);
   dropCallApprovalsFor(agentId);
   await updateAgentGrantChanges(agentId, withoutOwnChanges);

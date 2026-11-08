@@ -166,7 +166,7 @@ Every agent carries these definitions in its tool list, so they stay short: a te
 
 ## Superseded: project admin and scoped edits
 
-**Superseded by Clubhouse permissions (#2921).** What an agent may read or change through Clubhouse, on itself, its helpers, other agents, projects or the app, is now a grant: an action on a target, Off, Ask first or Allow, set per agent on its Clubhouse permissions page and checked on every call. There is no separate project admin, and "app-level settings stay out of scope even for an admin" no longer holds as written: an app settings write is the `settings.app.write` grant, which no agent holds by default (the Dispatcher's is Ask first). The proposal below is kept for its reasoning about which settings should stay with the user.
+**Superseded by Clubhouse permissions (#2921).** What an agent may read or change through Clubhouse, on itself, its helpers, other agents, projects or the app, is now a grant: an action on a target, Off, Ask first or Allow, set per agent on its Clubhouse permissions page and checked on every call. There is no separate project admin, and "app-level settings stay out of scope even for an admin" no longer holds as written: an app settings write is the `settings.app.write` grant, which no agent holds by default (the Dispatcher's is Ask first). The same goes for project defaults (`project.configure`) and for adding or opening a project (`project.add`, #3050): no agent holds either by default, and the Dispatcher's are Ask first. Reading a project's settings is `project.read`, which every agent holds on its own project and the Dispatcher on every project. The proposal below is kept for its reasoning about which settings should stay with the user.
 
 ### Project admin
 

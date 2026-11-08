@@ -10,7 +10,10 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('../services/annex-server', () => ({ closeSocketsUnlessController: vi.fn() }));
-vi.mock('../services/annex-peers', () => ({ listPeersForDisplay: vi.fn(() => []) }));
+vi.mock('../services/annex-peers', () => ({
+  listPeersForDisplay: vi.fn(() => []),
+  listPeers: vi.fn(() => [{ fingerprint: 'fp:member', role: 'member' }, { fingerprint: 'fp:phone', role: 'controller' }]),
+}));
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 
 vi.mock('../services/annex-client', () => ({
@@ -128,6 +131,9 @@ describe('annex-client-handlers', () => {
     const handler = handlers.get(IPC.ANNEX_CLIENT.FORGET_ALL_SATELLITES)!;
     handler({});
     expect(annexClient.forgetAllSatellites).toHaveBeenCalled();
+    // A forgotten member's own connections to this machine are cut too; a phone that controls it is left.
+    expect(annexServer.closeSocketsUnlessController).toHaveBeenCalledWith('fp:member');
+    expect(annexServer.closeSocketsUnlessController).not.toHaveBeenCalledWith('fp:phone');
   });
 
   // --- Input validation ---

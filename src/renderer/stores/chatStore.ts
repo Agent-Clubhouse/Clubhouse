@@ -229,6 +229,11 @@ export interface ChatViewState {
   level: PermissionLevel | null;
   model: string | null;
   /**
+   * The first model this session reported (#2790). A model that differs from
+   * it was changed in the session, which isn't saved for the next start.
+   */
+  startModel: string | null;
+  /**
    * The session said it runs the provider's default but doesn't know which
    * model that is yet (session_info `model: null`, #2293). Shown as "Default
    * model" until model_changed names it.
@@ -295,6 +300,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     cliVersion: null,
     level: null,
     model: null,
+    startModel: null,
     modelUnknown: false,
     effort: null,
     effortIsDefault: false,
@@ -567,6 +573,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         cliVersion: d.cliVersion ?? state.cliVersion,
         nativeSessionId: d.nativeSessionId ?? state.nativeSessionId,
         model: d.model ?? state.model,
+        startModel: d.model ?? null,
         // A new run says again whether its model is known.
         modelUnknown: false,
         level: d.level ?? state.level,
@@ -596,6 +603,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         nativeSessionId: d.nativeSessionId ?? state.nativeSessionId,
         // null: not known yet, so the last run's model doesn't stand in for it.
         model: d.model !== undefined ? d.model : state.model,
+        startModel: state.startModel ?? d.model ?? null,
         modelUnknown: d.model !== undefined ? d.model === null : state.modelUnknown,
         cliVersion: d.cliVersion ?? state.cliVersion,
         // Picker lists: present replaces (empty clears), absent leaves unchanged.
@@ -921,7 +929,8 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
     case 'mode_changed':
       return { ...state, level: event.data.level };
     case 'model_changed':
-      return { ...state, model: event.data.modelId, modelUnknown: false, effort: event.data.effort ?? null, effortIsDefault: event.data.effortIsDefault === true, effortReported: true };
+      // Some drivers name the opening model this way too (Codex), so the first one is the start.
+      return { ...state, model: event.data.modelId, startModel: state.startModel ?? event.data.modelId, modelUnknown: false, effort: event.data.effort ?? null, effortIsDefault: event.data.effortIsDefault === true, effortReported: true };
     case 'commands_available':
       return { ...state, commands: event.data.commands };
 

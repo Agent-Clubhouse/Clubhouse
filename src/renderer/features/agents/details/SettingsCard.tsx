@@ -24,7 +24,7 @@ import { Button } from '../../../components/Button';
 import { useEffectiveOrchestrators } from '../../../hooks/useEffectiveOrchestrators';
 import { useModelOptions } from '../../../hooks/useModelOptions';
 import { useContextWindowOptions } from '../../../hooks/useContextWindowOptions';
-import { ContextWindowSelect, contextSummary, contextWindowHelp, formatContextChoice } from '../ContextWindowField';
+import { ContextWindowSelect, contextSummary, contextWindowHelp, nowAndNextStart, pendingContextChoice, sessionModelLine } from '../ContextWindowField';
 import { useAgentSettingsPages } from '../agentSettingsPages';
 import { buildOrchestratorOptions } from '../orchestrator-options';
 import { useCliChangeConfirm } from '../useCliChangeConfirm';
@@ -217,10 +217,18 @@ export function SettingsCard(props: SettingsCardProps) {
   const { agent, chat, projectPath, provider } = props;
   const local = agent.kind === 'durable' && !isRemoteProjectId(agent.projectId) && !!projectPath;
   const { value: setup } = useManagedSetup(local ? projectPath : undefined, local ? agent.id : undefined);
+  // The saved model and context, for what the next start uses (#2790).
+  const { config } = useDurableConfig(local && setup ? projectPath : undefined, agent.id);
   if (!local || !setup || !projectPath) return <AgentSettingsCard {...props} />;
   const awake = agent.status !== 'sleeping' && agent.status !== 'error';
-  const runsOn = `${provider} · ${modelLabel(chat && awake ? chat.model : agent.model, awake ? chat : undefined)}`;
-  return <SetupCard agent={agent} projectPath={projectPath} setup={setup} runsOn={runsOn} />;
+  const session = chat && awake ? chat : undefined;
+  const modelNow = modelLabel(session ? session.model : agent.model, session);
+  const savedModel = config ? config.model : agent.model;
+  const model = sessionModelLine(session, modelNow, modelLabel(savedModel, session)) || modelNow;
+  const runsOn = `${provider} · ${model}`;
+  const saved = pendingContextChoice(config?.contextWindow, session?.contextLimits);
+  const context = nowAndNextStart(session ? contextSummary(session.contextLimits, session.usage.context?.size) : null, saved);
+  return <SetupCard agent={agent} projectPath={projectPath} setup={setup} runsOn={runsOn} context={context} />;
 }
 
 function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardProps) {
@@ -275,6 +283,10 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
   else runsIn = runtimeName(saved?.runtimeMode);
   const modelId = chat && !asleep ? chat.model : (saved ? saved.model : agent.model);
   const model = modelLabel(modelId, asleep ? undefined : chat);
+  // A model changed in the chat session isn't saved: the next start uses the saved one (#2790).
+  // Only an agent that starts again has a next start, so not a quick agent.
+  const savedModelId = saved ? saved.model : agent.model;
+  const modelRow = (!asleep && agent.kind === 'durable' && sessionModelLine(chat, model, modelLabel(savedModelId, chat))) || model;
   const savedLevel = recordAccess(saved ?? agent);
   // The level a chat session starts at: the saved one, or the nearest lower one chat has.
   const startLevel = savedLevel && chat && !asleep ? startableAccess(savedLevel, orchestrator, 'chat') : savedLevel;
@@ -331,6 +343,7 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
   const contextOptions = useContextWindowOptions(editing && open, projectPath, orchestrator, modelValue);
   // What the session reports now, kept apart from the saved next-start choice.
   const contextNow = !asleep && chat ? contextSummary(chat.contextLimits, chat.usage.context?.size) : null;
+  const contextRow = nowAndNextStart(contextNow, !asleep ? pendingContextChoice(saved?.contextWindow, chat?.contextLimits) : null);
 
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const { effectiveOrchestrators } = useEffectiveOrchestrators();
@@ -380,7 +393,7 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
       ) : undefined,
     }] : []),
     {
-      id: 'model', label: 'Model', editable: 'sleeping', value: model,
+      id: 'model', label: 'Model', editable: 'sleeping', value: modelRow,
       control: editing ? (
         <SelectControl
           label="Model"
@@ -397,8 +410,8 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
     },
     // Effort lives in the chat session; the composer chip changes it.
     ...(effort ? [{ id: 'effort', label: 'Effort', editable: 'never' as const, value: effort }] : []),
-    ...(contextNow ? [{ id: 'context-now', label: 'Context now', editable: 'never' as const, value: contextNow }] : []),
-    ...(saved?.contextWindow && !asleep ? [{ id: 'context-saved', label: 'Context next start', editable: 'never' as const, value: formatContextChoice(saved.contextWindow) }] : []),
+    // One Context row beside Model and Effort (#2790): what runs now, then a choice waiting for the next start.
+    ...(!editing && contextRow ? [{ id: 'context', label: 'Context', editable: 'never' as const, value: contextRow }] : []),
     ...(editing ? [{
       id: 'context', label: contextOptions?.label ?? 'Context', editable: 'sleeping' as const,
       control: (

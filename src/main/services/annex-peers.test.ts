@@ -25,6 +25,7 @@ import {
   listPeers, getPeer, isPairedPeer, addPeer, removePeer, removeAllPeers,
   updateLastSeen, checkBruteForce, recordFailedAttempt, recordSuccessfulAttempt, forgiveFailedAttempt,
   unlockPairing, isPairingLocked, resetForTests, peerNeedsPairing, listPeersForDisplay,
+  noteReached, setTypedHost,
 } from './annex-peers';
 import { app } from 'electron';
 
@@ -102,6 +103,31 @@ describe('annex-peers', () => {
       resetForTests();
       expect(listPeers()).toHaveLength(1);
       expect(getPeer('aa:bb:cc')).toBeTruthy();
+    });
+  });
+
+  describe('where a satellite is reached (#3058)', () => {
+    it('remembers the host it was reached at first, and its port, across a restart', () => {
+      addPeer({ ...makePeer('aa:bb:cc'), role: 'satellite', knownHosts: ['10.0.0.4', 'studio.local'], mainPort: 9000 });
+      noteReached('aa:bb:cc', 'Studio.local', 9443);
+      resetForTests();
+      expect(getPeer('aa:bb:cc')).toMatchObject({ knownHosts: ['studio.local', '10.0.0.4'], mainPort: 9443 });
+    });
+
+    it('ignores an unknown peer or an address with no port', () => {
+      addPeer(makePeer('aa:bb:cc'));
+      noteReached('nope', '10.0.0.4', 9443);
+      noteReached('aa:bb:cc', '10.0.0.4', 0);
+      expect(getPeer('aa:bb:cc')!.knownHosts).toBeUndefined();
+    });
+
+    it('sets and clears a typed host', () => {
+      addPeer(makePeer('aa:bb:cc'));
+      expect(setTypedHost('aa:bb:cc', 'studio.tail1234.ts.net')).toBe(true);
+      expect(getPeer('aa:bb:cc')!.typedHost).toBe('studio.tail1234.ts.net');
+      setTypedHost('aa:bb:cc', undefined);
+      expect(getPeer('aa:bb:cc')).not.toHaveProperty('typedHost');
+      expect(setTypedHost('nope', 'x')).toBe(false);
     });
   });
 

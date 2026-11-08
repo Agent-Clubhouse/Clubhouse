@@ -10,7 +10,11 @@ const cell = (fields: Partial<PresetCellView> = {}): PresetCellView => ({
 const SERVER_TIME = '2027-01-15T08:10:00.000Z';
 let providerQuota: QuotaView;
 
-function settings(hard: Partial<PresetCellView> = {}, revision = 'r1.0'): HelperRoutingSettings {
+function settings(
+  hard: Partial<PresetCellView> = {},
+  revision = 'r1.0',
+  bounds: { minimum?: Partial<PresetCellView>; maximum?: Partial<PresetCellView> } = {},
+): HelperRoutingSettings {
   return {
     revision,
     serverTime: SERVER_TIME,
@@ -21,7 +25,13 @@ function settings(hard: Partial<PresetCellView> = {}, revision = 'r1.0'): Helper
         autoEligible: true,
         quota: providerQuota,
         choices: { source: 'live', asOf: null, models: [{ id: 'opus', label: 'Opus', efforts: ['low', 'high'] }, { id: 'sonnet', label: 'Sonnet', efforts: ['medium'] }] },
-        cells: { easy: cell(), medium: cell(), hard: cell(hard) },
+        cells: {
+          minimum: cell({ follows: 'easy', ...bounds.minimum }),
+          easy: cell(),
+          medium: cell(),
+          hard: cell(hard),
+          maximum: cell({ follows: 'hard', ...bounds.maximum }),
+        },
       },
       'copilot-cli': { autoEligible: false, reason: 'auto_not_supported', quota: { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null }, cells: null },
     },
@@ -244,6 +254,63 @@ describe('HelperPresetsSection (#2671)', () => {
       fireEvent.click(await screen.findByTestId('helper-preset-claude-code-hard-reset'));
       await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith({ revision: 'r1.0', reset: { provider: 'claude-code', difficulty: 'hard' } }));
       expect(app().getHelperRouting).not.toHaveBeenCalledWith({ refresh: true });
+    });
+  });
+
+  describe('Minimum and maximum (#3044)', () => {
+    const select = (id: string) => screen.getByTestId(id) as HTMLSelectElement;
+
+    it('lists them around the difficulties, following Easy and Hard until one is picked', async () => {
+      render(<HelperPresetsSection />);
+      await screen.findByTestId('helper-presets-claude-code');
+      const rows = screen.getAllByTestId(/^helper-preset-claude-code-[a-z]+$/).map((row) => row.dataset.testid);
+      expect(rows).toEqual(['minimum', 'easy', 'medium', 'hard', 'maximum'].map((level) => `helper-preset-claude-code-${level}`));
+      expect(select('helper-preset-claude-code-minimum-model').value).toBe('');
+      expect(select('helper-preset-claude-code-minimum-model').selectedOptions[0].textContent).toBe('Same as Easy (Opus)');
+      expect(select('helper-preset-claude-code-maximum-model').selectedOptions[0].textContent).toBe('Same as Hard (Opus)');
+      expect(select('helper-preset-claude-code-minimum-effort').value).toBe('high');
+      expect((screen.getByTestId('helper-preset-claude-code-minimum-reset') as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.getByText(/Until you pick one, they use Easy and Hard/)).toBeTruthy();
+      // The difficulties have no follow choice.
+      expect([...select('helper-preset-claude-code-easy-model').options].map((o) => o.value)).toEqual(['opus', 'sonnet']);
+    });
+
+    it('picking a model saves the minimum as its own choice', async () => {
+      render(<HelperPresetsSection />);
+      fireEvent.change(await screen.findByTestId('helper-preset-claude-code-minimum-model'), { target: { value: 'sonnet' } });
+      await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith({
+        revision: 'r1.0', cells: [{ provider: 'claude-code', difficulty: 'minimum', model: 'sonnet', effort: null }],
+      }));
+    });
+
+    it('a level while following saves the followed model with it', async () => {
+      render(<HelperPresetsSection />);
+      fireEvent.change(await screen.findByTestId('helper-preset-claude-code-maximum-effort'), { target: { value: 'low' } });
+      await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith({
+        revision: 'r1.0', cells: [{ provider: 'claude-code', difficulty: 'maximum', model: 'opus', effort: 'low' }],
+      }));
+    });
+
+    it('a saved one shows its model, and Same as Easy or Reset puts it back', async () => {
+      const own = { minimum: { source: 'custom' as const, custom: { model: 'sonnet', effort: null }, effective: { model: 'sonnet', effort: null }, follows: undefined } };
+      app().getHelperRouting.mockResolvedValue(settings({}, 'r1.0', own));
+      render(<HelperPresetsSection />);
+      const model = await screen.findByTestId('helper-preset-claude-code-minimum-model') as HTMLSelectElement;
+      expect(model.value).toBe('sonnet');
+      expect(model.options[0].textContent).toBe('Same as Easy');
+      expect((screen.getByTestId('helper-presets-claude-code-reset') as HTMLButtonElement).disabled).toBe(false);
+      fireEvent.change(model, { target: { value: '' } });
+      await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith({ revision: 'r1.0', reset: { provider: 'claude-code', difficulty: 'minimum' } }));
+    });
+
+    it('says what is used when a saved maximum is no longer offered', async () => {
+      app().getHelperRouting.mockResolvedValue(settings({}, 'r1.0', {
+        maximum: { state: 'stale', staleReason: 'model_unavailable', source: 'custom', custom: { model: 'gone', effort: null }, fallback: 'builtin_preset' },
+      }));
+      render(<HelperPresetsSection />);
+      expect((await screen.findByTestId('helper-preset-claude-code-maximum-note')).textContent).toBe('No longer offered. Using opus until you change it.');
+      expect(select('helper-preset-claude-code-maximum-model').value).toBe('gone');
+      expect((screen.getByTestId('helper-preset-claude-code-maximum-reset') as HTMLButtonElement).disabled).toBe(false);
     });
   });
 

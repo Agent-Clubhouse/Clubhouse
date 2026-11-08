@@ -33,6 +33,8 @@ const NOT_SETTINGS = new Set([
   'actions.json',
   'action-history.json',
   'annex-ports.json',
+  // Annex Network membership state (removals, confirmations), kept by Clubhouse: not settings.
+  'annex-network.json',
   'finished-quick-agents.json',
   'project-state.json',
   'chat-cli-denylist.json',

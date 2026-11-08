@@ -56,7 +56,7 @@ async function processWorkspaceQueue(entries: RestartSessionEntry[]): Promise<vo
  */
 function resolveProjectId(projectPath: string, agentId: string): string {
   const dispatcher = useDispatcherStore.getState().state;
-  if (dispatcher?.agentId === agentId || (dispatcher?.path && sameProjectPath(dispatcher.path, projectPath))) {
+  if (dispatcher?.chatAgentId === agentId || (dispatcher?.chatPath && sameProjectPath(dispatcher.chatPath, projectPath))) {
     return DISPATCHER_PROJECT_ID;
   }
   const projects = useProjectStore.getState().projects;

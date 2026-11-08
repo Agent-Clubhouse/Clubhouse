@@ -85,7 +85,7 @@ function InputDialog({ prompt, defaultValue, onResolve }: InputDialogProps) {
           <button
             onClick={() => resolve(value)}
             data-testid="plugin-dialog-ok"
-            className="px-4 py-1.5 text-xs rounded-lg bg-ctp-accent text-ctp-base hover:opacity-90
+            className="px-4 py-1.5 text-xs rounded-lg bg-ctp-accent text-ctp-on-accent hover:opacity-90
               cursor-pointer transition-colors font-medium"
           >
             OK
@@ -157,7 +157,7 @@ function ConfirmDialog({ message, onResolve }: ConfirmDialogProps) {
             className={`px-4 py-1.5 text-xs rounded-lg cursor-pointer transition-colors font-medium ${
               isDestructive
                 ? 'bg-ctp-error text-ctp-base hover:opacity-90'
-                : 'bg-ctp-accent text-ctp-base hover:opacity-90'
+                : 'bg-ctp-accent text-ctp-on-accent hover:opacity-90'
             }`}
           >
             {isDestructive ? 'Delete' : 'Confirm'}
@@ -229,7 +229,7 @@ export function showConfirmDialog(message: string): { promise: Promise<boolean>;
 // ── ApprovalDialog ────────────────────────────────────────────────────
 
 const ACTION_STYLE_CLASSES: Record<NonNullable<ApprovalDialogAction['style']>, string> = {
-  primary: 'bg-ctp-accent text-ctp-base hover:opacity-90 font-medium',
+  primary: 'bg-ctp-accent text-ctp-on-accent hover:opacity-90 font-medium',
   danger: 'bg-ctp-error text-ctp-base hover:opacity-90 font-medium',
   default: 'text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0',
 };

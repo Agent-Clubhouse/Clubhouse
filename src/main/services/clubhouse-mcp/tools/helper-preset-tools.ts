@@ -39,8 +39,10 @@ export function registerHelperPresetTools(): void {
   registerGlobalTool(
     'read_helper_presets',
     {
-      description: 'Read the helper presets: for each CLI with presets and each difficulty (easy, medium, hard), the model and effort start_helper uses, '
-        + 'whether it is custom or built in, whether it is still valid, the choices, and the revision to send with a change. App-wide. Changes nothing.',
+      description: 'Read the helper presets: for each CLI with presets and each level, the model and effort it uses, '
+        + 'whether it is custom or built in, whether it is still valid, the choices, and the revision to send with a change. '
+        + 'Levels are easy, medium and hard (the difficulties start_helper takes), plus minimum and maximum, the cheapest and strongest choices. '
+        + 'An unset minimum or maximum uses easy or hard, shown by `follows`. App-wide. Changes nothing.',
       inputSchema: { type: 'object', properties: {} },
     },
     async () => {
@@ -54,8 +56,9 @@ export function registerHelperPresetTools(): void {
     'set_helper_presets',
     {
       description: 'Change or reset helper presets, app-wide. Needs the app settings permission. Send the revision you read; '
-        + 'a stale one changes nothing and returns the current values. cells: [{ provider, difficulty, model, effort }]; '
-        + 'reset: {} for all, { provider } or { provider, difficulty }.',
+        + 'a stale one changes nothing and returns the current values. cells: [{ provider, difficulty, model, effort }], '
+        + 'where difficulty is any level: minimum, easy, medium, hard or maximum; '
+        + 'reset: {} for all, { provider } or { provider, difficulty }. A reset minimum or maximum uses easy or hard again.',
       inputSchema: {
         type: 'object',
         properties: {

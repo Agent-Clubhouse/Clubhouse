@@ -15,6 +15,11 @@ import type { OrchestrationControl } from './orchestration-policy';
  */
 export interface GrantCallerFacts {
   dispatcher: boolean;
+  /**
+   * The Dispatcher's chat (#3036). It has no permissions of its own: it reads,
+   * and hands every action to the Dispatcher. Its grants replace all others.
+   */
+  dispatcherChat?: boolean;
   /** Has an orchestrator. */
   helper: boolean;
   /** "Let this agent orchestrate" is on. */
@@ -59,13 +64,33 @@ const ANY_PROJECT: GrantTarget = { kind: 'project', project: 'any' };
 const APP: GrantTarget = { kind: 'app' };
 const ANY: GrantTarget = { kind: 'any' };
 
+/**
+ * The Dispatcher's chat (#3036): reading only, `agent.message` on itself,
+ * which is how it hands work to the Dispatcher (one identity, two agents), and
+ * `agent.wake` on the Dispatcher alone, so a hand-off wakes it (#3037).
+ * Nothing that acts on another agent, a project, an Action or a setting.
+ */
+function dispatcherChatGrants(): Grant[] {
+  const structural = g('structural');
+  return [
+    structural('agent.read', SELF), structural('agent.read', CONNECTED), structural('agent.read', ANY),
+    structural('agent.message', SELF),
+    structural('agent.wake', { kind: 'connected', onlyDispatcher: true }),
+    structural('project.read', ANY_PROJECT),
+    structural('settings.app.read', APP), structural('models.read', APP), structural('action.read', APP),
+  ];
+}
+
 export function defaultGrants(facts: GrantCallerFacts): Grant[] {
+  if (facts.dispatcherChat) return dispatcherChatGrants();
   const every = g('every_agent');
   const structural = g('structural');
   const out: Grant[] = [
     every('agent.read', SELF), every('agent.display', SELF),
     every('agent.read', CONNECTED), every('agent.message', CONNECTED),
     every('agent.reset', { kind: 'connected', excludeDispatcher: true }),
+    // A message to a sleeping Dispatcher wakes it to deliver the message (#3037).
+    every('agent.wake', { kind: 'connected', onlyDispatcher: true }),
     every('browser.read', CONNECTED), every('browser.act', CONNECTED),
     every('project.read', OWN_PROJECT), every('project.display', OWN_PROJECT),
     every('group_project.read', { kind: 'group_project', role: 'member' }),
@@ -103,8 +128,11 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
     for (const a of ['agent.read', 'agent.display', 'agent.grant', 'agent.restart', 'library.read', 'library.write', 'template.write', 'template.push', 'action.read', 'action.write', 'action.run'] as const) {
       out.push(structural(a, ANY));
     }
+    // Creating agents and connections replaces #2576's no-create rule (#3034, #3050). Adding or opening
+    // a project, changing project defaults and changing app settings ask first.
     out.push(
       structural('agent.create', ANY_PROJECT), structural('project.read', ANY_PROJECT), structural('project.display', ANY_PROJECT),
+      structural('project.add', ANY_PROJECT, 'ask'),
       structural('project.configure', ANY_PROJECT, 'ask'), structural('settings.app.write', APP, 'ask'),
     );
   }

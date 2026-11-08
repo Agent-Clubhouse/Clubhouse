@@ -9,6 +9,8 @@ import * as path from 'path';
 import { app } from 'electron';
 import { annexEphemeralSession } from './annex-network-profile';
 import { appLog } from './log-service';
+import { devicesChanged } from './annex-device-signal';
+import { rememberHost } from './annex-reach';
 import type { AnnexPeer, AnnexPeerListing } from '../../shared/types';
 
 // ---------------------------------------------------------------------------
@@ -62,6 +64,7 @@ function loadPeers(): AnnexPeer[] {
 function savePeers(peers: AnnexPeer[]): void {
   const ephemeral = annexEphemeralSession();
   cachedPeers = peers;
+  devicesChanged();
   if (ephemeral) return;
   // Readable by this user only: the file holds the certificates paired devices are trusted by.
   const target = getPeersPath();
@@ -97,7 +100,17 @@ export function isPairedPeer(fingerprint: string): boolean {
  */
 export function peerNeedsPairing(peer: AnnexPeer): boolean {
   if (!peer.role || !peer.tlsCertificateFingerprint) return true;
-  return peer.role === 'satellite' && !peer.tlsCertificatePem;
+  return controlledFromHere(peer) && !peer.tlsCertificatePem;
+}
+
+/** It may control this machine: a controller, or a fellow network member (#3061). */
+export function controlsThisMachine(peer: Pick<AnnexPeer, 'role'> | undefined | null): boolean {
+  return peer?.role === 'controller' || peer?.role === 'member';
+}
+
+/** This machine connects to it: a satellite, or a fellow network member (#3061). */
+export function controlledFromHere(peer: Pick<AnnexPeer, 'role'> | undefined | null): boolean {
+  return peer?.role === 'satellite' || peer?.role === 'member';
 }
 
 export function addPeer(peer: AnnexPeer): void {
@@ -128,6 +141,31 @@ export function removePeer(fingerprint: string): boolean {
 export function removeAllPeers(): void {
   savePeers([]);
   appLog('core:annex', 'info', 'All peers removed');
+}
+
+/**
+ * Remembers where a satellite was just reached (#3058): the host goes first in
+ * its known hosts, and the port is kept, so it can be found after a restart.
+ */
+export function noteReached(fingerprint: string, host: string, port: number): void {
+  const peers = loadPeers();
+  const peer = peers.find((p) => p.fingerprint === fingerprint);
+  if (!peer || !host || !(port > 0)) return;
+  peer.knownHosts = rememberHost(peer.knownHosts, host);
+  peer.mainPort = port;
+  peer.lastSeen = new Date().toISOString();
+  savePeers(peers);
+}
+
+/** Sets or clears (`undefined`) the host a person typed for a satellite. Returns whether the peer exists. */
+export function setTypedHost(fingerprint: string, typedHost: string | undefined): boolean {
+  const peers = loadPeers();
+  const peer = peers.find((p) => p.fingerprint === fingerprint);
+  if (!peer) return false;
+  if (typedHost) peer.typedHost = typedHost;
+  else delete peer.typedHost;
+  savePeers(peers);
+  return true;
 }
 
 export function updateLastSeen(fingerprint: string): void {

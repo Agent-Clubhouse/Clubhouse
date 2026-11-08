@@ -57,12 +57,13 @@ function BuiltFrom({ templateName, changes }: { templateName: string | null; cha
 }
 
 /** The rows, read only while the card is open. */
-function SetupRows({ setup, templateName, templateChange, runsOn, changes }: {
+function SetupRows({ setup, templateName, templateChange, runsOn, context, changes }: {
   setup: ManagedAgentSetup;
   templateName: string | null;
   /** Who last changed the template, when not the person (D90). */
   templateChange: string | null;
   runsOn: string;
+  context: string | null;
   changes: string[] | null;
 }) {
   const skills = useManagedParts('skill');
@@ -84,6 +85,7 @@ function SetupRows({ setup, templateName, templateChange, runsOn, changes }: {
       <CardRow label="Skills" labelWidth="wide" testId="details-setup-skills"><NameList ids={setup.skills} parts={skills.value} /></CardRow>
       <CardRow label="MCP servers" labelWidth="wide" testId="details-setup-mcp"><NameList ids={setup.mcps} parts={mcps.value} /></CardRow>
       <CardRow label="Runs on" labelWidth="wide" testId="details-setup-runs-on">{runsOn}</CardRow>
+      {context && <CardRow label="Context" labelWidth="wide" testId="details-setup-context">{context}</CardRow>}
       {changes && (
         <CardRow label="Waiting" labelWidth="wide" testId="details-setup-waiting">
           <span className="flex flex-col text-ctp-warning">
@@ -95,12 +97,14 @@ function SetupRows({ setup, templateName, templateChange, runsOn, changes }: {
   );
 }
 
-export function SetupCard({ agent, projectPath, setup, runsOn }: {
+export function SetupCard({ agent, projectPath, setup, runsOn, context = null }: {
   agent: Agent;
   projectPath: string;
   setup: ManagedAgentSetup;
-  /** "Claude Code · Opus 5.5". */
+  /** "Claude Code · Opus 5.5", or with a model changed in the session, "… Opus 5.5. Next start: Sonnet 4.5". */
   runsOn: string;
+  /** What the session runs with and any choice waiting for the next start (#2790). Null hides the row. */
+  context?: string | null;
 }) {
   const open = useAgentDetailsStore((s) => s.settingsOpen);
   const setOpen = useAgentDetailsStore((s) => s.setSettingsOpen);
@@ -131,7 +135,7 @@ export function SetupCard({ agent, projectPath, setup, runsOn }: {
 
   return (
     <DetailsCard id="settings" title="Setup" summary={summary} open={open} onToggle={() => setOpen(!open)}>
-      <SetupRows setup={setup} templateName={templateName} templateChange={templateChange} runsOn={runsOn} changes={changes} />
+      <SetupRows setup={setup} templateName={templateName} templateChange={templateChange} runsOn={runsOn} context={context} changes={changes} />
       {setup.updatedBy && <CardNote><span data-testid="details-setup-changed">{changedLine(setup.updatedAt, setup.updatedBy)}</span></CardNote>}
       <span role="status" className="sr-only" data-testid="details-setup-live">{pending ? PENDING_RESTART_NOTE : waiting ? SETUP_WAITING_NOTE : ''}</span>
       {(waiting || pending) && <CardNote><span data-testid="details-setup-note">{pending ? PENDING_RESTART_NOTE : SETUP_WAITING_NOTE}</span></CardNote>}
@@ -145,6 +149,8 @@ export function SetupCard({ agent, projectPath, setup, runsOn }: {
       {dismissError && <CardNote><span className="text-ctp-error" role="alert">{dismissError}</span></CardNote>}
       <div className="pr-3.5 pl-[33px] pt-1 flex items-center gap-1.5">
         <Button kind="ghost" onClick={() => openAgentSettingsOn(agent.id, 'instructions')} data-testid="details-setup-open-builder">Open builder</Button>
+        {/* Model, effort and context are changed on the agent's Settings page; the card edits nothing. */}
+        <Button kind="ghost" onClick={() => openAgentSettingsOn(agent.id, 'settings')} data-testid="details-setup-open-settings">Model and context</Button>
         {waiting && (
           <Button kind="ghost" onClick={() => restart({ fresh: !!status?.cliChanged })} disabled={busy} data-testid="details-setup-restart">
             {busy ? 'Restarting' : 'Restart'}

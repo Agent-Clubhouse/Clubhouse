@@ -110,6 +110,9 @@ describe('tool grant declarations (#2967)', () => {
       list_models: models.read on app
       list_agents: agent.read on connected
       inspect_helper: agent.read on agent_arg
+      start_work: agent.message on self
+      read_memory: agent.read on self
+      tell_user: user.notify on app
       update_project: project.display on project_arg
       update_agent: agent.display on agent_arg
       list_settings: settings.app.read on app

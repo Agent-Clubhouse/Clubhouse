@@ -16,6 +16,10 @@ import {
   isPresetModel,
   minimalRouting,
   normalizeSavedPresets,
+  AUTO_LEVELS,
+  AUTO_LEVEL_FOLLOWS,
+  isAutoLevel,
+  isHelperDifficulty,
   quotaRefetchDelaySeconds,
   routingLabel,
   type HelperRouting,
@@ -48,6 +52,22 @@ describe('helper routing', () => {
       'copilot-cli': { easy: { model: 'x', effort: null } },
     })).toEqual({ 'claude-code': { hard: { model: 'opus', effort: 'max' } }, 'codex-cli': { hard: { model: 'y', effort: null } } });
     for (const raw of [null, 'x', [], 3]) expect(normalizeSavedPresets(raw)).toEqual({});
+  });
+
+  it('keeps a valid minimum and maximum, and drops a bad one, like any level (#3044)', () => {
+    expect(normalizeSavedPresets({
+      'claude-code': { minimum: { model: 'haiku', effort: null }, maximum: { model: 'opus', effort: 'BAD;' } },
+      'codex-cli': { maximum: { model: 'gpt-6.1-sol', effort: 'xhigh' }, minimum: { model: '-c' } },
+    })).toEqual({ 'claude-code': { minimum: { model: 'haiku', effort: null } }, 'codex-cli': { maximum: { model: 'gpt-6.1-sol', effort: 'xhigh' } } });
+  });
+
+  it('orders the levels cheapest first, and keeps start_helper\'s difficulties as they were (#3044)', () => {
+    expect(AUTO_LEVELS).toEqual(['minimum', 'easy', 'medium', 'hard', 'maximum']);
+    expect(HELPER_DIFFICULTIES).toEqual(['easy', 'medium', 'hard']);
+    expect(AUTO_LEVEL_FOLLOWS).toEqual({ minimum: 'easy', maximum: 'hard' });
+    expect(isAutoLevel('minimum')).toBe(true);
+    expect(isAutoLevel('extreme')).toBe(false);
+    expect(isHelperDifficulty('minimum')).toBe(false);
   });
 
   it('accepts ids a CLI lists, and nothing that could be an argument or shell syntax', () => {

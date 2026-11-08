@@ -18,6 +18,37 @@ export function isHelperDifficulty(value: unknown): value is HelperDifficulty {
   return (HELPER_DIFFICULTIES as readonly unknown[]).includes(value);
 }
 
+/**
+ * Auto's levels (#3044): the three difficulties, plus a minimum and a maximum
+ * that a person maps per provider like the others. Minimum is the cheapest
+ * level, for small background steps; maximum the strongest. They are mapping
+ * levels only: `start_helper`'s `difficulty` still takes the three difficulties.
+ */
+export const AUTO_LEVELS = ['minimum', 'easy', 'medium', 'hard', 'maximum'] as const;
+export type AutoLevel = (typeof AUTO_LEVELS)[number];
+
+export const AUTO_BOUND_LEVELS = ['minimum', 'maximum'] as const;
+export type AutoBoundLevel = (typeof AUTO_BOUND_LEVELS)[number];
+
+/**
+ * What an unset minimum or maximum uses: the nearest difficulty, as that level
+ * resolves (the person's choice, else its built-in). So they have no built-in
+ * models of their own, and an app that never set them behaves as before. A
+ * saved minimum or maximum that is no longer offered falls back the same way.
+ */
+export const AUTO_LEVEL_FOLLOWS: Readonly<Record<AutoBoundLevel, HelperDifficulty>> = {
+  minimum: 'easy',
+  maximum: 'hard',
+};
+
+export function isAutoLevel(value: unknown): value is AutoLevel {
+  return (AUTO_LEVELS as readonly unknown[]).includes(value);
+}
+
+export function isAutoBoundLevel(value: unknown): value is AutoBoundLevel {
+  return (AUTO_BOUND_LEVELS as readonly unknown[]).includes(value);
+}
+
 /** Recorded on each decision, so telemetry can tell which values produced it. */
 export const HELPER_ROUTING_POLICY_VERSION = 2;
 
@@ -56,8 +87,12 @@ export const BUILTIN_PRESETS: Readonly<Record<PresetProvider, ProviderPresets>> 
   },
 };
 
-/** The user's overrides. Only what differs from a built-in is kept. */
-export type SavedPresets = Partial<Record<PresetProvider, Partial<Record<HelperDifficulty, PresetCell>>>>;
+/**
+ * The user's overrides. Only what differs from a built-in is kept. Minimum and
+ * maximum have no built-in, so a saved one is kept as chosen until it's reset.
+ * Files from before #3044 have only the difficulties, and read unchanged.
+ */
+export type SavedPresets = Partial<Record<PresetProvider, Partial<Record<AutoLevel, PresetCell>>>>;
 
 /** A model id as a CLI's list gives it: no spaces or shell syntax, since it reaches CLI arguments. */
 export function isPresetModel(value: unknown): value is string {
@@ -71,12 +106,12 @@ export function normalizeSavedPresets(raw: unknown): SavedPresets {
   for (const provider of PRESET_PROVIDERS) {
     const cells = (raw as Record<string, unknown>)[provider];
     if (!cells || typeof cells !== 'object' || Array.isArray(cells)) continue;
-    for (const difficulty of HELPER_DIFFICULTIES) {
-      const cell = (cells as Record<string, unknown>)[difficulty] as Partial<PresetCell> | undefined;
+    for (const level of AUTO_LEVELS) {
+      const cell = (cells as Record<string, unknown>)[level] as Partial<PresetCell> | undefined;
       if (!cell || !isPresetModel(cell.model)) continue;
       const effort = cell.effort === null || cell.effort === undefined ? null : cell.effort;
       if (effort !== null && !isEffortValue(effort)) continue;
-      (out[provider] ??= {})[difficulty] = { model: cell.model, effort };
+      (out[provider] ??= {})[level] = { model: cell.model, effort };
     }
   }
   return out;
@@ -252,7 +287,7 @@ export function describeRouting(routing: HelperRouting): string {
 
 // ── The settings ─────────────────────────────────────────────────────────
 
-/** One provider and difficulty, as Settings and a phone show it. */
+/** One provider and level, as Settings and a phone show it. */
 export interface PresetCellView {
   /** What a start uses now, or null when nothing valid is left and the start is refused. */
   effective: PresetCell | null;
@@ -261,8 +296,14 @@ export interface PresetCellView {
   staleReason?: PresetStaleReason;
   fallback?: HelperRoutingFallback;
   custom: PresetCell | null;
+  /** For minimum and maximum, the built-in of the difficulty they follow. */
   builtin: PresetCell;
   editable: boolean;
+  /**
+   * Minimum and maximum only, while they have no usable choice of their own:
+   * the difficulty whose cell is used instead (see AUTO_LEVEL_FOLLOWS).
+   */
+  follows?: HelperDifficulty;
 }
 
 export interface PresetChoice {
@@ -276,7 +317,8 @@ export type ProviderRoutingView =
     autoEligible: true;
     quota: QuotaView;
     choices: { source: 'live' | 'fallback'; asOf: string | null; models: PresetChoice[] };
-    cells: Record<HelperDifficulty, PresetCellView>;
+    /** Every Auto level. A client from before #3044 reads only the difficulties. */
+    cells: Record<AutoLevel, PresetCellView>;
   }
   | { autoEligible: false; reason: 'auto_not_supported'; quota: QuotaView; cells: null };
 
@@ -314,8 +356,9 @@ export interface HelperRoutingReadOptions {
 export interface HelperRoutingUpdate {
   /** The revision the change was made from. */
   revision: string;
+  /** `difficulty` takes any Auto level, minimum and maximum included. */
   cells?: Array<{ provider: string; difficulty: string; model: string; effort: string | null }>;
-  /** Back to the built-ins: one cell, one provider, or `{}` for all. */
+  /** Back to the built-ins: one cell, one provider, or `{}` for all. A reset minimum or maximum follows its difficulty again. */
   reset?: { provider?: string; difficulty?: string };
   /** `cli: "auto"`, at the write's scope: a boolean app-wide, `off` or null for a project. */
   auto?: boolean | 'off' | null;

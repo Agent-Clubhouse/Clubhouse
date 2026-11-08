@@ -486,7 +486,7 @@ export function QuestionCard({ request, onAnswer, busy }: QuestionCardProps) {
             type="button"
             disabled={!complete || sent}
             onClick={() => submit()}
-            className="ml-auto h-7 px-3 rounded-md bg-ctp-accent text-ctp-crust text-[12px] font-medium disabled:opacity-40"
+            className="ml-auto h-7 px-3 rounded-md bg-ctp-accent text-ctp-on-accent text-[12px] font-medium disabled:opacity-40"
           >
             Send answer
           </button>

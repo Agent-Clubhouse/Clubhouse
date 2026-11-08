@@ -24,7 +24,12 @@ import { useAgentReview } from '../review/useAgentReview';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { PermissionCard, QuestionCard } from './ApprovalDock';
 import { XIcon } from './icons';
-import { Composer, LevelPill, QueueList, TaskList, type ComposerLayout } from './Composer';
+import { Composer, LevelPill, QueueList, TaskList, type ComposerContext, type ComposerLayout } from './Composer';
+import { contextSummary, pendingContextChoice } from '../ContextWindowField';
+import { useDurableConfig } from '../details/useDurableConfig';
+import { openAgentSettingsOn } from '../agentSettingsPages';
+import { useProjectStore } from '../../../stores/projectStore';
+import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
 import { useNarrow, useShortWindow } from '../pane/useNarrow';
 import { useChatActions, useChatAttachments, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, useEarlierHistory, type ChatActions } from './useChatSession';
 import { buildAgentMap, commandForRequest, diffsForRequest, implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
@@ -100,7 +105,7 @@ function LoginBanner({ state, onSwitchToTerminal }: { state: ChatViewState; onSw
         <button
           type="button"
           onClick={onSwitchToTerminal}
-          className="h-7 px-2.5 rounded-md bg-ctp-accent text-ctp-crust text-[12px] font-medium"
+          className="h-7 px-2.5 rounded-md bg-ctp-accent text-ctp-on-accent text-[12px] font-medium"
         >
           Switch to CLI to log in
         </button>
@@ -118,12 +123,29 @@ function PlanHandoff({ state, onImplement }: { state: ChatViewState; onImplement
       <button
         type="button"
         onClick={() => onImplement(level)}
-        className="h-7 px-2.5 rounded-md bg-ctp-accent text-ctp-crust text-[12px] font-medium"
+        className="h-7 px-2.5 rounded-md bg-ctp-accent text-ctp-on-accent text-[12px] font-medium"
       >
         Switch to {LEVEL_LABELS[level]} and implement
       </button>
     </div>
   );
+}
+
+/**
+ * The context the composer shows beside Model and Effort (#2790): what the
+ * session reports, and a saved choice for the next start. Only a local durable
+ * agent has a saved choice, and a way to change it.
+ */
+function useComposerContext(agent: Agent, state: ChatViewState, view: ChatViewContext): ComposerContext | undefined {
+  const local = agent.kind === 'durable' && !isRemoteProjectId(agent.projectId);
+  const projectPath = useProjectStore((s) => (local ? s.projects.find((p) => p.id === agent.projectId)?.path : undefined));
+  const { config } = useDurableConfig(projectPath, agent.id);
+  const now = contextSummary(state.contextLimits, state.usage.context?.size);
+  const next = pendingContextChoice(config?.contextWindow, state.contextLimits);
+  if (!now && !next) return undefined;
+  // The Settings page takes a context change while a managed agent runs, and only the main window shows it.
+  const canOpen = view === 'main' && !!projectPath && !!config?.managed;
+  return { now, next, ...(canOpen && { onOpen: () => openAgentSettingsOn(agent.id, 'settings') }) };
 }
 
 export function ChatViewBody({ agent, state, actions, loading, onSwitchToTerminal, switching, context = 'main', onShowEarlier, onBrowseHistory }: ChatViewBodyProps) {
@@ -137,6 +159,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   const questionBusy = useAnswering(agent.id, question?.requestId ?? '');
   const plan = permission ? planForRequest(state.items, permission) : undefined;
   const ended = isSessionEnded(state);
+  const composerContext = useComposerContext(agent, state, context);
   const rootRef = useRef<HTMLDivElement>(null);
   const columnRef = useRef<HTMLDivElement>(null);
   // The composer fits the transcript column, which the details column narrows.
@@ -272,6 +295,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           onStop={() => { void actions.interrupt(); }}
           onLevelChange={(l) => { void actions.setLevel(l); }}
           onModelChange={actions.setModel ? (m, e) => { void actions.setModel?.(m, e); } : undefined}
+          context={composerContext}
           layout={composerLayout}
         />
       </>

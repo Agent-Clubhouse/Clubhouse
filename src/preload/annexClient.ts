@@ -83,6 +83,9 @@ export const annexClient = {
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.GP_SET_POLLING, satelliteId, groupProjectId, enabled),
   forgetSatellite: (fingerprint: string) =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.FORGET_SATELLITE, fingerprint),
+  /** A host name or address to reach a satellite at, such as its tailnet name; empty clears it (#3058). */
+  setSatelliteHost: (fingerprint: string, host: string): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke(IPC.ANNEX_CLIENT.SET_SATELLITE_HOST, fingerprint, host),
   forgetAllSatellites: () =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.FORGET_ALL_SATELLITES),
   getDiscovered: () =>

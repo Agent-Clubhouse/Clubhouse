@@ -12,10 +12,10 @@ The rules, in short:
 | Trigger | Linux + Windows | macOS |
 |---|---|---|
 | PR, docs only | nothing (`paths-ignore`) | nothing |
-| PR, code | lint; workflow lint (actionlint); Codex schema drift; typecheck + API surface (one Linux job); unit tests (2 shards per OS); Copilot SDK chunk (one job per OS); **one build per OS, then E2E (3 shards per OS), Annex E2E, Chat E2E and Stable-mode E2E from that build** | **macOS unit** (~2.5 min), plus **macOS build + E2E smoke** (~9 min) only if the change touches packaging, dependencies or window/keyboard chrome |
+| PR, code | lint; workflow lint (actionlint); Codex schema drift; typecheck + API surface (one Linux job); unit tests (2 shards per OS); Copilot SDK chunk (one job per OS); **one build per OS, then E2E (3 shards per OS), Annex E2E, Chat E2E, Stable-mode E2E and Classic layout E2E from that build** | **macOS unit** (~2.5 min), plus **macOS build + E2E smoke** (~9 min) only if the change touches packaging, dependencies or window/keyboard chrome |
 | PR touching only unit tests | lint, workflow lint, typecheck, unit | macOS unit |
 | Dependabot PR | as a code PR, plus the Linux package smoke test | as a code PR. Electron and native-module bumps trigger macOS build |
-| `full-ci` label, manual dispatch | everything | everything (unit, build, sharded E2E, Annex E2E), except Chat E2E and Stable-mode E2E, which stay on Linux and Windows |
+| `full-ci` label, manual dispatch | everything | everything (unit, build, sharded E2E, Annex E2E), except Chat E2E, Stable-mode E2E and Classic layout E2E, which stay on Linux and Windows |
 | Push to `main` | everything, plus the Linux package smoke test | macOS unit, plus macOS build if the push is macOS-relevant |
 | Daily, 07:00 UTC | everything | macOS unit and macOS build. This catches runner-image and Xcode drift that no change would trigger, for about 12 macOS minutes a day. |
 | `stable-candidate.yml`, dispatched by hand | Linux and Windows package and launch | macOS package and launch. Nothing else runs, and nothing in Validate starts it |
@@ -100,6 +100,7 @@ The table below shows where every behaviour the old macOS legs tested is covered
 | (new) Rich chat content and chat UX specs, `e2e/chat-rich` (#2480) | Linux and Windows Chat E2E, every PR; never macOS, not even on `full-ci` | Paths, pdf.js, media playback and IPC have no darwin branch; see docs/testing/chat-e2e-plan.md |
 | (new) Stable mode, `e2e/stable-mode.spec.ts` | Linux and Windows Stable-mode E2E, every PR; never macOS, not even on `full-ci` | Preview off and on, with no saved flags and with the saved state a beta leaves behind, through `CLUBHOUSE_TEST_STABLE_BUILD`. It runs unpackaged, so it proves the gates and not a packaged build. |
 | (new) Layout default, `e2e/layout-default.spec.ts` | In the same Stable-mode E2E job | Which layout each saved state starts on, the Display toggle across relaunches, and what a stable upgrader keeps. This build writes the state and reads it back, so no released build is upgraded. Specs that use legacy selectors pin `newChrome: false`. Its last group is a smoke of the default layout, on one launch: sidebar, New agent page, settings and command palette. That's thinner than the classic specs it sits beside. |
+| (new) Classic layout, `e2e/classic-specs.mjs` (#2843) | Linux and Windows Classic layout E2E, every PR; never macOS | Specs launch on the new layout. This job sets `CLUBHOUSE_E2E_LAYOUT=classic`, runs only the list in `e2e/classic-specs.mjs`, and launches default to classic. A spec moved to the new layout stays in the list until its new-layout run is stable, and the small set that stays on classic ends up here. `test/e2e-classic-layout.test.ts` keeps the files that still pin `newChrome: false` to a listed set. |
 
 The one narrowing: a change that touches none of the triggers can't break the macOS-specific UI and packaging checks by construction. Even so, if a runner image or Xcode update changes behaviour, the daily run surfaces it within a day, and `full-ci` runs the complete macOS matrix on demand.
 
@@ -107,7 +108,7 @@ The one narrowing: a change that touches none of the triggers can't break the ma
 
 The E2E specs launch `.webpack/<arch>/main` with Electron from `node_modules` (`e2e/launch.ts`). Forge rebuilds no native modules (`rebuildConfig.onlyModules` is empty, and node-pty ships N-API prebuilds). So the `build` job runs `electron-forge package` once per OS and uploads `.webpack/` as an artifact.
 
-The three E2E shards, the Annex E2E job, the Chat E2E job and the Stable-mode E2E job for that OS each run `npm ci`, download the artifact and run. The sharded E2E job skips `e2e/chat-rich` and the specs with their own jobs (`PLAYWRIGHT_IGNORE_CHAT_RICH`), so the chat specs add a parallel job instead of lengthening a shard. Before, every E2E and Annex E2E job packaged the app itself.
+The three E2E shards, the Annex E2E job, the Chat E2E job, the Stable-mode E2E job and the Classic layout E2E job for that OS each run `npm ci`, download the artifact and run. The sharded E2E job skips `e2e/chat-rich` and the specs with their own jobs (`PLAYWRIGHT_IGNORE_CHAT_RICH`), so the chat specs add a parallel job instead of lengthening a shard. Before, every E2E and Annex E2E job packaged the app itself.
 
 ## Caching and skipped downloads
 

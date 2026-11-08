@@ -13,7 +13,7 @@ import { pluginHotkeyRegistry } from '../../plugins/plugin-hotkeys';
 import { pluginCommandRegistry } from '../../plugins/plugin-commands';
 import { CATEGORY, type CommandItem } from './command-registry';
 import { useSettingsCategories } from '../../panels/AccessoryPanel';
-import { openNewAgentOrDialog } from '../../chrome/startPage';
+import { openNewAgentOrDialog, openQuickPrompt } from '../../chrome/startPage';
 import { isNewChromeEnabled } from '../../chrome/chromeFlag';
 import { useChromeStore } from '../../chrome/chromeStore';
 import { agentDot, groupProjectAgents } from '../../chrome/sidebar/treeModel';
@@ -448,7 +448,8 @@ export function useCommandSource(): CommandItem[] {
       category: CATEGORY.commands,
       shortcut: getShortcut(shortcuts, isNewChromeEnabled() ? 'open-quick-agent' : 'new-quick-agent'),
       keywords: ['agent', 'mission', 'quick'],
-      execute: () => openNewAgentOrDialog('quick'),
+      // The same as its shortcut: ⌘N's one-line prompt in the new layout (#2812).
+      execute: () => openQuickPrompt(),
     });
     items.push({
       id: 'action:add-project',

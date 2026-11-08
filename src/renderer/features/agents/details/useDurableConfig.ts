@@ -42,12 +42,19 @@ export function useDurableConfig(projectPath: string | undefined, agentId: strin
   useEffect(() => {
     if (!projectPath || !key) return;
     let alive = true;
-    Promise.resolve().then(() => window.clubhouse.agent.getDurableConfig(projectPath, agentId)).then(
-      (config) => { if (alive) setState({ key, config: (config as DurableAgentConfig | null) ?? null, loaded: true }); },
-      // telemetry-exempt: the rows show defaults and the full settings page still works.
-      () => { if (alive) setState({ key, config: null, loaded: true }); },
-    );
-    return () => { alive = false; };
+    let seq = 0;
+    const read = () => {
+      const id = ++seq;
+      Promise.resolve().then(() => window.clubhouse.agent.getDurableConfig(projectPath, agentId)).then(
+        (config) => { if (alive && id === seq) setState({ key, config: (config as DurableAgentConfig | null) ?? null, loaded: true }); },
+        // telemetry-exempt: the rows show defaults and the full settings page still works.
+        () => { if (alive && id === seq) setState({ key, config: null, loaded: true }); },
+      );
+    };
+    read();
+    // A managed agent's settings changed somewhere else (its Settings page, the phone): read again (#2790).
+    const off = window.clubhouse.managed?.onChanged?.(read);
+    return () => { alive = false; off?.(); };
   }, [projectPath, agentId, key]);
 
   const current = state.key === key ? state : null;

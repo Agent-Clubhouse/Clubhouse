@@ -11,7 +11,7 @@ The quickest way is the project's start page:
 3. Pick **Runs on** and **Model** if you want something other than the defaults.
 4. Press `⌘Enter` or click **Start**.
 
-You can also press `⌘N` to open **New agent** with **Quick** selected. `⇧⌘N` selects **Durable** instead. On Windows and Linux, use `Ctrl` in place of `⌘`. These are the default bindings; you can change them in **Settings > Keyboard shortcuts**.
+Faster still, press `⌘N`. It opens a one-line prompt: type the task and press Enter, and a quick agent starts in the current project with your default settings. **Details** changes the project, CLI, model or access for that one start, and Esc closes the prompt without starting anything. With no project in view, such as in the Dispatcher or Settings, the prompt asks for one, starting with the last you used. On a satellite, `⌘N` opens the **New Quick Agent** dialog instead. `⇧⌘N` opens **New agent** with **Durable** selected. On Windows and Linux, use `Ctrl` in place of `⌘`. These are the default bindings; you can change them in **Settings > Keyboard shortcuts**.
 
 For more options, click **New** at the top of the sidebar and choose **Quick agent…**. That dialog adds:
 

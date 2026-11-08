@@ -31,6 +31,8 @@ vi.mock('../services/annex-server', () => ({
 vi.mock('../services/annex-client', () => ({
   startClient: vi.fn(),
   stopClient: vi.fn(),
+  connect: vi.fn(),
+  forgetSatellite: vi.fn(),
 }));
 
 vi.mock('../services/annex-peers', () => ({
@@ -39,6 +41,17 @@ vi.mock('../services/annex-peers', () => ({
   removePeer: vi.fn(() => true),
   removeAllPeers: vi.fn(),
   unlockPairing: vi.fn(),
+}));
+
+vi.mock('../services/annex-network-channel', () => ({ listMembers: vi.fn(() => [{ fingerprint: 'fp:sat', connected: true }]) }));
+const membershipInit = vi.hoisted(() => ({ hooks: null as null | { connect: (fp: string) => void; endDevice: (fp: string) => void } }));
+vi.mock('../services/annex-network-membership', () => ({
+  initNetworkMembership: vi.fn((h: { connect: (fp: string) => void; endDevice: (fp: string) => void }) => { membershipInit.hooks = h; }),
+}));
+
+vi.mock('../services/annex-devices', () => ({
+  listDevices: vi.fn(() => [{ fingerprint: 'fp:phone', state: 'connected' }]),
+  removeDevice: vi.fn(() => true),
 }));
 
 vi.mock('../services/annex-identity', () => ({
@@ -66,6 +79,8 @@ import * as annexClient from '../services/annex-client';
 import * as annexPeers from '../services/annex-peers';
 import * as annexIdentity from '../services/annex-identity';
 import * as annexTls from '../services/annex-tls';
+import * as annexDevices from '../services/annex-devices';
+import { devicesChanged, resetDeviceSignalForTests } from '../services/annex-device-signal';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 
@@ -221,6 +236,43 @@ describe('annex-handlers', () => {
     expect(annexServer.revokePeer).toHaveBeenCalledWith('fp:phone');
     expect(annexPeers.removePeer).not.toHaveBeenCalled();
     expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX.PEERS_CHANGED, []);
+  });
+
+  it('LIST_DEVICES answers with the one device list', () => {
+    expect(handlers.get(IPC.ANNEX.LIST_DEVICES)!({})).toEqual([{ fingerprint: 'fp:phone', state: 'connected' }]);
+  });
+
+  it('starts Annex Network membership with hooks that connect to, and end, a device (#3061)', () => {
+    membershipInit.hooks!.connect('fp:new');
+    expect(annexClient.connect).toHaveBeenCalledWith('fp:new');
+    membershipInit.hooks!.endDevice('fp:gone');
+    expect(annexClient.forgetSatellite).toHaveBeenCalledWith('fp:gone');
+    expect(annexServer.revokePeer).toHaveBeenCalledWith('fp:gone');
+    expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX.PEERS_CHANGED, []);
+  });
+
+  it('LIST_NETWORK_MEMBERS answers with who this machine has heard from', () => {
+    expect(handlers.get(IPC.ANNEX.LIST_NETWORK_MEMBERS)!({})).toEqual([{ fingerprint: 'fp:sat', connected: true }]);
+  });
+
+  it('REMOVE_DEVICE removes the device whichever way it is paired, and broadcasts the peers', () => {
+    expect(handlers.get(IPC.ANNEX.REMOVE_DEVICE)!({}, 'fp:sat')).toBe(true);
+    expect(annexDevices.removeDevice).toHaveBeenCalledWith('fp:sat');
+    expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX.PEERS_CHANGED, []);
+  });
+
+  it('broadcasts the device list when it changes', () => {
+    vi.useFakeTimers();
+    try {
+      resetDeviceSignalForTests();
+      registerAnnexHandlers();
+      devicesChanged();
+      vi.advanceTimersByTime(60);
+      expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX.DEVICES_CHANGED, [{ fingerprint: 'fp:phone', state: 'connected' }]);
+    } finally {
+      vi.useRealTimers();
+      resetDeviceSignalForTests();
+    }
   });
 
   it('REMOVE_ALL_PEERS revokes every pairing', () => {

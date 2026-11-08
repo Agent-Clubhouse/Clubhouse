@@ -174,7 +174,8 @@ function forwardConfigChanges(): void {
 // --- Dispatcher singleton guards (#2535) ---
 
 function isDispatcherAgent(projectPath: string, agentId: string): boolean {
-  return dispatcher.isDispatcherPath(projectPath) || dispatcher.isDispatcherAgentId(agentId);
+  // Either of its folders, either of its two agents (#3036).
+  return dispatcher.isDispatcherPath(projectPath) || dispatcher.isDispatcherIdentityAgentId(agentId);
 }
 
 /** The Dispatcher can't be deleted or given orchestration settings. */

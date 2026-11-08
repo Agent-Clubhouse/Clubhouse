@@ -74,6 +74,7 @@ vi.mock('./fs-utils', () => ({
 }));
 vi.mock('./dispatcher/dispatcher-paths', () => ({
   getDispatcherPath: () => DISPATCHER_DIR,
+  getDispatcherFolders: () => [DISPATCHER_DIR, `${DISPATCHER_DIR}-chat`],
 }));
 
 import {

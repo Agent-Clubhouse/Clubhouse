@@ -404,7 +404,9 @@ export function AgentSettingsView({ agent }: Props) {
   // The saved next-start choice (#2660). Main can clear it on a new model or CLI, so it's read back after those.
   const [contextWindow, setContextWindow] = useState<string | undefined>();
   const [contextWindowNotice, setContextWindowNotice] = useState<string | undefined>();
-  const contextOptions = useContextWindowOptions(!!projectPath && !isRunning, projectPath, agentOrchestrator, savedModel);
+  // A managed agent's context, like its model, can change while it runs: it applies at the next start (#2790).
+  const contextLocked = isRunning && !managedSetup;
+  const contextOptions = useContextWindowOptions(!!projectPath && !contextLocked, projectPath, agentOrchestrator, savedModel);
   useEffect(() => {
     if (!projectPath) return;
     let alive = true;
@@ -1014,8 +1016,8 @@ export function AgentSettingsView({ agent }: Props) {
         <ManagedEffortField projectPath={projectPath} agentId={agent.id} orchestrator={agentOrchestrator} model={savedModel} />
       )}
       <Field label={contextOptions?.label ?? 'Context'} help={contextWindowHelp(contextOptions)} htmlFor="agent-settings-context">
-        {/* Awake it can't change, so the saved choice is enough and the CLI's catalog isn't read. */}
-        {isRunning ? (
+        {/* Locked while it runs, the saved choice is enough and the CLI's catalog isn't read. */}
+        {contextLocked ? (
           <span title={stopFirst} data-testid="agent-settings-context-saved">
             {contextWindow ? `${formatContextChoice(contextWindow)} on the next start` : 'CLI default'}
           </span>

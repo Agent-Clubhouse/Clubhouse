@@ -1,3 +1,5 @@
+import type { AnnexProblem } from './annex-problems';
+
 /** Whether the clubhouse command is installed (#2598). Only a packaged build can install it. */
 export interface CliInstallStatus {
   supported: boolean;
@@ -1072,6 +1074,17 @@ export interface AnnexSettings {
   color: string;
   /** Whether to auto-reconnect to satellites after disconnection */
   autoReconnect: boolean;
+  /**
+   * A name or address other devices can also reach this machine by, such as its
+   * tailnet name (#3058). Added to the pairing link and the phone's routes.
+   */
+  reachableAs?: string;
+  /**
+   * Annex Network for this machine (#3061). On (the default when unset), a new
+   * pairing with another desktop that has it on joins the network. Off, pairings
+   * are one-to-one as before.
+   */
+  networkEnabled?: boolean;
 }
 
 export interface AnnexStatus {
@@ -1099,8 +1112,11 @@ export interface AnnexStatus {
 
 // ── Annex peer types ──────────────────────────────────────────────────
 
-/** Role of a peer relative to this machine. */
-export type AnnexPeerRole = 'controller' | 'satellite';
+/**
+ * Role of a peer relative to this machine. `member`: both are in the same Annex
+ * Network (#3061), so each controls the other.
+ */
+export type AnnexPeerRole = 'controller' | 'satellite' | 'member';
 
 export interface AnnexPeer {
   /**
@@ -1132,12 +1148,81 @@ export interface AnnexPeer {
    * Entries without a role are from an older version and need pairing again.
    */
   role?: AnnexPeerRole;
+  /** For a satellite: addresses it was reached at or listed in its pairing link, most recently reached first (#3058). */
+  knownHosts?: string[];
+  /** For a satellite: its main (TLS) port when it was last reached or paired. */
+  mainPort?: number;
+  /** For a satellite: a host name or address the person typed, such as a tailnet name. */
+  typedHost?: string;
+  /** For a network member: a computer or a phone, as it said when it joined. */
+  kind?: 'desktop' | 'phone';
+  /** For a network member: the fingerprint of the member that added it (this machine's own when paired here). */
+  addedBy?: string;
 }
 
 /** A peer as Settings lists it. */
 export interface AnnexPeerListing extends AnnexPeer {
   /** Older pairing (or one we can't verify): refused until it's paired again. */
   needsPairing: boolean;
+}
+
+/**
+ * Where a paired device stands, as Settings shows it.
+ * - `connected`: a live connection either way.
+ * - `connecting`: this machine is connecting to it, or looking for it on the network.
+ * - `offline`: paired, with no connection now.
+ * - `needs-pairing`: refused until it's paired again.
+ * - `removing`: removed from the network, and some members haven't heard yet (#3061).
+ */
+export type AnnexDeviceState = 'connected' | 'connecting' | 'offline' | 'needs-pairing' | 'removing';
+
+/**
+ * One paired device (#3057): the single list Settings is built from, whichever
+ * way the pairing goes. Keyed by identity fingerprint.
+ */
+export interface AnnexDevice {
+  fingerprint: string;
+  alias: string;
+  icon: string;
+  color: string;
+  /**
+   * How it's paired with this machine: it controls this machine (`controller`),
+   * or this machine controls it (`satellite`). Null for a pairing from before
+   * roles, which needs pairing again.
+   */
+  role: AnnexPeerRole | null;
+  state: AnnexDeviceState;
+  /** ISO time it was paired; empty when unknown. */
+  pairedAt: string;
+  /** ISO time of its last connection; empty when unknown. */
+  lastSeen: string;
+  /** Paired for this session only (a phone's session pairing): forgotten when Annex stops. */
+  sessionOnly?: boolean;
+  /** For a device this machine connects to: the address in use or tried last, as `host:port`. */
+  address?: string;
+  /** For a device this machine connects to: the host name or address the person typed, if any. */
+  typedHost?: string;
+  /** Why it isn't connected, and what to do, when that's known. */
+  problem: AnnexProblem | null;
+  /**
+   * For a network member: where its join, or its removal, is confirmed (#3061).
+   * Names of members whose view shows it, and of those it hasn't reached yet.
+   * Absent once every member has it.
+   */
+  confirmation?: { kind: 'join' | 'removal'; confirmedBy: string[]; waitingOn: string[] };
+}
+
+/** A device this machine has heard from on the Annex Network channel (#3060). */
+export interface AnnexNetworkMemberListing {
+  fingerprint: string;
+  name: string;
+  kind: 'desktop' | 'phone';
+  /** Its channel to or from this machine is open now. */
+  connected: boolean;
+  /** How many members it says the network has, itself included. */
+  memberCount: number;
+  /** ISO time of its last message. */
+  lastHeard: string;
 }
 
 // ── Annex client (controller) types ───────────────────────────────────
@@ -1339,6 +1424,11 @@ export type BuiltinThemeId =
   | 'tokyo-night'
   | 'gruvbox-dark'
   | 'cyberpunk'
+  // Designed around their gradients (#2916), in src/renderer/themes/gradient-themes.ts.
+  | 'aurora'
+  | 'canyon'
+  | 'daybreak'
+  | 'mist'
   // The seven Workshop packs (#2753), in src/renderer/themes/packs.
 | 'maple'
 | 'harvest'

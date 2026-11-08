@@ -7,7 +7,8 @@
  * - You (Settings) and Clubhouse may do anything.
  * - The Dispatcher's actions may wake, message and put to sleep agents
  *   connected to it, watch those agents and app events, and notify you. They
- *   can't start quick agents (#2921 gives the Dispatcher no agent.create).
+ *   can't start quick agents (D140): those run at Full access. It holds
+ *   agent.create (#3050), so this is a rule of Actions, not a missing grant.
  * - An agent's actions may act on itself, its own helpers and agents it is
  *   connected to (an MCP wire from it to them), and start quick agents in its
  *   own project. They may watch the same agents, its own project and app
