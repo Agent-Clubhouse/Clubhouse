@@ -1,0 +1,943 @@
+{
+  "agent": {
+    "frames": [
+      {
+        "payload": {
+          "agentId": "durable_sleepy",
+          "event": {
+            "agentId": "durable_sleepy",
+            "data": {
+              "capabilities": {
+                "effortDefault": false,
+                "effortSwitch": "per_turn",
+                "images": true,
+                "interrupt": true,
+                "limits": true,
+                "liveLevels": [
+                  "plan",
+                  "ask",
+                  "auto_edit",
+                  "full_access"
+                ],
+                "login": "terminal",
+                "modelSwitch": "per_turn",
+                "planApproval": true,
+                "questions": true,
+                "queue": "client",
+                "resume": "native",
+                "slashCommands": true,
+                "steer": true,
+                "subagents": "full",
+                "systemPrompt": true,
+                "usage": "cost"
+              },
+              "cwd": "/work",
+              "driver": "claude_agent_sdk",
+              "provider": "claude-code",
+              "resumed": false
+            },
+            "seq": 1,
+            "sessionId": "sess_old",
+            "ts": 1799999941000,
+            "type": "session_started",
+            "v": 2
+          }
+        },
+        "seq": 1008,
+        "type": "chat:event"
+      },
+      {
+        "payload": {
+          "agentId": "durable_sleepy",
+          "event": {
+            "agentId": "durable_sleepy",
+            "data": {
+              "trigger": "prompt"
+            },
+            "seq": 2,
+            "sessionId": "sess_old",
+            "ts": 1799999942000,
+            "turnId": "turn_1",
+            "type": "turn_started",
+            "v": 2
+          }
+        },
+        "seq": 1009,
+        "type": "chat:event"
+      },
+      {
+        "payload": {
+          "agentId": "durable_sleepy",
+          "event": {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "Tell me when checkout is fixed.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "msg_you",
+              "source": "annex"
+            },
+            "seq": 3,
+            "sessionId": "sess_old",
+            "ts": 1799999943000,
+            "turnId": "turn_1",
+            "type": "user_message",
+            "v": 2
+          }
+        },
+        "seq": 1010,
+        "type": "chat:event"
+      },
+      {
+        "payload": {
+          "agentId": "durable_sleepy",
+          "event": {
+            "agentId": "durable_sleepy",
+            "data": {
+              "messageId": "th_1",
+              "text": "Who owns checkout?"
+            },
+            "seq": 4,
+            "sessionId": "sess_old",
+            "ts": 1799999944000,
+            "turnId": "turn_1",
+            "type": "agent_thought",
+            "v": 2
+          }
+        },
+        "seq": 1011,
+        "type": "chat:event"
+      },
+      {
+        "payload": {
+          "agentId": "durable_sleepy",
+          "event": {
+            "agentId": "durable_sleepy",
+            "data": {
+              "kind": "other",
+              "status": "in_progress",
+              "title": "list_agents",
+              "toolCallId": "tool_1",
+              "toolName": "mcp__clubhouse__list_agents"
+            },
+            "seq": 5,
+            "sessionId": "sess_old",
+            "ts": 1799999945000,
+            "turnId": "turn_1",
+            "type": "tool_call",
+            "v": 2
+          }
+        },
+        "seq": 1012,
+        "type": "chat:event"
+      },
+      {
+        "payload": {
+          "agentId": "durable_sleepy",
+          "event": {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "content": {
+                    "text": "[{\"id\":\"durable_sleepy\"}]",
+                    "type": "text"
+                  },
+                  "type": "content"
+                }
+              ],
+              "status": "completed",
+              "toolCallId": "tool_1"
+            },
+            "seq": 6,
+            "sessionId": "sess_old",
+            "ts": 1799999946000,
+            "turnId": "turn_1",
+            "type": "tool_call_update",
+            "v": 2
+          }
+        },
+        "seq": 1013,
+        "type": "chat:event"
+      },
+      {
+        "payload": {
+          "agentId": "durable_sleepy",
+          "event": {
+            "agentId": "durable_sleepy",
+            "data": {
+              "messageId": "sub_1",
+              "subagentId": "sa_1",
+              "text": "Looked it up."
+            },
+            "seq": 7,
+            "sessionId": "sess_old",
+            "ts": 1799999947000,
+            "turnId": "turn_1",
+            "type": "agent_message",
+            "v": 2
+          }
+        },
+        "seq": 1014,
+        "type": "chat:event"
+      },
+      {
+        "payload": {
+          "agentId": "durable_sleepy",
+          "event": {
+            "agentId": "durable_sleepy",
+            "data": {
+              "messageId": "amsg_1",
+              "text": "On it (task_id=t_1abcdef)."
+            },
+            "seq": 8,
+            "sessionId": "sess_old",
+            "ts": 1799999948000,
+            "turnId": "turn_1",
+            "type": "agent_message_chunk",
+            "v": 2
+          }
+        },
+        "seq": 1015,
+        "type": "chat:event"
+      },
+      {
+        "payload": {
+          "agentId": "durable_sleepy",
+          "event": {
+            "agentId": "durable_sleepy",
+            "data": {
+              "messageId": "amsg_1",
+              "text": "On it (task_id=t_1abcdef)."
+            },
+            "seq": 9,
+            "sessionId": "sess_old",
+            "ts": 1799999949000,
+            "turnId": "turn_1",
+            "type": "agent_message",
+            "v": 2
+          }
+        },
+        "seq": 1016,
+        "type": "chat:event"
+      },
+      {
+        "payload": {
+          "agentId": "durable_sleepy",
+          "event": {
+            "agentId": "durable_sleepy",
+            "data": {
+              "durationMs": 900,
+              "stopReason": "end_turn"
+            },
+            "seq": 10,
+            "sessionId": "sess_old",
+            "ts": 1799999950000,
+            "turnId": "turn_1",
+            "type": "turn_ended",
+            "v": 2
+          }
+        },
+        "seq": 1017,
+        "type": "chat:event"
+      },
+      {
+        "payload": {
+          "agentId": "durable_sleepy",
+          "event": {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "2 updates, oldest first:\n\n--- 1 of 2 ---\n[FROM:brave-otter@App] Checkout is fixed (task_id=t_2abcdef).\n\n--- 2 of 2 ---\n[Clubhouse] brave-otter is asleep.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "msg_news",
+              "routed": [
+                {
+                  "sender": {
+                    "agentId": "durable_sleepy",
+                    "name": "brave-otter"
+                  },
+                  "text": "Checkout is fixed (task_id=t_2abcdef)."
+                },
+                {
+                  "fromClubhouse": true,
+                  "text": "brave-otter is asleep."
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 11,
+            "sessionId": "sess_old",
+            "ts": 1799999951000,
+            "type": "user_message",
+            "v": 2
+          }
+        },
+        "seq": 1018,
+        "type": "chat:event"
+      },
+      {
+        "payload": {
+          "agentId": "durable_sleepy",
+          "event": {
+            "agentId": "durable_sleepy",
+            "data": {
+              "content": [
+                {
+                  "text": "Continued from the terminal.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "msg_notice",
+              "source": "system"
+            },
+            "seq": 12,
+            "sessionId": "sess_old",
+            "ts": 1799999952000,
+            "type": "user_message",
+            "v": 2
+          }
+        },
+        "seq": 1019,
+        "type": "chat:event"
+      }
+    ],
+    "history": {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/mobile/agents/durable_sleepy/chat"
+      },
+      "response": {
+        "body": {
+          "agentId": "durable_sleepy",
+          "canStart": true,
+          "capabilities": null,
+          "chatControls": null,
+          "contentAnyPath": true,
+          "contentRoots": [
+            "/work/app/.clubhouse/agents/planner",
+            "/work/app"
+          ],
+          "currentSessionId": null,
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "events": [
+            {
+              "agentId": "durable_sleepy",
+              "data": {
+                "capabilities": {
+                  "effortDefault": false,
+                  "effortSwitch": "per_turn",
+                  "images": true,
+                  "interrupt": true,
+                  "limits": true,
+                  "liveLevels": [
+                    "plan",
+                    "ask",
+                    "auto_edit",
+                    "full_access"
+                  ],
+                  "login": "terminal",
+                  "modelSwitch": "per_turn",
+                  "planApproval": true,
+                  "questions": true,
+                  "queue": "client",
+                  "resume": "native",
+                  "slashCommands": true,
+                  "steer": true,
+                  "subagents": "full",
+                  "systemPrompt": true,
+                  "usage": "cost"
+                },
+                "cwd": "/work",
+                "driver": "claude_agent_sdk",
+                "provider": "claude-code",
+                "resumed": false
+              },
+              "seq": 1,
+              "sessionId": "sess_old",
+              "ts": 1799999941000,
+              "type": "session_started",
+              "v": 2
+            },
+            {
+              "agentId": "durable_sleepy",
+              "data": {
+                "trigger": "prompt"
+              },
+              "seq": 2,
+              "sessionId": "sess_old",
+              "ts": 1799999942000,
+              "turnId": "turn_1",
+              "type": "turn_started",
+              "v": 2
+            },
+            {
+              "agentId": "durable_sleepy",
+              "data": {
+                "content": [
+                  {
+                    "text": "Tell me when checkout is fixed.",
+                    "type": "text"
+                  }
+                ],
+                "delivery": "prompt",
+                "messageId": "msg_you",
+                "source": "annex"
+              },
+              "seq": 3,
+              "sessionId": "sess_old",
+              "ts": 1799999943000,
+              "turnId": "turn_1",
+              "type": "user_message",
+              "v": 2
+            },
+            {
+              "agentId": "durable_sleepy",
+              "data": {
+                "messageId": "th_1",
+                "text": "Who owns checkout?"
+              },
+              "seq": 4,
+              "sessionId": "sess_old",
+              "ts": 1799999944000,
+              "turnId": "turn_1",
+              "type": "agent_thought",
+              "v": 2
+            },
+            {
+              "agentId": "durable_sleepy",
+              "data": {
+                "kind": "other",
+                "status": "in_progress",
+                "title": "list_agents",
+                "toolCallId": "tool_1",
+                "toolName": "mcp__clubhouse__list_agents"
+              },
+              "seq": 5,
+              "sessionId": "sess_old",
+              "ts": 1799999945000,
+              "turnId": "turn_1",
+              "type": "tool_call",
+              "v": 2
+            },
+            {
+              "agentId": "durable_sleepy",
+              "data": {
+                "content": [
+                  {
+                    "content": {
+                      "text": "[{\"id\":\"durable_sleepy\"}]",
+                      "type": "text"
+                    },
+                    "type": "content"
+                  }
+                ],
+                "status": "completed",
+                "toolCallId": "tool_1"
+              },
+              "seq": 6,
+              "sessionId": "sess_old",
+              "ts": 1799999946000,
+              "turnId": "turn_1",
+              "type": "tool_call_update",
+              "v": 2
+            },
+            {
+              "agentId": "durable_sleepy",
+              "data": {
+                "messageId": "sub_1",
+                "subagentId": "sa_1",
+                "text": "Looked it up."
+              },
+              "seq": 7,
+              "sessionId": "sess_old",
+              "ts": 1799999947000,
+              "turnId": "turn_1",
+              "type": "agent_message",
+              "v": 2
+            },
+            {
+              "agentId": "durable_sleepy",
+              "data": {
+                "messageId": "amsg_1",
+                "text": "On it (task_id=t_1abcdef)."
+              },
+              "seq": 8,
+              "sessionId": "sess_old",
+              "ts": 1799999948000,
+              "turnId": "turn_1",
+              "type": "agent_message_chunk",
+              "v": 2
+            },
+            {
+              "agentId": "durable_sleepy",
+              "data": {
+                "messageId": "amsg_1",
+                "text": "On it (task_id=t_1abcdef)."
+              },
+              "seq": 9,
+              "sessionId": "sess_old",
+              "ts": 1799999949000,
+              "turnId": "turn_1",
+              "type": "agent_message",
+              "v": 2
+            },
+            {
+              "agentId": "durable_sleepy",
+              "data": {
+                "durationMs": 900,
+                "stopReason": "end_turn"
+              },
+              "seq": 10,
+              "sessionId": "sess_old",
+              "ts": 1799999950000,
+              "turnId": "turn_1",
+              "type": "turn_ended",
+              "v": 2
+            },
+            {
+              "agentId": "durable_sleepy",
+              "data": {
+                "content": [
+                  {
+                    "text": "2 updates, oldest first:\n\n--- 1 of 2 ---\n[FROM:brave-otter@App] Checkout is fixed (task_id=t_2abcdef).\n\n--- 2 of 2 ---\n[Clubhouse] brave-otter is asleep.",
+                    "type": "text"
+                  }
+                ],
+                "delivery": "prompt",
+                "messageId": "msg_news",
+                "routed": [
+                  {
+                    "sender": {
+                      "agentId": "durable_sleepy",
+                      "name": "brave-otter"
+                    },
+                    "text": "Checkout is fixed (task_id=t_2abcdef)."
+                  },
+                  {
+                    "fromClubhouse": true,
+                    "text": "brave-otter is asleep."
+                  }
+                ],
+                "source": "mcp"
+              },
+              "seq": 11,
+              "sessionId": "sess_old",
+              "ts": 1799999951000,
+              "type": "user_message",
+              "v": 2
+            },
+            {
+              "agentId": "durable_sleepy",
+              "data": {
+                "content": [
+                  {
+                    "text": "Continued from the terminal.",
+                    "type": "text"
+                  }
+                ],
+                "delivery": "prompt",
+                "messageId": "msg_notice",
+                "source": "system"
+              },
+              "seq": 12,
+              "sessionId": "sess_old",
+              "ts": 1799999952000,
+              "type": "user_message",
+              "v": 2
+            }
+          ],
+          "lastSeq": 12,
+          "nextBeforeSeq": null,
+          "pendingPermissions": [],
+          "pendingQuestions": [],
+          "queueRemovalSupported": false,
+          "queueStateSeq": 0,
+          "queuedMessageIds": [],
+          "readOnly": true,
+          "sessionId": "sess_old",
+          "slashCommands": null,
+          "state": "sleeping",
+          "truncated": false,
+          "version": 1
+        },
+        "status": 200
+      }
+    }
+  },
+  "direction": "desktop-to-phone",
+  "dispatcher": {
+    "frames": [
+      {
+        "payload": {
+          "agentId": "durable_dispatcher",
+          "event": {
+            "agentId": "durable_dispatcher",
+            "data": {
+              "capabilities": {
+                "effortDefault": false,
+                "effortSwitch": "per_turn",
+                "images": true,
+                "interrupt": true,
+                "limits": true,
+                "liveLevels": [
+                  "plan",
+                  "ask",
+                  "auto_edit",
+                  "full_access"
+                ],
+                "login": "terminal",
+                "modelSwitch": "per_turn",
+                "planApproval": true,
+                "questions": true,
+                "queue": "client",
+                "resume": "native",
+                "slashCommands": true,
+                "steer": true,
+                "subagents": "full",
+                "systemPrompt": true,
+                "usage": "cost"
+              },
+              "cwd": "/work",
+              "driver": "claude_agent_sdk",
+              "provider": "claude-code",
+              "resumed": false
+            },
+            "seq": 1,
+            "sessionId": "sess_dispatch",
+            "ts": 1799999941000,
+            "type": "session_started",
+            "v": 2
+          }
+        },
+        "seq": 1001,
+        "type": "chat:event"
+      },
+      {
+        "payload": {
+          "agentId": "durable_dispatcher",
+          "event": {
+            "agentId": "durable_dispatcher",
+            "data": {
+              "trigger": "prompt"
+            },
+            "seq": 2,
+            "sessionId": "sess_dispatch",
+            "ts": 1799999942000,
+            "turnId": "turn_1",
+            "type": "turn_started",
+            "v": 2
+          }
+        },
+        "seq": 1002,
+        "type": "chat:event"
+      },
+      {
+        "payload": {
+          "agentId": "durable_dispatcher",
+          "event": {
+            "agentId": "durable_dispatcher",
+            "data": {
+              "content": [
+                {
+                  "text": "Tell me when checkout is fixed.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "msg_you",
+              "source": "annex"
+            },
+            "seq": 3,
+            "sessionId": "sess_dispatch",
+            "ts": 1799999943000,
+            "turnId": "turn_1",
+            "type": "user_message",
+            "v": 2
+          }
+        },
+        "seq": 1003,
+        "type": "chat:event"
+      },
+      {
+        "payload": {
+          "agentId": "durable_dispatcher",
+          "event": {
+            "agentId": "durable_dispatcher",
+            "data": {
+              "messageId": "amsg_1",
+              "text": "On it (task_id=t_1abcdef)."
+            },
+            "seq": 8,
+            "sessionId": "sess_dispatch",
+            "ts": 1799999948000,
+            "turnId": "turn_1",
+            "type": "agent_message_chunk",
+            "v": 2
+          }
+        },
+        "seq": 1004,
+        "type": "chat:event"
+      },
+      {
+        "payload": {
+          "agentId": "durable_dispatcher",
+          "event": {
+            "agentId": "durable_dispatcher",
+            "data": {
+              "messageId": "amsg_1",
+              "text": "On it."
+            },
+            "seq": 9,
+            "sessionId": "sess_dispatch",
+            "ts": 1799999949000,
+            "turnId": "turn_1",
+            "type": "agent_message",
+            "v": 2
+          }
+        },
+        "seq": 1005,
+        "type": "chat:event"
+      },
+      {
+        "payload": {
+          "agentId": "durable_dispatcher",
+          "event": {
+            "agentId": "durable_dispatcher",
+            "data": {
+              "durationMs": 900,
+              "stopReason": "end_turn"
+            },
+            "seq": 10,
+            "sessionId": "sess_dispatch",
+            "ts": 1799999950000,
+            "turnId": "turn_1",
+            "type": "turn_ended",
+            "v": 2
+          }
+        },
+        "seq": 1006,
+        "type": "chat:event"
+      },
+      {
+        "payload": {
+          "agentId": "durable_dispatcher",
+          "event": {
+            "agentId": "durable_dispatcher",
+            "data": {
+              "content": [
+                {
+                  "text": "2 updates, oldest first:\n\n--- 1 of 2 ---\n[FROM:brave-otter@App] Checkout is fixed (task_id=t_2abcdef).\n\n--- 2 of 2 ---\n[Clubhouse] brave-otter is asleep.",
+                  "type": "text"
+                }
+              ],
+              "delivery": "prompt",
+              "messageId": "msg_news",
+              "routed": [
+                {
+                  "sender": {
+                    "agentId": "durable_sleepy",
+                    "name": "brave-otter"
+                  },
+                  "text": "Checkout is fixed."
+                }
+              ],
+              "source": "mcp"
+            },
+            "seq": 11,
+            "sessionId": "sess_dispatch",
+            "ts": 1799999951000,
+            "type": "user_message",
+            "v": 2
+          }
+        },
+        "seq": 1007,
+        "type": "chat:event"
+      }
+    ],
+    "history": {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/mobile/agents/durable_dispatcher/chat"
+      },
+      "response": {
+        "body": {
+          "agentId": "durable_dispatcher",
+          "canStart": true,
+          "capabilities": null,
+          "chatControls": null,
+          "contentAnyPath": true,
+          "contentRoots": [
+            "/work/app/.clubhouse/agents/planner",
+            "/work/app"
+          ],
+          "currentSessionId": null,
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "events": [
+            {
+              "agentId": "durable_dispatcher",
+              "data": {
+                "capabilities": {
+                  "effortDefault": false,
+                  "effortSwitch": "per_turn",
+                  "images": true,
+                  "interrupt": true,
+                  "limits": true,
+                  "liveLevels": [
+                    "plan",
+                    "ask",
+                    "auto_edit",
+                    "full_access"
+                  ],
+                  "login": "terminal",
+                  "modelSwitch": "per_turn",
+                  "planApproval": true,
+                  "questions": true,
+                  "queue": "client",
+                  "resume": "native",
+                  "slashCommands": true,
+                  "steer": true,
+                  "subagents": "full",
+                  "systemPrompt": true,
+                  "usage": "cost"
+                },
+                "cwd": "/work",
+                "driver": "claude_agent_sdk",
+                "provider": "claude-code",
+                "resumed": false
+              },
+              "seq": 1,
+              "sessionId": "sess_dispatch",
+              "ts": 1799999941000,
+              "type": "session_started",
+              "v": 2
+            },
+            {
+              "agentId": "durable_dispatcher",
+              "data": {
+                "trigger": "prompt"
+              },
+              "seq": 2,
+              "sessionId": "sess_dispatch",
+              "ts": 1799999942000,
+              "turnId": "turn_1",
+              "type": "turn_started",
+              "v": 2
+            },
+            {
+              "agentId": "durable_dispatcher",
+              "data": {
+                "content": [
+                  {
+                    "text": "Tell me when checkout is fixed.",
+                    "type": "text"
+                  }
+                ],
+                "delivery": "prompt",
+                "messageId": "msg_you",
+                "source": "annex"
+              },
+              "seq": 3,
+              "sessionId": "sess_dispatch",
+              "ts": 1799999943000,
+              "turnId": "turn_1",
+              "type": "user_message",
+              "v": 2
+            },
+            {
+              "agentId": "durable_dispatcher",
+              "data": {
+                "messageId": "amsg_1",
+                "text": "On it (task_id=t_1abcdef)."
+              },
+              "seq": 8,
+              "sessionId": "sess_dispatch",
+              "ts": 1799999948000,
+              "turnId": "turn_1",
+              "type": "agent_message_chunk",
+              "v": 2
+            },
+            {
+              "agentId": "durable_dispatcher",
+              "data": {
+                "messageId": "amsg_1",
+                "text": "On it."
+              },
+              "seq": 9,
+              "sessionId": "sess_dispatch",
+              "ts": 1799999949000,
+              "turnId": "turn_1",
+              "type": "agent_message",
+              "v": 2
+            },
+            {
+              "agentId": "durable_dispatcher",
+              "data": {
+                "durationMs": 900,
+                "stopReason": "end_turn"
+              },
+              "seq": 10,
+              "sessionId": "sess_dispatch",
+              "ts": 1799999950000,
+              "turnId": "turn_1",
+              "type": "turn_ended",
+              "v": 2
+            },
+            {
+              "agentId": "durable_dispatcher",
+              "data": {
+                "content": [
+                  {
+                    "text": "2 updates, oldest first:\n\n--- 1 of 2 ---\n[FROM:brave-otter@App] Checkout is fixed (task_id=t_2abcdef).\n\n--- 2 of 2 ---\n[Clubhouse] brave-otter is asleep.",
+                    "type": "text"
+                  }
+                ],
+                "delivery": "prompt",
+                "messageId": "msg_news",
+                "routed": [
+                  {
+                    "sender": {
+                      "agentId": "durable_sleepy",
+                      "name": "brave-otter"
+                    },
+                    "text": "Checkout is fixed."
+                  }
+                ],
+                "source": "mcp"
+              },
+              "seq": 11,
+              "sessionId": "sess_dispatch",
+              "ts": 1799999951000,
+              "type": "user_message",
+              "v": 2
+            }
+          ],
+          "lastSeq": 12,
+          "nextBeforeSeq": null,
+          "pendingPermissions": [],
+          "pendingQuestions": [],
+          "queueRemovalSupported": false,
+          "queueStateSeq": 0,
+          "queuedMessageIds": [],
+          "readOnly": true,
+          "sessionId": "sess_dispatch",
+          "slashCommands": null,
+          "state": "sleeping",
+          "truncated": false,
+          "version": 1
+        },
+        "status": 200
+      }
+    }
+  },
+  "note": "The same conversation as the Dispatcher's (`dispatcher`) and as an ordinary agent's (`agent`): the Dispatcher's comes as its group chat shows it, the agent's whole."
+}
