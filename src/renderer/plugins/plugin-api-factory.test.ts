@@ -4208,7 +4208,7 @@ describe('plugin-api-factory', () => {
         await deliver({ callId: 'c1', pluginId: ctx.pluginId, toolName: 't', args: {}, callerAccess: 'auto' });
         await settle();
         expect(resultOf('c1')).toMatchObject({ isError: true });
-        expect(resultOf('c1')!.content[0].text).toBe(`Plugin '${ctx.pluginId}' is answering a tool call from an agent that runs at Auto, so it can't start an agent at Full access: an agent never sets Access above its own, even through a plugin. Pass access at or below Auto, or start it from the plugin's own view.`);
+        expect(resultOf('c1')!.content[0].text).toBe(`Plugin '${ctx.pluginId}' is answering a tool call from an agent that runs at Auto, so it can't start an agent at Full access: an agent never sets Access above its own, even through a plugin. Pass access at or below Auto, or ask the person to start it.`);
         expect(mockAgent.createDurable).not.toHaveBeenCalled();
       });
 
@@ -4238,7 +4238,7 @@ describe('plugin-api-factory', () => {
           await deliver({ callId: 'c4', pluginId: legacy.pluginId, toolName: 't', args: {}, callerAccess: 'auto' });
           await settle();
           expect(resultOf('c4')!.content[0].text).toContain('(freeAgentMode can mean Full access)');
-          expect(resultOf('c4')!.content[0].text).toContain('Leave freeAgentMode out');
+          expect(resultOf('c4')!.content[0].text).toContain('Leave freeAgentMode out, or ask the person to start it.');
         } finally {
           app.getDefaultAccess = before;
         }
@@ -4253,6 +4253,89 @@ describe('plugin-api-factory', () => {
         await settle();
         expect(resultOf('c5')!.content[0].text).toContain('runs at Ask first');
         expect(spawn).not.toHaveBeenCalled();
+      });
+
+      it('the lowest of several open calls applies, only to the plugin answering them', async () => {
+        const ctx = makeCtx({ pluginId: 'slow-plugin' });
+        const api = createPluginAPI(ctx, undefined, makeAllPermsManifest());
+        const release: Array<() => void> = [];
+        api.mcp.onToolCall(() => new Promise((resolve) => { release.push(() => resolve({ content: [{ type: 'text' as const, text: 'ok' }] })); }));
+        await settle();
+        await deliver({ callId: 'hi', pluginId: 'slow-plugin', toolName: 't', args: {}, callerAccess: 'full_access' });
+        await deliver({ callId: 'lo', pluginId: 'slow-plugin', toolName: 't', args: {}, callerAccess: 'auto_edit' });
+        await expect(api.agents.createDurable({ name: 'x', color: 'blue', access: 'auto' })).rejects.toThrow(/runs at Auto-accept edits/);
+        // Another plugin isn't limited by these calls.
+        mockAgent.createDurable.mockResolvedValue({ id: 'made', name: 'made' });
+        vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('made');
+        const other = createPluginAPI(makeCtx({ pluginId: 'other-plugin' }), undefined, makeAllPermsManifest());
+        await expect(other.agents.createDurable({ name: 'y', color: 'blue', access: 'full_access' })).resolves.toBe('made');
+        // Answering the lower call leaves the higher one.
+        release[1]();
+        await settle();
+        mockAgent.createDurable.mockClear();
+        await expect(api.agents.createDurable({ name: 'z', color: 'blue', access: 'full_access' })).resolves.toBe('made');
+        // A companion starts at Ask first: refused only under a caller at Plan.
+        await deliver({ callId: 'plan', pluginId: 'slow-plugin', toolName: 't', args: {}, callerAccess: 'plan' });
+        await expect(api.agents.spawnCompanion()).rejects.toThrow(/runs at Plan, so it can't start an agent at Ask first/);
+        release[0](); release[2]();
+        await settle();
+      });
+
+      it('a handler that throws still ends its call, and deactivating the plugin clears a call never answered', async () => {
+        mockAgent.createDurable.mockResolvedValue({ id: 'made', name: 'made' });
+        vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('made');
+        const ctx = makeCtx({ pluginId: 'throwing-plugin' });
+        const api = createPluginAPI(ctx, undefined, makeAllPermsManifest());
+        api.mcp.onToolCall(() => { throw new Error('boom'); });
+        await settle();
+        await deliver({ callId: 't1', pluginId: 'throwing-plugin', toolName: 't', args: {}, callerAccess: 'plan' });
+        await settle();
+        await expect(api.agents.createDurable({ name: 'a', color: 'blue', access: 'full_access' })).resolves.toBe('made');
+
+        const hung = makeCtx({ pluginId: 'hung-plugin' });
+        const hungApi = createPluginAPI(hung, undefined, makeAllPermsManifest());
+        hungApi.mcp.onToolCall(() => new Promise(() => {}));
+        await settle();
+        await deliver({ callId: 'h1', pluginId: 'hung-plugin', toolName: 't', args: {}, callerAccess: 'plan' });
+        await expect(hungApi.agents.createDurable({ name: 'b', color: 'blue', access: 'ask' })).rejects.toThrow(/runs at Plan/);
+        dispose(hung);
+        const again = createPluginAPI(makeCtx({ pluginId: 'hung-plugin' }), undefined, makeAllPermsManifest());
+        await expect(again.agents.createDurable({ name: 'c', color: 'blue', access: 'full_access' })).resolves.toBe('made');
+      });
+
+      it('the level checked holds even if the call ends while the Default access is read; a legacy on under Full access is sent as is', async () => {
+        const app = window.clubhouse.app as unknown as { getDefaultAccess: () => Promise<string> };
+        const before = app.getDefaultAccess;
+        let releaseDefault!: () => void;
+        app.getDefaultAccess = () => new Promise((resolve) => { releaseDefault = () => resolve('full_access'); });
+        try {
+          const ctx = makeCtx({ pluginId: 'racing-plugin' });
+          const api = createPluginAPI(ctx, undefined, makeAllPermsManifest());
+          let started!: Promise<string>;
+          api.mcp.onToolCall(async () => {
+            started = api.agents.createDurable({ name: 'r', color: 'blue' });
+            return { content: [{ type: 'text' as const, text: 'started' }] };
+          });
+          await settle();
+          await deliver({ callId: 'r1', pluginId: 'racing-plugin', toolName: 't', args: {}, callerAccess: 'ask' });
+          await settle();
+          // The call is answered; now the Default access arrives.
+          releaseDefault();
+          await expect(started).rejects.toThrow(/runs at Ask first, so it can't start an agent at Full access/);
+          expect(mockAgent.createDurable).not.toHaveBeenCalled();
+        } finally {
+          app.getDefaultAccess = before;
+        }
+        mockAgent.createDurable.mockResolvedValue({ id: 'made', name: 'made' });
+        vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('made');
+        const full = makeCtx({ pluginId: 'legacy-plugin' });
+        const fullApi = createPluginAPI(full, undefined, makeAllPermsManifest());
+        fullApi.mcp.onToolCall(() => new Promise(() => {}));
+        await settle();
+        await deliver({ callId: 'f1', pluginId: 'legacy-plugin', toolName: 't', args: {}, callerAccess: 'full_access' });
+        await expect(fullApi.agents.createDurable({ name: 'l', color: 'blue', freeAgentMode: true })).resolves.toBe('made');
+        expect(mockAgent.createDurable.mock.calls[0][6]).toBe(true);
+        dispose(full);
       });
 
       it('outside a call, the plugin acts from its own view for the person, with what its manifest allows', async () => {

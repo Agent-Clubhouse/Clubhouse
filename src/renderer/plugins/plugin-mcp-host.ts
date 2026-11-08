@@ -204,6 +204,8 @@ function acquireToken(ctx: PluginContext): Slot {
         released.add(ctx);
         if (!setDelete(held.contexts, ctx) || held.contexts.size > 0) return;
         if (mapGet(tokens, ctx.pluginId) === held) mapDelete(tokens, ctx.pluginId);
+        // Main settled its open calls with the token; a handler that never answered caps it no longer.
+        mapDelete(answering, ctx.pluginId);
         whenReady(held.slot, (token) => {
           if (token && bridge) promiseThen(bridge.revokeToken(token), ignore, ignore);
         });
