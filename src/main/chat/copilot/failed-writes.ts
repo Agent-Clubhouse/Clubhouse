@@ -20,7 +20,23 @@ interface MessageWriterLike {
   write(msg: unknown): Promise<void>;
 }
 
-/** Wrap a client's message writer so the errors it throws are marked. Safe to call twice. */
+/**
+ * Mark the errors a client's writers throw, from its first write on. The SDK
+ * makes a new writer each time it connects (`connectToServer`, private), and
+ * start() itself sends a request, so this wraps the connect step rather than
+ * the writer start() leaves. Call before start().
+ */
+export function markFailedCopilotWritesFromStart(client: unknown): void {
+  const c = client as { connectToServer?: () => Promise<void> } | null;
+  if (!c || typeof c.connectToServer !== 'function') return;
+  const connectToServer = c.connectToServer.bind(c);
+  c.connectToServer = async () => {
+    await connectToServer();
+    markFailedCopilotWrites(c);
+  };
+}
+
+/** Wrap a client's current message writer so the errors it throws are marked. Safe to call twice. */
 export function markFailedCopilotWrites(client: unknown): void {
   const writer = (client as { messageWriter?: MessageWriterLike | null } | null)?.messageWriter;
   if (!writer || typeof writer.write !== 'function' || (writer as { [MARKED]?: true })[MARKED]) return;

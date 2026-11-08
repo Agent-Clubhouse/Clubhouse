@@ -361,7 +361,10 @@ describe('CopilotSdkChatDriver sessions against fake Copilot', () => {
         callback(new Error('write EPIPE'));
         return false;
       }) as typeof client.socket.write;
-      await expect(say(session, 'Reply with the word one.')).rejects.toBeDefined();
+      const sent = await say(session, 'Reply with the word one.').then(() => null, (err: unknown) => err);
+      // The caller's own failure is a normal error, never filtered.
+      expect(sent).toBeTruthy();
+      expect(isFailedCopilotWrite(sent)).toBe(false);
       await new Promise((resolve) => setImmediate(resolve));
       await new Promise((resolve) => setImmediate(resolve));
     } finally {

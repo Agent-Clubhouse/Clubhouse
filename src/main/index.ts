@@ -152,10 +152,11 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
   const msg = reason instanceof Error ? reason.message : String(reason);
   const stack = reason instanceof Error ? reason.stack : undefined;
-  // A write to a Copilot CLI that was going away: its request already failed
-  // through its own promise, and this is vscode-jsonrpc's second copy (#2706).
+  // A failed Copilot message write, usually to a CLI that is going away. Its
+  // request already failed through its own promise; this is vscode-jsonrpc's
+  // second copy, which nothing can catch (#2706).
   if (isFailedCopilotWrite(reason)) {
-    appLog('core:process', 'warn', 'A write to a Copilot CLI that was closing failed', { meta: { error: msg } });
+    appLog('core:process', 'warn', 'A Copilot message write failed, and its request already failed with it', { meta: { error: msg, stack } });
     return;
   }
   appLog('core:process', 'error', 'Unhandled promise rejection', {

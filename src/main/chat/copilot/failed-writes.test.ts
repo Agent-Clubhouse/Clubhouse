@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isFailedCopilotWrite, markFailedCopilotWrites } from './failed-writes';
+import { isFailedCopilotWrite, markFailedCopilotWrites, markFailedCopilotWritesFromStart } from './failed-writes';
 
 describe('markFailedCopilotWrites (#2706)', () => {
   it('marks what the writer throws, and only that', async () => {
@@ -25,5 +25,26 @@ describe('markFailedCopilotWrites (#2706)', () => {
     expect(calls).toBe(1);
     expect(() => markFailedCopilotWrites({ messageWriter: null })).not.toThrow();
     expect(() => markFailedCopilotWrites(undefined)).not.toThrow();
+  });
+
+  it('marks the writer each connect makes, so a write during start() is covered', async () => {
+    const broken = [new Error('first'), new Error('second')];
+    let made = 0;
+    const client = {
+      messageWriter: null as { write(msg: unknown): Promise<void> } | null,
+      async connectToServer() {
+        const error = broken[made++];
+        this.messageWriter = { write: async () => { throw error; } };
+      },
+      async start() {
+        await this.connectToServer();
+        await this.messageWriter!.write('connect').catch(() => undefined);
+      },
+    };
+    markFailedCopilotWritesFromStart(client);
+    await client.start();
+    expect(isFailedCopilotWrite(broken[0])).toBe(true);
+    await client.start(); // a reconnect makes a new writer
+    expect(isFailedCopilotWrite(broken[1])).toBe(true);
   });
 });
