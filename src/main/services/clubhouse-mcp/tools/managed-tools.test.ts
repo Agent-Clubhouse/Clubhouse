@@ -116,6 +116,16 @@ describe('builder tools for the Dispatcher (#2900)', () => {
     const first = await call('update_agent_part', { id: part.id, expectedRevision: part.revision, content: { kind: 'block', content: 'two' } });
     expect(first.json).toMatchObject({ status: 'needs_confirmation', templates: ['Template 3100'] });
     expect(first.json.reaches).toHaveLength(1);
+    const saved = await call('update_agent_part', { id: part.id, expectedRevision: part.revision, content: { kind: 'block', content: 'two' }, confirm: first.json.confirm });
+    expect(saved.json).toMatchObject({ revision: part.revision + 1 });
+  });
+
+  it('asks first for a part only two templates use (#3100)', async () => {
+    const part = (await call('create_agent_part', { kind: 'block', name: 'Two templates 3100', content: { kind: 'block', content: 'one' } })).json;
+    await call('save_agent_template', { name: 'Template A 3100', blocks: [part.id] });
+    await call('save_agent_template', { name: 'Template B 3100', blocks: [part.id] });
+    const first = await call('update_agent_part', { id: part.id, expectedRevision: part.revision, content: { kind: 'block', content: 'two' } });
+    expect(first.json).toMatchObject({ status: 'needs_confirmation', reaches: [] });
   });
 
   it('has no retired built-ins: they are not installed, and nothing lists them (D99)', async () => {

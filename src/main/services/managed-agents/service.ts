@@ -8,6 +8,7 @@
  * Everything the UI and the builder MCP tools do goes through here, so the
  * two can't drift (#2900).
  */
+import { nameIssues } from '../asset-catalog/validation';
 import { ACCESS_LEVELS, accessLabel, isAccessLevel, withAccess } from '../../../shared/agent-access';
 import { agentAccess, getDefaultAccess, getPermissionMode } from '../free-agent-settings';
 import { canonicalHash } from '../asset-catalog/planner';
@@ -664,6 +665,8 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       if (newName && Object.values(await liveEntries()).some((e) => e.kind === entry.kind && e.id !== entry.id && !isRetiredBuiltin(e) && e.name.toLowerCase() === newName.toLowerCase())) {
         throw new ManagedError('name_taken', `${newName} already exists.`);
       }
+      // The catalog's own name rules (length, control characters, secrets), checked here for the same reason.
+      if (newName && nameIssues(newName).length > 0) throw new ManagedError('invalid', 'Check the name.');
       try {
         if (input.content) {
           if (input.content.kind !== entry.kind) throw new ManagedError('invalid');

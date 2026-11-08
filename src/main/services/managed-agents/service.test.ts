@@ -268,6 +268,9 @@ describe('built-ins', () => {
     await expectCode(user(() => service.updatePart({ id: notes.id, expectedRevision: notes.revision, name: 'review 3099', description: 'd', content: { kind: 'block', content: 'new' } })), 'name_taken');
     const after = await user(() => service.getPart(notes.id));
     expect(after).toMatchObject({ name: 'Notes 3099', revision: notes.revision, content: { kind: 'block', content: 'old' } });
+    // A name the catalog refuses (too long) changes nothing either.
+    await expectCode(user(() => service.updatePart({ id: notes.id, expectedRevision: notes.revision, name: 'x'.repeat(121), content: { kind: 'block', content: 'new' } })), 'invalid');
+    expect(await user(() => service.getPart(notes.id))).toMatchObject({ name: 'Notes 3099', revision: notes.revision, content: { kind: 'block', content: 'old' } });
     // The same edit with a free name still saves from the original revision.
     const saved = await user(() => service.updatePart({ id: notes.id, expectedRevision: notes.revision, name: 'Notes renamed 3099', content: { kind: 'block', content: 'new' } }));
     expect(saved).toMatchObject({ name: 'Notes renamed 3099', revision: notes.revision + 1 });
