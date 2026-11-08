@@ -2,10 +2,20 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Page } from '@playwright/test';
 import type { ElectronApp } from '../e2e/launch';
 
-vi.mock('@playwright/test', () => ({ expect: vi.fn() }));
+const pw = vi.hoisted(() => {
+  const toBeVisible = vi.fn().mockResolvedValue(undefined);
+  return {
+    toBeVisible,
+    // expect(check).toPass() runs the check once; expect(locator).toBeVisible() passes.
+    expect: vi.fn((value: unknown) => ({ toPass: () => (value as () => Promise<void>)(), toBeVisible })),
+  };
+});
+vi.mock('@playwright/test', () => ({ expect: pw.expect }));
 vi.mock('../e2e/renderer-diagnostics', () => ({ reportActionFailure: vi.fn() }));
+vi.mock('../e2e/layout', () => ({ isNewLayout: vi.fn().mockResolvedValue(false) }));
 import { clickExplorerTab } from '../e2e/smoke-helpers';
 import { reportActionFailure } from '../e2e/renderer-diagnostics';
+import { isNewLayout } from '../e2e/layout';
 
 function pageWithRail(present: boolean) {
   const click = vi.fn().mockResolvedValue(undefined);
@@ -13,7 +23,7 @@ function pageWithRail(present: boolean) {
   return {
     locator: vi.fn(() => ({ count: vi.fn().mockResolvedValue(present ? 1 : 0) })),
     evaluate: vi.fn().mockResolvedValue({ x: 1399, y: 450 }),
-    getByTestId: vi.fn(() => ({ click })),
+    getByTestId: vi.fn(() => ({ click, isVisible: vi.fn().mockResolvedValue(true) })),
     mouse: { move },
     click,
   };
@@ -44,5 +54,15 @@ describe('explorer navigation behind the classic hover rail', () => {
     page.click.mockRejectedValue(cause);
     await expect(clickExplorerTab(app, page as unknown as Page, 'explorer-tab-plugin:files')).rejects.toBe(cause);
     expect(reportActionFailure).toHaveBeenCalledWith(app, page, 'explorer-tab-plugin:files', cause);
+  });
+
+  it('on the new layout, clicks the title bar tab without moving off a rail', async () => {
+    vi.mocked(isNewLayout).mockResolvedValueOnce(true);
+    const page = pageWithRail(false);
+    await clickExplorerTab({} as ElectronApp, page as unknown as Page, 'explorer-tab-plugin:files');
+    expect(page.locator).not.toHaveBeenCalled();
+    expect(page.mouse.move).not.toHaveBeenCalled();
+    expect(pw.toBeVisible).toHaveBeenCalled();
+    expect(page.click).toHaveBeenCalledOnce();
   });
 });
