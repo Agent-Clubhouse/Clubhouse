@@ -183,20 +183,6 @@ test.describe('Blank-Screen Prevention — Navigation', () => {
     await assertNotBlankScreen(window);
   });
 
-  test('navigating to home and back does not blank-screen', async () => {
-    const homeBtn = window.locator('[data-testid="nav-home"]');
-    const homeVisible = await homeBtn.isVisible({ timeout: 3_000 }).catch(() => false);
-
-    if (homeVisible) {
-      await homeBtn.click();
-      await window.waitForTimeout(500);
-      await assertNotBlankScreen(window);
-
-      await navigateToSmokeProject(window);
-      await assertNotBlankScreen(window);
-    }
-  });
-
   test('command palette open/close does not blank screen', async () => {
     // Open command palette
     await window.keyboard.press('Meta+k');

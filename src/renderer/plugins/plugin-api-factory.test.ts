@@ -673,9 +673,16 @@ describe('plugin-api-factory', () => {
   // ── Hub (removed) ─────────────────────────────────────────────────────
 
   describe('hub API', () => {
-    it('has no hub namespace, since the built-in Hub was removed', () => {
-      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+    it('has no hub namespace on API 0.9, since the built-in Hub was removed', () => {
+      const api = createPluginAPI(makeCtx(), undefined, { ...allPermsManifest, engine: { api: 0.9 } });
       expect('hub' in api).toBe(false);
+    });
+
+    it.each([0.5, 0.6, 0.7, 0.8])('keeps an empty, frozen hub namespace on API %s, so reading it still works', (version) => {
+      const api = createPluginAPI(makeCtx(), undefined, { ...allPermsManifest, engine: { api: version } });
+      const hub = (api as unknown as { hub?: object }).hub;
+      expect(hub).toEqual({});
+      expect(Object.isFrozen(hub)).toBe(true);
     });
   });
 

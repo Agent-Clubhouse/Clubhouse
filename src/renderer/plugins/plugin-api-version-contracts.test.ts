@@ -169,7 +169,7 @@ function makeAllPermsManifest(overrides?: Partial<PluginManifest>): PluginManife
     id: 'test-plugin',
     name: 'Test Plugin',
     version: '1.0.0',
-    engine: { api: 0.8 },
+    engine: { api: 0.9 },
     scope: 'project',
     permissions: [...ALL_PLUGIN_PERMISSIONS],
     contributes: { help: {} },
@@ -1297,7 +1297,7 @@ describe('§2b v0.7 pack plugins and new contributions', () => {
 
 describe('§3 API surface area contracts — createPluginAPI()', () => {
   const unrestrictedProjectManifest = makeAllPermsManifest({
-    engine: { api: 0.8 },
+    engine: { api: 0.9 },
     scope: 'project',
     permissions: [...ALL_PLUGIN_PERMISSIONS],
   });
