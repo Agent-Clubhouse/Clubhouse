@@ -9,6 +9,10 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
 }));
 
+vi.mock('../services/annex-server', () => ({ closeSocketsUnlessController: vi.fn() }));
+vi.mock('../services/annex-peers', () => ({ listPeersForDisplay: vi.fn(() => []) }));
+vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
+
 vi.mock('../services/annex-client', () => ({
   getSatellites: vi.fn(() => []),
   getDiscoveredServices: vi.fn(() => []),
@@ -39,6 +43,7 @@ import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerAnnexClientHandlers } from './annex-client-handlers';
 import * as annexClient from '../services/annex-client';
+import * as annexServer from '../services/annex-server';
 
 describe('annex-client-handlers', () => {
   let handlers: Map<string, (...args: any[]) => any>;
@@ -126,6 +131,18 @@ describe('annex-client-handlers', () => {
   });
 
   // --- Input validation ---
+
+  it('cuts any controller connection from a peer once it is paired here as a satellite, or forgotten', async () => {
+    vi.mocked(annexClient.pairWithService).mockResolvedValueOnce({ success: true, fingerprint: 'fp:sat' } as never);
+    await handlers.get(IPC.ANNEX_CLIENT.PAIR_WITH)!({}, 'fp:sat', '123456');
+    expect(annexServer.closeSocketsUnlessController).toHaveBeenCalledWith('fp:sat');
+    vi.mocked(annexServer.closeSocketsUnlessController).mockClear();
+    vi.mocked(annexClient.pairWithService).mockResolvedValueOnce({ success: false, error: 'no' } as never);
+    await handlers.get(IPC.ANNEX_CLIENT.PAIR_WITH)!({}, 'fp:sat', '123456');
+    expect(annexServer.closeSocketsUnlessController).not.toHaveBeenCalled();
+    handlers.get(IPC.ANNEX_CLIENT.FORGET_SATELLITE)!({}, 'fp:gone');
+    expect(annexServer.closeSocketsUnlessController).toHaveBeenCalledWith('fp:gone');
+  });
 
   it('rejects non-string fingerprint for PAIR_WITH', () => {
     const handler = handlers.get(IPC.ANNEX_CLIENT.PAIR_WITH)!;

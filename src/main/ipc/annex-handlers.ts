@@ -92,8 +92,10 @@ export function registerAnnexHandlers(): void {
     broadcastPeersChanged();
   });
 
+  // Reopens pairing after too many wrong PINs paused it, with a fresh PIN.
   ipcMain.handle(IPC.ANNEX.UNLOCK_PAIRING, () => {
-    annexPeers.unlockPairing();
+    annexServer.allowPairingAgain();
+    broadcastStatusChanged();
   });
 
   ipcMain.handle(IPC.ANNEX.DISCONNECT_CONTROLLER, withValidatedArgs(
