@@ -12,9 +12,9 @@ describe('help-content', () => {
     expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting']);
   });
 
-  it('has 23 total topics', () => {
+  it('has 24 total topics', () => {
     const total = HELP_SECTIONS.reduce((sum, s) => sum + s.topics.length, 0);
-    expect(total).toBe(23);
+    expect(total).toBe(24);
   });
 
   it('each section has at least 1 topic', () => {
@@ -46,9 +46,9 @@ describe('help-content', () => {
     expect(general?.topics).toHaveLength(5);
   });
 
-  it('Agents & Orchestrators section has 6 topics', () => {
+  it('Agents & Orchestrators section has 7 topics', () => {
     const agents = HELP_SECTIONS.find((s) => s.id === 'agents');
-    expect(agents?.topics).toHaveLength(6);
+    expect(agents?.topics).toHaveLength(7);
   });
 
   it('Settings section has 4 topics', () => {
@@ -182,7 +182,7 @@ describe('help-content in the new shell', () => {
   });
 
   it('points only at settings pages that exist', () => {
-    const pages = ['About', 'Agents & providers', 'Managed agents', 'Helpers', 'Display & UI', 'External editor', 'Keyboard shortcuts',
+    const pages = ['About', 'Agents & providers', 'Managed agents', 'Helpers', 'Actions', 'Display & UI', 'External editor', 'Keyboard shortcuts',
       'Notifications & alerts', 'Plugins', 'Annex', 'Annex control', 'Updates', 'Logging', 'Feedback', "What's new"];
     for (const t of articles()) {
       for (const m of t.content.matchAll(/\*\*Settings > ([^*]+)\*\*/g)) {
