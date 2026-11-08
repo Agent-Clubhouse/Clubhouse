@@ -31,7 +31,7 @@ Automates the release preparation workflow: analyze changes since the last relea
    ```
    This is the baseline. All commits between this tag and `HEAD` are candidates. Stable notes always start from the previous stable tag, never a beta: `--sort=-v:refname` puts `v0.42.0-beta.14` above `v0.42.0`, so without the filter a patch release would be diffed from a beta. (Only used if the current version is already a clean release; skipped for prerelease promotion.)
 
-5. **Collect commits since the last tag:**
+5. **Collect commits since the last stable tag** (from step 4):
    ```bash
    git log <last-tag>..HEAD --oneline --no-merges
    ```
