@@ -39,7 +39,7 @@
  * and none of the others.
  */
 
-import { accessFromLegacy } from '../../../../shared/agent-access';
+import { ACCESS_LEVELS as FIVE_LEVELS, accessLabel } from '../../../../shared/agent-access';
 import * as path from 'path';
 import { registerGlobalTool } from '../tool-registry';
 import { isOrchestrationEnabled, onOrchestrationGateChange } from '../orchestration-gate';
@@ -72,8 +72,9 @@ import { HELPER_DIFFICULTIES, isHelperDifficulty, type HelperAutoView, type Help
 import {
   ACCESS_LEVELS,
   CROSS_PROJECT_OFF_MESSAGE,
-  isAccessLevel,
+  helperAccessRequest,
   rankHelperLaunch,
+  type HelperRequestedAccess,
   type HelperLaunch,
   type OrchestrationControl,
 } from '../../../../shared/orchestration-policy';
@@ -427,7 +428,7 @@ async function finishHelperStart(
 
     // The task and the requested level stay on the helper: a helper left
     // asleep gets the task on its next wake, and no wake goes above the level.
-    const asked = requestedAccess && isAccessLevel(requestedAccess) ? requestedAccess : null;
+    const asked = requestedAccess && helperAccessRequest(requestedAccess) ? requestedAccess as HelperRequestedAccess : null;
     await agentConfig.setHelperStartFields(helperPath, helperId, { pendingTask: task, requestedAccess: asked });
     const provider = config.orchestrator ?? orchestrator.orchestrator;
     const launch = await resolveLaunchFor(homePath, orchestrator.id, provider, requestedAccess);
@@ -474,7 +475,7 @@ async function finishHelperStart(
       // at spawn, and the config may hold another freeAgentMode.
       freeAgentMode: finalLaunch.freeAgentMode,
       permissionMode: finalLaunch.permissionMode,
-      access: accessFromLegacy(finalLaunch.freeAgentMode, finalLaunch.permissionMode),
+      access: finalLaunch.access,
     });
     taskTaken = false;
     result = 'started';
@@ -544,8 +545,8 @@ const NEEDS_MANAGED = 'Refused unless the person lets orchestrators choose helpe
 
 /** Check start_helper's arguments. Throws McpArgError. */
 function validateStartArgs(args: HelperStartArgs): void {
-  if (args.access && args.access !== 'same' && !isAccessLevel(args.access)) {
-    throw new McpArgError(`access must be one of: same, ${ACCESS_LEVELS.join(', ')}`);
+  if (args.access && args.access !== 'same' && !helperAccessRequest(args.access)) {
+    throw new McpArgError(`access must be one of: same, ${FIVE_LEVELS.join(', ')} (or ${ACCESS_LEVELS.join(', ')})`);
   }
   if (args.cli === AUTO_CLI) {
     if (!args.difficulty) throw new McpArgError('cli "auto" needs a difficulty: easy, medium or hard.');
@@ -810,7 +811,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
         ...(helperProvider && { orchestrator: helperProvider as OrchestratorId }),
         freeAgentMode: launch.freeAgentMode,
         // A helper's level comes from the orchestration policy, never the app's Default access (#2761).
-        access: accessFromLegacy(launch.freeAgentMode, launch.permissionMode),
+        access: launch.access,
       };
       // A managed helper's setup is required: if it can't be saved, the creation fails rather than start a helper without it.
       // What start_helper changed from the template is kept for the helper's Details (D91).
@@ -904,7 +905,7 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
         ...(outcome.effortWarning && { effortWarning: outcome.effortWarning }),
         ...(outcome.quotaWarning && { quotaWarning: outcome.quotaWarning.message }),
         ...personaNote,
-        ...(outcome.launch.clamped && { accessNote: `Access lowered to ${outcome.launch.level}: a helper never gets more than you run with or than its CLI allows at that level.` }),
+        ...(outcome.launch.clamped && { accessNote: `Access lowered to ${accessLabel(outcome.launch.access)}: a helper never gets more than you run with or than its CLI allows at that level.` }),
         message:
           `Helper "${outcome.name}" is being created${outcome.project.cross ? ` in ${outcome.project.name}` : ''}. Its worktree can take up to a minute; ` +
           'you will get a message when it has started its task, or why it failed. Its access is checked again at start.',
@@ -1247,7 +1248,7 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
       orchestrator: provider,
       freeAgentMode: launch.freeAgentMode,
       permissionMode: launch.permissionMode,
-      access: accessFromLegacy(launch.freeAgentMode, launch.permissionMode),
+      access: launch.access,
       resume,
       ...(resume && { sessionId: helper.lastSessionId }),
     });
@@ -1374,7 +1375,7 @@ export function registerHelperTools(): void {
               'easy: mechanical, well specified, easy to check. medium: normal feature or bug work in a known area with clear acceptance. ' +
               'hard: ambiguous, cross-cutting, concurrency, security or data-loss risk, or a mistake that is costly to catch.',
           },
-          access: { type: 'string', enum: ['same', ...ACCESS_LEVELS], description: 'Access level: same (default) or a lower one. Never more than yours.' },
+          access: { type: 'string', enum: ['same', ...FIVE_LEVELS, ...ACCESS_LEVELS], description: 'Access level: same (default), or a lower one: plan, ask, auto_edit, auto or full_access (standard, auto and bypass still work). Never more than yours.' },
           branchFrom: { type: 'string', description: 'Optional branch or commit the helper\'s branch starts from. Defaults to HEAD.' },
           folder: { type: 'string', description: 'Optional folder name under .clubhouse/agents/. Defaults to the name.' },
           project: {
@@ -1388,7 +1389,8 @@ export function registerHelperTools(): void {
       },
     },
     (agentId, args) => guarded('start_helper', agentId, () => startHelper(agentId, args)),
-    { group: 'orchestration', grant: { actions: ['agent.create'], target: 'project_arg' } },
+    // Choosing its template, parts or access gives the helper what agent.grant covers (#3000).
+    { group: 'orchestration', grant: [{ actions: ['agent.create'], target: 'project_arg' }, { actions: ['agent.grant'], target: 'project_arg', ifArgs: ['template', 'addParts', 'removeParts', 'access'] }] },
   );
 
   registerGlobalTool(

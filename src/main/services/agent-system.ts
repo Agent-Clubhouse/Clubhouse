@@ -235,26 +235,29 @@ async function capHelperLaunch(
   helper: DurableAgentConfig & { parentAgentId: string },
   providerId: string,
   asked: AgentLaunchAccess,
-): Promise<AgentLaunchAccess & { ceiling: AgentAccessLevel }> {
-  let cap: Pick<HelperLaunch, 'freeAgentMode' | 'permissionMode' | 'level'>;
+): Promise<AgentLaunchAccess & { ceiling: AgentAccessLevel; ceilingAccess: AccessLevel }> {
+  let cap: Pick<HelperLaunch, 'freeAgentMode' | 'permissionMode' | 'level' | 'access'>;
+  let ceilingAccess: AccessLevel = 'ask';
   try {
     const parent = await findParent(projectPath, helper);
     if (!parent) throw new Error('Orchestrator not found');
     const resolved = await resolveHelperLaunchSettings(parent.projectPath, helper.parentAgentId, { helperProvider: providerId });
     cap = rankHelperLaunch(resolved, helper.requestedAccess, providerId);
+    // The five-level ceiling (#3000): the orchestrator's live level, lowered to what start_helper asked.
+    ceilingAccess = cap.access;
   } catch (err) {
     // telemetry-exempt: fails safe to standard and is logged; the spawn goes on.
     appLog('core:orchestration', 'warn', 'Could not resolve a helper\'s ceiling; starting it at standard', {
       meta: { agentId, orchestratorId: helper.parentAgentId, error: err instanceof Error ? err.message : String(err) },
     });
-    cap = { ...launchAccessFor('standard'), level: 'standard' };
+    cap = { ...launchAccessFor('standard'), level: 'standard', access: 'ask' };
   }
   const askedLevel = providerAccessLevel(providerId, asked);
-  if (!isLowerAccess(cap.level, askedLevel)) return { ...asked, ceiling: cap.level };
+  if (!isLowerAccess(cap.level, askedLevel)) return { ...asked, ceiling: cap.level, ceilingAccess };
   appLog('core:orchestration', 'info', 'Lowered a helper\'s launch access to its orchestrator\'s ceiling', {
     meta: { agentId, orchestratorId: helper.parentAgentId, asked: askedLevel, level: cap.level },
   });
-  return { freeAgentMode: cap.freeAgentMode, permissionMode: cap.permissionMode, ceiling: cap.level };
+  return { freeAgentMode: cap.freeAgentMode, permissionMode: cap.permissionMode, ceiling: cap.level, ceilingAccess };
 }
 
 /**
@@ -520,8 +523,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         access = lowerAccess(access, accessFromLegacy(capped.freeAgentMode, capped.permissionMode));
         launch = { freeAgentMode: capped.freeAgentMode, permissionMode: capped.permissionMode };
       }
-      // The helper ceiling has three ranks; the levels between them stay at or under it.
-      if (capped.ceiling === 'standard' && access === 'auto_edit') access = 'ask';
+      // Never above its orchestrator's five-level level, nor what start_helper asked (#3000).
+      access = lowerAccess(access, capped.ceilingAccess);
     }
     params = { ...params, access, freeAgentMode: launch.freeAgentMode, permissionMode: launch.permissionMode };
     const permissionMode = launch.permissionMode;
@@ -529,7 +532,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     await prepareMcpBridge(durableConfig);
     // The final launch access, the ceiling for this agent's helpers (#2228).
     // Every runtime below starts with exactly these values.
-    agentRegistry.setLaunchCap(params.agentId, { freeAgentMode: launch.freeAgentMode, permissionMode });
+    agentRegistry.setLaunchCap(params.agentId, { freeAgentMode: launch.freeAgentMode, permissionMode, access });
     // The orchestration tools are listed from this gate (#2228); set it before the MCP connects.
     if (params.kind === 'durable') await syncOrchestrationGate(params.projectPath, params.agentId);
     // Likewise the Dispatcher's tools (#2536), only for the Dispatcher.
@@ -780,7 +783,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           meta: { agentId: params.agentId, provider: provider.id, saved: params.access, level: startable },
         });
         params = { ...params, access: startable, freeAgentMode: lowered.freeAgentMode, permissionMode: lowered.permissionMode };
-        agentRegistry.reportLaunchAccess(params.agentId, lowered);
+        agentRegistry.reportLaunchAccess(params.agentId, { ...lowered, access: startable });
       }
     }
     await spawnPtyAgent(params, provider, allowedTools, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts, managed, quickManaged);

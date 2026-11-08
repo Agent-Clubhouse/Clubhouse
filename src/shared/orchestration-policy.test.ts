@@ -9,6 +9,7 @@ import {
   launchAccessForChatLevel,
   providerAccessLevel,
   rankHelperLaunch,
+  helperAccessRequest,
   normalizeOrchestrationConfig,
   resolveHelperAccess,
   resolveOrchestrationPolicy,
@@ -249,7 +250,34 @@ describe('orchestration policy', () => {
 describe('rankHelperLaunch', () => {
   it('lowers to the requested access when it asks for less', () => {
     const launch = rankHelperLaunch(resolveHelperAccess(launchAccessFor('bypass'), 'same', 'claude-code'), 'auto', 'claude-code');
-    expect(launch).toEqual({ freeAgentMode: true, permissionMode: 'auto', level: 'auto', clamped: false });
+    expect(launch).toEqual({ freeAgentMode: true, permissionMode: 'auto', level: 'auto', access: 'auto', clamped: false });
+  });
+
+  describe('the five-level ceiling (#3000)', () => {
+    const plan = { freeAgentMode: false, permissionMode: 'auto' as const, access: 'plan' as const };
+    it('a helper of an orchestrator at Plan starts at Plan, not Ask first', () => {
+      const launch = rankHelperLaunch(resolveHelperAccess(plan, 'same', 'claude-code'), undefined, 'claude-code');
+      expect(launch).toMatchObject({ freeAgentMode: false, access: 'plan', clamped: false });
+      // Asking for more is lowered, and says so.
+      expect(rankHelperLaunch(resolveHelperAccess(plan, 'same', 'claude-code'), 'ask', 'claude-code')).toMatchObject({ access: 'plan', clamped: true });
+    });
+    it('a helper of an orchestrator at Auto-accept edits keeps that level', () => {
+      const edits = { ...plan, access: 'auto_edit' as const };
+      expect(rankHelperLaunch(resolveHelperAccess(edits, 'same', 'claude-code'), undefined, 'claude-code')).toMatchObject({ access: 'auto_edit', clamped: false });
+    });
+    it('start_helper may ask for Plan under a Full access orchestrator', () => {
+      const full = { ...launchAccessFor('bypass'), access: 'full_access' as const };
+      expect(rankHelperLaunch(resolveHelperAccess(full, 'same', 'claude-code'), 'plan', 'claude-code')).toMatchObject({ freeAgentMode: false, access: 'plan', clamped: false });
+      expect(rankHelperLaunch(resolveHelperAccess(full, 'same', 'claude-code'), 'standard', 'claude-code')).toMatchObject({ access: 'ask' });
+    });
+    it('an orchestrator not running reads as Ask first', () => {
+      expect(rankHelperLaunch(resolveHelperAccess(undefined, 'same', 'claude-code'), undefined, 'claude-code')).toMatchObject({ access: 'ask' });
+    });
+    it('reads the policy values and the five levels as requests, nothing else', () => {
+      expect(helperAccessRequest('bypass')).toEqual({ legacy: 'bypass', access: 'full_access' });
+      expect(helperAccessRequest('auto_edit')).toEqual({ legacy: 'standard', access: 'auto_edit' });
+      expect(helperAccessRequest('root')).toBeUndefined();
+    });
   });
 
   it('never raises above the policy resolution', () => {

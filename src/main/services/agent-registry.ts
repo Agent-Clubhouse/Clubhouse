@@ -1,9 +1,10 @@
 import * as path from 'path';
+import { ACCESS_LEVELS as FIVE_LEVELS, type AccessLevel } from '../../shared/agent-access';
 import * as fsp from 'fs/promises';
 import { getProvider, OrchestratorId, OrchestratorProvider } from '../orchestrators';
 import { appLog } from './log-service';
 import type { FreeAgentPermissionMode } from '../../shared/types';
-import { ACCESS_LEVELS, accessLevelOf, launchAccessFor } from '../../shared/orchestration-policy';
+import { ACCESS_LEVELS, accessLevelOf, fiveLevelOf, launchAccessFor } from '../../shared/orchestration-policy';
 import { setOrchestrationEnabled } from './clubhouse-mcp/orchestration-gate';
 import { setDispatcherAgent } from './clubhouse-mcp/dispatcher-gate';
 import { forgetMcpCaller } from './clubhouse-mcp/mcp-call-gate';
@@ -36,6 +37,8 @@ export interface AgentRegistration {
 export interface LaunchAccess {
   freeAgentMode: boolean;
   permissionMode?: FreeAgentPermissionMode;
+  /** The five-level Access level, when known (#3000). */
+  access?: AccessLevel;
 }
 
 function rankOf(access: LaunchAccess | undefined): number {
@@ -115,7 +118,15 @@ class AgentRegistry {
     const registration = this.registrations.get(agentId);
     if (!registration) return;
     const bound = Math.max(rankOf(registration.launchCap), rankOf(registration.userAccess));
-    registration.launchAccess = rankOf(access) <= bound ? { ...access } : launchAccessFor(ACCESS_LEVELS[bound]);
+    const recorded: LaunchAccess = rankOf(access) <= bound ? { ...access } : launchAccessFor(ACCESS_LEVELS[bound]);
+    // Within a rank, the five-level level can't rise above the bound either (#3000): a CLI
+    // reporting Auto-accept edits doesn't lift an agent started at Plan.
+    const capAccess = [registration.launchCap, registration.userAccess].filter((a): a is Readonly<LaunchAccess> => !!a).map((a) => fiveLevelOf(a));
+    if (recorded.access && capAccess.length > 0) {
+      const top = capAccess.reduce((a, b) => (FIVE_LEVELS.indexOf(a) >= FIVE_LEVELS.indexOf(b) ? a : b));
+      if (FIVE_LEVELS.indexOf(recorded.access) > FIVE_LEVELS.indexOf(top)) recorded.access = top;
+    }
+    registration.launchAccess = recorded;
   }
 
   untrack(agentId: string): void {
