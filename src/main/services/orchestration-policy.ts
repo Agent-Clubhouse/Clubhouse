@@ -161,6 +161,7 @@ function resolveOptions(agent: DurableAgentConfig): { helper: boolean } {
 function applyGate(projectPath: string, agent: DurableAgentConfig, policy: ResolvedOrchestrationPolicy): void {
   setOrchestrationEnabled(agent.id, policy.orchestrate && !isDisposedAgent(agent) && isLiveIn(projectPath, agent.id), {
     crossProject: policy.crossProjectHelpers,
+    control: policy.control,
   });
 }
 

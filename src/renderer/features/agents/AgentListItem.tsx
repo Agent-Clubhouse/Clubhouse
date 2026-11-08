@@ -9,6 +9,7 @@ import { useEffectiveOrchestrator } from './effective-orchestrator';
 import { useAgentRowActions, AgentContextMenu, OverflowIcon } from './useAgentRowActions';
 import { describeHelperDispose, useHelperDisposeRequestStore } from '../../stores/helperDisposeRequestStore';
 import { describeHelperStarts, startRequestsFor, useHelperStartRequestStore } from '../../stores/helperStartRequestStore';
+import { describeGrantRequests, grantRequestsFor, useGrantRequestStore } from '../../stores/grantRequestStore';
 import { useAgentDetailsStore } from './details/detailsStore';
 
 interface Props {
@@ -26,15 +27,19 @@ interface Props {
 
 /**
  * The helper request waiting on the user for this agent, as the new chrome's
- * Needs you shows it: an orchestrator's held starts (#2234), or a helper's
- * dispose its orchestrator asked about (#2229).
+ * Needs you shows it: an orchestrator's held starts (#2234), a helper's
+ * dispose its orchestrator asked about (#2229), or a Clubhouse permission the
+ * agent asked for (#2970).
  */
-export function useHelperRequest(agentId: string, enabled: boolean): { kind: 'dispose' | 'start'; message: string } | null {
+export function useHelperRequest(agentId: string, enabled: boolean): { kind: 'dispose' | 'start' | 'grant'; message: string } | null {
   const dispose = useHelperDisposeRequestStore((s) => (enabled ? s.requests[agentId] : undefined));
   const allStarts = useHelperStartRequestStore((s) => s.requests);
   const starts = useMemo(() => (enabled ? startRequestsFor(allStarts, agentId) : []), [allStarts, agentId, enabled]);
+  const allGrants = useGrantRequestStore((s) => s.requests);
+  const grants = useMemo(() => (enabled ? grantRequestsFor(allGrants, agentId) : []), [allGrants, agentId, enabled]);
   if (dispose) return { kind: 'dispose', message: describeHelperDispose(dispose) };
   if (starts.length > 0) return { kind: 'start', message: describeHelperStarts(starts) };
+  if (grants.length > 0) return { kind: 'grant', message: describeGrantRequests(grants) };
   return null;
 }
 
@@ -86,6 +91,7 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
     e.stopPropagation();
     onSelect(agent.id);
     if (request?.kind === 'dispose') useHelperDisposeRequestStore.getState().review(agent.id);
+    else if (request?.kind === 'grant') useGrantRequestStore.getState().review(agent.id);
     else useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'helpers' });
   }, [onSelect, agent.id, request?.kind]);
 

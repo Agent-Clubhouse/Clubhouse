@@ -98,6 +98,22 @@ describe('selectNeedsAttention', () => {
       ['h', 'dispose_request', 'Orch asked to dispose this helper. Nothing would be lost.'],
     ]);
   });
+
+  it('lists agents asking for a Clubhouse permission (#2970)', () => {
+    const agents = { a: agent('a'), p: agent('p') };
+    const items = selectNeedsAttention(
+      agents,
+      { p: detail('needs_permission', 'Wants to run: ls', 5) },
+      new Set(['p1']),
+      {},
+      {},
+      { a: { message: 'Asks for a permission', at: 20 }, p: { message: 'ignored: a permission prompt comes first', at: 1 } },
+    );
+    expect(items.map((i) => [i.agent.id, i.reason, i.message])).toEqual([
+      ['p', 'permission', 'Wants to run: ls'],
+      ['a', 'grant_request', 'Asks for a permission'],
+    ]);
+  });
 });
 
 describe('orderProjects', () => {

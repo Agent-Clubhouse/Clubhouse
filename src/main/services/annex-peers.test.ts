@@ -23,7 +23,7 @@ vi.mock('./log-service', () => ({
 
 import {
   listPeers, getPeer, isPairedPeer, addPeer, removePeer, removeAllPeers,
-  updateLastSeen, checkBruteForce, recordFailedAttempt, recordSuccessfulAttempt,
+  updateLastSeen, checkBruteForce, recordFailedAttempt, recordSuccessfulAttempt, forgiveFailedAttempt,
   unlockPairing, isPairingLocked, resetForTests, peerNeedsPairing, listPeersForDisplay,
 } from './annex-peers';
 import { app } from 'electron';
@@ -136,6 +136,26 @@ describe('annex-peers', () => {
       const check = checkBruteForce('192.168.1.1');
       expect(check.allowed).toBe(true);
       expect(check.attemptsRemaining).toBe(3);
+    });
+
+    it('takes back one attempt that was not a guess, lifting a lockout it caused', () => {
+      for (let i = 0; i < 6; i++) recordFailedAttempt('192.168.1.1');
+      expect(checkBruteForce('192.168.1.1').locked).toBe(true);
+      forgiveFailedAttempt('192.168.1.1');
+      expect(checkBruteForce('192.168.1.1').locked).toBe(false);
+      expect(isPairingLocked()).toBe(false);
+      for (let i = 0; i < 5; i++) forgiveFailedAttempt('192.168.1.1');
+      expect(checkBruteForce('192.168.1.1')).toMatchObject({ allowed: true, attemptsRemaining: 3 });
+      // Nothing to take back: still a no-op.
+      forgiveFailedAttempt('192.168.1.1');
+      expect(checkBruteForce('192.168.1.1').attemptsRemaining).toBe(3);
+    });
+
+    it('a recorded and forgiven attempt leaves earlier failures counted', () => {
+      for (let i = 0; i < 2; i++) recordFailedAttempt('192.168.1.1');
+      recordFailedAttempt('192.168.1.1');
+      forgiveFailedAttempt('192.168.1.1');
+      expect(checkBruteForce('192.168.1.1')).toMatchObject({ allowed: true, attemptsRemaining: 1 });
     });
 
     it('should unlock manually', () => {

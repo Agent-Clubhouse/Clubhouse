@@ -26,6 +26,8 @@ export const TOOL_GRANT_TARGETS = [
    * (target_agent_id), or every member when the tool reaches them all (broadcast).
    */
   'group_members',
+  /** The caller itself. */
+  'self',
   /** A helper's orchestrator, the agent that started it. */
   'parent',
   /** The caller's direct helpers: the one named in the arguments, or all of them. */
@@ -76,6 +78,14 @@ export interface ToolGrantDeclaration {
    * wake_agent's `message` (agent.message). Left out, it always applies.
    */
   ifArgs?: readonly string[];
+  /**
+   * When one of these actions is Ask first, the tool decides itself whether
+   * and how to ask, so the check lets the call reach it instead of asking
+   * (#2970). start_helper and dispose_helper ask with requests of their own,
+   * from the orchestrator's approval setting; hand_off never asked under it
+   * (a handed-off helper's work is already taken), and still doesn't.
+   */
+  askHandledByTool?: true;
 }
 
 /**

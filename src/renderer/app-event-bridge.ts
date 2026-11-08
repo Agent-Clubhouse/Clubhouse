@@ -19,6 +19,7 @@ import { useUIStore } from './stores/uiStore';
 import { useNotificationStore } from './stores/notificationStore';
 import { useHelperDisposeRequestStore, describeHelperDispose } from './stores/helperDisposeRequestStore';
 import { useHelperStartRequestStore } from './stores/helperStartRequestStore';
+import { useGrantRequestStore } from './stores/grantRequestStore';
 import { useFilePreviewStore } from './stores/filePreviewStore';
 import { useToastStore } from './stores/toastStore';
 import { openActionsSettings } from './features/actions/useActions';
@@ -398,6 +399,23 @@ export function initHelperStartRequestListener(): () => void {
   const offClosed = window.clubhouse.agent.onHelperStartRequestsClosed((ids) => store.remove(ids));
   Promise.resolve().then(() => window.clubhouse.agent.listHelperStartRequests()).then(
     (list) => { for (const request of list ?? []) useHelperStartRequestStore.getState().add(request); },
+    // telemetry-exempt: requests sent from now on still arrive.
+    () => {},
+  );
+  return () => { offAdded(); offClosed(); };
+}
+
+/**
+ * Clubhouse permission requests waiting on the user (#2970), loaded once and
+ * then kept current the same way as helper starts.
+ */
+export function initGrantRequestListener(): () => void {
+  if (window.clubhouse.window.isPopout()) return () => {};
+  const store = useGrantRequestStore.getState();
+  const offAdded = window.clubhouse.agent.onGrantRequest((request) => store.add(request));
+  const offClosed = window.clubhouse.agent.onGrantRequestsClosed((ids) => store.remove(ids));
+  Promise.resolve().then(() => window.clubhouse.agent.listGrantRequests()).then(
+    (list) => { for (const request of list ?? []) useGrantRequestStore.getState().add(request); },
     // telemetry-exempt: requests sent from now on still arrive.
     () => {},
   );
@@ -839,6 +857,7 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initCreationEventListener());
   cleanups.push(initHelperDisposeRequestListener());
   cleanups.push(initHelperStartRequestListener());
+  cleanups.push(initGrantRequestListener());
   cleanups.push(initChatRuntimeNoticeListener());
   cleanups.push(initHookEventListener());
   cleanups.push(initPermissionQueueListener());

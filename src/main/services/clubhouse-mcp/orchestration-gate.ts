@@ -13,8 +13,13 @@
 
 export type OrchestrationGateListener = (agentId: string) => void;
 
-/** Agents with orchestration open, and whether their crossProject gate is open too. */
-const enabled = new Map<string, { crossProject: boolean }>();
+import type { OrchestrationControl } from '../../../shared/orchestration-policy';
+
+/**
+ * Agents with orchestration open, whether their crossProject gate is open too,
+ * and their approval setting, which the grant check reads (#2970).
+ */
+const enabled = new Map<string, { crossProject: boolean; control?: OrchestrationControl }>();
 const listeners = new Set<OrchestrationGateListener>();
 
 export function isOrchestrationEnabled(agentId: string): boolean {
@@ -26,17 +31,24 @@ export function isCrossProjectEnabled(agentId: string): boolean {
   return enabled.get(agentId)?.crossProject === true;
 }
 
+/** An orchestrating agent's approval setting; undefined when it isn't orchestrating. */
+export function orchestrationControl(agentId: string): OrchestrationControl | undefined {
+  return enabled.get(agentId)?.control;
+}
+
 /**
  * Record whether orchestration is on for an agent, and with `crossProject`
  * whether cross-project helpers are (only while orchestration is). Listeners
  * (the tool-list cache and the bridge server's tools/list_changed) fire only
  * on a change.
  */
-export function setOrchestrationEnabled(agentId: string, on: boolean, options: { crossProject?: boolean } = {}): void {
+export function setOrchestrationEnabled(agentId: string, on: boolean, options: { crossProject?: boolean; control?: OrchestrationControl } = {}): void {
   const crossProject = on && !!options.crossProject;
   const current = enabled.get(agentId);
+  // The approval setting changes no tool list: kept without telling the listeners.
+  if (on && current && options.control !== undefined) current.control = options.control;
   if (on ? current?.crossProject === crossProject : !current) return;
-  if (on) enabled.set(agentId, { crossProject });
+  if (on) enabled.set(agentId, { crossProject, ...(options.control !== undefined && { control: options.control }) });
   else enabled.delete(agentId);
   notify(agentId);
 }
@@ -45,7 +57,7 @@ export function setOrchestrationEnabled(agentId: string, on: boolean, options: {
 export function closeCrossProject(agentId: string): void {
   const current = enabled.get(agentId);
   if (!current?.crossProject) return;
-  enabled.set(agentId, { crossProject: false });
+  enabled.set(agentId, { ...current, crossProject: false });
   notify(agentId);
 }
 

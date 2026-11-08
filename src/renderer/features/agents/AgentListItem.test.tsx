@@ -7,6 +7,7 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import type { Agent } from '../../../shared/types';
 import { useHelperStartRequestStore } from '../../stores/helperStartRequestStore';
 import { useHelperDisposeRequestStore } from '../../stores/helperDisposeRequestStore';
+import { useGrantRequestStore } from '../../stores/grantRequestStore';
 import { useAgentDetailsStore } from './details/detailsStore';
 
 const baseAgent: Agent = {
@@ -506,5 +507,20 @@ describe('AgentListItem helper roll-up and requests (legacy layout)', () => {
     fireEvent.click(line);
     expect(onSelect).toHaveBeenCalledWith('agent-1');
     expect(useHelperDisposeRequestStore.getState().reviewing).toBe('agent-1');
+  });
+
+  it('shows a Clubhouse permission request and opens its review dialog (#2970)', () => {
+    const onSelect = vi.fn();
+    resetStores();
+    useGrantRequestStore.setState({ reviewing: null, requests: {
+      g1: { requestId: 'g1', kind: 'call', agentId: 'agent-1', agentName: 'bold-falcon', projectPath: '/project', actions: ['settings.app.write'], where: 'the app', createdAt: '2026-10-18T10:00:00Z', expiresAt: '2026-10-19T10:00:00Z' },
+    } });
+    render(<AgentListItem agent={baseAgent} isActive={false} isThinking={false} onSelect={onSelect} />);
+    const line = screen.getByTestId('agent-helper-request');
+    expect(line).toHaveTextContent('Asks to make a call');
+    fireEvent.click(line);
+    expect(onSelect).toHaveBeenCalledWith('agent-1');
+    expect(useGrantRequestStore.getState().reviewing).toBe('agent-1');
+    useGrantRequestStore.setState({ requests: {}, reviewing: null });
   });
 });

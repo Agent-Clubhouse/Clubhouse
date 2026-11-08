@@ -19,6 +19,7 @@ import { registerHelperQuestionTools } from './helper-question-tools';
 import { registerConnectionTools } from './connection-tools';
 import { registerActionTools } from './action-tools';
 import { registerHelperPresetTools } from './helper-preset-tools';
+import { registerGrantRequestTools } from './grant-request-tools';
 
 export function registerClubhouseMcpTools(): void {
   registerAgentTools();
@@ -37,4 +38,5 @@ export function registerClubhouseMcpTools(): void {
   registerConnectionTools();
   registerActionTools();
   registerHelperPresetTools();
+  registerGrantRequestTools();
 }

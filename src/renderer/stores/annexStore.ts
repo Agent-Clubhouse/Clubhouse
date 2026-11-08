@@ -29,6 +29,8 @@ interface AnnexStoreState {
   saveSettings: (settings: AnnexSettings) => Promise<void>;
   loadStatus: () => Promise<void>;
   regeneratePin: () => Promise<void>;
+  /** Reopens pairing after too many wrong PINs paused it. */
+  allowPairingAgain: () => Promise<void>;
   purgeServerConfig: () => Promise<void>;
   /** Everything paired with this machine, phones and computers both ways. */
   peers: AnnexPeerListing[];
@@ -79,6 +81,16 @@ export const useAnnexStore = create<AnnexStoreState>((set) => ({
   regeneratePin: async () => {
     try {
       const status = await window.clubhouse.annex.regeneratePin();
+      set({ status: status || DEFAULT_STATUS });
+    } catch {
+      // Error handled in main
+    }
+  },
+
+  allowPairingAgain: async () => {
+    try {
+      await window.clubhouse.annex.unlockPairing();
+      const status = await window.clubhouse.annex.getStatus();
       set({ status: status || DEFAULT_STATUS });
     } catch {
       // Error handled in main

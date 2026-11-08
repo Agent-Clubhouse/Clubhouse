@@ -305,7 +305,7 @@ export function connectFailed(key: string, errorType: ErrorType | undefined, atM
 export function connectErrorFor(text: string | undefined): ErrorType | undefined {
   if (text === undefined) return undefined;
   if (text === 'Peer certificate unavailable') return 'cert_missing';
-  if (text === 'Peer certificate mismatch') return 'cert_mismatch';
+  if (text === 'Peer certificate mismatch' || /showed a different certificate/.test(text)) return 'cert_mismatch';
   if (text === 'Incompatible Annex version') return 'protocol_incompatible';
   if (/timed? ?out/i.test(text)) return 'handshake_timeout';
   if (/401|403|unauthorized|forbidden|authentication|pair again/i.test(text)) return 'auth_rejected';

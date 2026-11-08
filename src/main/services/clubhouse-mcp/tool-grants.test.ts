@@ -146,7 +146,8 @@ describe('tool grant declarations (#2967)', () => {
       run_action: action.run on action_arg
       action_history: action.read on app
       read_helper_presets: settings.app.read on app
-      set_helper_presets: settings.app.write on app"
+      set_helper_presets: settings.app.write on app
+      request_grant: grant.request on self"
     `);
   });
 });

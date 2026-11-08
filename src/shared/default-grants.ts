@@ -1,4 +1,5 @@
-import type { Grant, GrantAction, GrantSource, GrantTarget } from './agent-grants';
+import type { Grant, GrantAction, GrantMode, GrantSource, GrantTarget } from './agent-grants';
+import type { OrchestrationControl } from './orchestration-policy';
 
 /**
  * Default grants (#2921, #2968): today's behavior as grants, from structural
@@ -20,6 +21,32 @@ export interface GrantCallerFacts {
   orchestrates: boolean;
   /** Cross-project helpers is on (with orchestration). */
   crossProject: boolean;
+  /**
+   * The orchestrator's approval setting (#2970). It sets Ask first or Allow on
+   * starting helpers (`agent.create`) and disposing them (`agent.dispose`).
+   * Left out, both allow (hands-off).
+   */
+  control?: OrchestrationControl;
+}
+
+/** The modes an orchestrator's approval setting gives its start and dispose grants (#2970). */
+export function controlGrantModes(control: OrchestrationControl): { create: GrantMode; dispose: GrantMode } {
+  switch (control) {
+    case 'hands-off': return { create: 'allow', dispose: 'allow' };
+    case 'ask-before-start': return { create: 'ask', dispose: 'allow' };
+    case 'ask-everything': return { create: 'ask', dispose: 'ask' };
+  }
+}
+
+/**
+ * The approval setting a pair of start and dispose modes stands for: the other
+ * direction of controlGrantModes. Asking before a dispose but not a start has
+ * no setting of its own, so it reads as asking for both, the nearer of the two
+ * that asks at least as much.
+ */
+export function controlFromGrantModes(modes: { create: GrantMode; dispose: GrantMode }): OrchestrationControl {
+  if (modes.dispose === 'ask') return 'ask-everything';
+  return modes.create === 'ask' ? 'ask-before-start' : 'hands-off';
 }
 
 const g = (source: GrantSource) => (action: GrantAction, target: GrantTarget, mode: Grant['mode'] = 'allow'): Grant => ({ action, target, mode, source });
@@ -55,12 +82,16 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
   ];
   if (facts.helper) out.push(structural('agent.message', { kind: 'parent' }));
   if (facts.orchestrates && !facts.dispatcher) {
-    for (const a of ['agent.read', 'agent.message', 'agent.wake', 'agent.sleep', 'agent.reset', 'agent.dispose', 'agent.display'] as const) {
+    // The approval setting decides whether starts and disposes ask first (#2970).
+    // start_helper and dispose_helper ask themselves, with their own requests.
+    const modes = controlGrantModes(facts.control ?? 'hands-off');
+    for (const a of ['agent.read', 'agent.message', 'agent.wake', 'agent.sleep', 'agent.reset', 'agent.display'] as const) {
       out.push(structural(a, HELPERS));
     }
+    out.push(structural('agent.dispose', HELPERS, modes.dispose));
     // What it passes to its helpers at start_helper, never more than it holds (fixed rule 2).
-    out.push(structural('agent.create', OWN_PROJECT), structural('connection.manage', HELPERS), structural('connection.manage', SELF), structural('agent.grant', HELPERS));
-    if (facts.crossProject) out.push(structural('agent.create', ANY_PROJECT), structural('project.read', ANY_PROJECT));
+    out.push(structural('agent.create', OWN_PROJECT, modes.create), structural('connection.manage', HELPERS), structural('connection.manage', SELF), structural('agent.grant', HELPERS));
+    if (facts.crossProject) out.push(structural('agent.create', ANY_PROJECT, modes.create), structural('project.read', ANY_PROJECT));
   }
   if (facts.dispatcher) {
     // Broad power over agents; the maintainer kept the builder's v1 reach (any agent, any project).
