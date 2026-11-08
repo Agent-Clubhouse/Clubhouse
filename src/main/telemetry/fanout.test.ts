@@ -167,6 +167,18 @@ describe('multi-destination fan-out', () => {
     expect(b.logs.getFinishedLogRecords()[0].attributes).not.toHaveProperty('enduser.pseudo.id');
   });
 
+  it('emits an event under a given trace and span, linking it to them (#2524)', async () => {
+    const a = sink();
+    const r = start([dest('azure', 'azure', a, 'standard')]);
+    const ids = { traceId: '0af7651916cd43dd8448eb211c80319c', spanId: 'b7ad6b7169203331' };
+    r.event('clubhouse.feedback.submitted', [], { trace: ids });
+    r.event('clubhouse.feedback.delivered', [], { trace: { traceId: 'not-hex', spanId: 'x' } });
+    await r.forceFlush(1000);
+    const [linked, unlinked] = a.logs.getFinishedLogRecords();
+    expect(linked.spanContext).toMatchObject(ids);
+    expect(unlinked.spanContext).toBeUndefined();
+  });
+
   it('drops them from span exception events too (#2526)', async () => {
     const a = sink();
     const b = sink();

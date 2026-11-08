@@ -16,7 +16,7 @@
  */
 import type { TelemetryDestinationEntry, TelemetryDestinationKind } from '../../../shared/telemetry/settings-types';
 import { loadAzureDestination, loadFramebriarDestination, loadOtlpDestination } from '../lazy-chunks';
-import { currentFramebriarExport, FRAMEBRIAR_DROPPED_ATTRIBUTES, FRAMEBRIAR_NOT_CONNECTED, setBoundFramebriarSession, type FramebriarTelemetryExport } from './framebriar-source';
+import { currentFramebriarExport, FRAMEBRIAR_DROPPED_ATTRIBUTES, FRAMEBRIAR_NOT_CONNECTED, FRAMEBRIAR_ONLY_ATTRIBUTES, setBoundFramebriarSession, type FramebriarTelemetryExport } from './framebriar-source';
 import type { TelemetrySecrets } from '../secret-store';
 import {
   resolveDestination,
@@ -27,6 +27,7 @@ import {
 } from '../settings';
 import type { ExportRecord } from '../types';
 import type { DestinationAdapter } from './types';
+import { TELEMETRY_SCHEMA_VERSION } from '../../../shared/telemetry/attributes';
 
 function azureFailure(record: ExportRecord): string | undefined {
   const s = record.httpStatus;
@@ -56,6 +57,7 @@ const azure: DestinationAdapter<AzureDestinationConfig> = {
   },
   usesOfflineQueue: true,
   describeFailure: azureFailure,
+  dropAttributes: FRAMEBRIAR_ONLY_ATTRIBUTES,
 };
 
 const otlp: DestinationAdapter<OtlpDestinationConfig> = {
@@ -72,6 +74,7 @@ const otlp: DestinationAdapter<OtlpDestinationConfig> = {
       temporality: entry.otlp?.temporality ?? 'cumulative',
     });
   },
+  dropAttributes: FRAMEBRIAR_ONLY_ATTRIBUTES,
 };
 
 /**
@@ -101,7 +104,10 @@ const framebriar: DestinationAdapter<FramebriarTelemetryExport> = {
   },
   describeFailure: framebriarFailure,
   // Framebriar keeps service.* and session.id from the resource and drops the rest.
-  copyResourceAttributes: ['clubhouse.ui.chrome', 'clubhouse.channel'],
+  // The schema version, OS and Electron versions too, which crash triage needs (#2525).
+  copyResourceAttributes: ['clubhouse.ui.chrome', 'clubhouse.channel', 'clubhouse.telemetry.schema', 'os.version', 'clubhouse.electron.version'],
+  // Framebriar's cross-app name for the schema version (#2525).
+  itemAttributes: { 'app.telemetry.schema_version': TELEMETRY_SCHEMA_VERSION },
   // The install id outlives a Feedback enrollment, so it would link one person's
   // records across enrollments; Framebriar's own player id rotates (#2526).
   dropAttributes: FRAMEBRIAR_DROPPED_ATTRIBUTES,

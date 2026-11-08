@@ -830,6 +830,12 @@ export const ATTR = {
     'undeliverable',
     'unknown', 'other',
   ]),
+  /**
+   * The Framebriar report id, a random UUID with no report content, on
+   * `feedback.submitted` only. Framebriar's own name, and only the developer
+   * destination receives it (#2524): the others drop it.
+   */
+  feedbackReportId: uuidAttr('feedback.report.id'),
   feedbackScreenshot: boolAttr('clubhouse.feedback.screenshot'),
   feedbackAnnotated: boolAttr('clubhouse.feedback.annotated'),
   feedbackShots: intAttr('clubhouse.feedback.shots'),

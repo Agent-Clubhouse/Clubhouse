@@ -327,7 +327,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
   };
 
   const stampFor = (dest: SdkDestination) => ({
-    attributes: { 'clubhouse.telemetry.level': dest.filter.level },
+    attributes: { ...dest.itemAttributes, 'clubhouse.telemetry.level': dest.filter.level },
     copyResourceAttributes: dest.copyResourceAttributes ?? [],
     dropAttributes: dest.dropAttributes ?? [],
   });
@@ -519,7 +519,10 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     event(name: EventName, attrs, opts) {
       if (!levelAllows(level, EVENTS[name].level)) return;
       const severity = EVENT_SEVERITY[opts?.severity ?? 'info'];
+      const linked: SpanContext | undefined = opts?.trace && { ...opts.trace, traceFlags: TraceFlags.SAMPLED, isRemote: true };
+      const link = linked && isSpanContextValid(linked) ? trace.setSpanContext(ROOT_CONTEXT, linked) : undefined;
       logger.emit({
+        ...(link && { context: link }),
         eventName: name,
         severityNumber: severity.number,
         severityText: severity.text,

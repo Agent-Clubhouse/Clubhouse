@@ -647,7 +647,7 @@ describe('FeedbackService (fake SDK)', () => {
       ]);
     });
 
-    it('records a submit: screenshot, annotated, shot count and access state', async () => {
+    it('records a submit: screenshot, annotated, shot count, access state and the report id (#2524)', async () => {
       const { create } = fakeSdk();
       const s = service(create);
       const shot = pngOf(4, 3, 'shot');
@@ -655,8 +655,8 @@ describe('FeedbackService (fake SDK)', () => {
       await s.send({ draftId: draft.draftId, notes: NOTES, includeScreenshot: true, annotatedPng: pngOf(4, 3, 'ink').toString('base64') });
       await s.send({ draftId: (await s.captureDraft(async () => null)).draftId, notes: NOTES, includeScreenshot: false });
       expect(named('clubhouse.feedback.submitted')).toEqual([
-        [ATTR.feedbackScreenshot(true), ATTR.feedbackAnnotated(true), ATTR.feedbackShots(2), ATTR.feedbackAccessState('connected')],
-        [ATTR.feedbackScreenshot(false), ATTR.feedbackAnnotated(false), ATTR.feedbackShots(0), ATTR.feedbackAccessState('connected')],
+        [ATTR.feedbackScreenshot(true), ATTR.feedbackAnnotated(true), ATTR.feedbackShots(2), ATTR.feedbackAccessState('connected'), ATTR.feedbackReportId('rep-1')],
+        [ATTR.feedbackScreenshot(false), ATTR.feedbackAnnotated(false), ATTR.feedbackShots(0), ATTR.feedbackAccessState('connected'), ATTR.feedbackReportId('rep-1')],
       ]);
     });
 
@@ -793,7 +793,7 @@ describe('FeedbackService (fake SDK)', () => {
       ]);
     });
 
-    it('never puts notes, image bytes, the invitation or the report id in telemetry', async () => {
+    it('never puts notes, image bytes or the invitation in telemetry; the report id only as feedback.report.id', async () => {
       const { create, opts } = fakeSdk();
       const s = service(create);
       await s.connect(INVITE);
@@ -802,8 +802,15 @@ describe('FeedbackService (fake SDK)', () => {
       await s.send({ draftId: draft.draftId, notes: NOTES, includeScreenshot: true });
       opts().onReceipt!({ id: 'rep-1' });
       const all = JSON.stringify(events());
-      for (const secret of [NOTES, INVITE, 'rep-1', ink, PNG.toString('latin1'), draft.draftId, 'data:image']) expect(all).not.toContain(secret);
-      for (const [, attrs] of events()) for (const a of attrs as Array<{ kind: string }>) expect(['enum', 'int', 'bool']).toContain(a.kind);
+      for (const secret of [NOTES, INVITE, ink, PNG.toString('latin1'), draft.draftId, 'data:image']) expect(all).not.toContain(secret);
+      for (const [, attrs] of events()) {
+        for (const a of attrs as Array<{ key: string; kind: string }>) {
+          if (a.key === 'feedback.report.id') expect(a.kind).toBe('uuid');
+          else expect(['enum', 'int', 'bool']).toContain(a.kind);
+        }
+      }
+      // Only the submitted event carries it, and only the developer destination keeps it (registry).
+      expect(events().filter(([, attrs]) => JSON.stringify(attrs).includes('rep-1')).map(([name]) => name)).toEqual(['clubhouse.feedback.submitted']);
     });
   });
 

@@ -242,6 +242,7 @@ async function start(): Promise<boolean> {
           filter: { level: entry.level, preset: entry.preset },
           copyResourceAttributes: adapter.copyResourceAttributes,
           dropAttributes: adapter.dropAttributes,
+          itemAttributes: adapter.itemAttributes,
         };
       } catch (err) {
         errors.set(entry.id, 'This destination failed to start. See the local log for details.');
