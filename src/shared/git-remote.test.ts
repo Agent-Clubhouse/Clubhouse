@@ -13,6 +13,7 @@ describe('a git remote as a key (#3066)', () => {
 
   it('keeps no credentials', () => {
     expect(normalizeGitRemote('https://me:hunter2@example.com/team/app.git')).not.toContain('hunter2');
+    expect(normalizeGitRemote('me:p@ss@example.com:team/app.git')).toBe('example.com/team/app');
   });
 
   it('has no key for what isn\'t a remote', () => {

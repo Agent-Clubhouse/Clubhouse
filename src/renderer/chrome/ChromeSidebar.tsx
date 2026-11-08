@@ -37,7 +37,7 @@ import { useNetworkSidebarStore } from './sidebar/networkSidebarStore';
 import { LinkSuggestionLine } from './sidebar/LinkSuggestionLine';
 import { PopupMenu, type MenuItem } from '../components/PopupMenu';
 import { useClickOutside } from './sidebar/useClickOutside';
-import { hostOf, switchHost } from './hosts';
+import { hostOf, returnToThisMachine, switchHost } from './hosts';
 import { openNewAgentOrDialog } from './startPage';
 import { useChromeStore, type AppLaunchParams } from './chromeStore';
 import { reportChromeFeature, reportChromeActionFailed } from './telemetry';
@@ -353,9 +353,12 @@ export function ChromeSidebar() {
   useEffect(() => {
     if (activeHostId && satellites.length > 0 && !satellites.some((s) => s.id === activeHostId)) switchHost(null);
   }, [activeHostId, satellites]);
+  // Only once the paired list has loaded (it's empty at startup), so a saved choice survives a restart.
   useEffect(() => {
-    if (show !== 'all' && show !== 'local' && !satellites.some((s) => s.id === show)) useNetworkSidebarStore.getState().setShow('all');
+    if (show !== 'all' && show !== 'local' && satellites.length > 0 && !satellites.some((s) => s.id === show)) useNetworkSidebarStore.getState().setShow('all');
   }, [show, satellites]);
+  // Meanwhile, a choice of a computer that isn't paired shows everything rather than nothing.
+  const effectiveShow = show === 'all' || show === 'local' || satellites.some((s) => s.id === show) ? show : 'all';
 
   // An unpaired satellite's pins, collapsed state and folds go with it. Only on
   // unpairing: a satellite that goes offline keeps them for when it is back.
@@ -419,8 +422,8 @@ export function ChromeSidebar() {
     [satellites],
   );
   const network = useMemo(
-    () => buildNetworkProjects({ local: projects, remote: satelliteProjects, machineOrder, links, show, machineOf: hostOf }),
-    [projects, satelliteProjects, machineOrder, links, show],
+    () => buildNetworkProjects({ local: projects, remote: satelliteProjects, machineOrder, links, show: effectiveShow, machineOf: hostOf }),
+    [projects, satelliteProjects, machineOrder, links, effectiveShow],
   );
   const treeProjects = network.projects;
   const treeAgents = useMemo(() => ({ ...agents, ...remoteAgents }), [agents, remoteAgents]);
@@ -441,12 +444,15 @@ export function ChromeSidebar() {
   }, [treeAgents, network]);
   const isRemoteProject = useCallback((projectId: string) => hostOf(projectId) !== null, []);
   // A short label for an agent on another machine, and whether that machine is offline; none for this machine's.
+  // One object per machine, so rows (and the memoized groups) see the same value until that machine changes.
+  const machineInfo = useMemo(
+    () => new Map(satellites.map((s) => [s.id, { label: shortMachineLabel(s.alias), offline: s.state !== 'connected' }])),
+    [satellites],
+  );
   const agentMachine = useCallback((agent: Agent) => {
     const host = hostOf(agent.projectId);
-    if (!host) return undefined;
-    const sat = satellites.find((s) => s.id === host);
-    return { label: shortMachineLabel(sat?.alias), offline: sat?.state !== 'connected' };
-  }, [satellites]);
+    return host ? machineInfo.get(host) ?? { label: shortMachineLabel(undefined), offline: true } : undefined;
+  }, [machineInfo]);
   // Manual or most-recent order (#2116), shared by the tree and the filter results.
   const ordered = useSidebarOrder(treeProjects, agentsByProject);
 
@@ -505,6 +511,8 @@ export function ChromeSidebar() {
 
   // Every open goes through launchApp, so a plain open ends a visit that Needs you started.
   const openAppItem = useCallback((id: string, params?: AppLaunchParams) => {
+    // App views are this machine's (#3065): nothing on screen would say they showed another one.
+    returnToThisMachine();
     useChromeStore.getState().launchApp(id, params);
     useChromeStore.getState().closeNewAgent();
     closeDispatcher();
@@ -565,7 +573,7 @@ export function ChromeSidebar() {
   }, [openAgent]);
 
   const openProjectSettings = useCallback((projectId: string) => {
-    switchHost(null);
+    returnToThisMachine(projectId);
     useUIStore.getState().openProjectSettings(projectId);
   }, []);
   const closeProject = useCallback((projectId: string) => { void requestCloseProject(projectId); }, []);
@@ -675,30 +683,34 @@ export function ChromeSidebar() {
   // Merge with… and Split per machine, in each project's menu (#3065): they change only the sidebar.
   const [merging, setMerging] = useState<{ projectId: string; x: number; y: number } | null>(null);
   const projectLabel = useCallback((projectId: string) => {
-    const project = [...projects, ...Object.values(satelliteProjects).flat()].find((p) => p.id === projectId);
+    const project = [...projects, ...satellites.flatMap((s) => satelliteProjects[s.id] ?? [])].find((p) => p.id === projectId);
     const name = project ? project.displayName || project.name : projectId;
     const host = hostOf(projectId);
     return host ? `${name} on ${satellites.find((s) => s.id === host)?.alias ?? 'another computer'}` : name;
   }, [projects, satelliteProjects, satellites]);
-  const projectMenuItems = useCallback((projectId: string): MenuItem[] => {
-    const items: MenuItem[] = [];
-    if (treeProjects.length > 1) {
-      items.push({
-        id: 'merge', label: 'Merge with…', onSelect: () => {
-          const rect = document.querySelector(`[data-testid="project-${CSS.escape(projectId)}"]`)?.getBoundingClientRect();
-          setMerging({ projectId, x: rect ? rect.left + 24 : 24, y: rect ? rect.bottom : 80 });
-        },
-      });
-    }
-    if ((network.members[projectId] ?? []).length > 1) {
-      items.push({ id: 'split', label: 'Split per machine', onSelect: () => { useNetworkSidebarStore.getState().split(projectId); reportChromeFeature('project_menu_open'); } });
-    }
-    return items;
+  // Built once per tree change, so each memoized group gets the same items until something changes.
+  const menuItemsByProject = useMemo(() => {
+    const build = (projectId: string): MenuItem[] => {
+      const items: MenuItem[] = [];
+      if (treeProjects.length > 1) {
+        items.push({
+          id: 'merge', label: 'Merge with…', onSelect: () => {
+            const rect = document.querySelector(`[data-testid="project-${CSS.escape(projectId)}"]`)?.getBoundingClientRect();
+            setMerging({ projectId, x: rect ? rect.left + 24 : 24, y: rect ? rect.bottom : 80 });
+          },
+        });
+      }
+      if ((network.members[projectId] ?? []).length > 1) {
+        items.push({ id: 'split', label: 'Split per machine', onSelect: () => { useNetworkSidebarStore.getState().split(projectId); } });
+      }
+      return items;
+    };
+    return new Map(treeProjects.map((p) => [p.id, build(p.id)]));
   }, [treeProjects, network]);
+  const projectMenuItems = useCallback((projectId: string): MenuItem[] => menuItemsByProject.get(projectId) ?? [], [menuItemsByProject]);
 
   // A project's +, and each New menu item, open the New agent page with that kind chosen (#2031).
   const onNewAgent = useCallback((projectId: string) => {
-    switchHost(null);
     openNewAgentOrDialog('durable', projectId);
     reportChromeFeature('new_agent_open');
   }, []);
@@ -754,7 +766,7 @@ export function ChromeSidebar() {
       <div className="flex-shrink-0 pt-2" />
       <ShowMenu
         satellites={satellites}
-        show={show}
+        show={effectiveShow}
         needsByHost={needsByHost}
         onShow={onShow}
         onRetry={onRetryHost}

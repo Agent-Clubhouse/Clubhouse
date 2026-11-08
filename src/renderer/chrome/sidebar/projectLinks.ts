@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Project } from '../../../shared/types';
 import { useProjectStore } from '../../stores/projectStore';
 import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
+import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useNetworkSidebarStore } from './networkSidebarStore';
 import { linkGroupOf, pairKey } from './networkTree';
 
@@ -41,11 +42,20 @@ export function linkSuggestions(
   return out;
 }
 
-/** This machine's projects' git remotes as keys, read again when its projects change. */
+/** Every paired computer's projects, as its snapshot listed them; an unpaired computer's are left out. */
+export function usePairedRemoteProjects(): Array<Project & { satelliteId?: string; satelliteName?: string }> {
+  const satellites = useAnnexClientStore((s) => s.satellites);
+  const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
+  return useMemo(() => satellites.flatMap((s) => satelliteProjects[s.id] ?? []), [satellites, satelliteProjects]);
+}
+
+/** This machine's projects' git remotes as keys, read again when its projects change; only while another computer is paired. */
 export function useLocalRepoKeys(): Record<string, string> {
   const projects = useProjectStore((s) => s.projects);
+  const paired = useAnnexClientStore((s) => s.satellites.length > 0);
   const [keys, setKeys] = useState<Record<string, string>>({});
   useEffect(() => {
+    if (!paired) { setKeys({}); return undefined; }
     let alive = true;
     Promise.resolve().then(() => window.clubhouse.project.getRepoKeys()).then(
       (k) => { if (alive) setKeys(k ?? {}); },
@@ -53,19 +63,19 @@ export function useLocalRepoKeys(): Record<string, string> {
       () => { if (alive) setKeys({}); },
     );
     return () => { alive = false; };
-  }, [projects]);
+  }, [projects, paired]);
   return keys;
 }
 
 /** Every suggestion now, from this machine's projects and every connected machine's. */
 export function useLinkSuggestions(): LinkSuggestion[] {
   const projects = useProjectStore((s) => s.projects);
-  const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
+  const remote = usePairedRemoteProjects();
   const links = useNetworkSidebarStore((s) => s.links);
   const keptSeparate = useNetworkSidebarStore((s) => s.keptSeparate);
   const keys = useLocalRepoKeys();
   return useMemo(
-    () => linkSuggestions(projects, keys, Object.values(satelliteProjects).flat(), links, keptSeparate),
-    [projects, keys, satelliteProjects, links, keptSeparate],
+    () => linkSuggestions(projects, keys, remote, links, keptSeparate),
+    [projects, keys, remote, links, keptSeparate],
   );
 }

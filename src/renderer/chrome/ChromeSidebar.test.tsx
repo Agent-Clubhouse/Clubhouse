@@ -705,6 +705,41 @@ describe('ChromeSidebar', () => {
       expect(useChromeStore.getState().pinnedProjectIds).toEqual(['p1']);
     });
 
+    it('the + on this computer\'s project, with another computer\'s agent selected, comes back and selects that project first', () => {
+      useChromeFlagStore.setState({ enabled: true });
+      useUIStore.setState({ activeHostId: 's1' });
+      useProjectStore.setState({ activeProjectId: rp });
+      render(<ChromeSidebar />);
+      fireEvent.click(within(screen.getByTestId('project-group-p2')).getByLabelText('New agent in Goobers'));
+      expect(useUIStore.getState().activeHostId).toBeNull();
+      expect(useProjectStore.getState().activeProjectId).toBe('p2');
+      expect(useChromeStore.getState().newAgent).toMatchObject({ projectId: 'p2' });
+      act(() => useChromeStore.getState().closeNewAgent());
+    });
+
+    it('an app view is this computer\'s: opening one comes back from another computer', () => {
+      registerAppPlugin('canvas', 'Canvas');
+      usePluginStore.setState({ appEnabled: ['canvas'] });
+      useUIStore.setState({ activeHostId: 's1' });
+      useProjectStore.setState({ activeProjectId: rp });
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByText('Canvas'));
+      expect(useUIStore.getState().activeHostId).toBeNull();
+    });
+
+    it('keeps a saved Show choice through startup, before the paired list arrives', () => {
+      useNetworkSidebarStore.getState().setShow('s1');
+      useAnnexClientStore.setState({ satellites: [] });
+      const { rerender } = render(<ChromeSidebar />);
+      // Nothing paired yet: everything shows, and the choice is kept.
+      expect(screen.getByTestId('project-p1')).toBeTruthy();
+      expect(useNetworkSidebarStore.getState().show).toBe('s1');
+      act(() => useAnnexClientStore.setState({ satellites: [{ id: 's1', alias: 'Studio', state: 'connected', fingerprint: 'fp1', icon: '', color: 'blue', host: 'h', mainPort: 1, pairingPort: 2, snapshot: null, lastError: null }] }));
+      rerender(<ChromeSidebar />);
+      expect(screen.queryByTestId('project-p1')).toBeNull();
+      expect(screen.getByTestId(`project-${rp}`)).toBeTruthy();
+    });
+
     it('opens Annex Network settings from Show', () => {
       render(<ChromeSidebar />);
       fireEvent.click(screen.getByTestId('show-menu'));

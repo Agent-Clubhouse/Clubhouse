@@ -1,6 +1,5 @@
 import { useLinkSuggestions } from './projectLinks';
 import { useNetworkSidebarStore } from './networkSidebarStore';
-import { reportChromeFeature } from '../telemetry';
 
 /**
  * A quiet line in the sidebar suggesting a link (#3066): a project here and
@@ -22,7 +21,7 @@ export function LinkSuggestionLine() {
         <button
           type="button"
           className="text-ctp-accent hover:underline cursor-pointer"
-          onClick={() => { link(first.local.id, first.remote.id); reportChromeFeature('project_menu_open'); }}
+          onClick={() => link(first.local.id, first.remote.id)}
         >
           Link
         </button>

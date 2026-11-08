@@ -52,7 +52,7 @@ import { withReachableAs } from './annex-reach';
 import * as networkChannel from './annex-network-channel';
 import * as membership from './annex-network-membership';
 import * as agentCalls from './annex-agent-calls';
-import { repoKeysFor } from './project-repo-keys';
+import { cachedRepoKeys } from './project-repo-keys';
 import { NETWORK_MESSAGE_MAX_BYTES, NETWORK_PROTOCOL_VERSION, parseNetworkMessage } from '../../shared/annex-network-protocol';
 import { parseAgentAddress, routeOf } from '../../shared/agent-address';
 import * as annexEventBus from './annex-event-bus';
@@ -1156,7 +1156,8 @@ async function readSnapshotSourcesData() {
 
   const iconSet = await buildSnapshotIcons(projects, durablesByProject, dispatcherRecord() ?? undefined);
   // Each project's git remote as a key, so another machine can suggest linking the same project (#3066).
-  const repoKeys = await repoKeysFor(projects);
+  // Whatever is known now: the snapshot never waits on git, and the rest arrive with a later one.
+  const repoKeys = cachedRepoKeys(projects);
 
   // Read per-project canvas state in parallel (including wires)
   const canvasState: Record<string, CanvasStateWire> = {};

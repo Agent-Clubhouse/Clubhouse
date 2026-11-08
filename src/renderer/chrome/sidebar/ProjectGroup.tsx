@@ -204,7 +204,8 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
   // group's new order goes back into the saved order at the same places
   // (moveWithinGroup). Memoized on the order, sleep and parent links, so
   // memoized rows don't re-render on every status change.
-  const durableKey = JSON.stringify(agents.filter((a) => a.kind === 'durable').map((a) => [a.id, a.status === 'sleeping', localParentId(a) ?? null]));
+  // Only this project's own agents reorder: a linked group's others are another project's, maybe on another machine (#3066).
+  const durableKey = JSON.stringify(agents.filter((a) => a.kind === 'durable' && a.projectId === project.id).map((a) => [a.id, a.status === 'sleeping', localParentId(a) ?? null]));
   const reorder = useMemo(() => {
     const entries = (JSON.parse(durableKey) as [string, boolean, string | null][]).map(([id, sleeping, parent]) => ({
       id, kind: 'durable' as const, status: sleeping ? 'sleeping' as const : 'running' as const, parentAgentId: parent ?? undefined,
@@ -297,8 +298,9 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
         onToggleHelpers={hasHelpers ? onToggleAgentCollapsed : undefined}
         dot={agentDot(agent, detailed[agent.id])}
         detailed={detailed[agent.id]}
-        projectPath={project.path}
-        onOpenTerminal={onOpenTerminal}
+        // A linked group's agents from another project have that project's folder and terminal, not this one's.
+        projectPath={agent.projectId === project.id ? project.path : undefined}
+        onOpenTerminal={agent.projectId === project.id ? onOpenTerminal : undefined}
         // A linked group's agents are in other projects too (#3066): each is active by its own project.
         active={agent.id === activeAgentId && (isActiveProject || agent.projectId === activeProjectId)}
         machine={agentMachine?.(agent)?.label}
@@ -309,7 +311,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
         extraActions={moveActions(agent)}
         onSelect={onSelectAgent}
         drag={reorder.actions.has(agent.id) && reorder.groupOf.get(agent.id)!.length > 1 ? agentDragHandlers
-          : agent.kind === 'durable' ? hintDragHandlers : undefined}
+          : agent.kind === 'durable' && agent.projectId === project.id ? hintDragHandlers : undefined}
         dropEdge={dropEdge(agent.id)}
       />
     );

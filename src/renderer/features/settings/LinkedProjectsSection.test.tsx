@@ -3,6 +3,7 @@ import { LinkedProjectsSection } from './LinkedProjectsSection';
 import { LinkSuggestionLine } from '../../chrome/sidebar/LinkSuggestionLine';
 import { useProjectStore } from '../../stores/projectStore';
 import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
+import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useNetworkSidebarStore, _resetNetworkSidebarForTesting } from '../../chrome/sidebar/networkSidebarStore';
 
 const REMOTE = 'remote||bb||site';
@@ -11,6 +12,7 @@ describe('linking the same project on two computers (#3066)', () => {
   beforeEach(() => {
     _resetNetworkSidebarForTesting();
     useProjectStore.setState({ projects: [{ id: 'p1', name: 'Site', path: '/site' }, { id: 'p2', name: 'Docs', path: '/docs' }] } as never);
+    useAnnexClientStore.setState({ satellites: [{ id: 'bb', alias: 'Studio', fingerprint: 'bb', state: 'connected' }] } as never);
     useRemoteProjectStore.setState({ satelliteProjects: { bb: [
       { id: REMOTE, name: 'Site', path: '/srv/site', remote: true, satelliteId: 'bb', satelliteName: 'Studio', repoKey: 'github.com/org/site' },
     ] } } as never);
@@ -43,6 +45,20 @@ describe('linking the same project on two computers (#3066)', () => {
     expect(useNetworkSidebarStore.getState().links).toEqual([]);
     // Only the display changed: both projects are still here.
     expect(useProjectStore.getState().projects.map((p) => p.id)).toEqual(['p1', 'p2']);
+  });
+
+  it('leaves out a computer that was unpaired, though its list is still in memory', async () => {
+    useAnnexClientStore.setState({ satellites: [] } as never);
+    const { container } = render(<><LinkSuggestionLine /><LinkedProjectsSection projectId="p1" /></>);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('names a linked project whose computer isn\'t connected, never by its id', () => {
+    useNetworkSidebarStore.getState().link('p1', 'remote||cc||gone');
+    render(<LinkedProjectsSection projectId="p1" />);
+    expect(screen.getByTestId('linked-project')).toHaveTextContent('A project on a computer not connected now');
+    expect(screen.getByTestId('linked-project')).not.toHaveTextContent('remote||');
   });
 
   it('shows nothing without another computer or a link', () => {

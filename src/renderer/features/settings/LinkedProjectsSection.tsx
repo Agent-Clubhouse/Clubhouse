@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import type { Project } from '../../../shared/types';
 import { useProjectStore } from '../../stores/projectStore';
-import { useRemoteProjectStore, type RemoteProject } from '../../stores/remoteProjectStore';
+import { parseNamespacedId, type RemoteProject } from '../../stores/remoteProjectStore';
 import { useNetworkSidebarStore } from '../../chrome/sidebar/networkSidebarStore';
 import { linkGroupOf } from '../../chrome/sidebar/networkTree';
-import { useLinkSuggestions } from '../../chrome/sidebar/projectLinks';
+import { useLinkSuggestions, usePairedRemoteProjects } from '../../chrome/sidebar/projectLinks';
 import { Button } from '../../components/Button';
 import { SettingsSection, SettingsField, settingsInput } from './SettingsLayout';
 
@@ -17,7 +17,7 @@ import { SettingsSection, SettingsField, settingsInput } from './SettingsLayout'
  */
 export function LinkedProjectsSection({ projectId }: { projectId: string }) {
   const projects = useProjectStore((s) => s.projects);
-  const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
+  const remoteProjects = usePairedRemoteProjects();
   const links = useNetworkSidebarStore((s) => s.links);
   const link = useNetworkSidebarStore((s) => s.link);
   const unlink = useNetworkSidebarStore((s) => s.unlink);
@@ -26,19 +26,22 @@ export function LinkedProjectsSection({ projectId }: { projectId: string }) {
   const [choice, setChoice] = useState('');
 
   const everyProject = useMemo<Array<Project | RemoteProject>>(
-    () => [...projects, ...Object.values(satelliteProjects).flat()],
-    [projects, satelliteProjects],
+    () => [...projects, ...remoteProjects],
+    [projects, remoteProjects],
   );
   const label = (p: Project | RemoteProject) => {
     const name = p.displayName || p.name;
-    return 'satelliteName' in p && p.satelliteName ? `${name} on ${p.satelliteName}` : `${name} on this computer`;
+    if ('satelliteName' in p) return p.satelliteName ? `${name} on ${p.satelliteName}` : name;
+    return `${name} on this computer`;
   };
   const group = linkGroupOf(links, projectId) ?? [projectId];
-  const linked = group.filter((id) => id !== projectId).map((id) => everyProject.find((p) => p.id === id) ?? { id, name: id, path: '' } as Project);
+  // A linked project whose computer hasn't sent its list yet (offline since a restart, say) is named as such, not by its id.
+  const linked = group.filter((id) => id !== projectId).map((id) => everyProject.find((p) => p.id === id)
+    ?? ({ id, name: parseNamespacedId(id) ? 'A project on a computer not connected now' : 'A project no longer here', path: '', satelliteName: '' } as Project));
   const candidates = everyProject.filter((p) => !group.includes(p.id));
 
   // Shown once another computer's projects are known, or a link exists: without a network there's nothing to link across.
-  const anyRemote = Object.values(satelliteProjects).some((list) => list.length > 0);
+  const anyRemote = remoteProjects.length > 0;
   if (linked.length === 0 && suggestions.length === 0 && !anyRemote) return null;
 
   return (

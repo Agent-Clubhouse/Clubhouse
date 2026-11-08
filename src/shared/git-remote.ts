@@ -11,7 +11,8 @@ export function normalizeGitRemote(url: string | null | undefined): string | nul
   if (!raw || /^[a-z]:[\\/]/i.test(raw)) return null;
   let host: string;
   let path: string;
-  const scp = /^(?:[^@/\s]+@)?([^:/\s]+):(?!\/)(.+)$/.exec(raw);
+  // Everything up to the last `@` before the host is the user (and any password, `@`s and all).
+  const scp = /^(?:[^/\s]*@)?([^:/\s@]+):(?!\/)(.+)$/.exec(raw);
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
     let parsed: URL;
     try { parsed = new URL(raw); } catch { return null; }
