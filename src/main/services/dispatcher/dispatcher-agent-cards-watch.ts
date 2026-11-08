@@ -11,6 +11,7 @@
  */
 
 import * as path from 'path';
+import { app } from 'electron';
 import type { ChatSessionState, RoutedMessagePart } from '../../../shared/chat';
 import { getBaseDirPath } from '../base-dir';
 import * as projectStore from '../project-store';
@@ -49,8 +50,19 @@ export function isWiredToDispatcher(agentId: string): boolean {
   return bindingManager.getBindingsForAgent(agentId).some((b) => b.targetKind === 'agent' && b.targetId === dispatcherId);
 }
 
+/**
+ * Test/E2E seam: `CLUBHOUSE_TEST_NO_CARD_REQUESTS=1` keeps card requests from
+ * being sent, so a fake CLI replaying a script never gets a prompt it doesn't
+ * expect. Requests are still recorded; they just never go out. Honored ONLY in
+ * unpackaged builds.
+ */
+export function testCardRequestsDisabled(): boolean {
+  return process.env.CLUBHOUSE_TEST_NO_CARD_REQUESTS === '1' && !app.isPackaged;
+}
+
 /** Put the text in front of a running agent. A busy chat agent gets it queued for its next turn. */
 async function send(agentId: string, text: string, routed: RoutedMessagePart[]): Promise<CardDelivery> {
+  if (testCardRequestsDisabled()) return 'not_running';
   const runtime = getAgentRuntime(agentId);
   if (!runtime?.isRunning()) return 'not_running';
   const busy = runtime.kind === 'chat' && BUSY.has(runtime.getState());

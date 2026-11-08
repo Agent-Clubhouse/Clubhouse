@@ -38,7 +38,8 @@ vi.mock('./dispatcher-service', () => ({
   onDispatcherChanged: subscribe(listeners.dispatcher),
 }));
 
-import { isWiredToDispatcher, watchAgentCards } from './dispatcher-agent-cards-watch';
+import { isWiredToDispatcher, liveAgentCardDeps, watchAgentCards } from './dispatcher-agent-cards-watch';
+import { getAgentRuntime } from '../agent-runtime';
 import type { AgentCards } from './dispatcher-agent-cards';
 
 let cards: { sync: ReturnType<typeof vi.fn>; deliver: ReturnType<typeof vi.fn> };
@@ -97,5 +98,26 @@ describe('isWiredToDispatcher', () => {
     expect(isWiredToDispatcher('lead')).toBe(true);
     expect(isWiredToDispatcher('qa')).toBe(false);
     expect(isWiredToDispatcher('dispatcher')).toBe(false);
+  });
+});
+
+describe('sending a request', () => {
+  const runtime = { kind: 'chat', isRunning: () => true, getState: () => 'idle', sendMessage: vi.fn(async () => ({ delivery: 'prompt' })) };
+
+  beforeEach(() => {
+    runtime.sendMessage.mockClear();
+    vi.mocked(getAgentRuntime).mockReturnValue(runtime as never);
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('puts it in front of a running agent as a Clubhouse message', async () => {
+    expect(await liveAgentCardDeps.send('lead', '[Clubhouse] hi', [{ fromClubhouse: true, text: 'hi' }])).toBe('delivered');
+    expect(runtime.sendMessage).toHaveBeenCalledWith('[Clubhouse] hi', expect.objectContaining({ source: 'mcp', routed: [{ fromClubhouse: true, text: 'hi' }] }));
+  });
+
+  it('sends nothing in E2E, where a fake CLI\'s script doesn\'t expect it', async () => {
+    vi.stubEnv('CLUBHOUSE_TEST_NO_CARD_REQUESTS', '1');
+    expect(await liveAgentCardDeps.send('lead', '[Clubhouse] hi', [])).toBe('not_running');
+    expect(runtime.sendMessage).not.toHaveBeenCalled();
   });
 });

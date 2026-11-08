@@ -98,6 +98,7 @@ function installIdleCli(): { env: Record<string, string>; argvFile: string } {
         'copilot-cli': path.join(root, 'not-installed', 'copilot'),
       }),
       CLUBHOUSE_TEST_NO_MODEL_PROBES: '1',
+      CLUBHOUSE_TEST_NO_CARD_REQUESTS: '1',
     },
   };
 }
