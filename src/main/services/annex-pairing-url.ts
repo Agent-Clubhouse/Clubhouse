@@ -79,3 +79,27 @@ export function buildPairingUrl(parts: PairingUrlParts): string | null {
   // literal plus. A real '+' is already %2B, so every '+' left is a space.
   return `clubhousego://pair?${params.toString().replace(/\+/g, '%20')}`;
 }
+
+/**
+ * Reads a pairing link back, for a computer pairing with another. Null unless
+ * every part is present and well formed: a pairing never falls back to guessing.
+ */
+export function parsePairingUrl(link: string): PairingUrlParts | null {
+  let url: URL;
+  try {
+    url = new URL(link.trim());
+  } catch { // telemetry-exempt: not a URL means not a pairing link, which the caller says
+    return null;
+  }
+  if (url.protocol !== 'clubhousego:' || (url.hostname || url.pathname.replace(/^\/+/, '')) !== 'pair') return null;
+  const params = url.searchParams;
+  if (params.get('v') !== PAIRING_URL_VERSION) return null;
+  const hosts = params.getAll('host').map((h) => h.trim()).filter(Boolean);
+  const port = Number(params.get('port'));
+  const fingerprint = params.get('id') ?? '';
+  const certFingerprint = normalizeCertFingerprint(params.get('cert') ?? '');
+  const pin = params.get('pin') ?? '';
+  if (hosts.length === 0 || !Number.isInteger(port) || port <= 0 || port > 65535) return null;
+  if (!/^[0-9a-f]{2}(:[0-9a-f]{2}){15}$/i.test(fingerprint) || !certFingerprint || !/^\d{6}$/.test(pin)) return null;
+  return { hosts, port, fingerprint: fingerprint.toLowerCase(), certFingerprint, pin, name: params.get('name') ?? '' };
+}

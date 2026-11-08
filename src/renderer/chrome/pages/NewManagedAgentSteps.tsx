@@ -6,11 +6,14 @@ import {
   type OrchestrationAccess, type OrchestrationControl, type OrchestrationPolicyConfig,
 } from '../../../shared/orchestration-policy';
 import { normalizeIdleSleep, type AgentIdleSleep } from '../../../shared/idle-sleep';
+import type { AccessLevel } from '../../../shared/agent-access';
 import { Button } from '../../components/Button';
 import { Toggle } from '../../components/Toggle';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
+import { AccessSelect as AccessLevelSelect, accessHelp, useDefaultAccess } from '../../features/agents/AccessSelect';
 import { ManagedBuilder, type SetupDraft } from '../../features/managed/ManagedBuilder';
 import { managed, unwrap, useManagedTemplates } from '../../features/managed/managedApi';
+import { settingsAccess } from '../../features/managed/create-managed-agent';
 import {
   EffortSelect, HELPER_SELECTION_HELP, HELPER_TEMPLATE_HELP, HelperSelectionSelect, HelperTemplateSelect, IDLE_SLEEP_HELP, IdleSleepSelect,
   effortHelp, useModelEfforts,
@@ -195,10 +198,11 @@ function useManagedAgents(): { list: CopyCandidate[] | null } {
 }
 
 /** What Copy another agent reads from the picked agent's durable config, besides what the agent list has. */
-type CopiedSettings = Pick<ManagedTemplateSettings, 'orchestration' | 'effort' | 'idleSleep' | 'helperTemplateId'>;
+type CopiedSettings = Pick<ManagedTemplateSettings, 'access' | 'orchestration' | 'effort' | 'idleSleep' | 'helperTemplateId'>;
 
 export function copySeed(c: { agent: Agent; setup: SetupDraft; orchestration?: OrchestrationPolicyConfig; config?: CopiedSettings }): BuilderSeed {
   const orchestration = c.config?.orchestration ?? c.orchestration;
+  const access = c.config?.access ?? settingsAccess(c.agent);
   return {
     key: `copy:${c.agent.id}`,
     origin: `copied from ${c.agent.name}`,
@@ -206,7 +210,7 @@ export function copySeed(c: { agent: Agent; setup: SetupDraft; orchestration?: O
     settings: {
       ...(c.agent.orchestrator && { orchestrator: c.agent.orchestrator }),
       ...(c.agent.model && c.agent.model !== 'default' && { model: c.agent.model }),
-      ...(c.agent.freeAgentMode && { freeAgentMode: true }),
+      ...(access && { access }),
       ...(orchestration && { orchestration: { ...orchestration } }),
       ...(c.config?.effort && { effort: c.config.effort }),
       ...(c.config?.idleSleep && { idleSleep: c.config.idleSleep }),
@@ -221,6 +225,7 @@ async function copiedSettingsOf(c: CopyCandidate): Promise<CopiedSettings | unde
     const config = await window.clubhouse.agent.getDurableConfig(c.project.path, c.agent.id);
     if (!config) return undefined;
     return {
+      ...(config.access && { access: config.access }),
       ...(config.orchestration && { orchestration: config.orchestration }),
       ...(config.effort && { effort: config.effort }),
       ...(config.idleSleep !== undefined && { idleSleep: config.idleSleep }),
@@ -289,7 +294,8 @@ export interface BuilderDraft {
   /** Empty: the project's first CLI. */
   orchestrator: string;
   model: string;
-  freeAgentMode: boolean;
+  /** The agent's Access (#2761). Unset: the app's Default access. */
+  agentAccess?: AccessLevel;
   orchestrate: boolean;
   helperLimit: string;
   /** Empty: the CLI's default. */
@@ -307,13 +313,14 @@ export interface BuilderDraft {
 
 export function draftFromSeed(seed: BuilderSeed): BuilderDraft {
   const o = seed.settings.orchestration ?? {};
+  const agentAccess = settingsAccess(seed.settings);
   return {
     key: seed.key,
     tab: 'instructions',
     setup: seed.setup,
     orchestrator: seed.settings.orchestrator ?? '',
     model: seed.settings.model ?? 'default',
-    freeAgentMode: !!seed.settings.freeAgentMode,
+    ...(agentAccess && { agentAccess }),
     orchestrate: !!o.orchestrate,
     helperLimit: String(o.maxHelpers ?? DEFAULT_MAX_HELPERS),
     effort: seed.settings.effort ?? '',
@@ -331,7 +338,7 @@ export function draftFromSeed(seed: BuilderSeed): BuilderDraft {
  * this page edits taken from the draft. A setting left at its default isn't
  * sent, so the agent follows the app or the CLI.
  */
-export function builderSettings(draft: BuilderDraft, seed: BuilderSeed, opts: { orchestrator: string; supportsPermissions: boolean; limit: number }): ManagedTemplateSettings {
+export function builderSettings(draft: BuilderDraft, seed: BuilderSeed, opts: { orchestrator: string; supportsPermissions: boolean; defaultAccess: AccessLevel; limit: number }): ManagedTemplateSettings {
   const orchestration: OrchestrationPolicyConfig = {
     ...(seed.settings.orchestration ?? {}),
     orchestrate: draft.orchestrate,
@@ -349,7 +356,8 @@ export function builderSettings(draft: BuilderDraft, seed: BuilderSeed, opts: { 
     orchestrator: opts.orchestrator,
     ...(draft.model !== 'default' && { model: draft.model }),
     ...(draft.effort && { effort: draft.effort }),
-    freeAgentMode: opts.supportsPermissions && draft.freeAgentMode,
+    // A CLI without permission support starts at Ask first, whatever the draft says.
+    access: opts.supportsPermissions ? draft.agentAccess ?? opts.defaultAccess : 'ask',
     orchestration,
     ...(draft.idleSleep !== 'inherit' && { idleSleep: draft.idleSleep }),
     ...(draft.helperTemplateId && { helperTemplateId: draft.helperTemplateId }),
@@ -371,7 +379,7 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
   onBack: () => void;
   onCancel: () => void;
 }) {
-  const { tab, setup, orchestrator, model, freeAgentMode, orchestrate, helperLimit, effort } = draft;
+  const { tab, setup, orchestrator, model, orchestrate, helperLimit, effort } = draft;
   const change = (patch: Partial<BuilderDraft>) => onDraftChange({ ...draft, ...patch });
   const setTab = (next: NewBuilderTab) => change({ tab: next });
   const tabsId = useId();
@@ -385,6 +393,8 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
   const { options: modelOptions, loading: modelsLoading } = useModelOptions(resolvedOrchestrator, projectPath);
   const selectedOrch = allOrchestrators.find((o) => o.id === resolvedOrchestrator);
   const supportsPermissions = selectedOrch?.capabilities?.permissions ?? false;
+  const defaultAccess = useDefaultAccess();
+  const agentAccess: AccessLevel = supportsPermissions ? draft.agentAccess ?? defaultAccess : 'ask';
   const avail = availability[resolvedOrchestrator];
   // Helpers go through the Clubhouse MCP server, which is in every setup.
   const orchestrating = orchestrate;
@@ -399,7 +409,7 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
   const { levelsFor, loading: effortsLoading } = useModelEfforts(resolvedOrchestrator, projectPath);
   const effortLevels = levelsFor(model);
   const { show: showDispatcher } = useDispatcherConnection();
-  const settings = builderSettings(draft, seed, { orchestrator: resolvedOrchestrator, supportsPermissions, limit });
+  const settings = builderSettings(draft, seed, { orchestrator: resolvedOrchestrator, supportsPermissions, defaultAccess, limit });
 
   const create = () => {
     if (busy || !canCreate || limitProblem) return;
@@ -465,13 +475,21 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
               <span className="text-[13px] text-ctp-text">Its own worktree and branch</span>
             </Row>
             <Row
-              label="Permissions"
+              label="Access"
+              htmlFor="new-agent-builder-agent-access"
               help={supportsPermissions
-                ? 'Uses the configured Free agent permission mode. Enable only if you trust this agent with the project.'
+                ? accessHelp(agentAccess)
                 : `${selectedOrch?.displayName ?? 'This CLI'} doesn't support it.`}
             >
-              <Toggle checked={supportsPermissions && freeAgentMode} onChange={(on) => change({ freeAgentMode: on })} disabled={!supportsPermissions} aria-label="Free Agent Mode" />
-              <span className={`text-[13px] ${supportsPermissions ? 'text-ctp-text' : 'text-ctp-overlay1'}`}>Free Agent Mode</span>
+              <AccessLevelSelect
+                id="new-agent-builder-agent-access"
+                value={agentAccess}
+                providerId={resolvedOrchestrator}
+                disabled={!supportsPermissions}
+                onChange={(level) => change({ agentAccess: level })}
+                className={`${selectClass} w-48 disabled:opacity-60 disabled:cursor-not-allowed`}
+                data-testid="new-agent-builder-agent-access"
+              />
             </Row>
             <Rule />
             <Row label="Orchestration" help={orchestrating ? 'It can start helpers and give them work.' : 'It works alone.'}>

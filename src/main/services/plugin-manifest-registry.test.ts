@@ -39,7 +39,7 @@ function makeManifest(overrides: Partial<PluginManifest> = {}): PluginManifest {
     id: 'test-plugin',
     name: 'Test Plugin',
     version: '1.0.0',
-    engine: { api: 0.5 },
+    engine: { api: 0.9 },
     scope: 'project',
     permissions: ['process'],
     allowedCommands: ['git'],

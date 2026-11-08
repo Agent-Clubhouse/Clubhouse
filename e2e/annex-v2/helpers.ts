@@ -1,11 +1,14 @@
 /**
  * Protocol-level helpers for Annex V2 E2E tests.
  *
- * These helpers interact with the Annex server at the HTTP/WS level,
- * allowing fast protocol validation without requiring full UI automation.
+ * These helpers interact with the Annex server at the HTTPS/WSS level with a
+ * client certificate, allowing fast protocol validation without requiring
+ * full UI automation.
  */
 import type { Page } from '@playwright/test';
+import * as https from 'https';
 import WebSocket from 'ws';
+import { connectMtlsWs, type TestIdentity } from './tls-test-utils';
 
 // ---------------------------------------------------------------------------
 // UI helpers
@@ -41,14 +44,19 @@ export async function enableAnnex(window: Page): Promise<void> {
 
 export interface AnnexStatusInfo {
   advertising: boolean;
+  /** Main TLS port: pairing, REST and the WebSocket. */
   port: number;
+  /** Plain HTTP port: identity hint only. */
   pairingPort: number;
+  /** Single-use: read it again after each pairing. */
   pin: string;
   connectedCount: number;
+  tlsEnabled: boolean;
+  tlsCertificateFingerprint?: string;
 }
 
 /**
- * Read Annex status (port + PIN) via the preload API in the renderer.
+ * Read Annex status (ports + current PIN) via the preload API in the renderer.
  */
 export async function getAnnexStatus(page: Page): Promise<AnnexStatusInfo> {
   return page.evaluate(async () => {
@@ -59,6 +67,8 @@ export async function getAnnexStatus(page: Page): Promise<AnnexStatusInfo> {
       pairingPort: status.pairingPort || status.port,
       pin: status.pin,
       connectedCount: status.connectedCount,
+      tlsEnabled: status.tlsEnabled,
+      tlsCertificateFingerprint: status.tlsCertificateFingerprint,
     };
   });
 }
@@ -95,11 +105,20 @@ export async function enableAnnexViaPreload(page: Page): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// HTTP helpers
+// Pairing and mTLS helpers
+//
+// Pairing is `POST /pair` on the main TLS port, presenting a client
+// certificate whose CN is the identity fingerprint. The server pins that
+// certificate; every REST request and WebSocket presents it afterwards.
+// A PIN is single-use, so read it from status again before each pairing.
 // ---------------------------------------------------------------------------
 
 export interface PairResult {
+  /** Vestigial: nothing authenticates by it. */
   token: string;
+  tlsCertificateFingerprint?: string;
+  mobileProtocolVersion?: number;
+  pairingMode?: string;
   publicKey?: string;
   alias?: string;
   icon?: string;
@@ -107,50 +126,108 @@ export interface PairResult {
   fingerprint?: string;
 }
 
-/**
- * Pair with an Annex server via HTTP POST /pair.
- */
-export async function pairViaHttp(
+export interface JsonReply {
+  status: number;
+  body: any;
+}
+
+/** A JSON request to the main TLS port, presenting the identity's client certificate. */
+export function mtlsRequest(
+  host: string,
+  port: number,
+  identity: TestIdentity,
+  method: string,
+  urlPath: string,
+  body?: unknown,
+): Promise<JsonReply> {
+  const payload = body === undefined ? undefined : JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      host, port, method, path: urlPath,
+      cert: identity.certPem, key: identity.keyPem, rejectUnauthorized: false, agent: false,
+      headers: payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {},
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        let parsed: unknown = data;
+        try { parsed = JSON.parse(data); } catch { /* not JSON */ }
+        resolve({ status: res.statusCode ?? 0, body: parsed });
+      });
+    });
+    req.on('error', reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+/** `POST /pair` on the main TLS port with this identity; answers whatever status the server gives. */
+export function tryPairOverTls(
   host: string,
   port: number,
   pin: string,
-  clientPublicKey?: string,
-): Promise<PairResult> {
-  const body: Record<string, unknown> = { pin };
-  if (clientPublicKey) body.publicKey = clientPublicKey;
-
-  const response = await fetch(`http://${host}:${port}/pair`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+  identity: TestIdentity,
+  extra: Record<string, unknown> = {},
+): Promise<JsonReply> {
+  return mtlsRequest(host, port, identity, 'POST', '/pair', {
+    pin,
+    publicKey: identity.ed25519PublicKeyBase64,
+    alias: 'E2E controller',
+    icon: 'computer',
+    color: 'indigo',
+    ...extra,
   });
-
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    throw new Error(`Pair failed (${response.status}): ${JSON.stringify(errorBody)}`);
-  }
-
-  return response.json();
 }
 
-/**
- * Fetch a JSON endpoint with bearer token authentication.
- */
-export async function fetchAuthed(
+/** Pair this identity over TLS on the main port. Throws with the status on anything but 200. */
+export async function pairOverTls(
   host: string,
   port: number,
-  token: string,
-  path: string,
-): Promise<unknown> {
-  const response = await fetch(`http://${host}:${port}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Request failed (${response.status}): ${path}`);
+  pin: string,
+  identity: TestIdentity,
+  extra: Record<string, unknown> = {},
+): Promise<PairResult> {
+  const reply = await tryPairOverTls(host, port, pin, identity, extra);
+  if (reply.status !== 200) {
+    throw new Error(`Pair failed (${reply.status}): ${JSON.stringify(reply.body)}`);
   }
+  return reply.body as PairResult;
+}
 
-  return response.json();
+/** A plain HTTP request to the pairing port (identity hint only; `POST /pair` there is 410). */
+export async function plainPairingPortRequest(
+  host: string,
+  pairingPort: number,
+  method: 'GET' | 'POST',
+  urlPath: string,
+  body?: unknown,
+): Promise<JsonReply> {
+  const response = await fetch(`http://${host}:${pairingPort}${urlPath}`, {
+    method,
+    headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return { status: response.status, body: await response.json().catch(() => null) };
+}
+
+/** Fetch a JSON endpoint over mTLS; throws on anything but 200. */
+export async function fetchMtls(
+  host: string,
+  port: number,
+  identity: TestIdentity,
+  urlPath: string,
+): Promise<unknown> {
+  const reply = await mtlsRequest(host, port, identity, 'GET', urlPath);
+  if (reply.status !== 200) {
+    throw new Error(`Request failed (${reply.status}): ${urlPath}`);
+  }
+  return reply.body;
+}
+
+/** Same SHA-256 certificate fingerprint, whatever the separators or case. */
+export function sameCertFingerprint(a: string | undefined, b: string | undefined): boolean {
+  const norm = (f: string | undefined) => (f ?? '').replace(/[:\s]/g, '').toLowerCase();
+  return norm(a).length === 64 && norm(a) === norm(b);
 }
 
 // ---------------------------------------------------------------------------
@@ -158,25 +235,42 @@ export async function fetchAuthed(
 // ---------------------------------------------------------------------------
 
 /**
- * Connect to an Annex server's WebSocket endpoint.
- * Tries wss:// first (TLS with self-signed cert), falls back to ws://.
+ * Connect to an Annex server's WebSocket endpoint over mTLS with a paired identity.
  */
-export function connectWs(host: string, port: number, token: string): WebSocket {
-  // The main port may be TLS — use wss:// with rejectUnauthorized: false for self-signed certs
-  const ws = new WebSocket(
-    `wss://${host}:${port}/ws?token=${encodeURIComponent(token)}`,
-    { rejectUnauthorized: false },
-  );
-  return ws;
+export function connectWs(host: string, port: number, identity: TestIdentity, query = ''): WebSocket {
+  return connectMtlsWs(host, port, identity, query);
 }
 
 /**
- * Connect to an Annex server's WebSocket endpoint using plain ws://.
- * Use this when the main server fell back to HTTP (no TLS).
+ * A WebSocket to the main TLS port that presents no client certificate.
  */
-export function connectWsPlain(host: string, port: number, token: string): WebSocket {
-  const ws = new WebSocket(`ws://${host}:${port}/ws?token=${encodeURIComponent(token)}`);
-  return ws;
+export function connectWsWithoutCertificate(host: string, port: number, query = ''): WebSocket {
+  return new WebSocket(`wss://${host}:${port}/ws${query ? `?${query}` : ''}`, { rejectUnauthorized: false });
+}
+
+/**
+ * How the server answered an upgrade: 'opened', or the HTTP status and JSON body it refused with.
+ */
+export function upgradeOutcome(ws: WebSocket, timeout = 10_000): Promise<'opened' | JsonReply> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`No answer to the WebSocket upgrade within ${timeout}ms`)), timeout);
+    ws.on('error', () => { /* the refusal below says what happened */ });
+    ws.once('open', () => {
+      clearTimeout(timer);
+      ws.close();
+      resolve('opened');
+    });
+    ws.once('unexpected-response', (_req, res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        clearTimeout(timer);
+        let body: unknown = data;
+        try { body = JSON.parse(data); } catch { /* not JSON */ }
+        resolve({ status: res.statusCode ?? 0, body });
+      });
+    });
+  });
 }
 
 /**

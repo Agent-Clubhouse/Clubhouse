@@ -16,7 +16,7 @@ vi.mock('./agent-system', () => ({
 }));
 vi.mock('./mobile-agents', () => ({ effectiveOrchestrators: () => [{ id: 'claude-code' }, { id: 'codex-cli' }] }));
 vi.mock('./agent-settings-service', () => ({ readProjectAgentDefaults: async () => ({}) }));
-vi.mock('./free-agent-settings', () => ({ getPermissionMode: () => 'skip-all' }));
+vi.mock('./free-agent-settings');
 vi.mock('./chat-runtime-settings', () => ({ isChatEnabled: () => true, resolveRuntimeMode: () => ({ mode: w.runtime }) }));
 vi.mock('./agent-runtime/chat-drivers', () => ({ resolveChatDriver: () => ({}) }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: vi.fn(() => undefined) } }));

@@ -8,7 +8,7 @@ export const manifest: PluginManifest = {
   version: '0.1.0',
   description: 'Shared coordination space for multi-agent collaboration via bulletin boards.',
   author: 'Clubhouse',
-  engine: { api: 0.8 },
+  engine: { api: 0.9 },
   scope: 'dual',
   permissions: ['canvas', 'widgets', 'storage', 'annex'],
   requiresMcp: true,

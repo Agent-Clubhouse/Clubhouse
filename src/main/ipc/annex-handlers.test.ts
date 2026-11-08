@@ -24,6 +24,8 @@ vi.mock('../services/annex-server', () => ({
   regeneratePin: vi.fn(),
   broadcastThemeChanged: vi.fn(),
   disconnectPeer: vi.fn(),
+  revokePeer: vi.fn(() => true),
+  revokeAllPeers: vi.fn(),
 }));
 
 vi.mock('../services/annex-client', () => ({
@@ -33,6 +35,7 @@ vi.mock('../services/annex-client', () => ({
 
 vi.mock('../services/annex-peers', () => ({
   listPeers: vi.fn(() => []),
+  listPeersForDisplay: vi.fn(() => []),
   removePeer: vi.fn(() => true),
   removeAllPeers: vi.fn(),
   unlockPairing: vi.fn(),
@@ -211,6 +214,24 @@ describe('annex-handlers', () => {
   });
 
   // --- PURGE_SERVER_CONFIG ---
+
+  it('REMOVE_PEER revokes the pairing (closing its connections) and broadcasts the list', () => {
+    const handler = handlers.get(IPC.ANNEX.REMOVE_PEER)!;
+    expect(handler({}, 'fp:phone')).toBe(true);
+    expect(annexServer.revokePeer).toHaveBeenCalledWith('fp:phone');
+    expect(annexPeers.removePeer).not.toHaveBeenCalled();
+    expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX.PEERS_CHANGED, []);
+  });
+
+  it('REMOVE_ALL_PEERS revokes every pairing', () => {
+    handlers.get(IPC.ANNEX.REMOVE_ALL_PEERS)!({});
+    expect(annexServer.revokeAllPeers).toHaveBeenCalled();
+  });
+
+  it('LIST_PEERS marks entries that need pairing again', () => {
+    vi.mocked(annexPeers.listPeersForDisplay).mockReturnValueOnce([{ fingerprint: 'fp:old', needsPairing: true }] as never);
+    expect(handlers.get(IPC.ANNEX.LIST_PEERS)!({})).toEqual([{ fingerprint: 'fp:old', needsPairing: true }]);
+  });
 
   it('PURGE_SERVER_CONFIG stops server, deletes identity/tls/peers, and resets settings', async () => {
     vi.mocked(annexSettings.getSettings).mockReturnValue({

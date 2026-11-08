@@ -11,8 +11,22 @@ import { DOT_LABEL, StatusDot } from '../../features/agents/agent-status';
 import type { AgentDot } from './treeModel';
 import { Tooltip } from '../../components/Tooltip';
 import { describeSleep, formatAgo } from '../../features/agents/states/format';
+import { accessLabel, type AccessLevel } from '../../../shared/agent-access';
 
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/**
+ * Access as plain text (#2761): the level it runs at, from the chat session
+ * when chat runs it, else the saved one. A record without `access` (a quick
+ * agent, or one on another machine) with the legacy flag on could be at
+ * either level that sets it.
+ */
+export function hoverAccessText(agent: Pick<Agent, 'access' | 'freeAgentMode'>, live: AccessLevel | null, permissionsSupported: boolean): string {
+  if (live) return accessLabel(live);
+  if (!permissionsSupported) return 'Set by the CLI';
+  if (agent.access) return accessLabel(agent.access);
+  return agent.freeAgentMode ? 'Auto or Full access' : accessLabel('ask');
+}
 
 /**
  * The agent hover card (docs/chrome-redesign-spec.md §2, §4.2): the details the
@@ -58,6 +72,9 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
   // Only while chat runs the agent: state left from an earlier chat session doesn't count (#2208).
   const chatState = useChatStore((s) => liveChatAgent(s, agent.id)?.state ?? null);
   const turnStartedAt = useChatStore((s) => liveChatAgent(s, agent.id)?.turnStartedAt ?? null);
+  // The chat session's level, which the composer can change for this session.
+  const liveLevel = useChatStore((s) => liveChatAgent(s, agent.id)?.level ?? null);
+  const permissionsSupported = allOrchestrators.find((o) => o.id === (agent.orchestrator || 'claude-code'))?.capabilities.permissions ?? true;
   // A chat agent's Working time is its turn's, as in the chat header (#2197).
   const since = chatState === 'running' && turnStartedAt ? turnStartedAt : spawnedAt;
   const running = agent.status === 'running' && since;
@@ -109,7 +126,7 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
         {agent.branch && <Row label="Branch"><span className="font-mono">{agent.branch}</span></Row>}
         {worktree && <Row label="Worktree"><Tooltip content={agent.worktreePath} disabled={worktree === agent.worktreePath}><span className="font-mono">{worktree}</span></Tooltip></Row>}
         {agent.mcpIds && agent.mcpIds.length > 0 && <Row label="MCP">{agent.mcpIds.join(', ')}</Row>}
-        {agent.freeAgentMode && <Row label="Permissions"><span className="text-ctp-error">Free Agent Mode, permissions follow the configured mode</span></Row>}
+        <Row label="Access">{hoverAccessText(agent, liveLevel, permissionsSupported)}</Row>
       </dl>
       {(onOpenTerminal || quick.length > 0) && (
         <div className="flex items-center gap-3 pt-1 border-t border-surface-0">

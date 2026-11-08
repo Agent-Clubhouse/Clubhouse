@@ -148,4 +148,90 @@ describe('AnnexSettingsView', () => {
       await waitFor(() => expect(screen.getByAltText(alt).getAttribute('src')).not.toBe(first));
     });
   });
+
+  it('says the PIN works once and changes every 10 minutes', () => {
+    useAnnexStore.setState({
+      settings: { enableServer: true, enableClient: false, deviceName: '' },
+      status: { advertising: true, port: 8080, pin: '123456', connectedCount: 0 },
+    });
+    render(<AnnexSettingsView />);
+    expect(screen.getByText('The PIN works once and changes every 10 minutes.')).toBeInTheDocument();
+  });
+
+  describe('Certificate code', () => {
+    it('shows the code for this machine', () => {
+      useAnnexStore.setState({
+        settings: { enableServer: true, enableClient: false, deviceName: '' },
+        status: { advertising: true, port: 8080, pin: '', connectedCount: 0, tlsCertificateFingerprint: 'ab12cd34ef567890'.padEnd(64, '0') },
+      });
+      render(<AnnexSettingsView />);
+      const field = screen.getByTestId('annex-certificate-code');
+      expect(field).toHaveTextContent('Certificate code');
+      expect(field).toHaveTextContent('AB12 CD34 EF56 7890');
+      expect(field).toHaveTextContent('A computer pairing from its discovered list should show this same code.');
+    });
+
+    it('stays hidden without a certificate', () => {
+      useAnnexStore.setState({
+        settings: { enableServer: true, enableClient: false, deviceName: '' },
+        status: { advertising: true, port: 8080, pin: '', connectedCount: 0 },
+      });
+      render(<AnnexSettingsView />);
+      expect(screen.queryByText('Certificate code')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Pairing link', () => {
+    const pairingUrl = 'clubhousego://pair?v=1&host=192.168.1.20&port=53123&pin=042917';
+    const writeText = vi.fn();
+
+    beforeEach(() => {
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+      useAnnexStore.setState({
+        settings: { enableServer: true, enableClient: false, deviceName: '' },
+        status: { advertising: true, port: 53123, pin: '042917', connectedCount: 0, pairingUrl },
+      });
+    });
+
+    it('shows the link with help', () => {
+      render(<AnnexSettingsView />);
+      const field = screen.getByTestId('annex-pairing-link');
+      expect(field).toHaveTextContent(pairingUrl);
+      expect(field).toHaveTextContent('Paste it into Annex control on the other computer.');
+    });
+
+    it('copies the link', async () => {
+      writeText.mockResolvedValueOnce(undefined);
+      render(<AnnexSettingsView />);
+      fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+      expect(writeText).toHaveBeenCalledWith(pairingUrl);
+      expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+    });
+
+    it('fails quietly when the clipboard refuses', async () => {
+      writeText.mockRejectedValueOnce(new Error('denied'));
+      render(<AnnexSettingsView />);
+      fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+      await waitFor(() => expect(writeText).toHaveBeenCalled());
+      expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument();
+    });
+  });
+
+  describe('Paired devices', () => {
+    it('shows a quiet empty line while the server is on', () => {
+      useAnnexStore.setState({
+        settings: { enableServer: true, enableClient: false, deviceName: '' },
+        status: { advertising: true, port: 8080, pin: '', connectedCount: 0 },
+        peers: [],
+      });
+      render(<AnnexSettingsView />);
+      expect(screen.getByText('Paired devices')).toBeInTheDocument();
+      expect(screen.getByText('No devices paired yet.')).toBeInTheDocument();
+    });
+
+    it('stays hidden with the server off and nothing paired', () => {
+      render(<AnnexSettingsView />);
+      expect(screen.queryByText('Paired devices')).not.toBeInTheDocument();
+    });
+  });
 });

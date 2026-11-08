@@ -39,6 +39,7 @@
  * and none of the others.
  */
 
+import { accessFromLegacy } from '../../../../shared/agent-access';
 import * as path from 'path';
 import { registerGlobalTool } from '../tool-registry';
 import { isOrchestrationEnabled, onOrchestrationGateChange } from '../orchestration-gate';
@@ -473,6 +474,7 @@ async function finishHelperStart(
       // at spawn, and the config may hold another freeAgentMode.
       freeAgentMode: finalLaunch.freeAgentMode,
       permissionMode: finalLaunch.permissionMode,
+      access: accessFromLegacy(finalLaunch.freeAgentMode, finalLaunch.permissionMode),
     });
     taskTaken = false;
     result = 'started';
@@ -807,6 +809,8 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
         ...(plan && { routing: plan.routing }),
         ...(helperProvider && { orchestrator: helperProvider as OrchestratorId }),
         freeAgentMode: launch.freeAgentMode,
+        // A helper's level comes from the orchestration policy, never the app's Default access (#2761).
+        access: accessFromLegacy(launch.freeAgentMode, launch.permissionMode),
       };
       // A managed helper's setup is required: if it can't be saved, the creation fails rather than start a helper without it.
       // What start_helper changed from the template is kept for the helper's Details (D91).
@@ -1243,6 +1247,7 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
       orchestrator: provider,
       freeAgentMode: launch.freeAgentMode,
       permissionMode: launch.permissionMode,
+      access: accessFromLegacy(launch.freeAgentMode, launch.permissionMode),
       resume,
       ...(resume && { sessionId: helper.lastSessionId }),
     });

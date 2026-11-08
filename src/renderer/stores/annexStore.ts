@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AnnexSettings, AnnexStatus } from '../../shared/types';
+import type { AnnexPeerListing, AnnexSettings, AnnexStatus } from '../../shared/types';
 
 const DEFAULT_SETTINGS: AnnexSettings = {
   enableServer: false,
@@ -30,11 +30,17 @@ interface AnnexStoreState {
   loadStatus: () => Promise<void>;
   regeneratePin: () => Promise<void>;
   purgeServerConfig: () => Promise<void>;
+  /** Everything paired with this machine, phones and computers both ways. */
+  peers: AnnexPeerListing[];
+  loadPeers: () => Promise<void>;
+  /** Removes a pairing and closes its connections. */
+  removePeer: (fingerprint: string) => Promise<void>;
 }
 
 export const useAnnexStore = create<AnnexStoreState>((set) => ({
   settings: DEFAULT_SETTINGS,
   status: DEFAULT_STATUS,
+  peers: [],
 
   loadSettings: async () => {
     try {
@@ -82,12 +88,38 @@ export const useAnnexStore = create<AnnexStoreState>((set) => ({
   purgeServerConfig: async () => {
     try {
       await window.clubhouse.annex.purgeServerConfig();
-      set({ settings: DEFAULT_SETTINGS, status: DEFAULT_STATUS });
+      set({ settings: DEFAULT_SETTINGS, status: DEFAULT_STATUS, peers: [] });
+    } catch {
+      // Error handled in main
+    }
+  },
+
+  loadPeers: async () => {
+    try {
+      const peers = await window.clubhouse.annex.listPeers();
+      set({ peers: Array.isArray(peers) ? peers : [] });
+    } catch {
+      // Keep the current list
+    }
+  },
+
+  removePeer: async (fingerprint: string) => {
+    try {
+      await window.clubhouse.annex.removePeer(fingerprint);
+      // The fresh list arrives via onPeersChanged; drop it here too so the row goes at once.
+      set((state) => ({ peers: state.peers.filter((p) => p.fingerprint !== fingerprint) }));
     } catch {
       // Error handled in main
     }
   },
 }));
+
+/** Keep `peers` fresh from main's broadcasts. */
+export function subscribeAnnexPeers(): () => void {
+  return window.clubhouse.annex.onPeersChanged((peers) => {
+    useAnnexStore.setState({ peers });
+  });
+}
 
 /** Listen for status updates pushed from main process. */
 export function initAnnexListener(): () => void {
