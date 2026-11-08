@@ -1402,7 +1402,7 @@ export function registerHelperTools(): void {
     },
     (agentId, args) => guarded('start_helper', agentId, () => startHelper(agentId, args)),
     // Choosing its template, parts or access gives the helper what agent.grant covers (#3000).
-    { group: 'orchestration', grant: [{ actions: ['agent.create'], target: 'project_arg', askHandledByTool: true }, { actions: ['agent.grant'], target: 'project_arg', ifArgs: ['template', 'addParts', 'removeParts', 'access'] }] },
+    { group: 'orchestration', grant: [{ actions: ['agent.create'], target: 'project_arg', askHandledByTool: true, from: { args: ['project'], missing: 'caller' } }, { actions: ['agent.grant'], target: 'project_arg', ifArgs: ['template', 'addParts', 'removeParts', 'access'] }] },
   );
 
   registerGlobalTool(

@@ -91,6 +91,6 @@ export function registerSettingsReadTools(): void {
         detail: optionalBoolean(args, 'detail'),
       });
     }),
-    { grant: [{ actions: ['agent.read'], target: 'agent_arg' }, { actions: ['project.read'], target: 'project_arg' }, { actions: ['settings.app.read'], target: 'app' }] },
+    { grant: [{ actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent_ids'], project: 'project', missing: 'caller', all: 'all_agents' } }, { actions: ['project.read'], target: 'project_arg', from: { args: ['project'], missing: 'caller', all: 'all_projects' } }, { actions: ['settings.app.read'], target: 'app' }] },
   );
 }
