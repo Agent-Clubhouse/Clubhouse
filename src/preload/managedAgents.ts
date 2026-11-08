@@ -60,6 +60,8 @@ const managed = {
   status: (projectPath: string, agentId: string) => call<ManagedAgentStatus>(IPC.MANAGED.STATUS, projectPath, agentId),
   /** Hide "Switched to managed when Clubhouse updated" for this agent (D59). */
   dismissMigrationNotice: (projectPath: string, agentId: string) => call<void>(IPC.MANAGED.DISMISS_MIGRATION_NOTICE, projectPath, agentId),
+  /** The root-file names git ignores for the whole repository while the project has managed agents (D97). */
+  projectGitExcludes: (projectPath: string) => call<string[]>(IPC.MANAGED.PROJECT_GIT_EXCLUDES, projectPath),
   isWorking: (agentId: string) => call<boolean>(IPC.MANAGED.IS_WORKING, agentId),
   restart: (projectPath: string, agentId: string, options?: { fresh?: boolean; whenTurnEnds?: boolean }) => call<{ resumed: boolean; noSession?: boolean }>(IPC.MANAGED.RESTART, projectPath, agentId, options),
   setClubhouseFeatures: (projectPath: string, agentId: string, on: boolean) => call<void>(IPC.MANAGED.SET_CLUBHOUSE_FEATURES, projectPath, agentId, on),

@@ -357,6 +357,11 @@ export function runLegacySettingsMigration(): Promise<unknown> {
  * built-in parts, and is skipped this start if they fail to install. Never throws.
  */
 export async function startManagedAtAppStart(ensureBuiltins: () => Promise<void>): Promise<void> {
+  // A CLI's root files leave the git excludes once no managed agent in the project runs it (D97).
+  void import('./git-excludes').then(({ watchManagedExcludes }) => { watchManagedExcludes(); }).catch((err) => {
+    // telemetry-exempt: logged; each start still refreshes the excludes.
+    appLog('core:managed', 'warn', 'Could not watch agents for git excludes', { meta: { code: codeOf(err) } });
+  });
   const settings = runLegacySettingsMigration();
   const agents = ensureBuiltins().then(
     () => runStartupMigration().then((): void => undefined, (err) => {

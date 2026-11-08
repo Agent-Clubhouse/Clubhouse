@@ -640,22 +640,35 @@ function instructionsFileRel(provider: OrchestratorProvider): string {
 }
 
 /**
- * The `.git/info/exclude` pattern that keeps the instructions file Clubhouse
- * writes out of commits (D16), or null when the worktree tracks that file:
+ * The root files Clubhouse delivers for a CLI, relative to the worktree with
+ * forward slashes: the instructions file, the MCP file for a JSON-format CLI
+ * (Codex gets its servers as launch flags), and Claude Code's local settings,
+ * which hold the `claudeMdExcludes` entries (D49).
+ */
+export function rootFileCandidates(provider: OrchestratorProvider): string[] {
+  const conv = provider.conventions;
+  const rels = [instructionsFileRel(provider)];
+  if (conv.settingsFormat !== 'toml') rels.push(forwardSlashes(conv.mcpConfigFile));
+  if (provider.id === CLAUDE_CODE_ID) rels.push(forwardSlashes(path.join(conv.configDir, conv.localSettingsFile)));
+  return rels;
+}
+
+/**
+ * The `.git/info/exclude` patterns that keep the root files Clubhouse
+ * delivers out of commits (D97), leaving out any the worktree tracks:
  * excluding a tracked file does nothing. Anchored to the root, since the
  * exclude file is shared by every worktree and the main checkout, and a bare
  * name would hide every untracked file of that name at any depth. When git
- * can't say, the file is excluded, as a pattern for a tracked file is harmless.
+ * can't say, all of them are listed, as a pattern for a tracked file is harmless.
  */
-export async function instructionsExcludePattern(worktree: string, provider: OrchestratorProvider): Promise<string | null> {
-  const rel = instructionsFileRel(provider);
-  const listed = await trackedFiles(worktree, [rel]);
+export async function rootFileExcludes(worktree: string, provider: OrchestratorProvider): Promise<string[]> {
+  const rels = rootFileCandidates(provider);
+  const listed = await trackedFiles(worktree, rels);
   if (listed.ok === false) {
-    appLog('core:managed', 'warn', 'git could not say whether the instructions file is tracked; it is excluded', { meta: { code: listed.code } });
-  } else if (listed.files.includes(rel)) {
-    return null;
+    appLog('core:managed', 'warn', 'git could not say whether the delivered root files are tracked; they are excluded', { meta: { code: listed.code } });
+    return rels.map((r) => `/${r}`);
   }
-  return `/${rel}`;
+  return rels.filter((r) => !listed.files.includes(r)).map((r) => `/${r}`);
 }
 
 /** Instruction files in the worktree, other than the one Clubhouse writes, that Copilot also reads. Only the ones git tracks: Clubhouse wrote none of them. */

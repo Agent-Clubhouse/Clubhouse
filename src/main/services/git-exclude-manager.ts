@@ -144,3 +144,17 @@ export async function replaceExclusions(projectPath: string, tag: string, patter
 export async function removeExclusions(projectPath: string, tag: string): Promise<void> {
   return rewrite(projectPath, tag, () => []);
 }
+
+/** Take `patterns` out of the tag's block, keeping the rest. Writes nothing when the block lists none of them. */
+export async function removePatterns(projectPath: string, tag: string, patterns: string[]): Promise<void> {
+  return rewrite(projectPath, tag, (current) => current.filter((p) => !patterns.includes(p)));
+}
+
+/** The patterns the tag's block lists, none when there is no block or no exclude file. */
+export async function listExclusions(projectPath: string, tag: string): Promise<string[]> {
+  try {
+    return splitTag(await fsp.readFile(await getExcludePath(projectPath), 'utf-8'), tag).patterns;
+  } catch {
+    return []; // telemetry-exempt: no exclude file yet
+  }
+}
