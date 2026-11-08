@@ -3,12 +3,47 @@
  * code takes them: launch flags in the terminal (agent-system), SDK options in
  * chat (chat-spawn). A managed agent gets exactly its MCP parts (#2896).
  */
+import * as fsp from 'fs/promises';
+import * as path from 'path';
 import { parseMcpJson } from '../../shared/mcp-config';
 import type { DurableAgentConfig, McpServerDef } from '../../shared/types';
 import { replaceWildcards } from '../../shared/wildcard-replacer';
 import { readLocalMcpJson, readProjectAgentDefaults, type SettingsConventions } from './agent-settings-service';
 import { buildWildcardContext, resolveAgentCommands, resolveSourceControlProvider } from './agent-wildcards';
 import { appLog } from './log-service';
+
+/**
+ * What an unmanaged Codex agent is told when its own .codex/config.toml lists
+ * MCP servers Clubhouse doesn't pass (#2849). Clubhouse has no TOML reader.
+ * Codex itself loads them from the project config layer, but only for a
+ * folder its user config trusts (probed on Codex 0.163 with config/read).
+ */
+export function localTomlMcpNotice(names: readonly string[]): string {
+  const listed = names.length > 0 ? `: ${names.join(', ')}` : '';
+  return `This agent's .codex/config.toml lists MCP servers that Clubhouse doesn't pass to Codex${listed}. Codex loads them itself only if it trusts this folder. The file is left as it is.`;
+}
+
+const TOML_KEY = String.raw`(?:"([^"]*)"|'([^']*)'|([A-Za-z0-9_-]+))`;
+const MCP_SERVERS = String.raw`["']?mcp_servers["']?`;
+/** `[mcp_servers.<name>...]` table headers. */
+const SERVER_TABLE = new RegExp(String.raw`^[ \t]*\[[ \t]*${MCP_SERVERS}[ \t]*\.[ \t]*${TOML_KEY}`, 'gm');
+/** Top-level dotted keys, `mcp_servers.<name>.command = ...`. */
+const SERVER_KEY = new RegExp(String.raw`^[ \t]*${MCP_SERVERS}[ \t]*\.[ \t]*${TOML_KEY}[^=\n]*=`, 'gm');
+/** A whole `[mcp_servers]` table or an inline `mcp_servers = { ... }`, whose names this doesn't read. */
+const WHOLE_TABLE = new RegExp(String.raw`^[ \t]*(?:\[[ \t]*${MCP_SERVERS}[ \t]*\]|${MCP_SERVERS}[ \t]*=)`, 'm');
+
+/**
+ * The MCP server names a Codex TOML file lists. Not a TOML parser. `unknown`
+ * is true when it lists servers in a form whose names this doesn't read.
+ */
+export function tomlMcpServerNames(toml: string): { names: string[]; unknown: boolean } {
+  const text = toml.replace(/^\uFEFF/, '');
+  const names = new Set<string>();
+  for (const re of [SERVER_TABLE, SERVER_KEY]) {
+    for (const m of text.matchAll(re)) names.add(m[1] ?? m[2] ?? m[3]);
+  }
+  return { names: [...names], unknown: WHOLE_TABLE.test(text) };
+}
 
 /** What an agent is told when the project MCP JSON isn't JSON (D10). */
 export const PROJECT_MCP_JSON_INVALID_NOTICE = 'The project MCP configuration isn\'t valid JSON, so its servers were left out. Conditional wildcards (@@If) are no longer processed; edit the project MCP configuration to fix it.';
@@ -63,10 +98,22 @@ export async function resolveAgentMcpServers(
 ): Promise<Record<string, McpServerDef>> {
   if (agent?.managed) return resolveProjectMcpServers(projectPath, agent);
   const fromProject = () => resolveProjectMcpServers(projectPath, agent, local.onNotice);
-  // No TOML reader exists here. Preserve canonical delivery and make the limitation visible.
+  // No TOML reader exists here: project defaults are delivered. The notice
+  // names only local servers they don't cover: Clubhouse writes the project
+  // defaults into a Codex worktree's file itself, and older versions wrote the
+  // bridge there (#2849).
   if (local.conventions.settingsFormat === 'toml') {
-    local.onNotice?.('Local TOML MCP configuration is not supported by chat preparation. Chat uses project MCP JSON defaults; local TOML servers are not delivered by this path. The local file is preserved.');
-    return fromProject();
+    const servers = await fromProject();
+    let toml = '';
+    try {
+      toml = await fsp.readFile(path.join(local.cwd, local.conventions.mcpConfigFile), 'utf-8');
+    } catch {
+      // telemetry-exempt: no readable local file means no local servers to mention
+    }
+    const listed = tomlMcpServerNames(toml);
+    const extra = listed.names.filter((name) => name !== 'clubhouse' && !(name in servers));
+    if (extra.length > 0 || listed.unknown) local.onNotice?.(localTomlMcpNotice(extra));
+    return servers;
   }
   const raw = await readLocalMcpJson(local.cwd, local.conventions);
   const servers = raw === null ? undefined : parseMcpJson(raw);

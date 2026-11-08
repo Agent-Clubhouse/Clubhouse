@@ -174,6 +174,12 @@ export interface ManagedTemplateSettings {
   idleSleep?: 'never' | number | null;
   /** The template this agent's helpers start from when start_helper names none (the agent's `helperTemplateId`). */
   helperTemplateId?: string | null;
+  /**
+   * Clubhouse permissions agents made from it get over the defaults (#2971),
+   * each Off, Ask first or Allow. Only the user sets them: the Clubhouse MCP
+   * refuses them. A null mode (in a push only) takes one away.
+   */
+  grants?: import('./agent-grant-changes').TemplateGrant[];
 }
 
 /** One line of Preview's settings summary, e.g. `{ key: 'model', label: 'Model', value: 'opus' }`. */
@@ -228,7 +234,7 @@ export type ManagedTemplateChange =
    * change does to it (D81): the template's effort goes with the new model,
    * or the effort goes back to the CLI default.
    */
-  | { kind: 'setting'; key: string; from: string; to: string; followsModel?: true };
+  | { kind: 'setting'; key: string; from: string; to: string; followsModel?: true; label?: string };
 
 export interface ManagedTemplatePushTarget {
   projectPath: string;

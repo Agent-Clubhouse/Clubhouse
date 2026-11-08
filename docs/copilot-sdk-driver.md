@@ -12,7 +12,7 @@ Copilot chat runs on this driver (`copilot_sdk`, `src/main/chat/copilot/driver.t
 |---|---|
 | Does it package? | Yes. A 221 KB lazy chunk, once `koffi` is aliased away. No CLI or native binary is emitted. |
 | Can it run the user's `copilot`? | Yes, but not through `forStdio` as it stands: `--no-auto-update` still picks the shim's built-in runtime. Have the driver spawn the CLI and connect with `RuntimeConnection.forUri`. |
-| Safe CLI range for SDK 1.0.28 | `minVersion: 1.0.83`, tested up to 1.0.106-2. Newer CLIs get a note, not a fallback. Pin the SDK to an exact version. |
+| Safe CLI range for SDK 1.0.29 | `minVersion: 1.0.83`, tested up to 1.0.107. Newer CLIs get a note, not a fallback. Pin the SDK to an exact version. |
 | Do the promised features work? | Everything except credit usage and the live model list ran end to end against a fake model. Those two need a real login, so they stayed untested. |
 | What triggers the fallback? | A failed or timed-out handshake, a protocol mismatch, or a CLI below `minVersion`. The protocol check alone is too weak to rely on (see [Version skew](#version-skew)). |
 | Size | About 2.5 to 3 engineer-weeks, up from the earlier estimate of 1.5 to 2. The extra time goes to the launch path and a new fixture protocol. |
@@ -146,10 +146,12 @@ The TCP listener is safe enough for this: it bound to `127.0.0.1`, and with `COP
 
 **Newer CLIs look much safer than older ones.** SDK 1.0.0 (June), 1.0.15, 1.0.22 and 1.0.25 all passed the feature probes against current CLIs (1.0.0 and 1.0.15 on 1.0.105; 1.0.22 and 1.0.25 on 1.0.106-2). Five months of CLI releases changed nothing these probes cover. A wider SDK and CLI gap isn't proven safe, and the probes can't see every event field.
 
+**SDK 1.0.29 (2026-11-08).** Bumped for the zod memory advisory. The feature probes passed on CLI 1.0.83, 1.0.105 and 1.0.107. One SDK change reached the driver: the elicitation handler no longer gets `elicitationSourceDisplayName`, so the approval card names the server by `elicitationSource`. CLI 1.0.107 runs a read-only shell command such as `true` without asking, with either SDK, so the permission probe now uses a command that writes.
+
 **Policy:**
 
-- Pin the SDK exactly, as for the Claude SDK. `@github/copilot-sdk` 1.0.28 ships with CLI 1.0.105. The earlier note's "SDK 1.0.N matches CLI 1.0.N" is wrong.
-- Set `copilot_sdk: { minVersion: '1.0.83', testedMax: '1.0.106-2' }` in `TESTED_CLI_VERSIONS`. 1.0.83 is two months old and these CLIs update themselves, so few users should be below it. 1.0.81 and 1.0.82 would work for `send` plus events, but they sit next to a broken SDK path, and the floor has no need to be that tight.
+- Pin the SDK exactly, as for the Claude SDK. `@github/copilot-sdk` 1.0.28 shipped with CLI 1.0.105, and 1.0.29 ships with 1.0.107. The earlier note's "SDK 1.0.N matches CLI 1.0.N" is wrong.
+- Set `copilot_sdk: { minVersion: '1.0.83', testedMax: '1.0.107' }` in `TESTED_CLI_VERSIONS`. 1.0.83 is two months old and these CLIs update themselves, so few users should be below it. 1.0.81 and 1.0.82 would work for `send` plus events, but they sit next to a broken SDK path, and the floor has no need to be that tight.
 - Newer than `testedMax`: keep the SDK, and log a note per §7.1.
 - Use the `chatCliDenylist` kill switch for a bad release. It already covers the driver id.
 

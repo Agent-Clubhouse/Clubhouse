@@ -152,9 +152,10 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
   const msg = reason instanceof Error ? reason.message : String(reason);
   const stack = reason instanceof Error ? reason.stack : undefined;
-  // A failed Copilot message write, usually to a CLI that is going away. Its
-  // request already failed through its own promise; this is vscode-jsonrpc's
-  // second copy, which nothing can catch (#2706).
+  // A failed Copilot message write, usually to a CLI that is going away, that
+  // its caller already got as an error. vscode-jsonrpc 8.2.1 left a second
+  // copy of every failed request write; 10.0.0 doesn't, but a notification
+  // write still rethrows, so the guard stays (#2706, failed-writes.ts).
   if (isFailedCopilotWrite(reason)) {
     appLog('core:process', 'warn', 'A Copilot message write failed, and its request already failed with it', { meta: { error: msg, stack } });
     return;

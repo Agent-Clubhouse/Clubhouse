@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  GRANT_ACTION_LABELS, applyGrantChanges, grantKey, grantRows, grantTargetLabel, normalizeGrantChanges, withGrantChange,
+  GRANT_ACTION_LABELS, applyGrantChanges, carriedGrants, grantKey, grantRows, grantTargetLabel, normalizeGrantChanges, normalizeTemplateGrants,
+  withGrantChange, withoutOwnChanges, withTemplateGrants,
 } from './agent-grant-changes';
 import { GRANT_ACTIONS, type Grant } from './agent-grants';
 import { defaultGrants } from './default-grants';
@@ -68,5 +69,57 @@ describe('saved grant changes (#2971)', () => {
   it('labels every action and target in plain words', () => {
     for (const a of GRANT_ACTIONS) expect(GRANT_ACTION_LABELS[a]).toMatch(/^[A-Z]/);
     expect(grantTargetLabel({ kind: 'parent' })).toBe('Its orchestrator');
+  });
+});
+
+describe('a template\'s layer (#2971)', () => {
+  const plain = defaultGrants({ dispatcher: false, helper: false, orchestrates: false, crossProject: false });
+  const msg = { action: 'agent.message' as const, target: { kind: 'connected' as const } };
+  const settings = { action: 'settings.app.write' as const, target: { kind: 'app' as const } };
+
+  it('sits between the defaults and the person\'s own changes', () => {
+    const saved = { changes: [{ ...settings, mode: 'off' as const, by: 'user' as const }], template: [{ ...msg, mode: 'off' as const }, { ...settings, mode: 'allow' as const }] };
+    const grants = applyGrantChanges(plain, saved);
+    expect(has(grants, grantKey(msg))).toBe(false);
+    // The person's Off wins over the template's Allow.
+    expect(has(grants, grantKey(settings))).toBe(false);
+    const rows = grantRows(plain, saved);
+    expect(rows.find((r) => grantKey(r) === grantKey(msg))).toMatchObject({ mode: 'off', defaultMode: 'off', source: 'template' });
+    expect(rows.find((r) => grantKey(r) === grantKey(settings))).toMatchObject({ mode: 'off', defaultMode: 'allow', source: 'user' });
+  });
+
+  it('a change back to the template\'s mode is dropped, and Reset keeps the template', () => {
+    const saved = { changes: [], template: [{ ...msg, mode: 'ask' as const }] };
+    expect(withGrantChange(saved, { ...msg, mode: 'ask', by: 'user' }, plain)).toEqual(saved);
+    const changed = withGrantChange(saved, { ...msg, mode: 'allow', by: 'user' }, plain);
+    expect(changed?.changes).toHaveLength(1);
+    expect(withoutOwnChanges(changed)).toEqual(saved);
+    expect(withoutOwnChanges({ changes: [{ ...msg, mode: 'off' }] })).toBeUndefined();
+  });
+
+  it('a push sets or takes away entries; the person\'s changes stay', () => {
+    const own = { ...settings, mode: 'off' as const, by: 'user' as const };
+    let saved = withTemplateGrants({ changes: [own] }, [{ ...msg, mode: 'off' }]);
+    expect(saved).toEqual({ changes: [own], template: [{ ...msg, mode: 'off' }] });
+    saved = withTemplateGrants(saved, [{ ...msg, mode: null }, { ...settings, mode: 'allow' }]);
+    expect(saved).toEqual({ changes: [own], template: [{ ...settings, mode: 'allow' }] });
+    // A fixed row never enters the layer.
+    expect(withTemplateGrants(undefined, [{ action: 'agent.message', target: { kind: 'parent' }, mode: 'off' }])).toBeUndefined();
+  });
+
+  it('reads back a saved template layer, alone or with changes, and drops what isn\'t one', () => {
+    expect(normalizeGrantChanges({ template: [{ ...msg, mode: 'off', by: 'user' }, { action: 'nope', target: { kind: 'app' }, mode: 'allow' }] }))
+      .toEqual({ changes: [], template: [{ ...msg, mode: 'off' }] });
+    expect(normalizeTemplateGrants([{ ...msg, mode: null }])).toEqual([]);
+    expect(normalizeTemplateGrants([{ ...msg, mode: null }], true)).toEqual([{ ...msg, mode: null }]);
+    expect(normalizeTemplateGrants('x')).toBeUndefined();
+    // Helper control's rows never enter a template.
+    expect(normalizeTemplateGrants([{ action: 'agent.create', target: { kind: 'project', project: 'own' }, mode: 'allow' }, { action: 'agent.dispose', target: { kind: 'my_helpers' }, mode: 'ask' }])).toEqual([]);
+    expect(withTemplateGrants(undefined, [{ action: 'agent.dispose', target: { kind: 'my_helpers' }, mode: 'off' }])).toBeUndefined();
+  });
+
+  it('carries the template\'s and its own, its own winning, for Copy and Save as template', () => {
+    expect(carriedGrants({ changes: [{ ...msg, mode: 'allow', by: 'user', at: 't' }], template: [{ ...msg, mode: 'off' }, { ...settings, mode: 'ask' }] }))
+      .toEqual([{ ...msg, mode: 'allow' }, { ...settings, mode: 'ask' }]);
   });
 });

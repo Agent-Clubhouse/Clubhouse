@@ -29,9 +29,10 @@ const TARGET_ORDER: ReadonlyArray<GrantTarget['kind']> = [
   'self', 'parent', 'my_helpers', 'connected', 'group_project', 'group_members', 'project', 'app', 'any',
 ];
 
-const SOURCE_LABEL: Record<GrantRow['source'], string | undefined> = {
+export const SOURCE_LABEL: Record<GrantRow['source'], string | undefined> = {
   every_agent: 'Every agent',
   structural: 'Built in',
+  template: 'From its template',
   user: 'Set by you',
   dispatcher: 'Set by Dispatcher',
   none: undefined,
@@ -234,11 +235,13 @@ function coveredLabel(view: AgentGrantsView | null, row: GrantRow): string | und
   return wider ? grantTargetLabel(wider.target) : undefined;
 }
 
-function GrantRowField({ row, targetLabel, coveredBy, mode, disabled, error, onChange }: {
+export function GrantRowField({ row, targetLabel, coveredBy, note, mode, disabled, error, onChange }: {
   row: GrantRow;
   targetLabel: string;
   /** A wider row allows this action: this row's own setting would change nothing. */
   coveredBy?: string;
+  /** Set elsewhere: why, in place of the choices being changeable. */
+  note?: string;
   mode: GrantChangeMode;
   disabled: boolean;
   error: string | undefined;
@@ -246,12 +249,13 @@ function GrantRowField({ row, targetLabel, coveredBy, mode, disabled, error, onC
 }) {
   const name = useId();
   const actionLabel = GRANT_ACTION_LABELS[row.action];
-  const off = disabled || row.fixed || !!coveredBy;
+  const off = disabled || row.fixed || !!coveredBy || !!note;
   return (
     <div data-testid={`agent-grant-row-${grantKey(row)}`}>
       <Field label={actionLabel} help={SOURCE_LABEL[row.source]}>
         {row.fixed && <span className="text-xs text-ctp-overlay1">Always on</span>}
         {coveredBy && <span className="text-xs text-ctp-overlay1">Allowed by {coveredBy}. Change it there.</span>}
+        {note && <span className="text-xs text-ctp-overlay1">{note}</span>}
         <div role="radiogroup" aria-label={`${actionLabel} (${targetLabel})`} className="flex items-center gap-3">
           {MODES.map((m) => (
             <label

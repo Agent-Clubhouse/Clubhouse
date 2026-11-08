@@ -63,6 +63,7 @@ import { managedAgents, restartManagedAgent } from '../../managed-agents';
 import { _resetSettingsAuditForTesting } from '../../settings-audit';
 import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_ALWAYS_ON } from '../../../../shared/managed-agents-types';
 import { BUILTIN_BLOCK_IDS } from '../../managed-agents/builtins';
+import { getAgentGrantChanges } from '../../agent-grants-store';
 
 const call = async (name: string, args: Record<string, unknown>, caller = 'dispatcher') => {
   const r = await callTool(caller, name, args);
@@ -268,6 +269,33 @@ describe('templates', () => {
     });
     const blocksOnly = (await call('save_agent_template', { id: t.id, blocks: [] })).json;
     expect(blocksOnly).toMatchObject({ name: 'Keeper 2', setup: { blocks: [], skills: [skill.id] }, settings: { model: 'opus' } });
+  });
+
+  it('only the user sets a template\'s Clubhouse permissions, and an edit over MCP keeps them (#2971)', async () => {
+    const grants = [{ action: 'settings.app.write', target: { kind: 'app' }, mode: 'allow' }];
+    const refused = await call('save_agent_template', { name: 'Escalate', blocks: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: { grants } });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0].text).toContain('only the user');
+    expect((await call('create_managed_agent', { project: '/p', name: 'x', settings: { grants } })).isError).toBe(true);
+
+    const saved = await managedAgents().saveTemplate({ name: 'User perms', description: '', setup: { blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, settings: { grants: [{ action: 'agent.message', target: { kind: 'connected' }, mode: 'off' }] } });
+    const edited = (await call('save_agent_template', { id: saved.id, settings: { model: 'opus' } })).json;
+    expect(edited.settings).toEqual({ model: 'opus', grants: [{ action: 'agent.message', target: { kind: 'connected' }, mode: 'off' }] });
+  });
+
+  it('an agent creating from a template passes its permissions only as far as it holds them (#2971)', async () => {
+    const app = { kind: 'app' };
+    const t = await managedAgents().saveTemplate({ name: 'Wide', description: '', setup: { blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, settings: { grants: [
+      { action: 'settings.app.write', target: app, mode: 'allow' },
+      { action: 'models.read', target: app, mode: 'off' },
+    ] as never } });
+    const made = await call('create_managed_agent', { project: 'Clubhouse', name: 'from-wide', templateId: t.id });
+    expect(made.isError).toBeFalsy();
+    // The Dispatcher has app settings writes only as Ask first, so that's all it passes.
+    expect(getAgentGrantChanges(made.json.id)?.template).toEqual([
+      { action: 'settings.app.write', target: app, mode: 'ask' },
+      { action: 'models.read', target: app, mode: 'off' },
+    ]);
   });
 
   it('push keeps the template\'s settings when the call leaves them out', async () => {

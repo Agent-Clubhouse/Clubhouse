@@ -6,7 +6,7 @@
  * surfaces call this.
  */
 
-import { applyGrantChanges, grantKey, grantRows, isFixedGrant, normalizeGrantChanges, withGrantChange, type AgentGrantsView, type GrantChange } from '../../shared/agent-grant-changes';
+import { applyGrantChanges, carriedGrants, shaped, grantKey, grantRows, isFixedGrant, normalizeGrantChanges, withGrantChange, withoutOwnChanges, withTemplateGrants, type AgentGrantsView, type GrantChange, type TemplateGrant } from '../../shared/agent-grant-changes';
 import { controlFromGrantModes, controlGrantModes, defaultGrants } from '../../shared/default-grants';
 import { resolveOrchestrationPolicy } from '../../shared/orchestration-policy';
 import type { Grant } from '../../shared/agent-grants';
@@ -56,8 +56,9 @@ async function setControlRow(projectPath: string, agentId: string, row: 'create'
   if (!result.ok) throw new Error(result.message);
   // A change saved on this row before it followed the setting would win over it: drop it.
   await updateAgentGrantChanges(agentId, (saved) => {
+    // Only the person's own: the template's layer stays as it is.
     const changes = saved?.changes.filter((c) => controlRow(c, { orchestrates: true, crossProject: true }) !== row) ?? [];
-    return changes.length > 0 ? { ...saved, changes } : undefined;
+    return shaped(changes, saved?.template);
   });
 }
 
@@ -73,8 +74,10 @@ async function configOf(projectPath: string, agentId: string): Promise<DurableAg
 
 function viewOf(agentId: string, config: DurableAgentConfig): AgentGrantsView {
   const facts = factsOf(agentId, config);
+  const saved = getAgentGrantChanges(agentId);
   return {
-    rows: grantRows(defaultsFor(agentId, config), getAgentGrantChanges(agentId)),
+    rows: grantRows(defaultsFor(agentId, config), saved),
+    carried: carriedGrants(saved),
     helper: facts.helper,
     dispatcher: facts.dispatcher,
     orchestrates: facts.orchestrates,
@@ -118,10 +121,32 @@ export async function setAgentGrant(projectPath: string, agentId: string, change
   return viewOf(agentId, config);
 }
 
-/** Reset to defaults: clears every change. */
+/** Reset to defaults: clears the person's changes, keeping what its template sets (#2971). */
 export async function resetAgentGrants(projectPath: string, agentId: string): Promise<AgentGrantsView> {
   const config = await configOf(projectPath, agentId);
   dropCallApprovalsFor(agentId);
-  await updateAgentGrantChanges(agentId, () => undefined);
+  await updateAgentGrantChanges(agentId, withoutOwnChanges);
   return viewOf(agentId, config);
+}
+
+/**
+ * Write what a template sets (#2971): all of it when an agent is made from
+ * the template, only what changed on a push (a null mode takes one away).
+ * Only the user's own template edits and creation reach this; the person's
+ * own changes stay over it.
+ */
+export async function applyTemplateGrants(agentId: string, grants: readonly TemplateGrant[]): Promise<void> {
+  if (grants.length === 0) return;
+  dropCallApprovalsFor(agentId);
+  await updateAgentGrantChanges(agentId, (saved) => withTemplateGrants(saved, grants));
+}
+
+/** What an agent's template layer sets. */
+export function templateLayerGrants(agentId: string): GrantChange[] {
+  return getAgentGrantChanges(agentId)?.template ?? [];
+}
+
+/** What an agent carries over its defaults, for Save as template. */
+export function carriedAgentGrants(agentId: string): GrantChange[] {
+  return carriedGrants(getAgentGrantChanges(agentId));
 }
