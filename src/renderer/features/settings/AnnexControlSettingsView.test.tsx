@@ -34,6 +34,8 @@ function resetStores() {
     loadSettings: mockLoadAnnexSettings,
     loadStatus: vi.fn(),
     regeneratePin: vi.fn(),
+    devices: [],
+    loadDevices: vi.fn(),
   });
 }
 
@@ -173,15 +175,32 @@ describe('AnnexControlSettingsView', () => {
     });
   });
 
+  describe('device list', () => {
+    it('lists only devices this machine controls, including ones not found since startup', () => {
+      useAnnexStore.setState({
+        devices: [
+          { fingerprint: 'fp-sat', alias: 'Studio Mac', icon: 'computer', color: 'indigo', role: 'satellite', state: 'offline', pairedAt: '', lastSeen: '',
+            problem: { code: 'not-found-yet', message: "Studio Mac hasn't been found on the network yet.", action: 'Check that Clubhouse is open there with Annex turned on.' } },
+          { fingerprint: 'fp-phone', alias: 'Phone', icon: 'iphone', color: 'indigo', role: 'controller', state: 'connected', pairedAt: '', lastSeen: '', problem: null },
+        ],
+        loadDevices: vi.fn(),
+      });
+      render(<AnnexControlSettingsView />);
+      expect(screen.getByText('Studio Mac')).toBeInTheDocument();
+      expect(screen.queryByText('Phone')).not.toBeInTheDocument();
+      expect(screen.getByText(/hasn't been found on the network yet/)).toBeInTheDocument();
+    });
+  });
+
   describe('pair again', () => {
     it('opens the wizard for a satellite that needs pairing again', () => {
-      useAnnexClientStore.setState({
-        satellites: [{
-          id: 'sat-1', fingerprint: 'fp-1', alias: 'Studio Mac', icon: 'computer', color: 'indigo',
-          state: 'disconnected', host: '', mainPort: 0, pairingPort: 0, snapshot: null,
-          lastError: 'This pairing is from an older version of Clubhouse. Pair again to connect.',
-          needsPairing: true,
+      useAnnexStore.setState({
+        devices: [{
+          fingerprint: 'fp-1', alias: 'Studio Mac', icon: 'computer', color: 'indigo', role: 'satellite',
+          state: 'needs-pairing', pairedAt: '', lastSeen: '',
+          problem: { code: 'old-pairing', message: 'This pairing is from an older version of Clubhouse.', action: 'Pair again to connect.' },
         }],
+        loadDevices: vi.fn(),
       });
       render(<AnnexControlSettingsView />);
       expect(screen.queryByTestId('pairing-wizard')).not.toBeInTheDocument();

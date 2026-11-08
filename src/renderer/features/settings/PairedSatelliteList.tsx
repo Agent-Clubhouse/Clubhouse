@@ -1,47 +1,46 @@
 import { useState } from 'react';
-import type { SatelliteConnection } from '../../stores/annexClientStore';
+import type { AnnexDevice } from '../../../shared/types';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
+import { useAnnexStore } from '../../stores/annexStore';
 import { getAgentColorHex } from '../../../shared/name-generator';
 import { Button } from '../../components/Button';
 
 interface Props {
-  satellites: SatelliteConnection[];
+  /** Devices this machine controls, from the one device list. */
+  devices: AnnexDevice[];
   /** Opens the pairing wizard for a satellite whose pairing can't be used any more. */
-  onPairAgain?: (satellite: SatelliteConnection) => void;
+  onPairAgain?: (device: AnnexDevice) => void;
 }
 
-
-function StatusDot({ state, lastError, needsPairing }: { state: SatelliteConnection['state']; lastError?: string | null; needsPairing?: boolean }) {
-  if (needsPairing) return <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-surface-2" />;
-  const isIncompatible = lastError?.toLowerCase().includes('incompatible');
-  const colors: Record<string, string> = {
+function StatusDot({ device }: { device: AnnexDevice }) {
+  if (device.problem?.code === 'incompatible') return <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-ctp-error" />;
+  const colors: Record<AnnexDevice['state'], string> = {
     connected: 'bg-ctp-success',
     connecting: 'bg-ctp-warning animate-pulse',
-    discovering: 'bg-ctp-info animate-pulse',
-    disconnected: 'bg-surface-2',
+    offline: 'bg-surface-2',
+    'needs-pairing': 'bg-surface-2',
   };
-  return <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isIncompatible ? 'bg-ctp-error' : colors[state] || 'bg-surface-2'}`} />;
+  return <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${colors[device.state]}`} />;
 }
 
-function stateLabel(state: SatelliteConnection['state'], lastError?: string | null, needsPairing?: boolean): string {
-  if (needsPairing) return 'Needs pairing again';
-  if (lastError?.toLowerCase().includes('incompatible')) return 'Incompatible';
-  switch (state) {
+function stateLabel(device: AnnexDevice): string {
+  if (device.problem?.code === 'incompatible') return 'Incompatible';
+  switch (device.state) {
     case 'connected': return 'Connected';
     case 'connecting': return 'Connecting…';
-    case 'discovering': return 'Discovering…';
-    case 'disconnected': return 'Offline';
+    case 'needs-pairing': return 'Needs pairing again';
+    case 'offline': return 'Offline';
   }
 }
 
-export function PairedSatelliteList({ satellites, onPairAgain }: Props) {
+export function PairedSatelliteList({ devices, onPairAgain }: Props) {
   const disconnect = useAnnexClientStore((s) => s.disconnect);
   const retry = useAnnexClientStore((s) => s.retry);
-  const forgetSatellite = useAnnexClientStore((s) => s.forgetSatellite);
+  const removeDevice = useAnnexStore((s) => s.removeDevice);
   const [confirmForget, setConfirmForget] = useState<string | null>(null);
 
-  // Sort: connected first, then alphabetical
-  const sorted = [...satellites].sort((a, b) => {
+  // Connected first, then alphabetical
+  const sorted = [...devices].sort((a, b) => {
     if (a.state === 'connected' && b.state !== 'connected') return -1;
     if (a.state !== 'connected' && b.state === 'connected') return 1;
     return a.alias.localeCompare(b.alias);
@@ -49,58 +48,59 @@ export function PairedSatelliteList({ satellites, onPairAgain }: Props) {
 
   return (
     <div data-testid="paired-satellite-list">
-      {sorted.map((sat) => (
+      {sorted.map((device) => (
         <div
-          key={sat.id}
+          key={device.fingerprint}
+          data-testid="annex-device-row"
+          data-state={device.state}
           className="flex items-center gap-3 min-h-[46px] py-2 border-t border-surface-0"
         >
           <div className="flex items-center gap-2.5 flex-1 min-w-0">
             <div
               className="w-[18px] h-[18px] rounded flex items-center justify-center text-xs font-bold leading-none shrink-0"
-              style={{ backgroundColor: `${getAgentColorHex(sat.color)}33`, color: getAgentColorHex(sat.color) }}
+              style={{ backgroundColor: `${getAgentColorHex(device.color)}33`, color: getAgentColorHex(device.color) }}
               aria-hidden="true"
             >
-              {sat.alias.slice(0, 1).toUpperCase()}
+              {(device.alias || '?').slice(0, 1).toUpperCase()}
             </div>
             <div className="min-w-0">
-              <div className="text-[13px] text-ctp-text truncate">{sat.alias}</div>
+              <div className="text-[13px] text-ctp-text truncate">{device.alias || 'Unnamed device'}</div>
               <div className="flex items-center gap-1.5 text-xs text-ctp-overlay1 min-w-0">
-                <StatusDot state={sat.state} lastError={sat.lastError} needsPairing={sat.needsPairing} />
-                <span>{stateLabel(sat.state, sat.lastError, sat.needsPairing)}</span>
-                {sat.lastError && sat.state === 'disconnected' && !sat.needsPairing && (
-                  <span className="text-ctp-error truncate">({sat.lastError})</span>
-                )}
+                <StatusDot device={device} />
+                <span>{stateLabel(device)}</span>
               </div>
-              {sat.needsPairing && sat.lastError && (
-                <div className="text-xs text-ctp-overlay1">{sat.lastError}</div>
+              {device.problem && (
+                <div className="text-xs text-ctp-overlay1" data-testid="annex-device-problem">
+                  {device.problem.message} {device.problem.action}
+                </div>
               )}
             </div>
           </div>
 
           <div className="flex gap-1.5 shrink-0">
-            {sat.needsPairing && onPairAgain && (
-              <Button onClick={() => onPairAgain(sat)} kind="ghost">
+            {device.state === 'needs-pairing' && onPairAgain && (
+              <Button onClick={() => onPairAgain(device)} kind="ghost">
                 Pair again
               </Button>
             )}
-            {sat.state === 'disconnected' && !sat.needsPairing && (
-              <Button onClick={() => retry(sat.fingerprint)} kind="ghost">
+            {device.state === 'offline' && (
+              <Button onClick={() => retry(device.fingerprint)} kind="ghost">
                 Retry
               </Button>
             )}
-            {sat.state === 'connected' && (
-              <Button onClick={() => disconnect(sat.fingerprint)} kind="ghost">
+            {device.state === 'connected' && (
+              <Button onClick={() => disconnect(device.fingerprint)} kind="ghost">
                 Disconnect
               </Button>
             )}
-            {confirmForget === sat.fingerprint ? (
+            {confirmForget === device.fingerprint ? (
               <>
                 <Button onClick={() => setConfirmForget(null)} kind="ghost">
                   Cancel
                 </Button>
                 <Button
                   onClick={() => {
-                    forgetSatellite(sat.fingerprint);
+                    void removeDevice(device.fingerprint);
                     setConfirmForget(null);
                   }}
                   kind="danger"
@@ -109,7 +109,7 @@ export function PairedSatelliteList({ satellites, onPairAgain }: Props) {
                 </Button>
               </>
             ) : (
-              <Button onClick={() => setConfirmForget(sat.fingerprint)} kind="danger">
+              <Button onClick={() => setConfirmForget(device.fingerprint)} kind="danger">
                 Forget
               </Button>
             )}

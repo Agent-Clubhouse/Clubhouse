@@ -53,6 +53,7 @@ import { listenPreferringPort, type ListenFn } from './annex-listen';
 import { buildPairingUrl, pairingHosts } from './annex-pairing-url';
 import * as annexIdentity from './annex-identity';
 import * as annexPeers from './annex-peers';
+import { devicesChanged } from './annex-device-signal';
 import * as projectStore from './project-store';
 import * as agentConfig from './agent-config';
 import { isDisposedAgent } from '../../shared/agent-helpers';
@@ -714,6 +715,7 @@ function dropUnconnectedPeers(now = Date.now()): void {
     if (deadline > now) continue;
     awaitingFirstConnection.delete(fingerprint);
     mobileSessionPeers.delete(fingerprint);
+    devicesChanged();
     if (annexPeers.removePeer(fingerprint)) {
       appLog('core:annex', 'info', 'Removed a pairing that never connected', { meta: { fingerprint } });
       broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeersForDisplay());
@@ -1281,6 +1283,7 @@ function reportClientCounts(): void {
     if (client.readyState === WebSocket.OPEN) counts[clientKindOf(client)]++;
   }
   recordClients(counts.desktop, counts.mobile, counts.unknown);
+  devicesChanged();
 }
 
 /** What a socket said it was at connect, for metrics only. It's unverified, so nothing else may read it. */
@@ -2334,6 +2337,36 @@ const PAIR_MESSAGES = {
   client_certificate_required: 'Pairing needs the device certificate that matches its identity.',
 } as const;
 
+/** Phones send `pairingMode`, and older ones a phone or tablet icon; Clubhouse desktops send neither. */
+function sentByPhone(body: Record<string, unknown>): boolean {
+  return body.pairingMode !== undefined || (typeof body.icon === 'string' && /phone|pad|tablet|mobile/i.test(body.icon));
+}
+
+/**
+ * The name to store for a device pairing with this machine (#2442). A device
+ * that sends this machine's own name (an older Clubhouse Go sent the desktop's
+ * name as its own) would show as "Controlled by <this Mac>", so it gets a
+ * neutral name instead, as does one that sends none. Phones send `pairingMode`.
+ */
+export function pairedDeviceAlias(
+  sent: unknown,
+  own: { alias?: string; deviceName?: string },
+  isPhone: boolean,
+  fingerprint = '',
+): string {
+  const fallback = isPhone ? 'Phone' : 'Computer';
+  const alias = typeof sent === 'string' ? sent.trim() : '';
+  if (!alias) return fallback;
+  const same = (name: string | undefined): boolean => !!name && name.trim().toLocaleLowerCase() === alias.toLocaleLowerCase();
+  if (same(own.alias) || same(own.deviceName)) {
+    appLog('core:annex', 'warn', "A pairing device sent this machine's own name; storing a neutral name", {
+      meta: { fingerprint, fallback },
+    });
+    return fallback;
+  }
+  return alias;
+}
+
 /**
  * POST /pair on the main TLS port. The client shows its certificate, whose CN is
  * its identity fingerprint; that certificate is pinned. A PIN pairs one identity
@@ -2451,10 +2484,11 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
   const identity = annexIdentity.getOrCreateIdentity();
   const settings = annexSettings.getSettings();
   const now = new Date().toISOString();
+  // Pairing again (same identity) stores the name it sends now, like everything else it sends.
   const pairedPeer: AnnexPeer = {
     fingerprint,
     publicKey: clientPublicKey,
-    alias: typeof body.alias === 'string' && body.alias ? body.alias : 'Unknown',
+    alias: pairedDeviceAlias(body.alias, settings, sentByPhone(body), fingerprint),
     icon: typeof body.icon === 'string' && body.icon ? body.icon : 'computer',
     color: typeof body.color === 'string' && body.color ? body.color : 'indigo',
     pairedAt: now,
@@ -2464,7 +2498,7 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
   };
   // The old certificate's sockets stop counting now (the pin no longer matches), and are cut.
   if (replacesPin) closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
-  if (sessionOnly) mobileSessionPeers.set(fingerprint, pairedPeer);
+  if (sessionOnly) { mobileSessionPeers.set(fingerprint, pairedPeer); devicesChanged(); }
   else { mobileSessionPeers.delete(fingerprint); annexPeers.addPeer(pairedPeer); }
   loggedRefusals.delete(fingerprint);
   broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeersForDisplay());
@@ -5085,6 +5119,7 @@ export function stop(): void {
   mobileCommands.reset();
   mobileAttachments.reset();
   mobileSessionPeers.clear();
+  devicesChanged();
   // Starts already accepted may still be awaiting a driver; stop them on completion.
   for (const starting of mobileStartingAgents.values()) starting.cancelled = true;
 
@@ -5595,6 +5630,7 @@ export const PEER_REVOKED_CLOSE_CODE = 4401;
  */
 export function revokePeer(fingerprint: string): boolean {
   const wasSession = mobileSessionPeers.delete(fingerprint);
+  if (wasSession) devicesChanged();
   const removed = annexPeers.removePeer(fingerprint) || wasSession;
   awaitingFirstConnection.delete(fingerprint);
   loggedRefusals.delete(fingerprint);
@@ -5624,6 +5660,22 @@ export function revokeAllPeers(): void {
   awaitingFirstConnection.clear();
   loggedRefusals.clear();
   for (const fingerprint of fingerprints) closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
+}
+
+/** Identities with an open, still-paired WebSocket to this server: the devices connected to this machine. */
+export function connectedPeerFingerprints(): Set<string> {
+  const connected = new Set<string>();
+  for (const client of wss?.clients ?? []) {
+    if (client.readyState !== WebSocket.OPEN || !socketStillPaired(client)) continue;
+    const fingerprint = wsPeerFingerprints.get(client);
+    if (fingerprint) connected.add(fingerprint);
+  }
+  return connected;
+}
+
+/** Phones paired for this session only: listed with the other devices, and gone when Annex stops. */
+export function sessionOnlyPeers(): AnnexPeer[] {
+  return [...mobileSessionPeers.values()];
 }
 
 /** Get the auth type of a WebSocket connection. Used by protocol V2 to gate control messages. */

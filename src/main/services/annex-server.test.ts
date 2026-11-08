@@ -2155,6 +2155,68 @@ describe('annex-server', () => {
       expect((await call('GET', '/api/v1/status', newCert)).status).toBe(200);
     });
 
+    it('lists a paired device with an open socket as connected, until it is removed (#3057)', async () => {
+      await startServer();
+      const phone = device();
+      expect((await pair(phone)).status).toBe(200);
+      expect(annexServer.connectedPeerFingerprints().has(phone.fingerprint)).toBe(false);
+      const { accepted } = await upgrade(phone);
+      expect(accepted).toBeDefined();
+      (accepted as unknown as { readyState: number }).readyState = 1;
+      expect(annexServer.connectedPeerFingerprints().has(phone.fingerprint)).toBe(true);
+      // Removed: the entry goes first, so the socket no longer counts even before it closes.
+      annexServer.revokePeer(phone.fingerprint);
+      expect(annexServer.connectedPeerFingerprints().has(phone.fingerprint)).toBe(false);
+    });
+
+    describe('the stored name (#2442)', () => {
+      it("replaces a name equal to this machine's own, ignoring case and spaces", async () => {
+        await startServer();
+        const phone = device();
+        expect((await pair(phone, { alias: ' test MACHINE ', pairingMode: 'persistent' })).status).toBe(200);
+        expect(peers.get(phone.fingerprint)?.alias).toBe('Phone');
+        const computer = device();
+        expect((await pair(computer, { alias: 'Test Machine', icon: 'computer' })).status).toBe(200);
+        expect(peers.get(computer.fingerprint)?.alias).toBe('Computer');
+        // An older phone that sends no pairingMode still says what it is by its icon.
+        const olderPhone = device();
+        expect((await pair(olderPhone, { alias: 'Test Machine', icon: 'iphone' })).status).toBe(200);
+        expect(peers.get(olderPhone.fingerprint)?.alias).toBe('Phone');
+      });
+
+      it('keeps any other name, and names a device that sends none', async () => {
+        await startServer();
+        const phone = device();
+        expect((await pair(phone, { alias: 'Pocket' })).status).toBe(200);
+        expect(peers.get(phone.fingerprint)?.alias).toBe('Pocket');
+        const nameless = device();
+        expect((await pair(nameless, { alias: '', pairingMode: 'persistent' })).status).toBe(200);
+        expect(peers.get(nameless.fingerprint)?.alias).toBe('Phone');
+      });
+
+      it('takes the new name when the same device pairs again', async () => {
+        await startServer();
+        const phone = device();
+        expect((await pair(phone, { alias: 'Test Machine', pairingMode: 'persistent' })).status).toBe(200);
+        expect(peers.get(phone.fingerprint)?.alias).toBe('Phone');
+        expect((await pair(phone, { alias: 'Pocket', pairingMode: 'persistent' })).status).toBe(200);
+        expect(peers.get(phone.fingerprint)?.alias).toBe('Pocket');
+      });
+
+      it('shows the stored name, not the sent one, on the lock overlay', async () => {
+        await startServer();
+        const phone = device();
+        expect((await pair(phone, { alias: 'Test Machine', pairingMode: 'persistent' })).status).toBe(200);
+        mockBroadcastToAllWindows.mockClear();
+        const { accepted } = await upgrade(phone);
+        expect(accepted).toBeDefined();
+        await vi.waitFor(() => expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
+          'annex:lock-state-changed', expect.objectContaining({ locked: true, controllerAlias: 'Phone' }),
+        ));
+        accepted!.close();
+      });
+    });
+
     it('needs a valid Ed25519 key and a client certificate named for it', async () => {
       await startServer();
       const phone = device();

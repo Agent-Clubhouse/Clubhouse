@@ -1,3 +1,5 @@
+import type { AnnexProblem } from './annex-problems';
+
 /** Whether the clubhouse command is installed (#2598). Only a packaged build can install it. */
 export interface CliInstallStatus {
   supported: boolean;
@@ -1138,6 +1140,41 @@ export interface AnnexPeer {
 export interface AnnexPeerListing extends AnnexPeer {
   /** Older pairing (or one we can't verify): refused until it's paired again. */
   needsPairing: boolean;
+}
+
+/**
+ * Where a paired device stands, as Settings shows it.
+ * - `connected`: a live connection either way.
+ * - `connecting`: this machine is connecting to it, or looking for it on the network.
+ * - `offline`: paired, with no connection now.
+ * - `needs-pairing`: refused until it's paired again.
+ */
+export type AnnexDeviceState = 'connected' | 'connecting' | 'offline' | 'needs-pairing';
+
+/**
+ * One paired device (#3057): the single list Settings is built from, whichever
+ * way the pairing goes. Keyed by identity fingerprint.
+ */
+export interface AnnexDevice {
+  fingerprint: string;
+  alias: string;
+  icon: string;
+  color: string;
+  /**
+   * How it's paired with this machine: it controls this machine (`controller`),
+   * or this machine controls it (`satellite`). Null for a pairing from before
+   * roles, which needs pairing again.
+   */
+  role: AnnexPeerRole | null;
+  state: AnnexDeviceState;
+  /** ISO time it was paired; empty when unknown. */
+  pairedAt: string;
+  /** ISO time of its last connection; empty when unknown. */
+  lastSeen: string;
+  /** Paired for this session only (a phone's session pairing): forgotten when Annex stops. */
+  sessionOnly?: boolean;
+  /** Why it isn't connected, and what to do, when that's known. */
+  problem: AnnexProblem | null;
 }
 
 // ── Annex client (controller) types ───────────────────────────────────
