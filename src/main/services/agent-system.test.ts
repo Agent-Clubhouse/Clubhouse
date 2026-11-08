@@ -696,6 +696,11 @@ describe('agent-system', () => {
       expect(mockProvider.buildSpawnCommand).toHaveBeenCalledWith(expect.objectContaining({ mission: 'Go', interactive }));
     });
 
+    it('asks for an interactive session for a quick agent someone follows (#3002)', async () => {
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'quick', mission: 'Go', interactive: true });
+      expect(mockProvider.buildSpawnCommand).toHaveBeenCalledWith(expect.objectContaining({ mission: 'Go', interactive: true }));
+    });
+
     it('throws with descriptive error when pre-flight check fails', async () => {
       mockProvider.checkAvailability.mockResolvedValueOnce({
         available: false,

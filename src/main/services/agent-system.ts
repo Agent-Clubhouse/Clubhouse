@@ -896,7 +896,8 @@ async function spawnPtyAgent(
       sessionId: params.sessionId,
       agentFile: params.agentFile,
       agentSource: params.agentSource ? expandHome(params.agentSource) : undefined,
-      interactive: params.kind === 'durable',
+      // A quick agent someone follows (a phone start, an action below Auto) runs as a session it can ask in, not one-shot.
+      interactive: params.kind === 'durable' || !!params.interactive,
     })),
   ]));
 
