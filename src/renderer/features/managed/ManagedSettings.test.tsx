@@ -163,6 +163,15 @@ describe('Templates page', () => {
     expect(screen.queryByText('Project Manager')).toBeNull();
   });
 
+  it('the template editor\'s Access and Helper access are separate fields, each with its own label (#2999)', async () => {
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [template('mine', { name: 'Release lead', settings: { orchestration: { orchestrate: true } } })] });
+    render(<TemplatesSettingsView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Release lead' }));
+    const ids = [...document.querySelectorAll('[id]')].map((e) => e.id);
+    expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
+    expect(screen.getByLabelText('Access')).not.toBe(screen.getByLabelText('Helper access'));
+  });
+
   it('says when a template is the copy of a retired built-in (D99)', async () => {
     vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [
       template('copy', { name: 'Project Manager', fromRetiredBuiltin: 'builtin-template-project-manager', usedBy: 2 }),

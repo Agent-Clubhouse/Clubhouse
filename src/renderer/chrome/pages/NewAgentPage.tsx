@@ -165,6 +165,9 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const [useWorktree, setUseWorktree] = useState(true);
   const [isGit, setIsGit] = useState<boolean | null>(null);
   const [pickedAccess, setPickedAccess] = useState<AccessLevel | null>(null);
+  // The level the current quick template filled in, so another template (or None) takes it back
+  // unless the person changed it since (#2999).
+  const templateAccess = useRef<AccessLevel | null>(null);
   const [mcpCatalog, setMcpCatalog] = useState<McpCatalogEntry[]>([]);
   const [selectedMcps, setSelectedMcps] = useState<string[]>([]);
   const [mission, setMission] = useState('');
@@ -228,9 +231,11 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
     setQuickTemplateId(t?.id ?? '');
     setQuickTemplate(t);
     setQuickChanges(NO_QUICK_CHANGES);
+    const level = t ? settingsAccess(t.settings) : undefined;
+    if (!level && templateAccess.current && pickedAccess === templateAccess.current) setPickedAccess(null);
+    templateAccess.current = level ?? null;
     if (!t) return;
     const { orchestrator: cli, model: m } = t.settings;
-    const level = settingsAccess(t.settings);
     const switchCli = !!cli && !parent && effectiveOrchestrators.some((o) => o.id === cli);
     if (switchCli) setOrchestrator(cli);
     const willRun = switchCli ? cli : runOrchestrator;
