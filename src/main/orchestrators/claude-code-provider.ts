@@ -428,14 +428,10 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
   }
 
   /**
-   * Read a historical session transcript from Claude Code's JSONL storage.
-   * Returns raw StreamJsonEvent[] or null if session not found.
+   * The transcript file for `sessionId` in Claude Code's JSONL storage for
+   * `cwd`, or null when there is none.
    */
-  async readSessionTranscript(
-    sessionId: string,
-    cwd: string,
-    opts?: TranscriptReadOptions,
-  ): Promise<import('../services/jsonl-parser').StreamJsonEvent[] | null> {
+  async transcriptPath(sessionId: string, cwd: string): Promise<string | null> {
     const projectDir = this.resolveProjectDir(cwd);
 
     if (!projectDir) return null;
@@ -475,6 +471,19 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
       }
     }
 
+    return jsonlPath;
+  }
+
+  /**
+   * Read a historical session transcript from Claude Code's JSONL storage.
+   * Returns raw StreamJsonEvent[] or null if session not found.
+   */
+  async readSessionTranscript(
+    sessionId: string,
+    cwd: string,
+    opts?: TranscriptReadOptions,
+  ): Promise<import('../services/jsonl-parser').StreamJsonEvent[] | null> {
+    const jsonlPath = await this.transcriptPath(sessionId, cwd);
     if (!jsonlPath) return null;
 
     const events = await parseJsonlFile(jsonlPath, opts);

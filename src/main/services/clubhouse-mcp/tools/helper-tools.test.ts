@@ -955,11 +955,14 @@ describe('start_helper difficulty (#2671)', () => {
   });
 
 
-  it('refuses a difficulty on a CLI with no presets', async () => {
-    const result = await start({ cli: 'copilot-cli', difficulty: 'easy' });
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('has no presets');
-    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  it('a difficulty on Copilot picks its preset (#3085); a CLI with no presets is refused in helper-routing.test', async () => {
+    modelLists.set('copilot-cli', { source: 'live', via: 'handshake', fetchedAt: 0, models: [
+      { id: 'claude-haiku-5.5', label: 'Claude Haiku 5.5', efforts: ['low', 'medium', 'high'] },
+    ] });
+    controllableCreation();
+    const body = parse(await start({ cli: 'copilot-cli', difficulty: 'easy' }));
+    expect(body).toMatchObject({ effort: 'low', routing: { mode: 'preset', reason: 'preset_on_cli', resolved: { provider: 'copilot-cli', model: 'claude-haiku-5.5', effort: 'low', difficulty: 'easy' } } });
+    expect(mockStartDurableCreation.mock.calls[0][1]).toMatchObject({ orchestrator: 'copilot-cli', model: 'claude-haiku-5.5', effort: 'low' });
   });
 
   it('an explicit model wins, is checked, and has no preset effort applied', async () => {

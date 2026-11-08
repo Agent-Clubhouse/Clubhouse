@@ -27,7 +27,11 @@ import {
   eventPhrase,
   nextCronTime,
   parseCron,
+  isSubscriptionShape,
+  subscriptionStep,
   suggestActionName,
+  suggestSubscriptionName,
+  validateTrigger,
   type Action,
   type ActionEventKind,
   type ActionNames,
@@ -91,6 +95,11 @@ export interface EngineFacts {
   projectIdForPath(projectPath: string): string | undefined;
   /** Which project and agent worktree a repo path belongs to. */
   repoOwner(repoPath: string): { projectId?: string; agentId?: string };
+  /**
+   * The Dispatcher's agent id: who the Dispatcher's subscriptions, and
+   * Clubhouse's own (#3040), tell. Unset when there is no Dispatcher.
+   */
+  dispatcherAgentId?(): string | undefined;
 }
 
 export interface StepContext {
@@ -98,6 +107,8 @@ export interface StepContext {
   runId: string;
   /** The chain this run's steps pass on: the run's chain plus this action. */
   chain: string[];
+  /** What set the run off. An event's detail ("web is pushed (main)") goes into messages. */
+  trigger?: ActionRunTrigger;
 }
 
 export interface StepRunner {
@@ -393,11 +404,14 @@ export class ActionsEngine {
     if (count >= max) throw new ActionError('not_allowed', `That’s ${max} actions already, the most this owner can have. Delete one first.`);
   }
 
-  create(input: unknown, owner: ActionOwner): Action {
+  create(input: unknown, owner: ActionOwner, opts: { subscription?: boolean } = {}): Action {
     const valid = assertActionInput(input);
     this.checkRights(owner, valid.trigger, valid.steps);
     this.checkTargets(valid.trigger, valid.steps);
     this.checkCount(owner);
+    if (opts.subscription && !isSubscriptionShape(valid, this.subscriberOf(owner))) {
+      throw new ActionError('invalid_input', 'A subscription waits for an event and messages its owner.');
+    }
     const now = this.now();
     const action: Action = {
       id: this.newId('act'),
@@ -407,6 +421,7 @@ export class ActionsEngine {
       overlap: valid.overlap,
       owner,
       enabled: valid.enabled,
+      ...(opts.subscription && { subscription: true as const }),
       createdAt: now,
       updatedAt: now,
     };
@@ -414,6 +429,44 @@ export class ActionsEngine {
     if (action.enabled && action.trigger.kind === 'schedule') this.armSchedule(action);
     this.persist();
     return action;
+  }
+
+  /**
+   * Who an owner's subscriptions tell (#3042): an agent tells itself; the
+   * Dispatcher, and Clubhouse's own upkeep (#3040), tell the Dispatcher. A
+   * person has no inbox, so people use a notify step instead.
+   */
+  subscriberOf(owner: ActionOwner): string | undefined {
+    if (owner.kind === 'agent') return owner.agentId;
+    if (owner.kind === 'dispatcher' || owner.kind === 'app') return this.deps.facts.dispatcherAgentId?.();
+    return undefined;
+  }
+
+  /**
+   * Create a subscription (#3042): the owner is told when the event in
+   * `trigger` happens, with its note. It is an ordinary action with one
+   * message step to the owner, checked and counted like any other. Several
+   * events in a row each tell the owner: runs queue, never skip.
+   */
+  subscribe(input: unknown, owner: ActionOwner): Action {
+    const raw = (typeof input === 'object' && input !== null ? input : {}) as { trigger?: unknown; note?: unknown; name?: unknown; enabled?: unknown };
+    const recipient = this.subscriberOf(owner);
+    if (!recipient) throw new ActionError('not_allowed', 'Only agents and the Dispatcher can subscribe. Use a notify step to be told yourself.');
+    const trigger = validateTrigger(raw.trigger);
+    if (!trigger.ok) throw new ActionError('invalid_input', trigger.error);
+    if (trigger.value.kind !== 'event') throw new ActionError('invalid_input', 'A subscription waits for something to happen, so it needs an event trigger. Use create_action for schedules.');
+    if (raw.note !== undefined && raw.note !== null && typeof raw.note !== 'string') throw new ActionError('invalid_input', 'note must be text.');
+    const names = this.names();
+    const name = typeof raw.name === 'string' && raw.name.trim()
+      ? raw.name
+      : suggestSubscriptionName(trigger.value, names.agent(recipient) ?? 'you', names);
+    return this.create({
+      name,
+      trigger: trigger.value,
+      steps: [subscriptionStep(recipient, raw.note as string | undefined)],
+      overlap: 'queue',
+      ...(typeof raw.enabled === 'boolean' && { enabled: raw.enabled }),
+    }, owner, { subscription: true });
   }
 
   /** Replace an action's definition. The owner stays; rights are checked against it. */
@@ -433,6 +486,8 @@ export class ActionsEngine {
       enabled: saysEnabled ? valid.enabled : current.enabled,
       updatedAt: this.now(),
     };
+    // A subscription stays one while it still waits for an event and tells its owner.
+    if (current.subscription && !isSubscriptionShape(next, this.subscriberOf(current.owner))) delete next.subscription;
     // Edited: the old failure and the reason it was turned off no longer apply.
     delete next.problem;
     if (next.enabled) delete next.offReason;
@@ -905,7 +960,7 @@ export class ActionsEngine {
       let result: ActionStepResult;
       let threw = false;
       try {
-        result = await this.deps.steps.run(step, { action, runId, chain: [...chain, actionId] });
+        result = await this.deps.steps.run(step, { action, runId, chain: [...chain, actionId], trigger });
       } catch (err) {
         // telemetry-exempt: recorded on the run and reported as a mechanical failure below
         threw = true;
