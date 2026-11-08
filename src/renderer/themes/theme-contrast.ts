@@ -4,10 +4,11 @@
  * Every built-in theme meets the gate: primary text and the four notification
  * colors at 4.5:1 against `base` (WCAG AA for normal text).
  *
- * The Workshop pack themes (`./packs`) also meet the secondary and syntax
- * floors below, checked against `base` and every color stop of the theme's
- * background gradient, since gradients are on by default and replace `base`
- * as the backdrop. The original nine built-ins aren't held to these: their
+ * The Workshop pack themes (`./packs`) also meet the secondary, syntax and
+ * terminal floors below. Each is checked against its usual background and
+ * every color stop of the theme's background gradient: gradients are on by
+ * default, and then the app's base, code blocks and terminals go transparent
+ * over the gradient. The original nine built-ins aren't held to these: their
  * lowest values are Solarized Dark's link and accent (4.08), subtext0 (3.37),
  * and Catppuccin Latte's syntax colors (string 2.96, type 2.31).
  *
@@ -37,13 +38,14 @@ export const UI_FLOORS = {
   overlay0: 1.8,
 } as const;
 
-/** Syntax colors for pack themes, against `base` and `mantle` (code blocks sit on either). */
+/** Syntax colors for pack themes, against `base`, `mantle` (code blocks sit on either) and the gradient stops. */
 export const SYNTAX_FLOOR = 3;
 /** Comments are meant to recede; this is the original built-ins' lowest comment. */
 export const SYNTAX_COMMENT_FLOOR = 2.3;
 
 /**
- * Terminal colors for pack themes, against the terminal background. Black and
+ * Terminal colors for pack themes, against the terminal background and the
+ * gradient stops (terminals are transparent over a gradient). Black and
  * bright black are background shades, and on light themes white and bright
  * white are too, so they have no floor.
  */

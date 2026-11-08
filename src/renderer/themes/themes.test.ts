@@ -295,20 +295,24 @@ describe('Workshop pack themes (#2753)', () => {
         }
       });
 
-      it('meets the syntax floors against base and mantle', () => {
+      // Code blocks and terminals go transparent over the gradient too, so they're checked on its stops as well.
+      const stops = gradientStops(t.gradients?.background);
+
+      it('meets the syntax floors against base, mantle and every background gradient stop', () => {
         for (const [key, color] of Object.entries(t.hljs)) {
           const floor = key === 'comment' ? SYNTAX_COMMENT_FLOOR : SYNTAX_FLOOR;
-          for (const bg of [t.colors.base, t.colors.mantle]) {
+          for (const bg of [t.colors.base, t.colors.mantle, ...stops]) {
             expect(floorRatio(color, bg), `${key} on ${bg}`).toBeGreaterThanOrEqual(floor);
           }
         }
       });
 
-      it('meets the terminal floors against the terminal background', () => {
-        const bg = t.terminal.background;
-        expect(floorRatio(t.terminal.foreground, bg)).toBeGreaterThanOrEqual(TERMINAL_FOREGROUND_FLOOR);
+      it('meets the terminal floors against the terminal background and every background gradient stop', () => {
         const keys = [...TERMINAL_COLOR_KEYS, ...(t.type === 'dark' ? TERMINAL_DARK_ONLY_KEYS : [])];
-        for (const key of keys) expect(floorRatio(t.terminal[key], bg), key).toBeGreaterThanOrEqual(TERMINAL_COLOR_FLOOR);
+        for (const bg of [t.terminal.background, ...stops]) {
+          expect(floorRatio(t.terminal.foreground, bg), `foreground on ${bg}`).toBeGreaterThanOrEqual(TERMINAL_FOREGROUND_FLOOR);
+          for (const key of keys) expect(floorRatio(t.terminal[key], bg), `${key} on ${bg}`).toBeGreaterThanOrEqual(TERMINAL_COLOR_FLOOR);
+        }
       });
     });
   }

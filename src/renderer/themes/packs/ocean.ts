@@ -323,7 +323,7 @@ export const OCEAN_THEMES: readonly ThemeDefinition[] = [
       keyword: '#4890b8',
       string: '#48b880',
       number: '#c89848',
-      comment: '#3f5060',
+      comment: '#415262',
       function: '#6880b0',
       type: '#c8a848',
       variable: '#b0c0d4',
