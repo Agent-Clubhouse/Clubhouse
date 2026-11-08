@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { claudeContextWindowOptions, copilotContextWindowOptions } from '../../../shared/context-window';
-import { ContextWindowSelect, contextSummary, contextWindowHelp, formatContextChoice } from './ContextWindowField';
+import { ContextWindowSelect, contextSummary, contextWindowHelp, formatContextChoice, nowAndNextStart, pendingContextChoice, sessionModelLine } from './ContextWindowField';
 
 describe('ContextWindowSelect', () => {
   const options = claudeContextWindowOptions('claude-haiku-4-5');
@@ -53,5 +53,31 @@ describe('copy', () => {
     expect(formatContextChoice('500000')).toBe('500K');
     expect(formatContextChoice('long_context')).toBe('Long context');
     expect(formatContextChoice('default')).toBe('Standard');
+  });
+});
+
+describe('now and next start (#2790)', () => {
+  it('puts a waiting choice after what runs now, and says only one when that is all there is', () => {
+    expect(nowAndNextStart('300K, compacts at 267K', '500K')).toBe('300K, compacts at 267K. Next start: 500K');
+    expect(nowAndNextStart('300K', null)).toBe('300K');
+    expect(nowAndNextStart(null, '500K')).toBe('Next start: 500K');
+    expect(nowAndNextStart('500K', '500K')).toBe('500K');
+    expect(nowAndNextStart(null, null)).toBeNull();
+  });
+
+  it('names the next start\'s model only when the session moved off the model it started on', () => {
+    expect(sessionModelLine({ model: 'opus', startModel: 'sonnet' }, 'Opus 5.5', 'Sonnet 5.5')).toBe('Opus 5.5. Next start: Sonnet 5.5');
+    expect(sessionModelLine({ model: 'opus', startModel: 'sonnet' }, 'Opus 5.5', 'Default model')).toBe('Opus 5.5. Next start: Default model');
+    // Started on it: a saved full id and the session's alias for it say nothing.
+    expect(sessionModelLine({ model: 'opus', startModel: 'opus' }, 'Opus 5.5', 'claude-opus-5-5')).toBeNull();
+    expect(sessionModelLine({ model: 'opus', startModel: null }, 'Opus 5.5', 'Sonnet 5.5')).toBeNull();
+    expect(sessionModelLine(undefined, 'Opus 5.5', 'Sonnet 5.5')).toBeNull();
+  });
+
+  it('treats a saved size the session already runs at as nothing waiting', () => {
+    expect(pendingContextChoice('300000', { effectiveTokens: 300000, compactAtTokens: 267000, reservedTokens: 33000 })).toBeNull();
+    expect(pendingContextChoice('500000', { effectiveTokens: 300000, compactAtTokens: null, reservedTokens: null })).toBe('500K');
+    expect(pendingContextChoice('500000', null)).toBe('500K');
+    expect(pendingContextChoice(undefined, null)).toBeNull();
   });
 });
