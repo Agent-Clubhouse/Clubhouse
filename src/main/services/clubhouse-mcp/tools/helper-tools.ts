@@ -1388,7 +1388,7 @@ export function registerHelperTools(): void {
       },
     },
     (agentId, args) => guarded('start_helper', agentId, () => startHelper(agentId, args)),
-    { group: 'orchestration' },
+    { group: 'orchestration', grant: { actions: ['agent.create'], target: 'project_arg' } },
   );
 
   registerGlobalTool(
@@ -1401,7 +1401,7 @@ export function registerHelperTools(): void {
       inputSchema: { type: 'object', properties: {} },
     },
     (agentId) => guarded('list_helpers', agentId, () => listOwnHelpers(agentId)),
-    { group: 'orchestration' },
+    { group: 'orchestration', grant: { actions: ['agent.read'], target: 'my_helpers' } },
   );
 
   registerGlobalTool(
@@ -1415,7 +1415,7 @@ export function registerHelperTools(): void {
       },
     },
     (agentId, args) => guarded('sleep_helper', agentId, () => sleepHelper(agentId, args)),
-    { group: 'orchestration' },
+    { group: 'orchestration', grant: { actions: ['agent.sleep'], target: 'my_helpers' } },
   );
 
   registerGlobalTool(
@@ -1434,7 +1434,7 @@ export function registerHelperTools(): void {
       },
     },
     (agentId, args) => guarded('wake_helper', agentId, () => wakeHelper(agentId, args)),
-    { group: 'orchestration' },
+    { group: 'orchestration', grant: [{ actions: ['agent.wake'], target: 'my_helpers' }, { actions: ['agent.message'], target: 'my_helpers', ifArgs: ['message'] }] },
   );
 
   registerGlobalTool(
@@ -1448,7 +1448,7 @@ export function registerHelperTools(): void {
     },
     (agentId) => guarded('list_projects', agentId, () => listProjects(agentId)),
     // The Dispatcher (#2536) gets it too; it is in no project, so nothing is "yours".
-    { group: ['crossProject', 'dispatcher'] },
+    { group: ['crossProject', 'dispatcher'], grant: { actions: ['project.read'], target: 'all_projects' } },
   );
 
   registerGlobalTool(
@@ -1466,6 +1466,7 @@ export function registerHelperTools(): void {
       },
     },
     (agentId, args) => guarded('message_parent', agentId, () => messageParent(agentId, args)),
+    { grant: { actions: ['agent.message'], target: 'parent' } },
   );
 }
 
