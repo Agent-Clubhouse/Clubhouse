@@ -250,7 +250,7 @@ Each subsection lists the **spans** (with boundaries in code), **metrics**, **er
 
 | Span | Boundaries | Attributes | Level |
 |---|---|---|---|
-| `c.update.check` (root) | `checkForUpdates` `:577` → state set | `c.update.trigger` (`startup`/`periodic`/`manual`), `c.update.channel` (`stable`/`preview`), `c.update.result` (`up_to_date`/`available`/`dismissed`/`no_artifact`/`skipped_busy`/`disabled`), `c.retry.count` | S (E if failed) |
+| `c.update.check` (root) | `checkForUpdates` `:577` → state set | `c.update.trigger` (`startup`/`periodic`/`manual`), `c.update.channel` (`stable`/`preview`), `c.update.result` (`up_to_date`/`available`/`dismissed`/`no_artifact`/`os_too_old`/`skipped_busy`/`disabled`), `c.retry.count` | S (E if failed) |
 | ↳ `c.update.fetch_manifest` | `fetchJSON` `:384`, per channel | `http.response.status_code`, `error.type` | S |
 | `c.update.download` (root) | `downloadUpdate` `:674` → ready/error | `c.update.result` (`downloaded`/`already_downloaded`), `c.size_bucket`, `c.retry.count` | S |
 | ↳ `c.update.verify` | `verifySHA256` `:514` | — | S |

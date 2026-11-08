@@ -68,7 +68,8 @@ vi.mock('./agent-runtime/chat-version-policy', () => ({ applyRemoteCliDenylist: 
 // Imports
 // ---------------------------------------------------------------------------
 
-import { checkForUpdates } from './auto-update-service';
+import { checkForUpdates, meetsMinSystemVersion, needsNewerSystem } from './auto-update-service';
+import { appLog } from './log-service';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -204,6 +205,45 @@ describe('checkForUpdates', () => {
 
     const result = await checkForUpdates(true);
     expect(result.state).toBe('idle');
+  });
+
+  describe('minSystemVersion (#2924)', () => {
+    const key = `${process.platform}-${process.arch}`;
+    const withMin = (min?: string) => makeManifest('99.0.0', {
+      artifacts: { [key]: { url: 'https://example.com/Clubhouse-99.0.0.zip', sha256: 'abc123', size: 1000, ...(min !== undefined && { minSystemVersion: min }) } },
+    });
+    const original = process.getSystemVersion;
+    afterEach(() => { process.getSystemVersion = original; });
+
+    it('skips an update the OS is too old for, and says why', async () => {
+      process.getSystemVersion = () => '12.7.4';
+      mockHttpsGet(200, JSON.stringify(withMin('13.0')));
+      const result = await checkForUpdates(true);
+      expect(result.state).toBe('idle');
+      expect(result.availableVersion).toBeNull();
+      expect(appLog).toHaveBeenCalledWith('update:check', 'warn', expect.stringContaining('needs a newer OS'), expect.objectContaining({
+        meta: expect.objectContaining({ systemVersion: '12.7.4', minSystemVersion: '13.0' }),
+      }));
+    });
+
+    it('needs a newer OS only when a minimum is set and the OS is known to be below it', () => {
+      const artifact = { url: 'u', sha256: 's' };
+      expect(needsNewerSystem({ ...artifact, minSystemVersion: '13.0' }, '12.7.4')).toBe(true);
+      expect(needsNewerSystem({ ...artifact, minSystemVersion: '13.0' }, '13.0')).toBe(false);
+      expect(needsNewerSystem({ ...artifact, minSystemVersion: '13.0' }, '14.2.1')).toBe(false);
+      expect(needsNewerSystem(artifact, '12.0')).toBe(false);
+      expect(needsNewerSystem({ ...artifact, minSystemVersion: '13.0' }, null)).toBe(false);
+    });
+
+    it('compares dotted versions part by part', () => {
+      expect(meetsMinSystemVersion('13', '13.0.0')).toBe(true);
+      expect(meetsMinSystemVersion('13.0.1', '13.1')).toBe(false);
+      expect(meetsMinSystemVersion('10.0.19045', '10.0.17763')).toBe(true);
+      expect(meetsMinSystemVersion('12.7.4', '13.0')).toBe(false);
+      expect(meetsMinSystemVersion('26.1', '13.0')).toBe(true);
+      expect(meetsMinSystemVersion('13.0', 'not a version')).toBe(true);
+      expect(meetsMinSystemVersion('', '13.0')).toBe(true);
+    });
   });
 
   it('sets error state on non-retryable HTTP error', async () => {
