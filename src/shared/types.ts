@@ -1262,6 +1262,8 @@ export interface SnapshotPluginSummary {
 }
 
 export interface SatelliteSnapshot {
+  /** The machine this snapshot is from (#3063): its agents' addresses are `<agentId>@<fingerprint>`. */
+  machine?: { fingerprint: string; name: string };
   projects: Project[];
   agents: Record<string, Agent[]>;
   quickAgents: Record<string, unknown[]>;

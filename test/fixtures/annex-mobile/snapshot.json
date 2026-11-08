@@ -374,6 +374,10 @@
       "helperRoutingRevision": "r0.0",
       "idleDays": 7,
       "lastSeq": 0,
+      "machine": {
+        "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+        "name": "Studio Mac"
+      },
       "orchestrators": {
         "claude-code": {
           "badge": "Beta",
