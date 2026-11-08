@@ -51,7 +51,7 @@ import { createBonjour } from './annex-mdns';
 import { withReachableAs } from './annex-reach';
 import * as networkChannel from './annex-network-channel';
 import * as membership from './annex-network-membership';
-import { NETWORK_PROTOCOL_VERSION, parseNetworkMessage } from '../../shared/annex-network-protocol';
+import { NETWORK_MESSAGE_MAX_BYTES, NETWORK_PROTOCOL_VERSION, parseNetworkMessage } from '../../shared/annex-network-protocol';
 import * as annexEventBus from './annex-event-bus';
 import * as annexSettings from './annex-settings';
 import { annexNetworkProfile } from './annex-network-profile';
@@ -1299,6 +1299,8 @@ function reportClientCounts(): void {
   }
   recordClients(counts.desktop, counts.mobile, counts.unknown);
   devicesChanged();
+  // Who's online changed: member phones hear it (#3062).
+  if (annexSettings.networkEnabled()) pushNetworkToPhones();
 }
 
 /** What a socket said it was at connect, for metrics only. It's unverified, so nothing else may read it. */
@@ -2511,7 +2513,8 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
   // A desktop (#3061) or a phone (#3062) with Annex Network on asks to join; with it on here too,
   // it's a member. A session-only pairing never joins.
   const joins = body.network === 1 && annexSettings.networkEnabled(settings) && !sessionOnly;
-  const joinsAs: 'desktop' | 'phone' = sentByPhone(body) ? 'phone' : 'desktop';
+  // Phones send pairingMode (the contract asks them to when joining); Clubhouse desktops never do.
+  const joinsAs: 'desktop' | 'phone' = body.pairingMode !== undefined || sentByPhone(body) ? 'phone' : 'desktop';
   const pairedPeer: AnnexPeer = {
     fingerprint,
     publicKey: clientPublicKey,
@@ -2547,7 +2550,7 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     icon: settings.icon,
     color: settings.color,
     fingerprint: identity.fingerprint,
-    // Only for a desktop that asked: phones' answers are unchanged.
+    // Only for a device that asked: answers to everyone else are unchanged.
     ...(joins && { network: 1 }),
   };
   if (!pinReusable) {
@@ -3418,7 +3421,7 @@ async function handleMobileNetworkRoute(ctx: AnnexRouteContext): Promise<void> {
 async function handleMobileNetworkMembersRoute(ctx: AnnexRouteContext): Promise<void> {
   if (!ctx.mobilePrincipal) { sendJson(ctx.res, 403, { error: 'client_certificate_required' }); return; }
   let raw: string;
-  try { raw = (await readCappedBody(ctx.req, MAX_BODY_SIZE)).toString(); } catch (err) {
+  try { raw = (await readCappedBody(ctx.req, NETWORK_MESSAGE_MAX_BYTES)).toString(); } catch (err) {
     if (isBodyTooLarge(err)) { refuseOversizedBody(ctx.req, ctx.res); return; }
     sendJson(ctx.res, 400, { error: 'invalid_json' }); return;
   }
@@ -3437,8 +3440,15 @@ async function handleMobileNetworkMembersRoute(ctx: AnnexRouteContext): Promise<
   }
   const parsed = parseNetworkMessage(JSON.stringify({ v: NETWORK_PROTOCOL_VERSION, type: 'members', members, removals: [] }));
   if ('reason' in parsed || parsed.message.type !== 'members') { sendJson(ctx.res, 400, { error: 'invalid_members' }); return; }
-  const added = membership.vouchFromPhone(ctx.mobilePrincipal, parsed.message.members);
-  sendJson(ctx.res, 200, { added });
+  sendJson(ctx.res, 200, membership.vouchFromPhone(ctx.mobilePrincipal, parsed.message.members));
+}
+
+/** Sends a phone its network view on every connection it has open here, at once. */
+function tellPhoneNow(fingerprint: string): void {
+  const frame = JSON.stringify({ type: 'network:changed', payload: networkForPhone(fingerprint) });
+  for (const client of wss?.clients ?? []) {
+    if (client.readyState === WebSocket.OPEN && wsPeerFingerprints.get(client) === fingerprint) safeSend(client, frame);
+  }
 }
 
 let networkPushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -5857,6 +5867,8 @@ export const PEER_REVOKED_CLOSE_CODE = 4401;
 export function revokePeer(fingerprint: string): boolean {
   // A network member is removed everywhere: every member hears before it's cut off (#3061).
   membership.noteLocalRemoval(fingerprint);
+  // A removed phone hears it on its open connections now, before they're cut: its own fingerprint in removals (#3062).
+  if (isPhoneMember(fingerprint)) tellPhoneNow(fingerprint);
   const wasSession = mobileSessionPeers.delete(fingerprint);
   if (wasSession) devicesChanged();
   const removed = annexPeers.removePeer(fingerprint) || wasSession;

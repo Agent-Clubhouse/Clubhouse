@@ -155,11 +155,12 @@ const NET = vi.hoisted(() => {
     hosts: kind === 'desktop' ? ['192.168.1.9', 'studio.tail1234.ts.net'] : [], ...(kind === 'desktop' && { port: 7432 }),
     joinedAt: '2026-11-08T10:00:00.000Z', ...extra,
   });
-  const self = record('AA:BB:CC:DD', 'Studio', 'desktop');
+  // Real-format fingerprints, so a phone can send these records back exactly as listed.
+  const self = record(Array(16).fill('aa').join(':'), 'Studio', 'desktop');
   return {
     self,
-    network: { members: [self, record(Array(16).fill('11').join(':'), 'Travel laptop', 'desktop'), record('mobile-fixture-identity', 'Mason’s iPhone', 'phone')], removals: [{ fingerprint: Array(16).fill('55').join(':'), removedAt: '2026-11-08T12:00:00.000Z' }] },
-    added: [Array(16).fill('11').join(':')] as string[],
+    network: { members: [self, record(Array(16).fill('11').join(':'), 'Travel laptop', 'desktop'), record(Array(16).fill('ef').join(':'), 'Mason’s iPhone', 'phone')], removals: [{ fingerprint: Array(16).fill('55').join(':'), removedAt: '2026-11-08T12:00:00.000Z' }] },
+    vouched: { added: [Array(16).fill('dd').join(':')], skipped: [{ fingerprint: Array(16).fill('11').join(':'), reason: 'member' }] },
     onChange: null as null | (() => void),
   };
 });
@@ -167,7 +168,7 @@ vi.mock('./annex-network-membership', () => ({
   noteLocalJoin: vi.fn(),
   noteLocalRemoval: vi.fn(),
   currentView: (to?: string) => (to === undefined ? NET.network : { members: [NET.self], removals: [] }),
-  vouchFromPhone: vi.fn(() => NET.added),
+  vouchFromPhone: vi.fn(() => NET.vouched),
   onMembershipChanged: (listener: () => void) => { NET.onChange = listener; return () => { NET.onChange = null; }; },
 }));
 
@@ -265,7 +266,8 @@ vi.mock('./file-service', () => ({ readTree: async () => [], readFile: async () 
 vi.mock('./annex-identity', () => ({
   getOrCreateIdentity: () => ({ publicKey: 'fixture-public-key', privateKey: 'fixture-private-key', fingerprint: 'AA:BB:CC:DD', createdAt: '2026-01-01T00:00:00.000Z' }),
   getPublicIdentity: () => ({ publicKey: 'fixture-public-key', fingerprint: 'AA:BB:CC:DD' }),
-  getIdentity: () => ({ publicKey: 'fixture-public-key', fingerprint: 'AA:BB:CC:DD', createdAt: '2026-01-01T00:00:00.000Z' }),
+  // Only the Annex Network routes read this one: it marks which listed member is this desktop.
+  getIdentity: () => ({ publicKey: 'fixture-public-key', fingerprint: Array(16).fill('aa').join(':'), createdAt: '2026-01-01T00:00:00.000Z' }),
   computeFingerprint: () => 'mobile-fixture-identity',
 }));
 vi.mock('./annex-tls', async (importOriginal) => {
@@ -2763,12 +2765,12 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     // Listing machines.
     const listed = await exchange('GET', '/api/v1/mobile/network');
     expect(listed.response.body).toMatchObject({ version: 1, joined: true });
-    expect(listed.response.body.members.find((m: { self?: boolean }) => m.self)).toMatchObject({ fingerprint: 'AA:BB:CC:DD', online: true });
+    expect(listed.response.body.members.find((m: { self?: boolean }) => m.self)).toMatchObject({ fingerprint: NET.self.fingerprint, online: true });
     fixtures.set('network-list.json', { member: listed, oneToOne });
 
-    // Joining a new computer through the phone: members are sent as they were listed.
-    const accepted = await exchange('POST', '/api/v1/mobile/network/members', { members: [listed.response.body.members[1]] });
-    expect(accepted.response.body).toEqual({ added: NET.added });
+    // Joining a new computer through the phone: members are sent exactly as they were listed.
+    const accepted = await exchange('POST', '/api/v1/mobile/network/members', { members: listed.response.body.members });
+    expect(accepted.response.body).toEqual(NET.vouched);
     const invalid = await exchange('POST', '/api/v1/mobile/network/members', { members: [{ ...record(NET.network.members[1]), command: 'agent:spawn' }] });
     expect(invalid.response.body.error).toBe('invalid_members');
     fixtures.set('network-members.json', { accepted, invalid, notAMember: refusedNotMember });

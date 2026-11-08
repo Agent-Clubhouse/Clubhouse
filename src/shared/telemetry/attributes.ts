@@ -871,6 +871,8 @@ export const ATTR = {
     'POST /api/v1/mobile/agents/:id/attachments',
     'GET /api/v1/mobile/agents/:id/content',
     'GET /api/v1/mobile/capabilities',
+    'GET /api/v1/mobile/network',
+    'POST /api/v1/mobile/network/members',
     'GET /api/v1/mobile/canvas',
     'GET /api/v1/mobile/canvas/:id',
     'DELETE /api/v1/mobile/pairing',

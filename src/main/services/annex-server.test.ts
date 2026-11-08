@@ -93,7 +93,7 @@ vi.mock('./annex-network-membership', () => ({
   noteLocalJoin: vi.fn(),
   noteLocalRemoval: vi.fn(),
   currentView: vi.fn(() => ({ members: [], removals: [] })),
-  vouchFromPhone: vi.fn(() => []),
+  vouchFromPhone: vi.fn(() => ({ added: [], skipped: [] })),
   onMembershipChanged: vi.fn((l: () => void) => { membershipMock.onChange = l; return () => { membershipMock.onChange = null; }; }),
 }));
 
@@ -2328,14 +2328,29 @@ describe('annex-server', () => {
         expect((await call('GET', '/api/v1/mobile/network', null)).status).toBe(403);
       });
 
+      it('tells a removed phone on its open connections, before they are cut', async () => {
+        await startServer();
+        const phone = device();
+        await pair(phone, { network: 1, pairingMode: 'persistent' });
+        const { EventEmitter } = await import('events');
+        const ws = Object.assign(new EventEmitter(), { send: vi.fn(), ping: vi.fn(), close: vi.fn(), terminate: vi.fn(), readyState: 1 }) as any;
+        annexServer._testing.registerPeerSocket(ws, phone.fingerprint, phone.certFingerprint);
+        annexServer._testing.wss!.clients.add(ws);
+        annexServer.revokePeer(phone.fingerprint);
+        const sent = ws.send.mock.calls.map((c: unknown[]) => JSON.parse(String(c[0])));
+        expect(sent.some((f: { type: string }) => f.type === 'network:changed')).toBe(true);
+        expect(ws.close).toHaveBeenCalledWith(4401, 'peer_not_paired');
+        annexServer._testing.wss!.clients.delete(ws);
+      });
+
       it('takes members a member phone vouches for, as listed, and refuses others', async () => {
         await startServer();
         const membershipMod = await import('./annex-network-membership');
-        vi.mocked(membershipMod.vouchFromPhone).mockReturnValue([AA_FP]);
+        vi.mocked(membershipMod.vouchFromPhone).mockReturnValue({ added: [AA_FP], skipped: [] });
         const member = device();
         await pair(member, { network: 1, pairingMode: 'persistent' });
         const listed = { ...memberRecord(AA_FP), online: true, self: true };
-        expect(await call('POST', '/api/v1/mobile/network/members', member, { members: [listed] })).toEqual({ status: 200, body: { added: [AA_FP] } });
+        expect(await call('POST', '/api/v1/mobile/network/members', member, { members: [listed] })).toEqual({ status: 200, body: { added: [AA_FP], skipped: [] } });
         expect(membershipMod.vouchFromPhone).toHaveBeenCalledWith(member.fingerprint, [memberRecord(AA_FP)]);
         expect((await call('POST', '/api/v1/mobile/network/members', member, { members: [{ ...memberRecord(AA_FP), command: 'agent:spawn' }] })).body.error).toBe('invalid_members');
         const oneToOne = device();

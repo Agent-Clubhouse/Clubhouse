@@ -28,7 +28,7 @@ No `network` key: this desktop doesn't offer it (older build, or Annex Network o
 
 ## Joining when pairing
 
-Add `"network": 1` to the `POST /pair` body (persistent pairing only; `pairingMode: "session"` never joins):
+Add `"network": 1` to the `POST /pair` body, with `"pairingMode": "persistent"` (required: it's how the desktop knows a phone is joining; `"session"` never joins):
 
 ```json
 { "pin": "123456", "publicKey": "…", "alias": "Mason’s iPhone", "icon": "iphone", "color": "emerald", "pairingMode": "persistent", "network": 1 }
@@ -80,7 +80,9 @@ The payload is the same as `GET /api/v1/mobile/network`. On each one:
 2. Disconnect from, and forget, every device in `removals`.
 3. If this phone is in `removals`, it was removed: forget the whole network.
 
-A desktop that refuses with 401 `peer_not_paired` no longer has this phone (removed while the phone was off, for example).
+When this phone is removed, each desktop it's connected to sends it a last `network:changed` with its own fingerprint in `removals`, then closes the connection (WebSocket close code 4401, reason `peer_not_paired`). A desktop that refuses with 401 `peer_not_paired` later no longer has this phone (it was removed while the phone was off, for example): if every desktop does, the phone was removed from the network.
+
+`network:changed` is also sent when a desktop connects or disconnects (`online` changes). After the phone reconnects, read `GET /api/v1/mobile/network` again rather than relying on an earlier event.
 
 ## Joining a new computer through the phone
 
@@ -92,7 +94,13 @@ The person scans a new computer's pairing code (or picks it from nearby and conf
 3. `GET /api/v1/mobile/network` from `D`, take the entry with `self: true`, and send it to `A`:
    `POST /api/v1/mobile/network/members` on `A`, body `{ "members": [ { …D… } ] }`.
 
-Each answers `{ "added": ["fingerprint", …] }`. From there the desktops do the rest: `A` tells its other members about `D`, and each connects to `D`; `D` connects to the members it was given. The phone gets `network:changed` from each desktop as that happens.
+Each answers which records were added, and why any weren't:
+
+```json
+{ "added": ["dd:…"], "skipped": [{ "fingerprint": "aa:…", "reason": "member" }] }
+```
+
+`reason` is `member` (already a member there), `one-to-one` (paired with that desktop one-to-one; pair it again with `network: 1` to join it), `self` (the desktop itself) or `invalid` (the record doesn't hold together). Joining through the phone counts as a fresh join, so an earlier removal of those devices doesn't stop it. From there the desktops do the rest: `A` tells its other members about `D`, and each connects to `D`; `D` connects to the members it was given. The phone gets `network:changed` from each desktop as that happens.
 
 Each record must hold together, or it's ignored: its public key hashes to its fingerprint, and its `certPem` to its `certFingerprint`. Send members exactly as `GET /api/v1/mobile/network` lists them; `online` and `self` are ignored. The record is `fingerprint`, `publicKey`, `certFingerprint`, `certPem`, `name`, `icon`, `color`, `kind`, `hosts`, `port` and `joinedAt`; anything else is refused. Sending a member that's already known changes nothing.
 
@@ -102,8 +110,9 @@ Refusals:
 |---|---|---|
 | 403 | `client_certificate_required` | No pinned client certificate. |
 | 403 | `not_a_member` | This phone isn't a member of this desktop's network. Pair again with `network: 1`. |
-| 400 | `invalid_members` | A record isn't well formed. Nothing was added. |
-| 413 | `body_too_large` | Over the body limit. |
+| 400 | `invalid_json` | The body isn't JSON. |
+| 400 | `invalid_members` | A record isn't well formed, or there are more than 64. Nothing was added. |
+| 413 | `too_large` | Over 512 KB (`maxBytes` says the limit). |
 
 ## Order of work for the app
 

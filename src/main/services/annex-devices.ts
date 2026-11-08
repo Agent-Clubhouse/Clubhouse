@@ -124,9 +124,10 @@ export function buildDeviceList(sources: Sources): AnnexDevice[] {
     devices.push({
       fingerprint: r.fingerprint,
       alias: r.name || '',
-      icon: 'computer',
+      icon: r.kind === 'phone' ? 'iphone' : 'computer',
       color: 'indigo',
       role: 'member',
+      ...(r.kind && { kind: r.kind }),
       state: 'removing',
       pairedAt: '',
       lastSeen: '',

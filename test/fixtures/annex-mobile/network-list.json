@@ -12,7 +12,7 @@
             "certFingerprint": "CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD",
             "certPem": "-----BEGIN CERTIFICATE-----\n<base64 DER>\n-----END CERTIFICATE-----\n",
             "color": "indigo",
-            "fingerprint": "AA:BB:CC:DD",
+            "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
             "hosts": [
               "192.168.1.9",
               "studio.tail1234.ts.net"
@@ -46,13 +46,13 @@
           {
             "certFingerprint": "EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF",
             "color": "indigo",
-            "fingerprint": "mobile-fixture-identity",
+            "fingerprint": "ef:ef:ef:ef:ef:ef:ef:ef:ef:ef:ef:ef:ef:ef:ef:ef",
             "hosts": [],
             "icon": "iphone",
             "joinedAt": "2026-11-08T10:00:00.000Z",
             "kind": "phone",
             "name": "Mason’s iPhone",
-            "online": true,
+            "online": false,
             "publicKey": "<base64 Ed25519 SPKI DER>"
           }
         ],
@@ -80,7 +80,7 @@
             "certFingerprint": "CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD",
             "certPem": "-----BEGIN CERTIFICATE-----\n<base64 DER>\n-----END CERTIFICATE-----\n",
             "color": "indigo",
-            "fingerprint": "AA:BB:CC:DD",
+            "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
             "hosts": [
               "192.168.1.9",
               "studio.tail1234.ts.net"
