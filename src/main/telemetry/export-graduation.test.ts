@@ -31,7 +31,7 @@ import { setFramebriarTelemetrySource } from './destinations/framebriar-source';
 import { abortPending, getLocalSink, isPending } from './facade';
 import { _resetLocalRecordingForTests } from './local-control';
 import { getOfflineDir } from './offline';
-import { getTelemetrySettings, migrateTelemetrySettings, type TelemetrySettings } from './settings';
+import { developerDestinationBlocker, getTelemetrySettings, migrateTelemetrySettings, takeDeveloperRuleSwitchedOff, type TelemetrySettings } from './settings';
 
 const SETTINGS_FILE = 'telemetry-settings.json';
 const FB_HOST = 'framebriar.example.net';
@@ -301,6 +301,51 @@ describe('Feedback connecting later', () => {
     connect();
     await control.syncFramebriarDestination();
     expect(developer().enabled).toBe(true);
+  });
+
+  describe('what stops the developer destination, for the log (#2523)', () => {
+    const settingsWith = (consentVersion: number, entry: object, extra: object = {}) => migrateTelemetrySettings({ ...file(consentVersion, entry), developerRule: 2, ...extra });
+
+    it('names the first gate that stops it, as a state name', () => {
+      expect(developerDestinationBlocker(settingsWith(0, framebriar({ confirmedHost: FB_HOST })))).toBe('no_consent');
+      expect(developerDestinationBlocker(settingsWith(1, framebriar({ confirmedHost: FB_HOST }), { exportSuspended: 'flag_unreadable' }))).toBe('paused');
+      expect(developerDestinationBlocker(settingsWith(1, framebriar({ confirmedHost: FB_HOST, userOff: true })))).toBe('user_off');
+      expect(developerDestinationBlocker(settingsWith(1, framebriar({ confirmedHost: FB_HOST })))).toBe('not_connected');
+      connect();
+      expect(developerDestinationBlocker(settingsWith(1, framebriar({ confirmedHost: 'other.example.net' })))).toBe('host_not_confirmed');
+      expect(developerDestinationBlocker(settingsWith(1, framebriar({ confirmedHost: FB_HOST })))).toBeNull();
+    });
+
+    it('reports once when the developer-rule migration switched it off', () => {
+      takeDeveloperRuleSwitchedOff();
+      migrateTelemetrySettings({ ...file(1, framebriar({ confirmedHost: FB_HOST })), developerRule: 1 });
+      expect(takeDeveloperRuleSwitchedOff()).toBe(true);
+      expect(takeDeveloperRuleSwitchedOff()).toBe(false);
+      migrateTelemetrySettings({ ...file(1, otlp(true), framebriar({ confirmedHost: FB_HOST })), developerRule: 1 });
+      expect(takeDeveloperRuleSwitchedOff()).toBe(false);
+    });
+
+    it('saves the switch-off at startup, so a later launch neither redoes nor reports it', async () => {
+      seedGate(true, true);
+      // Graduated already, so only the developer-rule migration changes anything on load.
+      writeJson(SETTINGS_FILE, { ...file(1, otlp(false), framebriar({ confirmedHost: FB_HOST })), developerRule: 1, exportGraduation: 1 });
+      takeDeveloperRuleSwitchedOff();
+      await launch();
+      await vi.waitFor(() => expect(readSaved().developerRule).toBe(2));
+      expect(readSaved().destinations.find((d) => d.kind === 'framebriar')?.framebriar).toEqual({ userOff: true });
+      // The next launch's load finds the marker.
+      resetAllSettingsStoresForTests();
+      expect(developerDestinationBlocker(getTelemetrySettings())).toBe('user_off');
+      expect(takeDeveloperRuleSwitchedOff()).toBe(false);
+    });
+
+    it('saves nothing at startup when the migration switched nothing off', async () => {
+      seedGate(true, true);
+      const raw = { ...file(1, otlp(false), framebriar({ confirmedHost: FB_HOST, userOff: true })), developerRule: 1, exportGraduation: 1 };
+      writeJson(SETTINGS_FILE, raw);
+      await launch();
+      expect(readSaved()).toEqual(raw);
+    });
   });
 
   describe('startup signals wait for Feedback (#2522)', () => {
