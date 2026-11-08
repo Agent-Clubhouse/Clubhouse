@@ -117,7 +117,9 @@ beforeEach(async () => {
   vi.mocked(agentSystem.spawnAgent).mockClear();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // A config refresh still queued from this test would otherwise write into the next test's folder.
+  await settle();
   fs.rmSync(h.baseDir, { recursive: true, force: true });
 });
 
@@ -126,7 +128,7 @@ describe('gating', () => {
     await svc.initDispatcher();
     expect(svc.getDispatcherState()).toMatchObject({ enabled: true, savedOn: true, flagOn: true, offReason: null, running: false, agentId: 'durable_1', path: dispatcherDir() });
     expect(agentConfig.createDurable).toHaveBeenCalledTimes(1);
-    expect(fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf-8')).toBe(svc.DISPATCHER_INSTRUCTIONS);
+    expect(fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf-8')).toContain(svc.DISPATCHER_INSTRUCTIONS);
     // What default-on must not do: start the agent, so no tokens are spent.
     expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
     expect(agentRegistry.get('durable_1')).toBeUndefined();
@@ -144,7 +146,7 @@ describe('gating', () => {
     finish();
     await init;
     expect(svc.getDispatcherState().config?.orchestrator).toBe('codex-cli');
-    expect(fs.readFileSync(path.join(dispatcherDir(), 'AGENTS.md'), 'utf-8')).toBe(svc.DISPATCHER_INSTRUCTIONS);
+    expect(fs.readFileSync(path.join(dispatcherDir(), 'AGENTS.md'), 'utf-8')).toContain(svc.DISPATCHER_INSTRUCTIONS);
   });
 
   it('is off on the classic layout with nothing saved, and creates nothing at start-up', async () => {
@@ -218,9 +220,12 @@ describe('Clubhouse MCP', () => {
 });
 
 describe('turning it on', () => {
-  it('creates the folder, notes/ and one agent with the defaults', async () => {
+  it('creates the folder, its memory and one agent with the defaults', async () => {
     const state = await svc.setDispatcherEnabled(true);
-    expect(fs.statSync(path.join(dispatcherDir(), 'notes')).isDirectory()).toBe(true);
+    expect(fs.existsSync(path.join(dispatcherDir(), 'notes'))).toBe(false);
+    for (const dir of ['agents', 'timeline', 'topics']) {
+      expect(fs.statSync(path.join(dispatcherDir(), 'memory', dir)).isDirectory()).toBe(true);
+    }
     expect(agentConfig.createDurable).toHaveBeenCalledTimes(1);
     const call = vi.mocked(agentConfig.createDurable).mock.calls[0];
     const [dir, name, , model, useWorktree, orchestrator, freeAgentMode] = call;
@@ -251,18 +256,39 @@ describe('turning it on', () => {
     h.enabledProviders = ['codex-cli'];
     const state = await svc.setDispatcherEnabled(true);
     expect(state.config?.orchestrator).toBe('codex-cli');
-    expect(fs.readFileSync(path.join(dispatcherDir(), 'AGENTS.md'), 'utf-8')).toBe(svc.DISPATCHER_INSTRUCTIONS);
+    expect(fs.readFileSync(path.join(dispatcherDir(), 'AGENTS.md'), 'utf-8')).toContain(svc.DISPATCHER_INSTRUCTIONS);
     expect(fs.existsSync(path.join(dispatcherDir(), 'CLAUDE.md'))).toBe(false);
   });
 
   it('writes its own instructions at create and again on start-up', async () => {
     await svc.setDispatcherEnabled(true);
     const file = path.join(dispatcherDir(), 'CLAUDE.md');
-    expect(fs.readFileSync(file, 'utf-8')).toBe(svc.DISPATCHER_INSTRUCTIONS);
+    expect(fs.readFileSync(file, 'utf-8')).toContain(svc.DISPATCHER_INSTRUCTIONS);
     fs.writeFileSync(file, 'stale');
     svc._resetDispatcherForTesting();
     await svc.initDispatcher();
-    expect(fs.readFileSync(file, 'utf-8')).toBe(svc.DISPATCHER_INSTRUCTIONS);
+    expect(fs.readFileSync(file, 'utf-8')).toContain(svc.DISPATCHER_INSTRUCTIONS);
+  });
+
+  it('loads its memory index into the instructions file, on any CLI', async () => {
+    h.enabledProviders = ['codex-cli'];
+    await svc.setDispatcherEnabled(true);
+    fs.writeFileSync(path.join(dispatcherDir(), 'memory', 'index.md'), 'Release 1.0 is waiting on checkout.\n');
+    svc._resetDispatcherForTesting();
+    await svc.initDispatcher();
+    const written = fs.readFileSync(path.join(dispatcherDir(), 'AGENTS.md'), 'utf-8');
+    expect(written.startsWith(svc.DISPATCHER_INSTRUCTIONS.trimEnd())).toBe(true);
+    expect(written).toContain('Release 1.0 is waiting on checkout.');
+  });
+
+  it('sorts an existing notes/ folder into memory before writing its instructions', async () => {
+    fs.mkdirSync(path.join(dispatcherDir(), 'notes'), { recursive: true });
+    fs.writeFileSync(path.join(dispatcherDir(), 'notes', 'checkout.md'), '# Checkout\n\nwebapp-lead owns it.\n');
+    await svc.setDispatcherEnabled(true);
+    const written = fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf-8');
+    expect(written).toContain('topics/checkout.md');
+    expect(fs.existsSync(path.join(dispatcherDir(), 'notes'))).toBe(false);
+    expect(fs.readFileSync(path.join(dispatcherDir(), 'notes-archive', 'checkout.md'), 'utf-8')).toBe('# Checkout\n\nwebapp-lead owns it.\n');
   });
 
   it('ships its instructions from dispatcher-instructions.md', () => {
@@ -277,7 +303,7 @@ describe('turning it on', () => {
     expect(agentConfig.createDurable).not.toHaveBeenCalled();
     expect(svc.getDispatcherAgentId()).toBe('durable_old');
     expect(svc.isDispatcherAgentId('durable_old')).toBe(true);
-    expect(fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf-8')).toBe(svc.DISPATCHER_INSTRUCTIONS);
+    expect(fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf-8')).toContain(svc.DISPATCHER_INSTRUCTIONS);
   });
 
   it('rewrites instructions for a new CLI', async () => {
@@ -287,25 +313,27 @@ describe('turning it on', () => {
     await agentConfig.updateDurableConfig(dispatcherDir(), 'durable_1', { orchestrator: 'copilot-cli' });
     await settle();
     const file = path.join(dispatcherDir(), '.github', 'copilot-instructions.md');
-    expect(fs.readFileSync(file, 'utf-8')).toBe(svc.DISPATCHER_INSTRUCTIONS);
+    expect(fs.readFileSync(file, 'utf-8')).toContain(svc.DISPATCHER_INSTRUCTIONS);
     expect(changed).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ orchestrator: 'copilot-cli' }) }));
   });
 });
 
 describe('turning it off', () => {
-  it('stops the agent and keeps the folder, notes and config for turning back on', async () => {
+  it('stops the agent and keeps the folder, memory and config for turning back on', async () => {
     await svc.setDispatcherEnabled(true);
-    fs.writeFileSync(path.join(dispatcherDir(), 'notes', 'plan.md'), 'keep me');
+    const page = path.join(dispatcherDir(), 'memory', 'topics', 'plan.md');
+    fs.writeFileSync(page, 'keep me');
     h.running.add('durable_1');
 
     const off = await svc.setDispatcherEnabled(false);
     expect(agentSystem.killAgent).toHaveBeenCalledTimes(1);
     expect(off).toMatchObject({ enabled: false, agentId: 'durable_1', path: dispatcherDir() });
-    expect(fs.readFileSync(path.join(dispatcherDir(), 'notes', 'plan.md'), 'utf-8')).toBe('keep me');
+    expect(fs.readFileSync(page, 'utf-8')).toBe('keep me');
 
     const on = await svc.setDispatcherEnabled(true);
     expect(on.agentId).toBe('durable_1');
     expect(agentConfig.createDurable).toHaveBeenCalledTimes(1);
+    expect(fs.readFileSync(page, 'utf-8')).toBe('keep me');
   });
 
   it('does not stop an agent that is not running', async () => {
