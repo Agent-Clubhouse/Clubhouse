@@ -63,7 +63,7 @@ export function registerDispatcherControlTools(): void {
       },
     },
     guarded('set_orchestrator_helpers', setOrchestratorHelpers),
-    { ...options, grant: { actions: ['agent.grant'], target: 'agent_arg' } },
+    { ...options, grant: { actions: ['agent.configure'], target: 'agent_arg' } },
   );
 
   registerGlobalTool(

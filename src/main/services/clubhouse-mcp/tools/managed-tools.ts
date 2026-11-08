@@ -463,7 +463,7 @@ export function registerManagedTools(): void {
       return json({ status: 'deleted' });
     });
 
-  tool('create_managed_agent', [{ actions: ['agent.create'], target: 'project_arg' }, { actions: ['agent.grant'], target: 'project_arg', ifArgs: ['settings'] }],
+  tool('create_managed_agent', [{ actions: ['agent.create'], target: 'project_arg' }, { actions: ['agent.grant'], target: 'project_arg', ifArgs: ['settings', 'templateId'] }],
     'Create a durable agent, asleep; wake it with wake_agent. By default it is Clubhouse managed, from a template or a full setup, in its own worktree (or folder). managed: false makes a plain agent instead, in its own worktree, that reads its own files; it takes settings but no template or parts.',
     { project: PROJECT, name: S, color: S, managed: { type: 'boolean', description: 'false for a plain (unmanaged) agent. Default true.' }, templateId: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, ['project', 'name'],
     async (callerId, args) => {
