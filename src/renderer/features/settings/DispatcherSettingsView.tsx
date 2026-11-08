@@ -12,7 +12,6 @@ import type { DurableConfigUpdates } from '../../../shared/types';
 import { AGENT_IDLE_SLEEP_MINUTES, formatIdleMinutes, normalizeIdleSleep } from '../../../shared/idle-sleep';
 import { Button } from '../../components/Button';
 import { Toggle } from '../../components/Toggle';
-import { useModelOptions } from '../../hooks/useModelOptions';
 import { useContextWindowOptions } from '../../hooks/useContextWindowOptions';
 import { ContextWindowSelect, contextWindowHelp } from '../agents/ContextWindowField';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
@@ -22,6 +21,16 @@ import { useCliChangeConfirm } from '../agents/useCliChangeConfirm';
 import { AccessSelect, accessHelp } from '../agents/AccessSelect';
 import type { AccessLevel } from '../../../shared/agent-access';
 import { useDispatcherRead } from '../dispatcher/useDispatcherEnabled';
+import { useProviderName } from '../dispatcher/BehaviorChip';
+import { openAutoSettings } from '../dispatcher/dispatcherNav';
+import {
+  DISPATCHER_BEHAVIORS,
+  DISPATCHER_BEHAVIOR_LABELS,
+  behaviorAutoNote,
+  canSetUpAuto,
+  isDispatcherBehavior,
+  type DispatcherBehaviorState,
+} from '../../../shared/dispatcher-behavior';
 import { SettingsField, SettingsPage, SettingsSection, settingsError, settingsHelp } from './SettingsLayout';
 
 const TITLE = 'Dispatcher';
@@ -41,6 +50,60 @@ export function dispatcherSwitchHelp({ enabled, classic }: Pick<DispatcherState,
     : `On by default in the new layout, and turned off here. ${kept}`;
 }
 
+/**
+ * Behavior (#3045), the same setting as the composer chip: both show main's
+ * state, so they stay in step. Minimal for now; Settings > Dispatcher's full
+ * page (#3046) moves it.
+ */
+export function BehaviorField({ behavior }: { behavior: DispatcherBehaviorState }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const providerName = useProviderName(behavior.provider);
+  const note = behaviorAutoNote(behavior.auto, providerName);
+
+  const change = async (value: string) => {
+    if (!isDispatcherBehavior(value) || value === behavior.level) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await window.clubhouse.dispatcher.setBehavior(value);
+    } catch (err) {
+      // telemetry-exempt: shown under the field, which keeps the saved level.
+      setError(`Couldn’t change it. ${ipcErrorMessage(err)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SettingsField
+      label="Behavior"
+      htmlFor="dispatcher-behavior"
+      help={(
+        <span className="flex flex-col gap-1.5">
+          <span>Covers which models it uses and how often it checks in. {DISPATCHER_BEHAVIOR_LABELS[behavior.level].description}</span>
+          {note && <span data-testid="dispatcher-behavior-auto-note">{note}</span>}
+          {canSetUpAuto(behavior.auto) && (
+            <span><Button onClick={openAutoSettings} data-testid="dispatcher-behavior-setup-auto">Set up Auto</Button></span>
+          )}
+          {error && <span className={settingsError} role="alert" data-testid="dispatcher-behavior-error">{error}</span>}
+        </span>
+      )}
+    >
+      <select
+        id="dispatcher-behavior"
+        className={SELECT_CLASS}
+        value={behavior.level}
+        disabled={saving}
+        onChange={(e) => void change(e.target.value)}
+        data-testid="dispatcher-behavior"
+      >
+        {DISPATCHER_BEHAVIORS.map((level) => <option key={level} value={level}>{DISPATCHER_BEHAVIOR_LABELS[level].label}</option>)}
+      </select>
+    </SettingsField>
+  );
+}
+
 export function DispatcherSettingsView() {
   const { state, error: readError, retry } = useDispatcherRead();
   const [switching, setSwitching] = useState(false);
@@ -57,7 +120,6 @@ export function DispatcherSettingsView() {
   const config = state?.config ?? null;
   const path = state?.path ?? undefined;
   const orchestrator = config?.orchestrator ?? '';
-  const { options: modelOptions, loading: modelsLoading } = useModelOptions(orchestrator || undefined, path ?? '');
   const contextOptions = useContextWindowOptions(!!config && !!path, path, orchestrator || undefined, config?.model);
 
   const turn = async (on: boolean) => {
@@ -115,8 +177,6 @@ export function DispatcherSettingsView() {
 
   // The current CLI stays listed even when it has since been turned off for new agents.
   const cliChoices = allOrchestrators.filter((o) => enabledIds.includes(o.id) || o.id === orchestrator);
-  const modelValue = config?.model && config.model !== 'default' ? config.model : 'default';
-  const modelChoices = modelOptions.some((o) => o.id === modelValue) ? modelOptions : [...modelOptions, { id: modelValue, label: modelValue }];
   const idle = normalizeIdleSleep(config?.idleSleep);
   const idleValue = typeof idle === 'number' ? String(idle) : idle;
   const minutes: number[] = [...AGENT_IDLE_SLEEP_MINUTES];
@@ -158,7 +218,7 @@ export function DispatcherSettingsView() {
       {cliChangeDialog}
       {state.enabled && config && (
         <SettingsSection title="Agent">
-          <p className={settingsHelp}>Changes apply the next time the Dispatcher starts. Auto-sleep applies at once.</p>
+          <p className={settingsHelp}>Changes apply the next time the Dispatcher starts. Behavior and auto-sleep apply at once.</p>
           <SettingsField label="CLI" htmlFor="dispatcher-cli" help="Changing it writes the Dispatcher’s instructions for the new CLI.">
             <select
               id="dispatcher-cli"
@@ -171,22 +231,7 @@ export function DispatcherSettingsView() {
               {cliChoices.map((o) => <option key={o.id} value={o.id}>{o.displayName}</option>)}
             </select>
           </SettingsField>
-          <SettingsField label="Model" htmlFor="dispatcher-model" help="Effort is set from the chat composer, as for other agents.">
-            <select
-              id="dispatcher-model"
-              className={SELECT_CLASS}
-              value={modelValue}
-              disabled={saving || modelsLoading}
-              onChange={(e) => {
-                const v = e.target.value;
-                // Only a model the CLI listed: a select still loading reads back as the placeholder.
-                if (modelsLoading || !modelOptions.some((o) => o.id === v)) return;
-                void save({ model: v });
-              }}
-            >
-              {modelChoices.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-            </select>
-          </SettingsField>
+          <BehaviorField behavior={state.behavior} />
           <SettingsField label={contextOptions?.label ?? 'Context'} htmlFor="dispatcher-context" help={contextWindowHelp(contextOptions)}>
             <ContextWindowSelect
               id="dispatcher-context"

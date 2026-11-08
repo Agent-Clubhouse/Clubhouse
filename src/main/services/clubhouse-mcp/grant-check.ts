@@ -40,7 +40,7 @@ export interface AskedAction { action: GrantAction; where: string }
 
 export type GrantCheck =
   | { ok: true }
-  | { ok: false; reason: GrantRefusal; message: string }
+  | { ok: false; reason: GrantRefusal; message: string; action?: GrantAction; targetKind?: GrantCallTarget['kind'] }
   /** Every action is allowed or Ask first, and at least one asks: the user decides (#2970). */
   | { ok: false; reason: 'ask_first'; message: string; asks: AskedAction[] };
 
@@ -218,7 +218,7 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
     for (const target of resolveTargets(agentId, d, wire, args, argTargets)) {
       for (const action of d.actions) {
         const decision = evaluateGrant({ caller, action, target }, grants);
-        if (decision.outcome === 'refuse') return { ok: false, reason: decision.reason, message: refusalMessage(decision.reason, action, target) };
+        if (decision.outcome === 'refuse') return { ok: false, reason: decision.reason, message: refusalMessage(decision.reason, action, target), action, targetKind: target.kind };
         if (decision.outcome === 'ask' && !d.askHandledByTool) asks.push({ action, where: whereText(target) });
       }
     }

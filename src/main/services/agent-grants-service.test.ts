@@ -15,6 +15,8 @@ vi.mock('./agent-grants-store', () => ({
   getAgentGrantChanges: () => mocks.changes,
   updateAgentGrantChanges: vi.fn(async (_id: string, fn: (c: unknown) => unknown) => { mocks.changes = fn(mocks.changes); }),
 }));
+const changes = vi.hoisted(() => [] as unknown[]);
+vi.mock('./grant-telemetry', () => ({ recordGrantChange: (c: unknown) => { changes.push(c); } }));
 vi.mock('./dispatcher/dispatcher-service', () => ({
   isDispatcherAgentId: () => false,
   resolveDispatcherIdentity: (projectPath: string, agentId: string) => ({ projectPath, agentId }),
@@ -84,6 +86,13 @@ describe('start and dispose rows follow the approval setting (#2970)', () => {
   it('Off is refused: turning off orchestration is how', async () => {
     await expect(setAgentGrant('/p', 'o1', { action: 'agent.create', target: { kind: 'project', project: 'own' }, mode: 'off' })).rejects.toThrow(/Let this agent orchestrate/);
     expect(mocks.setOrchestrationPolicy).not.toHaveBeenCalled();
+  });
+
+  it('records a change once, and not a save that changes nothing (#2973)', async () => {
+    changes.length = 0;
+    await setAgentGrant('/p', 'o1', { action: 'settings.app.write', target: { kind: 'app' }, mode: 'ask' });
+    await setAgentGrant('/p', 'o1', { action: 'settings.app.write', target: { kind: 'app' }, mode: 'ask' });
+    expect(changes).toEqual([expect.objectContaining({ agentId: 'o1', layer: 'own', mode: 'ask', action: 'settings.app.write' })]);
   });
 
   it('other rows save as before', async () => {

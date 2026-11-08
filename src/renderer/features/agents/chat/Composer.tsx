@@ -8,7 +8,7 @@
  * the slash menu takes Up/Down/Tab/Enter/Esc only while it's open.
  */
 
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, messageSummary, switchNote, type AvailableCommand, type ChatCapabilities, type ChatModelOption, type PermissionLevel } from '../../../../shared/chat';
 import type { PlanEntry } from '../../../../shared/chat';
 import type { QueuedMessage } from '../../../stores/chatStore';
@@ -524,6 +524,11 @@ export interface ComposerProps {
   layout?: ComposerLayout;
   /** Context beside Model and Effort, read only (#2790). */
   context?: ComposerContext;
+  /**
+   * Takes the place of the permission, model and effort pickers: the
+   * Dispatcher's Behavior chip (#3045), whose one choice covers them.
+   */
+  behaviorChip?: ReactNode;
 }
 
 export type ComposerLayout = 'wide' | 'narrow' | 'line';
@@ -780,6 +785,7 @@ export function Composer(props: ComposerProps) {
           />
         </>
       )}
+      {props.behaviorChip ?? (<>
       <LevelPill level={props.level} capabilities={capabilities} levelNames={props.levelNames} onChange={props.onLevelChange} compact={layout === 'narrow'} />
       <ModelPill
         models={props.onModelChange ? props.models ?? [] : []}
@@ -801,6 +807,7 @@ export function Composer(props: ComposerProps) {
         capabilities={capabilities}
         onChange={(m, e) => props.onModelChange?.(m, e)}
       />
+      </>)}
     </>
   );
 
@@ -915,8 +922,8 @@ export function Composer(props: ComposerProps) {
                 type="button"
                 onClick={() => setMoreOpen((o) => !o)}
                 aria-expanded={moreOpen}
-                aria-label="Attach, permissions and model"
-                title="Attach, permissions and model"
+                aria-label={props.behaviorChip ? 'Attach and Behavior' : 'Attach, permissions and model'}
+                title={props.behaviorChip ? 'Attach and Behavior' : 'Attach, permissions and model'}
                 className="w-7 h-7 flex-shrink-0 rounded-md grid place-items-center text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-0"
                 data-testid="chat-composer-plus"
               >

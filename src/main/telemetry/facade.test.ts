@@ -111,6 +111,17 @@ describe('telemetry facade', () => {
     expect(rt.event).toHaveBeenCalledTimes(1);
   });
 
+  it("gives the local sink an event's detail and never hands it to an export runtime (#2920)", () => {
+    const local: unknown[] = [];
+    setLocalSink({ ...passThroughSink('standard'), event: (_name, _attrs, opts) => local.push(opts) });
+    const rt = fakeRuntime();
+    setRuntime(rt);
+    tel.event('clubhouse.audit.setting', [], { detail: { key: 'theme' }, detailIds: { targets: ['a'] } });
+    tel.event('clubhouse.audit.setting', [], { severity: 'warn', detail: { key: 'theme' } });
+    expect(local).toEqual([{ detail: { key: 'theme' }, detailIds: { targets: ['a'] } }, { severity: 'warn', detail: { key: 'theme' } }]);
+    expect(vi.mocked(rt.event).mock.calls).toEqual([['clubhouse.audit.setting', []], ['clubhouse.audit.setting', [], { severity: 'warn' }]]);
+  });
+
   it('discards the buffer when startup is aborted', () => {
     beginPending();
     // Export only receives what local recording produces (spec §6.12).

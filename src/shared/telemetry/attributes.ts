@@ -17,6 +17,7 @@ import { IPC } from '../ipc-channels';
 import { SUPPORTED_PLUGIN_API_VERSIONS } from '../marketplace-types';
 import type { BuiltinThemeId } from '../types';
 import { ACTION_EVENT_KINDS, ACTION_STEP_KINDS, MISSED_RUN_RULES } from '../actions/types';
+import { GRANT_ACTIONS } from '../agent-grants';
 import {
   DECISION_QUOTA_QUALITIES,
   DECISION_SCORE_BASES,
@@ -568,7 +569,7 @@ export const ATTR = {
    * Why the tool registry refused a call before any handler ran (#2308). Only on
    * `clubhouse.mcp.tool_call` spans whose result is `tool_error`.
    */
-  mcpRefusalReason: enumAttr('clubhouse.mcp.refusal.reason', ['group_off', 'unparseable', 'no_binding', 'unknown_tool', 'invalid_args', 'tool_denied', 'caller_unknown', 'no_grant', 'ask_first']),
+  mcpRefusalReason: enumAttr('clubhouse.mcp.refusal.reason', ['group_off', 'unparseable', 'no_binding', 'unknown_tool', 'invalid_args', 'tool_denied', 'caller_unknown', 'no_grant', 'ask_first', 'other_machine']),
   binaryLookupTier: enumAttr('clubhouse.binary.lookup_tier', ['cache', 'well_known', 'path_scan', 'login_shell', 'not_found']),
   // Phase 4b: spawn, create, delete, kill, shoulder taps
   agentResume: boolAttr('clubhouse.agent.resume'),
@@ -769,6 +770,22 @@ export const ATTR = {
   updatesAvailable: intAttr('clubhouse.updates.available.count'),
   updatesIncompatible: intAttr('clubhouse.updates.incompatible.count'),
   settingsKey: enumAttr('clubhouse.settings.key', SETTINGS_KEYS),
+  // Audit events (#2920): who changed what. The key and values go in the local record's detail only.
+  auditSurface: enumAttr('clubhouse.audit.surface', ['ui', 'mcp', 'mobile', 'dispatcher', 'persona', 'cli', 'system']),
+  auditScope: enumAttr('clubhouse.audit.scope', ['app', 'project', 'agent']),
+  auditOutcome: enumAttr('clubhouse.audit.outcome', ['ok', 'refused', 'error']),
+  auditTool: enumAttr('clubhouse.audit.tool', ['set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'change_provider', 'preview_provider']),
+  auditActorIdHash: hashAttr('clubhouse.audit.actor.id_hash'),
+  // Clubhouse permissions (#2973, part of #2921): decisions, requests and changes. Enums only; ids hashed.
+  grantAction: enumAttr('clubhouse.grant.action', GRANT_ACTIONS),
+  grantDecision: enumAttr('clubhouse.grant.decision', ['refused', 'asked']),
+  grantRefusalReason: enumAttr('clubhouse.grant.refusal_reason', ['no_grant', 'raise_self', 'exceeds_caller', 'ask_first']),
+  grantTargetKind: enumAttr('clubhouse.grant.target_kind', ['agent', 'browser', 'project', 'group_project', 'app', 'library', 'action', 'connection']),
+  grantRequestKind: enumAttr('clubhouse.grant.request.kind', ['call', 'grant']),
+  grantRequestOutcome: enumAttr('clubhouse.grant.request.outcome', ['allowed', 'declined', 'expired']),
+  grantChangeMode: enumAttr('clubhouse.grant.change.mode', ['off', 'ask', 'allow', 'reset']),
+  grantChangeLayer: enumAttr('clubhouse.grant.change.layer', ['own', 'template', 'control', 'connection']),
+  auditTargetIdHash: hashAttr('clubhouse.audit.target.id_hash'),
   themeBuiltinId: enumAttr('clubhouse.theme.builtin_id', [...BUILTIN_THEME_IDS, 'other']),
   popoutType: enumAttr('clubhouse.popout.type', ['agent', 'canvas']),
   /**
@@ -1561,6 +1578,12 @@ export type MetricName = keyof typeof METRICS;
 
 export interface EventDef {
   readonly level: TelemetryLevel;
+  /**
+   * An audit event (#2920): local recording keeps it at every level and outside
+   * the hourly event cap, since it's the record of who changed what. Export still
+   * follows `level`.
+   */
+  readonly audit?: true;
 }
 
 export const EVENTS = {
@@ -1724,6 +1747,33 @@ export const EVENTS = {
    * Detailed: recorded locally only at the Detailed level, and exported only to destinations set to Detailed.
    */
   'clubhouse.action.run_detail': { level: 'detailed' },
+  /**
+   * A settings change or refusal, from any surface (#2920, was settings-audit.jsonl). Attributes:
+   * surface, scope, outcome, actor and target id hashes. The local record's detail adds the key,
+   * the old and new value when they're keepable (else `changed`), and the refusal code.
+   */
+  'clubhouse.audit.setting': { level: 'standard', audit: true },
+  /**
+   * One Dispatcher control call, refusals included (#2920, was dispatcher-audit.jsonl). Attributes:
+   * tool, outcome, actor and first target id hashes. The local record's detail adds every target's
+   * hash, what was requested, before and after, and the code. `list_orchestrator_controls` reads these back.
+   */
+  'clubhouse.audit.dispatcher_control': { level: 'standard', audit: true },
+  /**
+   * A Clubhouse MCP call the permissions refused or asked the user about (#2973). Attributes: action,
+   * decision, refusal reason, target kind, the caller's id hash. Detail: the tool (its built-in name or
+   * suffix only), and `actions` when there are several. Asked: only when a new request goes to the user. Allowed calls aren't events: the
+   * `clubhouse.mcp.tool_call` span already counts every call.
+   */
+  'clubhouse.audit.grant_decision': { level: 'standard', audit: true },
+  /** The user's answer to a permission request, or its expiry (#2973). Attributes: kind, outcome, action, the asking agent's id hash. Detail: the request kind and actions. */
+  'clubhouse.audit.grant_request': { level: 'standard', audit: true },
+  /**
+   * A change to an agent's Clubhouse permissions or a connection's (#2973). Attributes: surface, layer,
+   * mode, action (absent for a reset or a connection), the actor's and the agent's id hashes. Detail:
+   * the target kind, and for a connection the disabled tools and the other end's id hash.
+   */
+  'clubhouse.audit.grant_change': { level: 'standard', audit: true },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 

@@ -306,9 +306,10 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         onToggle={() => toggleCard('changes')}
         cwd={cwd}
         branch={branch}
-        chat={chat ? { sessionId: chat.sessionId, refreshKey } : undefined}
+        // Checkpoints are this machine's: none for an agent on another desktop (#2390).
+        chat={chat && !isRemoteProjectId(agent.projectId) ? { sessionId: chat.sessionId, refreshKey } : undefined}
         agentId={agent.id}
-        scope={chat ? scope : 'branch'}
+        scope={chat && !isRemoteProjectId(agent.projectId) ? scope : 'branch'}
         onScope={setScope}
         onReviewAll={onReviewAll}
       />

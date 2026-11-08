@@ -68,7 +68,7 @@ vi.mock('./agent-runtime/chat-version-policy', () => ({ applyRemoteCliDenylist: 
 // Imports
 // ---------------------------------------------------------------------------
 
-import { checkForUpdates, meetsMinSystemVersion, needsNewerSystem } from './auto-update-service';
+import { _setStatusForTesting, checkForUpdates, getStatus, meetsMinSystemVersion, needsNewerSystem } from './auto-update-service';
 import { appLog } from './log-service';
 
 // ---------------------------------------------------------------------------
@@ -243,6 +243,54 @@ describe('checkForUpdates', () => {
       expect(meetsMinSystemVersion('26.1', '13.0')).toBe(true);
       expect(meetsMinSystemVersion('13.0', 'not a version')).toBe(true);
       expect(meetsMinSystemVersion('', '13.0')).toBe(true);
+    });
+  });
+
+  describe('an update already downloaded (#3104)', () => {
+    const ready = { state: 'ready' as const, availableVersion: '0.99.0', releaseNotes: null, releaseMessage: null, downloadProgress: 100, downloadPath: '/tmp/Clubhouse-0.99.0.zip', error: null, artifactUrl: 'https://example.com/Clubhouse-0.99.0.zip' };
+    afterEach(() => _setStatusForTesting({ ...ready, state: 'idle', availableVersion: null, downloadPath: null, artifactUrl: null, downloadProgress: 0 } as never));
+
+    it('stays ready when a later check fails', async () => {
+      _setStatusForTesting(ready as never);
+      mockHttpsGet(500, 'Internal Server Error');
+      const result = await checkForUpdates(false, 'periodic');
+      expect(result).toMatchObject({ state: 'ready', availableVersion: '0.99.0', artifactUrl: ready.artifactUrl, error: null });
+    });
+
+    // Windows hands the download to Squirrel, so there is no download of ours to fail.
+    it.skipIf(process.platform === 'win32')('stays ready when a newer version fails to download', async () => {
+      _setStatusForTesting(ready as never);
+      let call = 0;
+      httpsGetSpy.mockImplementation((_url: string, _opts: unknown, cb: (res: unknown) => void) => {
+        call++;
+        const res = Object.assign(new EventEmitter(), { statusCode: call <= 1 ? 200 : 500, headers: {}, resume: vi.fn(), pipe: vi.fn((d) => d) });
+        cb(res);
+        if (call <= 1) process.nextTick(() => { res.emit('data', Buffer.from(JSON.stringify(makeManifest('99.1.0')))); res.emit('end'); });
+        else process.nextTick(() => res.emit('end'));
+        return Object.assign(new EventEmitter(), { on: vi.fn().mockReturnThis(), destroy: vi.fn(), setTimeout: vi.fn() });
+      });
+      const result = await checkForUpdates(false, 'periodic');
+      expect(result).toMatchObject({ state: 'ready', availableVersion: '0.99.0', artifactUrl: ready.artifactUrl });
+    });
+
+    it('doesn\'t show checking for a background check while ready', async () => {
+      _setStatusForTesting(ready as never);
+      mockHttpsGet(500, 'Internal Server Error');
+      const pending = checkForUpdates(false, 'periodic');
+      expect(getStatus().state).toBe('ready');
+      await pending;
+      // A manual check still shows that it's checking.
+      _setStatusForTesting(ready as never);
+      const manual = checkForUpdates(true);
+      expect(getStatus().state).toBe('checking');
+      await manual;
+    });
+
+    it('stays ready when the newest manifest has no artifact for this platform', async () => {
+      _setStatusForTesting(ready as never);
+      mockHttpsGet(200, JSON.stringify(makeManifest('99.1.0', { artifacts: { 'fake-platform-fake-arch': { url: 'x', sha256: 'y' } } })));
+      const result = await checkForUpdates(false, 'periodic');
+      expect(result).toMatchObject({ state: 'ready', availableVersion: '0.99.0' });
     });
   });
 

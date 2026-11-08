@@ -62,7 +62,7 @@ describe('explorer navigation behind the classic hover rail', () => {
     await clickExplorerTab({} as ElectronApp, page as unknown as Page, 'explorer-tab-plugin:files');
     expect(page.locator).not.toHaveBeenCalled();
     expect(page.mouse.move).not.toHaveBeenCalled();
-    expect(pw.toBeVisible).toHaveBeenCalled();
+    expect(page.click).toHaveBeenCalledWith({ timeout: 2_000 });
     expect(page.click).toHaveBeenCalledOnce();
   });
 });

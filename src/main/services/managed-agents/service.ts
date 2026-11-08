@@ -8,6 +8,7 @@
  * Everything the UI and the builder MCP tools do goes through here, so the
  * two can't drift (#2900).
  */
+import { nameIssues } from '../asset-catalog/validation';
 import { ACCESS_LEVELS, accessLabel, isAccessLevel, withAccess } from '../../../shared/agent-access';
 import { agentAccess, getDefaultAccess, getPermissionMode } from '../free-agent-settings';
 import { canonicalHash } from '../asset-catalog/planner';
@@ -659,6 +660,13 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         throw new ManagedError('stale', 'It changed since you opened it.');
       }
       refuseEnvValues(input.content);
+      // A taken name is refused before anything is saved, so a refused rename changes nothing (#3099).
+      const newName = input.name !== undefined && input.name.trim() && input.name.trim() !== entry.name ? input.name.trim() : undefined;
+      if (newName && Object.values(await liveEntries()).some((e) => e.kind === entry.kind && e.id !== entry.id && !isRetiredBuiltin(e) && e.name.toLowerCase() === newName.toLowerCase())) {
+        throw new ManagedError('name_taken', `${newName} already exists.`);
+      }
+      // The catalog's own name rules (length, control characters, secrets), checked here for the same reason.
+      if (newName && nameIssues(newName).length > 0) throw new ManagedError('invalid', 'Check the name.');
       try {
         if (input.content) {
           if (input.content.kind !== entry.kind) throw new ManagedError('invalid');
@@ -670,13 +678,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
           }
           entry = await catalog.saveRevision({ assetId: entry.id, expectedRevision: input.expectedRevision, payload });
         }
-        if (input.name !== undefined && input.name.trim() && input.name.trim() !== entry.name) {
-          const name = input.name.trim();
-          if (Object.values(await liveEntries()).some((e) => e.kind === entry.kind && e.id !== entry.id && !isRetiredBuiltin(e) && e.name.toLowerCase() === name.toLowerCase())) {
-            throw new ManagedError('name_taken', `${name} already exists.`);
-          }
-          entry = await catalog.renameAsset({ assetId: entry.id, expectedName: entry.name, name });
-        }
+        if (newName) entry = await catalog.renameAsset({ assetId: entry.id, expectedName: entry.name, name: newName });
       } catch (err) {
         // telemetry-exempt: rethrown as a ManagedError with a code the caller shows.
         mapCatalogError(err);

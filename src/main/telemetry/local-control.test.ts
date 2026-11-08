@@ -17,6 +17,8 @@ const chrome = vi.hoisted(() => ({ on: false }));
 vi.mock('../window-chrome', () => ({ newChromeEnabled: () => chrome.on }));
 const retention = vi.hoisted(() => ({ pruneLogDir: vi.fn(async () => ({ deleted: [] as string[] })), RETENTION_INTERVAL_MS: 3_600_000 }));
 vi.mock('./local-retention', () => retention);
+const salt = vi.hoisted(() => ({ localSalt: vi.fn(() => Buffer.alloc(32, 5)) }));
+vi.mock('./local-salt', () => salt);
 vi.mock('./settings', () => ({
   getTelemetrySettings: vi.fn(() => telemetrySettings.value),
   enabledDestinations: (s: { destinations: Array<{ enabled: boolean }> }) => s.destinations.filter((d) => d.enabled),
@@ -25,7 +27,7 @@ vi.mock('./settings', () => ({
 import * as path from 'path';
 import { forceFlushTelemetry, getLocalSink, isTelemetryActive, tel, telemetryLevel } from './facade';
 import { diag, getDiagSink, isDiagActive } from './diag';
-import { _resetLocalRecordingForTests, isDiagRecordingWanted, isLocalRecordingWanted, migrateLocalLevel, runRetention, runStartupRetention, syncLocalRecording } from './local-control';
+import { _resetLocalRecordingForTests, isDiagRecordingWanted, isLocalRecordingWanted, localRecordSalt, migrateLocalLevel, readLocalEvents, runRetention, runStartupRetention, syncLocalRecording } from './local-control';
 import { LOG_RETENTION_TIERS } from '../../shared/types';
 import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
 
@@ -39,6 +41,7 @@ beforeEach(() => {
   logSettings.getSettings.mockReturnValue({ ...base });
   telemetrySettings.value = { consentVersion: 0, destinations: [] };
   chrome.on = false;
+  salt.localSalt.mockClear();
 });
 
 afterEach(async () => {
@@ -107,6 +110,22 @@ describe('local recording control', () => {
     expect(data).toContain('"t":"diag"');
     expect(data).toContain('"signals":false');
     expect(data).not.toContain('"t":"event"');
+  });
+
+  it('reads no audit rows and needs no saved salt while telemetry signals are off (#2920)', async () => {
+    logSettings.getSettings.mockReturnValue({ ...base, telemetryRecording: false });
+    await syncLocalRecording();
+    expect(isDiagActive()).toBe(true);
+    // A diag-only recorder hashes nothing, so no local salt file is made for it.
+    expect(salt.localSalt).not.toHaveBeenCalled();
+    expect(localRecordSalt()).toBeUndefined();
+    expect(await readLocalEvents('clubhouse.audit.dispatcher_control', 10)).toEqual([]);
+  });
+
+  it("hands readers the running recorder's salt while signals are recorded (#2920)", async () => {
+    await syncLocalRecording();
+    expect(salt.localSalt).toHaveBeenCalledTimes(1);
+    expect(localRecordSalt()?.equals(Buffer.alloc(32, 5))).toBe(true);
   });
 
   it('writes no diag lines while logging is off', async () => {

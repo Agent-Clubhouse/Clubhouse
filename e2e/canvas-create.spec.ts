@@ -17,37 +17,25 @@
  *
  * This is the test that should have existed before the regression was
  * possible.
+ *
+ * Runs on the new layout, and on classic in the Classic layout E2E job
+ * (#2843). The project's Canvas tab and everything inside it are the same on
+ * both; only reaching the tab differs.
  */
 import { test, expect, _electron as electron, Page } from '@playwright/test';
 import * as path from 'path';
 import { launchApp } from './launch';
-import { clickExplorerTab } from './smoke-helpers';
+import { addProject, assertRunLayout, clickExplorerTab } from './smoke-helpers';
+import { isNewLayout } from './layout';
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
 
 const FIXTURE_PROJECT = path.resolve(__dirname, 'fixtures/project-a');
 
-/** Stub Electron's dialog so the next pickAndAddProject resolves to `dirPath`. */
-async function stubDialogForPath(dirPath: string) {
-  await electronApp.evaluate(
-    async ({ dialog, BrowserWindow }, fixturePath) => {
-      const win =
-        BrowserWindow.getAllWindows().find(
-          (w) => !w.webContents.getURL().startsWith('devtools://'),
-        ) ?? BrowserWindow.getAllWindows()[0] ?? null;
-      BrowserWindow.getFocusedWindow = () => win;
-      dialog.showOpenDialog = async () => ({
-        canceled: false,
-        filePaths: [fixturePath],
-      });
-    },
-    dirPath,
-  );
-}
-
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
+  ({ electronApp, window } = await launchApp());
+  await assertRunLayout(window);
 });
 
 test.afterAll(async () => {
@@ -56,17 +44,15 @@ test.afterAll(async () => {
 
 test('clicking the canvas + button → New Canvas creates a new canvas tab', async () => {
   // 1. Add a project fixture (canvas is per-project)
-  await stubDialogForPath(FIXTURE_PROJECT);
-  const navAddBtn = window.locator('[data-testid="nav-add-project"]');
-  await expect(navAddBtn).toBeVisible({ timeout: 5_000 });
-  await navAddBtn.click();
-  await expect(window.locator(`text=${path.basename(FIXTURE_PROJECT)}`).first()).toBeVisible({
-    timeout: 10_000,
-  });
+  await addProject(electronApp, window, FIXTURE_PROJECT);
 
-  // 2. Select the project's Canvas tab, distinct from the app-wide Canvas button.
-  const canvasNavBtn = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
-  await expect(canvasNavBtn).toBeVisible({ timeout: 10_000 });
+  // 2. Select the project's Canvas tab, distinct from the app-wide Canvas
+  //    (the rail button on classic, the sidebar's app row on the new layout).
+  //    On the new layout the tab is in the title bar or its More menu, which
+  //    clickExplorerTab opens when it has to.
+  if (!(await isNewLayout(window))) {
+    await expect(window.locator('[data-testid="explorer-tab-plugin:canvas"]')).toBeVisible({ timeout: 10_000 });
+  }
   await clickExplorerTab(electronApp, window, 'explorer-tab-plugin:canvas');
   const canvasPanel = window.locator('[data-testid="canvas-panel"]');
   await expect(canvasPanel).toBeVisible({ timeout: 10_000 });

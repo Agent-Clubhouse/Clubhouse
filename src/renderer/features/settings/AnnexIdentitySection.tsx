@@ -48,7 +48,7 @@ export function AnnexIdentitySection({ settings, status, onSave }: Props) {
       {status.tlsCertificateFingerprint && (
         <SettingsField
           label="TLS certificate fingerprint"
-          help={<span>Compare this SHA-256 fingerprint with Clubhouse Go before entering the pairing PIN.<br /><span className="font-mono select-all break-all">{status.tlsCertificateFingerprint}</span></span>}
+          help={<span>Compare this SHA-256 fingerprint with Clubhouse Go before entering the one-time code.<br /><span className="font-mono select-all break-all">{status.tlsCertificateFingerprint}</span></span>}
         />
       )}
       {status.fingerprint && (

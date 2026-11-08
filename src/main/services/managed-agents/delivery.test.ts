@@ -182,6 +182,19 @@ describe('deliverManagedSetup', () => {
     expect(fs.existsSync(path.join(skills, 'mine'))).toBe(true);
   });
 
+  it('never removes the skills folder itself for a "." in its manifest (#3101)', async () => {
+    const skill = await user(() => service.createPart({ name: 'Ship 3101', content: { kind: 'skill', skillName: 'ship3101', files: [{ path: 'SKILL.md', content: '# Ship' }] } }));
+    const skills = path.join(agent.worktreePath!, '.claude', 'skills');
+    fs.mkdirSync(path.join(skills, 'stale'), { recursive: true });
+    fs.writeFileSync(path.join(skills, 'stale', 'SKILL.md'), '# stale');
+    fs.writeFileSync(path.join(skills, '.clubhouse-managed-skills.json'), JSON.stringify({ skills: ['.', '', '..', 'a/b', 'stale'] }));
+    agent.managed = { version: 1, blocks: [], skills: [skill.id], mcps: [] };
+    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(fs.readFileSync(path.join(skills, 'ship3101', 'SKILL.md'), 'utf-8')).toBe('# Ship');
+    expect(fs.existsSync(path.join(skills, 'stale'))).toBe(false);
+    expect(JSON.parse(fs.readFileSync(path.join(skills, '.clubhouse-managed-skills.json'), 'utf-8'))).toEqual({ skills: ['ship3101'] });
+  });
+
   it('writes Codex skills to .agents/skills and removes only the ones it delivered to .codex/skills before', async () => {
     const skill = await user(() => service.createPart({ name: 'Ship', content: { kind: 'skill', skillName: 'ship', files: [{ path: 'SKILL.md', content: '# Ship' }] } }));
     const wt = agent.worktreePath!;

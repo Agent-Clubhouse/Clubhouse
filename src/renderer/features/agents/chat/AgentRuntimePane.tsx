@@ -11,13 +11,15 @@
  * during a turn, confirm "Interrupt and switch?" first).
  */
 
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { AgentRuntimeMode, ChatAgentRuntimeInfo } from '../../../../shared/chat';
 import { chatEventCount, useChatStore } from '../../../stores/chatStore';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useToastStore } from '../../../stores/toastStore';
-import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
+import { isRemoteProjectId, parseNamespacedId } from '../../../stores/remoteProjectStore';
+import { useAnnexClientStore } from '../../../stores/annexClientStore';
+import { RemoteChatContext, type RemoteChatInfo } from './remote-chat';
 import { findLocalProject, useLocalProject } from '../../dispatcher/dispatcherStore';
 import { ConfirmDestructiveAction } from '../../../components/ConfirmDestructiveAction';
 import { TerminalPaneToolbar } from '../pane/AgentPaneToolbar';
@@ -49,6 +51,13 @@ export function resetChatFlagCache(): void {
 }
 
 const NO_CHAT: ChatAgentRuntimeInfo = { chat: false, live: false, chatAvailable: false };
+
+/** For an agent on another desktop, that desktop's name; null for this machine's agents. */
+function useRemoteChatMachine(agent: Agent): RemoteChatInfo | null {
+  const satelliteId = isRemoteProjectId(agent.projectId) ? parseNamespacedId(agent.id)?.satelliteId ?? null : null;
+  const name = useAnnexClientStore((s) => (satelliteId ? s.satellites.find((sat) => sat.id === satelliteId)?.alias ?? null : null));
+  return useMemo(() => (satelliteId ? { machineName: name || 'another computer' } : null), [satelliteId, name]);
+}
 
 /** A chat runtime is running the agent now. Older answers have no `live`; their `chat` meant the same. */
 export function isChatLive(info: ChatAgentRuntimeInfo): boolean {
@@ -200,6 +209,7 @@ function RuntimePending({ agentName }: { agentName: string }) {
 }
 
 export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 'main' }: Props) {
+  const remoteChatMachine = useRemoteChatMachine(agent);
   const flag = useChatFlag();
   const info = useAgentRuntimeInfo(agent, flag !== null);
   // Only a local durable agent can be in chat; everything else is the terminal from the first paint.
@@ -226,6 +236,17 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
 
   // The main pane always gets the toolbar and Agent details; other views show the terminal alone.
   const plainTerminal = canSwitch ? <MainTerminal agent={agent} terminal={terminal} /> : <>{terminal}</>;
+  // An agent on another desktop running in chat (#2390): its chat view, read and driven through that desktop.
+  // The satellite says which runtime runs it (`executionMode`); older satellites never say, so they keep the terminal.
+  if (remoteChatMachine && agent.executionMode === 'chat') {
+    return (
+      <RemoteChatContext.Provider value={remoteChatMachine}>
+        <Suspense fallback={<RuntimePending agentName={agent.name} />}>
+          <ChatView agent={agent} context={context} switching={false} />
+        </Suspense>
+      </RemoteChatContext.Provider>
+    );
+  }
   if (!couldBeChat || (flag === false && !info?.chat)) return plainTerminal;
   // Flag or runtime still loading: a terminal here would flash before ChatView replaces it.
   if (flag === null || info === null) return <RuntimePending agentName={agent.name} />;

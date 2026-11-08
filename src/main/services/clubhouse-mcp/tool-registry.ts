@@ -18,6 +18,9 @@ import { CROSS_PROJECT_OFF_MESSAGE, MCP_CALLER_UNKNOWN_MESSAGE, ORCHESTRATION_OF
 import { checkToolGrant, isListable, type GrantCheck, type GrantCheckWire } from './grant-check';
 import { askFirst } from './ask-first';
 import { resolveArgTargets } from './arg-targets';
+import { recordGrantDecision } from '../grant-telemetry';
+import { CONNECTION_TOOLS } from '../../../shared/connection-grants';
+import { localizeAgentArgs } from './agent-addresses';
 import { getProvider } from '../../orchestrators';
 
 /** The refusal a Dispatcher tool returns for any other agent. */
@@ -587,6 +590,10 @@ export async function callTool(
         }
       }
     }
+    // An agent named with this machine's address is the bare id from here on; another machine's is refused (#3063).
+    const localized = localizeAgentArgs(globalTool.grant, args);
+    if ('message' in localized) return refuse('other_machine', localized.message);
+    args = localized.args;
     // After the argument checks, as for wire tools: the user is never asked about a call that would fail on its arguments.
     const granted = checkToolGrant(agentId, globalTool.grant, args, undefined, await resolveArgTargets(agentId, globalTool.grant, args));
     if (granted.ok === false) {
@@ -649,6 +656,11 @@ export async function callTool(
 
   // Checked at call time too: the listing drops these, but a client may have a stale list or know the name.
   if (binding.disabledTools?.includes(parsed.suffix)) {
+    // A connection's permissions (D129) refused it: recorded like any grant refusal (#2973).
+    if (binding.targetKind === 'agent') {
+      const action = CONNECTION_TOOLS.find((t) => t.tool === parsed.suffix)?.action;
+      recordGrantDecision({ agentId, toolName, decision: 'refused', reason: 'no_grant', actions: action ? [action] : [], targetKind: 'connection' });
+    }
     return refuse('tool_denied', `${parsed.suffix} is turned off on this wire.`);
   }
 
@@ -684,6 +696,9 @@ export async function callTool(
     }
   }
 
+  const localized = localizeAgentArgs(template.grant, args);
+  if ('message' in localized) return refuse('other_machine', localized.message);
+  args = localized.args;
   const granted = checkToolGrant(agentId, template.grant, args, wireOf(binding), await resolveArgTargets(agentId, template.grant, args));
   if (granted.ok === false) {
     const refused = await grantRefusal(agentId, toolName, granted, args);
@@ -709,9 +724,13 @@ function wireOf(binding: McpBinding): GrantCheckWire {
 async function grantRefusal(agentId: string, toolName: string, check: Extract<GrantCheck, { ok: false }>, args: Record<string, unknown>): Promise<McpToolResult | null> {
   if (check.reason === 'ask_first') {
     const outcome = await askFirst(agentId, toolName, args, check.asks);
-    return outcome.kind === 'approved' ? null : refuse('ask_first', outcome.text);
+    if (outcome.kind === 'approved') return null;
+    // Only a new request is recorded: a retry while it waits, or a request that couldn't be placed, isn't an ask.
+    if (outcome.created) recordGrantDecision({ agentId, toolName, decision: 'asked', reason: 'ask_first', actions: [...new Set(check.asks.map((a) => a.action))] });
+    return refuse('ask_first', outcome.text);
   }
   appLog('core:mcp', 'info', 'Tool call refused: no Clubhouse permission covers it', { meta: { agentId, toolName, reason: check.reason } });
+  recordGrantDecision({ agentId, toolName, decision: 'refused', reason: check.reason, actions: check.action ? [check.action] : [], ...(check.targetKind && { targetKind: check.targetKind }) });
   return refuse('no_grant', check.message);
 }
 

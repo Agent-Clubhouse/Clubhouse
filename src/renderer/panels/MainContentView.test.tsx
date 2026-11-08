@@ -72,8 +72,8 @@ vi.mock('../features/settings/LoggingSettingsView', () => ({
 vi.mock('../features/settings/UpdateSettingsView', () => ({
   UpdateSettingsView: () => <div />,
 }));
-vi.mock('../features/settings/AnnexSettingsView', () => ({
-  AnnexSettingsView: () => <div />,
+vi.mock('../features/settings/AnnexNetworkSettingsView', () => ({
+  AnnexNetworkSettingsView: () => <div />,
 }));
 vi.mock('../features/settings/WhatsNewSettingsView', () => ({
   WhatsNewSettingsView: () => <div />,

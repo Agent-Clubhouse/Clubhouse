@@ -11,6 +11,7 @@ import { RichLinkProvider } from './rich/RichLinks';
 import { useRichChatContent } from './rich/rich-flag';
 import { ChatMediaContext } from './rich/ChatImages';
 import { FileChipProvider } from './rich/FileChips';
+import { useRemoteChat } from './remote-chat';
 import { rendererLog } from '../../../plugins/renderer-logger';
 import { fnv1a } from '../../../../shared/telemetry/diag';
 import {
@@ -204,6 +205,8 @@ export interface ChatStreamProps {
   emptyMessage?: string;
   /** The agent's name. Saved history leaves it out: the agent's record has it, while it exists. */
   agentName?: string;
+  /** The Dispatcher's group chat (#3043): agents' interjections stay separate rows. */
+  groupChat?: boolean;
 }
 
 function sameTranscriptShape(a: ChatViewState, b: ChatViewState): boolean {
@@ -266,6 +269,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
   emptyMessage = 'No messages yet. Send one to start.',
   onShowEarlier,
   agentName,
+  groupChat = false,
 }: ChatStreamProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
@@ -287,11 +291,13 @@ const ChatStreamInner = memo(function ChatStreamInner({
   const onJumpResultRef = useRef(onJumpResult);
   onJumpResultRef.current = onJumpResult;
   const { items, subagents, capabilities, commands } = state;
-  const rich = useRichChatContent();
+  // Rich content reads files and media by path on this machine: not for an agent on another desktop (#2390).
+  const remoteChat = useRemoteChat();
+  const rich = useRichChatContent() && !remoteChat;
   // Tool calls whose permission request is still open (only those say "waiting for approval").
   const awaitingKey = state.pendingPermissions.map((p) => p.toolCallId ?? '').join('\n');
   const awaiting = useMemo(() => new Set(awaitingKey.split('\n').filter(Boolean)), [awaitingKey]);
-  const blocks = useMemo(() => buildStreamBlocks({ items, subagents, capabilities }, { mediaVisible: rich, awaitingApproval: awaiting }), [items, subagents, capabilities, rich, awaiting]);
+  const blocks = useMemo(() => buildStreamBlocks({ items, subagents, capabilities }, { mediaVisible: rich, awaitingApproval: awaiting, groupChat }), [items, subagents, capabilities, rich, awaiting, groupChat]);
   const stops = useMemo(() => blocks.flatMap((b, i) => (isNavigationStop(b) ? [i] : [])), [blocks]);
   const commandOutput = useMemo(() => commandOutputIds(items, commands), [items, commands]);
   const storedName = useAgentStore((s) => s.agents[state.agentId]?.name);
