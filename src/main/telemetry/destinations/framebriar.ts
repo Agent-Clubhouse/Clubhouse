@@ -15,7 +15,7 @@ import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
 import type { LogRecordExporter, ReadableLogRecord } from '@opentelemetry/sdk-logs';
 import type { PushMetricExporter, ResourceMetrics } from '@opentelemetry/sdk-metrics';
 import { createOtlpExportersWith } from './otlp';
-import { FRAMEBRIAR_NOT_CONNECTED, type FramebriarTelemetryExport } from './framebriar-source';
+import { FRAMEBRIAR_DROPPED_ATTRIBUTES, FRAMEBRIAR_NOT_CONNECTED, type FramebriarTelemetryExport } from './framebriar-source';
 import type { DestinationExporters, TelemetrySignal } from './types';
 
 type ResourceLike = { attributes: Record<string, unknown> };
@@ -26,9 +26,9 @@ export function sessionResourceView(sessionId: string): <R extends ResourceLike>
   return <R extends ResourceLike>(resource: R): R => {
     let view = views.get(resource);
     if (!view) {
-      view = Object.create(resource, {
-        attributes: { value: { ...resource.attributes, 'session.id': sessionId }, enumerable: true },
-      }) as ResourceLike;
+      const attributes: Record<string, unknown> = { ...resource.attributes, 'session.id': sessionId };
+      for (const key of FRAMEBRIAR_DROPPED_ATTRIBUTES) delete attributes[key];
+      view = Object.create(resource, { attributes: { value: attributes, enumerable: true } }) as ResourceLike;
       views.set(resource, view);
     }
     return view as R;
