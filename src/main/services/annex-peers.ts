@@ -10,6 +10,7 @@ import { app } from 'electron';
 import { annexEphemeralSession } from './annex-network-profile';
 import { appLog } from './log-service';
 import { devicesChanged } from './annex-device-signal';
+import { rememberHost } from './annex-reach';
 import type { AnnexPeer, AnnexPeerListing } from '../../shared/types';
 
 // ---------------------------------------------------------------------------
@@ -130,6 +131,31 @@ export function removePeer(fingerprint: string): boolean {
 export function removeAllPeers(): void {
   savePeers([]);
   appLog('core:annex', 'info', 'All peers removed');
+}
+
+/**
+ * Remembers where a satellite was just reached (#3058): the host goes first in
+ * its known hosts, and the port is kept, so it can be found after a restart.
+ */
+export function noteReached(fingerprint: string, host: string, port: number): void {
+  const peers = loadPeers();
+  const peer = peers.find((p) => p.fingerprint === fingerprint);
+  if (!peer || !host || !(port > 0)) return;
+  peer.knownHosts = rememberHost(peer.knownHosts, host);
+  peer.mainPort = port;
+  peer.lastSeen = new Date().toISOString();
+  savePeers(peers);
+}
+
+/** Sets or clears (`undefined`) the host a person typed for a satellite. Returns whether the peer exists. */
+export function setTypedHost(fingerprint: string, typedHost: string | undefined): boolean {
+  const peers = loadPeers();
+  const peer = peers.find((p) => p.fingerprint === fingerprint);
+  if (!peer) return false;
+  if (typedHost) peer.typedHost = typedHost;
+  else delete peer.typedHost;
+  savePeers(peers);
+  return true;
 }
 
 export function updateLastSeen(fingerprint: string): void {

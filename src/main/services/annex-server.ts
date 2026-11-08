@@ -45,7 +45,10 @@ import { onDisposeRequestsChanged } from './helper-dispose-requests';
 import { MOBILE_ATTACHMENTS_CAPABILITY, MobileAttachmentService, MobileUploadError, isUploadContentType, readCappedBody } from './mobile-attachments';
 import { sniffImage } from './agent-runtime/chat-attachments';
 
-import Bonjour, { Service } from 'bonjour-service';
+import type Bonjour from 'bonjour-service';
+import type { Service } from 'bonjour-service';
+import { createBonjour } from './annex-mdns';
+import { withReachableAs } from './annex-reach';
 import * as annexEventBus from './annex-event-bus';
 import * as annexSettings from './annex-settings';
 import { annexNetworkProfile } from './annex-network-profile';
@@ -182,6 +185,11 @@ let httpServer: http.Server | null = null;
 let wss: WebSocketServer | null = null;
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let bonjourService: Service | null = null;
+/** Publishes the advertisement again (after a dead mDNS socket, or on wake); set while the server runs. */
+let republishBonjour: (() => void) | null = null;
+let republishTimer: ReturnType<typeof setTimeout> | null = null;
+/** How long to wait before replacing an mDNS socket that couldn't start. */
+const MDNS_RESTART_DELAY_MS = 30_000;
 let serverPort = 0; // Main TLS port
 let boundHost = ''; // networkProfile.host while running
 let currentPin = '';
@@ -3349,6 +3357,15 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
 }
 
 /**
+ * The hosts this machine gives out (pairing link and phone routes): its own
+ * addresses, then the name the person says it's also reachable as, such as its
+ * tailnet name (#3058). A server bound to one address is only reachable there.
+ */
+function advertisedHosts(): string[] {
+  return withReachableAs(pairingHosts(os.networkInterfaces(), boundHost), boundHost, annexSettings.getSettings().reachableAs);
+}
+
+/**
  * Every address this desktop answers on (LAN first, then Tailscale), so a
  * paired phone can move between home Wi-Fi and Tailscale, and one paired before
  * Tailscale was set up learns it. Phones only connect over TLS and check the
@@ -3356,7 +3373,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
  */
 function phoneRoutes(): { routes?: { hosts: string[]; port: number } } {
   if (!tlsServer || !serverPort) return {};
-  const hosts = pairingHosts(os.networkInterfaces(), boundHost);
+  const hosts = advertisedHosts();
   return hosts.length > 0 ? { routes: { hosts, port: serverPort } } : {};
 }
 
@@ -4909,7 +4926,13 @@ export function start(): void {
     }
     try {
       appLog('core:annex', 'info', 'Creating Bonjour instance for mDNS advertisement...');
-      bonjour = new Bonjour();
+      unpublishBonjour();
+      // Socket errors are logged, never thrown (#1921). One that can't start is replaced after a pause.
+      bonjour = createBonjour('advertise', ({ fatal }) => {
+        if (!fatal || republishTimer || !republishBonjour) return;
+        republishTimer = setTimeout(() => { republishTimer = null; republishBonjour?.(); }, MDNS_RESTART_DELAY_MS);
+        republishTimer.unref?.();
+      });
       const settings = annexSettings.getSettings();
       const serviceConfig = {
         name: settings.deviceName,
@@ -4950,6 +4973,8 @@ export function start(): void {
     }
   }
 
+  republishBonjour = publishBonjour;
+
   // Reuse last launch's ports so a paired phone can reconnect without re-pairing.
   const lastPorts = annexSettings.getLastPorts();
   const pairing = pairingServer;
@@ -4979,6 +5004,35 @@ export function start(): void {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
   });
+}
+
+function unpublishBonjour(): void {
+  if (bonjourService) {
+    try { bonjourService.stop?.(); } catch (err) {
+      appLog('core:annex', 'debug', 'Failed to stop Bonjour service', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+    bonjourService = null;
+  }
+  if (bonjour) {
+    try { bonjour.destroy(); } catch (err) {
+      appLog('core:annex', 'debug', 'Failed to destroy Bonjour instance', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+    bonjour = null;
+  }
+}
+
+/**
+ * Publishes the mDNS advertisement again, for example after the machine wakes or
+ * changes network. Does nothing while the server isn't running or advertising.
+ */
+export function republishAdvertisement(): void {
+  if (republishTimer) clearTimeout(republishTimer);
+  republishTimer = null;
+  republishBonjour?.();
 }
 
 /** A ListenFn for `server`. On error the server is closed, so it can listen again. */
@@ -5064,22 +5118,10 @@ export function stop(): void {
   }
 
   // Un-publish mDNS
-  if (bonjourService) {
-    try { bonjourService.stop?.(); } catch (err) {
-      appLog('core:annex', 'debug', 'Failed to stop Bonjour service during shutdown', {
-        meta: { error: err instanceof Error ? err.message : String(err) },
-      });
-    }
-    bonjourService = null;
-  }
-  if (bonjour) {
-    try { bonjour.destroy(); } catch (err) {
-      appLog('core:annex', 'debug', 'Failed to destroy Bonjour instance during shutdown', {
-        meta: { error: err instanceof Error ? err.message : String(err) },
-      });
-    }
-    bonjour = null;
-  }
+  republishBonjour = null;
+  if (republishTimer) clearTimeout(republishTimer);
+  republishTimer = null;
+  unpublishBonjour();
 
   // Close servers
   if (tlsServer) {
@@ -5154,7 +5196,7 @@ export function getStatus(): AnnexStatus & { pairingPort: number; tlsEnabled: bo
  */
 function pairingLink(fingerprint: string, certFingerprint: string | undefined, name: string): Pick<AnnexStatus, 'pairingUrl' | 'pairingHosts'> {
   if (!tlsServer || !certFingerprint || !serverPort) return {};
-  const hosts = pairingHosts(os.networkInterfaces(), boundHost);
+  const hosts = advertisedHosts();
   const url = buildPairingUrl({ hosts, port: serverPort, fingerprint, certFingerprint, pin: currentPin, name });
   return url ? { pairingUrl: url, pairingHosts: hosts } : {};
 }

@@ -164,6 +164,12 @@ export function registerAnnexClientHandlers(): void {
     },
   ));
 
+  // A typed host for a satellite, such as its tailnet name (#3058)
+  ipcMain.handle(IPC.ANNEX_CLIENT.SET_SATELLITE_HOST, withValidatedArgs(
+    [stringArg(), stringArg({ minLength: 0, maxLength: 300 })],
+    (_event, fingerprint, host) => annexClient.setSatelliteHost(fingerprint, host),
+  ));
+
   // Forget all satellites (disconnect all + remove all peers + clear state)
   ipcMain.handle(IPC.ANNEX_CLIENT.FORGET_ALL_SATELLITES, () => {
     annexClient.forgetAllSatellites();

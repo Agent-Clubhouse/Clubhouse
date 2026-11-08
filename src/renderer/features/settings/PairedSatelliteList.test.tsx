@@ -228,4 +228,39 @@ describe('PairedSatelliteList', () => {
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Disconnect' })).not.toBeInTheDocument();
   });
+
+  describe('address (#3058)', () => {
+    it('shows where it is reached', () => {
+      render(<PairedSatelliteList devices={[{ ...mockSatellite, address: '10.0.0.4:9443' }]} />);
+      expect(screen.getByTestId('annex-device-address')).toHaveTextContent('at 10.0.0.4:9443');
+    });
+
+    it('saves a typed host and closes the editor', async () => {
+      const setSatelliteHost = vi.fn().mockResolvedValue({ ok: true });
+      Object.assign(window.clubhouse.annexClient, { setSatelliteHost });
+      render(<PairedSatelliteList devices={[{ ...mockDisconnectedSatellite, typedHost: 'old.local' }]} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Address' }));
+      const input = screen.getByRole('textbox', { name: 'Address for Offline Satellite' });
+      expect(input).toHaveValue('old.local');
+      fireEvent.change(input, { target: { value: 'studio.tail1234.ts.net' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      expect(setSatelliteHost).toHaveBeenCalledWith('fp-456', 'studio.tail1234.ts.net');
+      await waitFor(() => expect(screen.queryByTestId('annex-address-editor')).not.toBeInTheDocument());
+    });
+
+    it('keeps the editor open with the reason when the host is refused', async () => {
+      Object.assign(window.clubhouse.annexClient, { setSatelliteHost: vi.fn().mockResolvedValue({ ok: false, error: 'Type a name or address.' }) });
+      render(<PairedSatelliteList devices={[mockDisconnectedSatellite]} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Address' }));
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'https://x' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      expect(await screen.findByText('Type a name or address.')).toBeInTheDocument();
+      expect(screen.getByTestId('annex-address-editor')).toBeInTheDocument();
+    });
+
+    it('offers no address for a satellite that needs pairing again', () => {
+      render(<PairedSatelliteList devices={[{ ...mockDisconnectedSatellite, state: 'needs-pairing' }]} onPairAgain={vi.fn()} />);
+      expect(screen.queryByRole('button', { name: 'Address' })).not.toBeInTheDocument();
+    });
+  });
 });

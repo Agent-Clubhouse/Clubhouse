@@ -526,6 +526,7 @@ export const IPC = {
     PTY_GET_BUFFER: 'annex-client:pty-get-buffer',
     PTY_GET_BUFFER_SNAPSHOT: 'annex-client:pty-get-buffer-snapshot',
     FORGET_SATELLITE: 'annex-client:forget-satellite',
+    SET_SATELLITE_HOST: 'annex-client:set-satellite-host',
     FORGET_ALL_SATELLITES: 'annex-client:forget-all-satellites',
     FILE_TREE: 'annex-client:file-tree',
     FILE_READ: 'annex-client:file-read',

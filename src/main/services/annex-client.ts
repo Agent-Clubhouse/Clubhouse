@@ -9,7 +9,10 @@ import * as https from 'https';
 import * as http from 'http';
 import * as net from 'net';
 import * as tls from 'tls';
-import Bonjour, { Browser, Service as RemoteService } from 'bonjour-service';
+import type Bonjour from 'bonjour-service';
+import type { Browser, Service as RemoteService } from 'bonjour-service';
+import { createBonjour } from './annex-mdns';
+import { formatAddress, parseTypedHost, rankAddresses, reachCandidates, rememberHost, type ReachAddress } from './annex-reach';
 import { WebSocket } from 'ws';
 import * as annexIdentity from './annex-identity';
 import * as annexTls from './annex-tls';
@@ -148,6 +151,10 @@ interface SatelliteConnectionInternal {
   halt?: 'pairing' | 'mismatch' | 'clock' | null;
   heartbeatInterval: ReturnType<typeof setInterval> | null;
   pongTimeout: ReturnType<typeof setTimeout> | null;
+  /** What Bonjour announced for it while this machine has been running (#3058). */
+  discovered?: ReachAddress | null;
+  /** Which of its candidate addresses the current attempt uses. */
+  candidateIndex?: number;
 }
 
 // Heartbeat constants
@@ -656,13 +663,22 @@ interface RemoteIdentity {
   publicKey: string;
 }
 
+/**
+ * The best address a Bonjour announcement gave (#3058): a routable IPv4 address
+ * first, then IPv6 (unique-local, then global), never loopback or link-local.
+ * Falls back to the sender's address, then the announced name.
+ */
+function serviceHost(service: RemoteService): string {
+  return rankAddresses(service.addresses ?? [])[0] || service.referer?.address || service.host || '';
+}
+
 async function identifyService(service: RemoteService): Promise<RemoteIdentity | null> {
   const discoverStartMs = Date.now();
   const txt = service.txt || {};
   // Prefer resolved IP addresses over hostname — on Linux os.hostname() returns a
   // bare name (e.g. "desk") that macOS cannot resolve, while .local hostnames from
   // macOS work fine.  The addresses array and referer.address are always IPs.
-  const host = service.addresses?.[0] || service.referer?.address || service.host;
+  const host = serviceHost(service);
   if (!host) return null;
 
   // V2 services have a pairingPort in TXT
@@ -749,7 +765,9 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       connectAuthMode(sat.fingerprint, 'mtls');
       setState(sat, 'connected');
       sat.reconnectAttempt = 0;
-      annexPeers.updateLastSeen(sat.fingerprint);
+      sat.candidateIndex = 0;
+      // Remembered, so it's found again after a restart without waiting for discovery (#3058).
+      annexPeers.noteReached(sat.fingerprint, sat.host, sat.mainPort);
       startHeartbeat(sat);
     });
 
@@ -1152,21 +1170,98 @@ function scheduleReconnect(sat: SatelliteConnectionInternal): void {
     return;
   }
 
-  // Exponential backoff with jitter: 1s, 2s, 4s, 8s, 30s cap
-  // Jitter (0.5–1.5x) prevents thundering herd when multiple satellites reconnect
-  const baseDelay = Math.min(1000 * Math.pow(2, sat.reconnectAttempt), 30_000);
-  const delay = Math.round(baseDelay * (0.5 + Math.random()));
-  sat.reconnectAttempt++;
+  // Each of its addresses gets a quick try in turn; once all have failed, back off (#3058).
+  const candidates = candidatesFor(sat);
+  const nextIndex = candidates.length > 0 ? ((sat.candidateIndex ?? 0) + 1) % candidates.length : 0;
+  sat.candidateIndex = nextIndex;
+  let delay: number;
+  if (nextIndex !== 0) {
+    delay = NEXT_ADDRESS_DELAY_MS;
+  } else {
+    // Exponential backoff with jitter: 1s, 2s, 4s, 8s, 30s cap
+    // Jitter (0.5–1.5x) prevents thundering herd when multiple satellites reconnect
+    const baseDelay = Math.min(1000 * Math.pow(2, sat.reconnectAttempt), 30_000);
+    delay = Math.round(baseDelay * (0.5 + Math.random()));
+    sat.reconnectAttempt++;
+  }
   recordReconnectScheduled(sat.reconnectAttempt, delay);
   appLog('core:annex-client', 'info', `Scheduling reconnect in ${delay}ms (attempt ${sat.reconnectAttempt})`, {
     meta: { fingerprint: sat.fingerprint, alias: sat.alias },
   });
 
   sat.reconnectTimer = setTimeout(() => {
+    sat.reconnectTimer = null;
     if (sat.state === 'disconnected') {
+      useCandidate(sat, candidatesFor(sat));
       connectToSatellite(sat);
     }
   }, delay);
+}
+
+/** Delay before trying a satellite's next address, after one fails. */
+const NEXT_ADDRESS_DELAY_MS = 250;
+
+/** Every address to try for a satellite, in order (#3058). */
+function candidatesFor(sat: SatelliteConnectionInternal): ReachAddress[] {
+  const peer = annexPeers.getPeer(sat.fingerprint);
+  const port = peer?.mainPort || sat.mainPort;
+  const list = reachCandidates({ discovered: sat.discovered, typed: peer?.typedHost, known: peer?.knownHosts, port });
+  // Where it is now (from pairing), if nothing else lists it.
+  if (sat.host && sat.mainPort && !list.some((a) => a.host === sat.host.toLowerCase() && a.port === sat.mainPort)) {
+    list.push({ host: sat.host, port: sat.mainPort });
+  }
+  return list;
+}
+
+/** Points the satellite at its candidate address for this attempt. */
+function useCandidate(sat: SatelliteConnectionInternal, candidates: ReachAddress[]): void {
+  if (candidates.length === 0) return;
+  const index = (sat.candidateIndex ?? 0) % candidates.length;
+  sat.candidateIndex = index;
+  sat.host = candidates[index].host;
+  sat.mainPort = candidates[index].port;
+}
+
+/** A satellite connection record for a paired peer, not yet connected. */
+function newSatellite(peer: { fingerprint: string; alias: string; icon: string; color: string }, state: SatelliteState): SatelliteConnectionInternal {
+  return {
+    id: peer.fingerprint,
+    alias: peer.alias,
+    icon: peer.icon,
+    color: peer.color,
+    fingerprint: peer.fingerprint,
+    state,
+    host: '',
+    mainPort: 0,
+    pairingPort: 0,
+    snapshot: null,
+    lastError: null,
+    ws: null,
+    reconnectTimer: null,
+    reconnectAttempt: 0,
+    needsPairing: false,
+    heartbeatInterval: null,
+    pongTimeout: null,
+    discovered: null,
+    candidateIndex: 0,
+  };
+}
+
+/**
+ * Connects to every paired satellite with a remembered or typed address, without
+ * waiting for discovery (#3058). Discovery still finds the rest, and newer addresses.
+ */
+function restorePairedSatellites(): void {
+  for (const peer of annexPeers.listPeers()) {
+    if (peer.role !== 'satellite' || annexPeers.peerNeedsPairing(peer) || satellites.has(peer.fingerprint)) continue;
+    const sat = newSatellite(peer, 'disconnected');
+    const candidates = candidatesFor(sat);
+    if (candidates.length === 0) continue;
+    useCandidate(sat, candidates);
+    satellites.set(peer.fingerprint, sat);
+    connectToSatellite(sat);
+  }
+  broadcastSatellitesChanged();
 }
 
 function disconnectSatellite(sat: SatelliteConnectionInternal): void {
@@ -1193,18 +1288,32 @@ function disconnectSatellite(sat: SatelliteConnectionInternal): void {
 // Bonjour discovery
 // ---------------------------------------------------------------------------
 
+/** Replaces a discovery socket that couldn't start, after a pause. */
+let rediscoverTimer: ReturnType<typeof setTimeout> | null = null;
+const MDNS_RESTART_DELAY_MS = 30_000;
+
 function startDiscovery(): void {
   if (bonjourBrowser) return;
 
   try {
-    bonjourInstance = new Bonjour();
+    // Socket errors are logged, never thrown (#1921).
+    bonjourInstance = createBonjour('discover', ({ fatal }) => {
+      if (!fatal || rediscoverTimer) return;
+      rediscoverTimer = setTimeout(() => {
+        rediscoverTimer = null;
+        if (!bonjourBrowser) return; // stopped meanwhile
+        stopDiscovery();
+        startDiscovery();
+      }, MDNS_RESTART_DELAY_MS);
+      rediscoverTimer.unref?.();
+    });
     bonjourBrowser = bonjourInstance.find({ type: 'clubhouse-annex' }, async (service) => {
       const identity = await identifyService(service);
       if (!identity) return;
 
       const { fingerprint } = identity;
       const txt = service.txt || {};
-      const host = service.addresses?.[0] || service.referer?.address || service.host || '';
+      const host = serviceHost(service);
       const mainPort = service.port || 0;
       const pairingPort = txt.pairingPort ? parseInt(txt.pairingPort, 10) : service.port || 0;
 
@@ -1228,10 +1337,12 @@ function startDiscovery(): void {
           // disconnected satellite tries it, and the pinned certificate decides.
           const live = sat.state === 'connected' || sat.state === 'connecting';
           const hostChanged = host !== sat.host || mainPort !== sat.mainPort;
+          if (host && mainPort) sat.discovered = { host, port: mainPort };
           if (hostChanged && !live) {
             sat.host = host;
             sat.mainPort = mainPort;
             sat.pairingPort = pairingPort;
+            sat.candidateIndex = 0; // the announced address is the first candidate
           }
           // After a certificate mismatch, a newly announced address gets one more try, through the same pin.
           const halted = sat.halt || sat.needsPairing;
@@ -1246,25 +1357,11 @@ function startDiscovery(): void {
         const peer = annexPeers.getPeer(fingerprint);
         if (!peer) return;
 
-        const sat: SatelliteConnectionInternal = {
-          id: fingerprint,
-          alias: peer.alias,
-          icon: peer.icon,
-          color: peer.color,
-          fingerprint,
-          state: 'discovering',
-          host,
-          mainPort,
-          pairingPort,
-          snapshot: null,
-          lastError: null,
-          ws: null,
-          reconnectTimer: null,
-          reconnectAttempt: 0,
-          needsPairing: false,
-          heartbeatInterval: null,
-          pongTimeout: null,
-        };
+        const sat = newSatellite(peer, 'discovering');
+        sat.host = host;
+        sat.mainPort = mainPort;
+        sat.pairingPort = pairingPort;
+        if (host && mainPort) sat.discovered = { host, port: mainPort };
 
         satellites.set(fingerprint, sat);
         broadcastSatellitesChanged();
@@ -1318,6 +1415,7 @@ function startDiscovery(): void {
 }
 
 function stopDiscovery(): void {
+  if (rediscoverTimer) { clearTimeout(rediscoverTimer); rediscoverTimer = null; }
   if (bonjourBrowser) {
     try { bonjourBrowser.stop(); } catch (err) {
       appLog('core:annex-client', 'debug', 'Failed to stop Bonjour browser', {
@@ -1361,25 +1459,7 @@ export function connect(fingerprint: string): void {
       appLog('core:annex-client', 'warn', 'Cannot connect — unknown peer', { meta: { fingerprint } });
       return;
     }
-    sat = {
-      id: fingerprint,
-      alias: peer.alias,
-      icon: peer.icon,
-      color: peer.color,
-      fingerprint,
-      state: 'disconnected',
-      host: '',
-      mainPort: 0,
-      pairingPort: 0,
-      snapshot: null,
-      lastError: null,
-      ws: null,
-      reconnectTimer: null,
-      reconnectAttempt: 0,
-      needsPairing: false,
-      heartbeatInterval: null,
-      pongTimeout: null,
-    };
+    sat = newSatellite(peer, 'disconnected');
     satellites.set(fingerprint, sat);
   }
 
@@ -1388,12 +1468,53 @@ export function connect(fingerprint: string): void {
     return;
   }
 
+  // A remembered or typed address, if it has one (#3058).
+  if (!sat.host || !sat.mainPort) useCandidate(sat, candidatesFor(sat));
   if (sat.host && sat.mainPort) {
     connectToSatellite(sat);
   } else {
     // Will connect when discovered via Bonjour
     setState(sat, 'discovering');
   }
+}
+
+export type SetHostResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Sets the host name or address a person typed for a satellite (#3058), such as
+ * its tailnet name, with an optional port. An empty value clears it. A
+ * disconnected satellite tries it straight away; a live connection is left alone.
+ */
+export function setSatelliteHost(fingerprint: string, input: string): SetHostResult {
+  const peer = annexPeers.getPeer(fingerprint);
+  if (!peer || peer.role === 'controller') return { ok: false, error: "That computer isn't one this computer connects to." };
+  const value = input.trim();
+  if (value && !parseTypedHost(value)) {
+    return { ok: false, error: 'Type a name or address, such as studio.local, a tailnet name or 192.168.1.20, with an optional :port.' };
+  }
+  annexPeers.setTypedHost(fingerprint, value || undefined);
+  appLog('core:annex-client', 'info', value ? 'Typed host set for satellite' : 'Typed host cleared for satellite', { meta: { fingerprint } });
+  const sat = satellites.get(fingerprint);
+  if (!sat) { connect(fingerprint); broadcastSatellitesChanged(); return { ok: true }; }
+  if (value && (sat.state === 'disconnected' || sat.state === 'discovering') && !sat.needsPairing) {
+    // Try what was typed now: it's the first candidate unless discovery has an address.
+    const candidates = candidatesFor(sat);
+    const parsed = parseTypedHost(value)!;
+    const index = candidates.findIndex((a) => a.host === parsed.host);
+    sat.candidateIndex = index === -1 ? 0 : index;
+    sat.reconnectAttempt = 0;
+    if (sat.reconnectTimer) { clearTimeout(sat.reconnectTimer); sat.reconnectTimer = null; }
+    useCandidate(sat, candidates);
+    if (sat.host && sat.mainPort) connectToSatellite(sat);
+  }
+  broadcastSatellitesChanged();
+  return { ok: true };
+}
+
+/** Where this machine is reaching (or last tried) a satellite, as `host:port`. */
+export function satelliteAddress(fingerprint: string): string | undefined {
+  const sat = satellites.get(fingerprint);
+  return sat?.host && sat.mainPort ? formatAddress({ host: sat.host, port: sat.mainPort }) : undefined;
 }
 
 export function disconnect(fingerprint: string): void {
@@ -2077,7 +2198,7 @@ async function pairWithLinkImpl(link: string): Promise<PairResultForUi> {
       lastError = 'The computer at that address is not the one in the link.';
       continue;
     }
-    return pairOverTls({ host, port: parts.port, pinned: cert, expectedFingerprint: parts.fingerprint, pairingPort: 0, pin: parts.pin, alias: parts.name });
+    return pairOverTls({ host, port: parts.port, pinned: cert, expectedFingerprint: parts.fingerprint, pairingPort: 0, pin: parts.pin, alias: parts.name, linkHosts: parts.hosts });
   }
   return { success: false, error: lastError };
 }
@@ -2105,6 +2226,8 @@ async function pairOverTls(target: {
   pin: string;
   /** The name it's known by so far, for messages. */
   alias?: string;
+  /** Every host its pairing link lists, remembered as other ways to reach it (#3058). */
+  linkHosts?: string[];
 }): Promise<PairResultForUi> {
   const localIdentity = annexIdentity.getOrCreateIdentity();
   if (target.expectedFingerprint.toLowerCase() === localIdentity.fingerprint.toLowerCase()) {
@@ -2158,6 +2281,10 @@ async function pairOverTls(target: {
     role: 'satellite', // We paired with them → they are our satellite
     tlsCertificateFingerprint: target.pinned.fingerprint,
     tlsCertificatePem: target.pinned.certPem,
+    knownHosts: rememberHost(target.linkHosts, target.host),
+    mainPort: target.port,
+    // A typed host survives pairing again.
+    ...(annexPeers.getPeer(fingerprint)?.typedHost && { typedHost: annexPeers.getPeer(fingerprint)!.typedHost }),
   });
 
   probedCertificates.delete(fingerprint);
@@ -2246,18 +2373,24 @@ export function scan(): void {
  * Resume all disconnected satellites (e.g., after power resume).
  */
 export function resumeAllConnections(): void {
+  // Waking never starts the client: with Connect to satellites off there's nothing to resume.
+  if (!annexSettings.getSettings().enableClient) return;
   for (const sat of satellites.values()) {
     if (sat.state === 'disconnected') {
       sat.reconnectAttempt = 0; // Reset backoff on resume
+      sat.candidateIndex = 0;
+      useCandidate(sat, candidatesFor(sat));
       connectToSatellite(sat);
     }
   }
+  restorePairedSatellites();
   // Also restart discovery in case mDNS state was lost
   scan();
 }
 
 export function startClient(): void {
   startDiscovery();
+  restorePairedSatellites();
 }
 
 export function stopClient(): void {

@@ -441,6 +441,7 @@ vi.stubGlobal('clubhouse', {
     gpInjectMessage: vi.fn(async () => true),
     gpSetPolling: vi.fn(async () => ({ pollingEnabled: false, members: [] })),
     forgetSatellite: asyncNoop,
+    setSatelliteHost: async () => ({ ok: true }),
     forgetAllSatellites: asyncNoop,
     onSatellitesChanged: () => noop,
     onDiscoveredChanged: () => noop,

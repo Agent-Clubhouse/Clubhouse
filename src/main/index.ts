@@ -334,6 +334,8 @@ app.on('ready', () => {
       const annexClient = require('./services/annex-client');
       annexClient.resumeAllConnections();
     } catch { /* annex client may not be loaded */ }
+    // The network may have changed while asleep: advertise again on it (#1921).
+    try { annexServer.republishAdvertisement(); } catch { /* telemetry-exempt: Annex may not be running */ }
   });
 
   appLog('core:startup', 'info', `Clubhouse v${app.getVersion()} starting`, {

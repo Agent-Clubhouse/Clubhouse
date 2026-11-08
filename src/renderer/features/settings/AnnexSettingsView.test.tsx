@@ -28,6 +28,13 @@ describe('AnnexSettingsView', () => {
     expect(screen.getByText('Annex')).toBeInTheDocument();
   });
 
+  it('saves the name this machine is also reachable at (#3058)', () => {
+    useAnnexStore.setState({ settings: { enableServer: true, enableClient: false, deviceName: 'My Mac' } as any });
+    render(<AnnexSettingsView />);
+    fireEvent.change(screen.getByLabelText('Also reachable at'), { target: { value: 'studio.tail1234.ts.net' } });
+    expect(mockSaveSettings).toHaveBeenCalledWith(expect.objectContaining({ reachableAs: 'studio.tail1234.ts.net' }));
+  });
+
   it('calls loadSettings on mount', () => {
     render(<AnnexSettingsView />);
     expect(mockLoadSettings).toHaveBeenCalled();

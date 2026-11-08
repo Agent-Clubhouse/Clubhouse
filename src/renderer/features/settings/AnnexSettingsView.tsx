@@ -150,6 +150,20 @@ export function AnnexSettingsView() {
               placeholder="Clubhouse on my Mac"
             />
           </SettingsField>
+          <SettingsField
+            label="Also reachable at"
+            htmlFor="annex-reachable-as"
+            help="A name other computers and phones can reach this one by, such as its tailnet name. It's added to the pairing link."
+          >
+            <input
+              id="annex-reachable-as"
+              type="text"
+              value={settings.reachableAs ?? ''}
+              onChange={(e) => saveSettings({ ...settings, reachableAs: e.target.value })}
+              className={`${settingsInput} w-[220px]`}
+              placeholder="studio.tailnet.ts.net"
+            />
+          </SettingsField>
           <AnnexIdentitySection
             settings={settings}
             status={status}
