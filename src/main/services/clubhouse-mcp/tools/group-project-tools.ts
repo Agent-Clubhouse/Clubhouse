@@ -475,7 +475,8 @@ export function registerGroupProjectTools(): void {
         'Wake a sleeping agent connected to this group project.\n\n' +
         'Use list_members to find agents with status "sleeping", then call this tool ' +
         'with their agentId to start them. Optionally provide a mission message that ' +
-        'will be sent to the agent once it starts.\n\n' +
+        'will be sent to the agent once it starts. It starts a fresh session unless ' +
+        'resume is true; see resume for when to use it.\n\n' +
         'Returns the agent status after the wake attempt.',
       inputSchema: {
         type: 'object',
@@ -490,7 +491,10 @@ export function registerGroupProjectTools(): void {
           },
           resume: {
             type: 'boolean',
-            description: 'Whether to resume the agent\'s previous CLI session. Defaults to false.',
+            description: 'Resume the agent\'s previous CLI session instead of starting fresh. Defaults to false. '
+              + 'Resuming reloads its whole earlier conversation, which costs tokens and brings stale context. '
+              + 'Resume only to follow up on an open task this agent already worked on: fixes after a review, a re-review after a fix, finishing an interrupted task. '
+              + 'For new work (a new issue or task, a first review, a first judge pass) leave this out and put everything the agent needs in message.',
           },
         },
         required: ['target_agent_id'],

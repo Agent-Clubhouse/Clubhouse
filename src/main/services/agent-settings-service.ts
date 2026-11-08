@@ -1,4 +1,5 @@
 import { parseMcpJson } from '../../shared/mcp-config';
+import { replaceWildcards, type WildcardContext } from '../../shared/wildcard-replacer';
 import { auditChanges, projectAuditTarget, type AuditKeyFormat } from './settings-audit';
 import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import * as fsp from 'fs/promises';
@@ -736,16 +737,31 @@ async function writeProjectAgentDefaultsInner(projectPath: string, defaults: Pro
  * @param projectPath   - The project root (for reading defaults)
  * @param writeInstructions - Orchestrator-specific instructions writer
  * @param conv          - Orchestrator conventions for path resolution
+ * @param wildcards     - The new agent's `@@` values, filled into the instructions,
+ *                        permission rules and MCP JSON before they're written (#2439)
  */
 export async function applyAgentDefaults(
   worktreePath: string,
   projectPath: string,
   writeInstructions?: (worktreePath: string, content: string) => void | Promise<void>,
   conv?: SettingsConventions,
+  wildcards?: WildcardContext,
 ): Promise<void> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const defaults = await readProjectAgentDefaults(projectPath);
-  if (!defaults) return;
+  const raw = await readProjectAgentDefaults(projectPath);
+  if (!raw) return;
+  const fill = (text: string) => (wildcards ? replaceWildcards(text, wildcards) : text);
+  const defaults = {
+    ...raw,
+    ...(raw.instructions && { instructions: fill(raw.instructions) }),
+    ...(raw.mcpJson && { mcpJson: fill(raw.mcpJson) }),
+    ...(raw.permissions && {
+      permissions: {
+        ...(raw.permissions.allow && { allow: raw.permissions.allow.map(fill) }),
+        ...(raw.permissions.deny && { deny: raw.permissions.deny.map(fill) }),
+      },
+    }),
+  };
 
   if (defaults.permissions) assertPermissionRulesSupported(defaults.permissions, c);
 

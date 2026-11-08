@@ -2381,11 +2381,19 @@ async function runDurableCreation(
       const worktreePath = initial.worktreePath;
       try {
         const provider = await resolveOrchestrator(projectPath, initial.orchestrator);
+        // The defaults' @@ wildcards name this agent, as the MCP servers' do at start (#2439).
+        const { buildWildcardContext, resolveAgentCommands, resolveSourceControlProvider } = await import('./agent-wildcards');
+        const wildcards = buildWildcardContext(
+          initial, projectPath,
+          await resolveSourceControlProvider(projectPath, initial),
+          resolveAgentCommands(initial, await readProjectAgentDefaults(projectPath)),
+        );
         await applyAgentDefaults(
           worktreePath,
           projectPath,
           (wt, content) => provider.writeInstructions(wt, content),
           provider.conventions,
+          wildcards,
         );
       } catch (err) {
         if (err instanceof UnsupportedPermissionRulesError) throw err;
