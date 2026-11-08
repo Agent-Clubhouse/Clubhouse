@@ -51,6 +51,7 @@
     "create-options-errors.json",
     "create-options.json",
     "dispatcher-changed.json",
+    "dispatcher-group-chat.json",
     "dispatcher-off-routes.json",
     "dispatcher-off-states.json",
     "dispatcher-routes.json",

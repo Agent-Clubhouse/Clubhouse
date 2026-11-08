@@ -1,61 +1,36 @@
 /**
- * The Dispatcher's chat reads as a group chat (#3043): the person, the
- * Dispatcher, and brief interjections from agents in their own name and
- * avatar. Nothing else shows: no tool-call rows, thoughts or plans, no JSON,
- * task ids or reply instructions, and no Clubhouse updates, which the
- * Dispatcher puts in its own words.
- *
- * The rules are pure: they narrow the chat store's items for the view, and
- * the transcript keeps everything. useGroupChatContext tells ChatView when
- * they apply.
+ * The Dispatcher's group chat (#3043) on the desktop: the shared rules
+ * (shared/dispatcher-group-chat.ts) applied to the chat store's items as
+ * ChatView draws them. A phone gets the same rules applied in main.
+ * useGroupChatContext tells ChatView when they apply.
  */
 import { useMemo } from 'react';
-import { messageDisplay } from '../../../shared/chat';
-import type { RoutedMessagePart } from '../../../shared/chat';
-import { cleanChatText } from '../../../shared/dispatcher-chat-noise';
+import { groupChatMessage, groupChatReply, isSubagentWork, showsTurnEnd, type GroupChatContext } from '../../../shared/dispatcher-group-chat';
 import type { ChatItem, ChatViewState } from '../../stores/chatStore';
 import type { Agent } from '../../../shared/types';
 import { isDispatcherAgent, useDispatcherStore } from './dispatcherStore';
 
-export interface GroupChatContext {
-  /** The Dispatcher's own agents: a message from either is its own words, never an interjection. */
-  ownAgentIds: ReadonlySet<string>;
-}
-
-/** The sender name a hand-off from the chat carries (dispatcher-channel). */
-const OWN_SENDER_NAMES = new Set(['Conversation']);
-
-function isInterjection(part: RoutedMessagePart, ctx: GroupChatContext): boolean {
-  if (part.fromClubhouse || !part.sender) return false;
-  if (part.sender.agentId && ctx.ownAgentIds.has(part.sender.agentId)) return false;
-  return !OWN_SENDER_NAMES.has(part.sender.name);
-}
+export type { GroupChatContext };
 
 /** One item as the group chat shows it, or null when it isn't shown. */
 export function groupChatItem(item: ChatItem, ctx: GroupChatContext): ChatItem | null {
-  // A subagent's work is the Dispatcher's own business.
-  if ('subagentId' in item && item.subagentId) return null;
+  if ('subagentId' in item && isSubagentWork(item)) return null;
   switch (item.kind) {
     case 'tool_call':
     case 'thought':
     case 'plan_document':
       return null;
     case 'turn_end':
-      // A turn that ended normally needs no footer; one that failed or was stopped does.
-      return item.stopReason === 'end_turn' ? null : item;
+      return showsTurnEnd(item.stopReason) ? item : null;
     case 'agent_message': {
-      const text = cleanChatText(item.text);
-      if (!text && !item.streaming) return null;
+      const text = groupChatReply(item.text, item.streaming);
+      if (text === null) return null;
       return text === item.text ? item : { ...item, text };
     }
     case 'user_message': {
-      const display = messageDisplay(item);
-      if (display.from === 'you') return item;
-      const parts = display.parts
-        .filter((part) => isInterjection(part, ctx))
-        .map((part) => ({ ...part, text: cleanChatText(part.text) }))
-        .filter((part) => part.text);
-      return parts.length ? { ...item, routed: parts } : null;
+      const shown = groupChatMessage(item, ctx);
+      if (shown === 'own') return item;
+      return shown ? { ...item, routed: shown } : null;
     }
     default:
       return item;
