@@ -324,7 +324,7 @@ The warning is: "Incomplete input: this request is too large to show in full her
 **Approve is refused:** `chat.permission` with anything but a deny option answers 409, `status:"rejected"`, `error:{code:"incomplete_representation",message}`. Denying still works. Full review is on the desktop, and the pending call itself is never changed. Approve is also refused when the desktop can't establish you were shown the whole request: one left pending across its restart, unless the whole original request, options included, is at most 4 KiB, which is whole on every path. It's refused too if the options the agent would act on aren't the ones you were sent.
 
 **Approving after fetching it whole (#2731):** a desktop with `fullEvents` in capabilities lets a phone fetch the request and then approve it. Fetch it as described in "The whole of an event", below, and keep the response's `digest`. Then send `chat.permission` with `reviewedDigest` set to that digest. The approval is taken when all of these hold, and refused with `incomplete_representation` otherwise:
-- this same paired device fetched the request, in this pairing epoch;
+- this same paired device fetched the request, since the desktop last started and since it was last paired;
 - the request still pending is exactly what it fetched;
 - the options the agent would act on are the ones in the request.
 

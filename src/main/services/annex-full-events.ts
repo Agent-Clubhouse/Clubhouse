@@ -48,7 +48,7 @@ const REVIEWED_MAX = 1000;
 const reviewKey = (principal: string, event: { agentId: string; sessionId: string; data: { requestId: string } }) =>
   JSON.stringify([principal, event.agentId, event.sessionId, event.data.requestId]);
 
-/** This device was sent the whole of this request, in this pairing epoch. */
+/** This device was sent the whole of this request. `epoch` is the server run's, so a restart starts over. */
 export function rememberReviewed(principal: string, epoch: string, event: PermissionRequest): void {
   const key = reviewKey(principal, event);
   reviewed.delete(key);
@@ -57,7 +57,7 @@ export function rememberReviewed(principal: string, epoch: string, event: Permis
 }
 
 /**
- * Did this device fetch exactly this request, in this epoch, and quote it back?
+ * Did this device fetch exactly this request, in this server run and pairing, and quote it back?
  * `event` must be the pending request from the transcript, so a request whose
  * content changed since the fetch, or another device's fetch, doesn't count.
  */
@@ -67,6 +67,14 @@ export function wasReviewed(principal: string | undefined, epoch: string, event:
   if (!record || record.epoch !== epoch) return false;
   const digest = fullEventDigest(event);
   return record.digest === digest && quoted === digest;
+}
+
+/** A device's pairing was removed: nothing it fetched counts any more. */
+export function forgetReviewedBy(principal: string): void {
+  const prefix = JSON.stringify([principal]).slice(0, -1);
+  for (const key of reviewed.keys()) {
+    if (key.startsWith(`${prefix},`)) reviewed.delete(key);
+  }
 }
 
 /** For tests: as if this process had just started. */

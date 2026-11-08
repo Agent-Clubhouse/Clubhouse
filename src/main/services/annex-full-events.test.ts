@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { ChatEvent } from '../../shared/chat';
-import { _forgetReviewedForTest, findFullEvent, fullEventDigest, rememberReviewed, wasReviewed } from './annex-full-events';
+import { _forgetReviewedForTest, findFullEvent, forgetReviewedBy, fullEventDigest, rememberReviewed, wasReviewed } from './annex-full-events';
 
 const request = (rawInput: Record<string, unknown> = { file_path: '/x', content: 'big' }) => ({
   v: 1, type: 'permission_request', agentId: 'a', sessionId: 's', seq: 3, ts: 1,
@@ -39,5 +39,15 @@ describe('full chat events (#2731)', () => {
     const changed = request({ file_path: '/x', content: 'changed' });
     expect(wasReviewed('phone', 'e1', changed, digest)).toBe(false);
     expect(wasReviewed('phone', 'e1', changed, fullEventDigest(changed))).toBe(false);
+  });
+
+  it('forgets what a device fetched when its pairing is removed, and only that device', () => {
+    const event = request();
+    const digest = fullEventDigest(event);
+    rememberReviewed('phone', 'e1', event);
+    rememberReviewed('phone-2', 'e1', event);
+    forgetReviewedBy('phone');
+    expect(wasReviewed('phone', 'e1', event, digest)).toBe(false);
+    expect(wasReviewed('phone-2', 'e1', event, digest)).toBe(true);
   });
 });

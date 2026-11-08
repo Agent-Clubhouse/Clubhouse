@@ -20,7 +20,7 @@ import { applyFinishedQuickAgentChange, getFinishedQuickAgents, isFinishedQuickA
 import type { CompletedQuickAgent, Project } from '../../shared/types';
 import { ANNEX_FRAME_MAX_BYTES, MOBILE_WS_FRAME_MAX_BYTES, SNAPSHOT_FRAME_MAX_BYTES, SNAPSHOT_ICONS_MAX_BYTES } from '../../shared/icon-limits';
 import { MobileCommandService, MobileControlError, chatControls, executeChatCommand, pendingInteractions, MOBILE_COMMAND_MAX_ENTRIES, MOBILE_COMMAND_TTL_MS } from './mobile-control';
-import { FULL_EVENT_MAX_BYTES, findFullEvent, fullEventDigest, rememberReviewed, wasReviewed } from './annex-full-events';
+import { FULL_EVENT_MAX_BYTES, findFullEvent, forgetReviewedBy, fullEventDigest, rememberReviewed, wasReviewed } from './annex-full-events';
 import { isRevertRunning } from './agent-runtime/checkpoint-tracker';
 import { readChatTranscript, listChatSessions } from './agent-runtime/chat-transcript';
 import { isGraduatedFeatureOn } from './experimental-settings';
@@ -3500,8 +3500,9 @@ async function handleMobileFullEventRoute(ctx: AnnexRouteContext, match: RegExpM
   };
   if (!authorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
   try {
-    const agentId = decodeURIComponent(match[1]);
-    const seq = Number(match[2]);
+    let agentId: string;
+    try { agentId = decodeURIComponent(match[1]); } catch { sendJson(ctx.res, 400, { error: 'invalid_query' }); return; }
+    const seq = /^\d+$/.test(match[2]) ? Number(match[2]) : NaN;
     const sessionId = new URL(ctx.url, 'http://localhost').searchParams.get('sessionId');
     if (!Number.isSafeInteger(seq) || seq < 1 || !sessionId || sessionId.length > 256) {
       sendJson(ctx.res, 400, { error: 'invalid_query' }); return;
@@ -3908,7 +3909,7 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/state$/, handler: handleMobileAgentStateRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat(\?.*)?$/, handler: handleMobileChatRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat\/sessions$/, handler: handleMobileChatSessionsRoute },
-  { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat\/events\/(\d+)(\?.*)?$/, handler: handleMobileFullEventRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat\/events\/([^/?]+)(\?.*)?$/, handler: handleMobileFullEventRoute },
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/commands$/, handler: handleMobileCommandRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/projects\/([^/]+)\/create-options$/, handler: handleMobileCreateOptionsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/settings$/, handler: handleMobileAgentSettingsRoute },
@@ -5597,6 +5598,8 @@ export function revokePeer(fingerprint: string): boolean {
   const removed = annexPeers.removePeer(fingerprint) || wasSession;
   awaitingFirstConnection.delete(fingerprint);
   loggedRefusals.delete(fingerprint);
+  // What it fetched whole was for this pairing: pairing again starts over (#2731).
+  forgetReviewedBy(fingerprint);
   closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
   appLog('core:annex', 'info', 'Peer pairing removed', { meta: { fingerprint, removed } });
   return removed;
