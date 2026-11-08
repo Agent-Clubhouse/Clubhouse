@@ -20,7 +20,7 @@ describe('action draft', () => {
     const input = {
       name: 'Tidy',
       trigger: { kind: 'event' as const, event: 'agent.slept' as const, source: { kind: 'agent' as const, agentId: 'lead' }, delayMinutes: 30 },
-      steps: [{ kind: 'quick' as const, projectId: 'p1', worktreeAgentId: 'lead', prompt: 'Tidy notes', access: 'ask' as const }],
+      steps: [{ kind: 'quick' as const, projectId: 'p1', worktreeAgentId: 'lead', prompt: 'Tidy notes' }],
       overlap: 'queue' as const,
     };
     const r = draftToInput(draftFrom(input, NOW), NOW);

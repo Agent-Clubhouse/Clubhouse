@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Action, ActionOwner, ActionRun } from '../../../../shared/actions';
 import type { ActionsEngine } from '../../actions/engine';
+import type { AccessLevel } from '../../../../shared/agent-access';
 
 // What the gate decides is covered in mcp-call-gate.test.ts; here every caller is open and its kind is set per test.
 const h = vi.hoisted(() => ({
@@ -11,6 +12,8 @@ const h = vi.hoisted(() => ({
   known: new Map<string, { projectPath: string; projectId: string; name: string; parentAgentId?: string }>(),
   /** wires: "from>to" */
   wires: new Set<string>(),
+  /** agent id to Access level; unset is Full access */
+  access: new Map<string, string>(),
   engine: null as unknown,
   history: new Map<string, unknown>(),
   unavailable: false,
@@ -71,7 +74,7 @@ vi.mock('../../actions', async () => {
         agentProjectId,
         dispatcherAgentId: () => (h.dispatchers.has('dispatcher') ? 'dispatcher' : undefined),
         canStartAgents: () => true,
-        agentAccess: () => 'ask',
+        agentAccess: (id) => (h.access.get(id) ?? 'full_access') as AccessLevel,
       }),
     });
   };
@@ -130,6 +133,7 @@ describe('action tools', () => {
     vi.clearAllMocks();
     _resetForTesting();
     h.callerKinds.clear();
+    h.access.clear();
     h.dispatchers.clear();
     h.trackedDispatchers.clear();
     h.known.clear();
@@ -265,11 +269,28 @@ describe('action tools', () => {
   });
 
   describe('rights (review of #2952)', () => {
-    it('an agent’s action never starts a quick agent above the agent’s own Access level', async () => {
-      const r = await call('agent-a', 'create_action', { trigger: DAILY, steps: [{ kind: 'quick', prompt: 'x', access: 'full_access' }] });
-      expect(r.body.error.code).toBe('not_allowed');
-      expect(r.body.error.message).toMatch(/runs at Ask first/);
-      expect((await call('agent-a', 'create_action', { trigger: DAILY, steps: [{ kind: 'quick', prompt: 'x', access: 'plan' }] })).isError).toBe(false);
+    it('only an agent at Full access may have quick agent steps', async () => {
+      h.access.set('agent-a', 'ask');
+      const r = await call('agent-a', 'create_action', { trigger: DAILY, steps: [{ kind: 'quick', prompt: 'x' }] });
+      expect(r.body.error).toEqual({ code: 'not_allowed', message: 'Agent steps run with Full access, and release-lead runs at Ask first, so its actions can’t start quick agents.' });
+      h.access.set('agent-a', 'full_access');
+      expect((await call('agent-a', 'create_action', { trigger: DAILY, steps: [{ kind: 'quick', prompt: 'x' }] })).isError).toBe(false);
+    });
+
+    it('refuses an edit or turning on once the agent drops below Full access', async () => {
+      const made = await call('agent-a', 'create_action', { trigger: DAILY, steps: [{ kind: 'quick', prompt: 'x' }], enabled: false });
+      const id = made.body.action.id;
+      h.access.set('agent-a', 'auto');
+      const edit = await call('agent-a', 'update_action', { id, name: 'Renamed' });
+      expect(edit.body.error.code).toBe('not_allowed');
+      expect(edit.body.error.message).toMatch(/^Agent steps run with Full access/);
+      expect((await call('agent-a', 'update_action', { id, enabled: true })).body.error.code).toBe('not_allowed');
+    });
+
+    it('drops an access field older callers still send', async () => {
+      const r = await call('agent-a', 'create_action', { trigger: DAILY, steps: [{ kind: 'quick', prompt: 'x', access: 'plan' }] });
+      expect(r.isError).toBe(false);
+      expect(r.body.action.steps[0]).not.toHaveProperty('access');
     });
 
     it('the Dispatcher reaches only agents connected to it, and starts no quick agents', async () => {

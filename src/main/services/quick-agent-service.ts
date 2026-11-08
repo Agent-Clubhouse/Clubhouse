@@ -70,6 +70,8 @@ export interface StartQuickAgentParams {
   name?: string;
   /** A run someone will follow and talk to: chat or terminal, never headless. */
   interactive?: boolean;
+  /** No one is watching: headless whatever the project's spawn mode, or fail (#3033). */
+  headless?: boolean;
 }
 
 /** Start a quick agent. Resolves once it has spawned; rejects if it couldn't. */
@@ -103,6 +105,7 @@ export async function startQuickAgent(p: StartQuickAgentParams): Promise<QuickAg
       ...(p.freeAgentMode !== undefined && { freeAgentMode: p.freeAgentMode }),
       ...(p.access && { access: p.access }),
       ...(p.interactive && { interactive: true }),
+      ...(p.headless && { headless: true }),
     });
   } catch (err) {
     entry.status = 'failed';

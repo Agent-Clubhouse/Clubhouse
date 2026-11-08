@@ -915,6 +915,30 @@ describe('agent-system', () => {
       untrackAgent('hq');
     });
 
+    it('runs an unattended quick agent headless even when the project starts quick agents in a terminal (#3033)', async () => {
+      mockGetSpawnMode.mockReturnValue('interactive');
+      mockProvider.buildHeadlessCommand = vi.fn(() =>
+        Promise.resolve({ binary: '/usr/bin/claude', args: ['-p'], env: {}, outputKind: 'stream-json' as const }),
+      ) as never;
+      await spawnAgent({ agentId: 'unattended', projectPath: '/project', cwd: '/project', kind: 'quick', mission: 'm', access: 'full_access', headless: true });
+      expect(mockProvider.buildHeadlessCommand).toHaveBeenCalledWith(expect.objectContaining({ permissionMode: 'skip-all' }));
+      expect(mockHeadlessSpawn).toHaveBeenCalled();
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+      delete (mockProvider as any).buildHeadlessCommand;
+      untrackAgent('unattended');
+    });
+
+    it('fails an unattended quick agent rather than open a terminal when it has no headless run (#3033)', async () => {
+      mockGetSpawnMode.mockReturnValue('interactive');
+      mockProvider.buildHeadlessCommand = vi.fn(() => Promise.resolve(null)) as never;
+      await expect(
+        spawnAgent({ agentId: 'unattended', projectPath: '/project', cwd: '/project', kind: 'quick', mission: 'm', access: 'full_access', headless: true }),
+      ).rejects.toThrow('Claude Code can’t run without a window, so this quick agent can’t start unattended.');
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+      expect(getAgentProjectPath('unattended')).toBeUndefined();
+      delete (mockProvider as any).buildHeadlessCommand;
+    });
+
     it('propagates the original error after cleanup on spawn failure', async () => {
       const originalError = new Error('specific spawn error');
       mockProvider.buildSpawnCommand.mockRejectedValueOnce(originalError);

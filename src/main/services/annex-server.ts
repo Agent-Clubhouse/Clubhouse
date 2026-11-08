@@ -20,6 +20,7 @@ import { applyFinishedQuickAgentChange, getFinishedQuickAgents, isFinishedQuickA
 import type { CompletedQuickAgent, Project } from '../../shared/types';
 import { ANNEX_FRAME_MAX_BYTES, MOBILE_WS_FRAME_MAX_BYTES, SNAPSHOT_FRAME_MAX_BYTES, SNAPSHOT_ICONS_MAX_BYTES } from '../../shared/icon-limits';
 import { MobileCommandService, MobileControlError, chatControls, executeChatCommand, pendingInteractions, MOBILE_COMMAND_MAX_ENTRIES, MOBILE_COMMAND_TTL_MS } from './mobile-control';
+import { FULL_EVENT_MAX_BYTES, findFullEvent, forgetReviewedBy, fullEventDigest, rememberReviewed, wasReviewed } from './annex-full-events';
 import { isRevertRunning } from './agent-runtime/checkpoint-tracker';
 import { readChatTranscript, listChatSessions } from './agent-runtime/chat-transcript';
 import { isGraduatedFeatureOn } from './experimental-settings';
@@ -3298,6 +3299,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     finishedQuickAgents: { version: 1 },
     // A snapshot over its limit says what it left out in `snapshotTruncated`; these fetch canvases.
     snapshotTruncation: { version: 1, canvasPaths: { project: '/api/v1/mobile/canvas/{projectId}', app: '/api/v1/mobile/canvas' } },
+    // The whole of an event sent as a preview (one with `truncated`), and approving a large request after fetching it (#2731).
+    fullEvents: { version: 1, path: '/api/v1/mobile/agents/{agentId}/chat/events/{seq}?sessionId={sessionId}', maximumBytes: FULL_EVENT_MAX_BYTES, approvalField: 'reviewedDigest' },
     // Connect with `?iconRefs=1` and a snapshot carries `iconRefs` in place of image bytes.
     iconRefs: { version: 1, connectParam: 'iconRefs=1', clientParam: 'client=mobile', paths: { agent: '/api/v1/icons/agent/{agentId}?v={version}', project: '/api/v1/icons/project/{projectId}?v={version}' } },
     // Shells at the project root or an agent's worktree, and an agent's own PTY (#2476).
@@ -3480,6 +3483,54 @@ async function handleMobileContentRoute(ctx: AnnexRouteContext, match: RegExpMat
   }
 }
 
+/**
+ * The whole of one chat event, from the transcript (#2731), for an event a phone
+ * was sent only a preview of. Pinned mTLS like `/content`, rechecked after the read.
+ * Fetching a permission request records that this device has all of it, so it can approve it.
+ */
+async function handleMobileFullEventRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const principal = ctx.mobilePrincipal;
+  if (!principal) { sendJson(ctx.res, 403, { error: 'client_certificate_required' }); return; }
+  const epoch = mobileCommands.epoch;
+  const pin = findPairedPeer(principal)?.tlsCertificateFingerprint;
+  const authorized = () => {
+    const peer = findPairedPeer(principal);
+    return mobileCommands.epoch === epoch && !!peer && peer.tlsCertificateFingerprint === pin
+      && (!peer.role || peer.role === 'controller');
+  };
+  if (!authorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
+  try {
+    let agentId: string;
+    try { agentId = decodeURIComponent(match[1]); } catch { sendJson(ctx.res, 400, { error: 'invalid_query' }); return; }
+    const seq = /^\d+$/.test(match[2]) ? Number(match[2]) : NaN;
+    const sessionId = new URL(ctx.url, 'http://localhost').searchParams.get('sessionId');
+    if (!Number.isSafeInteger(seq) || seq < 1 || !sessionId || sessionId.length > 256) {
+      sendJson(ctx.res, 400, { error: 'invalid_query' }); return;
+    }
+    const info = await findMobileAgent(agentId);
+    if ((!info || isDisposedAgent(info.config)) && !trackedQuickAgents.has(agentId)) {
+      sendJson(ctx.res, 404, { error: 'agent_not_found' }); return;
+    }
+    const runtime = getAgentRuntime(agentId);
+    const live = runtime?.kind === 'chat' && runtime.isRunning() && runtime.getSessionId?.() === sessionId;
+    const events = live ? (await runtime.readTranscript()).events ?? [] : await readChatTranscript(agentId, { sessionId });
+    const event = findFullEvent(events, sessionId, seq);
+    if (!authorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
+    if (!event || event.agentId !== agentId) { sendJson(ctx.res, 404, { error: 'event_not_found' }); return; }
+    const body = JSON.stringify({ version: 1, agentId, sessionId, seq, digest: fullEventDigest(event), event });
+    const bytes = Buffer.byteLength(body);
+    if (bytes > FULL_EVENT_MAX_BYTES) {
+      sendJson(ctx.res, 413, { error: 'event_too_large', bytes, maximumBytes: FULL_EVENT_MAX_BYTES }); return;
+    }
+    if (event.type === 'permission_request') rememberReviewed(principal, epoch, event);
+    ctx.res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': bytes, 'Cache-Control': 'no-store' });
+    ctx.res.end(body);
+  } catch {
+    // telemetry-exempt: transcript content never leaves in a log; the caller gets a bounded error.
+    sendJson(ctx.res, 500, { error: 'event_unavailable' });
+  }
+}
+
 async function handleMobileChatSessionsRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   try {
     const agentId = decodeURIComponent(match[1]);
@@ -3570,7 +3621,8 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
     return executeChatCommand(command, runtime, async () => !await isRevertRunning(command.agentId), () => {
       assertAuthorized();
       if (getAgentRuntime(command.agentId) !== runtime) throw new MobileControlError('session_mismatch');
-    }, (ids, caps) => mobileAttachments.resolveFor(principal, command.agentId, ids, caps));
+    }, (ids, caps) => mobileAttachments.resolveFor(principal, command.agentId, ids, caps),
+    (request, quoted) => wasReviewed(principal, mobileCommands.epoch, request, quoted));
   }
   if (command.type === 'project.setPinned' || command.type === 'project.setInactive') {
     const project = await findProjectById(command.projectId);
@@ -3857,6 +3909,7 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/state$/, handler: handleMobileAgentStateRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat(\?.*)?$/, handler: handleMobileChatRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat\/sessions$/, handler: handleMobileChatSessionsRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat\/events\/([^/?]+)(\?.*)?$/, handler: handleMobileFullEventRoute },
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/commands$/, handler: handleMobileCommandRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/projects\/([^/]+)\/create-options$/, handler: handleMobileCreateOptionsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/settings$/, handler: handleMobileAgentSettingsRoute },
@@ -5545,6 +5598,8 @@ export function revokePeer(fingerprint: string): boolean {
   const removed = annexPeers.removePeer(fingerprint) || wasSession;
   awaitingFirstConnection.delete(fingerprint);
   loggedRefusals.delete(fingerprint);
+  // What it fetched whole was for this pairing: pairing again starts over (#2731).
+  forgetReviewedBy(fingerprint);
   closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
   appLog('core:annex', 'info', 'Peer pairing removed', { meta: { fingerprint, removed } });
   return removed;
