@@ -14,6 +14,7 @@ import type { McpToolResult } from '../types';
 import type { AnnexDevice } from '../../../../shared/types';
 import { appLog } from '../../log-service';
 import { requireString } from './validation';
+import { describeCallsForAsk } from '../ask-first';
 
 /** What the tools act through; set at startup (main's Annex services), tests set fakes. */
 export interface DeviceToolHost {
@@ -23,6 +24,8 @@ export interface DeviceToolHost {
   remove(fingerprint: string): boolean;
   /** Opens Settings › Annex Network on this computer for the person. False when no window is open. */
   openAddDevice(): boolean;
+  /** Whether this computer connects to other computers now (Annex Network on, or Connect to satellites). */
+  canConnect(): boolean;
 }
 
 let host: DeviceToolHost | null = null;
@@ -62,7 +65,27 @@ function find(fingerprint: string): AnnexDevice | undefined {
 
 const NOT_FOUND = 'No device with that id is paired with this computer. list_devices lists them.';
 
+/** The device a call names, for the person asked to allow it: by name, never only by id. */
+function describeDevice(action: string) {
+  return (args: Record<string, unknown>): string | undefined => {
+    const device = typeof args.id === 'string' ? find(args.id) : undefined;
+    if (!device) return `${action} a device this computer doesn't know.`;
+    const kind = device.kind === 'phone' ? 'phone' : 'computer';
+    return `${action} ${device.alias || 'an unnamed device'} (${kind}, ${device.role === 'member' ? 'in this network' : 'paired one-to-one'}).`;
+  };
+}
+
 export function registerDeviceTools(): void {
+  describeCallsForAsk('rename_device', (args) => {
+    const line = describeDevice('Rename')(args);
+    return typeof args.name === 'string' ? `${line?.replace(/\.$/, '')} to "${args.name.trim()}".` : line;
+  });
+  describeCallsForAsk('reconnect_device', describeDevice('Reconnect to'));
+  describeCallsForAsk('remove_device', (args) => {
+    const line = describeDevice('Remove')(args);
+    return `${line} A device in the network goes from every device in it, and comes back only when a person pairs it again.`;
+  });
+
   registerGlobalTool(
     'list_devices',
     {
@@ -116,6 +139,9 @@ export function registerDeviceTools(): void {
       const connectsFromHere = device.role === 'satellite' || (device.role === 'member' && device.kind !== 'phone');
       if (!connectsFromHere) return text('This computer doesn\'t connect to that device; it connects here when it\'s on.', true);
       if (device.state === 'needs-pairing') return text('That device needs pairing again, which a person does in Settings.', true);
+      if (device.state === 'removing') return text('That device is being removed.', true);
+      // Off means off: the person turned connecting to other computers off here.
+      if (!host.canConnect()) return text('This computer isn\'t connecting to other computers now. A person turns that on in Settings > Annex Network.', true);
       host.reconnect(device.fingerprint);
       appLog('core:annex', 'info', 'An agent asked to reconnect a device', { meta: { agentId } });
       return text(device.state === 'connected' ? 'It is already connected.' : 'Trying to connect now.');

@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import { settingsChanged } from '../telemetry/feature-events';
 import { IPC } from '../../shared/ipc-channels';
 import type { AnnexSettings } from '../../shared/types';
@@ -39,9 +39,11 @@ export function registerAnnexHandlers(): void {
     },
     // Only opens the page for a person: no code, link or certificate goes back to the agent.
     openAddDevice: () => {
+      if (!BrowserWindow.getAllWindows().some((w) => !w.isDestroyed())) return false;
       broadcastToAllWindows(IPC.APP.OPEN_SETTINGS, 'annex');
       return true;
     },
+    canConnect: () => !!annexSettings.getSettings().enableClient,
   });
   // Annex Network membership (#3061): what members tell each other, and what to do about it.
   membership.initNetworkMembership({

@@ -6,6 +6,8 @@ vi.mock('../tool-registry', () => ({
   registerGlobalTool: (name: string, _def: unknown, handler: never, options: { grant: unknown }) => { registered.set(name, { handler, grant: options.grant }); },
 }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
+const describers = vi.hoisted(() => new Map<string, (args: Record<string, unknown>) => string | undefined>());
+vi.mock('../ask-first', () => ({ describeCallsForAsk: (name: string, fn: never) => { describers.set(name, fn); } }));
 
 import { deviceForAgent, registerDeviceTools, setDeviceToolHost, type DeviceToolHost } from './device-tools';
 
@@ -34,6 +36,7 @@ beforeEach(() => {
     reconnect: vi.fn(),
     remove: vi.fn(() => true),
     openAddDevice: vi.fn(() => true),
+    canConnect: vi.fn(() => true),
   } as never;
   setDeviceToolHost(host);
 });
@@ -73,7 +76,24 @@ describe('See devices and Manage devices (#3068)', () => {
     expect((await call('reconnect_device', { id: '11:22' })).isError).toBe(true);
     host.list.mockReturnValue([device({ state: 'needs-pairing' })]);
     expect((await call('reconnect_device', { id: 'aa:bb' })).text).toContain('a person does in Settings');
+    host.list.mockReturnValue([device({ state: 'removing' })]);
+    expect((await call('reconnect_device', { id: 'aa:bb' })).isError).toBe(true);
     expect(host.reconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('never connects while the person has connecting to other computers turned off', async () => {
+    host.canConnect.mockReturnValue(false);
+    const refused = await call('reconnect_device', { id: 'ee:ff' });
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toContain('Settings > Annex Network');
+    expect(host.reconnect).not.toHaveBeenCalled();
+  });
+
+  it('names the device for the person asked to allow a change, never only its id', () => {
+    expect(describers.get('remove_device')!({ id: 'cc:dd' })).toBe('Remove Phone (phone, in this network). A device in the network goes from every device in it, and comes back only when a person pairs it again.');
+    expect(describers.get('rename_device')!({ id: 'aa:bb', name: ' Studio Pro ' })).toBe('Rename Studio (computer, in this network) to "Studio Pro".');
+    expect(describers.get('reconnect_device')!({ id: 'ee:ff' })).toBe('Reconnect to Old Mac (computer, paired one-to-one).');
+    expect(describers.get('remove_device')!({ id: 'nope' })).toContain("a device this computer doesn't know");
   });
 
   it('removes a device', async () => {
@@ -85,8 +105,10 @@ describe('See devices and Manage devices (#3068)', () => {
     const opened = await call('start_adding_device');
     expect(opened.isError).toBe(false);
     expect(host.openAddDevice).toHaveBeenCalled();
-    // Nothing in the answer that pairs: no code, link or certificate.
-    expect(opened.text).not.toMatch(/\d{6}|clubhousego:|pair\?|[0-9A-F]{2}(:[0-9A-F]{2}){7}/i);
+    expect(opened.text).toBe('Opened Settings > Annex Network on this computer. A person at the new device finishes the pairing there.');
+    // With no window to show it in, it says so.
+    host.openAddDevice.mockReturnValue(false);
+    expect((await call('start_adding_device')).isError).toBe(true);
     // And no device tool takes a code or a link to pair with.
     expect([...registered.keys()].sort()).toEqual(['list_devices', 'reconnect_device', 'remove_device', 'rename_device', 'start_adding_device']);
   });
