@@ -30,7 +30,7 @@ export function RetiredPluginSection({ pluginId }: { pluginId: string }) {
       const result = await window.clubhouse.plugin.exportRetiredData(pluginId);
       if (result.canceled) return;
       setExportResult(result.error ? `Couldn't export: ${result.error}` : `Exported to ${result.filePath}.`);
-    } catch (err) {
+    } catch (err) { // telemetry-exempt: shown to the person; main logs the export failure
       setExportResult(`Couldn't export: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
