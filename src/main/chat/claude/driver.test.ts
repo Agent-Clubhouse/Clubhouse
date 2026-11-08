@@ -17,6 +17,9 @@ import {
   claudeModeFromLevel,
   planLimitsFromWire,
   claudeModelRow,
+  claudeMcpServersFromStatus,
+  mergeClaudeMcpServers,
+  MCP_STATUS_TIMEOUT_MS,
   APPLIED_SETTINGS_TIMEOUT_MS,
   claudePermissionOptions,
   claudeToolContent,
@@ -229,6 +232,23 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
     });
   });
 
+  it('says why an MCP server failed, from mcp_status, with no env values or secrets (#2896, D95)', async () => {
+    const s = await start({ env: { FAKE_CLAUDE_MCP_FAILED: '1' } });
+    await s.send([{ type: 'text', text: 'hello' }], 'prompt');
+    const fromStatus = await drafts.waitFor('session_info', (d) => !!d.data.mcpServers?.some((m) => m.error));
+    expect(fromStatus.data).toEqual({ mcpServers: [
+      { name: 'clubhouse', status: 'connected' },
+      { name: 'github', status: 'needs_auth' },
+      { name: 'workiq', status: 'failed', error: 'MCP error -32000: Connection closed (Authorization: Bearer <redacted>)' },
+    ] });
+    // init said only "failed"; that list went out first.
+    const fromInit = drafts.of('session_info').find((d) => d.data.nativeSessionId);
+    expect(fromInit?.data.mcpServers).toContainEqual({ name: 'workiq', status: 'failed' });
+    // The reply's config (env, command) and the error's later lines never reach the chat.
+    const sent = JSON.stringify(drafts.all);
+    for (const leak of ['fake-tenant-value', 'WORKIQ_TENANT', 'fake-secret-token', 'Client.connect', 'workiq-mcp']) expect(sent).not.toContain(leak);
+  });
+
   it('maps a permission with native options and "always allow"', async () => {
     const s = await start();
     await s.send([{ type: 'text', text: 'tool' }], 'prompt');
@@ -424,6 +444,31 @@ describe('registerClaudeChatDrivers', () => {
 });
 
 describe('Claude contract mapping helpers', () => {
+  it('reads mcp_status replies: name, status and a failed server\'s safe error only (D95)', () => {
+    const token = `ghp_${'b'.repeat(36)}`;
+    expect(claudeMcpServersFromStatus([
+      { name: 'a', status: 'failed', error: `Bearer abcdefghijklmnop rejected; key ${token}\nsecond line`, config: { env: { K: 'v' } }, tools: [] },
+      { name: 'b', status: 'connected', error: 'ignored' },
+      { name: 'c', status: 'needs-auth' },
+      { status: 'failed' },
+      'junk',
+    ])).toEqual([
+      { name: 'a', status: 'failed', error: 'Bearer <redacted> rejected; key <redacted>' },
+      { name: 'b', status: 'connected' },
+      { name: 'c', status: 'needs_auth' },
+    ]);
+    expect(claudeMcpServersFromStatus({ mcpServers: [] })).toBeUndefined();
+    expect(claudeMcpServersFromStatus(undefined)).toBeUndefined();
+  });
+
+  it('merges mcp_status into init\'s list in init\'s order', () => {
+    expect(mergeClaudeMcpServers(
+      [{ name: 'a', status: 'connected' }, { name: 'b', status: 'pending' }],
+      [{ name: 'c', status: 'connected' }, { name: 'b', status: 'failed', error: 'exit 1' }],
+    )).toEqual([{ name: 'a', status: 'connected' }, { name: 'b', status: 'failed', error: 'exit 1' }, { name: 'c', status: 'connected' }]);
+  });
+
+
   it('maps the permission ladder both ways', () => {
     for (const level of ['plan', 'ask', 'auto_edit', 'auto', 'full_access'] as const) {
       expect(levelFromClaudeMode(claudeModeFromLevel(level))).toBe(level);
@@ -545,6 +590,115 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     { value: 'opus', displayName: 'Opus 5.5', resolvedModel: 'claude-opus-5-5', efforts: ['low', 'high'] },
     { value: 'haiku', displayName: 'Haiku', resolvedModel: 'claude-haiku-5-5', efforts: [] },
   ];
+
+  describe('MCP failure reasons from mcpServerStatus() (#2896, D95)', () => {
+    type WithStatus = ScriptedTransport & { mcpServerStatus?: () => Promise<unknown> };
+    const init = (mcp_servers: unknown[]): ClaudeChatEventBody => new ClaudeNormalizer().normalize({ type: 'system', subtype: 'init', session_id: 'native', mcp_servers })[0];
+    const mcpLists = (drafts: Drafts) => drafts.of('session_info').filter((d) => d.data.mcpServers).map((d) => d.data.mcpServers);
+    const failedReply = [
+      { name: 'ok', status: 'connected', error: 'stale text from an earlier failure' },
+      { name: 'workiq', status: 'failed', error: 'spawn workiq-mcp ENOENT token=ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaa\n  at spawn', config: { type: 'stdio', command: 'x', env: { WORKIQ_TENANT: 'tenant-value' } } },
+    ];
+
+    it('reports a failed server\'s redacted first line; a connected one gets no reason', async () => {
+      const calls: number[] = [];
+      const { transport, drafts } = await scripted({}, (t) => {
+        (t as WithStatus).mcpServerStatus = async () => { calls.push(1); return failedReply; };
+      });
+      transport.emit(init([{ name: 'ok', status: 'connected' }, { name: 'workiq', status: 'failed' }]));
+      await drafts.waitFor('session_info', (d) => !!d.data.mcpServers?.some((m) => m.error));
+      expect(mcpLists(drafts)).toEqual([
+        [{ name: 'ok', status: 'connected' }, { name: 'workiq', status: 'failed' }],
+        [{ name: 'ok', status: 'connected' }, { name: 'workiq', status: 'failed', error: 'spawn workiq-mcp ENOENT token=<redacted>' }],
+      ]);
+      expect(JSON.stringify(drafts.all)).not.toMatch(/ghp_|tenant-value|WORKIQ_TENANT|at spawn/);
+      // The same init list again (the next turn's) is not read again.
+      transport.emit(init([{ name: 'ok', status: 'connected' }, { name: 'workiq', status: 'failed' }]));
+      await settle(); await settle();
+      expect(calls).toHaveLength(1);
+    });
+
+    it('does not ask when every server is connected', async () => {
+      const read = vi.fn(async () => failedReply);
+      const { transport, drafts } = await scripted({}, (t) => { (t as WithStatus).mcpServerStatus = read; });
+      transport.emit(init([{ name: 'ok', status: 'connected' }, { name: 'gh', status: 'needs-auth' }]));
+      await drafts.waitFor('session_info', (d) => !!d.data.mcpServers);
+      await settle(); await settle();
+      expect(read).not.toHaveBeenCalled();
+      expect(mcpLists(drafts)).toEqual([[{ name: 'ok', status: 'connected' }, { name: 'gh', status: 'needs_auth' }]]);
+    });
+
+    it('stays quiet when the SDK has no mcpServerStatus(), and stops asking', async () => {
+      // No method on the transport at all.
+      const bare = await scripted();
+      bare.transport.emit(init([{ name: 'workiq', status: 'failed' }]));
+      await bare.drafts.waitFor('session_info', (d) => !!d.data.mcpServers);
+      await settle();
+      expect(mcpLists(bare.drafts)).toEqual([[{ name: 'workiq', status: 'failed' }]]);
+      await bare.session.close();
+
+      // The SDK transport over a Query without the method resolves undefined.
+      const sdk = new ClaudeSdkTransport({ binary: 'claude', cwd: os.tmpdir() } as ConstructorParameters<typeof ClaudeSdkTransport>[0]);
+      (sdk as unknown as { query: object }).query = {};
+      await expect(sdk.mcpServerStatus()).resolves.toBeUndefined();
+
+      const read = vi.fn(async () => undefined);
+      const { transport, drafts } = await scripted({}, (t) => { (t as WithStatus).mcpServerStatus = read; });
+      transport.emit(init([{ name: 'workiq', status: 'failed' }]));
+      await drafts.waitFor('session_info', (d) => !!d.data.mcpServers);
+      await settle(); await settle();
+      transport.emit(init([{ name: 'workiq', status: 'pending' }]));
+      await settle(); await settle();
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(mcpLists(drafts).every((l) => l?.every((m) => !m.error))).toBe(true);
+    });
+
+    it('a failed read is logged at debug and changes nothing', async () => {
+      const log = vi.fn();
+      const transport = new ScriptedTransport();
+      (transport as WithStatus).mcpServerStatus = async () => { throw new Error('mcp_status unsupported'); };
+      const session = await new ClaudeChatDriver('claude_agent_sdk', { createTransport: () => transport, log }).start({ agentId: 'a', provider: 'claude-code', cwd: os.tmpdir(), binaryPath: 'claude', level: 'ask' });
+      const drafts = new Drafts(session.events);
+      transport.emit(init([{ name: 'workiq', status: 'failed' }]));
+      await drafts.waitFor('session_info', (d) => !!d.data.mcpServers);
+      await settle(); await settle();
+      expect(mcpLists(drafts)).toEqual([[{ name: 'workiq', status: 'failed' }]]);
+      expect(log).toHaveBeenCalledWith('debug', '[claude-chat] Could not read the MCP server status', { error: 'mcp_status unsupported' });
+      await session.close();
+    });
+
+    it('gives up on a read that doesn\'t answer in time', async () => {
+      const log = vi.fn();
+      const transport = new ScriptedTransport();
+      (transport as WithStatus).mcpServerStatus = () => new Promise(() => {});
+      const session = await new ClaudeChatDriver('claude_agent_sdk', { createTransport: () => transport, log }).start({ agentId: 'a', provider: 'claude-code', cwd: os.tmpdir(), binaryPath: 'claude', level: 'ask' });
+      const drafts = new Drafts(session.events);
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        transport.emit(init([{ name: 'workiq', status: 'failed' }]));
+        await settle(); await settle();
+        await vi.advanceTimersByTimeAsync(MCP_STATUS_TIMEOUT_MS);
+      } finally {
+        vi.useRealTimers();
+      }
+      expect(log).toHaveBeenCalledWith('debug', '[claude-chat] Could not read the MCP server status', { error: `mcp_status timed out after ${MCP_STATUS_TIMEOUT_MS}ms` });
+      expect(mcpLists(drafts)).toEqual([[{ name: 'workiq', status: 'failed' }]]);
+      await session.close();
+    });
+
+    it('asks again at the next init while a server is still starting', async () => {
+      const replies: unknown[] = [[{ name: 'workiq', status: 'pending' }], failedReply.slice(1)];
+      const read = vi.fn(async () => replies.shift());
+      const { transport, drafts } = await scripted({}, (t) => { (t as WithStatus).mcpServerStatus = read; });
+      transport.emit(init([{ name: 'workiq', status: 'pending' }]));
+      await drafts.waitFor('session_info', (d) => !!d.data.mcpServers);
+      await settle(); await settle();
+      transport.emit(init([{ name: 'workiq', status: 'pending' }]));
+      await drafts.waitFor('session_info', (d) => !!d.data.mcpServers?.some((m) => m.error));
+      expect(read).toHaveBeenCalledTimes(2);
+      expect(mcpLists(drafts).at(-1)).toEqual([{ name: 'workiq', status: 'failed', error: 'spawn workiq-mcp ENOENT token=<redacted>' }]);
+    });
+  });
 
   it('reports context fill per turn from the last main-loop call, against the 1M window', async () => {
     const { transport, session, drafts } = await scripted({ model: 'claude-opus-5-5[1m]' });

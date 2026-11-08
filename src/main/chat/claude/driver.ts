@@ -8,6 +8,7 @@ import { levelFromClaudeMode } from './permission-mode';
 import type {
   ChatErrorCode,
   ChatEventDraft,
+  ChatMcpServer,
   ChatMcpServerStatus,
   ChatQuestion,
   ChatQuestionAnswers,
@@ -447,6 +448,43 @@ export function contextLimitsFromUsage(reply: unknown): ContextLimits | undefine
   };
 }
 
+/** How long an mcp_status read may take; it's best-effort and never holds a turn up. */
+export const MCP_STATUS_TIMEOUT_MS = 5_000;
+
+/**
+ * The servers from an `mcp_status` reply (`mcpServerStatus()`), in the shared
+ * status words. Only the name, status and a failed server's error are read:
+ * the reply's `config` holds each server's env and headers, which never leave
+ * here (D95). The error is the redacted first line, as for Codex and Copilot.
+ * Undefined when the reply isn't a list.
+ */
+export function claudeMcpServersFromStatus(reply: unknown): ChatMcpServer[] | undefined {
+  if (!Array.isArray(reply)) return undefined;
+  return reply.filter(isObj).flatMap((s) => {
+    const name = str(s.name);
+    if (!name) return [];
+    const status = claudeMcpStatus(str(s.status) ?? '');
+    const error = status === 'failed' ? safeMcpErrorLine(str(s.error)) : undefined;
+    return [{ name, status, ...(error && { error }) }];
+  });
+}
+
+/**
+ * init's list with what `mcp_status` said since: a server it reports takes its
+ * status and reason from there, in init's order, and one init didn't list is added.
+ */
+export function mergeClaudeMcpServers(init: ChatMcpServer[], status: ChatMcpServer[]): ChatMcpServer[] {
+  const byName = new Map(status.map((s) => [s.name, s]));
+  const merged = init.map((s) => byName.get(s.name) ?? s);
+  const listed = new Set(init.map((s) => s.name));
+  return [...merged, ...status.filter((s) => !listed.has(s.name))];
+}
+
+/** A server init can't say more about: it is still starting, or failed without a reason. */
+function mcpServerNeedsStatus(s: ChatMcpServer): boolean {
+  return s.status === 'pending' || (s.status === 'failed' && !s.error);
+}
+
 /** How long a get_usage read may take; it's best-effort and never holds a turn up. */
 const PLAN_USAGE_TIMEOUT_MS = 5_000;
 /** At most one get_usage read per this long (it calls the claude.ai usage endpoint). */
@@ -558,6 +596,12 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   /** False once get_usage said plan limits don't apply, or the CLI doesn't answer it. */
   private planUsageAvailable = true;
   private planUsageFailures = 0;
+  /** Bumped by every root init; an mcp_status reply for an older one is dropped. */
+  private mcpInitSeq = 0;
+  /** The init list the last mcp_status read was for: the same list again isn't re-read. */
+  private mcpStatusReadFor: string | undefined;
+  /** False once the SDK showed it has no mcpServerStatus(). */
+  private mcpStatusAvailable = true;
 
   constructor(
     readonly driverId: ClaudeChatDriverId,
@@ -613,6 +657,46 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
       if (!same) this.push({ type: 'session_info', data: { contextLimits: limits } }, true);
     } catch (err) {
       this.log?.('debug', '[claude-chat] Could not read the context limits', { error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  /**
+   * init gives each MCP server's status but no reason for a failure. When a
+   * server is still starting or failed without one, ask the CLI once
+   * (`mcpServerStatus()`, local, no tokens) and report what it says, with the
+   * failed server's redacted error, as the shared MCP list (D95). One read per
+   * new init list, under a timeout; a list read while a server was still
+   * starting is read again at the next init. Quiet when the SDK has no such
+   * call or the read fails.
+   */
+  private async readMcpStatus(init: ChatMcpServer[]): Promise<void> {
+    const seq = ++this.mcpInitSeq;
+    if (!this.mcpStatusAvailable || !this.transport.mcpServerStatus || this.closing) return;
+    if (!init.some(mcpServerNeedsStatus)) { this.mcpStatusReadFor = undefined; return; }
+    const key = JSON.stringify(init);
+    if (key === this.mcpStatusReadFor) return;
+    this.mcpStatusReadFor = key;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const reply = await Promise.race([
+        this.transport.mcpServerStatus(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`mcp_status timed out after ${MCP_STATUS_TIMEOUT_MS}ms`)), MCP_STATUS_TIMEOUT_MS);
+        }),
+      ]);
+      if (reply === undefined) { this.mcpStatusAvailable = false; return; }
+      const status = claudeMcpServersFromStatus(reply);
+      // A newer init has its own list (and its own read, if it needs one).
+      if (!status || seq !== this.mcpInitSeq || this.closing) return;
+      const servers = mergeClaudeMcpServers(init, status);
+      // Still starting: the next init reads again even if its list is the same.
+      if (servers.some((s) => s.status === 'pending')) this.mcpStatusReadFor = undefined;
+      if (JSON.stringify(servers) === key) return;
+      this.push({ type: 'session_info', data: { mcpServers: servers } });
+    } catch (err) {
+      this.log?.('debug', '[claude-chat] Could not read the MCP server status', { error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -917,16 +1001,17 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         // system/init only arrives with the first prompt: the native session id and resolved model are known now.
         if (ev.parentToolCallId || this.closing) return;
         this.costIsEstimate = ev.apiKeySource === undefined || ev.apiKeySource === 'none';
+        const mcpServers = ev.mcpServers?.map((s) => {
+          const error = s.error ? safeMcpErrorLine(s.error) : undefined;
+          return { name: s.name, status: claudeMcpStatus(s.status), ...(error && { error }) };
+        });
         this.push({
           type: 'session_info',
           data: {
             nativeSessionId: ev.sessionId || undefined,
             cliVersion: ev.cliVersion || undefined,
             model: ev.model || undefined,
-            ...(ev.mcpServers && { mcpServers: ev.mcpServers.map((s) => {
-              const error = s.error ? safeMcpErrorLine(s.error) : undefined;
-              return { name: s.name, status: claudeMcpStatus(s.status), ...(error && { error }) };
-            }) }),
+            ...(mcpServers && { mcpServers }),
             ...(ev.sessionId && ev.sessionId.length <= 512 && { providerSkills: {
               provider: PROVIDER, driver: this.driverId, source: 'system/init' as const,
               nativeSessionId: ev.sessionId, names: ev.skills ?? null,
@@ -936,6 +1021,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         // A per-turn init reports the model the turn started with, before any /model in it ran.
         if (ev.model) this.noteModel(this.menuId(ev.model), this.effort);
         if (ev.permissionMode) this.changeLevel(levelFromClaudeMode(ev.permissionMode), ev.permissionMode);
+        if (mcpServers) void this.readMcpStatus(mcpServers);
         return;
       case 'user_message':
         // The chat runtime records what it sent; CLI echoes add nothing.
