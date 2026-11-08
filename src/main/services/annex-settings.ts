@@ -40,6 +40,11 @@ export async function saveSettings(settings: AnnexSettings): Promise<void> {
 
 export const updateSettings = store.update;
 
+/** Whether Annex Network is on for this machine (#3061). On unless turned off. */
+export function networkEnabled(settings: AnnexSettings = getSettings()): boolean {
+  return settings.networkEnabled !== false;
+}
+
 /** Ports the Annex servers last bound, so a phone's remembered pairing survives a relaunch. */
 export interface AnnexLastPorts {
   mainPort: number;

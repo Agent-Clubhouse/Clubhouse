@@ -145,6 +145,9 @@ vi.mock('./finished-quick-agents-store', async () => {
   };
 });
 // Real sockets on loopback only; never advertise fixtures on the LAN.
+// Membership has its own tests (annex-network-membership.test.ts).
+vi.mock('./annex-network-membership', () => ({ noteLocalJoin: vi.fn(), noteLocalRemoval: vi.fn() }));
+
 vi.mock('./annex-network-profile', async (importOriginal) => ({
   ...await importOriginal<typeof import('./annex-network-profile')>(),
   annexNetworkProfile: () => ({ host: '127.0.0.1' as const, advertise: false }),
@@ -253,6 +256,8 @@ vi.mock('./annex-tls', async (importOriginal) => {
   };
 });
 vi.mock('./annex-peers', () => ({
+  controlsThisMachine: (p?: { role?: string } | null) => p?.role === 'controller' || p?.role === 'member',
+  controlledFromHere: (p?: { role?: string } | null) => p?.role === 'satellite' || p?.role === 'member',
   checkBruteForce: () => ({ allowed: true, delayMs: 0, locked: false, attemptsRemaining: 3 }),
   recordFailedAttempt: () => {},
   recordSuccessfulAttempt: () => {},
@@ -284,6 +289,7 @@ vi.mock('./group-project-polling', () => ({ setProjectPolling: async () => ({}),
 vi.mock('./clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: () => [] } }));
 vi.mock('./theme-service', () => ({ getActiveThemeId: () => 'catppuccin-mocha', getSettings: () => ({ themeId: 'catppuccin-mocha' }) }));
 vi.mock('./annex-settings', () => ({
+  networkEnabled: (s?: { networkEnabled?: boolean }) => s?.networkEnabled !== false,
   getSettings: () => ({ enableServer: false, enableClient: false, deviceName: 'Studio Mac', alias: 'Studio Mac', icon: 'computer', color: 'indigo', autoReconnect: false }),
   saveSettings: () => {},
   getLastPorts: () => ({ mainPort: 0, pairingPort: 0 }),

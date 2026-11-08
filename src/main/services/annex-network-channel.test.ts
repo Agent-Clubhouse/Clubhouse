@@ -12,7 +12,7 @@ vi.mock('./annex-identity', () => ({
   getIdentity: vi.fn(() => ({ fingerprint: SELF_FP, publicKey: 'self-pk', createdAt: '2026-11-01T00:00:00.000Z' })),
   computeFingerprint: vi.fn((key: string) => (key === 'peer-pk' ? FP : key === 'self-pk' ? SELF_FP : 'ff:ff')),
 }));
-vi.mock('./annex-settings', () => ({ getSettings: vi.fn(() => ({ alias: 'This Mac', deviceName: 'Clubhouse on This Mac', icon: 'computer', color: 'indigo' })) }));
+vi.mock('./annex-settings', () => ({ networkEnabled: (s?: { networkEnabled?: boolean }) => s?.networkEnabled !== false, getSettings: vi.fn(() => ({ alias: 'This Mac', deviceName: 'Clubhouse on This Mac', icon: 'computer', color: 'indigo' })) }));
 vi.mock('./annex-tls', () => ({
   getOrCreateCert: vi.fn(() => ({ certPem: '-----BEGIN CERTIFICATE-----\nSELF\n-----END CERTIFICATE-----\n' })),
   certificateFingerprint: vi.fn(() => SELF_CERT),

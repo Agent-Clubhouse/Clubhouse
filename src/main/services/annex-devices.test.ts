@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AnnexPeer } from '../../shared/types';
 
 vi.mock('./annex-peers', () => ({
+  controlsThisMachine: (p?: { role?: string } | null) => p?.role === 'controller' || p?.role === 'member',
+  controlledFromHere: (p?: { role?: string } | null) => p?.role === 'satellite' || p?.role === 'member',
   listPeers: vi.fn(() => []),
   getPeer: vi.fn(),
   peerNeedsPairing: vi.fn((peer: AnnexPeer) => !peer.role || !peer.tlsCertificateFingerprint),
@@ -12,7 +14,12 @@ vi.mock('./annex-client', () => ({
   forgetSatellite: vi.fn(),
   satelliteAddress: vi.fn(() => undefined),
 }));
-vi.mock('./annex-settings', () => ({ getSettings: vi.fn(() => ({ enableClient: true })) }));
+vi.mock('./annex-settings', () => ({ networkEnabled: (s?: { networkEnabled?: boolean }) => s?.networkEnabled !== false, getSettings: vi.fn(() => ({ enableClient: true })) }));
+vi.mock('./annex-network-membership', () => ({
+  joinConfirmation: vi.fn(() => null),
+  pendingRemovals: vi.fn(() => []),
+  noteLocalRemoval: vi.fn(),
+}));
 vi.mock('./annex-server', () => ({
   sessionOnlyPeers: vi.fn(() => []),
   connectedPeerFingerprints: vi.fn(() => new Set()),
@@ -115,6 +122,44 @@ describe('annex device list', () => {
       satellites: [satellite({ fingerprint: 'fp', host: 'studio.tail1234.ts.net', mainPort: 9443 })],
     });
     expect(device).toMatchObject({ address: 'studio.tail1234.ts.net:9443', typedHost: 'studio.tail1234.ts.net' });
+  });
+
+  describe('network members (#3061)', () => {
+    it('counts a member connected either way, and says where its join is confirmed', () => {
+      const devices = buildDeviceList({
+        ...empty,
+        peers: [
+          peer({ fingerprint: 'm1', alias: 'Studio', role: 'member', tlsCertificatePem: 'PEM' }),
+          peer({ fingerprint: 'm2', alias: 'Laptop', role: 'member', tlsCertificatePem: 'PEM' }),
+          peer({ fingerprint: 'm3', alias: 'Mini', role: 'member', tlsCertificatePem: 'PEM' }),
+        ],
+        satellites: [satellite({ fingerprint: 'm2', state: 'connected' })],
+        connected: new Set(['m1']),
+        joinOf: (fp) => (fp === 'm3' ? { fingerprint: 'm3', confirmedBy: ['m1'], waitingOn: ['m2'] } : null),
+      });
+      expect(devices.map((d) => [d.alias, d.state])).toEqual([['Laptop', 'connected'], ['Mini', 'offline'], ['Studio', 'connected']]);
+      expect(devices[1].confirmation).toEqual({ kind: 'join', confirmedBy: ['Studio'], waitingOn: ['Laptop'] });
+    });
+
+    it('lists a removed member as removing until every member has heard', () => {
+      const devices = buildDeviceList({
+        ...empty,
+        peers: [peer({ fingerprint: 'm1', alias: 'Studio', role: 'member', tlsCertificatePem: 'PEM' })],
+        removals: [{ fingerprint: 'gone', name: 'Old Mac', confirmedBy: [], waitingOn: ['m1'] }],
+      });
+      expect(devices.find((d) => d.fingerprint === 'gone')).toMatchObject({
+        alias: 'Old Mac', state: 'removing', confirmation: { kind: 'removal', confirmedBy: [], waitingOn: ['Studio'] },
+      });
+    });
+
+    it('removes a member everywhere: every member is told before it is cut off', async () => {
+      const membership = await import('./annex-network-membership');
+      vi.mocked(annexPeers.getPeer).mockReturnValue(peer({ role: 'member' }));
+      expect(removeDevice('fp')).toBe(true);
+      expect(membership.noteLocalRemoval).toHaveBeenCalledWith('fp');
+      expect(vi.mocked(membership.noteLocalRemoval).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(annexServer.revokePeer).mock.invocationCallOrder[0]);
+      expect(annexClient.forgetSatellite).toHaveBeenCalledWith('fp');
+    });
   });
 
   it('marks pairings from before pinning as needing pairing again, whichever way', () => {

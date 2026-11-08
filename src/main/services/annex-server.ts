@@ -50,6 +50,7 @@ import type { Service } from 'bonjour-service';
 import { createBonjour } from './annex-mdns';
 import { withReachableAs } from './annex-reach';
 import * as networkChannel from './annex-network-channel';
+import * as membership from './annex-network-membership';
 import * as annexEventBus from './annex-event-bus';
 import * as annexSettings from './annex-settings';
 import { annexNetworkProfile } from './annex-network-profile';
@@ -251,6 +252,8 @@ let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 // Server-side WebSocket heartbeat: detect dead controller connections (e.g. mobile app killed)
 const SERVER_HEARTBEAT_INTERVAL_MS = 30_000; // 30s ping interval
 const wsAlive = new WeakMap<WebSocket, boolean>();
+/** Sockets that locked this screen ("Controlled by"): mTLS from anything but a fellow network member. */
+const lockingSockets = new WeakSet<WebSocket>();
 
 /** Whether the satellite session is currently paused (tracks across reconnects). */
 let sessionPaused = false;
@@ -646,7 +649,7 @@ function authenticatePeer(socket: unknown): PeerAuthResult {
   const peer = findPairedPeer(fingerprint);
   if (!peer) return refuse(401, 'peer_not_paired', fingerprint);
   if (!peer.role) return refuse(401, 'needs_pairing', fingerprint);
-  if (peer.role !== 'controller') return refuse(403, 'peer_role_not_allowed', fingerprint);
+  if (!annexPeers.controlsThisMachine(peer)) return refuse(403, 'peer_role_not_allowed', fingerprint);
   if (!peer.tlsCertificateFingerprint) return refuse(401, 'needs_pairing', fingerprint);
   if (annexTls.extractPeerCertificateFingerprint(socket) !== peer.tlsCertificateFingerprint) return refuse(401, 'peer_not_paired', fingerprint);
   awaitingFirstConnection.delete(fingerprint);
@@ -2494,6 +2497,8 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
   const settings = annexSettings.getSettings();
   const now = new Date().toISOString();
   // Pairing again (same identity) stores the name it sends now, like everything else it sends.
+  // A desktop with Annex Network on asks to join (#3061); with it on here too, it's a member.
+  const joins = body.network === 1 && annexSettings.networkEnabled(settings);
   const pairedPeer: AnnexPeer = {
     fingerprint,
     publicKey: clientPublicKey,
@@ -2503,7 +2508,9 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     pairedAt: now,
     lastSeen: now,
     tlsCertificateFingerprint: certFingerprint,
-    role: 'controller', // This peer initiated pairing → they control us
+    // It paired with us, so it controls us; as a network member each controls the other.
+    role: joins ? 'member' : 'controller',
+    ...(joins && { kind: 'desktop' as const, addedBy: identity.fingerprint, tlsCertificatePem: annexTls.certificatePemFromDer(certDer) }),
   };
   // The old certificate's sockets stop counting now (the pin no longer matches), and are cut.
   if (replacesPin) {
@@ -2512,6 +2519,7 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
   }
   if (sessionOnly) { mobileSessionPeers.set(fingerprint, pairedPeer); devicesChanged(); }
   else { mobileSessionPeers.delete(fingerprint); annexPeers.addPeer(pairedPeer); }
+  if (joins && !sessionOnly) membership.noteLocalJoin(fingerprint);
   loggedRefusals.delete(fingerprint);
   broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeersForDisplay());
 
@@ -2526,6 +2534,8 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     icon: settings.icon,
     color: settings.color,
     fingerprint: identity.fingerprint,
+    // Only for a desktop that asked: phones' answers are unchanged.
+    ...(joins && { network: 1 }),
   };
   if (!pinReusable) {
     const pinDeadline = currentPinIssuedAt + PIN_TTL_MS;
@@ -4151,7 +4161,7 @@ function socketStillPaired(ws: WebSocket): boolean {
   const fingerprint = wsPeerFingerprints.get(ws);
   const pin = wsPeerPins.get(ws);
   const peer = fingerprint ? findPairedPeer(fingerprint) : undefined;
-  return !!peer && !!pin && peer.role === 'controller' && peer.tlsCertificateFingerprint === pin;
+  return !!peer && !!pin && annexPeers.controlsThisMachine(peer) && peer.tlsCertificateFingerprint === pin;
 }
 
 function handleWsMessage(ws: WebSocket, data: string): void {
@@ -4656,7 +4666,8 @@ export function start(): void {
 
     // The Annex Network channel (#3060): membership only, from a pinned peer of either role.
     if (forNetwork) {
-      networkChannel.handleNetworkUpgrade(req, socket, head);
+      // A pairing that connects here first counts as connected, like one on /ws.
+      networkChannel.handleNetworkUpgrade(req, socket, head, (fp) => { awaitingFirstConnection.delete(fp); });
       return;
     }
 
@@ -4705,9 +4716,13 @@ export function start(): void {
 
     // Broadcast lock state immediately when mTLS controller connects — before the async
     // buildSnapshot() so the satellite UI locks without waiting for snapshot I/O to complete.
-    if (authType === 'mtls') {
+    // A fellow Annex Network member doesn't lock this screen (#3061): members connect to
+    // each other all the time, and each is used as one machine.
+    const lockPeer = authType === 'mtls' ? findPairedPeer(wsPeerFingerprints.get(ws) ?? '') : undefined;
+    if (authType === 'mtls' && lockPeer?.role !== 'member') lockingSockets.add(ws);
+    if (lockingSockets.has(ws)) {
       const fingerprint = wsPeerFingerprints.get(ws);
-      const peer = fingerprint ? findPairedPeer(fingerprint) : null;
+      const peer = lockPeer;
       // Track the latest connecting controller as lock owner.
       sessionPauseOwner = fingerprint || null;
       broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
@@ -4730,10 +4745,10 @@ export function start(): void {
       });
       reportClientCounts();
       closeShellsFor(ws);
-      if (authType === 'mtls') {
-        // Check if any other mTLS connections are still open
+      if (lockingSockets.has(ws)) {
+        // Check if any other locking connections are still open
         const hasMtlsClient = Array.from(wss?.clients || []).some(
-          (client) => client !== ws && client.readyState === WebSocket.OPEN && wsAuthTypes.get(client) === 'mtls',
+          (client) => client !== ws && client.readyState === WebSocket.OPEN && lockingSockets.has(client),
         );
         // Only release the lock when no mTLS clients remain — a disconnecting
         // controller that "owned" the lock must not unlock while others are
@@ -5702,6 +5717,8 @@ export const PEER_REVOKED_CLOSE_CODE = 4401;
  * is refused with 401 peer_not_paired, then its open sockets close.
  */
 export function revokePeer(fingerprint: string): boolean {
+  // A network member is removed everywhere: every member hears before it's cut off (#3061).
+  membership.noteLocalRemoval(fingerprint);
   const wasSession = mobileSessionPeers.delete(fingerprint);
   if (wasSession) devicesChanged();
   const removed = annexPeers.removePeer(fingerprint) || wasSession;
@@ -5721,7 +5738,7 @@ export function revokePeer(fingerprint: string): boolean {
  */
 export function closeSocketsUnlessController(fingerprint: string): void {
   const peer = findPairedPeer(fingerprint);
-  if (peer?.role === 'controller' && peer.tlsCertificateFingerprint) return;
+  if (annexPeers.controlsThisMachine(peer) && peer!.tlsCertificateFingerprint) return;
   awaitingFirstConnection.delete(fingerprint);
   closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
 }

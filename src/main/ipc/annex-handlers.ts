@@ -10,6 +10,7 @@ import * as annexIdentity from '../services/annex-identity';
 import * as annexTls from '../services/annex-tls';
 import * as annexDevices from '../services/annex-devices';
 import * as networkChannel from '../services/annex-network-channel';
+import * as membership from '../services/annex-network-membership';
 import { onDevicesChanged } from '../services/annex-device-signal';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -25,6 +26,15 @@ function broadcastPeersChanged(): void {
 }
 
 export function registerAnnexHandlers(): void {
+  // Annex Network membership (#3061): what members tell each other, and what to do about it.
+  membership.initNetworkMembership({
+    connect: (fingerprint) => annexClient.connect(fingerprint),
+    endDevice: (fingerprint) => {
+      annexClient.forgetSatellite(fingerprint);
+      annexServer.revokePeer(fingerprint);
+      broadcastPeersChanged();
+    },
+  });
   onDevicesChanged(() => broadcastToAllWindows(IPC.ANNEX.DEVICES_CHANGED, annexDevices.listDevices()));
 
   ipcMain.handle(IPC.ANNEX.LIST_DEVICES, () => annexDevices.listDevices());

@@ -87,6 +87,9 @@ vi.mock('./mobile-agents', () => ({
 
 // Real HTTP sockets in this suite must never expose test fixtures to the LAN.
 // Bonjour itself is mocked below; retain its branch coverage independently.
+// Membership has its own tests (annex-network-membership.test.ts).
+vi.mock('./annex-network-membership', () => ({ noteLocalJoin: vi.fn(), noteLocalRemoval: vi.fn() }));
+
 vi.mock('./annex-network-profile', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./annex-network-profile')>();
   return { ...actual, annexNetworkProfile: () => ({ host: '127.0.0.1' as const, advertise: true }) };
@@ -173,6 +176,7 @@ vi.mock('./annex-tls', () => ({
   extractPeerCertificateDer: vi.fn().mockReturnValue(undefined),
   verifyCertBinding: vi.fn().mockReturnValue(false),
   getCertificateFingerprint: vi.fn().mockReturnValue(undefined),
+  certificatePemFromDer: (der: Buffer) => `-----BEGIN CERTIFICATE-----\n${der.toString('base64')}\n-----END CERTIFICATE-----\n`,
   sameCertificateFingerprint: (a?: string, b?: string) => {
     const norm = (v?: string) => v?.replace(/[:\s]/g, '').toLowerCase() ?? '';
     return /^[0-9a-f]{64}$/.test(norm(a)) && norm(a) === norm(b);
@@ -181,6 +185,8 @@ vi.mock('./annex-tls', () => ({
 
 // Mock annex-peers
 vi.mock('./annex-peers', () => ({
+  controlsThisMachine: (p?: { role?: string } | null) => p?.role === 'controller' || p?.role === 'member',
+  controlledFromHere: (p?: { role?: string } | null) => p?.role === 'satellite' || p?.role === 'member',
   checkBruteForce: vi.fn().mockReturnValue({ allowed: true, delayMs: 0, locked: false, attemptsRemaining: 3 }),
   recordFailedAttempt: vi.fn(),
   recordSuccessfulAttempt: vi.fn(),
@@ -253,6 +259,7 @@ vi.mock('./theme-service', () => ({
 
 // Mock annex-settings
 vi.mock('./annex-settings', () => ({
+  networkEnabled: (s?: { networkEnabled?: boolean }) => s?.networkEnabled !== false,
   getSettings: vi.fn().mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Test Machine', alias: 'Test Machine', icon: 'computer', color: 'indigo', autoReconnect: false }),
   saveSettings: vi.fn(),
   getLastPorts: vi.fn().mockReturnValue({ mainPort: 0, pairingPort: 0 }),
@@ -2225,6 +2232,43 @@ describe('annex-server', () => {
         peers.set(repinned.fingerprint, pinned(repinned, { role: 'satellite', tlsCertificatePem: 'PEM', tlsCertificateFingerprint: device().certFingerprint }));
         expect((await upgradeStatus(repinned, '/network')).body).toContain('peer_not_paired');
         expect((await upgradeStatus(null, '/network')).status).toBe(401);
+      });
+    });
+
+    describe('pairing as an Annex Network member (#3061)', () => {
+      it('makes a desktop that asks a member, pinning its certificate both ways, and says so', async () => {
+        await startServer();
+        const computer = device();
+        const res = await pair(computer, { network: 1, icon: 'computer' });
+        expect(res.status).toBe(200);
+        expect(res.body.network).toBe(1);
+        expect(peers.get(computer.fingerprint)).toMatchObject({ role: 'member', kind: 'desktop', addedBy: 'AA:BB:CC:DD', tlsCertificatePem: expect.stringContaining('BEGIN CERTIFICATE') });
+        // The other members are told.
+        const membershipMod = await import('./annex-network-membership');
+        expect(membershipMod.noteLocalJoin).toHaveBeenCalledWith(computer.fingerprint);
+        // A member may use /ws like a controller.
+        expect((await call('GET', '/api/v1/status', computer)).status).toBe(200);
+      });
+
+      it("leaves phones, and desktops that don't ask, as controllers with the same answer", async () => {
+        await startServer();
+        const phone = device();
+        const res = await pair(phone, { pairingMode: 'persistent' });
+        expect(res.body).not.toHaveProperty('network');
+        expect(peers.get(phone.fingerprint)?.role).toBe('controller');
+      });
+
+      it('keeps a desktop one-to-one while Annex Network is off here', async () => {
+        vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, alias: 'Test Machine', deviceName: 'Test Machine', icon: 'computer', color: 'indigo', networkEnabled: false } as any);
+        try {
+          await startServer();
+          const computer = device();
+          const res = await pair(computer, { network: 1 });
+          expect(res.body).not.toHaveProperty('network');
+          expect(peers.get(computer.fingerprint)?.role).toBe('controller');
+        } finally {
+          vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Test Machine', alias: 'Test Machine', icon: 'computer', color: 'indigo', autoReconnect: false } as any);
+        }
       });
     });
 
@@ -7230,6 +7274,40 @@ describe('annex-server', () => {
 
       // Let buildSnapshot complete (cleanup)
       resolveProjectList([]);
+      await new Promise((r) => setTimeout(r, 20));
+    }, 10_000);
+
+    it('a fellow network member connecting does not lock this screen, and its leaving does not unlock it (#3061)', async () => {
+      const { _testing } = await import('./annex-server');
+      await startAndPair();
+      const { EventEmitter } = await import('events');
+      const socket = () => Object.assign(new EventEmitter(), { send: vi.fn(), ping: vi.fn(), readyState: 1 }) as any;
+      vi.mocked(annexPeers.getPeer).mockImplementation((fp: string) => (fp === 'm1:m1'
+        ? { ...TEST_CONTROLLER, fingerprint: 'm1:m1', role: 'member' }
+        : fp === TEST_CONTROLLER.fingerprint ? TEST_CONTROLLER : null) as any);
+
+      const memberWs = socket();
+      _testing.registerPeerSocket(memberWs, 'm1:m1', TEST_CONTROLLER.tlsCertificateFingerprint);
+      mockBroadcastToAllWindows.mockClear();
+      _testing.wss!.clients.add(memberWs);
+      _testing.wss!.emit('connection', memberWs);
+      expect(mockBroadcastToAllWindows).not.toHaveBeenCalledWith('annex:lock-state-changed', expect.anything());
+
+      // A controller locks; the member leaving doesn't unlock while the controller stays.
+      const controllerWs = socket();
+      _testing.registerPeerSocket(controllerWs, TEST_CONTROLLER.fingerprint, TEST_CONTROLLER.tlsCertificateFingerprint);
+      _testing.wss!.clients.add(controllerWs);
+      _testing.wss!.emit('connection', controllerWs);
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('annex:lock-state-changed', expect.objectContaining({ locked: true }));
+      mockBroadcastToAllWindows.mockClear();
+      memberWs.readyState = 3;
+      _testing.wss!.clients.delete(memberWs);
+      memberWs.emit('close', 1000, Buffer.from(''));
+      expect(mockBroadcastToAllWindows).not.toHaveBeenCalledWith('annex:lock-state-changed', expect.objectContaining({ locked: false }));
+      controllerWs.readyState = 3;
+      _testing.wss!.clients.delete(controllerWs);
+      controllerWs.emit('close', 1000, Buffer.from(''));
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('annex:lock-state-changed', expect.objectContaining({ locked: false }));
       await new Promise((r) => setTimeout(r, 20));
     }, 10_000);
 
