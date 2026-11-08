@@ -73,6 +73,11 @@ vi.mock('../../agent-runtime/chat-transcript', () => ({
     return savedTranscripts.get(id);
   }),
 }));
+/** Agent cards by agent id (#3041); an agent not here has no record. */
+const cardStatuses = vi.hoisted(() => new Map<string, Record<string, unknown>>());
+vi.mock('../../dispatcher/dispatcher-agent-cards-watch', () => ({
+  getAgentCards: () => ({ status: async (id: string) => cardStatuses.get(id) ?? null }),
+}));
 vi.mock('../../pty-manager', () => ({ getLastActivity: (id: string) => ptyActivity.get(id) ?? null }));
 vi.mock('../../git-service', () => ({
   getGitInfo: vi.fn(async (dir: string) => ({ hasGit: true, branch: branches.get(dir) ?? 'main', ahead: 0, behind: 0, status: [], log: [] })),
@@ -161,6 +166,7 @@ function parse(result: { content: Array<{ text: string }> }): Record<string, unk
 }
 
 beforeEach(() => {
+  cardStatuses.clear();
   for (const id of agentRegistry.getAllRegistrations().keys()) agentRegistry.untrack(id);
   _resetForTesting();
   _resetHelperToolsForTesting();
@@ -254,6 +260,7 @@ describe('list_agents', () => {
     runAgent('h1', PROJECT_A);
     branches.set(PROJECT_A, 'feature/a');
     branches.set(path.join(PROJECT_B, 'wt'), 'feature/b');
+    cardStatuses.set('lead-a', { state: 'ready', asking: false, page: 'agents/lead-a-alpha.md', card: {}, text: 'What it\'s for: Leads alpha.' });
 
     const result = await callTool('dispatcher', 'list_agents', {});
     expect(result.isError).toBeFalsy();
@@ -273,6 +280,7 @@ describe('list_agents', () => {
             { id: 'h2', name: 'Helper 2', project: 'Beta', status: 'sleeping' },
           ],
         },
+        card: { description: 'What it\'s for: Leads alpha.', page: 'agents/lead-a-alpha.md' },
       },
       {
         id: 'busy-b',
@@ -284,6 +292,8 @@ describe('list_agents', () => {
         connected: false,
         branch: 'feature/b',
         helpers: { count: 0, helpers: [] },
+        // Never answered, or not asked yet.
+        card: { description: 'No description yet' },
       },
     ]);
   });
@@ -623,3 +633,14 @@ describe('list_projects for the Dispatcher', () => {
   });
 });
 
+
+describe('list_agents cards (#3041)', () => {
+  it('says when an agent is being asked for its card', async () => {
+    await runDispatcher();
+    addAgent(PROJECT_A, { id: 'lead-a' });
+    policies.set('lead-a', policy({ connectToDispatcher: true }));
+    cardStatuses.set('lead-a', { state: 'asking', asking: true, page: 'agents/lead-a-alpha.md', card: null, text: 'No description yet' });
+    const [row] = parse(await callTool('dispatcher', 'list_agents', {})).agents as Array<Record<string, unknown>>;
+    expect(row.card).toEqual({ description: 'No description yet', page: 'agents/lead-a-alpha.md', asking: true });
+  });
+});

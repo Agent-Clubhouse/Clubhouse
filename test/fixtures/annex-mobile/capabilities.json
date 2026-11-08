@@ -102,6 +102,10 @@
         "version": 1
       },
       "helperRouting": {
+        "autoCandidates": [
+          "claude-code",
+          "codex-cli"
+        ],
         "autoOffReasons": [
           "not_enabled",
           "project_off",
@@ -142,6 +146,11 @@
           "auto"
         ],
         "path": "/api/v1/mobile/helper-routing",
+        "presetProviders": [
+          "claude-code",
+          "codex-cli",
+          "copilot-cli"
+        ],
         "quota": true,
         "quotaSources": [
           "cli_query",
