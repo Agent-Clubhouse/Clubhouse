@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ClaudeCodeProvider, CodexCliProvider, CopilotCliProvider } from '../src/main/orchestrators';
 import { launchApp } from './launch';
-import { addProject, assertRunLayout, openSettings, projectIdFor, revealAgent } from './smoke-helpers';
+import { addProject, assertRunLayout, openNewAgentPage, openSettings, revealAgent } from './smoke-helpers';
 import { isNewLayout } from './layout';
 
 type ProviderId = 'copilot-cli' | 'claude-code' | 'codex-cli';
@@ -127,11 +127,8 @@ async function createDurableAgentFromUi(window: Page, name: string, orchestrator
     await window.locator('button:has-text("Create Agent")').click();
     return;
   }
-  const projectId = await projectIdFor(window, FIXTURE_DIR);
-  await window.locator(`[data-testid="project-${projectId}"]`).hover();
-  await window.getByRole('button', { name: `New agent in ${path.basename(FIXTURE_DIR)}`, exact: true }).click();
+  await openNewAgentPage(window, path.basename(FIXTURE_DIR));
   const page = window.getByTestId('new-agent-page');
-  await expect(page).toBeVisible({ timeout: 10_000 });
 
   // A plain agent: Clubhouse managed is on by default in a fresh profile.
   const managed = page.getByRole('switch', { name: 'Clubhouse managed' });

@@ -4,7 +4,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { installFakeClis, type FakeClis } from './chat-fake-cli';
 import { launchApp } from './launch';
-import { addProject } from './smoke-helpers';
+import { addProject, assertRunLayout, openNewAgentPage } from './smoke-helpers';
+import { isNewLayout } from './layout';
 import type { ChatFixtureCli } from '../src/main/orchestrators/adapters/testing/fake-cli';
 
 /**
@@ -67,32 +68,77 @@ test.afterEach(async () => {
   projectDir = undefined;
 });
 
+/**
+ * Create a plain durable agent on the given CLI in the project folder (not a
+ * git repo, so no worktree), leaving Access at the Default access, Ask first,
+ * so the permission fixtures' approval reaches the dock. Classic has the
+ * "+ Agent" dialog, the new layout the New agent page.
+ */
+async function createAgent(window: Page, dir: string, name: string, orchestrator: string): Promise<void> {
+  if (!(await isNewLayout(window))) {
+    await window.locator('button:has-text("+ Agent")').first().click();
+    await expect(window.locator('h2:has-text("New Agent")')).toBeVisible({ timeout: 5_000 });
+    await window.locator('input[type="text"]').first().fill(name);
+    await window.locator('label:has-text("Runs on") select').selectOption(orchestrator);
+    await window.locator('button:has-text("Create Agent")').click();
+    return;
+  }
+  await openNewAgentPage(window, path.basename(dir));
+  const page = window.getByTestId('new-agent-page');
+
+  // A plain agent: Clubhouse managed is on by default in a fresh profile.
+  const managed = page.getByRole('switch', { name: 'Clubhouse managed' });
+  if (await managed.getAttribute('aria-checked') === 'true') await managed.click();
+  await expect(managed).toHaveAttribute('aria-checked', 'false');
+  await page.getByTestId('new-agent-name').fill(name);
+  await page.locator('#new-agent-orchestrator').selectOption(orchestrator);
+  await expect(page.getByTestId('new-agent-access')).toHaveValue('ask');
+  // Enabled once the page has checked whether the folder is a git repo.
+  await expect(page.getByTestId('new-agent-submit')).toBeEnabled({ timeout: 10_000 });
+  await page.getByTestId('new-agent-submit').click();
+  // A failed create keeps the page open with its reason; show that rather than a timeout.
+  await expect(async () => {
+    const error = page.getByTestId('new-agent-error');
+    if (await error.isVisible()) throw new Error(`New agent page: ${await error.textContent()}`);
+    await expect(page).toBeHidden({ timeout: 1_000 });
+  }).toPass({ timeout: 30_000 });
+}
+
 /** Launch with nothing saved for Chat, so it's on by default, and the fake CLI installed, add a project, create a durable agent and open its chat. */
 async function openChat(p: ProviderCase, fixture: string) {
   fakes = await installFakeClis({ [p.cli]: fixture });
   projectDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), `chat-e2e-${p.cli}-`));
-  const app = await launchApp({ experimental: { newChrome: false }, userDataFiles: USER_DATA_FILES, env: fakes.env });
+  const app = await launchApp({ userDataFiles: USER_DATA_FILES, env: fakes.env });
   const { electronApp, window } = app;
+  try {
+    await assertRunLayout(window);
 
-  await addProject(electronApp, window, projectDir);
-  const name = `chat-${p.cli}-${Date.now()}`;
-  await window.locator('button:has-text("+ Agent")').first().click();
-  await expect(window.locator('h2:has-text("New Agent")')).toBeVisible({ timeout: 5_000 });
-  await window.locator('input[type="text"]').first().fill(name);
-  await window.locator('label:has-text("Runs on") select').selectOption(p.orchestrator);
-  // Access stays at the Default access, Ask first, so the permission
-  // fixtures' approval reaches the dock.
-  await window.locator('button:has-text("Create Agent")').click();
+    await addProject(electronApp, window, projectDir);
+    const name = `chat-${p.cli}-${Date.now()}`;
+    await createAgent(window, projectDir, name, p.orchestrator);
 
-  const item = window.locator(`[data-agent-name="${name}"][data-testid^="agent-item-durable_"]`);
-  await expect(item).toBeVisible({ timeout: 20_000 });
-  await item.click();
+    const item = window.locator(`[data-agent-name="${name}"][data-testid^="agent-item-durable_"]`);
+    await expect(item).toBeVisible({ timeout: 20_000 });
+    const agentId = (await item.getAttribute('data-testid'))!.slice('agent-item-'.length);
+    await item.click();
+    if (await isNewLayout(window)) {
+      // The row's hover card opens beside it while the pointer rests there, and
+      // could cover what a test clicks next; move off and let it close.
+      await window.getByTestId('chrome-title-bar').hover({ position: { x: 400, y: 19 } });
+      await expect(window.getByTestId('agent-hover-card')).toHaveCount(0, { timeout: 5_000 });
+    }
 
-  const chat = window.locator('[data-testid="chat-view"]');
-  await expect(chat).toBeVisible({ timeout: 20_000 });
-  await expect(chat).toHaveAttribute('data-state', 'idle', { timeout: 20_000 });
-  await expectFakeInUse(p.cli);
-  return { electronApp, window, chat };
+    // This agent's chat in the main pane, whatever other chat views exist.
+    const chat = window.locator(`[data-testid="chat-view"][data-agent-pane="${agentId}"][data-view-context="main"]`);
+    await expect(chat).toBeVisible({ timeout: 20_000 });
+    await expect(chat).toHaveAttribute('data-state', 'idle', { timeout: 20_000 });
+    await expectFakeInUse(p.cli);
+    return { electronApp, window, chat };
+  } catch (err) {
+    // The tests close the app only once this returns.
+    await electronApp.close().catch((): undefined => undefined);
+    throw err;
+  }
 }
 
 /**
@@ -130,10 +176,10 @@ for (const p of PROVIDERS) {
       const { electronApp, window, chat } = await openChat(p, 'multi-turn');
       try {
         await send(window, 'Reply with the word one.');
-        const footers = window.locator('[data-testid="chat-turn-footer"]');
+        const footers = chat.locator('[data-testid="chat-turn-footer"]');
         await expect(footers).toHaveCount(1, { timeout: ENDED_TIMEOUT });
         await expect(footers.first()).toHaveAttribute('data-stop-reason', 'end_turn');
-        const replies = window.locator('[data-testid="chat-agent-message"]');
+        const replies = chat.locator('[data-testid="chat-agent-message"]');
         await expect(replies.first()).toHaveText(/\S/);
         await expect(replies.first().getByLabel('Streaming')).toHaveCount(0);
         await expect(chat).toHaveAttribute('data-state', 'idle');
@@ -141,7 +187,7 @@ for (const p of PROVIDERS) {
         await send(window, 'Reply with the word two.');
         await expect(footers).toHaveCount(2, { timeout: ENDED_TIMEOUT });
         await expect(footers.nth(1)).toHaveAttribute('data-stop-reason', 'end_turn');
-        await expect(window.locator('[data-testid="chat-user-message"]')).toHaveCount(2);
+        await expect(chat.locator('[data-testid="chat-user-message"]')).toHaveCount(2);
         expect(await replies.count()).toBeGreaterThanOrEqual(2);
 
         await expectFixtureComplete(p.cli);
@@ -151,10 +197,10 @@ for (const p of PROVIDERS) {
     });
 
     test('long tokens and wide tables stay inside a narrow pane (#2292)', async () => {
-      const { electronApp, window } = await openChat(p, 'multi-turn');
+      const { electronApp, window, chat } = await openChat(p, 'multi-turn');
       try {
         await send(window, 'Reply with the word one.');
-        await expect(window.locator('[data-testid="chat-turn-footer"]')).toHaveCount(1, { timeout: ENDED_TIMEOUT });
+        await expect(chat.locator('[data-testid="chat-turn-footer"]')).toHaveCount(1, { timeout: ENDED_TIMEOUT });
         await electronApp.evaluate(({ BrowserWindow }) => {
           const win = BrowserWindow.getAllWindows()[0];
           win?.setMinimumSize(320, 320);
@@ -162,7 +208,7 @@ for (const p of PROVIDERS) {
         });
 
         // The user's bubble ends at the same right edge as the content column (#2365).
-        const bubbleGap = () => window.locator('[data-testid="chat-stream"]').evaluate((stream) => {
+        const bubbleGap = () => chat.locator('[data-testid="chat-stream"]').evaluate((stream) => {
           const column = stream.firstElementChild!.getBoundingClientRect();
           const bubble = stream.querySelector('[data-testid="chat-user-message"] > :last-child')!.getBoundingClientRect();
           return Math.round(column.right - bubble.right);
@@ -180,7 +226,7 @@ for (const p of PROVIDERS) {
           bubble?.append(` ${t}`);
         }, token);
 
-        const layout = await window.locator('[data-testid="chat-stream"]').evaluate((stream) => {
+        const layout = await chat.locator('[data-testid="chat-stream"]').evaluate((stream) => {
           const box = stream.getBoundingClientRect();
           const messages = [...stream.querySelectorAll('[data-testid="chat-agent-message"], [data-testid="chat-user-message"] > :last-child')];
           return {
@@ -192,11 +238,11 @@ for (const p of PROVIDERS) {
         expect(layout).toEqual({ overflow: 0, clippedLeft: 0, clippedRight: 0 });
         expect(Math.abs(await bubbleGap())).toBeLessThanOrEqual(1);
         // The wide table scrolls inside its own box instead.
-        const table = await window.locator('[data-testid="chat-agent-message"] table').evaluate((t) => t.scrollWidth > t.clientWidth);
+        const table = await chat.locator('[data-testid="chat-agent-message"] table').evaluate((t) => t.scrollWidth > t.clientWidth);
         expect(table).toBe(true);
 
         // Even with something wide enough to scroll, nothing leaves the stream scrolled sideways.
-        const scrollLeft = await window.locator('[data-testid="chat-stream"]').evaluate(async (stream) => {
+        const scrollLeft = await chat.locator('[data-testid="chat-stream"]').evaluate(async (stream) => {
           stream.firstElementChild?.insertAdjacentHTML('beforeend', '<div style="width:3000px;flex-shrink:0;height:1px"></div>');
           stream.scrollLeft = 200;
           stream.dispatchEvent(new Event('scroll'));
@@ -213,13 +259,13 @@ for (const p of PROVIDERS) {
       const { electronApp, window, chat } = await openChat(p, 'permission-approve-edit');
       try {
         await send(window, 'Make the edit.');
-        const permission = window.locator('[data-testid="chat-permission"]');
+        const permission = chat.locator('[data-testid="chat-permission"]');
         await expect(permission).toBeVisible({ timeout: ENDED_TIMEOUT });
         await expect(chat).toHaveAttribute('data-state', 'waiting_permission');
         await permission.locator('[data-option-kind="allow_once"]').click();
 
         await expect(permission).toHaveCount(0, { timeout: ENDED_TIMEOUT });
-        const footer = window.locator('[data-testid="chat-turn-footer"]');
+        const footer = chat.locator('[data-testid="chat-turn-footer"]');
         await expect(footer).toHaveCount(1, { timeout: ENDED_TIMEOUT });
         await expect(footer).toHaveAttribute('data-stop-reason', 'end_turn');
 
@@ -236,11 +282,11 @@ for (const p of PROVIDERS) {
       try {
         await send(window, 'Run the long command.');
         await expect(chat).toHaveAttribute('data-state', 'running', { timeout: ENDED_TIMEOUT });
-        await expect(window.locator('[data-testid="chat-tool-row"], [data-testid="chat-command-card"], [data-testid="chat-tool-card"]').first())
+        await expect(chat.locator('[data-testid="chat-tool-row"], [data-testid="chat-command-card"], [data-testid="chat-tool-card"]').first())
           .toBeVisible({ timeout: ENDED_TIMEOUT });
-        await window.locator('[data-testid="chat-stop"]').click();
+        await chat.locator('[data-testid="chat-stop"]').click();
 
-        const footer = window.locator('[data-testid="chat-turn-footer"]');
+        const footer = chat.locator('[data-testid="chat-turn-footer"]');
         await expect(footer).toHaveCount(1, { timeout: ENDED_TIMEOUT });
         await expect(footer).toHaveAttribute('data-stop-reason', 'cancelled');
         await expect(chat).toHaveAttribute('data-state', 'idle', { timeout: ENDED_TIMEOUT });
