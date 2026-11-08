@@ -75,7 +75,7 @@ describe('sync-builtin-text', () => {
     expect(manifest.templates).toEqual([
       expect.objectContaining({
         id: 'builtin-template-orchestrator', blocks: ['builtin-block-identity', 'builtin-block-orchestrator'],
-        settings: { model: 'opus', freeAgentMode: true, orchestration: { orchestrate: true, maxHelpers: 5, autoHelpers: true, connectToDispatcher: true } },
+        settings: { model: 'opus', access: 'full_access', orchestration: { orchestrate: true, maxHelpers: 5, autoHelpers: true, connectToDispatcher: true } },
       }),
       expect.objectContaining({ id: 'builtin-template-group', blocks: ['builtin-block-identity', 'builtin-block-group-projects'], settings: {} }),
       expect.objectContaining({ id: 'builtin-template-project-manager', retired: true }),
@@ -131,6 +131,22 @@ describe('sync-builtin-text', () => {
       'template builtin-template-project-manager is built in but missing from the export; built-in ids never disappear',
     ]));
     expect(readFileSync(path.join(textDir, 'manifest.json'), 'utf8')).toBe(before);
+  });
+
+  it('writes a template\'s Access as a level, from an export\'s level or its old Free Agent Mode switch (#3003)', async () => {
+    const { syncBuiltinText } = await import('./sync-builtin-text.mjs');
+    writeDoc('templates', template('builtin-template-group', ['builtin-block-identity'], { settings: { access: 'auto_edit', freeAgentMode: true } }));
+    writeDoc('templates', template('builtin-template-off', ['builtin-block-identity'], { settings: { freeAgentMode: false } }));
+    expect(syncBuiltinText(exportDir, { textDir, write: true })).toMatchObject({ problems: [], written: true });
+    const manifest = JSON.parse(readFileSync(path.join(textDir, 'manifest.json'), 'utf8'));
+    const settingsOf = (id: string) => manifest.templates.find((t: { id: string }) => t.id === id).settings;
+    // A level wins; no legacy flag is written.
+    expect(settingsOf('builtin-template-group')).toEqual({ access: 'auto_edit' });
+    expect(settingsOf('builtin-template-off')).toEqual({ access: 'ask' });
+    expect(settingsOf('builtin-template-orchestrator')).toMatchObject({ access: 'full_access' });
+    expect(settingsOf('builtin-template-orchestrator')).not.toHaveProperty('freeAgentMode');
+    writeDoc('templates', template('builtin-template-off', ['builtin-block-identity'], { settings: { access: 'everything' } }));
+    expect(syncBuiltinText(exportDir, { textDir }).problems).toContain('template builtin-template-off: setting "access" has a bad value "everything"');
   });
 
   it('writes each skill\'s SKILL.md as it is, and takes template skills from the export (#2902)', async () => {
