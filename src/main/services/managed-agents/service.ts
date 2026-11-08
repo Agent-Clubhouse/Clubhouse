@@ -57,6 +57,10 @@ export interface ManagedAgentsDeps {
   onChanged?(): void;
   /** Called after an agent stops being managed, to remove what Clubhouse added to its folder for itself. Never throws. */
   onUnmanaged?(projectPath: string, agent: DurableAgentConfig): Promise<void>;
+  /** Like listProjects, saying whether the list could be read. Retired built-ins are removed only when it could (D99). */
+  listProjectsChecked?(): Promise<{ projects: Array<{ path: string; name: string }>; readable: boolean }>;
+  /** Like listAgents, saying whether the project's agents could be read (D99). */
+  listAgentsChecked?(projectPath: string): Promise<{ agents: readonly DurableAgentConfig[]; readable: boolean }>;
   /** Set an agent's own helper template, when a retired built-in template it names becomes a copy (D99). */
   setHelperTemplate?(projectPath: string, agentId: string, templateId: string): Promise<void>;
   /**
@@ -416,17 +420,22 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     const retiredTemplates = [...BUILTIN_TEMPLATES.values()].filter((t) => t.retired);
     if (retiredParts.length === 0 && retiredTemplates.length === 0) return;
 
-    let incomplete = false;
+    // "No agents" and "couldn't read them" differ here: a project that couldn't be read keeps the retired parts.
+    const registered = deps.listProjectsChecked ? await deps.listProjectsChecked() : { projects: await deps.listProjects(), readable: true };
+    let incomplete = !registered.readable;
     const agents: Array<{ projectPath: string; agent: DurableAgentConfig }> = [];
-    for (const project of await deps.listProjects()) {
+    for (const project of registered.projects) {
       try {
-        for (const agent of await deps.listAgents(project.path)) agents.push({ projectPath: project.path, agent });
+        const read = deps.listAgentsChecked ? await deps.listAgentsChecked(project.path) : { agents: await deps.listAgents(project.path), readable: true };
+        if (!read.readable) incomplete = true;
+        for (const agent of read.agents) agents.push({ projectPath: project.path, agent });
       } catch (err) {
-        // telemetry-exempt: logged; the retired parts stay installed until every project can be read.
+        // telemetry-exempt: logged below with the other unreadable projects; the retired parts stay installed.
         incomplete = true;
         appLog('core:managed', 'warn', 'Could not read a project\'s agents while adopting retired built-ins', { meta: { error: err instanceof Error ? err.message : String(err) } });
       }
     }
+    if (incomplete) appLog('core:managed', 'warn', 'Some projects or their agents could not be read; retired built-ins stay installed until they can', { meta: { projects: registered.projects.length } });
     const current = new Map(agents.map(({ projectPath, agent }) => [`${projectPath}\0${agent.id}`, { projectPath, agent }]));
     const s0 = await state.read();
     const copies: Record<string, string> = { ...(s0.retiredCopies ?? {}) };
@@ -486,15 +495,28 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         if (!copyId) {
           // What agents get now: the installed text, or the shipped text when it was never installed here.
           const payload = entry ? await catalog.readRevision(entry.id, entry.headRevision) : part.payload;
-          const name = await uniqueName(part.kind, part.name);
-          const copy = await catalog.createAsset({ kind: part.kind, name, payload: payload as AssetPayload });
+          // A copy made before the app stopped, and never recorded: it is this one, so it isn't made twice.
+          const cutShort = (await state.read()).retiredPending?.[part.id];
+          const orphan = cutShort && Object.values(live).find((e) => e.kind === part.kind && e.source.kind !== 'builtin'
+            && e.name === cutShort.name && e.createdAt >= cutShort.at && !s.parts[e.id]);
+          let made = false;
+          if (orphan) {
+            copyId = orphan.id;
+          } else {
+            const name = await uniqueName(part.kind, part.name);
+            // The intent first: the catalog commits the copy before managed state can say what it is.
+            await state.update((st) => { st.retiredPending = { ...(st.retiredPending ?? {}), [part.id]: { name, at: new Date().toISOString() } }; });
+            copyId = (await catalog.createAsset({ kind: part.kind, name, payload: payload as AssetPayload })).id;
+            made = true;
+          }
+          const id = copyId;
           await state.update((st) => {
-            st.parts[copy.id] = { ...(part.description && { description: part.description }), fromRetiredBuiltin: part.id };
-            st.retiredCopies = { ...(st.retiredCopies ?? {}), [part.id]: copy.id };
+            st.parts[id] = { ...(part.description && { description: part.description }), fromRetiredBuiltin: part.id };
+            st.retiredCopies = { ...(st.retiredCopies ?? {}), [part.id]: id };
+            if (st.retiredPending) delete st.retiredPending[part.id];
           });
-          await auditManaged('managed.part.created', copy.id);
-          copyId = copy.id;
-          copies[part.id] = copy.id;
+          if (made) await auditManaged('managed.part.created', id);
+          copies[part.id] = id;
         }
         for (const { projectPath, agent } of users) {
           const fresh = await deps.getAgent(projectPath, agent.id);
@@ -1050,11 +1072,12 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     },
 
     /** Read a part's head content, for delivery. */
-    async headContent(id: string): Promise<{ entry: CatalogEntry; content: ManagedPartContent; droppedEnvValues: string[] } | null> {
+    async headContent(id: string): Promise<{ entry: CatalogEntry; content: ManagedPartContent; droppedEnvValues: string[]; fromRetiredBuiltin?: true } | null> {
       const live = await liveEntries();
       const entry = live[id];
       if (!entry) return null;
-      return { entry, ...(await readHead(entry)) };
+      const retiredCopy = entry.source.kind !== 'builtin' && !!(await state.read()).parts[id]?.fromRetiredBuiltin;
+      return { entry, ...(await readHead(entry)), ...(retiredCopy && { fromRetiredBuiltin: true as const }) };
     },
 
     async liveEntries(): Promise<Record<string, CatalogEntry>> {

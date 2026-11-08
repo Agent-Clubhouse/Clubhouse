@@ -37,7 +37,7 @@ vi.mock('./log-service', () => ({
 import * as fsp from 'fs/promises';
 import { appLog } from './log-service';
 import { pathExists } from './fs-utils';
-import { list, add, remove, update, reorder, readIconData, setIcon, saveCroppedIcon, removeIconFile, writeIconFile, onProjectsChanged, projectRegistryMutationState } from './project-store';
+import { list, add, peekProjectsChecked, remove, update, reorder, readIconData, setIcon, saveCroppedIcon, removeIconFile, writeIconFile, onProjectsChanged, projectRegistryMutationState } from './project-store';
 import { getSettings as getBadgeSettings, saveSettings as saveBadgeSettings } from './badge-settings';
 import { getSettings as getSoundSettings, saveSettings as saveSoundSettings } from './sound-service';
 
@@ -2048,4 +2048,46 @@ it('does not rule out the toast when a later valid registry read overlaps the fa
     expect(localStorage.getItem(CHAT_TIP_RULED_OUT_KEY)).toBeNull();
     expect(localStorage.getItem(CHAT_MESSAGE_SHOWN_KEY)).toBeNull();
   } finally { release(); releaseStatus(); vi.unstubAllGlobals(); }
+});
+
+describe('peekProjectsChecked (D99)', () => {
+  const BAK_PATH = path.join(BASE_DIR, 'projects.json.bak');
+  const errorWith = (code: string) => Object.assign(new Error(code), { code });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function files(byPath: Record<string, string | Error>) {
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+      const v = byPath[String(p)];
+      if (v === undefined) throw errorWith('ENOENT');
+      if (v instanceof Error) throw v;
+      return v;
+    });
+  }
+
+  it('reads the projects', async () => {
+    files({ [STORE_PATH]: JSON.stringify([{ id: 'p1', name: 'one', path: '/one' }]) });
+    const r = await peekProjectsChecked();
+    expect(r.readable).toBe(true);
+    expect(r.projects.map((p) => p.path)).toEqual(['/one']);
+  });
+
+  it('has no projects, readably, when neither file is there', async () => {
+    files({});
+    expect(await peekProjectsChecked()).toEqual({ projects: [], readable: true });
+  });
+
+  it('falls back to the backup', async () => {
+    files({ [STORE_PATH]: '{ broken', [BAK_PATH]: JSON.stringify([{ id: 'p1', name: 'one', path: '/one' }]) });
+    expect((await peekProjectsChecked()).readable).toBe(true);
+  });
+
+  it('says it couldn\'t read them when a file is there but doesn\'t parse or can\'t be read', async () => {
+    files({ [STORE_PATH]: '{ broken' });
+    expect(await peekProjectsChecked()).toEqual({ projects: [], readable: false });
+    files({ [STORE_PATH]: errorWith('EACCES') });
+    expect(await peekProjectsChecked()).toEqual({ projects: [], readable: false });
+  });
 });

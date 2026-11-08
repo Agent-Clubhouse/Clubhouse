@@ -42,7 +42,8 @@ export const EXCLUDES_MANIFEST = '.clubhouse-managed-excludes.json';
 
 interface Resolved {
   blocks: Array<{ id: string; name: string; builtin: boolean; revision: number; content: string }>;
-  skills: Array<{ id: string; name: string; revision: number; builtin: boolean; content: ManagedSkillContent }>;
+  /** `retiredCopy`: the person's copy of a retired built-in (D99), which a project's own folder still wins over (D74). */
+  skills: Array<{ id: string; name: string; revision: number; builtin: boolean; retiredCopy?: true; content: ManagedSkillContent }>;
   /** `droppedEnvValues`: env names the part stored literal values for, which now come from the environment (D46). */
   mcps: Array<{ id: string; name: string; revision: number; builtin: boolean; content: ManagedMcpContent; droppedEnvValues: string[] }>;
   missing: string[];
@@ -61,7 +62,7 @@ async function resolveSetup(service: ManagedAgentsService, saved: ManagedAgentSe
   for (const id of setup.skills) {
     const head = await service.headContent(id);
     if (!head || head.content.kind !== 'skill') { out.missing.push(id); continue; }
-    out.skills.push({ id, name: head.entry.name, revision: head.entry.headRevision, builtin: head.entry.source.kind === 'builtin', content: head.content });
+    out.skills.push({ id, name: head.entry.name, revision: head.entry.headRevision, builtin: head.entry.source.kind === 'builtin', ...(head.fromRetiredBuiltin && { retiredCopy: true as const }), content: head.content });
   }
   for (const id of setup.mcps) {
     const head = await service.headContent(id);
@@ -347,10 +348,12 @@ async function trackedSkillFolders(worktree: string, provider: OrchestratorProvi
  * is the project's `build` skill. When git can't say, a folder on disk that
  * Clubhouse didn't write counts as the project's too, so nothing tracked is
  * ever overwritten. Custom skills aren't checked: they replace the folder as
- * before (D48). Returns the setup's folder names that are the project's.
+ * before (D48), except the copy of a retired built-in (D99), which takes the
+ * built-in's place here too, so it delivers exactly what the built-in did.
+ * Returns the setup's folder names that are the project's.
  */
 async function projectOwnSkills(worktree: string, provider: OrchestratorProvider, skills: Resolved['skills'], previous: string[], tracked?: TrackedSkillFolders): Promise<Set<string>> {
-  const builtins = skills.filter((s) => s.builtin).map((s) => s.content.skillName);
+  const builtins = skills.filter((s) => s.builtin || s.retiredCopy).map((s) => s.content.skillName);
   if (builtins.length === 0) return new Set();
   const rel = skillsFolderOf(provider.conventions);
   const known = tracked ?? await trackedSkillFolders(worktree, provider);

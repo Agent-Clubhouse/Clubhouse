@@ -29,9 +29,15 @@ export interface ManagedState {
   migrations?: Record<string, string>;
   /** Each retired built-in part or template and the custom copy that took its place (D99), so it is copied once. */
   retiredCopies?: Record<string, string>;
+  /** A retired built-in's copy about to be made, with its name and when, so one made just before the app stopped is found again (D99). */
+  retiredPending?: Record<string, { name: string; at: string }>;
 }
 
 const EMPTY: ManagedState = { version: 1, parts: {}, templates: {} };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
 
 export function managedStateDir(): string {
   return path.join(getBaseDirPath(), 'managed-agents');
@@ -64,6 +70,12 @@ export function createManagedStateStore(dir: string = managedStateDir()): Manage
       ...(parsed.helperTemplateChoice === true ? { helperTemplateChoice: true } : {}),
       ...(parsed.migrations && typeof parsed.migrations === 'object' && !Array.isArray(parsed.migrations)
         ? { migrations: Object.fromEntries(Object.entries(parsed.migrations).filter((e): e is [string, string] => typeof e[1] === 'string')) }
+        : {}),
+      ...(isRecord(parsed.retiredCopies)
+        ? { retiredCopies: Object.fromEntries(Object.entries(parsed.retiredCopies).filter((e): e is [string, string] => typeof e[1] === 'string')) }
+        : {}),
+      ...(isRecord(parsed.retiredPending)
+        ? { retiredPending: Object.fromEntries(Object.entries(parsed.retiredPending).filter((e): e is [string, { name: string; at: string }] => isRecord(e[1]) && typeof e[1].name === 'string' && typeof e[1].at === 'string')) }
         : {}),
     };
   }

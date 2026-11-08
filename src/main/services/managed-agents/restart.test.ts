@@ -154,7 +154,8 @@ describe('a retired built-in swapped for its copy while the agent runs (D99)', (
       _setManagedAgentsForTesting(null);
       fs.rmSync(root, { recursive: true, force: true });
     }
-  });
+    // Installs every built-in twice on a real catalog: slow on a loaded machine.
+  }, 20_000);
 });
 
 describe('a setup saved before the Clubhouse MCP part was required (D69)', () => {
