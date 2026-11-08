@@ -9,7 +9,7 @@ vi.mock('../dispatcher/dispatcher-settings', async (original) => ({
 import { listToolGrants, _resetForTesting, type RegisteredToolGrant } from './tool-registry';
 import { mcpAdapter } from './mcp-adapter';
 import { registerClubhouseMcpTools } from './tools/register-all';
-import { checkToolGrant, isListable, registerActionOwnerLookup } from './grant-check';
+import { capToHolder, checkToolGrant, isListable, registerActionOwnerLookup } from './grant-check';
 import { updateAgentGrantChanges } from '../agent-grants-store';
 import { setMcpCaller, _resetMcpCallGateForTesting } from './mcp-call-gate';
 import { setOrchestrationEnabled, isOrchestrationEnabled, isCrossProjectEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
@@ -337,5 +337,41 @@ describe('Ask first (#2970)', () => {
   it('every agent can ask for a permission for itself', () => {
     const request = registerAll().find((t) => t.name === 'request_grant')!;
     for (const caller of CALLERS) expect(checkToolGrant(caller, request.grant, {}).ok).toBe(true);
+  });
+});
+
+describe('a helper template\'s permissions are capped by its orchestrator (#2971)', () => {
+  beforeEach(setupCallers);
+
+  it('caps each entry to what the orchestrator holds, never dropping one (which would leave a wider default)', async () => {
+    const app = { kind: 'app' as const };
+    const connected = { kind: 'connected' as const };
+    const grants = [
+      { action: 'agent.message' as const, target: connected, mode: 'off' as const },
+      { action: 'settings.app.write' as const, target: app, mode: 'allow' as const },
+      { action: 'models.read' as const, target: app, mode: 'allow' as const },
+      { action: 'agent.read' as const, target: connected, mode: 'ask' as const },
+    ];
+    expect(capToHolder('orchestrator', grants).map((g) => `${g.action}:${g.mode}`))
+      .toEqual(['agent.message:off', 'settings.app.write:off', 'models.read:allow', 'agent.read:ask']);
+    // An orchestrator that only asks passes Ask first; one with it Off passes Off.
+    await updateAgentGrantChanges('orchestrator', () => ({ changes: [
+      { action: 'models.read', target: app, mode: 'ask' },
+      { action: 'agent.read', target: connected, mode: 'off' },
+    ] }));
+    try {
+      expect(capToHolder('orchestrator', grants).map((g) => `${g.action}:${g.mode}`))
+        .toEqual(['agent.message:off', 'settings.app.write:off', 'models.read:ask', 'agent.read:off']);
+    } finally {
+      await updateAgentGrantChanges('orchestrator', () => undefined);
+    }
+  });
+
+  it('in another project, its own project needs the orchestrator to hold any project', () => {
+    const own = [{ action: 'project.read' as const, target: { kind: 'project' as const, project: 'own' as const }, mode: 'allow' as const }];
+    expect(capToHolder('plain', own)[0].mode).toBe('allow');
+    expect(capToHolder('plain', own, { elsewhere: true })[0].mode).toBe('off');
+    // The cross-project orchestrator holds project.read on any project.
+    expect(capToHolder('orchestrator', own, { elsewhere: true })[0].mode).toBe('allow');
   });
 });

@@ -22,6 +22,8 @@ import { resolveOrchestrator } from '../../agent-system';
 import { optionalBoolean, optionalString, requireString } from './validation';
 import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_ALWAYS_ON, isListed, type ManagedPartContent, type ManagedPartKind, type ManagedTemplateSettings } from '../../../../shared/managed-agents-types';
 import type { Project } from '../../../../shared/types';
+import { agentRegistry } from '../../agent-registry';
+import { capToHolder } from '../grant-check';
 
 const ACTOR = 'Dispatcher';
 const KINDS: ManagedPartKind[] = ['block', 'skill', 'mcp'];
@@ -71,6 +73,19 @@ function objectArg<T>(args: Record<string, unknown>, key: string): T | undefined
   if (v === undefined) return undefined;
   if (!v || typeof v !== 'object' || Array.isArray(v)) throw new ArgError(`${key} must be an object`);
   return v as T;
+}
+
+/**
+ * Template settings from a call. Clubhouse permissions aren't taken (#2971):
+ * only the user sets what agents made from a template may do, so an agent
+ * can't grant through a template more than it holds. A template's saved
+ * permissions are kept through an edit that replaces its other settings.
+ */
+function settingsArg(args: Record<string, unknown>, keep?: ManagedTemplateSettings): ManagedTemplateSettings | undefined {
+  const settings = objectArg<ManagedTemplateSettings>(args, 'settings');
+  if (settings && 'grants' in settings) throw new ArgError('settings.grants: only the user sets a template\'s Clubhouse permissions, in Settings. Leave it out.');
+  if (!settings) return undefined;
+  return keep?.grants?.length ? { ...settings, grants: keep.grants } : settings;
 }
 function contentArg(args: Record<string, unknown>, kind?: ManagedPartKind): ManagedPartContent | undefined {
   const c = objectArg<Record<string, unknown>>(args, 'content');
@@ -314,8 +329,8 @@ export function registerManagedTools(): void {
     { id: S, name: S, description: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, [],
     async (callerId, args) => {
       const id = optionalString(args, 'id');
-      const settings = objectArg<ManagedTemplateSettings>(args, 'settings');
       if (!id) {
+        const settings = settingsArg(args);
         const input = {
           name: requireString(args, 'name'), description: optionalString(args, 'description') ?? '',
           setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') },
@@ -325,6 +340,7 @@ export function registerManagedTools(): void {
       }
       // An edit merges what the call gave into the saved template.
       const current = await svc().getTemplate(id);
+      const settings = settingsArg(args, current.settings);
       const input = {
         id,
         name: optionalString(args, 'name') ?? current.name,
@@ -347,7 +363,7 @@ export function registerManagedTools(): void {
       const current = await svc().getTemplate(id);
       const next = {
         setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') },
-        settings: objectArg<ManagedTemplateSettings>(args, 'settings') ?? current.settings,
+        settings: settingsArg(args, current.settings) ?? current.settings,
       };
       const preview = await svc().previewTemplatePush(id, next);
       const chosen = [...new Set(idList(args, 'agents'))].sort();
@@ -415,8 +431,16 @@ export function registerManagedTools(): void {
         ...(plain && { managed: false as const }),
         templateId: optionalString(args, 'templateId'),
         ...(hasSetup && { setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') } }),
-        settings: objectArg<ManagedTemplateSettings>(args, 'settings'),
+        settings: settingsArg(args),
       };
+      // A template's Clubhouse permissions pass only as far as the caller holds them (#2971, fixed rule 2).
+      if (input.templateId) {
+        const template = await svc().getTemplate(input.templateId);
+        if (template.settings.grants?.length) {
+          const elsewhere = agentRegistry.get(callerId)?.projectPath !== project.path;
+          input.settings = { ...(input.settings ?? {}), grants: capToHolder(callerId, template.settings.grants, { elsewhere }) };
+        }
+      }
       // Created asleep: nothing here spawns, so the whole creation can run under the grant.
       const config = await asDispatcher(callerId, () => createManagedAgent(project.path, input));
       return json({ id: config.id, name: config.name, project: project.name, managed: !!config.managed, status: 'sleeping' });
