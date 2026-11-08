@@ -49,6 +49,7 @@ vi.stubGlobal('clubhouse', {
     remove: asyncNoop,
     pickDirectory: async () => null,
     checkGit: async () => false,
+    getRepoKeys: async () => ({}),
     gitInit: asyncNoop,
     update: asyncNoop,
     pickIcon: asyncNoop,

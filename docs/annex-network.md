@@ -64,6 +64,10 @@ Synthetic tests can't cover certificates under Electron or local network discove
 - Merge a project with the same project on the other computer, then Split it: only the sidebar changes.
 - Turn the other computer off: its agents stay, dimmed, and their chats open.
 
+**Project linking (#3066)**
+- The same repository open on two computers: the sidebar suggests linking it once; Link groups it, and Keep separate never asks again.
+- Link two folders without a git remote by hand in project settings, and unlink them.
+
 **Chat across desktops (#2390)**
 - Open a chat agent that runs on another desktop: its conversation shows, says which machine it's on, and streams live.
 - Send, steer, stop, approve a permission and answer a question from the controller; each lands on the other desktop.
@@ -145,4 +149,6 @@ Decisions made while building, for the maintainer to revisit. Newest last. D180 
 | D244 | Show is a dropdown (All computers, This computer, each computer with its state and how many agents wait on it) that only narrows the list. It's remembered on this machine, and falls back to All when its computer is unpaired. | Works with any number of computers. | |
 | D245 | Merge with… links two projects (or their groups) into one sidebar group, under this machine's project when it has one, with every machine's agents in it; Split per machine undoes it and remembers the pair as kept separate. Merge and the linking of #3066 are the same link, kept per machine in this machine's storage. Projects that are removed, or on a computer that's unpaired, leave their groups. Each agent still runs on its own machine. | Split and merge "only change the sidebar". | |
 | D246 | Another machine's projects show what can be done from here: open, select, collapse, pin, and their agents' chats. New agent, settings, close, reordering, marking inactive and the terminal are left out for them. An offline machine's agents stay listed, dimmed, saying "offline" instead of a time. | Offline is normal, and their chats stay readable. | |
+| D247 | A project's git remote is compared as a key: host and path, lowercased, with no scheme, user, credentials, port or `.git` (`github.com/org/repo`). Main reads `origin` for each project and only the key leaves it: snapshots carry `repoKey` on each project, and IPC `project:repo-keys` gives this machine's. | Two machines can match a repository without sending a URL that may hold a token. | |
+| D248 | A project here and one on another computer with the same key are suggested for linking, once per pair: as a quiet line in the sidebar (one at a time) and in the project's settings, with Link and Keep separate. Linked or kept separate, a pair isn't suggested again; splitting or unlinking counts as keeping it separate. Any two projects can be linked by hand in project settings, folders without a remote included. The Linked projects section shows once another computer's projects are known, or a link exists. | #3066: one suggestion, never repeated, and linking changes only the display. | |
 

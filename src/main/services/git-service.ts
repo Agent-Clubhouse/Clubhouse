@@ -141,6 +141,12 @@ const noRemote = (): Attempt<GitOpResult> => ({
  * Uses `git rev-parse --is-inside-work-tree` which naturally walks up parent
  * directories, so a project that is a subfolder of a repo is correctly detected.
  */
+/** The project's `origin` remote URL, or null when it has none (#3066). */
+export async function getRemoteUrl(dirPath: string): Promise<string | null> {
+  const url = (await run(['config', '--get', 'remote.origin.url'], dirPath)).trim();
+  return url || null;
+}
+
 export async function isInsideGitRepo(dirPath: string): Promise<boolean> {
   try {
     const out = await gitExec(['rev-parse', '--is-inside-work-tree'], dirPath);

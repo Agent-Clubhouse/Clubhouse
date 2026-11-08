@@ -34,6 +34,7 @@ import { useAgentDetailsStore } from '../features/agents/details/detailsStore';
 import { ShowMenu, LOCAL_HOST } from './sidebar/ShowMenu';
 import { buildNetworkProjects } from './sidebar/networkTree';
 import { useNetworkSidebarStore } from './sidebar/networkSidebarStore';
+import { LinkSuggestionLine } from './sidebar/LinkSuggestionLine';
 import { PopupMenu, type MenuItem } from '../components/PopupMenu';
 import { useClickOutside } from './sidebar/useClickOutside';
 import { hostOf, switchHost } from './hosts';
@@ -836,6 +837,7 @@ export function ChromeSidebar() {
       )}
 
       <div className={`flex-1 min-h-0 flex-col ${mode === 'tree' && !filtering ? 'flex' : 'hidden'}`}>
+        <LinkSuggestionLine />
         <ProjectTree
           projectScopeId={projectScopeId}
           projects={ordered.projects}

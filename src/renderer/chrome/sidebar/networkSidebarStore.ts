@@ -22,6 +22,8 @@ interface NetworkSidebarState extends Saved {
   link: (a: string, b: string) => void;
   /** Split a group into its projects, and remember each pair as kept separate. */
   split: (projectId: string) => void;
+  /** Take one project out of its group, remembering it as kept separate from the rest. */
+  unlink: (projectId: string) => void;
   /** Keep a suggested pair separate: it isn't suggested again. */
   keepSeparate: (a: string, b: string) => void;
   /** Drop projects that are gone from every link. */
@@ -70,6 +72,13 @@ export const useNetworkSidebarStore = create<NetworkSidebarState>((set, get) => 
     split: (projectId) => {
       const group = get().links.find((g) => g.includes(projectId)) ?? [];
       update({ links: splitLinks(get().links, projectId), keptSeparate: [...new Set([...get().keptSeparate, ...groupPairs(group)])] });
+    },
+    unlink: (projectId) => {
+      const group = get().links.find((g) => g.includes(projectId));
+      if (!group) return;
+      const rest = group.filter((id) => id !== projectId);
+      const links = [...get().links.filter((g) => g !== group), ...(rest.length > 1 ? [rest] : [])];
+      update({ links, keptSeparate: [...new Set([...get().keptSeparate, ...rest.map((id) => pairKey(projectId, id))])] });
     },
     keepSeparate: (a, b) => update({ keptSeparate: [...new Set([...get().keptSeparate, pairKey(a, b)])] }),
     prune: (exists) => {
