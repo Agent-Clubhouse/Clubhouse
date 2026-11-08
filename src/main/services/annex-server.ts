@@ -2536,7 +2536,8 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     tlsCertificateFingerprint: certFingerprint,
     // It paired with us, so it controls us; as a network member each controls the other.
     role: joins ? 'member' : 'controller',
-    ...(joins && { kind: joinsAs, addedBy: identity.fingerprint, tlsCertificatePem: annexTls.certificatePemFromDer(certDer) }),
+    // A member's pairing gets its id here, once: every member carries it with this join time (#3107).
+    ...(joins && { kind: joinsAs, addedBy: identity.fingerprint, tlsCertificatePem: annexTls.certificatePemFromDer(certDer), pairingId: randomUUID() }),
   };
   // The old certificate's sockets stop counting now (the pin no longer matches), and are cut.
   if (replacesPin) {
@@ -3384,6 +3385,8 @@ interface PhoneNetworkMember {
   certPem?: string;
   /** Connected to this desktop now (this desktop itself is always online). */
   online: boolean;
+  /** The pairing that put it in the network (#3107); a removal names the pairing it ends. */
+  pairingId?: string;
   /** This is the desktop answering. */
   self?: true;
   joinedAt: string;
@@ -3398,7 +3401,7 @@ function isPhoneMember(fingerprint: string | undefined): boolean {
  * The network as `principal` may see it. A phone that isn't a member (paired
  * one-to-one, or Annex Network off) sees only this desktop, with `joined: false`.
  */
-function networkForPhone(principal: string | undefined): { version: 1; joined: boolean; members: PhoneNetworkMember[]; removals: Array<{ fingerprint: string; removedAt: string }> } {
+function networkForPhone(principal: string | undefined): { version: 1; joined: boolean; members: PhoneNetworkMember[]; removals: Array<{ fingerprint: string; removedAt: string; pairingId?: string; joinedAt?: string }> } {
   const joined = annexSettings.networkEnabled() && isPhoneMember(principal);
   // Given who it's for, the view of a device that isn't a member is just this machine.
   const view = membership.currentView(joined ? undefined : principal ?? '');
@@ -3414,6 +3417,7 @@ function networkForPhone(principal: string | undefined): { version: 1; joined: b
       online: self || connected.has(m.fingerprint.toLowerCase()),
       ...(self && { self: true as const }),
       joinedAt: m.joinedAt,
+      ...(m.pairingId && { pairingId: m.pairingId }),
     };
   });
   return { version: 1, joined, members, removals: joined ? view.removals : [] };

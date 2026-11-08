@@ -1158,6 +1158,12 @@ export interface AnnexPeer {
   kind?: 'desktop' | 'phone';
   /** For a network member: the fingerprint of the member that added it (this machine's own when paired here). */
   addedBy?: string;
+  /**
+   * For a network member: the pairing that put it in the network (#3107), with
+   * `pairedAt` as that pairing's join time. Unknown until learned for a desktop
+   * this machine paired with, whose own pairing was made elsewhere.
+   */
+  pairingId?: string;
 }
 
 /** A peer as Settings lists it. */

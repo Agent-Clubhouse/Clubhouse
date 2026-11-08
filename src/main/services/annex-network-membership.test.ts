@@ -46,6 +46,7 @@ vi.mock('./annex-peers', () => ({
 vi.mock('./annex-network-channel', () => ({
   localMember: vi.fn(() => member(SELF, '01', 'This Mac')),
   setMembersProvider: vi.fn(),
+  setSelfPairingProvider: vi.fn(),
   onNetworkMessage: vi.fn((l: (from: string, message: NetworkMessage) => void) => { listener = l; return () => { listener = null; }; }),
   broadcast: vi.fn((message: NetworkMessage, to: (f: string) => boolean = () => true) => {
     const reached = open.filter(to);
@@ -72,7 +73,7 @@ function memberPeer(f: string, c: string, name: string, extra: Partial<AnnexPeer
   };
 }
 
-const view = (members: NetworkMember[], removals: Array<{ fingerprint: string; removedAt: string }> = []): NetworkMessage =>
+const view = (members: NetworkMember[], removals: Array<{ fingerprint: string; removedAt: string; pairingId?: string; joinedAt?: string }> = []): NetworkMessage =>
   ({ v: 1, type: 'members', members, removals });
 
 const hooks = { connect: vi.fn(), endDevice: vi.fn((f: string) => { peers.delete(f.toLowerCase()); }) };
@@ -142,6 +143,75 @@ describe('Annex Network membership (#3061)', () => {
     // A member that was off and still lists it doesn't bring it back.
     listener!(B, view([member(B, '0b', 'Laptop'), member(N, '0e', 'New Mac')]));
     expect(peers.has(N.toLowerCase())).toBe(false);
+  });
+
+  describe('a removal ends the pairing it names, whatever the clocks say (#3107)', () => {
+    const OLD = 'pairing-old-0001';
+    const NEW = 'pairing-new-0002';
+
+    it('names the pairing it ends when made here', () => {
+      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'New Mac', { pairedAt: '2026-11-08T10:00:00.000Z', pairingId: OLD }));
+      membership.noteLocalRemoval(N);
+      expect(membership.currentView().removals[0]).toMatchObject({ fingerprint: N.toLowerCase(), pairingId: OLD, joinedAt: '2026-11-08T10:00:00.000Z' });
+    });
+
+    it('a device paired again keeps its new pairing though the removal\'s clock runs ahead of the pairing member\'s', () => {
+      // Removed at 12:00 by A's clock, ending the old pairing; paired again on B 30s later, but B's clock is 60s slow.
+      listener!(A, view([], [{ fingerprint: N, removedAt: '2026-11-08T12:00:00.000Z', pairingId: OLD, joinedAt: '2026-11-01T09:00:00.000Z' }]));
+      listener!(B, view([member(N, '0e', 'Back again', { joinedAt: '2026-11-08T11:59:30.000Z', pairingId: NEW })]));
+      expect(peers.get(N.toLowerCase())).toMatchObject({ alias: 'Back again', pairingId: NEW });
+      expect(membership.currentView().removals).toEqual([]);
+      listener!(A, { v: 1, type: 'member-removed', removal: { fingerprint: N, removedAt: '2026-11-08T12:00:00.000Z', pairingId: OLD, joinedAt: '2026-11-01T09:00:00.000Z' } });
+      expect(peers.has(N.toLowerCase())).toBe(true);
+      expect(hooks.endDevice).not.toHaveBeenCalledWith(N);
+    });
+
+    it('removing a device moments after it was paired takes, whatever the clocks', () => {
+      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'New Mac', { pairedAt: '2026-11-08T12:00:00.000Z', pairingId: NEW }));
+      // A's clock runs 5 minutes slow: its removal is stamped before the pairing, but names it.
+      listener!(A, { v: 1, type: 'member-removed', removal: { fingerprint: N, removedAt: '2026-11-08T11:55:10.000Z', pairingId: NEW, joinedAt: '2026-11-08T12:00:00.000Z' } });
+      expect(hooks.endDevice).toHaveBeenCalledWith(N);
+      listener!(B, view([member(N, '0e', 'New Mac', { joinedAt: '2026-11-08T12:00:00.000Z', pairingId: NEW })]));
+      expect(peers.has(N.toLowerCase())).toBe(false);
+    });
+
+    it('a record without a pairing id never moves a pairing: a desktop\'s own stamp from pairing with it is not a pairing', () => {
+      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'New Mac', { pairedAt: '2026-11-01T09:00:00.000Z', pairingId: OLD }));
+      listener!(A, view([member(N, '0e', 'New Mac', { joinedAt: '2026-11-08T10:00:00.000Z' })]));
+      expect(peers.get(N.toLowerCase())).toMatchObject({ pairedAt: '2026-11-01T09:00:00.000Z', pairingId: OLD });
+      // So a removal of that pairing, made where the stamp never arrived, still takes everywhere.
+      listener!(B, { v: 1, type: 'member-removed', removal: { fingerprint: N, removedAt: '2026-11-08T12:00:00.000Z', pairingId: OLD, joinedAt: '2026-11-01T09:00:00.000Z' } });
+      expect(hooks.endDevice).toHaveBeenCalledWith(N);
+    });
+
+    it('learns a pairing id it hadn\'t: a desktop this machine just paired with, from its own record', () => {
+      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'New Mac', { pairedAt: '2026-11-08T12:00:00.000Z' }));
+      listener!(N, { v: 1, type: 'hello', member: member(N, '0e', 'New Mac', { joinedAt: '2026-10-01T09:00:00.000Z', pairingId: OLD }) });
+      expect(peers.get(N.toLowerCase())).toMatchObject({ pairedAt: '2026-10-01T09:00:00.000Z', pairingId: OLD });
+    });
+
+    it('learns this machine\'s own pairing from a member\'s record of it, and a removal of an older one doesn\'t remove it', () => {
+      listener!(A, view([member(SELF, '00', 'Me', { joinedAt: '2026-11-08T10:00:00.000Z', pairingId: NEW })]));
+      listener!(A, { v: 1, type: 'member-removed', removal: { fingerprint: SELF, removedAt: '2026-11-08T12:00:00.000Z', pairingId: OLD, joinedAt: '2026-11-01T09:00:00.000Z' } });
+      expect(hooks.endDevice).not.toHaveBeenCalled();
+      listener!(A, { v: 1, type: 'member-removed', removal: { fingerprint: SELF, removedAt: '2026-11-08T12:00:00.000Z', pairingId: NEW, joinedAt: '2026-11-08T10:00:00.000Z' } });
+      expect(hooks.endDevice).toHaveBeenCalled();
+    });
+
+    it('keeps the removal of the later pairing over one of an earlier pairing', () => {
+      listener!(A, view([], [{ fingerprint: N, removedAt: '2026-11-08T12:00:00.000Z', pairingId: NEW, joinedAt: '2026-11-08T11:00:00.000Z' }]));
+      listener!(B, view([], [{ fingerprint: N, removedAt: '2026-11-08T13:00:00.000Z', pairingId: OLD, joinedAt: '2026-11-01T09:00:00.000Z' }]));
+      expect(membership.currentView().removals).toEqual([{ fingerprint: N, removedAt: '2026-11-08T12:00:00.000Z', pairingId: NEW, joinedAt: '2026-11-08T11:00:00.000Z' }]);
+    });
+
+    it('a device joining through a phone gets a pairing of its own', () => {
+      const PHONE = fp('0c');
+      peers.set(PHONE.toLowerCase(), memberPeer(PHONE, '0c', 'Phone', { kind: 'phone' }));
+      membership.vouchFromPhone(PHONE, [member(N, '0e', 'New Mac', { joinedAt: '2026-01-01T00:00:00.000Z', pairingId: OLD })]);
+      const added = peers.get(N.toLowerCase());
+      expect(added?.pairingId).toBeTruthy();
+      expect(added?.pairingId).not.toBe(OLD);
+    });
   });
 
   it('a later join beats an earlier removal', () => {
@@ -242,13 +312,14 @@ describe('Annex Network membership (#3061)', () => {
     });
 
     it('takes a newer join from a view, so an older removal no longer removes it, and drops that removal', () => {
-      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'New Mac', { pairedAt: '2026-11-08T08:00:00.000Z' }));
-      listener!(A, view([member(N, '0e', 'New Mac', { joinedAt: '2026-11-08T12:00:00.000Z' })]));
-      expect(peers.get(N.toLowerCase())?.pairedAt).toBe('2026-11-08T12:00:00.000Z');
+      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'New Mac', { pairedAt: '2026-11-08T08:00:00.000Z', pairingId: 'pairing-old-0001' }));
+      // Paired again: a new pairing id with a later join time.
+      listener!(A, view([member(N, '0e', 'New Mac', { joinedAt: '2026-11-08T12:00:00.000Z', pairingId: 'pairing-new-0002' })]));
+      expect(peers.get(N.toLowerCase())).toMatchObject({ pairedAt: '2026-11-08T12:00:00.000Z', pairingId: 'pairing-new-0002' });
       listener!(B, view([], [{ fingerprint: N, removedAt: '2026-11-08T10:00:00.000Z' }]));
       expect(hooks.endDevice).not.toHaveBeenCalled();
       // A stale removal held here is dropped once a newer join is seen.
-      listener!(B, view([member(N, '0e', 'New Mac', { joinedAt: '2026-11-08T13:00:00.000Z' })], []));
+      listener!(B, view([member(N, '0e', 'New Mac', { joinedAt: '2026-11-08T13:00:00.000Z', pairingId: 'pairing-new-0003' })], []));
       expect(membership.currentView().removals.map((r) => r.fingerprint)).not.toContain(N);
     });
 
@@ -385,9 +456,12 @@ describe('Annex Network membership (#3061)', () => {
     });
 
     it('pins a member\'s new certificate when a newer join says so', () => {
-      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'Phone 2', { kind: 'phone' }));
-      listener!(A, view([member(N, '1e', 'Phone 2', { kind: 'phone', joinedAt: '2030-01-01T00:00:00.000Z' })]));
+      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'Phone 2', { kind: 'phone', pairingId: 'pairing-old-0001' }));
+      listener!(A, view([member(N, '1e', 'Phone 2', { kind: 'phone', joinedAt: '2030-01-01T00:00:00.000Z', pairingId: 'pairing-new-0002' })]));
       expect(peers.get(N.toLowerCase())?.tlsCertificateFingerprint).toBe(cert('1e'));
+      // Without a new pairing, a record never repins (or moves) anything.
+      listener!(B, view([member(N, '2e', 'Phone 2', { kind: 'phone', joinedAt: '2031-01-01T00:00:00.000Z' })]));
+      expect(peers.get(N.toLowerCase())).toMatchObject({ tlsCertificateFingerprint: cert('1e'), pairedAt: '2030-01-01T00:00:00.000Z' });
     });
   });
 });

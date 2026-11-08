@@ -51,11 +51,11 @@ A member phone still shows "Controlled by" on a desktop it connects to, like any
       "fingerprint": "aa:…", "publicKey": "MCowBQYDK2VwAyEA…", "name": "Studio", "icon": "computer", "color": "indigo", "kind": "desktop",
       "hosts": ["192.168.1.9", "studio.tail1234.ts.net"], "port": 7432,
       "certFingerprint": "AB:CD:…", "certPem": "-----BEGIN CERTIFICATE-----…",
-      "online": true, "self": true, "joinedAt": "2026-11-08T10:00:00.000Z"
+      "online": true, "self": true, "joinedAt": "2026-11-08T10:00:00.000Z", "pairingId": "6f1c2a3e-…"
     },
     { "fingerprint": "bb:…", "name": "Mason’s iPhone", "kind": "phone", "hosts": [], "certFingerprint": "…", "online": true, "joinedAt": "…" }
   ],
-  "removals": [{ "fingerprint": "cc:…", "removedAt": "2026-11-08T12:00:00.000Z" }]
+  "removals": [{ "fingerprint": "cc:…", "removedAt": "2026-11-08T12:00:00.000Z", "pairingId": "9b2e…", "joinedAt": "2026-11-05T09:00:00.000Z" }]
 }
 ```
 
@@ -64,7 +64,8 @@ A member phone still shows "Controlled by" on a desktop it connects to, like any
 - `certFingerprint` is the SHA-256 of the member's TLS certificate. Pin it exactly as at pairing: never connect to an address that shows another certificate.
 - `certPem` is there so the phone can vouch for that desktop to another one (below). Desktops only.
 - `joined: false`: this phone isn't a member here (paired one-to-one, or Annex Network off). `members` then lists only this desktop.
-- `removals`: devices removed from the network. Forget any listed here.
+- `pairingId` names the pairing that put a member in the network. The member that paired it made it once, and every member carries it unchanged with that pairing's `joinedAt`; pairing again makes a new one. A member a desktop hasn't learned the id for yet has none.
+- `removals`: devices removed from the network. Each names the pairing it ended (`pairingId`, with that pairing's `joinedAt`). Forget a device when its `pairingId` is that one, or it has none. If it has a different `pairingId`, forget it only if its `joinedAt` is no later than the removal's `joinedAt`: a later pairing means it was paired again since, and it stays. Never compare with `removedAt` or the phone's clock. A removal saved before this existed has neither field; forget the device if its `joinedAt` is no later than `removedAt`.
 
 ## Connecting to a new machine by itself
 
@@ -77,7 +78,7 @@ Over the `/ws` connection, a member phone receives:
 The payload is the same as `GET /api/v1/mobile/network`. On each one:
 
 1. Connect to every desktop in `members` that the phone isn't connected to yet, at `hosts`/`port`, pinned to `certFingerprint`, with the phone's own pinned client certificate. No pairing: the desktop already accepts this phone.
-2. Disconnect from, and forget, every device in `removals`.
+2. Disconnect from, and forget, every device in `removals` whose pairing it ends (above).
 3. If this phone is in `removals`, it was removed: forget the whole network.
 
 When this phone is removed, each desktop it's connected to sends it a last `network:changed` with its own fingerprint in `removals`, then closes the connection (WebSocket close code 4401, reason `peer_not_paired`). A desktop that refuses with 401 `peer_not_paired` later no longer has this phone (it was removed while the phone was off, for example): if every desktop does, the phone was removed from the network.

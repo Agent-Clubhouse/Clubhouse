@@ -21,7 +21,7 @@
       "pairingMode": "persistent",
       "publicKey": "fixture-public-key",
       "tlsCertificateFingerprint": "AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB",
-      "token": "00000000-0000-4000-8000-000000000021"
+      "token": "00000000-0000-4000-8000-000000000025"
     },
     "status": 200
   }
