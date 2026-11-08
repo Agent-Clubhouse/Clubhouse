@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { CLUBHOUSE_MCP_PART_ID, isListed } from '../../../shared/managed-agents-types';
 
@@ -47,22 +47,38 @@ function provider(conv: Partial<OrchestratorProvider['conventions']> = {}, id = 
   } as unknown as OrchestratorProvider;
 }
 
-beforeEach(async () => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-delivery-'));
-  project = path.join(root, 'project');
-  const wt = path.join(project, '.clubhouse', 'agents', 'cool-gazelle');
-  fs.mkdirSync(wt, { recursive: true });
-  _resetSettingsAuditForTesting(false);
-  catalog = createAssetCatalogStore({ dir: path.join(root, 'catalog') });
-  service = createManagedAgentsService({
+function serviceAt(dir: string): ManagedAgentsService {
+  catalog = createAssetCatalogStore({ dir: path.join(dir, 'catalog') });
+  return createManagedAgentsService({
     catalog,
-    state: createManagedStateStore(path.join(root, 'managed')),
+    state: createManagedStateStore(path.join(dir, 'managed')),
     listProjects: async () => [],
     listAgents: async () => [],
     getAgent: async () => agent,
     setManagedSetup: async () => {},
     isRunning: () => false,
   });
+}
+
+// Installing every built-in writes each part to disk, which took over 10s once
+// on a loaded Windows runner. Install them once per file and copy the result in
+// for each test; ensureBuiltins then finds them current and writes nothing.
+let seed: string;
+beforeAll(async () => {
+  seed = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-delivery-seed-'));
+  _resetSettingsAuditForTesting(false);
+  await serviceAt(seed).ensureBuiltins();
+});
+afterAll(() => { fs.rmSync(seed, { recursive: true, force: true }); });
+
+beforeEach(async () => {
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-delivery-'));
+  project = path.join(root, 'project');
+  const wt = path.join(project, '.clubhouse', 'agents', 'cool-gazelle');
+  fs.mkdirSync(wt, { recursive: true });
+  _resetSettingsAuditForTesting(false);
+  for (const name of fs.readdirSync(seed)) fs.cpSync(path.join(seed, name), path.join(root, name), { recursive: true });
+  service = serviceAt(root);
   await service.ensureBuiltins();
   agent = { id: 'a1', name: 'cool-gazelle', color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: wt, branch: 'cool-gazelle/standby' };
 });
