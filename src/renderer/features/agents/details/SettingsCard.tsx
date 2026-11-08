@@ -24,7 +24,7 @@ import { Button } from '../../../components/Button';
 import { useEffectiveOrchestrators } from '../../../hooks/useEffectiveOrchestrators';
 import { useModelOptions } from '../../../hooks/useModelOptions';
 import { useContextWindowOptions } from '../../../hooks/useContextWindowOptions';
-import { ContextWindowSelect, contextSummary, contextWindowHelp, formatContextChoice, nowAndNextStart, pendingContextChoice, sessionModelLine } from '../ContextWindowField';
+import { ContextWindowSelect, contextSummary, contextWindowHelp, nowAndNextStart, pendingContextChoice, sessionModelLine } from '../ContextWindowField';
 import { useAgentSettingsPages } from '../agentSettingsPages';
 import { buildOrchestratorOptions } from '../orchestrator-options';
 import { useCliChangeConfirm } from '../useCliChangeConfirm';
