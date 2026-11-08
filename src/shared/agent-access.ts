@@ -146,11 +146,13 @@ export const ACCESS_DESCRIPTIONS: Readonly<Record<AccessLevel, string>> = {
 /**
  * Settings that carry an access level (a template's, a builder draft's) with
  * the level filled in from a legacy `freeAgentMode` and the legacy flag
- * derived from the level, so both always agree. Settings that set neither
+ * derived from the level, so both always agree. A legacy flag that
+ * disagrees with the level was written later and wins, as in `savedAccess`. Settings that set neither
  * stay without either.
  */
 export function withAccess<T extends { access?: AccessLevel; freeAgentMode?: boolean }>(settings: T, legacyMode: FreeAgentPermissionMode | undefined): T {
   if (settings.access === undefined && settings.freeAgentMode === undefined) return settings;
-  const access = savedAccess(settings, legacyMode);
+  // Unlike an agent record, settings without the legacy flag haven't said off: a level alone stands.
+  const access = settings.freeAgentMode === undefined && isAccessLevel(settings.access) ? settings.access : savedAccess(settings, legacyMode);
   return { ...settings, access, freeAgentMode: legacyFreeAgentMode(access) };
 }

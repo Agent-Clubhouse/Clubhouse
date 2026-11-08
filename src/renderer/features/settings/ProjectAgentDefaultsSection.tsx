@@ -22,7 +22,6 @@ interface ProjectAgentDefaults {
   instructions?: string;
   permissions?: { allow?: string[]; deny?: string[] };
   mcpJson?: string;
-  freeAgentMode?: boolean;
   helperAuto?: 'off';
   sourceControlProvider?: SourceControlProvider;
   buildCommand?: string;
@@ -223,7 +222,6 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
   const [permAllow, setPermAllow] = useState('');
   const [permDeny, setPermDeny] = useState('');
   const [mcpJson, setMcpJson] = useState('');
-  const [freeAgentMode, setFreeAgentMode] = useState(false);
   const [helperAutoOff, setHelperAutoOff] = useState(false);
   // Empty: the project uses the app setting.
   const [sourceControlProvider, setSourceControlProvider] = useState<SourceControlProvider | ''>('');
@@ -256,7 +254,6 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
       setPermAllow((d.permissions?.allow || []).join('\n'));
       setPermDeny((d.permissions?.deny || []).join('\n'));
       setMcpJson(d.mcpJson || '');
-      setFreeAgentMode(d.freeAgentMode ?? false);
       setHelperAutoOff(d.helperAuto === 'off');
       setSourceControlProvider(d.sourceControlProvider ?? '');
       setBuildCommand(d.buildCommand || '');
@@ -330,7 +327,7 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
       if (userDeny.length > 0) newDefaults.permissions.deny = userDeny;
     }
     if (mcpJson.trim()) newDefaults.mcpJson = mcpJson;
-    if (freeAgentMode) newDefaults.freeAgentMode = true;
+    // The project's "Free agent mode by default" is retired (#2761): new agents start at the app's Default access.
     if (helperAutoOff) newDefaults.helperAuto = 'off';
     if (sourceControlProvider) newDefaults.sourceControlProvider = sourceControlProvider;
     if (buildCommand.trim()) newDefaults.buildCommand = buildCommand.trim();
@@ -468,18 +465,6 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
           />
         </SettingsField>
 
-        <SettingsField
-          label="Free agent mode by default"
-          help={freeAgentMode
-            ? <span className="text-ctp-error">New agents will use the configured Free agent permission mode.</span>
-            : 'Start new agents with the configured Free agent permission mode.'}
-        >
-          <Toggle
-            aria-label="Free agent mode by default"
-            checked={freeAgentMode}
-            onChange={(v) => { setFreeAgentMode(v); markDirty(); }}
-          />
-        </SettingsField>
         <SettingsField
           label="Turn off Auto provider here"
           help="Orchestrators here can’t let Clubhouse pick a helper’s provider. A project can turn this off, but not on."

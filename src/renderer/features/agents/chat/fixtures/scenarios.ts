@@ -120,7 +120,7 @@ function plan(p: FixtureProvider, agentId?: string): ChatEvent[] {
   explore(f, t);
   const markdown = [
     '1. **Row layout.** One flex line in `AgentListItem`: dot, xs avatar, name, orchestrator badge, right-aligned meta.',
-    '2. **Hover card.** New `AgentHoverCard` for chips, model and Free Agent Mode, opening after 300ms.',
+    '2. **Hover card.** New `AgentHoverCard` for chips, model and access, opening after 300ms.',
     '3. **Avatar.** Add `xs` (18px) to `AgentAvatar` with a corner badge for the orchestrator.',
     '4. **Verify.** Update 6 snapshot tests, then run typecheck and unit tests.',
   ].join('\n');

@@ -297,7 +297,7 @@ export interface ManagedPreview {
   instructions: string;
   /** The same text with wildcards as written, for "Show wildcards". */
   rawInstructions?: string;
-  /** CLI, model, effort, Free Agent Mode, orchestration and helpers. */
+  /** CLI, model, effort, Access, orchestration and helpers. */
   settings?: ManagedSettingsRow[];
   /** Set while the agent runs and its next start differs from what its session started with. */
   running?: ManagedRunningSnapshot;

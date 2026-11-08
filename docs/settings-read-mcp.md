@@ -66,14 +66,14 @@ Only the keys below ever come out. Each is read by name from its source, never b
 | `agent.identity` | `name`, `color`, `emoji`, `has_image` |
 | `agent.cli` | `orchestrator`, `model`, `runtime` |
 | `agent.persona` | `persona` (always null), `mission` (always null) |
-| `agent.access` | `free_agent_mode`, `permission_mode` |
+| `agent.access` | `access`, `free_agent_mode`, `permission_mode` |
 | `agent.mcp` | `clubhouse_mcp` (always on), `clubhouse_bridge` (always on), `clubhouse_mode` (always null), `mcp_ids` (ids) |
 | `agent.idle` | `idle_sleep` |
 | `agent.orchestration` | `orchestrate`, `access`, `control`, `max_helpers`, `cross_project_helpers`, `connect_to_dispatcher`, `auto_helpers` |
 | `project.identity` | `name`, `display_name`, `color`, `emoji`, `has_image` |
 | `project.defaults` | `orchestrator`, `persona` (always null), `mission` (always null), `free_agent_mode`, `profile_id` (always null: provider profiles were removed, #2749), `source_control_provider`, `default_mcps` |
 | `project.modes` | `clubhouse_mode` (always null), `mcp` (always on), `permission_mode` |
-| `app.defaults` | `idle_timeout_minutes`, `chat_enabled`, `provider_runtime`, `mcp_enabled` (always on), `clubhouse_mode_enabled` (always null), `permission_mode`, `global_helper_cap`, `enabled_orchestrators` |
+| `app.defaults` | `idle_timeout_minutes`, `chat_enabled`, `provider_runtime`, `mcp_enabled` (always on), `clubhouse_mode_enabled` (always null), `permission_mode`, `default_access`, `global_helper_cap`, `enabled_orchestrators` |
 | `app.system` | `dispatcher_enabled`, `experimental_chat`, `experimental_copilot_sdk`, `experimental_copilot_legacy_acp`, `annex_server_enabled`, `annex_client_enabled` |
 
 `app.defaults` is open to every agent because those values feed its own effective settings.
@@ -120,6 +120,7 @@ Each value has `effective` and `source`, and `stored` with `detail`.
 - **A sleeping helper's `free_agent_mode`** is its saved value, before its orchestrator's ceiling applies at the next start. Awake, it's what the helper runs with.
 - **`agent.cli.model`** reads `default` when the CLI picks. No CLI is asked which model that means, since that can spawn a process.
 - **A saved Free Agent permission mode has no agent level**, so `agent.access.permission_mode` has a `stored` of `null`. See `project.modes` and `app.defaults` for the saved values.
+- **Access (#2761).** `agent.access.access` is the agent's Access level: `plan`, `ask`, `auto_edit`, `auto` or `full_access`. `stored` is the saved `access`, or `null` for an agent saved before #2761. `effective` is the level an awake agent's session started at, or for a sleeping one the level its next start uses, which for an older agent comes from its legacy `freeAgentMode` and the old permission mode. `source` is `agent` when either `access` or `freeAgentMode` is saved. `app.defaults.default_access` is the app's Default access for new agents, `ask` when nothing is saved. `free_agent_mode` and `permission_mode` stay as legacy keys, derived from the level, and nothing edits the old permission mode any more.
 
 ### Derived off
 

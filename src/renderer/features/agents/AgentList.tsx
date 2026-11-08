@@ -18,6 +18,8 @@ import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 import { EmptyState } from '../../components/EmptyState';
 import { requestLeaveAgentSettings } from './agentSettingsPages';
 import { createDurableAgent } from './create-agent';
+import { AccessSelect, accessHelp, useDefaultAccess } from './AccessSelect';
+import type { AccessLevel } from '../../../shared/agent-access';
 import { buildAgentForest, forestSiblingGroups, helperRollup, localParentId, moveWithinGroup, type AgentNode } from '../../chrome/sidebar/treeModel';
 import { OtherProjectParentLine } from './helpers/OtherProjectParentLine';
 import { useAgentStatuses } from './agent-status-store';
@@ -136,7 +138,9 @@ function AgentListInner() {
   const [mission, setMission] = useState('');
   const [quickModel, setQuickModel] = useState('default');
   const [quickOrchestrator, setQuickOrchestrator] = useState('');
-  const [quickFreeAgentMode, setQuickFreeAgentMode] = useState(false);
+  // Access (#2761) for the quick form: the app's Default access until the person picks one.
+  const defaultAccess = useDefaultAccess();
+  const [quickPickedAccess, setQuickPickedAccess] = useState<AccessLevel | null>(null);
   const missionInputRef = useRef<HTMLInputElement>(null);
   const dropdownBtnRef = useRef<HTMLDivElement>(null);
   const [, setTick] = useState(0);
@@ -330,15 +334,24 @@ function AgentListInner() {
     setActiveAgent(agentId, activeProjectId ?? undefined);
   }), [selectCompleted, setActiveAgent, activeProjectId]);
 
+  /** The CLI a quick agent will run on, and the Access it starts at: Ask first on a CLI without permission support. */
+  const quickRun = (parentId: string | null): { orchId: string | undefined; supportsPermissions: boolean; access: AccessLevel } => {
+    const orchId = parentId
+      ? agents[parentId]?.orchestrator || enabledOrchestrators[0]?.id
+      : quickOrchestrator || enabledOrchestrators[0]?.id;
+    const supportsPermissions = allOrchestrators.find((o) => o.id === orchId)?.capabilities?.permissions ?? false;
+    return { orchId, supportsPermissions, access: supportsPermissions ? quickPickedAccess ?? defaultAccess : 'ask' };
+  };
+
   const handleMissionSubmit = async () => {
     if (!activeProject || !mission.trim()) return;
     const selectedModel = quickModel;
     const parentId = quickTargetParentId;
     const selectedOrchestrator = quickOrchestrator || undefined;
-    const freeMode = quickFreeAgentMode || undefined;
+    const { access } = quickRun(parentId);
     setShowMissionInput(false);
     try {
-      await spawnQuickAgent(activeProject.id, activeProject.path, mission.trim(), selectedModel, parentId || undefined, parentId ? undefined : selectedOrchestrator, freeMode);
+      await spawnQuickAgent(activeProject.id, activeProject.path, mission.trim(), selectedModel, parentId || undefined, parentId ? undefined : selectedOrchestrator, access);
     } catch (err) {
       console.error('Failed to spawn quick agent:', err);
       useToastStore.getState().addToast(`Failed to create agent: ${err instanceof Error ? err.message : String(err)}`, 'error');
@@ -346,7 +359,7 @@ function AgentListInner() {
     setMission('');
     setQuickModel('default');
     setQuickOrchestrator('');
-    setQuickFreeAgentMode(false);
+    setQuickPickedAccess(null);
     setQuickTargetParentId(null);
   };
 
@@ -355,19 +368,19 @@ function AgentListInner() {
     setMission('');
     setQuickModel('default');
     setQuickOrchestrator('');
-    setQuickFreeAgentMode(false);
+    setQuickPickedAccess(null);
     setQuickTargetParentId(null);
   };
 
 
   const sendAgentReorder = useAnnexClientStore((s) => s.sendAgentReorder);
 
-  const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[]) => {
+  const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, access?: AccessLevel, mcpIds?: string[]) => {
     if (!activeProject) return;
     setShowDialog(false);
     await createDurableAgent(
       { id: activeProject.id, path: activeProject.path },
-      { name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds },
+      { name, color, model, useWorktree, orchestrator, access, mcpIds },
     );
   };
 
@@ -455,12 +468,8 @@ function AgentListInner() {
   const targetParentAgent = quickTargetParentId ? agents[quickTargetParentId] : null;
 
   const renderMissionInput = (isNested: boolean, indent?: number) => {
-    // Resolve orchestrator for capabilities check
-    const resolvedOrchId = isNested
-      ? targetParentAgent?.orchestrator || enabledOrchestrators[0]?.id
-      : quickOrchestrator || enabledOrchestrators[0]?.id;
-    const resolvedOrch = allOrchestrators.find((o) => o.id === resolvedOrchId);
-    const supportsPermissions = resolvedOrch?.capabilities?.permissions ?? false;
+    // Resolve orchestrator for the Access picker
+    const { orchId: resolvedOrchId, supportsPermissions, access } = quickRun(isNested ? quickTargetParentId : null);
 
     return (
       <div
@@ -510,23 +519,19 @@ function AgentListInner() {
             </select>
           )}
         </div>
-        {/* Free Agent Mode toggle */}
-        <label
-          className={`flex items-center gap-1.5 ${supportsPermissions ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
-          title={supportsPermissions ? 'Handle permissions using the configured mode' : 'Not supported by this CLI'}
-        >
-          <input
-            type="checkbox"
-            checked={quickFreeAgentMode}
-            onChange={(e) => setQuickFreeAgentMode(e.target.checked)}
+        {/* Access */}
+        <div className="flex items-center gap-1.5" title={supportsPermissions ? accessHelp(access) : 'Not supported by this CLI'}>
+          <span className="text-xs text-ctp-subtext0">Access</span>
+          <AccessSelect
+            value={access}
+            onChange={setQuickPickedAccess}
+            providerId={resolvedOrchId}
             disabled={!supportsPermissions}
-            className="w-3 h-3 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-red-500"
+            data-testid="quick-mission-access"
+            className="flex-1 min-w-0 px-1.5 py-1 text-xs rounded bg-surface-0 border border-surface-2
+              text-ctp-text focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
           />
-          <span className="text-xs text-ctp-subtext0">Free Agent Mode</span>
-          {quickFreeAgentMode && supportsPermissions && (
-            <span className="text-xs text-ctp-error">uses configured permission mode</span>
-          )}
-        </label>
+        </div>
         <div className="flex gap-1.5">
           <button
             onClick={handleMissionSubmit}

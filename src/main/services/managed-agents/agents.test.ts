@@ -654,7 +654,8 @@ describe('convert acceptance (#2819)', () => {
     const t = await user(() => service.saveTemplate({ name: 'Other CLI', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: { orchestrator: 'codex-cli', model: 'gpt-5', freeAgentMode: true } }));
     vi.mocked(agentConfig.updateDurableConfig).mockClear();
     await user(() => convertToManaged('/p', 'ada', { keep: false, templateId: t.id }));
-    expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/p', 'ada', { freeAgentMode: true });
+    // A template saved before #2761 reads with the app's old mode (skip-all by default): Full access.
+    expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/p', 'ada', { access: 'full_access' });
   });
 
   it('keeps a template model only when the template is for the agent\'s CLI', () => {
@@ -701,6 +702,11 @@ describe('applying settings a template or the builder carries (#2895)', () => {
     expect(orchestrationPolicy.setOrchestrationPolicy).toHaveBeenCalledWith('/p', 'ada', { orchestrate: true, maxHelpers: 3, autoHelpers: true, connectToDispatcher: false, control: 'ask-before-start' });
     await applyManagedSettings('/p', 'ada', { effort: null, idleSleep: null, helperTemplateId: null });
     expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith('/p', 'ada', { effort: null, idleSleep: null, helperTemplateId: null });
+  });
+
+  it('applies a level as Access, which wins over the legacy flag beside it (#2761)', async () => {
+    await applyManagedSettings('/p', 'ada', { access: 'auto_edit', freeAgentMode: false });
+    expect(agentConfig.updateDurableConfig).toHaveBeenLastCalledWith('/p', 'ada', { access: 'auto_edit' });
   });
 
   it('create from a template applies what createDurable doesn\'t take: effort, auto-sleep, helper template and orchestration', async () => {

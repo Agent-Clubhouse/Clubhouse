@@ -5,7 +5,7 @@ import { HELPER_ROUTING_LABELS } from '../../../shared/helper-routing';
 import { HelpersSettingsView } from '../settings/HelpersSettingsView';
 import { PartLibraryView } from './PartLibraryView';
 import { TemplatesSettingsView } from './TemplatesSettingsView';
-import { changeText } from './TemplatePushDialog';
+import { changeText, noteText } from './TemplatePushDialog';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 
 const m = () => window.clubhouse.managed;
@@ -272,6 +272,51 @@ describe('Templates page', () => {
     expect(changeText({ kind: 'setting', key: 'effort', from: 'reset by the new model', to: 'high', followsModel: true })).toBe('~ Effort high goes with the new model');
     expect(changeText({ kind: 'setting', key: 'effort', from: 'reset by the new model', to: 'CLI default', followsModel: true })).toBe('~ Effort goes back to the CLI default with the new model');
     expect(changeText({ kind: 'setting', key: 'helperTemplateId', from: 'app default', to: 'QA helper' })).toBe('~ Helper template app default → QA helper');
+  });
+
+  it('names an Access change by its levels (#2761)', () => {
+    expect(changeText({ kind: 'setting', key: 'access', from: 'Ask first', to: 'Auto' })).toBe('~ Access Ask first → Auto');
+    expect(noteText('access already Auto, orchestration.access already same, already has access-review'))
+      .toBe('Access already Auto, Helper access already same, already has access-review');
+  });
+
+  it('a template sets an Access level, or leaves it to the Default access (#2761)', async () => {
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [template('old', { name: 'Old lead', settings: { orchestrator: 'claude-code', freeAgentMode: true } })] });
+    const save = vi.spyOn(m(), 'saveTemplate').mockResolvedValue({ ok: true, value: template('new') });
+    useOrchestratorStore.setState({ allOrchestrators: [
+      { id: 'claude-code', displayName: 'Claude Code', capabilities: { permissions: true } },
+      { id: 'other', displayName: 'Other CLI', capabilities: { permissions: false } },
+    ] as never });
+    render(<TemplatesSettingsView />);
+    fireEvent.click(await screen.findByTestId('managed-template-new'));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Lead' } });
+    const access = screen.getByLabelText('Access') as HTMLSelectElement;
+    expect(access.value).toBe('');
+    expect(screen.getByText('Not set: an agent made from it starts at the Default access.')).toBeTruthy();
+    expect([...access.options].map((o) => o.textContent)).toEqual(['Not set', 'Plan', 'Ask first', 'Auto-accept edits', 'Auto', 'Full access']);
+    expect(screen.queryByText(/Free Agent/)).toBeNull();
+    fireEvent.change(screen.getByLabelText('CLI'), { target: { value: 'other' } });
+    expect(access.disabled).toBe(true);
+    expect(screen.getByText("Other CLI doesn't support it.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('CLI'), { target: { value: 'claude-code' } });
+    fireEvent.change(access, { target: { value: 'auto' } });
+    expect(screen.getByText('A check decides what needs your approval. It can be wrong.')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('managed-template-save'));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ settings: { orchestrator: 'claude-code', access: 'auto' } })));
+  });
+
+  it('a template saved with only Free Agent Mode shows its level, and a new level replaces the legacy flag', async () => {
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [template('old', { name: 'Old lead', settings: { orchestrator: 'claude-code', freeAgentMode: true } })] });
+    const save = vi.spyOn(m(), 'saveTemplate').mockResolvedValue({ ok: true, value: template('old') });
+    vi.spyOn(m(), 'previewTemplatePush').mockResolvedValue({ ok: true, value: { changes: [], targets: [] } } as never);
+    useOrchestratorStore.setState({ allOrchestrators: [{ id: 'claude-code', displayName: 'Claude Code', capabilities: { permissions: true } }] as never });
+    render(<TemplatesSettingsView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Old lead' }));
+    const access = screen.getByLabelText('Access') as HTMLSelectElement;
+    expect(access.value).toBe('auto');
+    fireEvent.change(access, { target: { value: 'plan' } });
+    fireEvent.click(screen.getByTestId('managed-template-save'));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ settings: { orchestrator: 'claude-code', access: 'plan' } })));
   });
 
   it('deletes one of yours from its menu', async () => {

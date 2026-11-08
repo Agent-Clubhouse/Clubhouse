@@ -83,7 +83,7 @@ export function HeadlessRunFinished({ completed, onDismiss, onDelete, onRetried,
       const managedTemplateId = completed.managedTemplateId;
       await spawnQuickAgent(
         completed.projectId, project.path, completed.mission, completed.model, completed.parentAgentId,
-        completed.orchestrator, completed.freeAgentMode, completed.pluginMetadata, completed.cwd,
+        completed.orchestrator, completed.access ?? completed.freeAgentMode, completed.pluginMetadata, completed.cwd,
         ...(managedTemplateId ? [{ managedTemplateId }] as const : []),
       );
       onRetried?.();

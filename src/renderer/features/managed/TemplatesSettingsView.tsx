@@ -3,6 +3,7 @@ import { TabList, tabPanelProps } from '../../components/TabList';
 import { isListed, type ManagedTemplate, type ManagedTemplateChange, type ManagedTemplatePushTarget } from '../../../shared/managed-agents-types';
 import { DEFAULT_MAX_HELPERS, MAX_HELPER_LIMIT, ORCHESTRATION_DEFAULTS } from '../../../shared/orchestration-policy';
 import { normalizeIdleSleep } from '../../../shared/idle-sleep';
+import { ACCESS_DESCRIPTIONS, ACCESS_LEVELS, accessLabel, accessLevelsFor, isAccessLevel, type AccessLevel } from '../../../shared/agent-access';
 import type { OrchestratorId } from '../../../shared/types';
 import { Button } from '../../components/Button';
 import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAction';
@@ -11,6 +12,7 @@ import { Toggle } from '../../components/Toggle';
 import { SettingsField, SettingsPage, SettingsSection, settingsError, settingsHelp, settingsInput } from '../settings/SettingsLayout';
 import { ManagedBuilder, type SetupDraft } from './ManagedBuilder';
 import { TemplatePushDialog } from './TemplatePushDialog';
+import { settingsAccess } from './create-managed-agent';
 import { errorText, managed, unwrap, useManagedTemplates } from './managedApi';
 import { changedLine } from './attribution';
 import {
@@ -103,6 +105,16 @@ function TemplateEditor({ initial, onDone }: { initial: TemplateDraft; onDone: (
   const { levelsFor, loading: effortsLoading } = useModelEfforts(cli || undefined);
   const effortLevels = cli ? levelsFor(modelValue) : [];
   const effortValue = settings.effort ?? '';
+  // Access (#2761). Unset: an agent made from it starts at the Default access.
+  // A template saved before #2761 may carry only the legacy flag.
+  const accessValue = settingsAccess(settings);
+  const cliInfo = cli ? allOrchestrators.find((o) => o.id === cli) : undefined;
+  const accessUnsupported = !!cliInfo && !cliInfo.capabilities?.permissions;
+  // No CLI set: it may run on any, so every level is offered.
+  const accessLevels = cli ? accessLevelsFor(cli) : ACCESS_LEVELS;
+  const accessChoices = accessValue && !accessLevels.includes(accessValue) ? [...accessLevels, accessValue] : accessLevels;
+  // Setting the level drops the legacy flag; main writes it again from the level.
+  const setAccess = (level: AccessLevel | undefined) => setSetting({ access: level, freeAgentMode: undefined });
   const commitMax = () => {
     const n = Number(maxDraft);
     if (!Number.isInteger(n) || n < 1 || n > MAX_HELPER_LIMIT) { setMaxDraft(String(orch.maxHelpers ?? DEFAULT_MAX_HELPERS)); return; }
@@ -228,8 +240,29 @@ function TemplateEditor({ initial, onDone }: { initial: TemplateDraft; onDone: (
             onChange={(next) => setSetting({ effort: next || undefined })}
           />
         </SettingsField>
-        <SettingsField label="Free Agent Mode" help="Uses the configured Free agent permission mode. Only for CLIs that support it.">
-          <Toggle checked={!!settings.freeAgentMode} onChange={(v) => setSetting({ freeAgentMode: v })} aria-label="Free Agent Mode" data-testid="managed-template-free-agent-mode" />
+        <SettingsField
+          label="Access"
+          htmlFor="managed-template-access"
+          help={accessUnsupported
+            ? `${cliInfo?.displayName ?? 'This CLI'} doesn't support it.`
+            : accessValue ? ACCESS_DESCRIPTIONS[accessValue] : 'Not set: an agent made from it starts at the Default access.'}
+          disabled={accessUnsupported}
+        >
+          <select
+            id="managed-template-access"
+            data-testid="managed-template-access"
+            className={selectClass}
+            value={accessValue ?? ''}
+            disabled={accessUnsupported}
+            onChange={(e) => setAccess(isAccessLevel(e.target.value) ? e.target.value : undefined)}
+          >
+            <option value="">Not set</option>
+            {accessChoices.map((level) => (
+              <option key={level} value={level}>
+                {accessLabel(level)}{accessLevels.includes(level) ? '' : ' (not available for this CLI)'}
+              </option>
+            ))}
+          </select>
         </SettingsField>
         <SettingsField label="Orchestration" help="Agents made from this template can start helpers.">
           <Toggle checked={orchestrate} onChange={(v) => setOrch({ orchestrate: v })} aria-label="Orchestration" data-testid="managed-template-orchestrate" />

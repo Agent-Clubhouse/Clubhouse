@@ -22,6 +22,7 @@ vi.mock('child_process', () => ({
   execFile: vi.fn((_f: string, _a: string[], _opts: unknown, cb: (...args: unknown[]) => void) => { cb(null, ''); return {}; }),
 }));
 
+vi.mock('./free-agent-settings');
 vi.mock('fs', () => ({
   watch: vi.fn(() => ({ on: vi.fn().mockReturnThis(), close: vi.fn() })),
 }));

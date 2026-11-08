@@ -13,6 +13,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useUIStore } from '../../stores/uiStore';
+import { useDefaultAccessStore } from '../../stores/defaultAccessStore';
 import { useChromeStore, type NewAgentRequest } from '../chromeStore';
 
 const projects = [
@@ -28,6 +29,8 @@ beforeEach(() => {
   createDurableAgent.mockReset().mockResolvedValue('a-new');
   spawnQuickAgent = vi.fn().mockResolvedValue('q-new');
   window.clubhouse.project.checkGit = vi.fn().mockResolvedValue(true);
+  window.clubhouse.app.getDefaultAccess = vi.fn().mockResolvedValue('ask');
+  useDefaultAccessStore.setState({ defaultAccess: 'ask' });
   useProjectStore.setState({ projects: projects as never, activeProjectId: 'p1', projectIcons: {} });
   useAgentStore.setState({
     agents: { a1: { id: 'a1', projectId: 'p2', name: 'gallant-swift', kind: 'durable', status: 'running', color: 'blue', orchestrator: 'claude-code' } } as never,
@@ -84,7 +87,7 @@ describe('NewAgentPage', () => {
     fireEvent.click(screen.getByTestId('new-agent-submit'));
     expect(createDurableAgent).toHaveBeenCalledWith(
       { id: 'p1', path: '/tmp/ch' },
-      expect.objectContaining({ name: 'keen-heron', color: 'emerald', useWorktree: true, orchestrator: 'claude-code', model: 'default' }),
+      expect.objectContaining({ name: 'keen-heron', color: 'emerald', useWorktree: true, orchestrator: 'claude-code', model: 'default', access: 'ask' }),
       expect.objectContaining({ onError: expect.any(Function) }),
     );
     await waitFor(() => expect(useAgentStore.getState().activeAgentId).toBe('a-new'));
@@ -140,7 +143,7 @@ describe('NewAgentPage', () => {
     expect(submit.disabled).toBe(true);
     fireEvent.change(mission, { target: { value: 'Fix the build' } });
     fireEvent.keyDown(mission, { key: 'Enter', metaKey: true });
-    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalledWith('p1', '/tmp/ch', 'Fix the build', 'default', undefined, 'claude-code', undefined));
+    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalledWith('p1', '/tmp/ch', 'Fix the build', 'default', undefined, 'claude-code', 'ask'));
   });
 
   it("runs a quick agent in a durable agent's worktree from the picked project", async () => {
@@ -151,7 +154,47 @@ describe('NewAgentPage', () => {
     fireEvent.change(screen.getByLabelText('Runs in'), { target: { value: 'a1' } });
     fireEvent.change(screen.getByTestId('new-agent-mission'), { target: { value: 'Run tests' } });
     await submitWhenReady();
-    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalledWith('p2', '/tmp/gb', 'Run tests', 'default', 'a1', undefined, undefined));
+    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalledWith('p2', '/tmp/gb', 'Run tests', 'default', 'a1', undefined, 'ask'));
+  });
+
+  it('Access starts at the Default access and can be changed (#2761)', async () => {
+    window.clubhouse.app.getDefaultAccess = vi.fn().mockResolvedValue('auto');
+    openWith({});
+    const access = screen.getByLabelText('Access') as HTMLSelectElement;
+    await waitFor(() => expect(access.value).toBe('auto'));
+    expect([...access.options].map((o) => o.textContent)).toEqual(['Plan', 'Ask first', 'Auto-accept edits', 'Auto', 'Full access']);
+    expect(screen.getByText('A check decides what needs your approval. It can be wrong.')).toBeTruthy();
+    fireEvent.change(access, { target: { value: 'auto_edit' } });
+    await waitFor(() => expect(screen.getByLabelText('Own worktree and branch')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    expect(createDurableAgent).toHaveBeenCalledWith(
+      { id: 'p1', path: '/tmp/ch' },
+      expect.objectContaining({ access: 'auto_edit' }),
+      expect.anything(),
+    );
+  });
+
+  it('a quick agent starts at the Default access', async () => {
+    window.clubhouse.app.getDefaultAccess = vi.fn().mockResolvedValue('full_access');
+    render(<NewAgentPage request={req({ kind: 'quick' })} />);
+    await waitFor(() => expect((screen.getByLabelText('Access') as HTMLSelectElement).value).toBe('full_access'));
+    fireEvent.change(screen.getByTestId('new-agent-mission'), { target: { value: 'Fix the build' } });
+    await submitWhenReady();
+    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalledWith('p1', '/tmp/ch', 'Fix the build', 'default', undefined, 'claude-code', 'full_access'));
+  });
+
+  it("keeps Access at Ask first, disabled, for a CLI that doesn't support permissions", async () => {
+    window.clubhouse.app.getDefaultAccess = vi.fn().mockResolvedValue('full_access');
+    useOrchestratorStore.setState({ allOrchestrators: [{ id: 'claude-code', displayName: 'Claude Code', capabilities: { permissions: false } }] as never });
+    openWith({});
+    const access = screen.getByLabelText('Access') as HTMLSelectElement;
+    await waitFor(() => expect(useDefaultAccessStore.getState().defaultAccess).toBe('full_access'));
+    expect(access.value).toBe('ask');
+    expect(access.disabled).toBe(true);
+    expect(screen.getByText("Claude Code doesn't support it.")).toBeTruthy();
+    await waitFor(() => expect(screen.getByLabelText('Own worktree and branch')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    expect(createDurableAgent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ access: 'ask' }), expect.anything());
   });
 
   it('calls the CLI field "Runs on" (#2233)', () => {

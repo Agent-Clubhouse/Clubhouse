@@ -1,7 +1,7 @@
 import { createSettingsStore } from './settings-store';
 import type { FreeAgentPermissionMode } from '../../shared/types';
 import {
-  DEFAULT_ACCESS, accessForLegacyToggle, isAccessLevel, legacyLaunchFor, savedAccess, type AccessLevel,
+  DEFAULT_ACCESS, accessForLegacyToggle, isAccessLevel, legacyLaunchFor, savedAccess, withAccess, type AccessLevel,
 } from '../../shared/agent-access';
 
 export type { FreeAgentPermissionMode };
@@ -75,11 +75,19 @@ export function quickAgentAccess(
   projectPath?: string,
 ): AccessLevel {
   const q = parent.quickAgentDefaults;
-  if (q && (q.access !== undefined || q.freeAgentMode !== undefined)) return agentAccess(q, projectPath);
+  if (q && (isAccessLevel(q.access) || q.freeAgentMode !== undefined)) {
+    return withAccess({ access: isAccessLevel(q.access) ? q.access : undefined, freeAgentMode: q.freeAgentMode }, getPermissionMode(projectPath)).access ?? DEFAULT_ACCESS;
+  }
   return agentAccess(parent, projectPath);
 }
 
 /** A record as the renderer reads it: with its Access filled in, so an agent saved before #2761 shows its real level. */
-export function withSavedAccess<T extends { access?: AccessLevel; freeAgentMode?: boolean }>(record: T, projectPath?: string): T {
-  return { ...record, access: agentAccess(record, projectPath) };
+export function withSavedAccess<T extends { access?: AccessLevel; freeAgentMode?: boolean; quickAgentDefaults?: { access?: AccessLevel; freeAgentMode?: boolean } }>(record: T, projectPath?: string): T {
+  const q = record.quickAgentDefaults;
+  return {
+    ...record,
+    access: agentAccess(record, projectPath),
+    // Quick agent defaults that set a level (or a legacy on/off) show it too.
+    ...(q && (q.access !== undefined || q.freeAgentMode !== undefined) && { quickAgentDefaults: { ...q, access: quickAgentAccess(record, projectPath) } }),
+  };
 }

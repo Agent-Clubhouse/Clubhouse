@@ -578,6 +578,8 @@ Create (#2451) and settings (#2452) follow the desktop New agent page and the De
 
 **Free Agent Mode** (skip all permission prompts) is settable from a phone when capabilities have `permissions.freeAgentMode` ([Permissions from a phone](#permissions-from-a-phone)). As on the desktop, it needs an orchestrator with `permissions:true`: turning it on for one without is 409 `free_agent_mode_unavailable`; turning it off is always allowed. Omitted on create, the agent follows the project's agent defaults, as on the desktop. Older desktops refuse the field with 403 `free_agent_mode_not_allowed`.
 
+**Access (#2761).** The desktop now stores one Access level per agent (Plan, Ask first, Auto-accept edits, Auto, Full access) instead of Free Agent Mode. The phone contract keeps `freeAgentMode` unchanged. It reads `true` when the agent is at Auto or Full access, and `false` at the other levels. Setting it from a phone moves the agent to the nearest level: `true` keeps a level that is already Auto or Full access, or takes the level the desktop's old free agent permission mode gives (Full access, or Auto when that mode was Auto); `false` keeps a level that is already below Auto, or becomes Ask first. Omitted on create, the agent starts at the desktop's Default access, which replaces the project's agent defaults for this.
+
 ### Create options
 
 `GET /api/v1/mobile/projects/:projectId/create-options` (404 `project_not_found`):

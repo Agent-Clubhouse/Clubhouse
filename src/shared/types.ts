@@ -172,6 +172,8 @@ export interface CompletedQuickAgent {
   /** Epoch ms the run was spawned. */
   startedAt?: number;
   freeAgentMode?: boolean;
+  /** The level the run started at (#2761), for Retry. */
+  access?: import('./agent-access').AccessLevel;
   /** Headless runs: number of tool calls in the transcript. */
   toolCalls?: number;
   /** Headless runs: input tokens, including cache reads and writes. */

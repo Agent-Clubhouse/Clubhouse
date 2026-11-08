@@ -330,6 +330,7 @@ import {
   getRunningAgentIds,
   expandHome,
   listSessions,
+  spawnAccess,
 } from './agent-system';
 import * as os from 'os';
 import { broadcastAgentExit } from './agent-exit-broadcast';
@@ -3355,6 +3356,28 @@ describe('listSessions: saved ids the CLI store lacks (#2156)', () => {
   });
 });
 
+describe('spawnAccess (#2761)', () => {
+  it('an explicit level wins', () => {
+    expect(spawnAccess({ access: 'auto_edit', freeAgentMode: true }, { access: 'plan' }, 'skip-all')).toBe('auto_edit');
+  });
+  it('a durable agent starts at its saved level, migrating one saved before #2761', () => {
+    expect(spawnAccess({}, { access: 'plan' }, 'skip-all')).toBe('plan');
+    expect(spawnAccess({}, { freeAgentMode: true }, 'auto')).toBe('auto');
+    expect(spawnAccess({}, { freeAgentMode: true }, 'skip-all')).toBe('full_access');
+  });
+  it('a legacy on/off that agrees with the saved level keeps it', () => {
+    expect(spawnAccess({ freeAgentMode: false }, { access: 'auto_edit' }, 'skip-all')).toBe('auto_edit');
+    expect(spawnAccess({ freeAgentMode: true }, { access: 'auto', freeAgentMode: true }, 'skip-all')).toBe('auto');
+  });
+  it('a restart entry\'s mode wins for an on level', () => {
+    expect(spawnAccess({ freeAgentMode: true, permissionMode: 'skip-all' }, { access: 'auto', freeAgentMode: true }, 'auto')).toBe('full_access');
+  });
+  it('a quick agent starts at Ask first unless asked otherwise', () => {
+    expect(spawnAccess({}, undefined, 'skip-all')).toBe('ask');
+    expect(spawnAccess({ freeAgentMode: true }, undefined, 'auto')).toBe('auto');
+  });
+});
+
 describe('helper launch ceiling on the normal spawn path', () => {
   const getAgentLaunchAccess = (id: string) => agentRegistry.get(id)?.launchAccess;
   const projectPath = path.join(path.sep, 'project');
@@ -3388,6 +3411,19 @@ describe('helper launch ceiling on the normal spawn path', () => {
     expect(mockResolveHelperLaunchSettings).toHaveBeenCalledWith(projectPath, 'orch-1', { helperProvider: 'claude-code' });
     expect(lastBuild()).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
     expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+  });
+
+  it('a helper saved at Auto-accept edits starts at Ask first under a standard ceiling (#2761)', async () => {
+    orchestratorLive = undefined;
+    mockGetDurableConfig.mockImplementation((async () => helper({ freeAgentMode: undefined, access: 'auto_edit' })) as never);
+    await wake();
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, access: 'ask' });
+  });
+
+  it('a durable agent starts at its saved level, with the legacy pair derived (#2761)', async () => {
+    mockGetDurableConfig.mockImplementation((async () => ({ id: 'helper-1', name: 'plain', access: 'plan' })) as never);
+    await wake({ freeAgentMode: false });
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'skip-all', access: 'plan' });
   });
 
   it('a helper whose orchestrator is in another project gets the orchestrator\'s ceiling from there', async () => {

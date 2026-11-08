@@ -9,6 +9,7 @@ import type {
   ModelOption,
   Disposable,
 } from '../../shared/plugin-types';
+import { ACCESS_LEVELS, isAccessLevel, isLegacyFreeAgent, type AccessLevel } from '../../shared/agent-access';
 import { hasPermission } from './plugin-api-shared';
 import { useAgentStore } from '../stores/agentStore';
 import { getAgentStatus, onChatStatusChange } from '../features/agents/agent-status-store';
@@ -63,14 +64,21 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
       useWorktree?: boolean;
       orchestrator?: string;
       freeAgentMode?: boolean;
+      access?: AccessLevel;
       mcpIds?: string[];
       /** @deprecated Structured mode was removed; ignored. */
       structuredMode?: boolean;
       /** @deprecated Personas were retired; ignored. */
       persona?: string;
     }): Promise<string> {
+      if (options.access !== undefined && !isAccessLevel(options.access)) {
+        throw new Error(`agents.createDurable: access must be one of ${ACCESS_LEVELS.join(', ')}`);
+      }
       if (options.freeAgentMode && !hasPermission(manifest, 'agents.free-agent-mode')) {
         throw new Error(`Plugin '${ctx.pluginId}' requires 'agents.free-agent-mode' permission to use freeAgentMode`);
+      }
+      if (options.access !== undefined && isLegacyFreeAgent(options.access) && !hasPermission(manifest, 'agents.free-agent-mode')) {
+        throw new Error(`Plugin '${ctx.pluginId}' requires 'agents.free-agent-mode' permission to start an agent at ${options.access}`);
       }
       if (options.structuredMode !== undefined) {
         console.warn(`[plugin:${ctx.pluginId}] agents.createDurable: 'structuredMode' is deprecated and ignored (structured mode was removed).`);
@@ -95,7 +103,9 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
 
       const model = options.model && options.model !== 'default' ? options.model : undefined;
       const config = await window.clubhouse.agent.createDurable(
-        projectPath, options.name, options.color, model, options.useWorktree ?? false, options.orchestrator, options.freeAgentMode, options.mcpIds,
+        projectPath, options.name, options.color, model, options.useWorktree ?? false, options.orchestrator,
+        // Without the permission a plugin's agent never starts above Ask first, whatever the Default access (#2761).
+        options.access ?? options.freeAgentMode ?? (hasPermission(manifest, 'agents.free-agent-mode') ? undefined : false), options.mcpIds,
       );
       return useAgentStore.getState().spawnDurableAgent(projectId, projectPath, config, false);
     },

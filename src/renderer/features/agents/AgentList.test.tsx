@@ -1,11 +1,12 @@
-import { render, screen, fireEvent, act, renderHook, within } from '@testing-library/react';
+import { render, screen, fireEvent, act, renderHook, within, waitFor } from '@testing-library/react';
 import { memo } from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import { useUIStore } from '../../stores/uiStore';
+import { useDefaultAccessStore } from '../../stores/defaultAccessStore';
 import { useChromeStore, ensureChromeStateLoaded } from '../../chrome/chromeStore';
 import { AgentList, useProjectAgentBuckets, activityTimestamps } from './AgentList';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
@@ -14,13 +15,14 @@ import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 const isThinkingCaptures: boolean[] = [];
 const itemRenderCounts: Record<string, number> = {};
 let memoizeAgentItems = false;
+let withQuickChildButton = false;
 
 vi.mock('./AgentListItem', () => {
   const renderItem = (props: any) => {
     isThinkingCaptures.push(props.isThinking);
     itemRenderCounts[props.agent.id] = (itemRenderCounts[props.agent.id] ?? 0) + 1;
     return (
-      <div data-testid={`agent-item-${props.agent.id}`} data-thinking={props.isThinking} data-indent={props.indent} data-nested={props.isNested ? 'true' : undefined} data-rollup={props.helperRollup ? JSON.stringify(props.helperRollup) : undefined}>{props.agent.name}</div>
+      <div data-testid={`agent-item-${props.agent.id}`} data-thinking={props.isThinking} data-indent={props.indent} data-nested={props.isNested ? 'true' : undefined} data-rollup={props.helperRollup ? JSON.stringify(props.helperRollup) : undefined}>{props.agent.name}{withQuickChildButton && <button data-testid={`quick-child-${props.agent.id}`} onClick={() => props.onSpawnQuickChild?.(props.agent.id)}>Quick child</button>}</div>
     );
   };
   const MemoizedAgentListItem = memo(renderItem);
@@ -36,7 +38,7 @@ vi.mock('./AddAgentDialog', () => ({
     <div data-testid="add-agent-dialog">
       <button onClick={onClose}>Close</button>
       <button
-        onClick={() => onCreate('new-durable', 'indigo', 'default', false, 'claude-code', undefined, undefined)}
+        onClick={() => onCreate('new-durable', 'indigo', 'default', false, 'claude-code', 'auto_edit', undefined)}
         data-testid="add-agent-dialog-submit"
       >
         Submit
@@ -176,8 +178,46 @@ describe('AgentList dropdown', () => {
     });
 
     expect(createDurableSpy).toHaveBeenCalledWith(
-      '/project', 'new-durable', 'indigo', undefined, false, 'claude-code', undefined, undefined,
+      '/project', 'new-durable', 'indigo', undefined, false, 'claude-code', 'auto_edit', undefined,
     );
+  });
+
+  describe('the quick agent form (#2761)', () => {
+    beforeEach(() => {
+      withQuickChildButton = true;
+      window.clubhouse.app.getDefaultAccess = vi.fn().mockResolvedValue('auto');
+      useDefaultAccessStore.setState({ defaultAccess: 'ask' });
+    });
+    afterEach(() => { withQuickChildButton = false; });
+
+    it('starts at the Default access and spawns at the level picked', async () => {
+      const spawn = useAgentStore.getState().spawnQuickAgent as ReturnType<typeof vi.fn>;
+      render(<AgentList />);
+      fireEvent.click(screen.getByTestId('quick-child-agent-1'));
+      const access = await screen.findByTestId('quick-mission-access') as HTMLSelectElement;
+      await waitFor(() => expect(access.value).toBe('auto'));
+      expect(screen.queryByText(/Free Agent/)).not.toBeInTheDocument();
+      fireEvent.change(access, { target: { value: 'full_access' } });
+      const input = screen.getByPlaceholderText('What should this quick agent do?');
+      fireEvent.change(input, { target: { value: 'Fix it' } });
+      await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }); });
+      expect(spawn).toHaveBeenCalledWith('proj-1', '/project', 'Fix it', 'default', 'agent-1', undefined, 'full_access');
+    });
+
+    it("stays at Ask first, disabled, on a CLI that doesn't support permissions", async () => {
+      useOrchestratorStore.setState({ allOrchestrators: [{ id: 'claude-code', displayName: 'Claude Code', shortName: 'CC', capabilities: { permissions: false } }] as never });
+      const spawn = useAgentStore.getState().spawnQuickAgent as ReturnType<typeof vi.fn>;
+      render(<AgentList />);
+      fireEvent.click(screen.getByTestId('quick-child-agent-1'));
+      const access = await screen.findByTestId('quick-mission-access') as HTMLSelectElement;
+      await waitFor(() => expect(useDefaultAccessStore.getState().defaultAccess).toBe('auto'));
+      expect(access.value).toBe('ask');
+      expect(access.disabled).toBe(true);
+      const input = screen.getByPlaceholderText('What should this quick agent do?');
+      fireEvent.change(input, { target: { value: 'Fix it' } });
+      await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }); });
+      expect(spawn).toHaveBeenCalledWith('proj-1', '/project', 'Fix it', 'default', 'agent-1', undefined, 'ask');
+    });
   });
 });
 

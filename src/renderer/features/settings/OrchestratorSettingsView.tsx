@@ -3,7 +3,7 @@ import { useOrchestratorStore, DEFAULT_HOOK_SERVER_ORCHESTRATOR } from '../../st
 import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore, SpawnMode } from '../../stores/headlessStore';
 import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
-import { useFreeAgentSettingsStore } from '../../stores/freeAgentSettingsStore';
+import { useDefaultAccessStore } from '../../stores/defaultAccessStore';
 import { Toggle } from '../../components/Toggle';
 import { useUIStore } from '../../stores/uiStore';
 import { resetChatFlagCache } from '../agents/chat/AgentRuntimePane';
@@ -11,7 +11,8 @@ import { RICH_CHAT_CONTENT_FLAG, resetRichChatContentFlag } from '../agents/chat
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
 import { ManagedGitExcludesSection } from '../managed/ManagedGitExcludesSection';
 import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsHelp, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
-import type { FreeAgentPermissionMode, SourceControlProvider } from '../../../shared/types';
+import type { SourceControlProvider } from '../../../shared/types';
+import { ACCESS_DESCRIPTIONS, ACCESS_LEVELS, accessLabel, type AccessLevel } from '../../../shared/agent-access';
 import { type AgentRuntimeMode, type ChatRuntimeSettings } from '../../../shared/chat';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
 import { useChatIdleSettingsStore } from '../../stores/chatIdleSettingsStore';
@@ -188,9 +189,9 @@ function AppAgentSettings() {
   const promptForName = useSessionSettingsStore((s) => s.promptForName);
   const setPromptForName = useSessionSettingsStore((s) => s.setPromptForName);
   const loadSessionSettings = useSessionSettingsStore((s) => s.loadSettings);
-  const freeAgentDefaultMode = useFreeAgentSettingsStore((s) => s.defaultMode);
-  const setFreeAgentDefaultMode = useFreeAgentSettingsStore((s) => s.setDefaultMode);
-  const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
+  const defaultAccess = useDefaultAccessStore((s) => s.defaultAccess);
+  const setDefaultAccess = useDefaultAccessStore((s) => s.setDefaultAccess);
+  const loadDefaultAccess = useDefaultAccessStore((s) => s.loadDefaultAccess);
   const { chatEnabled, richChatEnabled, chatResolved, flagSaveFailed, runtimeSaving, runtimeSaveFailed, runtimeSettings, setChatFlag, setRichChatFlag, setRuntimeMode } = useChatRuntimeSettings();
   const idleMinutes = useChatIdleSettingsStore((st) => st.idleTimeoutMinutes as number);
   const saveIdle = useChatIdleSettingsStore((st) => st.saveSettings);
@@ -242,11 +243,29 @@ function AppAgentSettings() {
   useEffect(() => {
     loadSettings().then(() => checkAllAvailability());
     loadSessionSettings();
-    loadFreeAgentSettings();
-  }, [loadSettings, checkAllAvailability, loadSessionSettings, loadFreeAgentSettings]);
+    void loadDefaultAccess();
+  }, [loadSettings, checkAllAvailability, loadSessionSettings, loadDefaultAccess]);
 
   return (
     <>
+      <SettingsSection title="Access">
+        <SettingsField
+          label="Default access"
+          help={`The level new agents and quick agents start at. A CLI without it starts at the nearest lower level. ${ACCESS_DESCRIPTIONS[defaultAccess]}`}
+          htmlFor={`${idBase}-default-access`}
+        >
+          <select
+            id={`${idBase}-default-access`}
+            value={defaultAccess}
+            onChange={(e) => { void setDefaultAccess(e.target.value as AccessLevel); }}
+            className={SELECT_CLASS}
+            data-testid="app-default-access"
+          >
+            {ACCESS_LEVELS.map((level) => <option key={level} value={level}>{accessLabel(level)}</option>)}
+          </select>
+        </SettingsField>
+      </SettingsSection>
+
       <SettingsSection title="Quick agents">
         <SettingsField
           label="Default quick agent mode"
@@ -261,21 +280,6 @@ function AppAgentSettings() {
           >
             <option value="interactive">Interactive</option>
             <option value="headless">Headless</option>
-          </select>
-        </SettingsField>
-        <SettingsField
-          label="Free agent permission mode"
-          help={<>Skip all bypasses every check. Auto uses a classifier that can be wrong and needs <code className={CODE_CLASS}>--permission-mode</code> support in your CLI.</>}
-          htmlFor={`${idBase}-free-mode`}
-        >
-          <select
-            id={`${idBase}-free-mode`}
-            value={freeAgentDefaultMode}
-            onChange={(e) => setFreeAgentDefaultMode(e.target.value as FreeAgentPermissionMode)}
-            className={SELECT_CLASS}
-          >
-            <option value="skip-all">Skip all permissions (default)</option>
-            <option value="auto">Auto (requires CLI support)</option>
           </select>
         </SettingsField>
       </SettingsSection>
@@ -475,16 +479,9 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const clearSessionOverride = useSessionSettingsStore((s) => s.clearProjectOverride);
   const loadSessionSettings = useSessionSettingsStore((s) => s.loadSettings);
 
-  const freeAgentGlobalMode = useFreeAgentSettingsStore((s) => s.defaultMode);
-  const freeAgentOverrides = useFreeAgentSettingsStore((s) => s.projectOverrides);
-  const setFreeAgentProjectMode = useFreeAgentSettingsStore((s) => s.setProjectMode);
-  const clearFreeAgentProjectMode = useFreeAgentSettingsStore((s) => s.clearProjectMode);
-  const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
-
   useEffect(() => {
     loadSessionSettings();
-    loadFreeAgentSettings();
-  }, [loadSessionSettings, loadFreeAgentSettings]);
+  }, [loadSessionSettings]);
 
   if (!project) return null;
 
@@ -505,15 +502,6 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const handleSessionModeChange = (value: string) => {
     if (value === 'global') clearSessionOverride(projectPath);
     else setSessionOverride(projectPath, value === 'on');
-  };
-
-  // Free agent permission mode
-  const freeAgentOverride = freeAgentOverrides[projectPath];
-  const currentFreeAgentMode = freeAgentOverride !== undefined ? freeAgentOverride : 'global';
-  const freeAgentGlobalLabel = freeAgentGlobalMode === 'auto' ? 'Auto' : 'Skip all';
-  const handleFreeAgentModeChange = (value: string) => {
-    if (value === 'global') clearFreeAgentProjectMode(projectPath);
-    else setFreeAgentProjectMode(projectPath, value as FreeAgentPermissionMode);
   };
 
   const onOff = (v: boolean) => (v ? 'On' : 'Off');
@@ -546,19 +534,6 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
             <option value="global">Global default ({headlessDefaultMode.charAt(0).toUpperCase() + headlessDefaultMode.slice(1)})</option>
             <option value="interactive">Interactive</option>
             <option value="headless">Headless</option>
-          </select>
-        </SettingsField>
-
-        <SettingsField label="Free agent permission mode" help="How agents in Free Agent mode handle permissions." htmlFor={`${idBase}-free`}>
-          <select
-            id={`${idBase}-free`}
-            value={currentFreeAgentMode}
-            onChange={(e) => handleFreeAgentModeChange(e.target.value)}
-            className={SELECT_CLASS}
-          >
-            <option value="global">Global default ({freeAgentGlobalLabel})</option>
-            <option value="auto">Auto</option>
-            <option value="skip-all">Skip all permissions</option>
           </select>
         </SettingsField>
 

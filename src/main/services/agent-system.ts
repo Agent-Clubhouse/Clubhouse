@@ -488,7 +488,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     }
     // Access (#2761): the level this start uses.
     let access: AccessLevel = configUnreadable ? 'ask' : spawnAccess(params, durableConfig, legacyMode);
-    let launch = legacyLaunchFor(access, legacyMode);
+    // Unreadable config starts at standard with the mode pinned, as before #2761.
+    let launch = configUnreadable ? launchAccessFor('standard') : legacyLaunchFor(access, legacyMode);
     // A disposed helper keeps its row but has no worktree to run in (#2224).
     if (isDisposedAgent(durableConfig)) {
       throw tagError(new Error(`${durableConfig?.name ?? 'This agent'} was disposed and can't be started`), 'preflight_failed');
