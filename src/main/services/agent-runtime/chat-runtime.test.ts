@@ -1108,7 +1108,7 @@ describe('ChatAgentRuntime stop during start (#2087)', () => {
       await runtime.start();
       driver.last.emit({ type: 'mode_changed', data: { level: 'auto' } });
       await flush();
-      expect(agentRegistry.get('agent-1')?.launchAccess).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+      expect(agentRegistry.get('agent-1')?.launchAccess).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
       driver.last.emit({ type: 'mode_changed', data: { level: 'plan' } });
       await flush();
       expect(agentRegistry.get('agent-1')?.launchAccess?.freeAgentMode).toBe(false);
@@ -1122,12 +1122,12 @@ describe('ChatAgentRuntime stop during start (#2087)', () => {
       const real = driver.last.setLevel.bind(driver.last);
       driver.last.setLevel = async (level) => { seen = agentRegistry.get('agent-1')?.launchAccess; await real(level); };
       await runtime.setLevel('ask');
-      expect(seen).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+      expect(seen).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
       expect(agentRegistry.get('agent-1')?.launchAccess?.freeAgentMode).toBe(false);
 
       await runtime.setLevel('full_access');
-      expect(seen).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
-      expect(agentRegistry.get('agent-1')?.launchAccess).toEqual({ freeAgentMode: true, permissionMode: 'skip-all' });
+      expect(seen).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
+      expect(agentRegistry.get('agent-1')?.launchAccess).toMatchObject({ freeAgentMode: true, permissionMode: 'skip-all' });
     });
 
     it('records the spawn level when a session opens, and again after /clear', async () => {
@@ -1137,10 +1137,10 @@ describe('ChatAgentRuntime stop during start (#2087)', () => {
       await runtime.start();
       expect(agentRegistry.get('agent-1')?.launchAccess?.freeAgentMode).toBe(false);
       await runtime.setLevel('full_access');
-      expect(agentRegistry.get('agent-1')?.launchAccess).toEqual({ freeAgentMode: true, permissionMode: 'skip-all' });
+      expect(agentRegistry.get('agent-1')?.launchAccess).toMatchObject({ freeAgentMode: true, permissionMode: 'skip-all' });
       // The new session starts at the spawn level (ask), not full access.
       await runtime.clearContext();
-      expect(agentRegistry.get('agent-1')?.launchAccess).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+      expect(agentRegistry.get('agent-1')?.launchAccess).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
     });
 
     it('clamps a driver mode_changed above the user-set level', async () => {

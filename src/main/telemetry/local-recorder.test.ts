@@ -180,6 +180,27 @@ describe('local telemetry recorder', () => {
     expect(ev.traceId).toBeUndefined();
   });
 
+  it('records an event under a given trace, else the active flow (#2524)', async () => {
+    const h = harness();
+    const given = { traceId: '0af7651916cd43dd8448eb211c80319c', spanId: 'b7ad6b7169203331' };
+    h.rec.event('clubhouse.feedback.submitted', [], { trace: given });
+    h.rec.wrap('clubhouse.agent.spawn', {}, () => {
+      h.rec.event('clubhouse.feedback.submitted', [], { trace: given });
+      h.rec.event('clubhouse.feedback.delivered', [], { trace: { traceId: 'not-hex', spanId: 'x' } });
+      return { exitCode: 0 };
+    })(ok());
+    h.rec.event('clubhouse.feedback.connected', [], { trace: { traceId: given.traceId, spanId: 'short' } });
+    await h.rec.flush();
+    const [span] = h.records().filter((r) => r.t === 'span');
+    const events = h.records().filter((r) => r.t === 'event');
+    expect(events.map((e) => [e.name, e.traceId, e.spanId])).toEqual([
+      ['clubhouse.feedback.submitted', given.traceId, given.spanId],
+      ['clubhouse.feedback.submitted', given.traceId, given.spanId],
+      ['clubhouse.feedback.delivered', span.traceId, span.spanId],
+      ['clubhouse.feedback.connected', undefined, undefined],
+    ]);
+  });
+
   it('skips Detailed-only spans at its Standard level', async () => {
     const h = harness();
     expect(h.rec.wrap('clubhouse.ipc.invoke', {}, () => 1)(ok())).toBe(1);
