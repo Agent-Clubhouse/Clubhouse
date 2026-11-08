@@ -79,13 +79,19 @@ export function validateManifest(raw: unknown): ValidationResult {
     }
   }
 
-  // Kind validation
+  // Kind validation. The oldest loadable API is 0.7, so gates below it are
+  // gone; the ones left tell 0.7, 0.8 and 0.9 apart.
+  const engineObj = m.engine as Record<string, unknown> | undefined;
+  const apiVersion = engineObj && typeof engineObj.api === 'number' ? engineObj.api : 0;
   const isPack = m.kind === 'pack';
   const isWorkspace = m.kind === 'workspace';
 
   if (m.kind !== undefined) {
     if (m.kind !== 'plugin' && m.kind !== 'pack' && m.kind !== 'workspace') {
       errors.push(`Invalid kind: "${String(m.kind)}". Must be "plugin", "pack", or "workspace"`);
+    }
+    if (isWorkspace && apiVersion < 0.9) {
+      errors.push('Workspace plugins require API >= 0.9');
     }
   }
 
@@ -241,6 +247,26 @@ export function validateManifest(raw: unknown): ValidationResult {
         errors.push(`"${child}" requires the base "${parent}" permission`);
       }
     }
+
+    // Canvas permission requires API >= 0.8
+    if (permissions.includes('canvas') && apiVersion < 0.8) {
+      errors.push('Canvas permission requires API >= 0.8');
+    }
+
+    // Annex permission requires API >= 0.8
+    if (permissions.includes('annex') && apiVersion < 0.8) {
+      errors.push('Annex permission requires API >= 0.8');
+    }
+
+    // Companion permission requires API >= 0.9
+    if (permissions.includes('companion') && apiVersion < 0.9) {
+      errors.push('Companion permission requires API >= 0.9');
+    }
+
+    // MCP tools permission requires API >= 0.9
+    if (permissions.includes('mcp.tools') && apiVersion < 0.9) {
+      errors.push('mcp.tools permission requires API >= 0.9');
+    }
   }
 
   // Validate command declarations
@@ -364,11 +390,13 @@ export function validateManifest(raw: unknown): ValidationResult {
       }
     }
 
-    // contributes.tab.title / contributes.railItem.title validation
+    // v0.8+ contributes.tab.title / contributes.railItem.title validation
     if (contrib.tab && typeof contrib.tab === 'object') {
       const tab = contrib.tab as Record<string, unknown>;
       if (tab.title !== undefined) {
-        if (typeof tab.title !== 'string' || !tab.title) {
+        if (apiVersion < 0.8) {
+          errors.push('contributes.tab.title requires API >= 0.8');
+        } else if (typeof tab.title !== 'string' || !tab.title) {
           errors.push('contributes.tab.title must be a non-empty string');
         }
       }
@@ -376,15 +404,19 @@ export function validateManifest(raw: unknown): ValidationResult {
     if (contrib.railItem && typeof contrib.railItem === 'object') {
       const rail = contrib.railItem as Record<string, unknown>;
       if (rail.title !== undefined) {
-        if (typeof rail.title !== 'string' || !rail.title) {
+        if (apiVersion < 0.8) {
+          errors.push('contributes.railItem.title requires API >= 0.8');
+        } else if (typeof rail.title !== 'string' || !rail.title) {
           errors.push('contributes.railItem.title must be a non-empty string');
         }
       }
     }
 
-    // contributes.canvasWidgets validation
+    // v0.8+ contributes.canvasWidgets validation
     if (contrib.canvasWidgets !== undefined) {
-      if (!Array.isArray(contrib.canvasWidgets)) {
+      if (apiVersion < 0.8) {
+        errors.push('contributes.canvasWidgets requires API >= 0.8');
+      } else if (!Array.isArray(contrib.canvasWidgets)) {
         errors.push('contributes.canvasWidgets must be an array');
       } else {
         const seenIds = new Set<string>();
@@ -433,6 +465,8 @@ export function validateManifest(raw: unknown): ValidationResult {
             if (widget.pinnableToControls !== undefined) {
               if (typeof widget.pinnableToControls !== 'boolean') {
                 errors.push(`contributes.canvasWidgets[${i}].pinnableToControls must be a boolean`);
+              } else if (widget.pinnableToControls && apiVersion < 0.9) {
+                errors.push(`contributes.canvasWidgets[${i}].pinnableToControls requires API >= 0.9`);
               }
             }
           }
@@ -456,8 +490,11 @@ export function validateManifest(raw: unknown): ValidationResult {
     }
   }
 
-  // Companion config validation
+  // Companion config validation (v0.9+)
   if (m.companion !== undefined) {
+    if (apiVersion < 0.9) {
+      errors.push('companion config requires API >= 0.9');
+    }
     if (!m.companion || typeof m.companion !== 'object') {
       errors.push('companion must be an object');
     } else {

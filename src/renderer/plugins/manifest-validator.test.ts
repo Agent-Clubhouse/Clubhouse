@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { validateManifest } from './manifest-validator';
+import { validateManifest, DEPRECATED_PLUGIN_API_VERSIONS } from './manifest-validator';
+import { SUPPORTED_PLUGIN_API_VERSIONS } from '../../shared/marketplace-types';
 import { PERMISSION_HIERARCHY } from '../../shared/plugin-types';
 
 describe('manifest-validator', () => {
@@ -7,11 +8,54 @@ describe('manifest-validator', () => {
     id: 'test-plugin',
     name: 'Test Plugin',
     version: '1.0.0',
-    engine: { api: 0.9 },
+    engine: { api: 0.7 },
     scope: 'project',
     permissions: ['files'],
     contributes: { help: {} },
   };
+
+  describe('SUPPORTED_PLUGIN_API_VERSIONS', () => {
+    it('is 0.7, 0.8 and 0.9: every version a published Workshop release uses (#2757)', () => {
+      expect(SUPPORTED_PLUGIN_API_VERSIONS).toEqual([0.7, 0.8, 0.9]);
+    });
+
+    it('does not include 0.4, 0.5 or 0.6', () => {
+      expect(SUPPORTED_PLUGIN_API_VERSIONS).not.toContain(0.4);
+      expect(SUPPORTED_PLUGIN_API_VERSIONS).not.toContain(0.5);
+      expect(SUPPORTED_PLUGIN_API_VERSIONS).not.toContain(0.6);
+    });
+  });
+
+  describe('DEPRECATED_PLUGIN_API_VERSIONS', () => {
+    it('marks no loadable version as deprecated', () => {
+      expect(DEPRECATED_PLUGIN_API_VERSIONS).toEqual({});
+    });
+  });
+
+  describe('deprecation warnings', () => {
+    it('returns a warning for a deprecated API version that still loads', () => {
+      DEPRECATED_PLUGIN_API_VERSIONS[0.7] = 'v2.0';
+      try {
+        const result = validateManifest(validManifest);
+        expect(result.valid).toBe(true);
+        expect(result.warnings).toEqual(['API version 0.7 is deprecated and will be removed in v2.0. Please migrate to a newer API version.']);
+      } finally {
+        delete DEPRECATED_PLUGIN_API_VERSIONS[0.7];
+      }
+    });
+
+    it('returns no warnings for non-deprecated API version 0.7', () => {
+      const result = validateManifest({ ...validManifest, engine: { api: 0.7 } });
+      expect(result.valid).toBe(true);
+      expect(result.warnings).toHaveLength(0);
+    });
+
+    it('returns warnings array even for invalid manifests', () => {
+      const result = validateManifest(null);
+      expect(result.valid).toBe(false);
+      expect(result.warnings).toEqual([]);
+    });
+  });
 
   describe('validateManifest', () => {
     it('accepts a valid project-scoped manifest', () => {
@@ -121,7 +165,7 @@ describe('manifest-validator', () => {
     it('rejects unsupported API version', () => {
       const result = validateManifest({ ...validManifest, engine: { api: 99 } });
       expect(result.valid).toBe(false);
-      expect(result.errors).toEqual(["This plugin uses plugin API 99, which this version of Clubhouse can't load. Supported plugin API: 0.9."]);
+      expect(result.errors).toEqual(["This plugin uses plugin API 99, which this version of Clubhouse can't load. Supported plugin API: 0.7, 0.8 or 0.9."]);
     });
 
     // --- Scope checks ---
@@ -280,9 +324,9 @@ describe('manifest-validator', () => {
       expect(result.valid).toBe(true);
     });
 
-    // --- v0.5 help validation ---
+    // --- help validation ---
 
-    it('rejects v0.5 manifest without contributes.help', () => {
+    it('rejects a manifest without contributes.help', () => {
       const result = validateManifest({
         ...validManifest,
         contributes: {},
@@ -291,7 +335,7 @@ describe('manifest-validator', () => {
       expect(result.errors[0]).toContain('contributes.help');
     });
 
-    it('accepts v0.5 manifest with contributes.help: {}', () => {
+    it('accepts a manifest with contributes.help: {}', () => {
       const result = validateManifest({
         ...validManifest,
         contributes: { help: {} },
@@ -299,7 +343,7 @@ describe('manifest-validator', () => {
       expect(result.valid).toBe(true);
     });
 
-    it('accepts v0.5 manifest with valid help topics', () => {
+    it('accepts a manifest with valid help topics', () => {
       const result = validateManifest({
         ...validManifest,
         contributes: {
@@ -313,7 +357,7 @@ describe('manifest-validator', () => {
       expect(result.valid).toBe(true);
     });
 
-    it('rejects v0.5 manifest with malformed help topics', () => {
+    it('rejects a manifest with malformed help topics', () => {
       const result = validateManifest({
         ...validManifest,
         contributes: {
@@ -328,7 +372,7 @@ describe('manifest-validator', () => {
       expect(result.errors.some((e: string) => e.includes('topics[0].id'))).toBe(true);
     });
 
-    it('rejects v0.5 manifest with no contributes at all', () => {
+    it('rejects a manifest with no contributes at all', () => {
       const result = validateManifest({
         ...validManifest,
         contributes: undefined,
@@ -338,53 +382,53 @@ describe('manifest-validator', () => {
     });
   });
 
-  // --- v0.5 permission validation ---
+  // --- permission validation ---
 
-  describe('v0.5 permission validation', () => {
-    const v05Base = {
+  describe('permission validation', () => {
+    const permBase = {
       ...validManifest,
-      engine: { api: 0.9 },
+      engine: { api: 0.7 },
       permissions: ['files', 'git'],
     };
 
-    it('rejects v0.5 without permissions array', () => {
-      const { permissions: _permissions, ...rest } = v05Base;
+    it('rejects a plugin without permissions array', () => {
+      const { permissions: _permissions, ...rest } = permBase;
       const result = validateManifest(rest);
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('permissions array');
     });
 
-    it('accepts v0.5 with empty permissions array', () => {
-      const result = validateManifest({ ...v05Base, permissions: [] });
+    it('accepts an empty permissions array', () => {
+      const result = validateManifest({ ...permBase, permissions: [] });
       expect(result.valid).toBe(true);
     });
 
-    it('accepts v0.5 with valid permissions', () => {
-      const result = validateManifest(v05Base);
+    it('accepts valid permissions', () => {
+      const result = validateManifest(permBase);
       expect(result.valid).toBe(true);
     });
 
     it('rejects unknown permission strings', () => {
-      const result = validateManifest({ ...v05Base, permissions: ['files', 'teleport'] });
+      const result = validateManifest({ ...permBase, permissions: ['files', 'teleport'] });
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('unknown permission "teleport"');
     });
 
     it('rejects duplicate permissions', () => {
-      const result = validateManifest({ ...v05Base, permissions: ['files', 'git', 'files'] });
+      const result = validateManifest({ ...permBase, permissions: ['files', 'git', 'files'] });
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('duplicate permission "files"');
     });
 
     it('rejects non-string permission entries', () => {
-      const result = validateManifest({ ...v05Base, permissions: ['files', 42] });
+      const result = validateManifest({ ...permBase, permissions: ['files', 42] });
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('must be a string');
     });
 
     it('rejects externalRoots without files.external permission', () => {
       const result = validateManifest({
-        ...v05Base,
+        ...permBase,
         permissions: ['files'],
         externalRoots: [{ settingKey: 'data-root', root: 'data' }],
       });
@@ -394,7 +438,7 @@ describe('manifest-validator', () => {
 
     it('rejects files.external without externalRoots', () => {
       const result = validateManifest({
-        ...v05Base,
+        ...permBase,
         permissions: ['files', 'files.external'],
       });
       expect(result.valid).toBe(false);
@@ -403,7 +447,7 @@ describe('manifest-validator', () => {
 
     it('accepts files.external with valid externalRoots', () => {
       const result = validateManifest({
-        ...v05Base,
+        ...permBase,
         permissions: ['files', 'files.external'],
         externalRoots: [{ settingKey: 'data-root', root: 'data' }],
       });
@@ -412,7 +456,7 @@ describe('manifest-validator', () => {
 
     it('validates externalRoots entry shape — missing settingKey', () => {
       const result = validateManifest({
-        ...v05Base,
+        ...permBase,
         permissions: ['files', 'files.external'],
         externalRoots: [{ root: 'data' }],
       });
@@ -422,7 +466,7 @@ describe('manifest-validator', () => {
 
     it('validates externalRoots entry shape — missing root', () => {
       const result = validateManifest({
-        ...v05Base,
+        ...permBase,
         permissions: ['files', 'files.external'],
         externalRoots: [{ settingKey: 'data-root' }],
       });
@@ -432,7 +476,7 @@ describe('manifest-validator', () => {
 
     it('validates externalRoots entry shape — empty strings', () => {
       const result = validateManifest({
-        ...v05Base,
+        ...permBase,
         permissions: ['files', 'files.external'],
         externalRoots: [{ settingKey: '', root: '' }],
       });
@@ -444,7 +488,7 @@ describe('manifest-validator', () => {
 
     it('rejects process permission without allowedCommands', () => {
       const result = validateManifest({
-        ...v05Base,
+        ...permBase,
         permissions: ['files', 'process'],
       });
       expect(result.valid).toBe(false);
@@ -453,7 +497,7 @@ describe('manifest-validator', () => {
 
     it('rejects allowedCommands without process permission', () => {
       const result = validateManifest({
-        ...v05Base,
+        ...permBase,
         permissions: ['files'],
         allowedCommands: ['gh'],
       });
@@ -463,7 +507,7 @@ describe('manifest-validator', () => {
 
     it('accepts process permission with valid allowedCommands', () => {
       const result = validateManifest({
-        ...v05Base,
+        ...permBase,
         permissions: ['files', 'process'],
         allowedCommands: ['gh'],
       });
@@ -472,7 +516,7 @@ describe('manifest-validator', () => {
 
     it('rejects allowedCommands entries with forward slash', () => {
       const result = validateManifest({
-        ...v05Base,
+        ...permBase,
         permissions: ['files', 'process'],
         allowedCommands: ['/usr/bin/gh'],
       });
@@ -482,7 +526,7 @@ describe('manifest-validator', () => {
 
     it('rejects allowedCommands entries with backslash', () => {
       const result = validateManifest({
-        ...v05Base,
+        ...permBase,
         permissions: ['files', 'process'],
         allowedCommands: ['bin\\gh'],
       });
@@ -492,7 +536,7 @@ describe('manifest-validator', () => {
 
     it('rejects allowedCommands entries with dot-dot', () => {
       const result = validateManifest({
-        ...v05Base,
+        ...permBase,
         permissions: ['files', 'process'],
         allowedCommands: ['..gh'],
       });
@@ -502,7 +546,7 @@ describe('manifest-validator', () => {
 
     it('rejects empty string in allowedCommands', () => {
       const result = validateManifest({
-        ...v05Base,
+        ...permBase,
         permissions: ['files', 'process'],
         allowedCommands: [''],
       });
@@ -512,7 +556,7 @@ describe('manifest-validator', () => {
 
     it('accepts multiple valid allowedCommands', () => {
       const result = validateManifest({
-        ...v05Base,
+        ...permBase,
         permissions: ['files', 'process'],
         allowedCommands: ['gh', 'node', 'npx'],
       });
@@ -520,35 +564,32 @@ describe('manifest-validator', () => {
     });
   });
 
-  // --- v0.6 validation ---
+  // --- removed API versions and commands ---
 
-  describe('v0.6 API version', () => {
-    const v06Base = {
+  describe('removed API versions 0.5 and 0.6 (#2757)', () => {
+    it.each([0.5, 0.6])('refuses an otherwise valid %s manifest with one message naming the version', (api) => {
+      const result = validateManifest({ ...validManifest, engine: { api } });
+      expect(result.valid).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain(`plugin API ${api}, which was removed in Clubhouse 1.0`);
+      expect(result.errors[0]).toContain('0.7, 0.8 or 0.9');
+    });
+  });
+
+  describe('commands', () => {
+    const cmdBase = {
       id: 'test-plugin',
       name: 'Test Plugin',
       version: '1.0.0',
-      engine: { api: 0.9 },
+      engine: { api: 0.7 },
       scope: 'project' as const,
       permissions: ['commands'],
       contributes: { help: {} },
     };
 
-    it('accepts v0.6 manifest', () => {
-      const result = validateManifest(v06Base);
-      expect(result.valid).toBe(true);
-    });
-
-    it('v0.5 manifests still work', () => {
+    it('accepts commands with defaultBinding', () => {
       const result = validateManifest({
-        ...validManifest,
-        engine: { api: 0.9 },
-      });
-      expect(result.valid).toBe(true);
-    });
-
-    it('accepts commands with defaultBinding on v0.6', () => {
-      const result = validateManifest({
-        ...v06Base,
+        ...cmdBase,
         contributes: {
           help: {},
           commands: [
@@ -561,7 +602,7 @@ describe('manifest-validator', () => {
 
     it('rejects non-string defaultBinding', () => {
       const result = validateManifest({
-        ...v06Base,
+        ...cmdBase,
         contributes: {
           help: {},
           commands: [
@@ -575,7 +616,7 @@ describe('manifest-validator', () => {
 
     it('rejects non-boolean global flag', () => {
       const result = validateManifest({
-        ...v06Base,
+        ...cmdBase,
         contributes: {
           help: {},
           commands: [
@@ -589,7 +630,7 @@ describe('manifest-validator', () => {
 
     it('accepts boolean global flag', () => {
       const result = validateManifest({
-        ...v06Base,
+        ...cmdBase,
         contributes: {
           help: {},
           commands: [
@@ -601,21 +642,21 @@ describe('manifest-validator', () => {
     });
   });
 
-  // --- v0.6 agent-config permission validation ---
+  // --- agent-config permission validation ---
 
-  describe('v0.6 agent-config permissions', () => {
-    const v06Base = {
+  describe('agent-config permissions', () => {
+    const cmdBase = {
       id: 'test-plugin',
       name: 'Test Plugin',
       version: '1.0.0',
-      engine: { api: 0.9 },
+      engine: { api: 0.7 },
       scope: 'project' as const,
       contributes: { help: {} },
     };
 
     it('accepts agent-config permission', () => {
       const result = validateManifest({
-        ...v06Base,
+        ...cmdBase,
         permissions: ['agent-config'],
       });
       expect(result.valid).toBe(true);
@@ -623,7 +664,7 @@ describe('manifest-validator', () => {
 
     it('accepts agent-config with agent-config.permissions', () => {
       const result = validateManifest({
-        ...v06Base,
+        ...cmdBase,
         permissions: ['agent-config', 'agent-config.permissions'],
       });
       expect(result.valid).toBe(true);
@@ -631,7 +672,7 @@ describe('manifest-validator', () => {
 
     it('accepts agent-config with agent-config.mcp', () => {
       const result = validateManifest({
-        ...v06Base,
+        ...cmdBase,
         permissions: ['agent-config', 'agent-config.mcp'],
       });
       expect(result.valid).toBe(true);
@@ -639,7 +680,7 @@ describe('manifest-validator', () => {
 
     it('rejects agent-config.permissions without base agent-config', () => {
       const result = validateManifest({
-        ...v06Base,
+        ...cmdBase,
         permissions: ['agent-config.permissions'],
       });
       expect(result.valid).toBe(false);
@@ -648,7 +689,7 @@ describe('manifest-validator', () => {
 
     it('rejects agent-config.mcp without base agent-config', () => {
       const result = validateManifest({
-        ...v06Base,
+        ...cmdBase,
         permissions: ['agent-config.mcp'],
       });
       expect(result.valid).toBe(false);
@@ -657,7 +698,7 @@ describe('manifest-validator', () => {
 
     it('accepts all agent-config permissions together', () => {
       const result = validateManifest({
-        ...v06Base,
+        ...cmdBase,
         permissions: ['agent-config', 'agent-config.cross-project', 'agent-config.permissions', 'agent-config.mcp'],
       });
       expect(result.valid).toBe(true);
@@ -665,7 +706,7 @@ describe('manifest-validator', () => {
 
     it('accepts agent-config with agent-config.cross-project', () => {
       const result = validateManifest({
-        ...v06Base,
+        ...cmdBase,
         permissions: ['agent-config', 'agent-config.cross-project'],
       });
       expect(result.valid).toBe(true);
@@ -673,7 +714,7 @@ describe('manifest-validator', () => {
 
     it('rejects agent-config.cross-project without base agent-config', () => {
       const result = validateManifest({
-        ...v06Base,
+        ...cmdBase,
         permissions: ['agent-config.cross-project'],
       });
       expect(result.valid).toBe(false);
@@ -688,7 +729,7 @@ describe('manifest-validator', () => {
       id: 'spring-themes',
       name: 'Spring Themes',
       version: '0.1.0',
-      engine: { api: 0.9 },
+      engine: { api: 0.7 },
       kind: 'pack',
       scope: 'app',
       contributes: {
@@ -704,6 +745,10 @@ describe('manifest-validator', () => {
         ],
       },
     };
+
+    it('0.7 is in SUPPORTED_PLUGIN_API_VERSIONS', () => {
+      expect(SUPPORTED_PLUGIN_API_VERSIONS).toContain(0.7);
+    });
 
     it('accepts a valid pack manifest', () => {
       const result = validateManifest(validPack);
@@ -778,7 +823,7 @@ describe('manifest-validator', () => {
     it('accepts kind: "plugin" explicitly', () => {
       const result = validateManifest({
         ...validManifest,
-        engine: { api: 0.9 },
+        engine: { api: 0.7 },
         kind: 'plugin',
       });
       expect(result.valid).toBe(true);
@@ -792,7 +837,7 @@ describe('manifest-validator', () => {
       id: 'theme-plugin',
       name: 'Theme Plugin',
       version: '1.0.0',
-      engine: { api: 0.9 },
+      engine: { api: 0.7 },
       scope: 'app',
       permissions: [],
       contributes: { help: {} },
@@ -932,7 +977,7 @@ describe('manifest-validator', () => {
       id: 'test-plugin',
       name: 'Test Plugin',
       version: '1.0.0',
-      engine: { api: 0.9 },
+      engine: { api: 0.7 },
       scope: 'project' as const,
       contributes: { help: {} },
     };
@@ -955,11 +1000,8 @@ describe('manifest-validator', () => {
       for (const [child, parent] of Object.entries(PERMISSION_HIERARCHY)) {
         // files.external also needs externalRoots
         if (child === 'files.external') continue;
-        // workspace permissions need API >= 0.7
-        const apiVersion = child.startsWith('workspace') ? 0.7 : 0.5;
         const result = validateManifest({
           ...base,
-          engine: { api: apiVersion },
           permissions: [parent, child],
         });
         // Should not have hierarchy errors (may have other unrelated errors like process needing allowedCommands)
@@ -974,7 +1016,7 @@ describe('manifest-validator', () => {
       id: 'test-plugin',
       name: 'Test Plugin',
       version: '1.0.0',
-      engine: { api: 0.9 },
+      engine: { api: 0.7 },
       scope: 'project',
       contributes: { help: {} },
     };
@@ -1021,7 +1063,7 @@ describe('manifest-validator', () => {
       id: 'canvas-plugin',
       name: 'Canvas Plugin',
       version: '1.0.0',
-      engine: { api: 0.9 },
+      engine: { api: 0.8 },
       scope: 'project' as const,
       permissions: ['files', 'canvas'],
       contributes: {
@@ -1035,6 +1077,15 @@ describe('manifest-validator', () => {
     it('accepts valid canvasWidgets declaration', () => {
       const result = validateManifest(canvasBase);
       expect(result.valid).toBe(true);
+    });
+
+    it('rejects canvasWidgets with API < 0.8', () => {
+      const result = validateManifest({
+        ...canvasBase,
+        engine: { api: 0.7 },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('canvasWidgets requires API >= 0.8'))).toBe(true);
     });
 
     it('rejects canvasWidgets without canvas permission', () => {
@@ -1141,12 +1192,26 @@ describe('manifest-validator', () => {
       expect(result.valid).toBe(true);
     });
 
+    it('rejects canvas permission on API < 0.8', () => {
+      const result = validateManifest({
+        id: 'canvas-old',
+        name: 'Canvas Old',
+        version: '1.0.0',
+        engine: { api: 0.7 },
+        scope: 'project',
+        permissions: ['files', 'canvas'],
+        contributes: { help: {} },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('Canvas permission requires API >= 0.8'))).toBe(true);
+    });
+
     it('accepts canvas permission on API 0.8', () => {
       const result = validateManifest({
         id: 'canvas-new',
         name: 'Canvas New',
         version: '1.0.0',
-        engine: { api: 0.9 },
+        engine: { api: 0.8 },
         scope: 'project',
         permissions: ['files', 'canvas'],
         contributes: { help: {} },
@@ -1156,12 +1221,26 @@ describe('manifest-validator', () => {
   });
 
   describe('annex permission', () => {
+    it('rejects annex permission on API < 0.8', () => {
+      const result = validateManifest({
+        id: 'annex-old',
+        name: 'Annex Old',
+        version: '1.0.0',
+        engine: { api: 0.7 },
+        scope: 'project',
+        permissions: ['files', 'annex'],
+        contributes: { help: {} },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('Annex permission requires API >= 0.8'))).toBe(true);
+    });
+
     it('accepts annex permission on API 0.8', () => {
       const result = validateManifest({
         id: 'annex-new',
         name: 'Annex New',
         version: '1.0.0',
-        engine: { api: 0.9 },
+        engine: { api: 0.8 },
         scope: 'project',
         permissions: ['files', 'annex'],
         contributes: { help: {} },
@@ -1176,7 +1255,7 @@ describe('manifest-validator', () => {
         id: 'title-test',
         name: 'Title Test',
         version: '1.0.0',
-        engine: { api: 0.9 },
+        engine: { api: 0.8 },
         scope: 'project',
         permissions: ['files'],
         contributes: {
@@ -1192,7 +1271,7 @@ describe('manifest-validator', () => {
         id: 'rail-title',
         name: 'Rail Title',
         version: '1.0.0',
-        engine: { api: 0.9 },
+        engine: { api: 0.8 },
         scope: 'app',
         permissions: ['files'],
         contributes: {
@@ -1203,12 +1282,46 @@ describe('manifest-validator', () => {
       expect(result.valid).toBe(true);
     });
 
+    it('rejects tab.title on v0.7 manifest', () => {
+      const result = validateManifest({
+        id: 'title-old',
+        name: 'Title Old',
+        version: '1.0.0',
+        engine: { api: 0.7 },
+        scope: 'project',
+        permissions: ['files'],
+        contributes: {
+          help: {},
+          tab: { label: 'Tab', title: 'Custom' },
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('tab.title requires API >= 0.8'))).toBe(true);
+    });
+
+    it('rejects railItem.title on v0.7 manifest', () => {
+      const result = validateManifest({
+        id: 'rail-old',
+        name: 'Rail Old',
+        version: '1.0.0',
+        engine: { api: 0.7 },
+        scope: 'app',
+        permissions: ['files'],
+        contributes: {
+          help: {},
+          railItem: { label: 'Rail', title: 'Custom' },
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('railItem.title requires API >= 0.8'))).toBe(true);
+    });
+
     it('rejects empty string tab.title', () => {
       const result = validateManifest({
         id: 'empty-title',
         name: 'Empty Title',
         version: '1.0.0',
-        engine: { api: 0.9 },
+        engine: { api: 0.8 },
         scope: 'project',
         permissions: ['files'],
         contributes: {
@@ -1225,7 +1338,7 @@ describe('manifest-validator', () => {
         id: 'bad-title',
         name: 'Bad Title',
         version: '1.0.0',
-        engine: { api: 0.9 },
+        engine: { api: 0.8 },
         scope: 'project',
         permissions: ['files'],
         contributes: {
@@ -1242,7 +1355,7 @@ describe('manifest-validator', () => {
         id: 'no-title',
         name: 'No Title',
         version: '1.0.0',
-        engine: { api: 0.9 },
+        engine: { api: 0.8 },
         scope: 'project',
         permissions: ['files'],
         contributes: {

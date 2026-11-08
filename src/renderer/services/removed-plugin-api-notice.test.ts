@@ -21,20 +21,29 @@ describe('showRemovedPluginApiNotice (#2757)', () => {
   });
 
   it('names each refused plugin and its removed version, once', async () => {
-    install('automations', 'Automations', 0.8, 'incompatible');
-    install('wiki', 'Wiki', 0.7, 'incompatible');
+    install('old-a', 'Old A', 0.6, 'incompatible');
+    install('old-b', 'Old B', 0.5, 'incompatible');
+    install('automations', 'Automations', 0.8, 'registered'); // 0.8 still loads
     install('pomodoro', 'Pomodoro', 0.9, 'registered');
     install('future', 'Future', 2.0, 'incompatible');
     install('lounge', 'Lounge', 0.8, 'incompatible'); // retired: its own notice
 
     await showRemovedPluginApiNotice();
     expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual([
-      'These plugins use plugin API versions removed in Clubhouse 1.0, so they no longer load: Automations (API 0.8), Wiki (API 0.7). Settings > Plugins has the details.',
+      'These plugins use plugin API versions removed in Clubhouse 1.0, so they no longer load: Old A (API 0.6), Old B (API 0.5). Settings > Plugins has the details.',
     ]);
 
     useToastStore.setState({ toasts: [] });
     await showRemovedPluginApiNotice();
     expect(useToastStore.getState().toasts).toEqual([]);
+  });
+
+  it('speaks of one plugin in the singular', async () => {
+    install('old-a', 'Old A', 0.5, 'incompatible');
+    await showRemovedPluginApiNotice();
+    expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual([
+      'This plugin uses a plugin API version removed in Clubhouse 1.0, so it no longer loads: Old A (API 0.5). Settings > Plugins has the details.',
+    ]);
   });
 
   it('says nothing when every plugin loads', async () => {

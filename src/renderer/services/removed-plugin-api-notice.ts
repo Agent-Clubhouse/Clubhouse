@@ -30,9 +30,11 @@ export async function showRemovedPluginApiNotice(): Promise<void> {
     && !shown.includes(entry.manifest.id));
   if (refused.length === 0) return;
   const names = refused.map((e) => `${e.manifest.name} (API ${e.manifest.engine.api})`).join(', ');
-  const noun = refused.length === 1 ? 'plugin uses a plugin API version' : 'plugins use plugin API versions';
+  const lead = refused.length === 1
+    ? 'This plugin uses a plugin API version removed in Clubhouse 1.0, so it no longer loads'
+    : 'These plugins use plugin API versions removed in Clubhouse 1.0, so they no longer load';
   useToastStore.getState().addToast(
-    `These ${noun} removed in Clubhouse 1.0, so they no longer load: ${names}. Settings > Plugins has the details.`,
+    `${lead}: ${names}. Settings > Plugins has the details.`,
     'info',
   );
   try {

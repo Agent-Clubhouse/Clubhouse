@@ -111,11 +111,14 @@ export interface PluginUpdatesStatus {
 /** The registry schema version the client understands. */
 export const SUPPORTED_REGISTRY_VERSION = 1;
 
-/** Plugin API versions the host app can load. Clubhouse 1.0 keeps only the latest (#2757). */
-export const SUPPORTED_PLUGIN_API_VERSIONS = [0.9];
+/**
+ * Plugin API versions the host app can load: every version a published
+ * Workshop release still uses (#2757).
+ */
+export const SUPPORTED_PLUGIN_API_VERSIONS = [0.7, 0.8, 0.9];
 
 /** API versions that loaded before Clubhouse 1.0 and were removed then (#2757, #1676). */
-export const REMOVED_PLUGIN_API_VERSIONS: readonly number[] = [0.5, 0.6, 0.7, 0.8];
+export const REMOVED_PLUGIN_API_VERSIONS: readonly number[] = [0.5, 0.6];
 
 /**
  * Deprecated API versions that still load but will be removed in a future release.
@@ -123,11 +126,17 @@ export const REMOVED_PLUGIN_API_VERSIONS: readonly number[] = [0.5, 0.6, 0.7, 0.
  */
 export const DEPRECATED_PLUGIN_API_VERSIONS: Record<number, string> = {};
 
+/** "0.7, 0.8 or 0.9" */
+function listVersions(versions: readonly number[]): string {
+  if (versions.length <= 1) return versions.join('');
+  return `${versions.slice(0, -1).join(', ')} or ${versions[versions.length - 1]}`;
+}
+
 /** The refusal for a plugin whose `engine.api` this Clubhouse can't load, naming the version. */
 export function unsupportedPluginApiMessage(api: number): string {
-  const supported = SUPPORTED_PLUGIN_API_VERSIONS.join(', ');
+  const supported = listVersions(SUPPORTED_PLUGIN_API_VERSIONS);
   if (REMOVED_PLUGIN_API_VERSIONS.includes(api)) {
-    return `This plugin uses plugin API ${api}, which was removed in Clubhouse 1.0. Clubhouse now loads only plugins built for API ${supported}. Install an update built for API ${supported}, or ask the plugin's author for one.`;
+    return `This plugin uses plugin API ${api}, which was removed in Clubhouse 1.0. Clubhouse loads plugins built for API ${supported}. Install an update built for one of those, or ask the plugin's author for one.`;
   }
   return `This plugin uses plugin API ${api}, which this version of Clubhouse can't load. Supported plugin API: ${supported}.`;
 }

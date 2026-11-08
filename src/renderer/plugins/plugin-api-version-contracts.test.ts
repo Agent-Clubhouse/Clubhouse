@@ -7,16 +7,11 @@
  * 3. Removing a method from the API breaks the test (prevents silent API regression)
  * 4. Version-specific features are properly gated
  *
- * Clubhouse 1.0 loads only API 0.9 (#2757), so every fixture targets 0.9 and
- * 0.5 to 0.8 are refused (§1b). A version in a test title ("v0.7 pack
- * plugins") says which API release introduced the feature.
- *
  * @see https://github.com/Agent-Clubhouse/Clubhouse/issues/239
  */
 import { describe, it, expect } from 'vitest';
 import { validateManifest, DEPRECATED_PLUGIN_API_VERSIONS } from './manifest-validator';
-import { REMOVED_PLUGIN_API_VERSIONS } from '../../shared/marketplace-types';
-import { SUPPORTED_PLUGIN_API_VERSIONS } from '../../shared/marketplace-types';
+import { SUPPORTED_PLUGIN_API_VERSIONS, REMOVED_PLUGIN_API_VERSIONS } from '../../shared/marketplace-types';
 import { createMockAPI, createMockContext, installMockWindowClubhouse } from './testing';
 import { createPluginAPI } from './plugin-api-factory';
 import type {
@@ -164,7 +159,7 @@ const CONTEXT_PROPERTIES: (keyof PluginContextInfo)[] = ['mode', 'projectId', 'p
 // Top-level PluginAPI namespaces
 const PLUGIN_API_NAMESPACES: (keyof PluginAPI)[] = [
   'project', 'projects', 'git', 'storage', 'ui', 'commands', 'events',
-  'settings', 'agents', 'hub', 'navigation', 'widgets', 'terminal',
+  'settings', 'agents', 'navigation', 'widgets', 'terminal',
   'logging', 'files', 'process', 'badges', 'agentConfig', 'sounds', 'theme',
   'workspace', 'canvas', 'window', 'mcp', 'annex', 'context',
 ];
@@ -190,40 +185,14 @@ installMockWindowClubhouse();
 
 // ── Helper: minimal valid manifest per version ─────────────────────────────
 
-function minimalV05Manifest(overrides?: Partial<PluginManifest>): Record<string, unknown> {
+function fullV07Manifest(): Record<string, unknown> {
   return {
-    id: 'test-plugin',
-    name: 'Test Plugin',
-    version: '1.0.0',
-    engine: { api: 0.9 },
-    scope: 'project',
-    permissions: ['files'],
-    contributes: { help: {} },
-    ...overrides,
-  };
-}
-
-function minimalV06Manifest(overrides?: Partial<PluginManifest>): Record<string, unknown> {
-  return {
-    id: 'test-plugin',
-    name: 'Test Plugin',
-    version: '1.0.0',
-    engine: { api: 0.9 },
-    scope: 'project',
-    permissions: ['files'],
-    contributes: { help: {} },
-    ...overrides,
-  };
-}
-
-function fullV05Manifest(): Record<string, unknown> {
-  return {
-    id: 'full-v05-plugin',
-    name: 'Full v0.5 Plugin',
+    id: 'full-v07-plugin',
+    name: 'Full v0.7 Plugin',
     version: '2.0.0',
-    description: 'A fully-specified v0.5 plugin',
+    description: 'A fully-specified v0.7 plugin',
     author: 'Test Author',
-    engine: { api: 0.9 },
+    engine: { api: 0.7 },
     scope: 'dual',
     main: './dist/main.js',
     settingsPanel: 'declarative',
@@ -250,14 +219,13 @@ function fullV05Manifest(): Record<string, unknown> {
   };
 }
 
-function fullV06Manifest(): Record<string, unknown> {
+function fullV07ManifestWithBindings(): Record<string, unknown> {
   return {
-    ...fullV05Manifest(),
-    id: 'full-v06-plugin',
-    name: 'Full v0.6 Plugin',
-    engine: { api: 0.9 },
+    ...fullV07Manifest(),
+    id: 'full-v07-bindings-plugin',
+    name: 'Full v0.7 Plugin with bindings',
     contributes: {
-      ...((fullV05Manifest() as Record<string, unknown>).contributes as Record<string, unknown>),
+      ...((fullV07Manifest() as Record<string, unknown>).contributes as Record<string, unknown>),
       commands: [
         { id: 'run', title: 'Run It', defaultBinding: 'Meta+Shift+R', global: true },
         { id: 'stop', title: 'Stop It' },
@@ -271,7 +239,7 @@ function minimalV07Manifest(overrides?: Partial<PluginManifest>): Record<string,
     id: 'test-plugin',
     name: 'Test Plugin',
     version: '1.0.0',
-    engine: { api: 0.9 },
+    engine: { api: 0.7 },
     scope: 'project',
     permissions: ['files'],
     contributes: { help: {} },
@@ -284,7 +252,7 @@ function minimalV08Manifest(overrides?: Partial<PluginManifest>): Record<string,
     id: 'test-plugin',
     name: 'Test Plugin',
     version: '1.0.0',
-    engine: { api: 0.9 },
+    engine: { api: 0.8 },
     scope: 'project',
     permissions: ['files'],
     contributes: { help: {} },
@@ -310,7 +278,7 @@ function minimalPackManifest(overrides?: Record<string, unknown>): Record<string
     id: 'test-pack',
     name: 'Test Sound Pack',
     version: '1.0.0',
-    engine: { api: 0.9 },
+    engine: { api: 0.7 },
     kind: 'pack',
     scope: 'app',
     contributes: {
@@ -325,7 +293,7 @@ function themePackManifest(): Record<string, unknown> {
     id: 'monokai-pack',
     name: 'Monokai Theme Pack',
     version: '1.0.0',
-    engine: { api: 0.9 },
+    engine: { api: 0.7 },
     kind: 'pack',
     scope: 'app',
     contributes: {
@@ -348,7 +316,7 @@ function agentConfigPackManifest(): Record<string, unknown> {
     id: 'config-pack',
     name: 'Config Pack',
     version: '1.0.0',
-    engine: { api: 0.9 },
+    engine: { api: 0.7 },
     kind: 'pack',
     scope: 'project',
     contributes: {
@@ -372,12 +340,15 @@ describe('§1 SUPPORTED_PLUGIN_API_VERSIONS integrity', () => {
     }
   });
 
-  it('contains exactly [0.9]: Clubhouse 1.0 keeps only the latest (#2757)', () => {
-    expect(SUPPORTED_PLUGIN_API_VERSIONS).toEqual([0.9]);
+  it('contains exactly [0.7, 0.8, 0.9]', () => {
+    expect(SUPPORTED_PLUGIN_API_VERSIONS).toEqual([0.7, 0.8, 0.9]);
   });
 
-  it('does NOT contain v0.4 (dropped this cycle)', () => {
+  it('does NOT contain v0.4, or v0.5 and v0.6 (removed in 1.0, #2757)', () => {
     expect(SUPPORTED_PLUGIN_API_VERSIONS).not.toContain(0.4);
+    expect(SUPPORTED_PLUGIN_API_VERSIONS).not.toContain(0.5);
+    expect(SUPPORTED_PLUGIN_API_VERSIONS).not.toContain(0.6);
+    expect(REMOVED_PLUGIN_API_VERSIONS).toEqual([0.5, 0.6]);
   });
 
   it('does NOT contain v0.3 or lower', () => {
@@ -392,27 +363,35 @@ describe('§1 SUPPORTED_PLUGIN_API_VERSIONS integrity', () => {
 });
 
 // =============================================================================
-// § 1b. Removed and deprecated versions
+// § 1b. DEPRECATED_PLUGIN_API_VERSIONS
 // =============================================================================
 
-describe('§1b removed and deprecated API versions', () => {
-  it('removed 0.5 to 0.8, and none of them is still supported or deprecated', () => {
-    expect(REMOVED_PLUGIN_API_VERSIONS).toEqual([0.5, 0.6, 0.7, 0.8]);
-    for (const v of REMOVED_PLUGIN_API_VERSIONS) {
-      expect(SUPPORTED_PLUGIN_API_VERSIONS).not.toContain(v);
-      expect(DEPRECATED_PLUGIN_API_VERSIONS[v]).toBeUndefined();
-    }
-  });
-
-  it('has no deprecated version today', () => {
+describe('§1b DEPRECATED_PLUGIN_API_VERSIONS', () => {
+  it('marks no loadable version as deprecated', () => {
     expect(DEPRECATED_PLUGIN_API_VERSIONS).toEqual({});
   });
 
-  it.each(REMOVED_PLUGIN_API_VERSIONS.map((v) => [v]))('refuses a v%s manifest with one message naming the version', (api) => {
-    const result = validateManifest({ id: 'old', name: 'Old', version: '1.0.0', engine: { api }, scope: 'project', permissions: [], contributes: { help: {} } });
-    expect(result.valid).toBe(false);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain(`plugin API ${api}, which was removed in Clubhouse 1.0`);
+  it('v0.7 manifest validates with no deprecation warnings', () => {
+    const result = validateManifest(minimalV07Manifest());
+    expect(result.valid).toBe(true);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('v0.8 manifest validates with no deprecation warnings', () => {
+    const result = validateManifest(minimalV08Manifest());
+    expect(result.valid).toBe(true);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('a deprecated version still loads, with a warning that names its removal target', () => {
+    DEPRECATED_PLUGIN_API_VERSIONS[0.7] = 'v2.0';
+    try {
+      const result = validateManifest(minimalV07Manifest());
+      expect(result.valid).toBe(true);
+      expect(result.warnings.some(w => w.includes('0.7') && w.includes('deprecated') && w.includes('v2.0'))).toBe(true);
+    } finally {
+      delete DEPRECATED_PLUGIN_API_VERSIONS[0.7];
+    }
   });
 });
 
@@ -431,7 +410,7 @@ describe('§2 Per-version manifest validation', () => {
         scope: 'project',
       });
       expect(result.valid).toBe(false);
-      expect(result.errors).toEqual(["This plugin uses plugin API 0.4, which this version of Clubhouse can't load. Supported plugin API: 0.9."]);
+      expect(result.errors).toEqual(["This plugin uses plugin API 0.4, which this version of Clubhouse can't load. Supported plugin API: 0.7, 0.8 or 0.9."]);
     });
 
     it('error message mentions supported versions', () => {
@@ -448,46 +427,58 @@ describe('§2 Per-version manifest validation', () => {
     });
   });
 
-  describe('v0.5 minimal manifest validation', () => {
-    it('accepts a minimal valid v0.5 manifest', () => {
-      const result = validateManifest(minimalV05Manifest());
+  describe('v0.5 and v0.6 manifest refusal (removed in 1.0, #2757)', () => {
+    for (const api of [0.5, 0.6]) {
+      it(`refuses an otherwise valid v${api} manifest with one message that names the version`, () => {
+        const result = validateManifest(minimalV07Manifest({ engine: { api } }));
+        expect(result.valid).toBe(false);
+        expect(result.errors).toEqual([
+          `This plugin uses plugin API ${api}, which was removed in Clubhouse 1.0. Clubhouse loads plugins built for API 0.7, 0.8 or 0.9. Install an update built for one of those, or ask the plugin's author for one.`,
+        ]);
+      });
+    }
+  });
+
+  describe('core manifest validation', () => {
+    it('accepts a minimal valid manifest', () => {
+      const result = validateManifest(minimalV07Manifest());
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
     });
 
-    it('requires contributes.help for v0.5', () => {
-      const result = validateManifest(minimalV05Manifest({
+    it('requires contributes.help', () => {
+      const result = validateManifest(minimalV07Manifest({
         contributes: {} as PluginManifest['contributes'],
       }));
       expect(result.valid).toBe(false);
       expect(result.errors.some(e => e.includes('contributes.help'))).toBe(true);
     });
 
-    it('requires permissions array for v0.5', () => {
-      const manifest = minimalV05Manifest();
+    it('requires permissions array', () => {
+      const manifest = minimalV07Manifest();
       delete (manifest as Record<string, unknown>).permissions;
       const result = validateManifest(manifest);
       expect(result.valid).toBe(false);
       expect(result.errors.some(e => e.includes('permissions array'))).toBe(true);
     });
 
-    it('accepts v0.5 with each scope (project, app, dual)', () => {
+    it('accepts each scope (project, app, dual)', () => {
       for (const scope of ['project', 'app', 'dual'] as const) {
-        const result = validateManifest(minimalV05Manifest({ scope }));
+        const result = validateManifest(minimalV07Manifest({ scope }));
         expect(result.valid).toBe(true);
       }
     });
   });
 
-  describe('v0.5 full manifest validation', () => {
-    it('accepts a fully-specified v0.5 manifest', () => {
-      const result = validateManifest(fullV05Manifest());
+  describe('full manifest validation', () => {
+    it('accepts a fully-specified v0.7 manifest', () => {
+      const result = validateManifest(fullV07Manifest());
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
     });
 
     it('validates help topics shape', () => {
-      const manifest = fullV05Manifest();
+      const manifest = fullV07Manifest();
       const contributes = manifest.contributes as Record<string, unknown>;
       (contributes.help as Record<string, unknown>).topics = [
         { id: '', title: '', content: '' },
@@ -498,7 +489,7 @@ describe('§2 Per-version manifest validation', () => {
     });
 
     it('validates each permission string against ALL_PLUGIN_PERMISSIONS', () => {
-      const result = validateManifest(minimalV05Manifest({
+      const result = validateManifest(minimalV07Manifest({
         permissions: ['files', 'not-a-real-permission' as PluginPermission],
       }));
       expect(result.valid).toBe(false);
@@ -506,7 +497,7 @@ describe('§2 Per-version manifest validation', () => {
     });
 
     it('rejects duplicate permissions', () => {
-      const result = validateManifest(minimalV05Manifest({
+      const result = validateManifest(minimalV07Manifest({
         permissions: ['files', 'git', 'files'],
       }));
       expect(result.valid).toBe(false);
@@ -515,40 +506,16 @@ describe('§2 Per-version manifest validation', () => {
 
   });
 
-  describe('v0.6 minimal manifest validation', () => {
-    it('accepts a minimal valid v0.6 manifest', () => {
-      const result = validateManifest(minimalV06Manifest());
+  describe('command bindings', () => {
+    it('accepts a fully-specified manifest with command bindings', () => {
+      const result = validateManifest(fullV07ManifestWithBindings());
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
     });
 
-    it('requires contributes.help for v0.6 (inherited from v0.5+ rule)', () => {
-      const result = validateManifest(minimalV06Manifest({
-        contributes: {} as PluginManifest['contributes'],
-      }));
-      expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes('contributes.help'))).toBe(true);
-    });
-
-    it('requires permissions array for v0.6', () => {
-      const manifest = minimalV06Manifest();
-      delete (manifest as Record<string, unknown>).permissions;
-      const result = validateManifest(manifest);
-      expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes('permissions array'))).toBe(true);
-    });
-  });
-
-  describe('v0.6 full manifest validation', () => {
-    it('accepts a fully-specified v0.6 manifest', () => {
-      const result = validateManifest(fullV06Manifest());
-      expect(result.valid).toBe(true);
-      expect(result.errors).toHaveLength(0);
-    });
-
-    it('allows defaultBinding on v0.6 commands', () => {
+    it('allows defaultBinding on commands', () => {
       const result = validateManifest({
-        ...minimalV06Manifest(),
+        ...minimalV07Manifest(),
         permissions: ['commands'],
         contributes: {
           help: {},
@@ -560,9 +527,9 @@ describe('§2 Per-version manifest validation', () => {
       expect(result.valid).toBe(true);
     });
 
-    it('allows global: true on v0.6 commands', () => {
+    it('allows global: true on commands', () => {
       const result = validateManifest({
-        ...minimalV06Manifest(),
+        ...minimalV07Manifest(),
         permissions: ['commands'],
         contributes: {
           help: {},
@@ -575,16 +542,16 @@ describe('§2 Per-version manifest validation', () => {
     });
   });
 
-  describe('v0.6 agent-config permission hierarchy', () => {
+  describe('agent-config permission hierarchy', () => {
     it('accepts agent-config.cross-project with base agent-config', () => {
-      const result = validateManifest(minimalV06Manifest({
+      const result = validateManifest(minimalV07Manifest({
         permissions: ['agent-config', 'agent-config.cross-project'],
       }));
       expect(result.valid).toBe(true);
     });
 
     it('rejects agent-config.cross-project WITHOUT base agent-config', () => {
-      const result = validateManifest(minimalV06Manifest({
+      const result = validateManifest(minimalV07Manifest({
         permissions: ['agent-config.cross-project'],
       }));
       expect(result.valid).toBe(false);
@@ -592,7 +559,7 @@ describe('§2 Per-version manifest validation', () => {
     });
 
     it('rejects agent-config.permissions WITHOUT base agent-config', () => {
-      const result = validateManifest(minimalV06Manifest({
+      const result = validateManifest(minimalV07Manifest({
         permissions: ['agent-config.permissions'],
       }));
       expect(result.valid).toBe(false);
@@ -600,7 +567,7 @@ describe('§2 Per-version manifest validation', () => {
     });
 
     it('rejects agent-config.mcp WITHOUT base agent-config', () => {
-      const result = validateManifest(minimalV06Manifest({
+      const result = validateManifest(minimalV07Manifest({
         permissions: ['agent-config.mcp'],
       }));
       expect(result.valid).toBe(false);
@@ -608,7 +575,7 @@ describe('§2 Per-version manifest validation', () => {
     });
 
     it('accepts all agent-config sub-permissions with base', () => {
-      const result = validateManifest(minimalV06Manifest({
+      const result = validateManifest(minimalV07Manifest({
         permissions: [
           'agent-config',
           'agent-config.cross-project',
@@ -620,16 +587,16 @@ describe('§2 Per-version manifest validation', () => {
     });
   });
 
-  describe('v0.6 agents.free-agent-mode permission hierarchy', () => {
+  describe('agents.free-agent-mode permission hierarchy', () => {
     it('accepts agents.free-agent-mode with base agents permission', () => {
-      const result = validateManifest(minimalV06Manifest({
+      const result = validateManifest(minimalV07Manifest({
         permissions: ['agents', 'agents.free-agent-mode'],
       }));
       expect(result.valid).toBe(true);
     });
 
     it('rejects agents.free-agent-mode WITHOUT base agents permission', () => {
-      const result = validateManifest(minimalV06Manifest({
+      const result = validateManifest(minimalV07Manifest({
         permissions: ['agents.free-agent-mode'],
       }));
       expect(result.valid).toBe(false);
@@ -657,7 +624,7 @@ describe('§2 Per-version manifest validation', () => {
   });
 
   describe('every permission in ALL_PLUGIN_PERMISSIONS is accepted individually', () => {
-    // v0.9-gated permissions are not loadable in 0.38 (v0.9 not supported)
+    // v0.9-gated permissions are covered by the v0.9 cases below
     const V09_PERMISSIONS = new Set(['companion', 'mcp.tools']);
 
     for (const perm of ALL_PLUGIN_PERMISSIONS) {
@@ -761,7 +728,7 @@ describe('§2 Per-version manifest validation', () => {
 
   describe('externalRoots / files.external coupling', () => {
     it('rejects externalRoots without files.external permission', () => {
-      const result = validateManifest(minimalV05Manifest({
+      const result = validateManifest(minimalV07Manifest({
         permissions: ['files'],
         externalRoots: [{ settingKey: 'path', root: 'data' }],
       }));
@@ -770,7 +737,7 @@ describe('§2 Per-version manifest validation', () => {
     });
 
     it('rejects files.external without externalRoots', () => {
-      const result = validateManifest(minimalV05Manifest({
+      const result = validateManifest(minimalV07Manifest({
         permissions: ['files', 'files.external'],
       }));
       expect(result.valid).toBe(false);
@@ -778,7 +745,7 @@ describe('§2 Per-version manifest validation', () => {
     });
 
     it('accepts files.external with valid externalRoots', () => {
-      const result = validateManifest(minimalV05Manifest({
+      const result = validateManifest(minimalV07Manifest({
         permissions: ['files', 'files.external'],
         externalRoots: [{ settingKey: 'path', root: 'data' }],
       }));
@@ -788,7 +755,7 @@ describe('§2 Per-version manifest validation', () => {
 
   describe('allowedCommands / process permission coupling', () => {
     it('rejects process without allowedCommands', () => {
-      const result = validateManifest(minimalV05Manifest({
+      const result = validateManifest(minimalV07Manifest({
         permissions: ['files', 'process'],
       }));
       expect(result.valid).toBe(false);
@@ -796,7 +763,7 @@ describe('§2 Per-version manifest validation', () => {
     });
 
     it('rejects allowedCommands without process permission', () => {
-      const result = validateManifest(minimalV05Manifest({
+      const result = validateManifest(minimalV07Manifest({
         permissions: ['files'],
         allowedCommands: ['node'],
       }));
@@ -806,7 +773,7 @@ describe('§2 Per-version manifest validation', () => {
 
     it('rejects path separators in allowedCommands', () => {
       for (const bad of ['/usr/bin/node', 'bin\\node', '..node']) {
-        const result = validateManifest(minimalV05Manifest({
+        const result = validateManifest(minimalV07Manifest({
           permissions: ['files', 'process'],
           allowedCommands: [bad],
         }));
@@ -898,7 +865,7 @@ describe('§2b v0.7 pack plugins and new contributions', () => {
         id: 'empty-pack',
         name: 'Empty Pack',
         version: '1.0.0',
-        engine: { api: 0.9 },
+        engine: { api: 0.7 },
         kind: 'pack',
         scope: 'app',
         contributes: {},
@@ -1116,6 +1083,34 @@ describe('§2b v0.7 pack plugins and new contributions', () => {
       expect(result.errors).toHaveLength(0);
     });
 
+    it('tab.title is rejected on v0.7 manifests', () => {
+      const result = validateManifest(minimalV07Manifest({
+        contributes: {
+          help: {},
+          tab: { label: 'My Plugin', title: 'Custom Title' },
+        },
+      } as Record<string, unknown>));
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('tab.title requires API >= 0.8'))).toBe(true);
+    });
+
+    it('railItem.title is rejected on v0.7 manifests', () => {
+      const result = validateManifest({
+        id: 'test-plugin',
+        name: 'Test Plugin',
+        version: '1.0.0',
+        engine: { api: 0.7 },
+        scope: 'app',
+        permissions: ['files'],
+        contributes: {
+          help: {},
+          railItem: { label: 'My Rail', title: 'Custom' },
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('railItem.title requires API >= 0.8'))).toBe(true);
+    });
+
     it('tab.title must be a non-empty string', () => {
       const result = validateManifest(minimalV08Manifest({
         contributes: {
@@ -1132,7 +1127,7 @@ describe('§2b v0.7 pack plugins and new contributions', () => {
         id: 'v08-full',
         name: 'v0.8 Full',
         version: '1.0.0',
-        engine: { api: 0.9 },
+        engine: { api: 0.8 },
         scope: 'project',
         permissions: ['files', 'files.watch', 'workspace', 'canvas'],
         contributes: {
@@ -1186,6 +1181,11 @@ describe('§3 API surface area contracts — createPluginAPI()', () => {
     scope: 'project',
     permissions: [...ALL_PLUGIN_PERMISSIONS],
   });
+  const legacyProjectManifest = makeAllPermsManifest({
+    engine: { api: 0.7 },
+    scope: 'project',
+    permissions: [...ALL_PLUGIN_PERMISSIONS],
+  });
 
   const scenarios = [
     {
@@ -1233,6 +1233,11 @@ describe('§3 API surface area contracts — createPluginAPI()', () => {
     expectKeySet(api.project, PROJECT_API_METHODS);
     expect(api.project.readFile).toBeDefined();
     expect(api.project.writeFile).toBeDefined();
+  });
+
+  it('v0.7 project mode keeps the projects namespace gated off until API >= 0.8', () => {
+    const api = createPluginAPI(createMockContext(), undefined, legacyProjectManifest);
+    expect(() => api.projects.list()).toThrow(/api\.projects is not available for project-scoped plugins/);
   });
 
   it('v0.8 project mode exposes the full projects namespace contract', () => {
@@ -1376,12 +1381,6 @@ describe('§3 API surface area contracts — createMockAPI()', () => {
         expect(typeof api.agents[method]).toBe('function');
       });
     }
-  });
-
-  describe('api.hub surface', () => {
-    it('api.hub namespace exists', () => {
-      expect(api.hub).toBeDefined();
-    });
   });
 
   describe('api.navigation surface', () => {
@@ -1932,13 +1931,12 @@ describe('§7 ALL_PLUGIN_PERMISSIONS exhaustiveness', () => {
 // =============================================================================
 
 describe('§8 Cross-version backward compatibility', () => {
-  it('v0.5 features still work on v0.6 manifests', () => {
-    // A v0.6 manifest should be able to use all v0.5 features
+  it('core features and command bindings work on v0.7 manifests', () => {
     const result = validateManifest({
       id: 'compat-test',
       name: 'Compat Test',
       version: '1.0.0',
-      engine: { api: 0.9 },
+      engine: { api: 0.7 },
       scope: 'project',
       permissions: ['files', 'files.external', 'process'],
       externalRoots: [{ settingKey: 'path', root: 'data' }],
@@ -1965,7 +1963,7 @@ describe('§8 Cross-version backward compatibility', () => {
       id: 'v07-compat',
       name: 'v0.7 Compat',
       version: '1.0.0',
-      engine: { api: 0.9 },
+      engine: { api: 0.7 },
       scope: 'project',
       permissions: ['files', 'files.watch'],
       contributes: {
@@ -1989,11 +1987,18 @@ describe('§8 Cross-version backward compatibility', () => {
     expect(result.manifest!.kind).toBe('pack');
   });
 
+  it('v0.7 manifest still validates identically after v0.8 was added', () => {
+    const result = validateManifest(minimalV07Manifest());
+    expect(result.valid).toBe(true);
+    expect(result.manifest).toBeDefined();
+    expect(result.manifest!.engine.api).toBe(0.7);
+  });
+
   it('v0.8 minimal manifest validates', () => {
     const result = validateManifest(minimalV08Manifest());
     expect(result.valid).toBe(true);
     expect(result.manifest).toBeDefined();
-    expect(result.manifest!.engine.api).toBe(0.9);
+    expect(result.manifest!.engine.api).toBe(0.8);
   });
 
   it('v0.8 title features work on v0.8 manifests', () => {
@@ -2001,7 +2006,7 @@ describe('§8 Cross-version backward compatibility', () => {
       id: 'v08-title',
       name: 'v0.8 Title',
       version: '1.0.0',
-      engine: { api: 0.9 },
+      engine: { api: 0.8 },
       scope: 'dual',
       permissions: ['files'],
       contributes: {
@@ -2019,7 +2024,7 @@ describe('§8 Cross-version backward compatibility', () => {
       id: 'v08-canvas',
       name: 'v0.8 Canvas',
       version: '1.0.0',
-      engine: { api: 0.9 },
+      engine: { api: 0.8 },
       scope: 'project',
       permissions: ['files', 'canvas'],
       contributes: {
@@ -2031,6 +2036,26 @@ describe('§8 Cross-version backward compatibility', () => {
     });
     expect(result.valid).toBe(true);
     expect(result.errors).toHaveLength(0);
+  });
+
+  it('v0.8 canvas features are rejected on v0.7 manifests', () => {
+    const result = validateManifest({
+      id: 'v07-canvas',
+      name: 'v0.7 Canvas',
+      version: '1.0.0',
+      engine: { api: 0.7 },
+      scope: 'project',
+      permissions: ['files', 'canvas'],
+      contributes: {
+        help: {},
+        canvasWidgets: [
+          { id: 'chart', label: 'Chart Widget' },
+        ],
+      },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes('Canvas permission requires API >= 0.8'))).toBe(true);
+    expect(result.errors.some(e => e.includes('canvasWidgets requires API >= 0.8'))).toBe(true);
   });
 
   it('v0.8 project-scoped plugins can declare projects permission', () => {
