@@ -82,6 +82,16 @@ export function actionMessage(actionName: string, text: string): { text: string;
   };
 }
 
+/**
+ * Whether a headless quick agent starts at this level (#3002). A headless run
+ * can't ask, so it runs at Auto at least; Copilot's headless run allows
+ * everything (--allow-all --autopilot), so only Full access is kept there.
+ */
+export function headlessKeepsLevel(orchestrator: string, access: AccessLevel): boolean {
+  if (orchestrator === 'copilot-cli') return access === 'full_access';
+  return ACCESS_LEVELS.indexOf(access) >= ACCESS_LEVELS.indexOf('auto');
+}
+
 export function createStepRunner(deps: StepDeps): StepRunner {
   /**
    * The level a quick agent starts at, always explicit (#3002). A person's
@@ -153,16 +163,16 @@ export function createStepRunner(deps: StepDeps): StepRunner {
           }
           try {
             const access = quickAccess(step.access, ctx);
+            const orchestrator = step.orchestrator || project.orchestrator || 'claude-code';
             const started = await deps.startQuick({
               project: { id: project.id, path: project.path },
               cwd,
               prompt: actionMessage(ctx.action.name, step.prompt).text,
-              orchestrator: step.orchestrator || project.orchestrator || 'claude-code',
+              orchestrator,
               ...(step.model && { model: step.model }),
               access,
-              // A headless run can't ask, so it runs at Auto at least (#3002): below
-              // Auto it runs in chat or the terminal, where it can ask you.
-              ...(ACCESS_LEVELS.indexOf(access) < ACCESS_LEVELS.indexOf('auto') && { interactive: true }),
+              // Only where a headless run keeps the level; otherwise in chat or the terminal, where it can ask.
+              ...(!headlessKeepsLevel(orchestrator, access) && { interactive: true }),
               name: ctx.action.name,
             });
             // Commits it makes in a worktree carry this run's chain on.
