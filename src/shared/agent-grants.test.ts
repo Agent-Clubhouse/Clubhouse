@@ -102,6 +102,15 @@ describe('agent grants (#2966)', () => {
       expect(give(allow('agent.read', { kind: 'any' })).outcome).toBe('refuse');
     });
 
+    it('2: a wider held target covers a narrower given one', () => {
+      const target: GrantCallTarget = { kind: 'agent', relations: ['connected'] };
+      const give = (held: Grant[], g: Grant) => evaluateGrant(call('agent.grant', target, { change: { grants: [g] } }), [allow('agent.grant', { kind: 'connected' }), ...held]).outcome;
+      expect(give([allow('agent.reset', { kind: 'connected' })], allow('agent.reset', { kind: 'connected', excludeDispatcher: true }))).toBe('allow');
+      expect(give([allow('agent.reset', { kind: 'connected', excludeDispatcher: true })], allow('agent.reset', { kind: 'connected' }))).toBe('refuse');
+      expect(give([allow('agent.create', { kind: 'project', project: 'any' })], allow('agent.create', { kind: 'project', project: 'own' }))).toBe('allow');
+      expect(give([allow('agent.create', { kind: 'project', project: 'own' })], allow('agent.create', { kind: 'project', project: 'any' }))).toBe('refuse');
+    });
+
     it('4: the user is above every agent', () => {
       expect(evaluateGrant({ caller: { kind: 'user' }, action: 'agent.grant', target: { kind: 'agent', relations: ['self'] }, change: { access: 'full_access' } }, []))
         .toEqual({ outcome: 'allow' });

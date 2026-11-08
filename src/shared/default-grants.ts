@@ -55,7 +55,8 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
     for (const a of ['agent.read', 'agent.message', 'agent.wake', 'agent.sleep', 'agent.reset', 'agent.dispose', 'agent.display'] as const) {
       out.push(structural(a, HELPERS));
     }
-    out.push(structural('agent.create', OWN_PROJECT), structural('connection.manage', HELPERS), structural('agent.grant', SELF));
+    // What it passes to its helpers at start_helper, never more than it holds (fixed rule 2).
+    out.push(structural('agent.create', OWN_PROJECT), structural('connection.manage', HELPERS), structural('connection.manage', SELF), structural('agent.grant', HELPERS));
     if (facts.crossProject) out.push(structural('agent.create', ANY_PROJECT), structural('project.read', ANY_PROJECT));
   }
   if (facts.dispatcher) {
@@ -63,7 +64,7 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
     for (const a of ['agent.read', 'agent.message', 'agent.wake', 'agent.sleep', 'agent.reset', 'agent.display', 'agent.configure', 'connection.manage'] as const) {
       out.push(structural(a, CONNECTED));
     }
-    for (const a of ['agent.read', 'agent.grant', 'agent.restart', 'library.read', 'library.write', 'template.write', 'template.push', 'action.read', 'action.write', 'action.run'] as const) {
+    for (const a of ['agent.read', 'agent.display', 'agent.grant', 'agent.restart', 'library.read', 'library.write', 'template.write', 'template.push', 'action.read', 'action.write', 'action.run'] as const) {
       out.push(structural(a, ANY));
     }
     out.push(

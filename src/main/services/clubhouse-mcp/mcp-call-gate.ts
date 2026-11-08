@@ -55,9 +55,12 @@ export function setMcpCaller(agentId: string, projectPath: string, config: Pick<
     recordCaller(agentId, projectPath, 'quick');
     return;
   }
+  const parentBefore = parents.get(agentId);
   if (config?.parentAgentId) parents.set(agentId, config.parentAgentId);
   else parents.delete(agentId);
   recordCaller(agentId, projectPath, config?.parentAgentId ? 'helper' : 'durable');
+  // Its grants follow its parent (#2968): message_parent comes or goes.
+  if (parentBefore !== config?.parentAgentId && callers.get(agentId) !== undefined) notifyToolGateChange(agentId);
 }
 
 /** A durable agent whose config couldn't be read at start: closed until setMcpCaller has one. */

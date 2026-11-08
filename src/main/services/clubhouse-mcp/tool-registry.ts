@@ -12,7 +12,7 @@ import { groupProjectRegistry } from '../group-project-registry';
 import { deniedGroupProjectTools } from '../../../shared/group-project-admin';
 import { appLog } from '../log-service';
 import { isCrossProjectEnabled, isOrchestrationEnabled, onOrchestrationGateChange } from './orchestration-gate';
-import { isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
+import { dispatcherGateVersion, isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
 import { mcpCallAccess } from './mcp-call-gate';
 import { CROSS_PROJECT_OFF_MESSAGE, MCP_CALLER_UNKNOWN_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
 import { checkToolGrant, type GrantCheck, type GrantCheckWire } from './grant-check';
@@ -340,7 +340,8 @@ export function listToolGrants(): RegisteredToolGrant[] {
 
 /** Whether every global tool's condition is on, one character each: part of the cache key. */
 function conditionsKey(): string {
-  let key = '';
+  // Which agents are the Dispatcher: a wire to it lists no reset tools (#2968).
+  let key = `d${dispatcherGateVersion()}:`;
   for (const [, tool] of globalTools) if (tool.when) key += tool.when.isOn() ? '1' : '0';
   return key;
 }

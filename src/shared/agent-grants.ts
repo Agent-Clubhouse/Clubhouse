@@ -188,11 +188,19 @@ function rank(level: AccessLevel | undefined): number {
 function holds(held: readonly Grant[], given: Grant): boolean {
   return held.some((h) => h.action === given.action
     && (h.mode === 'allow' || given.mode === 'ask')
-    && (h.target.kind === 'any' || sameTarget(h.target, given.target)));
+    && widerOrSame(h.target, given.target));
 }
 
-function sameTarget(a: GrantTarget, b: GrantTarget): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+/** Whether a held target covers everything a given one does. */
+function widerOrSame(held: GrantTarget, given: GrantTarget): boolean {
+  if (held.kind === 'any') return true;
+  if (held.kind !== given.kind) return false;
+  if (held.kind === 'connected' && given.kind === 'connected') return !held.excludeDispatcher || !!given.excludeDispatcher;
+  if (held.kind === 'project' && given.kind === 'project') {
+    return held.project === 'any' || JSON.stringify(held.project) === JSON.stringify(given.project);
+  }
+  if (held.kind === 'group_project' && given.kind === 'group_project') return held.role === 'member' || given.role === 'admin';
+  return true;
 }
 
 /**
@@ -222,7 +230,7 @@ export function evaluateGrant(call: GrantCall, grants: readonly Grant[], held: r
 
 /** The message an agent gets for a refusal. Plain, and never says whether the target exists. */
 export const GRANT_REFUSAL_MESSAGES: Readonly<Record<GrantRefusal, string>> = {
-  no_grant: 'You don\'t have a Clubhouse permission for this. Ask for it with request_grant, or ask the user.',
-  raise_self: 'You can\'t change your own Clubhouse permissions or Access. Ask for it with request_grant.',
+  no_grant: 'You don\'t have a Clubhouse permission for this. Ask the user if you need it.',
+  raise_self: 'You can\'t change your own Clubhouse permissions or Access. Ask the user if you need it.',
   exceeds_caller: 'You can\'t give another agent more than you have yourself.',
 };

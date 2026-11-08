@@ -63,7 +63,8 @@ function boundTarget(agentId: string, wire: GrantCheckWire): GrantCallTarget | n
 function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantCheckWire | undefined): GrantCallTarget | null {
   switch (target) {
     case 'bound': return wire ? boundTarget(agentId, wire) : null;
-    case 'group_members': return { kind: 'agent', relations: ['group_member'] };
+    // Members of a group project its admins act on: the caller must administer the bound group.
+    case 'group_members': return { kind: 'agent', relations: wire && isProjectAdmin(wire.groupMetadata, agentId) ? ['group_member'] : [] };
     case 'parent': return { kind: 'agent', relations: ['parent'] };
     case 'my_helpers': return { kind: 'agent', relations: ['my_helper'] };
     case 'connected': return { kind: 'agent', relations: ['connected'] };
