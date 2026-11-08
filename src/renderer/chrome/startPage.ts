@@ -4,6 +4,7 @@ import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useChromeStore, type NewAgentOptions } from './chromeStore';
 import { isNewChromeEnabled } from './chromeFlag';
+import { useQuickPromptStore } from './quickPromptStore';
 
 /**
  * Open a project's start page: the project header selected with the Agents tab
@@ -60,4 +61,14 @@ export function openNewAgentOrDialog(kind: 'durable' | 'quick', projectId?: stri
 /** ⌘⇧N: the New agent page with Durable chosen, like the sidebar's New button (#2031). */
 export function openNewAgentFromShortcut(): void {
   openNewAgentOrDialog('durable');
+}
+
+/**
+ * ⌘N (#2812): the one-line quick agent prompt over the current view, where the
+ * New agent page could open. Elsewhere (the legacy shell, a satellite host, no
+ * projects) the Quick Agent dialog, as before.
+ */
+export function openQuickPrompt(): void {
+  if (!canOpenNewAgentPage()) { useUIStore.getState().openQuickAgentDialog(); return; }
+  useQuickPromptStore.getState().openPrompt();
 }

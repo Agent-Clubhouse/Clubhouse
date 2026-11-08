@@ -3,6 +3,7 @@ import { renderHook, act } from '@testing-library/react';
 import { useCommandSource } from './use-command-source';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import { useChromeStore } from '../../chrome/chromeStore';
+import { useQuickPromptStore } from '../../chrome/quickPromptStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
@@ -65,8 +66,11 @@ describe('palette in the new shell', () => {
     expect(quick.shortcut).toBeTruthy();
     expect(durable.shortcut).toBeTruthy();
     expect(quick.shortcut).not.toEqual(durable.shortcut);
+    // Quick is ⌘N's one-line prompt (#2812), not the page.
     act(() => quick.execute());
-    expect(useChromeStore.getState().newAgent?.kind).toBe('quick');
+    expect(useQuickPromptStore.getState().open).toBe(true);
+    expect(useChromeStore.getState().newAgent).toBeNull();
+    useQuickPromptStore.setState({ open: false });
     act(() => durable.execute());
     expect(useChromeStore.getState().newAgent?.kind).toBe('durable');
   });
