@@ -15,7 +15,7 @@ describe('Button', () => {
   });
 
   it.each([
-    ['primary', 'bg-ctp-accent', 'text-ctp-crust'],
+    ['primary', 'bg-ctp-accent', 'text-ctp-on-accent'],
     ['ghost', 'border-surface-1', 'text-ctp-subtext1'],
     ['quiet', 'border-transparent', 'text-ctp-subtext1'],
     ['danger', 'border-surface-1', 'text-ctp-red'],

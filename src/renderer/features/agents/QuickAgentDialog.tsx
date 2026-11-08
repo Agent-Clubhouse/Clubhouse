@@ -240,7 +240,7 @@ export function QuickAgentDialog() {
             type="button"
             onClick={handleSubmit}
             disabled={!mission.trim() || !selectedProjectId || (model === 'custom' && !customModel.trim())}
-            className="px-4 py-1.5 text-xs rounded bg-ctp-accent text-white
+            className="px-4 py-1.5 text-xs rounded bg-ctp-accent text-ctp-on-accent
               hover:bg-ctp-accent/80 cursor-pointer font-medium
               disabled:opacity-40 disabled:cursor-not-allowed"
           >

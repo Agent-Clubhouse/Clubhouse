@@ -167,7 +167,7 @@ function RetryButton({ onRetry }: { onRetry: () => void }) {
 function InlinePicker({ onPick }: { onPick: () => void }) {
   return React.createElement('button', {
     onClick: onPick,
-    className: 'text-sm px-3 py-1.5 rounded bg-ctp-accent text-ctp-base hover:opacity-90 cursor-pointer',
+    className: 'text-sm px-3 py-1.5 rounded bg-ctp-accent text-ctp-on-accent hover:opacity-90 cursor-pointer',
     'data-testid': 'goobers-inline-picker',
   }, 'Choose instance root…');
 }
@@ -272,7 +272,7 @@ function DaemonNotRunningScreen({
     manageDaemon
       ? React.createElement('button', {
           onClick: onStart,
-          className: 'text-sm px-3 py-1.5 rounded bg-ctp-accent text-ctp-base hover:opacity-90 cursor-pointer',
+          className: 'text-sm px-3 py-1.5 rounded bg-ctp-accent text-ctp-on-accent hover:opacity-90 cursor-pointer',
           'data-testid': 'goobers-start-daemon',
         }, 'Start daemon')
       : React.createElement('button', {

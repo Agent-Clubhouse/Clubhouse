@@ -143,7 +143,7 @@ export function PoppedOutPlaceholder({ type, name, windowId, agentId }: PoppedOu
           <button
             type="button"
             onClick={handleGoToWindow}
-            className="h-7 px-3 rounded-md bg-ctp-accent text-xs font-medium text-ctp-crust hover:opacity-90"
+            className="h-7 px-3 rounded-md bg-ctp-accent text-xs font-medium text-ctp-on-accent hover:opacity-90"
             data-testid="popped-out-go-to-window"
           >
             Show window

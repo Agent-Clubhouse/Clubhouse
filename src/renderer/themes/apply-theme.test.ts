@@ -145,6 +145,8 @@ describe('applyTheme', () => {
       expect(mockSetProperty).toHaveBeenCalledWith('--ctp-text', '205 214 244');
       // --ctp-accent = #cba6f7 → "203 166 247"
       expect(mockSetProperty).toHaveBeenCalledWith('--ctp-accent', '203 166 247');
+      // Text on the accent (#3086): Mocha's crust reads best on its mauve accent.
+      expect(mockSetProperty).toHaveBeenCalledWith('--ctp-on-accent', '17 17 27');
     });
 
     it('converts pure white (#ffffff) correctly', () => {
@@ -247,9 +249,9 @@ describe('applyTheme', () => {
   });
 
   describe('total variable count', () => {
-    it('sets exactly 38 CSS variables for a plain theme (19 colors + 16 hljs + 3 shadows)', () => {
+    it('sets exactly 39 CSS variables for a plain theme (19 colors + on-accent + 16 hljs + 3 shadows)', () => {
       applyTheme(makeTheme());
-      expect(mockSetProperty).toHaveBeenCalledTimes(38);
+      expect(mockSetProperty).toHaveBeenCalledTimes(39);
     });
   });
 
