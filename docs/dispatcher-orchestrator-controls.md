@@ -108,23 +108,21 @@ Limit: step 2 is the only case with no record past the session. If nothing in th
 
 ## Audit
 
-`dispatcher-audit.jsonl` under the Clubhouse base dir, with one row per write call that reaches the service, including the service's own refusals:
+One `clubhouse.audit.dispatcher_control` event in the local telemetry record (#2920, `docs/telemetry-otel-spec.md` §6.13) per write call that reaches the service, including the service's own refusals. `list_orchestrator_controls` with `audit` returns them as rows:
 
 ```json
 {"ts":"2026-11-01T12:00:00.000Z","tool":"set_orchestrator_helpers","actorId":"durable_1","targets":["durable_2"],"requested":{"fields":["max_helpers"],"max_helpers":3},"outcome":"ok","before":{"crossProjectHelpers":false,"maxHelpers":5},"after":{"crossProjectHelpers":false,"maxHelpers":3}}
 ```
 
-Rows hold allowlisted values only, and ids the caller supplied are cut to 100 characters. At 1 MB the file moves to `.1`, replacing the older one.
+Rows hold allowlisted values only, and ids the caller supplied are cut to 100 characters. The record's retention keeps it bounded. Until #2920 part three this was `dispatcher-audit.jsonl`, which is no longer written.
 
 Every code in [Refusals](#refusals) comes from the service and is audited, apart from the registry row below.
 
 Two refusals happen in the tool registry, before the service runs, so they leave no row: the group gate for other agents, and the check of an argument's type. Those show only in tool-call telemetry. This is an accepted limit. The same caller reaching the service directly is refused with `not_dispatcher`, and that is audited.
 
-If a row can't be written after a successful change, the change stands and the result has `audit_warning`.
+If local telemetry recording is off, nothing records the call: the change stands and the result has `audit_warning`.
 
-**In the telemetry record (#2920).** Every row is also recorded as a `clubhouse.audit.dispatcher_control` event in the local telemetry record (`docs/telemetry-otel-spec.md` §6.13). There, ids are hashed and values are kept only as short words, ids, booleans and whole numbers. `list_orchestrator_controls` with `audit` reads its rows from the record:
+**Reading the rows.** In the record, ids are hashed and values are kept only as short words, ids, booleans and whole numbers. `list_orchestrator_controls` with `audit` reads its rows from the record:
 - Ids are matched back to the agents Clubhouse knows. One since removed shows as `hash:<hash>`. A row recorded under another salt (another build's, or from before an install id reset) is left out.
 - A caller-supplied value that isn't a short word or id is left out.
 - With local telemetry recording off, there are no rows to return.
-
-The JSONL file is still written until nothing reads it.

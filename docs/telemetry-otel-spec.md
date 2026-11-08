@@ -1350,7 +1350,7 @@ The `tel.*` signals are also written to local files, so flow timings and classif
 
 ### 6.13 Audit events in the record ([#2920](https://github.com/Agent-Clubhouse/Clubhouse/issues/2920))
 
-The local record is also the record of who changed what. There's no separate audit stream and no Activity page (maintainer, 2026-11-07). This section covers the first part: the settings and Dispatcher audit rows become telemetry events, and `list_orchestrator_controls` reads them back from the record. While nothing else reads them, the old `settings-audit.jsonl` and `dispatcher-audit.jsonl` are still written alongside; they go once nothing reads them.
+The local record is also the record of who changed what. There's no separate audit stream and no Activity page (maintainer, 2026-11-07). The settings and Dispatcher audit rows are telemetry events, and `list_orchestrator_controls` reads them back from the record. The old `settings-audit.jsonl` and `dispatcher-audit.jsonl`, and `bounded-audit-log.ts` behind them, were removed in part three: nothing writes or reads them. Files left by earlier builds stay where they are; Clubhouse no longer touches them.
 
 **The events.**
 - `clubhouse.audit.setting`: a settings change or refusal, from any surface. Attributes: `clubhouse.audit.surface`, `clubhouse.audit.scope`, `clubhouse.audit.outcome`, and the actor and target id hashes. Detail: `key`, then `before` and `after` when the value is keepable, else `changed: true`, then `code`.

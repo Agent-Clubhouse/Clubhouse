@@ -54,7 +54,7 @@ vi.mock('./agent-config', async (importOriginal) => {
   };
 });
 
-import { auditPath } from './dispatcher-audit';
+import { captureAuditEvents, type AuditCapture } from '../telemetry/__test-utils__/audit-capture';
 import { flushAllAgentConfigs } from './agent-config';
 import { callTool, _resetForTesting } from './clubhouse-mcp/tool-registry';
 import { registerDispatcherControlTools } from './clubhouse-mcp/tools/dispatcher-control-tools';
@@ -90,9 +90,12 @@ async function saved(id: string): Promise<Record<string, unknown> | undefined> {
   return agents.find((a) => a.id === id)?.orchestration;
 }
 
+// The Dispatcher's audit rows (#2920): the audit events the local recorder receives, oldest first.
+let audit: AuditCapture | undefined;
+beforeEach(() => { audit = captureAuditEvents(); });
+afterEach(() => { audit?.stop(); audit = undefined; });
 function auditRows(): Array<Record<string, unknown>> {
-  if (!fs.existsSync(auditPath())) return [];
-  return fs.readFileSync(auditPath(), 'utf-8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  return (audit?.controls() ?? []) as unknown as Array<Record<string, unknown>>;
 }
 
 const set = (args: Record<string, unknown>, caller = 'dispatcher') => callTool(caller, 'set_orchestrator_helpers', args);
