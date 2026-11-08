@@ -23,7 +23,7 @@
 import { evaluateGrant, GRANT_REFUSAL_MESSAGES, widerOrSame, type Grant, type GrantAction, type GrantCallTarget, type GrantCaller, type GrantRefusal } from '../../../shared/agent-grants';
 import { defaultGrants } from '../../../shared/default-grants';
 import { isProjectAdmin } from '../../../shared/group-project-admin';
-import { fiveLevelOf } from '../../../shared/orchestration-policy';
+import { CROSS_PROJECT_OFF_MESSAGE, fiveLevelOf } from '../../../shared/orchestration-policy';
 import { agentRegistry } from '../agent-registry';
 import { bindingManager } from './binding-manager';
 import { isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
@@ -164,7 +164,10 @@ export function whereText(target: GrantCallTarget): string {
 function refusalMessage(reason: GrantRefusal, action: string, target: GrantCallTarget): string {
   if (reason !== 'no_grant') return GRANT_REFUSAL_MESSAGES[reason];
   const where = whereText(target);
-  const hint = (target.relations ?? []).includes('parent') ? ' To report to your orchestrator, use message_parent.' : '';
+  const hint = (target.relations ?? []).includes('parent') ? ' To report to your orchestrator, use message_parent.'
+    // Starting a helper in another project is what Cross-project helpers turns on (#2974).
+    : action === 'agent.create' && target.kind === 'project' ? ` ${CROSS_PROJECT_OFF_MESSAGE} Starting helpers in other projects needs Cross-project helpers on, in your Helpers settings.`
+      : '';
   return `You don't have the Clubhouse permission ${action} on ${where}.${hint} Only the user can grant it; ask them if you need it.`;
 }
 

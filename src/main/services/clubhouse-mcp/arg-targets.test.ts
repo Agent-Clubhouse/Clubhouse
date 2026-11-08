@@ -80,6 +80,12 @@ describe('targets named in the arguments (#2974)', () => {
     expect((await check('dispatcher', projectDisplay, { project: '/far' })).ok).toBe(true);
   });
 
+  it('a helper in another project without Cross-project helpers says how to turn it on', async () => {
+    const create: ToolGrant = { actions: ['agent.create'], target: 'project_arg', from: { args: ['project'], missing: 'caller' } };
+    expect((await check('orch', create, {})).ok).toBe(true);
+    expect(await check('orch', create, { project: 'Far' })).toMatchObject({ ok: false, message: expect.stringContaining('Cross-project helpers are turned off') });
+  });
+
   it('every agent or project (`all`) needs a grant on any', async () => {
     const read: ToolGrant = { actions: ['project.read'], target: 'project_arg', from: { args: ['project'], missing: 'caller', all: 'all_projects' } };
     expect((await check('plain', read, { all_projects: true })).ok).toBe(false);
