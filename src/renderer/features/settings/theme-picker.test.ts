@@ -27,11 +27,11 @@ describe('theme picker grouping (#2754)', () => {
   it('groups the originals, then the seven collections, then plugins by name, with no theme lost', () => {
     const groups = groupThemes(all, { query: '', kind: 'all', pluginName });
     expect(groups.map((g) => g.label)).toEqual([
-      'Clubhouse', 'Fall', 'Winter', 'Spring', 'Summer', 'Ocean', 'Tech Modern', 'Neon',
+      'Clubhouse', 'Gradients', 'Fall', 'Winter', 'Spring', 'Summer', 'Ocean', 'Tech Modern', 'Neon',
       'Acme Themes', 'Beta Colors', 'unnamed-pack', 'Zeta',
     ]);
     expect(groups[0].themes).toHaveLength(9);
-    expect(groups.flatMap((g) => g.themes)).toHaveLength(49);
+    expect(groups.flatMap((g) => g.themes)).toHaveLength(53);
     expect(themeSource(pluginThemes[4], pluginName).label).toBe('unnamed-pack');
   });
 
