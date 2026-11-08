@@ -14,6 +14,7 @@
  */
 
 import { createHash, randomUUID } from 'crypto';
+import { recordGrantRequest as recordRequestEvent } from './grant-telemetry';
 import {
   GRANT_REQUEST_TTL_MS, MAX_PENDING_GRANT_REQUESTS_PER_AGENT, type GrantRequest,
 } from '../../shared/grant-requests';
@@ -60,8 +61,10 @@ export function callKey(agentId: string, toolName: string, args: Record<string, 
 }
 
 function sweep(now: number): void {
-  const expired = [...pending.values()].filter((e) => Date.parse(e.request.expiresAt) <= now).map((e) => e.request.requestId);
+  const gone = [...pending.values()].filter((e) => Date.parse(e.request.expiresAt) <= now);
+  const expired = gone.map((e) => e.request.requestId);
   for (const id of expired) pending.delete(id);
+  for (const e of gone) recordRequestEvent({ agentId: e.request.agentId, kind: e.request.kind, outcome: 'expired', actions: e.request.actions });
   for (const [key, until] of approvals) if (until <= now) approvals.delete(key);
   emit({ kind: 'closed', requestIds: expired });
 }

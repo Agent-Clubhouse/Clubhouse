@@ -32,7 +32,8 @@ export type AskFirstOutcome =
   /** The user allowed this exact call: run it. */
   | { kind: 'approved' }
   /** Not yet: tell the agent this. */
-  | { kind: 'asked'; text: string };
+  /** Not yet: tell the agent this. `created`: a new request went to Needs you (only then is it recorded, #2973). */
+  | { kind: 'asked'; text: string; created?: boolean };
 
 export async function askFirst(agentId: string, toolName: string, args: Record<string, unknown>, asks: AskedAction[]): Promise<AskFirstOutcome> {
   const key = callKey(agentId, toolName, args);
@@ -69,6 +70,7 @@ export async function askFirst(agentId: string, toolName: string, args: Record<s
   const needs = asks.map((a) => `${GRANT_ACTION_LABELS[a.action] ?? a.action} (${a.action}) on ${a.where}`).join('; ');
   return {
     kind: 'asked',
+    created: !recorded.reused,
     text: `Not done yet: this needs the user's approval (${needs}). It's waiting in their Needs you list${recorded.reused ? ' (you asked already)' : ''}. `
       + 'Clubhouse will message you when they answer. If they allow it, make the same call again with the same arguments; it goes through once.',
   };
