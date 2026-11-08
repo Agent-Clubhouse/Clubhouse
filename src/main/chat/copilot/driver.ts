@@ -24,6 +24,7 @@ import {
   copilotToolLocations,
   copilotToolTitle,
 } from './normalizer';
+import { markFailedCopilotWrites, markFailedCopilotWritesFromStart } from './failed-writes';
 import { loadCopilotSdk } from './sdk-loader';
 import { copilotTierEntry, type CopilotTierEntry } from '../../../shared/context-window';
 import { safeMcpErrorLine } from '../../services/mcp-error-text';
@@ -99,7 +100,10 @@ const TIER_CATALOG_TIMEOUT_MS = 8_000;
 async function connect(server: CopilotServer): Promise<CopilotClient> {
   const { CopilotClient, RuntimeConnection } = await loadCopilotSdk();
   const client = new CopilotClient({ connection: RuntimeConnection.forUri(server.uri, { connectionToken: server.connectionToken }), logLevel: 'error' });
+  markFailedCopilotWritesFromStart(client);
   await client.start();
+  // In case a future SDK connects some other way.
+  markFailedCopilotWrites(client);
   return client;
 }
 
