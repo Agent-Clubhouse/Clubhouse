@@ -1074,6 +1074,11 @@ export interface AnnexSettings {
   color: string;
   /** Whether to auto-reconnect to satellites after disconnection */
   autoReconnect: boolean;
+  /**
+   * A name or address other devices can also reach this machine by, such as its
+   * tailnet name (#3058). Added to the pairing link and the phone's routes.
+   */
+  reachableAs?: string;
 }
 
 export interface AnnexStatus {
@@ -1134,6 +1139,12 @@ export interface AnnexPeer {
    * Entries without a role are from an older version and need pairing again.
    */
   role?: AnnexPeerRole;
+  /** For a satellite: addresses it was reached at or listed in its pairing link, most recently reached first (#3058). */
+  knownHosts?: string[];
+  /** For a satellite: its main (TLS) port when it was last reached or paired. */
+  mainPort?: number;
+  /** For a satellite: a host name or address the person typed, such as a tailnet name. */
+  typedHost?: string;
 }
 
 /** A peer as Settings lists it. */
@@ -1173,6 +1184,10 @@ export interface AnnexDevice {
   lastSeen: string;
   /** Paired for this session only (a phone's session pairing): forgotten when Annex stops. */
   sessionOnly?: boolean;
+  /** For a device this machine connects to: the address in use or tried last, as `host:port`. */
+  address?: string;
+  /** For a device this machine connects to: the host name or address the person typed, if any. */
+  typedHost?: string;
   /** Why it isn't connected, and what to do, when that's known. */
   problem: AnnexProblem | null;
 }

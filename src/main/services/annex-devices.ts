@@ -22,6 +22,8 @@ interface Sources {
   connected: ReadonlySet<string>;
   /** Whether this machine connects to its satellites ("Connect to satellites"). */
   clientOn: boolean;
+  /** Where this machine is reaching a satellite, as `host:port`. */
+  addressOf: (fingerprint: string) => string | undefined;
 }
 
 function readSources(): Sources {
@@ -31,6 +33,7 @@ function readSources(): Sources {
     satellites: annexClient.getSatellites(),
     connected: annexServer.connectedPeerFingerprints(),
     clientOn: annexSettings.getSettings().enableClient,
+    addressOf: annexClient.satelliteAddress,
   };
 }
 
@@ -85,6 +88,8 @@ export function buildDeviceList(sources: Sources): AnnexDevice[] {
       pairedAt: peer.pairedAt || '',
       lastSeen: peer.lastSeen || '',
       ...(sessionOnly && { sessionOnly: true }),
+      ...(peer.role === 'satellite' && sat && sources.addressOf(peer.fingerprint) && { address: sources.addressOf(peer.fingerprint) }),
+      ...(peer.typedHost && { typedHost: peer.typedHost }),
       problem: problem ?? problemFor(peer, state, sat),
     });
   };

@@ -10,6 +10,7 @@ vi.mock('./annex-client', () => ({
   getSatellites: vi.fn(() => []),
   getSatellite: vi.fn(() => null),
   forgetSatellite: vi.fn(),
+  satelliteAddress: vi.fn(() => undefined),
 }));
 vi.mock('./annex-settings', () => ({ getSettings: vi.fn(() => ({ enableClient: true })) }));
 vi.mock('./annex-server', () => ({
@@ -46,7 +47,7 @@ function satellite(overrides: Partial<annexClient.SatelliteConnection>): annexCl
   };
 }
 
-const empty = { peers: [], sessionPeers: [], satellites: [], connected: new Set<string>(), clientOn: true };
+const empty = { peers: [], sessionPeers: [], satellites: [], connected: new Set<string>(), clientOn: true, addressOf: () => undefined };
 
 describe('annex device list', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -104,6 +105,16 @@ describe('annex device list', () => {
       satellites: [satellite({ fingerprint: 'fp', state: 'discovering', host: '' })],
     });
     expect(device).toMatchObject({ state: 'offline', problem: { code: 'client-off', action: 'Turn on Connect to satellites in Annex control.' } });
+  });
+
+  it('says where a satellite is reached and what was typed for it (#3058)', () => {
+    const [device] = buildDeviceList({
+      ...empty,
+      addressOf: (fp) => (fp === 'fp' ? 'studio.tail1234.ts.net:9443' : undefined),
+      peers: [peer({ role: 'satellite', tlsCertificatePem: 'PEM', typedHost: 'studio.tail1234.ts.net' })],
+      satellites: [satellite({ fingerprint: 'fp', host: 'studio.tail1234.ts.net', mainPort: 9443 })],
+    });
+    expect(device).toMatchObject({ address: 'studio.tail1234.ts.net:9443', typedHost: 'studio.tail1234.ts.net' });
   });
 
   it('marks pairings from before pinning as needing pairing again, whichever way', () => {

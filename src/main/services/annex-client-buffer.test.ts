@@ -66,6 +66,8 @@ vi.mock('./annex-tls', () => ({
 }));
 
 vi.mock('./annex-peers', () => ({
+  noteReached: vi.fn(),
+  setTypedHost: vi.fn(() => true),
   getPeer: vi.fn().mockReturnValue(null),
   addPeer: vi.fn(),
   removePeer: vi.fn(),
