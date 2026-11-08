@@ -97,9 +97,12 @@ vi.mock('../bridge-server', () => ({ getAgentConnection: (id: string) => connect
 vi.mock('../../dispatcher/dispatcher-settings', () => ({ isDispatcherEnabled: () => dispatcherState.enabled }));
 vi.mock('../../dispatcher/dispatcher-paths', () => ({
   isDispatcherPath: (p: string) => path.resolve(p) === path.resolve(DISPATCHER_DIR),
+  isDispatcherCoordinatorPath: (p: string) => path.resolve(p) === path.resolve(DISPATCHER_DIR),
+  isDispatcherChatPath: () => false,
 }));
 vi.mock('../../dispatcher/dispatcher-service', () => ({
   isDispatcherAgentId: (id: string | null | undefined) => !!id && id === dispatcherState.agentId,
+  isDispatcherChatAgentId: () => false,
   onDispatcherChanged: (listener: () => void) => {
     dispatcherListeners.add(listener);
     return () => { dispatcherListeners.delete(listener); };

@@ -94,6 +94,7 @@ describe('every appearance change reaches a phone as a snapshot', () => {
   let projectId = '';
   let agentId = '';
   let dispatcherId = '';
+  let phoneId = '';
   /** Past every debounce, so a snapshot that hasn't come by then isn't coming. */
   const SETTLE_MS = 800;
   /** Lets one from the last step finish. `shows` looks for the new value, so one that's late can't pass for this. */
@@ -440,7 +441,10 @@ describe('every appearance change reaches a phone as a snapshot', () => {
       resetNewChromeCacheForTests();
       await expectSnapshotAfter(() => dispatcher.setDispatcherEnabled(true), (p) => !!shown(p));
       dispatcherId = dispatcher.getDispatcherAgentId()!;
-      expect(shown(snapshots().at(-1)).id).toBe(dispatcherId);
+      // A phone sees the chat the user talks to (#3036), never the agent that holds the Dispatcher's id.
+      phoneId = dispatcher.getDispatcherChatAgentId()!;
+      expect(shown(snapshots().at(-1)).id).toBe(phoneId);
+      expect(phoneId).not.toBe(dispatcherId);
     }, 30_000);
 
     it('color and emoji, from the CLI and from itself', async () => {
@@ -457,10 +461,10 @@ describe('every appearance change reaches a phone as a snapshot', () => {
         const bytes = png(fill);
         await expectSnapshotAfter(
           () => ipc(IPC.AGENT.SAVE_ICON, dispatcherPath(), dispatcherId, dataUrl(bytes)),
-          (p) => p.agentIcons[dispatcherId] === dataUrl(bytes),
+          (p) => p.agentIcons[phoneId] === dataUrl(bytes) && p.agentIcons[dispatcherId] === undefined,
         );
       }
-      await expectSnapshotAfter(() => ipc(IPC.AGENT.REMOVE_ICON, dispatcherPath(), dispatcherId), (p) => p.agentIcons[dispatcherId] === undefined);
+      await expectSnapshotAfter(() => ipc(IPC.AGENT.REMOVE_ICON, dispatcherPath(), dispatcherId), (p) => p.agentIcons[phoneId] === undefined);
     }, 30_000);
 
     it('its agents.json edited', async () => {

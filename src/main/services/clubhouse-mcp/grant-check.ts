@@ -26,7 +26,7 @@ import { isProjectAdmin } from '../../../shared/group-project-admin';
 import { CROSS_PROJECT_OFF_MESSAGE, fiveLevelOf } from '../../../shared/orchestration-policy';
 import { agentRegistry } from '../agent-registry';
 import { bindingManager } from './binding-manager';
-import { isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
+import { isDispatcherAgent, isTrackedDispatcher, isTrackedDispatcherChat } from './dispatcher-gate';
 import { mcpCallerParent } from './mcp-call-gate';
 import { getAgentGrantChanges } from '../agent-grants-store';
 import { applyGrantChanges } from '../../../shared/agent-grant-changes';
@@ -191,6 +191,7 @@ export function callerGrants(agentId: string): Grant[] {
   const tracked = isTrackedDispatcher(agentId);
   return applyGrantChanges(defaultGrants({
     dispatcher: isDispatcherAgent(agentId),
+    dispatcherChat: isTrackedDispatcherChat(agentId),
     helper: mcpCallerParent(agentId) !== undefined,
     orchestrates: !tracked && isOrchestrationEnabled(agentId),
     crossProject: !tracked && isCrossProjectEnabled(agentId),

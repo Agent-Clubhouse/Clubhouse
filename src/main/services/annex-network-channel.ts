@@ -208,7 +208,30 @@ function sendHello(ch: Channel): void {
   }
   if (!self) return;
   send(ch, { v: NETWORK_PROTOCOL_VERSION, type: 'hello', member: self });
-  send(ch, { v: NETWORK_PROTOCOL_VERSION, type: 'members', members: localMembers(), removals: [] });
+  const known = membersProvider?.(ch.fingerprint) ?? { members: localMembers(), removals: [] };
+  send(ch, { v: NETWORK_PROTOCOL_VERSION, type: 'members', members: known.members, removals: known.removals });
+}
+
+/** What to tell device `to` when its channel opens. */
+let membersProvider: ((to: string) => { members: NetworkMember[]; removals: NetworkRemoval[] }) | null = null;
+
+/** What this machine tells others it knows: the membership module sets it (#3061). */
+export function setMembersProvider(provider: typeof membersProvider): void {
+  membersProvider = provider;
+}
+
+/**
+ * Sends a membership message on every open channel that has said hello, to
+ * devices `to` accepts (all of them by default). Returns how many it went to.
+ */
+export function broadcast(message: NetworkMessage, to: (fingerprint: string) => boolean = () => true): number {
+  let sent = 0;
+  for (const ch of [...channels]) {
+    if (!ch.member || ch.ws.readyState !== WebSocket.OPEN || !to(ch.fingerprint)) continue;
+    send(ch, message);
+    sent++;
+  }
+  return sent;
 }
 
 /** This machine and every member that has said hello on an open channel. */
@@ -312,7 +335,7 @@ export function isNetworkUpgrade(pathname: string): boolean {
 }
 
 /** Takes an upgrade to `/network` on the main TLS server. */
-export function handleNetworkUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+export function handleNetworkUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, onAccepted?: (fingerprint: string) => void): void {
   const auth = authenticateMember(socket);
   if ('error' in auth) {
     appLog('core:annex', 'warn', 'Refused an Annex Network channel', { meta: { error: auth.error, remoteAddress: req.socket.remoteAddress } });
@@ -323,6 +346,7 @@ export function handleNetworkUpgrade(req: IncomingMessage, socket: Duplex, head:
   wss.handleUpgrade(req, socket, head, (ws) => {
     // One incoming channel per device: a new one replaces the old (it reconnected, or the old is dead).
     closeFor(auth.peer.fingerprint, 'in');
+    onAccepted?.(auth.peer.fingerprint);
     const ch = attach(ws, auth.peer.fingerprint, auth.certFingerprint, 'in');
     sendHello(ch);
   });
@@ -385,6 +409,7 @@ export function resetNetworkChannelForTests(): void {
   views.clear();
   listeners.clear();
   reachProvider = null;
+  membersProvider = null;
 }
 
 /** Test helper: wraps an already-open socket as a channel, as an accepted upgrade would. */

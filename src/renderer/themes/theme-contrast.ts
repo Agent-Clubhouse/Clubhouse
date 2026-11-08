@@ -4,7 +4,8 @@
  * Every built-in theme meets the gate: primary text and the four notification
  * colors at 4.5:1 against `base` (WCAG AA for normal text).
  *
- * The Workshop pack themes (`./packs`) also meet the secondary, syntax and
+ * The Workshop pack themes (`./packs`) and the gradient themes
+ * (`./gradient-themes.ts`, #2916) also meet the secondary, syntax and
  * terminal floors below. Each is checked against its usual background and
  * every color stop of the theme's background gradient: gradients are on by
  * default, and then the app's base, code blocks and terminals go transparent

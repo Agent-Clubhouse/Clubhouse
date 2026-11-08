@@ -9,7 +9,7 @@ import { useDispatcherStore } from './dispatcherStore';
 
 /**
  * Keeps the renderer's Dispatcher in step with main (#2538): the shared
- * state, and its agent in the agent store under DISPATCHER_PROJECT_ID with
+ * state, and the agent shown as it (its chat, #3036) in the agent store under DISPATCHER_PROJECT_ID with
  * its folder as the project path, loaded the way a project's agents are.
  * Turning it off drops the agent and closes its view, once it has stopped: MCP
  * going off leaves a running one running, so it stays. A failed load is kept
@@ -25,24 +25,24 @@ export function useDispatcherSync(): void {
     const store = useDispatcherStore.getState();
     store.setState(state);
     store.setLoadError(null);
-    const on = (!!state?.enabled || !!state?.running) && !!state.agentId && !!state.path;
+    const on = (!!state?.enabled || !!state?.running) && !!state.chatAgentId && !!state.chatPath;
     if (!on) {
       if (loadedId.current) useAgentStore.getState().removeAgent(loadedId.current);
       loadedId.current = null;
       useUIStore.getState().setDispatcherOpen(false);
       return;
     }
-    if (loadedId.current && loadedId.current !== state.agentId) useAgentStore.getState().removeAgent(loadedId.current);
-    loadedId.current = state.agentId;
+    if (loadedId.current && loadedId.current !== state.chatAgentId) useAgentStore.getState().removeAgent(loadedId.current);
+    loadedId.current = state.chatAgentId;
     // A resume that ran before this state arrived keyed the agent on its folder (#2552).
-    const loaded = useAgentStore.getState().agents[state.agentId!];
+    const loaded = useAgentStore.getState().agents[state.chatAgentId!];
     if (loaded && loaded.projectId !== DISPATCHER_PROJECT_ID) {
       useAgentStore.setState((s) => ({ agents: { ...s.agents, [loaded.id]: { ...s.agents[loaded.id], projectId: DISPATCHER_PROJECT_ID } } }));
     }
     // A config change (model, runtime) arrives as a new state, and reloading picks it up.
     let current = true;
-    const agentId = state.agentId!;
-    useAgentStore.getState().loadDurableAgents(DISPATCHER_PROJECT_ID, state.path!).then(() => {
+    const agentId = state.chatAgentId!;
+    useAgentStore.getState().loadDurableAgents(DISPATCHER_PROJECT_ID, state.chatPath!).then(() => {
       if (current && !useAgentStore.getState().agents[agentId]) {
         useDispatcherStore.getState().setLoadError('Its agent wasn’t found in its folder.');
       }

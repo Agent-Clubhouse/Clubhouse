@@ -268,4 +268,18 @@ describe('PairedSatelliteList', () => {
       expect(screen.queryByRole('button', { name: 'Address' })).not.toBeInTheDocument();
     });
   });
+
+  describe('network members (#3061)', () => {
+    it('says where a join is confirmed and who has not heard yet', () => {
+      render(<PairedSatelliteList devices={[{ ...mockSatellite, role: 'member', confirmation: { kind: 'join', confirmedBy: ['Studio'], waitingOn: ['Laptop'] } }]} />);
+      expect(screen.getByTestId('annex-device-confirmation')).toHaveTextContent('Confirmed on Studio. Waiting for Laptop, which hears when next connected.');
+    });
+
+    it('shows a removal in progress with no actions', () => {
+      render(<PairedSatelliteList devices={[{ ...mockDisconnectedSatellite, role: 'member', state: 'removing', confirmation: { kind: 'removal', confirmedBy: [], waitingOn: ['Studio', 'Laptop'] } }]} />);
+      expect(screen.getByText('Removing')).toBeInTheDocument();
+      expect(screen.getByTestId('annex-device-confirmation')).toHaveTextContent('Not confirmed on any other device yet. Waiting for Studio, Laptop, which hear when next connected.');
+      expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    });
+  });
 });

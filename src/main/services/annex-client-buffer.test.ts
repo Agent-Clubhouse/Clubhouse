@@ -35,6 +35,7 @@ vi.mock('bonjour-service', () => ({
 
 // The membership channel has its own tests (annex-network-channel.test.ts).
 vi.mock('./annex-network-channel', () => ({ connectTo: vi.fn(), closeFor: vi.fn(), closeAll: vi.fn() }));
+vi.mock('./annex-network-membership', () => ({ noteLocalJoin: vi.fn(), noteLocalRemoval: vi.fn() }));
 
 vi.mock('ws', () => ({
   WebSocket: class {
@@ -69,6 +70,8 @@ vi.mock('./annex-tls', () => ({
 }));
 
 vi.mock('./annex-peers', () => ({
+  controlsThisMachine: (p?: { role?: string } | null) => p?.role === 'controller' || p?.role === 'member',
+  controlledFromHere: (p?: { role?: string } | null) => p?.role === 'satellite' || p?.role === 'member',
   noteReached: vi.fn(),
   setTypedHost: vi.fn(() => true),
   getPeer: vi.fn().mockReturnValue(null),
@@ -79,6 +82,7 @@ vi.mock('./annex-peers', () => ({
 }));
 
 vi.mock('./annex-settings', () => ({
+  networkEnabled: (s?: { networkEnabled?: boolean }) => s?.networkEnabled !== false,
   getSettings: vi.fn().mockReturnValue({ autoReconnect: false }),
 }));
 
