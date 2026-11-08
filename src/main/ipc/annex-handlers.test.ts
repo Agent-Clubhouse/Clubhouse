@@ -41,6 +41,8 @@ vi.mock('../services/annex-peers', () => ({
   unlockPairing: vi.fn(),
 }));
 
+vi.mock('../services/annex-network-channel', () => ({ listMembers: vi.fn(() => [{ fingerprint: 'fp:sat', connected: true }]) }));
+
 vi.mock('../services/annex-devices', () => ({
   listDevices: vi.fn(() => [{ fingerprint: 'fp:phone', state: 'connected' }]),
   removeDevice: vi.fn(() => true),
@@ -232,6 +234,10 @@ describe('annex-handlers', () => {
 
   it('LIST_DEVICES answers with the one device list', () => {
     expect(handlers.get(IPC.ANNEX.LIST_DEVICES)!({})).toEqual([{ fingerprint: 'fp:phone', state: 'connected' }]);
+  });
+
+  it('LIST_NETWORK_MEMBERS answers with who this machine has heard from', () => {
+    expect(handlers.get(IPC.ANNEX.LIST_NETWORK_MEMBERS)!({})).toEqual([{ fingerprint: 'fp:sat', connected: true }]);
   });
 
   it('REMOVE_DEVICE removes the device whichever way it is paired, and broadcasts the peers', () => {

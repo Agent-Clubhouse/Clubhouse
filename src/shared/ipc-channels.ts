@@ -499,6 +499,7 @@ export const IPC = {
     LIST_DEVICES: 'annex:list-devices',
     REMOVE_DEVICE: 'annex:remove-device',
     DEVICES_CHANGED: 'annex:devices-changed',
+    LIST_NETWORK_MEMBERS: 'annex:list-network-members',
     LOCK_STATE_CHANGED: 'annex:lock-state-changed',
     NOTIFY_PAUSE: 'annex:notify-pause',
     DISCONNECT_CONTROLLER: 'annex:disconnect-controller',

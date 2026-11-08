@@ -150,6 +150,8 @@ vi.mock('./file-service', () => ({
 
 // Mock annex-identity
 vi.mock('./annex-identity', () => ({
+  // No identity yet as far as the Annex Network hello goes: it then sends none.
+  getIdentity: vi.fn().mockReturnValue(null),
   getOrCreateIdentity: vi.fn().mockReturnValue({
     publicKey: 'fake-public-key',
     privateKey: 'fake-private-key',
@@ -171,6 +173,10 @@ vi.mock('./annex-tls', () => ({
   extractPeerCertificateDer: vi.fn().mockReturnValue(undefined),
   verifyCertBinding: vi.fn().mockReturnValue(false),
   getCertificateFingerprint: vi.fn().mockReturnValue(undefined),
+  sameCertificateFingerprint: (a?: string, b?: string) => {
+    const norm = (v?: string) => v?.replace(/[:\s]/g, '').toLowerCase() ?? '';
+    return /^[0-9a-f]{64}$/.test(norm(a)) && norm(a) === norm(b);
+  },
 }));
 
 // Mock annex-peers
@@ -187,6 +193,9 @@ vi.mock('./annex-peers', () => ({
   removePeer: vi.fn(),
   removeAllPeers: vi.fn(),
   unlockPairing: vi.fn(),
+  // The real rule: older entries (no role, or no pin) need pairing again.
+  peerNeedsPairing: (peer: { role?: string; tlsCertificateFingerprint?: string; tlsCertificatePem?: string }) =>
+    !peer.role || !peer.tlsCertificateFingerprint || (peer.role === 'satellite' && !peer.tlsCertificatePem),
 }));
 
 // Mock annex-event-bus
@@ -263,6 +272,8 @@ vi.mock('./plugin-storage', () => ({
 
 // Mock annex-identity
 vi.mock('./annex-identity', () => ({
+  // No identity yet as far as the Annex Network hello goes: it then sends none.
+  getIdentity: vi.fn().mockReturnValue(null),
   getOrCreateIdentity: vi.fn().mockReturnValue({
     publicKey: 'mock-public-key',
     privateKey: 'mock-private-key',
@@ -305,6 +316,7 @@ import * as annexServer from './annex-server';
 import * as annexSettings from './annex-settings';
 import * as annexIdentity from './annex-identity';
 import * as annexTls from './annex-tls';
+import * as networkChannel from './annex-network-channel';
 
 /** A positive, minimally encoded certificate serial (first byte 0x01 to 0x7f). See #2992. */
 function positiveSerial(): string {
@@ -2167,6 +2179,53 @@ describe('annex-server', () => {
       // Removed: the entry goes first, so the socket no longer counts even before it closes.
       annexServer.revokePeer(phone.fingerprint);
       expect(annexServer.connectedPeerFingerprints().has(phone.fingerprint)).toBe(false);
+    });
+
+    /** The first response line's status for an upgrade to `path`, or 0 when the server accepted without writing (stubbed ws). */
+    function upgradeStatus(client: Credentials | null, path: string): Promise<{ status: number; body: string }> {
+      return new Promise((resolve, reject) => {
+        const socket = tlsLib.connect({ host: '127.0.0.1', port: annexServer.getStatus().port, rejectUnauthorized: false, ...(client ?? {}) });
+        let data = '';
+        const done = () => { socket.destroy(); const [head, body = ''] = data.split('\r\n\r\n'); resolve({ status: data ? Number(head.split(' ')[1]) : 0, body }); };
+        socket.once('secureConnect', () => {
+          socket.write([`GET ${path} HTTP/1.1`, 'Host: 127.0.0.1', 'Connection: Upgrade', 'Upgrade: websocket',
+            'Sec-WebSocket-Version: 13', 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==', '', ''].join('\r\n'));
+          setTimeout(done, 300);
+        });
+        socket.on('data', (chunk) => { data += chunk; });
+        socket.on('error', reject);
+      });
+    }
+
+    describe('the Annex Network channel (#3060)', () => {
+      it('accepts a pinned peer of either role at /network, where /ws takes only a controller', async () => {
+        await startServer();
+        const satellite = device();
+        peers.set(satellite.fingerprint, pinned(satellite, { role: 'satellite', tlsCertificatePem: satellite.cert }));
+        // The suite's ws stub writes nothing for an accepted upgrade: the channel module holds the socket instead.
+        expect((await upgradeStatus(satellite, '/network')).status).toBe(0);
+        expect(networkChannel.hasChannel(satellite.fingerprint)).toBe(true);
+        expect((await upgradeStatus(satellite, '/ws')).status).toBe(403);
+        const controller = device();
+        peers.set(controller.fingerprint, pinned(controller));
+        expect((await upgradeStatus(controller, '/network')).status).toBe(0);
+        expect(networkChannel.hasChannel(controller.fingerprint)).toBe(true);
+        // Removing a device closes its channel at once.
+        annexServer.revokePeer(controller.fingerprint);
+        expect(networkChannel.hasChannel(controller.fingerprint)).toBe(false);
+      });
+
+      it('refuses a stranger, an old pairing, another certificate, and no certificate', async () => {
+        await startServer();
+        expect(await upgradeStatus(device(), '/network')).toMatchObject({ status: 401, body: JSON.stringify({ error: 'peer_not_paired' }) });
+        const old = device();
+        peers.set(old.fingerprint, pinned(old, { role: undefined, tlsCertificateFingerprint: undefined }));
+        expect((await upgradeStatus(old, '/network')).body).toContain('needs_pairing');
+        const repinned = device();
+        peers.set(repinned.fingerprint, pinned(repinned, { role: 'satellite', tlsCertificatePem: 'PEM', tlsCertificateFingerprint: device().certFingerprint }));
+        expect((await upgradeStatus(repinned, '/network')).body).toContain('peer_not_paired');
+        expect((await upgradeStatus(null, '/network')).status).toBe(401);
+      });
     });
 
     describe('the stored name (#2442)', () => {

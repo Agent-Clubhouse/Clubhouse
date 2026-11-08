@@ -1,7 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { AnnexAgentUpdate } from '../shared/mobile-control';
-import type { AnnexDevice, AnnexPeerListing } from '../shared/types';
+import type { AnnexDevice, AnnexNetworkMemberListing, AnnexPeerListing } from '../shared/types';
 
 export const annex = {
   annex: {
@@ -52,6 +52,9 @@ export const annex = {
   /** Every paired device, whichever way it's paired, with where it stands (#3057). */
   listDevices: (): Promise<AnnexDevice[]> =>
     ipcRenderer.invoke(IPC.ANNEX.LIST_DEVICES),
+  /** Devices heard from on the Annex Network channel (#3060). */
+  listNetworkMembers: (): Promise<AnnexNetworkMemberListing[]> =>
+    ipcRenderer.invoke(IPC.ANNEX.LIST_NETWORK_MEMBERS),
   /** Removes a device and ends its connections, whichever way it's paired. */
   removeDevice: (fingerprint: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.ANNEX.REMOVE_DEVICE, fingerprint),
