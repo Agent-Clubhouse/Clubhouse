@@ -262,6 +262,17 @@ describe('built-ins', () => {
     await expectCode(user(() => service.saveTemplate({ name: 'Helper', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: {} })), 'name_taken');
   });
 
+  it('a rename to a taken name changes nothing, the content included (#3099)', async () => {
+    const notes = await user(() => service.createPart({ name: 'Notes 3099', content: { kind: 'block', content: 'old' } }));
+    await user(() => service.createPart({ name: 'Review 3099', content: { kind: 'block', content: 'r' } }));
+    await expectCode(user(() => service.updatePart({ id: notes.id, expectedRevision: notes.revision, name: 'review 3099', description: 'd', content: { kind: 'block', content: 'new' } })), 'name_taken');
+    const after = await user(() => service.getPart(notes.id));
+    expect(after).toMatchObject({ name: 'Notes 3099', revision: notes.revision, content: { kind: 'block', content: 'old' } });
+    // The same edit with a free name still saves from the original revision.
+    const saved = await user(() => service.updatePart({ id: notes.id, expectedRevision: notes.revision, name: 'Notes renamed 3099', content: { kind: 'block', content: 'new' } }));
+    expect(saved).toMatchObject({ name: 'Notes renamed 3099', revision: notes.revision + 1 });
+  });
+
   it('refuses edits to a built-in but lets it be forked', async () => {
     const identity = await user(() => service.getPart(BUILTIN_BLOCK_IDS.identity));
     await expectCode(user(() => service.updatePart({ id: identity.id, expectedRevision: identity.revision, content: { kind: 'block', content: 'x' } })), 'builtin_read_only');

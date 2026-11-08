@@ -337,7 +337,8 @@ export async function managedSkillExcludes(worktrees: string[], provider: Orches
 async function deliveredBefore(root: string): Promise<string[]> {
   try {
     const raw = JSON.parse(await fsp.readFile(path.join(root, SKILLS_MANIFEST), 'utf-8'));
-    if (Array.isArray(raw?.skills)) return raw.skills.filter((x: unknown): x is string => typeof x === 'string');
+    // Only plain folder names: never the folder itself or anything outside it, so a stray "." can't remove every skill (#3101).
+    if (Array.isArray(raw?.skills)) return raw.skills.filter((x: unknown): x is string => typeof x === 'string' && !!x && x === path.basename(x) && x !== '.' && x !== '..');
   } catch { /* telemetry-exempt: first managed start, or the manifest was removed */ }
   return [];
 }
