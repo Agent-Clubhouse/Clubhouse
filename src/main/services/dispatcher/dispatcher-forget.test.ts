@@ -48,7 +48,8 @@ function everythingElse(): Record<string, string> {
       const full = path.join(d, entry.name);
       if (skip.has(full) || entry.name.startsWith('notes-archive')) continue;
       if (entry.isDirectory()) walk(full);
-      else out[path.relative(h.base, full)] = fs.readFileSync(full, 'utf8');
+      // Forward slashes on every platform, so the keys compare with the literals below.
+      else out[path.relative(h.base, full).split(path.sep).join('/')] = fs.readFileSync(full, 'utf8');
     }
   };
   walk(h.base);
