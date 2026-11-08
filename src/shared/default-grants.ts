@@ -48,7 +48,8 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
     every('agent.sleep', { kind: 'group_members' }), every('agent.reset', { kind: 'group_members' }),
     every('settings.app.read', APP), every('user.notify', APP), every('models.read', APP),
     every('grant.request', SELF),
-    every('action.read', SELF), every('action.write', SELF), every('action.run', SELF),
+    // Actions (#2918) declare the app; each agent reaches only its own, which the Action tools check.
+    every('action.read', APP), every('action.write', APP), every('action.run', APP),
   ];
   if (facts.helper) out.push(structural('agent.message', { kind: 'parent' }));
   if (facts.orchestrates && !facts.dispatcher) {

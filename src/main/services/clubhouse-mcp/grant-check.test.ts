@@ -143,3 +143,84 @@ describe('grant check parity (#2968)', () => {
     ]);
   });
 });
+
+describe('everyday flows keep working (#2968)', () => {
+  beforeEach(setupCallers);
+  const byName = (kind: string, name: string) => registerAll().find((t) => t.kind === kind && t.name === name)!;
+  const ok = (caller: string, kind: string, name: string, args: Record<string, unknown> = {}, targetId?: string, wireKind: 'agent' | 'browser' | 'group-project' = 'agent', groupMetadata?: Record<string, unknown>) => {
+    const tool = byName(kind, name);
+    const wire = targetId ? { binding: { targetKind: wireKind, targetId }, groupMetadata } : undefined;
+    return checkToolGrant(caller, tool.grant, { ...allArgs(tool.grant), ...args }, wire).ok;
+  };
+
+  it('an orchestrator starts a helper, messages it, wakes it and reads its result', () => {
+    expect(ok('orchestrator', 'global', 'start_helper')).toBe(true);
+    for (const name of ['list_helpers', 'wake_helper', 'sleep_helper', 'inspect_helper', 'answer_helper_question', 'dispose_helper', 'hand_off']) {
+      expect(ok('orchestrator', 'global', name), name).toBe(true);
+    }
+    for (const name of ['send_message', 'send_file', 'get_status', 'read_output', 'check_connectivity', 'clear_agent', 'compact_agent']) {
+      expect(ok('orchestrator', 'agent', name, {}, 'helper'), name).toBe(true);
+    }
+  });
+
+  it('a helper replies to its orchestrator', () => {
+    expect(ok('helper', 'global', 'message_parent')).toBe(true);
+    expect(ok('helper', 'agent', 'send_message', {}, 'orchestrator')).toBe(true);
+    expect(ok('helper', 'agent', 'send_file', {}, 'orchestrator')).toBe(true);
+  });
+
+  it('group project board tools, for members and admins', () => {
+    for (const name of ['read_bulletin', 'read_topic', 'read_message', 'list_members', 'get_project_info', 'post_bulletin']) {
+      expect(ok('plain', 'group-project', name, {}, 'g', 'group-project', {}), name).toBe(true);
+    }
+    for (const name of ['shoulder_tap', 'broadcast', 'wake_agent', 'clear_topic', 'set_project_info']) {
+      expect(ok('plain', 'group-project', name, {}, 'g', 'group-project', { admins: ['plain'] }), name).toBe(true);
+    }
+  });
+
+  it('canvas wires between agents, and to browsers', () => {
+    for (const caller of ['plain', 'orchestrator']) {
+      for (const name of ['send_message', 'send_file', 'get_status', 'read_output', 'check_connectivity', 'clear_agent', 'compact_agent']) {
+        expect(ok(caller, 'agent', name, {}, 'peer'), `${caller} ${name}`).toBe(true);
+      }
+    }
+    for (const name of ['navigate', 'click', 'screenshot', 'get_console']) expect(ok('plain', 'browser', name, {}, 'b', 'browser'), name).toBe(true);
+  });
+
+  it('the Dispatcher keeps its v1 reach: creating, restarting, setting up and pushing to any agent', () => {
+    for (const name of ['create_managed_agent', 'restart_agent', 'set_agent_setup', 'push_agent_template', 'save_agent_template', 'create_agent_part',
+      'fork_agent_part', 'get_agent_setup', 'list_agents', 'update_agent', 'update_project', 'list_projects']) {
+      expect(ok('dispatcher', 'global', name), name).toBe(true);
+    }
+    for (const name of ['wake_agent', 'sleep_agent', 'preview_provider', 'clear_agent', 'send_message']) {
+      expect(ok('dispatcher', 'agent', name, {}, 'peer'), name).toBe(true);
+    }
+  });
+
+  it('Actions tools, declared on the app (#2918), for every caller', () => {
+    for (const caller of CALLERS) {
+      for (const action of ['action.read', 'action.write', 'action.run'] as const) {
+        expect(checkToolGrant(caller, { actions: [action], target: 'app' }, {}).ok, `${caller} ${action}`).toBe(true);
+      }
+    }
+  });
+});
+
+describe('a refused call says what is missing (#2968)', () => {
+  beforeEach(setupCallers);
+
+  it('names the permission and the target, and how to report instead', () => {
+    const status = registerAll().find((t) => t.kind === 'agent' && t.name === 'get_status')!;
+    const refused = checkToolGrant('helper', status.grant, {}, { binding: { targetKind: 'agent', targetId: 'orchestrator' } });
+    expect(refused.ok).toBe(false);
+    if (refused.ok === false) {
+      expect(refused.message).toContain('agent.read on your orchestrator');
+      expect(refused.message).toContain('message_parent');
+      expect(refused.message).toContain('Only the user can grant it');
+    }
+    const clear = registerAll().find((t) => t.kind === 'agent' && t.name === 'clear_agent')!;
+    const toDispatcher = checkToolGrant('plain', clear.grant, {}, { binding: { targetKind: 'agent', targetId: 'dispatcher' } });
+    if (toDispatcher.ok === false) expect(toDispatcher.message).toContain('agent.reset on the Dispatcher');
+    else throw new Error('expected a refusal');
+  });
+});

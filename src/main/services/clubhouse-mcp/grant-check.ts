@@ -77,6 +77,36 @@ function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantChec
   }
 }
 
+/** Where a refused call was aimed, in the caller's terms. Never says whether a target exists. */
+function whereText(target: GrantCallTarget): string {
+  const rel = target.relations ?? [];
+  if (target.isDispatcher && rel.includes('connected')) return 'the Dispatcher';
+  if (rel.includes('parent')) return 'your orchestrator';
+  if (rel.includes('my_helper')) return 'your helpers';
+  if (rel.includes('connected')) return target.kind === 'browser' ? 'a canvas browser you are wired to' : 'an agent you are connected to';
+  if (rel.includes('group_member')) return 'members of this group project';
+  if (rel.includes('self')) return 'yourself';
+  switch (target.kind) {
+    case 'group_project': return 'this group project';
+    case 'project': return 'projects';
+    case 'library': return 'the parts and templates library';
+    case 'app': return 'the app';
+    default: return 'this target';
+  }
+}
+
+/**
+ * The refusal an agent gets: which permission it lacks, on what, and what to
+ * do. Only the user grants Clubhouse permissions, and an agent can't give
+ * itself one, so it says to ask the user.
+ */
+function refusalMessage(reason: GrantRefusal, action: string, target: GrantCallTarget): string {
+  if (reason !== 'no_grant') return GRANT_REFUSAL_MESSAGES[reason];
+  const where = whereText(target);
+  const hint = (target.relations ?? []).includes('parent') ? ' To report to your orchestrator, use message_parent.' : '';
+  return `You don't have the Clubhouse permission ${action} on ${where}.${hint} Only the user can grant it; ask them if you need it.`;
+}
+
 /** A running agent's default grants, from what the gates know about it. */
 export function callerGrants(agentId: string): Grant[] {
   const tracked = isTrackedDispatcher(agentId);
@@ -106,7 +136,7 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
     if (!target) continue;
     for (const action of d.actions) {
       const decision = evaluateGrant({ caller, action, target }, grants);
-      if (decision.outcome === 'refuse') return { ok: false, reason: decision.reason, message: GRANT_REFUSAL_MESSAGES[decision.reason] };
+      if (decision.outcome === 'refuse') return { ok: false, reason: decision.reason, message: refusalMessage(decision.reason, action, target) };
       // No default grant on a tool is Ask first yet; requests in Needs you come with #2970.
       if (decision.outcome === 'ask') return { ok: false, reason: 'ask_first', message: 'This needs the user\'s approval, and asking isn\'t available yet.' };
     }
