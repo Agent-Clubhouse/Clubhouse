@@ -8,6 +8,7 @@ import { registerTrustedManifest } from './plugin-manifest-registry';
 import { pathExists } from './fs-utils';
 import { tel } from '../telemetry/facade';
 import { ATTR } from '../../shared/telemetry/attributes';
+import { isRetiredPlugin } from '../../shared/retired-plugins';
 
 function assertSafePluginId(pluginId: string): void {
   if (pluginId.includes('/') || pluginId.includes('\\') || pluginId.includes('..') || pluginId.includes('\0')) {
@@ -143,6 +144,10 @@ async function uninstallPluginNow(pluginId: string): Promise<void> {
   } else {
     await fsp.rm(pluginDir, { recursive: true, force: true });
   }
+
+  // A retired Workshop plugin's data is kept even when it's uninstalled
+  // (#2756): it can be exported from Settings and exists nowhere else.
+  if (isRetiredPlugin(pluginId)) return;
 
   // Clean up the plugin's data directory (storage + files dataDir)
   const dataDir = path.join(getGlobalPluginDataDir(), pluginId);
