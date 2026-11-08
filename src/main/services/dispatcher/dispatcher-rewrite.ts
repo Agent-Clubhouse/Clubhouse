@@ -3,7 +3,7 @@
  * or two plain sentences in that agent's voice before it shows in the chat.
  * The chat never writes it: a separate one-off prompt does, on Auto's minimum
  * level for the Dispatcher's provider (#3044). A provider without an Auto
- * mapping (Copilot today, #3085), or a run that fails, falls back to the
+ * mapping (`auto_not_supported`), or a run that fails, falls back to the
  * Dispatcher's own short version, which tell_user always carries.
  *
  * The agent's raw message stays where it was written: in its own transcript.

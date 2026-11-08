@@ -35,10 +35,10 @@ describe('rewriteAgentNews', () => {
     expect(prompt).not.toContain('\n');
   });
 
-  it('falls back to the Dispatcher\'s version where Auto has no mapping (Copilot)', async () => {
+  it('falls back to the Dispatcher\'s version for a provider without an Auto mapping', async () => {
     const run = runner({ ok: true, text: 'never used' });
     const result = await rewriteAgentNews(
-      { provider: 'github-copilot', agentName: 'api-lead', raw: RAW, fallback: 'I fixed checkout in #412. Tests pass. More detail here.' },
+      { provider: 'no-presets-cli', agentName: 'api-lead', raw: RAW, fallback: 'I fixed checkout in #412. Tests pass. More detail here.' },
       { resolveMinimum: async () => ({ ok: false, code: 'auto_not_supported', message: 'no' }), run },
     );
     expect(run).not.toHaveBeenCalled();
