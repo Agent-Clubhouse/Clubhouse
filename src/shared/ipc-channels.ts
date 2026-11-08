@@ -360,6 +360,7 @@ export const IPC = {
     GET_VERSION_HISTORY: 'app:get-version-history',
     GET_CLIPBOARD_SETTINGS: 'app:get-clipboard-settings',
     SAVE_CLIPBOARD_SETTINGS: 'app:save-clipboard-settings',
+    CONTENT_CONTEXT_MENU: 'app:content-context-menu',
     READ_CLIPBOARD_TEXT: 'app:read-clipboard-text',
     READ_CLIPBOARD_IMAGE: 'app:read-clipboard-image',
     GET_SOUND_SETTINGS: 'app:get-sound-settings',
