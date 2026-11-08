@@ -1,4 +1,5 @@
 import { REMOVED_PLUGIN_API_VERSIONS } from '../../shared/marketplace-types';
+import { isRetiredPlugin } from '../../shared/retired-plugins';
 import { pluginSystemReady } from '../plugins/plugin-loader';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useToastStore } from '../stores/toastStore';
@@ -25,6 +26,7 @@ export async function showRemovedPluginApiNotice(): Promise<void> {
   const refused = Object.values(usePluginStore.getState().plugins).filter((entry) =>
     entry.status === 'incompatible'
     && REMOVED_PLUGIN_API_VERSIONS.includes(entry.manifest.engine?.api ?? 0)
+    && !isRetiredPlugin(entry.manifest.id) // has its own notice
     && !shown.includes(entry.manifest.id));
   if (refused.length === 0) return;
   const names = refused.map((e) => `${e.manifest.name} (API ${e.manifest.engine.api})`).join(', ');

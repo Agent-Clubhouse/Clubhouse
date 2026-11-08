@@ -56,6 +56,15 @@ export const plugin = {
     ipcRenderer.invoke(IPC.PLUGIN.CLEANUP_PROJECT_INJECTIONS, pluginId, projectPath),
   listOrphanedPluginIds: (projectPath: string, knownPluginIds: string[]): Promise<string[]> =>
     ipcRenderer.invoke(IPC.PLUGIN.LIST_ORPHANED_PLUGIN_IDS, projectPath, knownPluginIds),
+  findRetiredData: (pluginId: string): Promise<{
+    installed: boolean;
+    locations: Array<{ scope: 'global' | 'project' | 'project-local'; projectPath?: string; dir: string }>;
+  }> =>
+    ipcRenderer.invoke(IPC.PLUGIN.RETIRED_DATA_FIND, pluginId),
+  exportRetiredData: (pluginId: string): Promise<{ canceled: boolean; filePath?: string; error?: string }> =>
+    ipcRenderer.invoke(IPC.PLUGIN.RETIRED_DATA_EXPORT, pluginId),
+  revealRetiredData: (pluginId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.PLUGIN.RETIRED_DATA_REVEAL, pluginId),
   refreshManifestFromDisk: (pluginId: string) =>
     ipcRenderer.invoke(IPC.PLUGIN.REFRESH_MANIFEST_FROM_DISK, pluginId),
   },

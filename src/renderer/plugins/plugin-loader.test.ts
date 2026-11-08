@@ -217,6 +217,31 @@ describe('plugin-loader', () => {
       expect(entry.error).toBe("This plugin uses plugin API 0.7, which was removed in Clubhouse 1.0. Clubhouse now loads only plugins built for API 0.9. Install an update built for API 0.9, or ask the plugin's author for one.");
     });
 
+    it('registers an installed retired Workshop plugin as incompatible, saying why, and never activates it (#2756)', async () => {
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        {
+          manifest: { id: 'lounge', name: 'Lounge', version: '2.1.0', engine: { api: 0.8 }, scope: 'app', permissions: [], contributes: { help: {} } },
+          pluginPath: '/plugins/lounge',
+          fromMarketplace: true,
+        },
+      ]);
+      mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
+        if (req.key === 'external-plugins-enabled') return true;
+        if (req.key === 'app-enabled') return ['lounge'];
+        return undefined;
+      });
+
+      await initializePluginSystem();
+
+      // Retirement wins over its removed API 0.8: one message, about the retirement.
+      const entry = usePluginStore.getState().plugins['lounge'];
+      expect(entry.status).toBe('incompatible');
+      expect(entry.manifest.name).toBe('Lounge');
+      expect(entry.error).toContain('Lounge was retired');
+      expect(entry.error).not.toContain('plugin API 0.8');
+      expect(usePluginStore.getState().modules['lounge']).toBeUndefined();
+    });
+
     it('activates safe mode when main reports safe mode active', async () => {
       mockPlugin.isSafeModeActive.mockResolvedValue(true);
 

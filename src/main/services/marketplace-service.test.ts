@@ -323,6 +323,21 @@ describe('marketplace-service', () => {
       expect(result.allPlugins[1].marketplaceName).toBe('Private Store');
     });
 
+    it('leaves retired Workshop plugins out of every listing (#2756)', async () => {
+      const retired = (id: string) => ({ ...sampleRegistry.plugins[0], id, name: id });
+      mockFetch
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ ...sampleRegistry, plugins: [...sampleRegistry.plugins, retired('lounge'), retired('kanboss')] }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => sampleFeatured })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ ...sampleCustomRegistry, plugins: [...sampleCustomRegistry.plugins, retired('bug-report')] }) })
+        .mockResolvedValueOnce({ ok: false });
+
+      const result = await fetchAllRegistries([
+        { id: 'cm-1', name: 'Private Store', url: 'https://private.example.com/registry.json', enabled: true },
+      ]);
+
+      expect(result.allPlugins.map((p) => p.id)).toEqual(['test-plugin', 'custom-plugin']);
+    });
+
     it('skips disabled custom marketplaces', async () => {
       mockFetch
         .mockResolvedValueOnce({
@@ -402,6 +417,19 @@ describe('marketplace-service', () => {
   });
 
   describe('installPlugin', () => {
+    it('refuses a retired Workshop plugin by id, naming it, without downloading (#2756)', async () => {
+      const result = await installPlugin({
+        pluginId: 'kanboss',
+        version: '1.0.0',
+        assetUrl: 'https://example.com/kanboss.zip',
+        sha256: 'abc123',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('KanBoss was retired');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('passes AbortSignal.timeout to plugin download fetch', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,

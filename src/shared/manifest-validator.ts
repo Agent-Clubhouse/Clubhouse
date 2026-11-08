@@ -1,6 +1,7 @@
 import type { PluginManifest } from './plugin-types';
 import { ALL_PLUGIN_PERMISSIONS, PERMISSION_HIERARCHY } from './plugin-types';
 import { SUPPORTED_PLUGIN_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS, unsupportedPluginApiMessage } from './marketplace-types';
+import { isRetiredPlugin, retiredPluginMessage } from './retired-plugins';
 
 export { DEPRECATED_PLUGIN_API_VERSIONS };
 
@@ -32,6 +33,12 @@ export function validateManifest(raw: unknown): ValidationResult {
   }
 
   const m = raw as Record<string, unknown>;
+
+  // A retired Workshop plugin (#2756) is refused by id, whatever else the
+  // manifest says, with one message that says why and where its data went.
+  if (typeof m.id === 'string' && isRetiredPlugin(m.id)) {
+    return { valid: false, errors: [retiredPluginMessage(m.id)], warnings: [] };
+  }
 
   // Required fields
   if (typeof m.id !== 'string' || !m.id) {

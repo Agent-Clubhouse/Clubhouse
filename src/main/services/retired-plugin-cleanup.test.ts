@@ -150,3 +150,11 @@ describe('cleanupRetiredPluginData', () => {
     });
   });
 });
+
+describe('retired Workshop plugins are not cleaned up (#2756)', () => {
+  it('never lists Lounge, KanBoss or Bug Report for deletion', async () => {
+    const { RETIRED_BUILTIN_PLUGIN_IDS } = await import('./retired-plugin-cleanup');
+    const { RETIRED_PLUGINS } = await import('../../shared/retired-plugins');
+    for (const id of Object.keys(RETIRED_PLUGINS)) expect(RETIRED_BUILTIN_PLUGIN_IDS).not.toContain(id);
+  });
+});

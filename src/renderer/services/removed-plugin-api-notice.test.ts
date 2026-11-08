@@ -25,6 +25,7 @@ describe('showRemovedPluginApiNotice (#2757)', () => {
     install('wiki', 'Wiki', 0.7, 'incompatible');
     install('pomodoro', 'Pomodoro', 0.9, 'registered');
     install('future', 'Future', 2.0, 'incompatible');
+    install('lounge', 'Lounge', 0.8, 'incompatible'); // retired: its own notice
 
     await showRemovedPluginApiNotice();
     expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual([

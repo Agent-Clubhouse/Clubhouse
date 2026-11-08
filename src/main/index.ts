@@ -32,6 +32,7 @@ import { PLUGIN_PROTOCOL_SCHEME } from '../shared/plugin-protocol-url';
 import { getCommunityPluginsDir } from './services/plugin-discovery';
 import { getGlobalPluginDataDir } from './services/plugin-storage';
 import { cleanupRetiredPluginData } from './services/retired-plugin-cleanup';
+import { noteRetiredPlugins } from './services/retired-plugin-data';
 import * as projectStore from './services/project-store';
 import { initTelemetry, recordAppSession, flushBeforeExit, tel, ATTR } from './telemetry';
 import { installCrashTelemetry, reportMainProcessError } from './telemetry/crash-handlers';
@@ -420,6 +421,19 @@ app.on('ready', () => {
     }))
     .catch((err) => {
       appLog('core:plugins', 'warn', `Retired plugin cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+
+  // Retired Workshop plugins (Lounge, KanBoss, Bug Report; #2756) keep their
+  // data: log once where it is, never delete it.
+  projectStore.list()
+    .then((projects) => noteRetiredPlugins({
+      globalPluginDataDir: getGlobalPluginDataDir(),
+      communityPluginsDir: getCommunityPluginsDir(),
+      projects,
+      markerFile: path.join(getGlobalPluginDataDir(), '_system', 'retired-plugins-noted.json'),
+    }))
+    .catch((err) => {
+      appLog('core:plugins', 'warn', `Retired plugin check failed: ${err instanceof Error ? err.message : String(err)}`);
     });
 
   // Start stale session sweeps (safety net for leaked sessions)

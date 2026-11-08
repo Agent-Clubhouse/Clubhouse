@@ -91,6 +91,32 @@ describe('PluginDetailSettings', () => {
     expect(screen.getByTestId('plugin-detail-meta')).toHaveTextContent('1.0.0');
   });
 
+  it('shows the retired section for an installed retired Workshop plugin, and not for others (#2756)', async () => {
+    useUIStore.setState({ pluginSettingsId: 'lounge' });
+    usePluginStore.setState({
+      plugins: {
+        lounge: {
+          manifest: { id: 'lounge', name: 'Lounge', version: '2.1.0', scope: 'app', engine: { api: 0 } },
+          source: 'marketplace',
+          status: 'incompatible',
+          error: 'Lounge was retired in Clubhouse 1.0 and no longer loads.',
+        },
+        'test-plugin': {
+          manifest: { id: 'test-plugin', name: 'Test Plugin', version: '1.0.0', scope: 'dual', permissions: [] },
+          source: 'community',
+        },
+      } as any,
+    });
+
+    const { unmount } = render(<PluginDetailSettings />);
+    expect(await screen.findByTestId('retired-plugin-section')).toBeInTheDocument();
+    unmount();
+
+    useUIStore.setState({ pluginSettingsId: 'test-plugin' });
+    render(<PluginDetailSettings />);
+    expect(screen.queryByTestId('retired-plugin-section')).toBeNull();
+  });
+
   it('shows permissions section when plugin has permissions', () => {
     useUIStore.setState({ pluginSettingsId: 'test-plugin' });
     usePluginStore.setState({

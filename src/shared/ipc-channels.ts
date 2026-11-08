@@ -407,6 +407,12 @@ export const IPC = {
     UNINSTALL: 'plugin:uninstall',
     LOAD_MODULE_SOURCE: 'plugin:load-module-source',
     REFRESH_MANIFEST_FROM_DISK: 'plugin:refresh-manifest-from-disk',
+    /** Where a retired Workshop plugin's data is (#2756). */
+    RETIRED_DATA_FIND: 'plugin:retired-data-find',
+    /** Save a copy of a retired plugin's data to a file the person picks. */
+    RETIRED_DATA_EXPORT: 'plugin:retired-data-export',
+    /** Show a retired plugin's data folder in the file manager. */
+    RETIRED_DATA_REVEAL: 'plugin:retired-data-reveal',
     CLEANUP_PROJECT_INJECTIONS: 'plugin:cleanup-project-injections',
     LIST_PROJECT_INJECTIONS: 'plugin:list-project-injections',
     LIST_ORPHANED_PLUGIN_IDS: 'plugin:list-orphaned-plugin-ids',
