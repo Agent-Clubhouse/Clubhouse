@@ -86,17 +86,37 @@ describe('from chat events', () => {
 });
 
 describe('from terminal hooks', () => {
-  it('starts a turn on the first tool after a stop and ends it at the stop', () => {
+  it('starts a turn at a prompt hook or the first tool, and ends it at Stop', () => {
     const events = collect();
-    publishFromHookEvent('a1', 'pre_tool');
-    publishFromHookEvent('a1', 'post_tool');
-    publishFromHookEvent('a1', 'pre_tool');
-    publishFromHookEvent('a1', 'stop');
-    publishFromHookEvent('a1', 'pre_tool');
-    publishFromHookEvent('a1', 'permission_request');
-    publishFromHookEvent('a1', 'tool_error', 'oops');
-    expect(events.map((e) => e.type)).toEqual(['turn.started', 'turn.ended', 'turn.started', 'agent.waiting', 'agent.error']);
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'UserPromptSubmit' }, 0);
+    publishFromHookEvent('a1', { kind: 'pre_tool', rawName: 'PreToolUse' }, 1);
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'Stop' }, 2);
+    publishFromHookEvent('a1', { kind: 'pre_tool', rawName: 'PreToolUse' }, 3);
+    publishFromHookEvent('a1', { kind: 'post_tool', rawName: 'PostToolUse' }, 4);
+    expect(events.map((e) => e.type)).toEqual(['turn.started', 'turn.ended', 'turn.started']);
     expect(events[1]).toMatchObject({ via: 'hook', outcome: 'completed' });
-    expect(events[4]).toMatchObject({ message: 'oops' });
+  });
+
+  it('treats a long-silent turn as over (an interrupt runs no Stop hook)', () => {
+    const events = collect();
+    publishFromHookEvent('a1', { kind: 'pre_tool' }, 0);
+    publishFromHookEvent('a1', { kind: 'pre_tool' }, 10 * 60_000);
+    expect(events.map((e) => e.type)).toEqual(['turn.started', 'turn.started']);
+  });
+
+  it('ignores session start, notifications, tool failures and Copilot’s session end', () => {
+    const events = collect();
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'SessionStart' });
+    publishFromHookEvent('a1', { kind: 'notification', rawName: 'Notification' });
+    publishFromHookEvent('a1', { kind: 'tool_error', rawName: 'PostToolUseFailure' });
+    publishFromHookEvent('a1', { kind: 'stop', rawName: 'sessionEnd' });
+    expect(events).toEqual([]);
+  });
+
+  it('waits on you for permission requests and question tools', () => {
+    const events = collect();
+    publishFromHookEvent('a1', { kind: 'permission_request', rawName: 'PermissionRequest' }, 0);
+    publishFromHookEvent('a1', { kind: 'pre_tool', toolName: 'AskUserQuestion' }, 1);
+    expect(events.filter((e) => e.type === 'agent.waiting').map((e) => e.type === 'agent.waiting' && e.reason)).toEqual(['permission', 'question']);
   });
 });

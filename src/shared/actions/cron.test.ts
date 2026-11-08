@@ -56,6 +56,14 @@ describe('nextCronTime', () => {
     expect(nextCronTime(s, local(2026, 11, 6, 13))).toEqual(local(2026, 11, 13, 12)); // the 13th
   });
 
+  it('follows standard cron for the two day fields', () => {
+    // Both restricted, one covering every day: every day.
+    expect(nextCronTime(spec('0 9 1-31 * 1'), local(2026, 11, 3, 10))).toEqual(local(2026, 11, 4, 9));
+    // A day-of-month step starting with `*` restricts together with the weekday.
+    // Odd days that are Mondays: Nov 9 is odd and a Monday.
+    expect(nextCronTime(spec('0 9 */2 * 1'), local(2026, 11, 3))).toEqual(local(2026, 11, 9, 9));
+  });
+
   it('returns null for a date that never comes', () => {
     expect(nextCronTime(spec('0 0 30 2 *'), local(2026, 1, 1))).toBeNull();
   });

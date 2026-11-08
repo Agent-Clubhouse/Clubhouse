@@ -5,6 +5,7 @@
  */
 
 import { parseCron } from './cron';
+import { cronToPresetFields, presetToCron } from './describe';
 import {
   ACTION_EVENT_KINDS,
   ACTION_STEP_KINDS,
@@ -49,8 +50,14 @@ type Result<T> = { ok: true; value: T; error?: undefined } | { ok: false; error:
 /** Pass a failure on with the caller's result type. */
 const fail = (r: { error?: string }): { ok: false; error: string } => ({ ok: false, error: r.error ?? 'Invalid input.' });
 
+/** Ids, branch names, provider and model names. */
+export const MAX_ID_LENGTH = 200;
+const MAX_CRON_LENGTH = 100;
+/** Year 3000: far enough for any real plan, and a finite timer target. */
+const MAX_ONCE_AT = Date.UTC(3000, 0, 1);
+
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
+const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0 && v.length <= MAX_ID_LENGTH;
 
 function text(v: unknown, field: string, required: boolean): Result<string | undefined> {
   if (v === undefined || v === null || v === '') {
@@ -80,13 +87,17 @@ export function validateTrigger(raw: unknown): Result<ActionTrigger> {
   if (raw.kind === 'schedule') {
     const preset: SchedulePreset = SCHEDULE_PRESETS.includes(raw.preset as never) ? raw.preset as SchedulePreset : 'cron';
     if (typeof raw.cron !== 'string') return { ok: false, error: 'A schedule needs a cron line.' };
+    if (raw.cron.length > MAX_CRON_LENGTH) return { ok: false, error: `The schedule line is longer than ${MAX_CRON_LENGTH} characters.` };
     const parsed = parseCron(raw.cron);
     if (!parsed.ok) return fail(parsed);
+    const cron = raw.cron.trim().split(/\s+/).join(' ');
+    // A preset label must match its line, or the form would show a time the schedule doesn't use.
+    const presetCron = preset === 'cron' ? null : presetToCron(preset, cronToPresetFields(preset, cron));
     const missed: MissedRunRule = MISSED_RUN_RULES.includes(raw.missed as never) ? raw.missed as MissedRunRule : 'skip';
-    return { ok: true, value: { kind: 'schedule', preset, cron: raw.cron.trim().split(/\s+/).join(' '), missed } };
+    return { ok: true, value: { kind: 'schedule', preset: presetCron === cron ? preset : 'cron', cron, missed } };
   }
   if (raw.kind === 'once') {
-    if (typeof raw.at !== 'number' || !Number.isFinite(raw.at) || raw.at <= 0) {
+    if (typeof raw.at !== 'number' || !Number.isFinite(raw.at) || raw.at <= 0 || raw.at > MAX_ONCE_AT) {
       return { ok: false, error: 'A one-time action needs a date and time.' };
     }
     return { ok: true, value: { kind: 'once', at: Math.floor(raw.at) } };
