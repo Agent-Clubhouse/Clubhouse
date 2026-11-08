@@ -386,8 +386,8 @@ describe('the startup pass (D59)', () => {
       inFlight++;
       expect(inFlight).toBe(1);
       order.push(id);
-      // Give any second switch the chance to start, without a real wait.
-      await new Promise((r) => setImmediate(r));
+      // Long enough for a second switch, were the pass to run them together, to reach its save.
+      await new Promise((r) => setTimeout(r, 5));
       try { return await saveSetup(p, id, setup); } finally { inFlight--; }
     });
 
