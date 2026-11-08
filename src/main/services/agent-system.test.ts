@@ -548,11 +548,12 @@ describe('agent-system', () => {
       expect(getAgentOrchestrator('agent-1')).toBe('codex-cli');
     });
 
-    it.each([false, true])('refuses a legacy Copilot hook document before launch with hook server %s', async (enabled) => {
+    it.each([false, true])('refuses an ambiguous Copilot hook document before launch with hook server %s', async (enabled) => {
       mockIsHookServerEnabled.mockReturnValue(enabled);
       const hookFile = path.join('/project', '.github', 'hooks', 'hooks.json');
       mockReadFile.mockImplementation(async (file: unknown) => {
-        if (file === hookFile) return JSON.stringify({ permissions: { allow: ['Read'] } });
+        // Permissions beside other content still needs review; permissions alone is moved aside (#2866).
+        if (file === hookFile) return JSON.stringify({ version: 1, hooks: {}, permissions: { allow: ['Read'] } });
         throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       });
       try {
