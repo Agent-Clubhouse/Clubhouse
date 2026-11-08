@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
-import { useUIStore } from '../../stores/uiStore';
 import { getTheme } from '../../themes';
 import { useChromeFlagStore, NEW_CHROME_FLAG } from '../../chrome/chromeFlag';
 import { useChromeStore, SIDEBAR_SORTS, type SidebarSort } from '../../chrome/chromeStore';
@@ -114,31 +113,12 @@ function SidebarSortSetting({ kind }: { kind: 'project' | 'agent' }) {
   );
 }
 
-const VIEW_TOGGLES = [
-  {
-    key: 'showHome' as const,
-    label: 'Home',
-    description: 'Show the Home dashboard in the sidebar.',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-        <polyline points="9 22 9 12 15 12 15 22" />
-      </svg>
-    ),
-  },
-];
-
 export function DisplaySettingsView() {
   const themeId = useThemeStore((s) => s.themeId);
   const setTheme = useThemeStore((s) => s.setTheme);
   const availableThemeIds = useThemeStore((s) => s.availableThemeIds);
-  const showHome = useUIStore((s) => s.showHome);
-  // The new layout has no Home (spec §4.4); its sidebar setting is the idle window instead.
+  // The sidebar's view settings belong to the new layout; the classic rail has none since Home was removed.
   const newChrome = useChromeFlagStore((s) => s.enabled);
-  const setShowHome = useUIStore((s) => s.setShowHome);
-  const toggleMap = {
-    showHome: { value: showHome, set: setShowHome },
-  };
 
   const gradientsEnabled = useThemeStore((s) => s.experimentalGradients);
   const setThemeGradients = useThemeStore((s) => s.setThemeGradients);
@@ -154,23 +134,13 @@ export function DisplaySettingsView() {
         <ClassicLayoutSetting />
       </SettingsSection>
 
-      <SettingsSection title="Views">
-        {newChrome && <IdleProjectsSetting />}
-        {newChrome && <SidebarSortSetting kind="project" />}
-        {newChrome && <SidebarSortSetting kind="agent" />}
-        {!newChrome && VIEW_TOGGLES.map(({ key, label, description, icon }) => {
-          const { value, set } = toggleMap[key];
-          return (
-            <SettingsField
-              key={key}
-              label={<span className="flex items-center gap-2"><span className="text-ctp-overlay1 flex">{icon}</span>{label}</span>}
-              help={description}
-            >
-              <Toggle aria-label={label} checked={value} onChange={set} />
-            </SettingsField>
-          );
-        })}
-      </SettingsSection>
+      {newChrome && (
+        <SettingsSection title="Views">
+          <IdleProjectsSetting />
+          <SidebarSortSetting kind="project" />
+          <SidebarSortSetting kind="agent" />
+        </SettingsSection>
+      )}
 
       <SettingsSection title="Color theme">
         <SettingsField

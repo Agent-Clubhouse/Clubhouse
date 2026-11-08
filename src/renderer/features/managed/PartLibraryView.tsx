@@ -11,10 +11,17 @@ import { AgentDot, DroppedEnvNote } from './parts-ui';
 
 type SourceFilter = 'all' | 'builtin' | 'custom';
 
-/** A custom part only one agent uses and no template lists: usually a fork made for that agent. */
+/**
+ * A custom part only one agent uses and no template lists: usually a fork made
+ * for that agent. The copy of a retired built-in always shows (D99), since the
+ * person didn't make it.
+ */
 export function usedByOneAgent(p: ManagedPartSummary): boolean {
-  return !p.builtin && p.usedBy.length === 1 && p.templates.length === 0;
+  return !p.builtin && !p.fromRetiredBuiltin && p.usedBy.length === 1 && p.templates.length === 0;
 }
+
+/** Said of the person's copy of a retired built-in, in the library and the template list (D99). */
+export const RETIRED_COPY_NOTE = 'Your copy of a built-in Clubhouse no longer ships. Edit it like any of your parts.';
 
 const GRID = 'grid grid-cols-[minmax(0,1fr)_minmax(0,140px)_minmax(0,140px)] gap-x-4 items-center';
 
@@ -125,6 +132,7 @@ function PartDetail({ part, onEdit, onFork, onDelete }: {
   return (
     <div data-testid="managed-part-detail" className="flex flex-col gap-3 px-3 pt-1 pb-3">
       {part.description && <p className="text-xs text-ctp-subtext0">{part.description}</p>}
+      {part.fromRetiredBuiltin && <p className="text-xs text-ctp-overlay1" data-testid="managed-part-retired-copy">{RETIRED_COPY_NOTE}</p>}
       {renaming ? (
         <form className="flex items-center gap-1.5" onSubmit={(e) => { e.preventDefault(); void rename(); }}>
           <input className={`${settingsInput} w-[260px] max-w-full`} aria-label="New name" value={name} onChange={(e) => setName(e.target.value)} autoFocus disabled={busy} />
@@ -324,7 +332,7 @@ export function PartLibraryView({ kind }: { kind: ManagedPartKind }) {
               >
                 <span className="min-w-0">
                   <span className="block text-[13px] text-ctp-text truncate">{p.name}</span>
-                  <span className="block text-xs text-ctp-overlay1 truncate">{p.builtin ? 'Built-in' : 'Custom'}{p.description ? ` · ${p.description}` : ''}</span>
+                  <span className="block text-xs text-ctp-overlay1 truncate">{p.builtin ? 'Built-in' : p.fromRetiredBuiltin ? 'Custom, from a retired built-in' : 'Custom'}{p.description ? ` · ${p.description}` : ''}</span>
                 </span>
                 <UsedBy part={p} />
                 <span className="text-xs text-ctp-overlay1 truncate">{updatedText(p)}</span>

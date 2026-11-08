@@ -11,19 +11,18 @@ import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
 import type { OrchestratorProvider } from '../../orchestrators/types';
 import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
-import type { ManagedAgentStatus, ManagedMcpProblem, ManagedRunningSnapshot } from '../../../shared/managed-agents-types';
+import type { ManagedAgentSetup, ManagedAgentStatus, ManagedMcpProblem, ManagedPlainChoice, ManagedPlainPreview, ManagedRunningSnapshot } from '../../../shared/managed-agents-types';
 import { createManagedAgentsService, ManagedError, type ManagedAgentsService } from './service';
 import { createManagedStateStore, managedStateDir } from './state-store';
 import { ensureBuiltinsOnceFor } from './builtins-once';
-import { MCP_BACKUP_DIR } from './mcp-backup';
+import { queueManagedExcludes } from './git-excludes';
 import { keepInstructionsAtFirstStart } from './before-managed';
+import { previewSwitchToPlain, switchToPlain, type PlainDeps } from './plain';
 import * as path from 'path';
 import { delivered, failedDeliveries, forgetDelivery, mcpProblems } from './delivery-records';
 import {
   deliverManagedSetup,
   managedSettingsRows,
-  EXCLUDES_MANIFEST,
-  managedSkillExcludes,
   mcpServersOf,
   quickManagedLaunch,
   removeManagedClaudeExcludes,
@@ -48,10 +47,17 @@ export function managedAgents(): ManagedAgentsService {
       state: createManagedStateStore(),
       listProjects: async () => (await projectStore.peekProjects()).map((p) => ({ path: p.path, name: p.displayName || p.name })),
       listAgents: (projectPath) => agentConfig.peekDurableConfigs(projectPath),
+      listProjectsChecked: async () => {
+        const { projects, readable } = await projectStore.peekProjectsChecked();
+        return { projects: projects.map((p) => ({ path: p.path, name: p.displayName || p.name })), readable };
+      },
+      listAgentsChecked: (projectPath) => agentConfig.peekDurableConfigsChecked(projectPath),
       getAgent: (projectPath, agentId) => agentConfig.getDurableConfig(projectPath, agentId),
       setManagedSetup: (projectPath, agentId, setup) => agentConfig.setManagedSetup(projectPath, agentId, setup),
       isRunning,
       onChanged: () => broadcastToAllWindows(IPC.MANAGED.CHANGED),
+      setHelperTemplate: async (projectPath, agentId, templateId) => { await agentConfig.updateDurableConfig(projectPath, agentId, { helperTemplateId: templateId }); },
+      onSetupRemapped: (_projectPath, agent, before, after) => followRemappedSetup(agent, before, after),
       onUnmanaged: async (_projectPath, agent) => {
         if (!agent.worktreePath) return;
         try {
@@ -65,6 +71,22 @@ export function managedAgents(): ManagedAgentsService {
     });
   }
   return service;
+}
+
+/**
+ * A retired built-in swapped for its copy delivers the same text (D99), so a
+ * running session that was up to date stays so: its delivery record moves to
+ * the copy's ids, and no setup-changed bar shows. A session already waiting
+ * for a change keeps waiting.
+ */
+export async function followRemappedSetup(agent: DurableAgentConfig, before: ManagedAgentSetup, after: ManagedAgentSetup): Promise<void> {
+  const record = delivered.get(agent.id);
+  if (!record) return;
+  const svc = managedAgents();
+  const was = setupFingerprint({ ...agent, managed: before }, await resolveManagedSetup(svc, before));
+  if (was.fingerprint !== record.fingerprint) return;
+  const now = setupFingerprint({ ...agent, managed: after }, await resolveManagedSetup(svc, after));
+  delivered.set(agent.id, { ...record, fingerprint: now.fingerprint, parts: now.parts, order: now.order });
 }
 
 /**
@@ -118,44 +140,12 @@ export async function deliverForSpawn(projectPath: string, agent: DurableAgentCo
   }
   failedDeliveries.delete(agent.id);
   if (record) delivered.set(agent.id, record);
-  void excludeManagedFiles(projectPath, agent.worktreePath, provider);
+  // Keep what Clubhouse delivered out of commits (D73, D76, D97).
+  void queueManagedExcludes(projectPath);
   broadcastToAllWindows(IPC.MANAGED.CHANGED);
   if (record?.missing) {
     broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, agent.id,
       `${record.missing} part${record.missing === 1 ? '' : 's'} in ${agent.name}'s setup no longer exist${record.missing === 1 ? 's' : ''} and ${record.missing === 1 ? 'was' : 'were'} skipped. Open its builder to fix the setup.`);
-  }
-}
-
-/**
- * Keep what Clubhouse delivered out of commits. `.git/info/exclude` covers the
- * main checkout and every worktree, so the block lists only paths Clubhouse
- * alone writes: each delivered skill folder and the skills manifest (D73),
- * and its own bookkeeping files. The block is rewritten each time, so it
- * lists exactly what this start excludes, and old-format lines for the tag
- * come out (D76).
- */
-async function excludeManagedFiles(projectPath: string, worktreePath: string | undefined, provider: OrchestratorProvider): Promise<void> {
-  try {
-    // Only the skill folders Clubhouse delivered, in any of this project's managed agents (D73).
-    const worktrees = (await agentConfig.peekDurableConfigs(projectPath)).filter((a) => a.managed && a.worktreePath).map((a) => a.worktreePath!);
-    const skills = await managedSkillExcludes(worktreePath ? [worktreePath, ...worktrees] : worktrees, provider);
-    const gitExclude = await import('../git-exclude-manager');
-    // The root files (the MCP file, the instructions file, Claude Code's settings.local.json) aren't
-    // listed: those names are the person's too, and excluding them would hide their own untracked
-    // copies in the main checkout. That waits on a maintainer decision (D76).
-    await gitExclude.replaceExclusions(projectPath, `clubhouse-managed-${provider.id}`, [
-      ...skills,
-      // Which claudeMdExcludes Clubhouse added (D49), and the MCP file it kept aside (D54): names only Clubhouse writes.
-      `/${EXCLUDES_MANIFEST}`,
-      `/${MCP_BACKUP_DIR}/`,
-    ]);
-    // Blocks nothing writes any more, in the old `<pattern> # <tag>` form git never matched: Clubhouse
-    // Mode's (retired in #2901) and the kept MCP file's own tag, now in the block above (D76).
-    await gitExclude.removeExclusions(projectPath, 'clubhouse-mode');
-    await gitExclude.removeExclusions(projectPath, 'clubhouse-managed-backup');
-  } catch (err) {
-    // telemetry-exempt: not a git project, or the exclude file is read-only; delivery already succeeded.
-    appLog('core:managed', 'warn', 'Could not add managed files to git excludes', { meta: { error: err instanceof Error ? err.message : String(err) } });
   }
 }
 
@@ -253,6 +243,27 @@ export async function dismissMigrationNotice(projectPath: string, agentId: strin
 }
 
 export { forgetDelivery };
+
+// ── Switch to plain (#2927) ────────────────────────────────────────────
+
+function plainDeps(): PlainDeps {
+  return {
+    service: managedAgents(),
+    getAgent: (projectPath, agentId) => agentConfig.getDurableConfig(projectPath, agentId),
+    providerFor: async (projectPath, agent) => (await import('../agent-registry')).resolveOrchestrator(projectPath, agent.orchestrator),
+    deliveredInstructions: (agentId) => delivered.get(agentId)?.snapshot?.instructions,
+  };
+}
+
+/** What switching the agent to plain leaves in its folder, and what can come back (D98). Writes nothing. */
+export function previewPlain(projectPath: string, agentId: string): Promise<ManagedPlainPreview> {
+  return previewSwitchToPlain(plainDeps(), projectPath, agentId);
+}
+
+/** Switch a managed agent to plain, bringing back the earlier files chosen (D98). */
+export function switchPlain(projectPath: string, agentId: string, choice: ManagedPlainChoice): Promise<void> {
+  return switchToPlain(plainDeps(), projectPath, agentId, choice);
+}
 
 // ── Restart ────────────────────────────────────────────────────────────
 

@@ -88,7 +88,6 @@ describe('plugin-api-factory', () => {
       expect(api.events).toBeDefined();
       expect(api.settings).toBeDefined();
       expect(api.agents).toBeDefined();
-      expect(api.hub).toBeDefined();
       expect(api.navigation).toBeDefined();
       expect(api.widgets).toBeDefined();
       expect(api.terminal).toBeDefined();
@@ -671,12 +670,19 @@ describe('plugin-api-factory', () => {
     });
   });
 
-  // ── HubAPI ────────────────────────────────────────────────────────────
+  // ── Hub (removed) ─────────────────────────────────────────────────────
 
   describe('hub API', () => {
-    it('hub namespace exists', () => {
-      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
-      expect(api.hub).toBeDefined();
+    it('has no hub namespace on API 0.9, since the built-in Hub was removed', () => {
+      const api = createPluginAPI(makeCtx(), undefined, { ...allPermsManifest, engine: { api: 0.9 } });
+      expect('hub' in api).toBe(false);
+    });
+
+    it.each([0.5, 0.6, 0.7, 0.8])('keeps an empty, frozen hub namespace on API %s, so reading it still works', (version) => {
+      const api = createPluginAPI(makeCtx(), undefined, { ...allPermsManifest, engine: { api: version } });
+      const hub = (api as unknown as { hub?: object }).hub;
+      expect(hub).toEqual({});
+      expect(Object.isFrozen(hub)).toBe(true);
     });
   });
 
@@ -3141,11 +3147,6 @@ describe('plugin-api-factory', () => {
         expect(typeof api.settings.onChange).toBe('function');
       });
 
-      it('api.hub is available with empty permissions', () => {
-        const manifest = v05Manifest([]);
-        const api = createPluginAPI(makeCtx(), undefined, manifest);
-        expect(api.hub).toBeDefined();
-      });
     });
 
     // ── permissionDeniedProxy React dev-mode safety ────────────────────

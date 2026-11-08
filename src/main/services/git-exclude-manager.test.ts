@@ -6,6 +6,7 @@ vi.mock('fs/promises', () => ({
   writeFile: vi.fn(() => Promise.resolve(undefined)),
   rename: vi.fn(() => Promise.resolve(undefined)),
   rm: vi.fn(() => Promise.resolve(undefined)),
+  copyFile: vi.fn(() => Promise.resolve(undefined)),
   mkdir: vi.fn(() => Promise.resolve(undefined)),
 }));
 
@@ -102,17 +103,40 @@ describe('git-exclude-manager', () => {
       expect(excludeContent).toBe('# >>> first\nfirst.txt\n# <<< first\n# >>> second\nsecond.txt\n# <<< second\n');
     });
 
-    it('removes an existing target before rename on platforms that reject overwrites', async () => {
+    it('tries a refused rename again and never removes the exclude file first', async () => {
       vi.mocked(fsp.readFile).mockResolvedValue('');
-      vi.mocked(fsp.rename).mockRejectedValueOnce(Object.assign(new Error('EEXIST'), { code: 'EEXIST' }));
+      vi.mocked(fsp.rename).mockRejectedValueOnce(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
 
       await addExclusions('/project', 'clubhouse-mode', ['CLAUDE.md']);
 
-      expect(fsp.rm).toHaveBeenCalledTimes(1);
-      const [removedPath, options] = vi.mocked(fsp.rm).mock.calls[0];
-      expect(normalizedPath(removedPath)).toContain('.git/info/exclude');
-      expect(options).toEqual({ force: true });
       expect(fsp.rename).toHaveBeenCalledTimes(2);
+      expect(fsp.rm).not.toHaveBeenCalled();
+    });
+
+    it('copies over the exclude file when a rename keeps being refused, then removes the temporary file', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('');
+      vi.mocked(fsp.rename).mockRejectedValue(Object.assign(new Error('EEXIST'), { code: 'EEXIST' }));
+
+      await addExclusions('/project', 'clubhouse-mode', ['CLAUDE.md']);
+
+      expect(fsp.copyFile).toHaveBeenCalledTimes(1);
+      const [from, to] = vi.mocked(fsp.copyFile).mock.calls[0];
+      expect(normalizedPath(to)).toMatch(/\.git\/info\/exclude$/);
+      expect(normalizedPath(from)).toContain('.git/info/exclude.tmp.');
+      expect(fsp.rm).toHaveBeenCalledTimes(1);
+      expect(normalizedPath(vi.mocked(fsp.rm).mock.calls[0][0])).toBe(normalizedPath(from));
+      vi.mocked(fsp.rename).mockResolvedValue(undefined);
+    });
+
+    it('keeps the temporary file, with the whole content, when nothing can replace the exclude file', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('');
+      vi.mocked(fsp.rename).mockRejectedValue(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
+      vi.mocked(fsp.copyFile).mockRejectedValueOnce(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
+
+      await expect(addExclusions('/project', 'clubhouse-mode', ['CLAUDE.md'])).rejects.toThrow('EPERM');
+
+      expect(fsp.rm).not.toHaveBeenCalled();
+      vi.mocked(fsp.rename).mockResolvedValue(undefined);
     });
 
     it('continues a queued write after an earlier write fails', async () => {
@@ -127,6 +151,32 @@ describe('git-exclude-manager', () => {
       await expect(first).rejects.toThrow('disk full');
       await expect(second).resolves.toBeUndefined();
       expect(fsp.rename).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('a block whose end line was removed by hand', () => {
+    it('takes only the lines up to the next blank line or comment, and keeps the person\'s lines after it', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('# >>> clubhouse-managed-claude-code\n/CLAUDE.md\n/.mcp.json\n\n# mine\nsecrets/\n*.log\n');
+
+      await replaceExclusions('/project', 'clubhouse-managed-claude-code', ['/CLAUDE.md']);
+
+      expect(written()).toBe('# >>> clubhouse-managed-claude-code\n/CLAUDE.md\n# <<< clubhouse-managed-claude-code\n\n# mine\nsecrets/\n*.log\n');
+    });
+
+    it('stops at the next block\'s start line', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('# >>> a\none\n# >>> b\ntwo\n# <<< b\n');
+
+      await removeExclusions('/project', 'a');
+
+      expect(written()).toBe('# >>> b\ntwo\n# <<< b\n');
+    });
+
+    it('drops a stray end line whose start was removed, and nothing else', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('mine/\n# <<< a\nalso-mine/\n');
+
+      await removeExclusions('/project', 'a');
+
+      expect(written()).toBe('mine/\nalso-mine/\n');
     });
   });
 

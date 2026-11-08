@@ -8,7 +8,6 @@ import type {
   EventsAPI,
   NavigationAPI,
   WidgetsAPI,
-  HubAPI,
   Disposable,
 } from '../../shared/plugin-types';
 import { pluginEventBus } from './plugin-events';
@@ -110,10 +109,6 @@ export function createEventsAPI(): EventsAPI {
       return pluginEventBus.on(event, handler);
     },
   };
-}
-
-export function createHubAPI(): HubAPI {
-  return {};
 }
 
 export function createNavigationAPI(): NavigationAPI {

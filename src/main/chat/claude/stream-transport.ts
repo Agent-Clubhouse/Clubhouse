@@ -163,6 +163,11 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
     return this.control({ subtype: 'get_usage', skip_behaviors: true }, 5_000);
   }
 
+  async mcpServerStatus(): Promise<unknown> {
+    // The reply's `mcpServers`, as the SDK's mcpServerStatus() returns it.
+    return (await this.control({ subtype: 'mcp_status' }, 5_000)).mcpServers;
+  }
+
   async close(): Promise<void> {
     const child = this.child;
     if (!child || this.isEnded) return;

@@ -197,9 +197,8 @@ describe('Plugin API v0.5.0 canary tests', () => {
 
   it('always-available APIs remain accessible', () => {
     const api = createMockAPI();
-    // context, settings, hub are never gated
+    // context and settings are never gated
     expect(api.context.mode).toBe('project');
     expect(typeof api.settings.get).toBe('function');
-    expect(api.hub).toBeDefined();
   });
 });

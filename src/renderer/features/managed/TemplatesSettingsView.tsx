@@ -43,6 +43,9 @@ export function copyName(name: string, taken: string[]): string {
   for (let i = 2; ; i++) if (!lower.has(`${base} ${i}`.toLowerCase())) return `${base} ${i}`;
 }
 
+/** The person's copy of a built-in template an app update retired (D99). */
+const RETIRED_TEMPLATE_NOTE = 'Your copy of a built-in template Clubhouse no longer ships. Edit it like any of your templates.';
+
 const usage = (n: number) => (n === 0 ? 'No agents' : `${n} agent${n === 1 ? '' : 's'}`);
 
 function TemplateRow({ t, children }: { t: ListedTemplate; children: React.ReactNode }) {
@@ -52,6 +55,7 @@ function TemplateRow({ t, children }: { t: ListedTemplate; children: React.React
         <span className="block text-[13px] text-ctp-text truncate">{t.name}</span>
         {t.description && <span className="block text-xs text-ctp-overlay1 truncate">{t.description}</span>}
         {t.updatedBy && <span className="block text-xs text-ctp-overlay1 truncate" data-testid="managed-template-changed">{changedLine(t.updatedAt, t.updatedBy)}</span>}
+        {t.fromRetiredBuiltin && <span className="block text-xs text-ctp-overlay1 truncate" data-testid="managed-template-retired-copy">{RETIRED_TEMPLATE_NOTE}</span>}
       </span>
       <span className="text-xs text-ctp-overlay1 truncate">{usage(t.usedBy)}</span>
       <span className="flex items-center gap-1">{children}</span>

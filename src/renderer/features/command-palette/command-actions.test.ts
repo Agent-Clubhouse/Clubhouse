@@ -57,7 +57,7 @@ describe('command-actions', () => {
     expect(ids).toContain('toggle-settings');
     expect(ids).toContain('toggle-help');
     expect(ids).not.toContain('toggle-assistant');
-    expect(ids).toContain('go-home');
+    expect(ids).not.toContain('go-home');
     expect(ids).toContain('toggle-sidebar');
     expect(ids).toContain('toggle-accessory');
     expect(ids).toContain('new-quick-agent');
@@ -92,11 +92,6 @@ describe('command-actions', () => {
   it('toggle-help calls toggleHelp', () => {
     findAction('toggle-help')?.execute();
     expect(mockToggleHelp).toHaveBeenCalled();
-  });
-
-  it('go-home calls setActiveProject(null)', () => {
-    findAction('go-home')?.execute();
-    expect(mockSetActiveProject).toHaveBeenCalledWith(null);
   });
 
   it('toggle-sidebar calls toggleExplorerCollapse', () => {

@@ -65,6 +65,19 @@ describe('Agent parts library page', () => {
     expect(screen.getAllByTestId('managed-library-row').map((r) => r.textContent)).toEqual([expect.stringContaining('Identity')]);
   });
 
+  it('shows the copy of a retired built-in even when one agent uses it, and says what it is (D99)', async () => {
+    const copy = part('copy', { name: 'Project manager', fromRetiredBuiltin: true, description: 'Plans and tracks.', usedBy: [consumer('ada')] });
+    vi.spyOn(m(), 'listParts').mockResolvedValue({ ok: true, value: [...parts, copy] });
+    vi.spyOn(m(), 'getPart').mockResolvedValue({ ok: true, value: { ...copy, content: { kind: 'block', content: 'Plan the work.' } } } as never);
+    render(<PartLibraryView kind="block" />);
+    const rows = await screen.findAllByTestId('managed-library-row');
+    const row = rows.find((r) => r.textContent?.includes('Project manager'))!;
+    expect(row.textContent).toContain('Custom, from a retired built-in');
+    expect(screen.getByTestId('managed-library-hidden').textContent).toBe('1 hidden');
+    fireEvent.click(within(row).getByRole('button', { expanded: false }));
+    expect((await screen.findByTestId('managed-part-retired-copy')).textContent).toBe('Your copy of a built-in Clubhouse no longer ships. Edit it like any of your parts.');
+  });
+
   it('filters by source and search', async () => {
     vi.spyOn(m(), 'listParts').mockResolvedValue({ ok: true, value: parts });
     render(<PartLibraryView kind="block" />);
@@ -148,6 +161,14 @@ describe('Templates page', () => {
     const builtin = await screen.findByTestId('managed-templates-builtin');
     expect(within(builtin).getByText('Orchestrator')).toBeTruthy();
     expect(screen.queryByText('Project Manager')).toBeNull();
+  });
+
+  it('says when a template is the copy of a retired built-in (D99)', async () => {
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [
+      template('copy', { name: 'Project Manager', fromRetiredBuiltin: 'builtin-template-project-manager', usedBy: 2 }),
+    ] });
+    render(<TemplatesSettingsView />);
+    expect((await screen.findByTestId('managed-template-retired-copy')).textContent).toBe('Your copy of a built-in template Clubhouse no longer ships. Edit it like any of your templates.');
   });
 
   it('saving lists the changes and agents, and applies to the ticked agents only', async () => {

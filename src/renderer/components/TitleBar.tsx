@@ -27,7 +27,8 @@ export function TitleBar() {
 
   const isAppPlugin = explorerTab.startsWith('plugin:app:');
   const isHelp = explorerTab === 'help';
-  const isHome = activeProjectId === null && explorerTab !== 'settings' && !isAppPlugin && !isHelp;
+  // No project open: first run, or a satellite's overview. Home was removed for v1.
+  const noProject = activeProjectId === null && explorerTab !== 'settings' && !isAppPlugin && !isHelp;
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
   const tabLabel = (() => {
@@ -44,8 +45,8 @@ export function TitleBar() {
       || activePluginEntry.manifest.name || activePluginId;
   })();
 
-  const titleText = isHome
-    ? 'Home'
+  const titleText = noProject
+    ? 'Clubhouse'
     : activeProject
       ? `${tabLabel} (${activeProject.displayName || activeProject.name})`
       : tabLabel;

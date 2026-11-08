@@ -36,13 +36,14 @@ import { skillsFolderOf } from '../../../shared/skills-folder';
 import { helperTemplateFor } from './helpers';
 
 /** Written beside the managed skills so a later start removes only what Clubhouse put there. */
-const SKILLS_MANIFEST = '.clubhouse-managed-skills.json';
+export const SKILLS_MANIFEST = '.clubhouse-managed-skills.json';
 /** In the worktree: the `claudeMdExcludes` entries Clubhouse added, so it replaces only those (D49). Git-excluded. */
 export const EXCLUDES_MANIFEST = '.clubhouse-managed-excludes.json';
 
 interface Resolved {
   blocks: Array<{ id: string; name: string; builtin: boolean; revision: number; content: string }>;
-  skills: Array<{ id: string; name: string; revision: number; builtin: boolean; content: ManagedSkillContent }>;
+  /** `retiredCopy`: the person's copy of a retired built-in (D99), which a project's own folder still wins over (D74). */
+  skills: Array<{ id: string; name: string; revision: number; builtin: boolean; retiredCopy?: true; content: ManagedSkillContent }>;
   /** `droppedEnvValues`: env names the part stored literal values for, which now come from the environment (D46). */
   mcps: Array<{ id: string; name: string; revision: number; builtin: boolean; content: ManagedMcpContent; droppedEnvValues: string[] }>;
   missing: string[];
@@ -61,7 +62,7 @@ async function resolveSetup(service: ManagedAgentsService, saved: ManagedAgentSe
   for (const id of setup.skills) {
     const head = await service.headContent(id);
     if (!head || head.content.kind !== 'skill') { out.missing.push(id); continue; }
-    out.skills.push({ id, name: head.entry.name, revision: head.entry.headRevision, builtin: head.entry.source.kind === 'builtin', content: head.content });
+    out.skills.push({ id, name: head.entry.name, revision: head.entry.headRevision, builtin: head.entry.source.kind === 'builtin', ...(head.fromRetiredBuiltin && { retiredCopy: true as const }), content: head.content });
   }
   for (const id of setup.mcps) {
     const head = await service.headContent(id);
@@ -347,10 +348,12 @@ async function trackedSkillFolders(worktree: string, provider: OrchestratorProvi
  * is the project's `build` skill. When git can't say, a folder on disk that
  * Clubhouse didn't write counts as the project's too, so nothing tracked is
  * ever overwritten. Custom skills aren't checked: they replace the folder as
- * before (D48). Returns the setup's folder names that are the project's.
+ * before (D48), except the copy of a retired built-in (D99), which takes the
+ * built-in's place here too, so it delivers exactly what the built-in did.
+ * Returns the setup's folder names that are the project's.
  */
 async function projectOwnSkills(worktree: string, provider: OrchestratorProvider, skills: Resolved['skills'], previous: string[], tracked?: TrackedSkillFolders): Promise<Set<string>> {
-  const builtins = skills.filter((s) => s.builtin).map((s) => s.content.skillName);
+  const builtins = skills.filter((s) => s.builtin || s.retiredCopy).map((s) => s.content.skillName);
   if (builtins.length === 0) return new Set();
   const rel = skillsFolderOf(provider.conventions);
   const known = tracked ?? await trackedSkillFolders(worktree, provider);
@@ -634,28 +637,41 @@ async function writeClaudeExcludes(worktree: string, provider: OrchestratorProvi
 }
 
 /** Where the CLI's instructions file is, relative to the worktree with forward slashes: Copilot's is in its config folder, the others' at the root. */
-function instructionsFileRel(provider: OrchestratorProvider): string {
+export function instructionsFileRel(provider: OrchestratorProvider): string {
   const conv = provider.conventions;
   return provider.id === COPILOT_ID ? forwardSlashes(path.join(conv.configDir, conv.legacyInstructionsFile)) : conv.legacyInstructionsFile;
 }
 
 /**
- * The `.git/info/exclude` pattern that keeps the instructions file Clubhouse
- * writes out of commits (D16), or null when the worktree tracks that file:
+ * The root files Clubhouse delivers for a CLI, relative to the worktree with
+ * forward slashes: the instructions file, the MCP file for a JSON-format CLI
+ * (Codex gets its servers as launch flags), and Claude Code's local settings,
+ * which hold the `claudeMdExcludes` entries (D49).
+ */
+export function rootFileCandidates(provider: OrchestratorProvider): string[] {
+  const conv = provider.conventions;
+  const rels = [instructionsFileRel(provider)];
+  if (conv.settingsFormat !== 'toml') rels.push(forwardSlashes(conv.mcpConfigFile));
+  if (provider.id === CLAUDE_CODE_ID) rels.push(forwardSlashes(path.join(conv.configDir, conv.localSettingsFile)));
+  return rels;
+}
+
+/**
+ * The `.git/info/exclude` patterns that keep the root files Clubhouse
+ * delivers out of commits (D97), leaving out any the worktree tracks:
  * excluding a tracked file does nothing. Anchored to the root, since the
  * exclude file is shared by every worktree and the main checkout, and a bare
  * name would hide every untracked file of that name at any depth. When git
- * can't say, the file is excluded, as a pattern for a tracked file is harmless.
+ * can't say, all of them are listed, as a pattern for a tracked file is harmless.
  */
-export async function instructionsExcludePattern(worktree: string, provider: OrchestratorProvider): Promise<string | null> {
-  const rel = instructionsFileRel(provider);
-  const listed = await trackedFiles(worktree, [rel]);
+export async function rootFileExcludes(worktree: string, provider: OrchestratorProvider): Promise<string[]> {
+  const rels = rootFileCandidates(provider);
+  const listed = await trackedFiles(worktree, rels);
   if (listed.ok === false) {
-    appLog('core:managed', 'warn', 'git could not say whether the instructions file is tracked; it is excluded', { meta: { code: listed.code } });
-  } else if (listed.files.includes(rel)) {
-    return null;
+    appLog('core:managed', 'warn', 'git could not say whether the delivered root files are tracked; they are excluded', { meta: { code: listed.code } });
+    return rels.map((r) => `/${r}`);
   }
-  return `/${rel}`;
+  return rels.filter((r) => !listed.files.includes(r)).map((r) => `/${r}`);
 }
 
 /** Instruction files in the worktree, other than the one Clubhouse writes, that Copilot also reads. Only the ones git tracks: Clubhouse wrote none of them. */

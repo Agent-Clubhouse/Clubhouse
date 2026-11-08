@@ -12,6 +12,8 @@ export const IPC = {
     GET_SETUP: 'managed:get-setup',
     SAVE_SETUP: 'managed:save-setup',
     UNMANAGE: 'managed:unmanage',
+    /** Switch to plain (#2927): what stays in the agent's folder, and what can come back. */
+    PREVIEW_UNMANAGE: 'managed:preview-unmanage',
     PREVIEW: 'managed:preview',
     PREVIEW_DRAFT: 'managed:preview-draft',
     MODEL_EFFORTS: 'managed:model-efforts',
@@ -35,6 +37,8 @@ export const IPC = {
     RESTART: 'managed:restart',
     SET_CLUBHOUSE_FEATURES: 'managed:set-clubhouse-features',
     DISMISS_MIGRATION_NOTICE: 'managed:dismiss-migration-notice',
+    /** The root-file names git ignores for the whole repository because of the project's managed agents (D97). */
+    PROJECT_GIT_EXCLUDES: 'managed:project-git-excludes',
     /** Skill import: whether each dropped or picked file is executable, by its mode (D96). */
     EXECUTABLE_BITS: 'managed:executable-bits',
     /** Main to renderer: parts, templates or setups changed; refetch what's shown. */

@@ -4,12 +4,7 @@ import { rendererLog } from '../plugins/renderer-logger';
 import { usePluginStore } from '../plugins/plugin-store';
 import { migrateRetiredExplorerTab } from '../plugins/retired-plugins';
 
-const VIEW_PREFS_KEY = 'clubhouse_view_prefs';
 const ACTIVE_HOST_KEY = 'clubhouse_active_host';
-
-interface ViewPrefs {
-  showHome: boolean;
-}
 
 /**
  * Which canvas store a blueprint import should target. Set by the caller that
@@ -22,34 +17,11 @@ export type BlueprintGalleryScope =
   | { mode: 'app' }
   | { mode: 'project'; projectId: string; projectPath: string };
 
-function loadViewPrefs(): ViewPrefs {
-  try {
-    const raw = localStorage.getItem(VIEW_PREFS_KEY);
-    if (raw) return { showHome: true, ...JSON.parse(raw) };
-  } catch (err) {
-    rendererLog('store:ui', 'warn', 'Corrupt view preferences in localStorage — reset to defaults', {
-      meta: { key: VIEW_PREFS_KEY, error: err instanceof Error ? err.message : String(err) },
-    });
-  }
-  return { showHome: true };
-}
-
-function saveViewPrefs(prefs: ViewPrefs): void {
-  try {
-    localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(prefs));
-  } catch (err) {
-    rendererLog('store:ui', 'warn', 'Failed to persist view prefs to localStorage (quota?)', {
-      meta: { key: VIEW_PREFS_KEY, error: err instanceof Error ? err.message : String(err) },
-    });
-  }
-}
-
 interface UIState {
   explorerTab: ExplorerTab;
   previousExplorerTab: ExplorerTab | null;
   settingsSubPage: SettingsSubPage;
   settingsContext: 'app' | string;
-  showHome: boolean;
   pluginSettingsId: string | null;
   helpSectionId: string;
   helpTopicId: string | null;
@@ -74,7 +46,6 @@ interface UIState {
   setHelpSection: (id: string) => void;
   setHelpTopic: (id: string | null) => void;
   setHelpSearchQuery: (query: string) => void;
-  setShowHome: (show: boolean) => void;
   openAbout: () => void;
   /**
    * One-shot focus target inside a settings page, cleared by the page once it
@@ -96,7 +67,6 @@ interface UIState {
   closeBlueprintGallery: () => void;
 }
 
-const initialPrefs = loadViewPrefs();
 
 /** Redirect tabs that point at a removed built-in plugin (e.g. the Hub) to Agents. */
 function resolveExplorerTab(tab: ExplorerTab): ExplorerTab {
@@ -118,7 +88,6 @@ export const useUIStore = create<UIState>((set, get) => ({
   // After that, toggleSettings restores whatever section/context was last viewed.
   settingsSubPage: 'orchestrators',
   settingsContext: 'app',
-  showHome: initialPrefs.showHome,
   pluginSettingsId: null,
   helpSectionId: 'general',
   helpTopicId: null,
@@ -195,10 +164,6 @@ export const useUIStore = create<UIState>((set, get) => ({
   setHelpSection: (id) => set({ helpSectionId: id, helpTopicId: null }),
   setHelpTopic: (id) => set({ helpTopicId: id }),
   setHelpSearchQuery: (query) => set({ helpSearchQuery: query }),
-  setShowHome: (show) => {
-    set({ showHome: show });
-    saveViewPrefs({ showHome: show });
-  },
   openAbout: () => {
     const { explorerTab } = get();
     set({ previousExplorerTab: explorerTab, explorerTab: 'settings', settingsSubPage: 'about', settingsContext: 'app' });

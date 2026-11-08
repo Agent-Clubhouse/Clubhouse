@@ -227,6 +227,13 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
     return query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true });
   }
 
+  async mcpServerStatus(): Promise<unknown> {
+    // Typed in the SDK this repo pins; checked anyway, so an older SDK just has no reasons to give.
+    const query = this.requireQuery() as Partial<Pick<Query, 'mcpServerStatus'>>;
+    if (typeof query.mcpServerStatus !== 'function') return undefined;
+    return query.mcpServerStatus();
+  }
+
   async close(): Promise<void> {
     if (!this.query) return;
     this.input.finish();

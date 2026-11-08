@@ -5,8 +5,8 @@
  */
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import type { ManagedPartContent, ManagedPartKind, ManagedResult, ManagedTemplate, ManagedTemplateSettings } from '../../shared/managed-agents-types';
-import { dismissMigrationNotice, managedAgents, restartManagedAgent, runningSnapshotFor, statusFor, isAgentWorking } from '../services/managed-agents';
+import type { ManagedPartContent, ManagedPartKind, ManagedPlainChoice, ManagedResult, ManagedTemplate, ManagedTemplateSettings } from '../../shared/managed-agents-types';
+import { dismissMigrationNotice, managedAgents, previewPlain, switchPlain, restartManagedAgent, runningSnapshotFor, statusFor, isAgentWorking } from '../services/managed-agents';
 import { applyManagedSettings, convertToManaged, createManagedAgent, previewConvert } from '../services/managed-agents/agents';
 import { withSwitchLock } from '../services/managed-agents/auto-migrate';
 import { previewManagedSetup } from '../services/managed-agents/delivery';
@@ -33,6 +33,14 @@ const modeArg = (): ArgValidator<'copy' | 'remove'> => (value, name) => {
   if (v !== 'copy' && v !== 'remove') throw new Error(`Invalid ${name}`);
   return v;
 };
+
+function plainChoiceShape(value: unknown): void {
+  const v = value as Record<string, unknown>;
+  for (const key of ['restoreInstructions', 'restoreMcp']) {
+    if (v[key] !== undefined && typeof v[key] !== 'boolean') throw new Error(`Invalid ${key}`);
+  }
+  if (typeof v.token !== 'string' || !v.token || v.token.length > 128) throw new Error('Invalid token');
+}
 
 function setupShape(value: unknown): void {
   const v = value as Record<string, unknown>;
@@ -109,7 +117,12 @@ export function registerManagedAgentsHandlers(): void {
 
   ipcMain.handle(IPC.MANAGED.GET_SETUP, withValidatedArgs([stringArg(), idArg()], (_e, projectPath, agentId) => result(() => s().getSetup(projectPath, agentId))));
   ipcMain.handle(IPC.MANAGED.SAVE_SETUP, withValidatedArgs([stringArg(), idArg(), setupArg()], (_e, projectPath, agentId, setup) => result(() => s().saveSetup(projectPath, agentId, setup))));
-  ipcMain.handle(IPC.MANAGED.UNMANAGE, withValidatedArgs([stringArg(), idArg()], (_e, projectPath, agentId) => result(() => s().unmanage(projectPath, agentId))));
+  // Switch to plain (#2927): the counterpart of Switch to managed, previewed first.
+  ipcMain.handle(IPC.MANAGED.PREVIEW_UNMANAGE, withValidatedArgs([stringArg(), idArg()], (_e, projectPath, agentId) => result(() => previewPlain(projectPath, agentId))));
+  ipcMain.handle(IPC.MANAGED.UNMANAGE, withValidatedArgs(
+    [stringArg(), idArg(), objectArg<ManagedPlainChoice>({ validate: plainChoiceShape })],
+    (_e, projectPath, agentId, choice) => result(() => switchPlain(projectPath, agentId, choice)),
+  ));
   ipcMain.handle(IPC.MANAGED.PREVIEW, withValidatedArgs([stringArg(), idArg(), objectArg<{ blocks: string[]; skills: string[]; mcps: string[] }>({ optional: true, validate: setupShape })], (_e, projectPath, agentId, setup) => result(async () => {
     const agent = await agentConfig.getDurableConfig(projectPath, agentId);
     if (!agent) throw new ManagedError('not_found');
@@ -211,6 +224,8 @@ export function registerManagedAgentsHandlers(): void {
   ipcMain.handle(IPC.MANAGED.STATUS, withValidatedArgs([stringArg(), idArg()], (_e, projectPath, agentId) => result(() => statusFor(projectPath, agentId))));
   ipcMain.handle(IPC.MANAGED.DISMISS_MIGRATION_NOTICE, withValidatedArgs([stringArg(), idArg()],
     (_e, projectPath, agentId) => result(() => dismissMigrationNotice(projectPath, agentId))));
+  ipcMain.handle(IPC.MANAGED.PROJECT_GIT_EXCLUDES, withValidatedArgs([stringArg()],
+    (_e, projectPath) => result(async () => (await import('../services/managed-agents/git-excludes')).managedRootExcludesInEffect(projectPath))));
   ipcMain.handle(IPC.MANAGED.IS_WORKING, withValidatedArgs([idArg()], (_e, agentId) => result(() => isAgentWorking(agentId))));
   ipcMain.handle(IPC.MANAGED.RESTART, withValidatedArgs(
     [stringArg(), idArg(), objectArg<{ fresh?: boolean; whenTurnEnds?: boolean }>({ optional: true })],

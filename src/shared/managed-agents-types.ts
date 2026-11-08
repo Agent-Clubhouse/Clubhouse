@@ -64,10 +64,13 @@ export interface ManagedPartSummary {
   description: string;
   builtin: boolean;
   /**
-   * A retired built-in (#2902): still installed and delivered to agents and
-   * templates that list it, but hidden from the library and from new choices.
+   * A retired built-in (#2902) that couldn't become a copy yet, because some
+   * project's agents couldn't be read (D99): still installed and delivered,
+   * hidden from the library and from new choices.
    */
   retired?: true;
+  /** The person's copy of a built-in an app update retired (D99): visible and editable like any custom part. */
+  fromRetiredBuiltin?: true;
   revision: number;
   updatedAt: string;
   /** Who last changed it, when not the person: for example "Dispatcher". */
@@ -188,10 +191,12 @@ export interface ManagedTemplate {
   description: string;
   builtin: boolean;
   /**
-   * A retired built-in template (#2902): agents made from it keep working and
-   * it still resolves by id, but New agent and the template lists hide it.
+   * A retired built-in template (#2902). Since D99 it is never listed or
+   * read: whatever used it switches to a custom copy.
    */
   retired?: true;
+  /** A custom copy of a built-in template an app update retired: the built-in's id (D99). */
+  fromRetiredBuiltin?: string;
   setup: Omit<ManagedAgentSetup, 'version' | 'templateId'>;
   settings: ManagedTemplateSettings;
   updatedAt?: string;
@@ -330,6 +335,51 @@ export interface ManagedConvertPreview {
   skills: string[];
   mcps: string[];
   notes: string[];
+}
+
+/**
+ * Switch to plain (#2927): what stays in the agent's folder, and what can come
+ * back from before it was managed. Read before anything is written.
+ */
+export interface ManagedPlainPreview {
+  instructions: {
+    /** Relative to the agent's folder, with forward slashes. */
+    file: string;
+    exists: boolean;
+    /** It differs from what Clubhouse wrote: edited since, by the person or an agent. */
+    changedSince: boolean;
+    /** Lines in it Clubhouse didn't write. They are kept when the earlier file comes back. */
+    addedLines: number;
+    /** The copy kept at the switch to managed, and exactly what would be written from it. */
+    before: { copy: string; result: string } | null;
+    /** Why the earlier file can't come back, when Clubhouse kept one. */
+    note?: string;
+  };
+  /** Null for a CLI with no MCP file (Codex gets its servers as launch flags). */
+  mcp: {
+    file: string;
+    exists: boolean;
+    /** Servers in the file now, without the Clubhouse bridge, which every start writes. */
+    servers: string[];
+    /** Servers added since Clubhouse wrote the file. They are kept when the earlier file comes back. */
+    added: string[];
+    before: { copy: string; servers: string[]; result: string[] } | null;
+    /** Why the earlier file can't come back, when Clubhouse kept one. */
+    note?: string;
+  } | null;
+  /** Skill folders Clubhouse delivered, which stay as the person's. */
+  skills: string[];
+  /** CLAUDE.md excludes Clubhouse added to the local settings, which come out. */
+  excludesAdded: number;
+  /** The files as read. Switching refuses when they changed since. */
+  token: string;
+}
+
+export interface ManagedPlainChoice {
+  restoreInstructions?: boolean;
+  restoreMcp?: boolean;
+  /** From the preview the person saw. Required: a switch without one is refused. */
+  token: string;
 }
 
 export type ManagedErrorCode =

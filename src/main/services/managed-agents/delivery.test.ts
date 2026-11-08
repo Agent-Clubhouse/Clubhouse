@@ -19,10 +19,10 @@ import { appLog } from '../log-service';
 import {
   deliverManagedSetup,
   EXCLUDES_MANIFEST,
-  instructionsExcludePattern,
   isSameFolder,
   parentInstructionFiles,
   previewManagedSetup,
+  rootFileExcludes,
   quickManagedLaunch,
   removeManagedClaudeExcludes,
   resolveManagedMcpServers,
@@ -125,22 +125,6 @@ describe('deliverManagedSetup', () => {
     const template = await user(() => service.saveTemplate({ name: 'Commands', description: '', settings: {}, setup: { blocks: [rules.id], skills: [], mcps: [] } }));
     const launch = await user(() => quickManagedLaunch({ service, projectPath: project, cwd: project, agentId: 'q', agentName: 'q', templateId: template.id, branch: 'main' }));
     expect(launch.instructions.split('\n').slice(0, 4)).toEqual(['Host: @@SourceControlProvider', 'Build: @@BuildCommand', 'Test: @@TestCommand', 'Lint: @@LintCommand']);
-  });
-
-  it('still delivers the cut Post result skill to an agent that has it (D71)', async () => {
-    agent.managed = { version: 1, blocks: [], skills: [BUILTIN_SKILL_IDS.postResult], mcps: [] };
-    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
-    expect(fs.readFileSync(path.join(agent.worktreePath!, '.claude', 'skills', 'post-result', 'SKILL.md'), 'utf-8')).toBe(BUILTIN_SKILL_TEXT['skills/post-result/SKILL.md']);
-  });
-
-  it('still delivers a retired built-in to an agent that uses it (D71)', async () => {
-    const { setup } = await user(() => service.setupFromTemplate('builtin-template-project-manager'));
-    agent.managed = setup;
-    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
-    const delivered = fs.readFileSync(path.join(agent.worktreePath!, 'CLAUDE.md'), 'utf-8');
-    const pm = builtinParts().find((p) => p.id === BUILTIN_BLOCK_IDS.projectManager)!;
-    expect(pm.retired).toBe(true);
-    expect(delivered.endsWith((pm.payload as { content: string }).content)).toBe(true);
   });
 
   it('delivers conditional wildcards as written: a variant is its own block (#2901)', async () => {
@@ -403,43 +387,56 @@ function git(cwd: string, ...args: string[]) {
   execFileSync('git', args, { cwd, stdio: 'ignore' });
 }
 
-describe('instructionsExcludePattern (D16)', () => {
+describe('rootFileExcludes (D16, D97)', () => {
+  /** Ignored by this repository's excludes only, not the machine's global ignore file. */
   function ignored(cwd: string, rel: string): boolean {
     try {
-      execFileSync('git', ['check-ignore', '-q', '--', rel], { cwd, stdio: 'ignore' });
+      execFileSync('git', ['-c', `core.excludesFile=${path.join(os.tmpdir(), 'no-global-ignore')}`, 'check-ignore', '-q', '--', rel], { cwd, stdio: 'ignore' });
       return true;
     } catch {
       return false;
     }
   }
+  const claude = () => provider({ localSettingsFile: 'settings.local.json' });
 
-  it('anchors the instructions file to the root, so an untracked one in a subfolder still shows', async () => {
+  it('anchors the instructions file, the MCP file and Claude Code\'s local settings to the root', async () => {
     const wt = agent.worktreePath!;
     git(wt, 'init', '-q');
-    const pattern = await instructionsExcludePattern(wt, provider());
-    expect(pattern).toBe('/CLAUDE.md');
-    fs.writeFileSync(path.join(wt, '.git', 'info', 'exclude'), `${pattern}\n`);
+    const patterns = await rootFileExcludes(wt, claude());
+    expect(patterns).toEqual(['/CLAUDE.md', '/.mcp.json', '/.claude/settings.local.json']);
+    fs.writeFileSync(path.join(wt, '.git', 'info', 'exclude'), `${patterns.join('\n')}\n`);
     expect(ignored(wt, 'CLAUDE.md')).toBe(true);
-    expect(ignored(wt, 'docs/CLAUDE.md')).toBe(false);
+    expect(ignored(wt, '.mcp.json')).toBe(true);
+    expect(ignored(wt, path.join('.claude', 'settings.local.json'))).toBe(true);
+    // An untracked file of that name in a subfolder still shows.
+    expect(ignored(wt, path.join('docs', 'CLAUDE.md'))).toBe(false);
+    expect(ignored(wt, path.join('pkg', '.mcp.json'))).toBe(false);
   });
 
-  it('uses Copilot\'s path in its config folder', async () => {
+  it('uses Copilot\'s paths in its config folder, and has no local settings for it', async () => {
     const wt = agent.worktreePath!;
     git(wt, 'init', '-q');
     const copilot = provider({ configDir: '.github', legacyInstructionsFile: 'copilot-instructions.md', mcpConfigFile: '.github/mcp.json' }, 'copilot-cli');
-    expect(await instructionsExcludePattern(wt, copilot)).toBe('/.github/copilot-instructions.md');
+    expect(await rootFileExcludes(wt, copilot)).toEqual(['/.github/copilot-instructions.md', '/.github/mcp.json']);
   });
 
-  it('adds nothing when the worktree tracks the file', async () => {
+  it('lists no MCP file for a TOML CLI, which gets its servers as launch flags', async () => {
+    const wt = agent.worktreePath!;
+    git(wt, 'init', '-q');
+    const codex = provider({ configDir: '.codex', legacyInstructionsFile: 'AGENTS.md', mcpConfigFile: '.codex/config.toml', settingsFormat: 'toml' }, 'codex-cli');
+    expect(await rootFileExcludes(wt, codex)).toEqual(['/AGENTS.md']);
+  });
+
+  it('leaves out a file the worktree tracks', async () => {
     const wt = agent.worktreePath!;
     git(wt, 'init', '-q');
     fs.writeFileSync(path.join(wt, 'CLAUDE.md'), '# theirs');
     git(wt, 'add', 'CLAUDE.md');
-    expect(await instructionsExcludePattern(wt, provider())).toBeNull();
+    expect(await rootFileExcludes(wt, claude())).toEqual(['/.mcp.json', '/.claude/settings.local.json']);
   });
 
-  it('still excludes it outside a git checkout', async () => {
-    expect(await instructionsExcludePattern(agent.worktreePath!, provider())).toBe('/CLAUDE.md');
+  it('still lists them all outside a git checkout', async () => {
+    expect(await rootFileExcludes(agent.worktreePath!, claude())).toEqual(['/CLAUDE.md', '/.mcp.json', '/.claude/settings.local.json']);
   });
 });
 
