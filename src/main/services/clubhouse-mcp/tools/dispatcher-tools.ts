@@ -274,7 +274,7 @@ export function registerDispatcherTools(): void {
         return { content: [{ type: 'text', text: errorText(err) }], isError: true };
       }
     },
-    { group: 'dispatcher', grant: { actions: ['agent.read'], target: 'agent_arg' } },
+    { group: 'dispatcher', grant: { actions: ['agent.read'], target: 'agent_arg', from: { args: ['helper'] } } },
   );
   // Turning the Dispatcher on or off adds or removes these tools.
   unwatchDispatcher?.();

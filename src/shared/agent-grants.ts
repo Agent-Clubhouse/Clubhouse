@@ -121,6 +121,8 @@ export interface GrantCallTarget {
   isDispatcher?: boolean;
   /** The project the target agent lives in, or the project itself. */
   projectPath?: string;
+  /** A group admin named an agent that isn't a member of the group (#2974): said so in the refusal. */
+  notGroupMember?: boolean;
   /** For a group project target: the caller's role in it. */
   groupRole?: 'member' | 'admin' | null;
 }

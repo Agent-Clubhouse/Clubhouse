@@ -164,9 +164,9 @@ Settings stores still load a file into memory on first `get`, and `isPreviewElig
 
 Every agent carries these definitions in its tool list, so they stay short: a test caps both together at 1,200 characters. Output is compact JSON for the same reason.
 
-## Design only: project admin and scoped edits
+## Superseded: project admin and scoped edits
 
-**None of this is enabled.** There is no write path, no admin flag and no new authority. This is a proposal to argue with.
+**Superseded by Clubhouse permissions (#2921).** What an agent may read or change through Clubhouse, on itself, its helpers, other agents, projects or the app, is now a grant: an action on a target, Off, Ask first or Allow, set per agent on its Clubhouse permissions page and checked on every call. There is no separate project admin, and "app-level settings stay out of scope even for an admin" no longer holds as written: an app settings write is the `settings.app.write` grant, which no agent holds by default (the Dispatcher's is Ask first). The proposal below is kept for its reasoning about which settings should stay with the user.
 
 ### Project admin
 
@@ -187,4 +187,4 @@ A separate tool, such as `update_settings`, and a separate allowlist.
 - **Same rules as the app:** go through the services the Settings page and `agent.update` use (`updateDurableConfig`, `setOrchestrationPolicy`), so locks like "sleep the agent first" and "settle its helpers first" still apply.
 - **Stale writes:** take the `stored` value the caller read as a precondition, and refuse if it has changed.
 - **Audit:** log each change with who asked, the target, the key, and old and new values, and show it to the user in the app, not only in a log file. Refusals should be logged too.
-- **Permission boundary:** the user's own settings stay above any agent. A change to app-level settings stays out of scope even for an admin. Whether the Dispatcher may change them needs its own decision.
+- **Permission boundary:** the user's own settings stay above any agent. (Superseded: see the note at the top of this section.)
