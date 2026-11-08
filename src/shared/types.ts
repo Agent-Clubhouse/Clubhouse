@@ -1192,6 +1192,19 @@ export interface AnnexDevice {
   problem: AnnexProblem | null;
 }
 
+/** A device this machine has heard from on the Annex Network channel (#3060). */
+export interface AnnexNetworkMemberListing {
+  fingerprint: string;
+  name: string;
+  kind: 'desktop' | 'phone';
+  /** Its channel to or from this machine is open now. */
+  connected: boolean;
+  /** How many members it says the network has, itself included. */
+  memberCount: number;
+  /** ISO time of its last message. */
+  lastHeard: string;
+}
+
 // ── Annex client (controller) types ───────────────────────────────────
 
 export const ANNEX_PROTOCOL_VERSION = 2;
