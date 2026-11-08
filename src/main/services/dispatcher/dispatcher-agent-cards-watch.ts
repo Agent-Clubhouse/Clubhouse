@@ -29,6 +29,7 @@ import {
   onDispatcherChanged,
 } from './dispatcher-service';
 import { AgentCards, type AgentCardDeps, type CardDelivery } from './dispatcher-agent-cards';
+import { notifyAgentCardChanged, setAgentCardSource, type AgentCardSource } from './dispatcher-agent-card-source';
 
 const NS = 'core:dispatcher';
 
@@ -91,7 +92,20 @@ export const liveAgentCardDeps: AgentCardDeps = {
   isWiredToDispatcher: (agentId) => isWiredToDispatcher(agentId),
   send: (agentId, text, routed) => send(agentId, text, routed),
   log: (level, message, meta) => appLog(NS, level, message, { meta }),
+  changed: (agentIds) => { for (const id of agentIds) notifyAgentCardChanged(id); },
 };
+
+/** What an agent's Dispatcher card in Details reads and saves (#3049). */
+export function agentCardSourceFor(cards: AgentCards): AgentCardSource {
+  return {
+    status: (agentId) => cards.view(agentId),
+    saveUserCard: async (agentId, fields) => {
+      const result = await cards.saveUserCard(agentId, fields);
+      if (!result.ok) throw new Error((result as { error: string }).error);
+      return (await cards.view(agentId)) ?? { state: 'ready', card: result.card };
+    },
+  };
+}
 
 let instance: AgentCards | null = null;
 
@@ -118,6 +132,7 @@ function logFailure(what: string) {
  * Returns the unsubscribe.
  */
 export function watchAgentCards(cards: AgentCards = getAgentCards()): () => void {
+  setAgentCardSource(agentCardSourceFor(cards));
   let timer: ReturnType<typeof setTimeout> | null = null;
   let all = true;
   const dirty = new Set<string>();
@@ -149,6 +164,7 @@ export function watchAgentCards(cards: AgentCards = getAgentCards()): () => void
   ];
   schedule();
   return () => {
+    setAgentCardSource(null);
     for (const unsubscribe of unsubscribers) unsubscribe();
     if (timer) clearTimeout(timer);
     timer = null;
