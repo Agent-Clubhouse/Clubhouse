@@ -94,6 +94,8 @@ export function registerPluginTools(
       nameSuffix: tool.name,
       definition: entry.definition,
       handler: async (_targetId, _agentId, args) => invokePluginToolHandler(pluginId, tool.name, args),
+      // Plugins get no new access (#2921): marked, not mapped to an action.
+      grant: 'plugin',
     });
   }
 

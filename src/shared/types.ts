@@ -1514,9 +1514,14 @@ export interface McpServerEntry {
 }
 
 export interface SkillEntry {
+  /** The folder's name. */
   name: string;
   path: string;
   hasReadme: boolean;
+  /** The `name` in SKILL.md's front matter, when it has one: what a provider reports (#2929). */
+  skillName?: string;
+  /** Clubhouse delivered this folder for a managed agent (its skills manifest names it). */
+  managed?: boolean;
 }
 
 export interface AgentTemplateEntry {
