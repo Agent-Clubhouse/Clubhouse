@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useAnnexStore, subscribeAnnexPeers } from '../../stores/annexStore';
-import type { AnnexPeerListing } from '../../../shared/types';
+import { useAnnexStore, subscribeAnnexDevices } from '../../stores/annexStore';
+import type { AnnexDevice } from '../../../shared/types';
 import { getAgentColorHex } from '../../../shared/name-generator';
 import { formatAgo } from '../agents/states/format';
 import { SettingsSection } from './SettingsLayout';
@@ -12,12 +12,14 @@ function parseTime(iso: string | undefined): number | null {
   return Number.isNaN(t) ? null : t;
 }
 
-function describePeer(peer: AnnexPeerListing, now: number): string {
+function describePeer(peer: AnnexDevice, now: number): string {
   const parts: string[] = [];
   const pairedAt = parseTime(peer.pairedAt);
   const lastSeen = parseTime(peer.lastSeen);
   if (pairedAt !== null) parts.push(`Paired ${new Date(pairedAt).toLocaleDateString()}`);
-  if (lastSeen !== null) parts.push(`Last seen ${formatAgo(lastSeen, now)}`);
+  if (peer.state === 'connected') parts.push('Connected');
+  else if (lastSeen !== null) parts.push(`Last seen ${formatAgo(lastSeen, now)}`);
+  if (peer.sessionOnly) parts.push('This session only');
   return parts.join(' · ');
 }
 
@@ -26,18 +28,18 @@ function describePeer(peer: AnnexPeerListing, now: number): string {
  * controls are listed in Annex control instead.
  */
 export function AnnexPairedDevices({ showWhenEmpty = true }: { showWhenEmpty?: boolean }) {
-  const peers = useAnnexStore((s) => s.peers);
-  const loadPeers = useAnnexStore((s) => s.loadPeers);
-  const removePeer = useAnnexStore((s) => s.removePeer);
+  const allDevices = useAnnexStore((s) => s.devices);
+  const loadDevices = useAnnexStore((s) => s.loadDevices);
+  const removeDevice = useAnnexStore((s) => s.removeDevice);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
 
   useEffect(() => {
-    loadPeers();
-    return subscribeAnnexPeers();
-  }, [loadPeers]);
+    loadDevices();
+    return subscribeAnnexDevices();
+  }, [loadDevices]);
 
-  const devices = peers
-    .filter((p) => p.role === 'controller' || !p.role)
+  const devices = allDevices
+    .filter((d) => d.role !== 'satellite')
     .sort((a, b) => a.alias.localeCompare(b.alias));
   const now = Date.now();
   if (devices.length === 0 && !showWhenEmpty) return null;
@@ -53,6 +55,8 @@ export function AnnexPairedDevices({ showWhenEmpty = true }: { showWhenEmpty?: b
           {devices.map((peer) => (
             <div
               key={peer.fingerprint}
+              data-testid="annex-device-row"
+              data-state={peer.state}
               className="flex items-center gap-3 min-h-[46px] py-2 border-t border-surface-0"
             >
               <div className="flex items-center gap-2.5 flex-1 min-w-0">
@@ -66,7 +70,7 @@ export function AnnexPairedDevices({ showWhenEmpty = true }: { showWhenEmpty?: b
                 <div className="min-w-0">
                   <div className="text-[13px] text-ctp-text truncate">{peer.alias || 'Unnamed device'}</div>
                   <div className="text-xs text-ctp-overlay1 truncate">{describePeer(peer, now)}</div>
-                  {peer.needsPairing && (
+                  {peer.state === 'needs-pairing' && (
                     <div className="text-xs text-ctp-overlay1">Needs pairing again</div>
                   )}
                 </div>
@@ -80,7 +84,7 @@ export function AnnexPairedDevices({ showWhenEmpty = true }: { showWhenEmpty?: b
                     </Button>
                     <Button
                       onClick={() => {
-                        removePeer(peer.fingerprint);
+                        void removeDevice(peer.fingerprint);
                         setConfirmRemove(null);
                       }}
                       kind="danger"

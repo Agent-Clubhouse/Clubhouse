@@ -52,6 +52,7 @@ import { listenPreferringPort, type ListenFn } from './annex-listen';
 import { buildPairingUrl, pairingHosts } from './annex-pairing-url';
 import * as annexIdentity from './annex-identity';
 import * as annexPeers from './annex-peers';
+import { devicesChanged } from './annex-device-signal';
 import * as projectStore from './project-store';
 import * as agentConfig from './agent-config';
 import { isDisposedAgent } from '../../shared/agent-helpers';
@@ -1280,6 +1281,7 @@ function reportClientCounts(): void {
     if (client.readyState === WebSocket.OPEN) counts[clientKindOf(client)]++;
   }
   recordClients(counts.desktop, counts.mobile, counts.unknown);
+  devicesChanged();
 }
 
 /** What a socket said it was at connect, for metrics only. It's unverified, so nothing else may read it. */
@@ -2334,6 +2336,31 @@ const PAIR_MESSAGES = {
 } as const;
 
 /**
+ * The name to store for a device pairing with this machine (#2442). A device
+ * that sends this machine's own name (an older Clubhouse Go sent the desktop's
+ * name as its own) would show as "Controlled by <this Mac>", so it gets a
+ * neutral name instead, as does one that sends none. Phones send `pairingMode`.
+ */
+export function pairedDeviceAlias(
+  sent: unknown,
+  own: { alias?: string; deviceName?: string },
+  isPhone: boolean,
+  fingerprint = '',
+): string {
+  const fallback = isPhone ? 'Phone' : 'Computer';
+  const alias = typeof sent === 'string' ? sent.trim() : '';
+  if (!alias) return fallback;
+  const same = (name: string | undefined): boolean => !!name && name.trim().toLocaleLowerCase() === alias.toLocaleLowerCase();
+  if (same(own.alias) || same(own.deviceName)) {
+    appLog('core:annex', 'warn', "A pairing device sent this machine's own name; storing a neutral name", {
+      meta: { fingerprint, fallback },
+    });
+    return fallback;
+  }
+  return alias;
+}
+
+/**
  * POST /pair on the main TLS port. The client shows its certificate, whose CN is
  * its identity fingerprint; that certificate is pinned. A PIN pairs one identity
  * and is then spent. A retry from the same identity and certificate while the PIN
@@ -2450,10 +2477,11 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
   const identity = annexIdentity.getOrCreateIdentity();
   const settings = annexSettings.getSettings();
   const now = new Date().toISOString();
+  // Pairing again (same identity) stores the name it sends now, like everything else it sends.
   const pairedPeer: AnnexPeer = {
     fingerprint,
     publicKey: clientPublicKey,
-    alias: typeof body.alias === 'string' && body.alias ? body.alias : 'Unknown',
+    alias: pairedDeviceAlias(body.alias, settings, body.pairingMode !== undefined, fingerprint),
     icon: typeof body.icon === 'string' && body.icon ? body.icon : 'computer',
     color: typeof body.color === 'string' && body.color ? body.color : 'indigo',
     pairedAt: now,
@@ -5569,6 +5597,22 @@ export function revokeAllPeers(): void {
   awaitingFirstConnection.clear();
   loggedRefusals.clear();
   for (const fingerprint of fingerprints) closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
+}
+
+/** Identities with an open, still-paired WebSocket to this server: the devices connected to this machine. */
+export function connectedPeerFingerprints(): Set<string> {
+  const connected = new Set<string>();
+  for (const client of wss?.clients ?? []) {
+    if (client.readyState !== WebSocket.OPEN || !socketStillPaired(client)) continue;
+    const fingerprint = wsPeerFingerprints.get(client);
+    if (fingerprint) connected.add(fingerprint);
+  }
+  return connected;
+}
+
+/** Phones paired for this session only: listed with the other devices, and gone when Annex stops. */
+export function sessionOnlyPeers(): AnnexPeer[] {
+  return [...mobileSessionPeers.values()];
 }
 
 /** Get the auth type of a WebSocket connection. Used by protocol V2 to gate control messages. */

@@ -603,7 +603,8 @@ describe('annex-client', () => {
       const sat = annexClient.getSatellites().find((s) => s.id === FINGERPRINT);
       expect(sat?.snapshot?.lastSeq).toBe(7);
       expect(sat?.state).toBe('disconnected');
-      expect(sat?.lastError).toBe('Incompatible Annex version');
+      expect(sat?.lastError).toMatch(/can't connect to this one\. Update Clubhouse on both computers\./);
+      expect(sat?.problem?.code).toBe('incompatible');
     });
   });
 
@@ -1638,7 +1639,7 @@ describe('annex-client', () => {
 
       const satsAfter = annexClient.getSatellites();
       expect(satsAfter[0].state).toBe('disconnected');
-      expect(satsAfter[0].lastError).toBe('Heartbeat ping failed');
+      expect(satsAfter[0].lastError).toMatch(/stopped answering\. Clubhouse is reconnecting/);
 
       vi.useRealTimers();
     });
@@ -1690,7 +1691,7 @@ describe('annex-client', () => {
       // One heartbeat ping, then no pong within the 10s timeout.
       vi.advanceTimersByTime(30_000 + 10_000);
 
-      expect(annexClient.getSatellites()[0].lastError).toBe('Heartbeat timeout');
+      expect(annexClient.getSatellites()[0].problem?.code).toBe('stopped-answering');
       const call = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'Heartbeat pong timeout — closing connection');
       expect(call?.[3]).toMatchObject({ telemetry: { event: 'clubhouse.annex.heartbeat_timeout' } });
       expect((call?.[3] as { telemetry: { attrs?: unknown } }).telemetry.attrs).toBeUndefined();
@@ -2046,7 +2047,7 @@ describe('annex-client', () => {
 
       const satsAfter = annexClient.getSatellites();
       expect(satsAfter[0].state).toBe('disconnected');
-      expect(satsAfter[0].lastError).toBe('Heartbeat timeout');
+      expect(satsAfter[0].problem?.code).toBe('stopped-answering');
 
       clearIntervalSpy.mockRestore();
       vi.useRealTimers();
@@ -2346,12 +2347,54 @@ describe('annex-client', () => {
       } finally { vi.useRealTimers(); }
     });
 
+    it.each([
+      ['ECONNREFUSED', 'refused', "Pinned Mac isn't accepting connections. Check that Clubhouse is open there with Annex turned on."],
+      ['EHOSTUNREACH', 'unreachable', "This computer can't reach Pinned Mac at its last address. Check this computer's network connection. Clubhouse tries again when it's back."],
+      ['ETIMEDOUT', 'timeout', "Pinned Mac didn't answer in time. Check that it is awake and on the same network or tailnet."],
+    ])('says what a socket error %s means and what to do', async (code, problem, text) => {
+      await discover();
+      vi.useFakeTimers();
+      try {
+        sockets[0].handlers.error(Object.assign(new Error(`connect ${code} 192.168.1.50:9000`), { code }));
+        expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', lastError: text, problem: { code: problem } });
+        expect(annexClient.getSatellite(FP)?.needsPairing).toBeUndefined();
+      } finally { vi.useRealTimers(); }
+    });
+
+    it('clears the problem once a snapshot arrives', async () => {
+      await discover();
+      sockets[0].handlers.error(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }));
+      expect(annexClient.getSatellite(FP)?.problem).toBeDefined();
+      annexClient.retry(FP);
+      sockets.at(-1)!.handlers.open();
+      annexClient._receiveSatelliteMessageForTesting(FP, { type: 'snapshot', payload: { protocolVersion: 2, lastSeq: 1, projects: [], agents: {}, quickAgents: {} } });
+      expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'connected', lastError: null });
+      expect(annexClient.getSatellite(FP)?.problem).toBeUndefined();
+    });
+
+    it('Retry on a paired satellite not seen since startup starts looking for it', () => {
+      expect(annexClient.getSatellite(FP)).toBeNull();
+      annexClient.retry(FP);
+      expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'discovering', alias: 'Pinned Mac' });
+    });
+
+    it('says what a 403 for the wrong role means, and keeps retrying', async () => {
+      await discover();
+      vi.useFakeTimers();
+      try {
+        refusal(403, { error: 'peer_role_not_allowed' });
+        await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.problem?.code).toBe('wrong-role'));
+        expect(annexClient.getSatellite(FP)?.problem?.action).toBe('Pair again from this computer to control it.');
+      } finally { vi.useRealTimers(); }
+    });
+
     it('retries after any other refusal', async () => {
       await discover();
       vi.useFakeTimers();
       try {
         refusal(503, { error: 'busy' });
-        await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.lastError).toContain('503'));
+        await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.problem?.code).toBe('tls-unavailable'));
+        expect(annexClient.getSatellite(FP)?.lastError).toMatch(/couldn't start its secure connection\. Turn Annex off and on there/);
         expect(annexClient.getSatellite(FP)?.needsPairing).toBeUndefined();
         vi.advanceTimersByTime(120_000);
         expect(WebSocketMock.mock.calls.length).toBeGreaterThan(1);
@@ -2534,6 +2577,15 @@ describe('annex-client', () => {
       expect(await annexClient.pairWithLink(await link())).toEqual({ success: false, error: 'That code was already used. Show a new code.' });
       answerPair(404, { error: 'not_found' });
       expect((await annexClient.pairWithLink(await link())).error).toMatch(/newer version/);
+    });
+
+    it('says what happened and what to do when no address in the link answers', async () => {
+      vi.mocked(annexTls.probePeerCertificate).mockRejectedValue(Object.assign(new Error('connect ECONNREFUSED 192.168.1.60:9443'), { code: 'ECONNREFUSED' }));
+      expect(await annexClient.pairWithLink(await link())).toEqual({
+        success: false,
+        error: "Mini isn't accepting connections. Check that Clubhouse is open there with Annex turned on.",
+      });
+      expect(posted).toHaveLength(0);
     });
 
     it('rejects something that is not a pairing link without dialling anything', async () => {

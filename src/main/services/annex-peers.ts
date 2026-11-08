@@ -9,6 +9,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import { annexEphemeralSession } from './annex-network-profile';
 import { appLog } from './log-service';
+import { devicesChanged } from './annex-device-signal';
 import type { AnnexPeer, AnnexPeerListing } from '../../shared/types';
 
 // ---------------------------------------------------------------------------
@@ -62,6 +63,7 @@ function loadPeers(): AnnexPeer[] {
 function savePeers(peers: AnnexPeer[]): void {
   const ephemeral = annexEphemeralSession();
   cachedPeers = peers;
+  devicesChanged();
   if (ephemeral) return;
   // Readable by this user only: the file holds the certificates paired devices are trusted by.
   const target = getPeersPath();

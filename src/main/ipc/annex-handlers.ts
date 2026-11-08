@@ -8,6 +8,8 @@ import * as annexClient from '../services/annex-client';
 import * as annexPeers from '../services/annex-peers';
 import * as annexIdentity from '../services/annex-identity';
 import * as annexTls from '../services/annex-tls';
+import * as annexDevices from '../services/annex-devices';
+import { onDevicesChanged } from '../services/annex-device-signal';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, objectArg, stringArg, booleanArg } from './validation';
@@ -22,6 +24,19 @@ function broadcastPeersChanged(): void {
 }
 
 export function registerAnnexHandlers(): void {
+  onDevicesChanged(() => broadcastToAllWindows(IPC.ANNEX.DEVICES_CHANGED, annexDevices.listDevices()));
+
+  ipcMain.handle(IPC.ANNEX.LIST_DEVICES, () => annexDevices.listDevices());
+
+  ipcMain.handle(IPC.ANNEX.REMOVE_DEVICE, withValidatedArgs(
+    [stringArg()],
+    (_event, fingerprint) => {
+      const removed = annexDevices.removeDevice(fingerprint);
+      if (removed) broadcastPeersChanged();
+      return removed;
+    },
+  ));
+
   ipcMain.handle(IPC.ANNEX.GET_SETTINGS, () => {
     return annexSettings.getSettings();
   });
