@@ -10,7 +10,8 @@ import {
 import { recordElectronApp, trackOpenApp, untrackOpenApp } from './e2e-cleanup';
 import { installFrameMonitor, reportActionFailure } from './renderer-diagnostics';
 import { observeOwnedProcess } from './owned-process-receipts';
-import { withRunLayout } from './layout';
+import { classicRunSeedOver, isClassicRun, withRunLayout } from './layout';
+import * as fs from 'fs';
 
 const APP_PATH = path.resolve(__dirname, '..');
 const MAIN_ENTRY = path.join(APP_PATH, '.webpack', process.arch, 'main');
@@ -105,7 +106,7 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   let electronApp: ElectronApp;
   try {
     if (!ownsProfile) assertDisposableProfile(profile);
-    seedProfile(profile, { experimental: withRunLayout(opts.experimental), userDataFiles: opts.userDataFiles });
+    seedProfile(profile, { experimental: runExperimental(profile, opts), userDataFiles: opts.userDataFiles });
     const env = buildLaunchEnv(process.env, { profile, pluginsDir: opts.pluginsDir, env: opts.env });
     electronApp = await electron.launch({
       ...(opts.executablePath ? { executablePath: opts.executablePath } : {}),
@@ -161,6 +162,19 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
     }
     throw err;
   }
+}
+
+/**
+ * The experimental flags to seed. When the spec passed none, the classic run
+ * merges the classic flag into what a reused profile already saved rather
+ * than replacing it, and leaves an unreadable file alone.
+ */
+function runExperimental(profile: DisposableProfile, opts: LaunchOptions): Record<string, boolean> | undefined {
+  if (!isClassicRun || opts.experimental !== undefined || opts.userDataFiles?.['experimental-settings.json'] !== undefined) {
+    return withRunLayout(opts.experimental);
+  }
+  const file = path.join(profile.userDataDir, 'experimental-settings.json');
+  return classicRunSeedOver(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined);
 }
 
 /** Serialized into the page by addInitScript; it must be self-contained. */
