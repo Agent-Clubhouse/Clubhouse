@@ -809,6 +809,7 @@ Gate on `helperRouting` in capabilities. It lists only what works now, so don't 
  "quotaStates":["known","low","near_limit","exhausted","unknown"],"unknownReasons":["not_read","stale","not_applicable","read_failed","not_supported"],"quotaSources":["cli_query","session_event","none"],
  "commands":["helperRouting.update"],"snapshotField":"helperRoutingRevision","event":"helper_routing:changed",
  "difficulties":["easy","medium","hard"],"levels":["minimum","easy","medium","hard","maximum"],
+ "presetProviders":["claude-code","codex-cli","copilot-cli"],"autoCandidates":["claude-code","codex-cli"],
  "reasons":["explicit_request","persona_pinned","preset_on_cli","only_candidate","lower_pressure","lower_load","fair_rotation","better_quota_tier","unknown_fallback","sticky","default_order"],
  "fallbacks":["none","builtin_preset","candidate_skipped","model_unverified"],
  "skipped":["cli_disabled","cli_unavailable","auto_not_supported","no_valid_mapping","cooling_down","quota_near_limit","quota_exhausted"],
@@ -828,13 +829,18 @@ Gate on `helperRouting` in capabilities. It lists only what works now, so don't 
     "weekly":{"usedPercent":41,"resetsAt":"…"},"fiveHour":{"usedPercent":12,"resetsAt":"…"},"refreshAfterSeconds":300},
    "choices":{"source":"live","asOf":"…","models":[{"id":"gpt-6.1-sol","label":"Sol","efforts":["low","high"]}]},
    "cells":{"hard":{"effective":{"model":"gpt-6.1-sol","effort":"high"},"source":"builtin","state":"valid","custom":null,"builtin":{"model":"gpt-6.1-sol","effort":"high"},"editable":true},…}},
-  "copilot-cli":{"autoEligible":false,"reason":"auto_not_supported","quota":{"state":"unknown","unknownReason":"not_supported","source":"none","asOf":null},"cells":null}}}
+  "copilot-cli":{"autoEligible":true,"autoCandidate":false,
+   "quota":{"state":"unknown","unknownReason":"not_supported","source":"none","asOf":null},
+   "choices":{"source":"live","asOf":"…","models":[{"id":"claude-haiku-4.5","label":"Claude Haiku 4.5","efforts":[]}]},
+   "cells":{"hard":{"effective":{"model":"claude-opus-5.5","effort":"high"},"source":"builtin","state":"valid","custom":null,"builtin":{"model":"claude-opus-5.5","effort":"high"},"editable":true},…}}}}
 ```
 
 - **labels**: the words for every code, in the families `reason`, `fallback`, `skipped`, `quota`, `unknown`, `window`, `autoSource`, `autoOff`, `cell` and `generic`. Every read has all of them, including a bare one, so cache them once per revision for rows that only have codes. For a code you don't have, use `labels.generic.unknownCode`, then your own generic "Other".
 - **cells**: `effective` is what a start uses now. `custom` is the saved choice, or null. `state` is that of the saved choice, or of the built-in without one: `valid`, `unverified` (the list may be out of date, so it couldn't be checked) or `stale` (no longer offered, with `staleReason` `model_unavailable` or `effort_unavailable`). A stale saved choice stays saved. `effective` is then the built-in, with `fallback: "builtin_preset"`, or null if that is stale too, and a start with that difficulty is refused. Offer Reset whenever `custom` is set.
 - **levels** (#3044): `cells` has a row for each entry in the capability's `levels`, which adds `minimum` and `maximum` around the `difficulties`. Without `levels`, show only `difficulties`. An unset minimum or maximum shows the cell of the difficulty it uses, with `follows` (`easy` or `hard`) and `custom: null`. `follows` is also set on a stale saved one that falls back. `difficulties` stays what `start_helper` takes.
-- **autoEligible**: whether a provider has presets and Auto can pick it. Copilot can't: its list reports no per-model efforts, and it has no quota source.
+- **autoEligible**: whether a provider has presets, so show its cells. A provider without them has `reason: "auto_not_supported"` and `cells: null`.
+- **autoCandidate** (#3085), and the capability's `presetProviders` and `autoCandidates`: whether `cli: "auto"` chooses between it and the others. Copilot has presets but is `false`: Auto doesn't pick it, and it has no quota source. Absent from older desktops, where every eligible provider was a candidate.
+- **efforts**: a model's `efforts` can be empty (some of Copilot's are). Then a cell for it has `effort: null`, which is valid, and a level on it is refused with `effort_unavailable`. Say the model has no effort levels rather than offering a picker.
 - **choices**: what the pickers offer, per model, with `source` `live` or `fallback`. Always the app-wide list, even with `projectId` or `agentId`, because a write is checked against it. `default` isn't offered, since a preset has to name a model.
 - **agent**: with `agentId` only. `{usable: true}`, or `{usable: false, reason}` with `dispatcher_locked` or `orchestration_off`, for presets. The Dispatcher doesn't start helpers, and this gives it no new authority.
 - **auto**: whether `cli: "auto"` is allowed at the scope asked about. See [Auto provider](#auto-provider).
