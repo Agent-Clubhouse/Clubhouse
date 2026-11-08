@@ -329,6 +329,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
   const stampFor = (dest: SdkDestination) => ({
     attributes: { 'clubhouse.telemetry.level': dest.filter.level },
     copyResourceAttributes: dest.copyResourceAttributes ?? [],
+    dropAttributes: dest.dropAttributes ?? [],
   });
 
   // --- Traces ---

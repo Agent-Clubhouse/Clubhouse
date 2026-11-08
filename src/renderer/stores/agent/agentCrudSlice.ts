@@ -93,6 +93,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
             model: config.model,
             orchestrator: config.orchestrator,
             freeAgentMode: config.freeAgentMode,
+            access: config.access,
             mcpIds: config.mcpIds,
             lastSleep: config.lastSleep,
             ...parentLinkFields(config),
@@ -236,6 +237,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
               model: config.model,
               orchestrator: config.orchestrator,
               freeAgentMode: config.freeAgentMode,
+            access: config.access,
               mcpIds: config.mcpIds,
               ...parentLinkFields(config),
             };

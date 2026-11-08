@@ -96,7 +96,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     expect(screen.queryByLabelText('Runs on')).toBeNull();
     expect(screen.queryByTestId('new-agent-persona')).toBeNull();
     expect(screen.queryByLabelText('Own worktree and branch')).toBeNull();
-    expect(screen.queryByRole('switch', { name: 'Free Agent Mode' })).toBeNull();
+    expect(screen.queryByLabelText('Access')).toBeNull();
     expect(screen.getByText('Copy another agent…')).toBeTruthy();
     expect(screen.getByTestId('new-agent-scratch').textContent).toBe('Build from scratch');
     expect(screen.getByTestId('new-agent-submit').textContent).toBe('Start with template');
@@ -163,7 +163,8 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     expect((screen.getByLabelText('Model') as HTMLSelectElement).value).toBe('opus');
     expect(screen.getByRole('switch', { name: 'Can start helpers' }).getAttribute('aria-checked')).toBe('true');
     fireEvent.change(screen.getByLabelText('Helper limit'), { target: { value: '4' } });
-    fireEvent.click(screen.getByRole('switch', { name: 'Free Agent Mode' }));
+    fireEvent.change(screen.getByTestId('new-agent-builder-agent-access'), { target: { value: 'auto' } });
+    expect(screen.getByText('A check decides what needs your approval. It can be wrong.')).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('new-agent-builder-create'));
     await waitFor(() => expect(create).toHaveBeenCalledWith('/tmp/ch', {
@@ -173,7 +174,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
       settings: {
         orchestrator: 'claude-code',
         model: 'opus',
-        freeAgentMode: true,
+        access: 'auto',
         orchestration: { orchestrate: true, maxHelpers: 4, access: 'same' },
       },
     }));
@@ -208,7 +209,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
         orchestrator: 'claude-code',
         model: 'opus',
         effort: 'xhigh',
-        freeAgentMode: false,
+        access: 'ask',
         orchestration: { orchestrate: true, maxHelpers: 3, access: 'same', autoHelpers: true, control: 'ask-before-start' },
         idleSleep: 'never',
         helperTemplateId: 'custom-release',
@@ -266,7 +267,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     fireEvent.click(screen.getByTestId('new-agent-builder-create'));
     await waitFor(() => expect(create).toHaveBeenCalledWith('/tmp/ch', expect.objectContaining({
       setup: { blocks: ['builtin-block-identity'], skills: [], mcps: ['builtin-mcp-clubhouse'] },
-      settings: { orchestrator: 'claude-code', freeAgentMode: false, orchestration: { orchestrate: false } },
+      settings: { orchestrator: 'claude-code', access: 'ask', orchestration: { orchestrate: false } },
     })));
   });
 
@@ -290,7 +291,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     expect((screen.getByTestId('new-agent-name') as HTMLInputElement).value).toBe('keen-heron');
   });
 
-  it('Copy another agent lists managed agents and opens the builder with its setup, model, CLI and Free Agent Mode', async () => {
+  it('Copy another agent lists managed agents and opens the builder with its setup, model, CLI and Access', async () => {
     vi.spyOn(m(), 'getSetup').mockImplementation(async (_path: string, id: string) => ({
       ok: true,
       value: id === 'a1' ? { version: 1, blocks: ['b-identity'], skills: ['s-notes'], mcps: [], templateId: 'custom-release' } : null,
@@ -309,15 +310,15 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     await waitFor(() => expect(create).toHaveBeenCalledWith('/tmp/ch', expect.objectContaining({
       name: 'keen-heron',
       setup: { blocks: ['b-identity'], skills: ['s-notes'], mcps: [], templateId: 'custom-release' },
-      settings: expect.objectContaining({ orchestrator: 'claude-code', model: 'opus', freeAgentMode: true }),
+      settings: expect.objectContaining({ orchestrator: 'claude-code', model: 'opus', access: 'auto' }),
     })));
   });
 
-  it('Copy another agent brings its orchestration from its config', async () => {
+  it('Copy another agent brings its Access and orchestration from its config', async () => {
     vi.spyOn(m(), 'getSetup').mockImplementation(async (_path: string, id: string) => ({
       ok: true, value: id === 'a1' ? { version: 1, blocks: ['b-identity'], skills: [], mcps: ['builtin-mcp-clubhouse'] } : null,
     }) as never);
-    const config = vi.spyOn(window.clubhouse.agent, 'getDurableConfig').mockResolvedValue({ id: 'a1', orchestration: { orchestrate: true, maxHelpers: 2, access: 'same' }, effort: 'high', idleSleep: 60, helperTemplateId: 'custom-release' } as never);
+    const config = vi.spyOn(window.clubhouse.agent, 'getDurableConfig').mockResolvedValue({ id: 'a1', access: 'auto_edit', orchestration: { orchestrate: true, maxHelpers: 2, access: 'same' }, effort: 'high', idleSleep: 60, helperTemplateId: 'custom-release' } as never);
     const create = vi.spyOn(m(), 'createAgent').mockResolvedValue({ ok: true, value: { id: 'm-new' } } as never);
     openWith();
     await managedSwitch();
@@ -330,7 +331,7 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     expect((screen.getByLabelText('Helper limit') as HTMLInputElement).value).toBe('2');
     fireEvent.click(screen.getByTestId('new-agent-builder-create'));
     await waitFor(() => expect(create).toHaveBeenCalledWith('/tmp/ch', expect.objectContaining({
-      settings: expect.objectContaining({ orchestration: { orchestrate: true, maxHelpers: 2, access: 'same' }, effort: 'high', idleSleep: 60, helperTemplateId: 'custom-release' }),
+      settings: expect.objectContaining({ access: 'auto_edit', orchestration: { orchestrate: true, maxHelpers: 2, access: 'same' }, effort: 'high', idleSleep: 60, helperTemplateId: 'custom-release' }),
     })));
   });
 
@@ -343,19 +344,19 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     fireEvent.change(screen.getByTestId('new-agent-name'), { target: { value: 'keen-heron' } });
     fireEvent.click(screen.getByTestId('new-agent-scratch'));
     fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
-    fireEvent.click(screen.getByRole('switch', { name: 'Free Agent Mode' }));
+    fireEvent.change(screen.getByTestId('new-agent-builder-agent-access'), { target: { value: 'full_access' } });
     fireEvent.click(screen.getByTestId('new-agent-builder-create'));
     expect((await screen.findByTestId('new-agent-error')).textContent).toMatch(/That name is taken/);
 
     fireEvent.click(screen.getByText('Back'));
     fireEvent.change(screen.getByTestId('new-agent-name'), { target: { value: 'keen-heron-2' } });
     fireEvent.click(screen.getByTestId('new-agent-scratch'));
-    // Same tab, same switch.
-    expect(screen.getByRole('switch', { name: 'Free Agent Mode' }).getAttribute('aria-checked')).toBe('true');
+    // Same tab, same level.
+    expect((screen.getByTestId('new-agent-builder-agent-access') as HTMLSelectElement).value).toBe('full_access');
     fireEvent.click(screen.getByTestId('new-agent-builder-create'));
     await waitFor(() => expect(m().createAgent).toHaveBeenLastCalledWith('/tmp/ch', expect.objectContaining({
       name: 'keen-heron-2',
-      settings: expect.objectContaining({ freeAgentMode: true }),
+      settings: expect.objectContaining({ access: 'full_access' }),
     })));
   });
 
@@ -447,7 +448,7 @@ describe('NewAgentPage, a quick agent from a template (D25)', () => {
   const serverTemplate = {
     id: 'custom-workiq', name: 'WorkIQ reader', description: '', builtin: false,
     setup: { blocks: ['b-identity'], skills: [], mcps: ['builtin-mcp-clubhouse', 'p-workiq'] },
-    settings: { model: 'opus', freeAgentMode: true }, usedBy: 0,
+    settings: { model: 'opus', access: 'full_access' as const }, usedBy: 0,
   };
   let spawnQuickAgent: ReturnType<typeof vi.fn>;
   beforeEach(() => {
@@ -468,9 +469,9 @@ describe('NewAgentPage, a quick agent from a template (D25)', () => {
     expect(screen.getByTestId('new-agent-quick-template-help').textContent).toBe('Optional. Starts the agent with a template’s instructions and MCP servers.');
 
     fireEvent.change(select, { target: { value: 'custom-workiq' } });
-    // The template fills in its model and Free Agent Mode; the rows stay to change them.
+    // The template fills in its model and Access; the rows stay to change them.
     expect((screen.getByRole('combobox', { name: 'Model' }) as HTMLSelectElement).value).toBe('opus');
-    expect(screen.getByRole('switch', { name: 'Free Agent Mode' }).getAttribute('aria-checked')).toBe('true');
+    expect((screen.getByTestId('new-agent-access') as HTMLSelectElement).value).toBe('full_access');
     expect(screen.getByTestId('new-agent-quick-template-help').textContent)
       .toBe('Its instructions lead the agent’s prompt. Its MCP server can’t reach Claude Code, which reads them only from the folder’s own MCP file.');
 
@@ -480,7 +481,8 @@ describe('NewAgentPage, a quick agent from a template (D25)', () => {
     const call = spawnQuickAgent.mock.calls[0];
     expect(call[2]).toBe('Summarize the inbox');
     expect(call[3]).toBe('opus');
-    expect(call[9]).toEqual({ managedTemplateId: 'custom-workiq' });
+    expect(call[6]).toBe('full_access');
+    expect(call[9]).toEqual({ managedTemplateId: 'custom-workiq', fallbackAccess: 'ask' });
   });
 
   it('leaves the model alone when the template\'s model is for a CLI that won\'t run', async () => {
@@ -491,10 +493,11 @@ describe('NewAgentPage, a quick agent from a template (D25)', () => {
     const select = await screen.findByTestId('new-agent-quick-template') as HTMLSelectElement;
     await waitFor(() => expect(select.disabled).toBe(false));
     const model = () => (screen.getByRole('combobox', { name: 'Model' }) as HTMLSelectElement).value;
-    // Codex isn't available here, so Claude Code runs and keeps its own model; Free Agent Mode still applies.
+    // Codex isn't available here, so Claude Code runs and keeps its own model; the template's Access still applies.
+    // This one saved only the legacy flag, which reads as Auto.
     fireEvent.change(select, { target: { value: 'custom-codex' } });
     expect(model()).toBe('default');
-    expect(screen.getByRole('switch', { name: 'Free Agent Mode' }).getAttribute('aria-checked')).toBe('true');
+    expect((screen.getByTestId('new-agent-access') as HTMLSelectElement).value).toBe('auto');
     // No CLI named, and the model isn't one of the current CLI's.
     fireEvent.change(select, { target: { value: 'custom-nocli' } });
     expect(model()).toBe('default');
@@ -514,7 +517,7 @@ describe('NewAgentPage, a quick agent from a template (D25)', () => {
     typeMission();
     fireEvent.click(screen.getByTestId('new-agent-submit'));
     await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalled());
-    expect(spawnQuickAgent.mock.calls[0][9]).toBeUndefined();
+    expect(spawnQuickAgent.mock.calls[0][9]).toEqual({ fallbackAccess: 'ask' });
   });
 });
 

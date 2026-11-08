@@ -480,8 +480,9 @@ describe('CopilotCliProvider', () => {
   });
 
   describe('writeHooksConfig', () => {
-    it('preserves ambiguous permissions-only and corrupt files with an actionable error', async () => {
-      for (const content of ['{"permissions":{"allow":["Read"]}}', '{']) {
+    it('preserves ambiguous and corrupt files with an actionable error', async () => {
+      // A permissions-only file is moved aside instead (copilot-hooks-config.test.ts, #2866).
+      for (const content of ['{"version":1,"hooks":{},"permissions":{"allow":["Read"]}}', '{"permissions":{"allow":["Read"]},"other":1}', '{']) {
         vi.mocked(fsp.readFile).mockResolvedValueOnce(content);
         await expect(provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook')).rejects.toThrow(/hooks/i);
         expect(fsp.writeFile).not.toHaveBeenCalled();

@@ -7,10 +7,12 @@ import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators
 import { Modal } from '../../components/Modal';
 import { Spinner } from '../../components/Spinner';
 import type { McpCatalogEntry } from '../../../shared/types';
+import type { AccessLevel } from '../../../shared/agent-access';
+import { AccessSelect, accessHelp, useDefaultAccess } from './AccessSelect';
 
 interface Props {
   onClose: () => void;
-  onCreate: (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[]) => void;
+  onCreate: (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, access?: AccessLevel, mcpIds?: string[]) => void;
   projectPath?: string;
   /** Surfaced when the most recent create attempt failed, so the user sees why instead of a silently dead button. */
   error?: string | null;
@@ -21,7 +23,9 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
   const [color, setColor] = useState<string>(AGENT_COLORS[0].id);
   const [model, setModel] = useState('default');
   const [useWorktree, setUseWorktree] = useState(false);
-  const [freeAgentMode, setFreeAgentMode] = useState(false);
+  // Access (#2761): the app's Default access until the person picks one.
+  const defaultAccess = useDefaultAccess();
+  const [pickedAccess, setPickedAccess] = useState<AccessLevel | null>(null);
   const [mcpCatalog, setMcpCatalog] = useState<McpCatalogEntry[]>([]);
   const [selectedMcps, setSelectedMcps] = useState<string[]>([]);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
@@ -33,6 +37,8 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
 
   const selectedOrch = allOrchestrators.find((o) => o.id === orchestrator);
   const supportsPermissions = selectedOrch?.capabilities?.permissions ?? false;
+  // A CLI without permission support starts at Ask first.
+  const access: AccessLevel = supportsPermissions ? pickedAccess ?? defaultAccess : 'ask';
 
   useEffect(() => {
     if (!projectPath) return;
@@ -53,7 +59,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || nameProblem) return;
-    onCreate(name.trim(), color, model, useWorktree, orchestrator, freeAgentMode || undefined, selectedMcps.length > 0 ? selectedMcps : undefined);
+    onCreate(name.trim(), color, model, useWorktree, orchestrator, access, selectedMcps.length > 0 ? selectedMcps : undefined);
   };
 
   return (
@@ -175,23 +181,22 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
             </span>
           </label>
 
-          {/* Free Agent Mode */}
-          <label
-            className={`flex items-center gap-2 mb-4 ${supportsPermissions ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
-            title={supportsPermissions ? 'Handle permissions using the configured mode' : 'Not supported by this CLI'}
-          >
-            <input
-              type="checkbox"
-              checked={freeAgentMode}
-              onChange={(e) => setFreeAgentMode(e.target.checked)}
+          {/* Access */}
+          <div className="block mb-4">
+            <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Access</span>
+            <AccessSelect
+              value={access}
+              onChange={setPickedAccess}
+              providerId={orchestrator}
               disabled={!supportsPermissions}
-              className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-red-500"
+              data-testid="add-agent-access"
+              className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
+                text-ctp-text focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
             />
-            <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Free Agent Mode</span>
-            <span className="text-xs text-ctp-subtext0/70 ml-1">
-              {supportsPermissions ? '(uses configured permission mode)' : '(not supported)'}
-            </span>
-          </label>
+            <p className="mt-1 text-xs text-ctp-subtext0/70">
+              {supportsPermissions ? accessHelp(access) : 'Not supported by this CLI.'}
+            </p>
+          </div>
 
           {/* MCPs (only when catalog is available) */}
           {mcpCatalog.length > 0 && (

@@ -151,7 +151,7 @@ An agent's orchestration settings come from its own settings, then the built-in 
 | Setting | Values |
 |-----|--------|
 | `orchestrate` | `true` or `false` |
-| `access` | `same`, `standard`, `auto` or `bypass` |
+| `access` | `same` (Same as the orchestrator), `standard` (Ask first), `auto` (Auto) or `bypass` (Full access) |
 | `control` | `hands-off`, `ask-before-start` or `ask-everything` |
 | `maxHelpers` | How many helpers at once |
 | `crossProjectHelpers` | `true` or `false`. Whether the agent can start helpers in other projects. |

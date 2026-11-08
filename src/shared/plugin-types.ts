@@ -227,7 +227,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   'agent-config': 'Inject skills, agent templates, and instruction content into project agents',
   'agent-config.cross-project': 'Inject agent configuration into other projects where the plugin is also enabled (elevated)',
   'agent-config.permissions': 'Modify agent permission allow/deny rules (elevated)',
-  'agents.free-agent-mode': 'Spawn agents using the configured Free Agent permission mode (elevated)',
+  'agents.free-agent-mode': 'Start agents above Ask first: Auto-accept edits, Auto or Full access (elevated)',
   'agent-config.mcp': 'Inject MCP server configurations into project agents (elevated)',
   sounds: 'Register and manage custom notification sound packs',
   theme: 'Read the current theme and subscribe to theme changes',
@@ -662,6 +662,11 @@ export interface AgentsAPI {
     useWorktree?: boolean;
     orchestrator?: string;
     freeAgentMode?: boolean;
+    /**
+     * The agent's Access level: 'plan' | 'ask' | 'auto_edit' | 'auto' | 'full_access'.
+     * Wins over `freeAgentMode`. Levels above Ask first need `agents.free-agent-mode`. @since 0.9
+     */
+    access?: 'plan' | 'ask' | 'auto_edit' | 'auto' | 'full_access';
     mcpIds?: string[];
     /** @deprecated Structured mode was removed. Accepted for compatibility and ignored; will be removed in the next plugin API major. */
     structuredMode?: boolean;
