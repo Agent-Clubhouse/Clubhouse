@@ -92,6 +92,16 @@ The retention tier sets how long files are kept and how much space they can use 
 
 Retention runs at startup (even with **Record locally** off), when recording starts, every hour while recording, and each time a file reaches 2 MB and continues in a new one. The oldest files are deleted first, and a file that is being written is never deleted. It also deletes the `session-*.jsonl` logs that earlier versions wrote to the same folder.
 
+## Sending recorded history to a new destination
+
+When you turn on a telemetry destination under **Telemetry export** in **Settings > Logging**, Clubhouse can offer to send it the history this computer already recorded. It's never sent unless you choose **Send**.
+
+- **Choosing how much:** pick the last day, the last 7 or 30 days, or everything kept. The record's retention limits still apply.
+- **What goes:** the destination's detail level and filters apply. Diagnostic log lines never leave this computer.
+- **What doesn't:** history from before your telemetry ID was last reset isn't sent. Neither is history the destination already received, so turning it off and on again never sends anything twice.
+- **Stopping and resuming:** **Cancel** stops partway through. If sending stops, **Send the rest** picks up where it left off.
+- **Where it's offered:** for Application Insights and other OTLP destinations, never for Feedback. Application Insights gets spans and events only, not metrics: it would stamp old metrics with today's time.
+
 ## Feedback reports
 
 A feedback report never includes the log folder. The review step can attach recent diagnostics, and shows every line before you send. They come from memory, so they work with **Record locally** and telemetry export off. They cover the last 30 minutes, at most 200 lines and 48 KB, and only connection, agent and chat events from a fixed list. Each line is a fixed event name with a few values, and ids are replaced by a short hash. Log messages, paths, project names and chat content are left out, and a warning or error outside the list keeps only its namespace, level, time and a one-word failure type.

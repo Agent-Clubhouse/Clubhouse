@@ -616,6 +616,11 @@ vi.stubGlobal('clubhouse', {
     clearOffline: async () => ({ ok: false }),
     deleteLocalData: async () => ({ ok: false }),
     resume: async () => ({ ok: false }),
+    backfillOffer: async () => null,
+    backfillStart: async () => ({ ok: false }),
+    backfillCancel: async () => {},
+    backfillStatus: async () => null,
+    backfillDismiss: async () => {},
   },
   chat: {
     readTranscript: async () => [],
