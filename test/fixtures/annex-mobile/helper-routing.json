@@ -142,6 +142,21 @@
                 "source": "builtin",
                 "state": "valid"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "follows": "hard",
+                "source": "builtin",
+                "state": "valid"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -153,6 +168,21 @@
                   "effort": "medium",
                   "model": "sonnet"
                 },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "follows": "easy",
                 "source": "builtin",
                 "state": "valid"
               }
@@ -238,6 +268,21 @@
                 "source": "builtin",
                 "state": "valid"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "follows": "hard",
+                "source": "builtin",
+                "state": "valid"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -249,6 +294,21 @@
                   "effort": "medium",
                   "model": "gpt-6.1-terra"
                 },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "follows": "easy",
                 "source": "builtin",
                 "state": "valid"
               }
@@ -458,6 +518,21 @@
                 "source": "builtin",
                 "state": "valid"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "follows": "hard",
+                "source": "builtin",
+                "state": "valid"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -469,6 +544,21 @@
                   "effort": "medium",
                   "model": "sonnet"
                 },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "follows": "easy",
                 "source": "builtin",
                 "state": "valid"
               }
@@ -554,6 +644,21 @@
                 "source": "builtin",
                 "state": "valid"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "follows": "hard",
+                "source": "builtin",
+                "state": "valid"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -565,6 +670,21 @@
                   "effort": "medium",
                   "model": "gpt-6.1-terra"
                 },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "follows": "easy",
                 "source": "builtin",
                 "state": "valid"
               }
@@ -770,6 +890,21 @@
                 "source": "builtin",
                 "state": "valid"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "follows": "hard",
+                "source": "builtin",
+                "state": "valid"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -781,6 +916,21 @@
                   "effort": "medium",
                   "model": "sonnet"
                 },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "follows": "easy",
                 "source": "builtin",
                 "state": "valid"
               }
@@ -866,6 +1016,21 @@
                 "source": "builtin",
                 "state": "valid"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "follows": "hard",
+                "source": "builtin",
+                "state": "valid"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -877,6 +1042,21 @@
                   "effort": "medium",
                   "model": "gpt-6.1-terra"
                 },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "follows": "easy",
                 "source": "builtin",
                 "state": "valid"
               }
@@ -1094,6 +1274,21 @@
                 "source": "builtin",
                 "state": "valid"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "follows": "hard",
+                "source": "builtin",
+                "state": "valid"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -1105,6 +1300,21 @@
                   "effort": "medium",
                   "model": "sonnet"
                 },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "follows": "easy",
                 "source": "builtin",
                 "state": "valid"
               }
@@ -1190,6 +1400,21 @@
                 "source": "builtin",
                 "state": "valid"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "follows": "hard",
+                "source": "builtin",
+                "state": "valid"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -1201,6 +1426,21 @@
                   "effort": "medium",
                   "model": "gpt-6.1-terra"
                 },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "follows": "easy",
                 "source": "builtin",
                 "state": "valid"
               }
@@ -1406,6 +1646,21 @@
                 "source": "builtin",
                 "state": "valid"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "follows": "hard",
+                "source": "builtin",
+                "state": "valid"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -1417,6 +1672,21 @@
                   "effort": "medium",
                   "model": "sonnet"
                 },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "follows": "easy",
                 "source": "builtin",
                 "state": "valid"
               }
@@ -1502,6 +1772,21 @@
                 "source": "builtin",
                 "state": "valid"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "follows": "hard",
+                "source": "builtin",
+                "state": "valid"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -1513,6 +1798,21 @@
                   "effort": "medium",
                   "model": "gpt-6.1-terra"
                 },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "follows": "easy",
                 "source": "builtin",
                 "state": "valid"
               }
@@ -1722,6 +2022,21 @@
                 "source": "builtin",
                 "state": "valid"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "follows": "hard",
+                "source": "builtin",
+                "state": "valid"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -1733,6 +2048,21 @@
                   "effort": "medium",
                   "model": "sonnet"
                 },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "follows": "easy",
                 "source": "builtin",
                 "state": "valid"
               }
@@ -1823,6 +2153,23 @@
                 "staleReason": "effort_unavailable",
                 "state": "stale"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "fallback": "builtin_preset",
+                "follows": "hard",
+                "source": "builtin",
+                "staleReason": "effort_unavailable",
+                "state": "stale"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -1834,6 +2181,21 @@
                   "effort": "medium",
                   "model": "gpt-6.1-terra"
                 },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "follows": "easy",
                 "source": "builtin",
                 "state": "valid"
               }
@@ -2031,6 +2393,21 @@
                 "source": "builtin",
                 "state": "valid"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "follows": "hard",
+                "source": "builtin",
+                "state": "valid"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -2042,6 +2419,21 @@
                   "effort": "medium",
                   "model": "sonnet"
                 },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "follows": "easy",
                 "source": "builtin",
                 "state": "valid"
               }
@@ -2125,6 +2517,19 @@
                 "staleReason": "model_unavailable",
                 "state": "stale"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": null,
+                "follows": "hard",
+                "source": "builtin",
+                "staleReason": "model_unavailable",
+                "state": "stale"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -2136,6 +2541,21 @@
                   "effort": "medium",
                   "model": "gpt-6.1-terra"
                 },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "follows": "easy",
                 "source": "builtin",
                 "state": "valid"
               }
@@ -2324,6 +2744,21 @@
                 "source": "builtin",
                 "state": "valid"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "follows": "hard",
+                "source": "builtin",
+                "state": "valid"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -2335,6 +2770,21 @@
                   "effort": "medium",
                   "model": "sonnet"
                 },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "follows": "easy",
                 "source": "builtin",
                 "state": "valid"
               }
@@ -2425,6 +2875,23 @@
                 "staleReason": "model_unavailable",
                 "state": "stale"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "fallback": "builtin_preset",
+                "follows": "hard",
+                "source": "builtin",
+                "staleReason": "model_unavailable",
+                "state": "stale"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -2436,6 +2903,21 @@
                   "effort": "medium",
                   "model": "gpt-6.1-terra"
                 },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "follows": "easy",
                 "source": "builtin",
                 "state": "valid"
               }
@@ -2635,6 +3117,22 @@
                 "source": "builtin",
                 "state": "unverified"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "opus"
+                },
+                "fallback": "model_unverified",
+                "follows": "hard",
+                "source": "builtin",
+                "state": "unverified"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -2648,6 +3146,22 @@
                 },
                 "source": "builtin",
                 "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "haiku"
+                },
+                "fallback": "model_unverified",
+                "follows": "easy",
+                "source": "builtin",
+                "state": "unverified"
               }
             },
             "choices": {
@@ -2713,6 +3227,21 @@
                 "source": "builtin",
                 "state": "valid"
               },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "gpt-6.1-sol"
+                },
+                "follows": "hard",
+                "source": "builtin",
+                "state": "valid"
+              },
               "medium": {
                 "builtin": {
                   "effort": "medium",
@@ -2724,6 +3253,21 @@
                   "effort": "medium",
                   "model": "gpt-6.1-terra"
                 },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "gpt-6-luna"
+                },
+                "follows": "easy",
                 "source": "builtin",
                 "state": "valid"
               }

@@ -117,6 +117,13 @@
           "candidate_skipped",
           "model_unverified"
         ],
+        "levels": [
+          "minimum",
+          "easy",
+          "medium",
+          "hard",
+          "maximum"
+        ],
         "modes": [
           "explicit",
           "preset",

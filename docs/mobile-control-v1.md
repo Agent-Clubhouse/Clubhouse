@@ -783,7 +783,7 @@ Gate on `helperRouting` in capabilities. It lists only what works now, so don't 
 "helperRouting":{"version":1,"path":"/api/v1/mobile/helper-routing","modes":["explicit","preset","auto"],"scopes":["app","project","agent"],"quota":true,
  "quotaStates":["known","low","near_limit","exhausted","unknown"],"unknownReasons":["not_read","stale","not_applicable","read_failed","not_supported"],"quotaSources":["cli_query","session_event","none"],
  "commands":["helperRouting.update"],"snapshotField":"helperRoutingRevision","event":"helper_routing:changed",
- "difficulties":["easy","medium","hard"],
+ "difficulties":["easy","medium","hard"],"levels":["minimum","easy","medium","hard","maximum"],
  "reasons":["explicit_request","persona_pinned","preset_on_cli","only_candidate","lower_pressure","lower_load","fair_rotation","better_quota_tier","unknown_fallback","sticky","default_order"],
  "fallbacks":["none","builtin_preset","candidate_skipped","model_unverified"],
  "skipped":["cli_disabled","cli_unavailable","auto_not_supported","no_valid_mapping","cooling_down","quota_near_limit","quota_exhausted"],
@@ -808,6 +808,7 @@ Gate on `helperRouting` in capabilities. It lists only what works now, so don't 
 
 - **labels**: the words for every code, in the families `reason`, `fallback`, `skipped`, `quota`, `unknown`, `window`, `autoSource`, `autoOff`, `cell` and `generic`. Every read has all of them, including a bare one, so cache them once per revision for rows that only have codes. For a code you don't have, use `labels.generic.unknownCode`, then your own generic "Other".
 - **cells**: `effective` is what a start uses now. `custom` is the saved choice, or null. `state` is that of the saved choice, or of the built-in without one: `valid`, `unverified` (the list may be out of date, so it couldn't be checked) or `stale` (no longer offered, with `staleReason` `model_unavailable` or `effort_unavailable`). A stale saved choice stays saved. `effective` is then the built-in, with `fallback: "builtin_preset"`, or null if that is stale too, and a start with that difficulty is refused. Offer Reset whenever `custom` is set.
+- **levels** (#3044): `cells` has a row for each entry in the capability's `levels`, which adds `minimum` and `maximum` around the `difficulties`. Without `levels`, show only `difficulties`. An unset minimum or maximum shows the cell of the difficulty it uses, with `follows` (`easy` or `hard`) and `custom: null`. `follows` is also set on a stale saved one that falls back. `difficulties` stays what `start_helper` takes.
 - **autoEligible**: whether a provider has presets and Auto can pick it. Copilot can't: its list reports no per-model efforts, and it has no quota source.
 - **choices**: what the pickers offer, per model, with `source` `live` or `fallback`. Always the app-wide list, even with `projectId` or `agentId`, because a write is checked against it. `default` isn't offered, since a preset has to name a model.
 - **agent**: with `agentId` only. `{usable: true}`, or `{usable: false, reason}` with `dispatcher_locked` or `orchestration_off`, for presets. The Dispatcher doesn't start helpers, and this gives it no new authority.
@@ -894,7 +895,7 @@ The snapshot's row has the same codes as any helper: `routing:{mode:"auto",diffi
 
 ### helperRouting.update
 
-`{revision, scope, projectId?, cells?: [{provider, difficulty, model, effort}], reset?: {provider?, difficulty?}, auto?}`, with at least one of `cells`, `reset` and `auto`. `cells` and `reset` are for `scope: "app"`. `effort` null leaves the level to the CLI. `reset: {}` resets everything, `{provider}` one provider, and `{provider, difficulty}` one cell. A reset runs before `cells`. The result is the page's data, so don't refetch.
+`{revision, scope, projectId?, cells?: [{provider, difficulty, model, effort}], reset?: {provider?, difficulty?}, auto?}`, with at least one of `cells`, `reset` and `auto`. `cells` and `reset` are for `scope: "app"`. `effort` null leaves the level to the CLI. `difficulty` takes any entry in `levels`, so `minimum` and `maximum` too. `reset: {}` resets everything, `{provider}` one provider, and `{provider, difficulty}` one cell. A reset runs before `cells`. The result is the page's data, so don't refetch.
 
 - 409 `helper_routing_stale`: another edit got there first. Nothing was written, and the refusal's body has `revision` and `settings` with fresh values. Show them and let the person make the change again. Never retry on your own, because that could overwrite someone's edit.
 - 409 `model_unavailable`, `effort_unavailable`: a live list doesn't offer it. `message` says what it does offer. Nothing was written.

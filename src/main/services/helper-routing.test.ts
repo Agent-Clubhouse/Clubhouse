@@ -88,6 +88,9 @@ import {
   planHelperStart,
   readHelperAuto,
   readHelperRouting,
+  resolveAutoLevel,
+  resolveProviderMaximum,
+  resolveProviderMinimum,
   startDecisionRecord,
   updateHelperPresets,
 } from './helper-routing';
@@ -485,6 +488,124 @@ describe('updateHelperPresets', () => {
     expect(W.audit.filter((r) => r.after === null).map((r) => r.key)).toEqual([
       'helper_presets.codex-cli.easy', 'helper_presets.codex-cli.hard', 'helper_presets.claude-code.easy',
     ]);
+  });
+});
+
+describe('Auto minimum and maximum (#3044)', () => {
+  it('an unset minimum uses Easy and an unset maximum uses Hard, as built in', async () => {
+    expect(await resolveProviderMinimum('claude-code')).toEqual({
+      ok: true, provider: 'claude-code', level: 'minimum', model: 'haiku', effort: 'low', source: 'builtin_mapping', fallback: 'none', follows: 'easy',
+    });
+    expect(await resolveProviderMaximum('codex-cli')).toEqual({
+      ok: true, provider: 'codex-cli', level: 'maximum', model: 'gpt-6.1-sol', effort: 'high', source: 'builtin_mapping', fallback: 'none', follows: 'hard',
+    });
+  });
+
+  it('an unset minimum follows the person\'s own Easy choice', async () => {
+    W.saved = { 'claude-code': { easy: { model: 'sonnet', effort: 'medium' } } };
+    expect(await resolveProviderMinimum('claude-code')).toMatchObject({ ok: true, model: 'sonnet', effort: 'medium', source: 'custom_mapping', follows: 'easy' });
+  });
+
+  it('a saved minimum or maximum is used as chosen', async () => {
+    W.saved = { 'codex-cli': { minimum: { model: 'gpt-6-luna', effort: 'medium' }, maximum: { model: 'gpt-6.1-sol', effort: null } } };
+    const min = await resolveProviderMinimum('codex-cli');
+    expect(min).toEqual({ ok: true, provider: 'codex-cli', level: 'minimum', model: 'gpt-6-luna', effort: 'medium', source: 'custom_mapping', fallback: 'none' });
+    expect(await resolveProviderMaximum('codex-cli')).toMatchObject({ ok: true, model: 'gpt-6.1-sol', effort: null, source: 'custom_mapping' });
+  });
+
+  it('a saved minimum no longer offered falls back to Easy, and says so', async () => {
+    W.saved = { 'codex-cli': { minimum: { model: 'gone', effort: null } } };
+    expect(await resolveProviderMinimum('codex-cli')).toMatchObject({ ok: true, model: 'gpt-6-luna', effort: 'low', fallback: 'builtin_preset', follows: 'easy' });
+  });
+
+  it('a minimum a fallback list can\'t check is used, with a warning', async () => {
+    W.lists.set('codex-cli', fallback([m('old')]));
+    W.saved = { 'codex-cli': { minimum: { model: 'new-model', effort: null } } };
+    expect(await resolveProviderMinimum('codex-cli')).toMatchObject({ ok: true, model: 'new-model', fallback: 'model_unverified', warning: expect.any(String) });
+  });
+
+  it('refuses when nothing valid is left, naming why, and never picks the CLI default', async () => {
+    W.lists.set('codex-cli', live([m('gpt-6.1-terra')]));
+    W.saved = { 'codex-cli': { minimum: { model: 'gone', effort: null } } };
+    const result = await resolveProviderMinimum('codex-cli');
+    expect(result).toMatchObject({ ok: false, code: 'no_valid_mapping' });
+    if (result.ok) throw new Error('refused');
+    expect(result.message).toMatch(/saved minimum/);
+    expect(result.message).toMatch(/easy: the default/);
+  });
+
+  it('a provider without presets, or an unknown one, is auto_not_supported, so the caller picks its own fallback', async () => {
+    expect(await resolveProviderMinimum('copilot-cli')).toMatchObject({ ok: false, code: 'auto_not_supported' });
+    expect(await resolveAutoLevel('nope', 'maximum')).toMatchObject({ ok: false, code: 'auto_not_supported' });
+    expect(await resolveAutoLevel('claude-code', 'extreme' as never)).toMatchObject({ ok: false, code: 'no_valid_mapping' });
+  });
+
+  it('every level resolves, the difficulties as a helper start would', async () => {
+    for (const [level, model] of [['easy', 'haiku'], ['medium', 'sonnet'], ['hard', 'opus']] as const) {
+      const result = await resolveAutoLevel('claude-code', level);
+      expect(result).toMatchObject({ ok: true, model, source: 'builtin_mapping' });
+      expect(result).not.toHaveProperty('follows');
+    }
+  });
+
+  it('a minimum isn\'t a start_helper difficulty, so it never picks a preset there', async () => {
+    const result = await planHelperStart({ ...base, difficulty: 'minimum' });
+    expect(result).toMatchObject({ ok: true, plan: { routing: { mode: 'explicit', resolved: { difficulty: null, model: null } } } });
+  });
+
+  it('cli "auto" refuses a minimum or maximum, and reads nothing', async () => {
+    const on = { effective: true, source: 'app' as const, scopes: { app: { value: true, editable: true } } };
+    for (const difficulty of ['minimum', 'maximum', undefined]) {
+      expect(await planHelperStart({ ...base, cli: 'auto', difficulty, auto: on })).toMatchObject({ ok: false, code: 'no_valid_mapping' });
+    }
+    expect(W.listCalls).toEqual([]);
+  });
+
+  it('the page shows every level, with an unset minimum and maximum following Easy and Hard', async () => {
+    W.saved = { 'claude-code': { easy: { model: 'sonnet', effort: 'low' } } };
+    const view = (await readHelperRouting()).providers['claude-code'];
+    if (!view.autoEligible) throw new Error('eligible');
+    expect(Object.keys(view.cells)).toEqual(['minimum', 'easy', 'medium', 'hard', 'maximum']);
+    expect(view.cells.minimum).toEqual({ ...view.cells.easy, custom: null, follows: 'easy' });
+    expect(view.cells.minimum).toMatchObject({ effective: { model: 'sonnet', effort: 'low' }, source: 'custom' });
+    expect(view.cells.maximum).toMatchObject({ effective: { model: 'opus', effort: 'high' }, source: 'builtin', custom: null, follows: 'hard', state: 'valid' });
+  });
+
+  it('the page shows a saved minimum as its own, and a stale one with what is used instead', async () => {
+    W.saved = { 'codex-cli': { minimum: { model: 'gpt-6.1-terra', effort: 'low' }, maximum: { model: 'gone', effort: 'high' } } };
+    const view = (await readHelperRouting()).providers['codex-cli'];
+    if (!view.autoEligible) throw new Error('eligible');
+    expect(view.cells.minimum).toEqual({
+      effective: { model: 'gpt-6.1-terra', effort: 'low' }, source: 'custom', state: 'valid', custom: { model: 'gpt-6.1-terra', effort: 'low' },
+      builtin: { model: 'gpt-6-luna', effort: 'low' }, editable: true,
+    });
+    expect(view.cells.maximum).toMatchObject({
+      state: 'stale', staleReason: 'model_unavailable', fallback: 'builtin_preset', custom: { model: 'gone' }, effective: { model: 'gpt-6.1-sol' }, follows: 'hard',
+    });
+  });
+
+  it('saves a minimum even when it matches Easy\'s built-in, audits it, and a reset makes it follow again', async () => {
+    const write = (fields: Record<string, unknown>) => updateHelperPresets({ revision: helperRoutingRevision(), ...fields } as never, { surface: 'ui' });
+    const view = (await write({ cells: [{ provider: 'claude-code', difficulty: 'minimum', model: 'haiku', effort: 'low' }] })).providers['claude-code'];
+    expect(W.saved).toEqual({ 'claude-code': { minimum: { model: 'haiku', effort: 'low' } } });
+    if (!view.autoEligible) throw new Error('eligible');
+    expect(view.cells.minimum).not.toHaveProperty('follows');
+    expect(W.audit).toEqual([{ surface: 'ui', scope: 'app', key: 'helper_presets.claude-code.minimum', before: null, after: 'haiku/low', outcome: 'ok' }]);
+    await write({ cells: [{ provider: 'claude-code', difficulty: 'maximum', model: 'gone', effort: null }] }).catch((err: HelperRoutingError) => {
+      expect(err.code).toBe('model_unavailable');
+    });
+    expect(W.saved).toEqual({ 'claude-code': { minimum: { model: 'haiku', effort: 'low' } } });
+    const reset = (await write({ reset: { provider: 'claude-code', difficulty: 'minimum' } })).providers['claude-code'];
+    expect(W.saved).toEqual({});
+    if (!reset.autoEligible) throw new Error('eligible');
+    expect(reset.cells.minimum).toMatchObject({ custom: null, follows: 'easy' });
+  });
+
+  it('moves the revision when a minimum\'s state changes with no write', async () => {
+    W.saved = { 'codex-cli': { minimum: { model: 'gpt-6.1-terra', effort: null } } };
+    const first = (await readHelperRouting()).revision;
+    W.lists.set('codex-cli', live([m('gpt-6-luna'), m('gpt-6.1-sol')]));
+    expect((await readHelperRouting()).revision).not.toBe(first);
   });
 });
 
