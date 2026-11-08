@@ -6,35 +6,18 @@
  * pause UX, and snapshot data integrity.
  */
 import { test, expect } from '@playwright/test';
-import WebSocket from 'ws';
 import * as path from 'path';
 import * as fs from 'fs';
 import { launchDual, cleanupDual, type DualInstanceHandles } from './dual-launch';
 import {
   enableAnnexViaPreload,
   getAnnexStatus,
-  pairViaHttp,
-  connectWs,
-  connectWsPlain,
+  pairOverTls,
   waitForOpen,
   waitForMessage,
 } from './helpers';
 import { generateTestIdentity, connectMtlsWs, type TestIdentity } from './tls-test-utils';
 import { addProject, stubDialogForPath } from '../smoke-helpers';
-
-/** Connect with bearer token only (tries wss, falls back to ws). No lock overlay. */
-async function connectBearerWs(host: string, port: number, token: string): Promise<WebSocket> {
-  let ws = connectWs(host, port, token);
-  try {
-    await waitForOpen(ws, 5_000);
-    return ws;
-  } catch {
-    ws.close();
-    ws = connectWsPlain(host, port, token);
-    await waitForOpen(ws, 10_000);
-    return ws;
-  }
-}
 
 const SCREENSHOTS_DIR = path.resolve(__dirname, 'screenshots');
 fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
@@ -43,9 +26,7 @@ const FIXTURE_PROJECT = path.resolve(__dirname, '../fixtures/project-smoke');
 
 let handles: DualInstanceHandles;
 let identity: TestIdentity;
-let bearerToken: string;
 let satPort: number;
-let pairingPort: number;
 
 test.setTimeout(300_000);
 
@@ -62,20 +43,12 @@ test.beforeAll(async () => {
 
   const status = await getAnnexStatus(satellite.window);
   satPort = status.port;
-  pairingPort = status.pairingPort;
 
-  // Generate test identity and pair
+  // Generate test identity and pair over TLS (its certificate is pinned)
   identity = generateTestIdentity();
+  await pairOverTls('127.0.0.1', satPort, status.pin, identity);
 
-  const pairResult = await pairViaHttp(
-    '127.0.0.1',
-    pairingPort,
-    status.pin,
-    identity.ed25519PublicKeyBase64,
-  );
-  bearerToken = pairResult.token;
-
-  console.log(`Dual launch ready: satPort=${satPort}, pairingPort=${pairingPort}`);
+  console.log(`Dual launch ready: satPort=${satPort}`);
 });
 
 test.afterAll(async () => {
@@ -88,7 +61,7 @@ test('mTLS connection triggers lock overlay on satellite', async () => {
   const { satellite } = handles;
 
   // Connect via mTLS — server broadcasts LOCK_STATE_CHANGED { locked: true }
-  const ws = connectMtlsWs('127.0.0.1', satPort, identity, bearerToken);
+  const ws = connectMtlsWs('127.0.0.1', satPort, identity);
   try {
     await waitForOpen(ws, 10_000);
     await waitForMessage(ws, 'snapshot', 15_000);
@@ -124,7 +97,7 @@ test('mTLS connection triggers lock overlay on satellite', async () => {
 test('lock overlay Pause button toggles to paused state', async () => {
   const { satellite } = handles;
 
-  const ws = connectMtlsWs('127.0.0.1', satPort, identity, bearerToken);
+  const ws = connectMtlsWs('127.0.0.1', satPort, identity);
   try {
     await waitForOpen(ws, 10_000);
     await waitForMessage(ws, 'snapshot', 15_000);
@@ -163,7 +136,7 @@ test('lock overlay Pause button toggles to paused state', async () => {
 });
 
 test('snapshot contains satellite project data', async () => {
-  const ws = connectMtlsWs('127.0.0.1', satPort, identity, bearerToken);
+  const ws = connectMtlsWs('127.0.0.1', satPort, identity);
   try {
     await waitForOpen(ws, 10_000);
     const snapshot = await waitForMessage(ws, 'snapshot', 15_000);
@@ -190,16 +163,19 @@ test('snapshot contains satellite project data', async () => {
 test('snapshot updates when project is added', async () => {
   const { satellite } = handles;
 
-  // Get initial project count via bearer WS (no lock overlay)
-  let ws = await connectBearerWs('127.0.0.1', satPort, bearerToken);
+  // Get initial project count. Every connection is a controller, so the satellite
+  // locks while it is open; wait for the lock to clear before clicking there.
+  let ws = connectMtlsWs('127.0.0.1', satPort, identity);
   let initialCount: number;
   try {
+    await waitForOpen(ws, 10_000);
     const initialSnapshot = await waitForMessage(ws, 'snapshot', 15_000);
     const initialProjects = ((initialSnapshot.payload as any).projects as any[]) || [];
     initialCount = initialProjects.length;
   } finally {
     ws.close();
   }
+  await expect(satellite.window.locator('text=/Controlled by/')).not.toBeVisible({ timeout: 10_000 });
 
   // Add another fixture project (no lock overlay blocking clicks)
   const fixtureB = path.resolve(__dirname, '../fixtures/project-b');
@@ -213,8 +189,9 @@ test('snapshot updates when project is added', async () => {
   await satellite.window.waitForTimeout(2_000);
 
   // Reconnect to get a fresh snapshot with the new project
-  ws = await connectBearerWs('127.0.0.1', satPort, bearerToken);
+  ws = connectMtlsWs('127.0.0.1', satPort, identity);
   try {
+    await waitForOpen(ws, 10_000);
     const updatedSnapshot = await waitForMessage(ws, 'snapshot', 15_000);
     const updatedProjects = ((updatedSnapshot.payload as any).projects as any[]) || [];
 
@@ -228,29 +205,23 @@ test('snapshot updates when project is added', async () => {
 test('two mTLS connections: lock persists until both disconnect', async () => {
   const { satellite } = handles;
 
-  // Generate a second identity and pair it
+  // Generate a second identity and pair it with the current PIN (the first pairing used the last one)
   const identity2 = generateTestIdentity();
-  const status = await getAnnexStatus(satellite.window);
-  const port2 = status.pairingPort;
 
   // Unlock pairing if locked from previous tests
   await satellite.window.evaluate(async () => {
     await (window as any).clubhouse.annex.unlockPairing();
   });
 
-  const pairResult2 = await pairViaHttp(
-    '127.0.0.1',
-    port2,
-    status.pin,
-    identity2.ed25519PublicKeyBase64,
-  );
+  const status = await getAnnexStatus(satellite.window);
+  await pairOverTls('127.0.0.1', status.port, status.pin, identity2);
 
   // Connect both controllers
-  const ws1 = connectMtlsWs('127.0.0.1', satPort, identity, bearerToken);
+  const ws1 = connectMtlsWs('127.0.0.1', satPort, identity);
   await waitForOpen(ws1, 10_000);
   await waitForMessage(ws1, 'snapshot', 15_000);
 
-  const ws2 = connectMtlsWs('127.0.0.1', satPort, identity2, pairResult2.token);
+  const ws2 = connectMtlsWs('127.0.0.1', satPort, identity2);
   await waitForOpen(ws2, 10_000);
   await waitForMessage(ws2, 'snapshot', 15_000);
 

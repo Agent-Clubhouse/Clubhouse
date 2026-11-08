@@ -9,6 +9,8 @@ const mockAnnexClient = {
   getSatellites: vi.fn(async () => []),
   getDiscovered: vi.fn(async () => []),
   pairWith: vi.fn(async () => ({ success: true })),
+  pairWithLink: vi.fn(async () => ({ success: true })),
+  probeService: vi.fn(async () => ({ success: true })),
   connect: vi.fn(),
   disconnect: vi.fn(),
   retry: vi.fn(),
@@ -52,6 +54,7 @@ Object.defineProperty(globalThis, 'window', {
 import {
   useAnnexClientStore,
   initAnnexClientListener,
+  PAIRING_UNAVAILABLE_ERROR,
   type DiscoveredService,
   type SatelliteConnection,
 } from './annexClientStore';
@@ -142,7 +145,37 @@ describe('annexClientStore', () => {
     it('returns error on IPC failure', async () => {
       mockAnnexClient.pairWith.mockRejectedValueOnce(new Error('boom'));
       const result = await getState().pairWith('XX:YY:ZZ:11', '123456');
-      expect(result).toEqual({ success: false, error: 'IPC error' });
+      expect(result).toEqual({ success: false, error: PAIRING_UNAVAILABLE_ERROR });
+    });
+  });
+
+  describe('probeService', () => {
+    it('delegates to IPC and returns the certificate fingerprint', async () => {
+      mockAnnexClient.probeService.mockResolvedValueOnce({ success: true, certFingerprint: 'ab'.repeat(32) } as never);
+      const result = await getState().probeService('XX:YY:ZZ:11');
+      expect(mockAnnexClient.probeService).toHaveBeenCalledWith('XX:YY:ZZ:11');
+      expect(result).toEqual({ success: true, certFingerprint: 'ab'.repeat(32) });
+    });
+
+    it('returns a plain error on IPC failure', async () => {
+      mockAnnexClient.probeService.mockRejectedValueOnce(new Error('boom'));
+      const result = await getState().probeService('XX:YY:ZZ:11');
+      expect(result).toEqual({ success: false, error: PAIRING_UNAVAILABLE_ERROR });
+    });
+  });
+
+  describe('pairWithLink', () => {
+    it('delegates to IPC and returns the result', async () => {
+      mockAnnexClient.pairWithLink.mockResolvedValueOnce({ success: true, alias: 'Studio Mac' } as never);
+      const result = await getState().pairWithLink('clubhousego://pair?v=1');
+      expect(mockAnnexClient.pairWithLink).toHaveBeenCalledWith('clubhousego://pair?v=1');
+      expect(result).toEqual({ success: true, alias: 'Studio Mac' });
+    });
+
+    it('returns a plain error on IPC failure', async () => {
+      mockAnnexClient.pairWithLink.mockRejectedValueOnce(new Error('boom'));
+      const result = await getState().pairWithLink('clubhousego://pair?v=1');
+      expect(result).toEqual({ success: false, error: PAIRING_UNAVAILABLE_ERROR });
     });
   });
 

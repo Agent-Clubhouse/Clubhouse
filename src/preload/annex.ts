@@ -1,6 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { AnnexAgentUpdate } from '../shared/mobile-control';
+import type { AnnexPeerListing } from '../shared/types';
 
 export const annex = {
   annex: {
@@ -48,23 +49,15 @@ export const annex = {
     ipcRenderer.on(IPC.ANNEX.AGENT_UPDATED, listener);
     return () => { ipcRenderer.removeListener(IPC.ANNEX.AGENT_UPDATED, listener); };
   },
-  listPeers: () =>
+  listPeers: (): Promise<AnnexPeerListing[]> =>
     ipcRenderer.invoke(IPC.ANNEX.LIST_PEERS),
-  removePeer: (fingerprint: string) =>
+  removePeer: (fingerprint: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.ANNEX.REMOVE_PEER, fingerprint),
   removeAllPeers: () =>
     ipcRenderer.invoke(IPC.ANNEX.REMOVE_ALL_PEERS),
   unlockPairing: () =>
     ipcRenderer.invoke(IPC.ANNEX.UNLOCK_PAIRING),
-  onPeersChanged: (callback: (peers: Array<{
-    fingerprint: string;
-    publicKey: string;
-    alias: string;
-    icon: string;
-    color: string;
-    pairedAt: string;
-    lastSeen: string;
-  }>) => void) => {
+  onPeersChanged: (callback: (peers: AnnexPeerListing[]) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, peers: Parameters<typeof callback>[0]) => callback(peers);
     ipcRenderer.on(IPC.ANNEX.PEERS_CHANGED, listener);
     return () => { ipcRenderer.removeListener(IPC.ANNEX.PEERS_CHANGED, listener); };

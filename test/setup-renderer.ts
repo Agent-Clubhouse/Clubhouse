@@ -393,6 +393,8 @@ vi.stubGlobal('clubhouse', {
     getSatellites: async () => [],
     getDiscovered: async () => [],
     pairWith: async () => ({ success: false, error: 'mock' }),
+    probeService: async () => ({ success: false, error: 'mock' }),
+    pairWithLink: async () => ({ success: false, error: 'mock' }),
     connect: asyncNoop,
     disconnect: asyncNoop,
     retry: asyncNoop,

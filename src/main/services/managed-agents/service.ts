@@ -495,10 +495,16 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       const s = await state.read();
       const inTemplates = Object.values(s.templates).some((t) => listOf({ version: 1, ...t.setup }, part.kind).includes(part.id));
       if (users.length > 0 || inTemplates) {
+        // What agents get now: the installed text, or the shipped text when it was never installed here.
+        const payload = entry ? await catalog.readRevision(entry.id, entry.headRevision) : part.payload;
         let copyId = copies[part.id] && live[copies[part.id]] ? copies[part.id] : null;
+        // An older build installed the built-in again and something uses it (D100): the earlier copy is
+        // the one only while it still has that text, so an edited copy never changes another agent's text.
+        if (copyId) {
+          const copied = await catalog.readRevision(copyId, live[copyId].headRevision).catch((): null => null);
+          if (!copied || canonicalHash(copied) !== canonicalHash(payload)) copyId = null;
+        }
         if (!copyId) {
-          // What agents get now: the installed text, or the shipped text when it was never installed here.
-          const payload = entry ? await catalog.readRevision(entry.id, entry.headRevision) : part.payload;
           // A copy made before the app stopped, and never recorded: it is this one, so it isn't made twice.
           const cutShort = (await state.read()).retiredPending?.[part.id];
           const orphan = cutShort && Object.values(live).find((e) => e.kind === part.kind && e.source.kind !== 'builtin'
@@ -561,7 +567,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
           if (existing && existing.source.kind !== 'builtin') continue;
           if (existing && !existing.deletedAt) {
             const current = await catalog.readRevision(part.id, existing.headRevision).catch((): null => null);
-            if (current && canonicalHash(current) === canonicalHash(part.payload)) continue;
+            if (current && existing.name === part.name && canonicalHash(current) === canonicalHash(part.payload)) continue;
           }
           try {
             await installBuiltinAsset(catalog, {

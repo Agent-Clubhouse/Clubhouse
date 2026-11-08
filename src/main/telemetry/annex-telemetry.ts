@@ -226,6 +226,8 @@ export function recordDiscover(startMs: number, host: string | undefined, errorT
 
 const PAIR_ERRORS: Record<string, PairResult> = {
   invalid_pin: 'invalid_pin',
+  pin_expired: 'invalid_pin',
+  pin_used: 'invalid_pin',
   rate_limited: 'rate_limited',
   pairing_locked: 'locked',
   invalid_public_key: 'invalid_key',
@@ -306,7 +308,7 @@ export function connectErrorFor(text: string | undefined): ErrorType | undefined
   if (text === 'Peer certificate mismatch') return 'cert_mismatch';
   if (text === 'Incompatible Annex version') return 'protocol_incompatible';
   if (/timed? ?out/i.test(text)) return 'handshake_timeout';
-  if (/401|403|unauthorized|forbidden|authentication/i.test(text)) return 'auth_rejected';
+  if (/401|403|unauthorized|forbidden|authentication|pair again/i.test(text)) return 'auth_rejected';
   return 'ws_error';
 }
 

@@ -96,7 +96,7 @@ describe('preload IPC bridge', () => {
       settings: api.settings,
       ...Object.assign({}, ...domainSlices),
     };
-    const exposed = exposedApi.value as typeof api;
+    const exposed = exposedApi.value as Record<string, unknown>;
 
     expect(exposed).toBe(api);
     expect(Object.keys(exposed).sort()).toEqual(Object.keys(expectedApi).sort());

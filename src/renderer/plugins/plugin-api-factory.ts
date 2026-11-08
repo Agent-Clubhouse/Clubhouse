@@ -152,8 +152,8 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
   };
 
   // The Hub was removed, and `api.hub` with it, from API 0.9. A plugin on an
-  // older API that only reads it still gets the empty namespace it always had,
-  // until those versions stop loading (#2947 removes this).
+  // older API (0.7 or 0.8) that only reads it still gets the empty namespace
+  // it always had. Keep this until 0.7 and 0.8 are removed (#2757).
   if ((manifest?.engine?.api ?? 0.9) < 0.9) {
     Object.defineProperty(api, 'hub', { value: Object.freeze({}), enumerable: true });
   }

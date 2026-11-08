@@ -1097,8 +1097,14 @@ export interface AnnexStatus {
 export type AnnexPeerRole = 'controller' | 'satellite';
 
 export interface AnnexPeer {
-  /** Certificate bound during HTTPS PIN pairing; required by mobile control. */
+  /**
+   * SHA-256 of the peer's TLS certificate, pinned during HTTPS PIN pairing.
+   * Every connection, either way, must present exactly this certificate. An
+   * entry without one is from an older version and needs pairing again.
+   */
   tlsCertificateFingerprint?: string;
+  /** The satellite's certificate (PEM), stored on our record of a satellite so outbound connections can pin it. */
+  tlsCertificatePem?: string;
   /** SHA-256 fingerprint of the peer's public key */
   fingerprint: string;
   /** Base64-encoded Ed25519 public key (DER/SPKI) */
@@ -1117,9 +1123,15 @@ export interface AnnexPeer {
    * The role of this peer relative to us:
    * - 'controller': This peer controls us (we are their satellite)
    * - 'satellite': This peer is our satellite (we control them)
-   * Legacy peers without a role are treated as 'satellite' for backward compat.
+   * Entries without a role are from an older version and need pairing again.
    */
   role?: AnnexPeerRole;
+}
+
+/** A peer as Settings lists it. */
+export interface AnnexPeerListing extends AnnexPeer {
+  /** Older pairing (or one we can't verify): refused until it's paired again. */
+  needsPairing: boolean;
 }
 
 // ── Annex client (controller) types ───────────────────────────────────
@@ -1142,6 +1154,8 @@ export interface SatelliteConnection {
   lastError: string | null;
   /** This connection's satellite can't build a snapshot yet, and is retrying. */
   snapshotUnavailable?: boolean;
+  /** The pairing can't be used (older version, removed on the other side, or expired certificate). Pair again to connect. */
+  needsPairing?: boolean;
 }
 
 /** Summary of an installed plugin sent in the satellite snapshot. */
