@@ -40,7 +40,7 @@ function strings(value: unknown, seen = new Set<unknown>()): string[] {
 
 describe('convertRecordLines (#2920)', () => {
   it('builds spans, log records and metrics from a v4 run, and never puts out diag lines, detail or unknown attributes', () => {
-    const result = convertRecordLines([session(), span, event, exception, counter(T0, 2), gauge, histogram(T0), diag, ...bookkeeping, '{"torn'], { resource, temporality: 'delta', scrub });
+    const result = convertRecordLines([session(), span, event, exception, counter(T0, 2), gauge, histogram(T0), diag, ...bookkeeping, '{"torn'], { resource: () => resource, temporality: 'delta', scrub });
     expect(result.skipped).toBe(4);
 
     expect(result.spans).toHaveLength(1);
@@ -78,7 +78,7 @@ describe('convertRecordLines (#2920)', () => {
 
   it('turns per-window counters and histograms into running totals for a cumulative destination', () => {
     const lines = [session(), counter(T0, 2), counter(T0 + 60_000, 3), histogram(T0), histogram(T0 + 60_000)];
-    const [{ metrics }] = convertRecordLines(lines, { resource, temporality: 'cumulative', scrub }).metrics.scopeMetrics;
+    const [{ metrics }] = convertRecordLines(lines, { resource: () => resource, temporality: 'cumulative', scrub }).metrics.scopeMetrics;
     const [sessions, writes] = metrics;
     expect(sessions.aggregationTemporality).toBe(AggregationTemporality.CUMULATIVE);
     expect(sessions.dataPoints.map((p) => p.value)).toEqual([2, 5]);
@@ -88,10 +88,10 @@ describe('convertRecordLines (#2920)', () => {
 
   it('converts a v3 run on the documented assumption, and skips a run recorded some other way', () => {
     const v3 = session({ v: 3, scope: undefined, temporality: undefined });
-    expect(convertRecordLines([v3, counter(T0, 1), event], { resource, temporality: 'delta', scrub })).toMatchObject({ skipped: 0, logs: [expect.anything()] });
+    expect(convertRecordLines([v3, counter(T0, 1), event], { resource: () => resource, temporality: 'delta', scrub })).toMatchObject({ skipped: 0, logs: [expect.anything()] });
     // A run with no session line (a later chunk read on its own) is a v3-or-later run: the same assumption.
-    expect(convertRecordLines([counter(T0, 1)], { resource, temporality: 'delta', scrub }).skipped).toBe(0);
-    const other = convertRecordLines([session({ v: 5, temporality: 'cumulative' }), counter(T0, 1), event], { resource, temporality: 'delta', scrub });
+    expect(convertRecordLines([counter(T0, 1)], { resource: () => resource, temporality: 'delta', scrub }).skipped).toBe(0);
+    const other = convertRecordLines([session({ v: 5, temporality: 'cumulative' }), counter(T0, 1), event], { resource: () => resource, temporality: 'delta', scrub });
     expect(other).toMatchObject({ skipped: 2, spans: [], logs: [] });
     expect(other.metrics.scopeMetrics).toEqual([]);
   });
@@ -114,7 +114,7 @@ describe('convertRecordLines (#2920)', () => {
       expect(file).toContain(DETAIL_CANARY);
       expect(file).toContain(DIAG_CANARY);
       expect(file).not.toContain(RAW_ID);
-      const result = convertRecordLines(lines, { resource, temporality: 'delta', scrub });
+      const result = convertRecordLines(lines, { resource: () => resource, temporality: 'delta', scrub });
       expect(result.logs.map((l) => l.eventName)).toEqual(['clubhouse.audit.dispatcher_control']);
       const all = strings(result).join('\n');
       expect(all).not.toContain(DETAIL_CANARY);
@@ -123,6 +123,68 @@ describe('convertRecordLines (#2920)', () => {
       expect(result.logs[0].attributes['clubhouse.audit.actor.id_hash']).toMatch(/^[0-9a-f]{16}$/);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('convertRecordLines: what each destination gets (#2920 review)', () => {
+  const report = JSON.stringify({ t: 'event', ts: '2026-11-08T10:00:05.000Z', name: 'clubhouse.feedback.submitted', severity: 'info', attrs: { 'feedback.report.id': '11111111-2222-4333-8444-555555555555' } });
+
+  it('leaves out attributes only the developer destination may get, unless it is the developer destination', () => {
+    const other = convertRecordLines([session(), report], { resource: () => resource, temporality: 'delta', scrub });
+    expect(other.logs[0].attributes).not.toHaveProperty('feedback.report.id');
+    const dev = convertRecordLines([session(), report], { resource: () => resource, temporality: 'delta', scrub, framebriar: true });
+    expect(dev.logs[0].attributes['feedback.report.id']).toBe('11111111-2222-4333-8444-555555555555');
+  });
+
+  it("copies the destination's item attributes onto spans and log records, never metrics", () => {
+    const user = { 'enduser.pseudo.id': '99999999-8888-4777-8666-555555555555' };
+    const result = convertRecordLines([session(), span, event, exception, counter(T0, 1)], { resource: () => resource, temporality: 'delta', scrub, itemAttributes: user });
+    expect(result.spans[0].attributes).toMatchObject(user);
+    for (const log of result.logs) expect(log.attributes).toMatchObject(user);
+    expect(result.metrics.scopeMetrics[0].metrics[0].dataPoints[0].attributes).not.toHaveProperty('enduser.pseudo.id');
+  });
+
+  it("gives each run its own resource from its session line, and starts cumulative totals again at a new run", () => {
+    const runs: unknown[] = [];
+    const lines = [session({ appVersion: '1.0.0' }), counter(T0, 2), session({ appVersion: '1.1.0', serviceInstanceId: 'inst-2' }), counter(T0 + 120_000, 3), event];
+    const result = convertRecordLines(lines, { resource: (run) => { runs.push(run); return resourceFromAttributes({ 'service.version': run?.appVersion ?? 'unknown' }); }, temporality: 'cumulative', scrub });
+    expect(runs).toEqual([{ appVersion: '1.0.0', uiChrome: 'v2', serviceInstanceId: undefined }, { appVersion: '1.1.0', uiChrome: 'v2', serviceInstanceId: 'inst-2' }]);
+    expect(result.logs[0].resource.attributes['service.version']).toBe('1.1.0');
+    expect(result.metrics.scopeMetrics[0].metrics[0].dataPoints.map((p) => p.value)).toEqual([2, 3]);
+  });
+
+  it('marks a local parent as local, and only a root span under a traceparent as remote', () => {
+    const child = JSON.stringify({ ...JSON.parse(span), name: 'clubhouse.app.startup.load_settings' });
+    const [root, inner] = convertRecordLines([session(), span, child], { resource: () => resource, temporality: 'delta', scrub }).spans;
+    expect(root.parentSpanContext?.isRemote).toBe(true);
+    expect(inner.parentSpanContext?.isRemote).toBe(false);
+  });
+
+  it('skips metrics for a destination that gets none, and marks the overflow series', () => {
+    expect(convertRecordLines([session(), counter(T0, 1)], { resource: () => resource, temporality: 'delta', scrub, metrics: false })).toMatchObject({ skipped: 1, metrics: { scopeMetrics: [] } });
+    const overflow = JSON.stringify({ ...JSON.parse(counter(T0, 4)), attrs: {}, overflow: true });
+    const [{ metrics }] = convertRecordLines([session(), overflow], { resource: () => resource, temporality: 'delta', scrub }).metrics.scopeMetrics;
+    expect(metrics[0].dataPoints[0].attributes).toEqual({ 'otel.metric.overflow': true });
+  });
+
+  it("matches the live exception record, which has no custom event name", () => {
+    const [ex] = convertRecordLines([session(), exception], { resource: () => resource, temporality: 'delta', scrub }).logs;
+    expect(ex.attributes).not.toHaveProperty('microsoft.custom_event.name');
+  });
+
+  it('refuses names that are only inherited object keys, and format versions it does not know', () => {
+    const forged = [
+      JSON.stringify({ ...JSON.parse(span), name: 'constructor' }),
+      JSON.stringify({ ...JSON.parse(event), name: 'toString', severity: 'constructor' }),
+      JSON.stringify({ ...JSON.parse(counter(T0, 1)), name: '__proto__' }),
+    ];
+    expect(convertRecordLines([session(), ...forged], { resource: () => resource, temporality: 'delta', scrub })).toMatchObject({ skipped: 3, spans: [], logs: [] });
+    // A known event with an inherited severity name falls back to info.
+    const odd = JSON.stringify({ ...JSON.parse(event), severity: 'constructor' });
+    expect(convertRecordLines([session(), odd], { resource: () => resource, temporality: 'delta', scrub }).logs[0].severityText).toBe('INFO');
+    for (const v of [2, 5]) {
+      expect(convertRecordLines([session({ v }), counter(T0, 1), event], { resource: () => resource, temporality: 'delta', scrub })).toMatchObject({ skipped: 2, logs: [] });
     }
   });
 });
@@ -141,7 +203,7 @@ describe('replay through the real OTLP exporters (#2920)', () => {
     await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
     const { port } = server.address() as { port: number };
     const base = `http://127.0.0.1:${port}`;
-    const result = convertRecordLines([session(), span, event, exception, counter(T0, 2), gauge, histogram(T0), diag], { resource, temporality: 'cumulative', scrub });
+    const result = convertRecordLines([session(), span, event, exception, counter(T0, 2), gauge, histogram(T0), diag], { resource: () => resource, temporality: 'cumulative', scrub });
 
     const done = (exp: { export: (items: never, cb: (r: { code: number; error?: Error }) => void) => void }, items: unknown) =>
       new Promise<number>((resolve) => exp.export(items as never, (r) => resolve(r.code)));
@@ -150,6 +212,17 @@ describe('replay through the real OTLP exporters (#2920)', () => {
     expect(await done(new OTLPMetricExporter({ url: `${base}/v1/metrics` }), result.metrics)).toBe(0);
 
     expect(bodies.map((b) => b.url).sort()).toEqual(['/v1/logs', '/v1/metrics', '/v1/traces']);
+    const json = (url: string) => JSON.parse(bodies.find((b) => b.url === url)!.body);
+    const traces = json('/v1/traces');
+    const otlpSpan = traces.resourceSpans[0].scopeSpans[0].spans[0];
+    expect(traces.resourceSpans[0].scopeSpans[0].scope.name).toBe('clubhouse');
+    expect(otlpSpan.name).toBe('clubhouse.annex.rest');
+    expect(otlpSpan.status.code).toBe(2);
+    const logs = json('/v1/logs').resourceLogs[0].scopeLogs[0].logRecords;
+    expect(logs.map((l: { eventName?: string; body: { stringValue: string } }) => l.eventName ?? l.body.stringValue)).toEqual(['clubhouse.audit.setting', 'clubhouse.exception']);
+    const sums = json('/v1/metrics').resourceMetrics[0].scopeMetrics[0].metrics.find((m: { name: string }) => m.name === 'clubhouse.app.sessions');
+    expect(sums.sum.isMonotonic).toBe(true);
+    expect(sums.sum.aggregationTemporality).toBe(2);
     const all = bodies.map((b) => b.body).join('\n');
     expect(all).toContain('clubhouse.annex.rest');
     expect(all).toContain('clubhouse.audit.setting');
