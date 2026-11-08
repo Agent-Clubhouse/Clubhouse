@@ -24,6 +24,8 @@ import * as zlib from 'zlib';
 import selfsigned from 'selfsigned';
 import { createDisposableProfile } from './app-profile';
 import { launchApp } from './launch';
+import { isNewLayout } from './layout';
+import { assertRunLayout } from './smoke-helpers';
 
 interface Received {
   url: string;
@@ -125,7 +127,7 @@ test.describe('Telemetry export', () => {
   test('OTLP: sends clubhouse.app.sessions with the hand-built resource on quit', async () => {
     const mock = await startMockIngestion();
     const { electronApp, window, userDataDir } = await launchApp({
-      experimental: { newChrome: false, telemetry: true },
+      experimental: { telemetry: true },
       userDataFiles: {
         'telemetry-settings.json': {
           enabled: true,
@@ -140,6 +142,8 @@ test.describe('Telemetry export', () => {
     });
     try {
       await expect(window.locator('body')).toBeVisible();
+      await assertRunLayout(window);
+      const newLayout = await isNewLayout(window);
       await quitAndWait(electronApp);
 
       const metrics = mock.received.filter((r) => r.url === '/v1/metrics');
@@ -151,6 +155,8 @@ test.describe('Telemetry export', () => {
       expect(body).toContain('clubhouse.startup.kind');
       expect(body).toContain('service.instance.id');
       expect(body).toContain('clubhouse.install.id');
+      // The resource names the shell this session runs: v2 is the new layout, legacy is classic.
+      expect(body).toContain(`{"key":"clubhouse.ui.chrome","value":{"stringValue":"${newLayout ? 'v2' : 'legacy'}"}}`);
       expectNoMachineIdentifiers(mock.received);
 
       // The install id was generated on first enable and persisted 0600.
@@ -190,7 +196,7 @@ test.describe('Telemetry export', () => {
     let launched: Awaited<ReturnType<typeof launchApp>> | undefined;
     try {
       launched = await launchApp({
-        experimental: { newChrome: false, telemetry: true },
+        experimental: { telemetry: true },
         // Unpackaged-only override of the App Insights host allowlist (settings.ts).
         env: { CLUBHOUSE_TELEMETRY_TEST_AZURE_HOST: `127.0.0.1:${mock.port}` },
         userDataFiles: {
@@ -207,6 +213,7 @@ test.describe('Telemetry export', () => {
         },
       });
       await expect(launched.window.locator('body')).toBeVisible();
+      await assertRunLayout(launched.window);
       const encryption = await secureStorageAvailable(launched.electronApp);
       await quitAndWait(launched.electronApp);
 
@@ -234,7 +241,7 @@ test.describe('Telemetry export', () => {
   test('Phase 1 file with the flag off: plaintext secret is still migrated, the destination ends up off, nothing exported', async () => {
     const mock = await startMockIngestion();
     const { electronApp, window, userDataDir } = await launchApp({
-      experimental: { newChrome: false, telemetry: false },
+      experimental: { telemetry: false },
       userDataFiles: {
         'telemetry-settings.json': {
           enabled: true,
@@ -249,6 +256,7 @@ test.describe('Telemetry export', () => {
     });
     try {
       await expect(window.locator('body')).toBeVisible();
+      await assertRunLayout(window);
       const encryption = await secureStorageAvailable(electronApp);
       if (encryption) {
         // Migration runs after ready regardless of flags; wait for it.
@@ -268,7 +276,7 @@ test.describe('Telemetry export', () => {
     // Phase 3a: renderer facade → telemetry:emit → main re-validation → SDK.
     const mock = await startMockIngestion();
     const { electronApp, window, userDataDir } = await launchApp({
-      experimental: { newChrome: false, telemetry: true },
+      experimental: { telemetry: true },
       userDataFiles: {
         'telemetry-settings.json': {
           enabled: true,
@@ -282,6 +290,7 @@ test.describe('Telemetry export', () => {
     });
     try {
       await expect(window.locator('body')).toBeVisible();
+      await assertRunLayout(window);
       // Wait until main has told this renderer that telemetry is on.
       await expect
         .poll(() => window.evaluate(() => window.clubhouse.telemetry.getState().then((s) => s.enabled)), { timeout: 15_000 })
@@ -312,7 +321,7 @@ test.describe('Telemetry export', () => {
     // Phase 3b: startup ends on renderer-ready; shutdown is recorded before the final flush.
     const mock = await startMockIngestion();
     const { electronApp, window, userDataDir } = await launchApp({
-      experimental: { newChrome: false, telemetry: true },
+      experimental: { telemetry: true },
       userDataFiles: {
         'telemetry-settings.json': {
           enabled: true,
@@ -326,6 +335,7 @@ test.describe('Telemetry export', () => {
     });
     try {
       await expect(window.locator('body')).toBeVisible();
+      await assertRunLayout(window);
       // The startup span is exported once initApp() reports ready and the exporter batch (5 s) runs.
       const tracesBody = () => mock.received.filter((r) => r.url === '/v1/traces').map((r) => r.body).join('\n');
       const logsBody = () => mock.received.filter((r) => r.url === '/v1/logs').map((r) => r.body).join('\n');
@@ -495,9 +505,10 @@ test.describe('Telemetry export', () => {
   });
 
   test('flag on but not enabled: nothing exported and no install id created', async () => {
-    const { electronApp, window, userDataDir } = await launchApp({ experimental: { newChrome: false, telemetry: true } });
+    const { electronApp, window, userDataDir } = await launchApp({ experimental: { telemetry: true } });
     try {
       await expect(window.locator('body')).toBeVisible();
+      await assertRunLayout(window);
       await quitAndWait(electronApp);
       expect(fs.existsSync(path.join(userDataDir!, 'telemetry-settings.json'))).toBe(false);
       expect(fs.existsSync(path.join(userDataDir!, '.clubhouse', 'telemetry'))).toBe(false);

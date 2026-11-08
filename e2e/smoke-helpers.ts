@@ -91,11 +91,14 @@ export async function clickExplorerTab(electronApp: ElectronApp, window: Page, t
  */
 async function clickTitleTab(window: Page, testId: string) {
   const tab = window.getByTestId(testId);
+  const more = window.getByTestId('title-more');
   await expect(async () => {
-    const more = window.getByTestId('title-more');
-    if (!(await tab.isVisible()) && await more.isVisible()) await more.click();
+    if (!(await tab.isVisible()) && await more.isVisible()) await more.click({ timeout: 2_000 });
     await tab.click({ timeout: 2_000 });
   }).toPass({ timeout: 20_000 });
+  // If the tab moved back into the row while More was open, the menu is still
+  // open over the pane; close it.
+  if (await more.isVisible() && (await more.getAttribute('aria-expanded')) === 'true') await more.click({ timeout: 2_000 });
 }
 
 // ---------------------------------------------------------------------------

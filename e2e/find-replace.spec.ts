@@ -8,12 +8,24 @@
  * Uses a dedicated fixture (project-find-replace) with a sample.ts file
  * containing known, repeated tokens for predictable match counts.
  *
+ * Runs on the new layout, and on classic in the Classic layout E2E job
+ * (#2843). Only opening the file differs: on the new layout the Files tab's
+ * tree takes over the sidebar. The editor and its find widget are shared.
+ *
  * NOTE: Cmd+H is intercepted by macOS to hide the app, so replace mode
  * is tested via Cmd+Option+F and the Toggle Replace button instead.
  */
 import { test, expect, _electron as electron, Page } from '@playwright/test';
 import * as path from 'path';
 import { launchApp } from './launch';
+import { isNewLayout } from './layout';
+import {
+  addProject,
+  assertActiveProject,
+  assertNotBlankScreen,
+  assertRunLayout,
+  clickExplorerTab,
+} from './smoke-helpers';
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
@@ -27,49 +39,6 @@ test.describe.configure({ mode: 'serial' });
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-async function stubDialogForPath(dirPath: string) {
-  await electronApp.evaluate(
-    async ({ dialog, BrowserWindow }, fixturePath) => {
-      const win =
-        BrowserWindow.getAllWindows().find(
-          (w) => !w.webContents.getURL().startsWith('devtools://'),
-        ) ?? BrowserWindow.getAllWindows()[0] ?? null;
-      BrowserWindow.getFocusedWindow = () => win;
-      dialog.showOpenDialog = async () => ({
-        canceled: false,
-        filePaths: [fixturePath],
-      });
-    },
-    dirPath,
-  );
-}
-
-async function addProject(dirPath: string) {
-  await stubDialogForPath(dirPath);
-  const addBtn = window.locator('[data-testid="nav-add-project"]');
-  await addBtn.click();
-  const name = path.basename(dirPath);
-  await expect(window.locator(`text=${name}`).first()).toBeVisible({
-    timeout: 10_000,
-  });
-}
-
-async function clickExplorerTab(testId: string) {
-  await window.waitForSelector(`[data-testid="${testId}"]`, { timeout: 10_000 });
-  await window.evaluate((tid) => {
-    const el = document.querySelector(`[data-testid="${tid}"]`) as HTMLElement;
-    if (el) el.click();
-  }, testId);
-  await window.waitForTimeout(500);
-}
-
-async function assertNotBlankScreen() {
-  const root = window.locator('#root');
-  await expect(root).toBeVisible({ timeout: 5_000 });
-  const childCount = await root.evaluate((el) => el.children.length);
-  expect(childCount).toBeGreaterThan(0);
-}
 
 /** Focus the Monaco editor by clicking its view lines area. */
 async function focusEditor() {
@@ -116,7 +85,8 @@ test.beforeAll(async () => {
   // attempt. Playwright restarts this worker and replays the whole file on
   // retry, so reusing the default Electron profile can restore a stale
   // project/tab/editor model and make the replay start midway through state.
-  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
+  ({ electronApp, window } = await launchApp());
+  await assertRunLayout(window);
   // Ensure the window is wide enough for Monaco's find widget to show all
   // elements (matchesCount, toggle buttons). With the minimap enabled the
   // editor viewport is narrower and Monaco hides these at small widths.
@@ -127,7 +97,8 @@ test.beforeAll(async () => {
     win?.setSize(1280, 800);
   });
   await window.waitForTimeout(500);
-  await addProject(FIXTURE_DIR);
+  await addProject(electronApp, window, FIXTURE_DIR);
+  await assertActiveProject(window, path.basename(FIXTURE_DIR));
   await window.waitForTimeout(1_000);
 });
 
@@ -141,12 +112,19 @@ test.afterAll(async () => {
 
 test.describe('Find Widget Activation', () => {
   test('navigate to Files tab and open sample.ts in editor', async () => {
-    await clickExplorerTab('explorer-tab-plugin:files');
+    await clickExplorerTab(electronApp, window, 'explorer-tab-plugin:files');
+    // The active tab is in the title bar's row on the new layout, never in More.
     const filesTab = window.locator('[data-testid="explorer-tab-plugin:files"]');
     await expect(filesTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
 
-    // Click on sample.ts in the file tree
-    const fileNode = window.locator('span:has-text("sample.ts")').first();
+    // The Files tree: the accessory column on classic. On the new layout it
+    // takes over the sidebar in place of the project tree.
+    let fileTree = window.locator('[role="tree"]');
+    if (await isNewLayout(window)) {
+      await expect(window.getByTestId('project-tree')).toBeHidden({ timeout: 10_000 });
+      fileTree = window.getByTestId('sidebar-list').locator('[role="tree"]');
+    }
+    const fileNode = fileTree.locator('[role="treeitem"][data-path$="sample.ts"]');
     await expect(fileNode).toBeVisible({ timeout: 10_000 });
     await fileNode.click();
     await window.waitForTimeout(500);
@@ -305,8 +283,8 @@ test.describe('Replace Functionality', () => {
     await replaceBtn.click();
     await window.waitForTimeout(500);
 
-    // Dirty indicator should appear (orange dot in header)
-    const dirtyDot = window.locator('.bg-ctp-warning');
+    // Dirty indicator should appear (the orange dot on the file's tab)
+    const dirtyDot = window.getByTestId('files-tab-strip').getByTitle('Unsaved changes');
     await expect(dirtyDot).toBeVisible({ timeout: 5_000 });
   });
 
@@ -319,7 +297,7 @@ test.describe('Replace Functionality', () => {
     await window.waitForTimeout(500);
 
     // Dirty state should clear since we're back to original
-    const dirtyDot = window.locator('.bg-ctp-warning');
+    const dirtyDot = window.getByTestId('files-tab-strip').getByTitle('Unsaved changes');
     await expect(dirtyDot).not.toBeVisible({ timeout: 5_000 });
   });
 });
@@ -359,7 +337,7 @@ test.describe('Multi-cursor Find Keybindings', () => {
     await window.keyboard.press('ControlOrMeta+d');
     await window.waitForTimeout(300);
 
-    await assertNotBlankScreen();
+    await assertNotBlankScreen(window);
 
     // Escape to deselect any multi-cursors
     await window.keyboard.press('Escape');
@@ -372,7 +350,7 @@ test.describe('Multi-cursor Find Keybindings', () => {
     await window.keyboard.press('ControlOrMeta+Shift+l');
     await window.waitForTimeout(500);
 
-    await assertNotBlankScreen();
+    await assertNotBlankScreen(window);
 
     // Escape to deselect
     await window.keyboard.press('Escape');

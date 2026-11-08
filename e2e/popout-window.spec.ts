@@ -9,12 +9,18 @@
  * - Track pop-out window lifecycle via LIST_POPOUTS
  *
  * Addresses: GitHub Issue #234
+ *
+ * Runs on the new layout, and on classic in the Classic layout E2E job (#2843).
+ * A pop-out renders the same test ids on both, with the new layout's bare
+ * title bar on the new one. In the main window the new layout puts sleeping
+ * agents in their project's sleeping fold, which revealAgent opens.
  */
 import { test, expect, _electron as electron, Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 
 import { launchApp } from './launch';
+import { addProject, assertRunLayout, projectIdFor, revealAgent } from './smoke-helpers';
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let mainWindow: Page;
@@ -27,33 +33,6 @@ const AGENTS_JSON = path.join(FIXTURE_DIR, '.clubhouse', 'agents.json');
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-async function stubDialogForPath(dirPath: string) {
-  await electronApp.evaluate(
-    async ({ dialog, BrowserWindow }, fixturePath) => {
-      const win =
-        BrowserWindow.getAllWindows().find(
-          (w) => !w.webContents.getURL().startsWith('devtools://'),
-        ) ?? BrowserWindow.getAllWindows()[0] ?? null;
-      BrowserWindow.getFocusedWindow = () => win;
-      dialog.showOpenDialog = async () => ({
-        canceled: false,
-        filePaths: [fixturePath],
-      });
-    },
-    dirPath,
-  );
-}
-
-async function addProject(dirPath: string) {
-  await stubDialogForPath(dirPath);
-  const addBtn = mainWindow.locator('[data-testid="nav-add-project"]');
-  await addBtn.click();
-  const name = path.basename(dirPath);
-  await expect(mainWindow.locator(`text=${name}`).first()).toBeVisible({
-    timeout: 10_000,
-  });
-}
 
 function writeAgentsJson(
   agents: Array<{ id: string; name: string; color: string }>,
@@ -127,26 +106,17 @@ async function createPopout(params: {
  * Get the project ID that was assigned to the fixture project.
  */
 async function getProjectId(): Promise<string> {
-  return mainWindow.evaluate(() => {
-    // The project store is a Zustand store — access its state directly
-    // from the renderer's window object.  Since the store is module-scoped
-    // and not on window, we use the IPC API to list projects.
-    return (window as any).clubhouse.project.list();
-  }).then((projects: Array<{ id: string; path: string }>) => {
-    const fixture = projects.find((p: any) =>
-      p.path.endsWith('project-b'),
-    );
-    return fixture?.id ?? '';
-  });
+  return projectIdFor(mainWindow, FIXTURE_DIR);
 }
 
+const AGENT_IDS = ['popout_agent_1', 'popout_agent_2', 'popout_agent_3'];
+
 /**
- * Wait for durable agents to appear in the main window store.
+ * Wait for the seeded durable agents to show in the main window's sidebar.
+ * On the new layout they are in the sleeping fold, which this opens.
  */
 async function waitForDurableAgents() {
-  await expect(
-    mainWindow.locator('[data-testid^="durable-drag-"]').first(),
-  ).toBeVisible({ timeout: 15_000 });
+  for (const id of AGENT_IDS) await revealAgent(mainWindow, id, 15_000);
 }
 
 /**
@@ -170,8 +140,9 @@ test.beforeAll(async () => {
   ]);
 
   // These cover the CLI view in a pop-out: a fake PTY never answers as a chat runtime.
-  ({ electronApp, window: mainWindow } = await launchApp({ experimental: { newChrome: false, chat: false } }));
-  await addProject(FIXTURE_DIR);
+  ({ electronApp, window: mainWindow } = await launchApp({ experimental: { chat: false } }));
+  await assertRunLayout(mainWindow);
+  await addProject(electronApp, mainWindow, FIXTURE_DIR);
   await waitForDurableAgents();
 });
 
@@ -205,6 +176,10 @@ test.describe('Pop-out Window Creation', () => {
       'alpha-popout',
       { timeout: 5_000 },
     );
+
+    // A pop-out uses the main window's layout (its bare title bar on the new
+    // layout); both bars keep this test id.
+    await expect(page.locator('[data-testid="popout-title-bar"]')).toBeVisible();
 
     // Clean up
     await mainWindow.evaluate(
@@ -421,9 +396,8 @@ test.describe('Agent State Snapshot Sync', () => {
     });
 
     // Verify the main window also shows the same agent
-    await expect(
-      mainWindow.locator('[data-agent-name="alpha-popout"]').first(),
-    ).toBeVisible({ timeout: 5_000 });
+    const mainRow = await revealAgent(mainWindow, 'popout_agent_1', 10_000);
+    await expect(mainRow).toHaveAttribute('data-agent-name', 'alpha-popout');
 
     // Pop-out should show the same agent name
     await expect(page.locator('[data-testid="popout-agent-name"]')).toContainText(
@@ -626,11 +600,13 @@ test.describe('Main Window Independence', () => {
   test('closing pop-out does not affect main window agent list', async () => {
     // Verify agents are visible in main window before pop-out
     const agentNames = ['alpha-popout', 'beta-popout', 'gamma-popout'];
-    for (const name of agentNames) {
-      await expect(
-        mainWindow.locator(`[data-agent-name="${name}"]`).first(),
-      ).toBeVisible({ timeout: 5_000 });
-    }
+    const expectAgentRows = async () => {
+      for (const [i, id] of AGENT_IDS.entries()) {
+        const row = await revealAgent(mainWindow, id, 10_000);
+        await expect(row).toHaveAttribute('data-agent-name', agentNames[i]);
+      }
+    };
+    await expectAgentRows();
 
     const projectId = await getProjectId();
     const { page, windowId } = await createPopout({
@@ -652,11 +628,7 @@ test.describe('Main Window Independence', () => {
     await mainWindow.waitForTimeout(500);
 
     // Main window agents should still be intact
-    for (const name of agentNames) {
-      await expect(
-        mainWindow.locator(`[data-agent-name="${name}"]`).first(),
-      ).toBeVisible({ timeout: 5_000 });
-    }
+    await expectAgentRows();
   });
 
   test('closing pop-out does not remove agents from main window store', async () => {
@@ -700,9 +672,7 @@ test.describe('Main Window Independence', () => {
     const projectId = await getProjectId();
 
     // Verify agents are visible before pop-out
-    await expect(
-      mainWindow.locator('[data-agent-name="alpha-popout"]').first(),
-    ).toBeVisible({ timeout: 5_000 });
+    await revealAgent(mainWindow, 'popout_agent_1', 10_000);
 
     const { page, windowId } = await createPopout({
       type: 'agent',
@@ -720,22 +690,21 @@ test.describe('Main Window Independence', () => {
     );
     await mainWindow.waitForTimeout(500);
 
-    // Agent list should still be visible and interactable
+    // Agent list should still be visible and interactable. Both layouts keep
+    // the agent-list test id: the agent list on classic, the project tree on
+    // the new layout.
     const agentList = mainWindow.locator('[data-testid="agent-list"]');
     await expect(agentList).toBeVisible({ timeout: 5_000 });
 
-    // Clicking on an agent should still work (sets it active)
-    const agentItem = mainWindow.locator('[data-testid="agent-item-popout_agent_1"]');
-    if (await agentItem.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await agentItem.click();
-      // Agent should still be responsive — no error or crash
-      await expect(agentItem).toBeVisible();
-    }
+    // Clicking on an agent still selects it, and the main view shows the
+    // sleeping agent with its Wake button.
+    const agentItem = await revealAgent(mainWindow, 'popout_agent_1', 10_000);
+    await agentItem.click();
+    await expect(agentItem).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
+    await expect(mainWindow.locator('[data-testid="wake-button"]')).toBeVisible({ timeout: 5_000 });
 
     // Agent data should remain intact
-    await expect(
-      mainWindow.locator('[data-agent-name="alpha-popout"]').first(),
-    ).toBeVisible({ timeout: 5_000 });
+    await expect(agentItem).toHaveAttribute('data-agent-name', 'alpha-popout');
   });
 });
 

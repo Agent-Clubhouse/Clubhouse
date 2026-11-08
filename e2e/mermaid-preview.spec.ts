@@ -1,13 +1,14 @@
 import { test, expect } from '@playwright/test';
 import * as path from 'path';
 import { launchApp } from './launch';
-import { clickExplorerTab } from './smoke-helpers';
+import { assertRunLayout, clickExplorerTab } from './smoke-helpers';
 
 // Exercise the real lazy-loaded Mermaid bundle in Electron: component tests
 // mock Mermaid and cannot catch packaging or browser API incompatibilities.
 test('markdown preview renders diagrams and preserves invalid source', async () => {
-  const { electronApp, window } = await launchApp({ experimental: { newChrome: false } });
+  const { electronApp, window } = await launchApp();
   try {
+    await assertRunLayout(window);
     const fixturePath = path.resolve(__dirname, 'fixtures/project-mermaid');
     await electronApp.evaluate(({ dialog, BrowserWindow }, dir) => {
       const win = BrowserWindow.getAllWindows().find(
@@ -19,7 +20,8 @@ test('markdown preview renders diagrams and preserves invalid source', async () 
 
     await window.getByTestId('nav-add-project').click();
     await clickExplorerTab(electronApp, window, 'explorer-tab-plugin:files');
-    await window.getByText('diagrams.md', { exact: true }).click();
+    // The Files tree: the accessory column on classic, the sidebar on the new layout.
+    await window.locator('[role="treeitem"][data-path$="diagrams.md"]').click();
 
     const diagrams = window.getByTestId('mermaid-diagram');
     await expect(diagrams).toHaveCount(4, { timeout: 30_000 });

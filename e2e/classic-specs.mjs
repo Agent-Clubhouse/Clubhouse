@@ -19,17 +19,14 @@
 
 export const CLASSIC_LAYOUT_ENV = 'CLUBHOUSE_E2E_LAYOUT';
 
-/** Run by the Classic layout E2E job, on classic. */
+/**
+ * Run by the Classic layout E2E job, on classic. A spec leaves this list once
+ * its new-layout runs have been stable on main for a while; the first moved
+ * specs (smoke, navigation, projects, agent start) left after 10 to 15 green
+ * main runs. Their classic branches stay in the specs until classic itself goes.
+ */
 export const CLASSIC_RUN_SPECS = [
   // Moved to the new layout; kept on classic until those runs are stable on CI.
-  'smoke-agent-lifecycle.spec.ts',
-  'smoke-blank-screen.spec.ts',
-  'smoke-settings-persistence.spec.ts',
-  'open-project.spec.ts',
-  'project-switching.spec.ts',
-  'navigation.spec.ts',
-  'start-agent.spec.ts',
-  'agent-real-cli.spec.ts',
   'command-palette.spec.ts',
   'terminal.spec.ts',
   'terminal-e2e.spec.ts',
@@ -56,19 +53,19 @@ export const CLASSIC_RUN_SPECS = [
   'annex-v2/full-demo.spec.ts',
   'annex-v2/remote-control.spec.ts',
   'annex-v2/settings-page.spec.ts',
+  'find-replace.spec.ts',
+  'mermaid-preview.spec.ts',
+  'plugin-system.spec.ts',
+  'popout-window.spec.ts',
+  'telemetry-export.spec.ts',
 ];
 
 /** Still pinned to classic, waiting to move. */
 export const PINNED_CLASSIC_SPECS = [
   'agent-list-ui.spec.ts',
-  'find-replace.spec.ts',
-  'mermaid-preview.spec.ts',
   'onboarding.spec.ts',
-  'plugin-system.spec.ts',
-  'popout-window.spec.ts',
   'rail-hover-flyout.spec.ts',
   'rail-pin.spec.ts',
-  'telemetry-export.spec.ts',
 ];
 
 /** Test the layout switch itself, so they seed both layouts. */

@@ -16,6 +16,22 @@ export function withRunLayout(experimental: Record<string, boolean> | undefined)
   return { ...experimental, newChrome: false };
 }
 
+/**
+ * The flags to seed for the classic run when the spec passed none, given what
+ * a reused profile already saved: the saved flags plus `newChrome: false`.
+ * Returns undefined to leave the file alone: when it's unreadable (which
+ * starts classic anyway, and is what some specs test) or already names a
+ * layout.
+ */
+export function classicRunSeedOver(savedText: string | undefined): Record<string, boolean> | undefined {
+  if (savedText === undefined) return { newChrome: false };
+  let saved: unknown;
+  try { saved = JSON.parse(savedText); } catch { return undefined; }
+  if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return undefined;
+  if ((saved as Record<string, unknown>).newChrome !== undefined) return undefined;
+  return { ...(saved as Record<string, boolean>), newChrome: false };
+}
+
 const layoutByPage = new WeakMap<Page, boolean>();
 
 /**

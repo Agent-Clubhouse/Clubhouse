@@ -23,7 +23,7 @@ function pageWithRail(present: boolean) {
   return {
     locator: vi.fn(() => ({ count: vi.fn().mockResolvedValue(present ? 1 : 0) })),
     evaluate: vi.fn().mockResolvedValue({ x: 1399, y: 450 }),
-    getByTestId: vi.fn(() => ({ click, isVisible: vi.fn().mockResolvedValue(true) })),
+    getByTestId: vi.fn(() => ({ click, isVisible: vi.fn().mockResolvedValue(true), getAttribute: vi.fn().mockResolvedValue('false') })),
     mouse: { move },
     click,
   };

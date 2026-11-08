@@ -5,98 +5,91 @@
  *
  * Uses a dedicated fixture (project-plugins) to avoid conflicts with other
  * parallel E2E test files.
+ *
+ * Runs on the new layout, and on classic in the Classic layout E2E job
+ * (#2843). Project plugin tabs are explorer rail tabs on classic and title
+ * bar tabs on the new layout, where a tab that doesn't fit is in the More
+ * menu and has no element until that menu opens. The plugin settings page
+ * and the marketplace dialog are the same components on both.
  */
 import { test, expect, _electron as electron, Page } from '@playwright/test';
 import * as path from 'path';
 import { launchApp } from './launch';
+import { isNewLayout } from './layout';
+import {
+  addProject,
+  assertActiveProject,
+  assertNotBlankScreen,
+  assertRunLayout,
+  clickExplorerTab,
+  closeSettings,
+  openSettings,
+  openSettingsPage,
+  projectButton,
+  selectProject,
+} from './smoke-helpers';
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
 
-// Dedicated fixture for plugin tests — not shared with other spec files
+// Dedicated fixture for plugin tests, not shared with other spec files
 const FIXTURE_PLUGINS = path.resolve(__dirname, 'fixtures/project-plugins');
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Stub Electron's dialog so the next pickAndAddProject resolves to `dirPath`. */
-async function stubDialogForPath(dirPath: string) {
-  await electronApp.evaluate(
-    async ({ dialog, BrowserWindow }, fixturePath) => {
-      const win =
-        BrowserWindow.getAllWindows().find(
-          (w) => !w.webContents.getURL().startsWith('devtools://'),
-        ) ?? BrowserWindow.getAllWindows()[0] ?? null;
-      BrowserWindow.getFocusedWindow = () => win;
-      dialog.showOpenDialog = async () => ({
-        canceled: false,
-        filePaths: [fixturePath],
-      });
-    },
-    dirPath,
-  );
+/**
+ * Assert a project tab is there, and has `label` when given. Classic shows
+ * every tab in the explorer rail. The new layout shows it in the title bar or
+ * in the More menu, which this opens when needed and closes again after.
+ */
+async function expectProjectTab(tabId: string, label?: string) {
+  const tab = window.getByTestId(`explorer-tab-${tabId}`);
+  if (!(await isNewLayout(window))) {
+    await expect(tab).toBeVisible({ timeout: 10_000 });
+    if (label) await expect(tab).toContainText(label);
+    return;
+  }
+  const more = window.getByTestId('title-more');
+  const moreOpen = async () => (await more.isVisible()) && (await more.getAttribute('aria-expanded')) === 'true';
+  // Tabs that finish loading later can push this one into More, so look and open together.
+  await expect(async () => {
+    if (!(await tab.isVisible()) && (await more.isVisible()) && !(await moreOpen())) await more.click({ timeout: 2_000 });
+    await expect(tab).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  if (label) await expect(tab).toContainText(label);
+  if (await moreOpen()) await more.click();
 }
 
-/** Add a fixture project by stubbing the dialog and clicking the add button. */
-async function addProject(dirPath: string) {
-  await stubDialogForPath(dirPath);
-  const addBtn = window.locator('[data-testid="nav-add-project"]');
-  await addBtn.click();
-  const name = path.basename(dirPath);
-  await expect(window.locator(`text=${name}`).first()).toBeVisible({
-    timeout: 10_000,
-  });
+/** Click a project tab by test id (the rail's on classic, the title bar's on the new layout). */
+async function clickTab(testId: string) {
+  await clickExplorerTab(electronApp, window, testId);
+}
+
+/** Go to the app's Plugins settings page. Settings must already be open. */
+async function navigateToPluginsSettings() {
+  if (await isNewLayout(window)) {
+    await openSettingsPage(window, 'plugins', 'Plugins');
+  } else {
+    // Use exact text match to avoid matching "project-plugins" in the sidebar
+    const pluginsBtn = window.locator('button', { hasText: /^Plugins$/ });
+    await expect(pluginsBtn).toBeVisible({ timeout: 5_000 });
+    await pluginsBtn.click();
+  }
+  await expect(window.locator('h2:has-text("Plugins")')).toBeVisible({ timeout: 5_000 });
 }
 
 /**
- * Click an explorer tab by dispatching a JS click event directly.
- * The project rail can overlay explorer tabs and intercept pointer events,
- * so we bypass the Playwright pointer event system entirely.
+ * Ensure we're on the plugins project's view (not settings or help). Classic
+ * clicks its rail icon when it shows. The new layout selects it in the
+ * project tree, bringing the tree back first.
  */
-async function clickExplorerTab(testId: string) {
-  await window.waitForSelector(`[data-testid="${testId}"]`, { timeout: 10_000 });
-  await window.evaluate((tid) => {
-    const el = document.querySelector(`[data-testid="${tid}"]`) as HTMLElement;
-    if (el) el.click();
-  }, testId);
-  await window.waitForTimeout(500);
-}
-
-/** Verify the page has meaningful content (not blank-screened). */
-async function assertNotBlankScreen() {
-  const root = window.locator('#root');
-  await expect(root).toBeVisible({ timeout: 5_000 });
-  const childCount = await root.evaluate((el) => el.children.length);
-  expect(childCount).toBeGreaterThan(0);
-}
-
-/** Get the title bar text. */
-async function getTitleBarText(): Promise<string> {
-  return window.locator('[data-testid="title-bar"]').first().textContent() as Promise<string>;
-}
-
-/** Navigate to settings. */
-async function openSettings() {
-  const settingsBtn = window.locator('[data-testid="nav-settings"]');
-  await settingsBtn.click();
-  // Use a retry-capable assertion instead of a fixed wait — CI machines can be slow
-  await expect(window.locator('[data-testid="title-bar"]').first()).toContainText('Settings', {
-    timeout: 5_000,
-  });
-}
-
-/** Navigate to the Plugins settings sub-page (within settings view). */
-async function navigateToPluginsSettings() {
-  // Use exact text match to avoid matching "project-plugins" in the sidebar
-  const pluginsBtn = window.locator('button', { hasText: /^Plugins$/ });
-  await expect(pluginsBtn).toBeVisible({ timeout: 5_000 });
-  await pluginsBtn.click();
-  await window.waitForTimeout(500);
-}
-
-/** Ensure we're on a project view (not settings or help). */
 async function ensureProjectView() {
+  if (await isNewLayout(window)) {
+    await selectProject(window, 'project-plugins');
+    return;
+  }
   const projBtn = window.locator('[title="project-plugins"]').first();
   const isVisible = await projBtn.isVisible({ timeout: 3_000 }).catch(() => false);
   if (isVisible) {
@@ -105,14 +98,14 @@ async function ensureProjectView() {
   }
 }
 
-/** Close settings by toggling the settings button. */
-async function closeSettings() {
-  const settingsBtn = window.locator('[data-testid="nav-settings"]');
-  await settingsBtn.click();
-  // Wait until Settings is no longer in the title bar — ensures close is complete before proceeding
-  await expect(window.locator('[data-testid="title-bar"]').first()).not.toContainText('Settings', {
-    timeout: 5_000,
-  });
+/** Close Settings and wait until it has closed. */
+async function closeSettingsView() {
+  await closeSettings(window);
+  if (!(await isNewLayout(window))) {
+    await expect(window.locator('[data-testid="title-bar"]').first()).not.toContainText('Settings', {
+      timeout: 5_000,
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +113,8 @@ async function closeSettings() {
 // ---------------------------------------------------------------------------
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
+  ({ electronApp, window } = await launchApp());
+  await assertRunLayout(window);
 });
 
 test.afterAll(async () => {
@@ -175,68 +169,71 @@ test.describe('Built-in Plugin Loading', () => {
   });
 
   test('add project and verify plugin tabs appear in explorer rail', async () => {
-    await addProject(FIXTURE_PLUGINS);
+    await addProject(electronApp, window, FIXTURE_PLUGINS);
+    // The tabs (the title bar's, on the new layout) are the active project's.
+    await assertActiveProject(window, 'project-plugins');
     await window.waitForTimeout(1_000);
 
     // Plugin tabs should appear after the core "Agents" tab
     // Canvas has scope 'dual' with a tab contribution
-    const canvasTab = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
-    await expect(canvasTab).toBeVisible({ timeout: 10_000 });
+    await expectProjectTab('plugin:canvas');
 
     // Terminal has scope 'project' with a tab contribution
-    const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
-    await expect(terminalTab).toBeVisible({ timeout: 5_000 });
+    await expectProjectTab('plugin:terminal');
 
     // Files has scope 'project' with a tab contribution
-    const filesTab = window.locator('[data-testid="explorer-tab-plugin:files"]');
-    await expect(filesTab).toBeVisible({ timeout: 5_000 });
+    await expectProjectTab('plugin:files');
   });
 
   test('built-in plugin tabs show correct labels', async () => {
     // Each tab should display its manifest label
-    const canvasTab = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
-    await expect(canvasTab).toContainText('Canvas');
-
-    const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
-    await expect(terminalTab).toContainText('Terminal');
-
-    const filesTab = window.locator('[data-testid="explorer-tab-plugin:files"]');
-    await expect(filesTab).toContainText('Files');
+    await expectProjectTab('plugin:canvas', 'Canvas');
+    await expectProjectTab('plugin:terminal', 'Terminal');
+    await expectProjectTab('plugin:files', 'Files');
   });
 
+  // The selected tab always stays in the new layout's title bar row, so after a
+  // click it has data-active there even when it came from the More menu.
   test('clicking Canvas tab activates it and renders content', async () => {
-    await clickExplorerTab('explorer-tab-plugin:canvas');
+    await clickTab('explorer-tab-plugin:canvas');
 
     const canvasTab = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
     await expect(canvasTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
 
     // Canvas plugin should render its content view (not blank screen)
-    await assertNotBlankScreen();
+    await assertNotBlankScreen(window);
   });
 
   test('clicking Files tab activates it and renders content', async () => {
-    await clickExplorerTab('explorer-tab-plugin:files');
+    await clickTab('explorer-tab-plugin:files');
 
     const filesTab = window.locator('[data-testid="explorer-tab-plugin:files"]');
     await expect(filesTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
 
-    await assertNotBlankScreen();
+    await assertNotBlankScreen(window);
   });
 
   test('clicking Terminal tab activates it and renders content', async () => {
-    await clickExplorerTab('explorer-tab-plugin:terminal');
+    await clickTab('explorer-tab-plugin:terminal');
 
     const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
     await expect(terminalTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
 
-    await assertNotBlankScreen();
+    await assertNotBlankScreen(window);
   });
 
   test('clicking Agents (core) tab deactivates plugin tabs', async () => {
-    await clickExplorerTab('explorer-tab-agents');
+    await clickTab('explorer-tab-agents');
 
     const agentsTab = window.locator('[data-testid="explorer-tab-agents"]');
     await expect(agentsTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
+
+    if (await isNewLayout(window)) {
+      // Plugin tabs may be in the More menu, whose items carry no data-active,
+      // so check that Agents is the only active tab in the row.
+      await expect(window.locator('[data-testid^="explorer-tab-"][data-active="true"]')).toHaveCount(1, { timeout: 3_000 });
+      return;
+    }
 
     // Plugin tabs should not be active
     const canvasTab = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
@@ -259,13 +256,13 @@ test.describe('Built-in Plugin Loading', () => {
 
     for (let i = 0; i < 3; i++) {
       for (const tabId of tabs) {
-        await clickExplorerTab(tabId);
+        await clickTab(tabId);
       }
     }
 
     // After rapid switching, UI should still be valid
     await window.waitForTimeout(500);
-    await assertNotBlankScreen();
+    await assertNotBlankScreen(window);
   });
 });
 
@@ -275,7 +272,7 @@ test.describe('Built-in Plugin Loading', () => {
 
 test.describe('Plugin Settings', () => {
   test('navigate to Plugins settings page', async () => {
-    await openSettings();
+    await openSettings(window);
     await navigateToPluginsSettings();
 
     // Should display "Plugins" heading in app context
@@ -288,10 +285,11 @@ test.describe('Plugin Settings', () => {
     const builtinSection = window.locator('h3:has-text("Built-in")');
     await expect(builtinSection).toBeVisible({ timeout: 5_000 });
 
-    // Each built-in plugin name should be visible
-    await expect(window.locator('text=Canvas').first()).toBeVisible({ timeout: 3_000 });
-    await expect(window.locator('text=Terminal').first()).toBeVisible({ timeout: 3_000 });
-    await expect(window.locator('text=Files').first()).toBeVisible({ timeout: 3_000 });
+    // Each built-in plugin's row should be listed with its name. The rows, not
+    // any text on the page, since the sidebar shows these names too.
+    await expect(window.getByTestId('plugin-row-canvas')).toContainText('Canvas', { timeout: 3_000 });
+    await expect(window.getByTestId('plugin-row-terminal')).toContainText('Terminal', { timeout: 3_000 });
+    await expect(window.getByTestId('plugin-row-files')).toContainText('Files', { timeout: 3_000 });
   });
 
   test('built-in plugins show "Built-in" in their meta line', async () => {
@@ -341,25 +339,25 @@ test.describe('Plugin Settings', () => {
 
   test('navigating away and back preserves plugin settings state', async () => {
     // Close settings
-    await closeSettings();
+    await closeSettingsView();
     await window.waitForTimeout(500);
 
     // Re-open settings and go to Plugins
-    await openSettings();
+    await openSettings(window);
     await navigateToPluginsSettings();
 
     // Built-in plugins should still be listed
     const builtinSection = window.locator('h3:has-text("Built-in")');
     await expect(builtinSection).toBeVisible({ timeout: 5_000 });
 
-    // Plugin names should still be visible
-    await expect(window.locator('text=Canvas').first()).toBeVisible({ timeout: 3_000 });
-    await expect(window.locator('text=Terminal').first()).toBeVisible({ timeout: 3_000 });
-    await expect(window.locator('text=Files').first()).toBeVisible({ timeout: 3_000 });
+    // Plugin rows should still be listed
+    await expect(window.getByTestId('plugin-row-canvas')).toContainText('Canvas', { timeout: 3_000 });
+    await expect(window.getByTestId('plugin-row-terminal')).toContainText('Terminal', { timeout: 3_000 });
+    await expect(window.getByTestId('plugin-row-files')).toContainText('Files', { timeout: 3_000 });
   });
 
   test('close settings for next test group', async () => {
-    await closeSettings();
+    await closeSettingsView();
   });
 });
 
@@ -369,7 +367,7 @@ test.describe('Plugin Settings', () => {
 
 test.describe('Plugin Marketplace Dialog', () => {
   test('open Marketplace dialog from plugin settings', async () => {
-    await openSettings();
+    await openSettings(window);
     await navigateToPluginsSettings();
 
     // Click the "Browse marketplace" button
@@ -432,24 +430,24 @@ test.describe('Plugin Marketplace Dialog', () => {
     const featuredTab = window.locator('[data-testid="marketplace-tab-featured"]');
     await featuredTab.click();
     await window.waitForTimeout(300);
-    await assertNotBlankScreen();
+    await assertNotBlankScreen(window);
 
     const officialTab = window.locator('[data-testid="marketplace-tab-official"]');
     await officialTab.click();
     await window.waitForTimeout(300);
-    await assertNotBlankScreen();
+    await assertNotBlankScreen(window);
 
     const allTab = window.locator('[data-testid="marketplace-tab-all"]');
     await allTab.click();
     await window.waitForTimeout(300);
-    await assertNotBlankScreen();
+    await assertNotBlankScreen(window);
   });
 
   test('search input accepts text without crashing', async () => {
     const searchInput = window.locator('[data-testid="marketplace-search"]');
     await searchInput.fill('test-plugin');
     await window.waitForTimeout(500);
-    await assertNotBlankScreen();
+    await assertNotBlankScreen(window);
 
     // Clear search
     await searchInput.fill('');
@@ -484,7 +482,7 @@ test.describe('Plugin Marketplace Dialog', () => {
   });
 
   test('close settings after marketplace tests', async () => {
-    await closeSettings();
+    await closeSettingsView();
   });
 });
 
@@ -523,31 +521,27 @@ test.describe('Plugin Store State Integrity', () => {
     await ensureProjectView();
 
     // Navigate to settings
-    await openSettings();
+    await openSettings(window);
     await window.waitForTimeout(500);
 
     // Navigate back to the project by clicking the project button
     // (closeSettings toggles the nav button, but we need to explicitly
     // return to project view for the ExplorerRail to show plugin tabs)
-    await closeSettings();
+    await closeSettingsView();
     await ensureProjectView();
 
     // Plugin tabs should still be present
-    const canvasTab = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
-    await expect(canvasTab).toBeVisible({ timeout: 10_000 });
-
-    const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
-    await expect(terminalTab).toBeVisible({ timeout: 5_000 });
-
-    const filesTab = window.locator('[data-testid="explorer-tab-plugin:files"]');
-    await expect(filesTab).toBeVisible({ timeout: 5_000 });
+    await expectProjectTab('plugin:canvas');
+    await expectProjectTab('plugin:terminal');
+    await expectProjectTab('plugin:files');
   });
 
   test('plugin tabs survive rapid navigation cycles', async () => {
     // Ensure we start on a project view
     await ensureProjectView();
 
-    // Rapidly toggle settings 3 times
+    // Rapidly toggle settings 3 times. The settings button is in the sidebar
+    // footer on both layouts, so it stays put while Settings opens and closes.
     for (let i = 0; i < 3; i++) {
       const settingsBtn = window.locator('[data-testid="nav-settings"]');
       await settingsBtn.click();
@@ -563,10 +557,9 @@ test.describe('Plugin Store State Integrity', () => {
     await window.waitForTimeout(1_000);
 
     // Plugin tabs should still be intact
-    const canvasTab = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
-    await expect(canvasTab).toBeVisible({ timeout: 10_000 });
+    await expectProjectTab('plugin:canvas');
 
-    await assertNotBlankScreen();
+    await assertNotBlankScreen(window);
   });
 });
 
@@ -574,35 +567,36 @@ test.describe('Plugin Store State Integrity', () => {
 // PART E: Plugin Tab Restore on Project Switch (Issue #266)
 // ===========================================================================
 
+// Each project's own saved tab comes back when it's selected again, on both
+// layouts. On the new layout the tree stays beside Canvas (a full-pane tab)
+// and Terminal (whose target is the tree's selection, listTabs.ts), so the
+// switch can go through the tree.
 test.describe('Plugin Tab Restore on Project Switch', () => {
   const FIXTURE_B = path.resolve(__dirname, 'fixtures/project-b');
 
   test('add a second project for switching tests', async () => {
-    await addProject(FIXTURE_B);
+    await addProject(electronApp, window, FIXTURE_B);
     await window.waitForTimeout(1_000);
-    const titleText = await getTitleBarText();
-    expect(titleText).toContain('project-b');
+    await assertActiveProject(window, 'project-b');
   });
 
   test('set Canvas tab active on project-plugins, switch to project-b, switch back — no blank screen', async () => {
     // Navigate to project-plugins and click Canvas tab
-    const projPlugins = window.locator('[title="project-plugins"]').first();
-    await projPlugins.click();
+    await selectProject(window, 'project-plugins');
     await window.waitForTimeout(500);
-    await clickExplorerTab('explorer-tab-plugin:canvas');
+    await clickTab('explorer-tab-plugin:canvas');
     const canvasTab = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
     await expect(canvasTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
 
     // Switch to project-b
-    const projB = window.locator('[title="project-b"]').first();
-    await projB.click();
+    await selectProject(window, 'project-b');
     await window.waitForTimeout(1_000);
-    await assertNotBlankScreen();
+    await assertNotBlankScreen(window);
 
     // Switch back to project-plugins — Canvas tab should restore
-    await projPlugins.click();
+    await selectProject(window, 'project-plugins');
     await window.waitForTimeout(1_500);
-    await assertNotBlankScreen();
+    await assertNotBlankScreen(window);
 
     // Canvas tab should still be active (restored from saved state)
     await expect(canvasTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
@@ -610,23 +604,21 @@ test.describe('Plugin Tab Restore on Project Switch', () => {
 
   test('set Terminal tab active on project-plugins, switch to project-b, switch back — no blank screen', async () => {
     // Navigate to project-plugins and click Terminal tab
-    const projPlugins = window.locator('[title="project-plugins"]').first();
-    await projPlugins.click();
+    await selectProject(window, 'project-plugins');
     await window.waitForTimeout(500);
-    await clickExplorerTab('explorer-tab-plugin:terminal');
+    await clickTab('explorer-tab-plugin:terminal');
     const termTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
     await expect(termTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
 
     // Switch to project-b
-    const projB = window.locator('[title="project-b"]').first();
-    await projB.click();
+    await selectProject(window, 'project-b');
     await window.waitForTimeout(1_000);
-    await assertNotBlankScreen();
+    await assertNotBlankScreen(window);
 
     // Switch back to project-plugins — Terminal tab should restore
-    await projPlugins.click();
+    await selectProject(window, 'project-plugins');
     await window.waitForTimeout(1_500);
-    await assertNotBlankScreen();
+    await assertNotBlankScreen(window);
 
     // Terminal tab should still be active
     await expect(termTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
@@ -634,11 +626,15 @@ test.describe('Plugin Tab Restore on Project Switch', () => {
 
   test('rapid project switching with plugin tab active does not blank screen', async () => {
     // Set Canvas tab active on project-plugins
-    const projPlugins = window.locator('[title="project-plugins"]').first();
-    const projB = window.locator('[title="project-b"]').first();
-    await projPlugins.click();
+    await selectProject(window, 'project-plugins');
     await window.waitForTimeout(500);
-    await clickExplorerTab('explorer-tab-plugin:canvas');
+    await clickTab('explorer-tab-plugin:canvas');
+    await expect(window.locator('[data-testid="explorer-tab-plugin:canvas"]')).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
+
+    // The sidebar buttons: rail icons on classic, tree rows on the new layout,
+    // where Canvas keeps the tree showing.
+    const projPlugins = await projectButton(window, 'project-plugins');
+    const projB = await projectButton(window, 'project-b');
 
     // Rapidly switch between projects 5 times
     for (let i = 0; i < 5; i++) {
@@ -648,7 +644,8 @@ test.describe('Plugin Tab Restore on Project Switch', () => {
 
     // Wait for all transitions to settle
     await window.waitForTimeout(2_000);
-    await assertNotBlankScreen();
+    await assertNotBlankScreen(window);
+    await assertActiveProject(window, 'project-plugins');
   });
 });
 
@@ -672,17 +669,17 @@ test.describe('Plugin System Console Errors (Part F)', () => {
     await ensureProjectView();
 
     // Navigate through plugin tabs to trigger any deferred errors
-    await clickExplorerTab('explorer-tab-plugin:canvas');
+    await clickTab('explorer-tab-plugin:canvas');
     await window.waitForTimeout(300);
-    await clickExplorerTab('explorer-tab-plugin:terminal');
+    await clickTab('explorer-tab-plugin:terminal');
     await window.waitForTimeout(300);
-    await clickExplorerTab('explorer-tab-plugin:files');
+    await clickTab('explorer-tab-plugin:files');
     await window.waitForTimeout(300);
-    await clickExplorerTab('explorer-tab-agents');
+    await clickTab('explorer-tab-agents');
     await window.waitForTimeout(300);
 
     // Open and close marketplace
-    await openSettings();
+    await openSettings(window);
     await navigateToPluginsSettings();
     const marketplaceBtn = window.locator('[data-testid="marketplace-button"]');
     await marketplaceBtn.click();
@@ -690,7 +687,7 @@ test.describe('Plugin System Console Errors (Part F)', () => {
     const closeBtn = window.locator('[data-testid="marketplace-close"]');
     await closeBtn.click();
     await window.waitForTimeout(500);
-    await closeSettings();
+    await closeSettingsView();
 
     // Wait for any deferred errors
     await window.waitForTimeout(2_000);

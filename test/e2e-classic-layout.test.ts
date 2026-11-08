@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import * as path from 'path';
+import { classicRunSeedOver } from '../e2e/layout';
 import { CLASSIC_RUN_SPECS, LAYOUT_SWITCH_SPECS, PINNED_CLASSIC_SPECS, classicTestMatch } from '../e2e/classic-specs.mjs';
 
 const E2E_DIR = path.resolve(__dirname, '..', 'e2e');
@@ -52,5 +53,13 @@ describe('E2E classic layout lists (#2843)', () => {
   it('turn the list into globs, and refuse an empty one', () => {
     expect(classicTestMatch(['a.spec.ts'])).toEqual(['**/a.spec.ts']);
     expect(() => classicTestMatch([])).toThrow(/no specs/);
+  });
+
+  it('seed classic over a reused profile by merging, and leave an unreadable or chosen file alone', () => {
+    expect(classicRunSeedOver(undefined)).toEqual({ newChrome: false });
+    expect(classicRunSeedOver('{"telemetry": true}')).toEqual({ telemetry: true, newChrome: false });
+    expect(classicRunSeedOver('{"telemetry": tru')).toBeUndefined();
+    expect(classicRunSeedOver('[]')).toBeUndefined();
+    expect(classicRunSeedOver('{"newChrome": true}')).toBeUndefined();
   });
 });
