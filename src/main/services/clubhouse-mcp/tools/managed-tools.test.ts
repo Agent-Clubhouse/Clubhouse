@@ -304,6 +304,46 @@ describe('templates', () => {
     expect(preview.json.changes).toEqual([expect.objectContaining({ kind: 'add', id: BUILTIN_BLOCK_IDS.identity })]);
   });
 
+  it('a level sent back with its read-back legacy flag is saved as the level, never higher (#2997)', async () => {
+    const t = (await call('save_agent_template', { name: 'Free', blocks: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: { access: 'full_access' } })).json;
+    const read = (await call('list_agent_templates', {})).json.find((x: { id: string }) => x.id === t.id);
+    expect(read.settings).toMatchObject({ access: 'full_access', freeAgentMode: true });
+    // Lower only the level, sending back the rest as read.
+    const lowered = (await call('save_agent_template', { id: t.id, settings: { ...read.settings, access: 'plan' } })).json;
+    expect(lowered.settings).toMatchObject({ access: 'plan', freeAgentMode: false });
+    // And the other way: raising it with the old flag beside it.
+    const raised = (await call('save_agent_template', { id: t.id, settings: { ...lowered.settings, access: 'auto' } })).json;
+    expect(raised.settings).toMatchObject({ access: 'auto', freeAgentMode: true });
+    // A push previews the level it was sent.
+    const preview = await call('push_agent_template', { id: t.id, blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: { ...raised.settings, access: 'ask' } });
+    expect(JSON.stringify(preview.json.changes)).toContain('Ask first');
+    expect(JSON.stringify(preview.json.changes)).not.toContain('Full access');
+  });
+
+  it('refuses a level or legacy flag it can\'t read, never reading it as some level (#2997)', async () => {
+    const t = (await call('save_agent_template', { name: 'Plan', blocks: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: { access: 'plan' } })).json;
+    for (const settings of [{ freeAgentMode: 'false' }, { freeAgentMode: 1 }, { access: 'full' }, { access: 'full', freeAgentMode: true }]) {
+      const saved = await call('save_agent_template', { id: t.id, settings });
+      expect(saved.isError, JSON.stringify(settings)).toBe(true);
+      const pushed = await call('push_agent_template', { id: t.id, blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings });
+      expect(pushed.isError, JSON.stringify(settings)).toBe(true);
+      const made = await call('create_managed_agent', { project: 'Clubhouse', name: 'odd', templateId: t.id, settings });
+      expect(made.isError, JSON.stringify(settings)).toBe(true);
+    }
+    expect((await call('list_agent_templates', {})).json.find((x: { id: string }) => x.id === t.id).settings).toMatchObject({ access: 'plan' });
+  });
+
+  it('a new template with only a legacy flag maps it as a legacy record does, not to the Default access', async () => {
+    const t = (await call('save_agent_template', { name: 'Off', blocks: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: { freeAgentMode: false } })).json;
+    expect(t.settings).toMatchObject({ access: 'ask', freeAgentMode: false });
+  });
+
+  it('a bare legacy flag keeps the template\'s level on that side (#2997)', async () => {
+    const t = (await call('save_agent_template', { name: 'Auto', blocks: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: { access: 'auto' } })).json;
+    const kept = (await call('save_agent_template', { id: t.id, settings: { freeAgentMode: true } })).json;
+    expect(kept.settings).toMatchObject({ access: 'auto' });
+  });
+
   it('push refuses a stale token after the template changed, and changes nothing', async () => {
     const t = (await call('save_agent_template', { name: 'Stale push', blocks: [], mcps: [CLUBHOUSE_MCP_PART_ID] })).json;
     managedAgent('a', { mcps: [CLUBHOUSE_MCP_PART_ID], templateId: t.id });
@@ -468,5 +508,32 @@ describe('stale renames over MCP (#2897, D92)', () => {
     const r = await call('update_agent_part', { ...args, confirm: first.json.confirm });
     expect(r.isError).toBe(true);
     expect(r.content[0].text).toMatch(/^stale/);
+  });
+});
+
+describe('an orchestrator reads the library (#3001)', () => {
+  it('only while orchestrators may choose helper templates, and sees only its own project\'s agents', async () => {
+    const { setOrchestrationEnabled } = await import('../orchestration-gate');
+    const { agentRegistry } = await import('../../agent-registry');
+    state.agents.set('lead', { id: 'lead', name: 'lead', color: 'indigo', createdAt: '', worktreePath: '/w/lead', managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+    agentRegistry.register('orch', { projectPath: '/elsewhere', orchestrator: 'claude-code', runtime: 'pty' });
+    setOrchestrationEnabled('orch', true);
+    try {
+      const off = await call('list_agent_templates', {}, 'orch');
+      expect(off.isError).toBe(true);
+      expect(off.content[0].text).toContain('choose helper templates');
+      expect((await call('list_agent_parts', { kind: 'mcp' }, 'orch')).isError).toBe(true);
+      await managedAgents().setHelperTemplateChoice(true);
+      expect((await call('list_agent_templates', {}, 'orch')).isError).toBeFalsy();
+      const mine = (await call('list_agent_parts', { kind: 'mcp' }, 'orch')).json.find((p: { id: string }) => p.id === CLUBHOUSE_MCP_PART_ID);
+      // Another project's agents stay out of an orchestrator's view without cross-project helpers.
+      expect(mine.usedBy).toEqual([]);
+      const all = (await call('list_agent_parts', { kind: 'mcp' })).json.find((p: { id: string }) => p.id === CLUBHOUSE_MCP_PART_ID);
+      expect(all.usedBy.map((u: { agentName: string }) => u.agentName)).toContain('lead');
+    } finally {
+      await managedAgents().setHelperTemplateChoice(false);
+      setOrchestrationEnabled('orch', false);
+      agentRegistry.untrack('orch');
+    }
   });
 });

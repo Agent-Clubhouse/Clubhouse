@@ -9,6 +9,8 @@
  * file) and hands the MCP servers to the existing launch merge points.
  */
 import { agentAccess } from '../free-agent-settings';
+import { resolveRuntimeMode } from '../chat-runtime-settings';
+import { accessLevelsFor, isAccessLevel, startableAccess } from '../../../shared/agent-access';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -112,11 +114,20 @@ export async function managedSettingsRows(service: ManagedAgentsService, agent: 
       // telemetry-exempt: the summary leaves the helper template out.
     }
   }
+  // The level the start uses (#3004), as the spawn does: in the terminal the nearest lower level its
+  // CLI has a start flag for; in chat the driver's (one without the level asks first). A record saved
+  // before #2761 starts as it always did, so it gets no note.
+  const access = agentAccess(agent, projectPath);
+  const runtime = provider && isAccessLevel(agent.access) ? resolveRuntimeMode(provider.id, agent.runtimeMode ?? undefined).mode : undefined;
+  const startsAt = !provider || !runtime ? access
+    : runtime === 'terminal' ? startableAccess(access, provider.id, 'terminal')
+      : accessLevelsFor(provider.id, 'chat').includes(access) ? access : 'ask';
   return managedSettingsSummary({
     cliName: provider?.displayName ?? agent.orchestrator,
     model: agent.model,
     effort: agent.effort,
-    access: agentAccess(agent, projectPath),
+    access,
+    ...(startsAt !== access && { accessStartsAt: { level: startsAt, runtime: runtime! } }),
     orchestration: agent.orchestration,
     helperTemplateName,
     helper,

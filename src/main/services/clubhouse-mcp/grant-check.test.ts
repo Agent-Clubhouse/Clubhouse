@@ -164,6 +164,17 @@ describe('everyday flows keep working (#2968)', () => {
     }
   });
 
+  it('an orchestrator lists the templates and parts start_helper can name (#3001)', () => {
+    for (const name of ['list_agent_templates', 'list_agent_parts']) {
+      expect(ok('orchestrator', 'global', name), name).toBe(true);
+      expect(ok('plain', 'global', name), name).toBe(false);
+    }
+    // Reading, never changing: the builder's writes stay the Dispatcher's.
+    for (const name of ['save_agent_template', 'create_agent_part', 'push_agent_template']) {
+      expect(ok('orchestrator', 'global', name), name).toBe(false);
+    }
+  });
+
   it('a helper replies to its orchestrator', () => {
     expect(ok('helper', 'global', 'message_parent')).toBe(true);
     expect(ok('helper', 'agent', 'send_message', {}, 'orchestrator')).toBe(true);
