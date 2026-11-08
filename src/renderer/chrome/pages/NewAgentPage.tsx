@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { McpCatalogEntry, Project } from '../../../shared/types';
+import type { McpCatalogEntry, Project, QuickRunChanges } from '../../../shared/types';
 import { CLUBHOUSE_MCP_PART_ID, isListed, type ManagedTemplate, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
 import { AGENT_COLORS, generateDurableName } from '../../../shared/name-generator';
 import { validateAgentGitName } from '../../../shared/agent-name';
@@ -27,6 +27,7 @@ import { openCreatedAgent } from '../startPage';
 import { ProjectPicker } from './ProjectPicker';
 import { reportChromeActionFailed, reportChromeFeature } from '../telemetry';
 import { IS_MAC, Row, Rule, footerLinkClass, inputClass, mono, selectClass } from './newAgentUi';
+import { NO_QUICK_CHANGES, QuickRunParts } from './QuickRunParts';
 import { BuilderStep, CopyStep, SCRATCH_SEED, TemplateStep, draftFromSeed, templateSeed, type BuilderDraft, type BuilderSeed } from './NewManagedAgentSteps';
 
 /**
@@ -169,6 +170,9 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const [mission, setMission] = useState('');
   const [parentAgentId, setParentAgentId] = useState('');
   const [quickTemplateId, setQuickTemplateId] = useState('');
+  const [quickTemplate, setQuickTemplate] = useState<ManagedTemplate | null>(null);
+  // This launch's part changes (#2928): start clean with each template, and never saved.
+  const [quickChanges, setQuickChanges] = useState<QuickRunChanges>(NO_QUICK_CHANGES);
   // Clubhouse-managed agents (#2893).
   const remote = isRemoteProjectId(projectId);
   const [managedPref, setManagedPref] = useState(readManagedPref);
@@ -222,6 +226,8 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
    */
   const pickQuickTemplate = (t: ManagedTemplate | null) => {
     setQuickTemplateId(t?.id ?? '');
+    setQuickTemplate(t);
+    setQuickChanges(NO_QUICK_CHANGES);
     if (!t) return;
     const { orchestrator: cli, model: m } = t.settings;
     const level = settingsAccess(t.settings);
@@ -368,7 +374,11 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
       ] as const;
       spawnQuick(...args, undefined, undefined, {
         fallbackAccess: defaultAccess,
-        ...(quickTemplates && quickTemplateId && { managedTemplateId: quickTemplateId }),
+        ...(quickTemplates && quickTemplateId && {
+          managedTemplateId: quickTemplateId,
+          ...(quickChanges.added.length > 0 && { addParts: quickChanges.added }),
+          ...(quickChanges.removed.length > 0 && { removeParts: quickChanges.removed }),
+        }),
       }).then((id) => finish(target.id, id))
         .catch((err) => {
           reportChromeActionFailed('agent_start', err);
@@ -586,6 +596,15 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
                 disabled={busy}
                 mcpLaunchFlags={selectedOrch?.mcpLaunchFlags === true}
                 cliName={selectedOrch?.displayName ?? 'this CLI'}
+              />
+            )}
+            {quickTemplates && quickTemplate && quickTemplate.id === quickTemplateId && (
+              <QuickRunParts
+                template={quickTemplate}
+                value={quickChanges}
+                onChange={setQuickChanges}
+                disabled={busy}
+                mcpLaunchFlags={selectedOrch?.mcpLaunchFlags === true}
               />
             )}
             <Rule />

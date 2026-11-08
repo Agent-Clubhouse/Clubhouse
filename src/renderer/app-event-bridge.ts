@@ -288,6 +288,7 @@ function initPtyExitListener(): () => void {
           inputTokens,
           outputTokens,
           ...(agent.managedTemplateId && { managedTemplateId: agent.managedTemplateId }),
+          ...(agent.managedQuickChanges && { managedQuickChanges: agent.managedQuickChanges }),
         });
 
         // Keep the finished run on screen when it was the one being viewed,
