@@ -18,15 +18,27 @@ describe('one identity over two records (#3036)', () => {
     };
     expect(mirrorUpdates(from, { ...base, id: 'b', icon: 'old.png' })).toEqual({
       identity: { name: 'Rosie', color: 'rose', emoji: '🦊', icon: null },
-      config: { orchestrator: 'codex-cli', model: 'gpt-5', contextWindow: '1m', runtimeMode: 'terminal', idleSleep: 'never', access: 'auto' },
+      config: { orchestrator: 'codex-cli', contextWindow: '1m', runtimeMode: 'terminal', idleSleep: 'never', access: 'auto' },
     });
+  });
+
+  it('keeps each agent\'s model, which Behavior sets per agent (#3045)', () => {
+    const from = { ...base, orchestrator: 'claude-code' as const, model: 'opus', effort: 'high' };
+    const to = { ...base, id: 'b', orchestrator: 'claude-code' as const, model: 'sonnet', effort: 'medium' };
+    expect(isEmptyMirror(mirrorUpdates(from, to))).toBe(true);
+  });
+
+  it('resets the other\'s model to the CLI default when the CLI changes', () => {
+    const from = { ...base, orchestrator: 'codex-cli' as const, model: 'default' };
+    expect(mirrorUpdates(from, { ...base, id: 'b', orchestrator: 'claude-code', model: 'sonnet' }).config).toEqual({ orchestrator: 'codex-cli', model: 'default' });
+    expect(mirrorUpdates(from, { ...base, id: 'b', orchestrator: 'claude-code' }).config).toEqual({ orchestrator: 'codex-cli' });
   });
 
   it('clears what the source cleared, and reads a missing model as the CLI default', () => {
     const to: DurableAgentConfig = { ...base, id: 'b', emoji: '🦊', model: 'opus', contextWindow: '1m', runtimeMode: 'chat', idleSleep: 'never' };
     expect(mirrorUpdates(base, to)).toEqual({
       identity: { emoji: null },
-      config: { model: 'default', contextWindow: null, runtimeMode: null, idleSleep: null },
+      config: { contextWindow: null, runtimeMode: null, idleSleep: null },
     });
     expect(isEmptyMirror(mirrorUpdates({ ...base, model: 'default' }, base))).toBe(true);
   });

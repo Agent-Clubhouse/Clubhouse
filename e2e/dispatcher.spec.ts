@@ -339,6 +339,22 @@ test('on by default, wire an orchestrator, restart, switch off and on, and wake 
   await expect(w.locator('[data-testid="dispatcher-view"] [data-testid="chat-view"]')).toBeVisible({ timeout: 15_000 });
   await expect(w.locator('[data-testid="title-bar"]')).toContainText('Dispatcher');
   await expect(w.locator('[data-testid="title-bar"]')).not.toContainText('dispatcher-e2e-');
+
+  // Its composer has one Behavior chip in place of the model and permission pickers (#3045).
+  const view = w.locator('[data-testid="dispatcher-view"]');
+  const chip = view.locator('[data-testid="dispatcher-behavior-chip"]');
+  await expect(chip).toHaveAttribute('data-level', 'standard', { timeout: 15_000 });
+  await expect(view.locator('[data-testid="chat-model-pill"]')).toHaveCount(0);
+  await expect(view.locator('[data-testid="chat-level-pill"]')).toHaveCount(0);
+  // Thorough keeps the chat on the same tier as Standard, so the running chat
+  // isn't switched: this fixture replays a strict script with no model change here.
+  await chip.click();
+  await view.locator('[data-testid="dispatcher-behavior-thorough"]').click();
+  await expect(chip).toHaveAttribute('data-level', 'thorough');
+  await expect(view.locator('[data-testid="dispatcher-behavior-menu"]')).toHaveCount(0);
+  // Settings shows the same choice.
+  await openSettingsPage(w, 'Dispatcher');
+  await expect(w.locator('[data-testid="dispatcher-behavior"]')).toHaveValue('thorough');
 });
 
 test('the Dispatcher wakes a connected agent with a message and sleeps it again', async () => {
