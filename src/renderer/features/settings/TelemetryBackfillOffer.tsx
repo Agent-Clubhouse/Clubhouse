@@ -5,7 +5,7 @@
  * (never for the developer destination, never after startup); this only shows it.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/Button';
 import { settingsInput } from './SettingsLayout';
 import type { BackfillOffer, BackfillRange, BackfillStatus } from '../../../shared/telemetry/settings-types';
@@ -53,15 +53,31 @@ function sentText(s: BackfillStatus): string {
   return parts.join(', ');
 }
 
+function statusText(s: BackfillStatus | null, label: string): string {
+  if (!s) return '';
+  if (s.state === 'running') {
+    return `Sending history to ${label}: ${sentText(s)}${s.runsTotal > 1 ? `, session ${Math.min(s.runsDone + 1, s.runsTotal)} of ${s.runsTotal}` : ''}.`;
+  }
+  if (s.state === 'done') return `History sent to ${label}: ${sentText(s)}.`;
+  if (s.state === 'cancelled') return 'Sending stopped. What was sent stays sent.';
+  if (s.reason === 'not_reachable') return `Sending stopped: ${label} isn't reachable right now. What was sent stays sent.`;
+  if (s.reason === 'export_failed') return `Sending stopped: ${label} didn't accept part of it. What was sent stays sent.`;
+  return 'Sending stopped before the end. What was sent stays sent.';
+}
+
 export function TelemetryBackfillOffer({ destinationId, label, on }: { destinationId: string; label: string; on: boolean }) {
   const [offer, setOffer] = useState<BackfillOffer | null>(null);
   const [range, setRange] = useState<BackfillRange>(7);
   const [status, setStatus] = useState<BackfillStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A reply that arrives after the destination was turned off is ignored.
+  const onRef = useRef(on);
+  onRef.current = on;
 
   const refresh = useCallback(async () => {
     try {
       const [next, current] = await Promise.all([api().backfillOffer(destinationId), api().backfillStatus(destinationId)]);
+      if (!onRef.current) return;
       setStatus(current);
       setOffer(next);
       if (next) setRange((r) => (rangeChoices(next).some((c) => c.id === r) ? r : defaultRange(next)));
@@ -72,83 +88,90 @@ export function TelemetryBackfillOffer({ destinationId, label, on }: { destinati
 
   // Asked when the destination is on; main answers null unless the user just turned it on.
   useEffect(() => {
-    if (!on) { setOffer(null); setStatus(null); return; }
+    if (!on) { setOffer(null); setStatus(null); setError(null); return; }
     void refresh();
   }, [on, refresh]);
 
   // While a send runs, follow it.
   useEffect(() => {
-    if (status?.state !== 'running') return;
+    if (!on || status?.state !== 'running') return;
     const timer = setInterval(() => {
       api().backfillStatus(destinationId).then((s) => {
+        if (!onRef.current) return;
         setStatus(s);
         if (s?.state !== 'running') void refresh();
       }).catch(() => {});
     }, 1000);
     return () => clearInterval(timer);
-  }, [status?.state, destinationId, refresh]);
+  }, [on, status?.state, destinationId, refresh]);
 
   const send = async () => {
     setError(null);
-    const result = await api().backfillStart(destinationId, range);
-    if (!result.ok) {
-      setError(result.reason === 'not_reachable'
-        ? `${label} isn't reachable right now, so nothing was sent. Try again once it's receiving live data.`
-        : "Couldn't start sending. Try again.");
-      return;
+    try {
+      const result = await api().backfillStart(destinationId, range);
+      if (!result.ok) {
+        setError(result.reason === 'not_reachable'
+          ? `${label} isn't reachable right now, so nothing was sent. Try again once it's receiving live data.`
+          : "Couldn't start sending. Try again.");
+        return;
+      }
+      const s = await api().backfillStatus(destinationId);
+      setStatus(s);
+      // Finished at once (nothing in the window): show what's true now.
+      if (s?.state !== 'running') await refresh();
+    } catch {
+      setError("Couldn't start sending. Try again.");
     }
-    setStatus(await api().backfillStatus(destinationId));
   };
 
   const notNow = async () => {
-    await api().backfillDismiss(destinationId);
+    setError(null);
+    try {
+      await api().backfillDismiss(destinationId);
+    } catch {
+      // Gone from view either way; main offers nothing new until the destination is turned on again.
+    }
     setOffer(null);
   };
 
   if (!on) return null;
 
-  if (status?.state === 'running') {
-    return (
-      <div className="text-xs text-ctp-subtext1 flex items-center gap-3" data-testid={`telemetry-backfill-${destinationId}`} role="status">
-        <span>Sending history to {label}: {sentText(status)}{status.runsTotal > 1 ? `, session ${Math.min(status.runsDone + 1, status.runsTotal)} of ${status.runsTotal}` : ''}.</span>
-        <Button kind="ghost" onClick={() => void api().backfillCancel(destinationId)}>Cancel</Button>
-      </div>
-    );
-  }
-
-  const outcome = status ? (
-    <p className="text-xs text-ctp-subtext1" role="status">
-      {status.state === 'done' && `History sent to ${label}: ${sentText(status)}.`}
-      {status.state === 'failed' && (status.reason === 'not_reachable'
-        ? `Sending stopped: ${label} isn't reachable right now. What was sent stays sent.`
-        : `Sending stopped: ${label} didn't accept part of it. What was sent stays sent.`)}
-      {status.state === 'cancelled' && `Sending stopped. What was sent stays sent.`}
-    </p>
-  ) : null;
-
-  if (!offer) return outcome;
-
-  const resuming = status?.state === 'failed' || status?.state === 'cancelled';
+  const running = status?.state === 'running';
+  const resuming = !!offer?.resuming;
+  const message = statusText(status, label);
+  if (!message && !offer && !error) return null;
   return (
     <div className="flex flex-col gap-2" data-testid={`telemetry-backfill-${destinationId}`}>
-      {outcome}
-      <p className="text-xs text-ctp-subtext1">
-        {resuming
-          ? `Send the rest of the history to ${label}? It picks up after what was already sent.`
-          : `Send recent history to ${label}? Clubhouse has kept ${historyAmount(offer)} of telemetry on this computer. You can send it now, within the limit you choose. It goes through this destination's detail level and filters, and diagnostic log lines never leave this computer.`}
-      </p>
-      <div className="flex items-center gap-3">
-        <select
-          aria-label={`How much history to send to ${label}`}
-          className={`${settingsInput} w-auto`}
-          value={String(range)}
-          onChange={(e) => setRange(e.target.value === 'all' ? 'all' : (Number(e.target.value) as BackfillRange))}
-        >
-          {rangeChoices(offer).map((c) => <option key={String(c.id)} value={String(c.id)}>{c.label}</option>)}
-        </select>
-        <Button kind="ghost" onClick={() => void send()}>{resuming ? 'Send the rest' : 'Send'}</Button>
-        <Button kind="ghost" onClick={() => void notNow()}>Not now</Button>
-      </div>
+      {/* One live region for progress and outcome, read without the buttons. */}
+      <p className="text-xs text-ctp-subtext1" role="status" aria-atomic="true">{message}</p>
+      {running && (
+        <div>
+          <Button kind="ghost" onClick={() => void api().backfillCancel(destinationId)}>Cancel</Button>
+        </div>
+      )}
+      {!running && offer && (
+        <>
+          <p className="text-xs text-ctp-subtext1">
+            {resuming
+              ? `Send the rest of the history to ${label}? It picks up after what was already sent, in the same window as before.`
+              : `Send recent history to ${label}? Clubhouse has kept ${historyAmount(offer)} of telemetry on this computer. You can send it now, within the limit you choose. It goes through this destination's detail level and filters, and diagnostic log lines never leave this computer.`}
+          </p>
+          <div className="flex items-center gap-3">
+            {!resuming && rangeChoices(offer).length > 1 && (
+              <select
+                aria-label={`How much history to send to ${label}`}
+                className={`${settingsInput} w-auto`}
+                value={String(range)}
+                onChange={(e) => setRange(e.target.value === 'all' ? 'all' : (Number(e.target.value) as BackfillRange))}
+              >
+                {rangeChoices(offer).map((c) => <option key={String(c.id)} value={String(c.id)}>{c.label}</option>)}
+              </select>
+            )}
+            <Button kind="ghost" onClick={() => void send()}>{resuming ? 'Send the rest' : 'Send'}</Button>
+            <Button kind="ghost" onClick={() => void notNow()}>Not now</Button>
+          </div>
+        </>
+      )}
       {error && <p className="text-xs text-ctp-error" role="alert">{error}</p>}
     </div>
   );

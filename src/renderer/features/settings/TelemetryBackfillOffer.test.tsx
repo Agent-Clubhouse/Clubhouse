@@ -79,15 +79,16 @@ describe('TelemetryBackfillOffer (#2920)', () => {
     expect(cancel).toHaveBeenCalledWith('otlp');
   });
 
-  it('after a failure, says so and offers to send the rest, which resumes', async () => {
-    vi.spyOn(api(), 'backfillOffer').mockResolvedValue(offer(2 * DAY));
+  it('after a failure, says so and offers to send the rest in the same window, with no picker', async () => {
+    vi.spyOn(api(), 'backfillOffer').mockResolvedValue({ ...offer(12 * DAY), resuming: true });
     vi.spyOn(api(), 'backfillStatus').mockResolvedValue(status('failed', { reason: 'export_failed' }));
     const start = vi.spyOn(api(), 'backfillStart').mockResolvedValue({ ok: true });
     render(<TelemetryBackfillOffer destinationId="otlp" label="OTLP" on />);
     expect(await screen.findByText("Sending stopped: OTLP didn't accept part of it. What was sent stays sent.")).toBeInTheDocument();
-    expect(screen.getByText('Send the rest of the history to OTLP? It picks up after what was already sent.')).toBeInTheDocument();
+    expect(screen.getByText('Send the rest of the history to OTLP? It picks up after what was already sent, in the same window as before.')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Send the rest' }));
-    await waitFor(() => expect(start).toHaveBeenCalledWith('otlp', 'all'));
+    await waitFor(() => expect(start).toHaveBeenCalled());
   });
 
   it('says when history was sent, with no offer left', async () => {
