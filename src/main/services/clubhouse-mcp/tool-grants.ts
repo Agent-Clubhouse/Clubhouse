@@ -53,9 +53,9 @@ export const TOOL_GRANT_TARGETS = [
   /** The managed agents library: shared parts and templates (#2819). */
   'library',
   /**
-   * An action (#2918) named in the arguments. Its owner (the caller, a
-   * person, another agent or the Dispatcher) decides which grant covers it:
-   * changing or running a person's action acts at the person's access.
+   * An Action (#2918) named in the arguments. The Actions module tells the
+   * check who owns it (`registerActionOwnerLookup`): the caller's own Action
+   * is `self`; anyone else's needs a grant on that Action, or on `any`.
    */
   'action_arg',
 ] as const;

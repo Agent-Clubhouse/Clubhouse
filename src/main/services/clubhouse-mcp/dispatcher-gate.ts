@@ -15,6 +15,13 @@ import { isDispatcherEnabled } from '../dispatcher/dispatcher-settings';
 import { notifyToolGateChange } from './orchestration-gate';
 
 const dispatcherAgents = new Set<string>();
+/** Bumped whenever an agent becomes or stops being the Dispatcher: other agents' tool lists depend on it too (#2968). */
+let dispatcherVersion = 0;
+
+/** Part of the tool-list cache key: which agents are the Dispatcher. */
+export function dispatcherGateVersion(): number {
+  return dispatcherVersion;
+}
 
 /** Whether the `dispatcher` tool group is open for an agent. */
 export function isDispatcherAgent(agentId: string): boolean {
@@ -34,6 +41,7 @@ export function setDispatcherAgent(agentId: string, on: boolean): void {
   if (on === dispatcherAgents.has(agentId)) return;
   if (on) dispatcherAgents.add(agentId);
   else dispatcherAgents.delete(agentId);
+  dispatcherVersion++;
   notifyToolGateChange(agentId);
 }
 

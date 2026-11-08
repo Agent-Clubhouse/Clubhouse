@@ -18,6 +18,7 @@ import { registerManagedTools } from './managed-tools';
 import { registerHelperQuestionTools } from './helper-question-tools';
 import { registerConnectionTools } from './connection-tools';
 import { registerActionTools } from './action-tools';
+import { registerHelperPresetTools } from './helper-preset-tools';
 
 export function registerClubhouseMcpTools(): void {
   registerAgentTools();
@@ -35,4 +36,5 @@ export function registerClubhouseMcpTools(): void {
   registerHelperQuestionTools();
   registerConnectionTools();
   registerActionTools();
+  registerHelperPresetTools();
 }

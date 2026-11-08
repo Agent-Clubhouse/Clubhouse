@@ -12,9 +12,10 @@ import { groupProjectRegistry } from '../group-project-registry';
 import { deniedGroupProjectTools } from '../../../shared/group-project-admin';
 import { appLog } from '../log-service';
 import { isCrossProjectEnabled, isOrchestrationEnabled, onOrchestrationGateChange } from './orchestration-gate';
-import { isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
+import { dispatcherGateVersion, isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
 import { mcpCallAccess, mcpCallerKind } from './mcp-call-gate';
 import { CROSS_PROJECT_OFF_MESSAGE, MCP_CALLER_UNKNOWN_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
+import { checkToolGrant, type GrantCheck, type GrantCheckWire } from './grant-check';
 import { getProvider } from '../../orchestrators';
 
 /** The refusal a Dispatcher tool returns for any other agent. */
@@ -321,6 +322,8 @@ export interface RegisteredToolGrant {
   name: string;
   /** Undefined only for a tool registered without one (tests). */
   grant: ToolGrant | undefined;
+  /** The tool group gating it, if any. */
+  group?: ToolGroups;
 }
 
 /**
@@ -331,20 +334,21 @@ export interface RegisteredToolGrant {
 export function listToolGrants(): RegisteredToolGrant[] {
   const out: RegisteredToolGrant[] = [];
   for (const [kind, templates] of toolTemplates) {
-    for (const t of templates) out.push({ kind, name: t.nameSuffix, grant: t.grant });
+    for (const t of templates) out.push({ kind, name: t.nameSuffix, grant: t.grant, ...(t.group && { group: t.group }) });
   }
   for (const [kind, byTarget] of targetTemplates) {
     for (const [, templates] of byTarget) {
       for (const t of templates) out.push({ kind, name: t.nameSuffix, grant: t.grant });
     }
   }
-  for (const [name, tool] of globalTools) out.push({ kind: 'global', name, grant: tool.grant });
+  for (const [name, tool] of globalTools) out.push({ kind: 'global', name, grant: tool.grant, ...(tool.group && { group: tool.group }) });
   return out;
 }
 
 /** Whether every global tool's condition is on, one character each: part of the cache key. */
 function conditionsKey(): string {
-  let key = '';
+  // Which agents are the Dispatcher: a wire to it lists no reset tools (#2968).
+  let key = `d${dispatcherGateVersion()}:`;
   for (const [, tool] of globalTools) if (tool.when) key += tool.when.isOn() ? '1' : '0';
   return key;
 }
@@ -491,6 +495,8 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
       if (deniedTools.has(template.nameSuffix)) {
         continue;
       }
+      // Listed only when a grant covers it, as callTool checks (#2968).
+      if (!checkToolGrant(agentId, template.grant, {}, wireOf(binding)).ok) continue;
 
       let description = template.definition.description;
 
@@ -522,6 +528,7 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
   for (const [, tool] of globalTools) {
     if (!groupAllows(tool.group, agentId)) continue;
     if (tool.when && !tool.when.isOn()) continue;
+    if (!checkToolGrant(agentId, tool.grant, {}).ok) continue;
     tools.push(tool.definition);
   }
 
@@ -557,6 +564,8 @@ export async function callTool(
       appLog('core:mcp', 'info', 'Tool call refused: the tool is turned off', { meta: { agentId, toolName } });
       return refuse('group_off', globalTool.when.refusal);
     }
+    const granted = checkToolGrant(agentId, globalTool.grant, args);
+    if (granted.ok === false) return grantRefusal(agentId, toolName, granted);
     const schema = globalTool.definition.inputSchema;
     if (schema && typeof schema === 'object') {
       const required = (schema.required as string[]) || [];
@@ -664,7 +673,24 @@ export async function callTool(
     }
   }
 
+  const granted = checkToolGrant(agentId, template.grant, args, wireOf(binding));
+  if (granted.ok === false) return grantRefusal(agentId, toolName, granted);
+
   return withSettingsSurface('mcp', agentId, () => template.handler(binding.targetId, agentId, args));
+}
+
+/** What the grant check needs about a wire. */
+function wireOf(binding: McpBinding): GrantCheckWire {
+  return {
+    binding,
+    ...(binding.targetKind === 'group-project' && { groupMetadata: groupProjectRegistry.getSync(binding.targetId)?.metadata }),
+  };
+}
+
+/** A call no grant covers (#2968). The refusal never says whether the target exists. */
+function grantRefusal(agentId: string, toolName: string, check: Extract<GrantCheck, { ok: false }>): McpToolResult {
+  appLog('core:mcp', 'info', 'Tool call refused: no Clubhouse permission covers it', { meta: { agentId, toolName, reason: check.reason } });
+  return refuse('no_grant', check.message);
 }
 
 function matchScopedToolName(

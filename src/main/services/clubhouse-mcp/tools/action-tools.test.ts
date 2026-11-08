@@ -226,16 +226,17 @@ describe('action tools', () => {
         for (const tool of ['update_action', 'delete_action', 'run_action']) {
           const args = tool === 'update_action' ? { id: target, enabled: false } : { id: target };
           const r = await call('agent-a', tool, args);
-          expect(r.body.error.code).toBe('not_allowed');
-          expect(r.body.error.message).toMatch(/only change, delete or run actions you made/);
+          // Refused by the grant check (#2968) before the tool's own check, which says the same.
+          expect(r.isError).toBe(true);
+          expect(r.body.text).toMatch(/an Action you don't own/);
         }
         expect((await call('agent-a', 'action_history', { id: target })).isError).toBe(false);
       }
       expect(actions.setActionEnabled).not.toHaveBeenCalled();
       expect(actions.deleteAction).not.toHaveBeenCalled();
       expect(actions.runActionNow).not.toHaveBeenCalled();
-      // A missing id is still not found.
-      expect((await call('agent-a', 'run_action', { id: 'nope' })).body.error.code).toBe('not_found');
+      // An unknown id is refused the same way: a refusal never says whether it exists.
+      expect((await call('agent-a', 'run_action', { id: 'nope' })).body.text).toMatch(/an Action you don't own/);
       // Its own action it may run.
       expect((await call('agent-a', 'run_action', { id: ids['own-a'] })).body.runId).toBeTruthy();
     });
@@ -252,7 +253,11 @@ describe('action tools', () => {
       for (const caller of ['dispatcher', 'agent-a']) {
         for (const tool of ['update_action', 'delete_action', 'run_action', 'action_history']) {
           const r = await call(caller, tool, tool === 'update_action' ? { id: ids.hidden, name: 'x' } : { id: ids.hidden });
-          expect(r.body.error.code).toBe('not_found');
+          expect(r.isError).toBe(true);
+          // The Dispatcher reaches the tool and gets not_found. An agent is refused by the
+          // grant check first (#2968), worded the same as for any action it doesn't own.
+          if (caller === 'dispatcher' || tool === 'action_history') expect(r.body.error.code).toBe('not_found');
+          else expect(r.body.text).toMatch(/an Action you don't own/);
         }
       }
       expect(engine().get(ids.hidden)).toBeDefined();
@@ -365,7 +370,7 @@ describe('action tools', () => {
     });
 
     it('a missing id', async () => {
-      expect((await call('agent-a', 'run_action', { id: '  ' })).body.error.code).toBe('invalid_input');
+      expect((await call('dispatcher', 'run_action', { id: '  ' })).body.error.code).toBe('invalid_input');
     });
   });
 

@@ -18,6 +18,7 @@
  */
 
 import { registerGlobalTool } from '../tool-registry';
+import { registerActionOwnerLookup } from '../grant-check';
 import { ACCESS_LEVELS } from '../../../../shared/agent-access';
 import type { McpToolDefinition, McpToolResult } from '../types';
 import { isDispatcherAgent, isTrackedDispatcher } from '../dispatcher-gate';
@@ -467,7 +468,28 @@ function schema(properties: Obj, required: string[] = []): McpToolDefinition['in
   return { type: 'object', properties, ...(required.length > 0 && { required }) };
 }
 
+/**
+ * Who owns the action a call names, for the grant check (#2921): an agent's
+ * own action is `self`, anyone else's needs a grant on it. A person's or the
+ * Dispatcher's action has no owning agent; an unknown id (or Clubhouse's own
+ * action) is undefined, refused like someone else's.
+ */
+export function actionOwnerFromArgs(args: Record<string, unknown>): { actionId: string; ownerAgentId?: string } | undefined {
+  const id = typeof args.id === 'string' ? args.id.trim() : '';
+  if (!id) return undefined;
+  let view: ActionView | undefined;
+  try {
+    view = actions.getAction(id);
+  } catch {
+    // telemetry-exempt: Actions still starting; the call is refused and the tool says why
+    return undefined;
+  }
+  if (!view) return undefined;
+  return { actionId: view.id, ...(view.owner.kind === 'agent' && { ownerAgentId: view.owner.agentId }) };
+}
+
 export function registerActionTools(): void {
+  registerActionOwnerLookup(actionOwnerFromArgs);
   registerGlobalTool(
     'create_action',
     {
