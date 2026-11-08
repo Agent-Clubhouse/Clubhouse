@@ -39,6 +39,7 @@ import {
 import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { Field, FieldLabel, inputClass, PageTitle, SectionHeading, selectClass, textareaClass } from './agentSettingsUi';
 import { AgentHelpersSettings } from './helpers/AgentHelpersSettings';
+import { AgentGrantsSettings } from './AgentGrantsSettings';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
 import type { ManagedAgentSetup } from '../../../shared/managed-agents-types';
 import { ManagedBuilder, PreviewPane } from '../managed/ManagedBuilder';
@@ -1348,6 +1349,16 @@ export function AgentSettingsView({ agent }: Props) {
     </>
   ) : null;
 
+  // Clubhouse permissions (#2971): every local durable agent, managed or not. Each row saves on its own.
+  const showGrants = !hiddenPages.includes('grants');
+  const grantsSettings = showGrants ? <AgentGrantsSettings agent={agent} projectPath={projectPath} refreshKey={refreshKey} /> : null;
+  const grantsSection = grantsSettings && (
+    <div id="agent-settings-section-grants" data-testid="agent-settings-section-grants">
+      <SectionHeading title="Clubhouse permissions" />
+      {grantsSettings}
+    </div>
+  );
+
   // ── Page content ───────────────────────────────────────────────
 
   // Actions (#2954): on this machine only.
@@ -1368,6 +1379,7 @@ export function AgentSettingsView({ agent }: Props) {
       mcp: undefined,
       permissions: <span className="font-mono">{permissionsPathLabel}</span>,
       settings: <>Instructions don't grant access. These settings do.{isRunning ? <span className="ml-2 text-ctp-overlay1">· Changes apply when it restarts</span> : null}</>,
+      grants: undefined,
       helpers: `How ${agent.name} starts, runs and disposes of helper agents. The same switches are in its Orchestration card beside the chat.`,
       quick: `Defaults for quick agents ${agent.name} starts`,
       actions: `Actions that involve ${agent.name}`,
@@ -1385,6 +1397,7 @@ export function AgentSettingsView({ agent }: Props) {
       skills: skillsSection,
       mcp: mcpSections,
       settings: managedSettings,
+      grants: grantsSettings,
       permissions: permissionsEditor,
       helpers: helpersSettings,
       quick: quickDefaults,
@@ -1426,6 +1439,7 @@ export function AgentSettingsView({ agent }: Props) {
         <div id="agent-settings-section-settings" data-testid="agent-settings-section-settings">
           {managedSettings}
         </div>
+        {grantsSection}
         <div id="agent-settings-section-preview" data-testid="agent-settings-section-preview">
           <SectionHeading title="Preview" sub={`What ${agent.name} gets at its next start`} />
           <PreviewPane agent={builderAgent} />
@@ -1443,6 +1457,7 @@ export function AgentSettingsView({ agent }: Props) {
         {instructionsEditor}
         {skillsSection}
         {mcpSections}
+        {grantsSection}
         <SectionHeading title="Permissions" sub={<span className="font-mono">{permissionsPathLabel}</span>} />
         {permissionsEditor}
         {helpersSettings}

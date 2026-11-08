@@ -151,6 +151,10 @@ export const IPC = {
     /** main → renderer: the lists after a change from any window or a phone. */
     FINISHED_QUICK_CHANGED: 'agent:finished-quick-changed',
     GET_DURABLE_CONFIG: 'agent:get-durable-config',
+    /** Clubhouse permissions (#2971). */
+    GET_GRANTS: 'agent:get-grants',
+    SET_GRANT: 'agent:set-grant',
+    RESET_GRANTS: 'agent:reset-grants',
     UPDATE_DURABLE_CONFIG: 'agent:update-durable-config',
     LIST_AGENT_TEMPLATES: 'agent:list-agent-templates',
     CREATE_SKILL: 'agent:create-skill',

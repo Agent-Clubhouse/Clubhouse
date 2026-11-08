@@ -197,7 +197,7 @@ function holds(held: readonly Grant[], given: Grant): boolean {
 }
 
 /** Whether a held target covers everything a given one does. */
-function widerOrSame(held: GrantTarget, given: GrantTarget): boolean {
+export function widerOrSame(held: GrantTarget, given: GrantTarget): boolean {
   if (held.kind === 'any') return true;
   if (held.kind !== given.kind) return false;
   if (held.kind === 'connected' && given.kind === 'connected') return !held.excludeDispatcher || !!given.excludeDispatcher;

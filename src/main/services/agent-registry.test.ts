@@ -259,14 +259,25 @@ describe('agent-registry', () => {
       agentRegistry.register('la-3', { projectPath: path.join('p', 'a'), orchestrator: 'claude-code', runtime: 'chat' });
       agentRegistry.setLaunchCap('la-3', { freeAgentMode: false, permissionMode: 'skip-all' });
       agentRegistry.reportLaunchAccess('la-3', { freeAgentMode: true, permissionMode: 'skip-all' });
-      expect(agentRegistry.get('la-3')?.launchAccess).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+      expect(agentRegistry.get('la-3')?.launchAccess).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
       agentRegistry.setUserLaunchAccess('la-3', { freeAgentMode: true, permissionMode: 'auto' });
       agentRegistry.reportLaunchAccess('la-3', { freeAgentMode: true, permissionMode: 'skip-all' });
-      expect(agentRegistry.get('la-3')?.launchAccess).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+      expect(agentRegistry.get('la-3')?.launchAccess).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
       agentRegistry.setUserLaunchAccess('la-3', undefined);
       agentRegistry.reportLaunchAccess('la-3', { freeAgentMode: true, permissionMode: 'auto' });
       expect(agentRegistry.get('la-3')?.launchAccess?.freeAgentMode).toBe(false);
       agentRegistry.untrack('la-3');
+    });
+
+    it('a report clamped to a Plan spawn stays at Plan; a change within the rank is the person\'s (#3000)', () => {
+      agentRegistry.register('la-5', { projectPath: path.join('p', 'a'), orchestrator: 'claude-code', runtime: 'chat' });
+      agentRegistry.setLaunchCap('la-5', { freeAgentMode: false, permissionMode: 'auto', access: 'plan' });
+      agentRegistry.reportLaunchAccess('la-5', { freeAgentMode: true, permissionMode: 'skip-all', access: 'full_access' });
+      expect(agentRegistry.get('la-5')?.launchAccess).toMatchObject({ freeAgentMode: false, access: 'plan' });
+      // Approving the plan moves Claude to Auto-accept edits: within the rank, so it stands.
+      agentRegistry.reportLaunchAccess('la-5', { freeAgentMode: false, permissionMode: 'auto', access: 'auto_edit' });
+      expect(agentRegistry.get('la-5')?.launchAccess?.access).toBe('auto_edit');
+      agentRegistry.untrack('la-5');
     });
 
     it('reads an agent with no cap as standard', () => {

@@ -4,11 +4,19 @@ import { IPC } from '../shared/ipc-channels';
 import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeRequest, HelperDisposeResult, HelperInProject, HelperStartDecisionResult, HelperStartRequest, StartDurableCreationParams } from '../shared/types';
 import type { HelperAccessResolution, HelperLimitCheck, HelperSummary, OrchestrationOffChoice, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy, SetOrchestrationPolicyResult, TurnOffOrchestrationResult } from '../shared/orchestration-policy';
 import type { AccessLevel } from '../shared/agent-access';
+import type { AgentGrantsView, GrantChange } from '../shared/agent-grant-changes';
 import type { FinishedQuickAgentOp, FinishedQuickAgents, FinishedQuickAgentsChange } from '../shared/finished-quick-agents';
 import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
 
 export const agent = {
   agent: {
+  /** Clubhouse permissions (#2971). */
+  getGrants: (projectPath: string, agentId: string): Promise<AgentGrantsView> =>
+    ipcRenderer.invoke(IPC.AGENT.GET_GRANTS, projectPath, agentId),
+  setGrant: (projectPath: string, agentId: string, change: Omit<GrantChange, 'by' | 'at'>): Promise<AgentGrantsView> =>
+    ipcRenderer.invoke(IPC.AGENT.SET_GRANT, projectPath, agentId, change),
+  resetGrants: (projectPath: string, agentId: string): Promise<AgentGrantsView> =>
+    ipcRenderer.invoke(IPC.AGENT.RESET_GRANTS, projectPath, agentId),
   listDurable: (projectPath: string) =>
     ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
   getRunningStatuses: (agentIds: string[]): Promise<string[]> =>

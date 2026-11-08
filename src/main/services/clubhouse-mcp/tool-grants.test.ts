@@ -101,7 +101,7 @@ describe('tool grant declarations (#2967)', () => {
       notify_user: user.notify on app
       hand_off: agent.dispose on my_helpers
       dispose_helper: agent.dispose on my_helpers
-      start_helper: agent.create on project_arg
+      start_helper: agent.create on project_arg; agent.grant on project_arg if template or addParts or removeParts or access
       list_helpers: agent.read on my_helpers
       sleep_helper: agent.sleep on my_helpers
       wake_helper: agent.wake on my_helpers; agent.message on my_helpers if message

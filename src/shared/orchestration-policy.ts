@@ -1,5 +1,6 @@
 import type { FreeAgentPermissionMode, HelperCascadeResult } from './types';
 import type { PermissionLevel } from './chat/capabilities';
+import { ACCESS_LEVELS as FIVE_LEVELS, accessFromLegacy, isAccessLevel as isFiveLevel, type AccessLevel } from './agent-access';
 
 /**
  * Orchestration policy (#2228): whether an agent may start and manage helper
@@ -274,6 +275,38 @@ export interface AgentLaunchAccess {
    * --allow-all-tools for skip-all).
    */
   permissionMode: FreeAgentPermissionMode;
+  /**
+   * The five-level Access level (#2761) it runs at, when known. The three ranks
+   * above can't tell Plan, Ask first and Auto-accept edits apart, so the
+   * helper ceiling compares this when both sides have it (#3000).
+   */
+  access?: AccessLevel;
+}
+
+/** The five-level level of launch settings: the recorded one, else what the legacy pair gives. */
+export function fiveLevelOf(launch: { freeAgentMode?: boolean; permissionMode?: FreeAgentPermissionMode; access?: AccessLevel } | undefined): AccessLevel {
+  if (launch?.access && isFiveLevel(launch.access)) return launch.access;
+  return accessFromLegacy(launch?.freeAgentMode, launch?.permissionMode);
+}
+
+/** The lower of two Access levels. */
+export function lowerFiveLevel(a: AccessLevel, b: AccessLevel): AccessLevel {
+  return FIVE_LEVELS.indexOf(a) <= FIVE_LEVELS.indexOf(b) ? a : b;
+}
+
+/** What start_helper saved as asked for: a saved policy value, or an Access level (#3000). */
+export type HelperRequestedAccess = AgentAccessLevel | AccessLevel;
+
+/** A level start_helper may ask for: `same`, one of the saved policy values, or an Access level (#3000). */
+export function helperAccessRequest(value: unknown): { legacy: AgentAccessLevel; access: AccessLevel } | undefined {
+  if (isFiveLevel(value)) {
+    const legacy: AgentAccessLevel = value === 'full_access' ? 'bypass' : value === 'auto' ? 'auto' : 'standard';
+    return { legacy, access: value };
+  }
+  if (value === 'standard') return { legacy: 'standard', access: 'ask' };
+  if (value === 'auto') return { legacy: 'auto', access: 'auto' };
+  if (value === 'bypass') return { legacy: 'bypass', access: 'full_access' };
+  return undefined;
 }
 
 /**
@@ -327,9 +360,9 @@ export function providerAccessLevel(
 /** A chat agent's live permission level as launch settings (lower levels read as standard). */
 export function launchAccessForChatLevel(level: PermissionLevel): AgentLaunchAccess {
   switch (level) {
-    case 'full_access': return launchAccessFor('bypass');
-    case 'auto': return launchAccessFor('auto');
-    default: return launchAccessFor('standard');
+    case 'full_access': return { ...launchAccessFor('bypass'), access: level };
+    case 'auto': return { ...launchAccessFor('auto'), access: level };
+    default: return { ...launchAccessFor('standard'), access: level };
   }
 }
 
@@ -345,6 +378,10 @@ export interface HelperAccessResolution extends AgentLaunchAccess {
   level: AgentAccessLevel;
   /** The orchestrator's live level, the ceiling. Standard when it isn't running or its mode is unknown. */
   ceiling: AgentAccessLevel;
+  /** The same ceiling on the five-level ladder (#3000): Ask first when it isn't running. */
+  ceilingAccess: AccessLevel;
+  /** The policy follows the orchestrator (`same`), so a helper gets its exact level. */
+  followsOrchestrator?: boolean;
   /** True when the helper got less than the policy asked for. */
   clamped: boolean;
   /** The provider the level was ranked for. */
@@ -359,7 +396,7 @@ export interface HelperAccessResolution extends AgentLaunchAccess {
  * Copilot helper of an `auto` orchestrator starts standard, not --yolo.
  */
 export function resolveHelperAccess(
-  orchestratorLive: { freeAgentMode?: boolean; permissionMode?: FreeAgentPermissionMode } | undefined,
+  orchestratorLive: { freeAgentMode?: boolean; permissionMode?: FreeAgentPermissionMode; access?: AccessLevel } | undefined,
   access: OrchestrationAccess,
   helperProvider?: string,
 ): HelperAccessResolution {
@@ -373,6 +410,8 @@ export function resolveHelperAccess(
     ...launchAccessFor(level),
     level,
     ceiling,
+    ceilingAccess: fiveLevelOf(orchestratorLive),
+    ...(access === 'same' && { followsOrchestrator: true }),
     clamped: rank(level) < rank(requested),
     ...(helperProvider && { helperProvider }),
   };
@@ -390,6 +429,8 @@ export function isLowerAccess(a: AgentAccessLevel, b: AgentAccessLevel): boolean
 export interface HelperLaunch extends AgentLaunchAccess {
   /** What the helper's CLI really gets with these settings. */
   level: AgentAccessLevel;
+  /** The five-level level it starts at (#3000): never above the orchestrator's, nor above what was asked. */
+  access: AccessLevel;
   /** True when the helper got less than the policy or the request asked for. */
   clamped: boolean;
 }
@@ -407,13 +448,30 @@ export function rankHelperLaunch(
   provider: string | undefined,
 ): HelperLaunch {
   let target = resolved.level;
-  const asked = isAccessLevel(requested) ? requested : undefined;
+  const request = helperAccessRequest(requested);
+  const asked = request?.legacy;
   if (asked && rank(asked) < rank(target)) target = asked;
   const ranked = resolveHelperAccess(launchAccessFor(target), 'same', provider);
   const launch = { freeAgentMode: ranked.freeAgentMode, permissionMode: ranked.permissionMode };
   const level = providerAccessLevel(provider, launch);
   const wanted = asked ?? resolved.level;
-  return { ...launch, level, clamped: resolved.clamped || rank(level) < rank(wanted) };
+  // The five-level level (#3000): what was asked (or the policy's), never above the
+  // orchestrator's live level. With Free Agent Mode on, the flags decide (Auto or Full
+  // access, already ranked for the provider); off, Plan, Ask first and Auto-accept edits
+  // stay as asked, and anything higher the provider lowered starts at Ask first.
+  // With nothing asked, a policy at the orchestrator's rank follows its exact level (`same`).
+  const wantedAccess = request?.access
+    ?? (resolved.followsOrchestrator ? resolved.ceilingAccess : fiveLevelOf(launchAccessFor(resolved.level)));
+  const capped = lowerFiveLevel(wantedAccess, resolved.ceilingAccess);
+  const access = launch.freeAgentMode
+    ? lowerFiveLevel(capped, fiveLevelOf(launch))
+    : (capped === 'auto' || capped === 'full_access' ? 'ask' : capped);
+  return {
+    ...launch,
+    level,
+    access,
+    clamped: resolved.clamped || rank(level) < rank(wanted) || FIVE_LEVELS.indexOf(access) < FIVE_LEVELS.indexOf(wantedAccess),
+  };
 }
 
 // ── Limits ───────────────────────────────────────────────────────────────
