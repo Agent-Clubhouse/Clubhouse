@@ -289,10 +289,49 @@ describe('ChatAgentRuntime', () => {
       vi.spyOn(driver.last, 'send').mockRejectedValueOnce(new Error('send failed'));
       driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
       await flush();
-      expect(transcript.filter((e) => e.type === 'queue_state').at(-1)).toMatchObject({ data: {
+      expect(transcript.find((e) => e.type === 'queue_state' && (e.data as { transition?: { status: string } }).transition?.status === 'failed')).toMatchObject({ data: {
         queuedMessageIds: ids.slice(1), transition: { messageIds: [ids[0]], status: 'failed' },
       } });
-      expect(runtime.getQueueState().queueRemovalSupported).toBe(false);
+      // The failed one isn't put back; the session stays, so the rest can still be removed (#3103).
+      expect(runtime.getQueueState().queuedMessageIds).not.toContain(ids[0]);
+      expect(runtime.getQueueState().queueRemovalSupported).toBe(true);
+    });
+
+    it('keeps the session when a queued message fails to send, and sends the next one (#3103)', async () => {
+      const { driver, runtime, ids } = await queuedRuntime();
+      vi.spyOn(driver.last, 'send').mockRejectedValueOnce(new Error('send failed'));
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+      await flush();
+      expect(transcript.some((e) => e.type === 'session_ended')).toBe(false);
+      expect(transcript.some((e) => e.type === 'error' && (e.data as { fatal?: boolean }).fatal)).toBe(false);
+      expect(transcript.find((e) => e.type === 'notice' && (e.data as { code: string }).code === 'queued_send_failed')).toBeDefined();
+      // The next queued message goes out in place of the failed one.
+      expect(sentTexts(driver)).toEqual(['two']);
+      expect(runtime.getQueueState().queuedMessageIds).toEqual([ids[2]]);
+    });
+
+    it('a message queued as a turn ends waits behind the queue, not ahead of it (#3102)', async () => {
+      const { driver, runtime, ids } = await queuedRuntime();
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+      // Before the drain runs: the state may already read idle, but the queue still holds items.
+      const late = await runtime.sendMessage('late', { source: 'user', delivery: 'queued' });
+      await flush();
+      expect(late.delivery).toBe('queued');
+      expect(sentTexts(driver)).toEqual(['one']);
+      expect(runtime.getQueueState().queuedMessageIds).toEqual([ids[1], ids[2], late.messageId]);
+    });
+
+    it('sends a message asked to queue as a prompt when nothing is running (#3102)', async () => {
+      const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli', STEERLESS);
+      const { runtime } = makeRuntime(driver);
+      await runtime.start();
+      driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+      await flush();
+      const result = await runtime.sendMessage('late', { source: 'user', delivery: 'queued' });
+      expect(result.delivery).toBe('prompt');
+      expect(sentTexts(driver)).toEqual(['late']);
+      expect(runtime.getQueueState().queuedMessageIds).toEqual([]);
     });
 
     it('does not claim native provider queued messages are locally removable', async () => {
@@ -983,14 +1022,14 @@ describe('ChatAgentRuntime', () => {
     expect(permissionQueue.listPendingForAgent('agent-1')).toEqual([]);
   });
 
-  it('closes the CLI when handling an event throws', async () => {
+  it('closes the CLI when handling turn_ended throws', async () => {
     const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli', STEERLESS);
     const { runtime, onEnded } = makeRuntime(driver);
     await runtime.start();
     driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
     await flush();
-    await runtime.sendMessage('queued one', { source: 'user' });
-    driver.last.send = async () => { throw new Error('pipe broke'); };
+    // A failed queued send no longer ends the session (#3103), so something else in the handler throws.
+    vi.spyOn(runtime as unknown as { drainQueue: () => Promise<void> }, 'drainQueue').mockRejectedValueOnce(new Error('pipe broke'));
     driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
     await flush();
     expect(driver.last.closed).toBe(true);

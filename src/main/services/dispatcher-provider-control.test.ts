@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 const w = vi.hoisted(() => ({ enabled: true, access: 'open', version: 1, removed: false, disabled: [] as string[], control: 'hands-off', connected: true, helper: false, commits: 0, revoke: false, revokeBinding: false }));
 vi.mock('./agent-provider-control', () => ({
   previewAgentProvider: async (_p: string, _t: string, _v: string, actor: any) => { await actor.assertAuthorized(); return { canSave: true }; },
-  changeAgentProvider: async (_p: string, _t: string, _v: string, _s: string, actor: any) => { if (w.revoke) w.control = 'ask-everything'; if (w.revokeBinding) w.version++; await actor.assertAuthorized(); w.commits++; return { status: 'changed' }; },
+  changeAgentProvider: async (_p: string, _t: string, _v: string, _s: string, actor: any) => { if (w.revoke) w.control = 'ask-everything'; if (w.revokeBinding) w.disabled = ['read_output']; await actor.assertAuthorized(); w.commits++; return { status: 'changed' }; },
 }));
 vi.mock('./agent-registry', () => ({ agentRegistry: { get: () => ({ projectPath: '/dispatcher' }) } }));
 vi.mock('./clubhouse-mcp/dispatcher-gate', () => ({ isDispatcherAgent: () => w.enabled }));
@@ -29,4 +29,16 @@ it('does not expose arbitrary settings, self or unwired targets', async () => {
   await expect(dispatcherProviderControl('dispatcher', 'other', false, { provider: 'codex-cli' })).rejects.toMatchObject({ code: 'permission_revoked' });
 });
 
-it('rejects a changed wire version at commit', async () => { w.revokeBinding = true; await expect(run()).rejects.toMatchObject({ code: 'permission_revoked' }); expect(w.commits).toBe(0); });
+it('rejects a change to this wire at commit', async () => { w.revokeBinding = true; await expect(run()).rejects.toMatchObject({ code: 'permission_revoked' }); expect(w.commits).toBe(0); });
+
+it('isn\'t refused when some other wire in the app changes (#3109)', async () => {
+  const keys: string[] = [];
+  const control = await import('./agent-provider-control');
+  const spy = vi.spyOn(control, 'previewAgentProvider').mockImplementation(async (_p, _t, _v, actor: any) => { keys.push(actor.key); await actor.assertAuthorized(); return { canSave: true } as never; });
+  await dispatcherProviderControl('dispatcher', 'target', false, { provider: 'codex-cli' });
+  w.version += 5;
+  await dispatcherProviderControl('dispatcher', 'target', false, { provider: 'codex-cli' });
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  spy.mockRestore();
+});

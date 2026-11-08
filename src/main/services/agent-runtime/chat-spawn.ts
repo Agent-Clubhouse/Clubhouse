@@ -304,7 +304,7 @@ export async function cancelAllChatStarts(): Promise<void> {
   await Promise.allSettled([...inflightStarts.keys()].map((agentId) => cancelChatStart(agentId)));
 }
 
-/** For tests. */
+/** Whether a chat start is in progress for an agent (it isn't running until it finishes). */
 export function hasChatStartInFlight(agentId: string): boolean {
   return inflightStarts.has(agentId);
 }
