@@ -7,7 +7,23 @@ existing conventions. Explicit agent requests reject a mismatched current
 worktree; mutations use the existing agent transition reservation.
 
 Rows show the worktree source path. Files found here are not proof that a provider
-loaded or executed a skill. This page is not a catalog inventory or a scan of
+loaded or executed a skill.
+
+Each row (#2929) also says, on one line, the provider the agent runs on, whose
+folder it is (the agent's worktree, or the project folder for an agent without one),
+whether Clubhouse manages it (its folder is named in the managed skills manifest,
+`.clubhouse-managed-skills.json`), and whether it is loaded. While the agent runs,
+"<provider> reports a skill by this name loaded" appears only when the provider's
+own report for the agent's current chat session names the skill, by folder name or
+by the `name` in its SKILL.md front matter. The report has no origin, so a user or
+plugin skill with the same name matches too, and the row says it matched by name.
+Otherwise the row says "Loaded: not confirmed", including when the agent is asleep,
+there is no report, the report is invalid, or the provider doesn't report skills.
+The listing reads folder names (the first 200 by name; the page says when there are
+more), the manifest and the first 8 KB of each SKILL.md that is a regular file (a
+link is not followed), and runs nothing; a test with a marker script covers that.
+
+This page is not a catalog inventory or a scan of
 home, ancestor, plugin or arbitrary additional directories. Opening it does not
 import, assign, adopt, start an agent or execute scripts. Target switches discard
 prior-target results.

@@ -28,6 +28,13 @@ describe('AnnexSettingsView', () => {
     expect(screen.getByText('Annex')).toBeInTheDocument();
   });
 
+  it('saves the name this machine is also reachable at (#3058)', () => {
+    useAnnexStore.setState({ settings: { enableServer: true, enableClient: false, deviceName: 'My Mac' } as any });
+    render(<AnnexSettingsView />);
+    fireEvent.change(screen.getByLabelText('Also reachable at'), { target: { value: 'studio.tail1234.ts.net' } });
+    expect(mockSaveSettings).toHaveBeenCalledWith(expect.objectContaining({ reachableAs: 'studio.tail1234.ts.net' }));
+  });
+
   it('calls loadSettings on mount', () => {
     render(<AnnexSettingsView />);
     expect(mockLoadSettings).toHaveBeenCalled();
@@ -55,6 +62,23 @@ describe('AnnexSettingsView', () => {
     expect(screen.getByText('1234')).toBeInTheDocument();
     expect(screen.getByText('2 devices connected')).toBeInTheDocument();
     expect(screen.getByText(/Advertising on port 8080/)).toBeInTheDocument();
+  });
+
+  it('offers to allow pairing again only while pairing is paused', () => {
+    const allowPairingAgain = vi.fn();
+    useAnnexStore.setState({
+      settings: { enableServer: true, enableClient: false, deviceName: 'My Mac' },
+      status: { advertising: true, port: 8080, pin: '123456', connectedCount: 0 },
+      allowPairingAgain,
+    } as never);
+    const { rerender } = render(<AnnexSettingsView />);
+    expect(screen.queryByText('Pairing paused')).not.toBeInTheDocument();
+
+    useAnnexStore.setState({ status: { advertising: true, port: 8080, pin: '123456', connectedCount: 0, pairingPaused: true } } as never);
+    rerender(<AnnexSettingsView />);
+    expect(screen.getByText('Pairing paused')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Allow pairing again' }));
+    expect(allowPairingAgain).toHaveBeenCalled();
   });
 
   it('shows singular device text for 1 connection', () => {

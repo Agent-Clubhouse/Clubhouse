@@ -170,9 +170,17 @@ jobs:
       ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
     steps:
       - uses: actions/checkout@v7
+      # The release tarball, so a GitHub release outage doesn't fail the job.
+      # The checksum is checked whether it came from the cache or the download.
+      - uses: actions/cache@v6
+        with:
+          path: actionlint.tar.gz
+          key: actionlint-${{ env.ACTIONLINT_VERSION }}-${{ env.ACTIONLINT_SHA256 }}
       - name: Download actionlint
         run: |
-          curl -fsSL -o actionlint.tar.gz "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          if [ ! -f actionlint.tar.gz ]; then
+            curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 -o actionlint.tar.gz "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          fi
           echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum --check
           tar -xzf actionlint.tar.gz actionlint
       # Workflow structure and expressions only. Passing no shellcheck keeps the
@@ -285,11 +293,30 @@ jobs:
         continue-on-error: true
         run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
         shell: pwsh
+      # The Electron binary npm ci downloads (~100 MB), in its default cache dir per
+      # OS. Packager finds the same zip there, so forge doesn't download it again.
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/electron
+            ~/Library/Caches/electron
+            ~/AppData/Local/electron/Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
       # E2E only needs webpack output, not distributable installers.
+      # Packager still fetches Electron's SHASUMS256.txt from GitHub every run
+      # (@electron/get never caches it), so one retry when that gets a 5xx.
       - name: Build app
         if: runner.os != 'macOS'
-        run: npx electron-forge package
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/forge-package.log"
+          for attempt in 1 2; do
+            if npx electron-forge package 2>&1 | tee "$log"; then exit 0; fi
+            grep -q 'HTTPError: Response code 5' "$log" || exit 1
+            echo "::warning::electron-forge package got a 5xx from GitHub (attempt $attempt)"
+          done
+          exit 1
       - name: Build unsigned isolated macOS test artifact
         if: runner.os == 'macOS'
         run: node scripts/ci/package-integration.mjs
@@ -537,6 +564,63 @@ jobs:
           name: stable-e2e-traces-${{ matrix.os }}
           path: test-results/
 
+  # The classic layout (#2843): specs moved to the new layout run here on
+  # classic too, until their new-layout runs are stable on CI, and later the
+  # small set that stays on classic. CLUBHOUSE_E2E_LAYOUT=classic makes the
+  # config run only e2e/classic-specs.mjs's list and launches default to
+  # classic. Linux and Windows only, in a job of its own so it never lengthens
+  # the E2E shards.
+  e2e-classic:
+    needs: [changes, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    name: Classic layout E2E Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2022]
+    env:
+      PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
+      CLUBHOUSE_E2E_LAYOUT: classic
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.23.4'
+          cache: npm
+      - name: Exclude workspace from Windows Defender
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
+        shell: pwsh
+      # The Electron binary npm ci downloads (~100 MB), in its default cache dir per OS.
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/electron
+            ~/Library/Caches/electron
+            ~/AppData/Local/electron/Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - uses: actions/download-artifact@v8
+        with:
+          name: webpack-${{ matrix.os }}
+          path: .webpack/
+      - name: Run classic layout E2E tests
+        if: runner.os != 'Linux'
+        run: npx playwright test --reporter=line,junit
+      - name: Run classic layout E2E tests (Linux — requires virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npx playwright test --reporter=line,junit
+        env:
+          # chrome-sandbox is not SUID root on GitHub runners
+          ELECTRON_DISABLE_SANDBOX: '1'
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: classic-e2e-traces-${{ matrix.os }}
+          path: test-results/
+
   # Static packaging guard for the Copilot SDK on the CI matrix. The real
   # runtime handshake requires separately authorized, sandboxed QA.
   copilot-sdk-chunk:
@@ -686,9 +770,8 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.full == 'true' }}
     name: Linux Package Smoke Test
-    # Pinned: ubuntu-26.04's rpmbuild runs %install in a per-package BUILD
-    # subdirectory, which breaks electron-installer-redhat's `cp -r usr/*`.
-    runs-on: ubuntu-24.04
+    # build/rpm.spec.ejs copies from an absolute path, so rpm 4.20 works (#2549).
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -696,6 +779,9 @@ jobs:
           node-version: '22.23.4'
           cache: npm
       - run: npm ci
+      - name: Build node-pty against glibc 2.36 (Debian 12)
+        # As the release does (#3080).
+        run: scripts/ci/build-linux-native.sh
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
@@ -711,3 +797,20 @@ jobs:
             echo "::error::No Linux packages were produced"
             exit 1
           fi
+      - name: Check the .rpm holds the app (#2549)
+        run: |
+          RPM=$(find out/make -name "*.rpm" -type f | head -n 1)
+          if [ -z "$RPM" ]; then
+            echo "::error::No .rpm was produced"
+            exit 1
+          fi
+          rpm -qlp "$RPM" > rpm-files.txt
+          echo "$(wc -l < rpm-files.txt) files in $RPM"
+          for f in /usr/bin/clubhouse /usr/lib/clubhouse/clubhouse /usr/share/applications/clubhouse.desktop; do
+            if ! grep -qx "$f" rpm-files.txt; then
+              echo "::error::$f is missing from $RPM"
+              exit 1
+            fi
+          done
+      - name: Check the glibc floor of native modules
+        run: scripts/ci/check-linux-glibc.sh 2.36

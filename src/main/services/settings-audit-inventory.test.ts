@@ -29,7 +29,12 @@ function wholeCall(text: string, start: number): string {
 
 /** Not a person's choices: where the app keeps its own place. */
 const NOT_SETTINGS = new Set([
+  // Actions (#2918): the actions themselves and their run history, kept and shown by Actions.
+  'actions.json',
+  'action-history.json',
   'annex-ports.json',
+  // Annex Network membership state (removals, confirmations), kept by Clubhouse: not settings.
+  'annex-network.json',
   'finished-quick-agents.json',
   'project-state.json',
   'chat-cli-denylist.json',

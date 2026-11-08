@@ -13,12 +13,16 @@
 import { useAgentStore, consumeCancelled } from './stores/agentStore';
 import { useProjectStore } from './stores/projectStore';
 import { applyDurableCreationEvent } from './features/agents/durable-creation-events';
+import { effectiveOrchestratorOf } from './features/agents/effective-orchestrator';
+import { useOrchestratorStore } from './stores/orchestratorStore';
 import { useUIStore } from './stores/uiStore';
 import { useNotificationStore } from './stores/notificationStore';
 import { useHelperDisposeRequestStore, describeHelperDispose } from './stores/helperDisposeRequestStore';
 import { useHelperStartRequestStore } from './stores/helperStartRequestStore';
+import { useGrantRequestStore } from './stores/grantRequestStore';
 import { useFilePreviewStore } from './stores/filePreviewStore';
 import { useToastStore } from './stores/toastStore';
+import { openActionsSettings } from './features/actions/useActions';
 import { useQuickAgentStore } from './stores/quickAgentStore';
 import { handleShortcutKeydown } from './shortcut-dispatch';
 import { pluginEventBus } from './plugins/plugin-events';
@@ -274,7 +278,7 @@ function initPtyExitListener(): () => void {
           costUsd,
           durationMs,
           toolsUsed,
-          orchestrator: agent.orchestrator || 'claude-code',
+          orchestrator: effectiveOrchestratorOf(agent, useProjectStore.getState().projects.find((p) => p.id === agent.projectId), useOrchestratorStore.getState().allOrchestrators),
           model: agent.model,
           cancelled,
           pluginMetadata: agent.pluginMetadata,
@@ -288,6 +292,7 @@ function initPtyExitListener(): () => void {
           inputTokens,
           outputTokens,
           ...(agent.managedTemplateId && { managedTemplateId: agent.managedTemplateId }),
+          ...(agent.managedQuickChanges && { managedQuickChanges: agent.managedQuickChanges }),
         });
 
         // Keep the finished run on screen when it was the one being viewed,
@@ -394,6 +399,23 @@ export function initHelperStartRequestListener(): () => void {
   const offClosed = window.clubhouse.agent.onHelperStartRequestsClosed((ids) => store.remove(ids));
   Promise.resolve().then(() => window.clubhouse.agent.listHelperStartRequests()).then(
     (list) => { for (const request of list ?? []) useHelperStartRequestStore.getState().add(request); },
+    // telemetry-exempt: requests sent from now on still arrive.
+    () => {},
+  );
+  return () => { offAdded(); offClosed(); };
+}
+
+/**
+ * Clubhouse permission requests waiting on the user (#2970), loaded once and
+ * then kept current the same way as helper starts.
+ */
+export function initGrantRequestListener(): () => void {
+  if (window.clubhouse.window.isPopout()) return () => {};
+  const store = useGrantRequestStore.getState();
+  const offAdded = window.clubhouse.agent.onGrantRequest((request) => store.add(request));
+  const offClosed = window.clubhouse.agent.onGrantRequestsClosed((ids) => store.remove(ids));
+  Promise.resolve().then(() => window.clubhouse.agent.listGrantRequests()).then(
+    (list) => { for (const request of list ?? []) useGrantRequestStore.getState().add(request); },
     // telemetry-exempt: requests sent from now on still arrive.
     () => {},
   );
@@ -687,7 +709,7 @@ function initNotificationClearing(): () => void {
     const activeAgentId = useAgentStore.getState().activeAgentId;
     const activeProjectId = useProjectStore.getState().activeProjectId;
     const { explorerTab, dispatcherOpen } = useUIStore.getState();
-    const dispatcherAgentId = useDispatcherStore.getState().state?.agentId;
+    const dispatcherAgentId = useDispatcherStore.getState().state?.chatAgentId;
     const key = `${activeAgentId}|${activeProjectId}|${explorerTab}|${dispatcherOpen}|${dispatcherAgentId}`;
     if (key !== prevKey) {
       prevKey = key;
@@ -811,6 +833,16 @@ function initProtocolActionListener(): () => void {
   return removeListener;
 }
 
+/** Actions (#2918): a toast for a mechanical failure or an action Clubhouse turned off, never for a task that went badly. */
+function initActionNoticeListener(): () => void {
+  return window.clubhouse.actions.onNotice((notice) => {
+    useToastStore.getState().addToast(notice.message, 'error', notice.exists ? {
+      label: 'Open',
+      onClick: () => openActionsSettings({ cardId: notice.actionId }),
+    } : undefined);
+  });
+}
+
 export function initAppEventBridge(): () => void {
   // Tear down previous subscriptions to prevent accumulation on re-init
   previousCleanup?.();
@@ -825,6 +857,7 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initCreationEventListener());
   cleanups.push(initHelperDisposeRequestListener());
   cleanups.push(initHelperStartRequestListener());
+  cleanups.push(initGrantRequestListener());
   cleanups.push(initChatRuntimeNoticeListener());
   cleanups.push(initHookEventListener());
   cleanups.push(initPermissionQueueListener());
@@ -835,6 +868,7 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initActiveAgentSound());
   cleanups.push(initNotificationClearing());
   cleanups.push(initAgentAttentionListener());
+  cleanups.push(initActionNoticeListener());
   cleanups.push(initStaleStatusCleanup());
 
   // One after the other: each reads the flags and saves them back without its own marker.

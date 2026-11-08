@@ -11,7 +11,7 @@ The quickest way is the project's start page:
 3. Pick **Runs on** and **Model** if you want something other than the defaults.
 4. Press `⌘Enter` or click **Start**.
 
-You can also press `⌘N` to open **New agent** with **Quick** selected. `⇧⌘N` selects **Durable** instead. On Windows and Linux, use `Ctrl` in place of `⌘`. These are the default bindings; you can change them in **Settings > Keyboard shortcuts**.
+Faster still, press `⌘N`. It opens a one-line prompt: type the task and press Enter, and a quick agent starts in the current project with your default settings. **Details** changes the project, CLI, model or access for that one start, and Esc closes the prompt without starting anything. With no project in view, such as in the Dispatcher or Settings, the prompt asks for one, starting with the last you used. On a satellite, `⌘N` opens the **New Quick Agent** dialog instead. `⇧⌘N` opens **New agent** with **Durable** selected. On Windows and Linux, use `Ctrl` in place of `⌘`. These are the default bindings; you can change them in **Settings > Keyboard shortcuts**.
 
 For more options, click **New** at the top of the sidebar and choose **Quick agent…**. That dialog adds:
 
@@ -32,6 +32,8 @@ For more options, click **New** at the top of the sidebar and choose **Quick age
 | **Full access** | Runs everything without asking. |
 
 Each CLI only lists the levels it can start at. Claude Code has all five. In the terminal, Codex CLI has Ask first, Auto and Full access, and Copilot CLI has Ask first and Full access. In chat, each CLI offers the levels its chat connection supports. A quick agent with a parent agent takes the level from the parent's **Quick agents** settings, or the parent's own level when those don't set one. See **Durable agents** for more.
+
+A quick agent's CLI gets a few tools allowed ahead of time, and for Claude Code they follow its level. At Plan and Ask first only tools that read files are allowed ahead, so in a terminal it asks before any edit or command. At Auto-accept edits, file edits are allowed too. At Auto and Full access, the usual git, npm and npx commands are as well. A headless run can't ask: below Full access a check decides what it may do, and it can be wrong. Copilot runs a quick agent in the terminal in one go and can't ask either, so it keeps its usual tools at every level. A CLI with no Plan start mode (Codex and Copilot in a terminal) starts a Plan quick agent at Ask first.
 
 ## Headless or interactive
 

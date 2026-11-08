@@ -7,6 +7,7 @@
  */
 
 import {
+  AUTO_LEVELS,
   HELPER_DIFFICULTIES,
   HELPER_AUTO_OFF_REASONS,
   HELPER_ROUTING_FALLBACKS,
@@ -47,6 +48,8 @@ export function helperRoutingCapability() {
     snapshotField: 'helperRoutingRevision',
     event: HELPER_ROUTING_CHANGED_EVENT,
     difficulties: HELPER_DIFFICULTIES,
+    /** Every row in a provider's `cells`, minimum and maximum included (#3044). `difficulties` stays what start_helper takes. */
+    levels: AUTO_LEVELS,
     reasons: HELPER_ROUTING_REASONS,
     fallbacks: HELPER_ROUTING_FALLBACKS,
     skipped: HELPER_ROUTING_SKIPS,

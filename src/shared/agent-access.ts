@@ -144,6 +144,29 @@ export const ACCESS_DESCRIPTIONS: Readonly<Record<AccessLevel, string>> = {
 };
 
 /**
+ * Settings a caller sends (an MCP tool, a form): a level it names wins over a
+ * legacy flag beside it, which is only the level's derived echo when the
+ * caller read the settings back and changed the level (#2997). Without a
+ * level, a legacy on/off keeps the level `from` already has when it is on
+ * that side, as the Free Agent Mode toggle does (`accessForLegacyToggle`);
+ * with no `from` (a new template), it maps as a legacy record does. Anything
+ * else (an unknown level, a flag that isn't a boolean) comes back as sent,
+ * for the caller's checks to refuse.
+ */
+export function callerAccess<T extends { access?: AccessLevel; freeAgentMode?: boolean }>(
+  settings: T,
+  from: AccessLevel | undefined,
+  legacyMode: FreeAgentPermissionMode | undefined,
+): T {
+  if (settings.access !== undefined) {
+    return isAccessLevel(settings.access) ? { ...settings, access: settings.access, freeAgentMode: legacyFreeAgentMode(settings.access) } : settings;
+  }
+  if (typeof settings.freeAgentMode !== 'boolean') return settings;
+  const access = from ? accessForLegacyToggle(from, settings.freeAgentMode, legacyMode) : accessFromLegacy(settings.freeAgentMode, legacyMode);
+  return { ...settings, access, freeAgentMode: legacyFreeAgentMode(access) };
+}
+
+/**
  * Settings that carry an access level (a template's, a builder draft's) with
  * the level filled in from a legacy `freeAgentMode` and the legacy flag
  * derived from the level, so both always agree. A legacy flag that
@@ -155,4 +178,27 @@ export function withAccess<T extends { access?: AccessLevel; freeAgentMode?: boo
   // Unlike an agent record, settings without the legacy flag haven't said off: a level alone stands.
   const access = settings.freeAgentMode === undefined && isAccessLevel(settings.access) ? settings.access : savedAccess(settings, legacyMode);
   return { ...settings, access, freeAgentMode: legacyFreeAgentMode(access) };
+}
+
+/** A CLI tool rule that runs commands: Claude's `Bash(...)`, Copilot's and Codex's `shell(...)`. */
+function isCommandTool(tool: string): boolean {
+  return /^(Bash|shell)(\(|$)/.test(tool);
+}
+
+/** A CLI tool rule that changes files: Claude's `Write` and `Edit`, Copilot's `edit`, Codex's `apply_patch`. */
+function isEditTool(tool: string): boolean {
+  return /^(Write|Edit|MultiEdit|NotebookEdit|edit|write|apply_patch)$/.test(tool);
+}
+
+/**
+ * The default tools a quick agent gets pre-allowed, at its Access level
+ * (#3007). Below Auto-accept edits only tools that read are pre-allowed, so
+ * the CLI asks before anything changes; at Auto-accept edits, edits too but
+ * not commands; at Auto and Full access the provider's whole default list.
+ * Only the defaults: tools a person or plugin passes explicitly stay as given.
+ */
+export function quickToolsForAccess(tools: readonly string[], level: AccessLevel): string[] {
+  if (level === 'auto' || level === 'full_access') return [...tools];
+  if (level === 'auto_edit') return tools.filter((t) => !isCommandTool(t));
+  return tools.filter((t) => !isCommandTool(t) && !isEditTool(t));
 }

@@ -4,11 +4,38 @@ import { IPC } from '../shared/ipc-channels';
 import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeRequest, HelperDisposeResult, HelperInProject, HelperStartDecisionResult, HelperStartRequest, StartDurableCreationParams } from '../shared/types';
 import type { HelperAccessResolution, HelperLimitCheck, HelperSummary, OrchestrationOffChoice, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy, SetOrchestrationPolicyResult, TurnOffOrchestrationResult } from '../shared/orchestration-policy';
 import type { AccessLevel } from '../shared/agent-access';
+import type { AgentGrantsView, GrantChange } from '../shared/agent-grant-changes';
+import type { GrantRequest, GrantRequestAnswer } from '../shared/grant-requests';
 import type { FinishedQuickAgentOp, FinishedQuickAgents, FinishedQuickAgentsChange } from '../shared/finished-quick-agents';
 import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
 
 export const agent = {
   agent: {
+  /** Clubhouse permissions (#2971). */
+  getGrants: (projectPath: string, agentId: string): Promise<AgentGrantsView> =>
+    ipcRenderer.invoke(IPC.AGENT.GET_GRANTS, projectPath, agentId),
+  setGrant: (projectPath: string, agentId: string, change: Omit<GrantChange, 'by' | 'at'>): Promise<AgentGrantsView> =>
+    ipcRenderer.invoke(IPC.AGENT.SET_GRANT, projectPath, agentId, change),
+  resetGrants: (projectPath: string, agentId: string): Promise<AgentGrantsView> =>
+    ipcRenderer.invoke(IPC.AGENT.RESET_GRANTS, projectPath, agentId),
+  /** A Clubhouse permission request waiting on the user (#2970). Sent to the main window only. */
+  onGrantRequest: (callback: (request: GrantRequest) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, request: GrantRequest) => callback(request);
+    ipcRenderer.on(IPC.AGENT.GRANT_REQUEST, listener);
+    return () => { ipcRenderer.removeListener(IPC.AGENT.GRANT_REQUEST, listener); };
+  },
+  /** Permission requests that were answered, expired or dropped (#2970). */
+  onGrantRequestsClosed: (callback: (requestIds: string[]) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, requestIds: string[]) => callback(requestIds);
+    ipcRenderer.on(IPC.AGENT.GRANT_REQUESTS_CLOSED, listener);
+    return () => { ipcRenderer.removeListener(IPC.AGENT.GRANT_REQUESTS_CLOSED, listener); };
+  },
+  /** Every permission request waiting on the user, oldest first. */
+  listGrantRequests: (): Promise<GrantRequest[]> =>
+    ipcRenderer.invoke(IPC.AGENT.LIST_GRANT_REQUESTS),
+  /** Allow or decline a permission request. Main tells the agent. */
+  answerGrantRequest: (requestId: string, allow: boolean): Promise<GrantRequestAnswer> =>
+    ipcRenderer.invoke(IPC.AGENT.ANSWER_GRANT_REQUEST, requestId, allow),
   listDurable: (projectPath: string) =>
     ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
   getRunningStatuses: (agentIds: string[]): Promise<string[]> =>

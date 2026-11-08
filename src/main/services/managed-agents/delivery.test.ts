@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { CLUBHOUSE_MCP_PART_ID, isListed } from '../../../shared/managed-agents-types';
 
@@ -47,22 +47,38 @@ function provider(conv: Partial<OrchestratorProvider['conventions']> = {}, id = 
   } as unknown as OrchestratorProvider;
 }
 
-beforeEach(async () => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-delivery-'));
-  project = path.join(root, 'project');
-  const wt = path.join(project, '.clubhouse', 'agents', 'cool-gazelle');
-  fs.mkdirSync(wt, { recursive: true });
-  _resetSettingsAuditForTesting(false);
-  catalog = createAssetCatalogStore({ dir: path.join(root, 'catalog') });
-  service = createManagedAgentsService({
+function serviceAt(dir: string): ManagedAgentsService {
+  catalog = createAssetCatalogStore({ dir: path.join(dir, 'catalog') });
+  return createManagedAgentsService({
     catalog,
-    state: createManagedStateStore(path.join(root, 'managed')),
+    state: createManagedStateStore(path.join(dir, 'managed')),
     listProjects: async () => [],
     listAgents: async () => [],
     getAgent: async () => agent,
     setManagedSetup: async () => {},
     isRunning: () => false,
   });
+}
+
+// Installing every built-in writes each part to disk, which took over 10s once
+// on a loaded Windows runner. Install them once per file and copy the result in
+// for each test; ensureBuiltins then finds them current and writes nothing.
+let seed: string;
+beforeAll(async () => {
+  seed = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-delivery-seed-'));
+  _resetSettingsAuditForTesting(false);
+  await serviceAt(seed).ensureBuiltins();
+});
+afterAll(() => { fs.rmSync(seed, { recursive: true, force: true }); });
+
+beforeEach(async () => {
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-delivery-'));
+  project = path.join(root, 'project');
+  const wt = path.join(project, '.clubhouse', 'agents', 'cool-gazelle');
+  fs.mkdirSync(wt, { recursive: true });
+  _resetSettingsAuditForTesting(false);
+  for (const name of fs.readdirSync(seed)) fs.cpSync(path.join(seed, name), path.join(root, name), { recursive: true });
+  service = serviceAt(root);
   await service.ensureBuiltins();
   agent = { id: 'a1', name: 'cool-gazelle', color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: wt, branch: 'cool-gazelle/standby' };
 });
@@ -243,6 +259,26 @@ describe('previewManagedSetup', () => {
     expect(preview.blocks.map((b) => [b.name, b.startLine, b.endLine])).toEqual([['Identity', 1, 2], ['Rules', 4, 5]]);
   });
 
+  it('says the level an agent starts at when its CLI has no start for the saved one in its runtime (#3004)', async () => {
+    agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+    // Copilot in the terminal starts only at Ask first or Full access.
+    Object.assign(agent, { orchestrator: 'copilot-cli', access: 'auto', freeAgentMode: true, runtimeMode: 'terminal' });
+    const copilot = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider({}, 'copilot-cli') }));
+    expect(copilot.settings.find((r) => r.key === 'access')!.value).toBe('Auto, starts at Ask first in the terminal');
+    // In chat, Copilot's driver asks first for a level it doesn't have.
+    Object.assign(agent, { runtimeMode: 'chat' });
+    const chat = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider({}, 'copilot-cli') }));
+    expect(chat.settings.find((r) => r.key === 'access')!.value).toBe('Auto, starts at Ask first in chat');
+    Object.assign(agent, { orchestrator: 'claude-code', runtimeMode: 'terminal' });
+    const claude = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(claude.settings.find((r) => r.key === 'access')!.value).toBe('Auto');
+    // A record from before #2761 starts as it always did: no note.
+    delete agent.access;
+    Object.assign(agent, { orchestrator: 'copilot-cli' });
+    const legacy = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider({}, 'copilot-cli') }));
+    expect(legacy.settings.find((r) => r.key === 'access')!.value).not.toContain('starts at');
+  });
+
   it('gives the text with wildcards as written for "Show wildcards", and a settings summary (#2895)', async () => {
     const rules = await user(() => service.createPart({ name: 'Rules', content: { kind: 'block', content: 'Work in @@Path on @@StandbyBranch.' } }));
     agent.managed = { version: 1, blocks: [rules.id], skills: [], mcps: [] };
@@ -360,6 +396,63 @@ describe('quickManagedLaunch (D25)', () => {
 
   it('refuses a template that doesn\'t exist', async () => {
     await expect(user(() => quickManagedLaunch({ service, projectPath: project, cwd: project, agentId: 'q', agentName: 'q', templateId: 'nope' }))).rejects.toThrow();
+  });
+  describe('one launch adds or leaves out parts (#2928, D102)', () => {
+    async function setupTemplate() {
+      const extra = await user(() => service.createPart({ name: 'Extra', content: { kind: 'block', content: 'Extra block.' } }));
+      const tone = await user(() => service.createPart({ name: 'Tone', content: { kind: 'block', content: 'Tone block.' } }));
+      const mcp = await user(() => service.createPart({ name: 'WorkIQ', content: { kind: 'mcp', serverKey: 'workiq', transport: 'stdio', command: 'npx' } }));
+      const template = await user(() => service.saveTemplate({
+        name: 'Release', description: '', settings: {},
+        setup: { blocks: [BUILTIN_BLOCK_IDS.identity, tone.id], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID, mcp.id] },
+      }));
+      return { extra, tone, mcp, template };
+    }
+    const launch = (templateId: string, change: { addParts?: string[]; removeParts?: string[] } = {}) => user(() => quickManagedLaunch({
+      service, projectPath: project, cwd: project, agentId: 'q', agentName: 'swift-otter', templateId, branch: 'main', ...change,
+    }));
+
+    it('adds, leaves out and swaps parts for that launch only, and the next launch starts from the template', async () => {
+      const { extra, tone, mcp, template } = await setupTemplate();
+      const savedBefore = await user(() => service.getTemplate(template.id));
+      const changed = await launch(template.id, { addParts: [extra.id], removeParts: [tone.id, mcp.id] });
+      expect(changed.instructions).toContain('Extra block.');
+      expect(changed.instructions).not.toContain('Tone block.');
+      expect(changed.servers).toEqual({});
+      expect(changed.changes).toEqual({ added: [extra.id], removed: [tone.id, mcp.id] });
+      // Nothing saved: the template, the library and the next launch are as before.
+      expect(await user(() => service.getTemplate(template.id))).toEqual(savedBefore);
+      const clean = await launch(template.id);
+      expect(clean.instructions).toContain('Tone block.');
+      expect(clean.instructions).not.toContain('Extra block.');
+      expect(clean.servers).toEqual({ workiq: { command: 'npx' } });
+      expect(clean.changes).toEqual({ added: [], removed: [] });
+    });
+
+    it('either Identity id names the one a quick agent gets, and leaving one out and adding it back is no change', async () => {
+      const { tone, template } = await setupTemplate();
+      const swapped = await launch(template.id, { removeParts: [BUILTIN_BLOCK_IDS.identity, tone.id], addParts: [tone.id] });
+      expect(swapped.instructions).not.toContain('You are swift-otter');
+      expect(swapped.instructions).toContain('Tone block.');
+      expect(swapped.changes).toEqual({ added: [], removed: [BUILTIN_BLOCK_IDS.identityHelper] });
+    });
+
+    it('can\'t grant what a person couldn\'t put in a setup', async () => {
+      const { tone, template } = await setupTemplate();
+      const msg = (p: Promise<unknown>) => p.then(() => 'ok', (e: Error) => e.message);
+      expect(await msg(launch(template.id, { removeParts: [CLUBHOUSE_MCP_PART_ID] }))).toContain('stays in every setup');
+      expect(await msg(launch(template.id, { addParts: ['no-such-part'] }))).toContain('isn\'t in the library');
+      // Leaving out what the template doesn't have (any more) is nothing to do.
+      expect((await launch(template.id, { removeParts: [BUILTIN_BLOCK_IDS.basics] })).changes).toEqual({ added: [], removed: [] });
+      // No skills for a quick agent, and no MCP server for a CLI that takes none at launch.
+      const skill = await user(() => service.createPart({ name: 'Notes', content: { kind: 'skill', skillName: 'notes', files: [{ path: 'SKILL.md', content: '# Notes' }] } }));
+      expect(await msg(launch(template.id, { addParts: [skill.id] }))).toContain('gets no skills');
+      const other = await user(() => service.createPart({ name: 'Other', content: { kind: 'mcp', serverKey: 'other', transport: 'stdio', command: 'npx' } }));
+      expect(await msg(user(() => quickManagedLaunch({ service, projectPath: project, cwd: project, agentId: 'q', agentName: 'q', templateId: template.id, addParts: [other.id], mcpLaunchFlags: false })))).toContain('only from the folder');
+      expect((await launch(template.id, { addParts: [other.id] })).servers).toHaveProperty('other');
+      expect(await msg(launch(template.id, { addParts: Array.from({ length: 51 }, () => tone.id) }))).toContain('at most 50');
+
+    });
   });
 });
 

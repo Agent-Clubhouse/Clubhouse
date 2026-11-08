@@ -5,15 +5,19 @@
 
 import { withSettingsSurface } from '../settings-audit';
 import type { McpToolDefinition, McpToolResult, McpBinding, BindingTargetKind } from './types';
+import type { ToolGrant } from './tool-grants';
 import { bindingManager } from './binding-manager';
 import { agentRegistry } from '../agent-registry';
 import { groupProjectRegistry } from '../group-project-registry';
 import { deniedGroupProjectTools } from '../../../shared/group-project-admin';
 import { appLog } from '../log-service';
 import { isCrossProjectEnabled, isOrchestrationEnabled, onOrchestrationGateChange } from './orchestration-gate';
-import { isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
-import { mcpCallAccess } from './mcp-call-gate';
+import { dispatcherGateVersion, isDispatcherAgent, isDispatcherChatAgent, isTrackedDispatcher } from './dispatcher-gate';
+import { mcpCallAccess, mcpCallerKind } from './mcp-call-gate';
 import { CROSS_PROJECT_OFF_MESSAGE, MCP_CALLER_UNKNOWN_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
+import { checkToolGrant, isListable, type GrantCheck, type GrantCheckWire } from './grant-check';
+import { askFirst } from './ask-first';
+import { resolveArgTargets } from './arg-targets';
 import { getProvider } from '../../orchestrators';
 
 /** The refusal a Dispatcher tool returns for any other agent. */
@@ -47,12 +51,18 @@ function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
  * - `dispatcher` (#2536): the Dispatcher's tools, on only for the running
  *   Dispatcher while it is turned on. The two groups above are never on for
  *   the Dispatcher, whatever its policy says.
+ * - `dispatcherChat` (#3036): the tools of the Dispatcher's chat, on only for
+ *   the running chat while the Dispatcher is turned on. Reading, and handing
+ *   work to the Dispatcher; the chat never acts on agents itself.
  * - `fixedToolList` (#2603): the way to a wire added after the session started,
  *   on for agents whose CLI never re-reads its tool list.
+ * - `actions` (#2952): the Actions tools, on for every agent that can own an
+ *   action: not for quick agents, which end with their task, not for the
+ *   Dispatcher while it is turned off, and never for its chat.
  *
  * A tool may name several groups; it is available when any of them is on.
  */
-export type ToolGroup = 'orchestration' | 'crossProject' | 'dispatcher' | 'fixedToolList';
+export type ToolGroup = 'orchestration' | 'crossProject' | 'dispatcher' | 'dispatcherChat' | 'fixedToolList' | 'actions';
 
 /** One group, or several (any one of them opens the tool). */
 export type ToolGroups = ToolGroup | readonly ToolGroup[];
@@ -72,6 +82,11 @@ const toolGroupGates: Record<ToolGroup, ToolGroupGate> = {
     refusal: CROSS_PROJECT_OFF_MESSAGE,
   },
   dispatcher: { isEnabled: isDispatcherAgent, refusal: DISPATCHER_ONLY_MESSAGE },
+  dispatcherChat: { isEnabled: isDispatcherChatAgent, refusal: DISPATCHER_ONLY_MESSAGE },
+  actions: {
+    isEnabled: (agentId) => (isTrackedDispatcher(agentId) ? isDispatcherAgent(agentId) : mcpCallerKind(agentId) !== 'quick'),
+    refusal: 'Actions aren’t available to you: quick agents can’t own actions, and the Dispatcher can’t use them while it is turned off.',
+  },
   fixedToolList: {
     isEnabled: keepsFirstToolList,
     refusal: 'Your CLI refreshes its tool list, so call the wire\'s own tools instead.',
@@ -109,25 +124,22 @@ function groupRefusal(group: ToolGroups): McpToolResult {
 }
 
 export interface ToolRegistrationOptions {
+  /**
+   * The grant actions a call needs and where its target comes from (#2967).
+   * Required: a tool can't be registered without one. Declarations only for
+   * now: nothing allows or refuses a call by it yet.
+   */
+  grant: ToolGrant;
   /** Gate the tool behind a tool group, or several. */
   group?: ToolGroups;
-  /**
-   * Gate the tool on app state as well as its group, such as an experimental
-   * flag: listed only while `isOn` returns true, and refused with `refusal`
-   * otherwise. Read at every listing and every call.
-   */
-  when?: ToolCondition;
-}
-
-export interface ToolCondition {
-  isOn: () => boolean;
-  refusal: string;
 }
 
 export interface ToolTemplate {
   nameSuffix: string;
   definition: Omit<McpToolDefinition, 'name'>;
   handler: (targetId: string, agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
+  /** What a call needs, as in {@link ToolRegistrationOptions.grant}. */
+  grant: ToolGrant;
   group?: ToolGroups;
 }
 
@@ -194,8 +206,8 @@ const SLEEPING_TARGET_TOOLS: ReadonlySet<string> = new Set(['get_status', 'wake_
 const globalTools = new Map<string, {
   definition: McpToolDefinition;
   handler: (agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
+  grant?: ToolGrant;
   group?: ToolGroups;
-  when?: ToolCondition;
 }>();
 
 /** Maximum length for wire instruction strings before truncation. */
@@ -241,7 +253,7 @@ export function registerToolTemplate(
   nameSuffix: string,
   definition: Omit<McpToolDefinition, 'name'>,
   handler: (targetId: string, agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>,
-  options: ToolRegistrationOptions = {},
+  options: ToolRegistrationOptions,
 ): void {
   let templates = toolTemplates.get(targetKind);
   if (!templates) {
@@ -251,7 +263,12 @@ export function registerToolTemplate(
   if (templates.some(t => t.nameSuffix === nameSuffix)) {
     throw new Error(`Duplicate tool template nameSuffix "${nameSuffix}" for targetKind "${targetKind}"`);
   }
-  templates.push({ nameSuffix, definition, handler, ...(options.group && { group: options.group }) });
+  // `options?.`: test-only tools may register without options; real tools can't (typecheck, tool-grants.test).
+  templates.push({
+    nameSuffix, definition, handler,
+    grant: options?.grant,
+    ...(options?.group && { group: options.group }),
+  });
 }
 
 /**
@@ -278,22 +295,52 @@ export function registerGlobalTool(
   name: string,
   definition: Omit<McpToolDefinition, 'name'>,
   handler: (agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>,
-  options: ToolRegistrationOptions = {},
+  options: ToolRegistrationOptions,
 ): void {
+  // `options?.`: test-only tools may register without options; real tools can't (typecheck, tool-grants.test).
   globalTools.set(name, {
     definition: { ...definition, name },
     handler,
-    ...(options.group && { group: options.group }),
-    ...(options.when && { when: options.when }),
+    ...(options?.grant && { grant: options.grant }),
+    ...(options?.group && { group: options.group }),
   });
   invalidateToolListCache();
 }
 
-/** Whether every global tool's condition is on, one character each: part of the cache key. */
+/** One registered tool and its grant declaration, for the declaration table and the evaluator. */
+export interface RegisteredToolGrant {
+  /** 'global', or the target kind of a template. */
+  kind: 'global' | BindingTargetKind;
+  /** The global tool's name, or the template's name suffix. */
+  name: string;
+  /** Undefined only for a tool registered without one (tests). */
+  grant: ToolGrant | undefined;
+  /** The tool group gating it, if any. */
+  group?: ToolGroups;
+}
+
+/**
+ * Every registered global tool and tool template with its grant declaration
+ * (#2967), templates first by target kind. Target-scoped templates (plugins)
+ * are listed under their kind once per target.
+ */
+export function listToolGrants(): RegisteredToolGrant[] {
+  const out: RegisteredToolGrant[] = [];
+  for (const [kind, templates] of toolTemplates) {
+    for (const t of templates) out.push({ kind, name: t.nameSuffix, grant: t.grant, ...(t.group && { group: t.group }) });
+  }
+  for (const [kind, byTarget] of targetTemplates) {
+    for (const [, templates] of byTarget) {
+      for (const t of templates) out.push({ kind, name: t.nameSuffix, grant: t.grant });
+    }
+  }
+  for (const [name, tool] of globalTools) out.push({ kind: 'global', name, grant: tool.grant, ...(tool.group && { group: tool.group }) });
+  return out;
+}
+
+/** Part of the cache key: which agents are the Dispatcher, since a wire to it lists no reset tools (#2968). */
 function conditionsKey(): string {
-  let key = '';
-  for (const [, tool] of globalTools) if (tool.when) key += tool.when.isOn() ? '1' : '0';
-  return key;
+  return `d${dispatcherGateVersion()}`;
 }
 
 /** True if `name` is a registered global tool. */
@@ -438,6 +485,8 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
       if (deniedTools.has(template.nameSuffix)) {
         continue;
       }
+      // Listed only when a grant covers it or the agent can ask for it, as callTool checks (#2968, #2970).
+      if (!isListable(checkToolGrant(agentId, template.grant, {}, wireOf(binding)))) continue;
 
       let description = template.definition.description;
 
@@ -468,7 +517,7 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
   // Append global tools (available regardless of bindings, unless gated by a group)
   for (const [, tool] of globalTools) {
     if (!groupAllows(tool.group, agentId)) continue;
-    if (tool.when && !tool.when.isOn()) continue;
+    if (!isListable(checkToolGrant(agentId, tool.grant, {}))) continue;
     tools.push(tool.definition);
   }
 
@@ -500,10 +549,6 @@ export async function callTool(
       });
       return groupRefusal(globalTool.group);
     }
-    if (globalTool.when && !globalTool.when.isOn()) {
-      appLog('core:mcp', 'info', 'Tool call refused: the tool is turned off', { meta: { agentId, toolName } });
-      return refuse('group_off', globalTool.when.refusal);
-    }
     const schema = globalTool.definition.inputSchema;
     if (schema && typeof schema === 'object') {
       const required = (schema.required as string[]) || [];
@@ -519,6 +564,12 @@ export async function callTool(
           return refuse('invalid_args', `Invalid type for argument "${key}": expected ${propSchema.type}, got ${typeof value}`);
         }
       }
+    }
+    // After the argument checks, as for wire tools: the user is never asked about a call that would fail on its arguments.
+    const granted = checkToolGrant(agentId, globalTool.grant, args, undefined, await resolveArgTargets(agentId, globalTool.grant, args));
+    if (granted.ok === false) {
+      const refused = await grantRefusal(agentId, toolName, granted, args);
+      if (refused) return refused;
     }
     return withSettingsSurface('mcp', agentId, () => globalTool.handler(agentId, args));
   }
@@ -611,7 +662,35 @@ export async function callTool(
     }
   }
 
+  const granted = checkToolGrant(agentId, template.grant, args, wireOf(binding), await resolveArgTargets(agentId, template.grant, args));
+  if (granted.ok === false) {
+    const refused = await grantRefusal(agentId, toolName, granted, args);
+    if (refused) return refused;
+  }
+
   return withSettingsSurface('mcp', agentId, () => template.handler(binding.targetId, agentId, args));
+}
+
+/** What the grant check needs about a wire. */
+function wireOf(binding: McpBinding): GrantCheckWire {
+  return {
+    binding,
+    ...(binding.targetKind === 'group-project' && { groupMetadata: groupProjectRegistry.getSync(binding.targetId)?.metadata }),
+  };
+}
+
+/**
+ * A call no grant covers (#2968), or one the user is asked about first
+ * (#2970). Null: the user allowed this call, so it runs. The refusal never
+ * says whether the target exists.
+ */
+async function grantRefusal(agentId: string, toolName: string, check: Extract<GrantCheck, { ok: false }>, args: Record<string, unknown>): Promise<McpToolResult | null> {
+  if (check.reason === 'ask_first') {
+    const outcome = await askFirst(agentId, toolName, args, check.asks);
+    return outcome.kind === 'approved' ? null : refuse('ask_first', outcome.text);
+  }
+  appLog('core:mcp', 'info', 'Tool call refused: no Clubhouse permission covers it', { meta: { agentId, toolName, reason: check.reason } });
+  return refuse('no_grant', check.message);
 }
 
 function matchScopedToolName(

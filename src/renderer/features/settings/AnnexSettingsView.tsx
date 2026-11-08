@@ -14,6 +14,7 @@ export function AnnexSettingsView() {
   const saveSettings = useAnnexStore((s) => s.saveSettings);
   const loadSettings = useAnnexStore((s) => s.loadSettings);
   const regeneratePin = useAnnexStore((s) => s.regeneratePin);
+  const allowPairingAgain = useAnnexStore((s) => s.allowPairingAgain);
   const purgeServerConfig = useAnnexStore((s) => s.purgeServerConfig);
   const loadStatus = useAnnexStore((s) => s.loadStatus);
   const [confirmPurge, setConfirmPurge] = useState(false);
@@ -75,6 +76,17 @@ export function AnnexSettingsView() {
                 ? 'No devices connected'
                 : `${status.connectedCount} device${status.connectedCount !== 1 ? 's' : ''} connected`}
             />
+            {status.pairingPaused && (
+              <SettingsField
+                label="Pairing paused"
+                testId="annex-pairing-paused"
+                help="Too many wrong codes were tried, so no device can pair until you allow it again."
+              >
+                <Button onClick={allowPairingAgain} kind="primary">
+                  Allow pairing again
+                </Button>
+              </SettingsField>
+            )}
             <SettingsField
               label="Pairing PIN"
               help={(
@@ -136,6 +148,20 @@ export function AnnexSettingsView() {
               onChange={(e) => saveSettings({ ...settings, deviceName: e.target.value })}
               className={`${settingsInput} w-[220px]`}
               placeholder="Clubhouse on my Mac"
+            />
+          </SettingsField>
+          <SettingsField
+            label="Also reachable at"
+            htmlFor="annex-reachable-as"
+            help="A name other computers and phones can reach this one by, such as its tailnet name. It's added to the pairing link."
+          >
+            <input
+              id="annex-reachable-as"
+              type="text"
+              value={settings.reachableAs ?? ''}
+              onChange={(e) => saveSettings({ ...settings, reachableAs: e.target.value })}
+              className={`${settingsInput} w-[220px]`}
+              placeholder="studio.tailnet.ts.net"
             />
           </SettingsField>
           <AnnexIdentitySection

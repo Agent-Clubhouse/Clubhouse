@@ -21,6 +21,7 @@ import { DEFAULT_PASTE_TIMING } from '../../agent-runtime/pty-runtime';
 import { isAgentStoppingError } from '../../agent-runtime/agent-stopping';
 import { getProvider } from '../../../orchestrators';
 import { sleepAgent, wakeWiredAgent } from './agent-lifecycle';
+import { deliverToDispatcher, isDispatcherTarget, sleepingDispatcherHint } from './dispatcher-delivery';
 import type { RoutedMessagePart } from '../../../../shared/chat';
 
 // PTY input helpers moved to agent-runtime/pty-input; re-exported for existing importers.
@@ -102,7 +103,7 @@ export function registerAgentTools(): void {
     mcpAdapter.registerMcpCommand({
       id: change ? 'agent.changeProvider' : 'agent.previewProvider', category: 'agent',
       label: change ? 'Change Provider' : 'Preview Provider',
-      mcp: { targetKind: 'agent', nameSuffix: change ? 'change_provider' : 'preview_provider', group: 'dispatcher' },
+      mcp: { targetKind: 'agent', nameSuffix: change ? 'change_provider' : 'preview_provider', group: 'dispatcher', grant: { actions: ['agent.configure'], target: 'bound' } },
       description: change
         ? 'Save the previewed provider for this sleeping connected orchestrator. Requires expectedState from preview_provider. Never stops, wakes, resumes across providers, or changes access/model policy. Old sessions remain in history.'
         : 'Preview a provider change for this connected orchestrator: active versus saved provider, local CLI availability, instruction compatibility, reset settings and an expectedState token. Sleep separately first; unavailable or incompatible targets are blocked.',
@@ -121,7 +122,7 @@ export function registerAgentTools(): void {
     id: 'agent.sendMessage',
     category: 'agent',
     label: 'Send Message',
-    mcp: { targetKind: 'agent', nameSuffix: 'send_message' },
+    mcp: { targetKind: 'agent', nameSuffix: 'send_message', grant: { actions: ['agent.message'], target: 'bound' } },
     description:
       'Send a message to the linked agent. The message is injected as input to the agent and submitted.\n\n' +
       'IMPORTANT — this is asynchronous. The target agent will process the message on its own timeline ' +
@@ -135,7 +136,8 @@ export function registerAgentTools(): void {
       'Reply instructions are included in the message automatically.\n' +
       '3. If UNIDIRECTIONAL: poll read_output and search for your task_id marker. Output may contain ' +
       'unrelated content — filter by the marker. Allow time for the agent to process.\n\n' +
-      'Use check_connectivity to determine the link direction if unsure.',
+      'Use check_connectivity to determine the link direction if unsure.\n\n' +
+      'A sleeping Dispatcher is woken to take the message, if you have permission to wake it.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -169,6 +171,41 @@ export function registerAgentTools(): void {
       const taskId = optionalString(args, 'task_id') || `t_${Date.now().toString(36)}`;
       const forceSubmit = args.force_submit !== false; // default true
 
+      const submitNote = forceSubmit ? '' : ' (force_submit=false, message injected without submitting)';
+      const sentText = (targetName: string, isBidirectional: boolean, woke = false) => {
+        const wokeNote = woke ? ` ${targetName} was asleep and was woken to take it.` : '';
+        return isBidirectional
+          ? `Message sent to ${targetName}. task_id=${taskId}. ` +
+            `Bidirectional — ${targetName} can reply directly via send_message.${wokeNote}${submitNote}`
+          : `Message sent to ${targetName}. task_id=${taskId} — ` +
+            `poll read_output for TASK_RESULT:${taskId}.${wokeNote}${submitNote}`;
+      };
+
+      // The Dispatcher, asleep or awake: a sleeping one is woken to take the message (#3037).
+      if (isDispatcherTarget(targetId)) {
+        const tagged = buildTaggedMessage(agentId, targetId, message, taskId);
+        // The call as the user would approve it, if waking asks first.
+        const binding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
+        const toolName = binding ? buildToolName(binding, 'send_message') : 'send_message';
+        try {
+          const delivery = await deliverToDispatcher({
+            senderId: agentId, targetId, targetName: tagged.targetName, text: tagged.text, routed: tagged.routed,
+            taskId, submit: forceSubmit, toolName, args,
+          });
+          if (delivery.delivered === false) return { content: [{ type: 'text', text: delivery.text }], isError: true };
+          return { content: [{ type: 'text', text: sentText(tagged.targetName, tagged.isBidirectional, delivery.woke) }] };
+        } catch (err) {
+          // telemetry-exempt: logged, and the error reaches the sender as the tool result
+          if (isAgentStoppingError(err)) {
+            return { content: [{ type: 'text', text: `${tagged.targetName} is shutting down, so the message was not delivered. Try again in a moment.` }], isError: true };
+          }
+          appLog('core:mcp', 'error', 'Failed to send message to the Dispatcher', {
+            meta: { sourceAgent: agentId, targetAgent: targetId, error: err instanceof Error ? err.message : String(err) },
+          });
+          return { content: [{ type: 'text', text: `Failed to send message: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+        }
+      }
+
       const reg = agentRegistry.get(targetId);
       if (!reg) {
         appLog('core:mcp', 'warn', 'send_message: target agent not found in registry', {
@@ -193,14 +230,7 @@ export function registerAgentTools(): void {
         });
         await runtime.sendMessage(taggedMessage, { source: 'mcp', taskId, submit: forceSubmit, routed });
 
-        const submitNote = forceSubmit ? '' : ' (force_submit=false, message injected without submitting)';
-        const resultText = isBidirectional
-          ? `Message sent to ${targetName}. task_id=${taskId}. ` +
-            `Bidirectional — ${targetName} can reply directly via send_message.${submitNote}`
-          : `Message sent to ${targetName}. task_id=${taskId} — ` +
-            `poll read_output for TASK_RESULT:${taskId}.${submitNote}`;
-
-        return { content: [{ type: 'text', text: resultText }] };
+        return { content: [{ type: 'text', text: sentText(targetName, isBidirectional) }] };
       } catch (err) {
         if (isAgentStoppingError(err)) {
           appLog('core:mcp', 'info', 'send_message: target is shutting down', { meta: { sourceAgent: agentId, targetAgent: targetId, taskId } });
@@ -219,7 +249,7 @@ export function registerAgentTools(): void {
     id: 'agent.getStatus',
     category: 'agent',
     label: 'Get Agent Status',
-    mcp: { targetKind: 'agent', nameSuffix: 'get_status' },
+    mcp: { targetKind: 'agent', nameSuffix: 'get_status', grant: { actions: ['agent.read'], target: 'bound' } },
     description: 'Get the current status of the linked agent.',
     inputSchema: {
       type: 'object',
@@ -235,7 +265,10 @@ export function registerAgentTools(): void {
         runtime: reg?.runtime || null,
         message: running
           ? 'Agent is running and available for interaction.'
-          : isDispatcherAgent(agentId)
+          // A message wakes a sleeping Dispatcher (#3037).
+          : isDispatcherTarget(targetId)
+            ? sleepingDispatcherHint(agentId)
+            : isDispatcherAgent(agentId)
             ? 'Agent is sleeping. Call its wake_agent tool to start it.'
             : 'Agent is sleeping. Start it from Clubhouse or a group project wake_agent tool.',
       };
@@ -253,7 +286,7 @@ export function registerAgentTools(): void {
     id: 'agent.readOutput',
     category: 'agent',
     label: 'Read Agent Output',
-    mcp: { targetKind: 'agent', nameSuffix: 'read_output' },
+    mcp: { targetKind: 'agent', nameSuffix: 'read_output', grant: { actions: ['agent.read'], target: 'bound' } },
     description:
         'Read recent output from the linked agent.\n\n' +
         'Use this to poll for responses after send_message. The output is a raw terminal buffer ' +
@@ -307,7 +340,7 @@ export function registerAgentTools(): void {
     id: 'agent.checkConnectivity',
     category: 'agent',
     label: 'Check Connectivity',
-    mcp: { targetKind: 'agent', nameSuffix: 'check_connectivity' },
+    mcp: { targetKind: 'agent', nameSuffix: 'check_connectivity', grant: { actions: ['agent.read'], target: 'bound' } },
     description:
         'Check whether communication with the linked agent is bidirectional or unidirectional.\n\n' +
         'Returns a JSON object with:\n' +
@@ -375,7 +408,7 @@ export function registerAgentTools(): void {
     id: 'agent.sendFile',
     category: 'agent',
     label: 'Send File',
-    mcp: { targetKind: 'agent', nameSuffix: 'send_file' },
+    mcp: { targetKind: 'agent', nameSuffix: 'send_file', grant: { actions: ['agent.message'], target: 'bound' } },
     description:
         'Send a message to the linked agent via a temp file.\n\n' +
         'The message content is written to a temporary file on disk and the agent receives a ' +
@@ -478,7 +511,7 @@ export function registerAgentTools(): void {
     id: 'agent.clearAgent',
     category: 'agent',
     label: 'Clear Agent Context',
-    mcp: { targetKind: 'agent', nameSuffix: 'clear_agent' },
+    mcp: { targetKind: 'agent', nameSuffix: 'clear_agent', grant: { actions: ['agent.reset'], target: 'bound' } },
     description:
         'Send a /clear command to the linked agent, clearing its conversation context.\n\n' +
         'Injects /clear directly into the agent\'s CLI. Use this when the agent\'s context ' +
@@ -514,7 +547,7 @@ export function registerAgentTools(): void {
     id: 'agent.compactAgent',
     category: 'agent',
     label: 'Compact Agent Context',
-    mcp: { targetKind: 'agent', nameSuffix: 'compact_agent' },
+    mcp: { targetKind: 'agent', nameSuffix: 'compact_agent', grant: { actions: ['agent.reset'], target: 'bound' } },
     description:
         'Send a /compact command to the linked agent, compacting its conversation context.\n\n' +
         'Injects /compact directly into the agent\'s CLI. Use this when the agent\'s context ' +
@@ -550,7 +583,7 @@ export function registerAgentTools(): void {
     id: 'agent.wakeAgent',
     category: 'agent',
     label: 'Wake Agent',
-    mcp: { targetKind: 'agent', nameSuffix: 'wake_agent', group: 'dispatcher' },
+    mcp: { targetKind: 'agent', nameSuffix: 'wake_agent', group: 'dispatcher', grant: [{ actions: ['agent.wake'], target: 'bound' }, { actions: ['agent.message'], target: 'bound', ifArgs: ['message'] }] },
     description:
       'Wake the linked agent if it is sleeping. It resumes its last session when it has one, at its own access level.\n\n' +
       'An optional message is delivered as its first prompt, tagged like send_message, so include what to do and why. ' +
@@ -579,7 +612,7 @@ export function registerAgentTools(): void {
     id: 'agent.sleepAgent',
     category: 'agent',
     label: 'Sleep Agent',
-    mcp: { targetKind: 'agent', nameSuffix: 'sleep_agent', group: 'dispatcher' },
+    mcp: { targetKind: 'agent', nameSuffix: 'sleep_agent', group: 'dispatcher', grant: { actions: ['agent.sleep'], target: 'bound' } },
     description:
       'Put the linked agent to sleep. Returns once it has stopped, or already_sleeping if it was. Its session stays; wake_agent resumes it.\n\n' +
       'Without force, this refuses a chat agent that is mid-turn and any agent in the CLI view, whose turn state is unknown. ' +
@@ -626,6 +659,7 @@ export function registerAgentTools(): void {
       }
       return callTool(agentId, buildToolName(binding, String(args.tool)), (args.arguments as Record<string, unknown>) ?? {});
     },
-    { group: 'fixedToolList' },
+    // Checked as the wire tool it calls: callTool runs again with that tool.
+    { group: 'fixedToolList', grant: 'called_tool' },
   );
 }

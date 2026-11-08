@@ -34,4 +34,10 @@ describe('managedSettingsSummary', () => {
     const rows = managedSettingsSummary({ orchestration: { connectToDispatcher: true }, helper: true });
     expect(value(rows, 'dispatcher')).toBeUndefined();
   });
+
+  it('says where Access starts lower than saved, and that a helper never starts above its orchestrator (#3004)', () => {
+    expect(value(managedSettingsSummary({ access: 'auto', accessStartsAt: { level: 'ask', runtime: 'terminal' } }), 'access')).toBe('Auto, starts at Ask first in the terminal');
+    expect(value(managedSettingsSummary({ access: 'auto', accessStartsAt: { level: 'ask', runtime: 'chat' } }), 'access')).toBe('Auto, starts at Ask first in chat');
+    expect(value(managedSettingsSummary({ access: 'full_access', helper: true }), 'access')).toBe('Full access, never above its orchestrator');
+  });
 });

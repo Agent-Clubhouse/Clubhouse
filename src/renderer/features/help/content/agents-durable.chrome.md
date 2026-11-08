@@ -67,6 +67,22 @@ Auto isn't a promise of safety. The check can let through something you would ha
 
 Changing the level in a chat's composer applies to that session only. The agent's saved Access doesn't change, and when the two differ the details card shows both, for example "Auto now, starts at Ask first".
 
+## Clubhouse permissions
+
+Access governs what an agent's CLI does on your machine. Clubhouse permissions govern what it can do through Clubhouse: read or message other agents, start helpers, change app settings, run Actions. They're on the **Clubhouse permissions** page in the agent's settings, grouped by what they reach. Each one is **Off**, **Ask first** or **Allow**.
+
+When a call needs a permission set to Ask first, the agent doesn't wait. The request goes to **Needs you** with what the call would do, and the agent is told it's waiting. Select it to see the request, then choose **Allow** or **Decline**. Allow runs that one call when the agent tries again; the agent's permissions don't change. To allow it every time, set the permission to Allow on the agent's page. Requests expire after 24 hours, and the agent is told your answer either way.
+
+An agent can also ask for a permission it doesn't have, with its reason. Allowing that adds it to the agent's page, marked as set by you, where you can turn it off again.
+
+Your templates can set permissions too, under **Clubhouse permissions** in the template's settings. Agents made from the template get them, marked "From its template", and saving a change offers to push it to the agents made from it. Your own changes on an agent stay on top, and **Reset to defaults** clears only yours. A helper template's permissions never give a helper more than its orchestrator has. In **New agent**, each template says in one line what agents made from it can do through Clubhouse, and **Copy another agent** brings its permissions with it.
+
+For an orchestrator, **Create agents** and **Remove helpers** follow its approval setting on the Helpers page, and changing either here changes that setting.
+
+The Dispatcher can do the most by default. It can read, message, wake, put to sleep, reset, rename and configure the agents connected to it, create agents in any project, change an agent's setup up to its own level, make and remove connections, and create and run Actions. It asks first before it adds or opens a project (**Add or open projects**), changes project defaults or changes app settings. Its Clubhouse permissions page works like any other agent's, so you can set each of these to Off, Ask first or Allow.
+
+These permissions are a guardrail on Clubhouse, not a sandbox. Other programs running as you aren't limited by them.
+
 ## Deleting
 
 Stop the agent first, then choose **Delete** in the row menu. What the dialog offers depends on the agent's worktree:

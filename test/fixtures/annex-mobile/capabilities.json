@@ -81,6 +81,12 @@
       "finishedQuickAgents": {
         "version": 1
       },
+      "fullEvents": {
+        "approvalField": "reviewedDigest",
+        "maximumBytes": 33554432,
+        "path": "/api/v1/mobile/agents/{agentId}/chat/events/{seq}?sessionId={sessionId}",
+        "version": 1
+      },
       "helperRequests": {
         "commands": [
           "helper.approve",
@@ -116,6 +122,13 @@
           "builtin_preset",
           "candidate_skipped",
           "model_unverified"
+        ],
+        "levels": [
+          "minimum",
+          "easy",
+          "medium",
+          "hard",
+          "maximum"
         ],
         "modes": [
           "explicit",
@@ -186,6 +199,13 @@
         "maxEntries": 2048,
         "scope": "peer-and-epoch",
         "ttlMs": 3600000
+      },
+      "network": {
+        "event": "network:changed",
+        "membersPath": "/api/v1/mobile/network/members",
+        "pairField": "network",
+        "path": "/api/v1/mobile/network",
+        "version": 1
       },
       "orchestration": {
         "version": 1

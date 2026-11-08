@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AnnexPeerListing, AnnexSettings, AnnexStatus } from '../../shared/types';
+import type { AnnexDevice, AnnexPeerListing, AnnexSettings, AnnexStatus } from '../../shared/types';
 
 const DEFAULT_SETTINGS: AnnexSettings = {
   enableServer: false,
@@ -29,18 +29,26 @@ interface AnnexStoreState {
   saveSettings: (settings: AnnexSettings) => Promise<void>;
   loadStatus: () => Promise<void>;
   regeneratePin: () => Promise<void>;
+  /** Reopens pairing after too many wrong PINs paused it. */
+  allowPairingAgain: () => Promise<void>;
   purgeServerConfig: () => Promise<void>;
   /** Everything paired with this machine, phones and computers both ways. */
   peers: AnnexPeerListing[];
   loadPeers: () => Promise<void>;
   /** Removes a pairing and closes its connections. */
   removePeer: (fingerprint: string) => Promise<void>;
+  /** Every paired device, whichever way it's paired, with where it stands (#3057). */
+  devices: AnnexDevice[];
+  loadDevices: () => Promise<void>;
+  /** Removes a device and ends its connections at once, whichever way it's paired. */
+  removeDevice: (fingerprint: string) => Promise<void>;
 }
 
 export const useAnnexStore = create<AnnexStoreState>((set) => ({
   settings: DEFAULT_SETTINGS,
   status: DEFAULT_STATUS,
   peers: [],
+  devices: [],
 
   loadSettings: async () => {
     try {
@@ -85,10 +93,20 @@ export const useAnnexStore = create<AnnexStoreState>((set) => ({
     }
   },
 
+  allowPairingAgain: async () => {
+    try {
+      await window.clubhouse.annex.unlockPairing();
+      const status = await window.clubhouse.annex.getStatus();
+      set({ status: status || DEFAULT_STATUS });
+    } catch {
+      // Error handled in main
+    }
+  },
+
   purgeServerConfig: async () => {
     try {
       await window.clubhouse.annex.purgeServerConfig();
-      set({ settings: DEFAULT_SETTINGS, status: DEFAULT_STATUS, peers: [] });
+      set({ settings: DEFAULT_SETTINGS, status: DEFAULT_STATUS, peers: [], devices: [] });
     } catch {
       // Error handled in main
     }
@@ -112,7 +130,36 @@ export const useAnnexStore = create<AnnexStoreState>((set) => ({
       // Error handled in main
     }
   },
+
+  loadDevices: async () => {
+    try {
+      const devices = await window.clubhouse.annex.listDevices();
+      set({ devices: Array.isArray(devices) ? devices : [] });
+    } catch {
+      // Keep the current list
+    }
+  },
+
+  removeDevice: async (fingerprint: string) => {
+    try {
+      await window.clubhouse.annex.removeDevice(fingerprint);
+      // The fresh list arrives via onDevicesChanged; drop it here too so the row goes at once.
+      set((state) => ({
+        devices: state.devices.filter((d) => d.fingerprint !== fingerprint),
+        peers: state.peers.filter((p) => p.fingerprint !== fingerprint),
+      }));
+    } catch {
+      // Error handled in main
+    }
+  },
 }));
+
+/** Keep `devices` fresh from main's broadcasts. */
+export function subscribeAnnexDevices(): () => void {
+  return window.clubhouse.annex.onDevicesChanged((devices) => {
+    useAnnexStore.setState({ devices });
+  });
+}
 
 /** Keep `peers` fresh from main's broadcasts. */
 export function subscribeAnnexPeers(): () => void {

@@ -36,7 +36,6 @@ vi.mock('../group-project-registry', () => ({
 }));
 
 import { mcpAdapter } from './mcp-adapter';
-import { commandRegistry } from '../../../shared/command-registry';
 import { _resetForTesting as resetTools, getScopedToolList, callTool } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import type { McpToolResult } from './types';
@@ -45,13 +44,12 @@ describe('McpCommandAdapter', () => {
   beforeEach(() => {
     resetTools();
     mcpAdapter._resetForTesting();
-    commandRegistry.clear();
     bindingManager._resetForTesting();
     mockAgentRegistryGet.mockReset();
   });
 
   describe('registerMcpCommand', () => {
-    it('registers in both CommandRegistry and tool templates', () => {
+    it('registers a tool template only: reached through callTool, never directly (#2974)', () => {
       const handler = vi.fn<[string, string, Record<string, unknown>], Promise<McpToolResult>>()
         .mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] });
 
@@ -63,12 +61,6 @@ describe('McpCommandAdapter', () => {
         mcp: { targetKind: 'agent', nameSuffix: 'do_thing' },
         handler,
       });
-
-      // Verify CommandRegistry has it
-      const cmd = commandRegistry.get('test.doThing');
-      expect(cmd).toBeDefined();
-      expect(cmd!.label).toBe('Do Thing');
-      expect(cmd!.category).toBe('test');
 
       // Verify tool template is registered (shows up in scoped list when bound)
       mockAgentRegistryGet.mockImplementation((id: string) =>
@@ -85,57 +77,6 @@ describe('McpCommandAdapter', () => {
       const tools = getScopedToolList('agent-1');
       const toolNames = tools.map((t) => t.name);
       expect(toolNames.some((n) => n.includes('do_thing'))).toBe(true);
-    });
-
-    it('returns a disposable that removes from CommandRegistry', () => {
-      const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] });
-
-      const disposable = mcpAdapter.registerMcpCommand({
-        id: 'test.disposable',
-        category: 'test',
-        label: 'Disposable',
-        description: 'Test',
-        mcp: { targetKind: 'agent', nameSuffix: 'disposable_tool' },
-        handler,
-      });
-
-      expect(commandRegistry.get('test.disposable')).toBeDefined();
-      disposable.dispose();
-      expect(commandRegistry.get('test.disposable')).toBeUndefined();
-    });
-
-    it('defaults palette to hidden', () => {
-      const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] });
-
-      mcpAdapter.registerMcpCommand({
-        id: 'test.hidden',
-        category: 'test',
-        label: 'Hidden',
-        description: 'Test',
-        mcp: { targetKind: 'agent', nameSuffix: 'hidden_tool' },
-        handler,
-      });
-
-      const cmd = commandRegistry.get('test.hidden');
-      expect(cmd!.palette?.hidden).toBe(true);
-    });
-
-    it('respects custom palette settings', () => {
-      const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] });
-
-      mcpAdapter.registerMcpCommand({
-        id: 'test.visible',
-        category: 'test',
-        label: 'Visible',
-        description: 'Test',
-        palette: { keywords: ['test'], hidden: false },
-        mcp: { targetKind: 'agent', nameSuffix: 'visible_tool' },
-        handler,
-      });
-
-      const cmd = commandRegistry.get('test.visible');
-      expect(cmd!.palette?.hidden).toBe(false);
-      expect(cmd!.palette?.keywords).toContain('test');
     });
   });
 
@@ -266,27 +207,6 @@ describe('McpCommandAdapter', () => {
 
       expect(suffixes).not.toContain('tool_a');
       expect(suffixes).toContain('tool_b');
-    });
-  });
-
-  describe('_resetForTesting', () => {
-    it('clears all registered commands', () => {
-      const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] });
-
-      mcpAdapter.registerMcpCommand({
-        id: 'test.reset1',
-        category: 'test',
-        label: 'Reset 1',
-        description: 'Test',
-        mcp: { targetKind: 'agent', nameSuffix: 'reset1' },
-        handler,
-      });
-
-      expect(commandRegistry.get('test.reset1')).toBeDefined();
-
-      mcpAdapter._resetForTesting();
-
-      expect(commandRegistry.get('test.reset1')).toBeUndefined();
     });
   });
 });

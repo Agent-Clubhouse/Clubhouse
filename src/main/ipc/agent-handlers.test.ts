@@ -114,6 +114,7 @@ vi.mock('../services/finished-quick-agents-store', () => ({
 vi.mock('../services/dispatcher/dispatcher-service', () => ({
   isDispatcherPath: (p: string) => p === 'dispatcher-folder',
   isDispatcherAgentId: (id: string) => id === 'disp',
+  isDispatcherIdentityAgentId: (id: string) => id === 'disp',
 }));
 
 import { ipcMain, dialog, BrowserWindow } from 'electron';
@@ -760,6 +761,24 @@ describe('agent-handlers', () => {
     const handler = handlers.get(IPC.AGENT.SPAWN_AGENT)!;
     await handler({}, params);
     expect(agentSystem.spawnAgent).toHaveBeenCalledWith(params);
+  });
+
+  it('SPAWN_AGENT takes a quick launch\'s part changes as a bounded list of ids (#2928)', async () => {
+    const handler = handlers.get(IPC.AGENT.SPAWN_AGENT)!;
+    const quick = (managedTemplate: unknown) => ({ agentId: 'q1', projectPath: '/p', cwd: '/p', kind: 'quick', managedTemplate });
+    const ok = quick({ id: 't', agentName: 'q', addParts: ['a'], removeParts: ['b'] });
+    await handler({}, ok);
+    expect(agentSystem.spawnAgent).toHaveBeenCalledWith(ok);
+    vi.mocked(agentSystem.spawnAgent).mockClear();
+    for (const bad of [
+      { id: 't', agentName: 'q', addParts: 'a' },
+      { id: 't', agentName: 'q', removeParts: [1] },
+      { id: 't', agentName: 'q', addParts: [''] },
+      { id: 't', agentName: 'q', addParts: Array.from({ length: 51 }, (_, i) => `p${i}`) },
+    ]) {
+      await expect(Promise.resolve().then(() => handler({}, quick(bad)))).rejects.toThrow();
+    }
+    expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
   });
 
   it('SPAWN_AGENT logs and rethrows on error', async () => {

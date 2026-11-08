@@ -178,7 +178,7 @@
         "builtin-block-orchestrator"
       ],
       "settings": {
-        "freeAgentMode": true,
+        "access": "full_access",
         "orchestration": {
           "orchestrate": true,
           "maxHelpers": 5,

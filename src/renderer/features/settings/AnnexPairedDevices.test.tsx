@@ -1,21 +1,21 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { AnnexPairedDevices } from './AnnexPairedDevices';
 import { useAnnexStore } from '../../stores/annexStore';
-import type { AnnexPeerListing } from '../../../shared/types';
+import type { AnnexDevice } from '../../../shared/types';
 
 const NOW = new Date('2026-11-07T12:00:00Z').getTime();
 
-function peer(overrides: Partial<AnnexPeerListing>): AnnexPeerListing {
+function peer(overrides: Partial<AnnexDevice>): AnnexDevice {
   return {
     fingerprint: 'fp-phone',
-    publicKey: 'pk',
     alias: 'Test iPhone',
     icon: 'phone',
     color: 'indigo',
     pairedAt: '2026-11-01T09:00:00Z',
     lastSeen: new Date(NOW - 5 * 60_000).toISOString(),
     role: 'controller',
-    needsPairing: false,
+    state: 'offline',
+    problem: null,
     ...overrides,
   };
 }
@@ -23,7 +23,7 @@ function peer(overrides: Partial<AnnexPeerListing>): AnnexPeerListing {
 describe('AnnexPairedDevices', () => {
   const listPeers = vi.fn();
   const removePeer = vi.fn();
-  let peersChanged: ((peers: AnnexPeerListing[]) => void) | null = null;
+  let peersChanged: ((peers: AnnexDevice[]) => void) | null = null;
   const unsubscribe = vi.fn();
 
   beforeEach(() => {
@@ -33,11 +33,11 @@ describe('AnnexPairedDevices', () => {
     listPeers.mockResolvedValue([]);
     removePeer.mockResolvedValue(true);
     Object.assign(window.clubhouse.annex, {
-      listPeers,
-      removePeer,
-      onPeersChanged: (cb: (peers: AnnexPeerListing[]) => void) => { peersChanged = cb; return unsubscribe; },
+      listDevices: listPeers,
+      removeDevice: removePeer,
+      onDevicesChanged: (cb: (devices: AnnexDevice[]) => void) => { peersChanged = cb; return unsubscribe; },
     });
-    useAnnexStore.setState({ peers: [] });
+    useAnnexStore.setState({ devices: [] });
   });
 
   afterEach(() => {
@@ -47,13 +47,23 @@ describe('AnnexPairedDevices', () => {
   it('loads peers and lists phones and controlling computers only', async () => {
     listPeers.mockResolvedValueOnce([
       peer({}),
-      peer({ fingerprint: 'fp-old', alias: 'Old Laptop', role: undefined }),
+      peer({ fingerprint: 'fp-old', alias: 'Old Laptop', role: null }),
       peer({ fingerprint: 'fp-sat', alias: 'Satellite Mac', role: 'satellite' }),
     ]);
     render(<AnnexPairedDevices />);
     expect(await screen.findByText('Test iPhone')).toBeInTheDocument();
     expect(screen.getByText('Old Laptop')).toBeInTheDocument();
     expect(screen.queryByText('Satellite Mac')).not.toBeInTheDocument();
+  });
+
+  it('lists a phone in this machine\'s network, and not a computer member (#3062)', async () => {
+    listPeers.mockResolvedValueOnce([
+      peer({ fingerprint: 'fp-member-phone', alias: 'Network Phone', role: 'member', kind: 'phone' }),
+      peer({ fingerprint: 'fp-member-mac', alias: 'Network Mac', role: 'member', kind: 'desktop' }),
+    ]);
+    render(<AnnexPairedDevices />);
+    expect(await screen.findByText('Network Phone')).toBeInTheDocument();
+    expect(screen.queryByText('Network Mac')).not.toBeInTheDocument();
   });
 
   it('shows when each device was paired and last seen', async () => {
@@ -64,9 +74,22 @@ describe('AnnexPairedDevices', () => {
   });
 
   it('marks a device that needs pairing again in plain text', async () => {
-    listPeers.mockResolvedValueOnce([peer({ needsPairing: true })]);
+    listPeers.mockResolvedValueOnce([peer({ state: 'needs-pairing' })]);
     render(<AnnexPairedDevices />);
     expect(await screen.findByText('Needs pairing again')).toBeInTheDocument();
+  });
+
+  it('says Connected instead of a time for a device connected now', async () => {
+    listPeers.mockResolvedValueOnce([peer({ state: 'connected' })]);
+    render(<AnnexPairedDevices />);
+    const pairedDate = new Date('2026-11-01T09:00:00Z').toLocaleDateString();
+    expect(await screen.findByText(`Paired ${pairedDate} · Connected`)).toBeInTheDocument();
+  });
+
+  it('marks a phone paired for this session only', async () => {
+    listPeers.mockResolvedValueOnce([peer({ sessionOnly: true })]);
+    render(<AnnexPairedDevices />);
+    expect(await screen.findByText(/This session only/)).toBeInTheDocument();
   });
 
   it('shows one quiet line when nothing is paired', async () => {

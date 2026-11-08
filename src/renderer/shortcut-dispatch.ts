@@ -1,5 +1,6 @@
 import { useKeyboardShortcutsStore, eventToBinding } from './stores/keyboardShortcutsStore';
 import { useCommandPaletteStore } from './stores/commandPaletteStore';
+import { useQuickPromptStore } from './chrome/quickPromptStore';
 import { getCommandActions } from './features/command-palette/command-actions';
 import { pluginHotkeyRegistry } from './plugins/plugin-hotkeys';
 import { isEditingKeyEvent, isTextInputTarget, keyPlatform } from './editing-keys';
@@ -8,6 +9,8 @@ import { isEditingKeyEvent, isTextInputTarget, keyPlatform } from './editing-key
 export function handleShortcutKeydown(e: KeyboardEvent): void {
   // Skip if recording a new binding in settings
   if (useKeyboardShortcutsStore.getState().editingId) return;
+  // The quick prompt (#2812) is a modal: no shortcut opens something under it.
+  if (useQuickPromptStore.getState().open) return;
 
   const binding = eventToBinding(e);
   if (!binding) return;

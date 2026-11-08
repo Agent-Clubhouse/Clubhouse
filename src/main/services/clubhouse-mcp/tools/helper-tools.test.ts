@@ -232,6 +232,7 @@ import { _resetProviderQuotaForTesting, noteProviderFailure } from '../../provid
 import { _resetHelperRoutingForTesting } from '../../helper-routing';
 import { reservationSummary } from '../../helper-auto-state';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
+import { setMcpCaller } from '../mcp-call-gate';
 import { managedAgents } from '../../managed-agents';
 import { HELPER_KEEPS_CLUBHOUSE_PART, HELPER_TEMPLATE_CHOICE_OFF } from '../../managed-agents/helpers';
 import { withSettingsSurface } from '../../settings-audit';
@@ -263,6 +264,8 @@ function addAgent(config: Partial<DurableAgentConfig> & { id: string }): Durable
 function runAgent(id: string, orchestrate = false): void {
   running.add(id);
   agentRegistry.register(id, { projectPath: PROJECT, orchestrator: 'claude-code', runtime: 'chat' });
+  // As spawnAgent does: the gate learns whether it's a helper, and whose (the grant check's parent, #2968).
+  setMcpCaller(id, PROJECT, agents.get(id));
   setOrchestrationEnabled(id, orchestrate);
 }
 
@@ -374,16 +377,19 @@ describe('parse, the test helper', () => {
 // ── Gating ─────────────────────────────────────────────────────────────────
 
 describe('gating', () => {
-  it('lists the orchestration tools only while orchestration is on; message_parent always', () => {
+  it('lists the orchestration tools only while orchestration is on; message_parent only for a helper (#2968)', () => {
     addAgent({ id: 'plain' });
     runAgent('plain', false);
     const plain = getScopedToolList('plain').map((t) => t.name);
-    expect(plain).toContain('message_parent');
+    expect(plain).not.toContain('message_parent');
     expect(plain).not.toContain('start_helper');
     expect(plain).not.toContain('list_helpers');
 
     const orch = getScopedToolList('orch').map((t) => t.name);
-    expect(orch).toEqual(expect.arrayContaining(['start_helper', 'list_helpers', 'sleep_helper', 'wake_helper', 'message_parent']));
+    expect(orch).toEqual(expect.arrayContaining(['start_helper', 'list_helpers', 'sleep_helper', 'wake_helper']));
+    addAgent({ id: 'kid', parentAgentId: 'orch' });
+    runAgent('kid', false);
+    expect(getScopedToolList('kid').map((t) => t.name)).toContain('message_parent');
   });
 
   it('refuses start_helper for an agent with orchestration off', async () => {
@@ -1864,7 +1870,8 @@ describe('message_parent', () => {
     runAgent('plain', false);
     const result = await callTool('plain', 'message_parent', { text: 'hi' });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('no parent');
+    // The grant check refuses it first (#2968): only a helper has a parent to message.
+    expect(result.content[0].text).toContain('Clubhouse permission');
   });
 
   it('says a parent that is shutting down did not get the message', async () => {
@@ -2043,6 +2050,7 @@ describe('helpers in another project', () => {
   it('a helper in another project reaches its parent with message_parent', async () => {
     farHelper();
     agentRegistry.register('far', { projectPath: FAR, orchestrator: 'claude-code', runtime: 'chat' });
+    setMcpCaller('far', FAR, { parentAgentId: 'orch' });
     const result = await callTool('far', 'message_parent', { text: 'done' });
     expect(result.isError).toBeFalsy();
     expect(sent.get('orch')?.[0]).toContain('[FROM HELPER:Far (far)] done');

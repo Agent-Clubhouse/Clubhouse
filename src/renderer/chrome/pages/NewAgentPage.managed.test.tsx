@@ -137,6 +137,11 @@ describe('NewAgentPage with Clubhouse-managed agents (#2893)', () => {
     expect(screen.queryByTestId('managed-template-builtin-template-project-manager')).toBeNull();
     expect(screen.queryByText('Project Manager')).toBeNull();
     expect(screen.getByTestId('managed-template-custom-release').textContent).toContain('Custom');
+    // What agents from it can do through Clubhouse, from the default grants (#2971).
+    const grants = screen.getByTestId('managed-template-grants-builtin-template-orchestrator');
+    expect(grants.querySelector('summary')?.textContent).toBe('Through Clubhouse it can read and message agents it\'s connected to, and start and manage its own helpers.');
+    expect(within(grants).getByText('Its helpers')).toBeTruthy();
+    expect(screen.getByTestId('managed-template-grants-custom-release').querySelector('summary')?.textContent).not.toContain('helpers');
 
     fireEvent.click(within(builtin).getByRole('button', { name: 'Create from Orchestrator' }));
     await waitFor(() => expect(create).toHaveBeenCalledWith('/tmp/ch', { name: 'keen-heron', color: 'emerald', templateId: 'builtin-template-orchestrator' }));
@@ -505,6 +510,72 @@ describe('NewAgentPage, a quick agent from a template (D25)', () => {
     fireEvent.click(screen.getByTestId('new-agent-submit'));
     await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalled());
     expect(spawnQuickAgent.mock.calls[0][3]).not.toBe('gpt-5-codex');
+  });
+
+  it('adds and leaves out parts for this launch only, shows them before the launch, and starts clean with each template (#2928)', async () => {
+    const other = { ...serverTemplate, id: 'custom-other', name: 'Other' };
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [serverTemplate, other] } as never);
+    const part = (id: string, name: string, kind: string) => ({ id, name, kind, description: '', builtin: false, usedBy: [], templates: [] });
+    vi.spyOn(m(), 'listParts').mockImplementation(async (kind: string) => ({
+      ok: true,
+      value: kind === 'block'
+        ? [part('b-identity', 'Identity', 'block'), part('b-tone', 'Tone', 'block')]
+        : kind === 'mcp' ? [part('builtin-mcp-clubhouse', 'Clubhouse', 'mcp'), part('p-workiq', 'WorkIQ', 'mcp')] : [],
+    }) as never);
+    openWith({ kind: 'quick' });
+    const select = await screen.findByTestId('new-agent-quick-template') as HTMLSelectElement;
+    await waitFor(() => expect(select.disabled).toBe(false));
+    fireEvent.change(select, { target: { value: 'custom-workiq' } });
+    // The template's parts, ticked, without the Clubhouse part every setup has. Claude Code takes no MCP
+    // servers at launch, so the template's WorkIQ isn't listed and none can be added.
+    const parts = await screen.findByTestId('quick-run-parts');
+    await waitFor(() => expect(parts.textContent).toContain('Identity'));
+    expect(parts.textContent).not.toContain('WorkIQ');
+    expect(parts.textContent).not.toContain('Clubhouse');
+    expect(Array.from((screen.getByTestId('quick-run-add') as HTMLSelectElement).options).map((o) => o.textContent)).toEqual(['Add a part…', 'Tone']);
+    expect(screen.getByTestId('quick-run-summary').textContent).toBe('The template as it is. Untick a part to leave it out of this run, or add one.');
+    fireEvent.click(screen.getByRole('checkbox', { name: /Identity/ }));
+    fireEvent.change(screen.getByTestId('quick-run-add'), { target: { value: 'b-tone' } });
+    expect(screen.getByRole('checkbox', { name: /Tone/ })).toBeChecked();
+    expect(screen.getByTestId('quick-run-summary').textContent).toBe('WorkIQ reader template, plus Tone, minus Identity. For this run only: the template doesn’t change.');
+    // Another template starts clean, and so does coming back.
+    fireEvent.change(select, { target: { value: 'custom-other' } });
+    fireEvent.change(select, { target: { value: 'custom-workiq' } });
+    expect(screen.getByTestId('quick-run-summary').textContent).toBe('The template as it is. Untick a part to leave it out of this run, or add one.');
+    fireEvent.click(screen.getByRole('checkbox', { name: /Identity/ }));
+    fireEvent.change(screen.getByTestId('quick-run-add'), { target: { value: 'b-tone' } });
+    typeMission();
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalled());
+    expect(spawnQuickAgent.mock.calls[0][9]).toEqual({ managedTemplateId: 'custom-workiq', fallbackAccess: 'ask', addParts: ['b-tone'], removeParts: ['b-identity'] });
+  });
+
+  it('a template\'s Access goes when another template without one, or None, is picked, unless the person changed it (#2999)', async () => {
+    const free = { ...serverTemplate, id: 'custom-free', name: 'Free', settings: { access: 'full_access' } };
+    const bare = { ...serverTemplate, id: 'custom-bare', name: 'Bare', settings: {} };
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [free, bare] } as never);
+    openWith({ kind: 'quick' });
+    const select = await screen.findByTestId('new-agent-quick-template') as HTMLSelectElement;
+    await waitFor(() => expect(select.disabled).toBe(false));
+    const access = () => (screen.getByTestId('new-agent-access') as HTMLSelectElement).value;
+    const before = access();
+    fireEvent.change(select, { target: { value: 'custom-free' } });
+    expect(access()).toBe('full_access');
+    fireEvent.change(select, { target: { value: 'custom-bare' } });
+    expect(access()).toBe(before);
+    fireEvent.change(select, { target: { value: 'custom-free' } });
+    fireEvent.change(select, { target: { value: '' } });
+    expect(access()).toBe(before);
+    // The person's own choice stays.
+    fireEvent.change(select, { target: { value: 'custom-free' } });
+    fireEvent.change(screen.getByTestId('new-agent-access'), { target: { value: 'auto' } });
+    fireEvent.change(select, { target: { value: 'custom-bare' } });
+    expect(access()).toBe('auto');
+    // A level the person already had stays theirs when a template sets the same one.
+    fireEvent.change(screen.getByTestId('new-agent-access'), { target: { value: 'full_access' } });
+    fireEvent.change(select, { target: { value: 'custom-free' } });
+    fireEvent.change(select, { target: { value: '' } });
+    expect(access()).toBe('full_access');
   });
 
   it('None starts a quick agent with no template', async () => {

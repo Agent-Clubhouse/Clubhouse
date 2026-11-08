@@ -11,6 +11,8 @@
 
 import { createHash, randomUUID } from 'crypto';
 import {
+  AUTO_LEVEL_FOLLOWS,
+  AUTO_LEVELS,
   BUILTIN_PRESETS,
   HELPER_DIFFICULTIES,
   HELPER_ROUTING_LABELS,
@@ -20,9 +22,12 @@ import {
   QUOTA_STALE_MS,
   PRESET_PROVIDERS,
   routingLabel,
+  isAutoBoundLevel,
+  isAutoLevel,
   isHelperDifficulty,
   isPresetModel,
   isPresetProvider,
+  type AutoLevel,
   type HelperDifficulty,
   type HelperAutoView,
   type HelperRouting,
@@ -97,16 +102,25 @@ interface ResolvedCell {
   source: 'custom_mapping' | 'builtin_mapping';
   fallback: HelperRoutingFallback;
   warning?: string;
+  /** A minimum or maximum that used its difficulty's cell instead of its own. */
+  follows?: HelperDifficulty;
 }
 
 /**
  * The cell a start uses: the saved one, else the built-in if the saved one is
  * stale, with a fallback code saying so. Null when neither is valid.
+ *
+ * A minimum or maximum (#3044) has no built-in. Unset, it uses its difficulty's
+ * cell (AUTO_LEVEL_FOLLOWS), resolved the same way. Saved but no longer
+ * offered, it does the same, with `builtin_preset` saying the saved choice
+ * wasn't used.
  */
 async function resolveCell(
   provider: PresetProvider,
-  difficulty: HelperDifficulty,
+  level: AutoLevel,
 ): Promise<{ resolved: ResolvedCell | null; problems: string[] }> {
+  if (isAutoBoundLevel(level)) return resolveBoundCell(provider, level);
+  const difficulty = level;
   const custom = orchestrationSettings.getPresets()[provider]?.[difficulty];
   const builtin = BUILTIN_PRESETS[provider][difficulty];
   const problems: string[] = [];
@@ -138,6 +152,99 @@ async function resolveCell(
     },
     problems,
   };
+}
+
+async function resolveBoundCell(
+  provider: PresetProvider,
+  level: 'minimum' | 'maximum',
+): Promise<{ resolved: ResolvedCell | null; problems: string[] }> {
+  const custom = orchestrationSettings.getPresets()[provider]?.[level];
+  const problems: string[] = [];
+  if (custom) {
+    const check = await checkCell(provider, custom);
+    if (check.state !== 'stale') {
+      return {
+        resolved: {
+          cell: custom, source: 'custom_mapping',
+          fallback: check.state === 'unverified' ? 'model_unverified' : 'none',
+          ...(check.message && { warning: check.message }),
+        },
+        problems,
+      };
+    }
+    problems.push(`your saved ${level} (${check.message})`);
+  }
+  const follows = AUTO_LEVEL_FOLLOWS[level];
+  const followed = await resolveCell(provider, follows);
+  problems.push(...followed.problems.map((p) => `${follows}: ${p}`));
+  if (!followed.resolved) return { resolved: null, problems };
+  return {
+    resolved: { ...followed.resolved, follows, ...(custom && { fallback: 'builtin_preset' as const }) },
+    problems,
+  };
+}
+
+// ── An Auto level, for callers other than start_helper ───────────────────
+
+export type AutoLevelResolution =
+  | {
+    ok: true;
+    provider: PresetProvider;
+    level: AutoLevel;
+    model: string;
+    /** Null passes no level, so the CLI picks. */
+    effort: string | null;
+    source: 'custom_mapping' | 'builtin_mapping';
+    fallback: HelperRoutingFallback;
+    /** Set when a minimum or maximum used this difficulty's cell instead of its own. */
+    follows?: HelperDifficulty;
+    /** The list may be out of date, so the choice couldn't be fully checked. */
+    warning?: string;
+  }
+  | { ok: false; code: 'auto_not_supported' | 'no_valid_mapping'; message: string };
+
+/**
+ * The model and effort a provider runs an Auto level on (#3044), checked
+ * against its CLI's list like a helper start. For callers that pick a model
+ * themselves, such as the Dispatcher's rewrite step at the minimum level. It
+ * doesn't depend on the Auto provider switch, which only governs choosing
+ * between providers, and it never falls back to a CLI's default model.
+ *
+ * A provider without presets (Copilot today) returns `auto_not_supported`, so
+ * the caller picks its own fallback. Never throws for a bad provider or level.
+ */
+export async function resolveAutoLevel(provider: string, level: AutoLevel): Promise<AutoLevelResolution> {
+  if (!isAutoLevel(level)) {
+    return { ok: false, code: 'no_valid_mapping', message: `${String(level)} isn't an Auto level. Use one of ${AUTO_LEVELS.join(', ')}.` };
+  }
+  if (!isPresetProvider(provider)) {
+    return { ok: false, code: 'auto_not_supported', message: `${provider} has no Auto mapping.` };
+  }
+  const { resolved, problems } = await resolveCell(provider, level);
+  if (!resolved) {
+    return { ok: false, code: 'no_valid_mapping', message: `No ${level} level for ${provider} is offered now: ${problems.join('; ')}` };
+  }
+  return {
+    ok: true,
+    provider,
+    level,
+    model: resolved.cell.model,
+    effort: resolved.cell.effort,
+    source: resolved.source,
+    fallback: resolved.fallback,
+    ...(resolved.follows && { follows: resolved.follows }),
+    ...(resolved.warning && { warning: resolved.warning }),
+  };
+}
+
+/** The provider's minimum level: its cheapest mapped model, for small background steps. */
+export function resolveProviderMinimum(provider: string): Promise<AutoLevelResolution> {
+  return resolveAutoLevel(provider, 'minimum');
+}
+
+/** The provider's maximum level: its strongest mapped model. */
+export function resolveProviderMaximum(provider: string): Promise<AutoLevelResolution> {
+  return resolveAutoLevel(provider, 'maximum');
 }
 
 // ── What a start decides ─────────────────────────────────────────────────
@@ -199,6 +306,15 @@ export async function planHelperStart(request: StartPlanRequest): Promise<StartP
 
   if (cli === AUTO_CLI) {
     if (!request.auto?.effective) return autoOffRefusal(request.auto);
+    // Only a difficulty: minimum and maximum (#3044) are mapping levels, not something a start asks for.
+    if (!isHelperDifficulty(difficulty)) {
+      return {
+        ok: false,
+        code: 'no_valid_mapping',
+        message: `cli "auto" needs a difficulty: ${HELPER_DIFFICULTIES.join(', ')}.`,
+        userReason: 'it named no difficulty Auto can use.',
+      };
+    }
     return prepareAuto(request);
   }
   const namedCli = cli;
@@ -653,7 +769,9 @@ function savedPartOf(revision: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
-async function viewCell(provider: PresetProvider, difficulty: HelperDifficulty): Promise<PresetCellView> {
+async function viewCell(provider: PresetProvider, level: AutoLevel): Promise<PresetCellView> {
+  if (isAutoBoundLevel(level)) return viewBoundCell(provider, level);
+  const difficulty = level;
   const custom = orchestrationSettings.getPresets()[provider]?.[difficulty] ?? null;
   const builtin = BUILTIN_PRESETS[provider][difficulty];
   const shown = await checkCell(provider, custom ?? builtin);
@@ -668,6 +786,41 @@ async function viewCell(provider: PresetProvider, difficulty: HelperDifficulty):
     custom,
     builtin,
     editable: true,
+  };
+}
+
+/**
+ * A minimum or maximum. Without a usable choice of its own it shows its
+ * difficulty's cell, with `follows` naming it; a stale saved one keeps its own
+ * state, so Settings can say so and offer Reset.
+ */
+async function viewBoundCell(provider: PresetProvider, level: 'minimum' | 'maximum'): Promise<PresetCellView> {
+  const follows = AUTO_LEVEL_FOLLOWS[level];
+  const custom = orchestrationSettings.getPresets()[provider]?.[level] ?? null;
+  const followed = await viewCell(provider, follows);
+  if (!custom) return { ...followed, custom: null, follows };
+  const shown = await checkCell(provider, custom);
+  if (shown.state !== 'stale') {
+    return {
+      effective: custom,
+      source: 'custom',
+      state: shown.state,
+      ...(shown.state === 'unverified' && { fallback: 'model_unverified' as const }),
+      custom,
+      builtin: followed.builtin,
+      editable: true,
+    };
+  }
+  return {
+    effective: followed.effective,
+    source: 'custom',
+    state: 'stale',
+    ...(shown.staleReason && { staleReason: shown.staleReason }),
+    ...(followed.effective && { fallback: 'builtin_preset' as const }),
+    custom,
+    builtin: followed.builtin,
+    editable: true,
+    follows,
   };
 }
 
@@ -696,7 +849,7 @@ async function viewProvider(provider: PresetProvider, refresh: boolean): Promise
     }
   }
   const [cells, quota] = await Promise.all([
-    Promise.all(HELPER_DIFFICULTIES.map((d) => viewCell(provider, d))),
+    Promise.all(AUTO_LEVELS.map((level) => viewCell(provider, level))),
     forcedQuota ? forcedQuota.then((forced) => forced.quota) : readProviderQuota(provider),
   ]);
   if (forcedQuota) {
@@ -709,7 +862,7 @@ async function viewProvider(provider: PresetProvider, refresh: boolean): Promise
     autoEligible: true,
     quota,
     choices,
-    cells: Object.fromEntries(HELPER_DIFFICULTIES.map((d, i) => [d, cells[i]])) as Record<HelperDifficulty, PresetCellView>,
+    cells: Object.fromEntries(AUTO_LEVELS.map((level, i) => [level, cells[i]])) as Record<AutoLevel, PresetCellView>,
   };
 }
 
@@ -731,7 +884,7 @@ export async function readHelperRouting(options: { projectPath?: string; autoCon
   if (!options.projectPath) {
     const signature = JSON.stringify(PRESET_PROVIDERS.map((p) => {
       const view = providers[p];
-      return view.autoEligible ? HELPER_DIFFICULTIES.map((d) => view.cells[d].state) : null;
+      return view.autoEligible ? AUTO_LEVELS.map((level) => view.cells[level].state) : null;
     }));
     const changed = lastStateSignature !== null && lastStateSignature !== signature;
     lastStateSignature = signature;
@@ -784,7 +937,7 @@ function checkShape(update: HelperRoutingUpdate): void {
   if (!update.cells?.length && !update.reset && update.auto === undefined) throw invalid('Send cells to change, a reset, or auto.');
   for (const cell of update.cells ?? []) {
     if (!isPresetProvider(cell?.provider)) throw invalid(`${String(cell?.provider)} has no presets.`);
-    if (!isHelperDifficulty(cell.difficulty)) throw invalid(`difficulty must be one of ${HELPER_DIFFICULTIES.join(', ')}.`);
+    if (!isAutoLevel(cell.difficulty)) throw invalid(`difficulty must be one of ${AUTO_LEVELS.join(', ')}.`);
     if (!isPresetModel(cell.model)) throw invalid('That isn\'t a model id.');
     if (cell.model === CLI_DEFAULT_MODEL) throw invalid('A preset has to name a model, not the CLI\'s default.');
     if (cell.effort !== null && !isEffortValue(cell.effort)) throw invalid('effort must be a level or null.');
@@ -792,7 +945,7 @@ function checkShape(update: HelperRoutingUpdate): void {
   const { reset } = update;
   if (reset) {
     if (reset.provider !== undefined && !isPresetProvider(reset.provider)) throw invalid(`${String(reset.provider)} has no presets.`);
-    if (reset.difficulty !== undefined && !isHelperDifficulty(reset.difficulty)) throw invalid(`difficulty must be one of ${HELPER_DIFFICULTIES.join(', ')}.`);
+    if (reset.difficulty !== undefined && !isAutoLevel(reset.difficulty)) throw invalid(`difficulty must be one of ${AUTO_LEVELS.join(', ')}.`);
     if (reset.difficulty !== undefined && reset.provider === undefined) throw invalid('Resetting one difficulty needs its provider.');
   }
 }
@@ -805,18 +958,18 @@ function afterReset(saved: SavedPresets, reset: HelperRoutingUpdate['reset']): S
     const { [provider]: _dropped, ...rest } = saved;
     return rest;
   }
-  const { [reset.difficulty as HelperDifficulty]: _cell, ...cells } = saved[provider] ?? {};
+  const { [reset.difficulty as AutoLevel]: _cell, ...cells } = saved[provider] ?? {};
   const { [provider]: _old, ...rest } = saved;
   return Object.keys(cells).length > 0 ? { ...rest, [provider]: cells } : rest;
 }
 
 async function auditPresetChanges(before: SavedPresets, after: SavedPresets, surface: SettingsAuditSurface): Promise<void> {
   for (const provider of PRESET_PROVIDERS) {
-    for (const difficulty of HELPER_DIFFICULTIES) {
-      const was = before[provider]?.[difficulty];
-      const now = after[provider]?.[difficulty];
+    for (const level of AUTO_LEVELS) {
+      const was = before[provider]?.[level];
+      const now = after[provider]?.[level];
       if (cellText(was) === cellText(now)) continue;
-      await appendSettingsAudit({ surface, scope: 'app', key: `helper_presets.${provider}.${difficulty}`, before: cellText(was), after: cellText(now), outcome: 'ok' });
+      await appendSettingsAudit({ surface, scope: 'app', key: `helper_presets.${provider}.${level}`, before: cellText(was), after: cellText(now), outcome: 'ok' });
     }
   }
 }
@@ -904,9 +1057,10 @@ async function writePresets(update: HelperRoutingUpdate, { surface, projectPath 
   const result: SavedPresets = Object.fromEntries(Object.entries(next).map(([p, cells]) => [p, { ...cells }]));
   for (const { provider, difficulty, model, effort } of update.cells ?? []) {
     const p = provider as PresetProvider;
-    const d = difficulty as HelperDifficulty;
+    const d = difficulty as AutoLevel;
     // Only what differs from a built-in is kept, so a built-in that moves on is followed.
-    if (sameCell({ model, effort }, BUILTIN_PRESETS[p][d])) {
+    // Minimum and maximum have none, so a choice there is kept as made.
+    if (isHelperDifficulty(d) && sameCell({ model, effort }, BUILTIN_PRESETS[p][d])) {
       if (result[p]) delete result[p]![d];
       if (result[p] && Object.keys(result[p]!).length === 0) delete result[p];
     } else {

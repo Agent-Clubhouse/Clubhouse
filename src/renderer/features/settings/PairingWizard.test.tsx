@@ -134,13 +134,10 @@ describe('PairingWizard', () => {
   });
 
   describe('pair again', () => {
-    it('names the satellite and starts comparing codes once it is discovered', async () => {
+    it('starts comparing codes at once, though the satellite is not in the discovered list', async () => {
+      // A satellite that needs pairing again is a known satellite, never a discovered service.
       useAnnexClientStore.setState({ discoveredServices: [] });
       render(<PairingWizard onClose={mockOnClose} repairTarget={{ fingerprint: 'abc123', alias: 'Test Machine' }} />);
-      expect(screen.getByText('Pair again with Test Machine')).toBeInTheDocument();
-      expect(mockProbeService).not.toHaveBeenCalled();
-
-      useAnnexClientStore.setState({ discoveredServices: [SERVICE] });
       await waitFor(() => expect(mockProbeService).toHaveBeenCalledWith('abc123'));
       expect(await screen.findByTestId('pairing-certificate-code')).toHaveTextContent(CODE);
     });

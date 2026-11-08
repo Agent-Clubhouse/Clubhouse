@@ -5,6 +5,10 @@
  * for the agent routes and commands only while it is turned on. A phone may
  * turn it on or off as Settings > Dispatcher does. See
  * docs/mobile-control-v1.md#dispatcher.
+ *
+ * A phone sees the agent the user talks to (#3036): the Dispatcher's chat,
+ * with its folder as the project. The agent that holds its connections and
+ * does the work is never listed, and its id answers as no agent at all.
  */
 
 import type { Project } from '../../shared/types';
@@ -19,9 +23,14 @@ export const DISPATCHER_CHANGED_EVENT = 'dispatcher:changed';
 
 export const isDispatcherProjectId = (projectId: unknown): boolean => projectId === DISPATCHER_PROJECT_ID;
 
-/** The Dispatcher's folder as a project, so agent code that takes `{ id, path }` runs unchanged. */
+/** The chat's folder as the Dispatcher's project, so agent code that takes `{ id, path }` runs unchanged. */
 export function dispatcherProject(): Project {
-  return { id: DISPATCHER_PROJECT_ID, name: dispatcher.DISPATCHER_NAME, path: dispatcher.getDispatcherPath() };
+  return { id: DISPATCHER_PROJECT_ID, name: dispatcher.DISPATCHER_NAME, path: dispatcher.getDispatcherChatPath() };
+}
+
+/** The id a phone knows the Dispatcher by: its chat's. */
+function isPhoneDispatcherId(agentId: string | undefined): boolean {
+  return dispatcher.isDispatcherChatAgentId(agentId);
 }
 
 type DurableConfig = NonNullable<DispatcherState['config']>;
@@ -55,7 +64,7 @@ export function dispatcherCommandsWhileOff(state: DispatcherState): readonly str
 
 /** Refuse what the list doesn't hold for the Dispatcher's id. No new authority comes from being off. */
 export function assertDispatcherCommand(type: string, agentId: unknown): void {
-  if (!dispatcher.isDispatcherAgentId(typeof agentId === 'string' ? agentId : undefined)) return;
+  if (!isPhoneDispatcherId(typeof agentId === 'string' ? agentId : undefined)) return;
   const state = dispatcher.getDispatcherState();
   if (state.enabled || dispatcherCommandsWhileOff(state).includes(type)) return;
   throw new MobileControlError('dispatcher_off', 409, 'rejected', 'The Dispatcher is turned off.');
@@ -63,20 +72,20 @@ export function assertDispatcherCommand(type: string, agentId: unknown): void {
 
 /** The record, whatever state it is in: the snapshot keeps it, so history isn't lost. */
 export function dispatcherRecord(): DurableConfig | null {
-  return dispatcher.getDispatcherState().config;
+  return dispatcher.getDispatcherChatConfig();
 }
 
 /** The Dispatcher's config and folder while its routes answer; null when they don't, it isn't created yet, or `agentId` is another agent. */
 export function activeDispatcher(agentId?: string): { config: DurableConfig; project: Project } | null {
-  if (agentId !== undefined && !dispatcher.isDispatcherAgentId(agentId)) return null;
-  const state = dispatcher.getDispatcherState();
-  if (!isReachable(state)) return null;
-  return state.config ? { config: state.config, project: dispatcherProject() } : null;
+  if (agentId !== undefined && !isPhoneDispatcherId(agentId)) return null;
+  if (!isReachable(dispatcher.getDispatcherState())) return null;
+  const config = dispatcher.getDispatcherChatConfig();
+  return config ? { config, project: dispatcherProject() } : null;
 }
 
 /** True for the Dispatcher's id while its routes don't answer. */
 export function isDisabledDispatcherId(agentId: string): boolean {
-  return dispatcher.isDispatcherAgentId(agentId) && !isReachable(dispatcher.getDispatcherState());
+  return isPhoneDispatcherId(agentId) && !isReachable(dispatcher.getDispatcherState());
 }
 
 /** The Dispatcher's folder as a project for a phone's session list, while its routes answer. */
@@ -91,7 +100,7 @@ export function dispatcherShellProject(projectId: unknown): Project | undefined 
 
 /** `dispatcher.setEnabled`'s result, and the part of `dispatcher:changed` every phone reads. The agent id only while it is on. */
 export function dispatcherChange(state: DispatcherState = dispatcher.getDispatcherState()) {
-  return { enabled: state.enabled, flagOn: state.flagOn, agentId: state.enabled ? state.agentId : null };
+  return { enabled: state.enabled, flagOn: state.flagOn, agentId: state.enabled ? state.chatAgentId : null };
 }
 export type MobileDispatcherChange = ReturnType<typeof dispatcherChange>;
 
@@ -106,12 +115,13 @@ export function dispatcherOffFields(state: DispatcherState, view: AgentView) {
   const offReason = offReasonOf(state);
   if (!offReason) return {};
   const detail = offReason === 'classic_layout' ? 'Needs the new layout' : 'Turned off';
-  const agent = state.config ? view(state.config) : null;
+  const record = dispatcherRecord();
+  const agent = record ? view(record) : null;
   return {
     offReason,
-    running: state.running,
+    running: state.chatRunning,
     // What the agent itself says, so the two can't differ. Before it exists, nothing is running.
-    status: (agent as { status?: string } | null)?.status ?? (state.running ? 'running' : 'sleeping'),
+    status: (agent as { status?: string } | null)?.status ?? (state.chatRunning ? 'running' : 'sleeping'),
     detail,
     commandsWhileOff: [...dispatcherCommandsWhileOff(state)],
     agent,

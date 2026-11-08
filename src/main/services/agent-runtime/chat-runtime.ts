@@ -19,6 +19,7 @@
  * the runtime never answered still goes through.
  */
 
+import { ACCESS_LEVELS as FIVE_LEVELS } from '../../../shared/agent-access';
 import { randomUUID } from 'crypto';
 import {
   CHAT_CONTRACT_VERSION,
@@ -55,8 +56,9 @@ import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
 import { ChatMediaPolicy } from './chat-media';
+import { isConcealedTool } from './concealed-tools';
 import { agentRegistry } from '../agent-registry';
-import { ACCESS_LEVELS, accessLevelOf, launchAccessForChatLevel } from '../../../shared/orchestration-policy';
+import { fiveLevelOf, launchAccessForChatLevel } from '../../../shared/orchestration-policy';
 
 export const DEFAULT_CHAT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
@@ -212,6 +214,8 @@ export class ChatAgentRuntime implements AgentRuntime {
   private startNoticesEmitted = false;
   /** Serializes stamping so seq order matches transcript and bus order. */
   private emitChain: Promise<void> = Promise.resolve();
+  /** Tool calls this agent never shows (concealed-tools), so their updates are dropped too. */
+  private readonly concealedToolCalls = new Set<string>();
   private readonly now: () => number;
   private readonly newId: () => string;
   private readonly stateListeners = new Set<(state: ChatSessionState) => void>();
@@ -878,7 +882,8 @@ export class ChatAgentRuntime implements AgentRuntime {
     }
     if (how === 'lower') {
       const before = agentRegistry.get(this.agentId)?.launchAccess;
-      if (ACCESS_LEVELS.indexOf(accessLevelOf(next)) >= ACCESS_LEVELS.indexOf(accessLevelOf(before))) return;
+      // On the five-level ladder (#3000): Auto-accept edits to Plan is a lowering too.
+      if (FIVE_LEVELS.indexOf(fiveLevelOf(next)) >= FIVE_LEVELS.indexOf(fiveLevelOf(before))) return;
     }
     agentRegistry.reportLaunchAccess(this.agentId, next);
   }
@@ -918,6 +923,12 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   private emit(draft: ChatEventDraft): Promise<void> {
+    // Plumbing between agents that share an identity (#3036): never in the transcript, a window or a phone.
+    if (draft.type === 'tool_call' && isConcealedTool(this.agentId, draft.data.toolName)) {
+      this.concealedToolCalls.add(draft.data.toolCallId);
+      return this.emitChain;
+    }
+    if (draft.type === 'tool_call_update' && this.concealedToolCalls.has(draft.data.toolCallId)) return this.emitChain;
     const traceContext = draft.type === 'user_message'
       ? captureChatTrace(currentRequestTraceparent()) : this.turnTrace;
     const next = this.emitChain.then(async () => {

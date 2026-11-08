@@ -418,9 +418,9 @@ jobs:
   build-linux:
     name: Build Linux (${{ matrix.arch }})
     needs: [verify-tag]
-    # Pinned: ubuntu-26.04's rpmbuild runs %install in a per-package BUILD
-    # subdirectory, which breaks electron-installer-redhat's `cp -r usr/*`.
-    runs-on: ubuntu-24.04
+    # node-pty is rebuilt in an older Debian below, so the glibc the app needs no
+    # longer follows this runner's (#3080). rpm 4.20 works since build/rpm.spec.ejs (#2549).
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -442,6 +442,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build node-pty against glibc 2.36 (Debian 12)
+        run: scripts/ci/build-linux-native.sh
+
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
@@ -449,6 +452,10 @@ jobs:
 
       - name: Build Linux packages
         run: npx electron-forge make --arch=${{ matrix.arch }}
+
+      - name: Check the glibc floor of native modules
+        # The oldest Linux the app runs on: raise it only on purpose (#3080).
+        run: scripts/ci/check-linux-glibc.sh 2.36
 
       - name: Compute artifact hashes
         id: hash

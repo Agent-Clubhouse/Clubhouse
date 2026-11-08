@@ -32,6 +32,7 @@ import forge from 'node-forge';
 import {
   getOrCreateCert, createTlsServerOptions, createPinnedTlsClientOptions, resetForTests, signCertBinding, verifyCertBinding,
   certificateFingerprint, sameCertificateFingerprint, probePeerCertificate, PIN_MISMATCH_CODE,
+  randomCertificateSerial,
 } from './annex-tls';
 import type { AnnexIdentity } from './annex-identity';
 import { app } from 'electron';
@@ -126,6 +127,54 @@ describe('annex-tls', () => {
         expect(x509.subject).toContain(`CN=${id.fingerprint}`);
       }
     });
+
+    /** A saved certificate built with the given serial, using a native RSA key for speed. */
+    function savedCertWithSerial(serialHex: string): { certPem: string; keyPem: string; generatedAt: string } {
+      const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+      const cert = forge.pki.createCertificate();
+      cert.publicKey = forge.pki.publicKeyFromPem(publicKey.export({ type: 'spki', format: 'pem' }) as string);
+      cert.serialNumber = serialHex;
+      cert.validity.notBefore = new Date(Date.now() - 60_000);
+      cert.validity.notAfter = new Date(Date.now() + 86_400_000);
+      cert.setSubject([{ name: 'commonName', value: identity.fingerprint }]);
+      cert.setIssuer(cert.subject.attributes);
+      const keyPem = privateKey.export({ type: 'pkcs1', format: 'pem' }) as string;
+      cert.sign(forge.pki.privateKeyFromPem(keyPem), forge.md.sha256.create());
+      return { certPem: forge.pki.certificateToPem(cert), keyPem, generatedAt: new Date().toISOString() };
+    }
+
+    it('replaces a saved certificate that TLS cannot load (#2992)', () => {
+      // forge drops one leading zero byte, so 00 00 43 is written as 00 43: not
+      // minimal, which OpenSSL refuses as "illegal padding".
+      const bad = savedCertWithSerial('0000' + '43' + 'ab'.repeat(13));
+      expect(() => tls.createSecureContext({ cert: bad.certPem, key: bad.keyPem })).toThrow();
+      const filePath = path.join(tmpDir, 'annex-tls-cert.json');
+      fs.writeFileSync(filePath, JSON.stringify(bad));
+
+      const cert = getOrCreateCert(identity);
+
+      expect(cert.certPem).not.toBe(bad.certPem);
+      expect(() => tls.createSecureContext({ cert: cert.certPem, key: cert.keyPem })).not.toThrow();
+      expect(JSON.parse(fs.readFileSync(filePath, 'utf-8')).certPem).toBe(cert.certPem);
+    });
+
+    it('keeps a saved certificate that TLS can load', () => {
+      const good = savedCertWithSerial(randomCertificateSerial());
+      fs.writeFileSync(path.join(tmpDir, 'annex-tls-cert.json'), JSON.stringify(good));
+      expect(getOrCreateCert(identity).certPem).toBe(good.certPem);
+    });
+  });
+
+  describe('randomCertificateSerial', () => {
+    it('is 16 bytes with a first byte from 0x01 to 0x7f', () => {
+      for (let i = 0; i < 4096; i++) {
+        const serial = randomCertificateSerial();
+        expect(serial).toMatch(/^[0-9a-f]{32}$/);
+        const first = parseInt(serial.slice(0, 2), 16);
+        expect(first).toBeGreaterThanOrEqual(0x01);
+        expect(first).toBeLessThanOrEqual(0x7f);
+      }
+    });
   });
 
   describe('createTlsServerOptions', () => {
@@ -146,7 +195,7 @@ describe('annex-tls', () => {
       const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
       const cert = forge.pki.createCertificate();
       cert.publicKey = forge.pki.publicKeyFromPem(publicKey.export({ type: 'spki', format: 'pem' }) as string);
-      cert.serialNumber = `0${crypto.randomBytes(8).toString('hex')}`;
+      cert.serialNumber = randomCertificateSerial();
       cert.validity.notBefore = validity.notBefore ?? new Date(Date.now() - 60_000);
       cert.validity.notAfter = validity.notAfter ?? new Date(Date.now() + 86_400_000);
       cert.setSubject([{ name: 'commonName', value: cn }]);

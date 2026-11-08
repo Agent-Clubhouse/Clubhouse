@@ -151,6 +151,16 @@ export const IPC = {
     /** main → renderer: the lists after a change from any window or a phone. */
     FINISHED_QUICK_CHANGED: 'agent:finished-quick-changed',
     GET_DURABLE_CONFIG: 'agent:get-durable-config',
+    /** Clubhouse permissions (#2971). */
+    GET_GRANTS: 'agent:get-grants',
+    SET_GRANT: 'agent:set-grant',
+    RESET_GRANTS: 'agent:reset-grants',
+    /** Main → renderer (#2970): a Clubhouse permission request waiting on the user. */
+    GRANT_REQUEST: 'agent:grant-request',
+    /** Main → renderer (#2970): permission requests that were answered, expired or dropped. */
+    GRANT_REQUESTS_CLOSED: 'agent:grant-requests-closed',
+    LIST_GRANT_REQUESTS: 'agent:list-grant-requests',
+    ANSWER_GRANT_REQUEST: 'agent:answer-grant-request',
     UPDATE_DURABLE_CONFIG: 'agent:update-durable-config',
     LIST_AGENT_TEMPLATES: 'agent:list-agent-templates',
     CREATE_SKILL: 'agent:create-skill',
@@ -486,6 +496,10 @@ export const IPC = {
     REMOVE_ALL_PEERS: 'annex:remove-all-peers',
     UNLOCK_PAIRING: 'annex:unlock-pairing',
     PEERS_CHANGED: 'annex:peers-changed',
+    LIST_DEVICES: 'annex:list-devices',
+    REMOVE_DEVICE: 'annex:remove-device',
+    DEVICES_CHANGED: 'annex:devices-changed',
+    LIST_NETWORK_MEMBERS: 'annex:list-network-members',
     LOCK_STATE_CHANGED: 'annex:lock-state-changed',
     NOTIFY_PAUSE: 'annex:notify-pause',
     DISCONNECT_CONTROLLER: 'annex:disconnect-controller',
@@ -513,6 +527,7 @@ export const IPC = {
     PTY_GET_BUFFER: 'annex-client:pty-get-buffer',
     PTY_GET_BUFFER_SNAPSHOT: 'annex-client:pty-get-buffer-snapshot',
     FORGET_SATELLITE: 'annex-client:forget-satellite',
+    SET_SATELLITE_HOST: 'annex-client:set-satellite-host',
     FORGET_ALL_SATELLITES: 'annex-client:forget-all-satellites',
     FILE_TREE: 'annex-client:file-tree',
     FILE_READ: 'annex-client:file-read',
@@ -583,6 +598,10 @@ export const IPC = {
     /** Renderer→main: the wires an orchestrator's connection tools made and alone own (#2232). */
     GET_TOOL_CONNECTIONS: 'mcp-binding:get-tool-connections',
     GET_DISPATCHER_LINKS: 'mcp-binding:get-dispatcher-links',
+    /** The sources behind an agent's connections (#2744). */
+    GET_CONNECTION_SOURCES: 'mcp-binding:get-connection-sources',
+    /** Remove one source of one connection (#2744). */
+    REMOVE_CONNECTION_SOURCE: 'mcp-binding:remove-connection-source',
     /** Main→renderer: the agent id whose connection or tool count changed. */
     AGENT_CONNECTION_CHANGED: 'mcp-binding:agent-connection-changed',
     /** Broadcast when an MCP tool is called — carries source/target/direction for wire animation. */
@@ -622,6 +641,20 @@ export const IPC = {
      * import blueprints from anywhere on disk (e.g. ~/Downloads).
      */
     OPEN_AND_READ: 'blueprint:open-and-read',
+  },
+  /** Actions (#2918): workflows that run on a schedule, on events, or once. */
+  ACTIONS: {
+    LIST: 'actions:list',
+    CREATE: 'actions:create',
+    UPDATE: 'actions:update',
+    SET_ENABLED: 'actions:set-enabled',
+    DELETE: 'actions:delete',
+    RUN_NOW: 'actions:run-now',
+    HISTORY: 'actions:history',
+    /** Main → renderer: the actions or a run changed. No payload; the renderer re-lists. */
+    CHANGED: 'actions:changed',
+    /** Main → renderer: a mechanical failure or an action Clubhouse turned off, for a toast. */
+    NOTICE: 'actions:notice',
   },
   /** The app-wide Dispatcher agent (#2533). */
   DISPATCHER: {

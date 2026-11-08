@@ -28,7 +28,7 @@ import { persist } from '../telemetry/persist';
 import { normalizeIdleSleep } from '../../shared/idle-sleep';
 import { setAgentIdleSleep } from './chat-idle-settings';
 import { assertAgentGitName, validateAgentGitName } from '../../shared/agent-name';
-import { ACCESS_LEVELS, type AgentAccessLevel, type OrchestrationPolicyConfig } from '../../shared/orchestration-policy';
+import { helperAccessRequest, type HelperRequestedAccess, type OrchestrationPolicyConfig } from '../../shared/orchestration-policy';
 import { uncommittedPorcelain } from './clubhouse-owned-files';
 import { isDispatcherPath } from './dispatcher/dispatcher-paths';
 import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedMigration, type ManagedMigrationFailure } from '../../shared/managed-agents-types';
@@ -655,7 +655,7 @@ export function normalizeHelperFields(agents: DurableAgentConfig[]): number {
       delete record.pendingTask;
       changed.add(agent.id);
     }
-    if ('requestedAccess' in record && !(ACCESS_LEVELS as readonly unknown[]).includes(record.requestedAccess)) {
+    if ('requestedAccess' in record && !helperAccessRequest(record.requestedAccess)) {
       delete record.requestedAccess;
       changed.add(agent.id);
     }
@@ -1633,7 +1633,9 @@ async function updateDurableConfigInner(
   // A managed agent's setup-changed bar compares these with what its session started on.
   // Auto-sleep and the helper template apply at once, but Settings and Preview show them, so they refresh too.
   if (agent.managed && (updates.orchestrator !== undefined || updates.model !== undefined || updates.freeAgentMode !== undefined || updates.access !== undefined
-    || updates.effort !== undefined || updates.idleSleep !== undefined || updates.helperTemplateId !== undefined)) noteManagedSettingsChanged();
+    || updates.effort !== undefined || updates.idleSleep !== undefined || updates.helperTemplateId !== undefined
+    // The Setup card and the composer show what the next start uses (#2790).
+    || updates.contextWindow !== undefined)) noteManagedSettingsChanged();
   await auditChanges('agent', 'agent', agentId, auditBefore, pickAudited(agent, AGENT_AUDIT_CATALOG), AGENT_AUDIT_CATALOG);
   // A running chat session picks the new timeout up now.
   if (updates.idleSleep !== undefined) setAgentIdleSleep(agentId, agent.idleSleep);
@@ -3350,7 +3352,7 @@ async function setClubhouseFeaturesInner(projectPath: string, agentId: string, o
 /** What start_helper keeps on a helper (#2227). null clears a field; undefined leaves it. */
 export interface HelperStartFields {
   pendingTask?: string | null;
-  requestedAccess?: AgentAccessLevel | null;
+  requestedAccess?: HelperRequestedAccess | null;
   /** What became of a context choice at the start, recorded on the helper's `routing`. */
   routingContext?: HelperContextStatus;
 }

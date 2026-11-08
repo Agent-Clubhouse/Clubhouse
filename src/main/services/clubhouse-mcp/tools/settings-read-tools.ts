@@ -53,6 +53,7 @@ export function registerSettingsReadTools(): void {
       inputSchema: { type: 'object', properties: {} },
     },
     (agentId) => guarded('list_settings', agentId, () => listSettings(actorFor(agentId))),
+    { grant: { actions: ['settings.app.read'], target: 'app' } },
   );
 
   registerGlobalTool(
@@ -90,5 +91,6 @@ export function registerSettingsReadTools(): void {
         detail: optionalBoolean(args, 'detail'),
       });
     }),
+    { grant: [{ actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent_ids'], project: 'project', missing: 'caller', all: 'all_agents' } }, { actions: ['project.read'], target: 'project_arg', from: { args: ['project'], missing: 'caller', all: 'all_projects' } }, { actions: ['settings.app.read'], target: 'app' }] },
   );
 }

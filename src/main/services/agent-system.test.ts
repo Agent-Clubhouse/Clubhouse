@@ -175,6 +175,12 @@ vi.mock('fs/promises', () => ({
   readFile: (...args: unknown[]) => mockReadFile(...args),
 }));
 
+// The project list, where "Agents run on" is saved (#2975).
+const mockPeekProjects = vi.fn(async (): Promise<Array<{ path: string; orchestrator?: string }>> => []);
+vi.mock('./project-store', () => ({
+  peekProjects: () => mockPeekProjects(),
+}));
+
 // Mock the orchestrator registry
 const mockClaudeConventions: OrchestratorConventions = {
   configDir: '.claude',
@@ -357,6 +363,7 @@ function notSessionCapable(provider: Record<string, unknown>): void {
 describe('agent-system', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPeekProjects.mockReset().mockResolvedValue([]);
     mockHeadlessSpawn.mockImplementation((agentId: string) => {
       mockIsHeadless.mockImplementation((trackedAgentId: string) => trackedAgentId === agentId);
     });
@@ -382,9 +389,7 @@ describe('agent-system', () => {
     });
 
     it('falls back to project-level setting', async () => {
-      mockReadFile.mockResolvedValueOnce(
-        JSON.stringify({ orchestrator: 'codex-cli' })
-      );
+      mockPeekProjects.mockResolvedValueOnce([{ path: '/project', orchestrator: 'codex-cli' }]);
       const provider = await resolveOrchestrator('/project');
       expect(provider.id).toBe('codex-cli');
     });
@@ -536,10 +541,8 @@ describe('agent-system', () => {
       expect(getAgentOrchestrator('agent-1')).toBe('claude-code');
     });
 
-    it('tracks project-level orchestrator from settings.json', async () => {
-      mockReadFile.mockResolvedValueOnce(
-        JSON.stringify({ orchestrator: 'codex-cli' })
-      );
+    it('tracks the project-level orchestrator from the project list', async () => {
+      mockPeekProjects.mockResolvedValue([{ path: '/my/project', orchestrator: 'codex-cli' }]);
       await spawnAgent({
         agentId: 'agent-1',
         projectPath: '/my/project',
@@ -650,6 +653,28 @@ describe('agent-system', () => {
       expect(mockProvider.getDefaultPermissions).toHaveBeenCalledWith('quick');
     });
 
+    it('pre-allows only reading tools for a quick agent below Auto-accept edits (#3007)', async () => {
+      const toolsFor = async (extra: Record<string, unknown>) => {
+        await spawnAgent({ agentId: 'agent-q', projectPath: '/project', cwd: '/project', kind: 'quick', ...extra });
+        const opts = mockProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { allowedTools?: string[] };
+        untrackAgent('agent-q');
+        return opts.allowedTools;
+      };
+      expect(await toolsFor({})).toEqual(['Read']);
+      expect(await toolsFor({ access: 'auto_edit' })).toEqual(['Read', 'Write']);
+      expect(await toolsFor({ access: 'full_access' })).toEqual(['Read', 'Write']);
+      // Tools passed explicitly stay as given.
+      expect(await toolsFor({ allowedTools: ['Bash(make:*)'] })).toEqual(['Bash(make:*)']);
+      // Copilot runs a terminal quick agent one-shot and can't ask: it keeps its defaults.
+      const provider = mockProvider as { id: string };
+      provider.id = 'copilot-cli';
+      try {
+        expect(await toolsFor({})).toEqual(['Read', 'Write']);
+      } finally {
+        provider.id = 'claude-code';
+      }
+    });
+
     describe('a saved effort (#2671)', () => {
       afterEach(() => {
         mockGetDurableConfig.mockReset();
@@ -694,6 +719,11 @@ describe('agent-system', () => {
     it.each([['durable', true], ['quick', false]] as const)('asks the provider for an interactive session only for %s agents', async (kind, interactive) => {
       await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind, mission: 'Go' });
       expect(mockProvider.buildSpawnCommand).toHaveBeenCalledWith(expect.objectContaining({ mission: 'Go', interactive }));
+    });
+
+    it('asks for an interactive session for a quick agent someone follows (#3002)', async () => {
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'quick', mission: 'Go', interactive: true });
+      expect(mockProvider.buildSpawnCommand).toHaveBeenCalledWith(expect.objectContaining({ mission: 'Go', interactive: true }));
     });
 
     it('throws with descriptive error when pre-flight check fails', async () => {
@@ -883,6 +913,30 @@ describe('agent-system', () => {
       expect(mockProvider.buildHeadlessCommand).toHaveBeenCalledWith(expect.objectContaining({ permissionMode: mode }));
       delete (mockProvider as any).buildHeadlessCommand;
       untrackAgent('hq');
+    });
+
+    it('runs an unattended quick agent headless even when the project starts quick agents in a terminal (#3033)', async () => {
+      mockGetSpawnMode.mockReturnValue('interactive');
+      mockProvider.buildHeadlessCommand = vi.fn(() =>
+        Promise.resolve({ binary: '/usr/bin/claude', args: ['-p'], env: {}, outputKind: 'stream-json' as const }),
+      ) as never;
+      await spawnAgent({ agentId: 'unattended', projectPath: '/project', cwd: '/project', kind: 'quick', mission: 'm', access: 'full_access', headless: true });
+      expect(mockProvider.buildHeadlessCommand).toHaveBeenCalledWith(expect.objectContaining({ permissionMode: 'skip-all' }));
+      expect(mockHeadlessSpawn).toHaveBeenCalled();
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+      delete (mockProvider as any).buildHeadlessCommand;
+      untrackAgent('unattended');
+    });
+
+    it('fails an unattended quick agent rather than open a terminal when it has no headless run (#3033)', async () => {
+      mockGetSpawnMode.mockReturnValue('interactive');
+      mockProvider.buildHeadlessCommand = vi.fn(() => Promise.resolve(null)) as never;
+      await expect(
+        spawnAgent({ agentId: 'unattended', projectPath: '/project', cwd: '/project', kind: 'quick', mission: 'm', access: 'full_access', headless: true }),
+      ).rejects.toThrow('Claude Code can’t run without a window, so this quick agent can’t start unattended.');
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+      expect(getAgentProjectPath('unattended')).toBeUndefined();
+      delete (mockProvider as any).buildHeadlessCommand;
     });
 
     it('propagates the original error after cleanup on spawn failure', async () => {
@@ -1475,9 +1529,7 @@ describe('agent-system', () => {
 
     it('uses tracked project-level orchestrator when spawned from settings', async () => {
       // Spawn with orchestrator resolved from project settings (codex-cli)
-      mockReadFile.mockResolvedValueOnce(
-        JSON.stringify({ orchestrator: 'codex-cli' })
-      );
+      mockPeekProjects.mockResolvedValue([{ path: '/project', orchestrator: 'codex-cli' }]);
       await spawnAgent({
         agentId: 'agent-1',
         projectPath: '/project',
@@ -2648,7 +2700,8 @@ describe('agent-system', () => {
 
       expect(mockProvider.buildHeadlessCommand).toHaveBeenCalledWith(
         expect.objectContaining({
-          allowedTools: ['Read', 'Write'],
+          // The defaults follow the level (#3007): Ask first pre-allows only reading tools.
+          allowedTools: ['Read'],
         }),
       );
     });
@@ -3425,7 +3478,7 @@ describe('helper launch ceiling on the normal spawn path', () => {
     await wake();
     expect(mockResolveHelperLaunchSettings).toHaveBeenCalledWith(projectPath, 'orch-1', { helperProvider: 'claude-code' });
     expect(lastBuild()).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
-    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+    expect(getAgentLaunchAccess('helper-1')).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
   });
 
   it('a helper saved at Auto-accept edits starts at Ask first under a standard ceiling (#2761)', async () => {
@@ -3447,6 +3500,13 @@ describe('helper launch ceiling on the normal spawn path', () => {
     expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'skip-all', access: 'ask' });
   });
 
+  it('a helper of an orchestrator at Plan starts at Plan, whatever it was saved at (#3000)', async () => {
+    orchestratorLive = { ...launchAccessFor('standard'), access: 'plan' } as AgentLaunchAccess;
+    mockGetDurableConfig.mockImplementation((async () => helper({ freeAgentMode: undefined, access: 'auto_edit' })) as never);
+    await wake();
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, access: 'plan' });
+  });
+
   it('a helper saved at Plan stays at Plan when its ceiling lowers the legacy pair', async () => {
     orchestratorLive = undefined;
     mockGetDurableConfig.mockImplementation((async () => helper({ freeAgentMode: undefined, access: 'plan' })) as never);
@@ -3461,7 +3521,7 @@ describe('helper launch ceiling on the normal spawn path', () => {
     expect(mockFindParent).toHaveBeenCalledWith(projectPath, expect.objectContaining({ parentAgentId: 'orch-1', parentProjectPath: orchestratorProject }));
     expect(mockResolveHelperLaunchSettings).toHaveBeenCalledWith(orchestratorProject, 'orch-1', { helperProvider: 'claude-code' });
     expect(lastBuild()).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
-    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+    expect(getAgentLaunchAccess('helper-1')).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
   });
 
   it('starts at standard when the orchestrator can\'t be found in any project', async () => {
@@ -3483,7 +3543,7 @@ describe('helper launch ceiling on the normal spawn path', () => {
     mockGetDurableConfig.mockImplementation((async () => helper()) as never);
     await wake();
     expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
-    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+    expect(getAgentLaunchAccess('helper-1')).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
   });
 
   it('starts at standard when the orchestrator can\'t be read', async () => {
@@ -3516,7 +3576,7 @@ describe('helper launch ceiling on the normal spawn path', () => {
     const launch = lastBuild();
     expect(launch).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
     expect(providerAccessLevel('copilot-cli', launch as AgentLaunchAccess)).toBe('standard');
-    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+    expect(getAgentLaunchAccess('helper-1')).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
   });
 
   it('a Copilot helper with its orchestrator asleep starts at standard', async () => {
@@ -3530,7 +3590,7 @@ describe('helper launch ceiling on the normal spawn path', () => {
     mockGetDurableConfig.mockImplementation((async () => { throw new Error('agents.json is corrupt'); }) as never);
     await wake({ freeAgentMode: true, permissionMode: 'skip-all' });
     expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
-    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+    expect(getAgentLaunchAccess('helper-1')).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
   });
 
   it('hands the chat runtime the capped values', async () => {
@@ -3545,7 +3605,7 @@ describe('helper launch ceiling on the normal spawn path', () => {
     await wake();
     expect(mockResolveHelperLaunchSettings).not.toHaveBeenCalled();
     expect(lastBuild()).toMatchObject({ freeAgentMode: true, permissionMode: 'skip-all' });
-    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: true, permissionMode: 'skip-all' });
+    expect(getAgentLaunchAccess('helper-1')).toMatchObject({ freeAgentMode: true, permissionMode: 'skip-all' });
   });
 
   it('leaves quick agents alone', async () => {

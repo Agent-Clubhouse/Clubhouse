@@ -13,6 +13,7 @@ import { getSettings as getThemeSettings } from './services/theme-service';
 import { getThemeColorsForTitleBar } from './title-bar-colors';
 import * as safeMode from './services/safe-mode';
 import { appLog } from './services/log-service';
+import { isFailedCopilotWrite } from './chat/copilot/failed-writes';
 import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpdateChecks, applyUpdateOnQuit, shouldAutoCheckOnStartup } from './services/auto-update-service';
 import { startPeriodicPluginUpdateChecks, stopPeriodicPluginUpdateChecks } from './services/plugin-update-service';
 import * as annexServer from './services/annex-server';
@@ -51,6 +52,7 @@ import { configuredRecordingLevel } from './telemetry/bootstrap';
 import { installAgentTelemetry } from './telemetry/agent-telemetry';
 import { installChatTelemetry } from './telemetry/chat-telemetry';
 import { installHelperUsageTelemetry } from './telemetry/helper-usage';
+import { installActionsTelemetry } from './telemetry/actions-telemetry';
 import { getBaseDirPath } from './services/base-dir';
 import { installIpcTelemetry } from './telemetry/ipc-telemetry';
 import { installOsSessionEndFlush } from './os-session-end';
@@ -150,6 +152,14 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
   const msg = reason instanceof Error ? reason.message : String(reason);
   const stack = reason instanceof Error ? reason.stack : undefined;
+  // A failed Copilot message write, usually to a CLI that is going away, that
+  // its caller already got as an error. vscode-jsonrpc 8.2.1 left a second
+  // copy of every failed request write; 10.0.0 doesn't, but a notification
+  // write still rethrows, so the guard stays (#2706, failed-writes.ts).
+  if (isFailedCopilotWrite(reason)) {
+    appLog('core:process', 'warn', 'A Copilot message write failed, and its request already failed with it', { meta: { error: msg, stack } });
+    return;
+  }
   appLog('core:process', 'error', 'Unhandled promise rejection', {
     meta: { error: msg, stack },
   });
@@ -287,6 +297,26 @@ app.on('ready', () => {
   )).catch((err) => {
     appLog('core:managed', 'warn', 'The managed agents startup work stopped', { meta: { code: codeOf(err) } });
   });
+  // The app event bus (#2950): fed from here on, then "Clubhouse started" once subscribers listen.
+  void import('./services/app-event-sources').then(async ({ startAppEventSources, publishAppStarted }) => {
+    await startAppEventSources();
+    // Actions (#2918) subscribe before "Clubhouse started" goes out.
+    try {
+      const { startActions, observeActions } = await import('./services/actions');
+      // Telemetry listens first, so the "Clubhouse started" triggers are counted. It never changes a run.
+      installActionsTelemetry(observeActions);
+      await startActions();
+    } catch (err) {
+      appLog('core:actions', 'error', 'Actions did not start', { meta: { code: codeOf(err) } });
+    }
+    publishAppStarted();
+  }).catch((err) => {
+    appLog('core:app-events', 'warn', 'The app event bus did not start', { meta: { code: codeOf(err) } });
+  });
+  // Commits, branch switches and remote-tracking updates for the bus (#2955).
+  void import('./services/git-watcher').then(({ startGitWatcher }) => startGitWatcher()).catch((err) => {
+    appLog('core:app-events', 'warn', 'The git watcher did not start', { meta: { code: codeOf(err) } });
+  });
   // Provider profiles were removed (#2749): one log line, once, for anyone who had saved some.
   void import('./services/provider-profiles-removed').then(({ noteRemovedProviderProfiles }) => noteRemovedProviderProfiles()).catch((err) => {
     appLog('core:agent', 'warn', 'Could not check for removed provider profiles', { meta: { code: codeOf(err) } });
@@ -304,6 +334,8 @@ app.on('ready', () => {
       const annexClient = require('./services/annex-client');
       annexClient.resumeAllConnections();
     } catch { /* annex client may not be loaded */ }
+    // The network may have changed while asleep: advertise again on it (#1921).
+    try { annexServer.republishAdvertisement(); } catch { /* telemetry-exempt: Annex may not be running */ }
   });
 
   appLog('core:startup', 'info', `Clubhouse v${app.getVersion()} starting`, {
@@ -487,6 +519,7 @@ setShutdownBegin(() => {
   mcpBridgeServer.stop();
   unpublishCliEndpoint();
   stopAllWatches();
+  void import('./services/git-watcher').then(({ stopGitWatcher }) => stopGitWatcher()).catch((): void => undefined);
   // Bounded; queued feedback stays on disk for the next run.
   void shutdownFeedback();
 });

@@ -8,7 +8,8 @@ import { useChromeStore } from '../../chrome/chromeStore';
 import { isNewChromeEnabled } from '../../chrome/chromeFlag';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from '../agents/AgentTerminal';
 import { NEXT_AGENT_MESSAGE_EVENT, PREVIOUS_AGENT_MESSAGE_EVENT } from '../../stores/keyboardShortcutsStore';
-import { openNewAgentFromShortcut, openNewAgentOrDialog } from '../../chrome/startPage';
+import { openNewAgentFromShortcut, openQuickPrompt } from '../../chrome/startPage';
+import { hasOpenModal } from '../../components/layers';
 import { groupProjectAgents } from '../../chrome/sidebar/treeModel';
 
 export interface CommandAction {
@@ -54,7 +55,8 @@ export function getCommandActions(): CommandAction[] {
     {
       id: 'open-quick-agent',
       global: true,
-      execute: () => openNewAgentOrDialog('quick'),
+      // Not over a dialog: it would open under it.
+      execute: () => { if (!hasOpenModal()) openQuickPrompt(); },
     },
     {
       id: 'focus-active-terminal',

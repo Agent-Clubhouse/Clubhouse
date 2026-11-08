@@ -3,6 +3,7 @@
  * join/leave events to the system topic on the bulletin board.
  */
 
+import { holdsGrant } from './clubhouse-mcp/grant-check';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { consumeRestoredBinding } from './persisted-bindings';
 import { getBulletinBoard, ensureInboxChannel, ensureProjectChannels } from './group-project-bulletin';
@@ -99,7 +100,9 @@ export function isAgentAlive(agentId: string): boolean {
  * messages, shoulder taps included, don't ask this.
  */
 export function canPoll(agentId: string): boolean {
-  return mcpCallAccess(agentId, agentRegistry.get(agentId)?.projectPath) === 'open';
+  return mcpCallAccess(agentId, agentRegistry.get(agentId)?.projectPath) === 'open'
+    // Polling reads the board for it: not when reading the board is turned off (#2971).
+    && holdsGrant(agentId, 'group_project.read', { kind: 'group_project', groupRole: 'member' });
 }
 
 async function syncMemberships(agentId: string): Promise<void> {

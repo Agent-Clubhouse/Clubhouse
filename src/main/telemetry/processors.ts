@@ -391,7 +391,7 @@ export class ObservedMetricExporter implements PushMetricExporter {
  * resource attributes.
  */
 export interface DestinationStamp {
-  attributes: Record<string, string>;
+  attributes: Record<string, string | number>;
   copyResourceAttributes: readonly string[];
   /** Keys removed from the item's own attributes for this destination. */
   dropAttributes?: readonly string[];

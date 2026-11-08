@@ -38,6 +38,9 @@ export const USER_ACTIVITY = {
     'clubhouse.agent.delete',
     'clubhouse.agent.turn',
     'clubhouse.agent.permission',
+    // Normal runs and startup timing, so a report can be placed (#2524).
+    'clubhouse.agent.run',
+    'clubhouse.app.startup',
   ]),
   /**
    * Feature and navigation events. Every Errors-level event (exceptions,
@@ -62,12 +65,19 @@ export const USER_ACTIVITY = {
     'clubhouse.theme.changed',
     'clubhouse.blueprint.exported',
     'clubhouse.blueprint.imported',
+    // The feedback lifecycle, so the stream shows where a report was sent (#2524).
+    'clubhouse.feedback.captured',
+    'clubhouse.feedback.submitted',
+    'clubhouse.feedback.delivered',
+    'clubhouse.feedback.connected',
+    'clubhouse.feedback.access',
   ]),
   /**
    * Almost no metrics: the session count, so activity can be put per
-   * session, and the dropped-items count, so a gap can be told from silence.
+   * session, the dropped-items count, so a gap can be told from silence, and
+   * startup time.
    */
-  metrics: new Set<string>(['clubhouse.app.sessions', 'clubhouse.telemetry.dropped']),
+  metrics: new Set<string>(['clubhouse.app.sessions', 'clubhouse.telemetry.dropped', 'clubhouse.app.startup.duration']),
 } as const;
 
 export interface FilterItem {

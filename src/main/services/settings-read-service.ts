@@ -32,8 +32,8 @@ import * as annexSettings from './annex-settings';
 import { AppearanceError, findOwnProject, findProject } from './appearance-service';
 import { chatIdleSettings } from './chat-idle-settings';
 import * as chatRuntimeSettings from './chat-runtime-settings';
-import { getDispatcherPath } from './dispatcher/dispatcher-paths';
-import { getDispatcherState, isDispatcherAgentId } from './dispatcher/dispatcher-service';
+import { getDispatcherChatPath, getDispatcherPath } from './dispatcher/dispatcher-paths';
+import { getDispatcherState, isDispatcherAgentId, isDispatcherChatAgentId, isDispatcherIdentityAgentId } from './dispatcher/dispatcher-service';
 import * as dispatcherSettings from './dispatcher/dispatcher-settings';
 import * as freeAgentSettings from './free-agent-settings';
 import { appLog } from './log-service';
@@ -506,7 +506,7 @@ export interface ReadSettingsRequest {
 interface Located { project: { id: string; path: string }; config: DurableAgentConfig }
 
 async function readAgentTarget({ project, config }: Located, fields: ReturnType<typeof pick<AgentContext>>, files: AppFiles, detail: boolean | undefined) {
-  const dispatcher = isDispatcherAgentId(config.id);
+  const dispatcher = isDispatcherIdentityAgentId(config.id);
   const [view, defaults, defaultMcps, projectOrchestrator] = await Promise.all([
     buildAgentSettings(project, config, agentRegistry.get(config.id) ? 'running' : undefined, { dispatcher }),
     readProjectAgentDefaults(project.path),
@@ -536,6 +536,12 @@ async function namesProject(project: Project, ref: string): Promise<boolean> {
 
 /** Find an agent for the Dispatcher: its own folder, or where it runs, or the registered projects in turn. */
 async function locateAgent(id: string, projects: Project[], only: Project | undefined): Promise<Located | null> {
+  if (!only && isDispatcherChatAgentId(id)) {
+    // The Dispatcher's chat (#3036), in its own folder.
+    const path = getDispatcherChatPath();
+    const config = (await agentConfig.peekDurableConfigs(path)).find((a) => a.id === id);
+    return config ? { project: { id: DISPATCHER_PROJECT_ID, path }, config } : null;
+  }
   if (!only && isDispatcherAgentId(id)) {
     const path = getDispatcherPath();
     const config = (await agentConfig.peekDurableConfigs(path)).find((a) => a.id === id) ?? getDispatcherState().config;

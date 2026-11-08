@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { McpCatalogEntry, Project } from '../../../shared/types';
+import type { McpCatalogEntry, Project, QuickRunChanges } from '../../../shared/types';
 import { CLUBHOUSE_MCP_PART_ID, isListed, type ManagedTemplate, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
 import { AGENT_COLORS, generateDurableName } from '../../../shared/name-generator';
 import { validateAgentGitName } from '../../../shared/agent-name';
@@ -8,6 +8,8 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { effectiveOrchestratorOf, newAgentOrchestrator } from '../../features/agents/effective-orchestrator';
+import { startingProject } from '../starting-project';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
@@ -27,6 +29,7 @@ import { openCreatedAgent } from '../startPage';
 import { ProjectPicker } from './ProjectPicker';
 import { reportChromeActionFailed, reportChromeFeature } from '../telemetry';
 import { IS_MAC, Row, Rule, footerLinkClass, inputClass, mono, selectClass } from './newAgentUi';
+import { NO_QUICK_CHANGES, QuickRunParts } from './QuickRunParts';
 import { BuilderStep, CopyStep, SCRATCH_SEED, TemplateStep, draftFromSeed, templateSeed, type BuilderDraft, type BuilderSeed } from './NewManagedAgentSteps';
 
 /**
@@ -125,15 +128,8 @@ function useStartingProject(request: NewAgentRequest, projects: Project[]): { id
   const lastProjectId = useChromeStore((s) => s.lastProjectId);
   // Decided once per open: later navigation doesn't move the picker.
   const [start] = useState(() => {
-    const has = (id: string | null | undefined): id is string => !!id && projects.some((p) => p.id === id);
-    if (has(request.projectId)) return { id: request.projectId, why: '' };
-    if (projects.length === 1) return { id: projects[0].id, why: '' };
-    // On Canvas, Review, Settings or Help no project is highlighted in the sidebar.
-    const projectInView = explorerTab !== 'settings' && explorerTab !== 'help' && !explorerTab.startsWith('plugin:app:');
-    if (projectInView && has(activeProjectId)) return { id: activeProjectId, why: 'selected in the sidebar' };
-    if (has(lastProjectId)) return { id: lastProjectId, why: 'the last project you used' };
-    if (has(activeProjectId)) return { id: activeProjectId, why: 'the last project you used' };
-    return { id: projects[0]?.id ?? '', why: '' };
+    const { id, why } = startingProject(projects, { requested: request.projectId, activeProjectId, explorerTab, lastProjectId });
+    return { id, why };
   });
   return start;
 }
@@ -158,17 +154,24 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const [color, setColor] = useState<string>(AGENT_COLORS[0].id);
   const { effectiveOrchestrators } = useEffectiveOrchestrators();
   const [orchestrator, setOrchestrator] = useState('');
-  const resolvedOrchestrator = orchestrator || effectiveOrchestrators[0]?.id || 'claude-code';
+  // Until the person picks one, the project's "Agents run on" (#2975).
+  const resolvedOrchestrator = orchestrator || newAgentOrchestrator(project, effectiveOrchestrators);
   const [model, setModel] = useState('default');
   const [customModel, setCustomModel] = useState('');
   const [useWorktree, setUseWorktree] = useState(true);
   const [isGit, setIsGit] = useState<boolean | null>(null);
   const [pickedAccess, setPickedAccess] = useState<AccessLevel | null>(null);
+  // The level the current quick template filled in, so another template (or None) takes it back
+  // unless the person changed it since (#2999).
+  const templateAccess = useRef<AccessLevel | null>(null);
   const [mcpCatalog, setMcpCatalog] = useState<McpCatalogEntry[]>([]);
   const [selectedMcps, setSelectedMcps] = useState<string[]>([]);
   const [mission, setMission] = useState('');
   const [parentAgentId, setParentAgentId] = useState('');
   const [quickTemplateId, setQuickTemplateId] = useState('');
+  const [quickTemplate, setQuickTemplate] = useState<ManagedTemplate | null>(null);
+  // This launch's part changes (#2928): start clean with each template, and never saved.
+  const [quickChanges, setQuickChanges] = useState<QuickRunChanges>(NO_QUICK_CHANGES);
   // Clubhouse-managed agents (#2893).
   const remote = isRemoteProjectId(projectId);
   const [managedPref, setManagedPref] = useState(readManagedPref);
@@ -194,7 +197,8 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   // Access (#2761) starts at the app's Default access (a quick agent in a durable agent's
   // worktree: that agent's quick agent defaults) until the person or a template picks one.
   const { start: startAccess, defaultAccess } = useQuickAgentAccess(project?.path, !durable && parentAgentId ? parentAgentId : undefined);
-  const runOrchestrator = !durable && parent?.orchestrator ? parent.orchestrator : resolvedOrchestrator;
+  // A parent with no CLI of its own runs on the project's, and so does its quick agent (#2975).
+  const runOrchestrator = !durable && parent ? effectiveOrchestratorOf(parent, project, allOrchestrators) : resolvedOrchestrator;
   const { options: modelOptions, loading: modelsLoading } = useModelOptions(runOrchestrator, project?.path);
   const selectedOrch = allOrchestrators.find((o) => o.id === runOrchestrator);
   const supportsPermissions = selectedOrch?.capabilities?.permissions ?? false;
@@ -222,15 +226,28 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
    */
   const pickQuickTemplate = (t: ManagedTemplate | null) => {
     setQuickTemplateId(t?.id ?? '');
+    setQuickTemplate(t);
+    setQuickChanges(NO_QUICK_CHANGES);
+    const level = t ? settingsAccess(t.settings) : undefined;
+    if (!level) {
+      if (templateAccess.current && pickedAccess === templateAccess.current) setPickedAccess(null);
+      templateAccess.current = null;
+    } else if (pickedAccess !== level) {
+      // Only a level the template changed is the template's to take back; one already picked stays the person's.
+      templateAccess.current = level;
+    }
     if (!t) return;
     const { orchestrator: cli, model: m } = t.settings;
-    const level = settingsAccess(t.settings);
     const switchCli = !!cli && !parent && effectiveOrchestrators.some((o) => o.id === cli);
     if (switchCli) setOrchestrator(cli);
     const willRun = switchCli ? cli : runOrchestrator;
     if (m && ((cli && cli === willRun) || modelOptions.some((o) => o.id === m))) setModel(m);
     if (level) setPickedAccess(level);
   };
+  // Leaving Quick (Durable, or a project without quick templates) takes the template, and the level it filled in, with it.
+  useEffect(() => {
+    if (!quickTemplates && quickTemplateId) pickQuickTemplate(null);
+  }, [quickTemplates]);
   useEffect(() => {
     if (!projectPath) return;
     let cancelled = false;
@@ -368,7 +385,11 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
       ] as const;
       spawnQuick(...args, undefined, undefined, {
         fallbackAccess: defaultAccess,
-        ...(quickTemplates && quickTemplateId && { managedTemplateId: quickTemplateId }),
+        ...(quickTemplates && quickTemplateId && {
+          managedTemplateId: quickTemplateId,
+          ...(quickChanges.added.length > 0 && { addParts: quickChanges.added }),
+          ...(quickChanges.removed.length > 0 && { removeParts: quickChanges.removed }),
+        }),
       }).then((id) => finish(target.id, id))
         .catch((err) => {
           reportChromeActionFailed('agent_start', err);
@@ -586,6 +607,15 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
                 disabled={busy}
                 mcpLaunchFlags={selectedOrch?.mcpLaunchFlags === true}
                 cliName={selectedOrch?.displayName ?? 'this CLI'}
+              />
+            )}
+            {quickTemplates && quickTemplate && quickTemplate.id === quickTemplateId && (
+              <QuickRunParts
+                template={quickTemplate}
+                value={quickChanges}
+                onChange={setQuickChanges}
+                disabled={busy}
+                mcpLaunchFlags={selectedOrch?.mcpLaunchFlags === true}
               />
             )}
             <Rule />

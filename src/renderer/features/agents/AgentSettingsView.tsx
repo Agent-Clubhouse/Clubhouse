@@ -10,11 +10,14 @@ import { useCliChangeConfirm } from './useCliChangeConfirm';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { effectiveOrchestratorOf } from './effective-orchestrator';
 import { HandshakeRetry } from './HandshakeRetry';
 import { UtilityTerminal } from './UtilityTerminal';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
 import { EmojiPicker } from '../../components/EmojiPicker';
 import { SkillsSection } from './SkillsSection';
+import { reportedSkillsFor } from './details/reported-skills';
+import { useChatStore } from '../../stores/chatStore';
 import { McpJsonSection } from './McpJsonSection';
 import { AgentAvatar } from './AgentAvatar';
 import type { AgentRuntimeMode } from '../../../shared/chat';
@@ -25,6 +28,7 @@ import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAct
 import { useToastStore } from '../../stores/toastStore';
 import { reportChromeActionFailed } from '../../chrome/telemetry';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
+import { AgentActionsPage } from '../actions/AgentActionsPage';
 import {
   AGENT_SETTINGS_PAGES,
   useAgentSettingsPages,
@@ -36,6 +40,7 @@ import {
 import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { Field, FieldLabel, inputClass, PageTitle, SectionHeading, selectClass, textareaClass } from './agentSettingsUi';
 import { AgentHelpersSettings } from './helpers/AgentHelpersSettings';
+import { AgentGrantsSettings } from './AgentGrantsSettings';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
 import type { ManagedAgentSetup } from '../../../shared/managed-agents-types';
 import { ManagedBuilder, PreviewPane } from '../managed/ManagedBuilder';
@@ -162,7 +167,9 @@ export function AgentSettingsView({ agent }: Props) {
   // behaves consistently with agent creation.
   const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
   const { effectiveOrchestrators } = useEffectiveOrchestrators();
-  const agentOrchestrator = agent.orchestrator || 'claude-code';
+  const agentOrchestrator = effectiveOrchestratorOf(agent, projects.find((p) => p.id === agent.projectId), allOrchestrators);
+  const chatView = useChatStore((s) => s.agents[agent.id]);
+  const reportedSkills = reportedSkillsFor(agent, chatView, projects.find((p) => p.id === agent.projectId));
   // Scope the model list to *this agent's* orchestrator, not the project default —
   // otherwise a Codex/Copilot agent is offered (and validated against) Claude's ids.
   const { options: MODEL_OPTIONS, loading: modelOptionsLoading } = useModelOptions(agentOrchestrator);
@@ -397,7 +404,9 @@ export function AgentSettingsView({ agent }: Props) {
   // The saved next-start choice (#2660). Main can clear it on a new model or CLI, so it's read back after those.
   const [contextWindow, setContextWindow] = useState<string | undefined>();
   const [contextWindowNotice, setContextWindowNotice] = useState<string | undefined>();
-  const contextOptions = useContextWindowOptions(!!projectPath && !isRunning, projectPath, agentOrchestrator, savedModel);
+  // A managed agent's context, like its model, can change while it runs: it applies at the next start (#2790).
+  const contextLocked = isRunning && !managedSetup;
+  const contextOptions = useContextWindowOptions(!!projectPath && !contextLocked, projectPath, agentOrchestrator, savedModel);
   useEffect(() => {
     if (!projectPath) return;
     let alive = true;
@@ -1007,8 +1016,8 @@ export function AgentSettingsView({ agent }: Props) {
         <ManagedEffortField projectPath={projectPath} agentId={agent.id} orchestrator={agentOrchestrator} model={savedModel} />
       )}
       <Field label={contextOptions?.label ?? 'Context'} help={contextWindowHelp(contextOptions)} htmlFor="agent-settings-context">
-        {/* Awake it can't change, so the saved choice is enough and the CLI's catalog isn't read. */}
-        {isRunning ? (
+        {/* Locked while it runs, the saved choice is enough and the CLI's catalog isn't read. */}
+        {contextLocked ? (
           <span title={stopFirst} data-testid="agent-settings-context-saved">
             {contextWindow ? `${formatContextChoice(contextWindow)} on the next start` : 'CLI default'}
           </span>
@@ -1180,6 +1189,9 @@ export function AgentSettingsView({ agent }: Props) {
       disabled={isRunning}
       refreshKey={refreshKey}
       pathLabel={skillsPathLabel}
+      providerName={orchestratorName === 'this CLI' ? undefined : orchestratorName}
+      scope={agent.worktreePath ? 'agent' : 'project'}
+      reported={isRunning ? reportedSkills : undefined}
       hideTitle={pageMode}
       onDirtyChange={sectionCallbacks.skillsDirty}
       onCountChange={sectionCallbacks.skillsCount}
@@ -1340,7 +1352,26 @@ export function AgentSettingsView({ agent }: Props) {
     </>
   ) : null;
 
+  // Clubhouse permissions (#2971): every local durable agent, managed or not. Each row saves on its own.
+  const showGrants = !hiddenPages.includes('grants');
+  const grantsSettings = showGrants ? <AgentGrantsSettings agent={agent} projectPath={projectPath} refreshKey={refreshKey} /> : null;
+  const grantsSection = grantsSettings && (
+    <div id="agent-settings-section-grants" data-testid="agent-settings-section-grants">
+      <SectionHeading title="Clubhouse permissions" />
+      {grantsSettings}
+    </div>
+  );
+
   // ── Page content ───────────────────────────────────────────────
+
+  // Actions (#2954): on this machine only.
+  const actionsPage = hiddenPages.includes('actions') ? null : <AgentActionsPage agentId={agent.id} agentName={agent.name} projectId={agent.projectId} />;
+  const actionsSection = actionsPage && (
+    <div id="agent-settings-section-actions" data-testid="agent-settings-section-actions">
+      <SectionHeading title="Actions" sub={`Actions that involve ${agent.name}`} />
+      {actionsPage}
+    </div>
+  );
 
   let body: React.ReactNode;
   if (pageMode) {
@@ -1351,8 +1382,10 @@ export function AgentSettingsView({ agent }: Props) {
       mcp: undefined,
       permissions: <span className="font-mono">{permissionsPathLabel}</span>,
       settings: <>Instructions don't grant access. These settings do.{isRunning ? <span className="ml-2 text-ctp-overlay1">· Changes apply when it restarts</span> : null}</>,
+      grants: undefined,
       helpers: `How ${agent.name} starts, runs and disposes of helper agents. The same switches are in its Orchestration card beside the chat.`,
       quick: `Defaults for quick agents ${agent.name} starts`,
+      actions: `Actions that involve ${agent.name}`,
       preview: `What ${agent.name} gets at its next start`,
     };
     const builderNote = isRunning ? <span className="ml-2 text-ctp-overlay1">· Changes apply when the next session starts</span> : null;
@@ -1367,9 +1400,11 @@ export function AgentSettingsView({ agent }: Props) {
       skills: skillsSection,
       mcp: mcpSections,
       settings: managedSettings,
+      grants: grantsSettings,
       permissions: permissionsEditor,
       helpers: helpersSettings,
       quick: quickDefaults,
+      actions: actionsPage,
       preview: isManagedAgent && builderAgent ? <PreviewPane agent={builderAgent} /> : null,
     };
     if (isManagedAgent && builderTarget) {
@@ -1407,12 +1442,14 @@ export function AgentSettingsView({ agent }: Props) {
         <div id="agent-settings-section-settings" data-testid="agent-settings-section-settings">
           {managedSettings}
         </div>
+        {grantsSection}
         <div id="agent-settings-section-preview" data-testid="agent-settings-section-preview">
           <SectionHeading title="Preview" sub={`What ${agent.name} gets at its next start`} />
           <PreviewPane agent={builderAgent} />
         </div>
         <SectionHeading title="Quick agents" sub={`Defaults for quick agents ${agent.name} starts`} />
         {quickDefaults}
+        {actionsSection}
       </>
     );
   } else {
@@ -1423,11 +1460,13 @@ export function AgentSettingsView({ agent }: Props) {
         {instructionsEditor}
         {skillsSection}
         {mcpSections}
+        {grantsSection}
         <SectionHeading title="Permissions" sub={<span className="font-mono">{permissionsPathLabel}</span>} />
         {permissionsEditor}
         {helpersSettings}
         <SectionHeading title="Quick agents" sub={`Defaults for quick agents ${agent.name} starts`} />
         {quickDefaults}
+        {actionsSection}
       </>
     );
   }

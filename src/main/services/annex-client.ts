@@ -9,7 +9,12 @@ import * as https from 'https';
 import * as http from 'http';
 import * as net from 'net';
 import * as tls from 'tls';
-import Bonjour, { Browser, Service as RemoteService } from 'bonjour-service';
+import type Bonjour from 'bonjour-service';
+import type { Browser, Service as RemoteService } from 'bonjour-service';
+import { createBonjour } from './annex-mdns';
+import * as networkChannel from './annex-network-channel';
+import * as membership from './annex-network-membership';
+import { formatAddress, parseTypedHost, rankAddresses, reachCandidates, rememberHost, type ReachAddress } from './annex-reach';
 import { WebSocket } from 'ws';
 import * as annexIdentity from './annex-identity';
 import * as annexTls from './annex-tls';
@@ -22,6 +27,15 @@ import { IPC } from '../../shared/ipc-channels';
 import type { DigestSince } from '../../shared/group-project-types';
 import { encodeDigestSince } from '../../shared/digest-since';
 import { parsePairingUrl } from './annex-pairing-url';
+import { devicesChanged } from './annex-device-signal';
+import {
+  annexProblemText,
+  classifyConnectionError,
+  classifyRefusal,
+  describeAnnexProblem,
+  type AnnexProblem,
+  type AnnexProblemCode,
+} from '../../shared/annex-problems';
 import { ANNEX_PROTOCOL_VERSION } from '../../shared/types';
 import { ANNEX_BUFFER_HEADERS, windowsPtyForHost } from '../../shared/annex-pty';
 import { unseenPtySuffix } from '../../shared/pty-seq';
@@ -68,6 +82,8 @@ export interface SatelliteConnection {
   snapshotUnavailable?: boolean;
   /** Refused as not (or no longer) paired: pair again to connect. */
   needsPairing?: boolean;
+  /** Why the last attempt failed, and what to do. `lastError` is the same as one line. */
+  problem?: AnnexProblem;
 }
 
 export interface SatelliteSnapshot {
@@ -126,13 +142,27 @@ interface SatelliteConnectionInternal {
   pairingPort: number;
   snapshot: SatelliteSnapshot | null;
   lastError: string | null;
+  /** The classified reason behind `lastError`. */
+  problem?: { code: AnnexProblemCode; status?: number } | null;
   ws: WebSocket | null;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   reconnectAttempt: number;
   /** Refused as not (or no longer) paired: no automatic reconnects until it's paired again. */
   needsPairing: boolean;
+  /** Why automatic reconnects stopped, if they did. A mismatch may still try a newly announced address once. */
+  halt?: 'pairing' | 'mismatch' | 'clock' | null;
   heartbeatInterval: ReturnType<typeof setInterval> | null;
   pongTimeout: ReturnType<typeof setTimeout> | null;
+  /** What Bonjour announced for it while this machine has been running (#3058). */
+  discovered?: ReachAddress | null;
+  /** Which of its candidate addresses the current attempt uses. */
+  candidateIndex?: number;
+  /** Where the current attempt's address came from. */
+  candidateSource?: ReachAddress['source'];
+  /** The announced address was tried since it was last announced. */
+  discoveredTried?: boolean;
+  /** Addresses that showed another certificate in this round of tries. */
+  mismatches?: number;
 }
 
 // Heartbeat constants
@@ -302,7 +332,7 @@ function fetchSatelliteBuffer(sat: SatelliteConnectionInternal, agentId: string)
         return;
       }
       if (res.statusCode !== 200) {
-        res.resume();
+        drainRefusal(sat, res);
         once(null);
         return;
       }
@@ -420,6 +450,7 @@ async function getRemoteBufferSnapshot(satelliteId: string, agentId: string): Pr
 
 function broadcastSatellitesChanged(): void {
   broadcastToAllWindows(IPC.ANNEX_CLIENT?.SATELLITES_CHANGED || 'annex-client:satellites-changed', getSatellites());
+  devicesChanged();
 }
 
 function broadcastDiscoveredChanged(): void {
@@ -448,21 +479,39 @@ function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection
     lastError: s.lastError,
     ...(s.snapshotUnavailable && { snapshotUnavailable: true }),
     ...(s.needsPairing && { needsPairing: true }),
+    ...(s.problem && s.lastError && { problem: describeAnnexProblem(s.problem.code, s.alias, s.problem) }),
   };
 }
 
-function setState(sat: SatelliteConnectionInternal, state: SatelliteState, error?: string): void {
+/**
+ * Moves a satellite to `state`. `error` is the raw reason, kept for logs and
+ * telemetry; what the person sees is the problem it's classified as (or
+ * `problem`, when the caller already knows), saying what happened and what to do.
+ */
+function setState(
+  sat: SatelliteConnectionInternal,
+  state: SatelliteState,
+  error?: string,
+  problem?: { code: AnnexProblemCode; status?: number },
+): void {
   const prev = sat.state;
   sat.state = state;
   // Output sent while disconnected is in neither cache, and a restarted
   // satellite's seqs start over, so caches are seeded again on reconnect.
-  if (prev === 'connected' && state !== 'connected') disposeRemoteBuffers(sat.id);
+  if (prev === 'connected' && state !== 'connected') {
+    disposeRemoteBuffers(sat.id);
+    // The membership channel goes with the main connection, and reopens with it.
+    networkChannel.closeFor(sat.fingerprint, 'out');
+  }
   if (state === 'disconnected') {
     // The reason text stays local; it only picks the registry enum.
     if (prev === 'connected') recordDisconnect(disconnectReasonFor(error));
     connectFailed(sat.fingerprint, connectErrorFor(error));
   }
-  if (error !== undefined) sat.lastError = error;
+  if (error !== undefined) {
+    sat.problem = problem ?? { code: classifyConnectionError(error) };
+    sat.lastError = annexProblemText(describeAnnexProblem(sat.problem.code, sat.alias, sat.problem));
+  }
   appLog('core:annex-client', error ? 'warn' : 'info', `Satellite state: ${prev} → ${state}`, {
     meta: { fingerprint: sat.fingerprint, alias: sat.alias, ...(error ? { error } : {}) },
   });
@@ -530,14 +579,22 @@ const NEEDS_PAIRING_CODE = 'ERR_ANNEX_NEEDS_PAIRING';
 const NEEDS_PAIRING_MESSAGE = 'This pairing is from an older version of Clubhouse. Pair again to connect.';
 const PEER_NOT_PAIRED_MESSAGE = 'This computer is no longer paired there. Pair again to connect.';
 const CERT_EXPIRED_MESSAGE = "The satellite's certificate has expired. Pair again to connect.";
+const CERT_NOT_YET_VALID_MESSAGE = "The satellite's certificate isn't valid yet. Check the date and time on both computers, then retry.";
+const certMismatchMessage = (alias: string) => `${alias} showed a different certificate. If it was reset, pair again.`;
+/** TLS errors meaning the server showed a certificate other than the pinned one. */
+const MISMATCH_CODES = ['DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'ERR_TLS_CERT_ALTNAME_INVALID'];
 
 function satelliteUrl(sat: SatelliteConnectionInternal, urlPath: string, scheme: 'https' | 'wss' = 'https'): string {
   return `${scheme}://${bracketHost(sat.host)}:${sat.mainPort}${urlPath}`;
 }
 
-/** Stops trying a satellite that refused this pairing, until it's paired again. */
-function markNeedsPairing(sat: SatelliteConnectionInternal, message: string): void {
-  sat.needsPairing = true;
+/**
+ * Stops automatic reconnects. `pairing` and `mismatch` show the satellite as needing
+ * pairing again; `clock` only waits for the person to retry.
+ */
+function haltSatellite(sat: SatelliteConnectionInternal, kind: 'pairing' | 'mismatch' | 'clock', message: string, problem: AnnexProblemCode): void {
+  sat.halt = kind;
+  sat.needsPairing = kind !== 'clock';
   stopHeartbeat(sat);
   if (sat.reconnectTimer) {
     clearTimeout(sat.reconnectTimer);
@@ -548,23 +605,56 @@ function markNeedsPairing(sat: SatelliteConnectionInternal, message: string): vo
     sat.ws = null;
     try { ws.terminate(); } catch { /* telemetry-exempt: closing a socket that may be gone */ }
   }
-  appLog('core:annex-client', 'warn', `${sat.alias} needs to be paired again: ${message}`, { meta: { fingerprint: sat.fingerprint } });
-  setState(sat, 'disconnected', message);
+  if (kind !== 'clock') networkChannel.closeFor(sat.fingerprint, 'out');
+  appLog('core:annex-client', 'warn', `Stopped reconnecting to ${sat.alias}: ${message}`, { meta: { fingerprint: sat.fingerprint } });
+  setState(sat, 'disconnected', message, { code: problem });
 }
+
+function markNeedsPairing(sat: SatelliteConnectionInternal, refusal: PairingRefusal): void {
+  haltSatellite(sat, 'pairing', refusal.message, refusal.problem);
+}
+
+interface PairingRefusal { message: string; problem: AnnexProblemCode }
 
 /** The refusal codes that mean pairing again is the only way back. */
-function needsPairingMessageFor(code: unknown): string | null {
-  if (code === 'needs_pairing') return NEEDS_PAIRING_MESSAGE;
-  if (code === 'peer_not_paired') return PEER_NOT_PAIRED_MESSAGE;
+function needsPairingRefusalFor(code: unknown): PairingRefusal | null {
+  if (code === 'needs_pairing') return { message: NEEDS_PAIRING_MESSAGE, problem: 'old-pairing' };
+  if (code === 'peer_not_paired') return { message: PEER_NOT_PAIRED_MESSAGE, problem: 'removed-there' };
   return null;
 }
 
-/** A TLS error that pairing again fixes, rather than waiting. */
-function needsPairingMessageForTlsError(err: unknown): string | null {
+const OLD_PAIRING: PairingRefusal = { message: NEEDS_PAIRING_MESSAGE, problem: 'old-pairing' };
+
+/** A TLS error that waiting won't fix: stop, and say what will. */
+function haltForTlsError(sat: SatelliteConnectionInternal, err: unknown): boolean {
   const code = (err as { code?: string } | null)?.code;
-  if (code === NEEDS_PAIRING_CODE) return NEEDS_PAIRING_MESSAGE;
-  if (code === 'CERT_HAS_EXPIRED') return CERT_EXPIRED_MESSAGE;
-  return null;
+  if (code === NEEDS_PAIRING_CODE) { haltSatellite(sat, 'pairing', NEEDS_PAIRING_MESSAGE, 'old-pairing'); return true; }
+  if (code === 'CERT_HAS_EXPIRED') { haltSatellite(sat, 'pairing', CERT_EXPIRED_MESSAGE, 'cert-expired'); return true; }
+  if (code === 'CERT_NOT_YET_VALID') { haltSatellite(sat, 'clock', CERT_NOT_YET_VALID_MESSAGE, 'cert-not-yet-valid'); return true; }
+  if (code && (code === annexTls.PIN_MISMATCH_CODE || MISMATCH_CODES.includes(code))) {
+    // Another server at one of several addresses (a typo, or another service on that port):
+    // move on to the next. Only when every address shows another certificate does it stop.
+    sat.mismatches = (sat.mismatches ?? 0) + 1;
+    if (sat.mismatches < candidatesFor(sat).length) return false;
+    haltSatellite(sat, 'mismatch', certMismatchMessage(sat.alias), 'cert-mismatch');
+    return true;
+  }
+  return false;
+}
+
+/** A REST answer of 401 needs_pairing or peer_not_paired means what it does on the WebSocket. */
+function noteRestRefusal(sat: SatelliteConnectionInternal, status: number | undefined, text: string): void {
+  if (status !== 401) return;
+  let code: unknown;
+  try { code = (JSON.parse(text) as { error?: unknown }).error; } catch { /* telemetry-exempt: not JSON, so not a pairing refusal */ }
+  const refusal = needsPairingRefusalFor(code);
+  if (refusal) markNeedsPairing(sat, refusal);
+}
+
+/** Drains a non-200 REST answer, noting a pairing refusal. */
+function drainRefusal(sat: SatelliteConnectionInternal, res: http.IncomingMessage): void {
+  if (res.statusCode !== 401) { res.resume(); return; }
+  void readSmallBody(res).then((text) => noteRestRefusal(sat, res.statusCode, text));
 }
 
 function readSmallBody(res: http.IncomingMessage): Promise<string> {
@@ -593,13 +683,22 @@ interface RemoteIdentity {
   publicKey: string;
 }
 
+/**
+ * The best address a Bonjour announcement gave (#3058): a routable IPv4 address
+ * first, then IPv6 (unique-local, then global), never loopback or link-local.
+ * Falls back to the sender's address, then the announced name.
+ */
+function serviceHost(service: RemoteService): string {
+  return rankAddresses(service.addresses ?? [])[0] || service.referer?.address || service.host || '';
+}
+
 async function identifyService(service: RemoteService): Promise<RemoteIdentity | null> {
   const discoverStartMs = Date.now();
   const txt = service.txt || {};
   // Prefer resolved IP addresses over hostname — on Linux os.hostname() returns a
   // bare name (e.g. "desk") that macOS cannot resolve, while .local hostnames from
   // macOS work fine.  The addresses array and referer.address are always IPs.
-  const host = service.addresses?.[0] || service.referer?.address || service.host;
+  const host = serviceHost(service);
   if (!host) return null;
 
   // V2 services have a pairingPort in TXT
@@ -640,10 +739,11 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
   sat.snapshotUnavailable = false;
   const peer = annexPeers.getPeer(sat.fingerprint);
   if (!peer || annexPeers.peerNeedsPairing(peer)) {
-    markNeedsPairing(sat, NEEDS_PAIRING_MESSAGE);
+    markNeedsPairing(sat, OLD_PAIRING);
     return;
   }
   sat.needsPairing = false;
+  sat.halt = null;
   setState(sat, 'connecting');
   connectStarted(sat.fingerprint, sat.host);
 
@@ -667,11 +767,14 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       void readSmallBody(res).then((text) => {
         try { req.destroy(); } catch { /* telemetry-exempt: closing a refused upgrade */ }
         try { ws.terminate(); } catch { /* telemetry-exempt: closing a refused upgrade */ }
+        // Stopped or forgotten while the body arrived: this record is gone, so nothing more to do.
+        if (satellites.get(sat.fingerprint) !== sat) return;
         let code: unknown;
         try { code = (JSON.parse(text) as { error?: unknown }).error; } catch { /* telemetry-exempt: a refusal without a JSON body is handled as a plain one */ }
-        const message = needsPairingMessageFor(code);
-        if (message) { markNeedsPairing(sat, message); return; }
-        setState(sat, 'disconnected', `Unexpected server response: ${res.statusCode}`);
+        const refusal = needsPairingRefusalFor(code);
+        if (refusal) { markNeedsPairing(sat, refusal); return; }
+        const status = res.statusCode ?? 0;
+        setState(sat, 'disconnected', `Unexpected server response: ${status}`, { code: classifyRefusal(status, code), status });
         if (!sat.reconnectTimer) scheduleReconnect(sat);
       });
     });
@@ -684,7 +787,14 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       connectAuthMode(sat.fingerprint, 'mtls');
       setState(sat, 'connected');
       sat.reconnectAttempt = 0;
-      annexPeers.updateLastSeen(sat.fingerprint);
+      sat.mismatches = 0;
+      // Remembered, so it's found again after a restart without waiting for discovery (#3058).
+      // A typed address is kept as typed instead: clearing it then forgets it, and its port stays its own.
+      if (sat.candidateSource === 'typed') annexPeers.updateLastSeen(sat.fingerprint);
+      else annexPeers.noteReached(sat.fingerprint, sat.host, sat.mainPort);
+      sat.candidateIndex = 0;
+      // The membership channel (#3060), to the same address and certificate.
+      networkChannel.connectTo(sat.fingerprint, sat.host, sat.mainPort, pinnedTlsOptionsFor(sat.fingerprint));
       startHeartbeat(sat);
     });
 
@@ -718,8 +828,8 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       if (sat.ws !== ws) return;
       sat.ws = null;
       // The satellite removed this pairing; reconnecting would only be refused.
-      const message = needsPairingMessageFor(reason?.toString());
-      if (message) { markNeedsPairing(sat, message); return; }
+      const refusal = needsPairingRefusalFor(reason?.toString());
+      if (refusal) { markNeedsPairing(sat, refusal); return; }
       if (sat.state === 'connected') {
         setState(sat, 'disconnected', 'Connection closed');
         if (!sat.reconnectTimer) scheduleReconnect(sat);
@@ -728,12 +838,8 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
 
     ws.on('error', (err) => {
       if (sat.ws !== ws) return;
-      const pairAgain = needsPairingMessageForTlsError(err);
-      if (pairAgain) { markNeedsPairing(sat, pairAgain); return; }
-      const code = (err as { code?: string } | null)?.code;
-      const errorText = code === annexTls.PIN_MISMATCH_CODE || code === 'DEPTH_ZERO_SELF_SIGNED_CERT' || code === 'SELF_SIGNED_CERT_IN_CHAIN'
-        ? 'Peer certificate mismatch'
-        : (err && typeof err === 'object' && 'message' in err) ? String((err as Error).message) : String(err);
+      if (haltForTlsError(sat, err)) { sat.ws = null; return; }
+      const errorText = (err && typeof err === 'object' && 'message' in err) ? String((err as Error).message) : String(err);
 
       // Downgrade to 'warn' after 3 consecutive reconnect attempts to reduce log noise
       const level = sat.reconnectAttempt >= 3 ? 'warn' : 'error';
@@ -741,7 +847,7 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
         meta: { fingerprint: sat.fingerprint, error: errorText, attempt: sat.reconnectAttempt },
       });
       sat.ws = null;
-      setState(sat, 'disconnected', errorText);
+      setState(sat, 'disconnected', errorText, { code: classifyConnectionError(err) });
       if (!sat.reconnectTimer) scheduleReconnect(sat);
     });
   };
@@ -764,7 +870,7 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
     case 'snapshot': {
       const incoming = msg.payload as SatelliteSnapshot;
       if (incoming.protocolVersion !== ANNEX_PROTOCOL_VERSION) {
-        setState(sat, 'disconnected', 'Incompatible Annex version');
+        setState(sat, 'disconnected', 'Incompatible Annex version', { code: 'incompatible' });
         return;
       }
       connectSucceeded(sat.fingerprint);
@@ -773,6 +879,7 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
       if (!sat.snapshot || !socketsWithSnapshot.has(sat.ws!) || incoming.lastSeq >= sat.snapshot.lastSeq) {
         if (sat.ws) socketsWithSnapshot.add(sat.ws);
         sat.lastError = null;
+        sat.problem = null;
         sat.snapshotUnavailable = false;
         // Left out for size, so what's known still stands, and a new connection fetches it.
         const omitted = incoming.snapshotTruncated?.omitted?.includes('canvasState');
@@ -1039,7 +1146,7 @@ function startHeartbeat(sat: SatelliteConnectionInternal): void {
       sat.ws.ping();
     } catch {
       stopHeartbeat(sat);
-      setState(sat, 'disconnected', 'Heartbeat ping failed');
+      setState(sat, 'disconnected', 'Heartbeat ping failed', { code: 'stopped-answering' });
       scheduleReconnect(sat);
       return;
     }
@@ -1057,7 +1164,7 @@ function startHeartbeat(sat: SatelliteConnectionInternal): void {
         }
         sat.ws = null;
       }
-      setState(sat, 'disconnected', 'Heartbeat timeout');
+      setState(sat, 'disconnected', 'Heartbeat timeout', { code: 'stopped-answering' });
       stopHeartbeat(sat);
       scheduleReconnect(sat);
     }, PONG_TIMEOUT_MS);
@@ -1080,8 +1187,10 @@ function scheduleReconnect(sat: SatelliteConnectionInternal): void {
     clearTimeout(sat.reconnectTimer);
     sat.reconnectTimer = null;
   }
-  // Refused as not paired: retrying can't help, only pairing again.
-  if (sat.needsPairing) return;
+  // Refused, or a certificate or clock problem: retrying the same way can't help.
+  if (sat.halt || sat.needsPairing) return;
+  // Stopped or forgotten: this record is no longer the satellite's.
+  if (satellites.get(sat.fingerprint) !== sat) return;
 
   // Check if auto-reconnect is enabled
   const settings = annexSettings.getSettings();
@@ -1090,21 +1199,104 @@ function scheduleReconnect(sat: SatelliteConnectionInternal): void {
     return;
   }
 
-  // Exponential backoff with jitter: 1s, 2s, 4s, 8s, 30s cap
-  // Jitter (0.5–1.5x) prevents thundering herd when multiple satellites reconnect
-  const baseDelay = Math.min(1000 * Math.pow(2, sat.reconnectAttempt), 30_000);
-  const delay = Math.round(baseDelay * (0.5 + Math.random()));
-  sat.reconnectAttempt++;
+  // Each of its addresses gets a quick try in turn; once all have failed, back off (#3058).
+  const candidates = candidatesFor(sat);
+  let nextIndex = candidates.length > 0 ? ((sat.candidateIndex ?? 0) + 1) % candidates.length : 0;
+  // An address announced during that attempt goes next, at once: it's where the satellite is now.
+  const announcedNext = candidates[0]?.source === 'discovered' && !sat.discoveredTried;
+  if (announcedNext) nextIndex = 0;
+  if (nextIndex === 0) sat.mismatches = 0;
+  sat.candidateIndex = nextIndex;
+  let delay: number;
+  if (nextIndex !== 0 || announcedNext) {
+    delay = NEXT_ADDRESS_DELAY_MS;
+  } else {
+    // Exponential backoff with jitter: 1s, 2s, 4s, 8s, 30s cap
+    // Jitter (0.5–1.5x) prevents thundering herd when multiple satellites reconnect
+    const baseDelay = Math.min(1000 * Math.pow(2, sat.reconnectAttempt), 30_000);
+    delay = Math.round(baseDelay * (0.5 + Math.random()));
+    sat.reconnectAttempt++;
+  }
   recordReconnectScheduled(sat.reconnectAttempt, delay);
   appLog('core:annex-client', 'info', `Scheduling reconnect in ${delay}ms (attempt ${sat.reconnectAttempt})`, {
     meta: { fingerprint: sat.fingerprint, alias: sat.alias },
   });
 
   sat.reconnectTimer = setTimeout(() => {
+    sat.reconnectTimer = null;
     if (sat.state === 'disconnected') {
+      useCandidate(sat, candidatesFor(sat));
       connectToSatellite(sat);
     }
   }, delay);
+}
+
+/** Delay before trying a satellite's next address, after one fails. */
+const NEXT_ADDRESS_DELAY_MS = 250;
+
+/** Every address to try for a satellite, in order (#3058). */
+function candidatesFor(sat: SatelliteConnectionInternal): ReachAddress[] {
+  const peer = annexPeers.getPeer(sat.fingerprint);
+  const port = peer?.mainPort || sat.mainPort;
+  const list = reachCandidates({ discovered: sat.discovered, typed: peer?.typedHost, known: peer?.knownHosts, port });
+  // Where it is now (from pairing), if nothing else lists it.
+  if (sat.host && sat.mainPort && !list.some((a) => a.host === sat.host.toLowerCase() && a.port === sat.mainPort)) {
+    list.push({ host: sat.host, port: sat.mainPort });
+  }
+  return list;
+}
+
+/** Points the satellite at its candidate address for this attempt. */
+function useCandidate(sat: SatelliteConnectionInternal, candidates: ReachAddress[]): void {
+  if (candidates.length === 0) return;
+  const index = (sat.candidateIndex ?? 0) % candidates.length;
+  sat.candidateIndex = index;
+  sat.host = candidates[index].host;
+  sat.mainPort = candidates[index].port;
+  sat.candidateSource = candidates[index].source;
+  if (candidates[index].source === 'discovered') sat.discoveredTried = true;
+}
+
+/** A satellite connection record for a paired peer, not yet connected. */
+function newSatellite(peer: { fingerprint: string; alias: string; icon: string; color: string }, state: SatelliteState): SatelliteConnectionInternal {
+  return {
+    id: peer.fingerprint,
+    alias: peer.alias,
+    icon: peer.icon,
+    color: peer.color,
+    fingerprint: peer.fingerprint,
+    state,
+    host: '',
+    mainPort: 0,
+    pairingPort: 0,
+    snapshot: null,
+    lastError: null,
+    ws: null,
+    reconnectTimer: null,
+    reconnectAttempt: 0,
+    needsPairing: false,
+    heartbeatInterval: null,
+    pongTimeout: null,
+    discovered: null,
+    candidateIndex: 0,
+  };
+}
+
+/**
+ * Connects to every paired satellite with a remembered or typed address, without
+ * waiting for discovery (#3058). Discovery still finds the rest, and newer addresses.
+ */
+function restorePairedSatellites(): void {
+  for (const peer of annexPeers.listPeers()) {
+    if (!annexPeers.controlledFromHere(peer) || annexPeers.peerNeedsPairing(peer) || satellites.has(peer.fingerprint)) continue;
+    const sat = newSatellite(peer, 'disconnected');
+    const candidates = candidatesFor(sat);
+    if (candidates.length === 0) continue;
+    useCandidate(sat, candidates);
+    satellites.set(peer.fingerprint, sat);
+    connectToSatellite(sat);
+  }
+  broadcastSatellitesChanged();
 }
 
 function disconnectSatellite(sat: SatelliteConnectionInternal): void {
@@ -1131,18 +1323,32 @@ function disconnectSatellite(sat: SatelliteConnectionInternal): void {
 // Bonjour discovery
 // ---------------------------------------------------------------------------
 
+/** Replaces a discovery socket that couldn't start, after a pause. */
+let rediscoverTimer: ReturnType<typeof setTimeout> | null = null;
+const MDNS_RESTART_DELAY_MS = 30_000;
+
 function startDiscovery(): void {
   if (bonjourBrowser) return;
 
   try {
-    bonjourInstance = new Bonjour();
+    // Socket errors are logged, never thrown (#1921).
+    bonjourInstance = createBonjour('discover', ({ fatal }) => {
+      if (!fatal || rediscoverTimer) return;
+      rediscoverTimer = setTimeout(() => {
+        rediscoverTimer = null;
+        if (!bonjourBrowser) return; // stopped meanwhile
+        stopDiscovery();
+        startDiscovery();
+      }, MDNS_RESTART_DELAY_MS);
+      rediscoverTimer.unref?.();
+    });
     bonjourBrowser = bonjourInstance.find({ type: 'clubhouse-annex' }, async (service) => {
       const identity = await identifyService(service);
       if (!identity) return;
 
       const { fingerprint } = identity;
       const txt = service.txt || {};
-      const host = service.addresses?.[0] || service.referer?.address || service.host || '';
+      const host = serviceHost(service);
       const mainPort = service.port || 0;
       const pairingPort = txt.pairingPort ? parseInt(txt.pairingPort, 10) : service.port || 0;
 
@@ -1152,7 +1358,7 @@ function startDiscovery(): void {
 
       // Paired peer — only connect to peers we've paired as satellites (not controllers)
       const peerRecord = annexPeers.getPeer(fingerprint);
-      if (peerRecord && (peerRecord.role === 'satellite' || !peerRecord.role)) {
+      if (peerRecord && (annexPeers.controlledFromHere(peerRecord) || !peerRecord.role)) {
         // Remove from discovered if it was there
         if (discoveredServices.has(fingerprint)) {
           discoveredServices.delete(fingerprint);
@@ -1166,12 +1372,23 @@ function startDiscovery(): void {
           // disconnected satellite tries it, and the pinned certificate decides.
           const live = sat.state === 'connected' || sat.state === 'connecting';
           const hostChanged = host !== sat.host || mainPort !== sat.mainPort;
+          if (host && mainPort && (sat.discovered?.host !== host || sat.discovered?.port !== mainPort)) {
+            sat.discovered = { host, port: mainPort };
+            sat.discoveredTried = false;
+          }
           if (hostChanged && !live) {
             sat.host = host;
             sat.mainPort = mainPort;
             sat.pairingPort = pairingPort;
+            sat.candidateIndex = 0; // the announced address is the first candidate
+            sat.candidateSource = 'discovered';
+            sat.discoveredTried = true;
           }
-          if (sat.state === 'disconnected' && !sat.needsPairing && sat.host && sat.mainPort) {
+          // After a certificate mismatch, a newly announced address gets one more try, through the same pin.
+          const halted = sat.halt || sat.needsPairing;
+          // A satellite waiting to be found (Retry before discovery saw it) connects now too.
+          const waiting = sat.state === 'disconnected' || sat.state === 'discovering';
+          if (waiting && (!halted || (sat.halt === 'mismatch' && hostChanged)) && sat.host && sat.mainPort) {
             connectToSatellite(sat);
           }
           return;
@@ -1180,25 +1397,15 @@ function startDiscovery(): void {
         const peer = annexPeers.getPeer(fingerprint);
         if (!peer) return;
 
-        const sat: SatelliteConnectionInternal = {
-          id: fingerprint,
-          alias: peer.alias,
-          icon: peer.icon,
-          color: peer.color,
-          fingerprint,
-          state: 'discovering',
-          host,
-          mainPort,
-          pairingPort,
-          snapshot: null,
-          lastError: null,
-          ws: null,
-          reconnectTimer: null,
-          reconnectAttempt: 0,
-          needsPairing: false,
-          heartbeatInterval: null,
-          pongTimeout: null,
-        };
+        const sat = newSatellite(peer, 'discovering');
+        sat.host = host;
+        sat.mainPort = mainPort;
+        sat.pairingPort = pairingPort;
+        if (host && mainPort) {
+          sat.discovered = { host, port: mainPort };
+          sat.candidateSource = 'discovered';
+          sat.discoveredTried = true;
+        }
 
         satellites.set(fingerprint, sat);
         broadcastSatellitesChanged();
@@ -1252,6 +1459,7 @@ function startDiscovery(): void {
 }
 
 function stopDiscovery(): void {
+  if (rediscoverTimer) { clearTimeout(rediscoverTimer); rediscoverTimer = null; }
   if (bonjourBrowser) {
     try { bonjourBrowser.stop(); } catch (err) {
       appLog('core:annex-client', 'debug', 'Failed to stop Bonjour browser', {
@@ -1295,39 +1503,71 @@ export function connect(fingerprint: string): void {
       appLog('core:annex-client', 'warn', 'Cannot connect — unknown peer', { meta: { fingerprint } });
       return;
     }
-    sat = {
-      id: fingerprint,
-      alias: peer.alias,
-      icon: peer.icon,
-      color: peer.color,
-      fingerprint,
-      state: 'disconnected',
-      host: '',
-      mainPort: 0,
-      pairingPort: 0,
-      snapshot: null,
-      lastError: null,
-      ws: null,
-      reconnectTimer: null,
-      reconnectAttempt: 0,
-      needsPairing: false,
-      heartbeatInterval: null,
-      pongTimeout: null,
-    };
+    sat = newSatellite(peer, 'disconnected');
     satellites.set(fingerprint, sat);
   }
 
-  if (sat.state !== 'disconnected') {
+  // Waiting to be found with no address yet: an address learned since (a member's hello) is worth a try.
+  const waitingWithoutAddress = sat.state === 'discovering' && !sat.host;
+  if (sat.state !== 'disconnected' && !waitingWithoutAddress) {
     appLog('core:annex-client', 'info', 'Satellite already connecting/connected', { meta: { fingerprint } });
     return;
   }
 
+  // A remembered or typed address, if it has one (#3058).
+  if (!sat.host || !sat.mainPort) useCandidate(sat, candidatesFor(sat));
   if (sat.host && sat.mainPort) {
     connectToSatellite(sat);
   } else {
     // Will connect when discovered via Bonjour
     setState(sat, 'discovering');
   }
+}
+
+export type SetHostResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Sets the host name or address a person typed for a satellite (#3058), such as
+ * its tailnet name, with an optional port. An empty value clears it. A
+ * disconnected satellite tries it straight away; a live connection is left alone.
+ */
+export function setSatelliteHost(fingerprint: string, input: string): SetHostResult {
+  const peer = annexPeers.getPeer(fingerprint);
+  if (!peer || !annexPeers.controlledFromHere(peer)) return { ok: false, error: "That computer isn't one this computer connects to." };
+  const value = input.trim();
+  const parsed = value ? parseTypedHost(value) : null;
+  if (value && !parsed) {
+    return { ok: false, error: 'Type a name or address, such as studio.local, a tailnet name or 192.168.1.20, with an optional :port.' };
+  }
+  const sat = satellites.get(fingerprint);
+  if (parsed && !parsed.port && !peer.mainPort && !sat?.mainPort) {
+    return { ok: false, error: "This computer hasn't reached it yet, so add its port too, such as studio.local:9443. Its Annex settings show the port." };
+  }
+  annexPeers.setTypedHost(fingerprint, value || undefined);
+  appLog('core:annex-client', 'info', value ? 'Typed host set for satellite' : 'Typed host cleared for satellite', { meta: { fingerprint } });
+  // Saved either way; connecting waits for Connect to satellites.
+  if (!annexSettings.getSettings().enableClient) { broadcastSatellitesChanged(); return { ok: true }; }
+  if (!sat) { if (value) connect(fingerprint); broadcastSatellitesChanged(); return { ok: true }; }
+  // A new address is a fresh chance after "showed a different certificate": that may have been the old address.
+  if (sat.halt === 'mismatch') { sat.halt = null; sat.needsPairing = false; sat.mismatches = 0; }
+  if (value && (sat.state === 'disconnected' || sat.state === 'discovering') && !sat.needsPairing) {
+    // Try what was typed now: it's the first candidate unless discovery has an address.
+    const candidates = candidatesFor(sat);
+    const index = candidates.findIndex((a) => a.source === 'typed');
+    sat.candidateIndex = index === -1 ? 0 : index;
+    sat.reconnectAttempt = 0;
+    if (sat.reconnectTimer) { clearTimeout(sat.reconnectTimer); sat.reconnectTimer = null; }
+    useCandidate(sat, candidates);
+    if (sat.host && sat.mainPort) connectToSatellite(sat);
+  }
+  broadcastSatellitesChanged();
+  return { ok: true };
+}
+
+/** Where this machine is reaching (or last tried) a satellite, as `host:port`. */
+export function satelliteAddress(fingerprint: string): string | undefined {
+  const sat = satellites.get(fingerprint);
+  return sat?.host && sat.mainPort ? formatAddress({ host: sat.host, port: sat.mainPort }) : undefined;
 }
 
 export function disconnect(fingerprint: string): void {
@@ -1341,6 +1581,8 @@ export function disconnect(fingerprint: string): void {
  */
 export function forgetSatellite(fingerprint: string): void {
   appLog('core:annex-client', 'info', 'Forgetting satellite', { meta: { fingerprint } });
+  // A network member is removed everywhere, not just here (#3061).
+  membership.noteLocalRemoval(fingerprint);
   const sat = satellites.get(fingerprint);
   if (sat) {
     disconnectSatellite(sat);
@@ -1348,14 +1590,18 @@ export function forgetSatellite(fingerprint: string): void {
   }
   disposeRemoteBuffers(fingerprint);
   annexPeers.removePeer(fingerprint);
+  networkChannel.closeFor(fingerprint);
   broadcastSatellitesChanged();
 }
 
 export function retry(fingerprint: string): void {
   const sat = satellites.get(fingerprint);
-  if (sat && sat.state === 'disconnected') {
+  // A paired satellite not seen since startup has no connection yet: start one.
+  if (!sat) { connect(fingerprint); return; }
+  if (sat.state === 'disconnected') {
     sat.reconnectAttempt = 0;
     sat.needsPairing = false;
+    sat.halt = null;
     connectToSatellite(sat);
   }
 }
@@ -1429,7 +1675,7 @@ export function requestFileTree(fingerprint: string, projectId: string, options?
   return new Promise<unknown[]>((resolve) => {
     const url = satelliteUrl(sat, `/api/v1/projects/${encodeURIComponent(projectId)}/files/tree${qs}`);
     const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
-      if (res.statusCode !== 200) { res.resume(); resolve([]); return; }
+      if (res.statusCode !== 200) { drainRefusal(sat, res); resolve([]); return; }
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => {
@@ -1462,7 +1708,7 @@ export function requestFileRead(fingerprint: string, projectId: string, path: st
     const url = satelliteUrl(sat, `/api/v1/projects/${encodeURIComponent(projectId)}/files/read${qs}`);
     const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
       if (res.statusCode === 404) { res.resume(); reject(new Error('File not found')); return; }
-      if (res.statusCode !== 200) { res.resume(); reject(new Error(`HTTP ${res.statusCode}`)); return; }
+      if (res.statusCode !== 200) { drainRefusal(sat, res); reject(new Error(`HTTP ${res.statusCode}`)); return; }
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
@@ -1496,7 +1742,7 @@ export function requestBulletinDigest(fingerprint: string, groupProjectId: strin
   return new Promise<unknown[]>((resolve) => {
     const url = satelliteUrl(sat, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/digest${qs}`);
     const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
-      if (res.statusCode !== 200) { res.resume(); resolve([]); return; }
+      if (res.statusCode !== 200) { drainRefusal(sat, res); resolve([]); return; }
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => {
@@ -1531,7 +1777,7 @@ export function requestBulletinTopicMessages(fingerprint: string, groupProjectId
   return new Promise<unknown[]>((resolve) => {
     const url = satelliteUrl(sat, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/topics/${encodeURIComponent(topic)}${qs}`);
     const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
-      if (res.statusCode !== 200) { res.resume(); resolve([]); return; }
+      if (res.statusCode !== 200) { drainRefusal(sat, res); resolve([]); return; }
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => {
@@ -1590,7 +1836,7 @@ export function requestBulletinAllMessages(
   return new Promise<unknown[]>((resolve) => {
     const url = satelliteUrl(sat, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/messages${qs}`);
     const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
-      if (res.statusCode !== 200) { res.resume(); resolve([]); return; }
+      if (res.statusCode !== 200) { drainRefusal(sat, res); resolve([]); return; }
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => {
@@ -1770,6 +2016,7 @@ function satelliteHttpsRequest(
           try { resolve(JSON.parse(text)); }
           catch { resolve(text); }
         } else {
+          noteRestRefusal(sat, res.statusCode, text);
           reject(new Error(`HTTP ${res.statusCode}: ${text.slice(0, 200)}`));
         }
       });
@@ -1932,7 +2179,7 @@ export async function requestWorktreeStatus(
     `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/worktree-status`);
 }
 
-export interface PairResultForUi { success: boolean; error?: string; alias?: string }
+export interface PairResultForUi { success: boolean; error?: string; alias?: string; fingerprint?: string }
 
 /** Certificates read from discovered services, waiting for the person to compare and enter a PIN. */
 const probedCertificates = new Map<string, annexTls.PinnedCertificate & { host: string; port: number }>();
@@ -1942,15 +2189,19 @@ const probedCertificates = new Map<string, annexTls.PinnedCertificate & { host: 
  * its code with the one in that computer's Annex settings before sending a PIN.
  */
 export async function probeService(fingerprint: string): Promise<{ success: boolean; certFingerprint?: string; error?: string }> {
+  // A discovered service, or a satellite that needs pairing again at its last announced address.
   const discovered = discoveredServices.get(fingerprint);
-  if (!discovered) return { success: false, error: 'Service not found. It may have gone offline.' };
-  if (!discovered.mainPort) return { success: false, error: 'That computer did not say where to connect.' };
+  const known = satellites.get(fingerprint);
+  const host = discovered?.host || known?.host;
+  const port = discovered?.mainPort || known?.mainPort;
+  if (!discovered && !known) return { success: false, error: 'Service not found. It may have gone offline.' };
+  if (!host || !port) return { success: false, error: "That computer hasn't been found on the network yet. Paste its pairing link instead." };
   try {
-    const cert = await annexTls.probePeerCertificate(discovered.host, discovered.mainPort);
-    probedCertificates.set(fingerprint, { ...cert, host: discovered.host, port: discovered.mainPort });
+    const cert = await annexTls.probePeerCertificate(host, port);
+    probedCertificates.set(fingerprint, { ...cert, host, port });
     return { success: true, certFingerprint: cert.fingerprint };
   } catch (err) { // telemetry-exempt: shown to the person pairing
-    return { success: false, error: err instanceof Error ? err.message : 'Could not reach that computer' };
+    return { success: false, error: pairingReachError(err, discovered?.alias || known?.alias || '') };
   }
 }
 
@@ -1965,14 +2216,15 @@ export function pairWithService(fingerprint: string, pin: string): Promise<PairR
 async function pairWithServiceImpl(fingerprint: string, pin: string): Promise<PairResultForUi> {
   const probed = probedCertificates.get(fingerprint);
   if (!probed) return { success: false, error: "Check the computer's certificate code first." };
-  const discovered = discoveredServices.get(fingerprint);
+  const pairingPort = discoveredServices.get(fingerprint)?.pairingPort ?? satellites.get(fingerprint)?.pairingPort ?? 0;
   return pairOverTls({
     host: probed.host,
     port: probed.port,
     pinned: { certPem: probed.certPem, fingerprint: probed.fingerprint },
     expectedFingerprint: fingerprint,
-    pairingPort: discovered?.pairingPort ?? 0,
+    pairingPort,
     pin,
+    alias: discoveredServices.get(fingerprint)?.alias ?? satellites.get(fingerprint)?.alias,
   });
 }
 
@@ -1994,7 +2246,7 @@ async function pairWithLinkImpl(link: string): Promise<PairResultForUi> {
     try {
       cert = await annexTls.probePeerCertificate(host, parts.port);
     } catch (err) { // telemetry-exempt: the next address is tried, and the last error is shown
-      lastError = err instanceof Error ? err.message : lastError;
+      lastError = pairingReachError(err, parts.name);
       continue;
     }
     if (!annexTls.sameCertificateFingerprint(cert.fingerprint, parts.certFingerprint)) {
@@ -2002,9 +2254,14 @@ async function pairWithLinkImpl(link: string): Promise<PairResultForUi> {
       lastError = 'The computer at that address is not the one in the link.';
       continue;
     }
-    return pairOverTls({ host, port: parts.port, pinned: cert, expectedFingerprint: parts.fingerprint, pairingPort: 0, pin: parts.pin });
+    return pairOverTls({ host, port: parts.port, pinned: cert, expectedFingerprint: parts.fingerprint, pairingPort: 0, pin: parts.pin, alias: parts.name, linkHosts: parts.hosts });
   }
   return { success: false, error: lastError };
+}
+
+/** A failure to reach a computer while pairing, as what happened and what to do. */
+function pairingReachError(err: unknown, alias: string): string {
+  return annexProblemText(describeAnnexProblem(classifyConnectionError(err), alias, { pairing: true }));
 }
 
 /** Plain messages for a satellite's pairing refusals that don't carry their own. */
@@ -2023,6 +2280,10 @@ async function pairOverTls(target: {
   expectedFingerprint: string;
   pairingPort: number;
   pin: string;
+  /** The name it's known by so far, for messages. */
+  alias?: string;
+  /** Every host its pairing link lists, remembered as other ways to reach it (#3058). */
+  linkHosts?: string[];
 }): Promise<PairResultForUi> {
   const localIdentity = annexIdentity.getOrCreateIdentity();
   if (target.expectedFingerprint.toLowerCase() === localIdentity.fingerprint.toLowerCase()) {
@@ -2039,9 +2300,11 @@ async function pairOverTls(target: {
       icon: localSettings.icon,
       color: localSettings.color,
       certBinding: annexTls.signCertBinding(localIdentity),
+      // Ask to join as an Annex Network member (#3061); a satellite with it on agrees.
+      ...(annexSettings.networkEnabled(localSettings) && { network: 1 }),
     });
   } catch (err) { // telemetry-exempt: shown to the person pairing; the pair flow records the result
-    return { success: false, error: err instanceof Error ? err.message : 'Pairing failed' };
+    return { success: false, error: pairingReachError(err, target.alias ?? '') };
   }
 
   let body: Record<string, unknown> = {};
@@ -2073,15 +2336,24 @@ async function pairOverTls(target: {
     color,
     pairedAt: new Date().toISOString(),
     lastSeen: new Date().toISOString(),
-    role: 'satellite', // We paired with them → they are our satellite
+    // We paired with them, so they're our satellite; as network members each controls the other.
+    role: body.network === 1 && annexSettings.networkEnabled(localSettings) ? 'member' : 'satellite',
+    ...(body.network === 1 && annexSettings.networkEnabled(localSettings) && { kind: 'desktop' as const, addedBy: localIdentity.fingerprint }),
     tlsCertificateFingerprint: target.pinned.fingerprint,
     tlsCertificatePem: target.pinned.certPem,
+    knownHosts: rememberHost(target.linkHosts, target.host),
+    mainPort: target.port,
+    // A typed host survives pairing again.
+    ...(annexPeers.getPeer(fingerprint)?.typedHost && { typedHost: annexPeers.getPeer(fingerprint)!.typedHost }),
   });
 
   probedCertificates.delete(fingerprint);
+  if (body.network === 1 && annexSettings.networkEnabled(localSettings)) membership.noteLocalJoin(fingerprint);
   if (discoveredServices.delete(fingerprint)) broadcastDiscoveredChanged();
   const previous = satellites.get(fingerprint);
   if (previous) disconnectSatellite(previous);
+  // Paired again (perhaps with a new certificate): nothing from the old pairing carries over.
+  networkChannel.closeFor(fingerprint);
 
   const sat: SatelliteConnectionInternal = {
     id: fingerprint,
@@ -2107,7 +2379,7 @@ async function pairOverTls(target: {
   connectToSatellite(sat);
 
   appLog('core:annex-client', 'info', 'Paired with satellite', { meta: { fingerprint, alias } });
-  return { success: true, alias };
+  return { success: true, alias, fingerprint };
 }
 
 function pinnedJsonPost(host: string, port: number, urlPath: string, tlsOptions: tls.ConnectionOptions, data: unknown): Promise<{ status: number; body: string }> {
@@ -2142,9 +2414,13 @@ export function forgetAllSatellites(): void {
   }
   satellites.clear();
   seededBuffers.clear();
+  networkChannel.closeAll('out');
   // Only our satellites: devices that control this machine are managed in Annex settings.
   for (const peer of annexPeers.listPeers()) {
-    if (peer.role !== 'controller') annexPeers.removePeer(peer.fingerprint);
+    if (peer.role === 'controller') continue;
+    // A network member is removed everywhere, not just here (#3061).
+    membership.noteLocalRemoval(peer.fingerprint);
+    annexPeers.removePeer(peer.fingerprint);
   }
   probedCertificates.clear();
   discoveredServices.clear();
@@ -2164,18 +2440,26 @@ export function scan(): void {
  * Resume all disconnected satellites (e.g., after power resume).
  */
 export function resumeAllConnections(): void {
+  // Waking never starts the client: with Connect to satellites off there's nothing to resume.
+  if (!annexSettings.getSettings().enableClient) return;
   for (const sat of satellites.values()) {
+    // An address announced before sleep may be another network's.
+    sat.discovered = null;
     if (sat.state === 'disconnected') {
       sat.reconnectAttempt = 0; // Reset backoff on resume
+      sat.candidateIndex = 0;
+      useCandidate(sat, candidatesFor(sat));
       connectToSatellite(sat);
     }
   }
+  restorePairedSatellites();
   // Also restart discovery in case mDNS state was lost
   scan();
 }
 
 export function startClient(): void {
   startDiscovery();
+  restorePairedSatellites();
 }
 
 export function stopClient(): void {
@@ -2187,6 +2471,7 @@ export function stopClient(): void {
   satellites.clear();
   seededBuffers.clear();
   discoveredServices.clear();
+  networkChannel.closeAll('out');
   stopDiscovery();
 }
 

@@ -272,7 +272,7 @@ export function ImageCropDialog({
           <button
             onClick={handleConfirm}
             disabled={!image}
-            className="flex-1 px-4 py-2 text-sm rounded-lg bg-ctp-accent text-white
+            className="flex-1 px-4 py-2 text-sm rounded-lg bg-ctp-accent text-ctp-on-accent
               hover:bg-ctp-accent/80 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Apply

@@ -277,7 +277,7 @@ export function FeedbackReviewDialog({ draft, reopened = null, onClose }: Props)
                 type="button"
                 onClick={() => void send(hasScreenshot)}
                 disabled={phase === 'sending' || (!hasScreenshot && notes.trim() === '')}
-                className="px-3 py-1.5 text-sm rounded-md bg-ctp-accent text-white disabled:opacity-50"
+                className="px-3 py-1.5 text-sm rounded-md bg-ctp-accent text-ctp-on-accent disabled:opacity-50"
               >
                 {phase === 'sending' ? 'Sending…' : 'Send'}
               </button>

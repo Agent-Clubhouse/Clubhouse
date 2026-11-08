@@ -1,10 +1,14 @@
 import { contextWindowOptionsFor } from '../services/context-window';
+import { readAgentGrants, resetAgentGrants, setAgentGrant } from '../services/agent-grants-service';
+import { listGrantRequests } from '../services/grant-requests';
+import { answerGrantRequest } from '../services/grant-request-answers';
+import type { GrantChange } from '../../shared/agent-grant-changes';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { ICON_DATA_URL_MAX_LENGTH } from '../../shared/icon-limits';
-import { SpawnAgentParams } from '../../shared/types';
+import { MAX_QUICK_RUN_CHANGES, SpawnAgentParams } from '../../shared/types';
 import { isSessionCapable, type OrchestratorId, type TranscriptReadStats } from '../orchestrators';
 import * as agentConfig from '../services/agent-config';
 import * as agentSystem from '../services/agent-system';
@@ -169,7 +173,8 @@ function forwardConfigChanges(): void {
 // --- Dispatcher singleton guards (#2535) ---
 
 function isDispatcherAgent(projectPath: string, agentId: string): boolean {
-  return dispatcher.isDispatcherPath(projectPath) || dispatcher.isDispatcherAgentId(agentId);
+  // Either of its folders, either of its two agents (#3036).
+  return dispatcher.isDispatcherPath(projectPath) || dispatcher.isDispatcherIdentityAgentId(agentId);
 }
 
 /** The Dispatcher can't be deleted or given orchestration settings. */
@@ -322,6 +327,18 @@ export function registerAgentHandlers(): void {
       return agentConfig.removeAgentIcon(projectPath, agentId);
     },
   ));
+
+  // Clubhouse permissions (#2971): the user's own surface, so no grant check applies.
+  ipcMain.handle(IPC.AGENT.GET_GRANTS, withValidatedArgs([stringArg(), stringArg()],
+    async (_event, projectPath, agentId) => readAgentGrants(projectPath, agentId)));
+  ipcMain.handle(IPC.AGENT.SET_GRANT, withValidatedArgs([stringArg(), stringArg(), objectArg<Omit<GrantChange, 'by' | 'at'>>()],
+    async (_event, projectPath, agentId, change) => setAgentGrant(projectPath, agentId, change)));
+  ipcMain.handle(IPC.AGENT.RESET_GRANTS, withValidatedArgs([stringArg(), stringArg()],
+    async (_event, projectPath, agentId) => resetAgentGrants(projectPath, agentId)));
+  // Permission requests in Needs you (#2970).
+  ipcMain.handle(IPC.AGENT.LIST_GRANT_REQUESTS, () => listGrantRequests());
+  ipcMain.handle(IPC.AGENT.ANSWER_GRANT_REQUEST, withValidatedArgs([stringArg({ maxLength: 200 }), booleanArg()],
+    async (_event, requestId, allow) => answerGrantRequest(requestId, allow)));
 
   ipcMain.handle(IPC.AGENT.GET_DURABLE_CONFIG, withValidatedArgs(
     [stringArg(), stringArg()],
@@ -564,9 +581,17 @@ export function registerAgentHandlers(): void {
         if (typeof v.kind !== 'string' || !v.kind) throw new Error(`${name}.kind must be a non-empty string`);
         if (v.access !== undefined && !isAccessLevel(v.access)) throw new Error(`${name}.access must be an access level`);
         if (v.managedTemplate !== undefined) {
-          const t = v.managedTemplate as { id?: unknown; agentName?: unknown } | null;
+          const t = v.managedTemplate as { id?: unknown; agentName?: unknown; addParts?: unknown; removeParts?: unknown } | null;
           if (!t || typeof t.id !== 'string' || !t.id || t.id.length > 128 || typeof t.agentName !== 'string' || t.agentName.length > 200) {
             throw new Error(`${name}.managedTemplate must be { id, agentName }`);
+          }
+          // One launch's part changes (#2928): part ids, a bounded few. Main checks each against the library.
+          for (const key of ['addParts', 'removeParts'] as const) {
+            const ids = t[key];
+            if (ids === undefined) continue;
+            if (!Array.isArray(ids) || ids.length > MAX_QUICK_RUN_CHANGES || ids.some((id) => typeof id !== 'string' || !id || id.length > 128)) {
+              throw new Error(`${name}.managedTemplate.${key} must be at most ${MAX_QUICK_RUN_CHANGES} part ids`);
+            }
           }
           if (v.kind !== 'quick') throw new Error(`${name}.managedTemplate is for quick agents`);
         }

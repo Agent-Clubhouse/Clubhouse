@@ -21,7 +21,7 @@ import type { ChatViewState } from '../../../stores/chatStore';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
-import { isDispatcherAgent, useLocalProject } from '../../dispatcher/dispatcherStore';
+import { dispatcherWiresAgentId, isDispatcherAgent, useLocalProject } from '../../dispatcher/dispatcherStore';
 import { Tooltip } from '../../../components/Tooltip';
 import { jumpToCanvas, useAgentCanvases } from './agent-canvases';
 import { getOrchestratorLabel } from '../orchestrator-colors';
@@ -29,6 +29,7 @@ import { DRIVER_LABELS, limitLabel, limitName } from '../chat/ChatHeader';
 import { SubagentList, subagentSummary } from '../chat/AgentMapPanel';
 import { buildAgentMap, formatCost, formatDuration, formatTokens } from '../chat/view-model';
 import { ChangesCard, type ChangesScope } from './ChangesCard';
+import { DispatcherActionsCard } from '../../actions/AgentActionsPage';
 import { CardNote, CardRow, DetailsCard, UsageBar } from './DetailsCard';
 import { SettingsCard } from './SettingsCard';
 import { McpCard } from './McpCard';
@@ -39,8 +40,9 @@ import type { LastSessionInfo } from '../states/useLastSession';
 import { describeSleep, formatAgo, formatShortDuration, formatUsd } from '../states/format';
 import { ConnectionsCard, type Connection } from '../helpers/ConnectionsCard';
 import { OrchestrationCardPair, useOrchestrationCards } from '../helpers/OrchestrationCards';
+import { useEffectiveOrchestrator } from '../effective-orchestrator';
 
-export type CardId = 'changes' | 'subagents' | 'canvases' | 'orchestrate' | 'helpers' | 'connections' | 'context' | 'mcp' | 'provider-skills' | 'session';
+export type CardId = 'changes' | 'subagents' | 'canvases' | 'orchestrate' | 'helpers' | 'connections' | 'context' | 'mcp' | 'provider-skills' | 'session' | 'actions';
 
 /** A worktree inside the project, as a path relative to it; null when it lives elsewhere. */
 export function relativeFolder(worktree: string | undefined, projectPath: string | undefined): string | null {
@@ -199,6 +201,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const hook = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
   const orchestrators = useOrchestratorStore((s) => s.allOrchestrators);
+  const agentCli = useEffectiveOrchestrator(agent);
 
   // Chat refreshes when a turn starts or ends, or the agent commits, pushes
   // or rebases mid-turn; the terminal when its hook status moves on.
@@ -219,7 +222,10 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   // Orchestration (#2232): local durable agents only; a satellite keeps its own config.
   const orchestration = useOrchestrationCards(agent, projectPath);
   const { orchestrationPath, ownConfig, helperIds, orchestrating } = orchestration;
-  const hasWires = useMcpBindingStore((s) => s.bindings.some((b) => b.agentId === agent.id || (b.targetKind === 'agent' && b.targetId === agent.id)));
+  // The Dispatcher's wires are on the id that holds them, not the chat shown here (#3036).
+  const wiresId = dispatcherWiresAgentId(agent);
+  const wiresAgent = useMemo(() => (wiresId === agent.id ? agent : { ...agent, id: wiresId }), [agent, wiresId]);
+  const hasWires = useMcpBindingStore((s) => s.bindings.some((b) => b.agentId === wiresId || (b.targetKind === 'agent' && b.targetId === wiresId)));
   // The Dispatcher has no orchestration of its own, but its wires to orchestrators show (#2538).
   const showConnections = (!!orchestrationPath && (orchestrating || hasWires)) || (isDispatcherAgent(agent) && hasWires);
   // A tool-made wire removed here is a user removal: the usual unbind, with no cause (#2230).
@@ -230,7 +236,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const now = useNow(running && !!spawnedAt);
 
   const open = (id: CardId) => openCards.has(id);
-  const providerId = chat?.provider ?? agent.orchestrator ?? 'claude-code';
+  const providerId = chat?.provider ?? agentCli;
   const provider = getOrchestratorLabel(providerId, orchestrators);
 
   // Subagents: only when the agent reports them.
@@ -345,9 +351,11 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
 
       <OrchestrationCardPair agent={agent} model={orchestration} isOpen={open} onToggle={toggleCard} />
 
+      {isDispatcherAgent(agent) && <DispatcherActionsCard open={open('actions')} onToggle={() => toggleCard('actions')} />}
+
       {showConnections && (
         <ConnectionsCard
-          agent={agent}
+          agent={wiresAgent}
           helperIds={helperIds}
           parentId={ownConfig?.parentAgentId}
           open={open('connections')}

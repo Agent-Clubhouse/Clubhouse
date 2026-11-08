@@ -20,6 +20,7 @@ import { applyFinishedQuickAgentChange, getFinishedQuickAgents, isFinishedQuickA
 import type { CompletedQuickAgent, Project } from '../../shared/types';
 import { ANNEX_FRAME_MAX_BYTES, MOBILE_WS_FRAME_MAX_BYTES, SNAPSHOT_FRAME_MAX_BYTES, SNAPSHOT_ICONS_MAX_BYTES } from '../../shared/icon-limits';
 import { MobileCommandService, MobileControlError, chatControls, executeChatCommand, pendingInteractions, MOBILE_COMMAND_MAX_ENTRIES, MOBILE_COMMAND_TTL_MS } from './mobile-control';
+import { FULL_EVENT_MAX_BYTES, findFullEvent, forgetReviewedBy, fullEventDigest, rememberReviewed, wasReviewed } from './annex-full-events';
 import { isRevertRunning } from './agent-runtime/checkpoint-tracker';
 import { readChatTranscript, listChatSessions } from './agent-runtime/chat-transcript';
 import { isGraduatedFeatureOn } from './experimental-settings';
@@ -44,7 +45,13 @@ import { onDisposeRequestsChanged } from './helper-dispose-requests';
 import { MOBILE_ATTACHMENTS_CAPABILITY, MobileAttachmentService, MobileUploadError, isUploadContentType, readCappedBody } from './mobile-attachments';
 import { sniffImage } from './agent-runtime/chat-attachments';
 
-import Bonjour, { Service } from 'bonjour-service';
+import type Bonjour from 'bonjour-service';
+import type { Service } from 'bonjour-service';
+import { createBonjour } from './annex-mdns';
+import { withReachableAs } from './annex-reach';
+import * as networkChannel from './annex-network-channel';
+import * as membership from './annex-network-membership';
+import { NETWORK_MESSAGE_MAX_BYTES, NETWORK_PROTOCOL_VERSION, parseNetworkMessage } from '../../shared/annex-network-protocol';
 import * as annexEventBus from './annex-event-bus';
 import * as annexSettings from './annex-settings';
 import { annexNetworkProfile } from './annex-network-profile';
@@ -52,6 +59,7 @@ import { listenPreferringPort, type ListenFn } from './annex-listen';
 import { buildPairingUrl, pairingHosts } from './annex-pairing-url';
 import * as annexIdentity from './annex-identity';
 import * as annexPeers from './annex-peers';
+import { devicesChanged } from './annex-device-signal';
 import * as projectStore from './project-store';
 import * as agentConfig from './agent-config';
 import { isDisposedAgent } from '../../shared/agent-helpers';
@@ -97,6 +105,7 @@ import { decodeDigestSince, SINCE_CHANNELS_PARAM } from '../../shared/digest-sin
 import { THEMES } from '../../renderer/themes';
 import { generateQuickName } from '../../shared/name-generator';
 import { generateQuickAgentId } from '../../shared/agent-id';
+import { observeQuickAgents, startQuickAgent } from './quick-agent-service';
 import { ANNEX_PROTOCOL_VERSION } from '../../shared/types';
 import { handshakeAttributes, parseTelemetryHello, telemetryHelloAck } from '../telemetry/annex-handshake';
 import { rememberAnnexIncidentPhone, rememberAnnexIncidentTrace } from '../telemetry/feedback-incident';
@@ -179,6 +188,13 @@ let httpServer: http.Server | null = null;
 let wss: WebSocketServer | null = null;
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let bonjourService: Service | null = null;
+/** Publishes the advertisement again (after a dead mDNS socket, or on wake); set while the server runs. */
+let republishBonjour: (() => void) | null = null;
+let republishTimer: ReturnType<typeof setTimeout> | null = null;
+/** Stops pushing network changes to phones. */
+let unsubMembership: (() => void) | null = null;
+/** How long to wait before replacing an mDNS socket that couldn't start. */
+const MDNS_RESTART_DELAY_MS = 30_000;
 let serverPort = 0; // Main TLS port
 let boundHost = ''; // networkProfile.host while running
 let currentPin = '';
@@ -186,9 +202,14 @@ let currentPinIssuedAt = 0;
 let pinRotationTimer: ReturnType<typeof setTimeout> | null = null;
 /** How long a PIN can be used, and how long after it was used or replaced it is still recognised. */
 const PIN_TTL_MS = 10 * 60 * 1000;
-/** Wrong PINs from any address before the PIN is replaced, on top of the per-address limit. */
+/**
+ * Wrong PINs from any address, across PINs, before pairing is paused for the whole
+ * install, on top of the per-address limit. Only a successful pairing or the person
+ * reopening pairing in Settings resets it.
+ */
 const PIN_FAILURE_LIMIT = 10;
 let pinFailures = 0;
+let pairingPaused = false;
 /** PINs that paired a device, kept for their lifetime so a retry after a lost answer can be told apart from a second device. */
 interface SpentPin { pin: string; expiresAt: number; fingerprint: string; certFingerprint: string; response: Record<string, unknown> }
 const spentPins: SpentPin[] = [];
@@ -206,6 +227,8 @@ type WsAuthType = 'bearer' | 'mtls';
 const wsAuthTypes = new WeakMap<WebSocket, WsAuthType>();
 // Track peer fingerprint per WebSocket connection (for mTLS connections)
 const wsPeerFingerprints = new WeakMap<WebSocket, string>();
+/** The certificate each WebSocket authenticated with; its messages count only while the peer still pins it. */
+const wsPeerPins = new WeakMap<WebSocket, string>();
 /**
  * Shells a controller spawned over `pty:spawn-shell`, by session id (#2476).
  * Their output goes to that controller only, and they end when it disconnects.
@@ -232,6 +255,8 @@ let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 // Server-side WebSocket heartbeat: detect dead controller connections (e.g. mobile app killed)
 const SERVER_HEARTBEAT_INTERVAL_MS = 30_000; // 30s ping interval
 const wsAlive = new WeakMap<WebSocket, boolean>();
+/** Sockets that locked this screen ("Controlled by"): mTLS from anything but a fellow network member. */
+const lockingSockets = new WeakSet<WebSocket>();
 
 /** Whether the satellite session is currently paused (tracks across reconnects). */
 let sessionPaused = false;
@@ -520,6 +545,21 @@ function untrackQuickAgent(agentId: string): void {
   trackedQuickAgents.delete(agentId);
 }
 
+// Quick agents started through the shared service (#2951): from here, and
+// from Actions. Phones see them in the snapshot and get agent:spawned.
+// Only while the server runs: its exit cleanup untracks them, and a stopped
+// server would keep them as running forever.
+observeQuickAgents({
+  starting(entry) {
+    if (!wss) return;
+    setTrackedQuickAgent(entry.id, entry);
+    broadcastAndBuffer('agent:spawned', quickAgentWireFields(entry));
+  },
+  failed(entry) {
+    untrackQuickAgent(entry.id);
+  },
+});
+
 /** What a tracked quick agent sends to controllers. Named, so a field added to the entry stays off the wire until it's listed here. */
 function quickAgentWireFields(qa: TrackedQuickAgent) {
   return {
@@ -612,7 +652,7 @@ function authenticatePeer(socket: unknown): PeerAuthResult {
   const peer = findPairedPeer(fingerprint);
   if (!peer) return refuse(401, 'peer_not_paired', fingerprint);
   if (!peer.role) return refuse(401, 'needs_pairing', fingerprint);
-  if (peer.role !== 'controller') return refuse(403, 'peer_role_not_allowed', fingerprint);
+  if (!annexPeers.controlsThisMachine(peer)) return refuse(403, 'peer_role_not_allowed', fingerprint);
   if (!peer.tlsCertificateFingerprint) return refuse(401, 'needs_pairing', fingerprint);
   if (annexTls.extractPeerCertificateFingerprint(socket) !== peer.tlsCertificateFingerprint) return refuse(401, 'peer_not_paired', fingerprint);
   awaitingFirstConnection.delete(fingerprint);
@@ -644,13 +684,13 @@ function prunePins(now = Date.now()): void {
 }
 
 /** A new PIN. The old one, unless it was used, is remembered as expired for a while. */
-function rotatePin(reason: 'start' | 'used' | 'expired' | 'regenerated' | 'failures', broadcast = true): void {
+function rotatePin(reason: 'start' | 'used' | 'expired' | 'regenerated' | 'exposed', broadcast = true): void {
   const now = Date.now();
   prunePins(now);
-  if (currentPin && reason !== 'used' && reason !== 'start') expiredPins.push({ pin: currentPin, until: now + PIN_TTL_MS });
+  // A PIN sent in the clear is simply gone: a later try with it reads as wrong, like any other.
+  if (currentPin && (reason === 'expired' || reason === 'regenerated')) expiredPins.push({ pin: currentPin, until: now + PIN_TTL_MS });
   currentPin = generatePin();
   currentPinIssuedAt = now;
-  pinFailures = 0;
   if (pinRotationTimer) clearTimeout(pinRotationTimer);
   pinRotationTimer = null;
   // The harness switch keeps one printed PIN usable for its whole run.
@@ -662,7 +702,7 @@ function rotatePin(reason: 'start' | 'used' | 'expired' | 'regenerated' | 'failu
     }, PIN_TTL_MS);
     pinRotationTimer.unref?.();
   }
-  if (reason === 'failures') appLog('core:annex', 'warn', 'Pairing PIN replaced after too many wrong attempts');
+  if (reason === 'exposed') appLog('core:annex', 'warn', 'Pairing PIN replaced after it was sent without TLS');
   if (broadcast) broadcastToAllWindows(IPC.ANNEX.STATUS_CHANGED, getStatus());
 }
 
@@ -690,6 +730,7 @@ function dropUnconnectedPeers(now = Date.now()): void {
     if (deadline > now) continue;
     awaitingFirstConnection.delete(fingerprint);
     mobileSessionPeers.delete(fingerprint);
+    devicesChanged();
     if (annexPeers.removePeer(fingerprint)) {
       appLog('core:annex', 'info', 'Removed a pairing that never connected', { meta: { fingerprint } });
       broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeersForDisplay());
@@ -771,6 +812,13 @@ function readJsonBody(
   handler: (body: Record<string, unknown>) => void,
 ): void {
   readBody(req).then((raw) => {
+    // The body can arrive long after the headers were checked: act only if the peer is still paired now.
+    const recheck = authenticatePeer(req.socket);
+    if (isRefusal(recheck)) {
+      logRefusedPeer('rest', recheck, req.socket.remoteAddress);
+      sendJson(res, recheck.status, { error: recheck.error, message: recheck.message });
+      return;
+    }
     const body = parseJsonBody(raw);
     if (!body) {
       sendJson(res, 400, { error: 'invalid_json' });
@@ -898,7 +946,7 @@ async function catalogOrchestration(projectPath: string, durables: DurableConfig
 /** The Dispatcher can't start while it is off, though its history can still be read. */
 function isDispatcherOffForStart(agentId: string): boolean {
   const state = getDispatcherState();
-  return state.agentId === agentId && !state.enabled;
+  return state.chatAgentId === agentId && !state.enabled;
 }
 
 /** The Dispatcher as the snapshot, dispatcher:changed and the capabilities carry it: the same shape in all three. */
@@ -1250,6 +1298,9 @@ function reportClientCounts(): void {
     if (client.readyState === WebSocket.OPEN) counts[clientKindOf(client)]++;
   }
   recordClients(counts.desktop, counts.mobile, counts.unknown);
+  devicesChanged();
+  // Who's online changed: member phones hear it (#3062).
+  if (annexSettings.networkEnabled()) pushNetworkToPhones();
 }
 
 /** What a socket said it was at connect, for metrics only. It's unverified, so nothing else may read it. */
@@ -2029,93 +2080,29 @@ async function handleSpawnQuickAgent(
     systemPrompt = (body.systemPrompt as string | undefined) || parentInfo.config.quickAgentDefaults?.systemPrompt;
   }
 
-  const agentId = generateQuickAgentId();
-  const name = generateQuickName();
   const model = (body.model as string | undefined) || defaultModel;
   const orchestrator = (body.orchestrator as string | undefined) || defaultOrchestrator;
   // Access (#2761): a phone's on/off maps to a level; otherwise the parent's quick agent level.
   const access = typeof body.freeAgentMode === 'boolean' ? accessFromLegacy(body.freeAgentMode, getPermissionMode(project.path)) : defaultAccess;
   const freeAgentMode = legacyFreeAgentMode(access);
 
-  // Track the quick agent
-  const tracked: TrackedQuickAgent = {
-    id: agentId,
-    name,
-    kind: 'quick',
-    status: 'starting',
-    prompt,
-    model: model || null,
-    orchestrator: orchestrator || null,
-    freeAgentMode,
-    parentAgentId,
-    projectId,
-    spawnedAt: Date.now(),
-  };
-  setTrackedQuickAgent(agentId, tracked);
-
-  // Broadcast agent:spawned
-  broadcastAndBuffer('agent:spawned', {
-    id: agentId,
-    name,
-    kind: 'quick',
-    status: 'starting',
-    prompt,
-    model: model || null,
-    orchestrator: orchestrator || null,
-    freeAgentMode,
-    parentAgentId,
-    projectId,
-  });
-
-  // Spawn the agent
+  // Tracked and announced to phones by the quick agent observer (see observeQuickAgents below).
   try {
-    await spawnAgent({
-      agentId,
-      projectPath: project.path,
+    const entry = await startQuickAgent({
+      project: { id: projectId, path: project.path },
       cwd,
-      kind: 'quick',
+      prompt,
       model,
-      mission: prompt,
-      systemPrompt,
       orchestrator,
       freeAgentMode,
+      systemPrompt,
       access,
-    });
-
-    tracked.status = 'running';
-
-    // Notify the desktop renderer so the agent appears in the UI
-    broadcastToAllWindows(IPC.ANNEX.AGENT_SPAWNED, {
-      id: agentId,
-      name,
-      kind: 'quick',
-      status: 'running',
-      prompt,
-      model: model || null,
-      orchestrator: orchestrator || null,
-      freeAgentMode,
       parentAgentId,
-      projectId,
-      headless: true,
     });
-
-    sendJson(res, 201, {
-      id: agentId,
-      name,
-      kind: 'quick',
-      status: 'starting',
-      prompt,
-      model: model || null,
-      orchestrator: orchestrator || null,
-      freeAgentMode,
-      parentAgentId,
-      projectId,
-    });
+    sendJson(res, 201, { ...quickAgentWireFields(entry), status: 'starting' });
   } catch (err) {
-    tracked.status = 'failed';
-    untrackQuickAgent(agentId);
     appLog('core:annex', 'error', 'Failed to spawn quick agent', {
-      meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+      meta: { error: err instanceof Error ? err.message : String(err) },
     });
     sendJson(res, 500, { error: 'spawn_failed' });
   }
@@ -2338,7 +2325,13 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
   // Pairing over plain HTTP is gone: it changes nothing, and says how to pair instead.
   if (method === 'POST' && url === '/pair') {
     recordPairServed(Date.now(), 'invalid_request');
-    req.resume();
+    // An older client sends the PIN here in the clear. That PIN is replaced, so it can't be used on TLS.
+    try {
+      const sent = parseJsonBody((await readCappedBody(req, PLAIN_PAIR_BODY_MAX_BYTES)).toString());
+      if (sent && typeof sent.pin === 'string' && comparePins(sent.pin, currentPin)) rotatePin('exposed');
+    } catch { /* telemetry-exempt: too large or unreadable; the answer is the same */
+      req.resume();
+    }
     sendJson(res, 410, {
       error: 'update_required',
       message: 'This computer only pairs over a secure connection. Update Clubhouse on the other device, then pair using this computer\'s pairing link.',
@@ -2349,13 +2342,55 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
   sendJson(res, 404, { error: 'not_found' });
 }
 
+/** An older client's pairing body is a few hundred bytes. */
+const PLAIN_PAIR_BODY_MAX_BYTES = 16 * 1024;
+
 const PAIR_MESSAGES = {
   invalid_pin: "That code doesn't match. Check the code in this computer's Annex settings and try again.",
   pin_expired: "That code has expired. Use the current code from this computer's Annex settings.",
   pin_used: "That code was already used. Show a new code in this computer's Annex settings and try again.",
   peer_already_paired: 'This device is already paired here with a different certificate. Remove it in Annex settings on this computer, then pair again.',
+  pairing_paused: "Pairing is paused after too many wrong codes. Allow pairing again in this computer's Annex settings.",
   client_certificate_required: 'Pairing needs the device certificate that matches its identity.',
 } as const;
+
+/**
+ * Who may use the phone routes: a controller (or an older entry with no role), or
+ * a phone that's an Annex Network member (#3062).
+ */
+function actsAsPhoneController(peer: AnnexPeer): boolean {
+  return !peer.role || peer.role === 'controller' || (peer.role === 'member' && peer.kind === 'phone');
+}
+
+/** Phones send `pairingMode`, and older ones a phone or tablet icon; Clubhouse desktops send neither. */
+function sentByPhone(body: Record<string, unknown>): boolean {
+  return body.pairingMode !== undefined || (typeof body.icon === 'string' && /phone|pad|tablet|mobile/i.test(body.icon));
+}
+
+/**
+ * The name to store for a device pairing with this machine (#2442). A device
+ * that sends this machine's own name (an older Clubhouse Go sent the desktop's
+ * name as its own) would show as "Controlled by <this Mac>", so it gets a
+ * neutral name instead, as does one that sends none. Phones send `pairingMode`.
+ */
+export function pairedDeviceAlias(
+  sent: unknown,
+  own: { alias?: string; deviceName?: string },
+  isPhone: boolean,
+  fingerprint = '',
+): string {
+  const fallback = isPhone ? 'Phone' : 'Computer';
+  const alias = typeof sent === 'string' ? sent.trim() : '';
+  if (!alias) return fallback;
+  const same = (name: string | undefined): boolean => !!name && name.trim().toLocaleLowerCase() === alias.toLocaleLowerCase();
+  if (same(own.alias) || same(own.deviceName)) {
+    appLog('core:annex', 'warn', "A pairing device sent this machine's own name; storing a neutral name", {
+      meta: { fingerprint, fallback },
+    });
+    return fallback;
+  }
+  return alias;
+}
 
 /**
  * POST /pair on the main TLS port. The client shows its certificate, whose CN is
@@ -2370,6 +2405,11 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     sendJson(res, status, body);
   };
   const source = req.socket.remoteAddress || 'unknown';
+  if (pairingPaused) {
+    req.resume();
+    pairReply(429, { error: 'pairing_locked', message: PAIR_MESSAGES.pairing_paused });
+    return;
+  }
   const bruteCheck = annexPeers.checkBruteForce(source);
 
   if (!bruteCheck.allowed) {
@@ -2381,6 +2421,11 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     }
     return;
   }
+  // Counted now, before the body is read, so requests held open together can't all pass the check.
+  // A successful pairing clears it; an answer that wasn't a guess (an expired or used PIN,
+  // a device already paired) takes it back, so a real device retrying isn't locked out.
+  annexPeers.recordFailedAttempt(source);
+  const notAGuess = (): void => annexPeers.forgiveFailedAttempt(source);
 
   let raw: string;
   try {
@@ -2391,6 +2436,14 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
     res.writeHead(400);
     res.end();
+    return;
+  }
+  // Checked again now the body is here: requests held open together all passed the first
+  // check. Nothing below awaits before a wrong PIN is counted, so at most PIN_FAILURE_LIMIT
+  // wrong PINs are ever checked.
+  if (pairingPaused) {
+    notAGuess();
+    pairReply(429, { error: 'pairing_locked', message: PAIR_MESSAGES.pairing_paused });
     return;
   }
   const body = parseJsonBody(raw);
@@ -2424,18 +2477,22 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
   dropUnconnectedPeers();
   const pinCheck = checkPin(pin);
   if (pinCheck.kind === 'wrong') {
-    annexPeers.recordFailedAttempt(source);
     pinFailures++;
-    if (pinFailures >= PIN_FAILURE_LIMIT) rotatePin('failures');
+    if (pinFailures >= PIN_FAILURE_LIMIT && !pairingPaused) {
+      pairingPaused = true;
+      appLog('core:annex', 'warn', 'Pairing paused after too many wrong PINs; it stays paused until allowed again in Settings');
+      broadcastToAllWindows(IPC.ANNEX.STATUS_CHANGED, getStatus());
+    }
     pairReply(409, { error: 'invalid_pin', message: PAIR_MESSAGES.invalid_pin }); return;
   }
-  if (pinCheck.kind === 'expired') { pairReply(410, { error: 'pin_expired', message: PAIR_MESSAGES.pin_expired }); return; }
+  if (pinCheck.kind === 'expired') { notAGuess(); pairReply(410, { error: 'pin_expired', message: PAIR_MESSAGES.pin_expired }); return; }
   if (pinCheck.kind === 'spent') {
     const { spent } = pinCheck;
     if (spent.fingerprint === fingerprint && spent.certFingerprint === certFingerprint && findPairedPeer(fingerprint)?.tlsCertificateFingerprint === certFingerprint) {
       annexPeers.recordSuccessfulAttempt(source);
       pairReply(200, spent.response); return;
     }
+    notAGuess();
     pairReply(410, { error: 'pin_used', message: PAIR_MESSAGES.pin_used }); return;
   }
 
@@ -2443,27 +2500,42 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
   const previous = findPairedPeer(fingerprint);
   const replacesPin = !!previous?.tlsCertificateFingerprint && previous.tlsCertificateFingerprint !== certFingerprint;
   if (replacesPin && !annexTls.verifyCertBinding(clientPublicKey, certDer, body.certBinding)) {
+    notAGuess();
     pairReply(409, { error: 'peer_already_paired', message: PAIR_MESSAGES.peer_already_paired }); return;
   }
 
   annexPeers.recordSuccessfulAttempt(source);
+  pinFailures = 0;
   const identity = annexIdentity.getOrCreateIdentity();
   const settings = annexSettings.getSettings();
   const now = new Date().toISOString();
+  // Pairing again (same identity) stores the name it sends now, like everything else it sends.
+  // A desktop (#3061) or a phone (#3062) with Annex Network on asks to join; with it on here too,
+  // it's a member. A session-only pairing never joins.
+  const joins = body.network === 1 && annexSettings.networkEnabled(settings) && !sessionOnly;
+  // Phones send pairingMode (the contract asks them to when joining); Clubhouse desktops never do.
+  const joinsAs: 'desktop' | 'phone' = body.pairingMode !== undefined || sentByPhone(body) ? 'phone' : 'desktop';
   const pairedPeer: AnnexPeer = {
     fingerprint,
     publicKey: clientPublicKey,
-    alias: typeof body.alias === 'string' && body.alias ? body.alias : 'Unknown',
+    alias: pairedDeviceAlias(body.alias, settings, sentByPhone(body), fingerprint),
     icon: typeof body.icon === 'string' && body.icon ? body.icon : 'computer',
     color: typeof body.color === 'string' && body.color ? body.color : 'indigo',
     pairedAt: now,
     lastSeen: now,
     tlsCertificateFingerprint: certFingerprint,
-    role: 'controller', // This peer initiated pairing → they control us
+    // It paired with us, so it controls us; as a network member each controls the other.
+    role: joins ? 'member' : 'controller',
+    ...(joins && { kind: joinsAs, addedBy: identity.fingerprint, tlsCertificatePem: annexTls.certificatePemFromDer(certDer) }),
   };
-  if (replacesPin) disconnectPeer(fingerprint);
-  if (sessionOnly) mobileSessionPeers.set(fingerprint, pairedPeer);
+  // The old certificate's sockets stop counting now (the pin no longer matches), and are cut.
+  if (replacesPin) {
+    closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
+    networkChannel.closeFor(fingerprint);
+  }
+  if (sessionOnly) { mobileSessionPeers.set(fingerprint, pairedPeer); devicesChanged(); }
   else { mobileSessionPeers.delete(fingerprint); annexPeers.addPeer(pairedPeer); }
+  if (joins && !sessionOnly) membership.noteLocalJoin(fingerprint);
   loggedRefusals.delete(fingerprint);
   broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeersForDisplay());
 
@@ -2478,11 +2550,14 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     icon: settings.icon,
     color: settings.color,
     fingerprint: identity.fingerprint,
+    // Only for a device that asked: answers to everyone else are unchanged.
+    ...(joins && { network: 1 }),
   };
   if (!pinReusable) {
     const pinDeadline = currentPinIssuedAt + PIN_TTL_MS;
     spentPins.push({ pin: currentPin, expiresAt: pinDeadline, fingerprint, certFingerprint, response });
-    if (!previous || replacesPin || !previous.tlsCertificateFingerprint) awaitingFirstConnection.set(fingerprint, pinDeadline);
+    // Only an entry this pairing created is dropped if it never connects; an existing one is never removed this way.
+    if (!previous) awaitingFirstConnection.set(fingerprint, pinDeadline);
     rotatePin('used');
   }
   pairReply(200, response);
@@ -3269,6 +3344,129 @@ async function handleMobileCanvasRoute(ctx: AnnexRouteContext, match: RegExpMatc
   sendJson(ctx.res, 200, { projectId, state: await readCanvasState(project.path) });
 }
 
+// ---------------------------------------------------------------------------
+// Annex Network for phones (#3062). Contract: docs/annex-network-phone.md.
+// ---------------------------------------------------------------------------
+
+const NETWORK_CAPABILITY = {
+  version: 1,
+  path: '/api/v1/mobile/network',
+  membersPath: '/api/v1/mobile/network/members',
+  event: 'network:changed',
+  pairField: 'network',
+} as const;
+
+/** A machine in the network as a phone sees it. */
+interface PhoneNetworkMember {
+  fingerprint: string;
+  /** Base64 Ed25519 public key; its hash is the fingerprint. */
+  publicKey: string;
+  name: string;
+  icon: string;
+  color: string;
+  kind: 'desktop' | 'phone';
+  /** Where to reach it (desktops). The pinned certificate decides whether an address is it. */
+  hosts: string[];
+  port?: number;
+  /** SHA-256 of its TLS certificate, colon-separated: pin it. */
+  certFingerprint: string;
+  /** Its certificate (PEM), so it can be vouched for to another member. Desktops only. */
+  certPem?: string;
+  /** Connected to this desktop now (this desktop itself is always online). */
+  online: boolean;
+  /** This is the desktop answering. */
+  self?: true;
+  joinedAt: string;
+}
+
+function isPhoneMember(fingerprint: string | undefined): boolean {
+  const peer = fingerprint ? findPairedPeer(fingerprint) : undefined;
+  return peer?.role === 'member' && peer.kind === 'phone';
+}
+
+/**
+ * The network as `principal` may see it. A phone that isn't a member (paired
+ * one-to-one, or Annex Network off) sees only this desktop, with `joined: false`.
+ */
+function networkForPhone(principal: string | undefined): { version: 1; joined: boolean; members: PhoneNetworkMember[]; removals: Array<{ fingerprint: string; removedAt: string }> } {
+  const joined = annexSettings.networkEnabled() && isPhoneMember(principal);
+  // Given who it's for, the view of a device that isn't a member is just this machine.
+  const view = membership.currentView(joined ? undefined : principal ?? '');
+  const selfFp = annexIdentity.getIdentity()?.fingerprint.toLowerCase();
+  const connected = new Set([...connectedPeerFingerprints(), ...networkChannel.connectedMembers()].map((f) => f.toLowerCase()));
+  const members = view.members.map((m): PhoneNetworkMember => {
+    const self = m.fingerprint.toLowerCase() === selfFp;
+    return {
+      fingerprint: m.fingerprint, publicKey: m.publicKey, name: m.name, icon: m.icon, color: m.color, kind: m.kind,
+      hosts: m.kind === 'desktop' ? m.hosts : [], ...(m.kind === 'desktop' && m.port && { port: m.port }),
+      certFingerprint: m.certFingerprint,
+      ...(m.kind === 'desktop' && m.certPem && { certPem: m.certPem }),
+      online: self || connected.has(m.fingerprint.toLowerCase()),
+      ...(self && { self: true as const }),
+      joinedAt: m.joinedAt,
+    };
+  });
+  return { version: 1, joined, members, removals: joined ? view.removals : [] };
+}
+
+async function handleMobileNetworkRoute(ctx: AnnexRouteContext): Promise<void> {
+  if (!ctx.mobilePrincipal) { sendJson(ctx.res, 403, { error: 'client_certificate_required' }); return; }
+  sendJson(ctx.res, 200, networkForPhone(ctx.mobilePrincipal));
+}
+
+/**
+ * A member phone vouches for devices: the network's members, to a desktop it
+ * just paired; or that desktop, to a member. Same checks as a member's word.
+ */
+async function handleMobileNetworkMembersRoute(ctx: AnnexRouteContext): Promise<void> {
+  if (!ctx.mobilePrincipal) { sendJson(ctx.res, 403, { error: 'client_certificate_required' }); return; }
+  let raw: string;
+  try { raw = (await readCappedBody(ctx.req, NETWORK_MESSAGE_MAX_BYTES)).toString(); } catch (err) {
+    if (isBodyTooLarge(err)) { refuseOversizedBody(ctx.req, ctx.res); return; }
+    sendJson(ctx.res, 400, { error: 'invalid_json' }); return;
+  }
+  // Checked once the body is here: the phone may have been removed meanwhile.
+  if (!annexSettings.networkEnabled() || !isPhoneMember(ctx.mobilePrincipal)) { sendJson(ctx.res, 403, { error: 'not_a_member', message: "This phone isn't in this computer's Annex Network. Pair it again with Annex Network on." }); return; }
+  let members: unknown;
+  try { members = (JSON.parse(raw) as { members?: unknown }).members; } catch { sendJson(ctx.res, 400, { error: 'invalid_json' }); return; }
+  // Members as GET /api/v1/mobile/network lists them are taken as they are: what this desktop says
+  // about its own connections (`online`, `self`) isn't part of the record.
+  if (Array.isArray(members)) {
+    members = members.map((m: unknown) => {
+      if (typeof m !== 'object' || m === null) return m;
+      const { online: _online, self: _self, ...record } = m as Record<string, unknown>;
+      return record;
+    });
+  }
+  const parsed = parseNetworkMessage(JSON.stringify({ v: NETWORK_PROTOCOL_VERSION, type: 'members', members, removals: [] }));
+  if ('reason' in parsed || parsed.message.type !== 'members') { sendJson(ctx.res, 400, { error: 'invalid_members' }); return; }
+  sendJson(ctx.res, 200, membership.vouchFromPhone(ctx.mobilePrincipal, parsed.message.members));
+}
+
+/** Sends a phone its network view on every connection it has open here, at once. */
+function tellPhoneNow(fingerprint: string): void {
+  const frame = JSON.stringify({ type: 'network:changed', payload: networkForPhone(fingerprint) });
+  for (const client of wss?.clients ?? []) {
+    if (client.readyState === WebSocket.OPEN && wsPeerFingerprints.get(client) === fingerprint) safeSend(client, frame);
+  }
+}
+
+let networkPushTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Tells each member phone connected here that the network changed, with its new view. */
+function pushNetworkToPhones(): void {
+  if (networkPushTimer) return;
+  networkPushTimer = setTimeout(() => {
+    networkPushTimer = null;
+    for (const client of wss?.clients ?? []) {
+      const fp = wsPeerFingerprints.get(client);
+      if (client.readyState !== WebSocket.OPEN || !socketStillPaired(client) || !isPhoneMember(fp)) continue;
+      safeSend(client, JSON.stringify({ type: 'network:changed', payload: networkForPhone(fp) }));
+    }
+  }, 100);
+  networkPushTimer.unref?.();
+}
+
 async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<void> {
   sendJson(ctx.res, 200, {
     version: 1, epoch: mobileCommands.epoch, controlAuth: 'mtls-pinned-client',
@@ -3283,6 +3481,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     providerControl: { version: 1, preview: 'agent.providerPreview', change: 'agent.providerChange', stoppedAcknowledgment: true, strictStart: true },
     // Every agent's live state in one read, for catching up after a reconnect.
     agentState: { version: 1, path: '/api/v1/mobile/agents/state' },
+    // Annex Network (#3062): the machines in this phone's network, and joining through the phone.
+    ...(annexSettings.networkEnabled() && { network: NETWORK_CAPABILITY }),
     helperRequests: { version: 1, snapshotField: 'helperRequests', commands: ['helper.approve', 'helper.decline'] },
     chatControls: { version: 1 },
     // The composer's / menu: a live chat snapshot's `slashCommands`, updated by `commands_available` events.
@@ -3296,6 +3496,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     finishedQuickAgents: { version: 1 },
     // A snapshot over its limit says what it left out in `snapshotTruncated`; these fetch canvases.
     snapshotTruncation: { version: 1, canvasPaths: { project: '/api/v1/mobile/canvas/{projectId}', app: '/api/v1/mobile/canvas' } },
+    // The whole of an event sent as a preview (one with `truncated`), and approving a large request after fetching it (#2731).
+    fullEvents: { version: 1, path: '/api/v1/mobile/agents/{agentId}/chat/events/{seq}?sessionId={sessionId}', maximumBytes: FULL_EVENT_MAX_BYTES, approvalField: 'reviewedDigest' },
     // Connect with `?iconRefs=1` and a snapshot carries `iconRefs` in place of image bytes.
     iconRefs: { version: 1, connectParam: 'iconRefs=1', clientParam: 'client=mobile', paths: { agent: '/api/v1/icons/agent/{agentId}?v={version}', project: '/api/v1/icons/project/{projectId}?v={version}' } },
     // Shells at the project root or an agent's worktree, and an agent's own PTY (#2476).
@@ -3310,6 +3512,15 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
 }
 
 /**
+ * The hosts this machine gives out (pairing link and phone routes): its own
+ * addresses, then the name the person says it's also reachable as, such as its
+ * tailnet name (#3058). A server bound to one address is only reachable there.
+ */
+function advertisedHosts(): string[] {
+  return withReachableAs(pairingHosts(os.networkInterfaces(), boundHost), boundHost, annexSettings.getSettings().reachableAs);
+}
+
+/**
  * Every address this desktop answers on (LAN first, then Tailscale), so a
  * paired phone can move between home Wi-Fi and Tailscale, and one paired before
  * Tailscale was set up learns it. Phones only connect over TLS and check the
@@ -3317,7 +3528,7 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
  */
 function phoneRoutes(): { routes?: { hosts: string[]; port: number } } {
   if (!tlsServer || !serverPort) return {};
-  const hosts = pairingHosts(os.networkInterfaces(), boundHost);
+  const hosts = advertisedHosts();
   return hosts.length > 0 ? { routes: { hosts, port: serverPort } } : {};
 }
 
@@ -3459,7 +3670,7 @@ async function handleMobileContentRoute(ctx: AnnexRouteContext, match: RegExpMat
   const authorized = () => {
     const peer = findPairedPeer(principal);
     return mobileCommands.epoch === epoch && !!peer && peer.tlsCertificateFingerprint === pin
-      && (!peer.role || peer.role === 'controller');
+      && actsAsPhoneController(peer);
   };
   try {
     const agentId = decodeURIComponent(match[1]);
@@ -3475,6 +3686,54 @@ async function handleMobileContentRoute(ctx: AnnexRouteContext, match: RegExpMat
   } catch {
     // telemetry-exempt: paths, bytes and credentials must never enter telemetry.
     sendJson(ctx.res, 404, { error: 'content_unavailable' });
+  }
+}
+
+/**
+ * The whole of one chat event, from the transcript (#2731), for an event a phone
+ * was sent only a preview of. Pinned mTLS like `/content`, rechecked after the read.
+ * Fetching a permission request records that this device has all of it, so it can approve it.
+ */
+async function handleMobileFullEventRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
+  const principal = ctx.mobilePrincipal;
+  if (!principal) { sendJson(ctx.res, 403, { error: 'client_certificate_required' }); return; }
+  const epoch = mobileCommands.epoch;
+  const pin = findPairedPeer(principal)?.tlsCertificateFingerprint;
+  const authorized = () => {
+    const peer = findPairedPeer(principal);
+    return mobileCommands.epoch === epoch && !!peer && peer.tlsCertificateFingerprint === pin
+      && actsAsPhoneController(peer);
+  };
+  if (!authorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
+  try {
+    let agentId: string;
+    try { agentId = decodeURIComponent(match[1]); } catch { sendJson(ctx.res, 400, { error: 'invalid_query' }); return; }
+    const seq = /^\d+$/.test(match[2]) ? Number(match[2]) : NaN;
+    const sessionId = new URL(ctx.url, 'http://localhost').searchParams.get('sessionId');
+    if (!Number.isSafeInteger(seq) || seq < 1 || !sessionId || sessionId.length > 256) {
+      sendJson(ctx.res, 400, { error: 'invalid_query' }); return;
+    }
+    const info = await findMobileAgent(agentId);
+    if ((!info || isDisposedAgent(info.config)) && !trackedQuickAgents.has(agentId)) {
+      sendJson(ctx.res, 404, { error: 'agent_not_found' }); return;
+    }
+    const runtime = getAgentRuntime(agentId);
+    const live = runtime?.kind === 'chat' && runtime.isRunning() && runtime.getSessionId?.() === sessionId;
+    const events = live ? (await runtime.readTranscript()).events ?? [] : await readChatTranscript(agentId, { sessionId });
+    const event = findFullEvent(events, sessionId, seq);
+    if (!authorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
+    if (!event || event.agentId !== agentId) { sendJson(ctx.res, 404, { error: 'event_not_found' }); return; }
+    const body = JSON.stringify({ version: 1, agentId, sessionId, seq, digest: fullEventDigest(event), event });
+    const bytes = Buffer.byteLength(body);
+    if (bytes > FULL_EVENT_MAX_BYTES) {
+      sendJson(ctx.res, 413, { error: 'event_too_large', bytes, maximumBytes: FULL_EVENT_MAX_BYTES }); return;
+    }
+    if (event.type === 'permission_request') rememberReviewed(principal, epoch, event);
+    ctx.res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': bytes, 'Cache-Control': 'no-store' });
+    ctx.res.end(body);
+  } catch {
+    // telemetry-exempt: transcript content never leaves in a log; the caller gets a bounded error.
+    sendJson(ctx.res, 500, { error: 'event_unavailable' });
   }
 }
 
@@ -3568,7 +3827,8 @@ async function runMobileCommand(command: MobileCommand, assertAuthorized: () => 
     return executeChatCommand(command, runtime, async () => !await isRevertRunning(command.agentId), () => {
       assertAuthorized();
       if (getAgentRuntime(command.agentId) !== runtime) throw new MobileControlError('session_mismatch');
-    }, (ids, caps) => mobileAttachments.resolveFor(principal, command.agentId, ids, caps));
+    }, (ids, caps) => mobileAttachments.resolveFor(principal, command.agentId, ids, caps),
+    (request, quoted) => wasReviewed(principal, mobileCommands.epoch, request, quoted));
   }
   if (command.type === 'project.setPinned' || command.type === 'project.setInactive') {
     const project = await findProjectById(command.projectId);
@@ -3764,7 +4024,7 @@ async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
     const input: unknown = JSON.parse((await readCappedBody(ctx.req, MAX_BODY_SIZE)).toString());
     // A peer can be revoked while its body is streaming; recheck before execution.
     const peer = findPairedPeer(ctx.mobilePrincipal);
-    const principal = peer && (peer.role === 'controller' || !peer.role)
+    const principal = peer && actsAsPhoneController(peer)
       && peer.tlsCertificateFingerprint === annexTls.extractPeerCertificateFingerprint(ctx.req.socket as tls.TLSSocket)
       ? ctx.mobilePrincipal : undefined;
     const epoch = mobileCommands.epoch;
@@ -3772,7 +4032,7 @@ async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
     const assertAuthorized = () => {
       const current = principal ? findPairedPeer(principal) : undefined;
       if (mobileCommands.epoch !== epoch || !current || current.tlsCertificateFingerprint !== pin
-        || (current.role && current.role !== 'controller')) throw new MobileControlError('authorization_revoked', 403);
+        || !actsAsPhoneController(current)) throw new MobileControlError('authorization_revoked', 403);
     };
     const response = await mobileCommands.execute(principal, input, (command) => runMobileCommand(command, assertAuthorized, principal!));
     logRefusedMobileCommand(response, input);
@@ -3809,7 +4069,7 @@ async function handleMobileAttachmentRoute(ctx: AnnexRouteContext, match: RegExp
   const authorized = () => {
     const peer = findPairedPeer(principal);
     return mobileCommands.epoch === epoch && !!peer && peer.tlsCertificateFingerprint === pin
-      && (!peer.role || peer.role === 'controller');
+      && actsAsPhoneController(peer);
   };
   let bodyRead = false;
   const refuse = (status: number, error: string, retryAfterMs?: number) => {
@@ -3849,12 +4109,15 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/attachments$/, handler: handleMobileAttachmentRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/content(\?.*)?$/, handler: handleMobileContentRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/capabilities$/, handler: handleMobileCapabilitiesRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/network$/, handler: handleMobileNetworkRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/mobile\/network\/members$/, handler: handleMobileNetworkMembersRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas$/, handler: handleMobileCanvasRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas\/([^/]+)$/, handler: handleMobileCanvasRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/mobile\/pairing$/, handler: handleMobilePairingDeleteRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/state$/, handler: handleMobileAgentStateRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat(\?.*)?$/, handler: handleMobileChatRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat\/sessions$/, handler: handleMobileChatSessionsRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/chat\/events\/([^/?]+)(\?.*)?$/, handler: handleMobileFullEventRoute },
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/commands$/, handler: handleMobileCommandRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/projects\/([^/]+)\/create-options$/, handler: handleMobileCreateOptionsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/settings$/, handler: handleMobileAgentSettingsRoute },
@@ -4029,7 +4292,23 @@ function safeSend(ws: WebSocket, data: string): boolean {
 const wsTelemetryHandshakes = new WeakMap<WebSocket, ReturnType<typeof telemetryHelloAck>>();
 const wsTelemetryPeerServices = new WeakMap<WebSocket, string>();
 
+/**
+ * Whether a WebSocket's messages still count: it is open, and its peer is still
+ * paired as a controller with the certificate the socket authenticated with. A
+ * socket closing after Remove (or a pin change) is never acted on, even if the
+ * other end ignores the close.
+ */
+function socketStillPaired(ws: WebSocket): boolean {
+  if (ws.readyState !== WebSocket.OPEN) return false;
+  if (wsAuthTypes.get(ws) !== 'mtls') return true; // Never mTLS, so control is refused below anyway.
+  const fingerprint = wsPeerFingerprints.get(ws);
+  const pin = wsPeerPins.get(ws);
+  const peer = fingerprint ? findPairedPeer(fingerprint) : undefined;
+  return !!peer && !!pin && annexPeers.controlsThisMachine(peer) && peer.tlsCertificateFingerprint === pin;
+}
+
 function handleWsMessage(ws: WebSocket, data: string): void {
+  if (!socketStillPaired(ws)) return;
   // `tc`: optional W3C traceparent from a controller with telemetry on (spec §7).
   let msg: { type?: string; payload?: Record<string, unknown>; since?: number; epoch?: unknown; tc?: unknown };
   try {
@@ -4311,39 +4590,18 @@ async function handleSpawnQuickAgentWs(
 ): Promise<void> {
   const prompt = payload.prompt as string;
   const parentAgentId = payload.parentAgentId as string | null;
-  const agentId = generateQuickAgentId();
-  const name = generateQuickName();
-  const model = payload.model as string | undefined;
-  const orchestrator = (payload.orchestrator as string) || project.orchestrator || 'claude-code';
-  const freeAgentMode = (payload.freeAgentMode as boolean) ?? false;
-
-  const tracked: TrackedQuickAgent = {
-    id: agentId, name, kind: 'quick', status: 'starting', prompt,
-    model: model || null, orchestrator, freeAgentMode,
-    parentAgentId: parentAgentId || null, projectId: project.id, spawnedAt: Date.now(),
-  };
-  setTrackedQuickAgent(agentId, tracked);
-
-  broadcastAndBuffer('agent:spawned', {
-    id: agentId, name, kind: 'quick', status: 'starting', prompt,
-    model: model || null, orchestrator, freeAgentMode, parentAgentId, projectId: project.id,
-  });
-
   try {
-    await spawnAgent({
-      agentId, projectPath: project.path, cwd: project.path,
-      kind: 'quick', model, mission: prompt, orchestrator, freeAgentMode,
+    const entry = await startQuickAgent({
+      project: { id: project.id, path: project.path },
+      prompt,
+      model: payload.model as string | undefined,
+      orchestrator: (payload.orchestrator as string) || project.orchestrator || 'claude-code',
+      freeAgentMode: (payload.freeAgentMode as boolean) ?? false,
+      parentAgentId,
     });
-    tracked.status = 'running';
-    broadcastToAllWindows(IPC.ANNEX.AGENT_SPAWNED, {
-      id: agentId, name, kind: 'quick', status: 'running', prompt,
-      model: model || null, orchestrator, freeAgentMode,
-      parentAgentId, projectId: project.id, headless: true,
-    });
-    safeSend(ws, JSON.stringify({ type: 'agent:spawn:ack', payload: { id: agentId, name, status: 'starting' } }));
+    safeSend(ws, JSON.stringify({ type: 'agent:spawn:ack', payload: { id: entry.id, name: entry.name, status: 'starting' } }));
   } catch {
-    tracked.status = 'failed';
-    untrackQuickAgent(agentId);
+    // telemetry-exempt: the controller is told the start failed
     safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'spawn_failed' } }));
   }
 }
@@ -4453,6 +4711,10 @@ async function handleWakeAgentWs(
 // Server lifecycle
 // ---------------------------------------------------------------------------
 
+/** Time allowed for a request's headers, and for the whole request including its body (a phone image upload included). */
+const ANNEX_HEADERS_TIMEOUT_MS = 20_000;
+const ANNEX_REQUEST_TIMEOUT_MS = 60_000;
+
 const HTTP_STATUS_TEXT: Record<number, string> = { 401: 'Unauthorized', 403: 'Forbidden', 503: 'Service Unavailable' };
 
 /** Answers a WebSocket upgrade with a JSON error, the same body REST gives, then closes. */
@@ -4500,6 +4762,9 @@ export function start(): void {
   try {
     tlsOptions = annexTls.createTlsServerOptions(identity);
     tlsServer = https.createServer(tlsOptions, handleRequest);
+    // Bound how long a request may take to arrive, so none can be held open indefinitely.
+    tlsServer.headersTimeout = ANNEX_HEADERS_TIMEOUT_MS;
+    tlsServer.requestTimeout = ANNEX_REQUEST_TIMEOUT_MS;
   } catch (err) {
     appLog('core:annex', 'error', 'TLS server creation failed; Annex will not serve anything until it can start securely', {
       meta: { error: err instanceof Error ? err.message : String(err) },
@@ -4524,7 +4789,8 @@ export function start(): void {
     }
     const urlObj = new URL(req.url || '/', `http://${req.headers.host}`);
 
-    if (urlObj.pathname !== '/ws') {
+    const forNetwork = networkChannel.isNetworkUpgrade(urlObj.pathname);
+    if (urlObj.pathname !== '/ws' && !forNetwork) {
       socket.destroy();
       return;
     }
@@ -4538,6 +4804,13 @@ export function start(): void {
       });
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
+      return;
+    }
+
+    // The Annex Network channel (#3060): membership only, from a pinned peer of either role.
+    if (forNetwork) {
+      // A pairing that connects here first counts as connected, like one on /ws.
+      networkChannel.handleNetworkUpgrade(req, socket, head, (fp) => { awaitingFirstConnection.delete(fp); });
       return;
     }
 
@@ -4562,6 +4835,7 @@ export function start(): void {
       const clientKind = urlObj.searchParams.get('client');
       if (clientKind === 'mobile' || clientKind === 'desktop') wsClientKinds.set(ws, clientKind);
       wsPeerFingerprints.set(ws, peerFingerprintForWs);
+      wsPeerPins.set(ws, auth.peer.tlsCertificateFingerprint!);
       wss!.emit('connection', ws, req);
     });
   });
@@ -4585,9 +4859,14 @@ export function start(): void {
 
     // Broadcast lock state immediately when mTLS controller connects — before the async
     // buildSnapshot() so the satellite UI locks without waiting for snapshot I/O to complete.
-    if (authType === 'mtls') {
+    // A fellow Annex Network member doesn't lock this screen (#3061): members connect to
+    // each other all the time, and each is used as one machine.
+    const lockPeer = authType === 'mtls' ? findPairedPeer(wsPeerFingerprints.get(ws) ?? '') : undefined;
+    // A phone that's a member is still a phone in someone's hand: it locks, as before (#3062).
+    if (authType === 'mtls' && (lockPeer?.role !== 'member' || lockPeer.kind === 'phone')) lockingSockets.add(ws);
+    if (lockingSockets.has(ws)) {
       const fingerprint = wsPeerFingerprints.get(ws);
-      const peer = fingerprint ? findPairedPeer(fingerprint) : null;
+      const peer = lockPeer;
       // Track the latest connecting controller as lock owner.
       sessionPauseOwner = fingerprint || null;
       broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
@@ -4610,10 +4889,10 @@ export function start(): void {
       });
       reportClientCounts();
       closeShellsFor(ws);
-      if (authType === 'mtls') {
-        // Check if any other mTLS connections are still open
+      if (lockingSockets.has(ws)) {
+        // Check if any other locking connections are still open
         const hasMtlsClient = Array.from(wss?.clients || []).some(
-          (client) => client !== ws && client.readyState === WebSocket.OPEN && wsAuthTypes.get(client) === 'mtls',
+          (client) => client !== ws && client.readyState === WebSocket.OPEN && lockingSockets.has(client),
         );
         // Only release the lock when no mTLS clients remain — a disconnecting
         // controller that "owned" the lock must not unlock while others are
@@ -4817,7 +5096,13 @@ export function start(): void {
     }
     try {
       appLog('core:annex', 'info', 'Creating Bonjour instance for mDNS advertisement...');
-      bonjour = new Bonjour();
+      unpublishBonjour();
+      // Socket errors are logged, never thrown (#1921). One that can't start is replaced after a pause.
+      bonjour = createBonjour('advertise', ({ fatal }) => {
+        if (!fatal || republishTimer || !republishBonjour) return;
+        republishTimer = setTimeout(() => { republishTimer = null; republishBonjour?.(); }, MDNS_RESTART_DELAY_MS);
+        republishTimer.unref?.();
+      });
       const settings = annexSettings.getSettings();
       const serviceConfig = {
         name: settings.deviceName,
@@ -4858,6 +5143,12 @@ export function start(): void {
     }
   }
 
+  republishBonjour = publishBonjour;
+  unsubMembership?.();
+  unsubMembership = membership.onMembershipChanged(pushNetworkToPhones);
+  // Where this machine can be reached, for its Annex Network hello.
+  networkChannel.setReachProvider(() => ({ hosts: advertisedHosts(), port: serverPort }));
+
   // Reuse last launch's ports so a paired phone can reconnect without re-pairing.
   const lastPorts = annexSettings.getLastPorts();
   const pairing = pairingServer;
@@ -4889,21 +5180,63 @@ export function start(): void {
   });
 }
 
+function unpublishBonjour(): void {
+  if (bonjourService) {
+    try { bonjourService.stop?.(); } catch (err) {
+      appLog('core:annex', 'debug', 'Failed to stop Bonjour service', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+    bonjourService = null;
+  }
+  if (bonjour) {
+    try { bonjour.destroy(); } catch (err) {
+      appLog('core:annex', 'debug', 'Failed to destroy Bonjour instance', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+    bonjour = null;
+  }
+}
+
+/**
+ * Publishes the mDNS advertisement again, for example after the machine wakes or
+ * changes network. Does nothing while the server isn't running or advertising.
+ */
+export function republishAdvertisement(): void {
+  if (republishTimer) clearTimeout(republishTimer);
+  republishTimer = null;
+  republishBonjour?.();
+}
+
 /** A ListenFn for `server`. On error the server is closed, so it can listen again. */
 function listenServer(server: http.Server | https.Server, host: string): ListenFn {
-  return (port) => new Promise((resolve, reject) => {
+  const listenOn = (port: number, address: string) => new Promise<number>((resolve, reject) => {
     const onError = (err: Error) => {
       server.close();
       reject(err);
     };
     server.once('error', onError);
-    server.listen(port, host, () => {
+    server.listen(port, address, () => {
       server.removeListener('error', onError);
       const addr = server.address();
       if (addr && typeof addr === 'object') resolve(addr.port);
       else reject(new Error('Annex server has no address after listen'));
     });
   });
+  // Every interface means IPv6 too (#3058): '::' takes IPv4 and IPv6 alike. Where the
+  // system has no IPv6, fall back to IPv4 only.
+  if (host !== '0.0.0.0') return (port) => listenOn(port, host);
+  return async (port) => {
+    try {
+      return await listenOn(port, '::');
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException | null)?.code;
+      if (code !== 'EAFNOSUPPORT' && code !== 'EADDRNOTAVAIL' && code !== 'EINVAL') throw err;
+      appLog('core:annex', 'info', 'No IPv6 here; Annex listens on IPv4 only', { meta: { code } });
+      return listenOn(port, host);
+    }
+  };
 }
 
 /** Persist the bound ports for the next launch's listenPreferringPort. */
@@ -4971,23 +5304,17 @@ export function stop(): void {
     wss = null;
   }
 
+  networkChannel.setReachProvider(null);
+  unsubMembership?.();
+  unsubMembership = null;
+  // Only the channels this server accepted; ones this machine's client opened are its own.
+  networkChannel.closeAll('in');
+
   // Un-publish mDNS
-  if (bonjourService) {
-    try { bonjourService.stop?.(); } catch (err) {
-      appLog('core:annex', 'debug', 'Failed to stop Bonjour service during shutdown', {
-        meta: { error: err instanceof Error ? err.message : String(err) },
-      });
-    }
-    bonjourService = null;
-  }
-  if (bonjour) {
-    try { bonjour.destroy(); } catch (err) {
-      appLog('core:annex', 'debug', 'Failed to destroy Bonjour instance during shutdown', {
-        meta: { error: err instanceof Error ? err.message : String(err) },
-      });
-    }
-    bonjour = null;
-  }
+  republishBonjour = null;
+  if (republishTimer) clearTimeout(republishTimer);
+  republishTimer = null;
+  unpublishBonjour();
 
   // Close servers
   if (tlsServer) {
@@ -5008,7 +5335,9 @@ export function stop(): void {
   boundHost = '';
   currentPin = '';
   currentPinIssuedAt = 0;
+  // Turning Annex off and on in Settings also reopens pairing.
   pinFailures = 0;
+  pairingPaused = false;
   if (pinRotationTimer) clearTimeout(pinRotationTimer);
   pinRotationTimer = null;
   spentPins.length = 0;
@@ -5025,13 +5354,14 @@ export function stop(): void {
   mobileCommands.reset();
   mobileAttachments.reset();
   mobileSessionPeers.clear();
+  devicesChanged();
   // Starts already accepted may still be awaiting a driver; stop them on completion.
   for (const starting of mobileStartingAgents.values()) starting.cancelled = true;
 
   appLog('core:annex', 'info', 'Annex server stopped');
 }
 
-export function getStatus(): AnnexStatus & { pairingPort: number; tlsEnabled: boolean } {
+export function getStatus(): AnnexStatus & { pairingPort: number; tlsEnabled: boolean; pairingPaused: boolean } {
   const settings = annexSettings.getSettings();
   const identity = annexIdentity.getPublicIdentity();
   const certFingerprint = tlsServer ? annexTls.getCertificateFingerprint() : undefined;
@@ -5046,6 +5376,7 @@ export function getStatus(): AnnexStatus & { pairingPort: number; tlsEnabled: bo
     color: settings.color,
     pairingPort,
     tlsEnabled: !!tlsServer,
+    pairingPaused,
     ...(certFingerprint ? { tlsCertificateFingerprint: certFingerprint } : {}),
     ...pairingLink(identity?.fingerprint || '', certFingerprint, settings.alias || settings.deviceName),
   };
@@ -5058,7 +5389,7 @@ export function getStatus(): AnnexStatus & { pairingPort: number; tlsEnabled: bo
  */
 function pairingLink(fingerprint: string, certFingerprint: string | undefined, name: string): Pick<AnnexStatus, 'pairingUrl' | 'pairingHosts'> {
   if (!tlsServer || !certFingerprint || !serverPort) return {};
-  const hosts = pairingHosts(os.networkInterfaces(), boundHost);
+  const hosts = advertisedHosts();
   const url = buildPairingUrl({ hosts, port: serverPort, fingerprint, certFingerprint, pin: currentPin, name });
   return url ? { pairingUrl: url, pairingHosts: hosts } : {};
 }
@@ -5484,12 +5815,23 @@ export function notifySessionPause(paused: boolean): void {
   broadcastWs({ type: paused ? 'session:paused' : 'session:resumed', payload: { paused } });
 }
 
+/** Reopens pairing after it was paused for wrong PINs (Settings), with a fresh PIN. */
+export function allowPairingAgain(): void {
+  pairingPaused = false;
+  pinFailures = 0;
+  annexPeers.unlockPairing();
+  if (currentPin) rotatePin('regenerated', false);
+}
+
 /** A new PIN from Settings. Paired devices stay connected: they authenticate by certificate, not PIN. */
 export function regeneratePin(): void {
   rotatePin('regenerated', false);
 }
 
-function closePeerSockets(fingerprint: string, code: number, reason: string): void {
+/** Grace for a close frame to reach a well-behaved client before the socket is cut. */
+const REVOKED_SOCKET_GRACE_MS = 250;
+
+function closePeerSockets(fingerprint: string, code: number, reason: string, hard = false): void {
   if (!wss) return;
   for (const client of wss.clients) {
     if (wsPeerFingerprints.get(client) !== fingerprint) continue;
@@ -5498,6 +5840,13 @@ function closePeerSockets(fingerprint: string, code: number, reason: string): vo
         meta: { fingerprint, error: err instanceof Error ? err.message : String(err) },
       });
     }
+    // Revoked: cut the socket rather than wait for the other end to finish the close.
+    if (hard) {
+      const timer = setTimeout(() => {
+        try { client.terminate(); } catch { /* telemetry-exempt: the socket is already gone */ }
+      }, REVOKED_SOCKET_GRACE_MS);
+      timer.unref?.();
+    }
   }
 }
 
@@ -5505,6 +5854,7 @@ function closePeerSockets(fingerprint: string, code: number, reason: string): vo
 export function disconnectPeer(fingerprint: string): void {
   appLog('core:annex', 'info', `disconnectPeer called`, { meta: { fingerprint } });
   closePeerSockets(fingerprint, 1000, 'disconnected_by_satellite');
+  networkChannel.closeFor(fingerprint, 'in');
 }
 
 /** Close code for a peer whose pairing was removed; reconnecting gets 401 peer_not_paired. */
@@ -5515,13 +5865,32 @@ export const PEER_REVOKED_CLOSE_CODE = 4401;
  * is refused with 401 peer_not_paired, then its open sockets close.
  */
 export function revokePeer(fingerprint: string): boolean {
+  // A network member is removed everywhere: every member hears before it's cut off (#3061).
+  membership.noteLocalRemoval(fingerprint);
+  // A removed phone hears it on its open connections now, before they're cut: its own fingerprint in removals (#3062).
+  if (isPhoneMember(fingerprint)) tellPhoneNow(fingerprint);
   const wasSession = mobileSessionPeers.delete(fingerprint);
+  if (wasSession) devicesChanged();
   const removed = annexPeers.removePeer(fingerprint) || wasSession;
   awaitingFirstConnection.delete(fingerprint);
   loggedRefusals.delete(fingerprint);
-  closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired');
+  // What it fetched whole was for this pairing: pairing again starts over (#2731).
+  forgetReviewedBy(fingerprint);
+  closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
+  networkChannel.closeFor(fingerprint);
   appLog('core:annex', 'info', 'Peer pairing removed', { meta: { fingerprint, removed } });
   return removed;
+}
+
+/**
+ * Cuts a peer's open sockets if it is no longer a paired controller here, for
+ * example after this machine paired with it as a satellite, or forgot it.
+ */
+export function closeSocketsUnlessController(fingerprint: string): void {
+  const peer = findPairedPeer(fingerprint);
+  if (annexPeers.controlsThisMachine(peer) && peer!.tlsCertificateFingerprint) return;
+  awaitingFirstConnection.delete(fingerprint);
+  closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
 }
 
 /** Remove every pairing and close every peer connection. */
@@ -5531,7 +5900,26 @@ export function revokeAllPeers(): void {
   annexPeers.removeAllPeers();
   awaitingFirstConnection.clear();
   loggedRefusals.clear();
-  for (const fingerprint of fingerprints) closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired');
+  for (const fingerprint of fingerprints) {
+    closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
+    networkChannel.closeFor(fingerprint);
+  }
+}
+
+/** Identities with an open, still-paired WebSocket to this server: the devices connected to this machine. */
+export function connectedPeerFingerprints(): Set<string> {
+  const connected = new Set<string>();
+  for (const client of wss?.clients ?? []) {
+    if (client.readyState !== WebSocket.OPEN || !socketStillPaired(client)) continue;
+    const fingerprint = wsPeerFingerprints.get(client);
+    if (fingerprint) connected.add(fingerprint);
+  }
+  return connected;
+}
+
+/** Phones paired for this session only: listed with the other devices, and gone when Annex stops. */
+export function sessionOnlyPeers(): AnnexPeer[] {
+  return [...mobileSessionPeers.values()];
 }
 
 /** Get the auth type of a WebSocket connection. Used by protocol V2 to gate control messages. */
@@ -5571,6 +5959,14 @@ export const _testing = {
   wsAlive,
   wsAuthTypes,
   wsPeerFingerprints,
+  wsPeerPins,
+  /** Tags a test socket as accepted for `fingerprint` with certificate `pin`, as an upgrade would. */
+  registerPeerSocket(ws: WebSocket, fingerprint: string, pin: string) {
+    wsAuthTypes.set(ws, 'mtls');
+    wsPeerFingerprints.set(ws, fingerprint);
+    wsPeerPins.set(ws, pin);
+  },
+  socketStillPaired,
   shellOwners,
   get wss() { return wss; },
   get heartbeatInterval() { return heartbeatInterval; },

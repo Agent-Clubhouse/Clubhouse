@@ -11,6 +11,7 @@ import { useProjectStore } from '../../stores/projectStore';
 beforeEach(() => {
   useUIStore.setState({ explorerTab: 'settings', settingsContext: 'app', settingsSubPage: 'about' });
   useProjectStore.setState({ projects: [{ id: 'p1', name: 'Clubhouse', path: '/ch' }, { id: 'p2', name: 'Goobers', path: '/gb' }] as never });
+  useChromeStore.setState({ pinnedProjectIds: [], projectSort: 'manual', inactiveProjectIds: [], projectActivity: {} });
 });
 
 const visibleProjectOrder = () => [...screen.getByTestId('settings-nav')
@@ -41,18 +42,33 @@ describe('SettingsNav', () => {
     expect(useUIStore.getState()).toMatchObject({ settingsContext: 'p2', settingsSubPage: 'notifications' });
     expect(screen.getByTestId('settings-nav-project-page-notifications')).toHaveAttribute('aria-current', 'page');
   });
-  it('does not reshuffle for display-name edits, Recent mode, pinned/idle groups or running agents', () => {
+  it('does not reshuffle for display-name edits, Recent mode, the idle group or running agents', () => {
     useUIStore.setState({ settingsContext: 'p2', settingsSubPage: 'project' });
     render(<SettingsNav />);
     act(() => {
       useProjectStore.setState((state) => ({ projects: state.projects.map((project) => ({ ...project, displayName: project.id === 'p1' ? 'Zulu' : 'Alpha' })) }));
-      useChromeStore.setState({ projectSort: 'recent', pinnedProjectIds: ['p2'], inactiveProjectIds: ['p1'], projectActivity: { p2: Date.now(), p1: 1 } });
+      useChromeStore.setState({ projectSort: 'recent', inactiveProjectIds: ['p1'], projectActivity: { p2: Date.now(), p1: 1 } });
       useAgentStore.setState({ agents: { a: { id: 'a', projectId: 'p1', name: 'a', kind: 'durable', status: 'running', color: 'blue' } } });
     });
     expect(visibleProjectOrder()).toEqual(['p1', 'p2']);
     expect(screen.getByTestId('settings-nav-project-p2')).toHaveTextContent('Alpha');
     expect(screen.getByTestId('settings-nav-project-p2')).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByText(/Saved manual order/)).toBeVisible();
+    expect(screen.getByText(/Pinned first, then your saved order/)).toBeVisible();
+  });
+
+  // #2853: the sidebar's manual order puts pinned projects first, and so does this list.
+  it('lists pinned projects first, in saved order, as the sidebar does, keeping the selected scope', () => {
+    useProjectStore.setState((state) => ({ projects: [...state.projects, { id: 'p3', name: 'Third', path: '/third' }] as never }));
+    useUIStore.setState({ settingsContext: 'p1', settingsSubPage: 'notifications' });
+    render(<SettingsNav />);
+    expect(visibleProjectOrder()).toEqual(['p1', 'p2', 'p3']);
+    act(() => useChromeStore.setState({ pinnedProjectIds: ['p3', 'p2'] }));
+    // Pinned keep their saved order between themselves, as in the sidebar.
+    expect(visibleProjectOrder()).toEqual(['p2', 'p3', 'p1']);
+    expect(screen.getByTestId('settings-nav-project-p1')).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('settings-nav-project-page-notifications')).toHaveAttribute('aria-current', 'page');
+    act(() => useChromeStore.setState({ pinnedProjectIds: [] }));
+    expect(visibleProjectOrder()).toEqual(['p1', 'p2', 'p3']);
   });
   it('appends newly registered projects and removes only the closed entry, keeping selected scope', async () => {
     useUIStore.setState({ settingsContext: 'p2', settingsSubPage: 'plugins' });

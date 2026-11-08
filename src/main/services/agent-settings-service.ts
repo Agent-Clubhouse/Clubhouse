@@ -3,6 +3,7 @@ import { replaceWildcards, type WildcardContext } from '../../shared/wildcard-re
 import { auditChanges, projectAuditTarget, type AuditKeyFormat } from './settings-audit';
 import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import * as fsp from 'fs/promises';
+import { constants as fsConstants } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { McpServerEntry, SkillEntry, AgentTemplateEntry, PermissionsConfig, ProjectAgentDefaults, LaunchWrapperConfig, McpCatalogEntry, WrapperCatalogSnapshot } from '../../shared/types';
@@ -13,7 +14,7 @@ import { validateCommandPrefix } from './command-prefix-validation';
 const LOG_NS = 'core:agent-settings';
 
 import { UnsupportedPermissionRulesError } from './permission-rules-error';
-import { skillsFolderOf } from '../../shared/skills-folder';
+import { MANAGED_SKILLS_MANIFEST, MAX_LISTED_SKILLS, skillsFolderOf } from '../../shared/skills-folder';
 export { UnsupportedPermissionRulesError } from './permission-rules-error';
 
 /** Check whether an error is a filesystem "file not found" (ENOENT). */
@@ -120,16 +121,74 @@ export async function readMcpConfig(worktreePath: string, conv?: SettingsConvent
   return [...projectServers, ...uniqueGlobal];
 }
 
+export { MAX_LISTED_SKILLS };
+/** How much of a SKILL.md is read for its front matter `name`. */
+const FRONT_MATTER_BYTES = 8192;
+
+/** The folder names Clubhouse's skills manifest lists, or none. Read only. */
+async function managedSkillFolders(skillsDir: string): Promise<Set<string>> {
+  try {
+    const raw = JSON.parse(await fsp.readFile(path.join(skillsDir, MANAGED_SKILLS_MANIFEST), 'utf-8')) as { skills?: unknown };
+    return new Set(Array.isArray(raw?.skills) ? raw.skills.filter((s): s is string => typeof s === 'string') : []);
+  } catch {
+    // telemetry-exempt: no manifest (or an unreadable one) means Clubhouse delivered none of these.
+    return new Set();
+  }
+}
+
+/** The `name` in front matter text, or undefined. Quoted or bare, without a trailing comment. */
+export function frontMatterNameOf(text: string): string | undefined {
+  const m = /^---\n([\s\S]*?)\n---/.exec(text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n'));
+  const raw = m && /^name:[ \t]*(.*)$/m.exec(m[1])?.[1].trim();
+  if (!raw) return undefined;
+  const quoted = /^"([^"]*)"$/.exec(raw) ?? /^'([^']*)'$/.exec(raw);
+  const name = quoted ? quoted[1] : raw.replace(/[ \t]+#.*$/, '');
+  return name.trim() || undefined;
+}
+
+/**
+ * The front matter `name` of a SKILL.md, from its first few KB. Reads text;
+ * never runs anything, and reads only a regular file, so a link out of the
+ * folder (or to a pipe) isn't followed.
+ */
+async function frontMatterName(skillPath: string): Promise<string | undefined> {
+  let handle: Awaited<ReturnType<typeof fsp.open>> | undefined;
+  try {
+    const file = path.join(skillPath, 'SKILL.md');
+    if (!(await fsp.lstat(file)).isFile()) return undefined;
+    // No following a link swapped in after the check, and no waiting on a pipe (where the platform has the flags).
+    handle = await fsp.open(file, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0));
+    const buf = Buffer.alloc(FRONT_MATTER_BYTES);
+    const { bytesRead } = await handle.read(buf, 0, FRONT_MATTER_BYTES, 0);
+    return frontMatterNameOf(buf.subarray(0, bytesRead).toString('utf-8'));
+  } catch {
+    // telemetry-exempt: no SKILL.md, or not readable: the folder name stands.
+    return undefined;
+  } finally {
+    await handle?.close().catch((): undefined => undefined);
+  }
+}
+
+/**
+ * The skill folders in an agent's provider folder (#2929: "found on disk").
+ * Read only and bounded: it lists folders, reads Clubhouse's manifest and the
+ * start of each SKILL.md, and runs nothing. Finding a folder here never means
+ * the provider loaded it.
+ */
 export async function listSkills(worktreePath: string, conv?: SettingsConventions): Promise<SkillEntry[]> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   const skillsDir = path.join(worktreePath, skillsFolderOf(c));
   try {
     const entries = await fsp.readdir(skillsDir, { withFileTypes: true });
-    const dirs = entries.filter((e) => e.isDirectory());
+    const all = entries.filter((e) => e.isDirectory()).sort((a, b) => a.name.localeCompare(b.name));
+    if (all.length > MAX_LISTED_SKILLS) appLog(LOG_NS, 'info', 'Skills list cut to its limit', { meta: { found: all.length, shown: MAX_LISTED_SKILLS } });
+    const dirs = all.slice(0, MAX_LISTED_SKILLS);
+    const managed = await managedSkillFolders(skillsDir);
     return Promise.all(dirs.map(async (e) => {
       const skillPath = path.join(skillsDir, e.name);
       const hasReadme = await pathExists(path.join(skillPath, 'README.md'));
-      return { name: e.name, path: skillPath, hasReadme };
+      const skillName = await frontMatterName(skillPath);
+      return { name: e.name, path: skillPath, hasReadme, ...(skillName && { skillName }), ...(managed.has(e.name) && { managed: true }) };
     }));
   } catch (err) {
     appLog(LOG_NS, 'warn', `Failed to list skills from ${skillsDir}`, { meta: { error: err instanceof Error ? err.message : String(err) } });

@@ -20,11 +20,22 @@ export interface ManagedSettingsSummaryInput {
   effort?: string;
   /** Access (#2761). Unset reads as Ask first. */
   access?: AccessLevel;
+  /** The lower level the agent starts at, when its CLI has no start for `access` in that runtime (#3004). */
+  accessStartsAt?: { level: AccessLevel; runtime: 'chat' | 'terminal' };
   orchestration?: OrchestrationPolicyConfig;
   /** The helper template's name: the agent's own, else the app's default. */
   helperTemplateName?: string;
   /** A helper never orchestrates or connects to the Dispatcher. */
   helper?: boolean;
+}
+
+/** "Auto", "Auto, starts at Ask first in the terminal", or a helper's "…, never above its orchestrator". */
+function accessValue(input: ManagedSettingsSummaryInput): string {
+  const notes = [
+    ...(input.accessStartsAt ? [`starts at ${accessLabel(input.accessStartsAt.level)} in ${input.accessStartsAt.runtime === 'chat' ? 'chat' : 'the terminal'}`] : []),
+    ...(input.helper ? ['never above its orchestrator'] : []),
+  ];
+  return [accessLabel(input.access ?? 'ask'), ...notes].join(', ');
 }
 
 export function managedSettingsSummary(input: ManagedSettingsSummaryInput): ManagedSettingsRow[] {
@@ -33,7 +44,7 @@ export function managedSettingsSummary(input: ManagedSettingsSummaryInput): Mana
     { key: 'cli', label: 'CLI', value: input.cliName || 'The project\'s CLI' },
     { key: 'model', label: 'Model', value: input.model && input.model !== 'default' ? input.model : 'CLI default' },
     { key: 'effort', label: 'Effort', value: input.effort || 'CLI default' },
-    { key: 'access', label: 'Access', value: accessLabel(input.access ?? 'ask') },
+    { key: 'access', label: 'Access', value: accessValue(input) },
     { key: 'orchestration', label: 'Orchestration', value: policy.orchestrate ? 'Can start helpers' : 'Off' },
   ];
   if (policy.orchestrate) {

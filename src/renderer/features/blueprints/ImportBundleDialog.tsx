@@ -109,7 +109,7 @@ export function ImportBundleDialog({ bundle, onImport, onClose }: ImportBundleDi
           <button
             onClick={handleImport}
             disabled={importing}
-            className="px-3 py-1.5 text-[11px] bg-ctp-accent text-ctp-base rounded hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="px-3 py-1.5 text-[11px] bg-ctp-accent text-ctp-on-accent rounded hover:opacity-90 transition-opacity disabled:opacity-50"
             data-testid="import-bundle-submit"
           >
             {importing ? 'Importing...' : `Import ${canvasCount} Canvas${canvasCount !== 1 ? 'es' : ''}`}

@@ -84,6 +84,7 @@ export function registerAppearanceTools(): void {
       });
       return { project };
     }),
+    { grant: { actions: ['project.display'], target: 'project_arg', from: { args: ['project'], missing: 'caller' } } },
   );
 
   registerGlobalTool(
@@ -111,5 +112,6 @@ export function registerAppearanceTools(): void {
       });
       return { agent };
     }),
+    { grant: { actions: ['agent.display'], target: 'agent_arg', from: { args: ['agent_id'], missing: 'caller' } } },
   );
 }

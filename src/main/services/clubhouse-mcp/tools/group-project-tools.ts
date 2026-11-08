@@ -73,7 +73,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.list_members',
     category: 'group-project',
     label: 'List Members',
-    mcp: { targetKind: 'group-project', nameSuffix: 'list_members' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'list_members', grant: { actions: ['group_project.read'], target: 'bound' } },
     description:
         'List all agents currently connected to this group project.\n\n' +
         'Returns a JSON array of { agentId, agentName, status } objects. Use this to discover ' +
@@ -108,7 +108,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.post_bulletin',
     category: 'group-project',
     label: 'Post Bulletin',
-    mcp: { targetKind: 'group-project', nameSuffix: 'post_bulletin' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'post_bulletin', grant: { actions: ['group_project.post'], target: 'bound' } },
     description:
         'Post a message to a channel on the project board.\n\n' +
         'CHANNEL MODEL:\n' +
@@ -177,7 +177,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.read_bulletin',
     category: 'group-project',
     label: 'Read Bulletin',
-    mcp: { targetKind: 'group-project', nameSuffix: 'read_bulletin' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'read_bulletin', grant: { actions: ['group_project.read'], target: 'bound' } },
       description:
         'Get a digest of channels on the project board — {topic, messageCount, newMessageCount, latestTimestamp, isProtected} per channel.\n\n' +
         'Pass "since" (the latestTimestamp from your last read) on every call after your first to keep the digest cheap.\n' +
@@ -219,7 +219,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.read_topic',
     category: 'group-project',
     label: 'Read Topic',
-    mcp: { targetKind: 'group-project', nameSuffix: 'read_topic' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'read_topic', grant: { actions: ['group_project.read'], target: 'bound' } },
       description:
         'Read messages from a specific channel.\n\n' +
         'Always pass "since" (latestTimestamp from your last read of this channel) to fetch only new messages — avoids re-reading the full history.\n' +
@@ -286,7 +286,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.get_project_info',
     category: 'group-project',
     label: 'Get Project Info',
-    mcp: { targetKind: 'group-project', nameSuffix: 'get_project_info' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'get_project_info', grant: { actions: ['group_project.read'], target: 'bound' } },
       description:
         'Get full project information including name, description, instructions, and members.\n\n' +
         'Call this when you first join a group project. The instructions field contains ' +
@@ -349,7 +349,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.shoulder_tap',
     category: 'group-project',
     label: 'Shoulder Tap',
-    mcp: { targetKind: 'group-project', nameSuffix: 'shoulder_tap' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'shoulder_tap', grant: { actions: ['agent.message'], target: 'group_members' } },
       description:
         'Send an urgent, ephemeral message directly into a specific agent\'s CLI.\n\n' +
         'NOT for routine coordination — post to a channel instead. Use shoulder_tap only when a channel post is insufficient: ' +
@@ -413,7 +413,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.broadcast',
     category: 'group-project',
     label: 'Broadcast',
-    mcp: { targetKind: 'group-project', nameSuffix: 'broadcast' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'broadcast', grant: { actions: ['agent.message'], target: 'group_members' } },
       description:
         'Broadcast an urgent, ephemeral message to every agent in this project (injected as input to each one; no bulletin record).\n\n' +
         'NOT for routine coordination — post to "general" for that. Use broadcast only for critical, all-hands announcements ' +
@@ -470,7 +470,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.wake_agent',
     category: 'group-project',
     label: 'Wake Agent',
-    mcp: { targetKind: 'group-project', nameSuffix: 'wake_agent' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'wake_agent', grant: [{ actions: ['agent.wake'], target: 'group_members' }, { actions: ['agent.message'], target: 'group_members', ifArgs: ['message'] }] },
       description:
         'Wake a sleeping agent connected to this group project.\n\n' +
         'Use list_members to find agents with status "sleeping", then call this tool ' +
@@ -590,7 +590,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.sleep_agent',
     category: 'group-project',
     label: 'Sleep Agent',
-    mcp: { targetKind: 'group-project', nameSuffix: 'sleep_agent' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'sleep_agent', grant: { actions: ['agent.sleep'], target: 'group_members' } },
       description:
         'Put a connected agent in this group project to sleep.\n\n' +
         'Gracefully stops the target agent using the same lifecycle path as the Clubhouse UI stop action, ' +
@@ -639,7 +639,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.toggle_polling',
     category: 'group-project',
     label: 'Toggle Polling',
-    mcp: { targetKind: 'group-project', nameSuffix: 'toggle_polling' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'toggle_polling', grant: { actions: ['group_project.admin'], target: 'bound' } },
       description:
         'Turn the project-wide polling setting on or off.\n\n' +
         'This is the real admin control over `pollingEnabled` — the same setting the ' +
@@ -691,7 +691,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.query_polling',
     category: 'group-project',
     label: 'Query Polling',
-    mcp: { targetKind: 'group-project', nameSuffix: 'query_polling' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'query_polling', grant: { actions: ['group_project.read'], target: 'bound' } },
       description:
         'Read the current project-wide polling setting.\n\n' +
         'Returns `{ pollingEnabled, members }` where `pollingEnabled` is the persisted ' +
@@ -720,7 +720,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.nudge_polling',
     category: 'group-project',
     label: 'Nudge Polling',
-    mcp: { targetKind: 'group-project', nameSuffix: 'nudge_polling' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'nudge_polling', grant: { actions: ['group_project.admin'], target: 'bound' } },
       description:
         'Nudge a single connected agent to start polling if it isn\'t already.\n\n' +
         'This is a one-off PTY nudge to a specific peer — it does NOT change the ' +
@@ -798,7 +798,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.read_message',
     category: 'group-project',
     label: 'Read Message',
-    mcp: { targetKind: 'group-project', nameSuffix: 'read_message' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'read_message', grant: { actions: ['group_project.read'], target: 'bound' } },
     description:
       'Read the full content of a single message by ID.\n\n' +
       'Use this after read_topic with summary=true to drill into specific messages ' +
@@ -839,7 +839,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.clear_topic',
     category: 'group-project',
     label: 'Clear Topic',
-    mcp: { targetKind: 'group-project', nameSuffix: 'clear_topic' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'clear_topic', grant: { actions: ['group_project.admin'], target: 'bound' } },
     description:
       'Delete an entire channel and all its messages from the project board.\n\n' +
       'Use this to clean up stale or completed work channels that are no longer relevant. ' +
@@ -878,7 +878,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.clear_agent',
     category: 'group-project',
     label: 'Clear Agent Context',
-    mcp: { targetKind: 'group-project', nameSuffix: 'clear_agent' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'clear_agent', grant: { actions: ['agent.reset'], target: 'group_members' } },
     description:
       'Send a /clear command to a connected agent, clearing its conversation context.\n\n' +
       'Injects /clear directly into the target agent\'s CLI. Use this when the agent\'s ' +
@@ -944,7 +944,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.compact_agent',
     category: 'group-project',
     label: 'Compact Agent Context',
-    mcp: { targetKind: 'group-project', nameSuffix: 'compact_agent' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'compact_agent', grant: { actions: ['agent.reset'], target: 'group_members' } },
     description:
       'Send a /compact command to a connected agent, compacting its conversation context.\n\n' +
       'Injects /compact directly into the target agent\'s CLI. Use this when the agent\'s ' +
@@ -1010,7 +1010,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.delete_messages',
     category: 'group-project',
     label: 'Delete Messages',
-    mcp: { targetKind: 'group-project', nameSuffix: 'delete_messages' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'delete_messages', grant: { actions: ['group_project.admin'], target: 'bound' } },
     description:
       'Delete specific messages by ID from the bulletin board.\n\n' +
       'Use this to clean up outdated or irrelevant messages. Pass an array of message IDs ' +
@@ -1057,7 +1057,7 @@ export function registerGroupProjectTools(): void {
     id: 'group-project.set_project_info',
     category: 'group-project',
     label: 'Set Project Info',
-    mcp: { targetKind: 'group-project', nameSuffix: 'set_project_info' },
+    mcp: { targetKind: 'group-project', nameSuffix: 'set_project_info', grant: { actions: ['group_project.admin'], target: 'bound' } },
     description:
       'Update the group project description and/or instructions (project-lead tool).\n\n' +
       'The description explains the purpose of the group; the instructions are directives ' +

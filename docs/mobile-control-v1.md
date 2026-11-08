@@ -11,9 +11,9 @@ Mobile MUST pin SHA-256 of the server leaf certificate DER (uppercase colon-sepa
 
 Pairing is only `POST https://host:mainPort/pair` with `{pin, publicKey, alias, icon, color}`. `publicKey` is base64 Ed25519 SPKI DER. Optional `pairingMode:"session"` stores peer trust only in memory until server stop/disconnect; no peer record is persisted. `pairingMode:"persistent"` (default) uses the existing peer store. The response echoes pairingMode. Integration must explicitly use session mode; a product UI must label it accurately and obtain user consent before persistent enrollment. Present a self-signed RSA client certificate whose CN is the lowercase colon-separated **first 16 bytes of SHA-256** of that publicKey (existing desktop identity format; 32 hex characters, not the full TLS pin); without one that matches, pairing is 400 `client_certificate_required`. Desktop pins the *actual presented certificate* (its SHA-256) to this peer. Response fields: `token, tlsCertificateFingerprint, mobileProtocolVersion:1, pairingMode, publicKey, alias, icon, color, fingerprint`; `token` is kept for older clients and authenticates nothing. No live pairing is performed as part of code implementation.
 
-The PIN pairs one identity, then desktop replaces it; it also expires after 10 minutes. Refusals carry `{error, message}`, and `message` is a sentence to show: 409 `invalid_pin` (wrong PIN), 410 `pin_expired` (expired or replaced), 410 `pin_used` (already used by another identity). The same identity and certificate retrying a used PIN while it would still have been live gets 200 with the same response, so a lost reply can be retried. 429 `rate_limited`/`pairing_locked` are unchanged. Pairing an identity that already has a pinned certificate with a different certificate is 409 `peer_already_paired`, unless the body has `certBinding`: base64 of the identity key's Ed25519 signature over `"annex-cert-binding/v1" || SHA-256(certificate DER)`. On the plain HTTP pairing port, `POST /pair` is 410 `update_required` and changes nothing; that port only answers `GET /api/v1/identity`, a discovery hint.
+The PIN pairs one identity, then desktop replaces it; it also expires after 10 minutes. Refusals carry `{error, message}`, and `message` is a sentence to show: 409 `invalid_pin` (wrong PIN), 410 `pin_expired` (expired or replaced), 410 `pin_used` (already used by another identity). The same identity and certificate retrying a used PIN while it would still have been live gets 200 with the same response, so a lost reply can be retried. 429 `rate_limited`/`pairing_locked` are unchanged per address. Each attempt counts as it starts. After 10 wrong PINs in all, from any address, pairing is paused for every device: 429 `pairing_locked` with a `message`, until someone allows pairing again in desktop Settings (or turns Annex off and on). Pairing an identity that already has a pinned certificate with a different certificate is 409 `peer_already_paired`, unless the body has `certBinding`: base64 of the identity key's Ed25519 signature over `"annex-cert-binding/v1" || SHA-256(certificate DER)`. On the plain HTTP pairing port, `POST /pair` is 410 `update_required` and pairs nothing; if it carried the current PIN, that PIN is replaced. That port only answers `GET /api/v1/identity`, a discovery hint.
 
-Every REST route and the `/ws` upgrade on the main port require a paired controller's pinned client certificate, and nothing else authenticates (an `Authorization` header or `?token=` is ignored). Refusals are JSON `{error, message}`, with the same status and body on a WebSocket upgrade: 401 `unauthorized` (no client certificate; `/api/v1/mobile/*` routes keep their 403 `client_certificate_required` for that case), 401 `peer_not_paired` (not paired, removed, or a certificate other than the pinned one), 401 `needs_pairing` (an older pairing with no pinned certificate: pair again), 403 `peer_role_not_allowed`. When a pairing is removed, its open WebSockets close with code 4401, reason `peer_not_paired`; treat both 401s as "pair again", not as a reason to retry. If desktop can't start TLS, the main port answers 503 `tls_unavailable` to everything and serves nothing over plain HTTP.
+Every REST route and the `/ws` upgrade on the main port require a paired controller's pinned client certificate, and nothing else authenticates (an `Authorization` header or `?token=` is ignored). Refusals are JSON `{error, message}`, with the same status and body on a WebSocket upgrade: 401 `unauthorized` (no client certificate; `/api/v1/mobile/*` routes keep their 403 `client_certificate_required` for that case), 401 `peer_not_paired` (not paired, removed, or a certificate other than the pinned one), 401 `needs_pairing` (an older pairing with no pinned certificate: pair again), 403 `peer_role_not_allowed`. When a pairing is removed, its open WebSockets close with code 4401, reason `peer_not_paired`, and are cut shortly after; nothing more sent on them is acted on; treat both 401s as "pair again", not as a reason to retry. If desktop can't start TLS, the main port answers 503 `tls_unavailable` to everything and serves nothing over plain HTTP.
 
 ## Capability negotiation
 
@@ -32,7 +32,7 @@ A 404 means unsupported: do not send mobile commands. Gate durable-agent creatio
 - `chat.send`: `{agentId, sessionId, text, delivery?, attachmentIds?}`; delivery `auto|prompt|steer|queued` (default auto). `attachmentIds` (1–10 distinct ids from the upload route below) sends images; `text` may then be `""` for an image-only message. See [Image attachments](#image-attachments).
 - `chat.queue.remove`: `{agentId, sessionId, messageIds:["id"]}`; removes only messages still held in the runtime queue, returns `{removed:["id"]}`. A native-provider queue may return no removed IDs.
 - `chat.interrupt`: `{agentId, sessionId}`; cancels the turn and keeps the session.
-- `chat.permission`: `{agentId, sessionId, requestId, optionId}`; exact pending option required. Any offered option, persistent ones (`allow_session`, `allow_always`, `reject_always`) included, is answered as the desktop's approval dock answers it, when capabilities have `permissions.persistentApprovals`. Older desktops refuse persistent options with 403 `persistent_approval_not_supported`.
+- `chat.permission`: `{agentId, sessionId, requestId, optionId, reviewedDigest?}`; exact pending option required. `reviewedDigest` approves a request sent only as a preview, after fetching it whole (see "Large permission requests"). Any offered option, persistent ones (`allow_session`, `allow_always`, `reject_always`) included, is answered as the desktop's approval dock answers it, when capabilities have `permissions.persistentApprovals`. Older desktops refuse persistent options with 403 `persistent_approval_not_supported`.
 - `chat.question`: `{agentId, sessionId, requestId, answers}`; question-ID to string/string-array map. Send each key exactly as the question's `id`, with no trimming or normalizing: a Claude question's `id` is its full text. Up to 100 keys, each key and answer string 1 to 65536 UTF-16 code units (an emoji is two), and up to 100 strings in an array. Older desktops refuse a key over 256 with 400 `invalid_command`.
 
   The whole request also has to fit the route's 1 MiB (1048576 bytes) limit, measured as UTF-8 JSON. Over it, the desktop [refuses it with 413 `too_large`](#oversized-commands). One key at the limit always fits, but a request can only hold so many: 15 of ASCII text, 7 of emoji, 5 of three-byte text such as CJK, or 2 when every character is escaped as `\uXXXX`. Answers count toward the same limit.
@@ -308,7 +308,7 @@ A `tool_call_update` whose `chat:event` is over 1 MiB goes out as a preview, liv
 - `rawOutput` is left out unless it's small. If no block was cut, a text block says it's a preview, because a client may ignore `truncated`. With no `content` at all, that note is the only `content`, with `contentMode: append` so what's shown stays, and only one update for a call carries it. After a desktop restart a call can get one more. These notes are in the tool's content, so on a client that collapses tool cards they're seen when a card is opened. The always-visible warning is the permission request's `description`, below.
 - `truncated: {originalBytes}` is the whole event's size.
 
-The transcript on the desktop is whole. `GET …/chat` still returns the full event, so this recovers the output only if the whole response fits in what you can receive. Permission requests have their own rules, below. Other `chat:event` types aren't bounded yet (#2673).
+The transcript on the desktop is whole. `GET …/chat` still returns the full event, so this recovers the output only if the whole response fits in what you can receive. With `fullEvents` in capabilities, fetch one event whole instead (see "The whole of an event"). Permission requests have their own rules, below. Other `chat:event` types aren't bounded yet (#2673).
 
 Conditions from Clubhouse Go's tests on build 147, for any later change here: a preview must keep the id and final status, and must replace rather than append. A frame may only be left out entirely if it carries no critical fact, so never a permission, question, queue or status frame.
 
@@ -323,11 +323,36 @@ The warning is: "Incomplete input: this request is too large to show in full her
 
 **Approve is refused:** `chat.permission` with anything but a deny option answers 409, `status:"rejected"`, `error:{code:"incomplete_representation",message}`. Denying still works. Full review is on the desktop, and the pending call itself is never changed. Approve is also refused when the desktop can't establish you were shown the whole request: one left pending across its restart, unless the whole original request, options included, is at most 4 KiB, which is whole on every path. It's refused too if the options the agent would act on aren't the ones you were sent.
 
+**Approving after fetching it whole (#2731):** a desktop with `fullEvents` in capabilities lets a phone fetch the request and then approve it. Fetch it as described in "The whole of an event", below, and keep the response's `digest`. Then send `chat.permission` with `reviewedDigest` set to that digest. The approval is taken when all of these hold, and refused with `incomplete_representation` otherwise:
+- this same paired device fetched the request, since the desktop last started and since it was last paired;
+- the request still pending is exactly what it fetched;
+- the options the agent would act on are the ones in the request.
+
+The record is in memory, so after a desktop restart, fetch it again.
+
 **The `tool_call` for it:** over 256 KiB, a `tool_call` keeps its id, title, kind, status and locations. Its `rawInput` has only small plain fields, its `content` starts with a text note saying it's a preview, then a preview of any content, and it has `truncated: {originalBytes}`.
 
 **All pending, together:** the permissions in `/chat` total at most 1 MiB. Past that each gets a share, and one forced below its own cap counts as incomplete, with the same warning and refusal. None is ever left out.
 
 **Paths that draw no card** (`hook:event`, outer `permission:request` and the snapshot's `pendingPermissions`) carry at most 64 KiB of `toolInput`: its small plain fields, and `toolInputTruncated: {originalBytes}`. `POST …/permission-response` refuses `allow` with 409 `incomplete_representation` for a call that's over that. `hook:event` keeps `detailedStatus`.
+
+## The whole of an event
+
+Capabilities `fullEvents: {version:1, path, maximumBytes, approvalField:"reviewedDigest"}` (#2731). Any `chat:event`, or event in `GET …/chat`, that came with `truncated` can be fetched whole:
+
+`GET /api/v1/mobile/agents/{agentId}/chat/events/{seq}?sessionId={sessionId}`, with pinned mTLS like `/content`.
+
+It answers `{"version":1,"agentId":"…","sessionId":"…","seq":7,"digest":"sha256:…","event":{…}}`, where `event` is the original from the desktop's transcript.
+
+Errors:
+- 400 `invalid_query`: the seq or `sessionId` is missing or bad.
+- 404 `agent_not_found` or `event_not_found`.
+- 413 `event_too_large` with `bytes` and `maximumBytes`: the response would be over `maximumBytes`, 32 MiB.
+- 403 `client_certificate_required` or `authorization_revoked`.
+
+It's an HTTP response, not a frame, so it isn't held to the socket's 16 MiB. A permission request's `digest` is what `chat.permission` takes as `reviewedDigest` (see "Large permission requests").
+
+Events over 16 MiB that carry a fact that can't be left out (a `user_message`, `question` or `plan_document`, for example) still close the socket. That part of #2731 waits for `clubhouse.annex.frames.over_limit` to show it happens.
 
 ## Who sent a message
 
@@ -783,7 +808,7 @@ Gate on `helperRouting` in capabilities. It lists only what works now, so don't 
 "helperRouting":{"version":1,"path":"/api/v1/mobile/helper-routing","modes":["explicit","preset","auto"],"scopes":["app","project","agent"],"quota":true,
  "quotaStates":["known","low","near_limit","exhausted","unknown"],"unknownReasons":["not_read","stale","not_applicable","read_failed","not_supported"],"quotaSources":["cli_query","session_event","none"],
  "commands":["helperRouting.update"],"snapshotField":"helperRoutingRevision","event":"helper_routing:changed",
- "difficulties":["easy","medium","hard"],
+ "difficulties":["easy","medium","hard"],"levels":["minimum","easy","medium","hard","maximum"],
  "reasons":["explicit_request","persona_pinned","preset_on_cli","only_candidate","lower_pressure","lower_load","fair_rotation","better_quota_tier","unknown_fallback","sticky","default_order"],
  "fallbacks":["none","builtin_preset","candidate_skipped","model_unverified"],
  "skipped":["cli_disabled","cli_unavailable","auto_not_supported","no_valid_mapping","cooling_down","quota_near_limit","quota_exhausted"],
@@ -808,6 +833,7 @@ Gate on `helperRouting` in capabilities. It lists only what works now, so don't 
 
 - **labels**: the words for every code, in the families `reason`, `fallback`, `skipped`, `quota`, `unknown`, `window`, `autoSource`, `autoOff`, `cell` and `generic`. Every read has all of them, including a bare one, so cache them once per revision for rows that only have codes. For a code you don't have, use `labels.generic.unknownCode`, then your own generic "Other".
 - **cells**: `effective` is what a start uses now. `custom` is the saved choice, or null. `state` is that of the saved choice, or of the built-in without one: `valid`, `unverified` (the list may be out of date, so it couldn't be checked) or `stale` (no longer offered, with `staleReason` `model_unavailable` or `effort_unavailable`). A stale saved choice stays saved. `effective` is then the built-in, with `fallback: "builtin_preset"`, or null if that is stale too, and a start with that difficulty is refused. Offer Reset whenever `custom` is set.
+- **levels** (#3044): `cells` has a row for each entry in the capability's `levels`, which adds `minimum` and `maximum` around the `difficulties`. Without `levels`, show only `difficulties`. An unset minimum or maximum shows the cell of the difficulty it uses, with `follows` (`easy` or `hard`) and `custom: null`. `follows` is also set on a stale saved one that falls back. `difficulties` stays what `start_helper` takes.
 - **autoEligible**: whether a provider has presets and Auto can pick it. Copilot can't: its list reports no per-model efforts, and it has no quota source.
 - **choices**: what the pickers offer, per model, with `source` `live` or `fallback`. Always the app-wide list, even with `projectId` or `agentId`, because a write is checked against it. `default` isn't offered, since a preset has to name a model.
 - **agent**: with `agentId` only. `{usable: true}`, or `{usable: false, reason}` with `dispatcher_locked` or `orchestration_off`, for presets. The Dispatcher doesn't start helpers, and this gives it no new authority.
@@ -894,7 +920,7 @@ The snapshot's row has the same codes as any helper: `routing:{mode:"auto",diffi
 
 ### helperRouting.update
 
-`{revision, scope, projectId?, cells?: [{provider, difficulty, model, effort}], reset?: {provider?, difficulty?}, auto?}`, with at least one of `cells`, `reset` and `auto`. `cells` and `reset` are for `scope: "app"`. `effort` null leaves the level to the CLI. `reset: {}` resets everything, `{provider}` one provider, and `{provider, difficulty}` one cell. A reset runs before `cells`. The result is the page's data, so don't refetch.
+`{revision, scope, projectId?, cells?: [{provider, difficulty, model, effort}], reset?: {provider?, difficulty?}, auto?}`, with at least one of `cells`, `reset` and `auto`. `cells` and `reset` are for `scope: "app"`. `effort` null leaves the level to the CLI. `difficulty` takes any entry in `levels`, so `minimum` and `maximum` too. `reset: {}` resets everything, `{provider}` one provider, and `{provider, difficulty}` one cell. A reset runs before `cells`. The result is the page's data, so don't refetch.
 
 - 409 `helper_routing_stale`: another edit got there first. Nothing was written, and the refusal's body has `revision` and `settings` with fresh values. Show them and let the person make the change again. Never retry on your own, because that could overwrite someone's edit.
 - 409 `model_unavailable`, `effort_unavailable`: a live list doesn't offer it. `message` says what it does offer. Nothing was written.
@@ -949,7 +975,7 @@ The snapshot's `dispatcher` is `null` while the Dispatcher is off (or was never 
   "detailedStatus":null,"executionMode":null,"hasSession":true,"lastActivityAt":1800000000000}}
 ```
 
-`agent` is the `agents[projectId][]` shape with `projectId: "__dispatcher__"` and `isDispatcher: true`, and no `orchestration` (its orchestration settings are locked). It is in `agentIcons` when it has an image icon and in `agentsMeta` while it runs. `GET /api/v1/mobile/agents/state` has a row for it (`projectId: "__dispatcher__"`, `isDispatcher: true`) while it is on.
+`agent` is the `agents[projectId][]` shape with `projectId: "__dispatcher__"` and `isDispatcher: true`, and no `orchestration` (its orchestration settings are locked). It is the Dispatcher you talk to (#3036). Since that change its `id` is a new one, and its conversation starts fresh: work on agents happens out of sight under the Dispatcher's name, and only this agent is ever listed. Its chat, agent routes and commands take this `id`, and a phone should not keep an older one. It is in `agentIcons` when it has an image icon and in `agentsMeta` while it runs. `GET /api/v1/mobile/agents/state` has a row for it (`projectId: "__dispatcher__"`, `isDispatcher: true`) while it is on.
 
 ### Live changes
 
@@ -1069,7 +1095,7 @@ Capabilities: `terminal: {version:1, projectShell:true, agentShell:true, agentAt
 
 For agents running in a terminal (`executionMode: "pty"`; chat and headless agents have no PTY):
 
-- `pty:attach {agentId}` → `pty:attach:ack {agentId, buffer, outputSeq, cols?, rows?}`. `buffer` is the agent's current screen and scrollback, serialized as terminal output. `cols`/`rows` is the PTY's size, when known. A frame is at most 8 MiB, so a large buffer drops old scrollback: `scrollbackLines` then says how many lines it kept, and the screen and cursor are whole. Raw output with no mirror is rebuilt through a terminal first. Its resynchronized start carries checkpointed bracketed paste and application cursor modes, but other earlier modes are not reconstructed. A cut command with no resync boundary can still lose these modes; see [the remaining replay limits](terminal-input-mode-replay.md). If even the screen is over the limit there's no ack: you get an `error` with `terminal_unavailable`, the agent keeps running, and you can try again. `GET /api/v1/agents/:id/buffer` has the same limit: `x-clubhouse-scrollback-lines` says how many lines it kept, and it answers 503 `{"error":"terminal_unavailable"}` in that last case.
+- `pty:attach {agentId}` → `pty:attach:ack {agentId, buffer, outputSeq, cols?, rows?}`. `buffer` is the agent's current screen and scrollback, serialized as terminal output. `cols`/`rows` is the PTY's size, when known. A frame is at most 8 MiB, so a large buffer drops old scrollback: `scrollbackLines` then says how many lines it kept, and the screen and cursor are whole. Raw output with no mirror is rebuilt through a terminal first. Its resynchronized start carries checkpointed bracketed paste and application cursor modes, but other earlier modes are not reconstructed. A command cut by the shortening is skipped to its end, so a mode it sets is still carried; see [the replay limits](terminal-input-mode-replay.md). If even the screen is over the limit there's no ack: you get an `error` with `terminal_unavailable`, the agent keeps running, and you can try again. `GET /api/v1/agents/:id/buffer` has the same limit: `x-clubhouse-scrollback-lines` says how many lines it kept, and it answers 503 `{"error":"terminal_unavailable"}` in that last case.
 - Live output is the existing broadcast `pty:data {agentId, data, outputSeq}`, which every controller already receives. There is no subscription and no `pty:detach`: to stop viewing, stop rendering. `outputSeq` counts output in UTF-16 code units and is the count after its chunk. Drop frames with `outputSeq <= ack.outputSeq`; of a frame that straddles it, only the last `outputSeq - ack.outputSeq` units are new. Frames may arrive before the ack, so buffer them until it does.
 - `pty:input {agentId, data}` types into the agent. `pty:resize {agentId, cols, rows}` resizes the agent's **real** PTY, and the desktop's view reflows with it. A phone shouldn't resize an agent PTY unless the user asks to; render at the snapshot's `cols`/`rows` instead.
 - `pty:exit {agentId, exitCode}` (broadcast, as before) ends the view.

@@ -46,6 +46,17 @@ export interface ManagedHelperChanges {
  */
 export const CLUBHOUSE_MCP_PART_ID = 'builtin-mcp-clubhouse';
 
+/** The built-in Identity block a durable agent gets, and the working one a helper or quick agent gets in its place (#2902). */
+export const IDENTITY_BLOCK_ID = 'builtin-block-identity';
+export const WORKING_IDENTITY_BLOCK_ID = 'builtin-block-identity-helper';
+
+/** Blocks as a helper or quick agent gets them: the working Identity in place of the durable one, once, where it came first. */
+export function workingIdentityBlocks(blocks: string[]): string[] {
+  if (!blocks.includes(IDENTITY_BLOCK_ID)) return blocks;
+  const mapped = blocks.map((id) => (id === IDENTITY_BLOCK_ID ? WORKING_IDENTITY_BLOCK_ID : id));
+  return mapped.filter((id, i) => id !== WORKING_IDENTITY_BLOCK_ID || mapped.indexOf(id) === i);
+}
+
 /** Whether a part or template is offered for new choices: everything but retired built-ins. */
 export function isListed(item: { retired?: boolean }): boolean {
   return !item.retired;
@@ -163,6 +174,12 @@ export interface ManagedTemplateSettings {
   idleSleep?: 'never' | number | null;
   /** The template this agent's helpers start from when start_helper names none (the agent's `helperTemplateId`). */
   helperTemplateId?: string | null;
+  /**
+   * Clubhouse permissions agents made from it get over the defaults (#2971),
+   * each Off, Ask first or Allow. Only the user sets them: the Clubhouse MCP
+   * refuses them. A null mode (in a push only) takes one away.
+   */
+  grants?: import('./agent-grant-changes').TemplateGrant[];
 }
 
 /** One line of Preview's settings summary, e.g. `{ key: 'model', label: 'Model', value: 'opus' }`. */
@@ -217,7 +234,7 @@ export type ManagedTemplateChange =
    * change does to it (D81): the template's effort goes with the new model,
    * or the effort goes back to the CLI default.
    */
-  | { kind: 'setting'; key: string; from: string; to: string; followsModel?: true };
+  | { kind: 'setting'; key: string; from: string; to: string; followsModel?: true; label?: string };
 
 export interface ManagedTemplatePushTarget {
   projectPath: string;

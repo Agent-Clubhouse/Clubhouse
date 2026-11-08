@@ -22,7 +22,7 @@ import { isDisposedAgent, isEffortValue } from '../../shared/agent-helpers';
 import { cleanupStaleJsonInTomlConfigs } from './toml-config-cleanup';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
 import { applyLaunchWrapper, validateWrapperConfig } from '../orchestrators/shared';
-import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode } from '../../shared/types';
+import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode, QuickTemplateChoice } from '../../shared/types';
 import type { RoutedMessagePart } from '../../shared/chat';
 import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrator, DEFAULT_ORCHESTRATOR } from './agent-registry';
 import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
@@ -45,7 +45,7 @@ import {
   type HelperLaunch,
 } from '../../shared/orchestration-policy';
 import {
-  ACCESS_LEVELS, accessForLegacyToggle, accessFromLegacy, isAccessLevel, legacyLaunchFor, savedAccess, startableAccess, type AccessLevel,
+  ACCESS_LEVELS, accessForLegacyToggle, accessFromLegacy, accessLabel, isAccessLevel, legacyLaunchFor, quickToolsForAccess, savedAccess, startableAccess, type AccessLevel,
 } from '../../shared/agent-access';
 
 /** The lower of two levels. */
@@ -53,6 +53,7 @@ function lowerAccess(a: AccessLevel, b: AccessLevel): AccessLevel {
   return ACCESS_LEVELS.indexOf(a) <= ACCESS_LEVELS.indexOf(b) ? a : b;
 }
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
+import { publishAppEvent } from './app-event-bus';
 import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
 import { getAgentRuntime, isChatAgent } from './agent-runtime';
@@ -124,6 +125,12 @@ export interface SpawnAgentParams {
    * instead of the project's headless spawn mode.
    */
   interactive?: boolean;
+  /**
+   * A quick agent no one is watching (an Action's step, #3033): it runs
+   * headless whatever the project's spawn mode, and fails to start rather
+   * than open a terminal where it could stop at a prompt.
+   */
+  headless?: boolean;
   /** CLI agent name to load (e.g. --agent k8s-assistant) */
   agentFile?: string;
   /** Source directory for agent file (e.g. --source ~/.copilot/agents/) */
@@ -133,7 +140,7 @@ export interface SpawnAgentParams {
    * template. Its instructions go in the system prompt and its MCP servers in
    * the launch flags; nothing is written into the folder it runs in.
    */
-  managedTemplate?: { id: string; agentName: string };
+  managedTemplate?: QuickTemplateChoice;
 }
 
 export function isHeadlessAgent(agentId: string): boolean {
@@ -234,26 +241,29 @@ async function capHelperLaunch(
   helper: DurableAgentConfig & { parentAgentId: string },
   providerId: string,
   asked: AgentLaunchAccess,
-): Promise<AgentLaunchAccess & { ceiling: AgentAccessLevel }> {
-  let cap: Pick<HelperLaunch, 'freeAgentMode' | 'permissionMode' | 'level'>;
+): Promise<AgentLaunchAccess & { ceiling: AgentAccessLevel; ceilingAccess: AccessLevel }> {
+  let cap: Pick<HelperLaunch, 'freeAgentMode' | 'permissionMode' | 'level' | 'access'>;
+  let ceilingAccess: AccessLevel = 'ask';
   try {
     const parent = await findParent(projectPath, helper);
     if (!parent) throw new Error('Orchestrator not found');
     const resolved = await resolveHelperLaunchSettings(parent.projectPath, helper.parentAgentId, { helperProvider: providerId });
     cap = rankHelperLaunch(resolved, helper.requestedAccess, providerId);
+    // The five-level ceiling (#3000): the orchestrator's live level, lowered to what start_helper asked.
+    ceilingAccess = cap.access;
   } catch (err) {
     // telemetry-exempt: fails safe to standard and is logged; the spawn goes on.
     appLog('core:orchestration', 'warn', 'Could not resolve a helper\'s ceiling; starting it at standard', {
       meta: { agentId, orchestratorId: helper.parentAgentId, error: err instanceof Error ? err.message : String(err) },
     });
-    cap = { ...launchAccessFor('standard'), level: 'standard' };
+    cap = { ...launchAccessFor('standard'), level: 'standard', access: 'ask' };
   }
   const askedLevel = providerAccessLevel(providerId, asked);
-  if (!isLowerAccess(cap.level, askedLevel)) return { ...asked, ceiling: cap.level };
+  if (!isLowerAccess(cap.level, askedLevel)) return { ...asked, ceiling: cap.level, ceilingAccess };
   appLog('core:orchestration', 'info', 'Lowered a helper\'s launch access to its orchestrator\'s ceiling', {
     meta: { agentId, orchestratorId: helper.parentAgentId, asked: askedLevel, level: cap.level },
   });
-  return { freeAgentMode: cap.freeAgentMode, permissionMode: cap.permissionMode, ceiling: cap.level };
+  return { freeAgentMode: cap.freeAgentMode, permissionMode: cap.permissionMode, ceiling: cap.level, ceilingAccess };
 }
 
 /**
@@ -274,6 +284,12 @@ export function spawnAccess(
   // A restart entry's mode is what the agent ran with; it wins over the saved level.
   if (params.freeAgentMode && params.permissionMode !== undefined) return accessFromLegacy(true, params.permissionMode);
   return accessForLegacyToggle(saved, params.freeAgentMode, legacyMode);
+}
+
+/** The agent is up: tell windows, and the app event bus (#2950). */
+function announceAwake(agentId: string): void {
+  broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, agentId);
+  publishAppEvent({ type: 'agent.awake', agentId });
 }
 
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
@@ -331,6 +347,19 @@ function assertDispatcherCanStart({ kind, projectPath }: SpawnAgentParams): void
 async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, managed: ManagedLaunchLease | null): Promise<void> {
   let params = inParams;
   assertDispatcherCanStart(params);
+  if (params.kind === 'durable' && isDispatcherPath(params.projectPath)) {
+    // Either of the Dispatcher's agents starts with its memory as it is now (#3036).
+    // Loaded here: dispatcher-service imports this module.
+    try {
+      const { prepareDispatcherSessionStart } = await import('./dispatcher/dispatcher-service');
+      await prepareDispatcherSessionStart(params.projectPath, params.agentId);
+    } catch (err) {
+      // telemetry-exempt: logged; it starts with the instructions file it already has
+      appLog('core:agent', 'warn', 'Could not refresh the Dispatcher\'s instructions before its start', {
+        meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
   // An agent still being created has no worktree yet, and a failed one never
   // will (#2226): refuse before anything touches its folder.
   // Read once here; the managed delivery step below uses the same read.
@@ -353,6 +382,12 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     withErrorType('orchestrator_unknown', () => resolveOrchestrator(params.projectPath, params.orchestrator)),
   );
   facts.orchestrator = provider.id;
+  if (!params.orchestrator) {
+    // An agent with no CLI of its own runs on its project's "Agents run on" (#2975).
+    appLog('core:agent', 'info', 'Agent has no CLI of its own, so it starts on the project default', {
+      meta: { agentId: params.agentId, providerId: provider.id, projectDefault: (await readProjectOrchestrator(params.projectPath)) ?? null },
+    });
+  }
 
   // Copilot discovers repository hooks in every runtime, even with the Clubhouse hook server off.
   if (provider.id === 'copilot-cli') await readCopilotHooksConfig(params.cwd);
@@ -435,7 +470,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       params = { ...params, systemPrompt: [instructions, params.systemPrompt].filter(Boolean).join('\n\n') };
     }
 
-    const allowedTools = params.allowedTools
+    let allowedTools = params.allowedTools
       || (params.kind === 'quick' ? provider.getDefaultPermissions('quick') : undefined);
 
     // Resolve launch wrapper config (if any)
@@ -513,8 +548,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         access = lowerAccess(access, accessFromLegacy(capped.freeAgentMode, capped.permissionMode));
         launch = { freeAgentMode: capped.freeAgentMode, permissionMode: capped.permissionMode };
       }
-      // The helper ceiling has three ranks; the levels between them stay at or under it.
-      if (capped.ceiling === 'standard' && access === 'auto_edit') access = 'ask';
+      // Never above its orchestrator's five-level level, nor what start_helper asked (#3000).
+      access = lowerAccess(access, capped.ceilingAccess);
     }
     params = { ...params, access, freeAgentMode: launch.freeAgentMode, permissionMode: launch.permissionMode };
     const permissionMode = launch.permissionMode;
@@ -522,7 +557,16 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     await prepareMcpBridge(durableConfig);
     // The final launch access, the ceiling for this agent's helpers (#2228).
     // Every runtime below starts with exactly these values.
-    agentRegistry.setLaunchCap(params.agentId, { freeAgentMode: launch.freeAgentMode, permissionMode });
+    agentRegistry.setLaunchCap(params.agentId, { freeAgentMode: launch.freeAgentMode, permissionMode, access });
+    // A quick agent's default tools follow its level (#3007): at Plan or Ask first nothing that
+    // edits or runs commands is pre-allowed, so the level picked is the level it gets. Copilot
+    // runs a terminal quick agent one-shot (-p), where it can't ask: its defaults stay, as
+    // they're the only way it gets anything done.
+    const defaultQuickTools = params.kind === 'quick' && !params.allowedTools ? allowedTools : undefined;
+    const filterQuickTools = (level: AccessLevel) => {
+      if (defaultQuickTools && provider.id !== 'copilot-cli') allowedTools = quickToolsForAccess(defaultQuickTools, level);
+    };
+    filterQuickTools(access);
     // The orchestration tools are listed from this gate (#2228); set it before the MCP connects.
     if (params.kind === 'durable') await syncOrchestrationGate(params.projectPath, params.agentId);
     // Likewise the Dispatcher's tools (#2536), only for the Dispatcher.
@@ -651,12 +695,13 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     if (chatStart === 'cancelled') return;
     if (chatStart === 'chat') {
       facts.runtime = 'chat';
-      broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
+      announceAwake(params.agentId);
       return;
     }
 
     // Try headless path for quick agents when enabled
-    if (spawnMode === 'headless' && params.kind === 'quick' && !params.interactive && isHeadlessCapable(provider)) {
+    const unattended = params.kind === 'quick' && !!params.headless && !params.interactive;
+    if ((spawnMode === 'headless' || unattended) && params.kind === 'quick' && !params.interactive && isHeadlessCapable(provider)) {
       const headlessResult = await provider.buildHeadlessCommand({
         cwd: params.cwd,
         model: params.model,
@@ -757,9 +802,13 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           headlessResult.createEventNormalizer,
         ));
         facts.noPid = !headlessManager.hasPid(params.agentId);
-        broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
+        announceAwake(params.agentId);
         return;
       }
+    }
+
+    if (unattended) {
+      throw new Error(`${provider.displayName} can’t run without a window, so this quick agent can’t start unattended.`);
     }
 
     // Fall back to PTY mode
@@ -767,17 +816,24 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // A terminal agent starts at the nearest level its CLI has a start flag for (#2761).
     if (!legacyRecord && !configUnreadable && params.access) {
       const startable = startableAccess(params.access, provider.id, 'terminal');
+      // A helper never starts above its ceiling (#3000): a CLI with no start mode at or under it
+      // (Plan, on Codex or Copilot in a terminal) can't run it, rather than run it at Ask first.
+      if (durableConfig?.parentAgentId && ACCESS_LEVELS.indexOf(startable) > ACCESS_LEVELS.indexOf(params.access)) {
+        throw tagError(new Error(`${provider.displayName} can't start at ${accessLabel(params.access)} in a terminal, and this helper can't go higher. Start it in chat, or on a CLI with that level.`), 'preflight_failed');
+      }
       if (startable !== params.access) {
         const lowered = legacyLaunchFor(startable, 'auto');
         appLog('core:agent', 'info', 'Started a terminal agent at the nearest level its CLI has', {
           meta: { agentId: params.agentId, provider: provider.id, saved: params.access, level: startable },
         });
         params = { ...params, access: startable, freeAgentMode: lowered.freeAgentMode, permissionMode: lowered.permissionMode };
-        agentRegistry.reportLaunchAccess(params.agentId, lowered);
+        // The tools follow the level it really starts at.
+        filterQuickTools(startable);
+        agentRegistry.reportLaunchAccess(params.agentId, { ...lowered, access: startable });
       }
     }
     await spawnPtyAgent(params, provider, allowedTools, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts, managed, quickManaged);
-    if (!managed || ptyManager.isRunning(params.agentId)) broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
+    if (!managed || ptyManager.isRunning(params.agentId)) announceAwake(params.agentId);
   } catch (err) {
     if (!(err instanceof ProcessStartedReceiptError)) untrackAgent(params.agentId);
     throw err;
@@ -889,7 +945,8 @@ async function spawnPtyAgent(
       sessionId: params.sessionId,
       agentFile: params.agentFile,
       agentSource: params.agentSource ? expandHome(params.agentSource) : undefined,
-      interactive: params.kind === 'durable',
+      // A quick agent someone follows (a phone start, an action below Auto) runs as a session it can ask in, not one-shot.
+      interactive: params.kind === 'durable' || !!params.interactive,
     })),
   ]));
 

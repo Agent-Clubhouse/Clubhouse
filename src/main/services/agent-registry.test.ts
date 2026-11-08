@@ -25,6 +25,11 @@ vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
 }));
 
+const mockPeekProjects = vi.fn(async (): Promise<Array<{ path: string; orchestrator?: string }>> => []);
+vi.mock('./project-store', () => ({
+  peekProjects: () => mockPeekProjects(),
+}));
+
 import * as fsp from 'fs/promises';
 import { isOrchestrationEnabled, setOrchestrationEnabled } from './clubhouse-mcp/orchestration-gate';
 import {
@@ -162,6 +167,39 @@ describe('agent-registry', () => {
       const result = await readProjectOrchestrator('/project');
       expect(result).toBeUndefined();
     });
+
+    // #2975: "Agents run on" in project settings saves to projects.json.
+    it('reads the project\'s "Agents run on" from the project list first', async () => {
+      const project = path.resolve('/project');
+      mockGetProvider.mockImplementation((id: string) => ({ id }));
+      mockPeekProjects.mockResolvedValueOnce([
+        { path: path.resolve('/other'), orchestrator: 'copilot-cli' },
+        { path: project, orchestrator: 'codex-cli' },
+      ]);
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({ orchestrator: 'copilot-cli' }));
+
+      expect(await readProjectOrchestrator(path.join(project, '.'))).toBe('codex-cli');
+    });
+
+    it('skips a project value naming a CLI the app no longer has, so agents still start', async () => {
+      mockGetProvider.mockImplementation((id: string) => (id === 'opencode' ? undefined : { id }));
+      mockPeekProjects.mockResolvedValue([{ path: path.resolve('/project'), orchestrator: 'opencode' }]);
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+
+      expect(await readProjectOrchestrator('/project')).toBeUndefined();
+      expect((await resolveOrchestrator('/project')).id).toBe('claude-code');
+      expect(mockAppLog).toHaveBeenCalledWith('core:agent', 'warn', expect.stringContaining('does not have'), { meta: { orchestratorId: 'opencode' } });
+      mockPeekProjects.mockReset().mockResolvedValue([]);
+      mockGetProvider.mockReset();
+    });
+
+    it('falls back to the project file when the list has no value for it, or cannot be read', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({ orchestrator: 'copilot-cli' }));
+      mockPeekProjects.mockResolvedValueOnce([{ path: path.resolve('/project') }]);
+      expect(await readProjectOrchestrator('/project')).toBe('copilot-cli');
+      mockPeekProjects.mockRejectedValueOnce(new Error('unreadable'));
+      expect(await readProjectOrchestrator('/project')).toBe('copilot-cli');
+    });
   });
 
   describe('resolveOrchestrator', () => {
@@ -186,6 +224,16 @@ describe('agent-registry', () => {
       const result = await resolveOrchestrator('/project');
       expect(result).toBe(copilotProvider);
       expect(mockGetProvider).toHaveBeenCalledWith('copilot-cli');
+    });
+
+    it('uses the project list\'s "Agents run on" for an agent with no CLI of its own (#2975)', async () => {
+      mockPeekProjects.mockResolvedValueOnce([{ path: path.resolve('/project'), orchestrator: 'codex-cli' }]);
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      const codex = { id: 'codex-cli', displayName: 'Codex' };
+      mockGetProvider.mockReturnValue(codex);
+
+      expect(await resolveOrchestrator('/project')).toBe(codex);
+      expect(mockGetProvider).toHaveBeenCalledWith('codex-cli');
     });
 
     it('falls back to default orchestrator', async () => {
@@ -259,14 +307,25 @@ describe('agent-registry', () => {
       agentRegistry.register('la-3', { projectPath: path.join('p', 'a'), orchestrator: 'claude-code', runtime: 'chat' });
       agentRegistry.setLaunchCap('la-3', { freeAgentMode: false, permissionMode: 'skip-all' });
       agentRegistry.reportLaunchAccess('la-3', { freeAgentMode: true, permissionMode: 'skip-all' });
-      expect(agentRegistry.get('la-3')?.launchAccess).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+      expect(agentRegistry.get('la-3')?.launchAccess).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
       agentRegistry.setUserLaunchAccess('la-3', { freeAgentMode: true, permissionMode: 'auto' });
       agentRegistry.reportLaunchAccess('la-3', { freeAgentMode: true, permissionMode: 'skip-all' });
-      expect(agentRegistry.get('la-3')?.launchAccess).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+      expect(agentRegistry.get('la-3')?.launchAccess).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
       agentRegistry.setUserLaunchAccess('la-3', undefined);
       agentRegistry.reportLaunchAccess('la-3', { freeAgentMode: true, permissionMode: 'auto' });
       expect(agentRegistry.get('la-3')?.launchAccess?.freeAgentMode).toBe(false);
       agentRegistry.untrack('la-3');
+    });
+
+    it('a report clamped to a Plan spawn stays at Plan; a change within the rank is the person\'s (#3000)', () => {
+      agentRegistry.register('la-5', { projectPath: path.join('p', 'a'), orchestrator: 'claude-code', runtime: 'chat' });
+      agentRegistry.setLaunchCap('la-5', { freeAgentMode: false, permissionMode: 'auto', access: 'plan' });
+      agentRegistry.reportLaunchAccess('la-5', { freeAgentMode: true, permissionMode: 'skip-all', access: 'full_access' });
+      expect(agentRegistry.get('la-5')?.launchAccess).toMatchObject({ freeAgentMode: false, access: 'plan' });
+      // Approving the plan moves Claude to Auto-accept edits: within the rank, so it stands.
+      agentRegistry.reportLaunchAccess('la-5', { freeAgentMode: false, permissionMode: 'auto', access: 'auto_edit' });
+      expect(agentRegistry.get('la-5')?.launchAccess?.access).toBe('auto_edit');
+      agentRegistry.untrack('la-5');
     });
 
     it('reads an agent with no cap as standard', () => {

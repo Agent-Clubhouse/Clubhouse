@@ -12,7 +12,7 @@ export type MobileCommand = CommandBase & (
   | (ChatTarget & { type: 'chat.send'; text: string; delivery?: 'auto' | 'prompt' | 'steer' | 'queued'; attachmentIds?: string[] })
   | (ChatTarget & { type: 'chat.interrupt' })
   | (ChatTarget & { type: 'chat.queue.remove'; messageIds: string[] })
-  | (ChatTarget & { type: 'chat.permission'; requestId: string; optionId: string })
+  | (ChatTarget & { type: 'chat.permission'; requestId: string; optionId: string; /** The digest from the full-event route, for a request a phone was sent only a preview of (#2731). */ reviewedDigest?: string })
   | (ChatTarget & { type: 'chat.question'; requestId: string; answers: ChatQuestionAnswers })
   // `effort` omitted keeps a chosen effort the new model offers; null is the provider's default (capabilities.effortDefault).
   | (ChatTarget & { type: 'chat.setModel'; model: string; effort?: string | null })

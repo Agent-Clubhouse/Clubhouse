@@ -30,6 +30,7 @@ import { bootstrapGroupProjectAdmin } from '../../group-project-admin-service';
 import {
   claimSourceBinding,
   isBindingRemovedByUser,
+  isSourceRemovedByUser,
   rebuildPersistedBindings,
   releaseSourceBinding,
   type PersistedBinding,
@@ -169,7 +170,8 @@ function entryFor(callerId: string, scope: CallerScope, binding: PersistedBindin
  */
 async function connect(callerId: string, scope: CallerScope, bindings: PersistedBinding[]): Promise<Array<'created' | 'existing' | 'removed' | 'invalid'>> {
   // A pair the user removed this session stays removed: only the user can draw it again.
-  const refused = bindings.find((b) => isBindingRemovedByUser(b.agentId, b.targetId));
+  // Or one whose orchestrator link the user removed from the Connections card (#2744).
+  const refused = bindings.find((b) => isBindingRemovedByUser(b.agentId, b.targetId) || isSourceRemovedByUser(ORCHESTRATOR_CONNECTION_SOURCE_ID, b.agentId, b.targetId));
   if (refused) {
     throw new ConnectionScopeError(`The user removed this connection. ${refused.agentName} → ${refused.targetName} stays disconnected until the user connects it again.`);
   }
@@ -362,7 +364,7 @@ export function registerConnectionTools(): void {
       },
       required: ['name'],
     },
-  }, handleCreateGroupProject, options);
+  }, handleCreateGroupProject, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['members'], names: 'self_and_helpers' } } });
 
   registerGlobalTool('add_to_group_project', {
     description: 'Add you or one of your helpers to a group project. The membership is saved and comes back when Clubhouse restarts.',
@@ -374,7 +376,7 @@ export function registerConnectionTools(): void {
       },
       required: ['project', 'helper'],
     },
-  }, handleAddToGroupProject, options);
+  }, handleAddToGroupProject, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['helper'], names: 'self_and_helpers' } } });
 
   registerGlobalTool('remove_from_group_project', {
     description: 'Remove you or one of your helpers from a group project. Memberships made on the canvas stay; change those on the canvas.',
@@ -386,7 +388,7 @@ export function registerConnectionTools(): void {
       },
       required: ['project', 'helper'],
     },
-  }, handleRemoveFromGroupProject, options);
+  }, handleRemoveFromGroupProject, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['helper'], names: 'self_and_helpers' } } });
 
   registerGlobalTool('connect_agents', {
     description:
@@ -401,7 +403,7 @@ export function registerConnectionTools(): void {
       },
       required: ['from', 'to'],
     },
-  }, handleConnectAgents, options);
+  }, handleConnectAgents, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['from', 'to'], names: 'self_and_helpers' } } });
 
   registerGlobalTool('disconnect_agents', {
     description:
@@ -416,5 +418,5 @@ export function registerConnectionTools(): void {
       },
       required: ['from', 'to'],
     },
-  }, handleDisconnectAgents, options);
+  }, handleDisconnectAgents, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['from', 'to'], names: 'self_and_helpers' } } });
 }

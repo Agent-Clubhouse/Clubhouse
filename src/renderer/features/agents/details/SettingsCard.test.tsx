@@ -281,6 +281,20 @@ describe('Settings card edge cases', () => {
     expect(card.getByTestId('details-setting-model')).toBeInTheDocument();
   });
 
+  it('a quick agent from a template shows the template, and what this run added or left out (#2928)', async () => {
+    const m = window.clubhouse.managed;
+    vi.spyOn(m, 'listTemplates').mockResolvedValue({ ok: true, value: [{ id: 'tpl', name: 'Release', description: '', builtin: false, setup: { blocks: [], skills: [], mcps: [] }, settings: {}, usedBy: 0 }] } as never);
+    vi.spyOn(m, 'listParts').mockImplementation(async (kind: string) => ({ ok: true, value: kind === 'block' ? [{ id: 'p-a', name: 'Extra', kind: 'block' }, { id: 'p-b', name: 'Tone', kind: 'block' }] : [] }) as never);
+    const quick: Agent = { ...agent, kind: 'quick', managedTemplateId: 'tpl', managedQuickChanges: { added: ['p-a'], removed: ['p-b'] } };
+    const { unmount } = render(<AgentDetails agent={quick} />);
+    openSettings();
+    await waitFor(() => expect(screen.getByTestId('details-setting-template')).toHaveTextContent('Release template, plus Extra, minus ToneFor this run only'));
+    unmount();
+    render(<AgentDetails agent={{ ...quick, managedQuickChanges: undefined }} />);
+    await waitFor(() => expect(screen.getByTestId('details-setting-template')).toHaveTextContent('Release'));
+    expect(screen.getByTestId('details-setting-template')).not.toHaveTextContent('For this run only');
+  });
+
   it('reads no config for an agent on another machine and leaves out local-only rows', () => {
     const remote: Agent = { ...agent, projectId: 'remote||sat-1||p1' };
     render(<AgentDetails agent={remote} chat={chatState()} />);
@@ -420,8 +434,40 @@ describe('Settings card context row (#2660)', () => {
     window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: 'a1', contextWindow: '500000' })) as never;
     const chat = { ...createChatViewState('a1'), contextLimits: { effectiveTokens: 300000, compactAtTokens: 267000, reservedTokens: 33000 } };
     render(<SettingsCard agent={{ ...agent, status: 'running' }} chat={chat} projectPath="/p" provider="Claude Code" />);
-    await waitFor(() => expect(screen.getByTestId('details-setting-context-saved').textContent).toContain('500K'));
-    expect(screen.getByTestId('details-setting-context-now').textContent).toContain('300K, compacts at 267K, 33K in reserve');
+    // One Context row beside Model and Effort (#2790): what runs now, then what waits for the next start.
+    await waitFor(() => expect(screen.getByTestId('details-setting-context').textContent).toContain('300K, compacts at 267K, 33K in reserve. Next start: 500K'));
+    expect(screen.queryByTestId('details-setting-context-now')).toBeNull();
+    expect(screen.queryByTestId('details-setting-context-saved')).toBeNull();
     expect(read()).not.toHaveBeenCalled();
+  });
+
+  it('shows only what runs now when nothing is waiting, and no row when neither is known (#2790)', async () => {
+    useAgentDetailsStore.setState({ settingsOpen: true });
+    window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: 'a1' })) as never;
+    const chat = { ...createChatViewState('a1'), contextLimits: { effectiveTokens: 200000, compactAtTokens: null, reservedTokens: null } };
+    const { rerender } = render(<SettingsCard agent={{ ...agent, status: 'running' }} chat={chat} projectPath="/p" provider="Claude Code" />);
+    await waitFor(() => expect(screen.getByTestId('details-setting-context').textContent).toContain('200K'));
+    expect(screen.getByTestId('details-setting-context').textContent).not.toContain('Next start');
+    rerender(<SettingsCard agent={{ ...agent, status: 'running' }} chat={createChatViewState('a1')} projectPath="/p" provider="Claude Code" />);
+    await act(async () => {});
+    expect(screen.queryByTestId('details-setting-context')).toBeNull();
+  });
+
+  it('says when a model changed in the session differs from the saved one the next start uses (#2790)', async () => {
+    useAgentDetailsStore.setState({ settingsOpen: true });
+    window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: 'a1', model: 'sonnet' })) as never;
+    const chat = { ...createChatViewState('a1'), model: 'opus', startModel: 'sonnet' };
+    render(<SettingsCard agent={{ ...agent, status: 'running' }} chat={chat} projectPath="/p" provider="Claude Code" />);
+    await waitFor(() => expect(screen.getByTestId('details-setting-model').textContent).toContain('opus. Next start: sonnet'));
+  });
+
+  it('says nothing extra when the session runs the model it started on, whatever the saved id looks like (#2790)', async () => {
+    useAgentDetailsStore.setState({ settingsOpen: true });
+    window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: 'a1', model: 'claude-opus-5-5' })) as never;
+    const chat = { ...createChatViewState('a1'), model: 'opus', startModel: 'opus' };
+    render(<SettingsCard agent={{ ...agent, status: 'running' }} chat={chat} projectPath="/p" provider="Claude Code" />);
+    await waitFor(() => expect(window.clubhouse.agent.getDurableConfig).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.getByTestId('details-setting-model').textContent).not.toContain('Next start');
   });
 });

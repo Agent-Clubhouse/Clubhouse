@@ -2,6 +2,9 @@
  * Dispatcher tools (#2536), in the `dispatcher` tool group: listed and
  * callable only by the running Dispatcher.
  *
+ * Both are open to the Dispatcher's chat too (#3036), which reads agents'
+ * state directly.
+ *
  * - list_agents: every agent with "Connect to Dispatcher" on (#2534, #2578),
  *   across every registered project, with its status, whether it orchestrates,
  *   whether it is connected now, its helpers and its branch.
@@ -242,7 +245,7 @@ export function registerDispatcherTools(): void {
         return { content: [{ type: 'text', text: errorText(err) }], isError: true };
       }
     },
-    { group: 'dispatcher' },
+    { group: ['dispatcher', 'dispatcherChat'], grant: { actions: ['agent.read'], target: 'connected' } },
   );
   registerGlobalTool(
     'inspect_helper',
@@ -274,7 +277,7 @@ export function registerDispatcherTools(): void {
         return { content: [{ type: 'text', text: errorText(err) }], isError: true };
       }
     },
-    { group: 'dispatcher' },
+    { group: ['dispatcher', 'dispatcherChat'], grant: { actions: ['agent.read'], target: 'agent_arg', from: { args: ['helper'] } } },
   );
   // Turning the Dispatcher on or off adds or removes these tools.
   unwatchDispatcher?.();

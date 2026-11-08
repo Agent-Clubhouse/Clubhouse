@@ -1,3 +1,5 @@
+import type { AnnexProblem } from './annex-problems';
+
 /** Whether the clubhouse command is installed (#2598). Only a packaged build can install it. */
 export interface CliInstallStatus {
   supported: boolean;
@@ -141,6 +143,8 @@ export interface Agent {
   runBaseSha?: string;
   /** Quick agents started from a template (D25): its id, so Retry keeps it. */
   managedTemplateId?: string;
+  /** What this launch added to or left out of its template (#2928), for Details and Retry. */
+  managedQuickChanges?: QuickRunChanges;
 }
 
 export interface CompletedQuickAgent {
@@ -182,6 +186,8 @@ export interface CompletedQuickAgent {
   outputTokens?: number;
   /** The template the run started from (D25), for Retry. */
   managedTemplateId?: string;
+  /** What the run added to or left out of its template (#2928), for Retry. */
+  managedQuickChanges?: QuickRunChanges;
 }
 
 // --- Config inheritance types ---
@@ -378,7 +384,7 @@ export interface DurableAgentConfig {
    * "same"). Every later start resolves under it, so a wake
    * never raises the helper above what its start asked for.
    */
-  requestedAccess?: import('./orchestration-policy').AgentAccessLevel;
+  requestedAccess?: import('./orchestration-policy').HelperRequestedAccess;
   /**
    * True when Clubhouse created `branch` for this agent, so deleting the agent
    * may delete the branch (#2226). False for a branch that already existed.
@@ -959,7 +965,7 @@ export interface SoundSettings {
   }>;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher'
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher' | 'actions'
   // Clubhouse-managed agents (#2819).
   | 'managed-blocks' | 'managed-skills' | 'managed-mcp' | 'managed-templates' | 'managed-orchestration' | 'managed-switch';
 
@@ -1068,6 +1074,17 @@ export interface AnnexSettings {
   color: string;
   /** Whether to auto-reconnect to satellites after disconnection */
   autoReconnect: boolean;
+  /**
+   * A name or address other devices can also reach this machine by, such as its
+   * tailnet name (#3058). Added to the pairing link and the phone's routes.
+   */
+  reachableAs?: string;
+  /**
+   * Annex Network for this machine (#3061). On (the default when unset), a new
+   * pairing with another desktop that has it on joins the network. Off, pairings
+   * are one-to-one as before.
+   */
+  networkEnabled?: boolean;
 }
 
 export interface AnnexStatus {
@@ -1089,12 +1106,17 @@ export interface AnnexStatus {
   pairingUrl?: string;
   /** The hosts in pairingUrl, best first, for manual pairing. */
   pairingHosts?: string[];
+  /** Pairing is paused after too many wrong PINs, until allowed again in Settings. */
+  pairingPaused?: boolean;
 }
 
 // ── Annex peer types ──────────────────────────────────────────────────
 
-/** Role of a peer relative to this machine. */
-export type AnnexPeerRole = 'controller' | 'satellite';
+/**
+ * Role of a peer relative to this machine. `member`: both are in the same Annex
+ * Network (#3061), so each controls the other.
+ */
+export type AnnexPeerRole = 'controller' | 'satellite' | 'member';
 
 export interface AnnexPeer {
   /**
@@ -1126,12 +1148,83 @@ export interface AnnexPeer {
    * Entries without a role are from an older version and need pairing again.
    */
   role?: AnnexPeerRole;
+  /** For a satellite: addresses it was reached at or listed in its pairing link, most recently reached first (#3058). */
+  knownHosts?: string[];
+  /** For a satellite: its main (TLS) port when it was last reached or paired. */
+  mainPort?: number;
+  /** For a satellite: a host name or address the person typed, such as a tailnet name. */
+  typedHost?: string;
+  /** For a network member: a computer or a phone, as it said when it joined. */
+  kind?: 'desktop' | 'phone';
+  /** For a network member: the fingerprint of the member that added it (this machine's own when paired here). */
+  addedBy?: string;
 }
 
 /** A peer as Settings lists it. */
 export interface AnnexPeerListing extends AnnexPeer {
   /** Older pairing (or one we can't verify): refused until it's paired again. */
   needsPairing: boolean;
+}
+
+/**
+ * Where a paired device stands, as Settings shows it.
+ * - `connected`: a live connection either way.
+ * - `connecting`: this machine is connecting to it, or looking for it on the network.
+ * - `offline`: paired, with no connection now.
+ * - `needs-pairing`: refused until it's paired again.
+ * - `removing`: removed from the network, and some members haven't heard yet (#3061).
+ */
+export type AnnexDeviceState = 'connected' | 'connecting' | 'offline' | 'needs-pairing' | 'removing';
+
+/**
+ * One paired device (#3057): the single list Settings is built from, whichever
+ * way the pairing goes. Keyed by identity fingerprint.
+ */
+export interface AnnexDevice {
+  fingerprint: string;
+  alias: string;
+  icon: string;
+  color: string;
+  /**
+   * How it's paired with this machine: it controls this machine (`controller`),
+   * or this machine controls it (`satellite`). Null for a pairing from before
+   * roles, which needs pairing again.
+   */
+  role: AnnexPeerRole | null;
+  /** For a network member: a computer or a phone. */
+  kind?: 'desktop' | 'phone';
+  state: AnnexDeviceState;
+  /** ISO time it was paired; empty when unknown. */
+  pairedAt: string;
+  /** ISO time of its last connection; empty when unknown. */
+  lastSeen: string;
+  /** Paired for this session only (a phone's session pairing): forgotten when Annex stops. */
+  sessionOnly?: boolean;
+  /** For a device this machine connects to: the address in use or tried last, as `host:port`. */
+  address?: string;
+  /** For a device this machine connects to: the host name or address the person typed, if any. */
+  typedHost?: string;
+  /** Why it isn't connected, and what to do, when that's known. */
+  problem: AnnexProblem | null;
+  /**
+   * For a network member: where its join, or its removal, is confirmed (#3061).
+   * Names of members whose view shows it, and of those it hasn't reached yet.
+   * Absent once every member has it.
+   */
+  confirmation?: { kind: 'join' | 'removal'; confirmedBy: string[]; waitingOn: string[] };
+}
+
+/** A device this machine has heard from on the Annex Network channel (#3060). */
+export interface AnnexNetworkMemberListing {
+  fingerprint: string;
+  name: string;
+  kind: 'desktop' | 'phone';
+  /** Its channel to or from this machine is open now. */
+  connected: boolean;
+  /** How many members it says the network has, itself included. */
+  memberCount: number;
+  /** ISO time of its last message. */
+  lastHeard: string;
 }
 
 // ── Annex client (controller) types ───────────────────────────────────
@@ -1332,7 +1425,48 @@ export type BuiltinThemeId =
   | 'dracula'
   | 'tokyo-night'
   | 'gruvbox-dark'
-  | 'cyberpunk';
+  | 'cyberpunk'
+  // Designed around their gradients (#2916), in src/renderer/themes/gradient-themes.ts.
+  | 'aurora'
+  | 'canyon'
+  | 'daybreak'
+  | 'mist'
+  // The seven Workshop packs (#2753), in src/renderer/themes/packs.
+| 'maple'
+| 'harvest'
+| 'pumpkin-spice'
+| 'amber-forest'
+| 'twilight-ember'
+| 'frost'
+| 'evergreen'
+| 'northern-lights'
+| 'snowfall'
+| 'polar-night'
+| 'cherry-blossom'
+| 'spring-meadow'
+| 'wisteria'
+| 'daffodil'
+| 'moonlit-garden'
+| 'sunset-beach'
+| 'ocean-breeze'
+| 'tropical'
+| 'golden-hour'
+| 'midnight-swim'
+| 'coral-reef'
+| 'tide-pool'
+| 'pacific'
+| 'deep-sea'
+| 'abyssal'
+| 'redmond'
+| 'mountain-view'
+| 'cupertino'
+| 'ai-lab'
+| 'seattle'
+| 'neon-cyberpunk'
+| 'synthwave'
+| 'neon-tokyo'
+| 'electric'
+| 'vaporwave';
 
 /** Theme IDs — builtin themes plus any plugin-contributed themes. */
 export type ThemeId = BuiltinThemeId | (string & {});
@@ -1438,6 +1572,8 @@ export interface ThemeDefinition {
   fonts?: ThemeFonts;
   /** CSS gradients (experimental). */
   gradients?: ThemeGradients;
+  /** The collection a built-in theme came in, such as `Winter` (#2753). Unset for the original built-ins. */
+  collection?: string;
 }
 
 export interface GitStatusFile {
@@ -1514,9 +1650,14 @@ export interface McpServerEntry {
 }
 
 export interface SkillEntry {
+  /** The folder's name. */
   name: string;
   path: string;
   hasReadme: boolean;
+  /** The `name` in SKILL.md's front matter, when it has one: what a provider reports (#2929). */
+  skillName?: string;
+  /** Clubhouse delivered this folder for a managed agent (its skills manifest names it). */
+  managed?: boolean;
 }
 
 export interface AgentTemplateEntry {
@@ -1562,8 +1703,28 @@ export interface SpawnAgentParams {
   agentFile?: string;
   /** Source directory for agent file (e.g. --source ~/.copilot/agents/) */
   agentSource?: string;
-  /** Clubhouse-managed quick agents (#2893): start from this template. */
-  managedTemplate?: { id: string; agentName: string };
+  /** Clubhouse-managed quick agents (#2893): start from this template, with this launch's part changes (#2928). */
+  managedTemplate?: QuickTemplateChoice;
+}
+
+/** At most this many parts added, and this many removed, for one quick launch (#2928). */
+export const MAX_QUICK_RUN_CHANGES = 50;
+
+/**
+ * A quick agent's template (#2893, D25), and what this one launch adds to it or
+ * leaves out (#2928, D102). Part ids; the template itself never changes.
+ */
+export interface QuickTemplateChoice {
+  id: string;
+  agentName: string;
+  addParts?: string[];
+  removeParts?: string[];
+}
+
+/** What one quick launch changed from its template (#2928): part ids, for Details and Retry. */
+export interface QuickRunChanges {
+  added: string[];
+  removed: string[];
 }
 
 export type AgentDetailedState = 'idle' | 'working' | 'needs_permission' | 'tool_error';

@@ -16,6 +16,30 @@ import { rendererConfig } from './webpack.renderer.config';
 import webpack, { type Configuration } from 'webpack';
 import { buildDevCsp } from './src/main/csp-nonce';
 
+/**
+ * The RPM spec template (#2549). electron-installer-redhat 3.4.0 has no
+ * template option and its `%install` copies a path relative to the build
+ * directory, which rpm 4.20 moved. Point its spec step at the repo's copy,
+ * which copies from the staged tree's absolute path. The installer is only
+ * there where the RPM maker can run, so elsewhere this does nothing.
+ */
+function useRpmSpecTemplate(): void {
+  type RedhatInstaller = { createTemplatedFile(src: string, dest: string): Promise<void>; specPath: string };
+  let installer: { Installer?: { prototype: { createSpec(this: RedhatInstaller): Promise<void> } } };
+  try {
+    installer = require('electron-installer-redhat');
+  } catch {
+    return;
+  }
+  const proto = installer.Installer?.prototype;
+  if (!proto) return;
+  const template = path.resolve(__dirname, 'build', 'rpm.spec.ejs');
+  proto.createSpec = function createSpec(this: RedhatInstaller) {
+    return this.createTemplatedFile(template, this.specPath);
+  };
+}
+useRpmSpecTemplate();
+
 function copyNativeModule(srcRoot: string, destRoot: string, moduleName: string): void {
   const src = path.join(srcRoot, 'node_modules', moduleName);
   const dest = path.join(destRoot, 'node_modules', moduleName);

@@ -23,6 +23,7 @@ vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: (...args: un
 import { ChatAgentRuntime, ChatStartCancelledError } from './chat-runtime';
 import { appendChatEvent } from './chat-transcript';
 import { FakeChatDriver } from './fake-chat-driver';
+import { registerConcealedTools } from './concealed-tools';
 import { registerChatRuntime, clearChatRuntimes, isChatAgent } from './index';
 import { onChatEvent, removeAllChatEventListeners } from './chat-event-bus';
 import { _forgetSentPermissionsForTest, isIncompletePermission } from '../annex-chat-bounds';
@@ -71,6 +72,30 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe('ChatAgentRuntime concealed tools (#3036)', () => {
+  it('never writes or publishes a concealed call or its updates, with no gaps in seq', async () => {
+    const remove = registerConcealedTools((id) => (id === 'agent-1' ? new Set(['start_work']) : null));
+    try {
+      const driver = new FakeChatDriver();
+      const published: ChatEvent[] = [];
+      onChatEvent((e) => published.push(e));
+      const { runtime } = makeRuntime(driver);
+      await runtime.start();
+      driver.last.emit({ type: 'tool_call', data: { toolCallId: 'h1', kind: 'other', title: 'start_work', status: 'pending', toolName: 'mcp__clubhouse__start_work' } });
+      driver.last.emit({ type: 'tool_call_update', data: { toolCallId: 'h1', status: 'completed' } });
+      driver.last.emit({ type: 'tool_call', data: { toolCallId: 'l1', kind: 'other', title: 'list_agents', status: 'pending', toolName: 'mcp__clubhouse__list_agents' } });
+      driver.last.emit({ type: 'agent_message', data: { messageId: 'm1', text: 'On it.' } });
+      await vi.waitFor(() => expect(transcript.some((e) => e.type === 'agent_message')).toBe(true));
+      expect(JSON.stringify(transcript)).not.toContain('start_work');
+      expect(JSON.stringify(published)).not.toContain('start_work');
+      expect(transcript.some((e) => e.type === 'tool_call' && e.data.toolCallId === 'l1')).toBe(true);
+      expect(transcript.map((e) => e.seq)).toEqual(transcript.map((_, i) => i + 1));
+    } finally {
+      remove();
+    }
+  });
 });
 
 describe('ChatAgentRuntime rich media', () => {
@@ -1108,7 +1133,7 @@ describe('ChatAgentRuntime stop during start (#2087)', () => {
       await runtime.start();
       driver.last.emit({ type: 'mode_changed', data: { level: 'auto' } });
       await flush();
-      expect(agentRegistry.get('agent-1')?.launchAccess).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+      expect(agentRegistry.get('agent-1')?.launchAccess).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
       driver.last.emit({ type: 'mode_changed', data: { level: 'plan' } });
       await flush();
       expect(agentRegistry.get('agent-1')?.launchAccess?.freeAgentMode).toBe(false);
@@ -1122,12 +1147,12 @@ describe('ChatAgentRuntime stop during start (#2087)', () => {
       const real = driver.last.setLevel.bind(driver.last);
       driver.last.setLevel = async (level) => { seen = agentRegistry.get('agent-1')?.launchAccess; await real(level); };
       await runtime.setLevel('ask');
-      expect(seen).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+      expect(seen).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
       expect(agentRegistry.get('agent-1')?.launchAccess?.freeAgentMode).toBe(false);
 
       await runtime.setLevel('full_access');
-      expect(seen).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
-      expect(agentRegistry.get('agent-1')?.launchAccess).toEqual({ freeAgentMode: true, permissionMode: 'skip-all' });
+      expect(seen).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
+      expect(agentRegistry.get('agent-1')?.launchAccess).toMatchObject({ freeAgentMode: true, permissionMode: 'skip-all' });
     });
 
     it('records the spawn level when a session opens, and again after /clear', async () => {
@@ -1137,10 +1162,10 @@ describe('ChatAgentRuntime stop during start (#2087)', () => {
       await runtime.start();
       expect(agentRegistry.get('agent-1')?.launchAccess?.freeAgentMode).toBe(false);
       await runtime.setLevel('full_access');
-      expect(agentRegistry.get('agent-1')?.launchAccess).toEqual({ freeAgentMode: true, permissionMode: 'skip-all' });
+      expect(agentRegistry.get('agent-1')?.launchAccess).toMatchObject({ freeAgentMode: true, permissionMode: 'skip-all' });
       // The new session starts at the spawn level (ask), not full access.
       await runtime.clearContext();
-      expect(agentRegistry.get('agent-1')?.launchAccess).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+      expect(agentRegistry.get('agent-1')?.launchAccess).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
     });
 
     it('clamps a driver mode_changed above the user-set level', async () => {

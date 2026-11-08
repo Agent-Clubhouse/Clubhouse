@@ -15,6 +15,8 @@ import { IPC } from '../ipc-channels';
 
 /** Bump on breaking attribute changes; exported as `clubhouse.telemetry.schema`. */
 import { SUPPORTED_PLUGIN_API_VERSIONS } from '../marketplace-types';
+import type { BuiltinThemeId } from '../types';
+import { ACTION_EVENT_KINDS, ACTION_STEP_KINDS, MISSED_RUN_RULES } from '../actions/types';
 import {
   DECISION_QUOTA_QUALITIES,
   DECISION_SCORE_BASES,
@@ -258,7 +260,21 @@ export const SETTINGS_KEYS = [
 /** Built-in theme ids (shared/types.ts BuiltinThemeId); plugin themes report `other`. */
 export const BUILTIN_THEME_IDS = [
   'catppuccin-mocha', 'catppuccin-latte', 'solarized-dark', 'terminal', 'nord', 'dracula', 'tokyo-night', 'gruvbox-dark', 'cyberpunk',
+  // Designed around their gradients (#2916).
+  'aurora', 'canyon', 'daybreak', 'mist',
+  // The Workshop pack themes (#2753).
+  'maple', 'harvest', 'pumpkin-spice', 'amber-forest', 'twilight-ember', 'frost',
+  'evergreen', 'northern-lights', 'snowfall', 'polar-night', 'cherry-blossom', 'spring-meadow',
+  'wisteria', 'daffodil', 'moonlit-garden', 'sunset-beach', 'ocean-breeze', 'tropical',
+  'golden-hour', 'midnight-swim', 'coral-reef', 'tide-pool', 'pacific', 'deep-sea',
+  'abyssal', 'redmond', 'mountain-view', 'cupertino', 'ai-lab', 'seattle',
+  'neon-cyberpunk', 'synthwave', 'neon-tokyo', 'electric', 'vaporwave',
 ] as const;
+
+// Every built-in id, and nothing else: a new built-in theme must be added here too.
+type SameIds<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
+const builtinThemeIdsMatch: SameIds<(typeof BUILTIN_THEME_IDS)[number], BuiltinThemeId> = true;
+void builtinThemeIdsMatch;
 
 /** Supported plugin API versions, kept in sync with the manifest validator. */
 export const PLUGIN_API_VERSION_VALUES: readonly string[] = SUPPORTED_PLUGIN_API_VERSIONS.map(String);
@@ -375,7 +391,7 @@ export const ATTR = {
     'more_menu_open', 'more_menu_pick',
     'row_menu_open', 'hover_card_action',
     'project_menu_open', 'agent_reorder', 'idle_toggle', 'needs_you_review',
-    'agent_settings_page', 'agent_shell_toggle', 'sidebar_filter', 'filter_search_everything', 'new_agent_create', 'new_agent_start', 'first_run_install',
+    'agent_settings_page', 'agent_shell_toggle', 'sidebar_filter', 'filter_search_everything', 'new_agent_create', 'new_agent_start', 'quick_prompt_start', 'first_run_install',
     'dispatcher_open',
   ]),
   /** The UI action whose failure was caught and reported (`clubhouse.ui.action_failed`). */
@@ -529,14 +545,18 @@ export const ATTR = {
     'answer_helper_question',
     // the Dispatcher (#2536)
     'list_agents', 'inspect_helper',
+    // the Dispatcher's two agents (#3036)
+    'start_work', 'read_memory', 'tell_user',
     // appearance (#2597)
     'update_project', 'update_agent',
     // settings reads (#2653)
-    'list_settings', 'read_settings',
+    'list_settings', 'read_settings', 'read_helper_presets', 'set_helper_presets', 'request_grant',
     // Dispatcher controls over connected orchestrators (#2661)
     'set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'list_orchestrator_controls',
     // orchestration: connection tools (#2230)
     'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
+    // actions (#2952), the permission model's action.* (#2921)
+    'create_action', 'list_actions', 'update_action', 'delete_action', 'run_action', 'action_history',
     'other',
   ]),
   mcpResult: enumAttr('clubhouse.mcp.result', ['ok', 'tool_error', 'threw']),
@@ -544,7 +564,7 @@ export const ATTR = {
    * Why the tool registry refused a call before any handler ran (#2308). Only on
    * `clubhouse.mcp.tool_call` spans whose result is `tool_error`.
    */
-  mcpRefusalReason: enumAttr('clubhouse.mcp.refusal.reason', ['group_off', 'unparseable', 'no_binding', 'unknown_tool', 'invalid_args', 'tool_denied', 'caller_unknown']),
+  mcpRefusalReason: enumAttr('clubhouse.mcp.refusal.reason', ['group_off', 'unparseable', 'no_binding', 'unknown_tool', 'invalid_args', 'tool_denied', 'caller_unknown', 'no_grant', 'ask_first']),
   binaryLookupTier: enumAttr('clubhouse.binary.lookup_tier', ['cache', 'well_known', 'path_scan', 'login_shell', 'not_found']),
   // Phase 4b: spawn, create, delete, kill, shoulder taps
   agentResume: boolAttr('clubhouse.agent.resume'),
@@ -816,7 +836,8 @@ export const ATTR = {
   goobersModel: enumAttr('clubhouse.goobers.model', ['instance', 'run', 'workflow']),
   sseTerminalReason: enumAttr('clubhouse.sse.terminal_reason', ['auth-required', 'no-read-model', 'schema-changed']),
   // Feedback (Framebriar screenshot feedback, #2309). States, counts and codes only:
-  // never notes, images, invitations or the report id (that stays in the local log).
+  // never notes, images or invitations. The report id is `feedbackReportId`, for the
+  // developer destination only (#2524).
   feedbackStage: enumAttr('clubhouse.feedback.stage', ['start', 'connect', 'capture', 'submit', 'deliver']),
   feedbackError: enumAttr('clubhouse.feedback.error', [
     // SDK and outbox codes, in their own spelling
@@ -830,6 +851,12 @@ export const ATTR = {
     'undeliverable',
     'unknown', 'other',
   ]),
+  /**
+   * The Framebriar report id, a random UUID with no report content, on
+   * `feedback.submitted` only. Framebriar's own name, and only the developer
+   * destination receives it (#2524): the others drop it.
+   */
+  feedbackReportId: uuidAttr('feedback.report.id'),
   feedbackScreenshot: boolAttr('clubhouse.feedback.screenshot'),
   feedbackAnnotated: boolAttr('clubhouse.feedback.annotated'),
   feedbackShots: intAttr('clubhouse.feedback.shots'),
@@ -848,12 +875,15 @@ export const ATTR = {
     'POST /api/v1/mobile/agents/:id/attachments',
     'GET /api/v1/mobile/agents/:id/content',
     'GET /api/v1/mobile/capabilities',
+    'GET /api/v1/mobile/network',
+    'POST /api/v1/mobile/network/members',
     'GET /api/v1/mobile/canvas',
     'GET /api/v1/mobile/canvas/:id',
     'DELETE /api/v1/mobile/pairing',
     'GET /api/v1/mobile/agents/state',
     'GET /api/v1/mobile/agents/:id/chat',
     'GET /api/v1/mobile/agents/:id/chat/sessions',
+    'GET /api/v1/mobile/agents/:id/chat/events/:id',
     'POST /api/v1/mobile/commands',
     'GET /api/v1/mobile/projects/:id/create-options',
     'GET /api/v1/mobile/agents/:id/settings',
@@ -903,6 +933,31 @@ export const ATTR = {
 
   // appLog bridge (§6.6, Phase 7)
   configFormat: enumAttr('clubhouse.config.format', ['json', 'toml']),
+
+  // Actions (#2918, #2956). Closed codes and counts only: never an action's name, steps' text, prompts or
+  // reasons in words. The action id hash is on the Detailed `clubhouse.action.run_detail` only.
+  actionOwner: enumAttr('clubhouse.action.owner', ['user', 'dispatcher', 'agent', 'app']),
+  actionTrigger: enumAttr('clubhouse.action.trigger', ['schedule', 'once', 'event', 'catch_up', 'manual']),
+  actionEvent: enumAttr('clubhouse.action.event', ACTION_EVENT_KINDS),
+  actionDelayed: boolAttr('clubhouse.action.delayed'),
+  actionWait: enumAttr('clubhouse.action.wait', ['started', 'restarted', 'cancelled', 'fired', 'dropped']),
+  actionOverlap: enumAttr('clubhouse.action.overlap', ['skipped', 'queued']),
+  actionLimit: enumAttr('clubhouse.action.limit', ['chain', 'self', 'hourly']),
+  actionChainDepth: enumAttr('clubhouse.action.chain_depth', ['0', '1', '2', '3+']),
+  actionMissedRule: enumAttr('clubhouse.action.missed_rule', MISSED_RUN_RULES),
+  actionMissedBucket: enumAttr('clubhouse.action.missed_bucket', ['0', '1', '2-4', '5-9', '10+']),
+  actionRunOutcome: enumAttr('clubhouse.action.run.outcome', ['done', 'failed', 'cancelled', 'skipped']),
+  actionRunReason: enumAttr('clubhouse.action.run.reason', [
+    'none', 'self_trigger', 'chain_limit', 'overlap', 'hourly_limit', 'missed', 'condition_changed', 'turned_off', 'edited',
+    'deleted', 'rights_refused', 'step_failed', 'step_threw',
+  ]),
+  actionRunSteps: intAttr('clubhouse.action.run.steps'),
+  actionRunDurationMs: intAttr('clubhouse.action.run.duration_ms'),
+  actionRunFailedStep: enumAttr('clubhouse.action.run.failed_step', [...ACTION_STEP_KINDS, 'none']),
+  actionStepKind: enumAttr('clubhouse.action.step.kind', ACTION_STEP_KINDS),
+  actionStepOutcome: enumAttr('clubhouse.action.step.outcome', ['done', 'failed']),
+  actionStepIndex: intAttr('clubhouse.action.step.index'),
+  actionIdHash: hashAttr('clubhouse.action.id_hash'),
 } as const;
 
 /**
@@ -1615,10 +1670,10 @@ export const EVENTS = {
   'clubhouse.agent.permission.stuck': { level: 'errors' },
   /** Restoring an agent's config file from its snapshot failed. Attributes: `clubhouse.config.format`. */
   'clubhouse.config.restore_failed': { level: 'errors' },
-  // Feedback (#2309). The report id is never an attribute: it stays in the local log.
+  // Feedback (#2309). The report id goes on `submitted` for the developer destination only (#2524).
   /** Screenshots taken for a review. Attributes: screenshot, shots, windows, trigger. */
   'clubhouse.feedback.captured': { level: 'standard' },
-  /** Reviewed feedback saved to the outbox. Attributes: screenshot, annotated, shots, access state. */
+  /** Reviewed feedback saved to the outbox. Attributes: screenshot, annotated, shots, access state, and the report id for the developer destination only (#2524). */
   'clubhouse.feedback.submitted': { level: 'standard' },
   /** The outbox delivered a report (Framebriar's receipt). */
   'clubhouse.feedback.delivered': { level: 'standard' },
@@ -1645,6 +1700,26 @@ export const EVENTS = {
    * `clubhouse.agent.runtime`, resume result.
    */
   'clubhouse.agent.resume_outcome': { level: 'standard' },
+  // Actions (#2918, #2956). Every event carries `clubhouse.action.owner`; Clubhouse's own hidden actions report `app`.
+  /** A trigger fired. Attributes: trigger kind, and for event triggers the event kind and whether it waits first. */
+  'clubhouse.action.triggered': { level: 'standard' },
+  /** A delayed event trigger's wait started, restarted, was cancelled, fired, or was dropped at launch. Attributes: wait code, event kind. */
+  'clubhouse.action.wait': { level: 'standard' },
+  /** A trigger fired while the last run was still going. Attributes: overlap code (skipped, queued), trigger kind. */
+  'clubhouse.action.overlap': { level: 'standard' },
+  /** Loop protection or the hourly limit stopped a run. Attributes: limit code, chain depth bucket. */
+  'clubhouse.action.limit_hit': { level: 'standard' },
+  /** Schedule times were missed while Clubhouse was closed or asleep. Attributes: missed-count bucket, the action's missed-run rule. */
+  'clubhouse.action.catch_up': { level: 'standard' },
+  /** A run ended or was recorded without running. Attributes: outcome, reason code, trigger, step count, failed step kind, chain depth bucket, duration. */
+  'clubhouse.action.run': { level: 'standard' },
+  /** One step of a run. Attributes: step kind, outcome, position (1 to 3). */
+  'clubhouse.action.step': { level: 'standard' },
+  /**
+   * The same run, with the action id hash (and the owning agent's id hash for agent-owned actions).
+   * Detailed: recorded locally only at the Detailed level, and exported only to destinations set to Detailed.
+   */
+  'clubhouse.action.run_detail': { level: 'detailed' },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 

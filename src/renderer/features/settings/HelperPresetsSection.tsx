@@ -3,13 +3,16 @@
  * (#2671). A choice is checked against the CLI's list when it's saved and each
  * time it's used. One no longer offered stays saved and shows what is used
  * instead, with Reset. These are starting choices, not measured best ones.
+ * Minimum and maximum (#3044) follow Easy and Hard until a person picks one.
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  HELPER_DIFFICULTIES,
+  AUTO_LEVEL_FOLLOWS,
+  AUTO_LEVELS,
+  isAutoBoundLevel,
   quotaRefetchDelaySeconds,
-  type HelperDifficulty,
+  type AutoLevel,
   type HelperRoutingSettings,
   type HelperRoutingUpdate,
   type PresetCellView,
@@ -21,7 +24,9 @@ import { Toggle } from '../../components/Toggle';
 import { SettingsBlock, SettingsSection, settingsHelp, settingsInput } from './SettingsLayout';
 
 const PROVIDER_NAMES: Record<string, string> = { 'claude-code': 'Claude Code', 'codex-cli': 'Codex' };
-const DIFFICULTY_NAMES: Record<HelperDifficulty, string> = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+const LEVEL_NAMES: Record<AutoLevel, string> = { minimum: 'Minimum', easy: 'Easy', medium: 'Medium', hard: 'Hard', maximum: 'Maximum' };
+/** The model select's value for a minimum or maximum with no choice of its own. */
+const FOLLOW = '';
 
 type Eligible = Extract<ProviderRoutingView, { autoEligible: true }>;
 
@@ -61,7 +66,7 @@ function cellNote(cell: PresetCellView, labels: HelperRoutingSettings['labels'])
 
 function PresetRow({ provider, difficulty, view, labels, busy, onSave, onReset }: {
   provider: string;
-  difficulty: HelperDifficulty;
+  difficulty: AutoLevel;
   view: Eligible;
   labels: HelperRoutingSettings['labels'];
   busy: boolean;
@@ -69,6 +74,9 @@ function PresetRow({ provider, difficulty, view, labels, busy, onSave, onReset }
   onReset: () => void;
 }) {
   const cell = view.cells[difficulty];
+  // Minimum and maximum offer "Same as" the difficulty they follow, selected while they have no choice of their own.
+  const follows = isAutoBoundLevel(difficulty) ? AUTO_LEVEL_FOLLOWS[difficulty] : null;
+  const following = follows && !cell.custom ? follows : null;
   const shown = cell.custom ?? cell.effective ?? cell.builtin;
   const listed = view.choices.models.find((m) => m.id === shown.model);
   const models = listed ? view.choices.models : [{ id: shown.model, label: shown.model, efforts: shown.effort ? [shown.effort] : [] }, ...view.choices.models];
@@ -79,19 +87,25 @@ function PresetRow({ provider, difficulty, view, labels, busy, onSave, onReset }
   return (
     <li className="py-1" data-testid={testId}>
       <div className="flex items-center gap-2.5 text-[13px]">
-        <span className="w-16 text-ctp-text">{DIFFICULTY_NAMES[difficulty]}</span>
+        <span className="w-16 text-ctp-text">{LEVEL_NAMES[difficulty]}</span>
         <select
           aria-label={`${PROVIDER_NAMES[provider] ?? provider} ${difficulty} model`}
           className={`${settingsInput} min-w-0 flex-1`}
           disabled={busy}
-          value={shown.model}
+          value={following ? FOLLOW : shown.model}
           onChange={(e) => {
+            if (e.target.value === FOLLOW) { onReset(); return; }
             const next = view.choices.models.find((m) => m.id === e.target.value);
             // Keep the level if the new model takes it, else let its CLI pick.
             onSave(e.target.value, shown.effort && next?.efforts.includes(shown.effort) ? shown.effort : null);
           }}
           data-testid={`${testId}-model`}
         >
+          {follows && (
+            <option value={FOLLOW}>
+              {`Same as ${LEVEL_NAMES[follows]}${following && cell.effective ? ` (${models.find((m) => m.id === cell.effective!.model)?.label ?? cell.effective.model})` : ''}`}
+            </option>
+          )}
           {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
         </select>
         <select
@@ -209,6 +223,9 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
         <p className={settingsHelp}>
           An orchestrator can name a difficulty instead of a model. These are what it picks on each CLI. They are starting choices, so change them to suit your work. Anything an orchestrator names itself still wins.
         </p>
+        <p className={settingsHelp}>
+          Minimum and Maximum are the cheapest and strongest choices on each CLI, for Clubhouse’s own background work. Until you pick one, they use Easy and Hard.
+        </p>
         <div className="mt-1.5 flex items-center gap-2.5">
           <p className={`${settingsHelp} min-w-0 flex-1`}>Asks each CLI again for its models and limits, for after you sign in.</p>
           <Button kind="quiet" disabled={busy} aria-busy={checking} onClick={() => void checkAgain()} data-testid="helper-presets-check-again">
@@ -225,7 +242,7 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
                 <Button
                   kind="quiet"
                   className="ml-auto"
-                  disabled={busy || !HELPER_DIFFICULTIES.some((d) => view.cells[d].custom)}
+                  disabled={busy || !AUTO_LEVELS.some((level) => view.cells[level]?.custom)}
                   onClick={() => void update({ reset: { provider } })}
                   data-testid={`helper-presets-${provider}-reset`}
                 >
@@ -236,7 +253,7 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
                 {quotaLine(view.quota, settings!)} Limits for one model aren’t included.
               </p>
               <ul className="flex flex-col">
-                {HELPER_DIFFICULTIES.map((difficulty) => (
+                {AUTO_LEVELS.filter((level) => view.cells[level]).map((difficulty) => (
                   <PresetRow
                     key={difficulty}
                     provider={provider}

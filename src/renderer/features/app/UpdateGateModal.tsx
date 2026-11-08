@@ -102,7 +102,7 @@ export function UpdateGateModal({ agents, onCancel, onConfirm, onResolveAgent }:
             className={`px-4 py-1.5 text-xs rounded-md transition-colors font-medium ${
               hasWorking
                 ? 'bg-surface-1 text-ctp-subtext0/40 cursor-not-allowed'
-                : 'bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer'
+                : 'bg-ctp-accent text-ctp-on-accent hover:bg-ctp-accent/80 cursor-pointer'
             }`}
           >
             Restart Now

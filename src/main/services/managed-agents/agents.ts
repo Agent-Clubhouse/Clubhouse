@@ -4,8 +4,8 @@
  * They combine the managed-agents service with agent config and
  * orchestration policy.
  */
-import { withAccess } from '../../../shared/agent-access';
-import { getPermissionMode } from '../free-agent-settings';
+import { callerAccess, isAccessLevel, withAccess } from '../../../shared/agent-access';
+import { getDefaultAccess, getPermissionMode } from '../free-agent-settings';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as agentConfig from '../agent-config';
@@ -43,6 +43,7 @@ import {
 import { backupMcpFile, hasMcpFileToKeep, MCP_BACKUP_DIR, mcpBackupPath } from './mcp-backup';
 import { appLog } from '../log-service';
 import { skillsFolderOf } from '../../../shared/skills-folder';
+import { applyTemplateGrants } from '../agent-grants-service';
 
 export interface CreateManagedAgentInput {
   name: string;
@@ -80,14 +81,21 @@ export async function applyManagedSettings(projectPath: string, agentId: string,
     const result = await setOrchestrationPolicy(projectPath, agentId, settings.orchestration);
     if (!result.ok) throw new ManagedError('invalid', result.message);
   }
+  // The template's Clubhouse permissions (#2971), under the person's own changes.
+  if (settings.grants?.length) await applyTemplateGrants(agentId, settings.grants);
 }
 
 export async function createManagedAgent(projectPath: string, input: CreateManagedAgentInput): Promise<DurableAgentConfig> {
   if (input.managed === false) return createPlainAgent(projectPath, input);
   const service = managedAgents();
   const base = input.templateId ? await service.setupFromTemplate(input.templateId) : null;
-  // The caller's own Access wins over the template's, a legacy on/off included (#2761): settle its level before merging.
-  const own = input.settings ? withAccess(input.settings, getPermissionMode(projectPath)) : {};
+  // The caller's own Access wins over the template's (#2761): a level it names, or a legacy on/off that keeps
+  // the template's level (else the Default access) when it is already on that side.
+  // An unknown level or a flag that isn't on/off is refused, never read as some level.
+  if (input.settings?.access !== undefined && !isAccessLevel(input.settings.access)) throw new ManagedError('invalid', 'access must be plan, ask, auto_edit, auto or full_access.');
+  if (input.settings?.freeAgentMode !== undefined && typeof input.settings.freeAgentMode !== 'boolean') throw new ManagedError('invalid', 'freeAgentMode must be true or false.');
+  const from = (base?.settings ? withAccess(base.settings, getPermissionMode(projectPath)).access : undefined) ?? getDefaultAccess();
+  const own = input.settings ? callerAccess(input.settings, from, getPermissionMode(projectPath)) : {};
   const settings: ManagedTemplateSettings = { ...(base?.settings ?? {}), ...own };
   if (base?.settings.orchestration || input.settings?.orchestration) {
     settings.orchestration = { ...(base?.settings.orchestration ?? {}), ...(input.settings?.orchestration ?? {}) };
@@ -99,12 +107,13 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
   const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.access ?? settings.freeAgentMode);
   try {
     await service.saveSetup(projectPath, config.id, setup);
-    // What createDurable doesn't take: orchestration, effort, auto-sleep and the helper template.
+    // What createDurable doesn't take: orchestration, effort, auto-sleep, the helper template and permissions.
     const rest: ManagedTemplateSettings = {
       ...(settings.orchestration && Object.keys(settings.orchestration).length > 0 && { orchestration: settings.orchestration }),
       ...(settings.effort && { effort: settings.effort }),
       ...(settings.idleSleep && { idleSleep: settings.idleSleep }),
       ...(settings.helperTemplateId && { helperTemplateId: settings.helperTemplateId }),
+      ...(settings.grants?.length && { grants: settings.grants }),
     };
     if (Object.keys(rest).length > 0) await applyManagedSettings(projectPath, config.id, rest);
   } catch (err) {

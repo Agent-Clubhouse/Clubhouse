@@ -87,6 +87,16 @@ vi.mock('./mobile-agents', () => ({
 
 // Real HTTP sockets in this suite must never expose test fixtures to the LAN.
 // Bonjour itself is mocked below; retain its branch coverage independently.
+// Membership has its own tests (annex-network-membership.test.ts).
+const membershipMock = vi.hoisted(() => ({ onChange: null as null | (() => void) }));
+vi.mock('./annex-network-membership', () => ({
+  noteLocalJoin: vi.fn(),
+  noteLocalRemoval: vi.fn(),
+  currentView: vi.fn(() => ({ members: [], removals: [] })),
+  vouchFromPhone: vi.fn(() => ({ added: [], skipped: [] })),
+  onMembershipChanged: vi.fn((l: () => void) => { membershipMock.onChange = l; return () => { membershipMock.onChange = null; }; }),
+}));
+
 vi.mock('./annex-network-profile', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./annex-network-profile')>();
   return { ...actual, annexNetworkProfile: () => ({ host: '127.0.0.1' as const, advertise: true }) };
@@ -150,6 +160,8 @@ vi.mock('./file-service', () => ({
 
 // Mock annex-identity
 vi.mock('./annex-identity', () => ({
+  // No identity yet as far as the Annex Network hello goes: it then sends none.
+  getIdentity: vi.fn().mockReturnValue(null),
   getOrCreateIdentity: vi.fn().mockReturnValue({
     publicKey: 'fake-public-key',
     privateKey: 'fake-private-key',
@@ -171,13 +183,21 @@ vi.mock('./annex-tls', () => ({
   extractPeerCertificateDer: vi.fn().mockReturnValue(undefined),
   verifyCertBinding: vi.fn().mockReturnValue(false),
   getCertificateFingerprint: vi.fn().mockReturnValue(undefined),
+  certificatePemFromDer: (der: Buffer) => `-----BEGIN CERTIFICATE-----\n${der.toString('base64')}\n-----END CERTIFICATE-----\n`,
+  sameCertificateFingerprint: (a?: string, b?: string) => {
+    const norm = (v?: string) => v?.replace(/[:\s]/g, '').toLowerCase() ?? '';
+    return /^[0-9a-f]{64}$/.test(norm(a)) && norm(a) === norm(b);
+  },
 }));
 
 // Mock annex-peers
 vi.mock('./annex-peers', () => ({
+  controlsThisMachine: (p?: { role?: string } | null) => p?.role === 'controller' || p?.role === 'member',
+  controlledFromHere: (p?: { role?: string; kind?: string } | null) => p?.role === 'satellite' || (p?.role === 'member' && p.kind !== 'phone'),
   checkBruteForce: vi.fn().mockReturnValue({ allowed: true, delayMs: 0, locked: false, attemptsRemaining: 3 }),
   recordFailedAttempt: vi.fn(),
   recordSuccessfulAttempt: vi.fn(),
+  forgiveFailedAttempt: vi.fn(),
   addPeer: vi.fn(),
   getPeer: vi.fn().mockReturnValue(null),
   updateLastSeen: vi.fn(),
@@ -186,6 +206,9 @@ vi.mock('./annex-peers', () => ({
   removePeer: vi.fn(),
   removeAllPeers: vi.fn(),
   unlockPairing: vi.fn(),
+  // The real rule: older entries (no role, or no pin) need pairing again.
+  peerNeedsPairing: (peer: { role?: string; tlsCertificateFingerprint?: string; tlsCertificatePem?: string }) =>
+    !peer.role || !peer.tlsCertificateFingerprint || (peer.role === 'satellite' && !peer.tlsCertificatePem),
 }));
 
 // Mock annex-event-bus
@@ -243,6 +266,7 @@ vi.mock('./theme-service', () => ({
 
 // Mock annex-settings
 vi.mock('./annex-settings', () => ({
+  networkEnabled: (s?: { networkEnabled?: boolean }) => s?.networkEnabled !== false,
   getSettings: vi.fn().mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Test Machine', alias: 'Test Machine', icon: 'computer', color: 'indigo', autoReconnect: false }),
   saveSettings: vi.fn(),
   getLastPorts: vi.fn().mockReturnValue({ mainPort: 0, pairingPort: 0 }),
@@ -262,6 +286,8 @@ vi.mock('./plugin-storage', () => ({
 
 // Mock annex-identity
 vi.mock('./annex-identity', () => ({
+  // No identity yet as far as the Annex Network hello goes: it then sends none.
+  getIdentity: vi.fn().mockReturnValue(null),
   getOrCreateIdentity: vi.fn().mockReturnValue({
     publicKey: 'mock-public-key',
     privateKey: 'mock-private-key',
@@ -304,6 +330,13 @@ import * as annexServer from './annex-server';
 import * as annexSettings from './annex-settings';
 import * as annexIdentity from './annex-identity';
 import * as annexTls from './annex-tls';
+import * as networkChannel from './annex-network-channel';
+
+/** A positive, minimally encoded certificate serial (first byte 0x01 to 0x7f). See #2992. */
+function positiveSerial(): string {
+  const bytes = forgeLib.random.getBytesSync(16);
+  return forgeLib.util.bytesToHex(String.fromCharCode((bytes.charCodeAt(0) & 0x7f) || 0x01) + bytes.slice(1));
+}
 import * as annexPeers from './annex-peers';
 import * as annexEventBus from './annex-event-bus';
 import * as projectStore from './project-store';
@@ -912,6 +945,7 @@ describe('annex-server', () => {
       const { EventEmitter } = await import('events');
       const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn() });
       annexServer._testing.wsAuthTypes.set(ws as any, auth);
+      if (auth === 'mtls') annexServer._testing.registerPeerSocket(ws as any, TEST_CONTROLLER.fingerprint, TEST_CONTROLLER.tlsCertificateFingerprint);
       annexServer._testing.wss!.emit('connection', ws);
       await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
       ws.send.mockClear();
@@ -1174,6 +1208,7 @@ describe('annex-server', () => {
       const { EventEmitter } = await import('events');
       const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn() });
       annexServer._testing.wsAuthTypes.set(ws as any, auth);
+      if (auth === 'mtls') annexServer._testing.registerPeerSocket(ws as any, TEST_CONTROLLER.fingerprint, TEST_CONTROLLER.tlsCertificateFingerprint);
       annexServer._testing.wss!.emit('connection', ws);
       await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
       ws.send.mockClear();
@@ -1203,7 +1238,7 @@ describe('annex-server', () => {
       // New socket, same process: connection changes; process identity does not.
       const { EventEmitter } = await import('events');
       const reconnected = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn() });
-      annexServer._testing.wsAuthTypes.set(reconnected as any, 'mtls');
+      annexServer._testing.registerPeerSocket(reconnected as any, TEST_CONTROLLER.fingerprint, TEST_CONTROLLER.tlsCertificateFingerprint);
       annexServer._testing.wss!.emit('connection', reconnected);
       await vi.waitFor(() => expect(reconnected.send).toHaveBeenCalled());
       reconnected.send.mockClear();
@@ -1593,7 +1628,7 @@ describe('annex-server', () => {
       const makeCertificate = () => {
         const keys = forge.pki.rsa.generateKeyPair(2048);
         const cert = forge.pki.createCertificate(); cert.publicKey = keys.publicKey;
-        cert.serialNumber = forge.util.bytesToHex(forge.random.getBytesSync(16));
+        cert.serialNumber = positiveSerial();
         cert.validity.notBefore = new Date(Date.now() - 1000); cert.validity.notAfter = new Date(Date.now() + 86400000);
         cert.setSubject([{ name: 'commonName', value: 'mobile-test-identity' }]); cert.setIssuer(cert.subject.attributes);
         cert.sign(keys.privateKey, forge.md.sha256.create());
@@ -1705,7 +1740,7 @@ describe('annex-server', () => {
       const makeCertificate = () => {
         const keys = forge.pki.rsa.generateKeyPair(2048);
         const cert = forge.pki.createCertificate(); cert.publicKey = keys.publicKey;
-        cert.serialNumber = forge.util.bytesToHex(forge.random.getBytesSync(16));
+        cert.serialNumber = positiveSerial();
         cert.validity.notBefore = new Date(Date.now() - 1000); cert.validity.notAfter = new Date(Date.now() + 86400000);
         cert.setSubject([{ name: 'commonName', value: 'mobile-test-identity' }]); cert.setIssuer(cert.subject.attributes);
         cert.sign(keys.privateKey, forge.md.sha256.create());
@@ -1779,6 +1814,35 @@ describe('annex-server', () => {
       const forged = await secureRequest('POST', '/api/v1/mobile/commands', { ...input, commandId: 'forged' }, impostor);
       expect(forged.status).toBe(401); expect(forged.body.error).toBe('peer_not_paired');
       expect((await secureRequest('POST', '/api/v1/agents/a/wake', {}, impostor)).status).toBe(401);
+      // The whole of a large permission request (#2731): fetching it lets this phone approve it.
+      const bigInput = { file_path: '/x', content: 'y'.repeat(400 * 1024) };
+      const options = [{ optionId: 'ok', kind: 'allow_once', name: 'Allow' }, { optionId: 'no', kind: 'reject_once', name: 'Deny' }];
+      const large = { v: 1, type: 'permission_request', agentId: 'a', sessionId: 's', seq: 7, ts: Date.now(), data: { requestId: 'big', title: 'Write x', toolName: 'Write', rawInput: bigInput, options } };
+      let transcript: unknown[] = [large];
+      const respondPermission = vi.fn(async () => {});
+      registerChatRuntime({ kind: 'chat', agentId: 'a', isRunning: () => true, getState: () => 'waiting_permission', getSessionId: () => 's',
+        readTranscript: async () => ({ events: transcript }), getPendingPermissionOptions: () => options, respondPermission } as never);
+      try {
+        const approve = (commandId: string, reviewedDigest?: string, client = credentials) => secureRequest('POST', '/api/v1/mobile/commands',
+          { version: 1, epoch: capability.body.epoch, commandId, type: 'chat.permission', agentId: 'a', sessionId: 's', requestId: 'big', optionId: 'ok', ...(reviewedDigest && { reviewedDigest }) }, client);
+        expect((await approve('before-fetch')).body.error.code).toBe('incomplete_representation');
+        expect(capability.body.fullEvents).toMatchObject({ version: 1, approvalField: 'reviewedDigest' });
+        expect((await secureRequest('GET', '/api/v1/mobile/agents/a/chat/events/7?sessionId=s', undefined, impostor)).status).toBe(401);
+        expect((await secureRequest('GET', '/api/v1/mobile/agents/a/chat/events/7', undefined)).status).toBe(400);
+        expect((await secureRequest('GET', '/api/v1/mobile/agents/a/chat/events/8?sessionId=s', undefined)).status).toBe(404);
+        const full = await secureRequest('GET', '/api/v1/mobile/agents/a/chat/events/7?sessionId=s', undefined);
+        expect(full.status).toBe(200);
+        expect(full.body.event.data.rawInput).toEqual(bigInput);
+        expect(full.body.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+        // A digest it didn't get is refused, and so is the right one once the request changed under it.
+        expect((await approve('wrong-digest', `sha256:${'0'.repeat(64)}`)).body.error.code).toBe('incomplete_representation');
+        transcript = [{ ...large, data: { ...large.data, rawInput: { ...bigInput, content: 'z'.repeat(400 * 1024) } } }];
+        expect((await approve('changed', full.body.digest)).body.error.code).toBe('incomplete_representation');
+        transcript = [large];
+        const approved = await approve('after-fetch', full.body.digest);
+        expect(approved.body).toMatchObject({ status: 'completed', result: { answered: true, requestId: 'big' } });
+        expect(respondPermission).toHaveBeenCalledWith('big', 'ok');
+      } finally { clearChatRuntimes(); }
       peers.clear();
       expect((await secureRequest('POST', '/api/v1/mobile/commands', { ...input, commandId: 'revoked' })).status).toBe(401);
       expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1);
@@ -1872,7 +1936,7 @@ describe('annex-server', () => {
       const { privateKey, publicKey } = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
       const cert = forgeLib.pki.createCertificate();
       cert.publicKey = forgeLib.pki.publicKeyFromPem(publicKey.export({ type: 'spki', format: 'pem' }) as string);
-      cert.serialNumber = `0${nodeCrypto.randomBytes(8).toString('hex')}`;
+      cert.serialNumber = positiveSerial();
       cert.validity.notBefore = validity.notBefore ?? new Date(Date.now() - 60_000);
       cert.validity.notAfter = validity.notAfter ?? new Date(Date.now() + 86_400_000);
       cert.setSubject([{ name: 'commonName', value: cn }]);
@@ -1938,10 +2002,19 @@ describe('annex-server', () => {
           ? tlsLib.connect({ host: '127.0.0.1', port, rejectUnauthorized: false, ...(client ?? {}) })
           : net.connect({ host: '127.0.0.1', port });
         let data = '';
-        socket.once(secure ? 'secureConnect' : 'connect', () => socket.write([
-          'GET /ws HTTP/1.1', 'Host: 127.0.0.1', 'Connection: Upgrade', 'Upgrade: websocket',
-          'Sec-WebSocket-Version: 13', 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==', '', '',
-        ].join('\r\n')));
+        socket.once(secure ? 'secureConnect' : 'connect', () => {
+          socket.write([
+            'GET /ws HTTP/1.1', 'Host: 127.0.0.1', 'Connection: Upgrade', 'Upgrade: websocket',
+            'Sec-WebSocket-Version: 13', 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==', '', '',
+          ].join('\r\n'));
+          // An accepted upgrade writes nothing back here: once the server has had the request, see what it added.
+          setTimeout(() => {
+            if (data) return;
+            const accepted = [...wss.clients].find((c) => !before.has(c)) as unknown as { close: (...args: unknown[]) => void } | undefined;
+            socket.destroy();
+            resolve({ accepted });
+          }, 300);
+        });
         socket.on('data', (chunk) => { data += chunk; });
         socket.on('error', reject);
         socket.on('close', () => {
@@ -1949,12 +2022,6 @@ describe('annex-server', () => {
           const [head, body] = data.split('\r\n\r\n');
           resolve({ status: Number(head.split(' ')[1]), body: JSON.parse(body) });
         });
-        setTimeout(() => {
-          if (data) return;
-          const accepted = [...wss.clients].find((c) => !before.has(c)) as unknown as { close: (...args: unknown[]) => void } | undefined;
-          socket.destroy();
-          resolve({ accepted });
-        }, 300);
       });
     }
 
@@ -2011,6 +2078,7 @@ describe('annex-server', () => {
       const wrong = pin === '000000' ? '111111' : '000000';
       expect(await pair(phone, {}, wrong)).toEqual({ status: 409, body: { error: 'invalid_pin', message: expect.stringMatching(/doesn't match/) } });
       expect((await pair(phone, {}, 'éééééé')).status).toBe(409);
+      // Every attempt is counted as it starts.
       expect(annexPeers.recordFailedAttempt).toHaveBeenCalledTimes(2);
 
       annexServer.regeneratePin();
@@ -2021,6 +2089,57 @@ describe('annex-server', () => {
       vi.spyOn(Date, 'now').mockReturnValue(now + annexServer._testing.PIN_TTL_MS + 1);
       expect((await pair(phone, {}, current)).body.error).toBe('pin_expired');
       expect(peers.size).toBe(0);
+    });
+
+    describe('per-address attempts with the real counter', () => {
+      beforeEach(async () => {
+        const actualPeers = await vi.importActual<typeof import('./annex-peers')>('./annex-peers');
+        actualPeers.resetForTests();
+        vi.mocked(annexPeers.checkBruteForce).mockImplementation(actualPeers.checkBruteForce);
+        vi.mocked(annexPeers.recordFailedAttempt).mockImplementation(actualPeers.recordFailedAttempt);
+        vi.mocked(annexPeers.recordSuccessfulAttempt).mockImplementation(actualPeers.recordSuccessfulAttempt);
+        vi.mocked(annexPeers.forgiveFailedAttempt).mockImplementation(actualPeers.forgiveFailedAttempt);
+      });
+
+      afterEach(async () => {
+        (await vi.importActual<typeof import('./annex-peers')>('./annex-peers')).resetForTests();
+      });
+
+      it('a device retrying an expired PIN is never slowed or locked out, and then pairs with the current one', async () => {
+        await startServer();
+        const phone = device();
+        const old = annexServer.getStatus().pin;
+        annexServer.regeneratePin();
+        // More retries than the per-address limit allows guesses.
+        for (let i = 0; i < 8; i++) {
+          expect(await pair(phone, {}, old)).toEqual({ status: 410, body: { error: 'pin_expired', message: expect.stringMatching(/expired/) } });
+        }
+        expect((await pair(phone)).status).toBe(200);
+      });
+
+      it('a PIN that ran out unused is not counted either', async () => {
+        await startServer();
+        const phone = device();
+        const pin = annexServer.getStatus().pin;
+        const now = Date.now();
+        vi.spyOn(Date, 'now').mockReturnValue(now + annexServer._testing.PIN_TTL_MS + 1);
+        for (let i = 0; i < 8; i++) expect((await pair(phone, {}, pin)).body.error).toBe('pin_expired');
+        expect(annexServer.getStatus().pairingPaused).toBe(false);
+      });
+
+      it('used-PIN and already-paired answers are not counted, but malformed requests are', async () => {
+        await startServer();
+        const first = device(); const second = device();
+        const pin = annexServer.getStatus().pin;
+        expect((await pair(first, {}, pin)).status).toBe(200);
+        for (let i = 0; i < 8; i++) expect((await pair(second, {}, pin)).body.error).toBe('pin_used');
+        // The same identity with a new certificate and no proof it holds it.
+        const swapped = device(undefined, first);
+        for (let i = 0; i < 8; i++) expect((await pair(swapped)).body.error).toBe('peer_already_paired');
+        // A body with no PIN is not a retry: three are free, then the address waits.
+        for (let i = 0; i < 3; i++) expect((await call('POST', '/pair', second, { publicKey: second.publicKey })).body.error).toBe('invalid_json');
+        expect(await call('POST', '/pair', second, { publicKey: second.publicKey })).toEqual({ status: 429, body: { error: 'rate_limited', retryAfterMs: expect.any(Number) } });
+      });
     });
 
     it('a used PIN pairs nobody else, and the same device retrying gets the same answer with no change', async () => {
@@ -2062,6 +2181,232 @@ describe('annex-server', () => {
       expect((await call('GET', '/api/v1/status', newCert)).status).toBe(200);
     });
 
+    it('lists a paired device with an open socket as connected, until it is removed (#3057)', async () => {
+      await startServer();
+      const phone = device();
+      expect((await pair(phone)).status).toBe(200);
+      expect(annexServer.connectedPeerFingerprints().has(phone.fingerprint)).toBe(false);
+      const { accepted } = await upgrade(phone);
+      expect(accepted).toBeDefined();
+      (accepted as unknown as { readyState: number }).readyState = 1;
+      expect(annexServer.connectedPeerFingerprints().has(phone.fingerprint)).toBe(true);
+      // Removed: the entry goes first, so the socket no longer counts even before it closes.
+      annexServer.revokePeer(phone.fingerprint);
+      expect(annexServer.connectedPeerFingerprints().has(phone.fingerprint)).toBe(false);
+    });
+
+    /** The first response line's status for an upgrade to `path`, or 0 when the server accepted without writing (stubbed ws). */
+    function upgradeStatus(client: Credentials | null, path: string): Promise<{ status: number; body: string }> {
+      return new Promise((resolve, reject) => {
+        const socket = tlsLib.connect({ host: '127.0.0.1', port: annexServer.getStatus().port, rejectUnauthorized: false, ...(client ?? {}) });
+        let data = '';
+        const done = () => { socket.destroy(); const [head, body = ''] = data.split('\r\n\r\n'); resolve({ status: data ? Number(head.split(' ')[1]) : 0, body }); };
+        socket.once('secureConnect', () => {
+          socket.write([`GET ${path} HTTP/1.1`, 'Host: 127.0.0.1', 'Connection: Upgrade', 'Upgrade: websocket',
+            'Sec-WebSocket-Version: 13', 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==', '', ''].join('\r\n'));
+          setTimeout(done, 300);
+        });
+        socket.on('data', (chunk) => { data += chunk; });
+        socket.on('error', reject);
+      });
+    }
+
+    describe('the Annex Network channel (#3060)', () => {
+      it('accepts a pinned peer of either role at /network, where /ws takes only a controller', async () => {
+        await startServer();
+        const satellite = device();
+        peers.set(satellite.fingerprint, pinned(satellite, { role: 'satellite', tlsCertificatePem: satellite.cert }));
+        // The suite's ws stub writes nothing for an accepted upgrade: the channel module holds the socket instead.
+        expect((await upgradeStatus(satellite, '/network')).status).toBe(0);
+        expect(networkChannel.hasChannel(satellite.fingerprint)).toBe(true);
+        expect((await upgradeStatus(satellite, '/ws')).status).toBe(403);
+        const controller = device();
+        peers.set(controller.fingerprint, pinned(controller));
+        expect((await upgradeStatus(controller, '/network')).status).toBe(0);
+        expect(networkChannel.hasChannel(controller.fingerprint)).toBe(true);
+        // Removing a device closes its channel at once.
+        annexServer.revokePeer(controller.fingerprint);
+        expect(networkChannel.hasChannel(controller.fingerprint)).toBe(false);
+      });
+
+      it('refuses a stranger, an old pairing, another certificate, and no certificate', async () => {
+        await startServer();
+        expect(await upgradeStatus(device(), '/network')).toMatchObject({ status: 401, body: JSON.stringify({ error: 'peer_not_paired' }) });
+        const old = device();
+        peers.set(old.fingerprint, pinned(old, { role: undefined, tlsCertificateFingerprint: undefined }));
+        expect((await upgradeStatus(old, '/network')).body).toContain('needs_pairing');
+        const repinned = device();
+        peers.set(repinned.fingerprint, pinned(repinned, { role: 'satellite', tlsCertificatePem: 'PEM', tlsCertificateFingerprint: device().certFingerprint }));
+        expect((await upgradeStatus(repinned, '/network')).body).toContain('peer_not_paired');
+        expect((await upgradeStatus(null, '/network')).status).toBe(401);
+      });
+    });
+
+    describe('pairing as an Annex Network member (#3061)', () => {
+      it('makes a desktop that asks a member, pinning its certificate both ways, and says so', async () => {
+        await startServer();
+        const computer = device();
+        const res = await pair(computer, { network: 1, icon: 'computer' });
+        expect(res.status).toBe(200);
+        expect(res.body.network).toBe(1);
+        expect(peers.get(computer.fingerprint)).toMatchObject({ role: 'member', kind: 'desktop', addedBy: 'AA:BB:CC:DD', tlsCertificatePem: expect.stringContaining('BEGIN CERTIFICATE') });
+        // The other members are told.
+        const membershipMod = await import('./annex-network-membership');
+        expect(membershipMod.noteLocalJoin).toHaveBeenCalledWith(computer.fingerprint);
+        // A member may use /ws like a controller.
+        expect((await call('GET', '/api/v1/status', computer)).status).toBe(200);
+      });
+
+      it("leaves phones, and desktops that don't ask, as controllers with the same answer", async () => {
+        await startServer();
+        const phone = device();
+        const res = await pair(phone, { pairingMode: 'persistent' });
+        expect(res.body).not.toHaveProperty('network');
+        expect(peers.get(phone.fingerprint)?.role).toBe('controller');
+      });
+
+      it('keeps a desktop one-to-one while Annex Network is off here', async () => {
+        vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, alias: 'Test Machine', deviceName: 'Test Machine', icon: 'computer', color: 'indigo', networkEnabled: false } as any);
+        try {
+          await startServer();
+          const computer = device();
+          const res = await pair(computer, { network: 1 });
+          expect(res.body).not.toHaveProperty('network');
+          expect(peers.get(computer.fingerprint)?.role).toBe('controller');
+        } finally {
+          vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Test Machine', alias: 'Test Machine', icon: 'computer', color: 'indigo', autoReconnect: false } as any);
+        }
+      });
+    });
+
+    describe('the phone as a member (#3062)', () => {
+      const AA_FP = Array(16).fill('aa').join(':');
+      const CC_FP = Array(16).fill('cc').join(':');
+      const memberRecord = (fp: string) => ({
+        fingerprint: fp, publicKey: `key-${fp}`, certFingerprint: Array(32).fill('CD').join(':'), certPem: '-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n',
+        name: 'Studio', icon: 'computer', color: 'indigo', kind: 'desktop', hosts: ['192.168.1.9'], port: 7432, joinedAt: '2026-11-08T10:00:00.000Z',
+      });
+
+      it('makes a phone that asks a member of kind phone, says so, and still locks the screen', async () => {
+        await startServer();
+        const phone = device();
+        const res = await pair(phone, { network: 1, pairingMode: 'persistent', icon: 'iphone' });
+        expect(res.body.network).toBe(1);
+        expect(peers.get(phone.fingerprint)).toMatchObject({ role: 'member', kind: 'phone' });
+        // It still may use the phone routes.
+        expect((await call('GET', '/api/v1/mobile/capabilities', phone)).body.controlAvailable).toBe(true);
+      });
+
+      it('never joins a session-only pairing', async () => {
+        await startServer();
+        const phone = device();
+        const res = await pair(phone, { network: 1, pairingMode: 'session' });
+        expect(res.body).not.toHaveProperty('network');
+      });
+
+      it('offers the network in capabilities while Annex Network is on', async () => {
+        await startServer();
+        const phone = device();
+        await pair(phone, { pairingMode: 'persistent' });
+        expect((await call('GET', '/api/v1/mobile/capabilities', phone)).body.network).toEqual({
+          version: 1, path: '/api/v1/mobile/network', membersPath: '/api/v1/mobile/network/members', event: 'network:changed', pairField: 'network',
+        });
+      });
+
+      it('lists the network for a member phone, and only this desktop for a one-to-one phone', async () => {
+        await startServer();
+        const membershipMod = await import('./annex-network-membership');
+        vi.mocked(membershipMod.currentView).mockReturnValue({ members: [memberRecord(AA_FP) as never], removals: [{ fingerprint: CC_FP, removedAt: '2026-11-08T12:00:00.000Z' }] });
+        const member = device();
+        await pair(member, { network: 1, pairingMode: 'persistent' });
+        const listed = await call('GET', '/api/v1/mobile/network', member);
+        expect(listed).toMatchObject({ status: 200, body: { version: 1, joined: true, removals: [{ fingerprint: CC_FP }] } });
+        expect(listed.body.members[0]).toMatchObject({ fingerprint: AA_FP, publicKey: `key-${AA_FP}`, kind: 'desktop', hosts: ['192.168.1.9'], port: 7432, certPem: expect.stringContaining('BEGIN'), online: false });
+        const oneToOne = device();
+        await pair(oneToOne, { pairingMode: 'persistent' });
+        expect((await call('GET', '/api/v1/mobile/network', oneToOne)).body).toMatchObject({ joined: false, removals: [] });
+        expect((await call('GET', '/api/v1/mobile/network', null)).status).toBe(403);
+      });
+
+      it('tells a removed phone on its open connections, before they are cut', async () => {
+        await startServer();
+        const phone = device();
+        await pair(phone, { network: 1, pairingMode: 'persistent' });
+        const { EventEmitter } = await import('events');
+        const ws = Object.assign(new EventEmitter(), { send: vi.fn(), ping: vi.fn(), close: vi.fn(), terminate: vi.fn(), readyState: 1 }) as any;
+        annexServer._testing.registerPeerSocket(ws, phone.fingerprint, phone.certFingerprint);
+        annexServer._testing.wss!.clients.add(ws);
+        annexServer.revokePeer(phone.fingerprint);
+        const sent = ws.send.mock.calls.map((c: unknown[]) => JSON.parse(String(c[0])));
+        expect(sent.some((f: { type: string }) => f.type === 'network:changed')).toBe(true);
+        expect(ws.close).toHaveBeenCalledWith(4401, 'peer_not_paired');
+        annexServer._testing.wss!.clients.delete(ws);
+      });
+
+      it('takes members a member phone vouches for, as listed, and refuses others', async () => {
+        await startServer();
+        const membershipMod = await import('./annex-network-membership');
+        vi.mocked(membershipMod.vouchFromPhone).mockReturnValue({ added: [AA_FP], skipped: [] });
+        const member = device();
+        await pair(member, { network: 1, pairingMode: 'persistent' });
+        const listed = { ...memberRecord(AA_FP), online: true, self: true };
+        expect(await call('POST', '/api/v1/mobile/network/members', member, { members: [listed] })).toEqual({ status: 200, body: { added: [AA_FP], skipped: [] } });
+        expect(membershipMod.vouchFromPhone).toHaveBeenCalledWith(member.fingerprint, [memberRecord(AA_FP)]);
+        expect((await call('POST', '/api/v1/mobile/network/members', member, { members: [{ ...memberRecord(AA_FP), command: 'agent:spawn' }] })).body.error).toBe('invalid_members');
+        const oneToOne = device();
+        await pair(oneToOne, { pairingMode: 'persistent' });
+        expect((await call('POST', '/api/v1/mobile/network/members', oneToOne, { members: [memberRecord(AA_FP)] })).body.error).toBe('not_a_member');
+      });
+    });
+
+    describe('the stored name (#2442)', () => {
+      it("replaces a name equal to this machine's own, ignoring case and spaces", async () => {
+        await startServer();
+        const phone = device();
+        expect((await pair(phone, { alias: ' test MACHINE ', pairingMode: 'persistent' })).status).toBe(200);
+        expect(peers.get(phone.fingerprint)?.alias).toBe('Phone');
+        const computer = device();
+        expect((await pair(computer, { alias: 'Test Machine', icon: 'computer' })).status).toBe(200);
+        expect(peers.get(computer.fingerprint)?.alias).toBe('Computer');
+        // An older phone that sends no pairingMode still says what it is by its icon.
+        const olderPhone = device();
+        expect((await pair(olderPhone, { alias: 'Test Machine', icon: 'iphone' })).status).toBe(200);
+        expect(peers.get(olderPhone.fingerprint)?.alias).toBe('Phone');
+      });
+
+      it('keeps any other name, and names a device that sends none', async () => {
+        await startServer();
+        const phone = device();
+        expect((await pair(phone, { alias: 'Pocket' })).status).toBe(200);
+        expect(peers.get(phone.fingerprint)?.alias).toBe('Pocket');
+        const nameless = device();
+        expect((await pair(nameless, { alias: '', pairingMode: 'persistent' })).status).toBe(200);
+        expect(peers.get(nameless.fingerprint)?.alias).toBe('Phone');
+      });
+
+      it('takes the new name when the same device pairs again', async () => {
+        await startServer();
+        const phone = device();
+        expect((await pair(phone, { alias: 'Test Machine', pairingMode: 'persistent' })).status).toBe(200);
+        expect(peers.get(phone.fingerprint)?.alias).toBe('Phone');
+        expect((await pair(phone, { alias: 'Pocket', pairingMode: 'persistent' })).status).toBe(200);
+        expect(peers.get(phone.fingerprint)?.alias).toBe('Pocket');
+      });
+
+      it('shows the stored name, not the sent one, on the lock overlay', async () => {
+        await startServer();
+        const phone = device();
+        expect((await pair(phone, { alias: 'Test Machine', pairingMode: 'persistent' })).status).toBe(200);
+        mockBroadcastToAllWindows.mockClear();
+        const { accepted } = await upgrade(phone);
+        expect(accepted).toBeDefined();
+        await vi.waitFor(() => expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
+          'annex:lock-state-changed', expect.objectContaining({ locked: true, controllerAlias: 'Phone' }),
+        ));
+        accepted!.close();
+      });
+    });
+
     it('needs a valid Ed25519 key and a client certificate named for it', async () => {
       await startServer();
       const phone = device();
@@ -2082,6 +2427,17 @@ describe('annex-server', () => {
       annexServer._testing.dropUnconnectedPeers();
       expect(peers.has(connected.fingerprint)).toBe(true);
       expect(peers.has(lost.fingerprint)).toBe(false);
+    });
+
+    it('never drops an entry that existed before the pairing, even if it does not connect', async () => {
+      await startServer();
+      const computer = device();
+      peers.set(computer.fingerprint, pinned(computer, { role: undefined, tlsCertificateFingerprint: undefined }));
+      expect((await pair(computer)).status).toBe(200);
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now + annexServer._testing.PIN_TTL_MS + 1);
+      annexServer._testing.dropUnconnectedPeers();
+      expect(peers.get(computer.fingerprint)?.tlsCertificateFingerprint).toBe(computer.certFingerprint);
     });
 
     it('authenticates every kind of entry the same way over REST and WebSocket', async () => {
@@ -2133,6 +2489,64 @@ describe('annex-server', () => {
       expect(await upgrade(phone)).toEqual({ status: 401, body: { error: 'peer_not_paired', message: expect.any(String) } });
     });
 
+    it("acts on nothing more from a removed peer's socket, even if its client ignores the close, and cuts it", async () => {
+      await startServer();
+      const phone = device();
+      peers.set(phone.fingerprint, pinned(phone));
+      // A client that never completes the close: the socket stays OPEN on our side.
+      const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn(), close: vi.fn(), terminate: vi.fn() });
+      annexServer._testing.registerPeerSocket(ws as never, phone.fingerprint, phone.certFingerprint);
+      annexServer._testing.wss!.clients.add(ws as never);
+      annexServer._testing.wss!.emit('connection', ws);
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
+      const kill = JSON.stringify({ type: 'agent:kill', payload: { agentId: 'missing' } });
+      ws.send.mockClear();
+      ws.emit('message', kill);
+      await vi.waitFor(() => expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('agent_not_found')));
+
+      vi.useFakeTimers();
+      try {
+        annexServer.revokePeer(phone.fingerprint);
+        expect(ws.close).toHaveBeenCalledWith(annexServer.PEER_REVOKED_CLOSE_CODE, 'peer_not_paired');
+        ws.send.mockClear();
+        ws.emit('message', kill);
+        ws.emit('message', JSON.stringify({ type: 'pty:input', payload: { agentId: 'a', data: 'x' } }));
+        expect(ws.send).not.toHaveBeenCalled();
+        expect(ptyManagerModule.write).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(1_000);
+        expect(ws.terminate).toHaveBeenCalled();
+      } finally { vi.useRealTimers(); }
+    });
+
+    it('cuts the sockets of a peer that is no longer a controller here, and leaves a controller alone', async () => {
+      await startServer();
+      const peer = device();
+      peers.set(peer.fingerprint, pinned(peer));
+      const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn(), close: vi.fn(), terminate: vi.fn() });
+      annexServer._testing.registerPeerSocket(ws as never, peer.fingerprint, peer.certFingerprint);
+      annexServer._testing.wss!.clients.add(ws as never);
+      annexServer.closeSocketsUnlessController(peer.fingerprint);
+      expect(ws.close).not.toHaveBeenCalled();
+      // This machine paired with it as a satellite: the same entry, a different role.
+      peers.set(peer.fingerprint, pinned(peer, { role: 'satellite', tlsCertificatePem: 'PEM' }));
+      annexServer.closeSocketsUnlessController(peer.fingerprint);
+      expect(ws.close).toHaveBeenCalledWith(annexServer.PEER_REVOKED_CLOSE_CODE, 'peer_not_paired');
+    });
+
+    it("stops acting on a socket once its peer's certificate is replaced, and on any socket that is closing", async () => {
+      await startServer();
+      const phone = device();
+      peers.set(phone.fingerprint, pinned(phone));
+      const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: vi.fn(), close: vi.fn(), terminate: vi.fn() });
+      annexServer._testing.registerPeerSocket(ws as never, phone.fingerprint, phone.certFingerprint);
+      expect(annexServer._testing.socketStillPaired(ws as never)).toBe(true);
+      peers.set(phone.fingerprint, pinned(phone, { tlsCertificateFingerprint: 'AB:CD' }));
+      expect(annexServer._testing.socketStillPaired(ws as never)).toBe(false);
+      peers.set(phone.fingerprint, pinned(phone));
+      ws.readyState = 2; // CLOSING
+      expect(annexServer._testing.socketStillPaired(ws as never)).toBe(false);
+    });
+
     it('accepts a pinned client certificate past its end date: the pin is the trust decision', async () => {
       await startServer();
       const phone = device({ notBefore: new Date(Date.now() - 2 * 86_400_000), notAfter: new Date(Date.now() - 86_400_000) });
@@ -2140,14 +2554,20 @@ describe('annex-server', () => {
       expect((await call('GET', '/api/v1/status', phone)).status).toBe(200);
     });
 
-    it('plain HTTP /pair answers 410 and changes nothing', async () => {
+    it('plain HTTP /pair answers 410, pairs nothing, and replaces a PIN sent to it in the clear', async () => {
       await startServer();
       const pin = annexServer.getStatus().pin;
-      const res = await request(annexServer.getStatus().pairingPort, 'POST', '/pair', { pin, publicKey: device().publicKey });
+      const wrong = pin === '000000' ? '111111' : '000000';
+      const plain = (sent: string) => request(annexServer.getStatus().pairingPort, 'POST', '/pair', { pin: sent, publicKey: device().publicKey });
+      const res = await plain(wrong);
       expect(res.status).toBe(410);
       expect(JSON.parse(res.body)).toEqual({ error: 'update_required', message: expect.stringMatching(/pairing link/) });
-      expect(annexPeers.addPeer).not.toHaveBeenCalled();
       expect(annexServer.getStatus().pin).toBe(pin);
+      expect((await plain(pin)).status).toBe(410);
+      expect(annexPeers.addPeer).not.toHaveBeenCalled();
+      expect(annexServer.getStatus().pin).not.toBe(pin);
+      // That PIN is now simply wrong on TLS.
+      expect((await pair(device(), {}, pin)).body.error).toBe('invalid_pin');
       // The pairing port still answers identity, as a discovery hint.
       expect((await request(annexServer.getStatus().pairingPort, 'GET', '/api/v1/identity')).status).toBe(200);
     });
@@ -2168,15 +2588,62 @@ describe('annex-server', () => {
       expect(await upgrade(null, false)).toEqual({ status: 503, body: { error: 'tls_unavailable', message: expect.any(String) } });
     });
 
-    it('replaces the PIN after repeated wrong PINs from any address', async () => {
+    it('pauses pairing for the whole install after repeated wrong PINs, until allowed again in Settings', async () => {
       await startServer();
       const phone = device();
       const pin = annexServer.getStatus().pin;
       const wrong = pin === '000000' ? '111111' : '000000';
-      for (let i = 0; i < 9; i++) await pair(phone, {}, wrong);
-      expect(annexServer.getStatus().pin).toBe(pin);
-      await pair(phone, {}, wrong);
+      for (let i = 0; i < 10; i++) expect((await pair(phone, {}, wrong)).status).toBe(409);
+      expect(annexServer.getStatus()).toMatchObject({ pairingPaused: true, pin });
+      // Even the right PIN is refused while paused, and new PINs don't reopen it.
+      expect(await pair(phone, {}, pin)).toEqual({ status: 429, body: { error: 'pairing_locked', message: expect.stringMatching(/Allow pairing again/) } });
+      annexServer.regeneratePin();
+      expect((await pair(phone)).status).toBe(429);
+      expect(peers.size).toBe(0);
+      annexServer.allowPairingAgain();
+      expect(annexServer.getStatus().pairingPaused).toBe(false);
       expect(annexServer.getStatus().pin).not.toBe(pin);
+      expect((await pair(phone)).status).toBe(200);
+    });
+
+    it('counts a pairing attempt before its body arrives, so held requests cannot all pass the check', async () => {
+      await startServer();
+      const phone = device();
+      const socket = tlsLib.connect({ host: '127.0.0.1', port: annexServer.getStatus().port, rejectUnauthorized: false, cert: phone.cert, key: phone.key });
+      await new Promise<void>((resolve) => socket.once('secureConnect', () => resolve()));
+      socket.write(['POST /pair HTTP/1.1', 'Host: 127.0.0.1', 'Content-Type: application/json', 'Content-Length: 500', '', ''].join('\r\n'));
+      await vi.waitFor(() => expect(annexPeers.recordFailedAttempt).toHaveBeenCalledTimes(1));
+      socket.destroy();
+    });
+
+    it('requests held open together from many addresses get at most the install-wide number of wrong PINs checked', async () => {
+      await startServer();
+      const phone = device();
+      const pin = annexServer.getStatus().pin;
+      const wrong = pin === '000000' ? '111111' : '000000';
+      const raw = JSON.stringify({ pin: wrong, publicKey: phone.publicKey, alias: 'Phone', icon: 'phone', color: 'blue' });
+      // The per-address check is stubbed to allow every request, standing in for twelve different addresses.
+      const held = Array.from({ length: 12 }, () => {
+        let release!: () => void;
+        const answer = new Promise<Answer>((resolve, reject) => {
+          const req = https.request({ host: '127.0.0.1', port: annexServer.getStatus().port, path: '/pair', method: 'POST', cert: phone.cert, key: phone.key,
+            rejectUnauthorized: false, agent: false, headers: { 'Content-Type': 'application/json', 'Content-Length': String(Buffer.byteLength(raw)) } }, (res) => {
+            let data = ''; res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => resolve({ status: res.statusCode!, body: JSON.parse(data) }));
+          });
+          req.on('error', reject);
+          req.flushHeaders();
+          release = () => req.end(raw);
+        });
+        return { answer, release: () => release() };
+      });
+      // Every request has passed the check made before its body, and is waiting on it.
+      await vi.waitFor(() => expect(annexPeers.recordFailedAttempt).toHaveBeenCalledTimes(12));
+      for (const request of held) request.release();
+      const answers = await Promise.all(held.map((request) => request.answer));
+      expect(answers.filter((a) => a.status === 409 && a.body.error === 'invalid_pin')).toHaveLength(10);
+      expect(answers.filter((a) => a.status === 429 && a.body.error === 'pairing_locked')).toHaveLength(2);
+      expect(annexServer.getStatus().pairingPaused).toBe(true);
     });
 
     it('regenerating the PIN leaves paired devices connected', async () => {
@@ -2548,6 +3015,8 @@ describe('annex-server', () => {
         { id: 'proj_1', name: 'test', path: '/tmp/test' },
       ]);
 
+      // The flag reports how it actually started (#2951), not always headless.
+      vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(true);
       const { port, token } = await startAndPair();
       mockBroadcastToAllWindows.mockClear();
 
@@ -3853,7 +4322,7 @@ describe('annex-server', () => {
     describe('icon refs', () => {
       async function connectWithRefs(optIn: boolean) {
         const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: () => {} });
-        annexServer._testing.wsAuthTypes.set(ws as never, 'mtls');
+        annexServer._testing.registerPeerSocket(ws as never, TEST_CONTROLLER.fingerprint, TEST_CONTROLLER.tlsCertificateFingerprint);
         if (optIn) annexServer._testing.wsIconRefs.add(ws as never);
         annexServer._testing.wss!.clients.add(ws as never);
         annexServer._testing.wss!.emit('connection', ws);
@@ -5089,6 +5558,7 @@ describe('annex-server', () => {
     const liveSocket = async (auth: 'mtls' | 'bearer' = 'mtls') => {
       const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
       annexServer._testing.wsAuthTypes.set(ws as never, auth);
+      if (auth === 'mtls') annexServer._testing.registerPeerSocket(ws as never, TEST_CONTROLLER.fingerprint, TEST_CONTROLLER.tlsCertificateFingerprint);
       annexServer._testing.wss!.clients.add(ws as never);
       annexServer._testing.wss!.emit('connection', ws);
       await vi.waitFor(() => expect(ws.send).toHaveBeenCalled());
@@ -5282,7 +5752,7 @@ describe('annex-server', () => {
           const seq = frameSeq(ws);
 
           const next = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: vi.fn() });
-          annexServer._testing.wsAuthTypes.set(next as never, 'mtls');
+          annexServer._testing.registerPeerSocket(next as never, TEST_CONTROLLER.fingerprint, TEST_CONTROLLER.tlsCertificateFingerprint);
           annexServer._testing.wss!.clients.add(next as never);
           annexServer._testing.wss!.emit('connection', next);
           await vi.waitFor(() => expect(sent(next).some((f) => f.type === 'snapshot')).toBe(true));
@@ -6874,7 +7344,7 @@ describe('annex-server', () => {
       }) as any;
 
       // Pre-mark this WS as mTLS-authenticated (normally done by handleUpgrade)
-      _testing.wsAuthTypes.set(mockWs, 'mtls');
+      _testing.registerPeerSocket(mockWs, TEST_CONTROLLER.fingerprint, TEST_CONTROLLER.tlsCertificateFingerprint);
       _testing.wsPeerFingerprints.set(mockWs, 'aa:bb:cc:dd');
       mockBroadcastToAllWindows.mockClear();
 
@@ -6891,6 +7361,40 @@ describe('annex-server', () => {
 
       // Let buildSnapshot complete (cleanup)
       resolveProjectList([]);
+      await new Promise((r) => setTimeout(r, 20));
+    }, 10_000);
+
+    it('a fellow network member connecting does not lock this screen, and its leaving does not unlock it (#3061)', async () => {
+      const { _testing } = await import('./annex-server');
+      await startAndPair();
+      const { EventEmitter } = await import('events');
+      const socket = () => Object.assign(new EventEmitter(), { send: vi.fn(), ping: vi.fn(), readyState: 1 }) as any;
+      vi.mocked(annexPeers.getPeer).mockImplementation((fp: string) => (fp === 'm1:m1'
+        ? { ...TEST_CONTROLLER, fingerprint: 'm1:m1', role: 'member' }
+        : fp === TEST_CONTROLLER.fingerprint ? TEST_CONTROLLER : null) as any);
+
+      const memberWs = socket();
+      _testing.registerPeerSocket(memberWs, 'm1:m1', TEST_CONTROLLER.tlsCertificateFingerprint);
+      mockBroadcastToAllWindows.mockClear();
+      _testing.wss!.clients.add(memberWs);
+      _testing.wss!.emit('connection', memberWs);
+      expect(mockBroadcastToAllWindows).not.toHaveBeenCalledWith('annex:lock-state-changed', expect.anything());
+
+      // A controller locks; the member leaving doesn't unlock while the controller stays.
+      const controllerWs = socket();
+      _testing.registerPeerSocket(controllerWs, TEST_CONTROLLER.fingerprint, TEST_CONTROLLER.tlsCertificateFingerprint);
+      _testing.wss!.clients.add(controllerWs);
+      _testing.wss!.emit('connection', controllerWs);
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('annex:lock-state-changed', expect.objectContaining({ locked: true }));
+      mockBroadcastToAllWindows.mockClear();
+      memberWs.readyState = 3;
+      _testing.wss!.clients.delete(memberWs);
+      memberWs.emit('close', 1000, Buffer.from(''));
+      expect(mockBroadcastToAllWindows).not.toHaveBeenCalledWith('annex:lock-state-changed', expect.objectContaining({ locked: false }));
+      controllerWs.readyState = 3;
+      _testing.wss!.clients.delete(controllerWs);
+      controllerWs.emit('close', 1000, Buffer.from(''));
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('annex:lock-state-changed', expect.objectContaining({ locked: false }));
       await new Promise((r) => setTimeout(r, 20));
     }, 10_000);
 
@@ -7017,16 +7521,31 @@ describe('annex-server', () => {
 
   // ── mTLS and brute-force security gates coverage (F-14-3) ──
   describe('security gate coverage: requireMtls and checkBruteForce', () => {
-    it('checks the peer again on a destructive route, so one removed mid-request is refused (git operation)', async () => {
+    it('checks the peer again once the body has arrived, so a removal while the body is held back is refused (git operation)', async () => {
       vi.mocked(projectStore.list).mockReturnValue([
         { id: 'test-proj-id', name: 'Test Project', path: '/test/path', icon: '' } as any,
       ]);
       const { port } = await startAndPair();
-      // Paired when the request arrives, removed by the time the route acts.
-      vi.mocked(annexPeers.getPeer).mockReset().mockReturnValueOnce({ ...TEST_CONTROLLER } as any).mockReturnValue(undefined);
-      const res = await request(port, 'POST', '/api/v1/projects/test-proj-id/git/pull', { branch: 'main' });
-      expect(res.status).toBe(401);
-      expect(JSON.parse(res.body)).toEqual({ error: 'peer_not_paired', message: expect.any(String) });
+      const body = JSON.stringify({ branch: 'main' });
+      const answer = await new Promise<string>((resolve, reject) => {
+        let data = '';
+        const socket = tlsLib.connect({ host: '127.0.0.1', port, rejectUnauthorized: false, ...suiteCredentials() }, () => {
+          // Headers now, while paired; the body only after the pairing is removed.
+          socket.write([
+            'POST /api/v1/projects/test-proj-id/git/pull HTTP/1.1', 'Host: 127.0.0.1', 'Connection: close',
+            'Content-Type: application/json', `Content-Length: ${Buffer.byteLength(body)}`, '', '',
+          ].join('\r\n'));
+          setTimeout(() => {
+            vi.mocked(annexPeers.getPeer).mockReturnValue(undefined);
+            socket.write(body);
+          }, 200);
+        });
+        socket.on('data', (chunk) => { data += chunk; });
+        socket.on('error', reject);
+        socket.on('close', () => resolve(data));
+      });
+      expect(answer.split('\r\n')[0]).toBe('HTTP/1.1 401 Unauthorized');
+      expect(JSON.parse(answer.split('\r\n\r\n')[1])).toEqual({ error: 'peer_not_paired', message: expect.any(String) });
       vi.mocked(projectStore.list).mockReturnValue([]);
     });
 

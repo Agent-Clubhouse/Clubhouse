@@ -8,7 +8,9 @@ vi.mock('../../themes', async (importOriginal) => {
   return {
     ...orig,
     getTheme: (id: string) => ({
+      id,
       name: id === 'catppuccin-mocha' ? 'Mocha' : 'Latte',
+      type: id === 'catppuccin-mocha' ? 'dark' : 'light',
       colors: { base: '#1e1e2e', mantle: '#181825', surface0: '#313244', text: '#cdd6f4', accent: '#cba6f7' },
     }),
   };

@@ -23,6 +23,7 @@ import { OnboardingModal } from './features/onboarding/OnboardingModal';
 import { CommandPalette } from './features/command-palette/CommandPalette';
 import { FeedbackDialogHost } from './features/feedback/FeedbackDialogHost';
 import { QuickAgentDialog } from './features/agents/QuickAgentDialog';
+import { QuickPrompt } from './chrome/QuickPrompt';
 import { BlueprintGallery } from './features/blueprints/BlueprintGallery';
 import { PluginUpdateBanner } from './features/plugins/PluginUpdateBanner';
 import { CollapsedSidebarNotices } from './features/app/AppNotices';
@@ -293,6 +294,7 @@ export function App() {
         </div>
         <ChromeBody />
         <CommandPalette />
+        <QuickPrompt />
         <QuickAgentDialog />
         <BlueprintGallery />
         <WhatsNewDialog />

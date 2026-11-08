@@ -234,7 +234,8 @@ describe('scoping refusals', () => {
     for (const [from, to] of [['h1', 'other'], ['otherhelper', 'h1'], ['h1', 'nobody']]) {
       const res = await call('connect_agents', { from, to });
       expect(res.isError).toBe(true);
-      expect(res.text).toMatch(/not you or one of your helpers/);
+      // The grant check refuses first (#2974): connection.manage covers only itself and its helpers.
+      expect(res.text).toMatch(/not you or one of your helpers|connection\.manage on that agent/);
     }
     expect(boundPairs()).toEqual([]);
     expect(await readConnections(projectPath)).toEqual([]);

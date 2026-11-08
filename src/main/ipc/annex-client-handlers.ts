@@ -4,8 +4,21 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import * as annexClient from '../services/annex-client';
+import * as annexServer from '../services/annex-server';
+import * as annexPeers from '../services/annex-peers';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg, booleanArg, digestSinceArg } from './validation';
 import type { DigestSince } from '../../shared/group-project-types';
+
+/**
+ * After this machine pairs with a peer as its satellite, or forgets it, that peer
+ * is no longer a controller here: cut any connection it still has to our server.
+ */
+function noLongerController(fingerprint: string | undefined): void {
+  if (!fingerprint) return;
+  annexServer.closeSocketsUnlessController(fingerprint);
+  broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeersForDisplay());
+}
 
 export function registerAnnexClientHandlers(): void {
   ipcMain.handle(IPC.ANNEX_CLIENT.GET_SATELLITES, () => {
@@ -46,7 +59,9 @@ export function registerAnnexClientHandlers(): void {
   ipcMain.handle(IPC.ANNEX_CLIENT.PAIR_WITH, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, fingerprint, pin) => {
-      return annexClient.pairWithService(fingerprint, pin);
+      const result = await annexClient.pairWithService(fingerprint, pin);
+      if (result.success) noLongerController(result.fingerprint);
+      return result;
     },
   ));
 
@@ -60,7 +75,9 @@ export function registerAnnexClientHandlers(): void {
   ipcMain.handle(IPC.ANNEX_CLIENT.PAIR_WITH_LINK, withValidatedArgs(
     [stringArg()],
     async (_event, link) => {
-      return annexClient.pairWithLink(link);
+      const result = await annexClient.pairWithLink(link);
+      if (result.success) noLongerController(result.fingerprint);
+      return result;
     },
   ));
 
@@ -143,12 +160,22 @@ export function registerAnnexClientHandlers(): void {
     [stringArg()],
     (_event, fingerprint) => {
       annexClient.forgetSatellite(fingerprint);
+      noLongerController(fingerprint);
     },
+  ));
+
+  // A typed host for a satellite, such as its tailnet name (#3058)
+  ipcMain.handle(IPC.ANNEX_CLIENT.SET_SATELLITE_HOST, withValidatedArgs(
+    [stringArg(), stringArg({ minLength: 0, maxLength: 300 })],
+    (_event, fingerprint, host) => annexClient.setSatelliteHost(fingerprint, host),
   ));
 
   // Forget all satellites (disconnect all + remove all peers + clear state)
   ipcMain.handle(IPC.ANNEX_CLIENT.FORGET_ALL_SATELLITES, () => {
+    const forgotten = annexPeers.listPeers().filter((p) => p.role !== 'controller').map((p) => p.fingerprint);
     annexClient.forgetAllSatellites();
+    // Members also had connections to this machine: cut those too.
+    for (const fingerprint of forgotten) noLongerController(fingerprint);
   });
 
   // File system proxy: read file tree from satellite

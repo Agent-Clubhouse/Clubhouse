@@ -23,8 +23,9 @@ vi.mock('./log-service', () => ({
 
 import {
   listPeers, getPeer, isPairedPeer, addPeer, removePeer, removeAllPeers,
-  updateLastSeen, checkBruteForce, recordFailedAttempt, recordSuccessfulAttempt,
+  updateLastSeen, checkBruteForce, recordFailedAttempt, recordSuccessfulAttempt, forgiveFailedAttempt,
   unlockPairing, isPairingLocked, resetForTests, peerNeedsPairing, listPeersForDisplay,
+  noteReached, setTypedHost,
 } from './annex-peers';
 import { app } from 'electron';
 
@@ -105,6 +106,31 @@ describe('annex-peers', () => {
     });
   });
 
+  describe('where a satellite is reached (#3058)', () => {
+    it('remembers the host it was reached at first, and its port, across a restart', () => {
+      addPeer({ ...makePeer('aa:bb:cc'), role: 'satellite', knownHosts: ['10.0.0.4', 'studio.local'], mainPort: 9000 });
+      noteReached('aa:bb:cc', 'Studio.local', 9443);
+      resetForTests();
+      expect(getPeer('aa:bb:cc')).toMatchObject({ knownHosts: ['studio.local', '10.0.0.4'], mainPort: 9443 });
+    });
+
+    it('ignores an unknown peer or an address with no port', () => {
+      addPeer(makePeer('aa:bb:cc'));
+      noteReached('nope', '10.0.0.4', 9443);
+      noteReached('aa:bb:cc', '10.0.0.4', 0);
+      expect(getPeer('aa:bb:cc')!.knownHosts).toBeUndefined();
+    });
+
+    it('sets and clears a typed host', () => {
+      addPeer(makePeer('aa:bb:cc'));
+      expect(setTypedHost('aa:bb:cc', 'studio.tail1234.ts.net')).toBe(true);
+      expect(getPeer('aa:bb:cc')!.typedHost).toBe('studio.tail1234.ts.net');
+      setTypedHost('aa:bb:cc', undefined);
+      expect(getPeer('aa:bb:cc')).not.toHaveProperty('typedHost');
+      expect(setTypedHost('nope', 'x')).toBe(false);
+    });
+  });
+
   describe('brute-force protection', () => {
     it('should allow first 3 attempts freely', () => {
       expect(checkBruteForce('192.168.1.1').allowed).toBe(true);
@@ -136,6 +162,26 @@ describe('annex-peers', () => {
       const check = checkBruteForce('192.168.1.1');
       expect(check.allowed).toBe(true);
       expect(check.attemptsRemaining).toBe(3);
+    });
+
+    it('takes back one attempt that was not a guess, lifting a lockout it caused', () => {
+      for (let i = 0; i < 6; i++) recordFailedAttempt('192.168.1.1');
+      expect(checkBruteForce('192.168.1.1').locked).toBe(true);
+      forgiveFailedAttempt('192.168.1.1');
+      expect(checkBruteForce('192.168.1.1').locked).toBe(false);
+      expect(isPairingLocked()).toBe(false);
+      for (let i = 0; i < 5; i++) forgiveFailedAttempt('192.168.1.1');
+      expect(checkBruteForce('192.168.1.1')).toMatchObject({ allowed: true, attemptsRemaining: 3 });
+      // Nothing to take back: still a no-op.
+      forgiveFailedAttempt('192.168.1.1');
+      expect(checkBruteForce('192.168.1.1').attemptsRemaining).toBe(3);
+    });
+
+    it('a recorded and forgiven attempt leaves earlier failures counted', () => {
+      for (let i = 0; i < 2; i++) recordFailedAttempt('192.168.1.1');
+      recordFailedAttempt('192.168.1.1');
+      forgiveFailedAttempt('192.168.1.1');
+      expect(checkBruteForce('192.168.1.1')).toMatchObject({ allowed: true, attemptsRemaining: 1 });
     });
 
     it('should unlock manually', () => {
