@@ -4,7 +4,9 @@
  * Verifies durable agent display (from agents.json), UI-driven creation,
  * deletion via context menu, and cross-project agent isolation.
  *
- * Issue #233 — Consolidated from smoke.spec.ts + PR #257
+ * Issue #233 — Consolidated from smoke.spec.ts + PR #257. Runs on the new
+ * layout, and on classic in the Classic layout E2E job (#2843). Where the two
+ * layouts differ, each has its own test and skips the other's.
  */
 import { test, expect, _electron as electron, Page } from '@playwright/test';
 import { launchApp } from './launch';
@@ -13,10 +15,14 @@ import {
   FIXTURE_B,
   addProject,
   assertNotBlankScreen,
+  assertRunLayout,
   navigateToSmokeProject,
+  projectIdFor,
+  revealAgent,
   writeAgentsJson,
   cleanupAgentsJson,
 } from './smoke-helpers';
+import { isNewLayout } from './layout';
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
@@ -31,16 +37,20 @@ test.beforeAll(async () => {
     { id: 'smoke_agent_2', name: 'smoke-beta', color: 'green' },
   ]);
 
-  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
+  ({ electronApp, window } = await launchApp());
+  await assertRunLayout(window);
 
   // Add smoke project (agents.json was pre-written above)
   await addProject(electronApp, window, FIXTURE_SMOKE);
 
   // Wait for durable agents to load asynchronously via IPC
-  await expect(
-    window.locator('[data-testid^="durable-drag-"]').first(),
-  ).toBeVisible({ timeout: 30_000 });
+  await revealAgent(window, 'smoke_agent_1');
 });
+
+/** Classic lists durable agents in draggable rows; the new layout's tree rows are the agent items. */
+const durableRows = async () => window.locator(
+  (await isNewLayout(window)) ? '[data-testid^="agent-item-"]' : '[data-testid^="durable-drag-"]',
+);
 
 test.afterAll(async () => {
   cleanupAgentsJson();
@@ -59,6 +69,7 @@ test.describe('Agent Lifecycle — Fixture Agents', () => {
   });
 
   test('durable agents from agents.json appear in list', async () => {
+    await revealAgent(window, 'smoke_agent_1');
     // Durable agents load asynchronously after project activation
     await expect(
       window.locator('[data-agent-name="smoke-alpha"]').first(),
@@ -68,16 +79,16 @@ test.describe('Agent Lifecycle — Fixture Agents', () => {
       window.locator('[data-agent-name="smoke-beta"]').first(),
     ).toBeVisible({ timeout: 5_000 });
 
-    const order = await window.evaluate(() => {
-      const items = document.querySelectorAll('[data-testid^="durable-drag-"]');
-      return Array.from(items).map((el) => el.getAttribute('data-agent-id') || '');
-    });
+    const order = await (await durableRows()).evaluateAll(
+      (items) => items.map((el) => el.getAttribute('data-agent-id') || ''),
+    );
 
     expect(order).toContain('smoke_agent_1');
     expect(order).toContain('smoke_agent_2');
   });
 
   test('agent names are visible in the list', async () => {
+    await revealAgent(window, 'smoke_agent_1');
     await expect(
       window.locator('[data-agent-name="smoke-alpha"]').first(),
     ).toBeVisible({ timeout: 5_000 });
@@ -88,6 +99,13 @@ test.describe('Agent Lifecycle — Fixture Agents', () => {
   });
 
   test('agent status displays correctly (sleeping for unstarted)', async () => {
+    if (await isNewLayout(window)) {
+      // The new layout puts sleeping agents in their project's "sleeping" fold.
+      const projectId = await projectIdFor(window, FIXTURE_SMOKE);
+      await expect(window.locator(`[data-testid="sleeping-fold-${projectId}"]`)).toContainText('2 sleeping', { timeout: 5_000 });
+      await revealAgent(window, 'smoke_agent_1');
+      return;
+    }
     const agentItem = window.locator('[data-testid="agent-item-smoke_agent_1"]');
     await expect(agentItem).toBeVisible({ timeout: 5_000 });
 
@@ -96,7 +114,7 @@ test.describe('Agent Lifecycle — Fixture Agents', () => {
   });
 
   test('clicking an agent selects it (active state)', async () => {
-    const agentItem = window.locator('[data-testid="agent-item-smoke_agent_1"]');
+    const agentItem = await revealAgent(window, 'smoke_agent_1');
     await agentItem.click();
     await window.waitForTimeout(500);
 
@@ -106,6 +124,7 @@ test.describe('Agent Lifecycle — Fixture Agents', () => {
   });
 
   test('completed footer section is present (with regex pattern check)', async () => {
+    test.skip(await isNewLayout(window), 'The Completed footer is classic only; the new layout lists finished quick agents in its tree.');
     await navigateToSmokeProject(window);
     await window.waitForTimeout(500);
 
@@ -118,8 +137,7 @@ test.describe('Agent Lifecycle — Fixture Agents', () => {
   });
 
   test('agent delete button visible via hover', async () => {
-    const agentItem = window.locator('[data-testid="agent-item-smoke_agent_2"]');
-    await expect(agentItem).toBeVisible({ timeout: 15_000 });
+    const agentItem = await revealAgent(window, 'smoke_agent_2', 15_000);
 
     await agentItem.hover();
     await window.waitForTimeout(300);
@@ -138,6 +156,20 @@ test.describe('Agent Lifecycle — Fixture Agents', () => {
     await addProject(electronApp, window, FIXTURE_B);
     await window.waitForTimeout(500);
 
+    if (await isNewLayout(window)) {
+      // The tree shows every project at once, so the guard is that project-b's
+      // group holds none of the smoke agents, and project-smoke's still does.
+      const bGroup = window.locator(`[data-testid="project-group-${await projectIdFor(window, FIXTURE_B)}"]`);
+      await expect(bGroup).toBeVisible({ timeout: 10_000 });
+      await expect(bGroup.locator('[data-testid^="agent-item-smoke"]')).toHaveCount(0);
+      await expect(bGroup.locator('[data-testid^="sleeping-fold-"]')).toHaveCount(0);
+      const smokeGroup = window.locator(`[data-testid="project-group-${await projectIdFor(window, FIXTURE_SMOKE)}"]`);
+      await revealAgent(window, 'smoke_agent_1');
+      await expect(smokeGroup.locator('[data-testid="agent-item-smoke_agent_1"]')).toBeVisible();
+      await navigateToSmokeProject(window);
+      return;
+    }
+
     // Smoke agents should NOT be visible in project-b
     const smokeAgentVisible = await window
       .locator('[data-testid^="agent-item-smoke"]')
@@ -155,6 +187,10 @@ test.describe('Agent Lifecycle — Fixture Agents', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Agent Lifecycle — Add Agent Dialog', () => {
+  test.beforeEach(async () => {
+    test.skip(await isNewLayout(window), 'The classic "+ Agent" dialog; the new layout has the New agent page.');
+  });
+
   test('clicking "+ Agent" opens the add agent dialog', async () => {
     await navigateToSmokeProject(window);
 
@@ -209,6 +245,35 @@ test.describe('Agent Lifecycle — Add Agent Dialog', () => {
   });
 });
 
+test.describe('Agent Lifecycle — New Agent Page', () => {
+  const page = () => window.locator('[data-testid="new-agent-page"]');
+
+  test.beforeEach(async () => {
+    test.skip(!(await isNewLayout(window)), 'The new layout\'s New agent page; classic has the "+ Agent" dialog.');
+  });
+
+  test('the project row opens the New agent page with its fields', async () => {
+    await navigateToSmokeProject(window);
+    const projectId = await projectIdFor(window, FIXTURE_SMOKE);
+    await window.locator(`[data-testid="project-${projectId}"]`).hover();
+    await window.getByRole('button', { name: 'New agent in project-smoke', exact: true }).click();
+    await expect(page()).toBeVisible({ timeout: 10_000 });
+
+    await expect(window.locator('[data-testid="new-agent-kind-durable"]')).toHaveAttribute('aria-checked', 'true');
+    await expect(window.locator('[data-testid="new-agent-name"]')).toBeVisible();
+    await expect(window.locator('[data-testid="new-agent-submit"]')).toBeVisible();
+    await expect(page().getByRole('button', { name: 'Cancel', exact: true })).toBeVisible();
+  });
+
+  test('cancel closes the page without creating', async () => {
+    await window.locator('[data-testid="new-agent-name"]').fill(AGENT_NAME);
+    await page().getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(page()).toBeHidden({ timeout: 5_000 });
+    // Creating from this page, on a fake CLI, is layout-default.spec.ts's.
+    await expect(window.locator(`[data-agent-name="${AGENT_NAME}"]`)).toHaveCount(0);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Deletion via context menu (uses pre-seeded smoke-beta — always sleeping)
 // ---------------------------------------------------------------------------
@@ -217,8 +282,7 @@ test.describe('Agent Lifecycle — Delete via Context Menu', () => {
   test('right-click delete removes agent after confirmation', async () => {
     await navigateToSmokeProject(window);
 
-    const item = window.locator('[data-agent-name="smoke-beta"]').first();
-    await expect(item).toBeVisible({ timeout: 15_000 });
+    const item = await revealAgent(window, 'smoke_agent_2', 15_000);
 
     // Open context menu
     await item.click({ button: 'right' });
@@ -259,6 +323,11 @@ test.describe('Agent Lifecycle — Delete via Context Menu', () => {
 
     await window.waitForTimeout(2_000);
 
+    if (await isNewLayout(window)) {
+      // Its row only exists while the fold is open, so count what the fold says.
+      const projectId = await projectIdFor(window, FIXTURE_SMOKE);
+      await expect(window.locator(`[data-testid="sleeping-fold-${projectId}"]`)).toContainText('1 sleeping', { timeout: 10_000 });
+    }
     const count = await window.locator('[data-agent-name="smoke-beta"]').count();
     expect(count).toBe(0);
   });
@@ -269,7 +338,19 @@ test.describe('Agent Lifecycle — Delete via Context Menu', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Agent Lifecycle — Dropdown', () => {
+  test('the New menu offers durable and quick agents (new layout)', async () => {
+    test.skip(!(await isNewLayout(window)), 'The new layout\'s New menu; classic has the "▾" dropdown.');
+    await navigateToSmokeProject(window);
+    await window.locator('[data-testid="chrome-new"]').click();
+    await expect(window.getByRole('menuitem', { name: 'Durable agent…' })).toBeVisible({ timeout: 3_000 });
+    await expect(window.getByRole('menuitem', { name: 'Quick agent…' })).toBeVisible({ timeout: 3_000 });
+    // The button toggles the menu.
+    await window.locator('[data-testid="chrome-new"]').click();
+    await expect(window.getByRole('menuitem', { name: 'Quick agent…' })).toBeHidden({ timeout: 3_000 });
+  });
+
   test('agent creation dropdown (Durable vs Quick Agent options)', async () => {
+    test.skip(await isNewLayout(window), 'The classic "▾" dropdown; the new layout has the New menu.');
     await navigateToSmokeProject(window);
 
     const dropdownBtn = window.locator('button:has-text("▾")');

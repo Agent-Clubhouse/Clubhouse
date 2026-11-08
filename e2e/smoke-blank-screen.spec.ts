@@ -5,7 +5,8 @@
  * Guards against Zustand selector crashes, missing content, and
  * infinite re-render console errors.
  *
- * Issue #233 — Consolidated from smoke.spec.ts + PR #257
+ * Issue #233 — Consolidated from smoke.spec.ts + PR #257. Runs on the new
+ * layout, and on classic in the Classic layout E2E job (#2843).
  */
 import { test, expect, _electron as electron, Page } from '@playwright/test';
 import { launchApp } from './launch';
@@ -14,10 +15,15 @@ import {
   FIXTURE_B,
   addProject,
   assertNotBlankScreen,
+  assertRunLayout,
+  assertActiveProject,
   assertTitleBarContains,
   getTitleBarText,
   navigateToSmokeProject,
+  projectButton,
+  selectProject,
 } from './smoke-helpers';
+import { isNewLayout } from './layout';
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
@@ -26,7 +32,8 @@ let window: Page;
 const consoleErrors: string[] = [];
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false }, preserveFirstLoad: true }));
+  ({ electronApp, window } = await launchApp({ preserveFirstLoad: true }));
+  await assertRunLayout(window);
 
   window.on('console', (msg) => {
     if (msg.type() === 'error') {
@@ -57,19 +64,19 @@ test.describe('Blank-Screen Prevention — Navigation', () => {
     await addProject(electronApp, window, FIXTURE_SMOKE);
     await window.waitForTimeout(500);
     await assertNotBlankScreen(window);
-    await assertTitleBarContains(window, 'project-smoke');
+    await assertActiveProject(window, 'project-smoke');
   });
 
   test('adding project-b renders project view (not blank)', async () => {
     await addProject(electronApp, window, FIXTURE_B);
     await assertNotBlankScreen(window);
-    await assertTitleBarContains(window, 'project-b');
+    await assertActiveProject(window, 'project-b');
   });
 
   test('switching to project-smoke renders content', async () => {
     await navigateToSmokeProject(window);
     await assertNotBlankScreen(window);
-    await assertTitleBarContains(window, 'project-smoke');
+    await assertActiveProject(window, 'project-smoke');
   });
 
   test('agent list or no-agent placeholder renders in project view', async () => {
@@ -117,21 +124,20 @@ test.describe('Blank-Screen Prevention — Navigation', () => {
   });
 
   test('switching between projects does not blank screen', async () => {
-    const projB = window.locator('[title="project-b"]').first();
-    await projB.click();
+    await selectProject(window, 'project-b');
     await window.waitForTimeout(500);
 
-    await assertTitleBarContains(window, 'project-b');
+    await assertActiveProject(window, 'project-b');
     await assertNotBlankScreen(window);
 
     await navigateToSmokeProject(window);
-    await assertTitleBarContains(window, 'project-smoke');
+    await assertActiveProject(window, 'project-smoke');
     await assertNotBlankScreen(window);
   });
 
   test('rapid project switching (10x) does not blank-screen', async () => {
-    const projSmoke = window.locator('[title="project-smoke"]').first();
-    const projB = window.locator('[title="project-b"]').first();
+    const projSmoke = await projectButton(window, 'project-smoke');
+    const projB = await projectButton(window, 'project-b');
 
     for (let i = 0; i < 10; i++) {
       await projSmoke.click();
@@ -143,19 +149,32 @@ test.describe('Blank-Screen Prevention — Navigation', () => {
   });
 
   test('rapid navigation between views does not blank-screen', async () => {
-    const projSmoke = window.locator('[title="project-smoke"]').first();
-    const projB = window.locator('[title="project-b"]').first();
     const settingsBtn = window.locator('[data-testid="nav-settings"]');
     const helpBtn = window.locator('[data-testid="nav-help"]');
 
-    await projSmoke.click();
-    await settingsBtn.click();
-    await projB.click();
-    await helpBtn.click();
-    await projSmoke.click();
-    await settingsBtn.click();
-    await helpBtn.click();
-    await projB.click();
+    if (await isNewLayout(window)) {
+      // Settings and Help take the sidebar, so each project click goes back to
+      // the tree first.
+      await selectProject(window, 'project-smoke');
+      await settingsBtn.click();
+      await selectProject(window, 'project-b');
+      await helpBtn.click();
+      await selectProject(window, 'project-smoke');
+      await settingsBtn.click();
+      await helpBtn.click();
+      await selectProject(window, 'project-b');
+    } else {
+      const projSmoke = await projectButton(window, 'project-smoke');
+      const projB = await projectButton(window, 'project-b');
+      await projSmoke.click();
+      await settingsBtn.click();
+      await projB.click();
+      await helpBtn.click();
+      await projSmoke.click();
+      await settingsBtn.click();
+      await helpBtn.click();
+      await projB.click();
+    }
 
     await window.waitForTimeout(1_000);
     await assertNotBlankScreen(window);
