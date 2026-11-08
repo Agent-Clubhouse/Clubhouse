@@ -24,6 +24,7 @@ import { getDispatcherAgentId } from './dispatcher/dispatcher-service';
 import { isRemovalUnsaved, listDispatcherLinksForUser, recordUserRemoval } from './dispatcher-connections';
 import { saveWireRemoval } from './dispatcher-wire-source';
 import { appLog } from './log-service';
+import { removeUserLink } from './connection-grants';
 import type { DispatcherLink } from '../../shared/types';
 import { removeStoredPair } from './orchestrator-connections';
 import { collectSourcesByPair, markBindingRemovedByUser, markSourceRemovedByUser, persistedPairKey, rebuildPersistedBindings, releaseSourceBinding } from './persisted-bindings';
@@ -37,6 +38,7 @@ const KIND_BY_SOURCE: Readonly<Record<string, ConnectionSourceKind>> = {
   'dispatcher-wires': 'dispatcher_auto',
   [ORCHESTRATOR_CONNECTION_SOURCE_ID]: 'tool_link',
   [DISPATCHER_CONNECTION_SOURCE_ID]: 'dispatcher_link',
+  'user-connections': 'user_link',
 };
 
 const SUSPENDED_WHY: Readonly<Record<string, string>> = {
@@ -119,6 +121,8 @@ export async function removeConnectionSource(agentId: string, targetId: string, 
       await recordUserRemoval({ agentId, targetId });
       notSaved = await isRemovalUnsaved({ agentId, targetId }).catch(() => false);
       releaseSourceBinding(DISPATCHER_CONNECTION_SOURCE_ID, agentId, targetId);
+    } else if (kind === 'user_link') {
+      await removeUserLink(agentId, targetId);
     } else if (kind === 'dispatcher_auto') {
       const other = nonDispatcherEnd(agentId, targetId);
       if (!other) return { ok: false, error: 'This isn\u2019t a wire to the Dispatcher.' };

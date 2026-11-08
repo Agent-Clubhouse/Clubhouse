@@ -173,7 +173,7 @@ describe('Annex Network membership (#3061)', () => {
     membership.noteLocalRemoval(N);
     expect(broadcasts[0]).toMatchObject({ message: { type: 'member-removed', removal: { fingerprint: N.toLowerCase() } }, to: [A, B, N] });
     peers.delete(N.toLowerCase());
-    expect(membership.pendingRemovals()).toEqual([{ fingerprint: N.toLowerCase(), name: 'New Mac', confirmedBy: [], waitingOn: [A, B] }]);
+    expect(membership.pendingRemovals()).toEqual([{ fingerprint: N.toLowerCase(), name: 'New Mac', kind: 'desktop', confirmedBy: [], waitingOn: [A, B] }]);
     // A's view shows the removal: confirmed there.
     const removal = (stored.removals as Array<{ fingerprint: string; removedAt: string }>)[0];
     listener!(A, view([member(A, '0a', 'Studio')], [removal]));
@@ -280,6 +280,100 @@ describe('Annex Network membership (#3061)', () => {
       listener!(A, { v: 1, type: 'hello', member: member(A, '0a', 'Studio Pro', { hosts: ['192.168.1.4'], port: 7000 }) });
       expect(peers.get(A.toLowerCase())).toMatchObject({ alias: 'Studio Pro', mainPort: 7000 });
       expect(peers.get(A.toLowerCase())?.knownHosts?.[0]).toBe('192.168.1.4');
+    });
+  });
+
+  describe('the phone as a member (#3062)', () => {
+    const PHONE = fp('0c');
+
+    it('takes devices a member phone vouches for, connects to desktops, and tracks the joins', () => {
+      peers.set(PHONE.toLowerCase(), memberPeer(PHONE, '0c', 'Phone', { kind: 'phone' }));
+      open = [A, B];
+      expect(membership.vouchFromPhone(PHONE, [member(N, '0e', 'New Mac')])).toEqual({ added: [N.toLowerCase()], skipped: [] });
+      expect(peers.get(N.toLowerCase())).toMatchObject({ role: 'member', addedBy: PHONE });
+      expect(hooks.connect).toHaveBeenCalledWith(N.toLowerCase());
+      // Phones never confirm over the channel, so only computers are waited on.
+      expect(membership.joinConfirmation(N)?.waitingOn).toEqual([A, B]);
+      expect(broadcasts.at(-1)!.message.type).toBe('members');
+      // Known already: nothing added, and the phone is told why.
+      expect(membership.vouchFromPhone(PHONE, [member(N, '0e', 'New Mac')])).toEqual({ added: [], skipped: [{ fingerprint: N.toLowerCase(), reason: 'member' }] });
+    });
+
+    it('refuses vouching from a phone that is not a member, a desktop, or with Annex Network off', () => {
+      peers.set(PHONE.toLowerCase(), memberPeer(PHONE, '0c', 'Phone', { kind: 'phone', role: 'controller' }));
+      const none = { added: [], skipped: [] };
+      expect(membership.vouchFromPhone(PHONE, [member(N, '0e', 'New Mac')])).toEqual(none);
+      expect(membership.vouchFromPhone(A, [member(N, '0e', 'New Mac')])).toEqual(none);
+      peers.set(PHONE.toLowerCase(), memberPeer(PHONE, '0c', 'Phone', { kind: 'phone' }));
+      vi.mocked(annexSettings.networkEnabled).mockReturnValue(false);
+      expect(membership.vouchFromPhone(PHONE, [member(N, '0e', 'New Mac')])).toEqual(none);
+      expect(peers.has(N.toLowerCase())).toBe(false);
+    });
+
+    it('never connects to a phone it learns of', () => {
+      listener!(A, view([member(fp('0d'), '0d', 'Another phone', { kind: 'phone', hosts: [], port: undefined })]));
+      expect(peers.get(fp('0d'))).toMatchObject({ role: 'member', kind: 'phone' });
+      expect(hooks.connect).not.toHaveBeenCalled();
+    });
+
+    it('tells listeners when the membership changes', () => {
+      const heard = vi.fn();
+      const off = membership.onMembershipChanged(heard);
+      listener!(A, view([member(N, '0e', 'New Mac')]));
+      expect(heard).toHaveBeenCalled();
+      off();
+    });
+  });
+
+  describe('the phone as a member, after review', () => {
+    const PHONE = fp('0c');
+    beforeEach(() => { peers.set(PHONE.toLowerCase(), memberPeer(PHONE, '0c', 'Phone', { kind: 'phone' })); });
+
+    it('rejoins through the phone a desktop that was removed before: it counts as a fresh join', () => {
+      listener!(A, view([], [{ fingerprint: N, removedAt: '2030-01-01T00:00:00.000Z' }]));
+      expect(membership.vouchFromPhone(PHONE, [member(N, '0e', 'Back', { joinedAt: '2020-01-01T00:00:00.000Z' })]).added).toEqual([N.toLowerCase()]);
+      expect(membership.currentView().removals.map((r) => r.fingerprint)).not.toContain(N);
+    });
+
+    it('says why a record was skipped: one-to-one here, this machine, or not holding together', () => {
+      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'Old', { role: 'satellite' }));
+      expect(membership.vouchFromPhone(PHONE, [
+        member(N, '0e', 'Old'),
+        member(SELF, '01', 'This Mac'),
+        member(fp('0f'), '0f', 'Liar', { publicKey: 'key-other' }),
+      ]).skipped).toEqual([
+        { fingerprint: N.toLowerCase(), reason: 'one-to-one' },
+        { fingerprint: SELF.toLowerCase(), reason: 'self' },
+        { fingerprint: fp('0f'), reason: 'invalid' },
+      ]);
+    });
+
+    it('treats an uppercase fingerprint as the same device', () => {
+      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'One-to-one', { role: 'controller' }));
+      listener!(A, view([member(N.toUpperCase(), '0e', 'Imposter', { publicKey: `key-${N.toUpperCase()}` })]));
+      expect(peers.get(N.toLowerCase())?.role).toBe('controller');
+    });
+
+    it('a removal made here with a phone in the network still completes', () => {
+      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'New Mac'));
+      membership.noteLocalRemoval(N);
+      peers.delete(N.toLowerCase());
+      const removal = (stored.removals as Array<{ fingerprint: string; removedAt: string }>)[0];
+      listener!(A, view([member(A, '0a', 'Studio')], [removal]));
+      listener!(B, view([member(B, '0b', 'Laptop')], [removal]));
+      expect(membership.pendingRemovals()).toEqual([]);
+    });
+
+    it('remembers a removed phone as a phone', () => {
+      membership.noteLocalRemoval(PHONE);
+      peers.delete(PHONE.toLowerCase());
+      expect(membership.pendingRemovals()[0]).toMatchObject({ fingerprint: PHONE.toLowerCase(), kind: 'phone' });
+    });
+
+    it('pins a member\'s new certificate when a newer join says so', () => {
+      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'Phone 2', { kind: 'phone' }));
+      listener!(A, view([member(N, '1e', 'Phone 2', { kind: 'phone', joinedAt: '2030-01-01T00:00:00.000Z' })]));
+      expect(peers.get(N.toLowerCase())?.tlsCertificateFingerprint).toBe(cert('1e'));
     });
   });
 });

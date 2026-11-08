@@ -248,6 +248,8 @@ describe('annex-handlers', () => {
     membershipInit.hooks!.endDevice('fp:gone');
     expect(annexClient.forgetSatellite).toHaveBeenCalledWith('fp:gone');
     expect(annexServer.revokePeer).toHaveBeenCalledWith('fp:gone');
+    // Revoked first, so a removed phone is told while it's still known.
+    expect(vi.mocked(annexServer.revokePeer).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(annexClient.forgetSatellite).mock.invocationCallOrder[0]);
     expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX.PEERS_CHANGED, []);
   });
 

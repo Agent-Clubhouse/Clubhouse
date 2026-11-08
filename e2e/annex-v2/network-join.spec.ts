@@ -38,7 +38,7 @@ test.afterAll(async () => {
 });
 
 const launch = (label: string, profile?: DisposableProfile) =>
-  launchApp({ label, args: ['--disable-gpu'], experimental: { newChrome: false }, ...(profile && { profile }) });
+  launchApp({ label, args: ['--disable-gpu'], ...(profile && { profile }) });
 
 function status(page: Page): Promise<{ fingerprint: string; port: number; pin: string; pairingUrl?: string }> {
   return page.evaluate(() => (window as any).clubhouse.annex.getStatus());

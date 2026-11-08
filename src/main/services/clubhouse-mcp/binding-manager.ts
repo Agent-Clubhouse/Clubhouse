@@ -14,6 +14,34 @@ class BindingManager {
   private version = 0;
 
   /**
+   * Where a direction's disabled tools come from when one is set (D129): the
+   * connection store, registered by main. Unset in tests that don't need it.
+   */
+  private toolsResolver: ((agentId: string, targetId: string, targetKind: BindingTargetKind) => string[] | undefined) | null = null;
+  private toolsRestorer: ((agentId: string, targetId: string, targetKind: BindingTargetKind, legacy: string[]) => void) | null = null;
+
+  /** Register the connection store: a new binding takes its list from it, and a restored list migrates into it. */
+  setConnectionToolsSource(
+    resolve: ((agentId: string, targetId: string, targetKind: BindingTargetKind) => string[] | undefined) | null,
+    restore: ((agentId: string, targetId: string, targetKind: BindingTargetKind, legacy: string[]) => void) | null,
+  ): void {
+    this.toolsResolver = resolve;
+    this.toolsRestorer = restore;
+  }
+
+  /**
+   * A source restored a binding with its own disabled tools (a canvas wire's,
+   * from before the connection store): the store's list wins, and a list the
+   * store doesn't have yet moves into it. Without a registered store, set as is.
+   */
+  restoreDisabledTools(agentId: string, targetId: string, legacy: string[]): void {
+    const binding = this.bindings.get(agentId)?.find((b) => b.targetId === targetId);
+    if (!binding) return;
+    if (this.toolsRestorer) this.toolsRestorer(agentId, targetId, binding.targetKind, legacy);
+    else this.setDisabledTools(agentId, targetId, legacy);
+  }
+
+  /**
    * Add a binding for an agent.
    * Returns true if a new binding was created, false if it already existed.
    * Callers that receive false may want to broadcast the current binding state
@@ -29,7 +57,9 @@ class BindingManager {
     // Don't duplicate
     if (agentBindings.some(b => b.targetId === target.targetId)) return false;
 
-    agentBindings.push({ agentId, ...target });
+    // A connection's saved permissions apply from the moment it's bound (D129).
+    const disabledTools = this.toolsResolver?.(agentId, target.targetId, target.targetKind);
+    agentBindings.push({ agentId, ...target, ...(disabledTools && disabledTools.length > 0 && { disabledTools }) });
     this.notifyChange(agentId);
     return true;
   }

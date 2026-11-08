@@ -65,6 +65,19 @@ describe('WireConfigPopover', () => {
     expect(getByTestId('wire-bidirectional-toggle')).toBeTruthy();
   });
 
+  it('turning two-way on gives the new reverse direction the new-wire default (#2969)', async () => {
+    const bindMock = vi.fn().mockResolvedValue(undefined);
+    const setDisabledTools = vi.fn().mockResolvedValue(undefined);
+    const onAddWireDefinition = vi.fn();
+    useMcpBindingStore.setState({ bindings: [agentBinding], bind: bindMock, setDisabledTools } as any);
+    const { getByRole } = render(
+      <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} onAddWireDefinition={onAddWireDefinition} />,
+    );
+    fireEvent.click(getByRole('switch', { name: 'Both directions' }));
+    await waitFor(() => expect(setDisabledTools).toHaveBeenCalledWith('agent-2', 'agent-1', ['clear_agent', 'compact_agent']));
+    expect(onAddWireDefinition).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'agent-2', targetId: 'agent-1', disabledTools: ['clear_agent', 'compact_agent'] }));
+  });
+
   it('shows Set Instructions button', () => {
     const { getByTestId } = render(
       <WireConfigPopover binding={browserBinding} x={100} y={200} onClose={vi.fn()} />,

@@ -151,7 +151,31 @@ vi.mock('./finished-quick-agents-store', async () => {
 });
 // Real sockets on loopback only; never advertise fixtures on the LAN.
 // Membership has its own tests (annex-network-membership.test.ts).
-vi.mock('./annex-network-membership', () => ({ noteLocalJoin: vi.fn(), noteLocalRemoval: vi.fn() }));
+// Membership has its own tests; here it answers with a fixed network, so the fixtures are the same every run.
+const NET = vi.hoisted(() => {
+  const record = (fp: string, name: string, kind: 'desktop' | 'phone', extra: Record<string, unknown> = {}) => ({
+    fingerprint: fp, publicKey: '<base64 Ed25519 SPKI DER>', certFingerprint: Array(32).fill(kind === 'phone' ? 'EF' : 'CD').join(':'),
+    ...(kind === 'desktop' && { certPem: '-----BEGIN CERTIFICATE-----\n<base64 DER>\n-----END CERTIFICATE-----\n' }),
+    name, icon: kind === 'phone' ? 'iphone' : 'computer', color: 'indigo', kind,
+    hosts: kind === 'desktop' ? ['192.168.1.9', 'studio.tail1234.ts.net'] : [], ...(kind === 'desktop' && { port: 7432 }),
+    joinedAt: '2026-11-08T10:00:00.000Z', ...extra,
+  });
+  // Real-format fingerprints, so a phone can send these records back exactly as listed.
+  const self = record(Array(16).fill('aa').join(':'), 'Studio', 'desktop');
+  return {
+    self,
+    network: { members: [self, record(Array(16).fill('11').join(':'), 'Travel laptop', 'desktop'), record(Array(16).fill('ef').join(':'), 'Mason’s iPhone', 'phone')], removals: [{ fingerprint: Array(16).fill('55').join(':'), removedAt: '2026-11-08T12:00:00.000Z' }] },
+    vouched: { added: [Array(16).fill('dd').join(':')], skipped: [{ fingerprint: Array(16).fill('11').join(':'), reason: 'member' }] },
+    onChange: null as null | (() => void),
+  };
+});
+vi.mock('./annex-network-membership', () => ({
+  noteLocalJoin: vi.fn(),
+  noteLocalRemoval: vi.fn(),
+  currentView: (to?: string) => (to === undefined ? NET.network : { members: [NET.self], removals: [] }),
+  vouchFromPhone: vi.fn(() => NET.vouched),
+  onMembershipChanged: (listener: () => void) => { NET.onChange = listener; return () => { NET.onChange = null; }; },
+}));
 
 vi.mock('./annex-network-profile', async (importOriginal) => ({
   ...await importOriginal<typeof import('./annex-network-profile')>(),
@@ -247,6 +271,8 @@ vi.mock('./file-service', () => ({ readTree: async () => [], readFile: async () 
 vi.mock('./annex-identity', () => ({
   getOrCreateIdentity: () => ({ publicKey: 'fixture-public-key', privateKey: 'fixture-private-key', fingerprint: 'AA:BB:CC:DD', createdAt: '2026-01-01T00:00:00.000Z' }),
   getPublicIdentity: () => ({ publicKey: 'fixture-public-key', fingerprint: 'AA:BB:CC:DD' }),
+  // Only the Annex Network routes read this one: it marks which listed member is this desktop.
+  getIdentity: () => ({ publicKey: 'fixture-public-key', fingerprint: Array(16).fill('aa').join(':'), createdAt: '2026-01-01T00:00:00.000Z' }),
   computeFingerprint: () => 'mobile-fixture-identity',
 }));
 vi.mock('./annex-tls', async (importOriginal) => {
@@ -258,11 +284,13 @@ vi.mock('./annex-tls', async (importOriginal) => {
     extractPeerCertificateDer: actual.extractPeerCertificateDer,
     verifyCertBinding: actual.verifyCertBinding,
     getCertificateFingerprint: () => W.tlsFingerprint,
+    certificatePemFromDer: actual.certificatePemFromDer,
+    sameCertificateFingerprint: actual.sameCertificateFingerprint,
   };
 });
 vi.mock('./annex-peers', () => ({
   controlsThisMachine: (p?: { role?: string } | null) => p?.role === 'controller' || p?.role === 'member',
-  controlledFromHere: (p?: { role?: string } | null) => p?.role === 'satellite' || p?.role === 'member',
+  controlledFromHere: (p?: { role?: string; kind?: string } | null) => p?.role === 'satellite' || (p?.role === 'member' && p.kind !== 'phone'),
   checkBruteForce: () => ({ allowed: true, delayMs: 0, locked: false, attemptsRemaining: 3 }),
   recordFailedAttempt: () => {},
   recordSuccessfulAttempt: () => {},
@@ -2718,6 +2746,48 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       const changed = await command('guided: capture refuses save', { type: 'agent.providerChange', agentId: 'durable_term', provider: 'codex-cli', expectedState: p.body.result.expectedState });
       expect(changed.body.error.code).toBe('session_capture_failed');
     } finally { clearSessionCaptures(); W.guidedAvailable = false; }
+  });
+
+  it('Annex Network: listing machines, joining through the phone, and new members (#3062)', async () => {
+    // Paired one-to-one: only this desktop, and nothing can be vouched for.
+    const oneToOne = await exchange('GET', '/api/v1/mobile/network');
+    expect(oneToOne.response.body.joined).toBe(false);
+    const record = (m: Record<string, unknown>) => { const { online: _o, self: _s, ...rest } = m; return rest; };
+    const refusedNotMember = await exchange('POST', '/api/v1/mobile/network/members', { members: [record(NET.network.members[1])] });
+    expect(refusedNotMember.response.body.error).toBe('not_a_member');
+
+    // The same phone pairs again, asking to join.
+    const pin = annexServer.getStatus().pin;
+    const publicKey = crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+    const pair = await send('POST', '/pair', { pin, publicKey, alias: 'Mason’s iPhone', icon: 'iphone', color: 'emerald', pairingMode: 'persistent', network: 1 });
+    expect(pair.body.network).toBe(1);
+    expect(W.peers.get('mobile-fixture-identity')).toMatchObject({ role: 'member', kind: 'phone' });
+    fixtures.set('network-pairing.json', {
+      request: { method: 'POST', path: '/pair', body: { pin: '123456', publicKey: '<base64 Ed25519 SPKI DER>', alias: 'Mason’s iPhone', icon: 'iphone', color: 'emerald', pairingMode: 'persistent', network: 1 } },
+      response: { status: pair.status, body: { ...pair.body, token: '<ignored>', tlsCertificateFingerprint: Array(32).fill('AB').join(':') } },
+    });
+
+    // Listing machines.
+    const listed = await exchange('GET', '/api/v1/mobile/network');
+    expect(listed.response.body).toMatchObject({ version: 1, joined: true });
+    expect(listed.response.body.members.find((m: { self?: boolean }) => m.self)).toMatchObject({ fingerprint: NET.self.fingerprint, online: true });
+    fixtures.set('network-list.json', { member: listed, oneToOne });
+
+    // Joining a new computer through the phone: members are sent exactly as they were listed.
+    const accepted = await exchange('POST', '/api/v1/mobile/network/members', { members: listed.response.body.members });
+    expect(accepted.response.body).toEqual(NET.vouched);
+    const invalid = await exchange('POST', '/api/v1/mobile/network/members', { members: [{ ...record(NET.network.members[1]), command: 'agent:spawn' }] });
+    expect(invalid.response.body.error).toBe('invalid_members');
+    fixtures.set('network-members.json', { accepted, invalid, notAMember: refusedNotMember });
+
+    // A change reaches a member phone on its WebSocket, with the new view.
+    const ws = await connect();
+    ws.send.mockClear();
+    NET.onChange!();
+    await eventually(() => expect(frames(ws).some((f) => f.type === 'network:changed')).toBe(true));
+    const changed = frames(ws).find((f) => f.type === 'network:changed');
+    expect(changed.payload).toEqual(listed.response.body);
+    fixtures.set('network-changed.json', { direction: 'desktop-to-phone', frame: changed });
   });
 
   it('every command type has an accepted request and receipt', () => {

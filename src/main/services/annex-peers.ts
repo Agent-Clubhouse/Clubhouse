@@ -108,9 +108,9 @@ export function controlsThisMachine(peer: Pick<AnnexPeer, 'role'> | undefined | 
   return peer?.role === 'controller' || peer?.role === 'member';
 }
 
-/** This machine connects to it: a satellite, or a fellow network member (#3061). */
-export function controlledFromHere(peer: Pick<AnnexPeer, 'role'> | undefined | null): boolean {
-  return peer?.role === 'satellite' || peer?.role === 'member';
+/** This machine connects to it: a satellite, or a fellow network member that's a computer (#3061, #3062). */
+export function controlledFromHere(peer: Pick<AnnexPeer, 'role' | 'kind'> | undefined | null): boolean {
+  return peer?.role === 'satellite' || (peer?.role === 'member' && peer.kind !== 'phone');
 }
 
 export function addPeer(peer: AnnexPeer): void {

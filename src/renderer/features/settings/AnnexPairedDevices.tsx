@@ -39,7 +39,8 @@ export function AnnexPairedDevices({ showWhenEmpty = true }: { showWhenEmpty?: b
   }, [loadDevices]);
 
   const devices = allDevices
-    .filter((d) => d.role !== 'satellite' && d.role !== 'member')
+    // Devices that control this machine: controllers, older entries, and phones in its network.
+    .filter((d) => d.role === 'controller' || d.role === null || (d.role === 'member' && d.kind === 'phone'))
     .sort((a, b) => a.alias.localeCompare(b.alias));
   const now = Date.now();
   if (devices.length === 0 && !showWhenEmpty) return null;

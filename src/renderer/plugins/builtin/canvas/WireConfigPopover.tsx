@@ -11,6 +11,7 @@ import { WireInstructionsDialog } from './WireInstructionsDialog';
 import { WireToolPermissionsDialog } from './WireToolPermissionsDialog';
 import { useDismissibleLayer } from './useDismissibleLayer';
 import { CANVAS_Z } from './canvas-chrome';
+import { newWireDisabledTools } from '../../../../shared/wire-defaults';
 
 interface WireConfigPopoverProps {
   binding: McpBindingEntry;
@@ -88,8 +89,11 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
         targetKind: 'agent' as const,
         label: sourceLabel,
       };
+      // A new reverse direction starts like any new agent wire (#2969); one that exists keeps its list.
+      const disabledTools = newWireDisabledTools(bindings, binding.targetId, binding.agentId, 'agent');
       await bind(binding.targetId, revTarget);
-      onAddWireDefinition?.({ agentId: binding.targetId, ...revTarget } as McpBindingEntry);
+      if (disabledTools) await setDisabledTools(binding.targetId, binding.agentId, disabledTools);
+      onAddWireDefinition?.({ agentId: binding.targetId, ...revTarget, ...(disabledTools && { disabledTools }) } as McpBindingEntry);
     }
   };
 
@@ -104,13 +108,15 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
   };
 
   const handleSavePermissions = async (disabledTools: string[]) => {
-    await setDisabledTools(binding.agentId, binding.targetId, disabledTools);
-    onUpdateWireDefinition?.(binding.agentId, binding.targetId, { disabledTools });
-    // Mirror permissions to the reverse binding for bidirectional agent-to-agent wires
-    if (bidirectional && isAgentToAgent) {
-      await setDisabledTools(binding.targetId, binding.agentId, disabledTools);
-      onUpdateWireDefinition?.(binding.targetId, binding.agentId, { disabledTools });
+    // This direction only: each direction of a connection has its own permissions, saved in the
+    // connection store (D129). The other direction is edited from its own wire or the Connections card.
+    try {
+      await setDisabledTools(binding.agentId, binding.targetId, disabledTools);
+    } catch {
+      // telemetry-exempt: not saved (the connection store refused it); the wire keeps its list
+      return;
     }
+    onUpdateWireDefinition?.(binding.agentId, binding.targetId, { disabledTools });
     // Dismiss the wire popover after saving — the dismissible-layer hook is
     // disabled while the dialog is open, so we close explicitly here.
     onClose();

@@ -36,7 +36,6 @@ export const PINNED_CLASSIC_SPECS = [
   'agent-list-ui.spec.ts',
   'agent-real-cli.spec.ts',
   'annex-v2/dual-launch.ts',
-  'annex-v2/network-join.spec.ts',
   'annex-v2/reachability.spec.ts',
   'canvas-card-wheel.spec.ts',
   'canvas-create.spec.ts',
