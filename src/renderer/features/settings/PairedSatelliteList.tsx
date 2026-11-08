@@ -54,6 +54,7 @@ function StatusDot({ device }: { device: AnnexDevice }) {
     connecting: 'bg-ctp-warning animate-pulse',
     offline: 'bg-surface-2',
     'needs-pairing': 'bg-surface-2',
+    removing: 'bg-ctp-warning',
   };
   return <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${colors[device.state]}`} />;
 }
@@ -65,7 +66,18 @@ function stateLabel(device: AnnexDevice): string {
     case 'connecting': return 'Connecting…';
     case 'needs-pairing': return 'Needs pairing again';
     case 'offline': return 'Offline';
+    case 'removing': return 'Removing';
   }
+}
+
+/** Where a network join or removal has reached, as one sentence each way (#3061). */
+function confirmationText(confirmation: NonNullable<AnnexDevice['confirmation']>): string {
+  const list = (names: string[]) => names.join(', ');
+  const done = confirmation.confirmedBy.length > 0 ? `Confirmed on ${list(confirmation.confirmedBy)}.` : 'Not confirmed on any other device yet.';
+  const waiting = confirmation.waitingOn.length > 0
+    ? ` Waiting for ${list(confirmation.waitingOn)}, which ${confirmation.waitingOn.length === 1 ? 'hears' : 'hear'} when next connected.`
+    : '';
+  return `${done}${waiting}`;
 }
 
 export function PairedSatelliteList({ devices, onPairAgain }: Props) {
@@ -115,6 +127,11 @@ export function PairedSatelliteList({ devices, onPairAgain }: Props) {
                   {device.problem.message} {device.problem.action}
                 </div>
               )}
+              {device.confirmation && (
+                <div className="text-xs text-ctp-overlay1" data-testid="annex-device-confirmation">
+                  {confirmationText(device.confirmation)}
+                </div>
+              )}
             </div>
           </div>
 
@@ -135,12 +152,12 @@ export function PairedSatelliteList({ devices, onPairAgain }: Props) {
               </Button>
             )}
             {/* Also while it needs pairing again: a mistyped address can be why. */}
-            {device.role === 'satellite' && editingAddress !== device.fingerprint && (
+            {(device.role === 'satellite' || device.role === 'member') && device.state !== 'removing' && editingAddress !== device.fingerprint && (
               <Button onClick={() => setEditingAddress(device.fingerprint)} kind="ghost">
                 Address
               </Button>
             )}
-            {confirmForget === device.fingerprint ? (
+            {device.state === 'removing' ? null : confirmForget === device.fingerprint ? (
               <>
                 <Button onClick={() => setConfirmForget(null)} kind="ghost">
                   Cancel

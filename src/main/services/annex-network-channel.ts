@@ -208,7 +208,29 @@ function sendHello(ch: Channel): void {
   }
   if (!self) return;
   send(ch, { v: NETWORK_PROTOCOL_VERSION, type: 'hello', member: self });
-  send(ch, { v: NETWORK_PROTOCOL_VERSION, type: 'members', members: localMembers(), removals: [] });
+  const known = membersProvider?.() ?? { members: localMembers(), removals: [] };
+  send(ch, { v: NETWORK_PROTOCOL_VERSION, type: 'members', members: known.members, removals: known.removals });
+}
+
+let membersProvider: (() => { members: NetworkMember[]; removals: NetworkRemoval[] }) | null = null;
+
+/** What this machine tells others it knows: the membership module sets it (#3061). */
+export function setMembersProvider(provider: typeof membersProvider): void {
+  membersProvider = provider;
+}
+
+/**
+ * Sends a membership message on every open channel that has said hello, to
+ * devices `to` accepts (all of them by default). Returns how many it went to.
+ */
+export function broadcast(message: NetworkMessage, to: (fingerprint: string) => boolean = () => true): number {
+  let sent = 0;
+  for (const ch of [...channels]) {
+    if (!ch.member || ch.ws.readyState !== WebSocket.OPEN || !to(ch.fingerprint)) continue;
+    send(ch, message);
+    sent++;
+  }
+  return sent;
 }
 
 /** This machine and every member that has said hello on an open channel. */
@@ -385,6 +407,7 @@ export function resetNetworkChannelForTests(): void {
   views.clear();
   listeners.clear();
   reachProvider = null;
+  membersProvider = null;
 }
 
 /** Test helper: wraps an already-open socket as a channel, as an accepted upgrade would. */

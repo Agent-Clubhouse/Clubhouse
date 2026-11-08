@@ -1079,6 +1079,12 @@ export interface AnnexSettings {
    * tailnet name (#3058). Added to the pairing link and the phone's routes.
    */
   reachableAs?: string;
+  /**
+   * Annex Network for this machine (#3061). On (the default when unset), a new
+   * pairing with another desktop that has it on joins the network. Off, pairings
+   * are one-to-one as before.
+   */
+  networkEnabled?: boolean;
 }
 
 export interface AnnexStatus {
@@ -1106,8 +1112,11 @@ export interface AnnexStatus {
 
 // ── Annex peer types ──────────────────────────────────────────────────
 
-/** Role of a peer relative to this machine. */
-export type AnnexPeerRole = 'controller' | 'satellite';
+/**
+ * Role of a peer relative to this machine. `member`: both are in the same Annex
+ * Network (#3061), so each controls the other.
+ */
+export type AnnexPeerRole = 'controller' | 'satellite' | 'member';
 
 export interface AnnexPeer {
   /**
@@ -1145,6 +1154,10 @@ export interface AnnexPeer {
   mainPort?: number;
   /** For a satellite: a host name or address the person typed, such as a tailnet name. */
   typedHost?: string;
+  /** For a network member: a computer or a phone, as it said when it joined. */
+  kind?: 'desktop' | 'phone';
+  /** For a network member: the fingerprint of the member that added it (this machine's own when paired here). */
+  addedBy?: string;
 }
 
 /** A peer as Settings lists it. */
@@ -1159,8 +1172,9 @@ export interface AnnexPeerListing extends AnnexPeer {
  * - `connecting`: this machine is connecting to it, or looking for it on the network.
  * - `offline`: paired, with no connection now.
  * - `needs-pairing`: refused until it's paired again.
+ * - `removing`: removed from the network, and some members haven't heard yet (#3061).
  */
-export type AnnexDeviceState = 'connected' | 'connecting' | 'offline' | 'needs-pairing';
+export type AnnexDeviceState = 'connected' | 'connecting' | 'offline' | 'needs-pairing' | 'removing';
 
 /**
  * One paired device (#3057): the single list Settings is built from, whichever
@@ -1190,6 +1204,12 @@ export interface AnnexDevice {
   typedHost?: string;
   /** Why it isn't connected, and what to do, when that's known. */
   problem: AnnexProblem | null;
+  /**
+   * For a network member: where its join, or its removal, is confirmed (#3061).
+   * Names of members whose view shows it, and of those it hasn't reached yet.
+   * Absent once every member has it.
+   */
+  confirmation?: { kind: 'join' | 'removal'; confirmedBy: string[]; waitingOn: string[] };
 }
 
 /** A device this machine has heard from on the Annex Network channel (#3060). */

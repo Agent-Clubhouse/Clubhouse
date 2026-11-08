@@ -13,6 +13,7 @@ import type Bonjour from 'bonjour-service';
 import type { Browser, Service as RemoteService } from 'bonjour-service';
 import { createBonjour } from './annex-mdns';
 import * as networkChannel from './annex-network-channel';
+import * as membership from './annex-network-membership';
 import { formatAddress, parseTypedHost, rankAddresses, reachCandidates, rememberHost, type ReachAddress } from './annex-reach';
 import { WebSocket } from 'ws';
 import * as annexIdentity from './annex-identity';
@@ -1287,7 +1288,7 @@ function newSatellite(peer: { fingerprint: string; alias: string; icon: string; 
  */
 function restorePairedSatellites(): void {
   for (const peer of annexPeers.listPeers()) {
-    if (peer.role !== 'satellite' || annexPeers.peerNeedsPairing(peer) || satellites.has(peer.fingerprint)) continue;
+    if (!annexPeers.controlledFromHere(peer) || annexPeers.peerNeedsPairing(peer) || satellites.has(peer.fingerprint)) continue;
     const sat = newSatellite(peer, 'disconnected');
     const candidates = candidatesFor(sat);
     if (candidates.length === 0) continue;
@@ -1357,7 +1358,7 @@ function startDiscovery(): void {
 
       // Paired peer — only connect to peers we've paired as satellites (not controllers)
       const peerRecord = annexPeers.getPeer(fingerprint);
-      if (peerRecord && (peerRecord.role === 'satellite' || !peerRecord.role)) {
+      if (peerRecord && (annexPeers.controlledFromHere(peerRecord) || !peerRecord.role)) {
         // Remove from discovered if it was there
         if (discoveredServices.has(fingerprint)) {
           discoveredServices.delete(fingerprint);
@@ -1530,7 +1531,7 @@ export type SetHostResult = { ok: true } | { ok: false; error: string };
  */
 export function setSatelliteHost(fingerprint: string, input: string): SetHostResult {
   const peer = annexPeers.getPeer(fingerprint);
-  if (!peer || peer.role === 'controller') return { ok: false, error: "That computer isn't one this computer connects to." };
+  if (!peer || !annexPeers.controlledFromHere(peer)) return { ok: false, error: "That computer isn't one this computer connects to." };
   const value = input.trim();
   const parsed = value ? parseTypedHost(value) : null;
   if (value && !parsed) {
@@ -2295,6 +2296,8 @@ async function pairOverTls(target: {
       icon: localSettings.icon,
       color: localSettings.color,
       certBinding: annexTls.signCertBinding(localIdentity),
+      // Ask to join as an Annex Network member (#3061); a satellite with it on agrees.
+      ...(annexSettings.networkEnabled(localSettings) && { network: 1 }),
     });
   } catch (err) { // telemetry-exempt: shown to the person pairing; the pair flow records the result
     return { success: false, error: pairingReachError(err, target.alias ?? '') };
@@ -2329,7 +2332,9 @@ async function pairOverTls(target: {
     color,
     pairedAt: new Date().toISOString(),
     lastSeen: new Date().toISOString(),
-    role: 'satellite', // We paired with them → they are our satellite
+    // We paired with them, so they're our satellite; as network members each controls the other.
+    role: body.network === 1 && annexSettings.networkEnabled(localSettings) ? 'member' : 'satellite',
+    ...(body.network === 1 && annexSettings.networkEnabled(localSettings) && { kind: 'desktop' as const, addedBy: localIdentity.fingerprint }),
     tlsCertificateFingerprint: target.pinned.fingerprint,
     tlsCertificatePem: target.pinned.certPem,
     knownHosts: rememberHost(target.linkHosts, target.host),
@@ -2339,6 +2344,7 @@ async function pairOverTls(target: {
   });
 
   probedCertificates.delete(fingerprint);
+  if (body.network === 1 && annexSettings.networkEnabled(localSettings)) membership.noteLocalJoin(fingerprint);
   if (discoveredServices.delete(fingerprint)) broadcastDiscoveredChanged();
   const previous = satellites.get(fingerprint);
   if (previous) disconnectSatellite(previous);

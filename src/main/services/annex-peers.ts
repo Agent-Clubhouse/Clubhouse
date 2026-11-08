@@ -100,7 +100,17 @@ export function isPairedPeer(fingerprint: string): boolean {
  */
 export function peerNeedsPairing(peer: AnnexPeer): boolean {
   if (!peer.role || !peer.tlsCertificateFingerprint) return true;
-  return peer.role === 'satellite' && !peer.tlsCertificatePem;
+  return controlledFromHere(peer) && !peer.tlsCertificatePem;
+}
+
+/** It may control this machine: a controller, or a fellow network member (#3061). */
+export function controlsThisMachine(peer: Pick<AnnexPeer, 'role'> | undefined | null): boolean {
+  return peer?.role === 'controller' || peer?.role === 'member';
+}
+
+/** This machine connects to it: a satellite, or a fellow network member (#3061). */
+export function controlledFromHere(peer: Pick<AnnexPeer, 'role'> | undefined | null): boolean {
+  return peer?.role === 'satellite' || peer?.role === 'member';
 }
 
 export function addPeer(peer: AnnexPeer): void {

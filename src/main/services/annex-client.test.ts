@@ -42,6 +42,7 @@ vi.mock('bonjour-service', () => ({
 
 // The membership channel has its own tests (annex-network-channel.test.ts).
 vi.mock('./annex-network-channel', () => ({ connectTo: vi.fn(), closeFor: vi.fn(), closeAll: vi.fn() }));
+vi.mock('./annex-network-membership', () => ({ noteLocalJoin: vi.fn() }));
 
 vi.mock('ws', () => ({
   WebSocket: WebSocketMock,
@@ -69,6 +70,8 @@ vi.mock('./annex-tls', () => ({
 }));
 
 vi.mock('./annex-peers', () => ({
+  controlsThisMachine: (p?: { role?: string } | null) => p?.role === 'controller' || p?.role === 'member',
+  controlledFromHere: (p?: { role?: string } | null) => p?.role === 'satellite' || p?.role === 'member',
   noteReached: vi.fn(),
   setTypedHost: vi.fn(() => true),
   getPeer: vi.fn().mockReturnValue(undefined),
@@ -82,6 +85,7 @@ vi.mock('./annex-peers', () => ({
 }));
 
 vi.mock('./annex-settings', () => ({
+  networkEnabled: (s?: { networkEnabled?: boolean }) => s?.networkEnabled !== false,
   getSettings: vi.fn().mockReturnValue({
     enableServer: true,
     enableClient: true,
@@ -2738,12 +2742,29 @@ describe('annex-client', () => {
       expect(posted).toHaveLength(1);
       expect(posted[0].url).toBe('https://192.168.1.60:9443/pair');
       expect(posted[0].options).toMatchObject({ pinned: true, method: 'POST' });
-      expect(posted[0].body).toEqual({ pin: '123456', publicKey: 'local-pub-key', alias: 'Test Mac', icon: 'computer', color: 'indigo', certBinding: 'cert-binding' });
+      // Annex Network is on by default, so it asks to join (#3061).
+      expect(posted[0].body).toEqual({ pin: '123456', publicKey: 'local-pub-key', alias: 'Test Mac', icon: 'computer', color: 'indigo', certBinding: 'cert-binding', network: 1 });
       expect(annexPeers.addPeer).toHaveBeenCalledWith(expect.objectContaining({
         fingerprint: SAT_FP, publicKey: 'sat-pk', alias: 'Mini', role: 'satellite', tlsCertificateFingerprint: CERT_COLONS, tlsCertificatePem: 'PROBED-PEM',
         knownHosts: ['192.168.1.60'], mainPort: 9443,
       }));
+      // A satellite that didn't agree to join (older, or Annex Network off) stays a satellite.
+      expect(vi.mocked(annexPeers.addPeer).mock.calls[0][0].role).toBe('satellite');
       expect(annexClient.getSatellite(SAT_FP)).toMatchObject({ host: '192.168.1.60', mainPort: 9443 });
+    });
+
+    it('joins as a network member when the satellite agrees, and stays one-to-one when Annex Network is off (#3061)', async () => {
+      answerPair(200, { token: 't', fingerprint: SAT_FP, publicKey: 'sat-pk', alias: 'Mini', icon: 'server', color: 'teal', tlsCertificateFingerprint: CERT_COLONS, network: 1 });
+      await annexClient.pairWithLink(await link());
+      expect(annexPeers.addPeer).toHaveBeenLastCalledWith(expect.objectContaining({ role: 'member', kind: 'desktop', addedBy: LOCAL_IDENTITY.fingerprint }));
+      const membershipMod = await import('./annex-network-membership');
+      expect(membershipMod.noteLocalJoin).toHaveBeenCalledWith(SAT_FP);
+
+      vi.mocked(annexSettings.getSettings).mockReturnValue({ enableClient: true, alias: 'Test Mac', icon: 'computer', color: 'indigo', networkEnabled: false } as any);
+      posted = [];
+      await annexClient.pairWithLink(await link());
+      expect(posted[0].body).not.toHaveProperty('network');
+      expect(annexPeers.addPeer).toHaveBeenLastCalledWith(expect.objectContaining({ role: 'satellite' }));
     });
 
     it('sends nothing to an address showing another certificate, and tries the next', async () => {

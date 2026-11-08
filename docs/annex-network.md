@@ -8,6 +8,7 @@ Epic: #3056. Stages land in order: #3057 (peer basics), #3058 (reachability), #3
 - **The device list** (`src/main/services/annex-devices.ts`) is every paired device with where it stands: `connected`, `connecting`, `offline` or `needs-pairing`, and a problem when one is known. Settings is built from it. IPC: `annex:list-devices`, `annex:remove-device`, `annex:devices-changed`.
 - **Reaching a satellite** (`src/main/services/annex-reach.ts`): each satellite entry remembers where it was reached (`knownHosts`, newest first, plus the hosts in its pairing link) and its port (`mainPort`), and can hold a host the person typed (`typedHost`), such as a tailnet name. Connections are direct: every address is the satellite itself, and the pinned certificate decides.
 - **The network channel** (`src/main/services/annex-network-channel.ts`, protocol in `src/shared/annex-network-protocol.ts`): a WebSocket at `/network` on the main TLS port that carries membership only (`hello`, `members`, `member-joined`, `member-removed`, `member-renamed`). Anything else closes it with 4400.
+- **Membership** (`src/main/services/annex-network-membership.ts`): a member is a peer with role `member`, which both controls and is controlled. `annex-network.json` keeps removals (so members that were off learn of them) and which members have confirmed each join and removal.
 - **A problem** (`src/shared/annex-problems.ts`) is a classified reason a connection failed, shown as two sentences: what happened, and what to do.
 
 ## Real-device checks
@@ -31,6 +32,12 @@ Synthetic tests can't cover certificates under Electron or local network discove
 **Stage 3 (#3060)**
 - Pair two desktops: each lists the other as a member it hears from (`listNetworkMembers`).
 - Remove the pairing on either: the channel closes at once on both.
+
+**Stage 4 (#3061)**
+- Pair desktop B with A, then turn B off. Pair a third desktop C with A. Turn B on: B lists C and connects to it, with no pairing on B or C. A's Settings shows C's join waiting on B, then confirmed.
+- Remove C on B: A and C hear at once; C stops being a member; A's Settings shows the removal confirmed. Remove a device while another member is off: it's removed there when it comes back.
+- A member connecting to another doesn't show "Controlled by" on either screen. A phone or a one-to-one controller still does.
+- An existing one-to-one pairing from before stage 4 keeps working as it was, until it's paired again.
 
 ## Decision log
 
@@ -59,4 +66,13 @@ Decisions made while building, for the maintainer to revisit. Newest last. D180 
 | D198 | The first message each way is `hello`, and it must name the identity and certificate the connection authenticated with. Each message is acted on only while the sender is still paired with that certificate, so a removal ends the channel at once. A channel silent for 10 s without a hello is closed, and the hello's public key must hash to its fingerprint. Nothing is sent to, or passed on about, a device that is no longer paired with that certificate. | A member can only speak for itself. | |
 | D200 | Channels are pinged every 30 s and closed when a pong doesn't come. One channel each way per device: a new incoming one replaces the old, and the client's outgoing one opens and closes with its main connection. Each side owns its own: stopping the server closes the channels it accepted, stopping the client the ones it opened; removal or a re-pin closes both. | A sleeping or moved peer otherwise leaves a dead channel that blocks a new one. | |
 | D199 | In this stage the controller opens the channel to each satellite once its main connection opens, and both sides only record what they hear (`listNetworkMembers`). Stage 4 acts on it. | Ships the channel on its own, as the epic allows. | |
+| D201 | A new pairing between two desktops with Annex Network on at both ends makes each a `member` of the other: it controls and is controlled. The desktop that pairs asks (`network: 1` in `/pair`), and the answer says yes the same way. Phones, older builds and a desktop with Annex Network off stay one-to-one, with byte-for-byte the same pair answer. Existing pairings keep their role until they're paired again. | "New pairing always joins; existing pairings keep working." | |
+| D202 | A member's `/ws` connection doesn't lock the screen ("Controlled by"). Controllers still do, and the lock is released only when no locking connection is left. | Members connect to each other all the time, and are used as one machine. | |
+| D203 | Annex Network is a per-machine setting, on unless turned off (`networkEnabled`). Off: pairings are one-to-one and membership messages are ignored. Its switch comes with the single settings page (#3067). | The epic's "switch at the top". | |
+| D204 | A device joins when any member vouches for it and its record proves itself: the public key hashes to its fingerprint and the certificate to its certificate fingerprint. Only members' messages are followed; a one-to-one pairing's are heard, not followed, and an existing one-to-one entry is never turned into a member by another's word. | All of one person's devices, as the epic decides, without trusting a record that doesn't hold together. | Devices of more than one person. |
+| D205 | Members exchange full views (members and removals) when a channel opens and whenever one changes; the same view twice changes nothing. Removals are kept. A removal beats the join it followed; a later join (paired again) beats an earlier removal. | Members that were off catch up from whichever member they reach first. | Removals pile up enough to matter. |
+| D206 | Removing a member here tells every connected member, the removed one included, before its connections are cut. A machine told it was removed ends every member pairing it had. | Removed everywhere, including on itself. | |
+| D207 | A join or removal is confirmed by a member once that member's view shows it. The device list carries who confirmed and who it's waiting on (by name) until every current member has it; a removed member is listed as `removing` until then. | "The page shows where it's confirmed." | |
+| D208 | A member learns other members' addresses from their own hello and from views, and connects once it knows one (only to desktops, only with Connect to satellites on). | No pairing and no discovery needed between members. | |
+| D209 | Any member can rename any member; the newest rename wins, everywhere. | "Rename" is one of Manage devices' actions. | |
 
