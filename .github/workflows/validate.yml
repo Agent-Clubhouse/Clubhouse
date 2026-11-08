@@ -564,12 +564,11 @@ jobs:
           name: stable-e2e-traces-${{ matrix.os }}
           path: test-results/
 
-  # The classic layout (#2843): specs moved to the new layout run here on
-  # classic too, until their new-layout runs are stable on CI, and later the
-  # small set that stays on classic. CLUBHOUSE_E2E_LAYOUT=classic makes the
-  # config run only e2e/classic-specs.mjs's list and launches default to
-  # classic. Linux and Windows only, in a job of its own so it never lengthens
-  # the E2E shards.
+  # The classic layout (#2843): the specs for classic-only UI, and specs moved
+  # to the new layout that run here on classic too until their new-layout runs
+  # are stable on CI. CLUBHOUSE_E2E_LAYOUT=classic makes the config run one of
+  # e2e/classic-specs.mjs's lists and launches default to classic. Linux and
+  # Windows only, in a job of its own so it never lengthens the E2E shards.
   e2e-classic:
     needs: [changes, build]
     if: ${{ !cancelled() && needs.build.result == 'success' }}

@@ -17,70 +17,119 @@ Epic: #3056. Stages land in order: #3057 (peer basics), #3058 (reachability), #3
 
 ## Real-device checks
 
-Synthetic tests can't cover certificates under Electron or local network discovery. Each stage merges on green CI; these need two computers and a phone before a release.
+Synthetic tests can't cover certificates under Electron or local network discovery, so each stage merged on green CI and these checks wait for real devices before a release. They're written as one script to run in order: each part says what it starts from, each step says what to do, then what you should see (✓). The issue in brackets is where the behaviour was built, for filing anything that fails.
 
-**Stage 1 (#3057)**
-- Pair two desktops with the pairing link; each lists the other as connected in its Annex settings.
-- Remove the controller on the satellite: the controller's row says "no longer paired" with Pair again, within a few seconds.
-- Quit and reopen the controller with the satellite off: the satellite is listed as offline, "hasn't been found on the network yet". Turn the satellite on: it connects without pressing anything.
-- Turn off Wi-Fi on the controller: the row says what happened and what to do, then reconnects when Wi-Fi is back.
-- Pair a phone running an older Clubhouse Go that sends the desktop's name: the lock overlay says "Controlled by Phone".
+### What you need
 
-**Stage 2 (#3058)**
-- Quit the controller, then reopen it with discovery blocked (different subnets, or mDNS off): it reconnects to a paired satellite at its remembered address.
-- Set a satellite's address to its tailnet name, then take the controller off the LAN onto the tailnet only: it connects by the tailnet name.
-- Put "Also reachable at" on a Mac and pair a phone from its QR code: the phone can reach it over the tailnet.
-- A network with IPv6 only between the two computers: discovery connects over IPv6.
-- Switch Wi-Fi networks, sleep and wake, and turn a VPN on and off with Annex running: no "Uncaught exception" in the log, and the advertisement comes back.
+- Two computers, **A** and **B**, both on a build of main and on the same Wi-Fi. **A** should be a Mac. A Windows PC as **B** covers the most.
+- On both computers, the same git repository open as a project, plus one folder with no git remote. Both need a chat agent and the Dispatcher.
+- A tailnet (or another VPN that gives names) that A, B and the phone can all join, and a second way for A to reach the internet (a phone hotspot or wired network) for step 2.2.
+- A way to block local discovery between A and B: mDNS off, or different subnets.
+- A phone with today's Clubhouse Go. Step 7.7 installs an older build that sends the desktop's name over it, so reinstall today's app (or the new one) afterwards. Part 8 waits on the iOS app adopting the phone contract in `docs/annex-network-phone.md` (#3062), pairing ids included.
+- Optionally, a third computer **C** for Part 9. Nothing before Part 9 depends on it.
+- The app log is in `~/.clubhouse/logs`. Computers pair by pasting one's **Pairing link** (Settings › Annex Network › Add a device) into the other's **Pair with another computer**, or by picking it from the computers found on the network. The QR code is for the phone.
 
-**Stage 3 (#3060)**
-- Pair two desktops: each lists the other as a member it hears from (`listNetworkMembers`).
-- Remove the pairing on either: the channel closes at once on both.
+### Part 0. An existing pairing (only if you have one)
 
-**Stage 4 (#3061)**
-- Pair desktop B with A, then turn B off. Pair a third desktop C with A. Turn B on: B lists C and connects to it, with no pairing on B or C. A's Settings shows C's join waiting on B, then confirmed.
-- Remove C on B: A and C hear at once; C stops being a member; A's Settings shows the removal confirmed. Remove a device while another member is off: it's removed there when it comes back.
-- A member connecting to another doesn't show "Controlled by" on either screen. A phone or a one-to-one controller still does.
-- An existing one-to-one pairing from before stage 4 keeps working as it was, until it's paired again.
+If A or B still has an Annex pairing made before stage 4, check it first, since everything after replaces it.
 
-**Stage 5 (#3062), once the iOS app adopts it**
-- Pair a phone with desktop A with Annex Network on: it lists every desktop in A's network, online ones bright, offline ones dimmed.
-- Pair desktop C with A while the phone is connected: the phone connects to C by itself.
-- From the phone, pair a new desktop D that's in no network: D joins, A and the others connect to D, and the phone lists it.
-- Remove the phone on any desktop: every desktop refuses it, and the phone forgets the network.
-- A phone in the network still shows "Controlled by" on the desktop it's connected to.
+1. Use it as before. ✓ It still works one-to-one, and the controlled computer shows "Controlled by". (#3061)
+2. On both computers, use Settings › Annex Network › Reset Annex Network, then Confirm reset.
 
-**Stage 6 (#3063)**
-- An agent calling a tool with another agent's address on this machine (`id@<this machine's fingerprint>`) works as with the bare id; with another machine's, it's told such an agent is reached through a connection.
+### Part 1. Turn it on and pair
 
-**Stage 7 (#3064)**
-- Connect an agent on one computer to an agent on another from the Connections card, both ways. Each sends the other a message and reads its status; the receiver sees the sender's name and computer.
-- Turn a tool off on the receiving computer's side of the connection: the sender's call is refused, whatever the sender's computer shows.
-- Close Clubhouse on the receiving computer, send a message, open it again: the message arrives once, after the reconnect.
-- Remove the connection on one computer: the other computer's agent loses its tools for it once the two reconnect.
+Starts from: A and B with no Annex devices. If either lists devices, reset it as in 0.2.
 
-**Sidebar (#3065)**
-- With two computers connected, both computers' agents show in one list, the other's with its name; Show narrows to one, and back.
-- Merge a project with the same project on the other computer, then Split it: only the sidebar changes.
-- Turn the other computer off: its agents stay, dimmed, and their chats open.
+1. On A and B, open Settings › Annex Network and turn on "Annex Network on this computer". ✓ Devices says "No devices yet". (#3067)
+2. On B, paste A's pairing link into Pair with another computer. ✓ Within a few seconds each computer lists the other as connected, in this network. (#3067, #3057)
+3. On A, open View › Toggle Developer Tools and run `await window.clubhouse.annex.listNetworkMembers()` in the console. ✓ B is listed with `connected: true`. Do the same on B. ✓ A is listed, and its `fingerprint` is A's, used in 5.2. (#3060)
+4. Look at both screens. ✓ Neither shows "Controlled by": computers in one network don't take control of each other. (#3061)
 
-**Project linking (#3066)**
-- The same repository open on two computers: the sidebar suggests linking it once; Link groups it, and Keep separate never asks again.
-- Link two folders without a git remote by hand in project settings, and unlink them.
+### Part 2. Reachability
 
-**Device grants (#3068)**
-- The Dispatcher lists the devices with their names and whether each is online, and is asked before it renames, reconnects or removes one.
-- The Dispatcher's "add a device" opens Settings › Annex Network on screen, and pairing still needs a person at the new device.
+Starts from: A and B connected.
 
-**Chat across desktops (#2390)**
-- Open a chat agent that runs on another desktop: its conversation shows, says which machine it's on, and streams live.
-- Send, steer, stop, approve a permission and answer a question from the controller; each lands on the other desktop.
-- Disconnect the other desktop mid-turn and reconnect: the conversation catches up (a turn that ended meanwhile shows ended, a permission asked meanwhile shows), with nothing twice.
+1. Quit A, block discovery between A and B, and reopen A. ✓ A reconnects to B at its remembered address. Unblock discovery. (#3058)
+2. Put A and B on the tailnet. On A, set B's address to B's tailnet name, then move A off the Wi-Fi onto its second connection, so it reaches B over the tailnet only. ✓ A connects to B by its tailnet name. Put A back on the Wi-Fi and clear B's typed address. (#3058)
+3. On A, fill in "Also reachable at" with A's tailnet name. Put the phone on mobile data with the tailnet on, and pair it from A's QR code. ✓ The phone reaches A over the tailnet. Close Clubhouse Go so A isn't under its control for the next parts. The phone stays paired with A for Parts 6 and 7. (#3058)
+4. If A and B can be put on a network with IPv6 only, do it. ✓ Discovery connects them over IPv6. (#3058)
+5. With Annex running on both, switch Wi-Fi networks, sleep and wake, and turn a VPN on and off. ✓ No "Uncaught exception" in the app log, and each computer is found again afterwards. (#3058)
+6. Turn off Wi-Fi on A. ✓ On A, B's row says what happened and what to do. Turn Wi-Fi back on. ✓ It reconnects without pressing anything. (#3057)
 
-**Settings › Annex Network (#3067)**
-- Turn Annex Network on from the page on two computers, pair them with the link or the QR code, and see each listed on the other.
-- Rename, reconnect, set an address for and remove a device from the page; a removal shows where it's confirmed.
-- The switch off on one computer: it stops answering and connecting; on again, it reconnects to its devices.
+### Part 3. The sidebar and project linking
+
+Starts from: A and B connected. Steps happen on A unless they say otherwise.
+
+1. Look at the sidebar. ✓ Both computers' agents are in one list, grouped by project. B's agents carry B's name and A's carry none. (#3065)
+2. Use Show to pick B, then This computer, then All computers. ✓ The list narrows to one computer each time, then shows both again. (#3065)
+3. Find the repository that's open on both computers. ✓ A suggestion to link them shows once, in the sidebar and in project settings. Choose Link. ✓ One group holds both computers' agents, and B's sidebar doesn't change. (#3066)
+4. In project settings › Linked projects, unlink the two. ✓ They're two groups again, and the suggestion doesn't come back. On B, which keeps its own links, choose Keep separate on the same suggestion. ✓ It isn't suggested again on B. (#3066)
+5. In project settings, link the folder with no remote to one of B's projects by hand with "Link with another project", then unlink it. ✓ They group, then separate. (#3066)
+6. From a project's menu, use Merge with… to merge it with one of B's projects, then Split per machine. ✓ A group forms on A, then splits. B's sidebar doesn't change. (#3065)
+7. Turn B off. ✓ B's agents stay on A, dimmed and saying "offline", and their chats can still be read. Turn B back on. (#3065)
+
+### Part 4. Chat across computers
+
+Starts from: A and B connected. B has a chat agent.
+
+1. On A, open the chat agent that runs on B. ✓ Its conversation shows, says it's on B, and streams live. (#2390)
+2. From A, send a message, steer, stop, approve a permission, and answer a question. ✓ Each one lands on B. (#2390)
+3. From A, start a turn, then turn B's Wi-Fi off for about 30 seconds and back on. ✓ The conversation catches up. A turn that ended meanwhile shows ended, a permission asked meanwhile shows, and nothing appears twice. (#2390)
+
+### Part 5. Agents across computers
+
+Starts from: A and B connected, with an agent on each.
+
+1. On A's Connections card, connect A's agent to B's agent with "Both ways" ticked. ✓ Each agent sends the other a message and reads its status, and the receiver sees the sender's name and computer. (#3064)
+2. Ask A's agent to call a tool with an agent address on A (`<id>@<A's fingerprint>`, from 1.3). ✓ It works as with the bare id. With another computer's fingerprint and no connection, ✓ it's told that agent is reached through a connection. (#3063)
+3. On B, untick a tool in B's copy of the A→B direction. ✓ A's agent is refused when it calls that tool, and A's card shows it unticked too. Tick it again. (#3064)
+4. Waking also needs the waking agent's own Wake permission, which by default only the Dispatcher has. In A's agent's permissions, allow Wake for connected agents. On the connection from 5.1, tick "Wake it" in the A→B direction. Put B's agent to sleep and ask A's agent to wake it. ✓ It wakes. On B, untick "Wake it", put the agent to sleep, and ask again. ✓ It's refused. (#3064)
+5. Quit Clubhouse on B. Have A's agent send B's agent a message, then open B again. ✓ The message arrives once, after the reconnect. (#3064)
+6. Turn B's Wi-Fi off, remove the connection on A, and turn B's Wi-Fi on. ✓ Once the two reconnect, B's agent no longer has tools for A's. (#3064)
+
+### Part 6. The Dispatcher's device tools
+
+Starts from: A and B connected, and the phone paired with A (2.3). Ask A's Dispatcher in each step.
+
+1. Ask which devices there are. ✓ It lists B and the phone with their names and whether each is online. (#3068)
+2. Ask it to rename B. ✓ You're asked first, with B named, and B is renamed when you allow it. Turn B's Wi-Fi off and ask it to reconnect B. ✓ You're asked first, and it tries when you allow it. Turn B's Wi-Fi on. (While B is connected, it answers that B already is.) (#3068)
+3. Ask it to remove B, and deny. ✓ B stays. (#3068)
+4. Ask it to add a device. ✓ Settings › Annex Network opens on screen with Add a device, and the Dispatcher gets no code or link. (#3068)
+
+### Part 7. Offline, the switch, removing, and clocks
+
+Starts from: A and B connected, and the phone paired with A.
+
+1. Turn B off, then quit and reopen A. ✓ B is listed offline with a reason it can't be reached. The exact words depend on B's remembered addresses. Press Reconnect on B's row. ✓ It says why it can't. Turn B on. ✓ It connects without pressing anything. (#3057, #3058, #3067)
+2. On A, rename B and set an address for it, then clear the address. ✓ Each change shows on A, and B stays connected. (#3067)
+3. On B, turn Annex Network off. ✓ A shows B offline, and B stops connecting. Turn it on. ✓ B reconnects to A. (#3067)
+4. On A, remove B. ✓ Within a few seconds B's row goes from A, and A's row goes from B, because B is told it was removed and leaves. On B, paste A's pairing link again. ✓ They're connected. (#3057, #3061)
+5. Quit A. On B, remove A. Reopen A. ✓ On A, B's row says this computer is no longer paired on B, with Pair again. Press Pair again and pair. ✓ They're connected. (#3057)
+6. At least five minutes after step 4, set B's clock two minutes behind A's. (Pairings made closer together than the clocks differ are a known limit.) On A, remove B. Then on A, paste B's pairing link, so B makes the new pairing with its slow clock. Quit and reopen both. ✓ B stays connected and in the network on both. Set B's clock back. (#3107)
+7. Open Clubhouse Go so the phone connects to A. ✓ A shows "Controlled by" with the phone's name. Install the older Clubhouse Go over it (this drops the phone's pairing) and pair it with A. ✓ The lock overlay says "Controlled by Phone". Reinstall today's app, or the new one for Part 8. (#3057, #3061)
+
+### Part 8. The phone as a network member
+
+These wait on the iOS app adopting the #3062 contract, `pairingId` included.
+
+Starts from: A and B connected. On A, remove the phone if it's still paired.
+
+1. Pair the phone with A from its QR code, with Annex Network on. ✓ It lists A and B. Turn B off. ✓ B is dimmed. Turn it on. (#3062)
+2. On A, remove B, then on B paste A's pairing link. ✓ The phone connects to B by itself. (#3062)
+3. On A, remove B again. From the phone, pair B into the network. ✓ B joins, A connects to it, and the phone lists it. (#3062)
+4. Look at the desktop the phone is connected to. ✓ It shows "Controlled by". (#3062)
+5. On A, remove B. ✓ B is removed on A and on the phone, leaves the network, and doesn't come back when the phone reconnects to A. From the phone, pair B into the network again, as in step 3. (#3107)
+6. On A, remove the phone. ✓ A and B both refuse it, and the phone forgets the network. B learned of the phone through the phone itself in step 3, so this also checks that joining through the phone kept every member's pairing as it was. (#3062, #3107)
+
+### Part 9. With a third computer
+
+Starts from: A and B connected, and C with Annex Network on and no devices.
+
+1. Turn B off. On C, paste A's pairing link. ✓ A's Settings shows C's join waiting on B. Turn B on. ✓ B lists C and connects to it, with no pairing made on B or C, and the waiting line goes from A. (#3061)
+2. On B, remove C. ✓ A and C hear at once, and C leaves the network. (#3061)
+3. On C, paste A's link again. ✓ B lists C again. Turn B off, then on A remove C. ✓ A's Settings shows the removal waiting on B. Turn B on. ✓ C is gone on B too, and the waiting line goes. (#3061)
+4. On C, paste A's link again. At least five minutes after B last paired, set C's clock two minutes behind. On A, remove B. On B, paste C's pairing link, so C makes the new pairing with its slow clock. Quit and reopen all three. ✓ B stays in the network on all three. Set C's clock back. (#3107)
+5. Turn C off. On A, remove C. ✓ B hears it. Turn A off. Turn C on, and on C paste B's pairing link. Turn A on. ✓ C stays in the network when A's old removal reaches it. (#3107)
 
 ## Decision log
 
@@ -113,7 +162,7 @@ Decisions made while building, for the maintainer to revisit. Newest last. D180 
 | D202 | A member's `/ws` connection doesn't lock the screen ("Controlled by"). Controllers still do, and the lock is released only when no locking connection is left. | Members connect to each other all the time, and are used as one machine. | |
 | D203 | Annex Network is a per-machine setting, on unless turned off (`networkEnabled`). Off: pairings are one-to-one and membership messages are ignored. Its switch comes with the single settings page (#3067). | The epic's "switch at the top". | |
 | D204 | A device joins when any member vouches for it and its record holds together: the public key hashes to its fingerprint and the certificate to its certificate fingerprint. (The certificate isn't signed by the identity key, so a member could vouch for any certificate; that's within the one-person trust model.) Only members' messages are followed. A one-to-one pairing's are heard, not followed, it hears only about this machine, and an existing one-to-one entry is never made a member or removed by another's word. | All of one person's devices, as the epic decides, without trusting a record that doesn't hold together. | Devices of more than one person. |
-| D205 | Members exchange full views (members and removals) when a channel opens and whenever one changes; the same view twice changes nothing. The newest 200 removals are kept. A removal beats the join it followed; a later join (paired again) beats an earlier removal, everywhere: members take the newer join time from views, drop the stale removal, and a machine ignores a removal of itself from before it last joined. | Members that were off catch up from whichever member they reach first. | |
+| D205 | Superseded by D252 for join times: Members exchange full views (members and removals) when a channel opens and whenever one changes; the same view twice changes nothing. The newest 200 removals are kept. A removal beats the join it followed; a later join (paired again) beats an earlier removal, everywhere: members take the newer join time from views, drop the stale removal, and a machine ignores a removal of itself from before it last joined. | Members that were off catch up from whichever member they reach first. | |
 | D206 | Removing a member here (from the device list, Forget, Forget all, or removing the pairing) tells every connected member, the removed one included, before its connections are cut. A machine told it was removed ends every member pairing it had. One removed while it was off isn't told: every member refuses it, and it shows them as needing pairing again. | Removed everywhere. | The removed machine should also clear its side when it was off. |
 | D207 | A join or removal made on this machine is confirmed by a member once that member's view shows it. The device list carries who confirmed and who it's waiting on (by name) until every current member has it; a removed member is listed as `removing` until then. Joins and removals made elsewhere aren't tracked or listed here. A device's own hello never moves its join time (only a member that paired it again does), so its own clock can't outlast a removal. | "The page shows where it's confirmed." | |
 | D208 | A member learns other members' addresses from their own hello and from views, and connects once it knows one (only to desktops, only with Connect to satellites on). | No pairing and no discovery needed between members. | |
@@ -121,7 +170,7 @@ Decisions made while building, for the maintainer to revisit. Newest last. D180 
 | D210 | A phone joins the network by sending `network: 1` with a persistent pairing; it's a member of kind `phone`. Desktops never connect to a phone, a member phone still locks the screen like any phone, and it keeps every phone route. A session-only pairing never joins. | The phone is a member, but it's still a phone in someone's hand. | |
 | D211 | `GET /api/v1/mobile/network` lists the network as the desktop answering knows it: every member with name, kind, addresses and port (desktops), certificate fingerprint (to pin), certificate PEM (desktops, to vouch), whether that desktop is connected to it now, and removals. A phone that isn't a member sees only this desktop, with `joined: false`. | One read gives the phone everything to show and connect to. | |
 | D212 | `network:changed` over `/ws` carries the same view to member phones whenever the membership changes or a connection comes or goes; the phone connects to new desktops by itself. A removed phone is sent its last view, with itself in `removals`, before its connections close (4401). Phones never confirm joins or removals (they don't use the membership channel), so nothing waits on them. | "Connects to new ones by itself." | |
-| D213 | Joining through the phone is one route both ways: `POST /api/v1/mobile/network/members` with member records, from a member phone. The phone sends the network's members to a desktop it just paired, and that desktop's own record to a member. Records must hold together, as with a member's word. Members may be sent exactly as listed; `online` and `self` are ignored. It counts as a fresh join (a person is joining them now), so an earlier removal doesn't stop it. The answer lists what was added and why anything wasn't (`member`, `one-to-one`, `self`, `invalid`). A phone is told apart from a computer by `pairingMode`, which the contract requires when joining. | A person on the new device finishes the pairing (the phone scanning its code), and nothing new to trust: the phone is already a member on both. | |
+| D213 | Joining through the phone is one route both ways: `POST /api/v1/mobile/network/members` with member records, from a member phone. The phone sends the network's members to a desktop it just paired, and that desktop's own record to a member. Records must hold together, as with a member's word. Members may be sent exactly as listed; `online` and `self` are ignored. It counts as a fresh join (a person is joining them now), so an earlier removal doesn't stop it. The answer lists what was added and why anything wasn't (`member`, `one-to-one`, `self`, `invalid`). A phone is told apart from a computer by `pairingMode`, which the contract requires when joining. | A person on the new device finishes the pairing (the phone scanning its code), and nothing new to trust: the phone is already a member on both. | Since D252, a vouched device keeps its pairing, so only a removal on the receiving desktop is overridden. |
 | D214 | The contract for the iOS app is `docs/annex-network-phone.md`, with fixtures `test/fixtures/annex-mobile/network-*.json`. Capabilities gain `network` while Annex Network is on; nothing else in the phone's existing fixtures changes. | Additive: a phone that ignores it works one-to-one as before. | |
 | D215 | An agent's address is `<agentId>@<machine>`, the machine being its identity fingerprint (lowercased). A bare id means this machine, so every reference that exists keeps working. Agent ids never contain `@`, and anything after the last `@` that isn't a fingerprint is part of the id. | Readable, sortable, and the same on every machine. | |
 | D216 | Tool calls: arguments a tool's grant names as agents are localized before the grant check, so tools and checks see bare ids: an `agent_arg` declaration's list (`from`/`to` when it has none), `target_agent_id` for group members, `helper` for helpers, and `target` for call_wire_tool. One naming another machine is refused (`other_machine`, without saying which machine) until stage 7 (#3064) routes it. | One place for every tool, no tool changed. | A new agent target reads another argument. |
@@ -160,4 +209,5 @@ Decisions made while building, for the maintainer to revisit. Newest last. D180 
 | D247 | A project's git remote is compared as a key: host and path, lowercased, with no scheme, user, credentials, port or `.git` (`github.com/org/repo`). Main reads `origin` for each project, best effort (a 3-second git call, four at a time, nothing logged, each answer kept a minute), and only the key leaves it: snapshots carry the keys known so far as `repoKey` and never wait on git, and IPC `project:repo-keys` gives this machine's, asked only while another computer is paired. | Two machines can match a repository without sending a URL that may hold a token. | |
 | D248 | A project here and one on another computer with the same key are suggested for linking, once per pair: as a quiet line in the sidebar (one at a time) and in the project's settings, with Link and Keep separate. Linked or kept separate, a pair isn't suggested again; splitting or unlinking counts as keeping it separate. Any two projects can be linked by hand in project settings, folders without a remote included. The Linked projects section shows once another computer's projects are known, or a link exists. | #3066: one suggestion, never repeated, and linking changes only the display. | |
 | D249 | With no host pill, nothing on screen names the machine the views show, so the host follows the selection and comes back to this machine for anything of this machine's: its projects and their settings, every app view (Canvas included), and every way to start an agent (the New button, a project's +, ⌘⇧N, ⌘N), which also selects one of this machine's projects first. Another machine's canvases are opened from its project. A linked group's agents from another project keep that project's own actions: they don't reorder within the group's head, and get no terminal or folder from it. Suggestions and the Linked projects section use only paired computers' projects. | A view never silently shows another machine's data, and starting an agent always works. | |
+| D252 | Changed before first release: each member's pairing into the network has a pairing id, made once with its join time, and carried unchanged by every member (#3107). It travels in the pairing exchange: a desktop pairing with another sends its own pairing (`selfPairing`), which the other keeps unless one of its removals ends it; a true newcomer, or one removed there, gets a new pairing made by the desktop it pairs with. The answer carries that pairing (`pairing`), kept as the joiner's own, and the answering desktop's (`serverPairing`), which the first desktop of a network starts. Leaving clears a machine's own pairing, so pairing again makes a new one, and a machine that learns of its removal inside a view takes nothing else from that view. A member phone pairing with another desktop sends its kept pairing too. A machine takes a later pairing of itself from members' records (a phone joined it again where it had been removed); nobody mints for a member that offers its own. A phone vouching for a device keeps the pairing it carries, unless a removal on that desktop ended it. A record moves a member's pairing only with an id: the one it hadn't learned yet, or a later pairing. A desktop's own stamp, or a member's own clock, never moves it, and a member's record of this machine never moves this machine's own pairing. A removal names the pairing it ends (`pairingId` and its `joinedAt`), and ends that pairing or an older one, never a later one; a record with no id counts as the one named. Records from before carry no id and compare by time. Every network message already carries `v: 1`. The phone contract (#3062) says the same, and a four-machine simulation of these flows is a permanent test. | The membership protocol hadn't shipped, and the phone side isn't built: the cheapest moment to change the record. Join times alone weren't stable across members, and an id minted on both sides of a pairing split. | Two pairings of one device made within clock skew of each other (they're still ordered by join time); a re-pair between two machines that both missed a removal keeps the removed pairing, so the removal still wins. |
 

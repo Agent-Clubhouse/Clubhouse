@@ -173,10 +173,9 @@ function refusalMessage(reason: GrantRefusal, action: string, target: GrantCallT
 
 /**
  * The caller as the check sees it, with its running Access level for fixed
- * rule 2 ("no granting more than you hold"). Unknown reads as Ask first. No
- * call passes the Access it would set yet (a `change`), so the level isn't
- * compared: doing so would refuse a Dispatcher at Ask first that creates an
- * agent at Auto, against its v1 reach. That waits on a decision (D126).
+ * rule 2 ("no granting more than you hold"). Unknown reads as Ask first. The
+ * Access a call would set is compared where the tool decides it, in
+ * access-ceiling.ts (D126): creating an agent, a template push, a helper start.
  */
 function callerOf(agentId: string): GrantCaller {
   const registration = agentRegistry.get(agentId);

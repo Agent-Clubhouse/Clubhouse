@@ -6,6 +6,7 @@
  * Several destinations can be enabled at once, each with its own switch,
  * level and preset. Consent names every host that will receive data.
  */
+import { dismissBackfill, noteDestinationDisabled, noteDestinationEnabled } from './backfill';
 import { restartLocalRecording } from './local-control';
 import { deleteLocalSalt } from './local-salt';
 import { app } from 'electron';
@@ -278,11 +279,12 @@ async function dropLegacyDestination(kind: TelemetryDestinationEntry['kind']): P
 }
 
 export async function clearAzureConnectionString(): Promise<TelemetryActionResult> {
-  await prepare();
+  const { settings } = await prepare();
   await updateTelemetrySettings((s) => withFramebriarFollowing(withDestination(s, 'azure', (d) => ({ ...d, enabled: false, confirmedHost: undefined }))));
   await updateSecrets((s) => ({ ...s, connectionString: undefined }));
   await dropLegacyDestination('azure');
   await applyRuntime({ clearOffline: true });
+  await noteTurnedOff(settings, 'azure');
   return done();
 }
 
@@ -339,7 +341,7 @@ export async function saveOtlpConfig(input: OtlpConfigInput, ack?: TelemetryAckn
 }
 
 export async function clearOtlpConfig(): Promise<TelemetryActionResult> {
-  await prepare();
+  const { settings } = await prepare();
   await updateSecrets((s) => ({ ...s, otlpHeaders: undefined }));
   await updateTelemetrySettings((s) => withFramebriarFollowing(withDestination(s, 'otlp', (d) => ({
     ...d,
@@ -349,7 +351,18 @@ export async function clearOtlpConfig(): Promise<TelemetryActionResult> {
   }))));
   await dropLegacyDestination('otlp');
   await applyRuntime();
+  await noteTurnedOff(settings, 'otlp');
   return done();
+}
+
+/**
+ * A destination that was on is now off, and its runtime has stopped (#2920): what it
+ * was sent live counts as sent. Taken after the stop, so anything emitted while it
+ * stopped isn't offered again.
+ */
+async function noteTurnedOff(before: TelemetrySettings, destinationId: string): Promise<void> {
+  if (findDestination(before, destinationId)?.enabled) await noteDestinationDisabled(destinationId);
+  else dismissBackfill(destinationId);
 }
 
 /**
@@ -378,6 +391,8 @@ export async function setEnabled(
     }))));
     // Nothing changed (e.g. "Not now" while it was already off): no restart.
     if (clearOffline || enabledIds(next) !== before) await applyRuntime({ clearOffline });
+    // What it was sent live counts as sent: turning it on again offers only what came after (#2920).
+    await noteTurnedOff(settings, destinationId);
     return done();
   }
   if (settings.exportSuspended !== undefined) return fail('export_paused', 'Telemetry export is paused. Choose Resume first.');
@@ -457,10 +472,14 @@ export async function setEnabled(
     consentVersion: Math.max(s.consentVersion, TELEMETRY_CONSENT_VERSION),
     weakStorageAccepted: s.weakStorageAccepted || ack.weakStorage === true,
   }));
+  // Before the runtime starts: anything buffered while it starts goes out live, so it isn't history (#2920).
+  const turnedOnAt = Date.now();
   const ok = await applyRuntime();
   if (!ok || !getActiveDestinations().some((d) => d.id === destinationId)) {
     return fail('start_failed', getDestinationStartError(destinationId) ?? getLastStartError() ?? 'Telemetry failed to start.');
   }
+  // The user turned it on here, from off: history recorded before now may be offered (#2920).
+  if (!entry.enabled) noteDestinationEnabled(destinationId, entry.kind, turnedOnAt);
   return done();
 }
 
@@ -621,7 +640,7 @@ export async function setAdvanced(input: AdvancedInput): Promise<TelemetryAction
 /** Rotates the install id and hash salt together (spec §5.2). */
 export async function resetInstallId(): Promise<TelemetryActionResult> {
   await prepare();
-  await updateTelemetrySettings((s) => ({ ...s, ...createIdentity() }));
+  await updateTelemetrySettings((s) => ({ ...s, ...createIdentity(), hashSaltSince: Date.now() }));
   // A reset salt must not come back from the local record's (#2920), and local recording moves to the new one.
   deleteLocalSalt();
   if (isRunning()) await restartTelemetry({ clearOffline: true });
@@ -636,7 +655,7 @@ export async function clearOfflineQueue(): Promise<TelemetryActionResult> {
 
 /** Turns every destination off and removes the install id, salt and offline queue. */
 export async function deleteLocalData(): Promise<TelemetryActionResult> {
-  await prepare();
+  const { settings } = await prepare();
   // Off for good: the developer destination is derived, so it's also marked
   // switched off, or Feedback reconnecting would turn it back on (#2097).
   await updateTelemetrySettings((s) => withoutIdleSuspension({
@@ -645,6 +664,7 @@ export async function deleteLocalData(): Promise<TelemetryActionResult> {
   }));
   // Also removes the local record's salt before the recorder restarts (#2920), so a destination added later starts from a fresh one.
   await disableTelemetry({ deleteLocalData: true });
+  for (const d of settings.destinations) await noteTurnedOff(settings, d.id);
   return done();
 }
 

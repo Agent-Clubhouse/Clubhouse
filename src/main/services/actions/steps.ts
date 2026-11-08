@@ -41,7 +41,11 @@ export interface StepDeps {
   /** The Dispatcher, reached only through its one delivery path. Unset: no agent is the Dispatcher. */
   dispatcher?: {
     is(agentId: string): boolean;
-    deliver(req: DispatcherStepDelivery): Promise<{ delivered: true; woke: boolean } | { delivered: false; text: string }>;
+    /**
+     * `skipped`: the message wasn't needed this time (one of Clubhouse's own
+     * actions found nothing to do, #3040). The step is done, with `text` as its detail.
+     */
+    deliver(req: DispatcherStepDelivery): Promise<{ delivered: true; woke: boolean } | { delivered: false; text: string; skipped?: boolean }>;
   };
   /**
    * Why the owner may not wake this agent, or null. A message step finds its
@@ -59,6 +63,9 @@ export interface DispatcherStepDelivery {
   targetId: string;
   targetName: string;
   actionId: string;
+  /** The action's name and owner, kept on the request: a one-time action is gone by the time its step runs. */
+  actionName: string;
+  owner: ActionOwner;
   text: string;
   routed: RoutedMessagePart[];
 }
@@ -156,10 +163,15 @@ export function createStepRunner(deps: StepDeps): StepRunner {
         targetId: id,
         targetName: name,
         actionId: ctx.action.id,
+        actionName: ctx.action.name,
+        owner,
         text: body.text,
         routed: body.routed,
       });
-      if (delivery.delivered === false) return fail(step, `Couldn’t deliver the message: ${delivery.text}`, id);
+      if (delivery.delivered === false) {
+        if (delivery.skipped) return done(step, delivery.text, { agentId: id });
+        return fail(step, `Couldn’t deliver the message: ${delivery.text}`, id);
+      }
       if (!msg) return done(step, `Woke ${name}`, { agentId: id });
       return done(step, delivery.woke ? `Woke ${name} with the message` : `Sent the message to ${name}`, { agentId: id });
     } catch (err) {

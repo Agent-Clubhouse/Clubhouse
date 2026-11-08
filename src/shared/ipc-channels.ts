@@ -682,6 +682,8 @@ export const IPC = {
     SET_BEHAVIOR: 'dispatcher:set-behavior',
     /** Starts the Dispatcher's conversation over (#3043). Memory is never touched. */
     CLEAR_CHAT: 'dispatcher:clear-chat',
+    /** Today's usage, split into conversations and background work (#3040). Resolves with a DispatcherUsageSplit. */
+    GET_USAGE: 'dispatcher:get-usage',
     /** Main → renderer broadcast: DispatcherState after any change. */
     CHANGED: 'dispatcher:changed',
     /** An agent's card, for its Dispatcher card in Details (#3049). */
@@ -713,6 +715,12 @@ export const IPC = {
     CLEAR_OFFLINE: 'telemetry-settings:clear-offline',
     DELETE_LOCAL_DATA: 'telemetry-settings:delete-local-data',
     RESUME: 'telemetry-settings:resume',
+    /** Backfill on connect (#2920): the offer after turning a destination on, and its run. */
+    BACKFILL_OFFER: 'telemetry-settings:backfill-offer',
+    BACKFILL_START: 'telemetry-settings:backfill-start',
+    BACKFILL_CANCEL: 'telemetry-settings:backfill-cancel',
+    BACKFILL_STATUS: 'telemetry-settings:backfill-status',
+    BACKFILL_DISMISS: 'telemetry-settings:backfill-dismiss',
   },
   FEEDBACK: {
     GET_STATUS: 'feedback:get-status',

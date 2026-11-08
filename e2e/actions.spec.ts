@@ -33,11 +33,17 @@ async function openActions(w: Page): Promise<void> {
   await expect(w.getByTestId('actions-settings')).toBeVisible();
 }
 
-/** The saved actions, or undefined while the file is missing or can't be parsed yet, so a poll tries again. */
+/**
+ * The saved actions people can see, or undefined while the file is missing or
+ * can't be parsed yet, so a poll tries again. Clubhouse's own hidden actions
+ * (owner 'app', e.g. the Dispatcher's upkeep, #3040) are saved in the same
+ * file and left out, as every list leaves them out.
+ */
 async function readActions(userDataDir: string): Promise<Array<{ name: string; enabled: boolean }> | undefined> {
   try {
     const parsed = JSON.parse(await fs.promises.readFile(path.join(userDataDir, 'actions.json'), 'utf8'));
-    return Array.isArray(parsed?.actions) ? parsed.actions : undefined;
+    if (!Array.isArray(parsed?.actions)) return undefined;
+    return (parsed.actions as Array<{ name: string; enabled: boolean; owner?: { kind?: string } }>).filter((a) => a.owner?.kind !== 'app');
   } catch {
     return undefined;
   }

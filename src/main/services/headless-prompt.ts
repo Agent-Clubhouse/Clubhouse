@@ -49,7 +49,8 @@ function defaultWorkDir(): string {
   return dir;
 }
 
-function defaultSpawn(binary: string, args: string[], opts: { cwd: string; env: Record<string, string> }): ChildProcess {
+/** Exported for tests, which wrap it to wait for each child to exit. */
+export function defaultSpawn(binary: string, args: string[], opts: { cwd: string; env: Record<string, string> }): ChildProcess {
   const cmd = resolveStructuredSpawn(binary, args);
   return cpSpawn(cmd.binary, cmd.args, {
     cwd: opts.cwd,
