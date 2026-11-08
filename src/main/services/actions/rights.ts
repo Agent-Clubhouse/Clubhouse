@@ -32,6 +32,11 @@ export interface RightsFacts {
   agentProjectId(agentId: string): string | undefined;
   /** The Dispatcher's agent id, for its wires to the agents connected to it. */
   dispatcherAgentId(): string | undefined;
+  /**
+   * Whether the agent may start helpers ("Let this agent orchestrate").
+   * Starting agents from an action needs at least what starting a helper does.
+   */
+  canStartAgents(agentId: string): boolean;
 }
 
 /** The most actions one owner may have. People and Clubhouse have no limit. */
@@ -74,6 +79,7 @@ export function createInterimRights(facts: RightsFacts): ActionRights {
         if (step.freeAgentMode === true) return `Only you can have an action start a quick agent in Free Agent mode. ${ownerName(owner)} can’t.`;
         if (owner.kind === 'dispatcher') return 'The Dispatcher can’t start quick agents from an action yet.';
         if (owner.helper) return helperOnly(owner);
+        if (!facts.canStartAgents(owner.agentId)) return `${ownerName(owner)} can’t start agents, so its actions can’t start quick agents. Turn on "Let this agent orchestrate" for it first.`;
         const ownProject = facts.agentProjectId(owner.agentId);
         if (!ownProject || step.projectId !== ownProject) return onProject(owner);
       }

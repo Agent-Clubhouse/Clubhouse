@@ -17,6 +17,7 @@ import { isAgentRunning } from '../agent-system';
 import { onAppEvent } from '../app-event-bus';
 import { knownAgent, knownAgents } from '../app-event-sources';
 import { bindingManager } from '../clubhouse-mcp/binding-manager';
+import { isOrchestrationEnabled } from '../clubhouse-mcp/orchestration-gate';
 import { sleepAgent, wakeWiredAgent } from '../clubhouse-mcp/tools/agent-lifecycle';
 import { getDispatcherAgentId } from '../dispatcher/dispatcher-service';
 import { appLog } from '../log-service';
@@ -132,6 +133,8 @@ function createEngine(): ActionsEngine {
     isConnected: (from, to) => bindingManager.getBindingsForAgent(from).some((b) => b.targetKind === 'agent' && b.targetId === to),
     // The Dispatcher's wires exist only while it is on, so an off Dispatcher reaches no one.
     dispatcherAgentId: () => getDispatcherAgentId() ?? undefined,
+    // The live gate for a running agent, else its saved switch (an asleep agent isn't synced to the gate).
+    canStartAgents: (id) => isOrchestrationEnabled(id) || knownAgent(id)?.orchestrates === true,
   });
   const steps = createStepRunner({
     agentExists: facts.agentExists,

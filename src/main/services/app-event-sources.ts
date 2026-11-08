@@ -19,6 +19,8 @@ export interface KnownAgent {
   name?: string;
   parentAgentId?: string;
   worktreePath?: string;
+  /** Its saved "Let this agent orchestrate" switch. */
+  orchestrates?: boolean;
 }
 
 /** Agents that exist (created, not disposed), per project, from the last read. */
@@ -40,6 +42,7 @@ function snapshot(projectPath: string, configs: DurableAgentConfig[]): Map<strin
       ...(c.name && { name: c.name }),
       ...(c.parentAgentId && { parentAgentId: c.parentAgentId }),
       ...(c.worktreePath && { worktreePath: c.worktreePath }),
+      ...(c.orchestration?.orchestrate === true && { orchestrates: true }),
     });
   }
   return out;

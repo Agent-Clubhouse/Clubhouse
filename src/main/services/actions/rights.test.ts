@@ -9,6 +9,8 @@ const rights = createInterimRights({
   isConnected: (from, to) => (from === 'lead' && to === 'pm') || (from === 'disp' && (to === 'lead' || to === 'pm')),
   agentProjectId: (id) => (id === 'other' ? 'p2' : 'p1'),
   dispatcherAgentId: () => dispatcherId,
+  // Only release-lead may start helpers.
+  canStartAgents: (id) => id === 'lead',
 });
 const lead = { kind: 'agent', agentId: 'lead' } as const;
 const helper = { kind: 'agent', agentId: 'h1', helper: true } as const;
@@ -105,5 +107,11 @@ describe('interim rights: how many actions', () => {
     expect(rights.maxActions(dispatcher)).toBe(MAX_ACTIONS.dispatcher);
     expect(rights.maxActions(user)).toBeNull();
     expect(MAX_ACTIONS).toEqual({ agent: 20, helper: 5, dispatcher: 50 });
+  });
+
+  it('starts quick agents only for an owner that may start helpers', () => {
+    const pm = { kind: 'agent', agentId: 'pm' } as const;
+    expect(rights.checkStep(pm, { kind: 'quick', projectId: 'p1', prompt: 'x' })).toMatch(/can’t start agents/);
+    expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', prompt: 'x' })).toBeNull();
   });
 });

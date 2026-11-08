@@ -70,6 +70,7 @@ vi.mock('../../actions', async () => {
         isConnected: (from, to) => h.wires.has(`${from}>${to}`),
         agentProjectId,
         dispatcherAgentId: () => (h.dispatchers.has('dispatcher') ? 'dispatcher' : undefined),
+        canStartAgents: () => true,
       }),
     });
   };
