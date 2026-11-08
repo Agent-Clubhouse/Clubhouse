@@ -49,7 +49,9 @@ function selfSignedCertificate(commonName: string): { certPem: string; keyPem: s
 
   const cert = forge.pki.createCertificate();
   cert.publicKey = keys.publicKey;
-  cert.serialNumber = forge.util.bytesToHex(forge.random.getBytesSync(16));
+  // First byte 0x01 to 0x7f: a positive, minimally encoded serial (#2992).
+  const serial = forge.random.getBytesSync(16);
+  cert.serialNumber = forge.util.bytesToHex(String.fromCharCode((serial.charCodeAt(0) & 0x7f) || 0x01) + serial.slice(1));
 
   const now = new Date();
   const expires = new Date(now);

@@ -304,6 +304,12 @@ import * as annexServer from './annex-server';
 import * as annexSettings from './annex-settings';
 import * as annexIdentity from './annex-identity';
 import * as annexTls from './annex-tls';
+
+/** A positive, minimally encoded certificate serial (first byte 0x01 to 0x7f). See #2992. */
+function positiveSerial(): string {
+  const bytes = forgeLib.random.getBytesSync(16);
+  return forgeLib.util.bytesToHex(String.fromCharCode((bytes.charCodeAt(0) & 0x7f) || 0x01) + bytes.slice(1));
+}
 import * as annexPeers from './annex-peers';
 import * as annexEventBus from './annex-event-bus';
 import * as projectStore from './project-store';
@@ -1593,7 +1599,7 @@ describe('annex-server', () => {
       const makeCertificate = () => {
         const keys = forge.pki.rsa.generateKeyPair(2048);
         const cert = forge.pki.createCertificate(); cert.publicKey = keys.publicKey;
-        cert.serialNumber = forge.util.bytesToHex(forge.random.getBytesSync(16));
+        cert.serialNumber = positiveSerial();
         cert.validity.notBefore = new Date(Date.now() - 1000); cert.validity.notAfter = new Date(Date.now() + 86400000);
         cert.setSubject([{ name: 'commonName', value: 'mobile-test-identity' }]); cert.setIssuer(cert.subject.attributes);
         cert.sign(keys.privateKey, forge.md.sha256.create());
@@ -1705,7 +1711,7 @@ describe('annex-server', () => {
       const makeCertificate = () => {
         const keys = forge.pki.rsa.generateKeyPair(2048);
         const cert = forge.pki.createCertificate(); cert.publicKey = keys.publicKey;
-        cert.serialNumber = forge.util.bytesToHex(forge.random.getBytesSync(16));
+        cert.serialNumber = positiveSerial();
         cert.validity.notBefore = new Date(Date.now() - 1000); cert.validity.notAfter = new Date(Date.now() + 86400000);
         cert.setSubject([{ name: 'commonName', value: 'mobile-test-identity' }]); cert.setIssuer(cert.subject.attributes);
         cert.sign(keys.privateKey, forge.md.sha256.create());
@@ -1872,7 +1878,7 @@ describe('annex-server', () => {
       const { privateKey, publicKey } = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
       const cert = forgeLib.pki.createCertificate();
       cert.publicKey = forgeLib.pki.publicKeyFromPem(publicKey.export({ type: 'spki', format: 'pem' }) as string);
-      cert.serialNumber = `0${nodeCrypto.randomBytes(8).toString('hex')}`;
+      cert.serialNumber = positiveSerial();
       cert.validity.notBefore = validity.notBefore ?? new Date(Date.now() - 60_000);
       cert.validity.notAfter = validity.notAfter ?? new Date(Date.now() + 86_400_000);
       cert.setSubject([{ name: 'commonName', value: cn }]);
