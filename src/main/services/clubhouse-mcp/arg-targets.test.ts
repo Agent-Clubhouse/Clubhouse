@@ -9,7 +9,7 @@ const state = vi.hoisted(() => ({
 vi.mock('../project-store', () => ({
   peekProjects: async () => [{ id: 'p1', name: 'Home', path: '/home' }, { id: 'p2', name: 'Far', path: '/far' }],
 }));
-vi.mock('../agent-config', () => ({ listDurable: async (p: string) => state.agents.get(p) ?? [] }));
+vi.mock('../agent-config', () => ({ peekDurableConfigs: async (p: string) => state.agents.get(p) ?? [] }));
 vi.mock('../orchestration-policy', () => ({
   resolveOrchestrationPolicies: async (_p: string, agents: DurableAgentConfig[]) =>
     new Map(agents.map((a) => [a.id, { connectToDispatcher: state.connected.has(a.id) }])),
@@ -89,6 +89,36 @@ describe('targets named in the arguments (#2974)', () => {
   it('a reference that doesn\'t resolve is left to the tool, which says it wasn\'t found', async () => {
     expect((await check('plain', display, { agent_id: 'nobody' })).ok).toBe(true);
     expect((await check('plain', projectDisplay, { project: 'Nowhere' })).ok).toBe(true);
+  });
+
+  it('an unknown reference in a list doesn\'t switch off the check for the others', async () => {
+    const read: ToolGrant = { actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent_ids'], missing: 'caller' } };
+    expect((await check('plain', read, { agent_ids: ['plain', 'nobody'] })).ok).toBe(true);
+    expect((await check('plain', read, { agent_ids: ['nobody', 'peer'] })).ok).toBe(false);
+  });
+
+  it('a name two agents share is checked against both', async () => {
+    state.agents.get('/home')!.push(agent('twin-1', { name: 'twin' }), agent('twin-2', { name: 'twin', parentAgentId: 'orch' }));
+    const restart: ToolGrant = { actions: ['agent.wake'], target: 'agent_arg', from: { args: ['agent'] } };
+    // The orchestrator may wake its helper twin-2, but not twin-1: the shared name is refused.
+    expect((await check('orch', restart, { agent: 'twin-2' })).ok).toBe(true);
+    expect((await check('orch', restart, { agent: 'twin' })).ok).toBe(false);
+  });
+
+  it('an id is found before any name, and connection tools place names among the caller and its helpers', async () => {
+    state.agents.get('/home')!.push(agent('builder-local', { name: 'builder' }));
+    state.agents.get('/far')!.push(agent('builder-helper', { name: 'builder', parentAgentId: 'orch' }), agent('named-like-an-id', { name: 'peer' }));
+    const helpersOnly: ToolGrant = { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['to'], names: 'self_and_helpers' } };
+    expect((await check('orch', helpersOnly, { to: 'builder' })).ok).toBe(true);
+    // "peer" is an id in the caller's project before it is anyone's name.
+    const [targets] = [...(await resolveArgTargets('dispatcher', configure, { agent_id: 'peer' })).values()];
+    expect(targets).toEqual([expect.objectContaining({ projectPath: '/home' })]);
+  });
+
+  it('every agent in a named project is that project\'s', async () => {
+    const all: ToolGrant = { actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent_ids'], project: 'project', missing: 'caller', all: 'all_agents' } };
+    const [targets] = [...(await resolveArgTargets('plain', all, { all_agents: true, project: 'Far' })).values()];
+    expect(targets).toEqual([{ kind: 'agent', relations: [], projectPath: '/far' }]);
   });
 
   it('an agent elsewhere is found by id', async () => {

@@ -93,7 +93,8 @@ function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantChec
     // agent named in the call (target_agent_id) must be a member of it (#2974). Broadcast names none.
     case 'group_members': {
       const admin = !!wire && isProjectAdmin(wire.groupMetadata, agentId);
-      const named = typeof args.target_agent_id === 'string' ? args.target_agent_id : undefined;
+      // "all" taps every member, as broadcast does.
+      const named = typeof args.target_agent_id === 'string' && args.target_agent_id !== 'all' ? args.target_agent_id : undefined;
       const member = !named || (!!wire && isGroupMember(wire.binding.targetId, named));
       return { kind: 'agent', relations: admin && member ? ['group_member'] : [], ...(admin && !member && { notGroupMember: true }) };
     }
@@ -169,7 +170,10 @@ function refusalMessage(reason: GrantRefusal, action: string, target: GrantCallT
 
 /**
  * The caller as the check sees it, with its running Access level for fixed
- * rule 2 ("no granting more than you hold"). Unknown reads as Ask first.
+ * rule 2 ("no granting more than you hold"). Unknown reads as Ask first. No
+ * call passes the Access it would set yet (a `change`), so the level isn't
+ * compared: doing so would refuse a Dispatcher at Ask first that creates an
+ * agent at Auto, against its v1 reach. That waits on a decision (D126).
  */
 function callerOf(agentId: string): GrantCaller {
   const registration = agentRegistry.get(agentId);

@@ -13,6 +13,7 @@
 import * as path from 'path';
 import type { GrantCallTarget } from '../../../shared/agent-grants';
 import type { DurableAgentConfig } from '../../../shared/types';
+import { isDisposedAgent } from '../../../shared/agent-helpers';
 import * as agentConfig from '../agent-config';
 import { agentRegistry } from '../agent-registry';
 import { resolveOrchestrationPolicies } from '../orchestration-policy';
@@ -55,7 +56,9 @@ class Lookup {
   agentsIn(projectPath: string): Promise<DurableAgentConfig[]> {
     let list = this.agents.get(projectPath);
     if (!list) {
-      list = Promise.resolve().then(() => agentConfig.listDurable(projectPath)).catch((): DurableAgentConfig[] => []);
+      // A peek: no cache load, watcher or recovery for a permission check.
+      list = Promise.resolve().then(() => agentConfig.peekDurableConfigs(projectPath))
+        .then((agents) => agents.filter((a) => !isDisposedAgent(a)), (): DurableAgentConfig[] => []);
       this.agents.set(projectPath, list);
     }
     return list;
@@ -66,7 +69,7 @@ class Lookup {
     let policies = this.policies.get(projectPath);
     if (!policies) {
       policies = this.agentsIn(projectPath)
-        .then((agents) => resolveOrchestrationPolicies(projectPath, agents))
+        .then((agents) => resolveOrchestrationPolicies(projectPath, [...agents]))
         .catch(() => new Map<string, { connectToDispatcher: boolean }>());
       this.policies.set(projectPath, policies);
     }
@@ -84,27 +87,40 @@ class Lookup {
   }
 
   /**
-   * An agent by id anywhere, or by name in one project (the call's `project`
-   * argument, else the caller's). A name used twice there doesn't resolve.
+   * The agents a reference can mean (#2974). An id is looked up everywhere
+   * before any name: the call's project, the caller's, a running agent's,
+   * then every project. A name is looked up in the call's project, or among
+   * the caller and its helpers (`self_and_helpers`, as the connection tools
+   * place names), or else in the caller's project; exact before any case.
+   * Every agent a name matches is returned, so each is checked. Empty when
+   * nothing matches.
    */
-  async agent(ref: string, inProject?: string): Promise<{ config: DurableAgentConfig; projectPath: string } | null> {
-    const home = inProject ?? this.callerProject;
-    const searched: string[] = [];
-    if (home) {
-      searched.push(home);
-      const list = await this.agentsIn(home);
-      const byId = list.find((a) => a.id === ref);
-      if (byId) return { config: byId, projectPath: home };
-      const named = list.filter((a) => a.name === ref);
-      if (named.length === 1) return { config: named[0], projectPath: home };
-      if (named.length > 1) return null;
+  async candidates(ref: string, inProject: string | undefined, names: 'project' | 'self_and_helpers'): Promise<Array<{ config: DurableAgentConfig; projectPath: string }>> {
+    const byId = await this.byId(ref, inProject);
+    if (byId) return [byId];
+    const pool: Array<{ config: DurableAgentConfig; projectPath: string }> = [];
+    if (inProject) {
+      for (const config of await this.agentsIn(inProject)) pool.push({ config, projectPath: inProject });
+    } else if (names === 'self_and_helpers') {
+      for (const p of (await this.allProjects()).map((x) => x.path)) {
+        for (const config of await this.agentsIn(p)) {
+          if (config.id === this.callerId || config.parentAgentId === this.callerId) pool.push({ config, projectPath: p });
+        }
+      }
+    } else if (this.callerProject) {
+      for (const config of await this.agentsIn(this.callerProject)) pool.push({ config, projectPath: this.callerProject });
     }
-    if (inProject) return null;
-    // By id elsewhere: a running agent's project first, then every project.
-    const running = agentRegistry.get(ref)?.projectPath;
-    const others = running ? [running] : (await this.allProjects()).map((p) => p.path);
-    for (const p of others) {
-      if (searched.some((s) => samePath(s, p))) continue;
+    const exact = pool.filter((c) => c.config.name === ref);
+    return exact.length > 0 ? exact : pool.filter((c) => c.config.name.toLowerCase() === ref.toLowerCase());
+  }
+
+  private async byId(ref: string, inProject: string | undefined): Promise<{ config: DurableAgentConfig; projectPath: string } | null> {
+    const order = [inProject, this.callerProject, agentRegistry.get(ref)?.projectPath].filter((p): p is string => !!p);
+    const all = (await this.allProjects()).map((p) => p.path);
+    const seen: string[] = [];
+    for (const p of [...order, ...all]) {
+      if (seen.some((x) => samePath(x, p))) continue;
+      seen.push(p);
       const found = (await this.agentsIn(p)).find((a) => a.id === ref);
       if (found) return { config: found, projectPath: p };
     }
@@ -135,26 +151,6 @@ async function isConnected(lookup: Lookup, target: DurableAgentConfig, projectPa
 async function resolveDeclaration(lookup: Lookup, d: ToolGrantDeclaration, args: Record<string, unknown>): Promise<GrantCallTarget[] | null> {
   const from = d.from;
   if (!from) return null;
-  if (from.all && args[from.all] === true) {
-    // Every agent, or every project: what only an `any` grant covers.
-    return [d.target === 'agent_arg' ? { kind: 'agent', relations: [] } : { kind: 'project' }];
-  }
-  const refs = from.args.flatMap((a) => refsOf(args[a]));
-  if (d.target === 'project_arg') {
-    if (refs.length === 0) return from.missing === 'caller' && lookup.callerProject ? [{ kind: 'project', projectPath: lookup.callerProject }] : null;
-    const out: GrantCallTarget[] = [];
-    for (const ref of refs) {
-      const p = await lookup.project(ref);
-      if (!p) return null;
-      out.push({ kind: 'project', projectPath: p.path });
-    }
-    return out;
-  }
-  // agent_arg
-  if (refs.length === 0) {
-    if (from.missing !== 'caller') return null;
-    return [{ kind: 'agent', relations: ['self'], ...(lookup.callerProject && { projectPath: lookup.callerProject }), isDispatcher: isTrackedDispatcher(lookup.callerId) }];
-  }
   let inProject: string | undefined;
   if (from.project) {
     const projectRef = refsOf(args[from.project])[0];
@@ -164,11 +160,34 @@ async function resolveDeclaration(lookup: Lookup, d: ToolGrantDeclaration, args:
       inProject = p.path;
     }
   }
+  if (from.all && args[from.all] === true) {
+    // Every agent in a project (the call's, else the caller's), or every project.
+    if (d.target === 'project_arg') return [{ kind: 'project' }];
+    const projectPath = inProject ?? lookup.callerProject;
+    return [{ kind: 'agent', relations: [], ...(projectPath && { projectPath }) }];
+  }
+  const refs = from.args.flatMap((a) => refsOf(args[a]));
+  if (d.target === 'project_arg') {
+    if (refs.length === 0) return from.missing === 'caller' && lookup.callerProject ? [{ kind: 'project', projectPath: lookup.callerProject }] : null;
+    const out: GrantCallTarget[] = [];
+    for (const ref of refs) {
+      const p = await lookup.project(ref);
+      if (p) out.push({ kind: 'project', projectPath: p.path });
+    }
+    return out;
+  }
+  // agent_arg
+  if (refs.length === 0) {
+    if (from.missing !== 'caller') return null;
+    return [{ kind: 'agent', relations: ['self'], ...(lookup.callerProject && { projectPath: lookup.callerProject }), isDispatcher: isTrackedDispatcher(lookup.callerId) }];
+  }
+  // Each reference on its own: one that matches nothing is left to the tool; one that matches
+  // several agents (a shared name) is checked against every one of them.
   const out: GrantCallTarget[] = [];
   for (const ref of refs) {
-    const found = await lookup.agent(ref, inProject);
-    if (!found) return null;
-    out.push(await agentTarget(lookup, found.config, found.projectPath));
+    for (const found of await lookup.candidates(ref, inProject, from.names ?? 'project')) {
+      out.push(await agentTarget(lookup, found.config, found.projectPath));
+    }
   }
   return out;
 }
