@@ -138,7 +138,8 @@
         "agentId",
         "sessionId",
         "requestId",
-        "optionId"
+        "optionId",
+        "reviewedDigest"
       ],
       "required": [
         "agentId",
