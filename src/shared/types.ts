@@ -123,6 +123,8 @@ export interface Agent {
   /** Execution mode: 'pty' (terminal) or 'headless' (feed) */
   executionMode?: AgentExecutionMode;
   freeAgentMode?: boolean;
+  /** Access (#2761); `freeAgentMode` is the legacy field derived from it. */
+  access?: import('./agent-access').AccessLevel;
   /** MCP IDs active for this agent via launch wrapper */
   mcpIds?: string[];
   /** Set when the agent is resuming a previous CLI session (spinner overlay) */
@@ -139,6 +141,8 @@ export interface Agent {
   runBaseSha?: string;
   /** Quick agents started from a template (D25): its id, so Retry keeps it. */
   managedTemplateId?: string;
+  /** What this launch added to or left out of its template (#2928), for Details and Retry. */
+  managedQuickChanges?: QuickRunChanges;
 }
 
 export interface CompletedQuickAgent {
@@ -170,6 +174,8 @@ export interface CompletedQuickAgent {
   /** Epoch ms the run was spawned. */
   startedAt?: number;
   freeAgentMode?: boolean;
+  /** The level the run started at (#2761), for Retry. */
+  access?: import('./agent-access').AccessLevel;
   /** Headless runs: number of tool calls in the transcript. */
   toolCalls?: number;
   /** Headless runs: input tokens, including cache reads and writes. */
@@ -178,6 +184,8 @@ export interface CompletedQuickAgent {
   outputTokens?: number;
   /** The template the run started from (D25), for Retry. */
   managedTemplateId?: string;
+  /** What the run added to or left out of its template (#2928), for Retry. */
+  managedQuickChanges?: QuickRunChanges;
 }
 
 // --- Config inheritance types ---
@@ -213,6 +221,8 @@ export interface QuickAgentDefaults {
   allowedTools?: string[];
   defaultModel?: string;
   freeAgentMode?: boolean;
+  /** Access (#2761); `freeAgentMode` is the legacy field derived from it. */
+  access?: import('./agent-access').AccessLevel;
 }
 
 export type SourceControlProvider = 'github' | 'azure-devops';
@@ -292,6 +302,8 @@ export interface DurableAgentConfig {
   quickAgentDefaults?: QuickAgentDefaults;
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;
+  /** Access (#2761): the level its CLI starts at. `freeAgentMode` is still written beside it, derived, for older phones and a rollback. */
+  access?: import('./agent-access').AccessLevel;
   /** Clubhouse Mode turned off for this agent. Clubhouse Mode was retired (#2901); read only by the switch to managed. */
   clubhouseModeOverride?: boolean;
   /** Last CLI session ID, used to resume previous session on wake */
@@ -658,6 +670,8 @@ export interface StartDurableCreationParams extends DurableWorktreeOptions {
   useWorktree?: boolean;
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;
+  /** Access (#2761); `freeAgentMode` is the legacy field derived from it. */
+  access?: import('./agent-access').AccessLevel;
   mcpIds?: string[];
   mcpConfigs?: Record<string, Record<string, string>>;
   /** Helpers (#2224): make the new agent a helper of this durable agent. */
@@ -737,6 +751,8 @@ export interface DurableConfigUpdates {
   /** A provider's choice for this model; null clears it. Refused when the model doesn't offer it. */
   contextWindow?: string | null;
   freeAgentMode?: boolean;
+  /** Access (#2761). Also sets the legacy `freeAgentMode`. A `freeAgentMode` alone maps to the nearest level. */
+  access?: import('./agent-access').AccessLevel;
   lastSessionId?: string | null;
   lastSleep?: AgentSleepInfo | null;
   mcpIds?: string[] | null;
@@ -947,7 +963,7 @@ export interface SoundSettings {
   }>;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher'
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher' | 'actions'
   // Clubhouse-managed agents (#2819).
   | 'managed-blocks' | 'managed-skills' | 'managed-mcp' | 'managed-templates' | 'managed-orchestration' | 'managed-switch';
 
@@ -1502,9 +1518,14 @@ export interface McpServerEntry {
 }
 
 export interface SkillEntry {
+  /** The folder's name. */
   name: string;
   path: string;
   hasReadme: boolean;
+  /** The `name` in SKILL.md's front matter, when it has one: what a provider reports (#2929). */
+  skillName?: string;
+  /** Clubhouse delivered this folder for a managed agent (its skills manifest names it). */
+  managed?: boolean;
 }
 
 export interface AgentTemplateEntry {
@@ -1538,6 +1559,8 @@ export interface SpawnAgentParams {
   allowedTools?: string[];
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;
+  /** The level to start at (#2761); wins over `freeAgentMode` and `permissionMode`. */
+  access?: import('./agent-access').AccessLevel;
   /** When true, attempt to resume the previous CLI session instead of starting fresh */
   resume?: boolean;
   /** Specific session ID to resume (provider-specific format) */
@@ -1548,8 +1571,28 @@ export interface SpawnAgentParams {
   agentFile?: string;
   /** Source directory for agent file (e.g. --source ~/.copilot/agents/) */
   agentSource?: string;
-  /** Clubhouse-managed quick agents (#2893): start from this template. */
-  managedTemplate?: { id: string; agentName: string };
+  /** Clubhouse-managed quick agents (#2893): start from this template, with this launch's part changes (#2928). */
+  managedTemplate?: QuickTemplateChoice;
+}
+
+/** At most this many parts added, and this many removed, for one quick launch (#2928). */
+export const MAX_QUICK_RUN_CHANGES = 50;
+
+/**
+ * A quick agent's template (#2893, D25), and what this one launch adds to it or
+ * leaves out (#2928, D102). Part ids; the template itself never changes.
+ */
+export interface QuickTemplateChoice {
+  id: string;
+  agentName: string;
+  addParts?: string[];
+  removeParts?: string[];
+}
+
+/** What one quick launch changed from its template (#2928): part ids, for Details and Retry. */
+export interface QuickRunChanges {
+  added: string[];
+  removed: string[];
 }
 
 export type AgentDetailedState = 'idle' | 'working' | 'needs_permission' | 'tool_error';
@@ -1684,6 +1727,8 @@ export interface RestartSessionEntry {
   permissionMode?: FreeAgentPermissionMode;
   /** Whether the agent was running in free-agent (dangerously skip permissions) mode */
   freeAgentMode?: boolean;
+  /** Access (#2761); `freeAgentMode` is the legacy field derived from it. */
+  access?: import('./agent-access').AccessLevel;
 }
 
 export interface RestartSessionState {

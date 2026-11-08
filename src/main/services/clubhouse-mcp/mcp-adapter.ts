@@ -9,6 +9,7 @@
  */
 
 import { registerToolTemplate, type ToolGroups } from './tool-registry';
+import type { ToolGrant } from './tool-grants';
 import { commandRegistry } from '../../../shared/command-registry';
 import type { CommandDefinition, CommandResult, Disposable, ExecutionContext } from '../../../shared/command-registry';
 import type { McpToolResult, BindingTargetKind } from './types';
@@ -38,6 +39,8 @@ export interface McpCommandDefinition {
     targetKind: BindingTargetKind;
     /** Tool name suffix (e.g. "send_message", "get_status") */
     nameSuffix: string;
+    /** The grant actions a call needs and where its target comes from (#2967). Required. */
+    grant: ToolGrant;
     /** Gate the tool behind a tool group, or several. */
     group?: ToolGroups;
   };
@@ -87,7 +90,7 @@ class McpCommandAdapter {
         inputSchema: def.inputSchema as McpToolDefinitionSchema,
       },
       def.handler,
-      def.mcp.group ? { group: def.mcp.group } : {},
+      { grant: def.mcp.grant, ...(def.mcp.group && { group: def.mcp.group }) },
     );
 
     // Register in CommandRegistry for discoverability

@@ -63,7 +63,7 @@ export function registerDispatcherControlTools(): void {
       },
     },
     guarded('set_orchestrator_helpers', setOrchestratorHelpers),
-    options,
+    { ...options, grant: { actions: ['agent.grant'], target: 'agent_arg' } },
   );
 
   registerGlobalTool(
@@ -75,7 +75,7 @@ export function registerDispatcherControlTools(): void {
       inputSchema: { type: 'object', properties: LINK_PROPERTIES, required: ['from', 'to'] },
     },
     guarded('connect_orchestrators', connectOrchestrators),
-    options,
+    { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg' } },
   );
 
   registerGlobalTool(
@@ -86,7 +86,7 @@ export function registerDispatcherControlTools(): void {
       inputSchema: { type: 'object', properties: LINK_PROPERTIES, required: ['from', 'to'] },
     },
     guarded('disconnect_orchestrators', disconnectOrchestrators),
-    options,
+    { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg' } },
   );
 
   registerGlobalTool(
@@ -106,6 +106,6 @@ export function registerDispatcherControlTools(): void {
       },
     },
     guarded('list_orchestrator_controls', listOrchestratorControls),
-    options,
+    { ...options, grant: { actions: ['agent.read'], target: 'connected' } },
   );
 }

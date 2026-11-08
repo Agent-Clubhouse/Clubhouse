@@ -52,6 +52,29 @@ let cachedCert: TlsCertificateInfo | null = null;
 // ---------------------------------------------------------------------------
 
 /**
+ * A random 16-byte certificate serial as hex. The first byte is 0x01 to 0x7f,
+ * so the DER INTEGER is positive and minimally encoded. A leading 0x00 makes
+ * OpenSSL refuse the certificate ("illegal padding"), and X.509 forbids
+ * negative serials.
+ */
+export function randomCertificateSerial(): string {
+  const bytes = forge.random.getBytesSync(16);
+  const first = (bytes.charCodeAt(0) & 0x7f) || 0x01;
+  return forge.util.bytesToHex(String.fromCharCode(first) + bytes.slice(1));
+}
+
+/** True when the TLS layer accepts this certificate and key together. */
+function usableCert(cert: TlsCertificateInfo): boolean {
+  try {
+    tls.createSecureContext({ cert: cert.certPem, key: cert.keyPem });
+    return true;
+  } catch {
+    // telemetry-exempt: the caller logs the replacement of an unusable certificate
+    return false;
+  }
+}
+
+/**
  * Generate a self-signed X.509 certificate using RSA-2048.
  * The CN is set to the Ed25519 fingerprint for identity binding.
  */
@@ -60,7 +83,7 @@ function generateSelfSignedCert(fingerprint: string): TlsCertificateInfo {
 
   const cert = forge.pki.createCertificate();
   cert.publicKey = keys.publicKey;
-  cert.serialNumber = forge.util.bytesToHex(forge.random.getBytesSync(16));
+  cert.serialNumber = randomCertificateSerial();
 
   const now = new Date();
   const expires = new Date(now);
@@ -129,10 +152,15 @@ export function getOrCreateCert(identity: AnnexIdentity): TlsCertificateInfo {
     return cachedCert;
   }
 
-  cachedCert = loadCert();
-  if (cachedCert) {
+  const saved = loadCert();
+  if (saved && usableCert(saved)) {
+    cachedCert = saved;
     appLog('core:annex', 'info', 'Loaded existing TLS certificate');
     return cachedCert;
+  }
+  if (saved) {
+    // TLS could never load this one, so no working peer can have pinned it.
+    appLog('core:annex', 'warn', 'Saved TLS certificate is unusable; generating a new one');
   }
 
   cachedCert = generateSelfSignedCert(identity.fingerprint);

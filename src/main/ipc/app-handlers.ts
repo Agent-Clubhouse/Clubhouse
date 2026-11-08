@@ -1,4 +1,5 @@
 import { execSync } from 'child_process';
+import { ACCESS_LEVELS, isAccessLevel } from '../../shared/agent-access';
 import { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { ArchInfo, BadgeSettings, LoggingSettings, NotificationSettings, ThemeId } from '../../shared/types';
@@ -278,14 +279,16 @@ export function registerAppHandlers(): void {
     },
   ));
 
-  ipcMain.handle(IPC.APP.GET_FREE_AGENT_SETTINGS, () => {
-    return freeAgentSettings.getSettings();
+  // Default access for new agents (#2761). The retired free agent permission mode isn't editable any more.
+  ipcMain.handle(IPC.APP.GET_DEFAULT_ACCESS, () => {
+    return freeAgentSettings.getDefaultAccess();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_FREE_AGENT_SETTINGS, withValidatedArgs(
-    [objectArg<freeAgentSettings.FreeAgentSettings>()],
-    async (_event, settings) => {
-      await freeAgentSettings.saveSettings(settings);
+  ipcMain.handle(IPC.APP.SET_DEFAULT_ACCESS, withValidatedArgs(
+    [stringArg()],
+    async (_event, level) => {
+      if (!isAccessLevel(level)) throw new Error(`level must be one of ${ACCESS_LEVELS.join(', ')}`);
+      await freeAgentSettings.setDefaultAccess(level);
       settingsChanged('free_agent');
     },
   ));

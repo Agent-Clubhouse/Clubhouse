@@ -254,7 +254,8 @@ describe('previewManagedSetup', () => {
       { key: 'cli', label: 'CLI', value: 'Claude Code' },
       { key: 'model', label: 'Model', value: 'opus' },
       { key: 'effort', label: 'Effort', value: 'high' },
-      { key: 'freeAgentMode', label: 'Free Agent Mode', value: 'On' },
+      // Saved before #2761, with the old mode at its default (skip-all).
+      { key: 'access', label: 'Access', value: 'Full access' },
       { key: 'orchestration', label: 'Orchestration', value: 'Can start helpers' },
       { key: 'helpers', label: 'Helpers', value: 'Up to 3 at once, Smart selection, no approvals' },
       { key: 'helperTemplate', label: 'Helper template', value: 'Helper' },
@@ -359,6 +360,63 @@ describe('quickManagedLaunch (D25)', () => {
 
   it('refuses a template that doesn\'t exist', async () => {
     await expect(user(() => quickManagedLaunch({ service, projectPath: project, cwd: project, agentId: 'q', agentName: 'q', templateId: 'nope' }))).rejects.toThrow();
+  });
+  describe('one launch adds or leaves out parts (#2928, D102)', () => {
+    async function setupTemplate() {
+      const extra = await user(() => service.createPart({ name: 'Extra', content: { kind: 'block', content: 'Extra block.' } }));
+      const tone = await user(() => service.createPart({ name: 'Tone', content: { kind: 'block', content: 'Tone block.' } }));
+      const mcp = await user(() => service.createPart({ name: 'WorkIQ', content: { kind: 'mcp', serverKey: 'workiq', transport: 'stdio', command: 'npx' } }));
+      const template = await user(() => service.saveTemplate({
+        name: 'Release', description: '', settings: {},
+        setup: { blocks: [BUILTIN_BLOCK_IDS.identity, tone.id], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID, mcp.id] },
+      }));
+      return { extra, tone, mcp, template };
+    }
+    const launch = (templateId: string, change: { addParts?: string[]; removeParts?: string[] } = {}) => user(() => quickManagedLaunch({
+      service, projectPath: project, cwd: project, agentId: 'q', agentName: 'swift-otter', templateId, branch: 'main', ...change,
+    }));
+
+    it('adds, leaves out and swaps parts for that launch only, and the next launch starts from the template', async () => {
+      const { extra, tone, mcp, template } = await setupTemplate();
+      const savedBefore = await user(() => service.getTemplate(template.id));
+      const changed = await launch(template.id, { addParts: [extra.id], removeParts: [tone.id, mcp.id] });
+      expect(changed.instructions).toContain('Extra block.');
+      expect(changed.instructions).not.toContain('Tone block.');
+      expect(changed.servers).toEqual({});
+      expect(changed.changes).toEqual({ added: [extra.id], removed: [tone.id, mcp.id] });
+      // Nothing saved: the template, the library and the next launch are as before.
+      expect(await user(() => service.getTemplate(template.id))).toEqual(savedBefore);
+      const clean = await launch(template.id);
+      expect(clean.instructions).toContain('Tone block.');
+      expect(clean.instructions).not.toContain('Extra block.');
+      expect(clean.servers).toEqual({ workiq: { command: 'npx' } });
+      expect(clean.changes).toEqual({ added: [], removed: [] });
+    });
+
+    it('either Identity id names the one a quick agent gets, and leaving one out and adding it back is no change', async () => {
+      const { tone, template } = await setupTemplate();
+      const swapped = await launch(template.id, { removeParts: [BUILTIN_BLOCK_IDS.identity, tone.id], addParts: [tone.id] });
+      expect(swapped.instructions).not.toContain('You are swift-otter');
+      expect(swapped.instructions).toContain('Tone block.');
+      expect(swapped.changes).toEqual({ added: [], removed: [BUILTIN_BLOCK_IDS.identityHelper] });
+    });
+
+    it('can\'t grant what a person couldn\'t put in a setup', async () => {
+      const { tone, template } = await setupTemplate();
+      const msg = (p: Promise<unknown>) => p.then(() => 'ok', (e: Error) => e.message);
+      expect(await msg(launch(template.id, { removeParts: [CLUBHOUSE_MCP_PART_ID] }))).toContain('stays in every setup');
+      expect(await msg(launch(template.id, { addParts: ['no-such-part'] }))).toContain('isn\'t in the library');
+      // Leaving out what the template doesn't have (any more) is nothing to do.
+      expect((await launch(template.id, { removeParts: [BUILTIN_BLOCK_IDS.basics] })).changes).toEqual({ added: [], removed: [] });
+      // No skills for a quick agent, and no MCP server for a CLI that takes none at launch.
+      const skill = await user(() => service.createPart({ name: 'Notes', content: { kind: 'skill', skillName: 'notes', files: [{ path: 'SKILL.md', content: '# Notes' }] } }));
+      expect(await msg(launch(template.id, { addParts: [skill.id] }))).toContain('gets no skills');
+      const other = await user(() => service.createPart({ name: 'Other', content: { kind: 'mcp', serverKey: 'other', transport: 'stdio', command: 'npx' } }));
+      expect(await msg(user(() => quickManagedLaunch({ service, projectPath: project, cwd: project, agentId: 'q', agentName: 'q', templateId: template.id, addParts: [other.id], mcpLaunchFlags: false })))).toContain('only from the folder');
+      expect((await launch(template.id, { addParts: [other.id] })).servers).toHaveProperty('other');
+      expect(await msg(launch(template.id, { addParts: Array.from({ length: 51 }, () => tone.id) }))).toContain('at most 50');
+
+    });
   });
 });
 

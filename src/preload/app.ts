@@ -1,4 +1,5 @@
 import type { HelperRoutingReadOptions, HelperRoutingSettings, HelperRoutingUpdate, HelperRoutingUpdateResult } from '../shared/helper-routing';
+import type { AccessLevel } from '../shared/agent-access';
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { CliInstallStatus, NotificationSettings, BadgeSettings, ResolvedProtocolAction, TerminalColors, ThemeColors, ThemeGradients } from '../shared/types';
@@ -83,10 +84,11 @@ export const app = {
     ipcRenderer.invoke(IPC.APP.GET_HEADLESS_SETTINGS),
   saveHeadlessSettings: (settings: { enabled?: boolean; defaultMode?: string; projectOverrides?: Record<string, string> }) =>
     ipcRenderer.invoke(IPC.APP.SAVE_HEADLESS_SETTINGS, settings),
-  getFreeAgentSettings: () =>
-    ipcRenderer.invoke(IPC.APP.GET_FREE_AGENT_SETTINGS),
-  saveFreeAgentSettings: (settings: { defaultMode: string; projectOverrides?: Record<string, string> }) =>
-    ipcRenderer.invoke(IPC.APP.SAVE_FREE_AGENT_SETTINGS, settings),
+  /** Default access for new agents (#2761). */
+  getDefaultAccess: (): Promise<AccessLevel> =>
+    ipcRenderer.invoke(IPC.APP.GET_DEFAULT_ACCESS),
+  setDefaultAccess: (level: AccessLevel): Promise<void> =>
+    ipcRenderer.invoke(IPC.APP.SET_DEFAULT_ACCESS, level),
   /** App-wide orchestration settings (#2228): the global helper cap. */
   getOrchestrationSettings: (): Promise<{ globalHelperCap: number }> =>
     ipcRenderer.invoke(IPC.APP.GET_ORCHESTRATION_SETTINGS),

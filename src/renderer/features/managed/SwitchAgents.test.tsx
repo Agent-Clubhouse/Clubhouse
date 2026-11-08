@@ -79,7 +79,7 @@ describe('Help without Clubhouse Mode and personas (#2901)', () => {
   it('tells a plain agent what it still sets, and that Orchestrator agents keep orchestrating when switched', () => {
     const topics = CHROME_HELP_SECTIONS.flatMap((s) => s.topics);
     const durable = topics.find((t) => t.id === 'agents-durable')!.content;
-    expect(durable).toContain('set its **Runs on** and **Model**, and optionally its **MCP servers** and **Free Agent Mode**');
+    expect(durable).toContain('set its **Runs on** and **Model**, and optionally its **MCP servers** and **Access**');
     const helpers = topics.find((t) => t.id === 'agents-orchestrated-helpers')!.content;
     expect(helpers).not.toContain('persona start with the switch on');
     expect(helpers).toContain('keeps the switch on when it switches to managed');

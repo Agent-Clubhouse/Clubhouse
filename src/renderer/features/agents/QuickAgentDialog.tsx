@@ -5,6 +5,9 @@ import { useUIStore } from '../../stores/uiStore';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { Modal } from '../../components/Modal';
+import type { AccessLevel } from '../../../shared/agent-access';
+import { AccessSelect, accessHelp } from './AccessSelect';
+import { useQuickAgentAccess } from './useQuickAgentAccess';
 
 export function QuickAgentDialog() {
   const isOpen = useUIStore((s) => s.quickAgentDialogOpen);
@@ -25,9 +28,12 @@ export function QuickAgentDialog() {
   const [orchestrator, setOrchestrator] = useState('');
   const [model, setModel] = useState('default');
   const [customModel, setCustomModel] = useState('');
-  const [freeAgentMode, setFreeAgentMode] = useState(false);
+  // Access (#2761): the parent's quick agent defaults, else the app's Default access, until the person picks one.
+  const [pickedAccess, setPickedAccess] = useState<AccessLevel | null>(null);
   const [mission, setMission] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const quickAccessProjectPath = projects.find((p) => p.id === selectedProjectId)?.path;
+  const { start: startAccess, defaultAccess } = useQuickAgentAccess(quickAccessProjectPath, parentAgentId || undefined);
 
   const { options: MODEL_OPTIONS } = useModelOptions(orchestrator || undefined);
 
@@ -40,7 +46,7 @@ export function QuickAgentDialog() {
       setOrchestrator(enabledOrchestrators[0]?.id || '');
       setModel('default');
       setCustomModel('');
-      setFreeAgentMode(false);
+      setPickedAccess(null);
       setMission('');
       // Focus the text input after a tick
       setTimeout(() => inputRef.current?.focus(), 50);
@@ -64,6 +70,8 @@ export function QuickAgentDialog() {
     : orchestrator || enabledOrchestrators[0]?.id;
   const resolvedOrch = allOrchestrators.find((o) => o.id === resolvedOrchId);
   const supportsPermissions = resolvedOrch?.capabilities?.permissions ?? false;
+  // A CLI without permission support starts at Ask first.
+  const access: AccessLevel = supportsPermissions ? pickedAccess ?? startAccess : 'ask';
 
   const resolvedModel = model === 'custom' ? customModel.trim() : model;
 
@@ -72,7 +80,6 @@ export function QuickAgentDialog() {
     if (model === 'custom' && !customModel.trim()) return;
     const parentId = parentAgentId || undefined;
     const selectedOrchestrator = (!parentId && orchestrator) ? orchestrator : undefined;
-    const freeMode = freeAgentMode || undefined;
     closeDialog();
 
     // Navigate to the project's agent view
@@ -87,7 +94,12 @@ export function QuickAgentDialog() {
         resolvedModel,
         parentId,
         selectedOrchestrator,
-        freeMode,
+        // Only a level the person picked; otherwise spawnQuickAgent resolves it from the
+        // parent's quick agent defaults, then the Default access.
+        supportsPermissions ? pickedAccess ?? undefined : 'ask',
+        undefined,
+        undefined,
+        { fallbackAccess: defaultAccess },
       );
     } catch (err) {
       console.error('Failed to spawn quick agent:', err);
@@ -179,23 +191,22 @@ export function QuickAgentDialog() {
           )}
         </div>
 
-        {/* Free Agent Mode */}
-        <label
-          className={`flex items-center gap-2 mb-4 ${supportsPermissions ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
-          title={supportsPermissions ? 'Autonomous permissions (auto mode by default)' : 'Not supported by this CLI'}
-        >
-          <input
-            type="checkbox"
-            checked={freeAgentMode}
-            onChange={(e) => setFreeAgentMode(e.target.checked)}
+        {/* Access */}
+        <div className="block mb-4">
+          <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Access</span>
+          <AccessSelect
+            value={access}
+            onChange={setPickedAccess}
+            providerId={resolvedOrchId}
             disabled={!supportsPermissions}
-            className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-red-500"
+            data-testid="quick-agent-access"
+            className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
+              text-ctp-text focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
           />
-          <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Free Agent Mode</span>
-          <span className="text-xs text-ctp-subtext0/70 ml-1">
-            {supportsPermissions ? '(autonomous permissions)' : '(not supported)'}
+          <span className="text-xs text-ctp-overlay0 mt-0.5 block">
+            {supportsPermissions ? accessHelp(access) : 'Not supported by this CLI.'}
           </span>
-        </label>
+        </div>
 
         {/* Prompt */}
         <label className="block mb-4">

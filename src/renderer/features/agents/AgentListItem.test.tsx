@@ -59,9 +59,12 @@ describe('AgentListItem activity animation', () => {
     vi.clearAllMocks();
   });
 
-  it('describes Free Agent Mode without guessing the permission level', () => {
-    renderItem({ freeAgentMode: true });
-    expect(screen.getByTitle('Free Agent Mode — permissions follow the configured mode')).toBeInTheDocument();
+  it('puts no access marker on the item, even at Full access', () => {
+    const { container } = renderItem({ access: 'full_access', freeAgentMode: true });
+    expect(screen.queryByTitle(/free agent/i)).toBeNull();
+    expect(screen.queryByText('Free')).toBeNull();
+    expect(screen.queryByText('!')).toBeNull();
+    expect(container.querySelector('.bg-ctp-error')).toBeNull();
   });
 
   it('does not apply animation classes when agent is sleeping', () => {

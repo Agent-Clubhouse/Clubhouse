@@ -21,7 +21,7 @@
  */
 import manifestJson from './builtin-text/manifest.json';
 import { BUILTIN_SKILL_TEXT, BUILTIN_TEXT } from './builtin-text/index';
-import { CLUBHOUSE_MCP_PART_ID, type ManagedTemplate, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
+import { CLUBHOUSE_MCP_PART_ID, IDENTITY_BLOCK_ID, WORKING_IDENTITY_BLOCK_ID, workingIdentityBlocks, type ManagedTemplate, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
 import type { BlockAssetPayload, McpAssetPayload, SkillAssetPayload } from '../../../shared/asset-catalog-types';
 
 export interface BuiltinPart {
@@ -53,8 +53,8 @@ export const BUILTIN_MANIFEST = manifestJson as BuiltinManifest;
  * them. The manifest is the full list; a test checks each of these is in it.
  */
 export const BUILTIN_BLOCK_IDS = {
-  identity: 'builtin-block-identity',
-  identityHelper: 'builtin-block-identity-helper',
+  identity: IDENTITY_BLOCK_ID,
+  identityHelper: WORKING_IDENTITY_BLOCK_ID,
   basics: 'builtin-block-clubhouse-basics',
   orchestrator: 'builtin-block-orchestrator',
   productOwner: 'builtin-block-product-owner',
@@ -93,8 +93,7 @@ export const BUILTIN_SKILL_IDS = {
 export function withWorkingIdentity<T extends { blocks: string[] }>(setup: T): T {
   if (!setup.blocks.includes(BUILTIN_BLOCK_IDS.identity)) return setup;
   // Never both: a setup that lists both gets the working one once, where it came first.
-  const blocks = setup.blocks.map((id) => (id === BUILTIN_BLOCK_IDS.identity ? BUILTIN_BLOCK_IDS.identityHelper : id));
-  return { ...setup, blocks: blocks.filter((id, i) => id !== BUILTIN_BLOCK_IDS.identityHelper || blocks.indexOf(id) === i) };
+  return { ...setup, blocks: workingIdentityBlocks(setup.blocks) };
 }
 
 /** LF, whatever the checkout did: .gitattributes keeps builtin-text LF, and this is the backstop. */

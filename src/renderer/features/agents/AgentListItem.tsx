@@ -150,15 +150,6 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
         {/* Avatar with status ring */}
         <div className={`relative flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>
           <AgentAvatar agent={agent} size="md" showRing ringColor={ringColor} iconUrl={iconDataUrl} />
-          {/* Free Agent Mode badge */}
-          {agent.freeAgentMode && (
-            <div
-              className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-ctp-error flex items-center justify-center ring-2 ring-ctp-base z-20"
-              title="Free Agent Mode — permissions follow the configured mode"
-            >
-              <span className="text-[9px] font-bold text-white leading-none">!</span>
-            </div>
-          )}
         </div>
 
         {/* Info */}
@@ -192,12 +183,6 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
                 </span>
               );
             })()}
-            {agent.freeAgentMode && (
-              <span className="text-xs px-1.5 py-0.5 rounded truncate min-w-0"
-                style={{ backgroundColor: 'rgb(var(--ctp-error) / 0.15)', color: 'rgb(var(--ctp-error))' }}>
-                Free
-              </span>
-            )}
             {agent.mcpIds && agent.mcpIds.length > 0 && (
               <span className="text-xs px-1.5 py-0.5 rounded truncate min-w-0"
                 style={{ backgroundColor: 'rgb(var(--ctp-accent2) / 0.15)', color: 'rgb(var(--ctp-accent2))' }}

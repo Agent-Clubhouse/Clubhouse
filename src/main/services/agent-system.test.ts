@@ -330,6 +330,7 @@ import {
   getRunningAgentIds,
   expandHome,
   listSessions,
+  spawnAccess,
 } from './agent-system';
 import * as os from 'os';
 import { broadcastAgentExit } from './agent-exit-broadcast';
@@ -649,6 +650,28 @@ describe('agent-system', () => {
       expect(mockProvider.getDefaultPermissions).toHaveBeenCalledWith('quick');
     });
 
+    it('pre-allows only reading tools for a quick agent below Auto-accept edits (#3007)', async () => {
+      const toolsFor = async (extra: Record<string, unknown>) => {
+        await spawnAgent({ agentId: 'agent-q', projectPath: '/project', cwd: '/project', kind: 'quick', ...extra });
+        const opts = mockProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { allowedTools?: string[] };
+        untrackAgent('agent-q');
+        return opts.allowedTools;
+      };
+      expect(await toolsFor({})).toEqual(['Read']);
+      expect(await toolsFor({ access: 'auto_edit' })).toEqual(['Read', 'Write']);
+      expect(await toolsFor({ access: 'full_access' })).toEqual(['Read', 'Write']);
+      // Tools passed explicitly stay as given.
+      expect(await toolsFor({ allowedTools: ['Bash(make:*)'] })).toEqual(['Bash(make:*)']);
+      // Copilot runs a terminal quick agent one-shot and can't ask: it keeps its defaults.
+      const provider = mockProvider as { id: string };
+      provider.id = 'copilot-cli';
+      try {
+        expect(await toolsFor({})).toEqual(['Read', 'Write']);
+      } finally {
+        provider.id = 'claude-code';
+      }
+    });
+
     describe('a saved effort (#2671)', () => {
       afterEach(() => {
         mockGetDurableConfig.mockReset();
@@ -693,6 +716,11 @@ describe('agent-system', () => {
     it.each([['durable', true], ['quick', false]] as const)('asks the provider for an interactive session only for %s agents', async (kind, interactive) => {
       await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind, mission: 'Go' });
       expect(mockProvider.buildSpawnCommand).toHaveBeenCalledWith(expect.objectContaining({ mission: 'Go', interactive }));
+    });
+
+    it('asks for an interactive session for a quick agent someone follows (#3002)', async () => {
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'quick', mission: 'Go', interactive: true });
+      expect(mockProvider.buildSpawnCommand).toHaveBeenCalledWith(expect.objectContaining({ mission: 'Go', interactive: true }));
     });
 
     it('throws with descriptive error when pre-flight check fails', async () => {
@@ -868,6 +896,20 @@ describe('agent-system', () => {
       expect(isHeadlessAgent('test-headless')).toBe(false);
 
       delete (mockProvider as any).buildHeadlessCommand;
+    });
+
+    it.each([
+      [undefined, 'auto'],
+      ['ask', 'auto'],
+      ['full_access', 'skip-all'],
+    ] as const)('a headless quick agent at %s runs with mode %s, never skipping prompts below Full access (#2761)', async (access, mode) => {
+      mockGetSpawnMode.mockReturnValue('headless');
+      mockGetPermissionMode.mockReturnValue('skip-all');
+      mockProvider.buildHeadlessCommand = vi.fn(() => Promise.resolve(null)) as never;
+      await spawnAgent({ agentId: 'hq', projectPath: '/project', cwd: '/project', kind: 'quick', mission: 'm', ...(access && { access }) }).catch(() => {});
+      expect(mockProvider.buildHeadlessCommand).toHaveBeenCalledWith(expect.objectContaining({ permissionMode: mode }));
+      delete (mockProvider as any).buildHeadlessCommand;
+      untrackAgent('hq');
     });
 
     it('propagates the original error after cleanup on spawn failure', async () => {
@@ -2633,7 +2675,8 @@ describe('agent-system', () => {
 
       expect(mockProvider.buildHeadlessCommand).toHaveBeenCalledWith(
         expect.objectContaining({
-          allowedTools: ['Read', 'Write'],
+          // The defaults follow the level (#3007): Ask first pre-allows only reading tools.
+          allowedTools: ['Read'],
         }),
       );
     });
@@ -3356,6 +3399,28 @@ describe('listSessions: saved ids the CLI store lacks (#2156)', () => {
   });
 });
 
+describe('spawnAccess (#2761)', () => {
+  it('an explicit level wins', () => {
+    expect(spawnAccess({ access: 'auto_edit', freeAgentMode: true }, { access: 'plan' }, 'skip-all')).toBe('auto_edit');
+  });
+  it('a durable agent starts at its saved level, migrating one saved before #2761', () => {
+    expect(spawnAccess({}, { access: 'plan' }, 'skip-all')).toBe('plan');
+    expect(spawnAccess({}, { freeAgentMode: true }, 'auto')).toBe('auto');
+    expect(spawnAccess({}, { freeAgentMode: true }, 'skip-all')).toBe('full_access');
+  });
+  it('a legacy on/off that agrees with the saved level keeps it', () => {
+    expect(spawnAccess({ freeAgentMode: false }, { access: 'auto_edit' }, 'skip-all')).toBe('auto_edit');
+    expect(spawnAccess({ freeAgentMode: true }, { access: 'auto', freeAgentMode: true }, 'skip-all')).toBe('auto');
+  });
+  it('a restart entry\'s mode wins for an on level', () => {
+    expect(spawnAccess({ freeAgentMode: true, permissionMode: 'skip-all' }, { access: 'auto', freeAgentMode: true }, 'auto')).toBe('full_access');
+  });
+  it('a quick agent starts at Ask first unless asked otherwise', () => {
+    expect(spawnAccess({}, undefined, 'skip-all')).toBe('ask');
+    expect(spawnAccess({ freeAgentMode: true }, undefined, 'auto')).toBe('auto');
+  });
+});
+
 describe('helper launch ceiling on the normal spawn path', () => {
   const getAgentLaunchAccess = (id: string) => agentRegistry.get(id)?.launchAccess;
   const projectPath = path.join(path.sep, 'project');
@@ -3389,6 +3454,32 @@ describe('helper launch ceiling on the normal spawn path', () => {
     expect(mockResolveHelperLaunchSettings).toHaveBeenCalledWith(projectPath, 'orch-1', { helperProvider: 'claude-code' });
     expect(lastBuild()).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
     expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+  });
+
+  it('a helper saved at Auto-accept edits starts at Ask first under a standard ceiling (#2761)', async () => {
+    orchestratorLive = undefined;
+    mockGetDurableConfig.mockImplementation((async () => helper({ freeAgentMode: undefined, access: 'auto_edit' })) as never);
+    await wake();
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, access: 'ask' });
+  });
+
+  it('a durable agent starts at its saved level, with the legacy pair derived and the mode at auto (#2761)', async () => {
+    mockGetDurableConfig.mockImplementation((async () => ({ id: 'helper-1', name: 'plain', access: 'plan' })) as never);
+    await wake({ freeAgentMode: false });
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'auto', access: 'plan' });
+  });
+
+  it('an agent saved before #2761 starts exactly as before, with the old mode below Free Agent Mode', async () => {
+    mockGetDurableConfig.mockImplementation((async () => ({ id: 'helper-1', name: 'old' })) as never);
+    await wake();
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'skip-all', access: 'ask' });
+  });
+
+  it('a helper saved at Plan stays at Plan when its ceiling lowers the legacy pair', async () => {
+    orchestratorLive = undefined;
+    mockGetDurableConfig.mockImplementation((async () => helper({ freeAgentMode: undefined, access: 'plan' })) as never);
+    await wake();
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, access: 'plan' });
   });
 
   it('a helper whose orchestrator is in another project gets the orchestrator\'s ceiling from there', async () => {

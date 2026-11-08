@@ -276,7 +276,8 @@ describe('Agent details for a sleeping agent (#2281)', () => {
   it('makes the spawn settings editable, with no lock hint and the next-wake note', async () => {
     render(<AgentDetails agent={sleeping} />);
     await waitFor(() => expect(settings().getByRole('combobox', { name: 'Model' })).toBeInTheDocument());
-    expect(settings().getByRole('switch', { name: 'Free agent mode' })).toBeInTheDocument();
+    expect(settings().getByRole('combobox', { name: 'Access' })).toBeInTheDocument();
+    expect(settings().queryByRole('switch', { name: /free agent/i })).not.toBeInTheDocument();
     // Clubhouse Mode was retired (#2901): nothing offers it.
     expect(settings().queryByRole('switch', { name: 'Clubhouse mode for this agent' })).not.toBeInTheDocument();
     await waitFor(() => expect(settings().getByRole('combobox', { name: 'Runs in' })).toBeInTheDocument());
@@ -293,14 +294,15 @@ describe('Agent details for a sleeping agent (#2281)', () => {
     await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1', { model: 'opus' }));
     await waitFor(() => expect(useAgentStore.getState().agents.a1.model).toBe('opus'));
 
-    fireEvent.click(settings().getByRole('switch', { name: 'Free agent mode' }));
-    await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1', { freeAgentMode: true }));
-    await waitFor(() => expect(settings().getByTestId('details-setting-access')).toHaveTextContent('Free agent'));
+    fireEvent.change(settings().getByRole('combobox', { name: 'Access' }), { target: { value: 'full_access' } });
+    await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1', { access: 'full_access' }));
+    await waitFor(() => expect((settings().getByRole('combobox', { name: 'Access' }) as HTMLSelectElement).value).toBe('full_access'));
+    await waitFor(() => expect(useAgentStore.getState().agents.a1).toMatchObject({ access: 'full_access', freeAgentMode: true }));
 
     const runsIn = await settings().findByRole('combobox', { name: 'Runs in' });
     fireEvent.change(runsIn, { target: { value: 'terminal' } });
     await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1', { runtimeMode: 'terminal' }));
-    expect(saved).toMatchObject({ model: 'opus', freeAgentMode: true, runtimeMode: 'terminal' });
+    expect(saved).toMatchObject({ model: 'opus', access: 'full_access', runtimeMode: 'terminal' });
     // Waking into the terminal: no idle sleep, so the Auto-sleep row goes.
     await waitFor(() => expect(settings().queryByTestId('details-setting-auto-sleep')).not.toBeInTheDocument());
   });
@@ -308,11 +310,11 @@ describe('Agent details for a sleeping agent (#2281)', () => {
   it('rolls a failed save back and says so on that row', async () => {
     window.clubhouse.agent.updateDurableConfig = vi.fn(async () => { throw new Error('disk full'); }) as never;
     render(<AgentDetails agent={sleeping} />);
-    const toggle = await settings().findByRole('switch', { name: 'Free agent mode' });
-    fireEvent.click(toggle);
+    const select = await settings().findByRole('combobox', { name: 'Access' }) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'auto' } });
     await waitFor(() => expect(settings().getByTestId('details-setting-access-error')).toHaveTextContent('Couldn’t save'));
-    expect(toggle).toHaveAttribute('aria-checked', 'false');
-    expect(settings().getByTestId('details-setting-access')).toHaveTextContent('Ask before edits');
+    expect(select.value).toBe('ask');
+    expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent('Ask first');
   });
 
   it('keeps an edit across a wake: saved for the spawn, then locked and shown while it runs', async () => {
@@ -447,11 +449,11 @@ describe('Agent details for a sleeping agent (#2281)', () => {
     const b2: Agent = { ...sleeping, id: 'b2', name: 'other' };
     useAgentStore.setState({ agents: { a1: sleeping, b2 } } as never);
     const { rerender } = render(<AgentDetails agent={sleeping} />);
-    fireEvent.click(await settings().findByRole('switch', { name: 'Free agent mode' }));
+    fireEvent.change(await settings().findByRole('combobox', { name: 'Access' }), { target: { value: 'auto' } });
     rerender(<AgentDetails agent={b2} />);
-    const toggleB = await settings().findByRole('switch', { name: 'Free agent mode' });
+    const toggleB = await settings().findByRole('combobox', { name: 'Access' });
     await waitFor(() => expect(toggleB).not.toBeDisabled());
-    fireEvent.click(toggleB);
+    fireEvent.change(toggleB, { target: { value: 'auto' } });
     expect(toggleB).toBeDisabled();
     finishA();
     await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledTimes(2));

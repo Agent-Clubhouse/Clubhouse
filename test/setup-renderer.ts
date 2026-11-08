@@ -318,8 +318,8 @@ vi.stubGlobal('clubhouse', {
     uninstallCli: async () => ({ supported: false, installed: false }),
     getHeadlessSettings: async () => ({ enabled: true }),
     saveHeadlessSettings: asyncNoop,
-    getFreeAgentSettings: async () => ({ defaultMode: 'auto' }),
-    saveFreeAgentSettings: asyncNoop,
+    getDefaultAccess: async () => 'ask',
+    setDefaultAccess: asyncNoop,
     setDockBadge: asyncNoop,
     getBadgeSettings: async () => ({ showBadge: true }),
     saveBadgeSettings: asyncNoop,
@@ -546,6 +546,17 @@ vi.stubGlobal('clubhouse', {
     get: async () => DISPATCHER_OFF,
     setEnabled: async () => DISPATCHER_OFF,
     onChanged: () => noop,
+  },
+  actions: {
+    list: async () => [],
+    create: async () => { throw new Error('not mocked'); },
+    update: async () => { throw new Error('not mocked'); },
+    setEnabled: async () => { throw new Error('not mocked'); },
+    delete: async () => undefined,
+    runNow: async () => ({ runId: 'run_1' }),
+    history: async () => [],
+    onChanged: () => noop,
+    onNotice: () => noop,
   },
   feedback: {
     getStatus: async () => ({
