@@ -43,7 +43,7 @@ interface AnnexStoreState {
   /** Removes a device and ends its connections at once, whichever way it's paired. */
   removeDevice: (fingerprint: string) => Promise<void>;
   /** Renames a network member everywhere (#3067). */
-  renameDevice: (fingerprint: string, name: string) => Promise<void>;
+  renameDevice: (fingerprint: string, name: string) => Promise<boolean>;
 }
 
 export const useAnnexStore = create<AnnexStoreState>((set) => ({
@@ -108,7 +108,10 @@ export const useAnnexStore = create<AnnexStoreState>((set) => ({
   purgeServerConfig: async () => {
     try {
       await window.clubhouse.annex.purgeServerConfig();
-      set({ settings: DEFAULT_SETTINGS, status: DEFAULT_STATUS, peers: [], devices: [] });
+      set({ status: DEFAULT_STATUS, peers: [], devices: [] });
+      // Main keeps the names through a reset, so show what it saved rather than blank defaults.
+      const settings = await window.clubhouse.annex.getSettings();
+      set({ settings: settings ? { ...DEFAULT_SETTINGS, ...settings } : DEFAULT_SETTINGS });
     } catch {
       // Error handled in main
     }
@@ -135,11 +138,13 @@ export const useAnnexStore = create<AnnexStoreState>((set) => ({
 
   renameDevice: async (fingerprint: string, name: string) => {
     try {
-      await window.clubhouse.annex.renameDevice(fingerprint, name);
+      const ok = await window.clubhouse.annex.renameDevice(fingerprint, name);
+      if (!ok) return false;
       // The fresh list arrives via onDevicesChanged; show the name at once.
       set((state) => ({ devices: state.devices.map((d) => (d.fingerprint === fingerprint ? { ...d, alias: name } : d)) }));
+      return true;
     } catch {
-      // Error handled in main
+      return false;
     }
   },
 

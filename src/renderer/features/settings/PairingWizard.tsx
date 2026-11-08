@@ -125,7 +125,7 @@ export function PairingWizard({ onClose, repairTarget }: PairingWizardProps) {
   }
 
   let title = `Pair with ${selectedService?.alias || 'service'}`;
-  if (step === 'choose') title = repairTarget ? `Pair again with ${repairTarget.alias}` : 'Add a satellite';
+  if (step === 'choose') title = repairTarget ? `Pair again with ${repairTarget.alias}` : 'Pair with another computer';
   if (step === 'result') title = 'Pairing result';
 
   return (
@@ -173,7 +173,7 @@ export function PairingWizard({ onClose, repairTarget }: PairingWizardProps) {
             <div className="text-[13px] text-ctp-text mb-1">Discovered on this network</div>
             {discoveredServices.length === 0 ? (
               <p className="text-xs text-ctp-overlay1 py-2">
-                No services found on the network. Make sure the satellite has Annex turned on.
+                No computers found on the network yet. Check that Annex Network is on there.
               </p>
             ) : (
               <ul className="mb-2">
@@ -236,7 +236,7 @@ export function PairingWizard({ onClose, repairTarget }: PairingWizardProps) {
       {step === 'pin-entry' && (
         <div className="space-y-2">
           <p className="text-xs text-ctp-overlay1">
-            Enter the PIN shown on <span className="text-ctp-text">{selectedService?.alias}</span>.
+            Enter the one-time code shown on <span className="text-ctp-text">{selectedService?.alias}</span>.
           </p>
           <div className="flex gap-2">
             <input
@@ -248,7 +248,7 @@ export function PairingWizard({ onClose, repairTarget }: PairingWizardProps) {
               onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
               onKeyDown={(e) => { if (e.key === 'Enter') handlePair(); }}
               placeholder="000000"
-              aria-label="Pairing PIN"
+              aria-label="One-time code"
               className={`${settingsInput} w-[140px] tracking-widest text-center font-mono`}
             />
             <Button

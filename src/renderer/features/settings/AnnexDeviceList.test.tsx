@@ -9,7 +9,7 @@ const NOW = new Date('2026-11-08T12:00:00Z').getTime();
 const disconnect = vi.fn();
 const retry = vi.fn();
 const removeDevice = vi.fn();
-const renameDevice = vi.fn();
+const renameDevice = vi.fn().mockResolvedValue(true);
 
 function device(overrides: Partial<AnnexDevice>): AnnexDevice {
   return {
@@ -21,6 +21,7 @@ function device(overrides: Partial<AnnexDevice>): AnnexDevice {
 describe('AnnexDeviceList (#3067)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    renameDevice.mockResolvedValue(true);
     vi.spyOn(Date, 'now').mockReturnValue(NOW);
     useAnnexClientStore.setState({ disconnect, retry } as never);
     useAnnexStore.setState({ removeDevice, renameDevice } as never);
@@ -38,22 +39,52 @@ describe('AnnexDeviceList (#3067)', () => {
     expect(rows[0]).toHaveTextContent('Phone');
     expect(rows[0]).toHaveTextContent('Phone in this network');
     expect(screen.getByText('Offline, last seen 5m ago')).toBeInTheDocument();
-    expect(screen.getByText('Paired one-to-one: this computer controls it')).toBeInTheDocument();
-    expect(screen.getByText('Paired one-to-one: it controls this computer')).toBeInTheDocument();
+    expect(screen.getByText('Paired one-to-one, and this computer controls it')).toBeInTheDocument();
+    expect(screen.getByText('Paired one-to-one, and it controls this computer')).toBeInTheDocument();
   });
 
-  it('offers Disconnect for a connected computer, Reconnect for an offline one, and neither for a phone or a controller', () => {
-    render(<AnnexDeviceList devices={[device({ fingerprint: 'on' }), device({ fingerprint: 'off', alias: 'Laptop', state: 'offline' })]} />);
+  it('offers Disconnect for a connected satellite, Reconnect for an offline computer, and no Disconnect for a member', () => {
+    render(<AnnexDeviceList devices={[
+      device({ fingerprint: 'sat', alias: 'Mini', role: 'satellite' }),
+      device({ fingerprint: 'member', alias: 'Studio' }),
+      device({ fingerprint: 'off', alias: 'Laptop', state: 'offline' }),
+    ]} />);
+    expect(screen.getAllByRole('button', { name: 'Disconnect' })).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
-    expect(disconnect).toHaveBeenCalledWith('on');
+    expect(disconnect).toHaveBeenCalledWith('sat');
     fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
     expect(retry).toHaveBeenCalledWith('off');
   });
 
-  it('never offers connection controls or an address for a device that connects to this computer', () => {
-    render(<AnnexDeviceList devices={[device({ kind: 'phone', state: 'offline' }), device({ fingerprint: 'c', role: 'controller', state: 'offline' })]} />);
+  it('offers no Reconnect while this computer is not connecting to others', () => {
+    render(<AnnexDeviceList canConnect={false} devices={[device({ state: 'offline' })]} />);
     expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Address' })).not.toBeInTheDocument();
+  });
+
+  it('never offers connection controls, an address or Pair again for a device that connects to this computer', () => {
+    const onPairAgain = vi.fn();
+    render(<AnnexDeviceList onPairAgain={onPairAgain} devices={[
+      device({ fingerprint: 'p1', kind: 'phone', state: 'offline' }),
+      device({ fingerprint: 'p2', kind: 'phone' }),
+      device({ fingerprint: 'c1', role: 'controller', state: 'offline' }),
+      device({ fingerprint: 'c2', role: 'controller' }),
+      device({ fingerprint: 'c3', role: 'controller', state: 'needs-pairing' }),
+    ]} />);
+    for (const name of ['Reconnect', 'Disconnect', 'Address', 'Pair again']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    }
+  });
+
+  it('offers Pair again for an older entry with no role', () => {
+    const onPairAgain = vi.fn();
+    render(<AnnexDeviceList onPairAgain={onPairAgain} devices={[device({ role: undefined, kind: undefined, state: 'needs-pairing' })]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Pair again' }));
+    expect(onPairAgain).toHaveBeenCalled();
+  });
+
+  it('shows a typed address before the device has been reached', () => {
+    render(<AnnexDeviceList devices={[device({ state: 'offline', typedHost: 'studio.tail1234.ts.net' })]} />);
+    expect(screen.getByTestId('annex-device-address')).toHaveTextContent('at studio.tail1234.ts.net');
   });
 
   it('renames a member everywhere', async () => {
@@ -62,6 +93,17 @@ describe('AnnexDeviceList (#3067)', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Name for Studio' }), { target: { value: 'Studio Pro' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(renameDevice).toHaveBeenCalledWith('fp-1', 'Studio Pro'));
+    await waitFor(() => expect(screen.queryByTestId('annex-rename-editor')).not.toBeInTheDocument());
+  });
+
+  it('keeps the editor open with a reason when a rename is refused', async () => {
+    renameDevice.mockResolvedValueOnce(false);
+    render(<AnnexDeviceList devices={[device({})]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name for Studio' }), { target: { value: 'Studio Pro' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText(/Couldn.t rename it/)).toBeInTheDocument();
+    expect(screen.getByTestId('annex-rename-editor')).toBeInTheDocument();
   });
 
   it('offers no rename for a one-to-one pairing', () => {

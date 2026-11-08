@@ -71,9 +71,10 @@ test('two desktops join from the page, and one renames and removes the other', a
   await b.window.getByTestId('annex-rename-editor').getByRole('button', { name: 'Save' }).click();
   await expect(rowOn(b.window)).toContainText('Studio in the network', { timeout: 10_000 });
 
-  // B removes A: gone from B's page, and A leaves the network.
+  // B removes A: gone from B's page, and A is no longer connected to B. Whether A hears
+  // the removal before the connection drops is timing, so its row may stay as needing pairing.
   await b.window.getByRole('button', { name: 'Remove' }).first().click();
   await b.window.getByRole('button', { name: 'Confirm' }).first().click();
   await expect(b.window.getByTestId('annex-device-row')).toHaveCount(0, { timeout: 30_000 });
-  await expect(a.window.getByTestId('annex-device-row')).toHaveCount(0, { timeout: 30_000 });
+  await expect(a.window.locator('[data-testid="annex-device-row"][data-state="connected"]')).toHaveCount(0, { timeout: 30_000 });
 });

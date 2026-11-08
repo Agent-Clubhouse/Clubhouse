@@ -17,11 +17,16 @@ function connectsTo(device: AnnexDevice): boolean {
   return device.role === 'satellite' || (device.role === 'member' && device.kind !== 'phone');
 }
 
+/** Pairs again from here: a computer this machine connects to, or an older entry with no role. */
+function pairsAgainFromHere(device: AnnexDevice): boolean {
+  return connectsTo(device) || (!device.role && device.kind !== 'phone');
+}
+
 /** How the device relates to this machine, in a few words. */
 function relation(device: AnnexDevice): string {
   if (device.role === 'member') return device.kind === 'phone' ? 'Phone in this network' : 'In this network';
-  if (device.role === 'satellite') return 'Paired one-to-one: this computer controls it';
-  if (device.role === 'controller') return 'Paired one-to-one: it controls this computer';
+  if (device.role === 'satellite') return 'Paired one-to-one, and this computer controls it';
+  if (device.role === 'controller') return 'Paired one-to-one, and it controls this computer';
   return 'Paired with an older version';
 }
 
@@ -95,37 +100,43 @@ function AddressEditor({ device, onDone }: { device: AnnexDevice; onDone: () => 
 /** Renames a network member, everywhere. */
 function RenameEditor({ device, onDone }: { device: AnnexDevice; onDone: () => void }) {
   const [value, setValue] = useState(device.alias);
+  const [failed, setFailed] = useState(false);
   const rename = useAnnexStore((s) => s.renameDevice);
   const save = async (): Promise<void> => {
     const name = value.trim();
     if (!name || name === device.alias) { onDone(); return; }
-    await rename(device.fingerprint, name);
-    onDone();
+    if (await rename(device.fingerprint, name)) onDone();
+    else setFailed(true);
   };
   return (
-    <div className="flex items-center gap-1.5 pb-2" data-testid="annex-rename-editor">
-      <input
-        type="text"
-        aria-label={`Name for ${device.alias || 'this device'}`}
-        value={value}
-        maxLength={200}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
-        className={`${settingsInput} w-[260px]`}
-      />
-      <Button onClick={() => void save()} kind="primary">Save</Button>
-      <Button onClick={onDone} kind="ghost">Cancel</Button>
+    <div className="flex flex-col gap-1 pb-2" data-testid="annex-rename-editor">
+      <div className="flex items-center gap-1.5">
+        <input
+          type="text"
+          aria-label={`Name for ${device.alias || 'this device'}`}
+          value={value}
+          maxLength={200}
+          onChange={(e) => { setValue(e.target.value); setFailed(false); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
+          className={`${settingsInput} w-[260px]`}
+        />
+        <Button onClick={() => void save()} kind="primary">Save</Button>
+        <Button onClick={onDone} kind="ghost">Cancel</Button>
+      </div>
+      {failed && <div className="text-xs text-ctp-error">Couldn&apos;t rename it. It may have left the network.</div>}
     </div>
   );
 }
 
 interface Props {
   devices: AnnexDevice[];
+  /** Whether this machine connects to other computers now; Reconnect is offered only then. */
+  canConnect?: boolean;
   /** Opens the pairing wizard for a device whose pairing can't be used any more. */
   onPairAgain?: (device: AnnexDevice) => void;
 }
 
-export function AnnexDeviceList({ devices, onPairAgain }: Props) {
+export function AnnexDeviceList({ devices, canConnect = true, onPairAgain }: Props) {
   const disconnect = useAnnexClientStore((s) => s.disconnect);
   const retry = useAnnexClientStore((s) => s.retry);
   const removeDevice = useAnnexStore((s) => s.removeDevice);
@@ -161,7 +172,7 @@ export function AnnexDeviceList({ devices, onPairAgain }: Props) {
                   <div className="flex items-center gap-1.5 text-xs text-ctp-overlay1 min-w-0">
                     <StatusDot device={device} />
                     <span>{stateLabel(device, now)}</span>
-                    {device.address && <span className="truncate" data-testid="annex-device-address">at {device.address}</span>}
+                    {(device.address || device.typedHost) && <span className="truncate" data-testid="annex-device-address">at {device.address || device.typedHost}</span>}
                   </div>
                   <div className="text-xs text-ctp-overlay1">{relation(device)}{device.sessionOnly ? ', this session only' : ''}</div>
                   {device.problem && device.state !== 'connected' && (
@@ -177,13 +188,14 @@ export function AnnexDeviceList({ devices, onPairAgain }: Props) {
 
               {!removing && (
                 <div className="flex gap-1.5 shrink-0">
-                  {device.state === 'needs-pairing' && connectsTo(device) && onPairAgain && (
+                  {device.state === 'needs-pairing' && pairsAgainFromHere(device) && onPairAgain && (
                     <Button onClick={() => onPairAgain(device)} kind="ghost">Pair again</Button>
                   )}
-                  {device.state === 'offline' && connectsTo(device) && (
+                  {device.state === 'offline' && connectsTo(device) && canConnect && (
                     <Button onClick={() => retry(device.fingerprint)} kind="ghost">Reconnect</Button>
                   )}
-                  {device.state === 'connected' && connectsTo(device) && (
+                  {/* A member may be connected from its side too, so only a satellite's connection is this machine's to end. */}
+                  {device.state === 'connected' && device.role === 'satellite' && (
                     <Button onClick={() => disconnect(device.fingerprint)} kind="ghost">Disconnect</Button>
                   )}
                   {device.role === 'member' && !isEditing('name') && (

@@ -84,7 +84,7 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
 
 /** Whether `page` is the selected settings page (plugin detail counts as Plugins). */
 export function isSettingsPageActive(current: SettingsSubPage, page: SettingsSubPage): boolean {
-  return current === page || (page === 'plugins' && current === 'plugin-detail');
+  return current === page || (page === 'plugins' && current === 'plugin-detail') || (page === 'annex' && current === 'annex-control');
 }
 
 function SettingsCategoryNav() {

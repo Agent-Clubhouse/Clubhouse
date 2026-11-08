@@ -31,7 +31,8 @@ export function AnnexNetworkSettingsView() {
   const [repairTarget, setRepairTarget] = useState<RepairTarget | undefined>(undefined);
   const [linkCopied, setLinkCopied] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
-  const on = settings.enableServer && settings.enableClient;
+  // On while either half runs, so an older server-only or client-only setup still shows its tools.
+  const on = settings.enableServer || settings.enableClient;
   const code = certificateCode(status.tlsCertificateFingerprint);
 
   useEffect(() => {
@@ -68,12 +69,17 @@ export function AnnexNetworkSettingsView() {
   }
 
   /** On: this machine answers and connects, and new pairings join the network. Off: nothing connects. */
-  const setOn = (value: boolean) => saveSettings({
-    ...settings,
-    enableServer: value,
-    enableClient: value,
-    ...(value && { networkEnabled: true }),
-  });
+  // Built on what main has saved, so a click before the settings load (or after a reset) keeps the names.
+  const setOn = async (value: boolean): Promise<void> => {
+    let current = settings;
+    try {
+      current = (await window.clubhouse.annex.getSettings()) ?? settings;
+    } catch {
+      // telemetry-exempt: falls back to the settings already shown.
+    }
+    await saveSettings({ ...current, enableServer: value, enableClient: value, ...(value && { networkEnabled: true }) });
+  };
+  const pairAgainHere = adding && !!repairTarget;
 
   return (
     <SettingsPage
@@ -85,10 +91,10 @@ export function AnnexNetworkSettingsView() {
           label="Annex Network on this computer"
           help={on
             ? 'Pair a new device with any device in the network and it joins all of them.'
-            : 'Off: this computer neither answers nor connects to other devices.'}
+            : 'When it is off, this computer neither answers nor connects to other devices.'}
         >
           <div data-testid="annex-network-toggle" className="flex">
-            <Toggle aria-label="Annex Network on this computer" checked={on} onChange={setOn} />
+            <Toggle aria-label="Annex Network on this computer" checked={on} onChange={(value) => { void setOn(value); }} />
           </div>
         </SettingsField>
       </div>
@@ -103,10 +109,18 @@ export function AnnexNetworkSettingsView() {
         ) : (
           <AnnexDeviceList
             devices={devices}
-            onPairAgain={(device) => {
+            canConnect={settings.enableClient}
+            onPairAgain={settings.enableClient ? (device) => {
               setRepairTarget({ fingerprint: device.fingerprint, alias: device.alias });
               setAdding(true);
-            }}
+            } : undefined}
+          />
+        )}
+        {pairAgainHere && (
+          <PairingWizard
+            key={repairTarget.fingerprint}
+            repairTarget={repairTarget}
+            onClose={() => { setAdding(false); setRepairTarget(undefined); }}
           />
         )}
       </SettingsSection>
@@ -115,8 +129,8 @@ export function AnnexNetworkSettingsView() {
         <SettingsSection
           title="Add a device"
           actions={(
-            <Button onClick={() => { setRepairTarget(undefined); setAdding((v) => !v); }} kind={adding ? 'ghost' : 'primary'}>
-              {adding ? 'Cancel' : 'Pair with another computer'}
+            <Button onClick={() => { const opening = !adding || !!repairTarget; setRepairTarget(undefined); setAdding(opening); }} kind={adding && !repairTarget ? 'ghost' : 'primary'}>
+              {adding && !repairTarget ? 'Cancel' : 'Pair with another computer'}
             </Button>
           )}
         >
@@ -129,12 +143,8 @@ export function AnnexNetworkSettingsView() {
               <Button onClick={allowPairingAgain} kind="primary">Allow pairing again</Button>
             </SettingsField>
           )}
-          {adding && (
-            <PairingWizard
-              key={repairTarget?.fingerprint ?? 'add'}
-              repairTarget={repairTarget}
-              onClose={() => { setAdding(false); setRepairTarget(undefined); }}
-            />
+          {adding && !repairTarget && (
+            <PairingWizard key="add" onClose={() => setAdding(false)} />
           )}
           <SettingsField
             label="One-time code"

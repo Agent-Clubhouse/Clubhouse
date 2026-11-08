@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AnnexNetworkSettingsView } from './AnnexNetworkSettingsView';
 import { useAnnexStore } from '../../stores/annexStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
@@ -35,16 +35,44 @@ describe('AnnexNetworkSettingsView (#3067)', () => {
     expect(screen.queryByText('This computer')).not.toBeInTheDocument();
   });
 
-  it('turns everything on together, joining new pairings to the network, and off together', () => {
+  it('turns everything on together, joining new pairings to the network, and off together', async () => {
     setup(OFF);
     const { unmount } = render(<AnnexNetworkSettingsView />);
     fireEvent.click(screen.getByTestId('annex-network-toggle').querySelector('button')!);
-    expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ enableServer: true, enableClient: true, networkEnabled: true }));
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ enableServer: true, enableClient: true, networkEnabled: true })));
     unmount();
     setup(ON);
     render(<AnnexNetworkSettingsView />);
     fireEvent.click(screen.getByTestId('annex-network-toggle').querySelector('button')!);
-    expect(saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ enableServer: false, enableClient: false }));
+    await waitFor(() => expect(saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ enableServer: false, enableClient: false })));
+  });
+
+  it('builds on the saved settings, so a click before they load keeps the names', async () => {
+    window.clubhouse.annex.getSettings = vi.fn().mockResolvedValue({ ...OFF, deviceName: 'Saved Mac', alias: 'Saved' });
+    setup({ ...OFF, deviceName: '', alias: '' });
+    render(<AnnexNetworkSettingsView />);
+    fireEvent.click(screen.getByTestId('annex-network-toggle').querySelector('button')!);
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ deviceName: 'Saved Mac', alias: 'Saved', enableServer: true })));
+  });
+
+  it('shows as on, with its tools, while only one half runs (an older phone setup)', () => {
+    setup({ ...OFF, enableServer: true });
+    render(<AnnexNetworkSettingsView />);
+    expect(screen.getByRole('switch', { name: 'Annex Network on this computer' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText('Add a device')).toBeInTheDocument();
+    expect(screen.getByTestId('annex-pairing-code')).toBeInTheDocument();
+  });
+
+  it('opens Pair again by the device, and offers it only while this computer connects to others', () => {
+    const needs = { fingerprint: 'm', alias: 'Laptop', icon: 'computer', color: 'indigo', role: 'member', kind: 'desktop', state: 'needs-pairing', pairedAt: '', lastSeen: '', problem: null };
+    setup(ON, { devices: [needs] });
+    const { unmount } = render(<AnnexNetworkSettingsView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Pair again' }));
+    expect(screen.getByTestId('pairing-wizard')).toBeInTheDocument();
+    unmount();
+    setup(OFF, { devices: [needs] });
+    render(<AnnexNetworkSettingsView />);
+    expect(screen.queryByRole('button', { name: 'Pair again' })).not.toBeInTheDocument();
   });
 
   it('adds a device by code, link and QR, and pairs with another computer', () => {
