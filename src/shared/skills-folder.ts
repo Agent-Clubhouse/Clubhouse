@@ -4,6 +4,12 @@
  * `<configDir>/<skillsDir>`. Codex reads repository skills from
  * `.agents/skills`, which Copilot reads too, not from its config folder.
  */
+/** Written beside the skills Clubhouse delivers (managed agents), naming their folders. */
+export const MANAGED_SKILLS_MANIFEST = '.clubhouse-managed-skills.json';
+
+/** An agent's Skills list shows at most this many folders, by name; the page says when there are more (#2929). */
+export const MAX_LISTED_SKILLS = 200;
+
 export function skillsFolderOf(conv: { configDir: string; skillsDir: string; skillsRoot?: string }): string {
   return conv.skillsRoot ?? `${conv.configDir}/${conv.skillsDir}`;
 }

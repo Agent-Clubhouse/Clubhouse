@@ -8,6 +8,7 @@
  * already reads (the provider's instructions file, skills folder and MCP
  * file) and hands the MCP servers to the existing launch merge points.
  */
+import { agentAccess } from '../free-agent-settings';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -17,7 +18,7 @@ import { canonicalHash } from '../asset-catalog/planner';
 import { replaceManagedWildcards } from '../../../shared/wildcard-replacer';
 import { buildWildcardContext } from '../agent-wildcards';
 import { appLog } from '../log-service';
-import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
+import { MAX_QUICK_RUN_CHANGES, type DurableAgentConfig, type McpServerDef, type QuickRunChanges } from '../../../shared/types';
 import type { OrchestratorProvider } from '../../orchestrators/types';
 import {
   CLUBHOUSE_MCP_PART_ID,
@@ -30,13 +31,13 @@ import {
 } from '../../../shared/managed-agents-types';
 import { managedSettingsSummary } from '../../../shared/managed-settings-summary';
 import { resolveOrchestrationPolicy } from '../../../shared/orchestration-policy';
-import { withClubhouseSetup, type ManagedAgentsService } from './service';
-import { withWorkingIdentity } from './builtins';
-import { skillsFolderOf } from '../../../shared/skills-folder';
+import { builtinPart, ManagedError, withClubhouseSetup, type ManagedAgentsService } from './service';
+import { BUILTIN_BLOCK_IDS, withWorkingIdentity } from './builtins';
+import { MANAGED_SKILLS_MANIFEST, skillsFolderOf } from '../../../shared/skills-folder';
 import { helperTemplateFor } from './helpers';
 
 /** Written beside the managed skills so a later start removes only what Clubhouse put there. */
-export const SKILLS_MANIFEST = '.clubhouse-managed-skills.json';
+export const SKILLS_MANIFEST = MANAGED_SKILLS_MANIFEST;
 /** In the worktree: the `claudeMdExcludes` entries Clubhouse added, so it replaces only those (D49). Git-excluded. */
 export const EXCLUDES_MANIFEST = '.clubhouse-managed-excludes.json';
 
@@ -96,11 +97,11 @@ export async function renderManagedInstructions(projectPath: string, agent: Dura
 }
 
 /**
- * Preview's settings summary for an agent: CLI, model, effort, Free Agent
- * Mode, orchestration and helpers. The helper template is named only when
+ * Preview's settings summary for an agent: CLI, model, effort, Access,
+ * orchestration and helpers. The helper template is named only when
  * it orchestrates; a template that can't be read is left out.
  */
-export async function managedSettingsRows(service: ManagedAgentsService, agent: DurableAgentConfig, provider: OrchestratorProvider | undefined): Promise<ManagedSettingsRow[]> {
+export async function managedSettingsRows(service: ManagedAgentsService, agent: DurableAgentConfig, provider: OrchestratorProvider | undefined, projectPath?: string): Promise<ManagedSettingsRow[]> {
   const helper = !!agent.parentAgentId;
   let helperTemplateName: string | undefined;
   if (resolveOrchestrationPolicy(agent.orchestration, { helper }).orchestrate) {
@@ -115,7 +116,7 @@ export async function managedSettingsRows(service: ManagedAgentsService, agent: 
     cliName: provider?.displayName ?? agent.orchestrator,
     model: agent.model,
     effort: agent.effort,
-    freeAgentMode: agent.freeAgentMode,
+    access: agentAccess(agent, projectPath),
     orchestration: agent.orchestration,
     helperTemplateName,
     helper,
@@ -722,6 +723,9 @@ export function setupFingerprint(agent: DurableAgentConfig, resolved: Resolved):
     parts, order,
     orchestrator: agent.orchestrator ?? null, model: agent.model ?? null, effort: agent.effort ?? null,
     freeAgentMode: agent.freeAgentMode ?? null, orchestration: agent.orchestration ?? null,
+    // Access (#2761). Left out at Ask first, and for an agent saved before it,
+    // so a fingerprint from before the upgrade still matches.
+    ...(agent.access !== undefined && agent.access !== 'ask' && { access: agent.access }),
   });
   return { fingerprint, deliveredAt: new Date().toISOString(), ...(agent.orchestrator && { orchestrator: agent.orchestrator }), parts, order };
 }
@@ -770,7 +774,7 @@ export async function deliverManagedSetup(params: {
       rawInstructions: composeManagedText(resolved),
       skills: resolved.skills.map((sk) => sk.name),
       mcps: resolved.mcps.map((m) => m.name),
-      settings: await managedSettingsRows(service, agent, provider),
+      settings: await managedSettingsRows(service, agent, provider, params.projectPath),
     },
     ...(resolved.missing.length > 0 && { missing: resolved.missing.length }),
   };
@@ -787,6 +791,63 @@ export interface QuickManagedLaunch {
   skippedSkills: number;
   /** Parts the template lists that no longer exist. */
   missing: number;
+  /** What this launch added to or left out of the template (#2928). Empty lists when it changed nothing. */
+  changes: QuickRunChanges;
+}
+
+/**
+ * A quick launch's setup: the template's, as a quick agent gets it (the
+ * working Identity), with this launch's parts added and left out (#2928,
+ * D102). Only parts a person could put in a setup themselves: library parts
+ * that exist and aren't retired, never the Clubhouse MCP part left out, and
+ * the result passes the checks a saved setup does. No skill is added (a quick
+ * agent gets none) and no MCP server for a CLI that takes none at launch.
+ * Leaving out a part the template no longer has is nothing to do. Throws
+ * before anything starts. The template is only read.
+ */
+export async function quickRunSetup(
+  service: ManagedAgentsService,
+  working: { blocks: string[]; skills: string[]; mcps: string[] },
+  choice: { addParts?: string[]; removeParts?: string[] },
+  opts: { mcpLaunchFlags?: boolean } = {},
+): Promise<{ setup: { blocks: string[]; skills: string[]; mcps: string[] }; changes: QuickRunChanges }> {
+  const add = choice.addParts ?? [];
+  const remove = choice.removeParts ?? [];
+  if (add.length === 0 && remove.length === 0) return { setup: working, changes: { added: [], removed: [] } };
+  if (add.length > MAX_QUICK_RUN_CHANGES || remove.length > MAX_QUICK_RUN_CHANGES) {
+    throw new ManagedError('invalid', `A quick launch adds or leaves out at most ${MAX_QUICK_RUN_CHANGES} parts.`);
+  }
+  const live = await service.liveEntries();
+  // Either Identity id names the one the quick agent gets.
+  const asWorking = (id: string) => (id === BUILTIN_BLOCK_IDS.identity ? BUILTIN_BLOCK_IDS.identityHelper : id);
+  const inTemplate = new Set([...working.blocks, ...working.skills, ...working.mcps]);
+  if (remove.map(asWorking).includes(CLUBHOUSE_MCP_PART_ID)) throw new ManagedError('invalid', 'The Clubhouse MCP part stays in every setup.');
+  // A part the template no longer has (deleted, or taken out since the form opened) is already left out.
+  const drop = new Set(remove.map(asWorking).filter((id) => inTemplate.has(id)));
+  const setup = {
+    blocks: working.blocks.filter((id) => !drop.has(id)),
+    skills: working.skills.filter((id) => !drop.has(id)),
+    mcps: working.mcps.filter((id) => !drop.has(id)),
+  };
+  const added: string[] = [];
+  for (const raw of add) {
+    const id = asWorking(raw);
+    const entry = live[id];
+    // What a person can add to a setup: a part in the library, not one an app update retired.
+    if (!entry || entry.owner.kind !== 'library' || builtinPart(id)?.retired) throw new ManagedError('not_found', 'A part to add isn\'t in the library.');
+    if (entry.kind === 'skill') throw new ManagedError('invalid', 'A quick agent gets no skills, since it has no folder of its own.');
+    if (entry.kind === 'mcp' && opts.mcpLaunchFlags === false) throw new ManagedError('invalid', 'This CLI reads MCP servers only from the folder\'s own MCP file, so a quick agent can\'t get one added.');
+    const list = entry.kind === 'block' ? setup.blocks : entry.kind === 'mcp' ? setup.mcps : null;
+    if (!list) throw new ManagedError('not_found', 'A part to add isn\'t in the library.');
+    if (!list.includes(id)) list.push(id);
+    if ((!inTemplate.has(id) || drop.has(id)) && !added.includes(id)) added.push(id);
+  }
+  // Left out and added back is no change either way.
+  const changes = { added: added.filter((id) => !drop.has(id)), removed: [...drop].filter((id) => !added.includes(id)) };
+  // The checks a saved setup passes (parts that exist), so a launch can't do what a save couldn't. Skills
+  // aren't checked: a quick agent gets none, and the launch without changes doesn't check them either.
+  const checked = await service.checkSetup({ ...setup, skills: [] });
+  return { setup: { blocks: checked.blocks, skills: setup.skills, mcps: checked.mcps }, changes };
 }
 
 /**
@@ -805,13 +866,18 @@ export async function quickManagedLaunch(params: {
   templateId: string;
   /** The branch checked out in `cwd`, when there is one. */
   branch?: string | null;
+  /** This launch's part changes (#2928). */
+  addParts?: string[];
+  removeParts?: string[];
+  /** The CLI takes MCP servers at launch. False: none can be added. */
+  mcpLaunchFlags?: boolean;
 }): Promise<QuickManagedLaunch> {
   // setupFromTemplate keeps only the parts that still exist, so what it dropped
   // is what's missing: the template's own list minus what came back.
   const template = await params.service.getTemplate(params.templateId);
   const { setup: fromTemplate } = await params.service.setupFromTemplate(params.templateId);
-  const setup = withWorkingIdentity(fromTemplate);
-  const resolved = await resolveSetup(params.service, setup);
+  const { setup, changes } = await quickRunSetup(params.service, withWorkingIdentity(fromTemplate), params, { mcpLaunchFlags: params.mcpLaunchFlags });
+  const resolved = await resolveSetup(params.service, { version: 1, ...setup });
   const partCount = (s: { blocks: string[]; skills: string[]; mcps: string[] }) => s.blocks.length + s.skills.length + s.mcps.length;
   const dropped = partCount(template.setup) - partCount(fromTemplate);
   const agent: DurableAgentConfig = {
@@ -830,6 +896,7 @@ export async function quickManagedLaunch(params: {
     servers: mcpServersOf(resolved),
     skippedSkills: resolved.skills.length,
     missing: dropped + resolved.missing.length,
+    changes,
   };
 }
 
@@ -877,7 +944,7 @@ export async function previewManagedSetup(params: {
     ...extra,
     instructions,
     rawInstructions,
-    settings: await managedSettingsRows(params.service, params.agent, params.provider),
+    settings: await managedSettingsRows(params.service, params.agent, params.provider, params.projectPath),
     blocks,
     skills: resolved.skills.map((s) => ({
       id: s.id, name: s.name, skillName: s.content.skillName, files: s.content.files.length, folder: `${folderRoot}/${s.content.skillName}`.replace(/\\/g, '/'),

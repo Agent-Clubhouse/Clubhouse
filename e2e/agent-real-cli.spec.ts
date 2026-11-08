@@ -73,6 +73,7 @@ function prepareSleepingAgent(orchestrator: ProviderId): { sleeperId: string; sl
         worktreePath: sleeperWorktree,
         createdAt: new Date().toISOString(),
         orchestrator,
+        // Saved as before #2761, with no `access`: it reads as Full access.
         freeAgentMode: true,
       }],
       null,
@@ -139,7 +140,7 @@ async function createThenWakeProviderAgent(providerCase: ProviderCase): Promise<
     await window.locator('input[type="text"]').first().fill(createdName);
     await window.getByText('Use git worktree', { exact: false }).click();
     await window.locator('label:has-text("Runs on") select').selectOption(providerCase.id);
-    await window.locator('label:has-text("Free Agent Mode") input').check();
+    await window.getByRole('combobox', { name: 'Access', exact: true }).selectOption('full_access');
     await window.locator('button:has-text("Create Agent")').click();
 
     const createdItem = window.locator(

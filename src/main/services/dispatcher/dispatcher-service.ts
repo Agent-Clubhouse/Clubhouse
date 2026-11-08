@@ -22,6 +22,7 @@
  * running, loses its connections, and can't be started again until MCP is back,
  * when it returns to what its saved values say without being started.
  */
+import { withSavedAccess } from '../free-agent-settings';
 import * as fsp from 'fs/promises';
 import * as agentConfig from '../agent-config';
 import * as agentSystem from '../agent-system';
@@ -79,7 +80,8 @@ export function getDispatcherState(): DispatcherState {
     running: !!config && !!agentRegistry.get(config.id),
     agentId: config?.id ?? null,
     path: config ? getDispatcherPath() : null,
-    config: config ? { ...config } : null,
+    // Access (#2761) filled in for a Dispatcher saved before it.
+    config: config ? withSavedAccess({ ...config }, getDispatcherPath()) : null,
   };
 }
 

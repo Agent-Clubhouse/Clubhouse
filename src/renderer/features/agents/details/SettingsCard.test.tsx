@@ -10,7 +10,7 @@ import { useAgentSettingsPages } from '../agentSettingsPages';
 import { AgentDetails } from './AgentDetails';
 import { SettingsCard } from './SettingsCard';
 import {
-  accessLabel, instructionsLabel, isRowLocked, LOCKED_HINT, modelLabel, settingsSummary,
+  accessText, instructionsLabel, isRowLocked, LOCKED_HINT, modelLabel, recordAccess, settingsSummary,
 } from './SettingsCard';
 import { useAgentDetailsStore } from './detailsStore';
 
@@ -74,8 +74,8 @@ describe('settings helpers', () => {
   it('builds the summary from what is known', () => {
     expect(settingsSummary({ runsIn: 'Chat', model: 'Opus 5.5', access: 'Full access', autoSleep: 'Sleeps after 30 min' }))
       .toBe('Chat · Opus 5.5 · Full access · Sleeps after 30 min');
-    expect(settingsSummary({ runsIn: 'CLI', model: 'Default model', access: 'Ask before edits', autoSleep: null }))
-      .toBe('CLI · Default model · Ask before edits');
+    expect(settingsSummary({ runsIn: 'CLI', model: 'Default model', access: 'Ask first', autoSleep: null }))
+      .toBe('CLI · Default model · Ask first');
   });
 
   it('names models, access and instructions in sentence case', () => {
@@ -85,11 +85,24 @@ describe('settings helpers', () => {
     expect(modelLabel(null, { models: [{ id: 'claude-sonnet-5.5', label: 'Sonnet 5.5' }] })).toBe('Default model');
     expect(modelLabel('sonnet', { models: [] })).toBe('sonnet');
     expect(modelLabel('claude-opus-5-5', { models: [{ id: 'claude-opus-5-5', label: 'Opus 5.5' }] })).toBe('Opus 5.5');
-    expect(accessLabel({ level: 'auto', levelNames: { auto: 'Agent' } }, false, true)).toBe('Agent');
-    expect(accessLabel({ level: 'ask', levelNames: {} }, false, true)).toBe('Ask first');
-    expect(accessLabel(undefined, true, true)).toBe('Free agent');
-    expect(accessLabel(undefined, false, true)).toBe('Ask before edits');
-    expect(accessLabel(undefined, true, false)).toBe('Set by the CLI');
+    expect(accessText('ask', 'ask', true)).toBe('Ask first');
+    expect(accessText('ask', null, true)).toBe('Ask first');
+    expect(accessText('full_access', null, true)).toBe('Full access');
+    expect(accessText('ask', null, false)).toBe('Set by the CLI');
+    // A composer change applies to this session only, so both show.
+    expect(accessText('ask', 'auto', true)).toBe('Auto now, starts at Ask first');
+    expect(accessText('auto', 'full_access', false)).toBe('Full access now, starts at Auto');
+    // A legacy record that is on at an unknown level.
+    expect(accessText(null, null, true)).toBe('Auto or Full access');
+    expect(accessText(null, 'auto', true)).toBe('Auto');
+    expect(accessText(null, 'ask', true)).toBe('Ask first now, starts at Auto or Full access');
+  });
+
+  it('reads the level a record starts at', () => {
+    expect(recordAccess({ access: 'plan', freeAgentMode: false })).toBe('plan');
+    expect(recordAccess({ freeAgentMode: true })).toBeNull();
+    expect(recordAccess({})).toBe('ask');
+    expect(recordAccess(null)).toBe('ask');
     expect(instructionsLabel(true, 'whatever Clubhouse wrote')).toBe('Dispatcher');
     expect(instructionsLabel(false, 'a\nb\n')).toBe('Custom, 2 lines');
     expect(instructionsLabel(false, 'a')).toBe('Custom, 1 line');
@@ -188,11 +201,37 @@ describe('Settings card (#2280)', () => {
     expect(window.clubhouse.project.readDefaultMcps).toHaveBeenCalledWith('/work/proj');
   });
 
-  it('shows Free agent mode for a terminal Claude agent', async () => {
-    saved = { freeAgentMode: true, clubhouseModeOverride: true };
+  it('shows the saved level for a terminal Claude agent', async () => {
+    saved = { access: 'auto', freeAgentMode: true };
     render(<AgentDetails agent={agent} />);
     const card = openSettings();
-    await waitFor(() => expect(card.getByTestId('details-setting-access')).toHaveTextContent('Free agent'));
+    await waitFor(() => expect(card.getByTestId('details-setting-access')).toHaveTextContent(/^AccessAuto$/));
+  });
+
+  it('shows both levels when the composer changed the session\'s level', async () => {
+    saved = { idleSleep: 30, access: 'ask' };
+    render(<AgentDetails agent={agent} chat={chatState({ level: 'auto' })} />);
+    const card = openSettings();
+    await waitFor(() => expect(card.getByTestId('details-setting-access')).toHaveTextContent('Auto now, starts at Ask first'));
+    expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent('Chat · Opus 5.5 · Auto ·');
+  });
+
+  it('shows one level when the session runs at the saved one', async () => {
+    saved = { idleSleep: 30, access: 'full_access', freeAgentMode: true };
+    render(<AgentDetails agent={agent} chat={chatState()} />);
+    const card = openSettings();
+    await waitFor(() => expect(card.getByTestId('details-setting-access')).toHaveTextContent(/^AccessFull access$/));
+  });
+
+  it('saves a level from the Access picker while asleep', async () => {
+    saved = { access: 'ask' };
+    render(<AgentDetails agent={{ ...agent, status: 'sleeping' }} />);
+    const card = openSettings();
+    const select = await card.findByTestId('details-access-select') as HTMLSelectElement;
+    expect(select.value).toBe('ask');
+    expect(card.queryByText(/free/i)).not.toBeInTheDocument();
+    fireEvent.change(select, { target: { value: 'full_access' } });
+    await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1', { access: 'full_access' }));
   });
 
   it('has no hint and no locked rows when the agent isn\'t running', async () => {
@@ -240,6 +279,20 @@ describe('Settings card edge cases', () => {
     expect(card.queryByTestId('details-all-settings')).not.toBeInTheDocument();
     expect(card.queryByTestId('details-setting-mcp')).not.toBeInTheDocument();
     expect(card.getByTestId('details-setting-model')).toBeInTheDocument();
+  });
+
+  it('a quick agent from a template shows the template, and what this run added or left out (#2928)', async () => {
+    const m = window.clubhouse.managed;
+    vi.spyOn(m, 'listTemplates').mockResolvedValue({ ok: true, value: [{ id: 'tpl', name: 'Release', description: '', builtin: false, setup: { blocks: [], skills: [], mcps: [] }, settings: {}, usedBy: 0 }] } as never);
+    vi.spyOn(m, 'listParts').mockImplementation(async (kind: string) => ({ ok: true, value: kind === 'block' ? [{ id: 'p-a', name: 'Extra', kind: 'block' }, { id: 'p-b', name: 'Tone', kind: 'block' }] : [] }) as never);
+    const quick: Agent = { ...agent, kind: 'quick', managedTemplateId: 'tpl', managedQuickChanges: { added: ['p-a'], removed: ['p-b'] } };
+    const { unmount } = render(<AgentDetails agent={quick} />);
+    openSettings();
+    await waitFor(() => expect(screen.getByTestId('details-setting-template')).toHaveTextContent('Release template, plus Extra, minus ToneFor this run only'));
+    unmount();
+    render(<AgentDetails agent={{ ...quick, managedQuickChanges: undefined }} />);
+    await waitFor(() => expect(screen.getByTestId('details-setting-template')).toHaveTextContent('Release'));
+    expect(screen.getByTestId('details-setting-template')).not.toHaveTextContent('For this run only');
   });
 
   it('reads no config for an agent on another machine and leaves out local-only rows', () => {

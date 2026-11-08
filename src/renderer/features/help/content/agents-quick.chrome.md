@@ -16,12 +16,24 @@ You can also press `⌘N` to open **New agent** with **Quick** selected. `⇧⌘
 For more options, click **New** at the top of the sidebar and choose **Quick agent…**. That dialog adds:
 
 - **Parent agent**, to inherit a durable agent's quick agent defaults and work in its worktree;
-- **Free Agent Mode**, to let the agent act without asking for permission;
+- **Access**, how much the agent may do without asking;
 - a **Project** picker, when you start it from outside a project.
 
-## Free agent mode
+## Access
 
-Free Agent Mode handles permission prompts for you. By default it skips them all. If your CLI supports `--permission-mode auto`, you can switch to **Auto** under **Free agent permission mode** in **Settings > Agents & providers**, for all projects or one. Auto uses a classifier to decide which actions need approval. The classifier can be wrong.
+**Access** is the level the agent starts at. New quick agents start at **Default access** in **Settings > Agents & providers**, and you can pick another level in the dialog.
+
+| Level | What the agent does |
+|-------|---------------------|
+| **Plan** | Reads and plans. Makes no changes. |
+| **Ask first** | Asks before edits and commands. |
+| **Auto-accept edits** | Makes file edits without asking. Asks before commands. |
+| **Auto** | A check decides what needs your approval. It can be wrong. |
+| **Full access** | Runs everything without asking. |
+
+Each CLI only lists the levels it can start at. Claude Code has all five. In the terminal, Codex CLI has Ask first, Auto and Full access, and Copilot CLI has Ask first and Full access. In chat, each CLI offers the levels its chat connection supports. A quick agent with a parent agent takes the level from the parent's **Quick agents** settings, or the parent's own level when those don't set one. See **Durable agents** for more.
+
+A quick agent's CLI gets a few tools allowed ahead of time, and for Claude Code they follow its level. At Plan and Ask first only tools that read files are allowed ahead, so in a terminal it asks before any edit or command. At Auto-accept edits, file edits are allowed too. At Auto and Full access, the usual git, npm and npx commands are as well. A headless run can't ask: below Full access a check decides what it may do, and it can be wrong. Copilot runs a quick agent in the terminal in one go and can't ask either, so it keeps its usual tools at every level. A CLI with no Plan start mode (Codex and Copilot in a terminal) starts a Plan quick agent at Ask first.
 
 ## Headless or interactive
 
@@ -31,7 +43,7 @@ Free Agent Mode handles permission prompts for you. By default it skips them all
 | **File edits and commands** | Applied right away | Need your approval |
 | **Speed** | Faster | Slower, since it waits for you |
 
-Set it with **Default quick agent mode** in **Settings > Agents & providers**, or **Quick agent mode** in a project's own **Agents & providers** page. Headless and Free Agent Mode are separate settings.
+Set it with **Default quick agent mode** in **Settings > Agents & providers**, or **Quick agent mode** in a project's own **Agents & providers** page. Headless and Access are separate settings.
 
 ## When it finishes
 

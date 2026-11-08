@@ -297,13 +297,6 @@ export const AgentRow = React.memo(function AgentRow({
           <StatusDot dot={dot} />
           <span className="relative flex-shrink-0">
             <AgentAvatar agent={agent} size="2xs" />
-            {agent.freeAgentMode && (
-              <span
-                role="img"
-                aria-label="Free Agent Mode: permissions follow the configured mode"
-                className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-ctp-error ring-1 ring-ctp-mantle"
-              />
-            )}
           </span>
           <span className={`truncate ${dot === 'sleeping' ? '' : 'font-medium'}`}><MarkedText text={agent.name} query={highlight} /></span>
           <OrchestratorGlyph orchestrator={agent.orchestrator || 'claude-code'} focusable={false} showTooltip={false} variant="row" />

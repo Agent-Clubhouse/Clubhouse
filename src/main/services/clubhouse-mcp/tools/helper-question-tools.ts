@@ -323,7 +323,7 @@ export function registerHelperQuestionTools(): void {
         return textResult(errorText(err), true);
       }
     },
-    { group: 'orchestration' },
+    { group: 'orchestration', grant: { actions: ['agent.message'], target: 'my_helpers' } },
   );
 }
 

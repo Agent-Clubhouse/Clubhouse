@@ -15,6 +15,7 @@ import { IPC } from '../ipc-channels';
 
 /** Bump on breaking attribute changes; exported as `clubhouse.telemetry.schema`. */
 import { SUPPORTED_PLUGIN_API_VERSIONS } from '../marketplace-types';
+import { ACTION_EVENT_KINDS, ACTION_STEP_KINDS, MISSED_RUN_RULES } from '../actions/types';
 import {
   DECISION_QUOTA_QUALITIES,
   DECISION_SCORE_BASES,
@@ -408,7 +409,7 @@ export const ATTR = {
   updateTrigger: enumAttr('clubhouse.update.trigger', ['startup', 'periodic', 'manual']),
   updateChannel: enumAttr('clubhouse.update.channel', ['stable', 'preview']),
   updateResult: enumAttr('clubhouse.update.result', [
-    'up_to_date', 'available', 'dismissed', 'no_artifact', 'skipped_busy', 'disabled',
+    'up_to_date', 'available', 'dismissed', 'no_artifact', 'os_too_old', 'skipped_busy', 'disabled',
     'downloaded', 'already_downloaded', 'applied', 'failed',
   ]),
   updatePhase: enumAttr('clubhouse.update.phase', ['check', 'download', 'apply', 'apply_on_quit']),
@@ -532,11 +533,13 @@ export const ATTR = {
     // appearance (#2597)
     'update_project', 'update_agent',
     // settings reads (#2653)
-    'list_settings', 'read_settings',
+    'list_settings', 'read_settings', 'read_helper_presets', 'set_helper_presets',
     // Dispatcher controls over connected orchestrators (#2661)
     'set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'list_orchestrator_controls',
     // orchestration: connection tools (#2230)
     'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
+    // actions (#2952), the permission model's action.* (#2921)
+    'create_action', 'list_actions', 'update_action', 'delete_action', 'run_action', 'action_history',
     'other',
   ]),
   mcpResult: enumAttr('clubhouse.mcp.result', ['ok', 'tool_error', 'threw']),
@@ -544,7 +547,7 @@ export const ATTR = {
    * Why the tool registry refused a call before any handler ran (#2308). Only on
    * `clubhouse.mcp.tool_call` spans whose result is `tool_error`.
    */
-  mcpRefusalReason: enumAttr('clubhouse.mcp.refusal.reason', ['group_off', 'unparseable', 'no_binding', 'unknown_tool', 'invalid_args', 'tool_denied', 'caller_unknown']),
+  mcpRefusalReason: enumAttr('clubhouse.mcp.refusal.reason', ['group_off', 'unparseable', 'no_binding', 'unknown_tool', 'invalid_args', 'tool_denied', 'caller_unknown', 'no_grant']),
   binaryLookupTier: enumAttr('clubhouse.binary.lookup_tier', ['cache', 'well_known', 'path_scan', 'login_shell', 'not_found']),
   // Phase 4b: spawn, create, delete, kill, shoulder taps
   agentResume: boolAttr('clubhouse.agent.resume'),
@@ -903,6 +906,31 @@ export const ATTR = {
 
   // appLog bridge (§6.6, Phase 7)
   configFormat: enumAttr('clubhouse.config.format', ['json', 'toml']),
+
+  // Actions (#2918, #2956). Closed codes and counts only: never an action's name, steps' text, prompts or
+  // reasons in words. The action id hash is on the Detailed `clubhouse.action.run_detail` only.
+  actionOwner: enumAttr('clubhouse.action.owner', ['user', 'dispatcher', 'agent', 'app']),
+  actionTrigger: enumAttr('clubhouse.action.trigger', ['schedule', 'once', 'event', 'catch_up', 'manual']),
+  actionEvent: enumAttr('clubhouse.action.event', ACTION_EVENT_KINDS),
+  actionDelayed: boolAttr('clubhouse.action.delayed'),
+  actionWait: enumAttr('clubhouse.action.wait', ['started', 'restarted', 'cancelled', 'fired', 'dropped']),
+  actionOverlap: enumAttr('clubhouse.action.overlap', ['skipped', 'queued']),
+  actionLimit: enumAttr('clubhouse.action.limit', ['chain', 'self', 'hourly']),
+  actionChainDepth: enumAttr('clubhouse.action.chain_depth', ['0', '1', '2', '3+']),
+  actionMissedRule: enumAttr('clubhouse.action.missed_rule', MISSED_RUN_RULES),
+  actionMissedBucket: enumAttr('clubhouse.action.missed_bucket', ['0', '1', '2-4', '5-9', '10+']),
+  actionRunOutcome: enumAttr('clubhouse.action.run.outcome', ['done', 'failed', 'cancelled', 'skipped']),
+  actionRunReason: enumAttr('clubhouse.action.run.reason', [
+    'none', 'self_trigger', 'chain_limit', 'overlap', 'hourly_limit', 'missed', 'condition_changed', 'turned_off', 'edited',
+    'deleted', 'rights_refused', 'step_failed', 'step_threw',
+  ]),
+  actionRunSteps: intAttr('clubhouse.action.run.steps'),
+  actionRunDurationMs: intAttr('clubhouse.action.run.duration_ms'),
+  actionRunFailedStep: enumAttr('clubhouse.action.run.failed_step', [...ACTION_STEP_KINDS, 'none']),
+  actionStepKind: enumAttr('clubhouse.action.step.kind', ACTION_STEP_KINDS),
+  actionStepOutcome: enumAttr('clubhouse.action.step.outcome', ['done', 'failed']),
+  actionStepIndex: intAttr('clubhouse.action.step.index'),
+  actionIdHash: hashAttr('clubhouse.action.id_hash'),
 } as const;
 
 /**
@@ -1645,6 +1673,26 @@ export const EVENTS = {
    * `clubhouse.agent.runtime`, resume result.
    */
   'clubhouse.agent.resume_outcome': { level: 'standard' },
+  // Actions (#2918, #2956). Every event carries `clubhouse.action.owner`; Clubhouse's own hidden actions report `app`.
+  /** A trigger fired. Attributes: trigger kind, and for event triggers the event kind and whether it waits first. */
+  'clubhouse.action.triggered': { level: 'standard' },
+  /** A delayed event trigger's wait started, restarted, was cancelled, fired, or was dropped at launch. Attributes: wait code, event kind. */
+  'clubhouse.action.wait': { level: 'standard' },
+  /** A trigger fired while the last run was still going. Attributes: overlap code (skipped, queued), trigger kind. */
+  'clubhouse.action.overlap': { level: 'standard' },
+  /** Loop protection or the hourly limit stopped a run. Attributes: limit code, chain depth bucket. */
+  'clubhouse.action.limit_hit': { level: 'standard' },
+  /** Schedule times were missed while Clubhouse was closed or asleep. Attributes: missed-count bucket, the action's missed-run rule. */
+  'clubhouse.action.catch_up': { level: 'standard' },
+  /** A run ended or was recorded without running. Attributes: outcome, reason code, trigger, step count, failed step kind, chain depth bucket, duration. */
+  'clubhouse.action.run': { level: 'standard' },
+  /** One step of a run. Attributes: step kind, outcome, position (1 to 3). */
+  'clubhouse.action.step': { level: 'standard' },
+  /**
+   * The same run, with the action id hash (and the owning agent's id hash for agent-owned actions).
+   * Detailed: recorded locally only at the Detailed level, and exported only to destinations set to Detailed.
+   */
+  'clubhouse.action.run_detail': { level: 'detailed' },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 

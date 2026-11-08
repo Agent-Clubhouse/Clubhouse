@@ -46,6 +46,17 @@ export interface ManagedHelperChanges {
  */
 export const CLUBHOUSE_MCP_PART_ID = 'builtin-mcp-clubhouse';
 
+/** The built-in Identity block a durable agent gets, and the working one a helper or quick agent gets in its place (#2902). */
+export const IDENTITY_BLOCK_ID = 'builtin-block-identity';
+export const WORKING_IDENTITY_BLOCK_ID = 'builtin-block-identity-helper';
+
+/** Blocks as a helper or quick agent gets them: the working Identity in place of the durable one, once, where it came first. */
+export function workingIdentityBlocks(blocks: string[]): string[] {
+  if (!blocks.includes(IDENTITY_BLOCK_ID)) return blocks;
+  const mapped = blocks.map((id) => (id === IDENTITY_BLOCK_ID ? WORKING_IDENTITY_BLOCK_ID : id));
+  return mapped.filter((id, i) => id !== WORKING_IDENTITY_BLOCK_ID || mapped.indexOf(id) === i);
+}
+
 /** Whether a part or template is offered for new choices: everything but retired built-ins. */
 export function isListed(item: { retired?: boolean }): boolean {
   return !item.retired;
@@ -154,6 +165,9 @@ export interface ManagedTemplateSettings {
   model?: string;
   /** The reasoning effort level, for the model these settings run (the agent's `effort`). */
   effort?: string | null;
+  /** Access (#2761): the level agents made from it start at. */
+  access?: import('./agent-access').AccessLevel;
+  /** Legacy Free Agent Mode, derived from `access` and still written for a rollback. Read only when `access` is missing. */
   freeAgentMode?: boolean;
   orchestration?: OrchestrationPolicyConfig;
   /** Auto-sleep: minutes idle before a chat session sleeps, or `never` (the agent's `idleSleep`). */
@@ -294,7 +308,7 @@ export interface ManagedPreview {
   instructions: string;
   /** The same text with wildcards as written, for "Show wildcards". */
   rawInstructions?: string;
-  /** CLI, model, effort, Free Agent Mode, orchestration and helpers. */
+  /** CLI, model, effort, Access, orchestration and helpers. */
   settings?: ManagedSettingsRow[];
   /** Set while the agent runs and its next start differs from what its session started with. */
   running?: ManagedRunningSnapshot;

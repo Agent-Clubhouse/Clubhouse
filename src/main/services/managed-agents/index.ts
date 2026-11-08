@@ -10,7 +10,7 @@ import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
 import type { OrchestratorProvider } from '../../orchestrators/types';
-import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
+import type { DurableAgentConfig, McpServerDef, QuickTemplateChoice } from '../../../shared/types';
 import type { ManagedAgentSetup, ManagedAgentStatus, ManagedMcpProblem, ManagedPlainChoice, ManagedPlainPreview, ManagedRunningSnapshot } from '../../../shared/managed-agents-types';
 import { createManagedAgentsService, ManagedError, type ManagedAgentsService } from './service';
 import { createManagedStateStore, managedStateDir } from './state-store';
@@ -159,14 +159,21 @@ export async function quickLaunchFor(
   projectPath: string,
   cwd: string,
   agentId: string,
-  template: { id: string; agentName: string },
+  template: QuickTemplateChoice,
   provider: OrchestratorProvider,
 ): Promise<QuickManagedLaunch> {
   const { getCurrentBranch } = await import('../git-service');
   const branch = await getCurrentBranch(cwd).catch((): null => null);
   const launch = await quickManagedLaunch({
     service: managedAgents(), projectPath, cwd, agentId, agentName: template.agentName, templateId: template.id, branch,
+    addParts: template.addParts, removeParts: template.removeParts, mcpLaunchFlags: !!provider.buildMcpArgs,
   });
+  if (launch.changes.added.length > 0 || launch.changes.removed.length > 0) {
+    // Ids only: what this one launch changed from its template (#2928). Nothing is saved.
+    appLog('core:managed', 'info', 'Quick agent template: parts changed for this launch', {
+      meta: { agentId, templateId: template.id, added: launch.changes.added, removed: launch.changes.removed },
+    });
+  }
   const serversLeftOut = provider.buildMcpArgs ? 0 : Object.keys(launch.servers).length;
   if (launch.skippedSkills > 0 || serversLeftOut > 0 || launch.missing > 0) {
     appLog('core:managed', 'warn', 'Quick agent template: some parts were not delivered', {

@@ -567,6 +567,18 @@ describe('createDurable', () => {
     expect(config).not.toHaveProperty('freeAgentMode');
   });
 
+  it('saves Access (#2761): unset takes the Default access, a level is kept, a legacy on/off maps', async () => {
+    expect((await createDurable(PROJECT_PATH, 'access-default', 'indigo')).access).toBe('ask');
+    const edits = await createDurable(PROJECT_PATH, 'access-edits', 'indigo', 'default', true, undefined, 'auto_edit');
+    expect(edits.access).toBe('auto_edit');
+    expect(edits).not.toHaveProperty('freeAgentMode');
+    const auto = await createDurable(PROJECT_PATH, 'access-auto', 'indigo', 'default', true, undefined, 'auto');
+    expect(auto).toMatchObject({ access: 'auto', freeAgentMode: true });
+    // Legacy on maps with the old mode, skip-all by default.
+    expect((await createDurable(PROJECT_PATH, 'access-legacy', 'indigo', 'default', true, undefined, true)).access).toBe('full_access');
+    expect((await createDurable(PROJECT_PATH, 'access-off', 'indigo', 'default', true, undefined, false)).access).toBe('ask');
+  });
+
   it('never writes structuredMode', async () => {
     const config = await createDurable(PROJECT_PATH, 'default-mode', 'indigo');
     expect(config).not.toHaveProperty('structuredMode');
@@ -1576,6 +1588,59 @@ describe('updateDurableConfig', () => {
     const result = await getDurableConfig(PROJECT_PATH, 'durable_fam_off');
     expect(result).not.toBeNull();
     expect(result!.freeAgentMode).toBeUndefined();
+  });
+
+  describe('Access updates (#2761)', () => {
+    const written: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    const seed = (agent: Record<string, unknown>) => {
+      written[agentsJsonPath] = JSON.stringify([{ name: 'acc', color: 'indigo', createdAt: '2024-01-01', ...agent }]);
+      vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('agents.json'));
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => written[String(p)] || '[]');
+      vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => { written[String(p)] = String(data); });
+      vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+        written[String(dest)] = written[String(src)] || '';
+        delete written[String(src)];
+      });
+      vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    };
+
+    it.each([
+      ['plan', undefined],
+      ['ask', undefined],
+      ['auto_edit', undefined],
+      ['auto', true],
+      ['full_access', true],
+    ] as const)('saves %s and writes the legacy flag beside it', async (level, legacy) => {
+      const id = `durable_acc_${level}`;
+      seed({ id, freeAgentMode: true });
+      await updateDurableConfig(PROJECT_PATH, id, { access: level });
+      const result = await getDurableConfig(PROJECT_PATH, id);
+      expect(result!.access).toBe(level);
+      expect(result!.freeAgentMode).toBe(legacy);
+    });
+
+    it('moves a legacy on/off (an older phone) to the nearest level', async () => {
+      const base = { name: 'acc', color: 'indigo', createdAt: '2024-01-01' };
+      seed({ id: 'unused' });
+      written[agentsJsonPath] = JSON.stringify([
+        { ...base, id: 'durable_acc_plan_on', access: 'plan' },
+        { ...base, id: 'durable_acc_auto_on', access: 'auto', freeAgentMode: true },
+        { ...base, id: 'durable_acc_edits_off', access: 'auto_edit' },
+        { ...base, id: 'durable_acc_auto_off', access: 'auto', freeAgentMode: true },
+      ]);
+      await updateDurableConfig(PROJECT_PATH, 'durable_acc_plan_on', { freeAgentMode: true });
+      await updateDurableConfig(PROJECT_PATH, 'durable_acc_auto_on', { freeAgentMode: true });
+      await updateDurableConfig(PROJECT_PATH, 'durable_acc_edits_off', { freeAgentMode: false });
+      await updateDurableConfig(PROJECT_PATH, 'durable_acc_auto_off', { freeAgentMode: false });
+      // The old mode is skip-all by default.
+      expect(await getDurableConfig(PROJECT_PATH, 'durable_acc_plan_on')).toMatchObject({ access: 'full_access', freeAgentMode: true });
+      expect((await getDurableConfig(PROJECT_PATH, 'durable_acc_auto_on'))!.access).toBe('auto');
+      expect((await getDurableConfig(PROJECT_PATH, 'durable_acc_edits_off'))!.access).toBe('auto_edit');
+      const off = await getDurableConfig(PROJECT_PATH, 'durable_acc_auto_off');
+      expect(off!.access).toBe('ask');
+      expect(off!.freeAgentMode).toBeUndefined();
+    });
   });
 
   it('persists lastSessionId and round-trips', async () => {

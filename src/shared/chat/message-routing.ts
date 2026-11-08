@@ -92,7 +92,7 @@ export function messageDisplay(message: { source: MessageSource; text: string; r
   const { source, text, routed } = message;
   if (source === 'user' || source === 'annex') return { from: 'you', text };
   if (routed?.length) return { from: 'others', parts: routed.map(shown) };
-  if (source === 'system') return { from: 'others', parts: [{ fromClubhouse: true, text }] };
+  if (source === 'system' || source === 'action') return { from: 'others', parts: [{ fromClubhouse: true, text }] };
   if (source === 'group_project') return { from: 'others', parts: [{ text }] };
   if (source === 'shoulder_tap') {
     const tap = TAP.exec(text);

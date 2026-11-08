@@ -30,6 +30,7 @@ import { EditorSettingsView } from '../features/settings/EditorSettingsView';
 import { ExperimentalSettingsView } from '../features/settings/ExperimentalSettingsView';
 import { GoobersSettingsView } from '../features/settings/GoobersSettingsView';
 import { HelpersSettingsView } from '../features/settings/HelpersSettingsView';
+import { ActionsSettingsView } from '../features/actions/ActionsSettingsView';
 import { DispatcherSettingsView } from '../features/settings/DispatcherSettingsView';
 import { PartLibraryView } from '../features/managed/PartLibraryView';
 import { TemplatesSettingsView } from '../features/managed/TemplatesSettingsView';
@@ -282,6 +283,7 @@ export function MainContentView() {
     if (settingsSubPage === 'goobers') return <GoobersSettingsView />;
     if (settingsSubPage === 'helpers') return <HelpersSettingsView />;
     if (settingsSubPage === 'dispatcher') return <DispatcherSettingsView />;
+    if (settingsSubPage === 'actions') return <ActionsSettingsView />;
     if (settingsSubPage === 'managed-blocks') return <PartLibraryView key="block" kind="block" />;
     if (settingsSubPage === 'managed-skills') return <PartLibraryView key="skill" kind="skill" />;
     if (settingsSubPage === 'managed-mcp') return <PartLibraryView key="mcp" kind="mcp" />;
