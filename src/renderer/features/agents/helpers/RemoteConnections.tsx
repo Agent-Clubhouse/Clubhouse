@@ -7,12 +7,13 @@
  * kept on both computers, and the computer that receives a call checks it.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Agent } from '../../../../shared/types';
-import type { ConnectionDirection as SavedDirection } from '../../../../shared/connection-grants';
+import { CONNECTION_TOOLS, type ConnectionDirection as SavedDirection } from '../../../../shared/connection-grants';
 import { addressFromNamespacedId, formatAgentAddress, namespacedIdFromAddress } from '../../../../shared/agent-address';
 import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
+import { useAnnexStore, subscribeAnnexDevices } from '../../../stores/annexStore';
 import { Button } from '../../../components/Button';
 import { ConfirmDestructiveAction } from '../../../components/ConfirmDestructiveAction';
 
@@ -44,6 +45,69 @@ export function remoteConnections(grants: readonly SavedDirection[], agentId: st
 
 const META: Record<RemoteConnection['direction'], string> = { 'two-way': 'two-way', to: 'sends to it', from: 'sends to this agent' };
 
+/** What a direction with an agent on another computer can let its sender do, each a switch (D232). */
+export const REMOTE_TOOLS: ReadonlyArray<{ tool: string; label: string }> = [
+  ...CONNECTION_TOOLS.map(({ tool, label }) => ({ tool, label })),
+  { tool: 'wake_agent', label: 'Wake it' },
+];
+
+/**
+ * The switches for each direction of one connection: what the sender may do
+ * to the other agent. Saved here and sent to the other computer, which checks
+ * every call against its copy.
+ */
+function DirectionTools({ agentId, row, grants, otherName, agentName, onChanged }: {
+  agentId: string;
+  row: RemoteConnection;
+  grants: readonly SavedDirection[];
+  otherName: string;
+  agentName: string;
+  onChanged: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const directions = [
+    { outgoing: true, title: `What ${agentName} can do to ${otherName}` },
+    { outgoing: false, title: `What ${otherName} can do to ${agentName}` },
+  ].map((d) => ({
+    ...d,
+    saved: grants.find((g) => !!g.link && (d.outgoing
+      ? g.from.agentId === agentId && !g.from.machineId && g.to.agentId === row.agentId && g.to.machineId?.toLowerCase() === row.machine
+      : g.to.agentId === agentId && !g.to.machineId && g.from.agentId === row.agentId && g.from.machineId?.toLowerCase() === row.machine)),
+  })).filter((d) => !!d.saved);
+  const toggle = async (outgoing: boolean, current: readonly string[], tool: string, on: boolean) => {
+    const next = on ? current.filter((t) => t !== tool) : [...current, tool];
+    setError(null);
+    try {
+      await window.clubhouse.mcpBinding.setToolsAcrossMachines(agentId, row.address, outgoing, next);
+      onChanged();
+    } catch {
+      // telemetry-exempt: main logged it; the switch says so and stays as saved.
+      setError('Couldn’t save that. Try again.');
+    }
+  };
+  return (
+    <div className="ml-[22px] pl-3 pr-2.5 pb-2 flex flex-col gap-2" data-testid="remote-connection-tools">
+      {directions.map((d) => (
+        <div key={String(d.outgoing)}>
+          <div className="text-xs text-ctp-subtext0 pb-1">{d.title}</div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            {REMOTE_TOOLS.map(({ tool, label }) => {
+              const on = !d.saved!.disabledTools.includes(tool);
+              return (
+                <label key={tool} className="flex items-center gap-1.5 text-xs text-ctp-subtext0">
+                  <input type="checkbox" checked={on} onChange={(e) => void toggle(d.outgoing, d.saved!.disabledTools, tool, e.target.checked)} />
+                  {label}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      {error && <div className="text-xs text-ctp-error">{error}</div>}
+    </div>
+  );
+}
+
 export function RemoteConnections({ agent, grants, onChanged }: {
   agent: Agent;
   grants: readonly SavedDirection[];
@@ -51,6 +115,12 @@ export function RemoteConnections({ agent, grants, onChanged }: {
   onChanged: () => void;
 }) {
   const satellites = useAnnexClientStore((s) => s.satellites);
+  const devices = useAnnexStore((s) => s.devices);
+  const loadDevices = useAnnexStore((s) => s.loadDevices);
+  useEffect(() => {
+    void loadDevices();
+    return subscribeAnnexDevices();
+  }, [loadDevices]);
   const remoteAgents = useRemoteProjectStore((s) => s.remoteAgents);
   const rows = useMemo(() => remoteConnections(grants, agent.id), [grants, agent.id]);
   const [picking, setPicking] = useState(false);
@@ -58,11 +128,13 @@ export function RemoteConnections({ agent, grants, onChanged }: {
   const [twoWay, setTwoWay] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<RemoteConnection | null>(null);
+  const [managing, setManaging] = useState<string | null>(null);
 
   const machineName = (machine: string) => satellites.find((s) => s.fingerprint.toLowerCase() === machine)?.alias || 'another computer';
-  // Durable agents on computers this one is connected to, by address.
+  // Durable agents on computers in this network that this one is connected to (D238), by address.
   const candidates = useMemo(() => {
-    const connected = new Set(satellites.filter((s) => s.state === 'connected').map((s) => s.fingerprint.toLowerCase()));
+    const network = new Set(devices.filter((d) => d.role === 'member' && d.kind !== 'phone').map((d) => d.fingerprint.toLowerCase()));
+    const connected = new Set(satellites.filter((s) => s.state === 'connected' && network.has(s.fingerprint.toLowerCase())).map((s) => s.fingerprint.toLowerCase()));
     const linked = new Set(rows.map((r) => r.address));
     return Object.entries(remoteAgents).flatMap(([id, a]) => {
       const address = addressFromNamespacedId(id);
@@ -70,7 +142,7 @@ export function RemoteConnections({ agent, grants, onChanged }: {
       const text = formatAgentAddress(address);
       return linked.has(text) ? [] : [{ address: text, name: a.name, machine: address.machine }];
     }).sort((x, y) => x.name.localeCompare(y.name));
-  }, [remoteAgents, satellites, rows]);
+  }, [remoteAgents, satellites, devices, rows]);
   const nameOf = (r: Pick<RemoteConnection, 'agentId' | 'machine'>) =>
     remoteAgents[namespacedIdFromAddress({ agentId: r.agentId, machine: r.machine })]?.name || r.agentId;
 
@@ -101,12 +173,18 @@ export function RemoteConnections({ agent, grants, onChanged }: {
               <div className="w-[calc(100%-28px)] ml-[22px] h-[30px] flex items-center gap-2 pl-3 pr-2.5 rounded-md hover:bg-surface-0" data-testid="remote-connection-row">
                 <span className="text-[12.5px] text-ctp-text truncate">{nameOf(r)}</span>
                 <span className="text-xs text-ctp-overlay1 whitespace-nowrap">on {machineName(r.machine)}, {META[r.direction]}</span>
-                <span className="ml-auto">
+                <span className="ml-auto flex items-center gap-2.5">
+                  <button type="button" onClick={() => setManaging(managing === r.address ? null : r.address)} className="text-xs text-ctp-overlay1 hover:text-ctp-text cursor-pointer" data-testid="remote-connection-manage">
+                    {managing === r.address ? 'Done' : 'Manage'}
+                  </button>
                   <button type="button" onClick={() => setRemoving(r)} className="text-xs text-ctp-overlay1 hover:text-ctp-text cursor-pointer" data-testid="remote-connection-remove">
                     Remove
                   </button>
                 </span>
               </div>
+              {managing === r.address && (
+                <DirectionTools agentId={agent.id} row={r} grants={grants} otherName={nameOf(r)} agentName={agent.name} onChanged={onChanged} />
+              )}
             </li>
           ))}
         </ul>

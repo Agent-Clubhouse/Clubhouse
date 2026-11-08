@@ -16,7 +16,7 @@ import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
   deniedConnectionTools, getConnectionDirection, listLinkedDirections, onConnectionGrantsChanged,
-  setConnectionLink, setConnectionTools,
+  listConnectionDirections, setConnectionLink, setConnectionTools,
 } from './connection-grants-store';
 import { appLog } from './log-service';
 import { recordConnectionChange } from './grant-telemetry';
@@ -26,7 +26,7 @@ import { clearBindingRemovedByUser, registerPersistedBindingSource, rebuildPersi
 import { removeConnectionDirections } from './connection-grants-store';
 import { formatAgentAddress, parseAgentAddress, routeOf } from '../../shared/agent-address';
 import * as annexIdentity from './annex-identity';
-import { remoteAgentName, rememberRemoteAgentName } from './annex-agent-calls';
+import { isNetworkComputer, remoteAgentName, rememberRemoteAgentName } from './annex-agent-calls';
 
 export const USER_CONNECTION_SOURCE_ID = 'user-connections';
 /** The user's links to agents on other machines (#3064). */
@@ -162,15 +162,30 @@ const networkConnectionSource: PersistedBindingSource = {
 export async function connectAcrossMachines(agentId: string, address: string, options: { twoWay?: boolean; name?: string } = {}): Promise<void> {
   const other = connectionEnd(address);
   if (!other.machineId) throw new Error('That agent is on this computer.');
+  if (!isNetworkComputer(other.machineId)) throw new Error('Agents connect only with computers in this Annex Network.');
   if (options.name) await rememberRemoteAgentName(bindingTargetOf(other), options.name);
   const link = async (from: AgentAddress, to: AgentAddress) => {
-    const existing = getConnectionDirection(from, to);
-    await setConnectionTools(from, to, existing?.link ? existing.disabledTools : [...NEW_CONNECTION_DISABLED_TOOLS]);
+    // A direction already linked keeps its tools and its time, so the other machine's newer edits stand.
+    if (getConnectionDirection(from, to)?.link) return;
+    await setConnectionTools(from, to, [...NEW_CONNECTION_DISABLED_TOOLS]);
     await setConnectionLink(from, to, true);
   };
   await link(local(agentId), other);
   if (options.twoWay) await link(other, local(agentId));
   await rebuildPersistedBindings();
+}
+
+/**
+ * Set the tools turned off on one direction between an agent here and one on
+ * another machine (#3064): `outgoing` from here to there, else from there to
+ * here. The other machine gets the change when connected.
+ */
+export async function setToolsAcrossMachines(agentId: string, address: string, outgoing: boolean, disabledTools: string[]): Promise<void> {
+  const other = connectionEnd(address);
+  if (!other.machineId) throw new Error('That agent is on this computer.');
+  const [from, to] = outgoing ? [local(agentId), other] : [other, local(agentId)];
+  if (!getConnectionDirection(from, to)?.link) throw new Error('Those agents are not connected that way.');
+  await setConnectionTools(from, to, disabledTools);
 }
 
 /** Remove the user's links between an agent here and one on another machine, both ways. */
@@ -227,7 +242,16 @@ let notifyRenderer: ((from: string, to: string, disabledTools: string[]) => void
 
 /** An agent was deleted: its directions go, and nothing binds them again. */
 export async function forgetConnectionAgent(agentId: string): Promise<void> {
-  await removeConnectionDirections(agentId).catch((err) => {
+  // A link with an agent on another machine is turned off, not dropped, so that machine hears of it (#3064).
+  for (const d of listConnectionDirections(agentId)) {
+    if ((d.from.machineId || d.to.machineId) && d.link) {
+      await setConnectionLink(d.from, d.to, false).catch((err) => {
+        // telemetry-exempt: logged; the entry goes below either way
+        appLog('core:mcp', 'warn', 'Could not turn off a deleted agent\u2019s link with another machine', { meta: { agentId, error: errorText(err) } });
+      });
+    }
+  }
+  await removeConnectionDirections(agentId, { keepOtherMachines: true }).catch((err) => {
     appLog('core:mcp', 'warn', 'Could not drop a deleted agent\u2019s connection permissions', { meta: { agentId, error: errorText(err) } });
   });
 }
@@ -242,7 +266,10 @@ export function startConnectionGrants(options: { notify?: (from: string, to: str
   const unregisterNetwork = registerPersistedBindingSource(networkConnectionSource);
   const unsubscribe = onConnectionGrantsChanged((from, to) => {
     // A direction from another machine has no binding here: that machine's agent holds it (#3064).
-    if (from.machineId) return;
+    if (from.machineId) {
+      notifyRenderer?.(bindingTargetOf(from), to.agentId, getConnectionDirection(from, to)?.disabledTools ?? []);
+      return;
+    }
     const entry = getConnectionDirection(from, to);
     const targetId = bindingTargetOf(to);
     bindingManager.setDisabledTools(from.agentId, targetId, entry?.disabledTools ?? []);

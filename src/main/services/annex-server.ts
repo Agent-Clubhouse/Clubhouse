@@ -3453,13 +3453,13 @@ async function handleMobileNetworkMembersRoute(ctx: AnnexRouteContext): Promise<
 
 /**
  * Another computer's agents calling this one's, and the connections between
- * them (#3064). Only a computer that controls this one: a phone has no agents.
+ * them (#3064): only a computer in this machine's network (D238), never a phone
+ * or a one-to-one pairing.
  */
 function agentCallPeer(ctx: AnnexRouteContext): string | null {
   const fp = ctx.mobilePrincipal;
   if (!fp || mobileSessionPeers.has(fp)) return null;
-  const peer = annexPeers.getPeer(fp);
-  return peer && peer.kind !== 'phone' && annexPeers.controlsThisMachine(peer) ? fp : null;
+  return agentCalls.isNetworkComputer(fp) ? fp : null;
 }
 
 async function readAgentCallBody(ctx: AnnexRouteContext): Promise<unknown | undefined> {
@@ -3473,7 +3473,7 @@ async function readAgentCallBody(ctx: AnnexRouteContext): Promise<unknown | unde
 
 async function handleNetworkAgentCallRoute(ctx: AnnexRouteContext): Promise<void> {
   const machine = agentCallPeer(ctx);
-  if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only another computer can call agents here.' }); return; }
+  if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only a computer in this Annex Network can call agents here.' }); return; }
   const body = await readAgentCallBody(ctx);
   if (body === undefined) return;
   // Checked again once the body is here: the peer may have been removed meanwhile.
@@ -3485,12 +3485,13 @@ async function handleNetworkAgentCallRoute(ctx: AnnexRouteContext): Promise<void
 
 async function handleNetworkConnectionsRoute(ctx: AnnexRouteContext): Promise<void> {
   const machine = agentCallPeer(ctx);
-  if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only another computer can share connections here.' }); return; }
+  if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only a computer in this Annex Network can share connections here.' }); return; }
   const body = await readAgentCallBody(ctx);
   if (body === undefined) return;
   if (ctx.requireMtls()) return;
   const outcome = await agentCalls.receiveDirections(machine, body);
-  if ('applied' in outcome) sendJson(ctx.res, 200, outcome);
+  // Answered with this machine's own share, so the sender has it even if this one can't reach it.
+  if ('applied' in outcome) sendJson(ctx.res, 200, { ...outcome, directions: await agentCalls.shareForAnswer(machine) });
   else sendJson(ctx.res, outcome.status, { error: outcome.error, message: outcome.message });
 }
 

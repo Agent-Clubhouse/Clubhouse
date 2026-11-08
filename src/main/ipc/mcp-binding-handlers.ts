@@ -34,10 +34,10 @@ import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/d
 import { watchAgentCards } from '../services/dispatcher/dispatcher-agent-cards-watch';
 import { dispatcherConnectionSource, isRemovalUnsaved, listDispatcherLinksForUser, watchDispatcherConnections } from '../services/dispatcher-connections';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
+import { withValidatedArgs, stringArg, objectArg, arrayArg, booleanArg } from './validation';
 import { listConnectionSources, removeConnectionSource } from '../services/connection-sources';
 import type { ConnectionSourceKind } from '../../shared/connection-sources';
-import { applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, makeTwoWay, startConnectionGrants } from '../services/connection-grants';
+import { applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, makeTwoWay, setToolsAcrossMachines, startConnectionGrants } from '../services/connection-grants';
 import { listConnectionDirections } from '../services/connection-grants-store';
 import { startAgentCalls } from '../services/annex-agent-calls';
 import * as annexClient from '../services/annex-client';
@@ -220,6 +220,13 @@ export function registerMcpBindingHandlers(): void {
         twoWay: o.twoWay === true,
         ...(typeof o.name === 'string' && o.name.length <= 200 && { name: o.name }),
       });
+    },
+  ));
+  ipcMain.handle(IPC.MCP_BINDING.SET_TOOLS_ACROSS_MACHINES, withValidatedArgs(
+    [stringArg({ maxLength: 200 }), stringArg({ maxLength: 400 }), booleanArg(), arrayArg(stringArg({ maxLength: 100 }), { maxLength: 50 })],
+    async (event, agentId, address, outgoing, tools) => {
+      assertCallerIsAppWindow(event);
+      await setToolsAcrossMachines(agentId as string, address as string, outgoing as boolean, tools as string[]);
     },
   ));
   ipcMain.handle(IPC.MCP_BINDING.DISCONNECT_ACROSS_MACHINES, withValidatedArgs([stringArg({ maxLength: 200 }), stringArg({ maxLength: 400 })], async (event, agentId, address) => {

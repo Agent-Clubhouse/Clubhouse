@@ -41,18 +41,26 @@ export function buildSenderLabel(agentId: string, senderName: string, projectNam
 }
 
 /**
- * A message as the target receives it: tagged with its task and sender, and
- * with reply instructions when the target has a wire back to the sender.
+ * Who a message or file is from, as the target reads it, and the target's
+ * name for the sender's answer. A caller on another machine has no binding
+ * here: its machine said who it is (#3064), and the label names that machine.
  */
-function buildTaggedMessage(agentId: string, targetId: string, message: string, taskId: string): { text: string; routed: RoutedMessagePart[]; senderLabel: string; targetName: string; isBidirectional: boolean } {
+function senderOf(agentId: string, targetId: string): { senderName: string; senderLabel: string; targetName: string } {
   const sourceBinding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
-  // A caller on another machine has no binding here: its machine said who it is (#3064).
   const remote = currentRemoteCaller();
   const senderName = remote ? `${remote.name} on ${remote.machineName}` : sourceBinding?.agentName || agentId;
   const senderLabel = remote
     ? (remote.projectName ? `${remote.name}@${remote.projectName} on ${remote.machineName}` : senderName)
     : buildSenderLabel(agentId, senderName, sourceBinding?.projectName);
-  const targetName = sourceBinding?.targetName || remote?.targetName || targetId;
+  return { senderName, senderLabel, targetName: sourceBinding?.targetName || remote?.targetName || targetId };
+}
+
+/**
+ * A message as the target receives it: tagged with its task and sender, and
+ * with reply instructions when the target has a wire back to the sender.
+ */
+function buildTaggedMessage(agentId: string, targetId: string, message: string, taskId: string): { text: string; routed: RoutedMessagePart[]; senderLabel: string; targetName: string; isBidirectional: boolean } {
+  const { senderName, senderLabel, targetName } = senderOf(agentId, targetId);
 
   // Check if the target has a reverse binding back to the caller
   const reverseBinding = bindingManager.getBindingsForAgent(targetId).find(b => b.targetId === agentId);
@@ -460,10 +468,7 @@ export function registerAgentTools(): void {
         return sleepingError(agentId, targetId, 'sending files');
       }
 
-      const sourceBinding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
-      const senderName = sourceBinding?.agentName || agentId;
-      const senderLabel = buildSenderLabel(agentId, senderName, sourceBinding?.projectName);
-      const targetName = sourceBinding?.targetName || targetId;
+      const { senderName, senderLabel, targetName } = senderOf(agentId, targetId);
 
       try {
         // Write content to temp file
@@ -605,7 +610,7 @@ export function registerAgentTools(): void {
     },
     handler: async (targetId, agentId, args): Promise<McpToolResult> => {
       const message = optionalString(args, 'message');
-      const targetName = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId)?.targetName || targetId;
+      const targetName = senderOf(agentId, targetId).targetName;
       const taskId = `t_${Date.now().toString(36)}`;
       const tagged = message ? buildTaggedMessage(agentId, targetId, message, taskId) : undefined;
       return wakeWiredAgent({ callerId: agentId, targetId, targetName, mission: tagged?.text, missionRouted: tagged?.routed });

@@ -10,12 +10,16 @@ const THIRD = Array(16).fill('cc').join(':');
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => state.base } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./annex-identity', () => ({ getIdentity: () => ({ fingerprint: SELF.toUpperCase() }) }));
-vi.mock('./annex-peers', () => ({ listPeers: () => [{ fingerprint: OTHER.toUpperCase(), alias: 'Studio' }] }));
+vi.mock('./annex-peers', () => ({ listPeers: () => [
+  { fingerprint: OTHER.toUpperCase(), alias: 'Studio', role: 'member', kind: 'desktop' },
+  // A one-to-one pairing: not in the network.
+  { fingerprint: THIRD.toUpperCase(), alias: 'Old Mac', role: 'satellite' },
+] }));
 state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'annex-agent-calls-'));
 
 import {
   AGENT_CALL_VERSION, LOOP_LIMIT, RATE_LIMIT, currentRemoteCaller, forwardAgentCall, receiveAgentCall, receiveDirections,
-  remoteAgentName, startAgentCalls, syncDirectionsWith, waitingFor, flushOutbox, type AgentCallTransport, type RemoteCaller,
+  remoteAgentName, startAgentCalls, _clearOutboxForTesting, syncDirectionsWith, waitingFor, flushOutbox, isNetworkComputer, type AgentCallTransport, type RemoteCaller,
 } from './annex-agent-calls';
 import {
   getConnectionDirection, listAllConnectionDirections, removeConnectionDirections, setConnectionLink, setConnectionTools,
@@ -52,6 +56,7 @@ const inbound = { from: { agentId: 'sender', machineId: OTHER }, to: { agentId: 
 
 beforeEach(async () => {
   for (const id of ['sender', 'receiver', 'here', 'there']) await removeConnectionDirections(id);
+  await _clearOutboxForTesting();
   connected = true;
   posts = [];
   seen.length = 0;
@@ -83,6 +88,25 @@ describe('receiving a call from another machine (#3064)', () => {
     expect(seen[0]).toMatchObject({ tool: 'send_message', targetId: 'receiver', callerId: `sender@${OTHER}`, args: { message: 'hi' } });
     expect(seen[0].caller).toEqual({ name: 'Scout', projectName: 'Atlas', machineName: 'Studio', targetName: 'Builder' });
     expect(await receiveAgentCall(OTHER, call({ tool: 'clear_agent' }), now)).toMatchObject({ status: 403, error: 'tool_denied' });
+  });
+
+  it('wakes an agent here when the link allows it, and not when wake is switched off on it (#3056: message, wake and read)', async () => {
+    await setConnectionLink(inbound.from, inbound.to, true);
+    expect(await receiveAgentCall(OTHER, call({ tool: 'wake_agent', args: { message: 'start on it' } }), now)).toEqual({ result: ok('ran here') });
+    expect(seen.at(-1)).toMatchObject({ tool: 'wake_agent', targetId: 'receiver', callerId: `sender@${OTHER}` });
+    expect(seen.at(-1)!.caller).toMatchObject({ name: 'Scout', machineName: 'Studio' });
+    await setConnectionTools(inbound.from, inbound.to, ['wake_agent']);
+    expect(await receiveAgentCall(OTHER, call({ tool: 'wake_agent', args: {} }), now)).toMatchObject({ status: 403, error: 'tool_denied' });
+  });
+
+  it('counts wakes with messages for the loop limit', async () => {
+    await setConnectionLink(inbound.from, inbound.to, true);
+    let t = now;
+    for (let i = 0; i < LOOP_LIMIT.messages; i++) {
+      expect(await receiveAgentCall(OTHER, call({ tool: i % 2 ? 'wake_agent' : 'send_message', args: i % 2 ? {} : { message: 'x' } }), t)).toHaveProperty('result');
+      t += Math.floor(RATE_LIMIT.windowMs / RATE_LIMIT.calls) + 1;
+    }
+    expect(await receiveAgentCall(OTHER, call({ tool: 'wake_agent', args: {} }), t)).toMatchObject({ status: 429, error: 'loop_limited' });
   });
 
   it('takes the sender\'s machine from the connection, not from the call', async () => {
@@ -120,6 +144,43 @@ describe('receiving a call from another machine (#3064)', () => {
   });
 });
 
+describe('receiving: repeats, and copies from another machine\'s clock', () => {
+  it('runs a call id once: a retry after a lost answer gets the first answer', async () => {
+    await setConnectionLink(inbound.from, inbound.to, true);
+    const once = call({ callId: 'same' });
+    expect(await receiveAgentCall(OTHER, once, now)).toEqual({ result: ok('ran here') });
+    expect(await receiveAgentCall(OTHER, once, now)).toEqual({ result: ok('ran here') });
+    expect(seen).toHaveLength(1);
+  });
+
+  it('takes a copy dated far ahead as made now, and a link only for an agent here that exists', async () => {
+    const ahead = new Date(now + 24 * 3_600_000).toISOString();
+    await receiveDirections(OTHER, { v: 1, directions: [
+      { from: { agentId: 'there', machine: OTHER }, to: { agentId: 'receiver', machine: SELF }, disabledTools: [], link: true, updatedAt: ahead },
+      { from: { agentId: 'there', machine: OTHER }, to: { agentId: 'nobody', machine: SELF }, disabledTools: [], link: true, updatedAt: ahead },
+    ] }, now);
+    expect(getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: 'receiver' })?.updatedAt).toBe(new Date(now).toISOString());
+    expect(getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: 'nobody' })).toBeUndefined();
+    // So an edit here a moment later still wins over it.
+    expect(Date.parse(getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: 'receiver' })!.updatedAt)).toBeLessThan(now + 1000);
+  });
+});
+
+describe('only computers in the network (D238)', () => {
+  it('knows a network computer from a one-to-one pairing or an unknown machine', () => {
+    expect(isNetworkComputer(OTHER)).toBe(true);
+    expect(isNetworkComputer(THIRD)).toBe(false);
+    expect(isNetworkComputer(Array(16).fill('dd').join(':'))).toBe(false);
+  });
+
+  it('sends nothing to a machine paired one-to-one', async () => {
+    const result = await forwardAgentCall('here', `there@${THIRD}`, 'Far agent', 'send_message', { message: 'hello' });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain("is not in this computer's Annex Network");
+    expect(posts).toHaveLength(0);
+  });
+});
+
 describe('sending a call to another machine', () => {
   it('posts it with the sender\'s name and project, and returns the other machine\'s answer', async () => {
     const result = await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'hello' });
@@ -144,6 +205,8 @@ describe('sending a call to another machine', () => {
     await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_file', { content: 'two' });
     expect(JSON.parse(textOf(await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'get_status', {})))).toMatchObject({ status: 'offline' });
     expect((await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'clear_agent', {})).isError).toBe(true);
+    // A wake whose moment has passed isn't kept for later.
+    expect((await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'wake_agent', {})).isError).toBe(true);
     expect(posts).toHaveLength(0);
     expect(waitingFor(OTHER).map((i) => i.body.tool)).toEqual(['send_message', 'send_file']);
 
@@ -152,6 +215,52 @@ describe('sending a call to another machine', () => {
     await vi.waitFor(() => expect(waitingFor(OTHER)).toHaveLength(0));
     const calls = posts.filter((p) => p.path === '/api/v1/network/agent-call');
     expect(calls.map((p) => p.body.tool)).toEqual(['send_message', 'send_file']);
+  });
+
+  it('keeps what waited when the other machine is busy or at its limit, and drops one it refuses', async () => {
+    connected = false;
+    await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'a' });
+    await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'b' });
+    connected = true;
+    respond = () => ({ status: 429, body: { error: 'rate_limited' } });
+    await flushOutbox(OTHER);
+    expect(waitingFor(OTHER)).toHaveLength(2);
+    respond = () => ({ status: 404, body: { error: 'unavailable' } });
+    await flushOutbox(OTHER);
+    expect(waitingFor(OTHER)).toHaveLength(2);
+    // Not connected there yet, for a message just queued: the link may still be on its way.
+    respond = () => ({ status: 403, body: { error: 'not_connected' } });
+    await flushOutbox(OTHER);
+    expect(waitingFor(OTHER)).toHaveLength(2);
+    // Any other refusal is final: the tool is off there.
+    respond = () => ({ status: 403, body: { error: 'tool_denied' } });
+    await flushOutbox(OTHER);
+    expect(waitingFor(OTHER)).toHaveLength(0);
+  });
+
+  it('queues a new message behind ones still waiting, even once the machine is back', async () => {
+    connected = false;
+    await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'first' });
+    connected = true;
+    respond = () => ({ status: 503, body: {} });
+    const second = await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'second' });
+    expect(textOf(second)).toContain('behind messages already on their way');
+    await vi.waitFor(() => expect(posts.length).toBeGreaterThan(0));
+    expect(waitingFor(OTHER).map((i) => i.body.args.message)).toEqual(['first', 'second']);
+    respond = () => ({ status: 200, body: { result: ok('ok') } });
+    await flushOutbox(OTHER);
+    expect(posts.filter((p) => p.path === '/api/v1/network/agent-call').slice(-2).map((p) => (p.body.args as { message: string }).message)).toEqual(['first', 'second']);
+  });
+
+  it('counts messages to one agent on this side too, so the limit holds both ways', async () => {
+    let t = now;
+    for (let i = 0; i < LOOP_LIMIT.messages; i++) {
+      expect((await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: `m${i}` }, t)).isError).toBeFalsy();
+      t += 1000;
+    }
+    const over = await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'one more' }, t);
+    expect(over.isError).toBe(true);
+    expect(textOf(over)).toContain('paused');
   });
 
   it('keeps what waited when the machine fails to answer, for the next connect', async () => {
@@ -168,6 +277,37 @@ describe('sending a call to another machine', () => {
 });
 
 describe('keeping both machines\' copies of a connection', () => {
+  it('takes the other machine\'s share from its answer, so both copies meet when only one can reach the other', async () => {
+    const at = new Date(now).toISOString();
+    respond = (urlPath) => (urlPath === '/api/v1/network/connections'
+      ? { status: 200, body: { applied: 0, directions: [{ from: { agentId: 'there', machine: OTHER, name: 'Far agent' }, to: { agentId: 'receiver', machine: SELF }, disabledTools: [], link: true, updatedAt: at }] } }
+      : { status: 200, body: { result: ok('x') } });
+    expect(await syncDirectionsWith(OTHER)).toBe(true);
+    expect(getConnectionDirection({ agentId: 'there', machineId: OTHER }, { agentId: 'receiver' })?.link).toBeTruthy();
+  });
+
+  it('on connect, sends what waited only after the connections got through', async () => {
+    await setConnectionLink({ agentId: 'here' }, { agentId: 'there', machineId: OTHER }, true);
+    connected = false;
+    await forwardAgentCall('here', `there@${OTHER}`, 'Far agent', 'send_message', { message: 'later' });
+    connected = true;
+    posts = [];
+    respond = (urlPath) => (urlPath === '/api/v1/network/connections' ? { status: 503, body: {} } : { status: 200, body: { result: ok('x') } });
+    connectedListener!(OTHER);
+    await vi.waitFor(() => expect(posts.some((p) => p.path === '/api/v1/network/connections')).toBe(true));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(posts.some((p) => p.path === '/api/v1/network/agent-call')).toBe(false);
+    expect(waitingFor(OTHER)).toHaveLength(1);
+  });
+
+  it('runs a retry that arrives during the first run only once', async () => {
+    await setConnectionLink(inbound.from, inbound.to, true);
+    const once = call({ callId: 'slow' });
+    const [a, b] = await Promise.all([receiveAgentCall(OTHER, once, now), receiveAgentCall(OTHER, once, now)]);
+    expect(a).toEqual(b);
+    expect(seen).toHaveLength(1);
+  });
+
   it('sends the other machine its share, with both ends naming their machine', async () => {
     await setConnectionLink({ agentId: 'here' }, { agentId: 'there', machineId: OTHER }, true);
     await setConnectionLink({ agentId: 'here' }, { agentId: 'there', machineId: THIRD }, true);
@@ -177,7 +317,7 @@ describe('keeping both machines\' copies of a connection', () => {
     expect(posts.filter((p) => p.path === '/api/v1/network/connections').every((p) => p.machine === OTHER || p.machine === THIRD)).toBe(true);
     const sent = posts.filter((p) => p.path === '/api/v1/network/connections' && p.machine === OTHER).at(-1)!;
     expect(sent.body.directions).toEqual([expect.objectContaining({
-      from: { agentId: 'here', machine: SELF, name: 'Helper' }, to: { agentId: 'there', machine: OTHER }, link: true,
+      from: { agentId: 'here', machine: SELF, name: 'Helper' }, to: expect.objectContaining({ agentId: 'there', machine: OTHER }), link: true,
     })]);
   });
 

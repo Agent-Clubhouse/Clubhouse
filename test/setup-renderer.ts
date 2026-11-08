@@ -492,6 +492,7 @@ vi.stubGlobal('clubhouse', {
     makeTwoWay: async () => {},
     connectAcrossMachines: async () => {},
     disconnectAcrossMachines: async () => {},
+    setToolsAcrossMachines: async () => {},
     onConnectionGrantsChanged: () => noop,
     onAgentConnectionChanged: () => noop,
     registerWebview: asyncNoop,
