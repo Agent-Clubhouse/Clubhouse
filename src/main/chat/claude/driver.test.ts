@@ -686,6 +686,58 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
       await session.close();
     });
 
+    it('a reply that arrives after the next init with the same list still shows the reason', async () => {
+      let answer!: (v: unknown) => void;
+      const read = vi.fn(() => new Promise((r) => { answer = r; }));
+      const { transport, drafts } = await scripted({}, (t) => { (t as WithStatus).mcpServerStatus = read; });
+      transport.emit(init([{ name: 'workiq', status: 'failed' }]));
+      await drafts.waitFor('session_info', (d) => !!d.data.mcpServers);
+      await settle();
+      // The next turn's init, same list, before the reply: no second read.
+      transport.emit(init([{ name: 'workiq', status: 'failed' }]));
+      await settle(); await settle();
+      expect(read).toHaveBeenCalledTimes(1);
+      answer(failedReply.slice(1));
+      const shown = await drafts.waitFor('session_info', (d) => !!d.data.mcpServers?.some((m) => m.error));
+      expect(shown.data.mcpServers).toEqual([{ name: 'workiq', status: 'failed', error: 'spawn workiq-mcp ENOENT token=<redacted>' }]);
+    });
+
+    it('drops a reply for an init list a newer one replaced', async () => {
+      let answer!: (v: unknown) => void;
+      const read = vi.fn(() => new Promise((r) => { answer = r; }));
+      const { transport, drafts } = await scripted({}, (t) => { (t as WithStatus).mcpServerStatus = read; });
+      transport.emit(init([{ name: 'workiq', status: 'failed' }]));
+      await drafts.waitFor('session_info', (d) => !!d.data.mcpServers);
+      await settle();
+      transport.emit(init([{ name: 'workiq', status: 'connected' }]));
+      await settle(); await settle();
+      answer(failedReply.slice(1));
+      await settle(); await settle();
+      expect(mcpLists(drafts)).toEqual([[{ name: 'workiq', status: 'failed' }], [{ name: 'workiq', status: 'connected' }]]);
+    });
+
+    it.each(['throws', 'times out'])('reads again at the next init after a read that %s, once per init', async (how) => {
+      const replies: Array<() => Promise<unknown>> = [
+        how === 'throws' ? async () => { throw new Error('busy'); } : () => new Promise(() => {}),
+        async () => failedReply.slice(1),
+      ];
+      const read = vi.fn(() => replies.shift()!());
+      const { transport, drafts } = await scripted({}, (t) => { (t as WithStatus).mcpServerStatus = read; });
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        transport.emit(init([{ name: 'workiq', status: 'pending' }]));
+        await settle(); await settle();
+        await vi.advanceTimersByTimeAsync(MCP_STATUS_TIMEOUT_MS);
+      } finally {
+        vi.useRealTimers();
+      }
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(mcpLists(drafts)).toEqual([[{ name: 'workiq', status: 'pending' }]]);
+      transport.emit(init([{ name: 'workiq', status: 'pending' }]));
+      await drafts.waitFor('session_info', (d) => !!d.data.mcpServers?.some((m) => m.error));
+      expect(read).toHaveBeenCalledTimes(2);
+    });
+
     it('asks again at the next init while a server is still starting', async () => {
       const replies: unknown[] = [[{ name: 'workiq', status: 'pending' }], failedReply.slice(1)];
       const read = vi.fn(async () => replies.shift());

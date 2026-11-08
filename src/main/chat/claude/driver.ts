@@ -596,8 +596,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   /** False once get_usage said plan limits don't apply, or the CLI doesn't answer it. */
   private planUsageAvailable = true;
   private planUsageFailures = 0;
-  /** Bumped by every root init; an mcp_status reply for an older one is dropped. */
-  private mcpInitSeq = 0;
+  /** The latest root init's MCP list: an mcp_status reply read for another list is dropped. */
+  private mcpInitKey: string | undefined;
   /** The init list the last mcp_status read was for: the same list again isn't re-read. */
   private mcpStatusReadFor: string | undefined;
   /** False once the SDK showed it has no mcpServerStatus(). */
@@ -665,15 +665,15 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
    * server is still starting or failed without one, ask the CLI once
    * (`mcpServerStatus()`, local, no tokens) and report what it says, with the
    * failed server's redacted error, as the shared MCP list (D95). One read per
-   * new init list, under a timeout; a list read while a server was still
-   * starting is read again at the next init. Quiet when the SDK has no such
-   * call or the read fails.
+   * new init list, under a timeout; a list is read again at the next init
+   * when a server was still starting or the read failed or timed out. Quiet
+   * when the SDK has no such call or the read fails.
    */
   private async readMcpStatus(init: ChatMcpServer[]): Promise<void> {
-    const seq = ++this.mcpInitSeq;
+    const key = JSON.stringify(init);
+    this.mcpInitKey = key;
     if (!this.mcpStatusAvailable || !this.transport.mcpServerStatus || this.closing) return;
     if (!init.some(mcpServerNeedsStatus)) { this.mcpStatusReadFor = undefined; return; }
-    const key = JSON.stringify(init);
     if (key === this.mcpStatusReadFor) return;
     this.mcpStatusReadFor = key;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -686,14 +686,17 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
       ]);
       if (reply === undefined) { this.mcpStatusAvailable = false; return; }
       const status = claudeMcpServersFromStatus(reply);
-      // A newer init has its own list (and its own read, if it needs one).
-      if (!status || seq !== this.mcpInitSeq || this.closing) return;
+      // A newer init with another list has its own read, if it needs one. One
+      // with the same list sent no read of its own, so this reply answers it too.
+      if (!status || key !== this.mcpInitKey || this.closing) return;
       const servers = mergeClaudeMcpServers(init, status);
       // Still starting: the next init reads again even if its list is the same.
       if (servers.some((s) => s.status === 'pending')) this.mcpStatusReadFor = undefined;
       if (JSON.stringify(servers) === key) return;
       this.push({ type: 'session_info', data: { mcpServers: servers } });
     } catch (err) {
+      // Unanswered: the next init reads again, still once per init.
+      if (this.mcpStatusReadFor === key) this.mcpStatusReadFor = undefined;
       this.log?.('debug', '[claude-chat] Could not read the MCP server status', { error: err instanceof Error ? err.message : String(err) });
     } finally {
       clearTimeout(timer);
