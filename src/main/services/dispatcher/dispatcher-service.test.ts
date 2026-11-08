@@ -737,10 +737,18 @@ describe('personality and first-run setup (#3047)', () => {
     expect(state.setup).toEqual({ status: 'pending', upgrade: false });
     expect(state.personality).toEqual(DEFAULT_DISPATCHER_PERSONALITY);
     expect(state.behavior.level).toBe('standard');
-    expect(chatFile()).toContain(svc.DISPATCHER_CHAT_INSTRUCTIONS.trimEnd());
+    expect(chatFile()).toContain(svc.DISPATCHER_CHAT_INSTRUCTIONS);
     expect(chatFile()).toContain(personalityInstructions('Dispatcher', DEFAULT_DISPATCHER_PERSONALITY));
     // The personality is the chat's: the agent that does the work isn't told it.
     expect(workFile()).not.toContain(PERSONALITY_PRESET_TEXT.concise);
+  });
+
+  it('keeps Clubhouse\'s chat instructions whole, whatever their line ends (a Windows checkout has CRLF)', () => {
+    for (const text of ['# Dispatcher\r\n\r\nHello.\r\n', '# Dispatcher\n\nHello.\n', '# Dispatcher\n\nHello.']) {
+      const joined = svc.appendSection(text, '## Section');
+      expect(joined.startsWith(text)).toBe(true);
+      expect(joined.endsWith('\n\n## Section\n')).toBe(true);
+    }
   });
 
   it('a new install saves no settings for setup until the user acts', async () => {

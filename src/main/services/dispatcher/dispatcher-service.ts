@@ -554,7 +554,13 @@ async function writeInstructions(agent: DurableAgentConfig, dir: string = getDis
  * personality exactly as the user wrote it. The memory index goes after.
  */
 export function chatInstructions(agent: Pick<DurableAgentConfig, 'name'>): string {
-  return `${DISPATCHER_CHAT_INSTRUCTIONS.trimEnd()}\n\n${personalityInstructions(agent.name, getDispatcherPersonality())}\n`;
+  return appendSection(DISPATCHER_CHAT_INSTRUCTIONS, personalityInstructions(agent.name, getDispatcherPersonality()));
+}
+
+/** `text` kept whole (a Windows checkout gives the shipped file CRLF line ends), a blank line, then `section`. */
+export function appendSection(text: string, section: string): string {
+  const base = /\n$/.test(text) ? text : `${text}\n`;
+  return `${base}\n${section}\n`;
 }
 
 /** What an instructions file depends on besides memory: the CLI, and for the chat its name. */
