@@ -15,6 +15,8 @@ export const project = {
       IPC.PROJECT.PICK_DIR,
     ),
   checkGit: (dirPath: string) => ipcRenderer.invoke(IPC.PROJECT.CHECK_GIT, dirPath),
+  /** Each project's git remote as a key, by project id (#3066). */
+  getRepoKeys: (): Promise<Record<string, string>> => ipcRenderer.invoke(IPC.PROJECT.REPO_KEYS),
   gitInit: (dirPath: string) => ipcRenderer.invoke(IPC.PROJECT.GIT_INIT, dirPath),
   update: (id: string, updates: Record<string, unknown>) =>
     ipcRenderer.invoke(IPC.PROJECT.UPDATE, id, updates),

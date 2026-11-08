@@ -70,6 +70,8 @@ export const IPC = {
     REMOVE: 'project:remove',
     PICK_DIR: 'project:pick-dir',
     CHECK_GIT: 'project:check-git',
+    /** Each project's git remote as a key, for suggesting links across machines (#3066). */
+    REPO_KEYS: 'project:repo-keys',
     GIT_INIT: 'project:git-init',
     UPDATE: 'project:update',
     PICK_ICON: 'project:pick-icon',

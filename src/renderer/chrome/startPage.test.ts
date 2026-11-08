@@ -29,12 +29,20 @@ describe('openNewAgentFromShortcut (⌘⇧N)', () => {
     expect(useChromeStore.getState().newAgent).toMatchObject({ kind: 'durable', projectId: undefined });
   });
 
-  it('keeps the dialog on a satellite host or with no projects', () => {
+  it('with another computer shown, comes back to this one with a project selected and opens the page (#3065)', () => {
     useChromeFlagStore.setState({ enabled: true });
     useUIStore.setState({ activeHostId: 'sat-1' });
+    useProjectStore.setState({ activeProjectId: 'remote||sat-1||x' });
     openNewAgentFromShortcut();
-    expect(useUIStore.getState().quickAgentDialogOpen).toBe(true);
+    expect(useUIStore.getState().activeHostId).toBeNull();
+    expect(useProjectStore.getState().activeProjectId).not.toBeNull();
+    expect(useChromeStore.getState().newAgent).not.toBeNull();
+    expect(useUIStore.getState().quickAgentDialogOpen).toBe(false);
+    useChromeStore.getState().closeNewAgent();
+  });
 
+  it('keeps the dialog with no projects', () => {
+    useChromeFlagStore.setState({ enabled: true });
     useUIStore.setState({ activeHostId: null, quickAgentDialogOpen: false });
     useProjectStore.setState({ projects: [], activeProjectId: null });
     openNewAgentFromShortcut();
