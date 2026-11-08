@@ -105,8 +105,11 @@ vi.mock('../../src/main/services/group-project-registry', () => ({ groupProjectR
 vi.mock('../../src/main/services/clubhouse-mcp/binding-manager', () => ({ bindingManager: { getAllBindings: () => [], onBindingsChanged: () => () => {} } }));
 
 import * as annexServer from '../../src/main/services/annex-server';
+import * as annexPeers from '../../src/main/services/annex-peers';
 import * as eventReplay from '../../src/main/services/annex-event-replay';
 import { clearChatRuntimes, publishChatEvent, registerChatRuntime } from '../../src/main/services/agent-runtime';
+import { AnnexProtocolClient, UpgradeRefusedError } from '../../e2e/annex-v2/protocol-client';
+import { generateTestIdentity, signCertBinding, withNewCertificate } from '../../e2e/annex-v2/tls-test-utils';
 
 function clientCertificate(commonName: string) {
   const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -155,13 +158,21 @@ function setFault(fault: typeof H.fault): void {
   if (fault !== 'hang') for (const release of H.releaseHung.splice(0)) release();
 }
 
-interface Harness { port: number; pin: string }
+interface Harness { port: number; pairingPort: number; pin: string }
 
+/**
+ * The harness keeps its PIN usable after each pairing (a PIN is otherwise single-use),
+ * so every client pointed at it can pair with the one PIN it prints.
+ */
 async function startServer(): Promise<Harness> {
+  annexServer._testing.setPinReusable(true);
   annexServer.start();
-  await vi.waitFor(() => expect(annexServer.getStatus().port).toBeGreaterThan(0), { timeout: 20_000 });
+  await vi.waitFor(() => {
+    expect(annexServer.getStatus().port).toBeGreaterThan(0);
+    expect(annexServer.getStatus().pairingPort).toBeGreaterThan(0);
+  }, { timeout: 20_000 });
   const status = annexServer.getStatus();
-  return { port: status.port, pin: status.pin };
+  return { port: status.port, pairingPort: status.pairingPort, pin: status.pin };
 }
 
 describe('Annex harness', () => {
@@ -194,6 +205,7 @@ describe('Annex harness', () => {
   afterAll(() => {
     for (const ws of sockets) ws.terminate();
     annexServer.stop();
+    annexServer._testing.setPinReusable(false);
     fs.rmSync(H.dir, { recursive: true, force: true });
   });
 
@@ -408,6 +420,168 @@ describe('Annex harness', () => {
     setFault('none');
   }, 120_000);
 
+  describe('pinned peers', () => {
+    const clients: AnnexProtocolClient[] = [];
+    const newClient = () => {
+      const client = new AnnexProtocolClient({ host: '127.0.0.1', port: harness.port, pairingPort: harness.pairingPort });
+      clients.push(client);
+      return client;
+    };
+    const pairedClient = async () => {
+      const client = newClient();
+      expect((await client.pair(annexServer.getStatus().pin)).status).toBe(200);
+      return client;
+    };
+    const notPaired = { error: 'peer_not_paired', message: expect.any(String) };
+
+    afterAll(() => {
+      for (const client of clients) client.disconnect();
+    });
+
+    it('main-port GET /api/v1/identity answers a pinned phone with the same fields as the pairing port', async () => {
+      const client = await pairedClient();
+      const main = await client.get('/api/v1/identity');
+      const hint = await client.pairingPortRequest('GET', '/api/v1/identity');
+      expect(main.status).toBe(200);
+      expect(hint.status).toBe(200);
+      expect(main.body).toEqual(hint.body);
+      expect(Object.keys(main.body as object).sort()).toEqual(['alias', 'color', 'fingerprint', 'icon', 'publicKey']);
+    }, 60_000);
+
+    it('a removed peer gets 401 peer_not_paired on REST and on the WebSocket upgrade, and its socket closes with 4401', async () => {
+      const client = await pairedClient();
+      expect((await client.get('/api/v1/mobile/capabilities')).status).toBe(200);
+      await client.connect();
+      const closed = client.waitForClose();
+
+      expect(annexServer.revokePeer(client.identity.fingerprint)).toBe(true);
+      expect(await closed).toEqual({ code: annexServer.PEER_REVOKED_CLOSE_CODE, reason: 'peer_not_paired' });
+
+      for (const route of ['/api/v1/identity', '/api/v1/mobile/capabilities']) {
+        const reply = await client.get(route);
+        expect(reply.status).toBe(401);
+        expect(reply.body).toEqual(notPaired);
+      }
+      const upgrade = await client.connect().catch((err: unknown) => err);
+      expect(upgrade).toBeInstanceOf(UpgradeRefusedError);
+      expect(upgrade).toMatchObject({ status: 401, body: notPaired });
+    }, 60_000);
+
+    it('POST /pair on the plain pairing port is 410 update_required and adds no peer', async () => {
+      const client = newClient();
+      const before = annexPeers.listPeers().map((p) => p.fingerprint);
+      const reply = await client.pairingPortRequest('POST', '/pair', {
+        pin: annexServer.getStatus().pin, publicKey: client.identity.ed25519PublicKeyBase64, alias: 'Plain', icon: 'phone', color: 'indigo',
+      });
+      expect(reply.status).toBe(410);
+      expect(reply.body).toEqual({ error: 'update_required', message: expect.any(String) });
+      expect(annexPeers.listPeers().map((p) => p.fingerprint)).toEqual(before);
+      expect(await client.get('/api/v1/identity')).toEqual({ status: 401, body: notPaired });
+    }, 60_000);
+
+    it('a request without a client certificate is 401 unauthorized, with or without the pairing token', async () => {
+      const client = newClient();
+      const paired = await client.pair(annexServer.getStatus().pin);
+      expect(paired.token).toEqual(expect.any(String));
+      const withoutCertificate = (route: string, headers: Record<string, string> = {}) => new Promise<{ status: number; body: unknown }>((resolve, reject) => {
+        https.get({ host: '127.0.0.1', port: harness.port, path: route, headers, rejectUnauthorized: false, agent: false }, (res) => {
+          let text = '';
+          res.on('data', (c) => { text += c; });
+          res.on('end', () => resolve({ status: res.statusCode!, body: JSON.parse(text) }));
+        }).on('error', reject);
+      });
+      const unauthorized = { status: 401, body: { error: 'unauthorized', message: expect.any(String) } };
+      expect(await withoutCertificate('/api/v1/identity')).toEqual(unauthorized);
+      expect(await withoutCertificate('/api/v1/identity', { Authorization: `Bearer ${paired.token}` })).toEqual(unauthorized);
+      expect(await withoutCertificate(`/api/v1/identity?token=${encodeURIComponent(paired.token!)}`)).toEqual(unauthorized);
+    }, 60_000);
+
+    it('requires the pinned certificate: another certificate for the identity is 401 until it pairs with a certBinding', async () => {
+      const client = await pairedClient();
+      const original = client.identity;
+      const replacement = withNewCertificate(original);
+      client.useIdentity(replacement);
+      expect(await client.get('/api/v1/identity')).toEqual({ status: 401, body: notPaired });
+
+      const refused = await client.pair(annexServer.getStatus().pin);
+      expect(refused).toMatchObject({ status: 409, error: 'peer_already_paired', message: expect.any(String) });
+
+      const rebound = await client.pair(annexServer.getStatus().pin, { certBinding: signCertBinding(replacement) });
+      expect(rebound.status).toBe(200);
+      expect((await client.get('/api/v1/identity')).status).toBe(200);
+
+      client.useIdentity(original);
+      expect(await client.get('/api/v1/identity')).toEqual({ status: 401, body: notPaired });
+    }, 60_000);
+
+    it('pairing needs a client certificate named for the identity it pairs', async () => {
+      const client = newClient();
+      const reply = await client.pair(annexServer.getStatus().pin, { publicKey: generateTestIdentity().ed25519PublicKeyBase64 });
+      expect(reply).toMatchObject({ status: 400, error: 'client_certificate_required', message: expect.any(String) });
+      expect(annexPeers.getPeer(client.identity.fingerprint)).toBeUndefined();
+    }, 60_000);
+  });
+
+  describe('a single-use PIN', () => {
+    const clients: AnnexProtocolClient[] = [];
+    const newClient = () => {
+      const client = new AnnexProtocolClient({ host: '127.0.0.1', port: harness.port, pairingPort: harness.pairingPort });
+      clients.push(client);
+      return client;
+    };
+
+    beforeAll(() => {
+      annexServer._testing.setPinReusable(false);
+      annexPeers.recordSuccessfulAttempt('127.0.0.1');
+    });
+
+    afterAll(() => {
+      for (const client of clients) client.disconnect();
+      annexServer._testing.setPinReusable(true);
+      annexPeers.recordSuccessfulAttempt('127.0.0.1');
+      harness.pin = annexServer.getStatus().pin;
+    });
+
+    it('is replaced after it pairs; the same identity retrying it gets the same answer, another gets 410 pin_used', async () => {
+      const pin = annexServer.getStatus().pin;
+      const first = newClient();
+      const paired = await first.pair(pin);
+      expect(paired.status).toBe(200);
+      expect(annexServer.getStatus().pin).not.toBe(pin);
+
+      expect(await first.pair(pin)).toEqual(paired);
+
+      const second = newClient();
+      expect(await second.pair(pin)).toMatchObject({ status: 410, error: 'pin_used', message: expect.any(String) });
+      expect(annexPeers.getPeer(second.identity.fingerprint)).toBeUndefined();
+
+      expect((await second.pair(annexServer.getStatus().pin)).status).toBe(200);
+    }, 60_000);
+
+    it('a wrong PIN is 409 invalid_pin, and a replaced one is 410 pin_expired', async () => {
+      const client = newClient();
+      const wrong = annexServer.getStatus().pin === '000000' ? '000001' : '000000';
+      expect(await client.pair(wrong)).toMatchObject({ status: 409, error: 'invalid_pin', message: expect.any(String) });
+      annexPeers.recordSuccessfulAttempt('127.0.0.1');
+
+      const old = annexServer.getStatus().pin;
+      annexServer.regeneratePin();
+      expect(annexServer.getStatus().pin).not.toBe(old);
+      expect(await client.pair(old)).toMatchObject({ status: 410, error: 'pin_expired', message: expect.any(String) });
+      expect(client.isPaired).toBe(false);
+    }, 60_000);
+
+    it('a new PIN leaves paired connections open', async () => {
+      const client = newClient();
+      expect((await client.pair(annexServer.getStatus().pin)).status).toBe(200);
+      await client.connect();
+      annexServer.regeneratePin();
+      await new Promise((r) => setTimeout(r, 200));
+      expect(client.isConnected).toBe(true);
+      expect((await client.get('/api/v1/identity')).status).toBe(200);
+    }, 60_000);
+  });
+
   // `npm run harness:annex`: stays up until POST /stop on the control port.
   it.runIf(process.env.CLUBHOUSE_ANNEX_HARNESS === '1')('serves until told to stop', async () => {
     setFault('none');
@@ -426,13 +600,14 @@ describe('Annex harness', () => {
           if (req.url === '/reset-seq') eventReplay.reset();
           if (req.url === '/chat-event') publishChatEvent({ agentId: body.agentId ?? 'durable_0_0', type: 'turn_ended', seq: 1, ts: 0, sessionId: 's', data: {} } as never);
           res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ fault: H.fault, reads: H.reads, readsRunning: H.readsRunning, maxReadsRunning: H.maxReadsRunning, lastSeq: eventReplay.getLastSeq() }));
+          const { pin, pairingUrl } = annexServer.getStatus();
+          res.end(JSON.stringify({ fault: H.fault, reads: H.reads, readsRunning: H.readsRunning, maxReadsRunning: H.maxReadsRunning, lastSeq: eventReplay.getLastSeq(), pin, pairingUrl }));
           if (req.url === '/stop') { control.close(); resolve(); }
         });
       });
       control.listen(0, '127.0.0.1', () => {
         const status = annexServer.getStatus();
-        console.info(`ANNEX_HARNESS ${JSON.stringify({ host: '127.0.0.1', port: status.port, pairingPort: (status as { pairingPort?: number }).pairingPort, pin: status.pin, controlPort: (control.address() as { port: number }).port, dataDir: H.dir })}`);
+        console.info(`ANNEX_HARNESS ${JSON.stringify({ host: '127.0.0.1', port: status.port, pairingPort: status.pairingPort, pin: status.pin, pairingUrl: status.pairingUrl, controlPort: (control.address() as { port: number }).port, dataDir: H.dir })}`);
       });
     });
   }, 24 * 60 * 60 * 1000);

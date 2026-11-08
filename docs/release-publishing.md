@@ -6,7 +6,9 @@
 
 macOS 13 or newer is required: Electron 44 dropped macOS 12, and Clubhouse is on Electron 45.
 
-v0.41.0 has no OS check. A v0.41.0 client on macOS 12 can be replaced by a build that won't launch, because its updater removes the old app before installing the new one. This is an accepted risk, not a fixed one. Nothing in the updater or this pipeline prevents it, and macOS 12 isn't supported.
+Each macOS artifact in the update manifest carries `minSystemVersion` (`13.0`, set in `release.yml`), and a client below it skips the update and logs why (#2924). Raise it with the Electron upgrade that raises Electron's minimum.
+
+Clients from before that check (v0.41.0 and v0.42.x) ignore the field. A v0.41.0 client on macOS 12 can be replaced by a build that won't launch, because its updater removes the old app before installing the new one. This is an accepted risk for those versions, and macOS 12 isn't supported.
 
 ## Publish order
 

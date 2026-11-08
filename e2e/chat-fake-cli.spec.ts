@@ -80,8 +80,8 @@ async function openChat(p: ProviderCase, fixture: string) {
   await expect(window.locator('h2:has-text("New Agent")')).toBeVisible({ timeout: 5_000 });
   await window.locator('input[type="text"]').first().fill(name);
   await window.locator('label:has-text("Runs on") select').selectOption(p.orchestrator);
-  // Free Agent Mode stays off: the agent runs at the 'ask' level, so the
-  // permission fixtures' approval reaches the dock.
+  // Access stays at the Default access, Ask first, so the permission
+  // fixtures' approval reaches the dock.
   await window.locator('button:has-text("Create Agent")').click();
 
   const item = window.locator(`[data-agent-name="${name}"][data-testid^="agent-item-durable_"]`);

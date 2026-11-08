@@ -18,7 +18,7 @@ function broadcastStatusChanged(): void {
 }
 
 function broadcastPeersChanged(): void {
-  broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeers());
+  broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeersForDisplay());
 }
 
 export function registerAnnexHandlers(): void {
@@ -74,20 +74,21 @@ export function registerAnnexHandlers(): void {
   // --- Peer management ---
 
   ipcMain.handle(IPC.ANNEX.LIST_PEERS, () => {
-    return annexPeers.listPeers();
+    return annexPeers.listPeersForDisplay();
   });
 
   ipcMain.handle(IPC.ANNEX.REMOVE_PEER, withValidatedArgs(
     [stringArg()],
     (_event, fingerprint) => {
-      const removed = annexPeers.removePeer(fingerprint);
+      // Revokes before anything can reconnect, and closes its open connections.
+      const removed = annexServer.revokePeer(fingerprint);
       if (removed) broadcastPeersChanged();
       return removed;
     },
   ));
 
   ipcMain.handle(IPC.ANNEX.REMOVE_ALL_PEERS, () => {
-    annexPeers.removeAllPeers();
+    annexServer.revokeAllPeers();
     broadcastPeersChanged();
   });
 

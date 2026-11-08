@@ -4,7 +4,7 @@
  * Validates Annex V2 protocol and UI integration using dual Clubhouse instances.
  * Uses preload APIs (not require()) for all IPC interactions.
  *
- * Phase 1 (Security): identity, dual-port, PIN pairing, brute-force lockout
+ * Phase 1 (Security): identity, dual-port, PIN pairing over TLS, brute-force lockout
  * Phase 2 (Client):   dual-instance launch, Annex enable, pairing, WS, snapshots
  * Phase 3 (Data Model): remote projects, lock overlay, plugin matching
  * Phase 4 (Full Demo): rail satellites, remote agent, bidirectional PTY
@@ -13,7 +13,8 @@ import { test, expect, Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 import { launchDual, cleanupDual, type DualInstanceHandles } from './dual-launch';
-import { pairViaHttp, connectWs, connectWsPlain, waitForOpen, waitForMessage } from './helpers';
+import { pairOverTls, connectWs, sameCertFingerprint, waitForOpen, waitForMessage } from './helpers';
+import { generateTestIdentity } from './tls-test-utils';
 
 const SCREENSHOTS_DIR = path.resolve(__dirname, 'screenshots');
 fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
@@ -78,6 +79,7 @@ test('Phase 2: Dual-instance launch, enable, pair, connect', async () => {
   expect(satStatus.advertising).toBe(true);
   expect(satStatus.port).toBeGreaterThan(0);
   expect(satStatus.pin).toBeTruthy();
+  expect(satStatus.tlsEnabled).toBe(true);
   console.log(`  Satellite: port=${satStatus.port}, pairingPort=${satStatus.pairingPort}, pin=${satStatus.pin}`);
   await screenshot(satellite.window, '02-satellite-annex-enabled');
 
@@ -90,32 +92,24 @@ test('Phase 2: Dual-instance launch, enable, pair, connect', async () => {
   expect(identity.fingerprint).toBeTruthy();
   console.log(`  Identity: fingerprint=${identity.fingerprint}, alias=${identity.alias}`);
 
-  // ── Step 4: Pair controller with satellite ────────────────────────────
+  // ── Step 4: Pair controller with satellite over TLS ───────────────────
   console.log('\n=== Step 4: Pair controller with satellite ===');
-  const pairResult = await pairViaHttp(
+  const controllerIdentity = generateTestIdentity();
+  const pairResult = await pairOverTls(
     '127.0.0.1',
-    identityPort,
+    satStatus.port,
     satStatus.pin,
+    controllerIdentity,
   );
-  expect(pairResult.token).toBeTruthy();
-  console.log(`  Paired: token=${pairResult.token.slice(0, 8)}...`);
+  expect(pairResult.fingerprint).toBe(identity.fingerprint);
+  expect(sameCertFingerprint(pairResult.tlsCertificateFingerprint, satStatus.tlsCertificateFingerprint)).toBe(true);
+  console.log(`  Paired: controller=${controllerIdentity.fingerprint}`);
 
-  // ── Step 5: WebSocket connection with bearer token ────────────────────
+  // ── Step 5: WebSocket connection over mTLS ────────────────────────────
   console.log('\n=== Step 5: WebSocket connection ===');
-  const wsPort = satStatus.port;
-
-  // Try wss:// first (TLS), fall back to ws:// (HTTP fallback)
-  let ws = connectWs('127.0.0.1', wsPort, pairResult.token);
-  try {
-    await waitForOpen(ws, 5_000);
-    console.log('  WebSocket connected via wss://');
-  } catch {
-    console.log('  wss:// failed, trying ws:// fallback...');
-    ws.close();
-    ws = connectWsPlain('127.0.0.1', wsPort, pairResult.token);
-    await waitForOpen(ws, 10_000);
-    console.log('  WebSocket connected via ws://');
-  }
+  const ws = connectWs('127.0.0.1', satStatus.port, controllerIdentity);
+  await waitForOpen(ws, 10_000);
+  console.log('  WebSocket connected via wss:// with the pinned client certificate');
 
   try {
     // Wait for initial snapshot
@@ -161,8 +155,9 @@ test('Phase 2: Dual-instance launch, enable, pair, connect', async () => {
     return (window as any).clubhouse.annex.listPeers();
   });
   expect(Array.isArray(peers)).toBe(true);
-  // PIN-only pairing without publicKey doesn't persist a peer — that's expected.
-  // The bearer token alone is sufficient for WS auth.
+  // Pairing over TLS persists the controller as a peer, with its certificate pinned.
+  const pairedPeer = peers.find((p: { fingerprint: string }) => p.fingerprint === controllerIdentity.fingerprint);
+  expect(pairedPeer).toMatchObject({ role: 'controller', needsPairing: false });
   console.log(`  Satellite has ${peers.length} peer(s)`);
 
   // Verify connected count reflects the WS connection we just made

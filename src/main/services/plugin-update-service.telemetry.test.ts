@@ -35,7 +35,7 @@ import { checkForPluginUpdates, classifyUpdateCheckError, updatePlugin, _resetSt
 const plugin = {
   id: 'my-plugin', name: 'My Plugin', description: '', author: '', official: false, repo: '', path: '', tags: [], latest: '2.0.0',
   releases: {
-    '2.0.0': { api: 0.5, asset: 'https://example.com/p.zip', sha256: 'def', permissions: [], size: 2048 },
+    '2.0.0': { api: 0.9, asset: 'https://example.com/p.zip', sha256: 'def', permissions: [], size: 2048 },
   },
 };
 

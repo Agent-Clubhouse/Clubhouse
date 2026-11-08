@@ -14,7 +14,7 @@ function registerPlugin(status: 'registered' | 'errored', error?: string): void 
           id: 'demo-plugin',
           name: 'Demo',
           version: '1.0.0',
-          engine: { api: 0.5 },
+          engine: { api: 0.9 },
           scope: 'project',
           permissions: [],
         },

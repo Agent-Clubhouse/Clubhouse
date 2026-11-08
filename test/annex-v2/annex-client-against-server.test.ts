@@ -1,7 +1,9 @@
 /**
  * Our own desktop controller, `annex-client`, against the real Annex server. The
  * server runs in its own process through the harness, because each side has its own
- * identity. Real pairing, mTLS, WebSocket, retries and message handling; no Electron,
+ * identity. Real pairing over TLS (by the pairing link, and by discovery with the
+ * certificate checked first), the satellite's pinned certificate, mTLS, WebSocket,
+ * retries and message handling; no Electron,
  * no renderer, and fixture stores on the server. Off the host: both sides use temp
  * folders. Slow, so it runs when asked: `npm run harness:annex-client`.
  */
@@ -46,7 +48,7 @@ const describeWhenAsked = process.env.CLUBHOUSE_ANNEX_CLIENT_HARNESS === '1' ? d
 
 describeWhenAsked('annex-client against the real Annex server', () => {
   let server: ChildProcess;
-  let info: { port: number; pairingPort: number; pin: string; controlPort: number };
+  let info: { port: number; pairingPort: number; pin: string; pairingUrl: string; controlPort: number };
   let fingerprint = '';
 
   const control = (path: string, body: object = {}) => new Promise<any>((resolve, reject) => {
@@ -89,11 +91,10 @@ describeWhenAsked('annex-client against the real Annex server', () => {
     });
 
     annexClient.startClient();
-    await until(() => C.found !== null);
-    C.found!({ host: '127.0.0.1', port: info.port, addresses: ['127.0.0.1'], referer: { address: '127.0.0.1' }, txt: { pairingPort: String(info.pairingPort) } });
-    await until(() => annexClient.getDiscoveredServices().length > 0);
-    fingerprint = annexClient.getDiscoveredServices()[0].fingerprint;
-    const paired = await annexClient.pairWithService(fingerprint, info.pin);
+    // The pairing link names the satellite's identity and certificate, as its QR code does.
+    expect(info.pairingUrl).toMatch(/^clubhousego:\/\/pair\?/);
+    fingerprint = new URL(info.pairingUrl).searchParams.get('id')!.toLowerCase();
+    const paired = await annexClient.pairWithLink(info.pairingUrl);
     expect(paired).toMatchObject({ success: true });
     await connected();
   }, 120_000);
@@ -162,9 +163,15 @@ describeWhenAsked('annex-client against the real Annex server', () => {
     annexClient.forgetSatellite(fingerprint);
     await control('/fault', { fault: 'fail' });
     const mark = satelliteEvents().length;
+    // Paired again through discovery: the certificate is read first, then the PIN goes to it.
+    await until(() => C.found !== null);
     C.found!({ host: '127.0.0.1', port: info.port, addresses: ['127.0.0.1'], referer: { address: '127.0.0.1' }, txt: { pairingPort: String(info.pairingPort) } });
-    await until(() => annexClient.getDiscoveredServices().length > 0);
-    expect(await annexClient.pairWithService(fingerprint, info.pin)).toMatchObject({ success: true });
+    await until(() => annexClient.getDiscoveredServices().some((s) => s.fingerprint === fingerprint));
+    const probed = await annexClient.probeService(fingerprint);
+    expect(probed).toMatchObject({ success: true });
+    expect(new URL(info.pairingUrl).searchParams.get('cert')).toBe(probed.certFingerprint!.replace(/:/g, '').toLowerCase());
+    const { pin } = await control('/state');
+    expect(await annexClient.pairWithService(fingerprint, pin)).toMatchObject({ success: true });
     await connected();
     await until(() => eventsSince(mark).length > 0);
 

@@ -66,6 +66,8 @@ export interface ChatSpawnParams {
   systemPrompt?: string;
   freeAgentMode?: boolean;
   permissionMode: FreeAgentPermissionMode;
+  /** Access (#2761): the level to start at. Wins over the legacy pair. */
+  access?: PermissionLevel;
   resume?: boolean;
   strictResume?: boolean;
   sessionId?: string;
@@ -430,7 +432,7 @@ async function runChatStart(
   // the terminal launch and use the same effective env for probing, health
   // keys and the actual session.
   const launchEnv = chatLaunchEnvironment();
-  const level = levelForFreeAgent(params.freeAgentMode, params.permissionMode);
+  const level = params.access ?? levelForFreeAgent(params.freeAgentMode, params.permissionMode);
   const resumeNativeSessionId = params.resume ? params.sessionId : undefined;
   appLog('core:chat', 'info', 'Chat start requested', {
     meta: {

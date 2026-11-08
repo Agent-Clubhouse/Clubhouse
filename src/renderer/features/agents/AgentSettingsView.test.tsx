@@ -1,6 +1,7 @@
 import { claudeContextWindowOptions } from '../../../shared/context-window';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { useDefaultAccessStore } from '../../stores/defaultAccessStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
@@ -337,16 +338,35 @@ describe('AgentSettingsView', () => {
       expect(await screen.findByText('Permissions')).toBeInTheDocument();
     });
 
-    it('renders free agent mode as a switch', () => {
+    it('renders an Access picker, not a Free Agent Mode switch', async () => {
       renderSettings();
-      expect(screen.getByRole('switch', { name: 'Free Agent Mode' })).toBeInTheDocument();
-      expect(screen.getByText('Handle permissions using the configured Free agent permission mode.')).toBeInTheDocument();
+      const picker = screen.getByLabelText('Access') as HTMLSelectElement;
+      expect(picker.value).toBe('ask');
+      expect([...picker.options].map((o) => o.textContent)).toEqual(['Plan', 'Ask first', 'Auto-accept edits', 'Auto', 'Full access']);
+      expect(screen.queryByRole('switch', { name: /free agent/i })).not.toBeInTheDocument();
+      expect(screen.queryByText(/free agent/i)).not.toBeInTheDocument();
+    });
+
+    it('saves the picked level as access', async () => {
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ access: 'auto', freeAgentMode: true });
+      renderSettings();
+      const picker = screen.getByLabelText('Access') as HTMLSelectElement;
+      await waitFor(() => expect(picker.value).toBe('auto'));
+      fireEvent.change(picker, { target: { value: 'full_access' } });
+      await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/project', 'agent-1', { access: 'full_access' }));
+    });
+
+    it('offers only the levels a terminal Copilot agent can start at', async () => {
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ runtimeMode: 'terminal' });
+      renderSettings({ orchestrator: 'copilot-cli' });
+      const picker = screen.getByLabelText('Access') as HTMLSelectElement;
+      await waitFor(() => expect([...picker.options].map((o) => o.value)).toEqual(['ask', 'full_access']));
     });
 
     it('does not render a Structured Mode toggle, even with the legacy experimental flag set', async () => {
       window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ structuredMode: true });
       renderSettings();
-      expect(await screen.findByTestId('agent-settings-free-agent-mode')).toBeInTheDocument();
+      expect(await screen.findByTestId('agent-settings-access')).toBeInTheDocument();
       expect(screen.queryByTestId('structured-mode-field')).not.toBeInTheDocument();
       expect(screen.queryByText('Structured Mode')).not.toBeInTheDocument();
     });
@@ -467,7 +487,7 @@ describe('AgentSettingsView', () => {
     it('is hidden when Chat is saved off', async () => {
       window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: false });
       renderSettings();
-      expect(await screen.findByTestId('agent-settings-free-agent-mode')).toBeInTheDocument();
+      expect(await screen.findByTestId('agent-settings-access')).toBeInTheDocument();
       await waitFor(() => expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled());
       expect(screen.queryByLabelText('Runtime')).not.toBeInTheDocument();
     });
@@ -879,6 +899,37 @@ describe('AgentSettingsView', () => {
       await waitFor(() => {
         expect((window.clubhouse.agent as any).updateDurableConfig).toHaveBeenCalledWith(
           '/project', 'agent-1', { quickAgentDefaults: { systemPrompt: 'Be brief.' } },
+        );
+      });
+    });
+
+    it('shows quick agents at the app\'s Default access until one is picked, then saves the level', async () => {
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ access: 'auto_edit', quickAgentDefaults: { systemPrompt: 'Hi' } });
+      const defaultAccess = vi.spyOn(window.clubhouse.app, 'getDefaultAccess').mockResolvedValue('plan');
+      renderSettings();
+      const picker = await screen.findByLabelText('Quick agent access') as HTMLSelectElement;
+      await waitFor(() => expect(picker.value).toBe('plan'));
+      expect(screen.getByText("Not set, so quick agents start at the app's Default access. Reads and plans. Makes no changes.")).toBeInTheDocument();
+      fireEvent.change(picker, { target: { value: 'full_access' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => {
+        expect((window.clubhouse.agent as any).updateDurableConfig).toHaveBeenCalledWith(
+          '/project', 'agent-1', { quickAgentDefaults: { systemPrompt: 'Hi', access: 'full_access', freeAgentMode: true } },
+        );
+      });
+      expect(screen.getByText('Quick agents start at this level. Runs everything without asking.')).toBeInTheDocument();
+      defaultAccess.mockRestore();
+      useDefaultAccessStore.setState({ defaultAccess: 'ask' });
+    });
+
+    it('keeps a legacy quick agent default as saved when the picker is untouched', async () => {
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ quickAgentDefaults: { freeAgentMode: true } });
+      renderSettings();
+      fireEvent.change(await screen.findByLabelText('Extra instructions'), { target: { value: 'Be brief.' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => {
+        expect((window.clubhouse.agent as any).updateDurableConfig).toHaveBeenCalledWith(
+          '/project', 'agent-1', { quickAgentDefaults: { systemPrompt: 'Be brief.', freeAgentMode: true } },
         );
       });
     });

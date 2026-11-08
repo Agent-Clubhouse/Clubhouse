@@ -13,13 +13,21 @@ Quick agents are one-shot task runners. Give them a mission, they execute it, an
    - **Project** — if launching from outside a project context
 4. Press `Cmd+Enter` or click **Run**
 
-## Free Agent Mode
+## Access
 
-Check **Free Agent** to enable autonomous permission handling. By default this uses **Skip All Permissions** mode, which bypasses all permission prompts.
+**Access** is the level the agent starts at. A quick agent starts at your **Default access**, set in **Settings > Agents & providers**. You can pick another level before you click **Run**.
 
-You can switch to **Auto** mode in **Settings > Agents & providers > Free Agent Permission Mode** (globally or per-project) if your CLI supports `--permission-mode auto`. Auto uses a classifier to decide which actions need approval. The classifier can be wrong.
+| Level | What the agent does |
+|-------|---------------------|
+| **Plan** | Reads and plans. Makes no changes. |
+| **Ask first** | Asks before edits and commands. |
+| **Auto-accept edits** | Makes file edits without asking. Asks before commands. |
+| **Auto** | A check decides what needs your approval. It can be wrong. |
+| **Full access** | Runs everything without asking. |
 
-> **Note:** Auto requires CLI support that is not yet widely available. Its classifier may make mistakes, including on high-risk operations.
+Each CLI only lists the levels it can start at. Claude Code has all five. In the terminal, Codex CLI has Ask first, Auto and Full access, and Copilot CLI has Ask first and Full access. In chat, each CLI offers the levels its chat connection supports.
+
+Auto isn't a promise of safety. The check can let through something you would have stopped, including risky commands.
 
 ## Headless vs Interactive Mode
 
@@ -32,7 +40,7 @@ You can switch to **Auto** mode in **Settings > Agents & providers > Free Agent 
 
 Switch mode in **Settings** (global) or **Project Settings** (per-project).
 
-**Note:** Headless mode controls output format. Free Agent mode controls permission handling. They are separate toggles.
+**Note:** Headless mode controls output format. Access controls what the agent may do without asking. They are separate settings.
 
 ## Completion Summary
 

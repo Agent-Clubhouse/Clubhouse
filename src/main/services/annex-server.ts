@@ -1,4 +1,6 @@
 import { hasSessionCaptureFailure } from './session-capture-barrier';
+import { accessFromLegacy, legacyFreeAgentMode, type AccessLevel } from '../../shared/agent-access';
+import { getPermissionMode, quickAgentAccess } from './free-agent-settings';
 import { waitForAgentStopped } from './agent-system';
 import { previewAgentProvider, changeAgentProvider, persistGuidedSessionCapture } from './agent-provider-control';
 import { withAgentTransition } from './agent-transition';
@@ -8,7 +10,7 @@ import * as tls from 'tls';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { randomInt, randomUUID, timingSafeEqual } from 'crypto';
+import { createPublicKey, randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import * as annexTls from './annex-tls';
 import { MOBILE_COMMAND_TYPES, type AnnexAgentUpdate, type MobileCommand, type MobileResponse } from '../../shared/mobile-control';
@@ -173,25 +175,38 @@ let pairingPort = 0;
 
 // Main port (TLS with mTLS): all authenticated endpoints + WSS
 let tlsServer: https.Server | null = null;
-let httpServer: http.Server | null = null; // Legacy fallback — to be removed when mTLS is fully validated
+/** Answers 503 to everything when the TLS server couldn't be created. Nothing authenticated is ever served without TLS. */
+let httpServer: http.Server | null = null;
 let wss: WebSocketServer | null = null;
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let bonjourService: Service | null = null;
 let serverPort = 0; // Main TLS port
 let boundHost = ''; // networkProfile.host while running
 let currentPin = '';
-const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const sessionTokens = new Map<string, { issuedAt: number; peerFingerprint?: string }>();
-/** Tokens revoked on peer removal — checked during validation, cleaned on TTL expiry. */
-const revokedTokens = new Set<string>();
+let currentPinIssuedAt = 0;
+let pinRotationTimer: ReturnType<typeof setTimeout> | null = null;
+/** How long a PIN can be used, and how long after it was used or replaced it is still recognised. */
+const PIN_TTL_MS = 10 * 60 * 1000;
+/** Wrong PINs from any address before the PIN is replaced, on top of the per-address limit. */
+const PIN_FAILURE_LIMIT = 10;
+let pinFailures = 0;
+/** PINs that paired a device, kept for their lifetime so a retry after a lost answer can be told apart from a second device. */
+interface SpentPin { pin: string; expiresAt: number; fingerprint: string; certFingerprint: string; response: Record<string, unknown> }
+const spentPins: SpentPin[] = [];
+/** PINs that ran out or were replaced unused, kept for a while so the answer can say so. */
+const expiredPins: Array<{ pin: string; until: number }> = [];
+/** Test harness only: the PIN stays usable for any number of pairings. */
+let pinReusable = false;
+/** Peers paired by PIN that haven't made a pinned connection yet, with when they're dropped if they never do. */
+const awaitingFirstConnection = new Map<string, number>();
+/** Fingerprints already logged as needing pairing again, so a retrying peer doesn't fill the log. */
+const loggedRefusals = new Set<string>();
 
 // Tag WebSocket connections with auth type for security gating
 type WsAuthType = 'bearer' | 'mtls';
 const wsAuthTypes = new WeakMap<WebSocket, WsAuthType>();
 // Track peer fingerprint per WebSocket connection (for mTLS connections)
 const wsPeerFingerprints = new WeakMap<WebSocket, string>();
-// Track bearer token per WebSocket connection (for revocation on peer removal)
-const wsBearerTokens = new WeakMap<WebSocket, string>();
 /**
  * Shells a controller spawned over `pty:spawn-shell`, by session id (#2476).
  * Their output goes to that controller only, and they end when it disconnects.
@@ -582,27 +597,120 @@ function comparePins(providedPin: string, expectedPin: string): boolean {
   );
 }
 
-function isValidToken(token: string | undefined): boolean {
-  if (!token) return false;
-  if (revokedTokens.has(token)) return false;
-  const entry = sessionTokens.get(token);
-  if (!entry) return false;
-  if (entry.peerFingerprint) {
-    const peer = findPairedPeer(entry.peerFingerprint);
-    if (!peer || (peer.role && peer.role !== 'controller')) { sessionTokens.delete(token); return false; }
-  }
-  if (Date.now() - entry.issuedAt > TOKEN_TTL_MS) {
-    sessionTokens.delete(token);
-    revokedTokens.delete(token);
-    return false;
-  }
-  return true;
+// ---------------------------------------------------------------------------
+// Peer authentication: every main-port request and WebSocket goes through here
+// ---------------------------------------------------------------------------
+
+type PeerAuthRefusal = { ok: false; status: 401 | 403; error: 'unauthorized' | 'peer_not_paired' | 'needs_pairing' | 'peer_role_not_allowed'; message: string; fingerprint?: string };
+type PeerAuthResult = { ok: true; fingerprint: string; peer: AnnexPeer } | PeerAuthRefusal;
+function isRefusal(result: PeerAuthResult): result is PeerAuthRefusal { return !result.ok; }
+
+const AUTH_MESSAGES = {
+  unauthorized: 'Connect with the certificate this device was paired with.',
+  peer_not_paired: 'This device is not paired with this computer. Pair it again.',
+  needs_pairing: 'This pairing is from an older version of Clubhouse. Pair this device again.',
+  peer_role_not_allowed: 'This computer is paired to be controlled from here, not to control it.',
+} as const;
+
+function refuse(status: 401 | 403, error: PeerAuthRefusal['error'], fingerprint?: string): PeerAuthRefusal {
+  return { ok: false, status, error, message: AUTH_MESSAGES[error], ...(fingerprint && { fingerprint }) };
 }
 
-function extractBearerToken(req: http.IncomingMessage): string | undefined {
-  const auth = req.headers.authorization;
-  if (!auth?.startsWith('Bearer ')) return undefined;
-  return auth.slice(7);
+/**
+ * The one check for a connection on the main port: the client certificate names
+ * a paired controller, and is exactly the certificate pinned when it paired.
+ * Entries from before pinning are refused (and kept, so Settings can show them).
+ */
+function authenticatePeer(socket: unknown): PeerAuthResult {
+  if (!tlsServer || !(socket instanceof tls.TLSSocket) || !socket.encrypted) return refuse(401, 'unauthorized');
+  const fingerprint = annexTls.extractPeerFingerprint(socket);
+  if (!fingerprint) return refuse(401, 'unauthorized');
+  const peer = findPairedPeer(fingerprint);
+  if (!peer) return refuse(401, 'peer_not_paired', fingerprint);
+  if (!peer.role) return refuse(401, 'needs_pairing', fingerprint);
+  if (peer.role !== 'controller') return refuse(403, 'peer_role_not_allowed', fingerprint);
+  if (!peer.tlsCertificateFingerprint) return refuse(401, 'needs_pairing', fingerprint);
+  if (annexTls.extractPeerCertificateFingerprint(socket) !== peer.tlsCertificateFingerprint) return refuse(401, 'peer_not_paired', fingerprint);
+  awaitingFirstConnection.delete(fingerprint);
+  return { ok: true, fingerprint, peer };
+}
+
+function logRefusedPeer(surface: 'rest' | 'ws', refusal: PeerAuthRefusal, remoteAddress: string | undefined): void {
+  const peer = refusal.fingerprint ? findPairedPeer(refusal.fingerprint) : undefined;
+  if (refusal.error === 'needs_pairing' && refusal.fingerprint) {
+    if (loggedRefusals.has(refusal.fingerprint)) return;
+    loggedRefusals.add(refusal.fingerprint);
+    appLog('core:annex', 'warn', `Refused ${peer?.alias ?? 'a paired device'}: its pairing is from an older version of Clubhouse and needs to be done again`, {
+      meta: { surface, fingerprint: refusal.fingerprint, remoteAddress },
+    });
+    return;
+  }
+  appLog('core:annex', 'warn', 'Refused a connection that is not a paired controller', {
+    meta: { surface, error: refusal.error, fingerprint: refusal.fingerprint ?? 'none', remoteAddress },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// PIN lifecycle: one use, ten minutes
+// ---------------------------------------------------------------------------
+
+function prunePins(now = Date.now()): void {
+  for (let i = spentPins.length - 1; i >= 0; i--) if (spentPins[i].expiresAt <= now) spentPins.splice(i, 1);
+  for (let i = expiredPins.length - 1; i >= 0; i--) if (expiredPins[i].until <= now) expiredPins.splice(i, 1);
+}
+
+/** A new PIN. The old one, unless it was used, is remembered as expired for a while. */
+function rotatePin(reason: 'start' | 'used' | 'expired' | 'regenerated' | 'failures', broadcast = true): void {
+  const now = Date.now();
+  prunePins(now);
+  if (currentPin && reason !== 'used' && reason !== 'start') expiredPins.push({ pin: currentPin, until: now + PIN_TTL_MS });
+  currentPin = generatePin();
+  currentPinIssuedAt = now;
+  pinFailures = 0;
+  if (pinRotationTimer) clearTimeout(pinRotationTimer);
+  pinRotationTimer = null;
+  // The harness switch keeps one printed PIN usable for its whole run.
+  if (!pinReusable) {
+    pinRotationTimer = setTimeout(() => {
+      pinRotationTimer = null;
+      if (!pairingServer && !tlsServer) return;
+      rotatePin('expired');
+    }, PIN_TTL_MS);
+    pinRotationTimer.unref?.();
+  }
+  if (reason === 'failures') appLog('core:annex', 'warn', 'Pairing PIN replaced after too many wrong attempts');
+  if (broadcast) broadcastToAllWindows(IPC.ANNEX.STATUS_CHANGED, getStatus());
+}
+
+type PinCheck =
+  | { kind: 'current' }
+  | { kind: 'spent'; spent: SpentPin }
+  | { kind: 'expired' }
+  | { kind: 'wrong' };
+
+function checkPin(pin: string, now = Date.now()): PinCheck {
+  prunePins(now);
+  if (comparePins(pin, currentPin)) {
+    if (pinReusable || now - currentPinIssuedAt < PIN_TTL_MS) return { kind: 'current' };
+    return { kind: 'expired' };
+  }
+  const spent = spentPins.find((entry) => comparePins(pin, entry.pin));
+  if (spent) return { kind: 'spent', spent };
+  if (expiredPins.some((entry) => comparePins(pin, entry.pin))) return { kind: 'expired' };
+  return { kind: 'wrong' };
+}
+
+/** Drop peers paired by PIN that never connected while their PIN was live: the answer to their pairing was lost. */
+function dropUnconnectedPeers(now = Date.now()): void {
+  for (const [fingerprint, deadline] of awaitingFirstConnection) {
+    if (deadline > now) continue;
+    awaitingFirstConnection.delete(fingerprint);
+    mobileSessionPeers.delete(fingerprint);
+    if (annexPeers.removePeer(fingerprint)) {
+      appLog('core:annex', 'info', 'Removed a pairing that never connected', { meta: { fingerprint } });
+      broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeersForDisplay());
+    }
+  }
 }
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
@@ -1921,7 +2029,7 @@ async function handleSpawnQuickAgent(
   let cwd = project.path;
   let defaultOrchestrator = project.orchestrator || 'claude-code';
   let defaultModel: string | undefined;
-  let defaultFreeAgentMode = false;
+  let defaultAccess: AccessLevel = 'ask';
   let systemPrompt: string | undefined;
 
   if (parentAgentId) {
@@ -1933,13 +2041,15 @@ async function handleSpawnQuickAgent(
     cwd = parentInfo.config.worktreePath || project.path;
     defaultOrchestrator = parentInfo.config.orchestrator || defaultOrchestrator;
     defaultModel = parentInfo.config.quickAgentDefaults?.defaultModel || parentInfo.config.model;
-    defaultFreeAgentMode = parentInfo.config.quickAgentDefaults?.freeAgentMode ?? parentInfo.config.freeAgentMode ?? false;
+    defaultAccess = quickAgentAccess(parentInfo.config, parentInfo.project.path);
     systemPrompt = (body.systemPrompt as string | undefined) || parentInfo.config.quickAgentDefaults?.systemPrompt;
   }
 
   const model = (body.model as string | undefined) || defaultModel;
   const orchestrator = (body.orchestrator as string | undefined) || defaultOrchestrator;
-  const freeAgentMode = (body.freeAgentMode as boolean | undefined) ?? defaultFreeAgentMode;
+  // Access (#2761): a phone's on/off maps to a level; otherwise the parent's quick agent level.
+  const access = typeof body.freeAgentMode === 'boolean' ? accessFromLegacy(body.freeAgentMode, getPermissionMode(project.path)) : defaultAccess;
+  const freeAgentMode = legacyFreeAgentMode(access);
 
   // Tracked and announced to phones by the quick agent observer (see observeQuickAgents below).
   try {
@@ -1951,6 +2061,7 @@ async function handleSpawnQuickAgent(
       orchestrator,
       freeAgentMode,
       systemPrompt,
+      access,
       parentAgentId,
     });
     sendJson(res, 201, { ...quickAgentWireFields(entry), status: 'starting' });
@@ -2176,112 +2287,157 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
     return;
   }
 
-  // POST /pair — with brute-force protection
+  // Pairing over plain HTTP is gone: it changes nothing, and says how to pair instead.
   if (method === 'POST' && url === '/pair') {
-    const pairStartMs = Date.now();
-    const pairReply = (status: number, body: Record<string, unknown>): void => {
-      recordPairServed(pairStartMs, status === 200 ? 'ok' : pairResultFor(body.error as string | undefined));
-      sendJson(res, status, body);
-    };
-    const source = req.socket.remoteAddress || 'unknown';
-    const bruteCheck = annexPeers.checkBruteForce(source);
-
-    if (!bruteCheck.allowed) {
-      if (bruteCheck.locked) {
-        pairReply(429, { error: 'pairing_locked', message: 'Too many failed attempts. Pairing is locked.' });
-      } else {
-        pairReply(429, { error: 'rate_limited', retryAfterMs: bruteCheck.delayMs });
-      }
-      return;
-    }
-
-    readBody(req).then((raw) => {
-      const body = parseJsonBody(raw);
-      if (!body) { pairReply(400, { error: 'invalid_json' }); return; }
-      const pin = body.pin;
-      if (typeof pin !== 'string') { pairReply(400, { error: 'invalid_json' }); return; }
-
-      if (!comparePins(pin, currentPin)) {
-        annexPeers.recordFailedAttempt(source);
-        pairReply(401, { error: 'invalid_pin' });
-        return;
-      }
-
-      const securePair = (req.socket as tls.TLSSocket).encrypted === true;
-      let clientCertificateFingerprint: string | undefined;
-      const sessionOnly = securePair && body.pairingMode === 'session';
-      if (securePair && body.pairingMode !== undefined && body.pairingMode !== 'session' && body.pairingMode !== 'persistent') {
-        pairReply(400, { error: 'invalid_pairing_mode' }); return;
-      }
-      if (securePair) {
-        clientCertificateFingerprint = annexTls.extractPeerCertificateFingerprint(req.socket as tls.TLSSocket);
-        if (typeof body.publicKey !== 'string' || !clientCertificateFingerprint
-          || annexTls.extractPeerFingerprint(req.socket as tls.TLSSocket) !== annexIdentity.computeFingerprint(body.publicKey)) {
-          pairReply(400, { error: 'client_certificate_required' });
-          return;
-        }
-      }
-      annexPeers.recordSuccessfulAttempt(source);
-      const token = randomUUID();
-      sessionTokens.set(token, { issuedAt: Date.now() });
-
-      const identity = annexIdentity.getOrCreateIdentity();
-      const settings = annexSettings.getSettings();
-
-      const clientPublicKey = body.publicKey as string | undefined;
-      if (clientPublicKey) {
-        // Validate public key: must be a valid Ed25519 SPKI/DER key encoded as base64
-        try {
-          const keyBuf = Buffer.from(clientPublicKey, 'base64');
-          const keyObj = require('crypto').createPublicKey({ key: keyBuf, format: 'der', type: 'spki' });
-          if (keyObj.asymmetricKeyType !== 'ed25519') {
-            pairReply(400, { error: 'invalid_public_key' });
-            return;
-          }
-        } catch {
-          pairReply(400, { error: 'invalid_public_key' });
-          return;
-        }
-        const pairedPeer: AnnexPeer = {
-          fingerprint: annexIdentity.computeFingerprint(clientPublicKey),
-          publicKey: clientPublicKey,
-          alias: (body.alias as string) || 'Unknown',
-          icon: (body.icon as string) || 'computer',
-          color: (body.color as string) || 'indigo',
-          pairedAt: new Date().toISOString(),
-          lastSeen: new Date().toISOString(),
-          ...(clientCertificateFingerprint ? { tlsCertificateFingerprint: clientCertificateFingerprint } : {}),
-          role: 'controller', // This peer initiated pairing → they control us
-        };
-        const previous = findPairedPeer(pairedPeer.fingerprint);
-        if (previous?.tlsCertificateFingerprint && previous.tlsCertificateFingerprint !== pairedPeer.tlsCertificateFingerprint) disconnectPeer(pairedPeer.fingerprint);
-        if (sessionOnly) mobileSessionPeers.set(pairedPeer.fingerprint, pairedPeer);
-        else { mobileSessionPeers.delete(pairedPeer.fingerprint); annexPeers.addPeer(pairedPeer); }
-      }
-
-      if (clientCertificateFingerprint && typeof clientPublicKey === 'string') {
-        sessionTokens.set(token, { issuedAt: Date.now(), peerFingerprint: annexIdentity.computeFingerprint(clientPublicKey) });
-      }
-      pairReply(200, {
-        token,
-        ...(clientCertificateFingerprint ? { tlsCertificateFingerprint: annexTls.getCertificateFingerprint(), mobileProtocolVersion: 1, pairingMode: sessionOnly ? 'session' : 'persistent' } : {}),
-        publicKey: identity.publicKey,
-        alias: settings.alias,
-        icon: settings.icon,
-        color: settings.color,
-        fingerprint: identity.fingerprint,
-      });
-    }).catch((err) => {
-      recordPairServed(pairStartMs, 'invalid_request');
-      if (isBodyTooLarge(err) && !res.headersSent) { refuseOversizedBody(req, res); return; }
-      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
-      res.writeHead(400);
-      res.end();
+    recordPairServed(Date.now(), 'invalid_request');
+    req.resume();
+    sendJson(res, 410, {
+      error: 'update_required',
+      message: 'This computer only pairs over a secure connection. Update Clubhouse on the other device, then pair using this computer\'s pairing link.',
     });
     return;
   }
 
   sendJson(res, 404, { error: 'not_found' });
+}
+
+const PAIR_MESSAGES = {
+  invalid_pin: "That code doesn't match. Check the code in this computer's Annex settings and try again.",
+  pin_expired: "That code has expired. Use the current code from this computer's Annex settings.",
+  pin_used: "That code was already used. Show a new code in this computer's Annex settings and try again.",
+  peer_already_paired: 'This device is already paired here with a different certificate. Remove it in Annex settings on this computer, then pair again.',
+  client_certificate_required: 'Pairing needs the device certificate that matches its identity.',
+} as const;
+
+/**
+ * POST /pair on the main TLS port. The client shows its certificate, whose CN is
+ * its identity fingerprint; that certificate is pinned. A PIN pairs one identity
+ * and is then spent. A retry from the same identity and certificate while the PIN
+ * would still have been live gets the same answer again, with no change.
+ */
+async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  const pairStartMs = Date.now();
+  const pairReply = (status: number, body: Record<string, unknown>): void => {
+    recordPairServed(pairStartMs, status === 200 ? 'ok' : pairResultFor(body.error as string | undefined));
+    sendJson(res, status, body);
+  };
+  const source = req.socket.remoteAddress || 'unknown';
+  const bruteCheck = annexPeers.checkBruteForce(source);
+
+  if (!bruteCheck.allowed) {
+    req.resume();
+    if (bruteCheck.locked) {
+      pairReply(429, { error: 'pairing_locked', message: 'Too many failed attempts. Pairing is locked.' });
+    } else {
+      pairReply(429, { error: 'rate_limited', retryAfterMs: bruteCheck.delayMs });
+    }
+    return;
+  }
+
+  let raw: string;
+  try {
+    raw = await readBody(req);
+  } catch (err) {
+    recordPairServed(pairStartMs, 'invalid_request');
+    if (isBodyTooLarge(err) && !res.headersSent) { refuseOversizedBody(req, res); return; }
+    appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    res.writeHead(400);
+    res.end();
+    return;
+  }
+  const body = parseJsonBody(raw);
+  if (!body) { pairReply(400, { error: 'invalid_json' }); return; }
+  const pin = body.pin;
+  if (typeof pin !== 'string') { pairReply(400, { error: 'invalid_json' }); return; }
+  if (body.pairingMode !== undefined && body.pairingMode !== 'session' && body.pairingMode !== 'persistent') {
+    pairReply(400, { error: 'invalid_pairing_mode' }); return;
+  }
+  const sessionOnly = body.pairingMode === 'session';
+
+  // Identity: an Ed25519 key, and a client certificate named for it.
+  const socket = req.socket as tls.TLSSocket;
+  const clientPublicKey = body.publicKey;
+  if (typeof clientPublicKey !== 'string') {
+    pairReply(400, { error: 'client_certificate_required', message: PAIR_MESSAGES.client_certificate_required }); return;
+  }
+  try {
+    const keyObj = createPublicKey({ key: Buffer.from(clientPublicKey, 'base64'), format: 'der', type: 'spki' });
+    if (keyObj.asymmetricKeyType !== 'ed25519') { pairReply(400, { error: 'invalid_public_key' }); return; }
+  } catch {
+    pairReply(400, { error: 'invalid_public_key' }); return;
+  }
+  const fingerprint = annexIdentity.computeFingerprint(clientPublicKey);
+  const certFingerprint = annexTls.extractPeerCertificateFingerprint(socket);
+  const certDer = annexTls.extractPeerCertificateDer(socket);
+  if (!certFingerprint || !certDer || annexTls.extractPeerFingerprint(socket) !== fingerprint) {
+    pairReply(400, { error: 'client_certificate_required', message: PAIR_MESSAGES.client_certificate_required }); return;
+  }
+
+  dropUnconnectedPeers();
+  const pinCheck = checkPin(pin);
+  if (pinCheck.kind === 'wrong') {
+    annexPeers.recordFailedAttempt(source);
+    pinFailures++;
+    if (pinFailures >= PIN_FAILURE_LIMIT) rotatePin('failures');
+    pairReply(409, { error: 'invalid_pin', message: PAIR_MESSAGES.invalid_pin }); return;
+  }
+  if (pinCheck.kind === 'expired') { pairReply(410, { error: 'pin_expired', message: PAIR_MESSAGES.pin_expired }); return; }
+  if (pinCheck.kind === 'spent') {
+    const { spent } = pinCheck;
+    if (spent.fingerprint === fingerprint && spent.certFingerprint === certFingerprint && findPairedPeer(fingerprint)?.tlsCertificateFingerprint === certFingerprint) {
+      annexPeers.recordSuccessfulAttempt(source);
+      pairReply(200, spent.response); return;
+    }
+    pairReply(410, { error: 'pin_used', message: PAIR_MESSAGES.pin_used }); return;
+  }
+
+  // An established pin is only replaced with proof the identity key holds the new certificate.
+  const previous = findPairedPeer(fingerprint);
+  const replacesPin = !!previous?.tlsCertificateFingerprint && previous.tlsCertificateFingerprint !== certFingerprint;
+  if (replacesPin && !annexTls.verifyCertBinding(clientPublicKey, certDer, body.certBinding)) {
+    pairReply(409, { error: 'peer_already_paired', message: PAIR_MESSAGES.peer_already_paired }); return;
+  }
+
+  annexPeers.recordSuccessfulAttempt(source);
+  const identity = annexIdentity.getOrCreateIdentity();
+  const settings = annexSettings.getSettings();
+  const now = new Date().toISOString();
+  const pairedPeer: AnnexPeer = {
+    fingerprint,
+    publicKey: clientPublicKey,
+    alias: typeof body.alias === 'string' && body.alias ? body.alias : 'Unknown',
+    icon: typeof body.icon === 'string' && body.icon ? body.icon : 'computer',
+    color: typeof body.color === 'string' && body.color ? body.color : 'indigo',
+    pairedAt: now,
+    lastSeen: now,
+    tlsCertificateFingerprint: certFingerprint,
+    role: 'controller', // This peer initiated pairing → they control us
+  };
+  if (replacesPin) disconnectPeer(fingerprint);
+  if (sessionOnly) mobileSessionPeers.set(fingerprint, pairedPeer);
+  else { mobileSessionPeers.delete(fingerprint); annexPeers.addPeer(pairedPeer); }
+  loggedRefusals.delete(fingerprint);
+  broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeersForDisplay());
+
+  // `token` stays for clients that read it; connections authenticate by the pinned certificate alone.
+  const response = {
+    token: randomUUID(),
+    tlsCertificateFingerprint: annexTls.getCertificateFingerprint(),
+    mobileProtocolVersion: 1,
+    pairingMode: sessionOnly ? 'session' : 'persistent',
+    publicKey: identity.publicKey,
+    alias: settings.alias,
+    icon: settings.icon,
+    color: settings.color,
+    fingerprint: identity.fingerprint,
+  };
+  if (!pinReusable) {
+    const pinDeadline = currentPinIssuedAt + PIN_TTL_MS;
+    spentPins.push({ pin: currentPin, expiresAt: pinDeadline, fingerprint, certFingerprint, response });
+    if (!previous || replacesPin || !previous.tlsCertificateFingerprint) awaitingFirstConnection.set(fingerprint, pinDeadline);
+    rotatePin('used');
+  }
+  pairReply(200, response);
 }
 
 type AnnexRouteContext = {
@@ -2749,7 +2905,7 @@ async function handleDurableCreationRoute(ctx: AnnexRouteContext, match: RegExpM
         body.model as string | undefined,
         body.useWorktree !== false,
         body.orchestrator as string | undefined,
-        body.freeAgentMode as boolean | undefined,
+        typeof body.freeAgentMode === 'boolean' ? body.freeAgentMode : undefined,
         body.mcpIds as string[] | undefined,
       );
       broadcastSnapshotRefresh();
@@ -3124,7 +3280,7 @@ async function handleMobilePairingDeleteRoute(ctx: AnnexRouteContext): Promise<v
   if (!mobileSessionPeers.has(fingerprint) || annexPeers.getPeer(fingerprint)) {
     sendJson(ctx.res, 409, { error: 'persistent_pairing_requires_desktop' }); return;
   }
-  disconnectPeer(fingerprint);
+  revokePeer(fingerprint);
   sendJson(ctx.res, 200, { version: 1, epoch: mobileCommands.epoch, revoked: true, pairingMode: 'session' });
 }
 
@@ -3731,58 +3887,49 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   // Mobile bootstrap: only PIN pairing, only over TLS. All control remains authenticated.
   if (method === 'POST' && url === '/pair' && (req.socket as tls.TLSSocket).encrypted) {
-    await handlePairingRequest(req, res);
+    await handleTlsPair(req, res);
     return;
   }
 
-  // All endpoints on the main server require auth (mTLS or bearer token).
-  // Check mTLS first (matching the WebSocket upgrade handler), then fall back
-  // to bearer token. Without this, REST calls from the controller using only
-  // mTLS certs (e.g. buffer fetch) would be rejected with 401.
-  let authenticated = false;
-  let isMtlsAuthenticated = false;
-  let mobilePrincipal: string | undefined;
-  if (req.socket && 'getPeerCertificate' in req.socket) {
-    const peerFingerprint = annexTls.extractPeerFingerprint(req.socket as tls.TLSSocket);
-    if (peerFingerprint) {
-      const peer = findPairedPeer(peerFingerprint);
-      if (peer && (peer.role === 'controller' || !peer.role)
-        && (!peer.tlsCertificateFingerprint || peer.tlsCertificateFingerprint === annexTls.extractPeerCertificateFingerprint(req.socket as tls.TLSSocket))) {
-        authenticated = true;
-        isMtlsAuthenticated = true;
-        if (peer.tlsCertificateFingerprint && peer.tlsCertificateFingerprint === annexTls.extractPeerCertificateFingerprint(req.socket as tls.TLSSocket)) mobilePrincipal = peerFingerprint;
-        annexPeers.updateLastSeen(peerFingerprint);
+  // Every endpoint on the main server needs a paired controller's pinned certificate.
+  const auth = authenticatePeer(req.socket);
+  if (isRefusal(auth)) {
+    logRefusedPeer('rest', auth, req.socket.remoteAddress);
+    req.resume();
+    // Mobile routes keep their documented answer to a request with no client certificate at all.
+    if (auth.error === 'unauthorized' && url.startsWith('/api/v1/mobile/')) {
+      if (method === 'POST' && /^\/api\/v1\/mobile\/commands(\?|$)/.test(url)) {
+        const response = mobileCommands.reject('client_certificate_required', 403);
+        sendJson(res, response.statusCode, response.body);
+      } else {
+        sendJson(res, 403, { error: 'client_certificate_required' });
       }
-    }
-  }
-  if (!authenticated) {
-    const token = extractBearerToken(req);
-    if (!isValidToken(token)) {
-      sendJson(res, 401, { error: 'unauthorized' });
       return;
     }
+    sendJson(res, auth.status, { error: auth.error, message: auth.message });
+    return;
   }
+  const mobilePrincipal = auth.fingerprint;
+  annexPeers.updateLastSeen(auth.fingerprint);
 
-  /** Require mTLS for destructive operations when TLS is active. Returns true if rejected. */
+  /**
+   * Destructive routes check the peer again when they act, so one removed while
+   * its request was in flight is refused. Returns true if refused.
+   */
   function requireMtls(): boolean {
-    // Only enforce mTLS when the server is running with TLS.
-    // In HTTP fallback mode, bearer tokens are sufficient (no TLS available).
-    if (tlsServer && !isMtlsAuthenticated) {
-      appLog('core:annex', 'warn', 'Rejected destructive REST request — mTLS required', {
-        meta: { method, url },
-      });
-      recordControlDenied('rest');
-      sendJson(res, 403, { error: 'mtls_required', message: 'Destructive operations require mTLS authentication' });
-      return true;
-    }
-    return false;
+    const recheck = authenticatePeer(req.socket);
+    if (!isRefusal(recheck)) return false;
+    appLog('core:annex', 'warn', 'Refused a destructive request from a peer no longer paired', { meta: { method, url, error: recheck.error } });
+    recordControlDenied('rest');
+    sendJson(res, recheck.status, { error: recheck.error, message: recheck.message });
+    return true;
   }
 
   const route = resolveAnnexHttpRoute(method, url);
   if (route) {
     const match = url.match(route.pattern);
     if (match) {
-      await withRemoteParent(restTraceparent(req.headers.traceparent, isMtlsAuthenticated), () =>
+      await withRemoteParent(restTraceparent(req.headers.traceparent, true), () =>
         annexRestFlow(method, route.pattern, () => res.statusCode, () =>
           traceHttpResponse(res, () => route.handler({ req, res, url, method, requireMtls, mobilePrincipal }, match))),
         true,
@@ -3932,7 +4079,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
   const authType = wsAuthTypes.get(ws);
   const isMtls = authType === 'mtls';
 
-  if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'pty:spawn-shell' || type === 'pty:close' || type === 'pty:attach' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill' || type === 'agent:reorder' || type === 'clipboard:image')) {
+  if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'pty:spawn-shell' || type === 'pty:close' || type === 'pty:attach' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill' || type === 'agent:reorder' || type === 'clipboard:image' || type === 'canvas:mutation')) {
     recordControlDenied('ws');
     safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'Control messages require mTLS authentication' } }));
     return;
@@ -4237,6 +4384,26 @@ async function handleWakeAgentWs(
 // Server lifecycle
 // ---------------------------------------------------------------------------
 
+const HTTP_STATUS_TEXT: Record<number, string> = { 401: 'Unauthorized', 403: 'Forbidden', 503: 'Service Unavailable' };
+
+/** Answers a WebSocket upgrade with a JSON error, the same body REST gives, then closes. */
+function refuseUpgrade(socket: import('net').Socket, status: 401 | 403 | 503, body: Record<string, unknown>): void {
+  const json = JSON.stringify(body);
+  socket.once('finish', () => socket.destroy());
+  socket.end(`HTTP/1.1 ${status} ${HTTP_STATUS_TEXT[status]}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(json)}\r\nConnection: close\r\n\r\n${json}`);
+}
+
+const TLS_UNAVAILABLE = {
+  error: 'tls_unavailable',
+  message: 'Annex could not start its secure server, so nothing is served. Restart Clubhouse, or reset Annex in Settings.',
+};
+
+/** The main port when TLS couldn't start: every request and upgrade gets 503, so nothing goes over plain HTTP. */
+function handleTlsUnavailable(req: http.IncomingMessage, res: http.ServerResponse): void {
+  req.resume();
+  sendJson(res, 503, TLS_UNAVAILABLE);
+}
+
 export function start(): void {
   if (tlsServer || httpServer) {
     appLog('core:annex', 'debug', 'Annex server start() called but already running');
@@ -4254,9 +4421,9 @@ export function start(): void {
     meta: { fingerprint: identity.fingerprint },
   });
 
-  currentPin = generatePin();
+  rotatePin('start', false);
 
-  // --- Pairing server (plain HTTP) ---
+  // --- Pairing server (plain HTTP): identity hint only; pairing itself is on the TLS port ---
   pairingServer = http.createServer(handlePairingRequest);
 
   // --- Main server (TLS with mTLS) ---
@@ -4265,16 +4432,15 @@ export function start(): void {
     tlsOptions = annexTls.createTlsServerOptions(identity);
     tlsServer = https.createServer(tlsOptions, handleRequest);
   } catch (err) {
-    appLog('core:annex', 'warn', 'TLS server creation failed, falling back to plain HTTP', {
+    appLog('core:annex', 'error', 'TLS server creation failed; Annex will not serve anything until it can start securely', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
-    // Fallback: use plain HTTP for the main server (legacy/iOS compat)
     tlsServer = null;
     recordTlsFallback();
   }
 
-  // If TLS failed, fall back to HTTP for the main server
-  const mainServer = tlsServer || http.createServer(handleRequest);
+  // Without TLS the main port only says so: no authenticated route or WebSocket is served over plain HTTP.
+  const mainServer = tlsServer || http.createServer(handleTlsUnavailable);
   if (!tlsServer) {
     httpServer = mainServer as http.Server;
   }
@@ -4283,6 +4449,10 @@ export function start(): void {
 
   // WebSocket upgrade handler for the main server
   mainServer.on('upgrade', (req: http.IncomingMessage, socket: any, head: Buffer) => {
+    if (!tlsServer) {
+      refuseUpgrade(socket, 503, TLS_UNAVAILABLE);
+      return;
+    }
     const urlObj = new URL(req.url || '/', `http://${req.headers.host}`);
 
     if (urlObj.pathname !== '/ws') {
@@ -4302,40 +4472,19 @@ export function start(): void {
       return;
     }
 
-    // Check auth: mTLS peer cert OR bearer token
-    let authType: WsAuthType = 'bearer';
-
-    let peerFingerprintForWs: string | undefined;
-    if (tlsServer && socket instanceof tls.TLSSocket) {
-      const peerFingerprint = annexTls.extractPeerFingerprint(socket);
-      if (peerFingerprint) {
-        const peer = findPairedPeer(peerFingerprint);
-        // Only grant mTLS auth to peers with role 'controller' (or legacy peers without a role)
-        if (peer && (peer.role === 'controller' || !peer.role)
-        && (!peer.tlsCertificateFingerprint || peer.tlsCertificateFingerprint === annexTls.extractPeerCertificateFingerprint(req.socket as tls.TLSSocket))) {
-          authType = 'mtls';
-          peerFingerprintForWs = peerFingerprint;
-          annexPeers.updateLastSeen(peerFingerprint);
-        }
-      }
+    // Same check as REST: a paired controller's pinned certificate, nothing else.
+    const auth = authenticatePeer(socket);
+    if (isRefusal(auth)) {
+      logRefusedPeer('ws', auth, req.socket.remoteAddress);
+      refuseUpgrade(socket, auth.status, { error: auth.error, message: auth.message });
+      return;
     }
-
-    if (authType !== 'mtls') {
-      // Accept token from Authorization header (preferred) or query param (legacy
-      // fallback kept until Clubhouse-Go#76 ships on the mobile client).
-      const token = extractBearerToken(req) ?? urlObj.searchParams.get('token');
-      if (!isValidToken(token || undefined)) {
-        appLog('core:annex', 'warn', 'WebSocket upgrade rejected — unauthorized', {
-          meta: { remoteAddress: req.socket.remoteAddress, hasToken: !!token },
-        });
-        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-        socket.destroy();
-        return;
-      }
-    }
+    const authType: WsAuthType = 'mtls';
+    const peerFingerprintForWs = auth.fingerprint;
+    annexPeers.updateLastSeen(auth.fingerprint);
 
     appLog('core:annex', 'info', 'WebSocket upgrade accepted', {
-      meta: { authType, peerFingerprint: peerFingerprintForWs || 'none', remoteAddress: req.socket.remoteAddress },
+      meta: { authType, peerFingerprint: peerFingerprintForWs, remoteAddress: req.socket.remoteAddress },
     });
 
     wss!.handleUpgrade(req, socket, head, (ws) => {
@@ -4343,13 +4492,7 @@ export function start(): void {
       if (urlObj.searchParams.get('iconRefs') === '1') wsIconRefs.add(ws);
       const clientKind = urlObj.searchParams.get('client');
       if (clientKind === 'mobile' || clientKind === 'desktop') wsClientKinds.set(ws, clientKind);
-      if (peerFingerprintForWs) {
-        wsPeerFingerprints.set(ws, peerFingerprintForWs);
-      }
-      if (authType === 'bearer') {
-        const token = extractBearerToken(req) ?? urlObj.searchParams.get('token');
-        if (token) wsBearerTokens.set(ws, token);
-      }
+      wsPeerFingerprints.set(ws, peerFingerprintForWs);
       wss!.emit('connection', ws, req);
     });
   });
@@ -4572,14 +4715,8 @@ export function start(): void {
 
   staleEvictionInterval = setInterval(() => {
     eventReplay.evictStale();
-    // Evict expired session tokens (SEC-11)
-    const now = Date.now();
-    for (const [token, entry] of sessionTokens) {
-      if (now - entry.issuedAt > TOKEN_TTL_MS) {
-        sessionTokens.delete(token);
-        revokedTokens.delete(token); // clean up expired revocations
-      }
-    }
+    prunePins();
+    dropUnconnectedPeers();
   }, 60_000);
 
   // Server-side heartbeat: ping all WS clients and terminate unresponsive ones.
@@ -4801,8 +4938,14 @@ export function stop(): void {
   pairingPort = 0;
   boundHost = '';
   currentPin = '';
-  sessionTokens.clear();
-  revokedTokens.clear();
+  currentPinIssuedAt = 0;
+  pinFailures = 0;
+  if (pinRotationTimer) clearTimeout(pinRotationTimer);
+  pinRotationTimer = null;
+  spentPins.length = 0;
+  expiredPins.length = 0;
+  awaitingFirstConnection.clear();
+  loggedRefusals.clear();
   detailedStatusCache.clear();
   lastChatStatusPush.clear();
   for (const agentId of quickAgentCleanupTimers.keys()) cancelQuickAgentCleanup(agentId);
@@ -5272,46 +5415,54 @@ export function notifySessionPause(paused: boolean): void {
   broadcastWs({ type: paused ? 'session:paused' : 'session:resumed', payload: { paused } });
 }
 
+/** A new PIN from Settings. Paired devices stay connected: they authenticate by certificate, not PIN. */
 export function regeneratePin(): void {
-  currentPin = generatePin();
-  sessionTokens.clear();
-  revokedTokens.clear();
-  // Close all WS clients so they must re-pair
-  if (wss) {
-    for (const client of wss.clients) {
-      try { client.close(); } catch (err) {
-        appLog('core:annex', 'debug', 'Failed to close WebSocket client during pin regeneration', {
-          meta: { error: err instanceof Error ? err.message : String(err) },
-        });
-      }
+  rotatePin('regenerated', false);
+}
+
+function closePeerSockets(fingerprint: string, code: number, reason: string): void {
+  if (!wss) return;
+  for (const client of wss.clients) {
+    if (wsPeerFingerprints.get(client) !== fingerprint) continue;
+    try { client.close(code, reason); } catch (err) {
+      appLog('core:annex', 'debug', 'Failed to close peer WebSocket connection', {
+        meta: { fingerprint, error: err instanceof Error ? err.message : String(err) },
+      });
     }
   }
 }
 
-/** Disconnect a specific peer's WebSocket connection by fingerprint and revoke their tokens. */
+/** Disconnect a peer's WebSockets. It stays paired and may reconnect. */
 export function disconnectPeer(fingerprint: string): void {
-  mobileSessionPeers.delete(fingerprint);
-  const peerTokens = new Set<string>();
   appLog('core:annex', 'info', `disconnectPeer called`, { meta: { fingerprint } });
-  for (const [token, session] of sessionTokens) {
-    if (session.peerFingerprint === fingerprint) { peerTokens.add(token); revokedTokens.add(token); sessionTokens.delete(token); }
-  }
-  if (!wss) return;
-  for (const client of wss.clients) {
-    if (wsPeerFingerprints.get(client) === fingerprint || peerTokens.has(wsBearerTokens.get(client) ?? '')) {
-      // Revoke the bearer token used by this connection
-      const token = wsBearerTokens.get(client);
-      if (token) {
-        revokedTokens.add(token);
-        sessionTokens.delete(token);
-      }
-      try { client.close(1000, 'disconnected_by_satellite'); } catch (err) {
-        appLog('core:annex', 'debug', 'Failed to close peer WebSocket connection', {
-          meta: { fingerprint, error: err instanceof Error ? err.message : String(err) },
-        });
-      }
-    }
-  }
+  closePeerSockets(fingerprint, 1000, 'disconnected_by_satellite');
+}
+
+/** Close code for a peer whose pairing was removed; reconnecting gets 401 peer_not_paired. */
+export const PEER_REVOKED_CLOSE_CODE = 4401;
+
+/**
+ * Remove a pairing. The entry goes first, so any reconnect (REST or WebSocket)
+ * is refused with 401 peer_not_paired, then its open sockets close.
+ */
+export function revokePeer(fingerprint: string): boolean {
+  const wasSession = mobileSessionPeers.delete(fingerprint);
+  const removed = annexPeers.removePeer(fingerprint) || wasSession;
+  awaitingFirstConnection.delete(fingerprint);
+  loggedRefusals.delete(fingerprint);
+  closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired');
+  appLog('core:annex', 'info', 'Peer pairing removed', { meta: { fingerprint, removed } });
+  return removed;
+}
+
+/** Remove every pairing and close every peer connection. */
+export function revokeAllPeers(): void {
+  const fingerprints = new Set([...annexPeers.listPeers().map((p) => p.fingerprint), ...mobileSessionPeers.keys()]);
+  mobileSessionPeers.clear();
+  annexPeers.removeAllPeers();
+  awaitingFirstConnection.clear();
+  loggedRefusals.clear();
+  for (const fingerprint of fingerprints) closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired');
 }
 
 /** Get the auth type of a WebSocket connection. Used by protocol V2 to gate control messages. */
@@ -5340,15 +5491,17 @@ export const _testing = {
   broadcastForTest: (message: object) => broadcastWs(message),
   resetFrameLogs: () => lastFrameLimitLog.clear(),
   runMobileCommand,
-  get sessionTokens() { return sessionTokens; },
-  isValidToken,
   readBody,
-  TOKEN_TTL_MS,
+  authenticatePeer,
+  PIN_TTL_MS,
+  /** Harness only: the PIN stays usable after pairing, so many clients can pair with one printed PIN. */
+  setPinReusable(reusable: boolean) { pinReusable = reusable; },
+  get awaitingFirstConnection() { return awaitingFirstConnection; },
+  dropUnconnectedPeers,
   SERVER_HEARTBEAT_INTERVAL_MS,
   wsAlive,
   wsAuthTypes,
   wsPeerFingerprints,
-  wsBearerTokens,
   shellOwners,
   get wss() { return wss; },
   get heartbeatInterval() { return heartbeatInterval; },

@@ -5,6 +5,7 @@
  * hear about it as it starts.
  */
 
+import type { AccessLevel } from '../../shared/agent-access';
 import { IPC } from '../../shared/ipc-channels';
 import { generateQuickAgentId } from '../../shared/agent-id';
 import { generateQuickName } from '../../shared/name-generator';
@@ -61,6 +62,8 @@ export interface StartQuickAgentParams {
   orchestrator: string;
   model?: string;
   freeAgentMode?: boolean;
+  /** Access level (#2761). Unset: spawnAgent applies the project's default. */
+  access?: AccessLevel;
   systemPrompt?: string;
   parentAgentId?: string | null;
   /** Defaults to a generated quick-agent name. */
@@ -96,6 +99,7 @@ export async function startQuickAgent(p: StartQuickAgentParams): Promise<QuickAg
       ...(p.systemPrompt && { systemPrompt: p.systemPrompt }),
       orchestrator: p.orchestrator,
       freeAgentMode: entry.freeAgentMode,
+      ...(p.access && { access: p.access }),
       ...(p.interactive && { interactive: true }),
     });
   } catch (err) {

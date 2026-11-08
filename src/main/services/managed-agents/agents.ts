@@ -4,6 +4,8 @@
  * They combine the managed-agents service with agent config and
  * orchestration policy.
  */
+import { withAccess } from '../../../shared/agent-access';
+import { getPermissionMode } from '../free-agent-settings';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as agentConfig from '../agent-config';
@@ -69,7 +71,8 @@ export async function applyManagedSettings(projectPath: string, agentId: string,
   if (settings.orchestrator !== undefined) updates.orchestrator = settings.orchestrator;
   if (settings.model !== undefined) updates.model = settings.model;
   if (settings.effort !== undefined) updates.effort = settings.effort;
-  if (settings.freeAgentMode !== undefined) updates.freeAgentMode = settings.freeAgentMode;
+  if (settings.access !== undefined) updates.access = settings.access;
+  else if (settings.freeAgentMode !== undefined) updates.freeAgentMode = settings.freeAgentMode;
   if (settings.idleSleep !== undefined) updates.idleSleep = settings.idleSleep;
   if (settings.helperTemplateId !== undefined) updates.helperTemplateId = settings.helperTemplateId;
   if (Object.keys(updates).length > 0) await agentConfig.updateDurableConfig(projectPath, agentId, updates);
@@ -83,7 +86,9 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
   if (input.managed === false) return createPlainAgent(projectPath, input);
   const service = managedAgents();
   const base = input.templateId ? await service.setupFromTemplate(input.templateId) : null;
-  const settings: ManagedTemplateSettings = { ...(base?.settings ?? {}), ...(input.settings ?? {}) };
+  // The caller's own Access wins over the template's, a legacy on/off included (#2761): settle its level before merging.
+  const own = input.settings ? withAccess(input.settings, getPermissionMode(projectPath)) : {};
+  const settings: ManagedTemplateSettings = { ...(base?.settings ?? {}), ...own };
   if (base?.settings.orchestration || input.settings?.orchestration) {
     settings.orchestration = { ...(base?.settings.orchestration ?? {}), ...(input.settings?.orchestration ?? {}) };
   }
@@ -91,7 +96,7 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
     ? { ...input.setup, ...(input.templateId && { templateId: input.templateId }) }
     : base?.setup ?? { blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] };
   // Managed agents always get their own folder: a worktree in a git project, a plain folder otherwise.
-  const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.freeAgentMode);
+  const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.access ?? settings.freeAgentMode);
   try {
     await service.saveSetup(projectPath, config.id, setup);
     // What createDurable doesn't take: orchestration, effort, auto-sleep and the helper template.
@@ -117,7 +122,7 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
 async function createPlainAgent(projectPath: string, input: CreateManagedAgentInput): Promise<DurableAgentConfig> {
   if (input.templateId || input.setup) throw new ManagedError('invalid', 'A plain agent has no template or parts.');
   const settings = input.settings ?? {};
-  const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.freeAgentMode);
+  const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.access ?? settings.freeAgentMode);
   if (settings.orchestration && Object.keys(settings.orchestration).length > 0) {
     try {
       await applyManagedSettings(projectPath, config.id, { orchestration: settings.orchestration });
