@@ -7,8 +7,9 @@
  *   `agent.message` on itself: one identity, two agents.
  * - read_memory, in the `dispatcherChat` group: the chat reads the
  *   Dispatcher's memory, read-only (dispatcher-memory-reader).
- * - tell_user, in the `dispatcher` group: the Dispatcher's report to the user,
- *   which reaches the chat as a Clubhouse update.
+ * - tell_user, in the `dispatcher` group: the Dispatcher's report to the user.
+ *   It says what kind of news it is and whose, and the group chat
+ *   (dispatcher-news) decides when it shows and how it reads.
  *
  * Descriptions speak to the agent as the Dispatcher, so neither agent learns
  * to describe a second one to the user.
@@ -20,6 +21,7 @@ import { appLog } from '../../log-service';
 import { deliverToChat, handOffToDispatcher, type ChannelResult } from '../../dispatcher/dispatcher-channel';
 import { MemoryReadError, readDispatcherMemory } from '../../dispatcher/dispatcher-memory-reader';
 import { optionalString, requireString } from './validation';
+import { NEWS_KINDS, isNewsKind, type NewsKind } from '../../dispatcher/dispatcher-triage';
 
 /** One request or report: long enough for a plan, short enough to stay a message. */
 export const MAX_CHANNEL_TEXT = 8_000;
@@ -108,13 +110,23 @@ export function registerDispatcherChatTools(): void {
     'tell_user',
     {
       description:
-        'Tell the user something: the outcome of what they asked for, a question that is theirs to answer, or ' +
-        'news that needs them. Write plain sentences, with no tool output, JSON or task ids. Don\'t report ' +
-        'routine progress. The user reads it in their conversation with you, where it is answered in your voice.',
+        'Tell the user something, in their conversation with you. Say what kind of news it is, and Clubhouse ' +
+        'decides when it shows: news that needs them, and the answer to something they asked, show right away; ' +
+        'routine news waits for the next check-in summary; a check-in shows only when news is waiting for it. ' +
+        'To pass on an agent\'s news, name the agent in `from`: it shows under that agent\'s name, rewritten ' +
+        'from what the agent sent you, and `message` is your one or two sentence version in its voice. Write ' +
+        'plain sentences, with no tool output, JSON or task ids, and leave out what isn\'t worth telling.',
       inputSchema: {
         type: 'object',
         properties: {
-          message: { type: 'string', description: 'What the user should know, in plain sentences.' },
+          message: { type: 'string', description: 'What the user should know, in one or two plain sentences. With `from`, in that agent\'s voice. For a check-in, your summary of what changed.' },
+          kind: {
+            type: 'string',
+            enum: [...NEWS_KINDS],
+            description: 'needs_user: a question or decision that is theirs, or a problem that needs them. answer: the outcome of something they asked for. ' +
+              'routine: progress worth knowing, but not now. check_in: your summary at a check-in. Leave it out for needs_user.',
+          },
+          from: { type: 'string', description: 'The agent whose news this is, by id or name. Leave it out for your own words and for check-ins.' },
         },
         required: ['message'],
       },
@@ -122,8 +134,13 @@ export function registerDispatcherChatTools(): void {
     async (agentId, args) => {
       const message = readText(args, 'message');
       if (typeof message !== 'string') return message;
+      if (args.kind !== undefined && !isNewsKind(args.kind)) return text(`kind must be one of ${NEWS_KINDS.join(', ')}.`, true);
+      const kind: NewsKind | undefined = isNewsKind(args.kind) ? args.kind : undefined;
+      const from = optionalString(args, 'from')?.trim();
       try {
-        const result = await deliverToChat(agentId, message);
+        const result = await deliverToChat(agentId, { message, ...(kind && { kind }), ...(from && { from }) });
+        if (result.held === 'later') return text(`Not shown yet. ${result.reason ?? 'Held for the next check-in summary.'}`);
+        if (result.held === 'never') return text(`Not shown. ${result.reason ?? 'It was held back.'}`);
         return failure(result) ?? text('The user has it.');
       } catch (err) {
         // telemetry-exempt: logged, and the error reaches the agent as the tool result

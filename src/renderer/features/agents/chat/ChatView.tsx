@@ -38,6 +38,7 @@ import { useChatActions, useChatAttachments, useChatDraft, useChatDraftStore, us
 import { buildAgentMap, commandForRequest, diffsForRequest, implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
 import { HelperHeader } from '../helpers/HelperHeader';
 import { SetupChangedBar } from '../../managed/SetupChangedBar';
+import { groupChatState, useGroupChatContext } from '../../dispatcher/group-chat';
 
 /** Where a ChatView is shown; several can show the same agent at once. */
 export type ChatViewContext = 'main' | 'popout' | 'canvas' | 'plugin';
@@ -58,6 +59,8 @@ export interface ChatViewBodyProps {
   /** Set when earlier history wasn't loaded. */
   onShowEarlier?: () => void;
   onBrowseHistory?: () => void;
+  /** The Dispatcher's group chat (#3043): `state` is already narrowed to what it shows. */
+  groupChat?: boolean;
 }
 
 /**
@@ -151,7 +154,7 @@ function useComposerContext(agent: Agent, state: ChatViewState, view: ChatViewCo
   return { now, next, ...(canOpen && { onOpen: () => openAgentSettingsOn(agent.id, 'settings') }) };
 }
 
-export function ChatViewBody({ agent, state, actions, loading, onSwitchToTerminal, switching, context = 'main', onShowEarlier, onBrowseHistory }: ChatViewBodyProps) {
+export function ChatViewBody({ agent, state, actions, loading, onSwitchToTerminal, switching, context = 'main', onShowEarlier, onBrowseHistory, groupChat }: ChatViewBodyProps) {
   const running = isRunningState(state.state);
   // Only a queue the runtime holds can be edited; a CLI that queues natively (Claude) already has the message.
   const queueEditable = state.capabilities?.queue === 'client';
@@ -360,6 +363,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
             latestRequest={latestRequest}
             announce={context !== 'canvas'}
             onShowEarlier={onShowEarlier}
+            groupChat={groupChat}
           />
           {/* An approval card is capped so it can't squeeze the transcript out (#2412): the card and the lists
               above it scroll inside the cap. The composer is never capped or wrapped: its menus open upward. */}
@@ -410,11 +414,15 @@ export function ChatView({ agent, onSwitchToTerminal, switching, context = 'main
   const loading = useChatLoading(agent.id);
   const actions = useChatActions(agent.id);
   const empty = useMemo(() => createChatViewState(agent.id), [agent.id]);
+  const groupChat = useGroupChatContext(agent);
+  const state = stored ?? empty;
+  const shown = useMemo(() => (groupChat ? groupChatState(state, groupChat) : state), [state, groupChat]);
   if (historyOpen) return <ChatHistory key={agent.id} agentId={agent.id} currentSessionId={stored?.sessionId ?? null} onClose={() => setHistoryOpen(false)} />;
   return (
     <ChatViewBody
       agent={agent}
-      state={stored ?? empty}
+      state={shown}
+      groupChat={!!groupChat}
       actions={actions}
       loading={loading && !stored}
       onSwitchToTerminal={onSwitchToTerminal}

@@ -3,6 +3,7 @@ import { DeleteAgentDialog } from '../../features/agents/DeleteAgentDialog';
 import { HelperDisposeRequestDialog } from '../../features/agents/helpers/HelperDisposeRequestDialog';
 import { GrantRequestDialog } from '../../features/agents/GrantRequestDialog';
 import { ManagedRestartHost } from '../../features/managed/restart';
+import { ClearChatHost } from '../../features/dispatcher/ClearChat';
 
 /**
  * Agent dialogs for the new chrome. The legacy shell renders these inside
@@ -17,6 +18,7 @@ export function ChromeAgentDialogs() {
     <>
       {deleteDialogAgent && <DeleteAgentDialog />}
       <ManagedRestartHost />
+      <ClearChatHost />
       <HelperDisposeRequestDialog />
       <GrantRequestDialog />
     </>
