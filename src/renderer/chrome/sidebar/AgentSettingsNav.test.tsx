@@ -13,7 +13,7 @@ describe('AgentSettingsNav', () => {
     render(<AgentSettingsNav />);
     const labels = screen.getAllByRole('button').map((b) => b.textContent);
     expect(labels).toEqual([
-      'General', 'Instructions', 'Skills', 'MCP servers', 'Settings', 'Clubhouse permissions', 'Permissions', 'Helpers', 'Quick agents', 'Shell in worktree',
+      'General', 'Instructions', 'Skills', 'MCP servers', 'Settings', 'Clubhouse permissions', 'Permissions', 'Helpers', 'Quick agents', 'Actions', 'Shell in worktree',
     ]);
     expect(screen.getByTestId('agent-settings-nav-general').getAttribute('aria-current')).toBe('page');
   });
@@ -28,7 +28,7 @@ describe('AgentSettingsNav', () => {
 
   it('hides Helpers for a helper and for a remote agent', () => {
     expect(hiddenAgentSettingsPages({ projectId: 'p1', parentAgentId: 'lead' }, false, true)).toEqual(['helpers', 'permissions']);
-    expect(hiddenAgentSettingsPages({ projectId: 'remote||sat||p1' }, true, false)).toEqual(['helpers', 'settings', 'grants', 'preview']);
+    expect(hiddenAgentSettingsPages({ projectId: 'remote||sat||p1' }, true, false)).toEqual(['helpers', 'settings', 'grants', 'preview', 'actions']);
     // Clubhouse-managed agents (#2893): the builder replaces the file pages; unmanaged agents get the basic page.
     expect(hiddenAgentSettingsPages({ projectId: 'p1' }, false, true)).toEqual(['helpers', 'permissions']);
     expect(hiddenAgentSettingsPages({ projectId: 'p1' }, false, false)).toEqual(['instructions', 'skills', 'mcp', 'settings', 'permissions', 'preview']);

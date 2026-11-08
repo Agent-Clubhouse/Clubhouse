@@ -625,6 +625,27 @@ Event records only. Booleans, counts, states and codes: never notes, screenshots
 
 **Report id.** Maintainers match a Framebriar report to the user's local record by its id. The id is not an attribute. It is in the `core:feedback` lines `Feedback saved for delivery` and `Feedback delivered`, which appLog writes as `t:"diag"` lines in `telemetry-*.jsonl` (local only, [#2299](https://github.com/Agent-Clubhouse/Clubhouse/issues/2299), [#2301](https://github.com/Agent-Clubhouse/Clubhouse/issues/2301)). Match by id and timestamp.
 
+### 4.17 Actions (`services/actions/`, [#2956](https://github.com/Agent-Clubhouse/Clubhouse/issues/2956), epic [#2918](https://github.com/Agent-Clubhouse/Clubhouse/issues/2918))
+
+Event records from `telemetry/actions-telemetry.ts`, which subscribes to the engine's observations (`observeActions`) at startup. The engine never imports telemetry, and an observer that throws can't affect a run, so Actions behave the same with telemetry off. Every event carries `c.action.owner` (`user`/`dispatcher`/`agent`/`app`); Clubhouse's own hidden actions are counted as `app`. Standard events carry closed codes and counts only: never an action's name, a prompt or message, a reason in words, or an agent, project or action id.
+
+**Volume.** The chatty events (`c.action.triggered`, `c.action.wait`, `c.action.overlap`, `c.action.step`) are capped at 300 each per hour across all actions, timed on a monotonic clock. Runs, limit hits and catch-up are not capped there, since the engine already limits each action to 60 runs an hour, so a busy trigger can't push out run outcomes or failures. When an hour with drops ends, the dropped counts per event are logged under `core:actions` (local only).
+
+| Event | Attributes | Level |
+|---|---|---|
+| `c.action.triggered` | `c.action.trigger` (`schedule`/`once`/`event`/`catch_up`/`manual`); for event triggers `c.action.event` (the trigger's event kind) and `c.action.delayed` | S |
+| `c.action.wait` | `c.action.wait` (`started`/`restarted`/`cancelled`/`fired`/`dropped`), `c.action.event` | S |
+| `c.action.overlap` | `c.action.overlap` (`skipped`/`queued`), `c.action.trigger` | S |
+| `c.action.limit_hit` | `c.action.limit` (`chain`/`self`/`hourly`), `c.action.chain_depth` (`0`/`1`/`2`/`3+`) | S |
+| `c.action.catch_up` | `c.action.missed_bucket` (`0`/`1`/`2-4`/`5-9`/`10+`), `c.action.missed_rule` (`skip`/`once`/`each`) | S |
+| `c.action.run` | `c.action.run.outcome` (`done`/`failed`/`cancelled`/`skipped`), `c.action.run.reason` (`none`, `self_trigger`, `chain_limit`, `overlap`, `hourly_limit`, `missed`, `condition_changed`, `turned_off`, `edited`, `deleted` (a queued run dropped because its action was deleted; observed only, not in history), `rights_refused`, `step_failed`, `step_threw`), `c.action.trigger`, `c.action.run.steps`, `c.action.run.failed_step` (a step kind or `none`), `c.action.chain_depth`, `c.action.run.duration_ms` | S |
+| `c.action.step` | `c.action.step.kind` (`wake`/`message`/`quick`/`sleep`/`notify`), `c.action.step.outcome` (`done`/`failed`), `c.action.step.index` (1 to 3) | S |
+| `c.action.run_detail` | the run's outcome, reason code and trigger, plus `c.action.id_hash` and, for an agent's action, `c.agent.id_hash` | D |
+
+**What stays local.** The action and owning agent ids are on `c.action.run_detail` only, hashed, and that event is Detailed: it is recorded only when the person chose Detailed and exported only to destinations they set to Detailed. Names, prompts, message text and reasons in words are never in telemetry at any level (the registry has no free-text attribute); they stay in the Actions run history.
+
+**MCP tool calls.** The Actions MCP tools (`create_action`, `list_actions`, `update_action`, `delete_action`, `run_action`, `action_history`) are not registered yet. Once they land they report through the generic Clubhouse MCP tool-call telemetry (the `c.mcp.tool_call` span and `c.mcp.tool_calls` metric, §4.5), with no Actions-specific code. The change that registers them adds their names to the `c.mcp.tool` list; a test keeps that list and the registered tools in step both ways, and a name not on the list reports as `other`.
+
 ### 4.15 Process health, renderer performance and pipeline health (added in revision 2)
 
 The first draft left these as gaps. The maintainer set the goal as broad coverage of critical paths, and the regression history (§12) shows main-thread starvation (#1528), canvas render cost (#1693, #1694) and silent stalls. All of the following are in Phase 3.
@@ -1608,6 +1629,8 @@ These recur across hot spots. No single span catches them, so each gets a rule i
 **Spans added in revision 2:** `c.shell.spawn`ᴿ, `c.provider.list_sessions`, `c.pty.inject`, `c.hooks.teardown`, `c.editor.monaco_load`, plugin spans `clubhouse.plugin.<name>`ᴿ.
 
 **Events added in revision 2:** `c.process.eventloop.blocked`, `c.persist.recovery`, `c.persist.guard_blocked`, `c.agent.turn.stalled`, `c.agent.hooks.silent_run`, `c.agent_config.id_collision_repaired`, `c.ui.action_failed`, `c.update.apply.verified`, `c.terminal.replay`, `c.mcp.tools_list`, `c.annex.identity.regenerated`, `c.goobers.stream.mode`, plugin events `clubhouse.plugin.<name>`.
+
+**Actions events (§4.17):** `c.action.triggered`, `c.action.wait`, `c.action.overlap`, `c.action.limit_hit`, `c.action.catch_up`, `c.action.run`, `c.action.step`, `c.action.run_detail` (D).
 
 **Metrics:**
 
