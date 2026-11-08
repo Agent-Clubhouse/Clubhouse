@@ -9,7 +9,7 @@
 
 import * as path from 'path';
 import { powerMonitor } from 'electron';
-import { ActionError, type Action, type ActionNotice, type ActionOwner, type ActionRun, type ActionView } from '../../../shared/actions';
+import { ActionError, type Action, type ActionNames, type ActionNotice, type ActionOwner, type ActionRun, type ActionView } from '../../../shared/actions';
 import { IPC } from '../../../shared/ipc-channels';
 import type { Project } from '../../../shared/types';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
@@ -17,13 +17,16 @@ import { isAgentRunning } from '../agent-system';
 import { onAppEvent } from '../app-event-bus';
 import { knownAgent, knownAgents } from '../app-event-sources';
 import { bindingManager } from '../clubhouse-mcp/binding-manager';
+import { isOrchestrationEnabled } from '../clubhouse-mcp/orchestration-gate';
 import { sleepAgent, wakeWiredAgent } from '../clubhouse-mcp/tools/agent-lifecycle';
+import { getDispatcherAgentId } from '../dispatcher/dispatcher-service';
 import { appLog } from '../log-service';
 import * as notificationService from '../notification-service';
 import * as projectStore from '../project-store';
 import { startQuickAgent } from '../quick-agent-service';
 import { createActionsStorage, createRunHistory } from './actions-store';
 import { ActionsEngine, type EngineFacts, type EngineObservation } from './engine';
+import { matchProjectRef } from './project-ref';
 import { createInterimRights } from './rights';
 import { createStepRunner } from './steps';
 
@@ -128,6 +131,11 @@ function createEngine(): ActionsEngine {
     parentOf: facts.parentOf,
     agentProjectId: facts.agentProjectId,
     isConnected: (from, to) => bindingManager.getBindingsForAgent(from).some((b) => b.targetKind === 'agent' && b.targetId === to),
+    // The Dispatcher's wires exist only while it is on, so an off Dispatcher reaches no one.
+    dispatcherAgentId: () => getDispatcherAgentId() ?? undefined,
+    // The live gate for a running agent, else its saved switch (an asleep agent isn't synced to the gate).
+    canStartAgents: (id) => isOrchestrationEnabled(id) || knownAgent(id)?.orchestrates === true,
+    agentAccess: (id) => knownAgent(id)?.access ?? 'ask',
   });
   const steps = createStepRunner({
     agentExists: facts.agentExists,
@@ -142,6 +150,7 @@ function createEngine(): ActionsEngine {
     // A person set this step up to put the agent to sleep: no mid-turn refusal after the wait.
     sleep: async (req) => parseToolResult(await sleepAgent({ ...req, force: true })),
     startQuick: (req) => startQuickAgent(req),
+    agentAccess: (id) => knownAgent(id)?.access ?? 'ask',
     notify: (title, body) => {
       const settings = notificationService.getSettings();
       if (!settings.enabled) return { shown: false, reason: 'notifications are off in Settings' };
@@ -202,7 +211,7 @@ export function stopActions(): void {
 }
 
 function requireEngine(): ActionsEngine {
-  if (!engine) throw new Error('Actions are still starting. Try again in a moment.');
+  if (!engine) throw new ActionError('unavailable', 'Actions are still starting. Try again in a moment.');
   return engine;
 }
 
@@ -267,6 +276,26 @@ export function actionHistory(id: string): ActionRun[] {
   const a = e.get(id);
   if (a?.owner.kind === 'app') return [];
   return e.history(id).sort((x, y) => y.startedAt - x.startedAt);
+}
+
+// ── Lookups for the Clubhouse MCP tools ─────────────────────────────────────
+
+/** Agent and project names, for describing actions in plain words. */
+export function actionNames(): ActionNames {
+  return { agent: (id) => facts.agentName(id), project: (id) => facts.projectName(id) };
+}
+
+/** The project an agent belongs to, from the last read. */
+export function projectIdOfAgent(agentId: string): string | undefined {
+  return facts.agentProjectId(agentId);
+}
+
+/**
+ * A project by id, name or path, among the projects `usable` allows, or
+ * undefined when none matches. Two with the same name are refused.
+ */
+export function findProjectId(ref: string, usable: (projectId: string) => boolean = () => true): string | undefined {
+  return matchProjectRef(projects.filter((p) => usable(p.id)), ref, samePath);
 }
 
 // ── Clubhouse's own actions ─────────────────────────────────────────────────

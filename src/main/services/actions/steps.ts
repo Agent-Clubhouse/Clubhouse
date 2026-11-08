@@ -19,6 +19,7 @@ import type { ChatSessionState, RoutedMessagePart } from '../../../shared/chat';
 import { setAgentChain } from '../app-event-bus';
 import { getAgentRuntime, isAgentStoppingError } from '../agent-runtime';
 import type { StepContext, StepRunner } from './engine';
+import { ACCESS_LEVELS, type AccessLevel } from '../../../shared/agent-access';
 
 export interface StepDeps {
   agentExists(agentId: string): boolean;
@@ -29,7 +30,9 @@ export interface StepDeps {
   /** wakeWiredAgent's JSON result: status, and whether a mission was delivered. */
   wake(req: { callerId: string; targetId: string; targetName: string; mission?: string; missionRouted?: RoutedMessagePart[] }): Promise<{ ok: boolean; status?: string; messageDelivered?: boolean; text: string }>;
   sleep(req: { callerId: string; targetId: string; targetName: string }): Promise<{ ok: boolean; status?: string; text: string }>;
-  startQuick(req: { project: { id: string; path: string }; cwd: string; prompt: string; orchestrator: string; model?: string; freeAgentMode?: boolean; name: string }): Promise<{ id: string; name: string }>;
+  startQuick(req: { project: { id: string; path: string }; cwd: string; prompt: string; orchestrator: string; model?: string; access?: AccessLevel; name: string }): Promise<{ id: string; name: string }>;
+  /** An agent owner's own Access level: its actions' quick agents never start above it. */
+  agentAccess(agentId: string): AccessLevel;
   notify(title: string, body: string): { shown: boolean; reason?: string };
   /** For tests: how long sleep waits for a busy turn. */
   sleepWaitMs?: number;
@@ -78,6 +81,19 @@ export function actionMessage(actionName: string, text: string): { text: string;
 }
 
 export function createStepRunner(deps: StepDeps): StepRunner {
+  /**
+   * The level a quick agent starts at. A person's action: the chosen level,
+   * else the app's Default access (spawnAgent applies it). An agent's action:
+   * the chosen level capped at the agent's own, else the agent's own.
+   */
+  const quickAccess = (chosen: AccessLevel | undefined, ctx: StepContext): AccessLevel | undefined => {
+    const owner = ctx.action.owner;
+    if (owner.kind !== 'agent') return chosen;
+    const cap = deps.agentAccess(owner.agentId);
+    if (!chosen) return cap;
+    return ACCESS_LEVELS.indexOf(chosen) <= ACCESS_LEVELS.indexOf(cap) ? chosen : cap;
+  };
+
   const fail = (step: ActionStep, detail: string, agentId?: string): ActionStepResult => ({ kind: step.kind, outcome: 'failed', detail, ...(agentId && { agentId }) });
   const done = (step: ActionStep, detail: string, extra: { agentId?: string; projectId?: string } = {}): ActionStepResult => ({ kind: step.kind, outcome: 'done', detail, ...extra });
 
@@ -140,7 +156,7 @@ export function createStepRunner(deps: StepDeps): StepRunner {
               prompt: actionMessage(ctx.action.name, step.prompt).text,
               orchestrator: step.orchestrator || project.orchestrator || 'claude-code',
               ...(step.model && { model: step.model }),
-              ...(step.freeAgentMode !== undefined && { freeAgentMode: step.freeAgentMode }),
+              ...(quickAccess(step.access, ctx) && { access: quickAccess(step.access, ctx) }),
               name: ctx.action.name,
             });
             // Commits it makes in a worktree carry this run's chain on.

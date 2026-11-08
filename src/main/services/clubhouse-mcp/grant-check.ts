@@ -74,7 +74,10 @@ function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantChec
     case 'library': return { kind: 'library' };
     case 'all_projects': return { kind: 'project' };
     case 'action_arg': {
-      if (!actionOwnerLookup) return null;
+      // Listing passes no arguments: which Action isn't known until the call,
+      // which is checked then. Without this an agent couldn't see the tools for
+      // its own Actions.
+      if (!actionOwnerLookup || args.id === undefined) return null;
       const action = actionOwnerLookup(args);
       // An unknown id reads like someone else's: a refusal never says whether it exists.
       return { kind: 'action', actionId: action?.actionId, relations: action?.ownerAgentId === agentId ? ['self'] : [] };
