@@ -352,7 +352,9 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // Loaded here: dispatcher-service imports this module.
     try {
       const { prepareDispatcherSessionStart } = await import('./dispatcher/dispatcher-service');
-      await prepareDispatcherSessionStart(params.projectPath, params.agentId);
+      // Its Behavior's model (#3045) wins over whatever model the caller last saw.
+      const behaviorModel = await prepareDispatcherSessionStart(params.projectPath, params.agentId);
+      if (behaviorModel) params = { ...params, model: behaviorModel.model };
     } catch (err) {
       // telemetry-exempt: logged; it starts with the instructions file it already has
       appLog('core:agent', 'warn', 'Could not refresh the Dispatcher\'s instructions before its start', {

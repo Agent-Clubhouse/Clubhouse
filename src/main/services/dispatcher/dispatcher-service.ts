@@ -29,6 +29,11 @@
  * and before each of their sessions starts, and an old `notes/` folder is
  * sorted into memory first (dispatcher-memory-migration.ts).
  *
+ * Behavior (#3045) sets each agent's model from the Auto mapping: before each
+ * session starts, and at once when the level changes, switching a running
+ * chat's model where its CLI allows. A provider with no mapping keeps the
+ * model it has. The identity no longer shares a model between the two.
+ *
  * Turning its switch off stops both agents and leaves the folders, the memory
  * and the configs alone, so turning it back on resumes where it left off. MCP going off
  * at app level derives it off and stops nothing: a running Dispatcher keeps
@@ -55,12 +60,16 @@ import { getDispatcherChatPath, getDispatcherPath, isDispatcherChatPath, isDispa
 import { isEmptyMirror, mirrorUpdates } from './dispatcher-identity';
 import { registerConcealedTools } from '../agent-runtime/concealed-tools';
 import { dispatcherEnablement, getSettings as getDispatcherSettings, isDispatcherEnabled, updateSettings } from './dispatcher-settings';
+import { behaviorAuto, getDispatcherBehavior, resolveDispatcherModels, saveDispatcherBehavior } from './dispatcher-behavior';
+import { onHelperRoutingChanged } from '../helper-routing';
+import type { DispatcherBehavior, DispatcherRole } from '../../../shared/dispatcher-behavior';
 
 export {
   getDispatcherPath, getDispatcherChatPath, getDispatcherNotesPath, getDispatcherNotesArchivePath, getDispatcherMemoryPath,
   isDispatcherPath, isDispatcherChatPath, isDispatcherCoordinatorPath,
 } from './dispatcher-paths';
 export { isDispatcherEnabled, DISPATCHER_FLAG } from './dispatcher-settings';
+export { getDispatcherBehavior, getDispatcherBehaviorPlan, onDispatcherBehaviorChanged } from './dispatcher-behavior';
 
 const NS = 'core:dispatcher';
 /** What the Dispatcher's instructions file holds. Clubhouse owns it: there is no project or user copy. */
@@ -137,17 +146,24 @@ export function withDispatcherMemory(instructions: string): Promise<string> {
 
 /**
  * Called on the spawn path before either of the Dispatcher's agents starts:
- * rewrites its instructions file, so the session loads memory as it is now.
- * Anything else is left alone.
+ * rewrites its instructions file, so the session loads memory as it is now,
+ * and gives it its Behavior model (#3045). Resolves with that model, which
+ * the start uses over whatever model its caller last saw, or null when
+ * Behavior set none. Anything else is left alone.
  */
-export async function prepareDispatcherSessionStart(projectPath: string, agentId: string): Promise<void> {
-  if (!isDispatcherEnabled()) return;
+export async function prepareDispatcherSessionStart(projectPath: string, agentId: string): Promise<AppliedModel | null> {
+  if (!isDispatcherEnabled()) return null;
   const agent = isDispatcherChatPath(projectPath) && isDispatcherChatAgentId(agentId) ? chatConfig
     : isDispatcherCoordinatorPath(projectPath) && isDispatcherAgentId(agentId) ? config
       : null;
-  if (!agent) return;
+  if (!agent) return null;
   const dir = isDispatcherChatPath(projectPath) ? getDispatcherChatPath() : getDispatcherPath();
-  await enqueue(() => writeInstructions(agent, dir));
+  const role: DispatcherRole = isDispatcherChatPath(projectPath) ? 'chat' : 'work';
+  return enqueue(async () => {
+    await writeInstructions(agent, dir);
+    const applied = await applyBehavior([{ agent, dir, role }], { live: false });
+    return applied.get(agent.id) ?? null;
+  });
 }
 
 /**
@@ -176,7 +192,99 @@ export function getDispatcherState(): DispatcherState {
     chatAgentId: chatConfig?.id ?? null,
     chatPath: chatConfig ? getDispatcherChatPath() : null,
     chatRunning,
+    behavior: behaviorState(),
   };
+}
+
+function dispatcherProvider(): string | null {
+  return config ? config.orchestrator ?? defaultDispatcherOrchestrator() ?? null : null;
+}
+
+function behaviorState(): DispatcherState['behavior'] {
+  const level = getDispatcherBehavior();
+  const provider = dispatcherProvider();
+  return { level, provider, auto: behaviorAuto(provider, level) };
+}
+
+export interface AppliedModel {
+  model: string;
+  effort: string | null;
+}
+
+interface BehaviorTarget {
+  agent: DurableAgentConfig;
+  dir: string;
+  role: DispatcherRole;
+}
+
+function behaviorTargets(): BehaviorTarget[] {
+  const targets: BehaviorTarget[] = [];
+  if (config) targets.push({ agent: config, dir: getDispatcherPath(), role: 'work' });
+  if (chatConfig) targets.push({ agent: chatConfig, dir: getDispatcherChatPath(), role: 'chat' });
+  return targets;
+}
+
+/**
+ * Give each agent the model its role runs on at the current level (#3045).
+ * Saved to its record, so the next start uses it. With `live`, a running chat
+ * session also switches now where its CLI allows; one that can't picks it up
+ * at its next start. Without an Auto mapping nothing is changed. Never throws.
+ */
+async function applyBehavior(targets: BehaviorTarget[], { live }: { live: boolean }): Promise<Map<string, AppliedModel>> {
+  const applied = new Map<string, AppliedModel>();
+  if (targets.length === 0) return applied;
+  const level = getDispatcherBehavior();
+  const before = JSON.stringify(behaviorState());
+  for (const { agent, dir, role } of targets) {
+    const provider = agent.orchestrator ?? defaultDispatcherOrchestrator();
+    if (!provider) continue;
+    try {
+      const resolved = await resolveDispatcherModels(provider, level);
+      if (resolved.ok === false) {
+        appLog(NS, 'info', 'Behavior has no Auto models on this provider, so the Dispatcher keeps its model', {
+          meta: { agentId: agent.id, provider, level, code: resolved.code },
+        });
+        continue;
+      }
+      const { model, effort } = resolved.models[role];
+      applied.set(agent.id, { model, effort });
+      const current = await agentConfig.getDurableConfig(dir, agent.id) ?? agent;
+      const modelChanged = current.model !== model;
+      const effortChanged = (current.effort ?? null) !== effort;
+      if (modelChanged) await agentConfig.updateDurableConfig(dir, agent.id, { model, effort });
+      else if (effortChanged) await agentConfig.updateDurableConfig(dir, agent.id, { effort });
+      if (live && (modelChanged || effortChanged)) await switchRunningModel(agent.id, model, effort);
+    } catch (err) {
+      // telemetry-exempt: logged; the agent keeps the model it had, and the next start tries again
+      appLog(NS, 'warn', 'Could not apply the Dispatcher\'s Behavior', {
+        meta: { agentId: agent.id, provider, level, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
+  if (JSON.stringify(behaviorState()) !== before) emitChanged();
+  return applied;
+}
+
+/** Switch a running chat session's model, where its CLI allows. Loaded here: agent-runtime is heavy. */
+async function switchRunningModel(agentId: string, model: string, effort: string | null): Promise<void> {
+  if (!agentRegistry.get(agentId)) return;
+  const { getAgentRuntime } = await import('../agent-runtime');
+  const runtime = getAgentRuntime(agentId);
+  if (!runtime || runtime.kind !== 'chat' || !runtime.setModel) return;
+  await runtime.setModel(model, effort);
+}
+
+/**
+ * Change the Behavior from the composer chip, Settings or a phone (#3045).
+ * Saves it, gives both agents their new models, and resolves with the state.
+ */
+export async function setDispatcherBehavior(level: DispatcherBehavior): Promise<DispatcherState> {
+  const changed = await saveDispatcherBehavior(level);
+  if (changed) {
+    emitChanged();
+    await enqueue(() => applyBehavior(behaviorTargets(), { live: true }));
+  }
+  return getDispatcherState();
 }
 
 /**
@@ -377,7 +485,14 @@ function watchChanges(): void {
     });
   }),
   // Its row and view stay while it runs.
-  agentRegistry.onAuthChange((agentId) => { if (agentId === config?.id || agentId === chatConfig?.id) emitChanged(); })];
+  agentRegistry.onAuthChange((agentId) => { if (agentId === config?.id || agentId === chatConfig?.id) emitChanged(); }),
+  // A change to the Auto mapping can fix or break Behavior's models: check again, and apply at once.
+  onHelperRoutingChanged(() => {
+    const queuedIn = generation;
+    void enqueue(async () => {
+      if (queuedIn === generation && isDispatcherEnabled()) await applyBehavior(behaviorTargets(), { live: true });
+    });
+  })];
   stopWatching = () => { for (const unsubscribe of unsubscribers) unsubscribe(); };
 }
 

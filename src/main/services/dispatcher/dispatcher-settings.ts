@@ -3,6 +3,7 @@ import * as experimentalSettings from '../experimental-settings';
 import { newChromeEnabled } from '../../window-chrome';
 import { resolveDispatcherEnablement, type DispatcherEnablement } from '../../../shared/dispatcher-types';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
+import type { DispatcherBehavior } from '../../../shared/dispatcher-behavior';
 
 /** A saved experimental flag from before the Dispatcher graduated. Read, never written or offered. */
 export const DISPATCHER_FLAG = 'dispatcher';
@@ -10,6 +11,8 @@ export const DISPATCHER_FLAG = 'dispatcher';
 export interface DispatcherSettings {
   /** The "Turn on Dispatcher" switch on Settings > Dispatcher. Missing means the default. */
   enabled?: boolean;
+  /** Behavior (#3045): Light, Standard or Thorough. Missing or unknown reads as Standard. */
+  behavior?: DispatcherBehavior;
 }
 
 const store = createSettingsStore<DispatcherSettings>('dispatcher-settings.json', {}, undefined, { audit: { key: 'dispatcher' } });

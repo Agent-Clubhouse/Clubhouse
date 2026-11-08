@@ -6,8 +6,11 @@
  * edits the coordinator's, the chat's own details or a phone edit the chat's)
  * is copied onto the other. The last change wins.
  *
- * Until Behavior (#3045) gives each its own model, the model is shared too.
- * Session ids, sleep records and anything else per agent are never copied.
+ * The model and effort are per agent: Behavior (#3045) gives each its own
+ * from the Auto mapping. A CLI change resets the other's model to the CLI's
+ * default, since a model means nothing to another CLI, and Behavior sets it
+ * again before the next start. Session ids, sleep records and anything else
+ * per agent are never copied.
  */
 import type { DurableAgentConfig, DurableConfigUpdates } from '../../../shared/types';
 
@@ -44,8 +47,10 @@ export function mirrorUpdates(from: DurableAgentConfig, to: DurableAgentConfig):
   if ((from.icon ?? null) !== (to.icon ?? null)) identity.icon = from.icon ?? null;
   if ((from.emoji ?? null) !== (to.emoji ?? null)) identity.emoji = from.emoji ?? null;
 
-  if (from.orchestrator && from.orchestrator !== to.orchestrator) config.orchestrator = from.orchestrator;
-  if (modelOf(from) !== modelOf(to)) config.model = modelOf(from);
+  if (from.orchestrator && from.orchestrator !== to.orchestrator) {
+    config.orchestrator = from.orchestrator;
+    if (modelOf(to) !== 'default') config.model = 'default';
+  }
   if ((from.contextWindow ?? null) !== (to.contextWindow ?? null)) config.contextWindow = from.contextWindow ?? null;
   if ((from.runtimeMode ?? null) !== (to.runtimeMode ?? null)) config.runtimeMode = from.runtimeMode ?? null;
   if ((from.idleSleep ?? null) !== (to.idleSleep ?? null)) config.idleSleep = from.idleSleep ?? null;

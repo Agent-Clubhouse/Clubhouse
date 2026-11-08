@@ -8,6 +8,8 @@
  */
 
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
+import { DispatcherBehaviorChip } from '../../dispatcher/BehaviorChip';
 import type { Agent } from '../../../../shared/types';
 import type { PermissionLevel } from '../../../../shared/chat';
 import { createChatViewState, useAnswering, type ChatViewState } from '../../../stores/chatStore';
@@ -160,6 +162,8 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   const plan = permission ? planForRequest(state.items, permission) : undefined;
   const ended = isSessionEnded(state);
   const composerContext = useComposerContext(agent, state, context);
+  // The Dispatcher's composer has one Behavior chip in place of its pickers (#3045).
+  const dispatcher = isDispatcherAgent(agent);
   const rootRef = useRef<HTMLDivElement>(null);
   const columnRef = useRef<HTMLDivElement>(null);
   // The composer fits the transcript column, which the details column narrows.
@@ -297,6 +301,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           onModelChange={actions.setModel ? (m, e) => { void actions.setModel?.(m, e); } : undefined}
           context={composerContext}
           layout={composerLayout}
+          behaviorChip={dispatcher ? <DispatcherBehaviorChip compact={composerLayout === 'narrow'} /> : undefined}
         />
       </>
     );

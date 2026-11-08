@@ -14,6 +14,10 @@ const h = vi.hoisted(() => ({
   configListeners: new Set<(projectPath: string) => void>(),
   running: new Set<string>(),
   nextId: 1,
+  routingListeners: new Set<() => void>(),
+  /** What the fake Auto mapping gives per provider and level; a provider missing here has none. */
+  auto: {} as Record<string, Record<string, { model: string; effort: string | null } | null>>,
+  runtimes: new Map<string, { kind: 'chat'; setModel: ReturnType<typeof vi.fn> }>(),
 }));
 
 vi.mock('../base-dir', () => ({ getBaseDirPath: () => h.baseDir }));
@@ -21,6 +25,18 @@ vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../experimental-settings', () => ({ getSettings: () => h.experimental }));
 vi.mock('../../window-chrome', () => ({ newChromeEnabled: () => h.newLayout }));
 vi.mock('../orchestrator-settings', () => ({ getSettings: () => ({ enabled: h.enabledProviders }), whenDefaultsDetected: () => h.detection }));
+// The Auto mapping (#3044), faked per provider so no CLI is asked for its models.
+vi.mock('../helper-routing', () => ({
+  resolveAutoLevel: vi.fn(async (provider: string, level: string) => {
+    const levels = h.auto[provider];
+    if (!levels) return { ok: false, code: 'auto_not_supported', message: `${provider} has no Auto mapping.` };
+    const cell = levels[level];
+    if (!cell) return { ok: false, code: 'no_valid_mapping', message: `No ${level} level for ${provider} is offered now` };
+    return { ok: true, provider, level, ...cell, source: 'builtin_mapping', fallback: 'none' };
+  }),
+  onHelperRoutingChanged: (l: () => void) => { h.routingListeners.add(l); return () => { h.routingListeners.delete(l); }; },
+}));
+vi.mock('../agent-runtime', async (importOriginal) => ({ ...(await importOriginal<object>()), getAgentRuntime: (id: string) => h.runtimes.get(id) }));
 
 // In-memory settings, so nothing touches userData.
 vi.mock('../settings-store', () => ({
@@ -95,6 +111,7 @@ import * as agentConfig from '../agent-config';
 import * as agentSystem from '../agent-system';
 import * as svc from './dispatcher-service';
 import { getSettings, updateSettings } from './dispatcher-settings';
+import { _resetDispatcherBehaviorForTesting, getDispatcherBehaviorPlan } from './dispatcher-behavior';
 import { agentRegistry } from '../agent-registry';
 import { DISPATCHER_CLASSIC_MESSAGE } from '../../../shared/dispatcher-types';
 
@@ -114,12 +131,28 @@ beforeEach(async () => {
   h.configListeners.clear();
   h.running.clear();
   h.nextId = 1;
+  h.routingListeners.clear();
+  h.runtimes.clear();
+  h.auto = {
+    'claude-code': {
+      easy: { model: 'haiku', effort: 'low' },
+      medium: { model: 'sonnet', effort: 'medium' },
+      hard: { model: 'opus', effort: 'high' },
+      maximum: { model: 'opus', effort: 'xhigh' },
+    },
+    'codex-cli': {
+      easy: { model: 'luna', effort: 'low' },
+      medium: { model: 'terra', effort: 'medium' },
+      maximum: { model: 'sol', effort: 'high' },
+    },
+  };
   providers.list = [
     fakeProvider('claude-code', 'CLAUDE.md'),
     fakeProvider('copilot-cli', path.join('.github', 'copilot-instructions.md')),
     fakeProvider('codex-cli', 'AGENTS.md'),
   ];
   svc._resetDispatcherForTesting();
+  _resetDispatcherBehaviorForTesting();
   await updateSettings(() => ({}));
   for (const agentId of agentRegistry.getAllRegistrations().keys()) agentRegistry.untrack(agentId);
   vi.mocked(agentConfig.createDurable).mockClear();
@@ -451,14 +484,14 @@ describe('two agents, one identity (#3036)', () => {
     await svc.setDispatcherEnabled(true);
     await settle();
     // Settings > Dispatcher edits the Dispatcher's own record.
-    await agentConfig.updateDurableConfig(dispatcherDir(), 'durable_1', { model: 'opus' });
+    await agentConfig.updateDurableConfig(dispatcherDir(), 'durable_1', { contextWindow: '1m' });
     await settle();
-    expect(h.agents.get(chatDir())?.[0].model).toBe('opus');
+    expect(h.agents.get(chatDir())?.[0].contextWindow).toBe('1m');
     // The chat's details or a phone edit the chat's.
     await agentConfig.updateDurable(chatDir(), 'durable_2', { name: 'Rosie', color: 'teal' });
     await settle();
     expect(h.agents.get(dispatcherDir())?.[0]).toMatchObject({ name: 'Rosie', color: 'teal' });
-    expect(svc.getDispatcherState().config).toMatchObject({ name: 'Rosie', color: 'teal', model: 'opus' });
+    expect(svc.getDispatcherState().config).toMatchObject({ name: 'Rosie', color: 'teal', contextWindow: '1m' });
     // Settled: nothing bounces back and forth.
     const writes = vi.mocked(agentConfig.updateDurable).mock.calls.length + vi.mocked(agentConfig.updateDurableConfig).mock.calls.length;
     notify(dispatcherDir());
@@ -546,5 +579,94 @@ describe('two agents, one identity (#3036)', () => {
     expect(svc.isDispatcherChatPath(chatDir())).toBe(true);
     expect(svc.isDispatcherCoordinatorPath(chatDir())).toBe(false);
     expect(svc.isDispatcherChatPath(dispatcherDir())).toBe(false);
+  });
+});
+
+describe('Behavior (#3045)', () => {
+  const coordinator = () => h.agents.get(dispatcherDir())?.[0];
+  const chat = () => h.agents.get(chatDir())?.[0];
+
+  it('is Standard by default, on the state and through the accessor', async () => {
+    const state = await svc.setDispatcherEnabled(true);
+    expect(state.behavior).toEqual({ level: 'standard', provider: 'claude-code', auto: { ready: true } });
+    expect(svc.getDispatcherBehavior()).toBe('standard');
+    expect(getDispatcherBehaviorPlan()).toMatchObject({ checkIns: 'occasionally' });
+  });
+
+  it('sets each agent\'s model from the Auto mapping before it starts, and hands it to the start', async () => {
+    await svc.setDispatcherEnabled(true);
+    expect(await svc.prepareDispatcherSessionStart(chatDir(), 'durable_2')).toEqual({ model: 'sonnet', effort: 'medium' });
+    await svc.prepareDispatcherSessionStart(dispatcherDir(), 'durable_1');
+    await settle();
+    expect(chat()).toMatchObject({ model: 'sonnet', effort: 'medium' });
+    expect(coordinator()).toMatchObject({ model: 'sonnet', effort: 'medium' });
+  });
+
+  it('gives Thorough the strongest model for the work and balanced for the chat, at once', async () => {
+    await svc.setDispatcherEnabled(true);
+    const state = await svc.setDispatcherBehavior('thorough');
+    await settle();
+    expect(state.behavior.level).toBe('thorough');
+    expect(getSettings().behavior).toBe('thorough');
+    expect(coordinator()).toMatchObject({ model: 'opus', effort: 'xhigh' });
+    expect(chat()).toMatchObject({ model: 'sonnet', effort: 'medium' });
+    expect(getDispatcherBehaviorPlan()).toMatchObject({ checkIns: 'frequently' });
+  });
+
+  it('maps the same level per provider', async () => {
+    h.enabledProviders = ['codex-cli'];
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherBehavior('light');
+    await settle();
+    expect(coordinator()).toMatchObject({ orchestrator: 'codex-cli', model: 'luna', effort: 'low' });
+    expect(chat()).toMatchObject({ model: 'luna', effort: 'low' });
+    expect(svc.getDispatcherState().behavior).toEqual({ level: 'light', provider: 'codex-cli', auto: { ready: true } });
+  });
+
+  it('switches a running chat\'s model when the level changes', async () => {
+    await svc.setDispatcherEnabled(true);
+    await svc.prepareDispatcherSessionStart(chatDir(), 'durable_2');
+    await settle();
+    const setModel = vi.fn(async () => undefined);
+    h.runtimes.set('durable_2', { kind: 'chat', setModel });
+    agentRegistry.register('durable_2', { projectPath: chatDir(), cwd: chatDir(), orchestrator: 'claude-code', runtime: 'pty' });
+    await svc.setDispatcherBehavior('light');
+    await settle();
+    expect(setModel).toHaveBeenCalledWith('haiku', 'low');
+  });
+
+  it('keeps the model it has where the provider has no Auto mapping, and says so', async () => {
+    h.enabledProviders = ['copilot-cli'];
+    await svc.setDispatcherEnabled(true);
+    await svc.setDispatcherBehavior('thorough');
+    expect(await svc.prepareDispatcherSessionStart(chatDir(), 'durable_2')).toBeNull();
+    await settle();
+    expect(chat()?.model).toBeUndefined();
+    expect(coordinator()?.model).toBeUndefined();
+    expect(svc.getDispatcherState().behavior).toEqual({ level: 'thorough', provider: 'copilot-cli', auto: { ready: false, code: 'auto_not_supported' } });
+    // The level still holds, for how often it checks in.
+    expect(getDispatcherBehaviorPlan().checkIns).toBe('frequently');
+  });
+
+  it('reports a mapping with nothing offered for the level, and recovers when Auto is set up', async () => {
+    h.enabledProviders = ['codex-cli'];
+    await svc.setDispatcherEnabled(true);
+    delete h.auto['codex-cli'].maximum;
+    await svc.setDispatcherBehavior('thorough');
+    await settle();
+    expect(svc.getDispatcherState().behavior.auto).toEqual({ ready: false, code: 'no_valid_mapping' });
+    // Neither agent moves to a mismatched tier.
+    expect(chat()?.model).toBeUndefined();
+    h.auto['codex-cli'].maximum = { model: 'sol', effort: 'high' };
+    for (const l of h.routingListeners) l();
+    await settle();
+    expect(svc.getDispatcherState().behavior.auto).toEqual({ ready: true });
+    expect(coordinator()).toMatchObject({ model: 'sol', effort: 'high' });
+  });
+
+  it('refuses a level that isn\'t one, and saves nothing', async () => {
+    await svc.setDispatcherEnabled(true);
+    await expect(svc.setDispatcherBehavior('extreme' as never)).rejects.toThrow(/Unknown Behavior/);
+    expect(getSettings().behavior).toBeUndefined();
   });
 });
