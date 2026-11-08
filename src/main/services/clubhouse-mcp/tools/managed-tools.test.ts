@@ -510,3 +510,30 @@ describe('stale renames over MCP (#2897, D92)', () => {
     expect(r.content[0].text).toMatch(/^stale/);
   });
 });
+
+describe('an orchestrator reads the library (#3001)', () => {
+  it('only while orchestrators may choose helper templates, and sees only its own project\'s agents', async () => {
+    const { setOrchestrationEnabled } = await import('../orchestration-gate');
+    const { agentRegistry } = await import('../../agent-registry');
+    state.agents.set('lead', { id: 'lead', name: 'lead', color: 'indigo', createdAt: '', worktreePath: '/w/lead', managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+    agentRegistry.register('orch', { projectPath: '/elsewhere', orchestrator: 'claude-code', runtime: 'pty' });
+    setOrchestrationEnabled('orch', true);
+    try {
+      const off = await call('list_agent_templates', {}, 'orch');
+      expect(off.isError).toBe(true);
+      expect(off.content[0].text).toContain('choose helper templates');
+      expect((await call('list_agent_parts', { kind: 'mcp' }, 'orch')).isError).toBe(true);
+      await managedAgents().setHelperTemplateChoice(true);
+      expect((await call('list_agent_templates', {}, 'orch')).isError).toBeFalsy();
+      const mine = (await call('list_agent_parts', { kind: 'mcp' }, 'orch')).json.find((p: { id: string }) => p.id === CLUBHOUSE_MCP_PART_ID);
+      // Another project's agents stay out of an orchestrator's view without cross-project helpers.
+      expect(mine.usedBy).toEqual([]);
+      const all = (await call('list_agent_parts', { kind: 'mcp' })).json.find((p: { id: string }) => p.id === CLUBHOUSE_MCP_PART_ID);
+      expect(all.usedBy.map((u: { agentName: string }) => u.agentName)).toContain('lead');
+    } finally {
+      await managedAgents().setHelperTemplateChoice(false);
+      setOrchestrationEnabled('orch', false);
+      agentRegistry.untrack('orch');
+    }
+  });
+});

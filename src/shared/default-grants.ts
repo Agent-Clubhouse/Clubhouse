@@ -91,6 +91,8 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
     out.push(structural('agent.dispose', HELPERS, modes.dispose));
     // What it passes to its helpers at start_helper, never more than it holds (fixed rule 2).
     out.push(structural('agent.create', OWN_PROJECT, modes.create), structural('connection.manage', HELPERS), structural('connection.manage', SELF), structural('agent.grant', HELPERS));
+    // The parts and templates start_helper can name, read with list_agent_templates and list_agent_parts (#3001).
+    out.push(structural('library.read', ANY));
     if (facts.crossProject) out.push(structural('agent.create', ANY_PROJECT, modes.create), structural('project.read', ANY_PROJECT));
   }
   if (facts.dispatcher) {
