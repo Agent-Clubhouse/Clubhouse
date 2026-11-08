@@ -23,6 +23,8 @@ const OLDER_ONLY = 'builtin-block-older-only';
 const NEWER_ONLY = 'builtin-block-newer-only';
 const NEWER_TEMPLATE = 'builtin-template-newer-only';
 const NEWER_LINE = 'A line only the newer build ships.';
+const NEWER_NAME = 'Basics, newer';
+const OLDER_NAME = builtinParts().find((p) => p.id === BUILTIN_BLOCK_IDS.basics)!.name;
 
 /** The older build: today's built-ins plus one block the newer build retires. */
 function olderBuild(): Build {
@@ -33,13 +35,13 @@ function olderBuild(): Build {
 }
 
 /**
- * The newer build: the Basics block says more, the build skill gains a file,
+ * The newer build: the Basics block says more under a new name, the build skill gains a file,
  * one block and one template are new, and the older build's extra block is
  * retired (D99).
  */
 function newerBuild(): Build {
   const parts = builtinParts().map((p): BuiltinPart => {
-    if (p.id === BUILTIN_BLOCK_IDS.basics) return { ...p, payload: { content: `${(p.payload as { content: string }).content}\n\n${NEWER_LINE}` } };
+    if (p.id === BUILTIN_BLOCK_IDS.basics) return { ...p, name: NEWER_NAME, payload: { content: `${(p.payload as { content: string }).content}\n\n${NEWER_LINE}` } };
     if (p.id === BUILTIN_SKILL_IDS.build) {
       const payload = p.payload as { skillName: string; files: Array<{ path: string; content: string }> };
       return { ...p, payload: { ...payload, files: [...payload.files, { path: 'reference.md', content: 'Newer reference.\n' }] } };
@@ -163,13 +165,21 @@ describe('moving between an older and a newer build (D100)', () => {
     });
     const freshNewer = await build.deliver('fresh');
     expect(freshNewer.instructions).toContain('Newer only block.');
+    expect((await build.user(() => build.service.getPart(BUILTIN_BLOCK_IDS.basics))).name).toBe(NEWER_NAME);
+    // The person edits their copy.
+    await build.user(() => build.service.updatePart({ id: copy.id, expectedRevision: copy.revision, content: { kind: 'block', content: 'Edited by the person.' } }));
+    const edited = await build.deliver('dev');
+    expect(edited.instructions).toContain('Edited by the person.');
 
     // ── Back to the older build ──
     build = await start(olderBuild());
     const older2 = await build.deliver('dev');
-    // The built-ins it ships win: the newer line and the newer file are gone, nothing else changed.
-    expect(older2).toEqual(older1);
+    // The built-ins it ships win: the newer line, name and file are gone. The edited copy stays the person's.
+    expect(older2.instructions).toBe(edited.instructions.replace(`\n\n${NEWER_LINE}`, ''));
+    expect(older2.instructions).not.toContain(NEWER_LINE);
+    expect(older2.skillFiles).toEqual(['SKILL.md']);
     expect(agents.get('dev')!.managed!.blocks).toContain(copy.id);
+    expect((await build.user(() => build.service.getPart(BUILTIN_BLOCK_IDS.basics))).name).toBe(OLDER_NAME);
     // A built-in only the newer build ships stays installed, read-only, with the text it had.
     const freshOlder = await build.deliver('fresh');
     expect(freshOlder.instructions).toBe(freshNewer.instructions);
@@ -182,13 +192,38 @@ describe('moving between an older and a newer build (D100)', () => {
     // The block the newer build retired is a built-in again, for new setups and the older build's templates.
     const olderOnly = await build.user(() => build.service.getPart(OLDER_ONLY));
     expect(olderOnly).toMatchObject({ builtin: true });
+    // An agent made on the older build uses it.
+    agent('later', { version: 1, blocks: [BUILTIN_BLOCK_IDS.identity, OLDER_ONLY], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] });
+    const laterOlder = await build.deliver('later');
+    expect(laterOlder.instructions).toContain('Older only block.');
 
     // ── Newer build again ──
     build = await start(newerBuild());
     const newer2 = await build.deliver('dev');
-    expect(newer2).toEqual(newer1);
-    // Copied once: the first copy is still the one, and the built-in is gone again.
+    expect(newer2).toEqual(edited);
+    // The later agent gets a copy of its own with the text it had: the earlier copy was edited, so it isn't reused (D99).
+    const laterNewer = await build.deliver('later');
+    expect(laterNewer).toEqual(laterOlder);
     const blocks = await build.user(() => build.service.listParts('block'));
-    expect(blocks.filter((p) => p.name.startsWith('Older only')).map((p) => p.id)).toEqual([copy.id]);
-  });
+    const copies = blocks.filter((p) => p.name.startsWith('Older only'));
+    expect(copies.map((p) => p.name).sort()).toEqual(['Older only', 'Older only 2']);
+    expect(copies.every((p) => !p.builtin)).toBe(true);
+    expect(agents.get('later')!.managed!.blocks[1]).toBe(copies.find((p) => p.name === 'Older only 2')!.id);
+    expect(agents.get('dev')!.managed!.blocks[2]).toBe(copy.id);
+  }, 60_000);
+
+  it('reuses the earlier copy for an agent made on the older build when the copy still has the built-in\'s text', async () => {
+    agent('dev', { version: 1, blocks: [BUILTIN_BLOCK_IDS.identity, OLDER_ONLY], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] });
+    await start(olderBuild());
+    let build = await start(newerBuild());
+    const copy = agents.get('dev')!.managed!.blocks[1];
+    build = await start(olderBuild());
+    agent('later', { version: 1, blocks: [BUILTIN_BLOCK_IDS.identity, OLDER_ONLY], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] });
+    const before = await build.deliver('later');
+    build = await start(newerBuild());
+    expect(agents.get('later')!.managed!.blocks[1]).toBe(copy);
+    expect(await build.deliver('later')).toEqual(before);
+    const blocks = await build.user(() => build.service.listParts('block'));
+    expect(blocks.filter((p) => p.name.startsWith('Older only')).map((p) => p.id)).toEqual([copy]);
+  }, 60_000);
 });
