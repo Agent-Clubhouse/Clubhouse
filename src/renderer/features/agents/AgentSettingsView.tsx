@@ -24,6 +24,7 @@ import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAct
 import { useToastStore } from '../../stores/toastStore';
 import { reportChromeActionFailed } from '../../chrome/telemetry';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
+import { AgentActionsPage } from '../actions/AgentActionsPage';
 import {
   AGENT_SETTINGS_PAGES,
   useAgentSettingsPages,
@@ -1317,6 +1318,15 @@ export function AgentSettingsView({ agent }: Props) {
 
   // ── Page content ───────────────────────────────────────────────
 
+  // Actions (#2954): on this machine only.
+  const actionsPage = hiddenPages.includes('actions') ? null : <AgentActionsPage agentId={agent.id} agentName={agent.name} projectId={agent.projectId} />;
+  const actionsSection = actionsPage && (
+    <div id="agent-settings-section-actions" data-testid="agent-settings-section-actions">
+      <SectionHeading title="Actions" sub={`Actions that involve ${agent.name}`} />
+      {actionsPage}
+    </div>
+  );
+
   let body: React.ReactNode;
   if (pageMode) {
     const sub: Record<AgentSettingsPage, React.ReactNode> = {
@@ -1328,6 +1338,7 @@ export function AgentSettingsView({ agent }: Props) {
       settings: <>Instructions don't grant access. These settings do.{isRunning ? <span className="ml-2 text-ctp-overlay1">· Changes apply when it restarts</span> : null}</>,
       helpers: `How ${agent.name} starts, runs and disposes of helper agents. The same switches are in its Orchestration card beside the chat.`,
       quick: `Defaults for quick agents ${agent.name} starts`,
+      actions: `Actions that involve ${agent.name}`,
       preview: `What ${agent.name} gets at its next start`,
     };
     const builderNote = isRunning ? <span className="ml-2 text-ctp-overlay1">· Changes apply when the next session starts</span> : null;
@@ -1345,6 +1356,7 @@ export function AgentSettingsView({ agent }: Props) {
       permissions: permissionsEditor,
       helpers: helpersSettings,
       quick: quickDefaults,
+      actions: actionsPage,
       preview: isManagedAgent && builderAgent ? <PreviewPane agent={builderAgent} /> : null,
     };
     if (isManagedAgent && builderTarget) {
@@ -1388,6 +1400,7 @@ export function AgentSettingsView({ agent }: Props) {
         </div>
         <SectionHeading title="Quick agents" sub={`Defaults for quick agents ${agent.name} starts`} />
         {quickDefaults}
+        {actionsSection}
       </>
     );
   } else {
@@ -1403,6 +1416,7 @@ export function AgentSettingsView({ agent }: Props) {
         {helpersSettings}
         <SectionHeading title="Quick agents" sub={`Defaults for quick agents ${agent.name} starts`} />
         {quickDefaults}
+        {actionsSection}
       </>
     );
   }
