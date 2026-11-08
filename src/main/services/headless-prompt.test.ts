@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { headlessAnswer, runHeadlessPrompt } from './headless-prompt';
+import { defaultSpawn, headlessAnswer, runHeadlessPrompt } from './headless-prompt';
 import type { HeadlessOpts, OrchestratorProvider } from '../orchestrators/types';
 import type { StreamJsonEvent } from './jsonl-parser';
 
@@ -35,8 +36,31 @@ beforeAll(() => {
   `);
 });
 
-afterAll(() => {
-  fs.rmSync(dir, { recursive: true, force: true });
+/**
+ * Every fake CLI started, so cleanup can wait for each to exit. A run that
+ * times out resolves as soon as it kills the child; on Windows the dying
+ * process still holds the folder (its cwd and script) for a moment, and
+ * removing it then fails with EBUSY.
+ */
+const children: ChildProcess[] = [];
+const spawn: typeof defaultSpawn = (binary, args, opts) => {
+  const child = defaultSpawn(binary, args, opts);
+  children.push(child);
+  return child;
+};
+
+function exited(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return Promise.resolve();
+  return new Promise((resolve) => {
+    child.once('exit', () => resolve());
+    child.once('error', () => resolve());
+    child.kill();
+  });
+}
+
+afterAll(async () => {
+  await Promise.all(children.map(exited));
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 function fakeProvider(mode: string, seen: HeadlessOpts[] = [], extra: Record<string, unknown> = {}): OrchestratorProvider {
@@ -57,7 +81,7 @@ describe('runHeadlessPrompt with a fake CLI', () => {
     const seen: HeadlessOpts[] = [];
     const result = await runHeadlessPrompt(
       { provider: 'fake', model: 'small', effort: 'low', prompt: 'Rewrite this please' },
-      { provider: () => fakeProvider('stream', seen), workDir },
+      { provider: () => fakeProvider('stream', seen), workDir, spawn },
     );
     expect(result).toEqual({ ok: true, text: 'Answer to: Rewrite this please' });
     expect(seen[0]).toMatchObject({ cwd: dir, model: 'small', effort: 'low', mission: 'Rewrite this please', noSessionPersistence: true });
@@ -65,24 +89,24 @@ describe('runHeadlessPrompt with a fake CLI', () => {
   });
 
   it('returns text output as it stands', async () => {
-    const result = await runHeadlessPrompt({ provider: 'fake', model: 'm', prompt: 'x' }, { provider: () => fakeProvider('text', [], { outputKind: 'text' }), workDir });
+    const result = await runHeadlessPrompt({ provider: 'fake', model: 'm', prompt: 'x' }, { provider: () => fakeProvider('text', [], { outputKind: 'text' }), workDir, spawn });
     expect(result).toEqual({ ok: true, text: 'plain answer' });
   });
 
   it('fails when the CLI exits with nothing to say', async () => {
-    const result = await runHeadlessPrompt({ provider: 'fake', model: 'm', prompt: 'x' }, { provider: () => fakeProvider('fail'), workDir });
+    const result = await runHeadlessPrompt({ provider: 'fake', model: 'm', prompt: 'x' }, { provider: () => fakeProvider('fail'), workDir, spawn });
     expect(result).toEqual({ ok: false, error: 'It exited with code 3.' });
   });
 
   it('stops a run that takes too long', async () => {
-    const result = await runHeadlessPrompt({ provider: 'fake', model: 'm', prompt: 'x', timeoutMs: 200 }, { provider: () => fakeProvider('hang'), workDir });
+    const result = await runHeadlessPrompt({ provider: 'fake', model: 'm', prompt: 'x', timeoutMs: 200 }, { provider: () => fakeProvider('hang'), workDir, spawn });
     expect(result).toEqual({ ok: false, error: 'It took too long.' });
   });
 
   it('fails for a provider that has no headless runs', async () => {
     const provider = { id: 'p', getCapabilities: () => ({ headless: false }) } as unknown as OrchestratorProvider;
-    expect(await runHeadlessPrompt({ provider: 'p', model: 'm', prompt: 'x' }, { provider: () => provider, workDir })).toEqual({ ok: false, error: "p can't run a one-off prompt." });
-    expect((await runHeadlessPrompt({ provider: 'gone', model: 'm', prompt: 'x' }, { provider: () => undefined, workDir })).ok).toBe(false);
+    expect(await runHeadlessPrompt({ provider: 'p', model: 'm', prompt: 'x' }, { provider: () => provider, workDir, spawn })).toEqual({ ok: false, error: "p can't run a one-off prompt." });
+    expect((await runHeadlessPrompt({ provider: 'gone', model: 'm', prompt: 'x' }, { provider: () => undefined, workDir, spawn })).ok).toBe(false);
   });
 
   it('fails when the binary is missing', async () => {
@@ -91,7 +115,7 @@ describe('runHeadlessPrompt with a fake CLI', () => {
       getCapabilities: () => ({ headless: true }),
       buildHeadlessCommand: async () => ({ binary: path.join(dir, 'no-such-cli'), args: [] }),
     } as unknown as OrchestratorProvider;
-    const result = await runHeadlessPrompt({ provider: 'fake', model: 'm', prompt: 'x' }, { provider: () => provider, workDir });
+    const result = await runHeadlessPrompt({ provider: 'fake', model: 'm', prompt: 'x' }, { provider: () => provider, workDir, spawn });
     expect(result.ok).toBe(false);
   });
 });
