@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { grantKey } from './agent-grant-changes';
-import type { Grant } from './agent-grants';
 import { controlFromGrantModes, controlGrantModes, defaultGrants } from './default-grants';
+import { evaluateGrant, type Grant, type GrantCallTarget } from './agent-grants';
 import { ORCHESTRATION_CONTROLS } from './orchestration-policy';
 
 describe('the approval setting as grant modes (#2970)', () => {
@@ -68,5 +68,22 @@ describe('the Dispatcher\'s defaults (#3050, #3034)', () => {
     ]) {
       expect(defaultGrants(facts).some((g) => g.action === 'project.add'), JSON.stringify(facts)).toBe(false);
     }
+  });
+});
+
+describe('waking the Dispatcher by messaging it (#3037)', () => {
+  const caller = { kind: 'agent' as const, agentId: 'a', projectPath: '/p' };
+  const dispatcher: GrantCallTarget = { kind: 'agent', relations: ['connected'], isDispatcher: true };
+  const peer: GrantCallTarget = { kind: 'agent', relations: ['connected'] };
+  const facts = [
+    { dispatcher: false, helper: false, orchestrates: false, crossProject: false },
+    { dispatcher: false, helper: true, orchestrates: false, crossProject: false },
+    { dispatcher: false, helper: false, orchestrates: true, crossProject: true },
+  ];
+
+  it.each(facts)('every agent may wake the Dispatcher it is connected to, and no other connected agent: %j', (f) => {
+    const grants = defaultGrants(f);
+    expect(evaluateGrant({ caller, action: 'agent.wake', target: dispatcher }, grants).outcome).toBe('allow');
+    expect(evaluateGrant({ caller, action: 'agent.wake', target: peer }, grants).outcome).toBe('refuse');
   });
 });

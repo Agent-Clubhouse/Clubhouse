@@ -66,6 +66,8 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
     every('agent.read', SELF), every('agent.display', SELF),
     every('agent.read', CONNECTED), every('agent.message', CONNECTED),
     every('agent.reset', { kind: 'connected', excludeDispatcher: true }),
+    // A message to a sleeping Dispatcher wakes it to deliver the message (#3037).
+    every('agent.wake', { kind: 'connected', onlyDispatcher: true }),
     every('browser.read', CONNECTED), every('browser.act', CONNECTED),
     every('project.read', OWN_PROJECT), every('project.display', OWN_PROJECT),
     every('group_project.read', { kind: 'group_project', role: 'member' }),

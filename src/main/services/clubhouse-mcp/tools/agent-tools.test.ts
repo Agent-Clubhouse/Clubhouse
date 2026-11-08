@@ -53,6 +53,14 @@ const lifecycle = vi.hoisted(() => ({
 }));
 vi.mock('./agent-lifecycle', () => lifecycle);
 
+// Delivery to the Dispatcher itself is covered in dispatcher-delivery.test.ts.
+const dispatcherDelivery = vi.hoisted(() => ({
+  isDispatcherTarget: vi.fn((_id: string) => false),
+  deliverToDispatcher: vi.fn(),
+  sleepingDispatcherHint: vi.fn((_senderId: string) => 'Agent is sleeping. send_message wakes it and delivers the message.'),
+}));
+vi.mock('./dispatcher-delivery', () => dispatcherDelivery);
+
 import { registerAgentTools, writeChunkedBracketedPaste, waitForBufferQuiescence } from './agent-tools';
 import { getScopedToolList, callTool, refusalReasonOf, buildToolName, invalidateToolListCache, _resetForTesting as resetTools } from '../tool-registry';
 import { mcpAdapter } from '../mcp-adapter';
@@ -819,6 +827,79 @@ describe('AgentTools', () => {
       expect(status.message).toContain('Start it from Clubhouse');
       const refused = await callTool('agent-1', agentToolName(toTarget, 'send_message'), { message: 'hi' });
       expect(refused.content[0].text).toContain('Start it from Clubhouse');
+    });
+  });
+
+  describe('an agent messaging the Dispatcher (#3037)', () => {
+    const toDispatcher = makeBinding({
+      agentId: 'agent-1', targetId: 'disp', targetKind: 'agent',
+      label: 'Dispatcher', agentName: 'mega-camel', targetName: 'Dispatcher', projectName: 'myapp',
+    });
+
+    beforeEach(() => {
+      dispatcherDelivery.isDispatcherTarget.mockImplementation((id: string) => id === 'disp');
+      dispatcherDelivery.deliverToDispatcher.mockReset().mockResolvedValue({ delivered: true, woke: true });
+      bindingManager.bind('agent-1', {
+        targetId: 'disp', targetKind: 'agent', label: 'Dispatcher', agentName: 'mega-camel', targetName: 'Dispatcher', projectName: 'myapp',
+      });
+      // The Dispatcher is asleep: nothing registered for it.
+      mockAgentRegistryGet.mockImplementation((id: string) => (id === 'agent-2' ? { runtime: 'pty' } : undefined));
+    });
+
+    afterEach(() => { dispatcherDelivery.isDispatcherTarget.mockReset().mockReturnValue(false); });
+
+    it('send_message to a sleeping Dispatcher hands the tagged message to the delivery, which wakes it', async () => {
+      const toolName = agentToolName(toDispatcher, 'send_message');
+      const result = await callTool('agent-1', toolName, { message: 'checkout is fixed', task_id: 'fix1' });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('Message sent to Dispatcher. task_id=fix1');
+      expect(result.content[0].text).toContain('Dispatcher was asleep and was woken to take it.');
+      expect(dispatcherDelivery.deliverToDispatcher).toHaveBeenCalledWith({
+        senderId: 'agent-1', targetId: 'disp', targetName: 'Dispatcher',
+        text: '[TASK:fix1] [FROM:mega-camel@myapp] checkout is fixed',
+        routed: [{ sender: { agentId: 'agent-1', name: 'mega-camel' }, text: 'checkout is fixed' }],
+        taskId: 'fix1', submit: true, toolName, args: { message: 'checkout is fixed', task_id: 'fix1' },
+      });
+      expect(mockPtyWrite).not.toHaveBeenCalled();
+    });
+
+    it('a running Dispatcher gets the message the same way, with no wake note', async () => {
+      dispatcherDelivery.deliverToDispatcher.mockResolvedValue({ delivered: true, woke: false });
+      const result = await callTool('agent-1', agentToolName(toDispatcher, 'send_message'), { message: 'hi', force_submit: false });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).not.toContain('was asleep');
+      expect(result.content[0].text).toContain('force_submit=false');
+      expect(dispatcherDelivery.deliverToDispatcher.mock.calls[0][0]).toMatchObject({ submit: false });
+    });
+
+    it('a Dispatcher that fails to start comes back to the sender as an error', async () => {
+      dispatcherDelivery.deliverToDispatcher.mockResolvedValue({
+        delivered: false, text: 'Dispatcher is asleep and could not be started, so the message was not delivered. Failed to wake agent: boom',
+      });
+      const result = await callTool('agent-1', agentToolName(toDispatcher, 'send_message'), { message: 'hi' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toBe('Dispatcher is asleep and could not be started, so the message was not delivered. Failed to wake agent: boom');
+    });
+
+    it('a delivery that throws is reported, not thrown', async () => {
+      dispatcherDelivery.deliverToDispatcher.mockRejectedValue(new Error('pipe closed'));
+      const result = await callTool('agent-1', agentToolName(toDispatcher, 'send_message'), { message: 'hi' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toBe('Failed to send message: pipe closed');
+    });
+
+    it('get_status on a sleeping Dispatcher says a message wakes it, not to start it first', async () => {
+      const status = JSON.parse((await callTool('agent-1', agentToolName(toDispatcher, 'get_status'), {})).content[0].text!);
+      expect(status).toMatchObject({ status: 'sleeping', running: false });
+      expect(status.message).toBe('Agent is sleeping. send_message wakes it and delivers the message.');
+      expect(dispatcherDelivery.sleepingDispatcherHint).toHaveBeenCalledWith('agent-1');
+    });
+
+    it('other agents are unaffected: a sleeping one still says to start it', async () => {
+      mockAgentRegistryGet.mockReturnValue(undefined);
+      const result = await callTool('agent-1', agentToolName(sourceBinding, 'send_message'), { message: 'hi' });
+      expect(result.content[0].text).toContain('Start it from Clubhouse');
+      expect(dispatcherDelivery.deliverToDispatcher).not.toHaveBeenCalled();
     });
   });
 

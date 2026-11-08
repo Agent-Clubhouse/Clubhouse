@@ -9,7 +9,7 @@ vi.mock('../dispatcher/dispatcher-settings', async (original) => ({
 import { listToolGrants, _resetForTesting, type RegisteredToolGrant } from './tool-registry';
 import { mcpAdapter } from './mcp-adapter';
 import { registerClubhouseMcpTools } from './tools/register-all';
-import { capToHolder, checkToolGrant, isListable, registerActionOwnerLookup } from './grant-check';
+import { capToHolder, checkToolGrant, decideGrant, isListable, registerActionOwnerLookup } from './grant-check';
 import { updateAgentGrantChanges } from '../agent-grants-store';
 import { setMcpCaller, _resetMcpCallGateForTesting } from './mcp-call-gate';
 import { setOrchestrationEnabled, isOrchestrationEnabled, isCrossProjectEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
@@ -286,6 +286,25 @@ describe('a person\'s changes reach the next call (#2971)', () => {
       expect(checkToolGrant('plain', run, { id: 'other' }).ok).toBe(false);
     } finally {
       registerActionOwnerLookup(null);
+      await updateAgentGrantChanges('plain', () => undefined);
+    }
+  });
+});
+
+describe('waking the Dispatcher by messaging it (#3037)', () => {
+  beforeEach(setupCallers);
+  const dispatcher = { kind: 'agent' as const, relations: ['connected' as const], isDispatcher: true };
+
+  it('every agent may by default; a person can set it to Ask first or Off', async () => {
+    for (const caller of ['plain', 'orchestrator', 'helper'] as const) expect(decideGrant(caller, 'agent.wake', dispatcher).outcome).toBe('allow');
+    expect(decideGrant('plain', 'agent.wake', { kind: 'agent', relations: ['connected'] }).outcome).toBe('refuse');
+    const target = { kind: 'connected' as const, onlyDispatcher: true };
+    try {
+      await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'agent.wake', target, mode: 'ask' }] }));
+      expect(decideGrant('plain', 'agent.wake', dispatcher).outcome).toBe('ask');
+      await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'agent.wake', target, mode: 'off' }] }));
+      expect(decideGrant('plain', 'agent.wake', dispatcher).outcome).toBe('refuse');
+    } finally {
       await updateAgentGrantChanges('plain', () => undefined);
     }
   });
