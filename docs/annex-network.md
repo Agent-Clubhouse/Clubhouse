@@ -11,6 +11,7 @@ Epic: #3056. Stages land in order: #3057 (peer basics), #3058 (reachability), #3
 - **Membership** (`src/main/services/annex-network-membership.ts`): a member is a peer with role `member`, which both controls and is controlled. `annex-network.json` keeps removals (so members that were off learn of them) and which members have confirmed each join and removal.
 - **Phones** (#3062): a phone that pairs with `network: 1` is a member of kind `phone`. The contract for the iOS app is `docs/annex-network-phone.md`.
 - **Agent addresses** (`src/shared/agent-address.ts`, #3063): `<agentId>@<machine fingerprint>`; a bare id means this machine. Converts to and from the renderer's `remote||<machine>||<agentId>`.
+- **Chat across desktops** (#2390): a controller reads and drives a satellite's chat agents through the same pinned routes and commands phones use (`docs/mobile-control-v1.md`). In the renderer, `stores/remoteChatBackend.ts` is the chat store's backend for namespaced (`remote||…`) agents.
 - **A problem** (`src/shared/annex-problems.ts`) is a classified reason a connection failed, shown as two sentences: what happened, and what to do.
 
 ## Real-device checks
@@ -50,6 +51,11 @@ Synthetic tests can't cover certificates under Electron or local network discove
 
 **Stage 6 (#3063)**
 - An agent calling a tool with another agent's address on this machine (`id@<this machine's fingerprint>`) works as with the bare id; with another machine's, it's told that machine can't be reached from here yet.
+
+**Chat across desktops (#2390)**
+- Open a chat agent that runs on another desktop: its conversation shows, says which machine it's on, and streams live.
+- Send, steer, stop, approve a permission and answer a question from the controller; each lands on the other desktop.
+- Disconnect the other desktop mid-turn and reconnect: the conversation catches up (a turn that ended meanwhile shows ended, a permission asked meanwhile shows), with nothing twice.
 
 ## Decision log
 
@@ -95,4 +101,10 @@ Decisions made while building, for the maintainer to revisit. Newest last. D180 
 | D215 | An agent's address is `<agentId>@<machine>`, the machine being its identity fingerprint (lowercased). A bare id means this machine, so every reference that exists keeps working. Agent ids never contain `@`, and anything after the last `@` that isn't a fingerprint is part of the id. | Readable, sortable, and the same on every machine. | |
 | D216 | Tool calls: arguments a tool's grant names as agents are localized before the grant check, so tools and checks see bare ids: an `agent_arg` declaration's list (`from`/`to` when it has none), `target_agent_id` for group members, `helper` for helpers, and `target` for call_wire_tool. One naming another machine is refused (`other_machine`, without saying which machine) until stage 7 (#3064) routes it. | One place for every tool, no tool changed. | A new agent target reads another argument. |
 | D217 | Phones: snapshots carry `machine`; a command's `agentId` may be an address; another machine's is refused with `wrong_machine` and the `machine` to send it to. Capabilities announce `agentAddress`. | The phone keeps one connection per desktop and routes by machine itself. | |
+| D218 | Chat across desktops reuses the phone routes and commands (chat pages, sessions, `chat.*` commands with epoch and command ids) instead of adding a desktop protocol. Any device that controls a machine may use them, so computer members and desktop controllers do too. | One contract, already tested byte for byte, already bounded for size. | A desktop needs something phones must not have. |
+| D219 | The controller's chat store keeps an agent on another desktop under its namespaced id (`remote||<machine>||<id>`); every read and action for such an id goes through the Annex client (chat page, chat command), never this machine's chat runtime. Live `chat:event`s from a satellite are applied under the same id. Components are unchanged. | One seam (`chatStore`), and no remote id can reach a local runtime. | |
+| D220 | An agent on another desktop shows its chat view when the satellite says it runs in chat (`executionMode: 'chat'`); older satellites never say, so they keep the terminal. The header says which machine it's on. | No protocol bump; older satellites keep working. | |
+| D221 | What only works on this machine, or that the phone commands can't carry, is left out for an agent on another desktop: rich previews of files and media by path, attachments, History (past sessions), Changes review and checkpoints, the Chat/terminal switch, and permission extras (edit the plan, deny with feedback): a permission is answered with the choice only. Approving a request too large to send whole needs the computer it runs on. | Better hidden than reading this machine's files at the other machine's paths, or approving something other than what was shown. | #2398 (rich content by reference), past-session pages and permission extras over Annex. |
+| D222 | A controller's chat command gets the satellite's epoch from its chat page or capabilities; a stale epoch (the satellite restarted) is read again once and the command sent again with a new id. A refusal is shown in words (known codes have their own sentences). | The phone's command contract, as is. | |
+| D223 | The desktop doesn't use the phone's replay: on every snapshot from a satellite (each connect and reconnect), its chats already read are read again from their pages, which are authoritative and deduped by seq. A cut page is marked partial and fills what it left out (capabilities, slash commands, picker lists) from the page's own metadata. Live comes from `readOnly`. | Simple, and a missed `turn_ended` or permission can't leave a chat stuck. | Reloading on every snapshot refresh costs too much on a busy satellite. |
 

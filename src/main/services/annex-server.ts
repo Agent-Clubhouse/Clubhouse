@@ -2359,10 +2359,12 @@ const PAIR_MESSAGES = {
 
 /**
  * Who may use the phone routes: a controller (or an older entry with no role), or
- * a phone that's an Annex Network member (#3062).
+ * an Annex Network member, phone (#3062) or computer (#2390).
  */
 function actsAsPhoneController(peer: AnnexPeer): boolean {
-  return !peer.role || peer.role === 'controller' || (peer.role === 'member' && peer.kind === 'phone');
+  // Any device that controls this machine: a phone, a desktop controller, or a network member, which
+  // reads and drives this machine's chat agents through the same routes (#2390).
+  return !peer.role || annexPeers.controlsThisMachine(peer);
 }
 
 /** Phones send `pairingMode`, and older ones a phone or tablet icon; Clubhouse desktops send neither. */

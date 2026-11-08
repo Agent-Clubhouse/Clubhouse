@@ -2716,6 +2716,66 @@ describe('annex-client', () => {
     });
   });
 
+  describe('chat across desktops (#2390)', () => {
+    const FP = 'dd:04:dd:04';
+    let requests: Array<{ url: string; method: string; body?: any }>;
+    let answers: Array<{ status: number; body: object }>;
+
+    beforeEach(() => {
+      requests = [];
+      answers = [];
+      vi.mocked(https.request).mockImplementation(((url: string, options: any, cb: any) => {
+        let body: any;
+        const req = Object.assign(new EventEmitter(), {
+          setTimeout: vi.fn(), destroy: vi.fn(),
+          write: (chunk: string) => { body = JSON.parse(chunk); },
+          end: () => {
+            requests.push({ url, method: options.method, body });
+            const answer = answers.shift() ?? { status: 200, body: {} };
+            const res = Object.assign(new EventEmitter(), { statusCode: answer.status });
+            cb(res);
+            res.emit('data', Buffer.from(JSON.stringify(answer.body)));
+            res.emit('end');
+          },
+        });
+        return req;
+      }) as any);
+      annexClient._addConnectedSatelliteForTesting(FP);
+    });
+
+    it('reads a chat page through the satellite\'s phone route, and remembers its epoch', async () => {
+      answers.push({ status: 200, body: { epoch: 'ep_1', events: [] } });
+      expect(await annexClient.requestChatPage(FP, 'durable_chat', { limit: 50 })).toEqual({ epoch: 'ep_1', events: [] });
+      expect(requests[0]).toMatchObject({ method: 'GET' });
+      expect(requests[0].url).toMatch(/\/api\/v1\/mobile\/agents\/durable_chat\/chat\?limit=50$/);
+      // The next command uses that epoch, with no capabilities read.
+      answers.push({ status: 200, body: { status: 'completed', result: { interrupted: true } } });
+      await annexClient.sendChatCommand(FP, { type: 'chat.interrupt', agentId: 'durable_chat', sessionId: 's1' });
+      expect(requests[1]).toMatchObject({ method: 'POST', body: { type: 'chat.interrupt', agentId: 'durable_chat', sessionId: 's1', version: 1, epoch: 'ep_1' } });
+      expect(requests[1].body.commandId).toEqual(expect.any(String));
+    });
+
+    it('reads the epoch from capabilities when it has none, and sends again once after a stale epoch', async () => {
+      answers.push({ status: 200, body: { epoch: 'ep_old' } });
+      answers.push({ status: 409, body: { status: 'rejected', error: { code: 'epoch_mismatch' } } });
+      answers.push({ status: 200, body: { epoch: 'ep_new' } });
+      answers.push({ status: 200, body: { status: 'completed', result: {} } });
+      expect(await annexClient.sendChatCommand(FP, { type: 'chat.setLevel', agentId: 'a', sessionId: 's', level: 'plan' })).toEqual({ status: 'completed', result: {} });
+      expect(requests.map((r) => `${r.method} ${r.url.replace(/^https:\/\/[^/]+/, '')}`)).toEqual([
+        'GET /api/v1/mobile/capabilities', 'POST /api/v1/mobile/commands', 'GET /api/v1/mobile/capabilities', 'POST /api/v1/mobile/commands',
+      ]);
+      expect(requests[3].body.epoch).toBe('ep_new');
+      expect(requests[3].body.commandId).not.toBe(requests[1].body.commandId);
+    });
+
+    it('answers a refusal as its receipt, and refuses anything but a chat command', async () => {
+      answers.push({ status: 200, body: { epoch: 'ep' } });
+      answers.push({ status: 409, body: { status: 'rejected', error: { code: 'session_mismatch' } } });
+      expect(await annexClient.sendChatCommand(FP, { type: 'chat.send', agentId: 'a', sessionId: 's', text: 'x' })).toMatchObject({ status: 'rejected' });
+      await expect(annexClient.sendChatCommand(FP, { type: 'agent.delete', agentId: 'a' })).rejects.toThrow(/Not a chat command/);
+    });
+  });
+
   describe('pairing over TLS', () => {
     const SAT_FP = 'bb:02:bb:02:bb:02:bb:02:bb:02:bb:02:bb:02:bb:02';
     const CERT = 'ab'.repeat(32);

@@ -96,6 +96,38 @@ describe('AgentRuntimePane', () => {
     expect(api.chat.getAgentRuntime).toHaveBeenCalledWith(FIXTURE_AGENT_ID, 'codex-cli', { projectPath: '/work/clubhouse', starting: false });
   });
 
+  describe('an agent on another desktop (#2390)', () => {
+    const SAT = Array.from({ length: 16 }, () => 'ab').join(':');
+    const remote: Agent = { ...agent, id: `remote||${SAT}||durable_chat`, projectId: `remote||${SAT}||proj-1` };
+
+    beforeEach(async () => {
+      const { useAnnexClientStore } = await import('../../../stores/annexClientStore');
+      useAnnexClientStore.setState({ satellites: [{ id: SAT, alias: 'Studio' }] } as never);
+      Object.assign(api.annexClient, { chatPage: vi.fn(async () => ({ events: chatFixture('codex', 'conversation').map((e) => ({ ...e, agentId: 'durable_chat' })), state: 'idle' })) });
+      api.chat.getAgentRuntime = vi.fn(async () => ({ chat: false, chatAvailable: false }));
+    });
+
+    it('shows its chat, read from that desktop, naming it, with nothing read from this machine', async () => {
+      render(<AgentRuntimePane agent={{ ...remote, executionMode: 'chat' }} terminal={terminal} />);
+      await screen.findByTestId('chat-view');
+      expect(screen.getByTestId('chat-remote-machine')).toHaveTextContent('On Studio');
+      expect(screen.queryByTestId('fake-terminal')).not.toBeInTheDocument();
+      await waitFor(() => expect(api.annexClient.chatPage).toHaveBeenCalledWith(SAT, 'durable_chat', expect.anything()));
+      expect(api.chat.getAgentRuntime).not.toHaveBeenCalled();
+      expect(api.chat.readTranscript).not.toHaveBeenCalled();
+      // No History (it reads this machine's transcripts).
+      expect(screen.queryByRole('button', { name: 'History' })).not.toBeInTheDocument();
+    });
+
+    it('keeps the terminal for one running in a terminal, or from a satellite that doesn\'t say', () => {
+      const { unmount } = render(<AgentRuntimePane agent={{ ...remote, executionMode: 'pty' } as Agent} terminal={terminal} />);
+      expect(screen.getByTestId('fake-terminal')).toBeInTheDocument();
+      unmount();
+      render(<AgentRuntimePane agent={remote} terminal={terminal} />);
+      expect(screen.getByTestId('fake-terminal')).toBeInTheDocument();
+    });
+  });
+
   describe('waking (#2206)', () => {
     const waking: Agent = { ...agent, status: 'waking' };
 
