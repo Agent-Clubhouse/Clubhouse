@@ -476,6 +476,8 @@ describe('ToolRegistry', () => {
       expect(result.content[0].text).toBe('sent there');
       expect(handler).not.toHaveBeenCalled();
       expect(forwarded.calls).toEqual([['agent-1', far, 'far', 'send_message', { message: 'hello' }]]);
+      // Listed in full though it's in no registry here: its machine knows whether it's awake (#3064).
+      expect(getScopedToolList('agent-1').some((t) => t.name === toolName)).toBe(true);
       // A tool turned off on the wire is refused here first.
       bindingManager.setDisabledTools('agent-1', far, ['send_message']);
       expect(refusalReasonOf(await callTool('agent-1', toolName, { message: 'again' }))).toBe('tool_denied');

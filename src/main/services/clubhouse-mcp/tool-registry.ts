@@ -481,7 +481,8 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     if (!templates) continue;
 
     // When target agent is sleeping (not in registry), only expose status and wake tools.
-    const followsTargetState = binding.targetKind === 'agent' && !allWireTools;
+    // An agent on another machine is never in this registry: its machine knows its state and answers for it (#3064).
+    const followsTargetState = binding.targetKind === 'agent' && !allWireTools && !remoteMachineOf(binding.targetId);
     const isTargetSleeping = followsTargetState && !agentRegistry.get(binding.targetId);
     // A sleeping Dispatcher still takes messages: send_message delivers and wakes it (#3069, #3108).
     const sleepingDispatcher = isTargetSleeping && isDispatcherCoordinatorId(binding.targetId);
