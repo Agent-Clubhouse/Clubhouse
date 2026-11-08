@@ -676,6 +676,12 @@ export const IPC = {
     CLEAR_CHAT: 'dispatcher:clear-chat',
     /** Main → renderer broadcast: DispatcherState after any change. */
     CHANGED: 'dispatcher:changed',
+    /** An agent's card, for its Dispatcher card in Details (#3049). */
+    GET_AGENT_CARD: 'dispatcher:get-agent-card',
+    /** The user's edit of an agent's card from Details; it replaces what the agent wrote. */
+    SAVE_AGENT_CARD: 'dispatcher:save-agent-card',
+    /** Main → renderer: an agent's card changed (agent id). */
+    AGENT_CARD_CHANGED: 'dispatcher:agent-card-changed',
   },
   HOOK_SERVER: {
     /** Main → renderer: a list of agentIds whose hook config was changed and need restart for the change to take full effect. */

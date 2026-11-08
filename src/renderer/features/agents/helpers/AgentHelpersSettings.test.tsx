@@ -66,31 +66,13 @@ describe('Agent Helpers settings page (#2232)', () => {
     expect(window.clubhouse.agent.setOrchestrationPolicy).toHaveBeenLastCalledWith(PROJECT, 'lead', { crossProjectHelpers: true });
   });
 
-  it('shows Connect to Dispatcher with orchestration on as well as off', async () => {
+  it('has no Connect to Dispatcher switch: an agent connects from its Dispatcher card in Details (#3049)', async () => {
     dispatcherOn = true;
     stored = { ...stored, orchestrate: true, connectToDispatcher: true };
     render(<AgentHelpersSettings agent={lead} projectPath={PROJECT} />);
-    expect(await screen.findByTestId('settings-orchestrate-dispatcher')).toHaveAttribute('aria-checked', 'true');
-  });
-
-  it('lets a plain agent connect to the Dispatcher, with orchestration left off (#2578)', async () => {
-    dispatcherOn = true;
-    render(<AgentHelpersSettings agent={lead} projectPath={PROJECT} />);
-    const toggle = await screen.findByTestId('settings-orchestrate-toggle');
-    const sw = await screen.findByTestId('settings-orchestrate-dispatcher');
-    expect(screen.getByText('Connect to Dispatcher')).toBeInTheDocument();
-    expect(screen.getByText('Let the Dispatcher message this agent and get its reports.')).toBeInTheDocument();
-    fireEvent.click(sw);
-    await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'true'));
-    expect(window.clubhouse.agent.setOrchestrationPolicy).toHaveBeenLastCalledWith(PROJECT, 'lead', { connectToDispatcher: true });
-    expect(toggle).toHaveAttribute('aria-checked', 'false');
-  });
-
-  it('hides Connect to Dispatcher while the Dispatcher is off (#2534)', async () => {
-    stored = { ...stored, orchestrate: true };
-    render(<AgentHelpersSettings agent={lead} projectPath={PROJECT} />);
     await screen.findByTestId('settings-orchestrate-cross-project');
     expect(screen.queryByTestId('settings-orchestrate-dispatcher')).not.toBeInTheDocument();
+    expect(screen.queryByText('Connect to Dispatcher')).not.toBeInTheDocument();
   });
 
   it('asks about helpers before turning off, as the card does', async () => {

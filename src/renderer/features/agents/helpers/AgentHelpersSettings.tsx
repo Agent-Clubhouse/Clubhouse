@@ -12,9 +12,8 @@ import { Field, SectionHeading, inputClass, selectClass } from '../agentSettings
 import { controlHelp } from './helper-model';
 import { maxHelpersCeiling, useOrchestration } from './orchestration-hooks';
 import {
-  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, AutoHelpersToggle, AUTO_HELPERS_HELP, CrossProjectToggle, DISPATCHER_HELP, DispatcherToggle, HelperCountInput, accessNote,
+  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, AutoHelpersToggle, AUTO_HELPERS_HELP, CrossProjectToggle, HelperCountInput, accessNote,
 } from './OrchestrationFields';
-import { useDispatcherConnection } from '../../dispatcher/useDispatcherEnabled';
 import { TurnOffOrchestrationDialog } from './TurnOffOrchestrationDialog';
 
 export function AgentHelpersSettings({ agent, projectPath, helperDefaults }: {
@@ -24,9 +23,8 @@ export function AgentHelpersSettings({ agent, projectPath, helperDefaults }: {
   helperDefaults?: ReactNode;
 }) {
   const orch = useOrchestration(projectPath, agent);
-  const ids = { auto: useId(), toggle: useId(), access: useId(), control: useId(), count: useId(), crossProject: useId(), dispatcher: useId() };
-  // Connect to Dispatcher shows while the Dispatcher is turned on, with orchestration on or off (#2578).
-  const { show: showDispatcher } = useDispatcherConnection();
+  const ids = { auto: useId(), toggle: useId(), access: useId(), control: useId(), count: useId(), crossProject: useId() };
+  // Connecting to the Dispatcher is the Dispatcher card in Details now (#3049).
   const [countError, setCountError] = useState<string | null>(null);
   const { policy, access, saving } = orch;
   const running = agent.status === 'running';
@@ -104,19 +102,6 @@ export function AgentHelpersSettings({ agent, projectPath, helperDefaults }: {
           />
         </Field>
       )}
-      {showDispatcher && (
-        <Field label="Connect to Dispatcher" htmlFor={ids.dispatcher} help={DISPATCHER_HELP}>
-          <DispatcherToggle
-            id={ids.dispatcher}
-            checked={policy.connectToDispatcher}
-            name={agent.name}
-            disabled={saving}
-            onChange={(on) => void orch.setConnectToDispatcher(on)}
-            testId="settings-orchestrate-dispatcher"
-          />
-        </Field>
-      )}
-
       <SectionHeading title="Defaults for new helpers" />
       <Field
         label="Access"

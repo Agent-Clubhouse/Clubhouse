@@ -24,6 +24,8 @@ const h = vi.hoisted(() => ({
   /** What a project or user orchestrator.md gives an agent with no persona. */
   projectLayer: {} as Record<string, unknown>,
   policyCalls: [] as string[],
+  /** Built-in installs and setup saves, in order (#3137). */
+  installOrder: [] as string[],
   /** Projects with MCP off. */
 }));
 
@@ -88,7 +90,10 @@ vi.mock('../agent-system', () => ({
 }));
 vi.mock('./index', () => ({
   managedAgents: () => h.service,
-  ensureBuiltinsOnce: async () => (h.service as { ensureBuiltins(): Promise<void> }).ensureBuiltins(),
+  ensureBuiltinsOnce: async () => {
+    h.installOrder.push('builtins');
+    return (h.service as { ensureBuiltins(): Promise<void> }).ensureBuiltins();
+  },
 }));
 vi.mock('../git-exclude-manager', () => ({ addExclusions: vi.fn(async () => {}), replaceExclusions: vi.fn(async () => {}) }));
 vi.mock('./legacy-settings', () => ({ migrateLegacySettings: vi.fn(async () => ({ sourceControl: false })) }));
@@ -161,6 +166,7 @@ beforeEach(async () => {
   h.personaPolicy = {};
   h.projectLayer = {};
   h.policyCalls = [];
+  h.installOrder = [];
   service = createManagedAgentsService({
     catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
     state: createManagedStateStore(h.stateDir),
@@ -171,6 +177,7 @@ beforeEach(async () => {
     setManagedSetup: async (p, id, setup: ManagedAgentSetup | null) => {
       const a = h.projects.get(p)!.get(id)!;
       h.policyCalls.push('save');
+      h.installOrder.push(`save ${id}`);
       if (setup) {
         if (!a.managed && !a.switchedToManagedAt) a.switchedToManagedAt = new Date().toISOString();
         a.managed = setup;
@@ -244,6 +251,13 @@ describe('the switch at spawn (D59)', () => {
     expect(await migrateAtSpawn('alpha', managed!)).toBeNull();
     expect(agentConfig.setManagedMigration).not.toHaveBeenCalled();
     expect(await parts('block')).toHaveLength(1);
+  });
+
+  it('installs the built-ins before it saves the setup, since the switch adds the built-in Clubhouse part (#3137)', async () => {
+    h.clubhouseMode.add('alpha');
+    const ada = agent('alpha', 'ada');
+    expect((await migrateAtSpawn('alpha', ada))?.managed?.mcps).toEqual([CLUBHOUSE_MCP_PART_ID]);
+    expect(h.installOrder).toEqual(['builtins', 'save ada']);
   });
 
   it('switches a persona agent and keeps the orchestration its persona gave it', async () => {
@@ -405,6 +419,15 @@ describe('the startup pass (D59)', () => {
     for (const id of ['plain', 'kept']) expect(get('beta', id).personaLayerCarriedAt, id).toEqual(expect.any(String));
     expect(get('alpha', 'stopped').personaLayerCarriedAt).toEqual(expect.any(String));
     expect(get('alpha', 'helper').personaLayerCarriedAt).toBeUndefined();
+  });
+
+  it('installs the built-ins before each switch saves (#3137)', async () => {
+    seed();
+    await runStartupMigration();
+    const saves = h.installOrder.filter((e) => e.startsWith('save'));
+    expect(saves).toEqual(['save sleepy', 'save persona']);
+    for (const save of saves) expect(h.installOrder.indexOf('builtins')).toBeLessThan(h.installOrder.indexOf(save));
+    expect(h.installOrder[h.installOrder.indexOf('save persona') - 1]).toBe('builtins');
   });
 
   it('runs once, and switches nothing twice even if run again', async () => {

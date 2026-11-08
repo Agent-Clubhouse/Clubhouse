@@ -41,13 +41,19 @@ vi.mock('./dispatcher-service', () => ({
 import { isWiredToDispatcher, liveAgentCardDeps, watchAgentCards } from './dispatcher-agent-cards-watch';
 import { getAgentRuntime } from '../agent-runtime';
 import type { AgentCards } from './dispatcher-agent-cards';
+import { readAgentCardView, saveAgentCardEdit } from './dispatcher-agent-card-source';
 
-let cards: { sync: ReturnType<typeof vi.fn>; deliver: ReturnType<typeof vi.fn> };
+let cards: { sync: ReturnType<typeof vi.fn>; deliver: ReturnType<typeof vi.fn>; view: ReturnType<typeof vi.fn>; saveUserCard: ReturnType<typeof vi.fn> };
 let stop: () => void;
 
 beforeEach(() => {
   vi.useFakeTimers();
-  cards = { sync: vi.fn(async () => {}), deliver: vi.fn(async () => {}) };
+  cards = {
+    sync: vi.fn(async () => {}),
+    deliver: vi.fn(async () => {}),
+    view: vi.fn(async () => ({ state: 'ready', card: { owns: 'web/' } })),
+    saveUserCard: vi.fn(async () => ({ ok: true, card: { owns: 'web/' }, page: 'agents/lead.md' })),
+  };
   stop = watchAgentCards(cards as unknown as AgentCards);
 });
 afterEach(() => {
@@ -90,6 +96,19 @@ describe('watching for agent cards', () => {
     stop();
     for (const l of listeners.bindings) l('lead');
     expect(cards.deliver).not.toHaveBeenCalled();
+  });
+});
+
+describe('the card source for Details (#3049)', () => {
+  it('reads and saves through the cards while watched, and goes away when unwatched', async () => {
+    expect(await readAgentCardView('lead')).toEqual({ state: 'ready', card: { owns: 'web/' } });
+    expect(await saveAgentCardEdit('lead', { owns: 'web/' })).toEqual({ state: 'ready', card: { owns: 'web/' } });
+    expect(cards.saveUserCard).toHaveBeenCalledWith('lead', { owns: 'web/' });
+    cards.saveUserCard.mockResolvedValueOnce({ ok: false, error: 'Connect this agent to the Dispatcher first.' });
+    await expect(saveAgentCardEdit('lead', { owns: 'x' })).rejects.toThrow('Connect this agent to the Dispatcher first.');
+    stop();
+    expect(await readAgentCardView('lead')).toBeNull();
+    stop = () => {};
   });
 });
 

@@ -199,37 +199,13 @@ describe('Orchestration card (#2232)', () => {
     expect(screen.queryByText('Orchestrate')).not.toBeInTheDocument();
   });
 
-  it('shows Connect to Dispatcher with orchestration on as well as off', async () => {
+  it('has no Connect to Dispatcher row: it is the Dispatcher card now (#3049)', async () => {
     dispatcherOn = true;
-    stored = { ...stored, orchestrate: true, connectToDispatcher: true };
-    await renderCard();
-    expect(await screen.findByTestId('orchestrate-dispatcher')).toHaveAttribute('aria-checked', 'true');
-    expect(screen.getByTestId('orchestrate-cross-project')).toBeInTheDocument();
-  });
-
-  it('lets a plain agent connect to the Dispatcher, with orchestration left off (#2578)', async () => {
-    dispatcherOn = true;
-    await renderCard();
-    expect(screen.queryByTestId('orchestrate-cross-project')).not.toBeInTheDocument();
-    const sw = await screen.findByTestId('orchestrate-dispatcher');
-    expect(sw).toHaveAttribute('aria-checked', 'false');
-    expect(screen.getByText('Connect to Dispatcher')).toBeInTheDocument();
-    expect(screen.getByText('Let the Dispatcher message this agent and get its reports.')).toBeInTheDocument();
-    fireEvent.click(sw);
-    await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'true'));
-    expect(window.clubhouse.agent.setOrchestrationPolicy).toHaveBeenLastCalledWith(PROJECT, 'lead', { connectToDispatcher: true });
-    expect(screen.getByTestId('orchestrate-toggle')).toHaveAttribute('aria-checked', 'false');
-  });
-
-  it('hides Connect to Dispatcher while the Dispatcher is off (#2534)', async () => {
     stored = { ...stored, orchestrate: true, connectToDispatcher: true };
     await renderCard();
     await screen.findByTestId('orchestrate-cross-project');
     expect(screen.queryByTestId('orchestrate-dispatcher')).not.toBeInTheDocument();
-    stored = { ...stored, orchestrate: false };
-    cleanup();
-    await renderCard();
-    expect(screen.queryByTestId('orchestrate-dispatcher')).not.toBeInTheDocument();
+    expect(screen.queryByText('Connect to Dispatcher')).not.toBeInTheDocument();
   });
 
   it('says helpers in other projects keep running when cross-project helpers go off', async () => {
@@ -520,6 +496,33 @@ describe('Orchestration cards in Agent details', () => {
   });
 });
 
+describe('The Dispatcher card in Agent details (#3049)', () => {
+  it('shows a top-level card with its switch while the Dispatcher is on, before Orchestration', async () => {
+    dispatcherOn = true;
+    stored = { ...stored, connectToDispatcher: true };
+    render(<AgentDetails agent={lead} />);
+    const card = await screen.findByTestId('details-card-dispatcher');
+    expect(card).toHaveAccessibleName('Dispatcher');
+    await waitFor(() => expect(screen.getByTestId('dispatcher-card-switch')).toHaveAttribute('aria-checked', 'true'));
+    const orchestration = screen.getByTestId('details-card-orchestrate');
+    expect(card.compareDocumentPosition(orchestration) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByTestId('orchestrate-dispatcher')).not.toBeInTheDocument();
+  });
+
+  it('leaves it out while the Dispatcher is off, and for a helper', async () => {
+    render(<AgentDetails agent={lead} />);
+    await screen.findByTestId('details-card-orchestrate');
+    expect(screen.queryByTestId('details-card-dispatcher')).not.toBeInTheDocument();
+    cleanup();
+    dispatcherOn = true;
+    configs = [config('lead', 'epic-lead', { parentAgentId: 'boss' })];
+    render(<AgentDetails agent={lead} />);
+    await screen.findByTestId('details-card-session');
+    await waitFor(() => expect(window.clubhouse.agent.listDurable).toHaveBeenCalled());
+    expect(screen.queryByTestId('details-card-dispatcher')).not.toBeInTheDocument();
+  });
+});
+
 describe('turn-off failure reasons', () => {
   it('keeps a reason that reads as words', async () => {
     window.clubhouse.agent.setOrchestrationPolicy = vi.fn(async () => ({ ok: true, message: 'Choose', needsHelperChoice: { helperIds: ['h1'] } })) as never;
@@ -558,7 +561,6 @@ describe('Orchestration card following config changes', () => {
   it('never reads the switches off for want of Clubhouse MCP: it always runs', async () => {
     const toggle = await renderCard();
     await waitFor(() => expect(toggle).not.toBeDisabled());
-    expect(screen.getByTestId('orchestrate-dispatcher')).not.toBeDisabled();
     expect(screen.queryByTestId('orchestrate-mcp-off')).not.toBeInTheDocument();
     expect(screen.getByTestId('details-card-orchestrate-summary')).not.toHaveTextContent('Clubhouse MCP');
   });

@@ -20,7 +20,7 @@ import {
   EffortSelect, HELPER_SELECTION_HELP, HELPER_TEMPLATE_HELP, HelperSelectionSelect, HelperTemplateSelect, IDLE_SLEEP_HELP, IdleSleepSelect,
   effortHelp, useModelEfforts,
 } from './settings-fields';
-import { AccessSelect, ControlSelect, DISPATCHER_HELP, DispatcherToggle } from '../agents/helpers/OrchestrationFields';
+import { AccessSelect, ControlSelect, DISPATCHER_HELP } from '../agents/helpers/OrchestrationFields';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 
@@ -323,11 +323,11 @@ function TemplateEditor({ initial, onDone }: { initial: TemplateDraft; onDone: (
           />
         </SettingsField>
         <SettingsField label="Connect to Dispatcher" help={DISPATCHER_HELP}>
-          <DispatcherToggle
+          <Toggle
             checked={orch.connectToDispatcher ?? orchestrate}
-            name="new agents"
             onChange={(on) => setOrch({ connectToDispatcher: on })}
-            testId="managed-template-dispatcher"
+            aria-label="Connect new agents to the Dispatcher"
+            data-testid="managed-template-dispatcher"
           />
         </SettingsField>
         <SettingsField label="Auto-sleep" htmlFor="managed-template-idle-sleep" help={IDLE_SLEEP_HELP}>

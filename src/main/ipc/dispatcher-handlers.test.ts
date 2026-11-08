@@ -30,9 +30,11 @@ import { restorePersistedBindings } from './mcp-binding-handlers';
 import { clearDispatcherChat } from '../services/dispatcher/dispatcher-clear-chat';
 import { installGroupChat } from '../services/dispatcher/dispatcher-news';
 import { registerDispatcherHandlers, _resetDispatcherHandlersForTesting } from './dispatcher-handlers';
+import { AGENT_CARDS_UNAVAILABLE, setAgentCardSource } from '../services/dispatcher/dispatcher-agent-card-source';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  setAgentCardSource(null);
   h.handlers.clear();
   _resetDispatcherHandlersForTesting();
   registerDispatcherHandlers();
@@ -78,5 +80,27 @@ describe('dispatcher handlers', () => {
     expect(restorePersistedBindings).toHaveBeenCalledTimes(1);
     h.listener!({ ...ON, enabled: false });
     expect(restorePersistedBindings).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads an agent\'s card: null with no card service, else what the service says (#3049)', async () => {
+    const get = h.handlers.get(IPC.DISPATCHER.GET_AGENT_CARD)!;
+    expect(await get({}, 'lead')).toBeNull();
+    const status = vi.fn(async () => ({ state: 'ready' as const, card: { owns: 'web' } }));
+    setAgentCardSource({ status, saveUserCard: vi.fn() });
+    expect(await get({}, 'lead')).toEqual({ state: 'ready', card: { owns: 'web' } });
+    expect(status).toHaveBeenCalledWith('lead');
+    await expect(Promise.resolve().then(() => get({}, 42))).rejects.toThrow();
+  });
+
+  it('saves the user\'s edit cleaned to one line per field, and tells every window (#3049)', async () => {
+    const save = h.handlers.get(IPC.DISPATCHER.SAVE_AGENT_CARD)!;
+    await expect(save({}, 'lead', { owns: 'x' })).rejects.toThrow(AGENT_CARDS_UNAVAILABLE);
+    const saveUserCard = vi.fn(async () => ({ state: 'ready' as const, card: { owns: 'web app' } }));
+    setAgentCardSource({ status: vi.fn(), saveUserCard });
+    const view = await save({}, 'lead', { owns: '  web\n app ', contactWhen: 'releases', extra: 'dropped' });
+    expect(view).toEqual({ state: 'ready', card: { owns: 'web app' } });
+    expect(saveUserCard).toHaveBeenCalledWith('lead', { owns: 'web app', contactWhen: 'releases' });
+    expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.DISPATCHER.AGENT_CARD_CHANGED, 'lead');
+    await expect(Promise.resolve().then(() => save({}, 'lead', 'text'))).rejects.toThrow();
   });
 });
