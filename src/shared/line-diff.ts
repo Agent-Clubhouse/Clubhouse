@@ -11,6 +11,24 @@ export interface DiffLine {
 /** Past this many line pairs, the diff shows their lines then yours rather than matching them up. */
 const MAX_CELLS = 2_000_000;
 
+/** The lines that differ, once the shared lines at either end are set aside. */
+function middleSizes(theirs: string, yours: string): { a: number; b: number } {
+  const a = theirs.split('\n');
+  const b = yours.split('\n');
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) start++;
+  let endA = a.length;
+  let endB = b.length;
+  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) { endA--; endB--; }
+  return { a: endA - start, b: endB - start };
+}
+
+/** Whether lineDiff gives up matching lines for these two texts, showing all of theirs then all of yours. */
+export function lineDiffTooLarge(theirs: string, yours: string): boolean {
+  const { a, b } = middleSizes(theirs, yours);
+  return a * b > MAX_CELLS;
+}
+
 /** A line diff from their version to yours: lines only in theirs, only in yours, and shared. */
 export function lineDiff(theirs: string, yours: string): DiffLine[] {
   const a = theirs.split('\n');

@@ -13,7 +13,7 @@ import * as path from 'path';
 import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
 import type { ManagedPlainChoice, ManagedPlainPreview } from '../../../shared/managed-agents-types';
 import type { OrchestratorProvider } from '../../orchestrators/types';
-import { lineDiff } from '../../../shared/line-diff';
+import { lineDiff, lineDiffTooLarge } from '../../../shared/line-diff';
 import { skillsFolderOf } from '../../../shared/skills-folder';
 import { appLog } from '../log-service';
 import { ManagedError, type ManagedAgentsService } from './service';
@@ -69,19 +69,26 @@ function shown(abs: string): string {
   return abs.startsWith(home + path.sep) ? `~${abs.slice(home.length)}`.replace(/\\/g, '/') : abs;
 }
 
+/** Line endings made plain, so a file saved with CRLF compares line by line with what Clubhouse wrote. */
+const lf = (text: string) => text.replace(/\r\n/g, '\n');
+
 /**
  * Runs of lines in `now` that none of `written` has: what was added since
  * Clubhouse wrote the file. Of the texts Clubhouse may have written (the
  * last delivery, the current setup), the one that leaves the fewest added
- * lines is taken. Runs of blank lines alone don't count.
+ * lines is taken. Runs of blank lines alone don't count. Line endings don't
+ * matter. Null when the files differ too much to match lines up (the line
+ * diff would call every line added), so nothing is guessed.
  */
-export function linesAddedSince(written: string[], now: string): string[][] {
+export function linesAddedSince(written: string[], now: string): string[][] | null {
   let best: string[][] | null = null;
   const count = (runs: string[][]) => runs.reduce((n, r) => n + r.length, 0);
-  for (const text of written) {
+  const current = lf(now);
+  for (const text of written.map(lf)) {
+    if (lineDiffTooLarge(text, current)) continue;
     const runs: string[][] = [];
     let run: string[] = [];
-    for (const line of lineDiff(text, now)) {
+    for (const line of lineDiff(text, current)) {
       if (line.kind === 'yours') { run.push(line.text); continue; }
       if (run.length > 0) { runs.push(run); run = []; }
     }
@@ -89,7 +96,7 @@ export function linesAddedSince(written: string[], now: string): string[][] {
     const kept = runs.map(trimBlank).filter((r) => r.length > 0);
     if (!best || count(kept) < count(best)) best = kept;
   }
-  return best ?? [];
+  return best;
 }
 
 function trimBlank(lines: string[]): string[] {
@@ -100,10 +107,11 @@ function trimBlank(lines: string[]): string[] {
   return lines.slice(a, b);
 }
 
-/** The earlier file with the added runs after it, each separated by a blank line. */
+/** The earlier file with the added runs after it, each separated by a blank line, in the earlier file's line endings. */
 export function withAddedLines(before: string, runs: string[][]): string {
   if (runs.length === 0) return before;
-  return `${before.replace(/\s+$/, '')}\n\n${runs.map((r) => r.join('\n')).join('\n\n')}\n`;
+  const eol = before.includes('\r\n') ? '\r\n' : '\n';
+  return `${before.replace(/\s+$/, '')}${eol}${eol}${runs.map((r) => r.join(eol)).join(eol + eol)}${eol}`;
 }
 
 type JsonObject = Record<string, unknown>;
@@ -152,14 +160,18 @@ async function readState(deps: PlainDeps, projectPath: string, agentId: string):
   const copyName = new RegExp(`^(${escape(base)}|${escape(firstStartName(base))})(\\.\\d+(-\\d+)?)?$`);
   const instrCopy = await newest(beforeManagedDir(agent.id), copyName);
   const instrBefore = instrCopy ? await readOr(instrCopy) : null;
-  const changedSince = instrNow !== null && !written.includes(instrNow);
+  const changedSince = instrNow !== null && !written.map(lf).includes(lf(instrNow));
   const added = instrNow !== null && changedSince ? linesAddedSince(written, instrNow) : [];
-  const instructionsResult = instrBefore !== null ? withAddedLines(instrBefore, added) : null;
+  const instructionsResult = instrBefore !== null && added !== null ? withAddedLines(instrBefore, added) : null;
+  const instructionsNote = instrCopy && added === null
+    ? `${instructionsFileRel(provider)} changed too much since Clubhouse wrote it to tell which lines were added, so the earlier file can't come back here without losing them. It is kept at ${shown(instrCopy)}.`
+    : undefined;
 
   // ── MCP file (JSON-format CLIs; Codex gets its servers as launch flags) ──
   let mcp: ManagedPlainPreview['mcp'] = null;
   let mcpResult: string | null = null;
   let mcpNowRaw: string | null = null;
+  let mcpCopyRaw: string | null = null;
   if (conv.settingsFormat !== 'toml' && conv.mcpConfigFile) {
     mcpNowRaw = await readOr(path.join(worktree, conv.mcpConfigFile));
     const now = mcpNowRaw === null ? { doc: {}, servers: {} } : parseMcp(mcpNowRaw);
@@ -169,6 +181,7 @@ async function readState(deps: PlainDeps, projectPath: string, agentId: string):
     const backupRel = mcpBackupPath(conv);
     const copy = await newest(path.dirname(path.join(worktree, backupRel)), new RegExp(`^${escape(path.basename(backupRel))}(\\.\\d+)?$`));
     const copyRaw = copy ? await readOr(copy) : null;
+    mcpCopyRaw = copyRaw;
     const earlier = copyRaw !== null ? parseMcp(copyRaw) : null;
     let note: string | undefined;
     let before: NonNullable<ManagedPlainPreview['mcp']>['before'] = null;
@@ -215,7 +228,8 @@ async function readState(deps: PlainDeps, projectPath: string, agentId: string):
     } catch { /* telemetry-exempt: removed as Clubhouse's own anyway */ }
   }
 
-  const token = createHash('sha256').update(JSON.stringify([instrNow, instrCopy, instrBefore, mcpNowRaw, mcp?.before?.copy ?? null])).digest('hex').slice(0, 32);
+  // Everything the switch would write, and what it was worked out from: a setup or file change since the preview refuses it.
+  const token = createHash('sha256').update(JSON.stringify([instrNow, instrCopy, instrBefore, instructionsResult, mcpNowRaw, mcp?.before?.copy ?? null, mcpCopyRaw, mcpResult])).digest('hex').slice(0, 32);
   return {
     agent, provider, worktree, instructionsResult, mcpResult, manifests,
     preview: {
@@ -223,8 +237,9 @@ async function readState(deps: PlainDeps, projectPath: string, agentId: string):
         file: instructionsFileRel(provider),
         exists: instrNow !== null,
         changedSince,
-        addedLines: added.reduce((n, r) => n + r.length, 0),
+        addedLines: (added ?? []).reduce((n, r) => n + r.length, 0),
         before: instrCopy && instructionsResult !== null ? { copy: shown(instrCopy), result: instructionsResult } : null,
+        ...(instructionsNote && { note: instructionsNote }),
       },
       mcp,
       skills: [...new Set(skills)].sort(),
@@ -241,11 +256,23 @@ export async function previewSwitchToPlain(deps: PlainDeps, projectPath: string,
 
 const reason = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
+/**
+ * Write through a temporary file and a rename. The MCP file can hold env
+ * values, so the temporary file never stays behind in the worktree, where it
+ * would be untracked and could be committed: it is removed if the write or the
+ * rename fails (on Windows a rename over an open file can).
+ */
 async function writeAtomically(file: string, content: string): Promise<void> {
   await fsp.mkdir(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp.${randomUUID().slice(0, 8)}`;
-  await fsp.writeFile(tmp, content, 'utf-8');
-  await fsp.rename(tmp, file);
+  try {
+    await fsp.writeFile(tmp, content, 'utf-8');
+    await fsp.rename(tmp, file);
+  } catch (err) {
+    // telemetry-exempt: rethrown to the caller, which reports it to the person
+    await fsp.rm(tmp, { force: true }).catch(() => { /* telemetry-exempt: the rethrown error says what failed */ });
+    throw err;
+  }
 }
 
 /**
@@ -257,7 +284,8 @@ async function writeAtomically(file: string, content: string): Promise<void> {
 export async function switchToPlain(deps: PlainDeps, projectPath: string, agentId: string, choice: ManagedPlainChoice): Promise<void> {
   const state = await readState(deps, projectPath, agentId);
   const { agent, provider, worktree, preview } = state;
-  if (choice.token !== undefined && choice.token !== preview.token) {
+  if (!choice.token) throw new ManagedError('invalid', `Switch to plain shows ${agent.name}'s files first. Open it again.`);
+  if (choice.token !== preview.token) {
     throw new ManagedError('stale', `${agent.name}'s files changed since you opened this. Look at them again before switching.`);
   }
   if (choice.restoreInstructions && !preview.instructions.before) throw new ManagedError('invalid', `Clubhouse kept no instructions file from before ${agent.name} was managed.`);

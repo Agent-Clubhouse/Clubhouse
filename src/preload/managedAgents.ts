@@ -35,7 +35,7 @@ const managed = {
   getSetup: (projectPath: string, agentId: string) => call<ManagedAgentSetup | null>(IPC.MANAGED.GET_SETUP, projectPath, agentId),
   saveSetup: (projectPath: string, agentId: string, setup: SetupInput) => call<ManagedAgentSetup>(IPC.MANAGED.SAVE_SETUP, projectPath, agentId, setup),
   /** Switch to plain (#2927). Refused when the files changed since the preview the token came from. */
-  unmanage: (projectPath: string, agentId: string, choice?: ManagedPlainChoice) => call<void>(IPC.MANAGED.UNMANAGE, projectPath, agentId, choice),
+  unmanage: (projectPath: string, agentId: string, choice: ManagedPlainChoice) => call<void>(IPC.MANAGED.UNMANAGE, projectPath, agentId, choice),
   /** What Switch to plain leaves in the agent's folder, and what can come back from before managed. Writes nothing. */
   previewUnmanage: (projectPath: string, agentId: string) => call<ManagedPlainPreview>(IPC.MANAGED.PREVIEW_UNMANAGE, projectPath, agentId),
   preview: (projectPath: string, agentId: string, setup?: SetupInput) => call<ManagedPreview>(IPC.MANAGED.PREVIEW, projectPath, agentId, setup),

@@ -6,9 +6,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { CLUBHOUSE_MCP_PART_ID } from '../../../shared/managed-agents-types';
 
-const h = vi.hoisted(() => ({ stateDir: '' }));
+const h = vi.hoisted(() => ({ stateDir: '', failMcpRename: false }));
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
+// A rename onto the MCP file can be refused (Windows, the file open elsewhere).
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  const rename = async (from: string, to: string) => {
+    if (h.failMcpRename && String(to).endsWith('.mcp.json')) throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+    return actual.rename(from, to);
+  };
+  return { ...actual, default: { ...actual, rename }, rename };
+});
 vi.mock('./state-store', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./state-store')>()),
   managedStateDir: () => h.stateDir,
@@ -72,6 +81,7 @@ beforeEach(async () => {
   fs.mkdirSync(wt, { recursive: true });
   _resetSettingsAuditForTesting(false);
   unmanaged = 0;
+  h.failMcpRename = false;
   service = createManagedAgentsService({
     catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
     state: createManagedStateStore(path.join(root, 'managed')),
@@ -121,7 +131,7 @@ describe('Switch to plain, not edited since the switch (#2927)', () => {
     await switchedToManaged();
     const managedText = read('CLAUDE.md');
     const managedMcp = read('.mcp.json');
-    await user(() => switchToPlain(deps, project, agent.id, {}));
+    await user(async () => switchToPlain(deps, project, agent.id, { token: (await previewSwitchToPlain(deps, project, agent.id)).token }));
     expect(read('CLAUDE.md')).toBe(managedText);
     expect(read('.mcp.json')).toBe(managedMcp);
     expect(agent.managed).toBeUndefined();
@@ -152,7 +162,7 @@ describe('Switch to plain, edited after the switch (#2927)', () => {
     await switchedToManaged();
     fs.appendFileSync(path.join(wt, 'CLAUDE.md'), '\nMy own line.\n');
     const edited = read('CLAUDE.md');
-    await user(() => switchToPlain(deps, project, agent.id, {}));
+    await user(async () => switchToPlain(deps, project, agent.id, { token: (await previewSwitchToPlain(deps, project, agent.id)).token }));
     expect(read('CLAUDE.md')).toBe(edited);
   });
 
@@ -190,6 +200,59 @@ describe('Switch to plain when a write fails (#2927)', () => {
   });
 });
 
+describe('Switch to plain, review fixes (#2927)', () => {
+  it('leaves no temporary MCP file behind when the rename is refused, since it can hold env values', async () => {
+    await switchedToManaged();
+    const mcp = JSON.parse(read('.mcp.json'));
+    mcp.mcpServers.mine = { command: 'my-server' };
+    fs.writeFileSync(path.join(wt, '.mcp.json'), JSON.stringify(mcp, null, 2));
+    const preview = await user(() => previewSwitchToPlain(deps, project, agent.id));
+    h.failMcpRename = true;
+    const err = await user(() => switchToPlain(deps, project, agent.id, { restoreMcp: true, token: preview.token })).catch((e: unknown) => e);
+    expect(err).toMatchObject({ code: 'failed' });
+    expect(fs.readdirSync(wt).filter((f) => f.startsWith('.mcp.json.tmp'))).toEqual([]);
+  });
+
+  it('refuses a switch without the token from a preview', async () => {
+    await switchedToManaged();
+    await expect(user(() => switchToPlain(deps, project, agent.id, {} as never))).rejects.toMatchObject({ code: 'invalid' });
+    expect(agent.managed).toBeDefined();
+  });
+
+  it('refuses when the setup changed after the preview, even with the files as they were', async () => {
+    await switchedToManaged();
+    const preview = await user(() => previewSwitchToPlain(deps, project, agent.id));
+    // Renamed meanwhile: the Identity line Clubhouse wrote no longer matches, so it would count as added.
+    agent.name = 'renamed-gazelle';
+    await expect(user(() => switchToPlain(deps, project, agent.id, { restoreInstructions: true, token: preview.token }))).rejects.toMatchObject({ code: 'stale' });
+    expect(agent.managed).toBeDefined();
+  });
+
+  it('matches lines whatever the line endings, and keeps the earlier file\'s', async () => {
+    await switchedToManaged();
+    // The file saved again with CRLF, plus one line.
+    fs.writeFileSync(path.join(wt, 'CLAUDE.md'), `${read('CLAUDE.md').replace(/\n/g, '\r\n')}\r\nMy own line.\r\n`);
+    const preview = await user(() => previewSwitchToPlain(deps, project, agent.id));
+    expect(preview.instructions.addedLines).toBe(1);
+    expect(preview.instructions.before?.result).toBe(`${BEFORE_INSTRUCTIONS.trimEnd()}\n\nMy own line.\n`);
+  });
+
+  it('won\'t bring the earlier file back when the files differ too much to tell what was added', async () => {
+    await switchedToManaged();
+    const lines = Array.from({ length: 1500 }, (_, i) => `line ${i}`);
+    fs.writeFileSync(path.join(wt, 'CLAUDE.md'), lines.join('\n'));
+    const managed = Array.from({ length: 1500 }, (_, i) => `other ${i}`).join('\n');
+    deps.deliveredInstructions = () => managed;
+    // Neither the current setup nor the delivered text lines up within the limit.
+    const big = await user(() => service.createPart({ name: 'Big', content: { kind: 'block', content: managed } }));
+    agent.managed = { ...agent.managed!, blocks: [big.id] };
+    const preview = await user(() => previewSwitchToPlain(deps, project, agent.id));
+    expect(preview.instructions.before).toBeNull();
+    expect(preview.instructions.note).toContain('changed too much since Clubhouse wrote it');
+    await expect(user(() => switchToPlain(deps, project, agent.id, { restoreInstructions: true, token: preview.token }))).rejects.toMatchObject({ code: 'invalid' });
+  });
+});
+
 describe('Switch to plain without copies (#2927)', () => {
   it('offers nothing to bring back when Clubhouse kept no earlier files', async () => {
     agent.managed = { version: 1, blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] };
@@ -198,7 +261,7 @@ describe('Switch to plain without copies (#2927)', () => {
     expect(preview.instructions.before).toBeNull();
     expect(preview.mcp?.before).toBeNull();
     expect(preview.mcp?.note).toBeUndefined();
-    await expect(user(() => switchToPlain(deps, project, agent.id, { restoreInstructions: true }))).rejects.toMatchObject({ code: 'invalid' });
+    await expect(user(() => switchToPlain(deps, project, agent.id, { restoreInstructions: true, token: preview.token }))).rejects.toMatchObject({ code: 'invalid' });
   });
 
   it('has no MCP file section for a CLI that gets its servers as launch flags', async () => {

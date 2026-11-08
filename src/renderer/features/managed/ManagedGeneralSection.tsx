@@ -327,6 +327,8 @@ function SwitchToPlainDialog({ projectPath, agentId, agentName, onClose }: {
                   )}
                 </span>
               </label>
+            ) : i.note ? (
+              <p className="text-xs text-ctp-warning" data-testid="managed-plain-instructions-note">{i.note}</p>
             ) : (
               <p className="text-xs text-ctp-overlay1">Clubhouse kept no instructions file from before managed.</p>
             )}

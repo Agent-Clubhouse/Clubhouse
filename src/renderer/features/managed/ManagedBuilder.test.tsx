@@ -472,6 +472,17 @@ describe('ManagedGeneralSection', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
+  it('Switch to plain says why the earlier instructions can\'t come back when the diff is too large (#2927)', async () => {
+    vi.spyOn(m(), 'previewUnmanage').mockResolvedValue({ ok: true, value: plainPreview({
+      instructions: { file: 'CLAUDE.md', exists: true, changedSince: true, addedLines: 0, before: null, note: 'CLAUDE.md changed too much since Clubhouse wrote it to tell which lines were added, so the earlier file can\'t come back here without losing them. It is kept at ~/x/CLAUDE.md.' },
+    }) } as never);
+    render(<ManagedGeneralSection projectPath="/p" agentId="ada" agentName="ada" setup={managedSetup} clubhouseFeatures isRunning={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to plain…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Switch ada to plain' });
+    expect((await within(dialog).findByTestId('managed-plain-instructions-note')).textContent).toContain('changed too much');
+    expect(within(dialog).queryByText('Clubhouse kept no instructions file from before managed.')).toBeNull();
+  });
+
   it('Switch to plain says when there is nothing to bring back (#2927)', async () => {
     vi.spyOn(m(), 'previewUnmanage').mockResolvedValue({ ok: true, value: plainPreview({
       instructions: { file: 'CLAUDE.md', exists: true, changedSince: false, addedLines: 0, before: null },

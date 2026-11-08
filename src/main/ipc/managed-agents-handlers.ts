@@ -39,7 +39,7 @@ function plainChoiceShape(value: unknown): void {
   for (const key of ['restoreInstructions', 'restoreMcp']) {
     if (v[key] !== undefined && typeof v[key] !== 'boolean') throw new Error(`Invalid ${key}`);
   }
-  if (v.token !== undefined && (typeof v.token !== 'string' || v.token.length > 128)) throw new Error('Invalid token');
+  if (typeof v.token !== 'string' || !v.token || v.token.length > 128) throw new Error('Invalid token');
 }
 
 function setupShape(value: unknown): void {
@@ -120,8 +120,8 @@ export function registerManagedAgentsHandlers(): void {
   // Switch to plain (#2927): the counterpart of Switch to managed, previewed first.
   ipcMain.handle(IPC.MANAGED.PREVIEW_UNMANAGE, withValidatedArgs([stringArg(), idArg()], (_e, projectPath, agentId) => result(() => previewPlain(projectPath, agentId))));
   ipcMain.handle(IPC.MANAGED.UNMANAGE, withValidatedArgs(
-    [stringArg(), idArg(), objectArg<ManagedPlainChoice>({ optional: true, validate: plainChoiceShape })],
-    (_e, projectPath, agentId, choice) => result(() => switchPlain(projectPath, agentId, choice ?? {})),
+    [stringArg(), idArg(), objectArg<ManagedPlainChoice>({ validate: plainChoiceShape })],
+    (_e, projectPath, agentId, choice) => result(() => switchPlain(projectPath, agentId, choice)),
   ));
   ipcMain.handle(IPC.MANAGED.PREVIEW, withValidatedArgs([stringArg(), idArg(), objectArg<{ blocks: string[]; skills: string[]; mcps: string[] }>({ optional: true, validate: setupShape })], (_e, projectPath, agentId, setup) => result(async () => {
     const agent = await agentConfig.getDurableConfig(projectPath, agentId);

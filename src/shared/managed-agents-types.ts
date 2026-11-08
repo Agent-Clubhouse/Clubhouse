@@ -347,6 +347,8 @@ export interface ManagedPlainPreview {
     addedLines: number;
     /** The copy kept at the switch to managed, and exactly what would be written from it. */
     before: { copy: string; result: string } | null;
+    /** Why the earlier file can't come back, when Clubhouse kept one. */
+    note?: string;
   };
   /** Null for a CLI with no MCP file (Codex gets its servers as launch flags). */
   mcp: {
@@ -371,8 +373,8 @@ export interface ManagedPlainPreview {
 export interface ManagedPlainChoice {
   restoreInstructions?: boolean;
   restoreMcp?: boolean;
-  /** From the preview the person saw. */
-  token?: string;
+  /** From the preview the person saw. Required: a switch without one is refused. */
+  token: string;
 }
 
 export type ManagedErrorCode =
