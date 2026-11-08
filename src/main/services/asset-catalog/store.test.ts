@@ -257,6 +257,21 @@ describe('saving unassigned assets', () => {
       expect((await installBuiltinAsset(store, { ...bridge, expectedRevision: 1 })).headRevision).toBe(2);
     });
 
+    it('takes the running build\'s name, and makes one a newer build removed live again (D100)', async () => {
+      await installBuiltinAsset(store, bridge);
+      expect((await installBuiltinAsset(store, { ...bridge, name: 'Bridge renamed', expectedRevision: 1 })).name).toBe('Bridge renamed');
+      // A removal that kept its revisions (something still refers to them) leaves a tombstone.
+      const file = path.join(dir, 'catalog.json');
+      const index = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      index.assets[bridge.assetId].deletedAt = '2026-11-07T00:00:00.000Z';
+      fs.writeFileSync(file, JSON.stringify(index));
+      expect((await store.read()).assets[bridge.assetId].deletedAt).toBeDefined();
+      const again = await installBuiltinAsset(store, { ...bridge, expectedRevision: 2 });
+      expect(again).toMatchObject({ name: 'Bridge', headRevision: 3 });
+      expect(again.deletedAt).toBeUndefined();
+      expect((await store.read()).assets[bridge.assetId].deletedAt).toBeUndefined();
+    });
+
     it('no surface a person or agent comes in on reaches it', async () => {
       for (const surface of ['ui', 'mobile', 'persona', 'mcp', 'cli', 'dispatcher'] as const) {
         await withSettingsSurface(surface, undefined, async () => {

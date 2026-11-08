@@ -30,6 +30,7 @@ import { isDispatcherPath } from './dispatcher/dispatcher-paths';
 import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedMigration, type ManagedMigrationFailure } from '../../shared/managed-agents-types';
 import { noteManagedSettingsChanged } from './managed-agents/changed-notice';
 import { forgetDelivery } from './managed-agents/delivery-records';
+import { removeAgentChatMedia } from './agent-runtime/chat-media-retention';
 import { legacyClubhouseModeEnabled } from './managed-agents/legacy-migration';
 
 /**
@@ -2660,6 +2661,8 @@ async function deleteDurableGuardedInner(projectPath: string, agentId: string): 
   helpersEnded([agentId, ...released]);
   forgetDelivery(agentId);
   await releaseForeignHelpersOf(projectPath, agentId);
+  // Its chat can't be opened any more, so nothing can show its images (#2828).
+  await removeAgentChatMedia(agentId);
 }
 
 /** Remove an agent's worktree, its branch and any leftover directory. */
@@ -3022,6 +3025,8 @@ async function deleteUnregisterGuardedInner(projectPath: string, agentId: string
   helpersEnded([agentId, ...released]);
   forgetDelivery(agentId);
   await releaseForeignHelpersOf(projectPath, agentId);
+  // Only when it was in this project: media is keyed by agent id alone (#2828).
+  if (filtered.length < agents.length) await removeAgentChatMedia(agentId);
   return { ok: true, message: 'Removed from agents list (files left on disk)' };
 }
 
