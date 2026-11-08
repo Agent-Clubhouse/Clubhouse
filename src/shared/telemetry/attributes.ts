@@ -15,6 +15,7 @@ import { IPC } from '../ipc-channels';
 
 /** Bump on breaking attribute changes; exported as `clubhouse.telemetry.schema`. */
 import { SUPPORTED_PLUGIN_API_VERSIONS } from '../marketplace-types';
+import type { BuiltinThemeId } from '../types';
 import { ACTION_EVENT_KINDS, ACTION_STEP_KINDS, MISSED_RUN_RULES } from '../actions/types';
 import {
   DECISION_QUOTA_QUALITIES,
@@ -259,7 +260,19 @@ export const SETTINGS_KEYS = [
 /** Built-in theme ids (shared/types.ts BuiltinThemeId); plugin themes report `other`. */
 export const BUILTIN_THEME_IDS = [
   'catppuccin-mocha', 'catppuccin-latte', 'solarized-dark', 'terminal', 'nord', 'dracula', 'tokyo-night', 'gruvbox-dark', 'cyberpunk',
+  // The Workshop pack themes (#2753).
+  'maple', 'harvest', 'pumpkin-spice', 'amber-forest', 'twilight-ember', 'frost',
+  'evergreen', 'northern-lights', 'snowfall', 'polar-night', 'cherry-blossom', 'spring-meadow',
+  'wisteria', 'daffodil', 'moonlit-garden', 'sunset-beach', 'ocean-breeze', 'tropical',
+  'golden-hour', 'midnight-swim', 'coral-reef', 'tide-pool', 'pacific', 'deep-sea',
+  'abyssal', 'redmond', 'mountain-view', 'cupertino', 'ai-lab', 'seattle',
+  'neon-cyberpunk', 'synthwave', 'neon-tokyo', 'electric', 'vaporwave',
 ] as const;
+
+// Every built-in id, and nothing else: a new built-in theme must be added here too.
+type SameIds<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
+const builtinThemeIdsMatch: SameIds<(typeof BUILTIN_THEME_IDS)[number], BuiltinThemeId> = true;
+void builtinThemeIdsMatch;
 
 /** Supported plugin API versions, kept in sync with the manifest validator. */
 export const PLUGIN_API_VERSION_VALUES: readonly string[] = SUPPORTED_PLUGIN_API_VERSIONS.map(String);
