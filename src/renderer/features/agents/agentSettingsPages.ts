@@ -18,6 +18,7 @@ export type AgentSettingsPage =
   | 'permissions'
   | 'helpers'
   | 'quick'
+  | 'actions'
   | 'preview';
 
 export const AGENT_SETTINGS_PAGES: ReadonlyArray<{ page: AgentSettingsPage; label: string }> = [
@@ -29,6 +30,7 @@ export const AGENT_SETTINGS_PAGES: ReadonlyArray<{ page: AgentSettingsPage; labe
   { page: 'permissions', label: 'Permissions' },
   { page: 'helpers', label: 'Helpers' },
   { page: 'quick', label: 'Quick agents' },
+  { page: 'actions', label: 'Actions' },
   { page: 'preview', label: 'Preview' },
 ];
 
@@ -194,7 +196,8 @@ export function hiddenAgentSettingsPages(
   // Clubhouse-managed agents (#2893): the builder takes over the file pages for
   // a managed agent; an unmanaged agent keeps one basic page plus orchestration.
   // A managed agent's Settings page holds what Helpers had (#2895).
-  if (remote) return [...hidden, 'settings', 'preview'];
+  // Actions run on this machine only.
+  if (remote) return [...hidden, 'settings', 'preview', 'actions'];
   if (managed) return ['helpers', 'permissions'];
   return [...hidden, 'instructions', 'skills', 'mcp', 'settings', 'permissions', 'preview'];
 }

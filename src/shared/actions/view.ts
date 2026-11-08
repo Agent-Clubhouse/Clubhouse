@@ -14,4 +14,6 @@ export interface ActionNotice {
   actionId: string;
   name: string;
   message: string;
+  /** False for a one-time action that already deleted itself: there is no card to open. */
+  exists: boolean;
 }

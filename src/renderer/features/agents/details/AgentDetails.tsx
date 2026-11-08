@@ -29,6 +29,7 @@ import { DRIVER_LABELS, limitLabel, limitName } from '../chat/ChatHeader';
 import { SubagentList, subagentSummary } from '../chat/AgentMapPanel';
 import { buildAgentMap, formatCost, formatDuration, formatTokens } from '../chat/view-model';
 import { ChangesCard, type ChangesScope } from './ChangesCard';
+import { DispatcherActionsCard } from '../../actions/AgentActionsPage';
 import { CardNote, CardRow, DetailsCard, UsageBar } from './DetailsCard';
 import { SettingsCard } from './SettingsCard';
 import { McpCard } from './McpCard';
@@ -40,7 +41,7 @@ import { describeSleep, formatAgo, formatShortDuration, formatUsd } from '../sta
 import { ConnectionsCard, type Connection } from '../helpers/ConnectionsCard';
 import { OrchestrationCardPair, useOrchestrationCards } from '../helpers/OrchestrationCards';
 
-export type CardId = 'changes' | 'subagents' | 'canvases' | 'orchestrate' | 'helpers' | 'connections' | 'context' | 'mcp' | 'provider-skills' | 'session';
+export type CardId = 'changes' | 'subagents' | 'canvases' | 'orchestrate' | 'helpers' | 'connections' | 'context' | 'mcp' | 'provider-skills' | 'session' | 'actions';
 
 /** A worktree inside the project, as a path relative to it; null when it lives elsewhere. */
 export function relativeFolder(worktree: string | undefined, projectPath: string | undefined): string | null {
@@ -344,6 +345,8 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
       </DetailsCard>
 
       <OrchestrationCardPair agent={agent} model={orchestration} isOpen={open} onToggle={toggleCard} />
+
+      {isDispatcherAgent(agent) && <DispatcherActionsCard open={open('actions')} onToggle={() => toggleCard('actions')} />}
 
       {showConnections && (
         <ConnectionsCard
