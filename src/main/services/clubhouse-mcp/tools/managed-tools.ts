@@ -1,6 +1,7 @@
 /**
  * Builder tools (#2900), in the `dispatcher` tool group: every builder
  * action as a Clubhouse MCP tool, so the
+ * (list_agent_templates and list_agent_parts are also an orchestrator's, #3001)
  * Dispatcher can manage agent parts, templates and managed agents for the
  * person. They call the same service the UI does. Shared edits, deleting a
  * part in use and template pushes are preview-then-commit: the first call
@@ -152,6 +153,13 @@ function asDispatcher<T>(callerId: string, fn: () => Promise<T>): Promise<T> {
 
 type Handler = (callerId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
 
+/**
+ * Builder reads an orchestrator also gets (#3001): the templates and parts start_helper can
+ * name when the person lets orchestrators choose helper templates. Every other builder tool
+ * is the Dispatcher's.
+ */
+const ORCHESTRATOR_READS = new Set(['list_agent_templates', 'list_agent_parts']);
+
 function tool(name: string, grant: ToolGrant, description: string, properties: Record<string, unknown>, required: string[], handler: Handler): void {
   registerGlobalTool(name, { description, inputSchema: { type: 'object', properties, required } }, async (callerId, args) => {
     try {
@@ -164,7 +172,7 @@ function tool(name: string, grant: ToolGrant, description: string, properties: R
       appLog('core:mcp', 'warn', `${name} failed`, { meta: { callerId, error: err instanceof Error ? err.message : String(err) } });
       return fail(err instanceof Error ? err.message : String(err));
     }
-  }, { group: 'dispatcher', grant });
+  }, { group: ORCHESTRATOR_READS.has(name) ? ['dispatcher', 'orchestration'] : 'dispatcher', grant });
 }
 
 const S = { type: 'string' } as const;
