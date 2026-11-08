@@ -9,6 +9,7 @@ import { tokyoNight } from './tokyo-night';
 import { gruvboxDark } from './gruvbox-dark';
 import { cyberpunk } from './cyberpunk';
 import { completeThemePalette } from '../../shared/theme-colors';
+import { aurora, canyon, daybreak, mist } from './gradient-themes';
 import { FALL_THEMES } from './packs/fall';
 import { WINTER_THEMES } from './packs/winter';
 import { SPRING_THEMES } from './packs/spring';
@@ -24,6 +25,7 @@ export const PACK_THEMES: readonly ThemeDefinition[] = [
 ];
 
 type OriginalThemeId = 'catppuccin-mocha' | 'catppuccin-latte' | 'solarized-dark' | 'terminal' | 'nord' | 'dracula' | 'tokyo-night' | 'gruvbox-dark' | 'cyberpunk';
+type GradientThemeId = 'aurora' | 'canyon' | 'daybreak' | 'mist';
 
 /** Built-in themes — static, never mutated. */
 export const BUILTIN_THEMES: Record<BuiltinThemeId, ThemeDefinition> = {
@@ -36,7 +38,12 @@ export const BUILTIN_THEMES: Record<BuiltinThemeId, ThemeDefinition> = {
   'tokyo-night': tokyoNight,
   'gruvbox-dark': gruvboxDark,
   'cyberpunk': cyberpunk,
-  ...(Object.fromEntries(PACK_THEMES.map((t) => [t.id, t])) as Record<Exclude<BuiltinThemeId, OriginalThemeId>, ThemeDefinition>),
+  // After the originals, so the picker shows them next (#2916).
+  'aurora': aurora,
+  'canyon': canyon,
+  'daybreak': daybreak,
+  'mist': mist,
+  ...(Object.fromEntries(PACK_THEMES.map((t) => [t.id, t])) as Record<Exclude<BuiltinThemeId, OriginalThemeId | GradientThemeId>, ThemeDefinition>),
 };
 
 /** Dynamic theme registry — includes builtins plus plugin-contributed themes. */

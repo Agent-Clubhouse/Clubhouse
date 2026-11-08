@@ -22,10 +22,11 @@ Customize how Clubhouse looks: themes, terminal colors, and display preferences.
 
 ## Theme collections
 
-Seven more collections come built in, five themes each. Themes are dark unless marked light.
+More collections come built in. Themes are dark unless marked light.
 
 | Collection | Themes |
 |------------|--------|
+| **Gradients** | Aurora, Canyon, Daybreak (light), Mist (light). Designed around their background gradients |
 | **Fall** | Maple (light), Harvest (light), Pumpkin Spice (light), Amber Forest (light), Twilight Ember |
 | **Winter** | Frost (light), Evergreen (light), Northern Lights, Snowfall (light), Polar Night |
 | **Spring** | Cherry Blossom (light), Spring Meadow (light), Wisteria (light), Daffodil (light), Moonlit Garden |
