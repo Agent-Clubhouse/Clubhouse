@@ -24,6 +24,7 @@ import { appLog } from '../log-service';
 import * as notificationService from '../notification-service';
 import * as projectStore from '../project-store';
 import { startQuickAgent } from '../quick-agent-service';
+import { getDefaultAccess } from '../free-agent-settings';
 import { createActionsStorage, createRunHistory } from './actions-store';
 import { ActionsEngine, type EngineFacts, type EngineObservation } from './engine';
 import { matchProjectRef } from './project-ref';
@@ -150,6 +151,7 @@ function createEngine(): ActionsEngine {
     // A person set this step up to put the agent to sleep: no mid-turn refusal after the wait.
     sleep: async (req) => parseToolResult(await sleepAgent({ ...req, force: true })),
     startQuick: (req) => startQuickAgent(req),
+    defaultAccess: () => getDefaultAccess(),
     agentAccess: (id) => knownAgent(id)?.access ?? 'ask',
     notify: (title, body) => {
       const settings = notificationService.getSettings();

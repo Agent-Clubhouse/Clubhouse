@@ -650,6 +650,28 @@ describe('agent-system', () => {
       expect(mockProvider.getDefaultPermissions).toHaveBeenCalledWith('quick');
     });
 
+    it('pre-allows only reading tools for a quick agent below Auto-accept edits (#3007)', async () => {
+      const toolsFor = async (extra: Record<string, unknown>) => {
+        await spawnAgent({ agentId: 'agent-q', projectPath: '/project', cwd: '/project', kind: 'quick', ...extra });
+        const opts = mockProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { allowedTools?: string[] };
+        untrackAgent('agent-q');
+        return opts.allowedTools;
+      };
+      expect(await toolsFor({})).toEqual(['Read']);
+      expect(await toolsFor({ access: 'auto_edit' })).toEqual(['Read', 'Write']);
+      expect(await toolsFor({ access: 'full_access' })).toEqual(['Read', 'Write']);
+      // Tools passed explicitly stay as given.
+      expect(await toolsFor({ allowedTools: ['Bash(make:*)'] })).toEqual(['Bash(make:*)']);
+      // Copilot runs a terminal quick agent one-shot and can't ask: it keeps its defaults.
+      const provider = mockProvider as { id: string };
+      provider.id = 'copilot-cli';
+      try {
+        expect(await toolsFor({})).toEqual(['Read', 'Write']);
+      } finally {
+        provider.id = 'claude-code';
+      }
+    });
+
     describe('a saved effort (#2671)', () => {
       afterEach(() => {
         mockGetDurableConfig.mockReset();
@@ -694,6 +716,11 @@ describe('agent-system', () => {
     it.each([['durable', true], ['quick', false]] as const)('asks the provider for an interactive session only for %s agents', async (kind, interactive) => {
       await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind, mission: 'Go' });
       expect(mockProvider.buildSpawnCommand).toHaveBeenCalledWith(expect.objectContaining({ mission: 'Go', interactive }));
+    });
+
+    it('asks for an interactive session for a quick agent someone follows (#3002)', async () => {
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'quick', mission: 'Go', interactive: true });
+      expect(mockProvider.buildSpawnCommand).toHaveBeenCalledWith(expect.objectContaining({ mission: 'Go', interactive: true }));
     });
 
     it('throws with descriptive error when pre-flight check fails', async () => {
@@ -2648,7 +2675,8 @@ describe('agent-system', () => {
 
       expect(mockProvider.buildHeadlessCommand).toHaveBeenCalledWith(
         expect.objectContaining({
-          allowedTools: ['Read', 'Write'],
+          // The defaults follow the level (#3007): Ask first pre-allows only reading tools.
+          allowedTools: ['Read'],
         }),
       );
     });

@@ -45,7 +45,7 @@ import {
   type HelperLaunch,
 } from '../../shared/orchestration-policy';
 import {
-  ACCESS_LEVELS, accessForLegacyToggle, accessFromLegacy, accessLabel, isAccessLevel, legacyLaunchFor, savedAccess, startableAccess, type AccessLevel,
+  ACCESS_LEVELS, accessForLegacyToggle, accessFromLegacy, accessLabel, isAccessLevel, legacyLaunchFor, quickToolsForAccess, savedAccess, startableAccess, type AccessLevel,
 } from '../../shared/agent-access';
 
 /** The lower of two levels. */
@@ -445,7 +445,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       params = { ...params, systemPrompt: [instructions, params.systemPrompt].filter(Boolean).join('\n\n') };
     }
 
-    const allowedTools = params.allowedTools
+    let allowedTools = params.allowedTools
       || (params.kind === 'quick' ? provider.getDefaultPermissions('quick') : undefined);
 
     // Resolve launch wrapper config (if any)
@@ -533,6 +533,15 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // The final launch access, the ceiling for this agent's helpers (#2228).
     // Every runtime below starts with exactly these values.
     agentRegistry.setLaunchCap(params.agentId, { freeAgentMode: launch.freeAgentMode, permissionMode, access });
+    // A quick agent's default tools follow its level (#3007): at Plan or Ask first nothing that
+    // edits or runs commands is pre-allowed, so the level picked is the level it gets. Copilot
+    // runs a terminal quick agent one-shot (-p), where it can't ask: its defaults stay, as
+    // they're the only way it gets anything done.
+    const defaultQuickTools = params.kind === 'quick' && !params.allowedTools ? allowedTools : undefined;
+    const filterQuickTools = (level: AccessLevel) => {
+      if (defaultQuickTools && provider.id !== 'copilot-cli') allowedTools = quickToolsForAccess(defaultQuickTools, level);
+    };
+    filterQuickTools(access);
     // The orchestration tools are listed from this gate (#2228); set it before the MCP connects.
     if (params.kind === 'durable') await syncOrchestrationGate(params.projectPath, params.agentId);
     // Likewise the Dispatcher's tools (#2536), only for the Dispatcher.
@@ -788,6 +797,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           meta: { agentId: params.agentId, provider: provider.id, saved: params.access, level: startable },
         });
         params = { ...params, access: startable, freeAgentMode: lowered.freeAgentMode, permissionMode: lowered.permissionMode };
+        // The tools follow the level it really starts at.
+        filterQuickTools(startable);
         agentRegistry.reportLaunchAccess(params.agentId, { ...lowered, access: startable });
       }
     }
@@ -904,7 +915,8 @@ async function spawnPtyAgent(
       sessionId: params.sessionId,
       agentFile: params.agentFile,
       agentSource: params.agentSource ? expandHome(params.agentSource) : undefined,
-      interactive: params.kind === 'durable',
+      // A quick agent someone follows (a phone start, an action below Auto) runs as a session it can ask in, not one-shot.
+      interactive: params.kind === 'durable' || !!params.interactive,
     })),
   ]));
 
