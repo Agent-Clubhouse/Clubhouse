@@ -411,6 +411,11 @@ describe('chat reading rules (#2664)', () => {
     expect(group.messages).toHaveLength(1);
   });
 
+  it('keeps each agent\'s interjection its own row in the Dispatcher\'s group chat (#3043)', () => {
+    expect(types(stream((f) => { routed(f, 'webapp-lead'); routed(f, 'api-lead'); }))).toEqual(['group']);
+    expect(types(stream((f) => { routed(f, 'webapp-lead'); routed(f, 'api-lead'); }, { groupChat: true }))).toEqual(['user_message', 'user_message']);
+  });
+
   it('leaves a single tool or message as its normal row', () => {
     expect(types(stream((f) => { edit(f, 'a'); f.say('t', 'm', 'Hi'); }))).toEqual(['tool_call', 'agent_message']);
     expect(types(stream((f) => { routed(f, 'helper'); f.say('t', 'm', 'Hi'); }))).toEqual(['user_message', 'agent_message']);
