@@ -682,9 +682,10 @@ describe('telemetry attribute registry', () => {
     }
   });
 
-  it('sends plugin API versions as strings, never truncated', () => {
-    expect(ATTR.pluginApiVersion('0.8').value).toBe('0.8');
+  it('sends plugin API versions as strings, never truncated, and removed versions as other', () => {
     expect(ATTR.pluginApiVersion('0.9').value).toBe('0.9');
+    expect(ATTR.pluginApiVersion('0.7').value).toBe('0.7');
+    expect(ATTR.pluginApiVersion('0.6').value).toBe('other');
     expect(ATTR.pluginApiVersion('7.5').value).toBe('other');
   });
 });

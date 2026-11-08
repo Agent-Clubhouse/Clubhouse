@@ -22,7 +22,7 @@ const v05Manifest: PluginManifest = {
   id: 'ext-plugin',
   name: 'Ext Plugin',
   version: '1.0.0',
-  engine: { api: 0.5 },
+  engine: { api: 0.9 },
   scope: 'project',
   contributes: { help: {} },
   permissions: ['files', 'files.external', 'storage', 'notifications'],
@@ -36,7 +36,7 @@ const appScopedCrossProjectManifest: PluginManifest = {
   id: 'app-cross',
   name: 'App Cross Plugin',
   version: '1.0.0',
-  engine: { api: 0.5 },
+  engine: { api: 0.9 },
   scope: 'app',
   permissions: ['agent-config', 'agent-config.cross-project', 'workspace', 'workspace.cross-project'],
 };
@@ -45,7 +45,7 @@ const projectScopedCrossProjectManifest: PluginManifest = {
   id: 'proj-cross',
   name: 'Proj Cross Plugin',
   version: '1.0.0',
-  engine: { api: 0.5 },
+  engine: { api: 0.9 },
   scope: 'project',
   permissions: ['agent-config', 'agent-config.cross-project'],
 };

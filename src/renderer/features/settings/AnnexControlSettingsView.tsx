@@ -3,7 +3,7 @@ import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useAnnexStore } from '../../stores/annexStore';
 import { Toggle } from '../../components/Toggle';
 import { PairedSatelliteList } from './PairedSatelliteList';
-import { PairingWizard } from './PairingWizard';
+import { PairingWizard, type RepairTarget } from './PairingWizard';
 import { SettingsPage, SettingsSection, SettingsField } from './SettingsLayout';
 import { Button } from '../../components/Button';
 
@@ -16,6 +16,7 @@ export function AnnexControlSettingsView() {
   const saveAnnexSettings = useAnnexStore((s) => s.saveSettings);
   const loadAnnexSettings = useAnnexStore((s) => s.loadSettings);
   const [showPairing, setShowPairing] = useState(false);
+  const [repairTarget, setRepairTarget] = useState<RepairTarget | undefined>(undefined);
   const [confirmPurge, setConfirmPurge] = useState(false);
 
   useEffect(() => {
@@ -46,7 +47,7 @@ export function AnnexControlSettingsView() {
               Scan
             </Button>
             <Button
-              onClick={() => setShowPairing((v) => !v)}
+              onClick={() => { setRepairTarget(undefined); setShowPairing((v) => !v); }}
               kind={showPairing ? 'ghost' : 'primary'}
             >
               {showPairing ? 'Cancel' : 'Add satellite'}
@@ -59,11 +60,22 @@ export function AnnexControlSettingsView() {
             No paired satellites. Click Add satellite to pair with another Clubhouse instance.
           </p>
         ) : (
-          <PairedSatelliteList satellites={satellites} />
+          <PairedSatelliteList
+            satellites={satellites}
+            onPairAgain={(sat) => {
+              setRepairTarget({ fingerprint: sat.fingerprint, alias: sat.alias });
+              setShowPairing(true);
+            }}
+          />
         )}
 
         {showPairing && (
-          <PairingWizard onClose={() => setShowPairing(false)} />
+          <PairingWizard
+            // A new target starts the wizard over.
+            key={repairTarget?.fingerprint ?? 'add'}
+            repairTarget={repairTarget}
+            onClose={() => { setShowPairing(false); setRepairTarget(undefined); }}
+          />
         )}
       </SettingsSection>
 

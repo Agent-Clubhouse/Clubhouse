@@ -54,11 +54,15 @@ const LOCAL_IDENTITY = {
 vi.mock('./annex-identity', () => ({
   getOrCreateIdentity: vi.fn(),
   getIdentity: vi.fn(),
+  computeFingerprint: vi.fn(),
 }));
 
 vi.mock('./annex-tls', () => ({
-  createTlsClientOptions: vi.fn().mockReturnValue({}),
-  extractPeerFingerprint: vi.fn().mockImplementation((socket: any) => socket.getPeerCertificate().subject?.CN ?? null),
+  PIN_MISMATCH_CODE: 'ERR_ANNEX_PIN_MISMATCH',
+  createPinnedTlsClientOptions: vi.fn().mockReturnValue({ pinned: true }),
+  probePeerCertificate: vi.fn(),
+  signCertBinding: vi.fn().mockReturnValue('cert-binding'),
+  sameCertificateFingerprint: (a?: string, b?: string) => !!a && a.replace(/:/g, '').toLowerCase() === b?.replace(/:/g, '').toLowerCase(),
 }));
 
 vi.mock('./annex-peers', () => ({
@@ -67,6 +71,9 @@ vi.mock('./annex-peers', () => ({
   updateLastSeen: vi.fn(),
   removePeer: vi.fn(),
   removeAllPeers: vi.fn(),
+  listPeers: vi.fn().mockReturnValue([]),
+  // Peers in these tests are pinned unless a test says otherwise.
+  peerNeedsPairing: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock('./annex-settings', () => ({
@@ -151,7 +158,10 @@ function resetAllMocks() {
     color: 'indigo',
     autoReconnect: true,
   });
-  vi.mocked(annexTls.extractPeerFingerprint).mockImplementation((socket: any) => socket.getPeerCertificate().subject?.CN ?? null);
+  vi.mocked(annexPeers.peerNeedsPairing).mockReturnValue(false);
+  vi.mocked(annexPeers.listPeers).mockReturnValue([]);
+  vi.mocked(annexTls.createPinnedTlsClientOptions).mockReturnValue({ pinned: true } as any);
+  vi.mocked(annexTls.signCertBinding).mockReturnValue('cert-binding');
   WebSocketMock.mockImplementation(function (this: any, _url?: string, _opts?: Record<string, any>) {
     this.readyState = WebSocketMock.OPEN;
     this.socket = {
@@ -206,34 +216,6 @@ function mockHttpGetIdentity(identity: Record<string, any>) {
   });
 }
 
-/** Simulate httpPost returning a pairing response */
-function mockHttpPostPairSuccess(token: string) {
-  vi.mocked(http.request).mockImplementation((_opts: any, cb: any) => {
-    const res = {
-      statusCode: 200,
-      on: vi.fn().mockImplementation((event: string, handler: any) => {
-        if (event === 'data') handler(JSON.stringify({ token }));
-        if (event === 'end') handler();
-      }),
-    };
-    cb(res);
-    return { on: vi.fn(), setTimeout: vi.fn(), write: vi.fn(), end: vi.fn() } as any;
-  });
-}
-
-function mockHttpPostPairFailure(status: number, body: Record<string, any>) {
-  vi.mocked(http.request).mockImplementation((_opts: any, cb: any) => {
-    const res = {
-      statusCode: status,
-      on: vi.fn().mockImplementation((event: string, handler: any) => {
-        if (event === 'data') handler(JSON.stringify(body));
-        if (event === 'end') handler();
-      }),
-    };
-    cb(res);
-    return { on: vi.fn(), setTimeout: vi.fn(), write: vi.fn(), end: vi.fn() } as any;
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -299,7 +281,6 @@ describe('annex-client', () => {
         publicKey: 'remote-pub-key',
       });
 
-
       annexClient.startClient();
       expect(bonjourFindCallback).not.toBeNull();
 
@@ -351,7 +332,6 @@ describe('annex-client', () => {
         color: 'blue',
         publicKey: 'remote-pub-key',
       });
-
 
       annexClient.startClient();
       await bonjourFindCallback!(makeService());
@@ -445,7 +425,6 @@ describe('annex-client', () => {
         publicKey: 'remote-pub-key',
       });
 
-
       annexClient.startClient();
       await bonjourFindCallback!(makeService());
       expect(annexClient.getDiscoveredServices()).toHaveLength(1);
@@ -459,127 +438,6 @@ describe('annex-client', () => {
   });
 
   // ---- pairWithService ----
-
-  describe('pairWithService', () => {
-    beforeEach(async () => {
-      // Set up a discovered service first
-      mockHttpGetIdentity({
-        fingerprint: 'XX:YY:ZZ:11',
-        alias: 'Remote Mac',
-        icon: 'laptop',
-        color: 'blue',
-        publicKey: 'remote-pub-key',
-      });
-
-
-      annexClient.startClient();
-      await bonjourFindCallback!(makeService());
-      expect(annexClient.getDiscoveredServices()).toHaveLength(1);
-    });
-
-    it('returns error when service is not found', async () => {
-      const result = await annexClient.pairWithService('nonexistent', '123456');
-      expect(result).toEqual({
-        success: false,
-        error: expect.stringContaining('not found'),
-      });
-    });
-
-    it('POSTs to /pair with PIN and local identity, adds peer on success', async () => {
-      mockHttpPostPairSuccess('bearer-token-123');
-
-      const result = await annexClient.pairWithService('XX:YY:ZZ:11', '986136');
-
-      expect(result).toEqual({ success: true });
-
-      // Should have called addPeer
-      expect(annexPeers.addPeer).toHaveBeenCalledWith(
-        expect.objectContaining({
-          fingerprint: 'XX:YY:ZZ:11',
-          alias: 'Remote Mac',
-          publicKey: 'remote-pub-key',
-        }),
-      );
-
-      // Should remove from discovered
-      expect(annexClient.getDiscoveredServices()).toHaveLength(0);
-
-      // Should add to satellites
-      const sats = annexClient.getSatellites();
-      expect(sats).toHaveLength(1);
-      expect(sats[0]).toMatchObject({
-        fingerprint: 'XX:YY:ZZ:11',
-        alias: 'Remote Mac',
-      });
-    });
-
-    it('decodes multi-byte UTF-8 characters split across response chunks', async () => {
-      const bytes = Buffer.from(JSON.stringify({ error: 'PIN ungültig — €' }));
-      const splitAt = bytes.indexOf(Buffer.from('€')) + 1;
-      vi.mocked(http.request).mockImplementation((_opts: any, cb: any) => {
-        const handlers: Record<string, (...args: any[]) => void> = {};
-        const res = { statusCode: 403, on: vi.fn((event: string, h: any) => { handlers[event] = h; }) };
-        cb(res);
-        handlers.data(bytes.subarray(0, splitAt));
-        handlers.data(bytes.subarray(splitAt));
-        handlers.end();
-        return { on: vi.fn(), setTimeout: vi.fn(), write: vi.fn(), end: vi.fn() } as any;
-      });
-
-      const result = await annexClient.pairWithService('XX:YY:ZZ:11', '000000');
-
-      expect(result).toEqual({ success: false, error: 'PIN ungültig — €' });
-    });
-
-    it('returns error on HTTP failure', async () => {
-      mockHttpPostPairFailure(403, { error: 'Invalid PIN' });
-
-      const result = await annexClient.pairWithService('XX:YY:ZZ:11', '000000');
-
-      expect(result).toEqual({
-        success: false,
-        error: 'Invalid PIN',
-      });
-
-      // Should NOT add peer
-      expect(annexPeers.addPeer).not.toHaveBeenCalled();
-
-      // Service should still be in discovered
-      expect(annexClient.getDiscoveredServices()).toHaveLength(1);
-    });
-
-    it('returns error on network failure', async () => {
-      vi.mocked(http.request).mockImplementation((_opts: any, _cb: any) => {
-        const req = {
-          on: vi.fn().mockImplementation((event: string, handler: any) => {
-            if (event === 'error') setTimeout(() => handler(new Error('ECONNREFUSED')), 0);
-          }),
-          setTimeout: vi.fn(),
-          write: vi.fn(),
-          end: vi.fn(),
-        };
-        return req as any;
-      });
-
-      const result = await annexClient.pairWithService('XX:YY:ZZ:11', '986136');
-
-      expect(result).toEqual({
-        success: false,
-        error: 'ECONNREFUSED',
-      });
-    });
-
-    it('broadcasts both DISCOVERED_CHANGED and SATELLITES_CHANGED on success', async () => {
-      mockHttpPostPairSuccess('bearer-token-123');
-      vi.mocked(broadcastToAllWindows).mockClear();
-
-      await annexClient.pairWithService('XX:YY:ZZ:11', '986136');
-
-      const channels = vi.mocked(broadcastToAllWindows).mock.calls.map((c) => c[0]);
-      expect(channels).toContain(IPC.ANNEX_CLIENT.DISCOVERED_CHANGED);
-      expect(channels).toContain(IPC.ANNEX_CLIENT.SATELLITES_CHANGED);
-    });
-  });
 
   // ---- getDiscoveredServices / getSatellites ----
 
@@ -639,7 +497,7 @@ describe('annex-client', () => {
   // ---- forgetAllSatellites ----
 
   describe('forgetAllSatellites', () => {
-    it('disconnects all, removes all peers, and clears all state', async () => {
+    it('disconnects all, removes the satellite pairings, and clears all state', async () => {
       mockHttpGetIdentity({
         fingerprint: 'PP:QQ:RR:SS',
         alias: 'Paired Mac',
@@ -662,11 +520,18 @@ describe('annex-client', () => {
       await bonjourFindCallback!(makeService());
       expect(annexClient.getSatellites()).toHaveLength(1);
 
+      vi.mocked(annexPeers.listPeers).mockReturnValue([
+        { fingerprint: 'PP:QQ:RR:SS', role: 'satellite' },
+        { fingerprint: 'PHONE:01', role: 'controller' },
+        { fingerprint: 'OLD:01' },
+      ] as any);
       annexClient.forgetAllSatellites();
 
       expect(annexClient.getSatellites()).toHaveLength(0);
       expect(annexClient.getDiscoveredServices()).toHaveLength(0);
-      expect(annexPeers.removeAllPeers).toHaveBeenCalled();
+      // Devices that control this machine are left alone; they're managed in Annex settings.
+      expect(vi.mocked(annexPeers.removePeer).mock.calls.map(([fp]) => fp)).toEqual(['PP:QQ:RR:SS', 'OLD:01']);
+      expect(annexPeers.removeAllPeers).not.toHaveBeenCalled();
     });
   });
 
@@ -742,7 +607,7 @@ describe('annex-client', () => {
     });
   });
 
-  // ---- mTLS reconnection (no bearer token required) ----
+  // ---- mTLS reconnection ----
 
   describe('snapshot order', () => {
     const FINGERPRINT = 'SNAP:ORDER';
@@ -1341,96 +1206,6 @@ describe('annex-client', () => {
       expect(wsUrl).toContain('wss://');
     });
 
-    it('rejects sockets that do not present a peer certificate before the session is considered connected', async () => {
-      const { WebSocket: WsMock } = await import('ws');
-
-      mockHttpGetIdentity({
-        fingerprint: 'PP:QQ:RR:SS',
-        alias: 'Paired Mac',
-        icon: 'server',
-        color: 'green',
-        publicKey: 'paired-pub-key',
-      });
-
-      vi.mocked(annexPeers.getPeer).mockReturnValue({
-        fingerprint: 'PP:QQ:RR:SS',
-        alias: 'Paired Mac',
-        icon: 'server',
-        color: 'green',
-        publicKey: 'paired-pub-key',
-        pairedAt: '2024-01-01',
-        lastSeen: '2024-01-01',
-      });
-
-      vi.mocked(annexTls.extractPeerFingerprint).mockReturnValue(null);
-      vi.mocked(WsMock).mockImplementation(function (this: any) {
-        this.readyState = 1;
-        this.socket = makeMockSocket('MM:NN:OO:PP');
-        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
-          if (event === 'open') setTimeout(cb, 0);
-          return this;
-        });
-        this.ping = vi.fn();
-        this.close = vi.fn();
-        this.send = vi.fn();
-        this.terminate = vi.fn();
-        this.removeListener = vi.fn();
-        return this;
-      });
-
-      annexClient.startClient();
-      await bonjourFindCallback!(makeService());
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      expect(annexClient.getSatellites()[0].state).toBe('disconnected');
-      expect(annexClient.getSatellites()[0].lastError).toBe('Peer certificate unavailable');
-    });
-
-    it('rejects TLS peer certificate mismatches before the session is considered connected', async () => {
-      const { WebSocket: WsMock } = await import('ws');
-
-      mockHttpGetIdentity({
-        fingerprint: 'PP:QQ:RR:SS',
-        alias: 'Paired Mac',
-        icon: 'server',
-        color: 'green',
-        publicKey: 'paired-pub-key',
-      });
-
-      vi.mocked(annexPeers.getPeer).mockReturnValue({
-        fingerprint: 'PP:QQ:RR:SS',
-        alias: 'Paired Mac',
-        icon: 'server',
-        color: 'green',
-        publicKey: 'paired-pub-key',
-        pairedAt: '2024-01-01',
-        lastSeen: '2024-01-01',
-      });
-
-      vi.mocked(annexTls.extractPeerFingerprint).mockReturnValue('MM:NN:OO:PP');
-      vi.mocked(WsMock).mockImplementation(function (this: any) {
-        this.readyState = 1;
-        this.socket = makeMockSocket('MM:NN:OO:PP');
-        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
-          if (event === 'open') setTimeout(cb, 0);
-          return this;
-        });
-        this.ping = vi.fn();
-        this.close = vi.fn();
-        this.send = vi.fn();
-        this.terminate = vi.fn();
-        this.removeListener = vi.fn();
-        return this;
-      });
-
-      annexClient.startClient();
-      await bonjourFindCallback!(makeService());
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      expect(annexClient.getSatellites()[0].state).toBe('disconnected');
-      expect(annexClient.getSatellites()[0].lastError).toBe('Peer certificate mismatch');
-    });
-
     it('retry works without bearer token', async () => {
       const { WebSocket: WsMock } = await import('ws');
 
@@ -1461,238 +1236,6 @@ describe('annex-client', () => {
       vi.mocked(WsMock).mockClear();
       annexClient.retry('PP:QQ:RR:SS');
       expect(WsMock).toHaveBeenCalled();
-    });
-  });
-
-  // ---- bearer token via Authorization header (SEC-CRIT-07) ----
-
-  describe('bearer token WebSocket auth', () => {
-    it('defers bearer token transmission until after the peer certificate is verified', async () => {
-      const { WebSocket: WsMock } = await import('ws');
-
-      mockHttpGetIdentity({
-        fingerprint: 'XX:YY:ZZ:11',
-        alias: 'Remote Mac',
-        icon: 'server',
-        color: 'green',
-        publicKey: 'remote-pub-key',
-      });
-
-      annexClient.startClient();
-      await bonjourFindCallback!(makeService());
-
-      mockHttpPostPairSuccess('my-bearer-token');
-      vi.mocked(WsMock).mockClear();
-
-      await annexClient.pairWithService('XX:YY:ZZ:11', '986136');
-
-      expect(WsMock).toHaveBeenCalled();
-      const wsUrl = vi.mocked(WsMock).mock.calls[0][0] as string;
-      const wsOptions = vi.mocked(WsMock).mock.calls[0][1] as Record<string, unknown>;
-
-      // The initial certificate-bound socket must not carry the bearer token yet.
-      expect(wsUrl).not.toContain('token=');
-      expect(wsUrl).toContain('wss://');
-      expect((wsOptions?.headers as Record<string, string>)?.Authorization).toBeUndefined();
-    });
-
-    it('omits Authorization header when no bearer token (mTLS path)', async () => {
-      const { WebSocket: WsMock } = await import('ws');
-
-      mockHttpGetIdentity({
-        fingerprint: 'PP:QQ:RR:SS',
-        alias: 'Paired Mac',
-        icon: 'server',
-        color: 'green',
-        publicKey: 'paired-pub-key',
-      });
-
-      vi.mocked(annexPeers.getPeer).mockReturnValue({
-        fingerprint: 'PP:QQ:RR:SS',
-        alias: 'Paired Mac',
-        icon: 'server',
-        color: 'green',
-        publicKey: 'paired-pub-key',
-        pairedAt: '2024-01-01',
-        lastSeen: '2024-01-01',
-      });
-
-      vi.mocked(WsMock).mockClear();
-      annexClient.startClient();
-      await bonjourFindCallback!(makeService());
-
-      expect(WsMock).toHaveBeenCalled();
-      const wsOptions = vi.mocked(WsMock).mock.calls[0][1] as Record<string, unknown>;
-      const authHeader = (wsOptions?.headers as Record<string, string> | undefined)?.Authorization;
-      expect(authHeader).toBeUndefined();
-    });
-  });
-
-  // ---- bearer-token-before-verification leak fix (PR #1734 merge-review finding) ----
-
-  describe('bearer token pre-verification gate', () => {
-    const FP = 'TLS:LEAK:FIX';
-
-    it('retries with bearer token after an auth error, deferring req.end() via finishRequest', async () => {
-      const { WebSocket: WsMock } = await import('ws');
-
-      mockHttpGetIdentity({
-        fingerprint: FP,
-        alias: 'Gate Sat',
-        icon: 'server',
-        color: 'green',
-        publicKey: 'gate-pub-key',
-      });
-
-      vi.mocked(annexPeers.getPeer).mockReturnValue({
-        fingerprint: FP,
-        alias: 'Gate Sat',
-        icon: 'server',
-        color: 'green',
-        publicKey: 'gate-pub-key',
-        pairedAt: '2024-01-01',
-        lastSeen: '2024-01-01',
-      });
-
-      const wsCtorArgsList: any[] = [];
-      let errorCb: ((err: Error) => void) | null = null;
-
-      vi.mocked(WsMock).mockImplementation(function (this: any, _url: any, opts: any) {
-        wsCtorArgsList.push(opts);
-        this.readyState = 1;
-        this.socket = makeMockSocket(FP);
-        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
-          if (event === 'error') errorCb = cb;
-          // Intentionally do NOT auto-fire 'open' — we want this attempt to fail with an auth error.
-          return this;
-        });
-        this.send = vi.fn();
-        this.ping = vi.fn();
-        this.close = vi.fn();
-        this.terminate = vi.fn();
-        this.removeListener = vi.fn();
-        return this;
-      } as any);
-
-      annexClient.startClient();
-      await bonjourFindCallback!(makeService());
-
-      // Give the satellite a bearer token from a prior pairing, as if reconnecting.
-      annexClient._setSatelliteTokenStateForTesting(FP, 'super-secret-token', Date.now());
-
-      // First (mTLS-only) attempt fails with an auth-shaped error, triggering the
-      // bearer-token retry path.
-      expect(errorCb).not.toBeNull();
-      errorCb!(new Error('401 Unauthorized'));
-
-      // A second WebSocket must have been opened, carrying the bearer token —
-      // but only via finishRequest, which gates the actual header transmission.
-      expect(wsCtorArgsList.length).toBe(2);
-      const retryOpts = wsCtorArgsList[1];
-      expect(retryOpts?.headers?.Authorization).toBe('Bearer super-secret-token');
-      expect(typeof retryOpts?.finishRequest).toBe('function');
-
-      // Simulate the underlying http.ClientRequest for that retry connection.
-      const req = {
-        end: vi.fn(),
-        destroy: vi.fn(),
-        on: vi.fn(),
-      };
-      let socketCb: ((socket: any) => void) | null = null;
-      req.on.mockImplementation((event: string, cb: any) => {
-        if (event === 'socket') socketCb = cb;
-      });
-
-      retryOpts.finishRequest(req);
-      expect(socketCb).not.toBeNull();
-
-      // Peer certificate does not match this satellite's pinned fingerprint (e.g. an
-      // on-path attacker completing the handshake with a different certificate) —
-      // the token must never be flushed to the wire.
-      const mismatchedSocket = { encrypted: true, pending: false, getPeerCertificate: () => ({ subject: { CN: 'NOT:THE:RIGHT:FP' } }) };
-      socketCb!(mismatchedSocket);
-      expect(req.end).not.toHaveBeenCalled();
-      expect(req.destroy).toHaveBeenCalledWith(expect.any(Error));
-    });
-
-    it('flushes the bearer-token request once the peer certificate is verified on that socket', async () => {
-      const { WebSocket: WsMock } = await import('ws');
-
-      mockHttpGetIdentity({
-        fingerprint: FP,
-        alias: 'Gate Sat',
-        icon: 'server',
-        color: 'green',
-        publicKey: 'gate-pub-key',
-      });
-
-      vi.mocked(annexPeers.getPeer).mockReturnValue({
-        fingerprint: FP,
-        alias: 'Gate Sat',
-        icon: 'server',
-        color: 'green',
-        publicKey: 'gate-pub-key',
-        pairedAt: '2024-01-01',
-        lastSeen: '2024-01-01',
-      });
-
-      const wsCtorArgsList: any[] = [];
-      let errorCb: ((err: Error) => void) | null = null;
-
-      vi.mocked(WsMock).mockImplementation(function (this: any, _url: any, opts: any) {
-        wsCtorArgsList.push(opts);
-        this.readyState = 1;
-        this.socket = makeMockSocket(FP);
-        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
-          if (event === 'error') errorCb = cb;
-          return this;
-        });
-        this.send = vi.fn();
-        this.ping = vi.fn();
-        this.close = vi.fn();
-        this.terminate = vi.fn();
-        this.removeListener = vi.fn();
-        return this;
-      } as any);
-
-      annexClient.startClient();
-      await bonjourFindCallback!(makeService());
-      annexClient._setSatelliteTokenStateForTesting(FP, 'super-secret-token', Date.now());
-
-      expect(errorCb).not.toBeNull();
-      errorCb!(new Error('403 Forbidden'));
-
-      const retryOpts = wsCtorArgsList[1];
-      const req = { end: vi.fn(), destroy: vi.fn(), on: vi.fn() };
-      let socketCb: ((socket: any) => void) | null = null;
-      req.on.mockImplementation((event: string, cb: any) => {
-        if (event === 'socket') socketCb = cb;
-      });
-
-      retryOpts.finishRequest(req);
-
-      // Socket hasn't completed its TLS handshake yet — finishRequest must wait for
-      // 'secureConnect' rather than flushing the request immediately.
-      const pendingSocket: any = {
-        encrypted: false,
-        pending: true,
-        getPeerCertificate: () => ({ subject: { CN: FP } }),
-        once: vi.fn(),
-      };
-      let secureConnectCb: (() => void) | null = null;
-      pendingSocket.once.mockImplementation((event: string, cb: any) => {
-        if (event === 'secureConnect') secureConnectCb = cb;
-      });
-
-      socketCb!(pendingSocket);
-      expect(req.end).not.toHaveBeenCalled();
-      expect(secureConnectCb).not.toBeNull();
-
-      // Handshake completes and the certificate matches the pinned fingerprint —
-      // only now is it safe to send the bearer token.
-      secureConnectCb!();
-      expect(req.end).toHaveBeenCalledTimes(1);
-      expect(req.destroy).not.toHaveBeenCalled();
     });
   });
 
@@ -1792,45 +1335,6 @@ describe('annex-client', () => {
       expect(WsMock).toHaveBeenCalled();
     });
 
-    it('pairWithService stores peer with role "satellite"', async () => {
-      mockHttpGetIdentity({
-        fingerprint: 'NEW:PEER',
-        alias: 'New Satellite',
-        icon: 'server',
-        color: 'green',
-        publicKey: 'new-pub-key',
-      });
-
-      // We need to first discover the service
-      annexClient.startClient();
-      await bonjourFindCallback!(makeService());
-
-      // Now pair with the discovered service
-      const discoveredAfter = annexClient.getDiscoveredServices();
-      if (discoveredAfter.length > 0) {
-        // Mock HTTP POST for pairing
-        const http = await import('http');
-        vi.spyOn(http, 'request').mockImplementation(((_opts: any, cb: any) => {
-          const res = {
-            statusCode: 200,
-            on: (event: string, handler: any) => {
-              if (event === 'data') handler(JSON.stringify({ token: 'test-token' }));
-              if (event === 'end') handler();
-            },
-          };
-          cb(res);
-          return { on: vi.fn(), setTimeout: vi.fn(), write: vi.fn(), end: vi.fn() };
-        }) as any);
-
-        await annexClient.pairWithService(discoveredAfter[0].fingerprint, '123456');
-
-        expect(annexPeers.addPeer).toHaveBeenCalledWith(
-          expect.objectContaining({
-            role: 'satellite',
-          }),
-        );
-      }
-    });
   });
 
   // -------------------------------------------------------------------------
@@ -2658,171 +2162,6 @@ describe('annex-client', () => {
   });
 
   // -------------------------------------------------------------------------
-  // LB-AN-004: Bearer token expiry — expired or missing issuedAt clears token
-  // -------------------------------------------------------------------------
-
-  describe('LB-AN-004: bearer token cleared when expired or issuedAt missing', () => {
-    const FINGERPRINT = 'AN004:BB:CC';
-
-    it('does not send Authorization header on reconnect when issuedAt is null (token loaded from disk)', async () => {
-      // Regression test for the actual LB-AN-004 bug: `null && ...` short-circuited to
-      // false in the old expiry check, so disk-loaded tokens with no issuedAt were trusted
-      // indefinitely. The fix adds `!sat.bearerTokenIssuedAt` so null issuedAt → clear token.
-      const { WebSocket: WsMock } = await import('ws');
-
-      const FP = 'AN004:NULL:ISSUED';
-      mockHttpGetIdentity({
-        fingerprint: FP,
-        alias: 'Null Issued Sat',
-        icon: 'server',
-        color: 'green',
-        publicKey: 'null-issued-pub-key',
-      });
-
-      vi.mocked(annexPeers.getPeer).mockReturnValue({
-        fingerprint: FP,
-        alias: 'Null Issued Sat',
-        icon: 'server',
-        color: 'green',
-        publicKey: 'null-issued-pub-key',
-        pairedAt: '2024-01-01',
-        lastSeen: '2024-01-01',
-      });
-
-      let openCb: (() => void) | null = null;
-      let closeCb: (() => void) | null = null;
-      const wsCtorArgsList: any[] = [];
-
-      vi.mocked(WsMock).mockImplementation(function (this: any, _url: any, opts: any) {
-        wsCtorArgsList.push(opts);
-        this.readyState = 1;
-        this.socket = makeMockSocket(FP);
-        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
-          if (event === 'open') openCb = cb;
-          if (event === 'close') closeCb = cb;
-          return this;
-        });
-        this.send = vi.fn();
-        this.ping = vi.fn();
-        this.close = vi.fn();
-        this.terminate = vi.fn();
-        this.removeListener = vi.fn();
-        return this;
-      } as any);
-
-      vi.useFakeTimers();
-
-      annexClient.startClient();
-      await bonjourFindCallback!(makeService());
-      await vi.advanceTimersByTimeAsync(0);
-
-      // Connect with a bearer token (issuedAt is set to now by connect())
-      annexClient.connect(FP, 'disk-loaded-token');
-
-      // Simulate a disk-loaded token state: token present but issuedAt is null
-      annexClient._setSatelliteTokenStateForTesting(FP, 'disk-loaded-token', null);
-
-      // Fire open to transition to connected
-      expect(openCb).not.toBeNull();
-      openCb!();
-      expect(annexClient.getSatellites().find(s => s.id === FP)?.state).toBe('connected');
-
-      // Fire close to trigger reconnect (connectToSatellite re-runs the expiry check)
-      expect(closeCb).not.toBeNull();
-      closeCb!();
-
-      // Advance past reconnect delay
-      await vi.advanceTimersByTimeAsync(2000);
-
-      vi.useRealTimers();
-
-      // Second WebSocket connection must NOT carry Authorization header —
-      // the null-issuedAt token should have been cleared before reconnecting.
-      expect(wsCtorArgsList.length).toBeGreaterThanOrEqual(2);
-      const reconnectOpts = wsCtorArgsList[wsCtorArgsList.length - 1];
-      expect(reconnectOpts?.headers?.Authorization).toBeUndefined();
-    });
-
-    it('does not send Authorization header on reconnect when token is past the 22h TTL', async () => {
-      const { WebSocket: WsMock } = await import('ws');
-
-      mockHttpGetIdentity({
-        fingerprint: FINGERPRINT,
-        alias: 'Token Sat',
-        icon: 'server',
-        color: 'blue',
-        publicKey: 'token-pub-key',
-      });
-
-      vi.mocked(annexPeers.getPeer).mockReturnValue({
-        fingerprint: FINGERPRINT,
-        alias: 'Token Sat',
-        icon: 'server',
-        color: 'blue',
-        publicKey: 'token-pub-key',
-        pairedAt: '2024-01-01',
-        lastSeen: '2024-01-01',
-      });
-
-      let openCb: (() => void) | null = null;
-      let closeCb: (() => void) | null = null;
-      const wsCtorArgsList: any[] = [];
-
-      vi.mocked(WsMock).mockImplementation(function (this: any, _url: any, opts: any) {
-        wsCtorArgsList.push(opts);
-        this.readyState = 1;
-        this.socket = makeMockSocket(FINGERPRINT);
-        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
-          if (event === 'open') openCb = cb;
-          if (event === 'close') closeCb = cb;
-          return this;
-        });
-        this.send = vi.fn();
-        this.ping = vi.fn();
-        this.close = vi.fn();
-        this.terminate = vi.fn();
-        this.removeListener = vi.fn();
-        return this;
-      } as any);
-
-      vi.useFakeTimers();
-
-      // Set system time to 23 hours ago when connecting so bearerTokenIssuedAt is old
-      const TWENTY_THREE_HOURS_AGO = Date.now() - 23 * 60 * 60 * 1000;
-      vi.setSystemTime(TWENTY_THREE_HOURS_AGO);
-
-      annexClient.startClient();
-      await bonjourFindCallback!(makeService());
-      await vi.advanceTimersByTimeAsync(0);
-
-      // Connect with bearer token — issuedAt is set to 23h ago
-      annexClient.connect(FINGERPRINT, 'old-token');
-
-      // Restore system time to now
-      vi.setSystemTime(Date.now() + 23 * 60 * 60 * 1000);
-
-      // Fire open to transition to connected
-      expect(openCb).not.toBeNull();
-      openCb!();
-      expect(annexClient.getSatellites().find(s => s.id === FINGERPRINT)?.state).toBe('connected');
-
-      // Fire close to trigger reconnect
-      expect(closeCb).not.toBeNull();
-      closeCb!();
-
-      // Advance past reconnect delay (up to 1500ms for first attempt with jitter)
-      await vi.advanceTimersByTimeAsync(2000);
-
-      vi.useRealTimers();
-
-      // Second WebSocket connection should have been made without Authorization header
-      expect(wsCtorArgsList.length).toBeGreaterThanOrEqual(2);
-      const secondConnectOpts = wsCtorArgsList[wsCtorArgsList.length - 1];
-      expect(secondConnectOpts?.headers?.Authorization).toBeUndefined();
-    });
-  });
-
-  // -------------------------------------------------------------------------
   // LB-AN-005: Stale snapshot sequence guard
   // -------------------------------------------------------------------------
 
@@ -2936,4 +2275,241 @@ describe('annex-client', () => {
       expect(vi.mocked(bcast).mock.calls.length).toBe(broadcastCountAfterNew);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Pinned satellite connections and pairing over TLS
+  // -------------------------------------------------------------------------
+
+  describe('pinned satellite connections', () => {
+    const FP = 'aa:01:aa:01';
+    const peer = { fingerprint: FP, alias: 'Pinned Mac', icon: 'server', color: 'green', publicKey: 'sat-pk', pairedAt: '2026-01-01',
+      lastSeen: '2026-01-01', role: 'satellite' as const, tlsCertificateFingerprint: 'AB:CD', tlsCertificatePem: 'SATELLITE-PEM' };
+    let sockets: Array<{ handlers: Record<string, (...args: any[]) => void>; terminate: ReturnType<typeof vi.fn> }>;
+
+    beforeEach(() => {
+      sockets = [];
+      WebSocketMock.mockImplementation(function (this: any) {
+        const handlers: Record<string, (...args: any[]) => void> = {};
+        Object.assign(this, { handlers, readyState: WebSocketMock.OPEN, send: vi.fn(), ping: vi.fn(), close: vi.fn(), terminate: vi.fn(),
+          removeListener: vi.fn(), on: vi.fn((event: string, cb: any) => { handlers[event] = cb; return this; }) });
+        sockets.push(this);
+        return this;
+      });
+      vi.mocked(annexPeers.getPeer).mockImplementation((fp: string) => (fp === FP ? { ...peer } : undefined) as any);
+      mockHttpGetIdentity({ fingerprint: FP, alias: 'Pinned Mac', icon: 'server', color: 'green', publicKey: 'sat-pk' });
+    });
+
+    async function discover(address = '192.168.1.50') {
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService({ addresses: [address] }));
+    }
+
+    function refusal(status: number, body: object) {
+      const res = Object.assign(new EventEmitter(), { statusCode: status });
+      sockets.at(-1)!.handlers['unexpected-response']({ destroy: vi.fn() }, res);
+      res.emit('data', Buffer.from(JSON.stringify(body)));
+      res.emit('end');
+    }
+
+    it('opens the WebSocket with options pinned to the stored certificate, and no token', async () => {
+      await discover();
+      expect(annexTls.createPinnedTlsClientOptions).toHaveBeenCalledWith(LOCAL_IDENTITY, { certPem: 'SATELLITE-PEM', fingerprint: 'AB:CD' });
+      const [url, options] = WebSocketMock.mock.calls.at(-1)!;
+      expect(url).toBe('wss://192.168.1.50:9000/ws?client=desktop');
+      expect(options).toMatchObject({ pinned: true });
+      expect(options).not.toHaveProperty('headers');
+    });
+
+    it('never dials a pairing from before pinning, and shows it needs pairing again', async () => {
+      vi.mocked(annexPeers.peerNeedsPairing).mockReturnValue(true);
+      await discover();
+      expect(WebSocketMock).not.toHaveBeenCalled();
+      expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', needsPairing: true, lastError: expect.stringMatching(/older version/) });
+    });
+
+    it.each([
+      ['needs_pairing', /older version/],
+      ['peer_not_paired', /no longer paired/],
+    ])('stops for good when the satellite answers 401 %s', async (error, message) => {
+      await discover();
+      vi.useFakeTimers();
+      try {
+        refusal(401, { error, message: 'from the satellite' });
+        await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.needsPairing).toBe(true));
+        expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', lastError: expect.stringMatching(message) });
+        vi.advanceTimersByTime(120_000);
+        expect(WebSocketMock).toHaveBeenCalledTimes(1);
+      } finally { vi.useRealTimers(); }
+    });
+
+    it('retries after any other refusal', async () => {
+      await discover();
+      vi.useFakeTimers();
+      try {
+        refusal(503, { error: 'busy' });
+        await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.lastError).toContain('503'));
+        expect(annexClient.getSatellite(FP)?.needsPairing).toBeUndefined();
+        vi.advanceTimersByTime(120_000);
+        expect(WebSocketMock.mock.calls.length).toBeGreaterThan(1);
+      } finally { vi.useRealTimers(); }
+    });
+
+    it('stops reconnecting when the satellite closes the socket because the pairing was removed', async () => {
+      await discover();
+      const socket = sockets[0];
+      socket.handlers.open();
+      vi.useFakeTimers();
+      try {
+        socket.handlers.close(4401, Buffer.from('peer_not_paired'));
+        expect(annexClient.getSatellite(FP)).toMatchObject({ needsPairing: true, lastError: expect.stringMatching(/no longer paired/) });
+        vi.advanceTimersByTime(120_000);
+        expect(WebSocketMock).toHaveBeenCalledTimes(1);
+      } finally { vi.useRealTimers(); }
+    });
+
+    it('treats an expired satellite certificate as needing pairing again', async () => {
+      await discover();
+      sockets[0].handlers.error(Object.assign(new Error('certificate has expired'), { code: 'CERT_HAS_EXPIRED' }));
+      expect(annexClient.getSatellite(FP)).toMatchObject({ needsPairing: true, lastError: expect.stringMatching(/expired/) });
+    });
+
+    it('reports another certificate at the address as a mismatch, and keeps trying', async () => {
+      await discover();
+      sockets[0].handlers.error(Object.assign(new Error('Peer certificate does not match the pinned certificate'), { code: 'ERR_ANNEX_PIN_MISMATCH' }));
+      expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', lastError: 'Peer certificate mismatch' });
+      expect(annexClient.getSatellite(FP)?.needsPairing).toBeUndefined();
+    });
+
+    it('never moves a connected satellite to an address discovery announces', async () => {
+      await discover('192.168.1.50');
+      sockets[0].handlers.open();
+      expect(annexClient.getSatellite(FP)?.state).toBe('connected');
+      await bonjourFindCallback!(makeService({ addresses: ['10.9.9.9'] }));
+      expect(annexClient.getSatellite(FP)?.host).toBe('192.168.1.50');
+      expect(WebSocketMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('tries an announced address while disconnected, through the same pin', async () => {
+      await discover('192.168.1.50');
+      sockets[0].handlers.error(new Error('ECONNREFUSED'));
+      await bonjourFindCallback!(makeService({ addresses: ['10.9.9.9'] }));
+      expect(WebSocketMock.mock.calls.at(-1)![0]).toBe('wss://10.9.9.9:9000/ws?client=desktop');
+      expect(WebSocketMock.mock.calls.at(-1)![1]).toMatchObject({ pinned: true });
+    });
+
+    it('builds every outbound connection from pinned options (source check)', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const source = fs.readFileSync(path.join(__dirname, 'annex-client.ts'), 'utf8');
+      expect(source).not.toMatch(/rejectUnauthorized:\s*false/);
+      expect(source).not.toMatch(/createTlsClientOptions/);
+      const isComment = (index: number) => /^\s*(\*|\/\/)/.test(source.slice(source.lastIndexOf('\n', index) + 1, index));
+      const calls = [...source.matchAll(/(https\.(get|request)|new WebSocket)\(/g)].filter((m) => !isComment(m.index!));
+      expect(calls.length).toBeGreaterThanOrEqual(9);
+      for (const call of calls) {
+        expect(source.slice(Math.max(0, call.index! - 700), call.index! + 200)).toContain('...tlsOptions');
+      }
+      const assignments = [...source.matchAll(/const tlsOptions = ([^;]+);/g)].map((m) => m[1]);
+      expect(assignments.length).toBeGreaterThan(0);
+      for (const value of assignments) expect(value).toMatch(/^(pinnedTlsOptionsFor|annexTls\.createPinnedTlsClientOptions)\(/);
+      expect(source).toMatch(/function pinnedJsonPost\(host: string, port: number, urlPath: string, tlsOptions: tls\.ConnectionOptions/);
+    });
+  });
+
+  describe('pairing over TLS', () => {
+    const SAT_FP = 'bb:02:bb:02:bb:02:bb:02:bb:02:bb:02:bb:02:bb:02';
+    const CERT = 'ab'.repeat(32);
+    const CERT_COLONS = Array(32).fill('AB').join(':');
+    let posted: Array<{ url: string; options: any; body: any }>;
+
+    function answerPair(status: number, body: object) {
+      vi.mocked(https.request).mockImplementation(((url: string, options: any, cb: any) => {
+        const req = Object.assign(new EventEmitter(), {
+          setTimeout: vi.fn(), destroy: vi.fn(),
+          write: (chunk: string) => { posted.push({ url, options, body: JSON.parse(chunk) }); },
+          end: () => {
+            const res = Object.assign(new EventEmitter(), { statusCode: status });
+            cb(res);
+            res.emit('data', Buffer.from(JSON.stringify(body)));
+            res.emit('end');
+          },
+        });
+        return req;
+      }) as any);
+    }
+
+    async function link(overrides: Partial<{ hosts: string[]; cert: string; pin: string }> = {}) {
+      const { buildPairingUrl } = await import('./annex-pairing-url');
+      return buildPairingUrl({ hosts: overrides.hosts ?? ['192.168.1.60'], port: 9443, fingerprint: SAT_FP, certFingerprint: overrides.cert ?? CERT, pin: overrides.pin ?? '123456', name: 'Mini' })!;
+    }
+
+    beforeEach(() => {
+      posted = [];
+      vi.mocked(annexIdentity.computeFingerprint).mockImplementation((key: string) => (key === 'sat-pk' ? SAT_FP : 'other'));
+      vi.mocked(annexTls.probePeerCertificate).mockResolvedValue({ certPem: 'PROBED-PEM', fingerprint: CERT_COLONS });
+      answerPair(200, { token: 't', fingerprint: SAT_FP, publicKey: 'sat-pk', alias: 'Mini', icon: 'server', color: 'teal', tlsCertificateFingerprint: CERT_COLONS });
+    });
+
+    it('pairs from a link: PIN only to the certificate it names, binding sent, answer checked, pin stored', async () => {
+      const result = await annexClient.pairWithLink(await link());
+      expect(result).toEqual({ success: true, alias: 'Mini' });
+      expect(annexTls.probePeerCertificate).toHaveBeenCalledWith('192.168.1.60', 9443);
+      expect(annexTls.createPinnedTlsClientOptions).toHaveBeenCalledWith(LOCAL_IDENTITY, { certPem: 'PROBED-PEM', fingerprint: CERT_COLONS });
+      expect(posted).toHaveLength(1);
+      expect(posted[0].url).toBe('https://192.168.1.60:9443/pair');
+      expect(posted[0].options).toMatchObject({ pinned: true, method: 'POST' });
+      expect(posted[0].body).toEqual({ pin: '123456', publicKey: 'local-pub-key', alias: 'Test Mac', icon: 'computer', color: 'indigo', certBinding: 'cert-binding' });
+      expect(annexPeers.addPeer).toHaveBeenCalledWith(expect.objectContaining({
+        fingerprint: SAT_FP, publicKey: 'sat-pk', alias: 'Mini', role: 'satellite', tlsCertificateFingerprint: CERT_COLONS, tlsCertificatePem: 'PROBED-PEM',
+      }));
+      expect(annexClient.getSatellite(SAT_FP)).toMatchObject({ host: '192.168.1.60', mainPort: 9443 });
+    });
+
+    it('sends nothing to an address showing another certificate, and tries the next', async () => {
+      vi.mocked(annexTls.probePeerCertificate)
+        .mockResolvedValueOnce({ certPem: 'OTHER', fingerprint: 'CD'.repeat(32) })
+        .mockResolvedValueOnce({ certPem: 'PROBED-PEM', fingerprint: CERT_COLONS });
+      expect((await annexClient.pairWithLink(await link({ hosts: ['10.0.0.1', '10.0.0.2'] }))).success).toBe(true);
+      expect(posted.map((p) => p.url)).toEqual(['https://10.0.0.2:9443/pair']);
+
+      posted = [];
+      vi.mocked(annexTls.probePeerCertificate).mockResolvedValue({ certPem: 'OTHER', fingerprint: 'CD'.repeat(32) });
+      expect(await annexClient.pairWithLink(await link())).toEqual({ success: false, error: expect.stringMatching(/not the one in the link/) });
+      expect(posted).toHaveLength(0);
+    });
+
+    it('refuses an answer whose identity does not check out, and saves nothing', async () => {
+      answerPair(200, { fingerprint: SAT_FP, publicKey: 'impostor-pk', alias: 'Mini' });
+      expect((await annexClient.pairWithLink(await link())).success).toBe(false);
+      answerPair(200, { fingerprint: SAT_FP, publicKey: 'sat-pk', alias: 'Mini', tlsCertificateFingerprint: 'EF'.repeat(32) });
+      expect((await annexClient.pairWithLink(await link())).success).toBe(false);
+      expect(annexPeers.addPeer).not.toHaveBeenCalled();
+    });
+
+    it("shows the satellite's own message when it refuses", async () => {
+      answerPair(410, { error: 'pin_used', message: 'That code was already used. Show a new code.' });
+      expect(await annexClient.pairWithLink(await link())).toEqual({ success: false, error: 'That code was already used. Show a new code.' });
+      answerPair(404, { error: 'not_found' });
+      expect((await annexClient.pairWithLink(await link())).error).toMatch(/newer version/);
+    });
+
+    it('rejects something that is not a pairing link without dialling anything', async () => {
+      expect((await annexClient.pairWithLink('https://example.com/pair')).success).toBe(false);
+      expect(annexTls.probePeerCertificate).not.toHaveBeenCalled();
+    });
+
+    it('pairs a discovered service only after its certificate was read, and only to that certificate', async () => {
+      mockHttpGetIdentity({ fingerprint: SAT_FP, alias: 'Mini', icon: 'server', color: 'teal', publicKey: 'sat-pk' });
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService({ addresses: ['192.168.1.60'], port: 9443 }));
+      expect(await annexClient.pairWithService(SAT_FP, '123456')).toEqual({ success: false, error: expect.stringMatching(/certificate code first/) });
+      expect(posted).toHaveLength(0);
+      expect(await annexClient.probeService(SAT_FP)).toEqual({ success: true, certFingerprint: CERT_COLONS });
+      expect((await annexClient.pairWithService(SAT_FP, '123456')).success).toBe(true);
+      expect(posted[0].url).toBe('https://192.168.1.60:9443/pair');
+      expect(annexTls.createPinnedTlsClientOptions).toHaveBeenCalledWith(LOCAL_IDENTITY, { certPem: 'PROBED-PEM', fingerprint: CERT_COLONS });
+      expect(annexClient.getDiscoveredServices()).toHaveLength(0);
+    });
+  });
+
 });

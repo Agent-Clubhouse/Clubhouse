@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { PluginMarketplaceDialog } from './PluginMarketplaceDialog';
 import { usePluginStore } from '../../plugins/plugin-store';
-import type { MarketplaceFetchResult } from '../../../shared/marketplace-types';
+import { DEPRECATED_PLUGIN_API_VERSIONS, type MarketplaceFetchResult } from '../../../shared/marketplace-types';
 
 const sampleResult: MarketplaceFetchResult = {
   registry: {
@@ -21,7 +21,7 @@ const sampleResult: MarketplaceFetchResult = {
         latest: '0.1.0',
         releases: {
           '0.1.0': {
-            api: 0.5,
+            api: 0.9,
             asset: 'https://example.com/hello-0.1.0.zip',
             sha256: 'abc123',
             permissions: ['logging', 'storage'],
@@ -41,7 +41,7 @@ const sampleResult: MarketplaceFetchResult = {
         latest: '1.0.0',
         releases: {
           '1.0.0': {
-            api: 0.5,
+            api: 0.9,
             asset: 'https://example.com/review-1.0.0.zip',
             sha256: 'def456',
             permissions: ['files', 'git', 'agents'],
@@ -61,7 +61,7 @@ const sampleResult: MarketplaceFetchResult = {
         latest: '0.2.0',
         releases: {
           '0.2.0': {
-            api: 0.5,
+            api: 0.9,
             asset: 'https://example.com/tool-0.2.0.zip',
             sha256: 'ghi789',
             permissions: [],
@@ -230,7 +230,7 @@ describe('PluginMarketplaceDialog', () => {
     usePluginStore.setState({
       plugins: {
         'hello-world': {
-          manifest: { id: 'hello-world', name: 'Hello World', version: '0.1.0', engine: { api: 0.5 }, scope: 'app' },
+          manifest: { id: 'hello-world', name: 'Hello World', version: '0.1.0', engine: { api: 0.9 }, scope: 'app' },
           status: 'activated',
           source: 'community',
           pluginPath: '/test',
@@ -301,7 +301,7 @@ describe('PluginMarketplaceDialog', () => {
           id: 'hello-world',
           name: 'Hello World',
           version: '0.1.0',
-          engine: { api: 0.5 },
+          engine: { api: 0.9 },
           scope: 'app',
         },
         pluginPath: '/home/.clubhouse/plugins/hello-world',
@@ -359,9 +359,21 @@ describe('PluginMarketplaceDialog', () => {
     const row = screen.getByTestId('marketplace-plugin-code-review');
     expect(row).toHaveTextContent('Official · 1.0.0 · by Clubhouse · 10.0 KB');
     expect(row).toHaveTextContent('Can change things · View permissions (3)');
-    expect(screen.queryByText('API 0.5')).not.toBeInTheDocument();
-    // API 0.5 is deprecated: one plain warning line per plugin
-    expect(screen.getAllByText('Uses plugin API 0.5, which stops loading in v0.39.').length).toBe(3);
+    expect(screen.queryByText('API 0.9')).not.toBeInTheDocument();
+    // API 0.9 is current: no warning line
+    expect(screen.queryByText(/Uses plugin API/)).toBeNull();
+  });
+
+  it('shows one plain warning line per plugin when its API is deprecated', async () => {
+    DEPRECATED_PLUGIN_API_VERSIONS[0.9] = 'v2.0';
+    try {
+      window.clubhouse.marketplace.fetchRegistry = vi.fn(async () => sampleResult);
+      render(<PluginMarketplaceDialog onClose={vi.fn()} />);
+      await waitFor(() => expect(screen.getByText('Hello World')).toBeInTheDocument());
+      expect(screen.getAllByText('Uses plugin API 0.9, which stops loading in v2.0.').length).toBe(3);
+    } finally {
+      delete DEPRECATED_PLUGIN_API_VERSIONS[0.9];
+    }
   });
 
   it('shows error when install fails', async () => {

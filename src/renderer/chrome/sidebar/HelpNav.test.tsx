@@ -57,7 +57,7 @@ describe('HelpNav', () => {
   it('lists enabled plugins under their own heading', () => {
     usePluginStore.setState({
       appEnabled: ['canvas'],
-      plugins: { canvas: { status: 'activated', manifest: { id: 'canvas', name: 'Canvas', engine: { api: 0.5 }, contributes: { help: { topics: [{ id: 'canvas-intro', title: 'Using canvas', content: '# Canvas' }] } } } } } as never,
+      plugins: { canvas: { status: 'activated', manifest: { id: 'canvas', name: 'Canvas', engine: { api: 0.9 }, contributes: { help: { topics: [{ id: 'canvas-intro', title: 'Using canvas', content: '# Canvas' }] } } } } } as never,
     });
     render(<HelpNav />);
     expect(screen.getAllByText('Plugins')).toHaveLength(2); // the built-in topic group and the heading above plugin groups

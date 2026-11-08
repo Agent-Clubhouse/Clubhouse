@@ -24,7 +24,7 @@ vi.mock('./log-service', () => ({
 import {
   listPeers, getPeer, isPairedPeer, addPeer, removePeer, removeAllPeers,
   updateLastSeen, checkBruteForce, recordFailedAttempt, recordSuccessfulAttempt,
-  unlockPairing, isPairingLocked, resetForTests,
+  unlockPairing, isPairingLocked, resetForTests, peerNeedsPairing, listPeersForDisplay,
 } from './annex-peers';
 import { app } from 'electron';
 
@@ -150,6 +150,42 @@ describe('annex-peers', () => {
       for (let i = 0; i < 6; i++) recordFailedAttempt('192.168.1.1');
       expect(checkBruteForce('192.168.1.1').locked).toBe(true);
       expect(checkBruteForce('192.168.1.2').allowed).toBe(true);
+    });
+  });
+
+  describe('pairings from before pinning', () => {
+    it('loads an older file as it is, keeps every entry, and marks the ones that need pairing again', () => {
+      // An older file: a bare array, entries with no role and no certificate pin.
+      fs.writeFileSync(path.join(tmpDir, 'annex-peers.json'), JSON.stringify([
+        { fingerprint: 'aa:bb', publicKey: 'pk', alias: 'Legacy desktop', icon: 'computer', color: 'indigo', pairedAt: '2025-01-01T00:00:00.000Z', lastSeen: '2025-01-01T00:00:00.000Z' },
+        { ...makePeer('cc:dd'), role: 'controller' },
+        { ...makePeer('ee:ff'), role: 'controller', tlsCertificateFingerprint: 'AB:CD' },
+        { ...makePeer('11:22'), role: 'satellite', tlsCertificateFingerprint: 'AB:CD' },
+        { ...makePeer('33:44'), role: 'satellite', tlsCertificateFingerprint: 'AB:CD', tlsCertificatePem: 'PEM' },
+      ]));
+      expect(listPeers()).toHaveLength(5);
+      expect(listPeersForDisplay().map((p) => [p.fingerprint, p.needsPairing])).toEqual([
+        ['aa:bb', true], ['cc:dd', true], ['ee:ff', false], ['11:22', true], ['33:44', false],
+      ]);
+      expect(peerNeedsPairing({ ...makePeer('x'), role: undefined, tlsCertificateFingerprint: 'AB' })).toBe(true);
+    });
+
+    it('treats a file that is not a list as empty rather than failing', () => {
+      fs.writeFileSync(path.join(tmpDir, 'annex-peers.json'), JSON.stringify({ peers: [] }));
+      expect(listPeers()).toEqual([]);
+    });
+
+    it('re-pairing an entry replaces it in place with the pinned one', () => {
+      addPeer(makePeer('aa:bb', 'Old'));
+      addPeer({ ...makePeer('aa:bb', 'New'), role: 'controller', tlsCertificateFingerprint: 'AB:CD' });
+      expect(listPeersForDisplay()).toEqual([expect.objectContaining({ alias: 'New', needsPairing: false })]);
+    });
+
+    it('writes the peer file readable by this user only', () => {
+      addPeer(makePeer('aa:bb'));
+      if (process.platform !== 'win32') {
+        expect(fs.statSync(path.join(tmpDir, 'annex-peers.json')).mode & 0o777).toBe(0o600);
+      }
     });
   });
 });

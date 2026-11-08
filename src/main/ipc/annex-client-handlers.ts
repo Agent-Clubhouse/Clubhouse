@@ -14,8 +14,10 @@ export function registerAnnexClientHandlers(): void {
 
   ipcMain.handle(IPC.ANNEX_CLIENT.CONNECT, withValidatedArgs(
     [stringArg(), stringArg({ optional: true })],
-    (_event, fingerprint, bearerToken) => {
-      annexClient.connect(fingerprint, bearerToken);
+    // The second argument (a bearer token) is still accepted for older callers and ignored:
+    // satellites authenticate this machine by its pinned certificate.
+    (_event, fingerprint, _ignoredBearerToken) => {
+      annexClient.connect(fingerprint);
     },
   ));
 
@@ -45,6 +47,20 @@ export function registerAnnexClientHandlers(): void {
     [stringArg(), stringArg()],
     async (_event, fingerprint, pin) => {
       return annexClient.pairWithService(fingerprint, pin);
+    },
+  ));
+
+  ipcMain.handle(IPC.ANNEX_CLIENT.PROBE_SERVICE, withValidatedArgs(
+    [stringArg()],
+    async (_event, fingerprint) => {
+      return annexClient.probeService(fingerprint);
+    },
+  ));
+
+  ipcMain.handle(IPC.ANNEX_CLIENT.PAIR_WITH_LINK, withValidatedArgs(
+    [stringArg()],
+    async (_event, link) => {
+      return annexClient.pairWithLink(link);
     },
   ));
 

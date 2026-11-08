@@ -10,31 +10,23 @@ import { launchDual, cleanupDual, type DualInstanceHandles } from './dual-launch
 import {
   enableAnnexViaPreload,
   getAnnexStatus,
-  pairViaHttp,
+  pairOverTls,
   connectWs,
-  connectWsPlain,
   waitForOpen,
   waitForMessage,
 } from './helpers';
+import { generateTestIdentity, type TestIdentity } from './tls-test-utils';
 
-/** Connect with bearer token (tries wss, falls back to ws). */
-async function connectBearerWs(host: string, port: number, token: string): Promise<WebSocket> {
-  let ws = connectWs(host, port, token);
-  try {
-    await waitForOpen(ws, 5_000);
-    return ws;
-  } catch {
-    ws.close();
-    ws = connectWsPlain(host, port, token);
-    await waitForOpen(ws, 10_000);
-    return ws;
-  }
+/** Connect over mTLS with the paired controller's certificate. */
+async function connectControllerWs(host: string, port: number, identity: TestIdentity): Promise<WebSocket> {
+  const ws = connectWs(host, port, identity);
+  await waitForOpen(ws, 10_000);
+  return ws;
 }
 
 let handles: DualInstanceHandles;
-let bearerToken: string;
+let controller: TestIdentity;
 let satPort: number;
-let pairingPort: number;
 
 test.setTimeout(300_000);
 
@@ -45,15 +37,14 @@ test.beforeAll(async () => {
   await enableAnnexViaPreload(handles.satellite.window);
   const satStatus = await getAnnexStatus(handles.satellite.window);
   satPort = satStatus.port;
-  pairingPort = satStatus.pairingPort;
 
   expect(satStatus.advertising).toBe(true);
   expect(satPort).toBeGreaterThan(0);
 
-  // Pair controller with satellite
-  const pairResult = await pairViaHttp('127.0.0.1', pairingPort, satStatus.pin);
-  bearerToken = pairResult.token;
-  expect(bearerToken).toBeTruthy();
+  // Pair controller with satellite over TLS; its certificate is pinned
+  controller = generateTestIdentity();
+  const pairResult = await pairOverTls('127.0.0.1', satPort, satStatus.pin, controller);
+  expect(pairResult.fingerprint).toBeTruthy();
 });
 
 test.afterAll(async () => {
@@ -63,7 +54,7 @@ test.afterAll(async () => {
 test.describe('lifecycle', () => {
   test('connect → snapshot → disconnect → reconnect', async () => {
     // 1. Connect via WebSocket
-    const ws1 = await connectBearerWs('127.0.0.1', satPort, bearerToken);
+    const ws1 = await connectControllerWs('127.0.0.1', satPort, controller);
 
     // 2. Receive snapshot
     const snapshot = await waitForMessage(ws1, 'snapshot', 15_000);
@@ -81,7 +72,7 @@ test.describe('lifecycle', () => {
     expect(statusAfterDisconnect.connectedCount).toBe(0);
 
     // 4. Reconnect
-    const ws2 = await connectBearerWs('127.0.0.1', satPort, bearerToken);
+    const ws2 = await connectControllerWs('127.0.0.1', satPort, controller);
     const snapshot2 = await waitForMessage(ws2, 'snapshot', 15_000);
     expect(snapshot2.type).toBe('snapshot');
     expect((snapshot2.payload as any).protocolVersion).toBe(2);
@@ -95,7 +86,7 @@ test.describe('lifecycle', () => {
 
   test('multiple sequential operations', async () => {
     // Connect
-    const ws = await connectBearerWs('127.0.0.1', satPort, bearerToken);
+    const ws = await connectControllerWs('127.0.0.1', satPort, controller);
     const snapshot = await waitForMessage(ws, 'snapshot', 15_000);
     expect(snapshot.type).toBe('snapshot');
 

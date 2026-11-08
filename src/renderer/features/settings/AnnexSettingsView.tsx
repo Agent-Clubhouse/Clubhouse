@@ -3,6 +3,8 @@ import { useAnnexStore } from '../../stores/annexStore';
 import { Toggle } from '../../components/Toggle';
 import { AnnexIdentitySection } from './AnnexIdentitySection';
 import { AnnexPairingQr } from './AnnexPairingQr';
+import { AnnexPairedDevices } from './AnnexPairedDevices';
+import { certificateCode } from '../../../shared/annex-certificate-code';
 import { SettingsPage, SettingsSection, SettingsField, settingsInput } from './SettingsLayout';
 import { Button } from '../../components/Button';
 
@@ -15,10 +17,28 @@ export function AnnexSettingsView() {
   const purgeServerConfig = useAnnexStore((s) => s.purgeServerConfig);
   const loadStatus = useAnnexStore((s) => s.loadStatus);
   const [confirmPurge, setConfirmPurge] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const code = certificateCode(status.tlsCertificateFingerprint);
 
   useEffect(() => {
     loadSettings();
   }, [loadSettings]);
+
+  useEffect(() => {
+    if (!linkCopied) return;
+    const timer = setTimeout(() => setLinkCopied(false), 2000);
+    return () => clearTimeout(timer);
+  }, [linkCopied]);
+
+  async function copyPairingLink() {
+    if (!status.pairingUrl) return;
+    try {
+      await navigator.clipboard.writeText(status.pairingUrl);
+      setLinkCopied(true);
+    } catch {
+      // telemetry-exempt: the link stays on screen to select and copy by hand.
+    }
+  }
 
   // Poll status while server is enabled but not yet advertising (catches missed broadcasts)
   useEffect(() => {
@@ -57,18 +77,53 @@ export function AnnexSettingsView() {
             />
             <SettingsField
               label="Pairing PIN"
-              help={<span className="text-[13px] font-mono text-ctp-text tracking-widest">{status.pin || '------'}</span>}
+              help={(
+                <>
+                  <span className="block text-[13px] font-mono text-ctp-text tracking-widest">{status.pin || '------'}</span>
+                  The PIN works once and changes every 10 minutes.
+                </>
+              )}
             >
               <Button onClick={regeneratePin} kind="ghost">
                 Regenerate
               </Button>
             </SettingsField>
+            {code && (
+              <SettingsField
+                label="Certificate code"
+                testId="annex-certificate-code"
+                help={(
+                  <>
+                    <span className="block text-[13px] font-mono text-ctp-text tracking-widest select-all">{code}</span>
+                    A computer pairing from its discovered list should show this same code.
+                  </>
+                )}
+              />
+            )}
+            {status.pairingUrl && (
+              <SettingsField
+                label="Pairing link"
+                testId="annex-pairing-link"
+                help={(
+                  <>
+                    <span className="block font-mono text-ctp-text truncate select-all">{status.pairingUrl}</span>
+                    Paste it into Annex control on the other computer.
+                  </>
+                )}
+              >
+                <Button onClick={copyPairingLink} kind="ghost">
+                  {linkCopied ? 'Copied' : 'Copy'}
+                </Button>
+              </SettingsField>
+            )}
             {status.pairingUrl && (
               <AnnexPairingQr url={status.pairingUrl} hosts={status.pairingHosts ?? []} port={status.port} />
             )}
           </>
         )}
       </SettingsSection>
+
+      <AnnexPairedDevices showWhenEmpty={settings.enableServer} />
 
       {/* Device name and identity (shown when either toggle is on) */}
       {(settings.enableServer || settings.enableClient) && (

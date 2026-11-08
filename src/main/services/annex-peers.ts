@@ -9,7 +9,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import { annexEphemeralSession } from './annex-network-profile';
 import { appLog } from './log-service';
-import type { AnnexPeer } from '../../shared/types';
+import type { AnnexPeer, AnnexPeerListing } from '../../shared/types';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -50,7 +50,8 @@ function loadPeers(): AnnexPeer[] {
 
   try {
     const raw = fs.readFileSync(getPeersPath(), 'utf-8');
-    cachedPeers = JSON.parse(raw) as AnnexPeer[];
+    const parsed: unknown = JSON.parse(raw);
+    cachedPeers = Array.isArray(parsed) ? parsed as AnnexPeer[] : [];
     return cachedPeers;
   } catch {
     cachedPeers = [];
@@ -62,7 +63,10 @@ function savePeers(peers: AnnexPeer[]): void {
   const ephemeral = annexEphemeralSession();
   cachedPeers = peers;
   if (ephemeral) return;
-  fs.writeFileSync(getPeersPath(), JSON.stringify(peers, null, 2), 'utf-8');
+  // Readable by this user only: the file holds the certificates paired devices are trusted by.
+  const target = getPeersPath();
+  fs.writeFileSync(target, JSON.stringify(peers, null, 2), { encoding: 'utf-8', mode: 0o600 });
+  try { fs.chmodSync(target, 0o600); } catch { /* telemetry-exempt: no POSIX modes on Windows */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -73,12 +77,27 @@ export function listPeers(): AnnexPeer[] {
   return [...loadPeers()];
 }
 
+/** Peers for Settings: each marked when it must be paired again before it can connect. */
+export function listPeersForDisplay(): AnnexPeerListing[] {
+  return loadPeers().map((peer) => ({ ...peer, needsPairing: peerNeedsPairing(peer) }));
+}
+
 export function getPeer(fingerprint: string): AnnexPeer | undefined {
   return loadPeers().find((p) => p.fingerprint === fingerprint);
 }
 
 export function isPairedPeer(fingerprint: string): boolean {
   return loadPeers().some((p) => p.fingerprint === fingerprint);
+}
+
+/**
+ * Whether this entry can't be used until it's paired again: it predates
+ * certificate pinning (no pin, or no role), or, for a satellite, we never
+ * stored its certificate. Such entries stay listed so they can be shown and removed.
+ */
+export function peerNeedsPairing(peer: AnnexPeer): boolean {
+  if (!peer.role || !peer.tlsCertificateFingerprint) return true;
+  return peer.role === 'satellite' && !peer.tlsCertificatePem;
 }
 
 export function addPeer(peer: AnnexPeer): void {
