@@ -2,7 +2,7 @@ import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { assertNoCopilotTerminalHooksForChat, readCopilotHooksConfig } from './copilot-hooks-config';
+import { LEGACY_PERMISSIONS_BACKUP_SUFFIX, assertNoCopilotTerminalHooksForChat, readCopilotHooksConfig } from './copilot-hooks-config';
 import { CopilotCliProvider } from './copilot-cli-provider';
 
 const roots: string[] = [];
@@ -27,7 +27,11 @@ describe('Copilot hook document boundary', () => {
 
   it.each([
     '{',
-    JSON.stringify({ permissions: { allow: ['Read'] } }),
+    JSON.stringify({ permissions: { allow: ['Read'] }, other: true }),
+    JSON.stringify({ permissions: { allow: ['Read'], ask: ['Bash'] } }),
+    JSON.stringify({ permissions: { allow: [42] } }),
+    JSON.stringify({ permissions: {} }),
+    JSON.stringify({ permissions: ['Read'] }),
     JSON.stringify({ version: 1, hooks: {}, permissions: { deny: ['WebFetch'] } }),
     JSON.stringify({ version: 2, hooks: {} }),
     JSON.stringify({ version: 1, hooks: { preToolUse: {} } }),
@@ -48,6 +52,27 @@ describe('Copilot hook document boundary', () => {
     await expect(readCopilotHooksConfig(root)).rejects.toThrow(/repair.*restart/i);
     await expect(new CopilotCliProvider().writeHooksConfig(root, 'http://127.0.0.1:9999/hook')).rejects.toThrow(/repair.*restart/i);
     expect(await fsp.readFile(file, 'utf8')).toBe(content);
+  });
+
+  it.each([
+    { permissions: { allow: ['Read'], deny: ['WebFetch'] } },
+    { permissions: { deny: [] } },
+  ])('moves aside only allow/deny rules an earlier Clubhouse wrote, keeping them (#2866): %j', async (doc) => {
+    const content = JSON.stringify(doc);
+    const { root, file } = await fixture(content);
+    expect(await readCopilotHooksConfig(root)).toBeNull();
+    await expect(fsp.stat(file)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fsp.readFile(`${file}${LEGACY_PERMISSIONS_BACKUP_SUFFIX}`, 'utf8')).toBe(content);
+    expect(await fsp.readdir(path.dirname(file))).toEqual([`hooks.json${LEGACY_PERMISSIONS_BACKUP_SUFFIX}`]);
+  });
+
+  it('writes a valid hook document where a legacy permissions file was', async () => {
+    const { root, file } = await fixture(JSON.stringify({ permissions: { allow: ['Read'] } }));
+    await new CopilotCliProvider().writeHooksConfig(root, 'http://127.0.0.1:9999/hook');
+    const written = JSON.parse(await fsp.readFile(file, 'utf8'));
+    expect(written).toMatchObject({ version: 1 });
+    expect(written).not.toHaveProperty('permissions');
+    expect(await readCopilotHooksConfig(root)).toEqual(written);
   });
 
   it('accepts documented command, HTTP and prompt entries without rewriting them', async () => {
