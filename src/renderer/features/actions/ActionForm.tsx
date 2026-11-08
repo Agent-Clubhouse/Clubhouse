@@ -48,7 +48,7 @@ const STEP_LABELS: Record<ActionStepKind, string> = {
 const STEP_ORDER: ActionStepKind[] = ['wake', 'message', 'quick', 'sleep', 'notify'];
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-const selectClass = `${settingsInput} pr-7`;
+const selectClass = settingsInput;
 const fieldGap = 'mt-3';
 
 function Field({ label, htmlFor, help, children }: { label: string; htmlFor?: string; help?: ReactNode; children: ReactNode }) {

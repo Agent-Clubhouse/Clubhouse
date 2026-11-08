@@ -5,12 +5,14 @@
  * disposable profile, allowing end-to-end testing of the desktop-to-desktop
  * remote control protocol. Both go through the shared `launchApp` primitive,
  * so window selection, onboarding suppression and auto-update disabling match
- * single-instance launches.
+ * single-instance launches. Each launches on the run's layout (the new one, or
+ * classic in the Classic layout E2E job), and checks it got that layout.
  */
 import type { Page } from '@playwright/test';
 import { launchApp, type ElectronApp } from '../launch';
 import type { DisposableProfile } from '../app-profile';
 import { untrackOpenApp } from '../e2e-cleanup';
+import { assertRunLayout } from '../smoke-helpers';
 
 export interface InstanceHandle {
   electronApp: ElectronApp;
@@ -25,10 +27,19 @@ export interface DualInstanceHandles {
 }
 
 /**
- * Launch a single Electron instance with its own disposable profile.
+ * Launch a single Electron instance with its own disposable profile, on the
+ * run's layout. An instance on the wrong layout is closed before the failure
+ * propagates, so launchDual never leaks it.
  */
 async function launchInstance(label: string): Promise<InstanceHandle> {
-  return launchApp({ label, args: ['--disable-gpu'], experimental: { newChrome: false } });
+  const handle = await launchApp({ label, args: ['--disable-gpu'] });
+  try {
+    await assertRunLayout(handle.window);
+  } catch (err) {
+    await cleanupInstance(handle);
+    throw err;
+  }
+  return handle;
 }
 
 /**

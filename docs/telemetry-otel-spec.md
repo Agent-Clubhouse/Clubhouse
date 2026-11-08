@@ -1320,6 +1320,32 @@ The `tel.*` signals are also written to local files, so flow timings and classif
 - **Retention.** Files are `~/.clubhouse/logs/telemetry-<recorder start, ms precision>.jsonl`, then `.1.jsonl`, `.2.jsonl` for later chunks. Turning recording off and on starts a new file. "Delete local telemetry data" restarts the recorder so it drops the deleted salt; existing files stay until retention prunes them. The log retention tier's age and total-size limits (`LOG_RETENTION_TIERS`) prune them together with `session-*.jsonl` logs left by earlier versions ([#2298](https://github.com/Agent-Clubhouse/Clubhouse/issues/2298), [#2313](https://github.com/Agent-Clubhouse/Clubhouse/issues/2313)). `local-retention.ts` runs once at startup whether or not recording is on and when recording starts (`local-control.ts`), hourly while recording, and after every rotation, and never deletes a file being written.
 - **Exit.** `flushBeforeExit` and `forceFlushTelemetry` flush the recorder alongside the SDK, within the same timeout, including a diag-only recorder.
 
+**Replaying the record** ([#2920](https://github.com/Agent-Clubhouse/Clubhouse/issues/2920)). Decision, 2026-11-08: the record stays in this JSON Lines format and is made provably OpenTelemetry-compatible. It is not rewritten as OTLP.
+
+- **Rejected alternative (A): write OTLP JSON Lines natively**, the OpenTelemetry file-exporter shape. Measured on a real 2 MB file, metric lines are 99% of the bytes, and OTLP JSON wraps every data point's attributes in nested key and value objects: roughly 1.5 to 2.5 times the size. Retention is by age and size, so the same disk would hold about half the history. Diag lines and `detail` would still need stripping before any replay, and every reader and the help's recipe for removing diag lines would change.
+- **Chosen (B): one converter.** `replay.ts` `convertRecordLines(lines, { resource, temporality, scrub })` turns a run's lines into SDK readable objects: `ReadableSpan`s, `ReadableLogRecord`s and one `ResourceMetrics`. It's the single path by which recorded lines reach any destination. Backfill and any later replay hand its output to each destination's own exporters, because Azure Monitor isn't an OTLP endpoint. Nothing else reads record lines and sends them.
+  - It never puts out diag, `session`, `evicted` or `dropped` lines, an event's `detail`, or any attribute the registry doesn't know or whose value its format refuses. Every attribute goes through `sanitizeAttribute` and the export scrubber again, and metric attributes are limited to each metric's declared dimensions.
+  - Ids in the record are already hashed (`detailIds` included). Attributes only the developer destination may get (`FRAMEBRIAR_ONLY_ATTRIBUTES`, such as the feedback report id) are left out unless the caller says the conversion is for that destination.
+  - Names are checked as the registry's own names (`isKnownSpan`, `isKnownEvent`, `isKnownMetric`), so a damaged file can't pass off an inherited object key as one.
+  - It applies no destination level, filter, error tail or limit; the caller does.
+  - The caller also passes, per destination, what the live pipeline adds there:
+    - **The resource for each run.** It's built from the run's session line (app version, shell, instance id), so an older run isn't labelled with today's.
+    - **The item attributes copied onto spans and log records**: the install id where live adds it, never for the developer destination (#2977).
+    - **Whether to include metrics.** The Azure Monitor exporter stamps metric envelopes with the export time, so replayed metrics would land in the wrong minute. Backfill leaves metrics out for Azure; spans and log records keep their own times there.
+  - A parent span is remote only for a root span under a traceparent; any other parent was local, so a caller's error-tail decisions match live. Cumulative totals start again at each run's session line. Overflow series carry `otel.metric.overflow`, as the SDK marks them. Exceptions carry no custom event name, as live.
+  - It imports OpenTelemetry, so it's loaded lazily, never from the main bundle.
+  - Events become log records with the event name and `microsoft.custom_event.name`, and exceptions become `clubhouse.exception` records whose message is the type, as on export.
+  - Histograms come out with one bucket holding every observation, because the record keeps count, sum, min and max only.
+  - For a destination that wants cumulative metrics, per-window counters and histograms become running totals from the run's first window.
+- **Format v4** adds `scope` and `temporality` to the session line, so replay doesn't guess.
+- **v3 files are converted, not skipped**, on the assumption that held for every v3 file Clubhouse wrote: scope `clubhouse` with no version, and per-window (delta) metric aggregates.
+  - Only versions 3 and 4 are replayed: an older or later format isn't.
+  - Neither is a file whose session line names any other scope or temporality.
+- `replay.test.ts` proves all of this:
+  - a real recorder's file, holding detail, a raw id given only as `detailIds` and a diag line, converts with none of them in the output;
+  - v3 lines convert on the assumption;
+  - the converted data posted through the real OTLP trace, log and metric exporters is accepted by a mock collector, and the bodies hold neither the detail nor the diag text.
+
 **Diagnostic lines** ([#2299](https://github.com/Agent-Clubhouse/Clubhouse/issues/2299), part of [#2295](https://github.com/Agent-Clubhouse/Clubhouse/issues/2295)). A local-only tier for the text that signals can't carry: error messages, paths, raw ids, stderr. `t:"diag"` lines share the file, chunking, rolling eviction and retention with the signals, but are not telemetry.
 
 - **API.** Main: `diag(ns, level, msg, meta?)` from `src/main/telemetry/diag.ts` (also exported from `telemetry/index.ts`). Renderer: `diag(ns, level, msg, meta?)` from `src/renderer/telemetry`, batched with the signals over `telemetry:emit` as a `diag` item. `level` is `debug`, `info`, `warn`, `error` or `fatal`. Neither ever throws. Main-process `appLog` writes through it (#2301); lines logged before the recorder starts are held, capped at 200, and written once it has. `rendererLog`, the plugin `api.logging` (namespace `plugin:<id>`, contract unchanged; an id too long for the 128-character namespace is cut and given a hash of the whole id, which is kept in `meta.pluginId`, #2403) and the `ui:perf` hang log write diag lines (#2302), with `projectId` carried in `meta`; renderer lines logged before main's first state reply are held, capped at 200, then sent or dropped.
@@ -1339,7 +1365,7 @@ The `tel.*` signals are also written to local files, so flow timings and classif
 
 | `t` | Fields |
 |---|---|
-| `session` | `v` (format version, 3), `ts`, `appVersion`, `platform`, `arch`, `uiChrome` (the `clubhouse.ui.chrome` value, `legacy` or `v2`), `level`, `signals?` (`false` when only diag lines are recorded). First line of the first file. |
+| `session` | `v` (format version, 4), `ts`, `appVersion`, `platform`, `arch`, `uiChrome` (the `clubhouse.ui.chrome` value, `legacy` or `v2`), `level`, `signals?` (`false` when only diag lines are recorded), `scope` (`clubhouse`) and `temporality` (`delta`), both from v4 (#2920, below). First line of the first file. |
 | `span` | `ts` (end), `name`, `traceId`, `spanId`, `parentSpanId?`, `startMs`, `durationMs`, `outcome` (`ok`/`error`/`cancelled`/...), `errorType?`, `attrs` |
 | `event` | `ts`, `name`, `severity` (`info`/`warn`/`error`/`fatal`), `traceId?`, `spanId?`, `attrs`, `detail?` (local only, §6.13) |
 | `exception` | `ts`, `type` (class name only), `stack` (sanitized frames), `traceId?`, `spanId?`, `attrs` (origin, handled, extras) |

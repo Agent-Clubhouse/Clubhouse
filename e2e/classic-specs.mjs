@@ -8,9 +8,8 @@
  * on CI, so classic keeps its coverage meanwhile.
  *
  * PINNED_CLASSIC_SPECS are the files that still seed `newChrome: false`, so
- * they run on classic in every job: specs, and the shared harnesses
- * (chat-rich/harness.ts, annex-v2/dual-launch.ts) that pin every spec using
- * them. Each one leaves that list when it moves. LAYOUT_SWITCH_SPECS seed both
+ * they run on classic in every job. A shared harness that pins would pin every
+ * spec using it. Each one leaves that list when it moves. LAYOUT_SWITCH_SPECS seed both
  * layouts on purpose.
  * test/e2e-classic-layout.test.ts fails if a file pins classic and is in
  * neither list.
@@ -39,17 +38,30 @@ export const CLASSIC_RUN_SPECS = [
   'canvas-golden-path.spec.ts',
   'canvas-group-project-create.spec.ts',
   'canvas-startup-bindings.spec.ts',
+  // Through the chat-rich harness, and the Annex specs that drive UI. Annex
+  // specs that only use the protocol don't depend on the layout.
+  'chat-fake-cli.spec.ts',
+  'chat-rich/annex.spec.ts',
+  'chat-rich/context-menu.spec.ts',
+  'chat-rich/file-chips.spec.ts',
+  'chat-rich/flag-off.spec.ts',
+  'chat-rich/link-tokens.spec.ts',
+  'chat-rich/media-cards.spec.ts',
+  'chat-rich/media-images.spec.ts',
+  'chat-rich/providers.spec.ts',
+  'chat-rich/question-dock.spec.ts',
+  'chat-rich/queue-merging.spec.ts',
+  'chat-rich/reading.spec.ts',
+  'annex-v2/chat-across-desktops.spec.ts',
+  'annex-v2/full-demo.spec.ts',
+  'annex-v2/remote-control.spec.ts',
+  'annex-v2/settings-page.spec.ts',
 ];
 
 /** Still pinned to classic, waiting to move. */
 export const PINNED_CLASSIC_SPECS = [
   'agent-list-ui.spec.ts',
   'annex-v2/agents-across-machines.spec.ts',
-  'annex-v2/chat-across-desktops.spec.ts',
-  'annex-v2/dual-launch.ts',
-  'annex-v2/reachability.spec.ts',
-  'chat-fake-cli.spec.ts',
-  'chat-rich/harness.ts',
   'find-replace.spec.ts',
   'mermaid-preview.spec.ts',
   'onboarding.spec.ts',
