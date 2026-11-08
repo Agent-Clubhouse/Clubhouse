@@ -6,7 +6,8 @@
  */
 
 import { isDisposedAgent } from '../../shared/agent-helpers';
-import { savedAccess, type AccessLevel } from '../../shared/agent-access';
+import type { AccessLevel } from '../../shared/agent-access';
+import { agentAccess } from './free-agent-settings';
 import type { DurableAgentConfig } from '../../shared/types';
 import { listDurable, onAgentConfigChanged } from './agent-config';
 import { onAgentExit } from './agent-exit-broadcast';
@@ -46,7 +47,8 @@ function snapshot(projectPath: string, configs: DurableAgentConfig[]): Map<strin
       ...(c.parentAgentId && { parentAgentId: c.parentAgentId }),
       ...(c.worktreePath && { worktreePath: c.worktreePath }),
       ...(c.orchestration?.orchestrate === true && { orchestrates: true }),
-      access: savedAccess(c, undefined),
+      // As launch and Preview read it: a record from before #2761 with its project's old mode.
+      access: agentAccess(c, projectPath),
     });
   }
   return out;

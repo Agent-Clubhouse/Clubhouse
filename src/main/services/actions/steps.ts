@@ -30,7 +30,9 @@ export interface StepDeps {
   /** wakeWiredAgent's JSON result: status, and whether a mission was delivered. */
   wake(req: { callerId: string; targetId: string; targetName: string; mission?: string; missionRouted?: RoutedMessagePart[] }): Promise<{ ok: boolean; status?: string; messageDelivered?: boolean; text: string }>;
   sleep(req: { callerId: string; targetId: string; targetName: string }): Promise<{ ok: boolean; status?: string; text: string }>;
-  startQuick(req: { project: { id: string; path: string }; cwd: string; prompt: string; orchestrator: string; model?: string; access?: AccessLevel; name: string }): Promise<{ id: string; name: string }>;
+  startQuick(req: { project: { id: string; path: string }; cwd: string; prompt: string; orchestrator: string; model?: string; access?: AccessLevel; interactive?: boolean; name: string }): Promise<{ id: string; name: string }>;
+  /** The app's Default access (#2761), for a person's quick step with no level. */
+  defaultAccess(): AccessLevel;
   /** An agent owner's own Access level: its actions' quick agents never start above it. */
   agentAccess(agentId: string): AccessLevel;
   notify(title: string, body: string): { shown: boolean; reason?: string };
@@ -82,13 +84,13 @@ export function actionMessage(actionName: string, text: string): { text: string;
 
 export function createStepRunner(deps: StepDeps): StepRunner {
   /**
-   * The level a quick agent starts at. A person's action: the chosen level,
-   * else the app's Default access (spawnAgent applies it). An agent's action:
-   * the chosen level capped at the agent's own, else the agent's own.
+   * The level a quick agent starts at, always explicit (#3002). A person's
+   * action: the chosen level, else the app's Default access. An agent's
+   * action: the chosen level capped at the agent's own, else the agent's own.
    */
-  const quickAccess = (chosen: AccessLevel | undefined, ctx: StepContext): AccessLevel | undefined => {
+  const quickAccess = (chosen: AccessLevel | undefined, ctx: StepContext): AccessLevel => {
     const owner = ctx.action.owner;
-    if (owner.kind !== 'agent') return chosen;
+    if (owner.kind !== 'agent') return chosen ?? deps.defaultAccess();
     const cap = deps.agentAccess(owner.agentId);
     if (!chosen) return cap;
     return ACCESS_LEVELS.indexOf(chosen) <= ACCESS_LEVELS.indexOf(cap) ? chosen : cap;
@@ -150,13 +152,17 @@ export function createStepRunner(deps: StepDeps): StepRunner {
             if (worktree) cwd = worktree;
           }
           try {
+            const access = quickAccess(step.access, ctx);
             const started = await deps.startQuick({
               project: { id: project.id, path: project.path },
               cwd,
               prompt: actionMessage(ctx.action.name, step.prompt).text,
               orchestrator: step.orchestrator || project.orchestrator || 'claude-code',
               ...(step.model && { model: step.model }),
-              ...(quickAccess(step.access, ctx) && { access: quickAccess(step.access, ctx) }),
+              access,
+              // A headless run can't ask, so it runs at Auto at least (#3002): below
+              // Auto it runs in chat or the terminal, where it can ask you.
+              ...(ACCESS_LEVELS.indexOf(access) < ACCESS_LEVELS.indexOf('auto') && { interactive: true }),
               name: ctx.action.name,
             });
             // Commits it makes in a worktree carry this run's chain on.
