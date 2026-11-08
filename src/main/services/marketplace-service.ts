@@ -17,6 +17,7 @@ import type {
 } from '../../shared/marketplace-types';
 import { SUPPORTED_REGISTRY_VERSION } from '../../shared/marketplace-types';
 import { isValidPluginId } from '../../shared/manifest-validator';
+import { isRetiredPlugin, retiredPluginMessage } from '../../shared/retired-plugins';
 import { tel } from '../telemetry/facade';
 import type { SpanHandle } from '../telemetry/types';
 import { byteSizeBucket, classifyFetchError, flowClassifyingThrows } from '../telemetry/workspace';
@@ -170,10 +171,11 @@ export async function fetchAllRegistries(customMarketplaces: CustomMarketplace[]
   // Fetch official registry
   const official = await fetchRegistry();
 
-  // Tag official plugins
-  const allPlugins: MarketplacePluginWithSource[] = official.registry.plugins.map((p): MarketplacePluginWithSource => ({
-    ...p,
-  }));
+  // Tag official plugins. Retired Workshop plugins (#2756) are left out of
+  // every listing, so they can't be found, installed or offered as updates.
+  const allPlugins: MarketplacePluginWithSource[] = official.registry.plugins
+    .filter((p) => !isRetiredPlugin(p.id))
+    .map((p): MarketplacePluginWithSource => ({ ...p }));
 
   // Track plugin IDs to avoid duplicates (official takes precedence)
   const seenIds = new Set(allPlugins.map((p) => p.id));
@@ -201,7 +203,7 @@ export async function fetchAllRegistries(customMarketplaces: CustomMarketplace[]
 
       // Add non-duplicate plugins with source tags
       for (const plugin of registry.plugins) {
-        if (!seenIds.has(plugin.id)) {
+        if (!seenIds.has(plugin.id) && !isRetiredPlugin(plugin.id)) {
           seenIds.add(plugin.id);
           allPlugins.push({
             ...plugin,
@@ -234,6 +236,7 @@ function resolvePluginInstallDir(pluginsDir: string, pluginId: string): string {
   if (!isValidPluginId(pluginId)) {
     throw new Error(`Invalid plugin id: ${JSON.stringify(pluginId)}`);
   }
+  if (isRetiredPlugin(pluginId)) throw new Error(retiredPluginMessage(pluginId));
   const root = path.resolve(pluginsDir);
   const pluginDir = path.resolve(root, pluginId);
   if (path.dirname(pluginDir) !== root) {

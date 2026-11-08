@@ -286,6 +286,18 @@ describe('plugin-discovery', () => {
       expect(fsp.unlink).not.toHaveBeenCalled();
     });
 
+    it('keeps a retired Workshop plugin\'s data when it is uninstalled (#2756)', async () => {
+      vi.mocked(fsp.lstat).mockResolvedValue({
+        isSymbolicLink: () => false,
+      } as any);
+      vi.mocked(fsp.rm).mockResolvedValue(undefined);
+
+      await uninstallPlugin('lounge');
+
+      expect(fsp.rm).toHaveBeenCalledWith(path.join(PLUGINS_DIR, 'lounge'), { recursive: true, force: true });
+      expect(fsp.rm).not.toHaveBeenCalledWith(path.join(PLUGIN_DATA_DIR, 'lounge'), expect.anything());
+    });
+
     it('cleans up plugin data directory on uninstall', async () => {
       vi.mocked(fsp.lstat).mockResolvedValue({
         isSymbolicLink: () => false,

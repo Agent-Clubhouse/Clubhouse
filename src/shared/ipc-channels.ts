@@ -35,6 +35,8 @@ export const IPC = {
     RESTART: 'managed:restart',
     SET_CLUBHOUSE_FEATURES: 'managed:set-clubhouse-features',
     DISMISS_MIGRATION_NOTICE: 'managed:dismiss-migration-notice',
+    /** The root-file names git ignores for the whole repository because of the project's managed agents (D97). */
+    PROJECT_GIT_EXCLUDES: 'managed:project-git-excludes',
     /** Skill import: whether each dropped or picked file is executable, by its mode (D96). */
     EXECUTABLE_BITS: 'managed:executable-bits',
     /** Main to renderer: parts, templates or setups changed; refetch what's shown. */
@@ -407,6 +409,12 @@ export const IPC = {
     UNINSTALL: 'plugin:uninstall',
     LOAD_MODULE_SOURCE: 'plugin:load-module-source',
     REFRESH_MANIFEST_FROM_DISK: 'plugin:refresh-manifest-from-disk',
+    /** Where a retired Workshop plugin's data is (#2756). */
+    RETIRED_DATA_FIND: 'plugin:retired-data-find',
+    /** Save a copy of a retired plugin's data to a file the person picks. */
+    RETIRED_DATA_EXPORT: 'plugin:retired-data-export',
+    /** Show a retired plugin's data folder in the file manager. */
+    RETIRED_DATA_REVEAL: 'plugin:retired-data-reveal',
     CLEANUP_PROJECT_INJECTIONS: 'plugin:cleanup-project-injections',
     LIST_PROJECT_INJECTIONS: 'plugin:list-project-injections',
     LIST_ORPHANED_PLUGIN_IDS: 'plugin:list-orphaned-plugin-ids',

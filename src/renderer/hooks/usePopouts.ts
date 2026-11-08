@@ -33,12 +33,6 @@ export function usePopouts() {
     [popouts],
   );
 
-  const findHubPopout = useCallback(
-    (hubId: string): PopoutEntry | undefined =>
-      popouts.find((p) => p.params.type === 'hub' && p.params.hubId === hubId),
-    [popouts],
-  );
-
   const findCanvasPopout = useCallback(
     (canvasId: string): PopoutEntry | undefined =>
       popouts.find((p) => p.params.type === 'canvas' && p.params.canvasId === canvasId),
@@ -48,7 +42,6 @@ export function usePopouts() {
   return useMemo(() => ({
     popouts,
     findAgentPopout,
-    findHubPopout,
     findCanvasPopout,
-  }), [popouts, findAgentPopout, findHubPopout, findCanvasPopout]);
+  }), [popouts, findAgentPopout, findCanvasPopout]);
 }

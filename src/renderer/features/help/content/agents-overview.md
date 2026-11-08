@@ -21,10 +21,6 @@ The explorer shows a colored ring around each agent's avatar:
 | **Sleeping** | Gray | Paused or between missions — resume anytime |
 | **Error** | Red | Fatal error, check the CLI output or transcript |
 
-## Dashboard Monitoring
-
-The Dashboard home screen aggregates agent stats across all projects: working count, attention needed, and completed today. The **Needs Attention** box lists agents requiring action with clickable links.
-
 ## Agent Pop-Out
 
 Any agent can be detached into an independent OS window for multi-monitor workflows. The pop-out stays fully synchronized with the main window.

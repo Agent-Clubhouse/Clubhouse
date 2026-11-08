@@ -253,6 +253,9 @@ vi.stubGlobal('clubhouse', {
     listOrphanedPluginIds: async () => [],
     registerManifest: asyncNoop,
     refreshManifestFromDisk: async () => null,
+    findRetiredData: async () => ({ installed: false, locations: [] }),
+    exportRetiredData: async () => ({ canceled: true }),
+    revealRetiredData: asyncNoop,
     loadModuleSource: async () => '',
   },
   marketplace: {
@@ -530,6 +533,7 @@ vi.stubGlobal('clubhouse', {
     status: async () => ({ ok: true, value: { managed: false, running: false, waiting: false, changes: [], cliChanged: false } }),
     isWorking: async () => ({ ok: true, value: false }),
     dismissMigrationNotice: async () => ({ ok: true, value: undefined }),
+    projectGitExcludes: async () => ({ ok: true, value: [] }),
     restart: async () => ({ ok: true, value: { resumed: true } }),
     setClubhouseFeatures: async () => ({ ok: true, value: undefined }),
     executableBits: async (files: unknown[]) => ({ ok: true, value: files.map(() => null) }),

@@ -32,7 +32,6 @@ describe('uiStore', () => {
       previousExplorerTab: null,
       settingsSubPage: 'orchestrators',
       settingsContext: 'app',
-      showHome: true,
       projectExplorerTab: {},
     });
     for (const key of Object.keys(storage)) delete storage[key];
@@ -337,31 +336,6 @@ describe('uiStore', () => {
   });
 
   describe('localStorage write error logging (LB-SP-004)', () => {
-    it('logs via rendererLog when setItem throws in setShowHome', () => {
-      vi.mocked(localStorage.setItem).mockImplementationOnce(() => {
-        throw new DOMException('QuotaExceededError');
-      });
-
-      getState().setShowHome(false);
-
-      expect(mockRendererLog).toHaveBeenCalledWith(
-        'store:ui',
-        'warn',
-        expect.stringContaining('Failed to persist view prefs'),
-        expect.objectContaining({ meta: expect.objectContaining({ key: 'clubhouse_view_prefs' }) }),
-      );
-    });
-
-    it('in-memory state still updates even when setItem throws in setShowHome', () => {
-      vi.mocked(localStorage.setItem).mockImplementationOnce(() => {
-        throw new DOMException('QuotaExceededError');
-      });
-
-      getState().setShowHome(false);
-
-      expect(getState().showHome).toBe(false);
-    });
-
     it('logs via rendererLog when setItem throws in setActiveHost', () => {
       vi.mocked(localStorage.setItem).mockImplementationOnce(() => {
         throw new DOMException('QuotaExceededError');
@@ -385,22 +359,6 @@ describe('uiStore', () => {
       getState().setActiveHost('sat-1');
 
       expect(getState().activeHostId).toBe('sat-1');
-    });
-  });
-
-  describe('corrupt localStorage', () => {
-    it('logs a warning when view prefs data is corrupt', async () => {
-      localStorage.setItem('clubhouse_view_prefs', '{not valid json');
-      vi.resetModules();
-      await import('./uiStore');
-      expect(mockRendererLog).toHaveBeenCalledWith(
-        'store:ui',
-        'warn',
-        expect.stringContaining('Corrupt view preferences'),
-        expect.objectContaining({
-          meta: expect.objectContaining({ key: 'clubhouse_view_prefs' }),
-        }),
-      );
     });
   });
 });

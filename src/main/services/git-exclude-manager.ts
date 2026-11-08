@@ -39,24 +39,42 @@ const blockStart = (tag: string) => `# >>> ${tag}`;
 const blockEnd = (tag: string) => `# <<< ${tag}`;
 const legacySuffix = (tag: string) => ` # ${tag}`;
 
-/** The file's lines without the tag's block and legacy lines, where the block was, and the block's patterns. */
+/**
+ * The file's lines without the tag's block and legacy lines, where the block
+ * was, and the block's patterns. A block runs to its `# <<< tag` line. One
+ * whose end line is gone (edited by hand) runs only to the next blank line,
+ * the next comment or marker line, or the end of the file, so the person's
+ * own lines after it are never taken as Clubhouse's.
+ */
 function splitTag(existing: string, tag: string): { lines: string[]; at: number; patterns: string[] } {
   const lines = existing.split('\n');
   while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  const bare = lines.map((raw) => raw.replace(/\r$/, ''));
   const out: string[] = [];
   const patterns: string[] = [];
+  const take = (line: string) => { if (line && !patterns.includes(line)) patterns.push(line); };
   let at = -1;
-  let inBlock = false;
-  for (const raw of lines) {
-    const bare = raw.replace(/\r$/, '');
-    if (bare === blockStart(tag)) { inBlock = true; if (at < 0) at = out.length; continue; }
-    if (inBlock) {
-      if (bare === blockEnd(tag)) inBlock = false;
-      else if (bare && !patterns.includes(bare)) patterns.push(bare);
+  for (let i = 0; i < lines.length; i++) {
+    if (bare[i] === blockStart(tag)) {
+      if (at < 0) at = out.length;
+      let end = -1;
+      for (let j = i + 1; j < lines.length && bare[j] !== blockStart(tag); j++) {
+        if (bare[j] === blockEnd(tag)) { end = j; break; }
+      }
+      if (end >= 0) {
+        for (let j = i + 1; j < end; j++) take(bare[j]);
+        i = end;
+      } else {
+        let j = i + 1;
+        for (; j < lines.length && bare[j] && !bare[j].startsWith('#'); j++) take(bare[j]);
+        i = j - 1;
+      }
       continue;
     }
-    if (bare.endsWith(legacySuffix(tag))) { if (at < 0) at = out.length; continue; }
-    out.push(raw);
+    // An end line whose start was removed: Clubhouse's own marker, nothing else.
+    if (bare[i] === blockEnd(tag)) continue;
+    if (bare[i].endsWith(legacySuffix(tag))) { if (at < 0) at = out.length; continue; }
+    out.push(lines[i]);
   }
   return { lines: out, at: at < 0 ? out.length : at, patterns };
 }
@@ -84,29 +102,40 @@ function enqueueWrite(excludePath: string, operation: () => Promise<void>): Prom
   });
 }
 
+const RENAME_TRIES = 5;
+
+/**
+ * Write the file through a temporary file and a rename, so git never reads
+ * half of it. The exclude file is never removed first. A rename refused for a
+ * moment (Windows, another process has the file open) is tried again; one
+ * still refused is replaced by copying the temporary file over it. If even
+ * that fails, the temporary file is kept beside it with the whole content.
+ */
 async function writeAtomically(filePath: string, content: string): Promise<void> {
   const tempPath = `${filePath}.tmp.${randomUUID().slice(0, 8)}`;
   await fsp.writeFile(tempPath, content, 'utf-8');
-
-  try {
-    await fsp.rename(tempPath, filePath);
-  } catch (error) {
-    const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as NodeJS.ErrnoException).code) : '';
-    const canRetryAfterRemovingDestination = code === 'EEXIST'
-      || (process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES'));
-    if (!canRetryAfterRemovingDestination) {
-      await fsp.rm(tempPath, { force: true });
-      throw error;
-    }
-
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= RENAME_TRIES; attempt++) {
     try {
-      await fsp.rm(filePath, { force: true });
       await fsp.rename(tempPath, filePath);
-    } catch (retryError) {
-      await fsp.rm(tempPath, { force: true });
-      throw retryError;
+      return;
+    } catch (error) {
+      lastError = error;
+      const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as NodeJS.ErrnoException).code) : '';
+      if (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY' && code !== 'EEXIST') {
+        await fsp.rm(tempPath, { force: true });
+        throw error;
+      }
+      if (attempt < RENAME_TRIES) await new Promise((resolve) => setTimeout(resolve, 20 * attempt));
     }
   }
+  try {
+    await fsp.copyFile(tempPath, filePath);
+  } catch {
+    // telemetry-exempt: rethrown below; the temporary file keeps the whole content
+    throw lastError;
+  }
+  await fsp.rm(tempPath, { force: true });
 }
 
 async function rewrite(projectPath: string, tag: string, patternsFor: (current: string[]) => string[]): Promise<void> {
@@ -143,4 +172,18 @@ export async function replaceExclusions(projectPath: string, tag: string, patter
 /** Remove the tag's block. */
 export async function removeExclusions(projectPath: string, tag: string): Promise<void> {
   return rewrite(projectPath, tag, () => []);
+}
+
+/** Take `patterns` out of the tag's block, keeping the rest. Writes nothing when the block lists none of them. */
+export async function removePatterns(projectPath: string, tag: string, patterns: string[]): Promise<void> {
+  return rewrite(projectPath, tag, (current) => current.filter((p) => !patterns.includes(p)));
+}
+
+/** The patterns the tag's block lists, none when there is no block or no exclude file. */
+export async function listExclusions(projectPath: string, tag: string): Promise<string[]> {
+  try {
+    return splitTag(await fsp.readFile(await getExcludePath(projectPath), 'utf-8'), tag).patterns;
+  } catch {
+    return []; // telemetry-exempt: no exclude file yet
+  }
 }

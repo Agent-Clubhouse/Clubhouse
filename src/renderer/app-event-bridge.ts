@@ -38,6 +38,7 @@ import { initToolActivityListener } from './plugins/builtin/canvas/useWireActivi
 import { usePendingPermissionStore } from './stores/pendingPermissionStore';
 import { showStructuredModeRemovedNotice } from './services/structured-mode-removal-notice';
 import { showCopilotAcpRemovedNotice } from './services/copilot-acp-removal-notice';
+import { showRetiredPluginNotices } from './services/retired-plugin-notice';
 import { showChatDefaultTip } from './features/agents/chat/chat-default-tip';
 import { isDispatcherAgent, isDispatcherProjectId, useDispatcherStore } from './features/dispatcher/dispatcherStore';
 import { DISPATCHER_PROJECT_ID } from '../shared/dispatcher-types';
@@ -837,6 +838,7 @@ export function initAppEventBridge(): () => void {
   // One after the other: each reads the flags and saves them back without its own marker.
   showStructuredModeRemovedNotice().catch(() => { /* best-effort one-time notice */ })
     .then(() => showCopilotAcpRemovedNotice()).catch(() => { /* best-effort one-time notice */ });
+  showRetiredPluginNotices().catch(() => { /* best-effort one-time notice */ });
   // The one call site for the first-launch Chat tip: a welcome intro (#2814) can run first or gate it here.
   showChatDefaultTip().catch(() => { /* best-effort one-time tip; asked again next launch */ });
   cleanups.push(initKeyboardShortcuts());

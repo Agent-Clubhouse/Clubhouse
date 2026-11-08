@@ -118,15 +118,12 @@ const switchAgents = (binding: (n: number) => string): ShortcutSpec[] => Array.f
   defaultBinding: binding(i + 1),
 }));
 
-/** The legacy shell's set, unchanged. */
+/** The legacy shell's set. Go to Home was removed with Home (v1); a saved binding for it is kept but unused. */
 export const LEGACY_SHORTCUTS: ShortcutSpec[] = [
   // General
   { id: 'command-palette', label: 'Command Palette', category: 'General', defaultBinding: 'Meta+K' },
   { id: 'toggle-settings', label: 'Toggle Settings', category: 'General', defaultBinding: 'Meta+,' },
   { id: 'toggle-help', label: 'Toggle Help', category: 'General', defaultBinding: 'Meta+Shift+/' },
-
-  // Navigation
-  { id: 'go-home', label: 'Go to Home', category: 'Navigation', defaultBinding: 'Meta+Shift+H' },
 
   // Panels
   { id: 'toggle-sidebar', label: 'Toggle Sidebar', category: 'Panels', defaultBinding: 'Meta+B' },

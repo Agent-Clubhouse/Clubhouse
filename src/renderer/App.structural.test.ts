@@ -65,7 +65,7 @@ interface ReturnPathInfo {
 }
 
 const CONDITION_LABELS: Record<string, string> = {
-  isHome: 'Home',
+  noProject: 'NoProject',
   isAppPlugin: 'AppPlugin',
   isHelp: 'Help',
   isNewChrome: 'Chrome',
@@ -74,7 +74,7 @@ const CONDITION_LABELS: Record<string, string> = {
 /**
  * Find all direct return statements in the App function body (skipping nested
  * functions/arrows). Labels each return path by its containing if-statement's
- * condition identifier (e.g. `if (isHome)` → label 'Home').
+ * condition identifier (e.g. `if (noProject)` → label 'NoProject').
  */
 function findReturnPaths(funcDecl: ts.FunctionDeclaration): ReturnPathInfo[] {
   const paths: ReturnPathInfo[] = [];
@@ -313,10 +313,10 @@ const initializerSource = readFileSync(join(__dirname, 'app-initializer.ts'), 'u
 describe('App.tsx – global dialog presence in all return paths', () => {
   const returnPaths = findReturnPaths(appFn);
 
-  it('should have exactly 5 JSX return blocks (Chrome, Home, AppPlugin, Help, MainProject)', () => {
+  it('should have exactly 5 JSX return blocks (Chrome, NoProject, AppPlugin, Help, MainProject)', () => {
     expect(returnPaths.length).toBe(5);
     const labels = returnPaths.map((p) => p.label).sort();
-    expect(labels).toEqual(['AppPlugin', 'Chrome', 'Help', 'Home', 'MainProject']);
+    expect(labels).toEqual(['AppPlugin', 'Chrome', 'Help', 'MainProject', 'NoProject']);
   });
 
   const requiredDialogs = [
@@ -615,29 +615,27 @@ describe('App.tsx – project switch handling', () => {
   });
 });
 
-// ─── 7. Home Satellite Routing ──────────────────────────────────────────────
+// ─── 7. No-project Satellite Routing ────────────────────────────────────────
 
-describe('App.tsx – Home renders SatelliteDashboard for satellite hosts', () => {
+describe('App.tsx – no project open renders SatelliteDashboard for satellite hosts', () => {
   const returnPaths = findReturnPaths(appFn);
-  const homePath = returnPaths.find((p) => p.label === 'Home')!;
+  const noProjectPath = returnPaths.find((p) => p.label === 'NoProject')!;
 
-  it('Home path should include SatelliteDashboard (not AnnexDisabledView)', () => {
-    expect(homePath, 'Home return path not found').toBeDefined();
+  it('NoProject path should include SatelliteDashboard (not AnnexDisabledView)', () => {
+    expect(noProjectPath, 'NoProject return path not found').toBeDefined();
     expect(
-      homePath.tagNames.has('SatelliteDashboard'),
-      'Home return path should include <SatelliteDashboard />',
+      noProjectPath.tagNames.has('SatelliteDashboard'),
+      'NoProject return path should include <SatelliteDashboard />',
     ).toBe(true);
     expect(
-      homePath.tagNames.has('AnnexDisabledView'),
-      'Home return path should NOT include <AnnexDisabledView /> — Home is not gated by plugin annex status',
+      noProjectPath.tagNames.has('AnnexDisabledView'),
+      'NoProject return path should NOT include <AnnexDisabledView /> — the satellite overview is not gated by plugin annex status',
     ).toBe(false);
   });
 
-  it('Home path should include Dashboard for local mode', () => {
-    expect(
-      homePath.tagNames.has('Dashboard'),
-      'Home return path should include <Dashboard /> for local mode',
-    ).toBe(true);
+  it('NoProject path shows NoProjectView locally, not the removed Home Dashboard', () => {
+    expect(noProjectPath.tagNames.has('NoProjectView')).toBe(true);
+    expect(noProjectPath.tagNames.has('Dashboard')).toBe(false);
   });
 
   it('SatelliteDashboard should be imported from annex features', () => {
