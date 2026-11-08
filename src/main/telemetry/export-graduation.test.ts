@@ -162,7 +162,8 @@ describe('a setup the old gate held back ends up off', () => {
     expect(getTelemetrySettings().destinations.some((d) => d.enabled)).toBe(false);
     // The move happens after ready; the mock app is ready at once.
     await vi.waitFor(() => expect(readText(SETTINGS_FILE)).not.toContain('plaintext-value'));
-    expect(readSaved().exportGraduation).toBe(1);
+    // The file can be caught mid-write (empty), so this waits too.
+    await vi.waitFor(() => expect(readSaved().exportGraduation).toBe(1));
   });
 
   it('clears the offline queue, as turning a destination off does', async () => {
