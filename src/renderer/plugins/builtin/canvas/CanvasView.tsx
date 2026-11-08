@@ -717,7 +717,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
       {/* Layout center indicator */}
       {isLayoutCenter && (
         <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-ctp-accent rounded-full flex items-center justify-center z-10" title="Radial layout center">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgb(var(--ctp-crust))" strokeWidth="3" strokeLinecap="round">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgb(var(--ctp-on-accent))" strokeWidth="3" strokeLinecap="round">
             <circle cx="12" cy="12" r="10" />
             <circle cx="12" cy="12" r="3" />
           </svg>

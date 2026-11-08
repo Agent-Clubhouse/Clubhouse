@@ -164,7 +164,7 @@ export function ExportBundleDialog({
           <button
             onClick={handleExport}
             disabled={exporting || !name.trim()}
-            className="px-3 py-1.5 text-[11px] bg-ctp-accent text-ctp-base rounded hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="px-3 py-1.5 text-[11px] bg-ctp-accent text-ctp-on-accent rounded hover:opacity-90 transition-opacity disabled:opacity-50"
             data-testid="export-bundle-submit"
           >
             {exporting ? 'Exporting...' : `Export ${canvases.length} Canvas${canvases.length !== 1 ? 'es' : ''}`}

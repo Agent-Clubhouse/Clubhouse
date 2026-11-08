@@ -105,7 +105,7 @@ function LoginBanner({ state, onSwitchToTerminal }: { state: ChatViewState; onSw
         <button
           type="button"
           onClick={onSwitchToTerminal}
-          className="h-7 px-2.5 rounded-md bg-ctp-accent text-ctp-crust text-[12px] font-medium"
+          className="h-7 px-2.5 rounded-md bg-ctp-accent text-ctp-on-accent text-[12px] font-medium"
         >
           Switch to CLI to log in
         </button>
@@ -123,7 +123,7 @@ function PlanHandoff({ state, onImplement }: { state: ChatViewState; onImplement
       <button
         type="button"
         onClick={() => onImplement(level)}
-        className="h-7 px-2.5 rounded-md bg-ctp-accent text-ctp-crust text-[12px] font-medium"
+        className="h-7 px-2.5 rounded-md bg-ctp-accent text-ctp-on-accent text-[12px] font-medium"
       >
         Switch to {LEVEL_LABELS[level]} and implement
       </button>
