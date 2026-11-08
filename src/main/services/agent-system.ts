@@ -125,6 +125,12 @@ export interface SpawnAgentParams {
    * instead of the project's headless spawn mode.
    */
   interactive?: boolean;
+  /**
+   * A quick agent no one is watching (an Action's step, #3033): it runs
+   * headless whatever the project's spawn mode, and fails to start rather
+   * than open a terminal where it could stop at a prompt.
+   */
+  headless?: boolean;
   /** CLI agent name to load (e.g. --agent k8s-assistant) */
   agentFile?: string;
   /** Source directory for agent file (e.g. --source ~/.copilot/agents/) */
@@ -681,7 +687,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     }
 
     // Try headless path for quick agents when enabled
-    if (spawnMode === 'headless' && params.kind === 'quick' && !params.interactive && isHeadlessCapable(provider)) {
+    const unattended = params.kind === 'quick' && !!params.headless && !params.interactive;
+    if ((spawnMode === 'headless' || unattended) && params.kind === 'quick' && !params.interactive && isHeadlessCapable(provider)) {
       const headlessResult = await provider.buildHeadlessCommand({
         cwd: params.cwd,
         model: params.model,
@@ -785,6 +792,10 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         announceAwake(params.agentId);
         return;
       }
+    }
+
+    if (unattended) {
+      throw new Error(`${provider.displayName} can’t run without a window, so this quick agent can’t start unattended.`);
     }
 
     // Fall back to PTY mode
