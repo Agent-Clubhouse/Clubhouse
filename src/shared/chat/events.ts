@@ -81,7 +81,8 @@ export type MessageSource =
   | 'shoulder_tap'   // group-project shoulder tap
   | 'group_project'  // group-project inject / polling nudge
   | 'annex'          // a remote Annex client
-  | 'system';        // Clubhouse itself (e.g. "continued from terminal" context)
+  | 'system'         // Clubhouse itself (e.g. "continued from terminal" context)
+  | 'action';        // an Action step (#2918)
 
 /** The agent that sent a message. The name is its name at the time, for when the agent is gone. */
 export interface MessageSender {

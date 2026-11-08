@@ -2548,6 +2548,8 @@ describe('annex-server', () => {
         { id: 'proj_1', name: 'test', path: '/tmp/test' },
       ]);
 
+      // The flag reports how it actually started (#2951), not always headless.
+      vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(true);
       const { port, token } = await startAndPair();
       mockBroadcastToAllWindows.mockClear();
 

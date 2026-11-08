@@ -97,6 +97,7 @@ import { decodeDigestSince, SINCE_CHANNELS_PARAM } from '../../shared/digest-sin
 import { THEMES } from '../../renderer/themes';
 import { generateQuickName } from '../../shared/name-generator';
 import { generateQuickAgentId } from '../../shared/agent-id';
+import { observeQuickAgents, startQuickAgent } from './quick-agent-service';
 import { ANNEX_PROTOCOL_VERSION } from '../../shared/types';
 import { handshakeAttributes, parseTelemetryHello, telemetryHelloAck } from '../telemetry/annex-handshake';
 import { rememberAnnexIncidentPhone, rememberAnnexIncidentTrace } from '../telemetry/feedback-incident';
@@ -519,6 +520,21 @@ function untrackQuickAgent(agentId: string): void {
   cancelQuickAgentCleanup(agentId);
   trackedQuickAgents.delete(agentId);
 }
+
+// Quick agents started through the shared service (#2951): from here, and
+// from Actions. Phones see them in the snapshot and get agent:spawned.
+// Only while the server runs: its exit cleanup untracks them, and a stopped
+// server would keep them as running forever.
+observeQuickAgents({
+  starting(entry) {
+    if (!wss) return;
+    setTrackedQuickAgent(entry.id, entry);
+    broadcastAndBuffer('agent:spawned', quickAgentWireFields(entry));
+  },
+  failed(entry) {
+    untrackQuickAgent(entry.id);
+  },
+});
 
 /** What a tracked quick agent sends to controllers. Named, so a field added to the entry stays off the wire until it's listed here. */
 function quickAgentWireFields(qa: TrackedQuickAgent) {
@@ -2029,93 +2045,29 @@ async function handleSpawnQuickAgent(
     systemPrompt = (body.systemPrompt as string | undefined) || parentInfo.config.quickAgentDefaults?.systemPrompt;
   }
 
-  const agentId = generateQuickAgentId();
-  const name = generateQuickName();
   const model = (body.model as string | undefined) || defaultModel;
   const orchestrator = (body.orchestrator as string | undefined) || defaultOrchestrator;
   // Access (#2761): a phone's on/off maps to a level; otherwise the parent's quick agent level.
   const access = typeof body.freeAgentMode === 'boolean' ? accessFromLegacy(body.freeAgentMode, getPermissionMode(project.path)) : defaultAccess;
   const freeAgentMode = legacyFreeAgentMode(access);
 
-  // Track the quick agent
-  const tracked: TrackedQuickAgent = {
-    id: agentId,
-    name,
-    kind: 'quick',
-    status: 'starting',
-    prompt,
-    model: model || null,
-    orchestrator: orchestrator || null,
-    freeAgentMode,
-    parentAgentId,
-    projectId,
-    spawnedAt: Date.now(),
-  };
-  setTrackedQuickAgent(agentId, tracked);
-
-  // Broadcast agent:spawned
-  broadcastAndBuffer('agent:spawned', {
-    id: agentId,
-    name,
-    kind: 'quick',
-    status: 'starting',
-    prompt,
-    model: model || null,
-    orchestrator: orchestrator || null,
-    freeAgentMode,
-    parentAgentId,
-    projectId,
-  });
-
-  // Spawn the agent
+  // Tracked and announced to phones by the quick agent observer (see observeQuickAgents below).
   try {
-    await spawnAgent({
-      agentId,
-      projectPath: project.path,
+    const entry = await startQuickAgent({
+      project: { id: projectId, path: project.path },
       cwd,
-      kind: 'quick',
+      prompt,
       model,
-      mission: prompt,
-      systemPrompt,
       orchestrator,
       freeAgentMode,
+      systemPrompt,
       access,
-    });
-
-    tracked.status = 'running';
-
-    // Notify the desktop renderer so the agent appears in the UI
-    broadcastToAllWindows(IPC.ANNEX.AGENT_SPAWNED, {
-      id: agentId,
-      name,
-      kind: 'quick',
-      status: 'running',
-      prompt,
-      model: model || null,
-      orchestrator: orchestrator || null,
-      freeAgentMode,
       parentAgentId,
-      projectId,
-      headless: true,
     });
-
-    sendJson(res, 201, {
-      id: agentId,
-      name,
-      kind: 'quick',
-      status: 'starting',
-      prompt,
-      model: model || null,
-      orchestrator: orchestrator || null,
-      freeAgentMode,
-      parentAgentId,
-      projectId,
-    });
+    sendJson(res, 201, { ...quickAgentWireFields(entry), status: 'starting' });
   } catch (err) {
-    tracked.status = 'failed';
-    untrackQuickAgent(agentId);
     appLog('core:annex', 'error', 'Failed to spawn quick agent', {
-      meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+      meta: { error: err instanceof Error ? err.message : String(err) },
     });
     sendJson(res, 500, { error: 'spawn_failed' });
   }
@@ -4311,39 +4263,18 @@ async function handleSpawnQuickAgentWs(
 ): Promise<void> {
   const prompt = payload.prompt as string;
   const parentAgentId = payload.parentAgentId as string | null;
-  const agentId = generateQuickAgentId();
-  const name = generateQuickName();
-  const model = payload.model as string | undefined;
-  const orchestrator = (payload.orchestrator as string) || project.orchestrator || 'claude-code';
-  const freeAgentMode = (payload.freeAgentMode as boolean) ?? false;
-
-  const tracked: TrackedQuickAgent = {
-    id: agentId, name, kind: 'quick', status: 'starting', prompt,
-    model: model || null, orchestrator, freeAgentMode,
-    parentAgentId: parentAgentId || null, projectId: project.id, spawnedAt: Date.now(),
-  };
-  setTrackedQuickAgent(agentId, tracked);
-
-  broadcastAndBuffer('agent:spawned', {
-    id: agentId, name, kind: 'quick', status: 'starting', prompt,
-    model: model || null, orchestrator, freeAgentMode, parentAgentId, projectId: project.id,
-  });
-
   try {
-    await spawnAgent({
-      agentId, projectPath: project.path, cwd: project.path,
-      kind: 'quick', model, mission: prompt, orchestrator, freeAgentMode,
+    const entry = await startQuickAgent({
+      project: { id: project.id, path: project.path },
+      prompt,
+      model: payload.model as string | undefined,
+      orchestrator: (payload.orchestrator as string) || project.orchestrator || 'claude-code',
+      freeAgentMode: (payload.freeAgentMode as boolean) ?? false,
+      parentAgentId,
     });
-    tracked.status = 'running';
-    broadcastToAllWindows(IPC.ANNEX.AGENT_SPAWNED, {
-      id: agentId, name, kind: 'quick', status: 'running', prompt,
-      model: model || null, orchestrator, freeAgentMode,
-      parentAgentId, projectId: project.id, headless: true,
-    });
-    safeSend(ws, JSON.stringify({ type: 'agent:spawn:ack', payload: { id: agentId, name, status: 'starting' } }));
+    safeSend(ws, JSON.stringify({ type: 'agent:spawn:ack', payload: { id: entry.id, name: entry.name, status: 'starting' } }));
   } catch {
-    tracked.status = 'failed';
-    untrackQuickAgent(agentId);
+    // telemetry-exempt: the controller is told the start failed
     safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'spawn_failed' } }));
   }
 }
