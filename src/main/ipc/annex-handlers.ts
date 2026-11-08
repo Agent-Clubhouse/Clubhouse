@@ -30,8 +30,9 @@ export function registerAnnexHandlers(): void {
   membership.initNetworkMembership({
     connect: (fingerprint) => annexClient.connect(fingerprint),
     endDevice: (fingerprint) => {
-      annexClient.forgetSatellite(fingerprint);
+      // Revoke first: a removed phone is told on its open connections while it's still known.
       annexServer.revokePeer(fingerprint);
+      annexClient.forgetSatellite(fingerprint);
       broadcastPeersChanged();
     },
   });

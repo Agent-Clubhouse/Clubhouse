@@ -88,7 +88,14 @@ vi.mock('./mobile-agents', () => ({
 // Real HTTP sockets in this suite must never expose test fixtures to the LAN.
 // Bonjour itself is mocked below; retain its branch coverage independently.
 // Membership has its own tests (annex-network-membership.test.ts).
-vi.mock('./annex-network-membership', () => ({ noteLocalJoin: vi.fn(), noteLocalRemoval: vi.fn() }));
+const membershipMock = vi.hoisted(() => ({ onChange: null as null | (() => void) }));
+vi.mock('./annex-network-membership', () => ({
+  noteLocalJoin: vi.fn(),
+  noteLocalRemoval: vi.fn(),
+  currentView: vi.fn(() => ({ members: [], removals: [] })),
+  vouchFromPhone: vi.fn(() => ({ added: [], skipped: [] })),
+  onMembershipChanged: vi.fn((l: () => void) => { membershipMock.onChange = l; return () => { membershipMock.onChange = null; }; }),
+}));
 
 vi.mock('./annex-network-profile', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./annex-network-profile')>();
@@ -186,7 +193,7 @@ vi.mock('./annex-tls', () => ({
 // Mock annex-peers
 vi.mock('./annex-peers', () => ({
   controlsThisMachine: (p?: { role?: string } | null) => p?.role === 'controller' || p?.role === 'member',
-  controlledFromHere: (p?: { role?: string } | null) => p?.role === 'satellite' || p?.role === 'member',
+  controlledFromHere: (p?: { role?: string; kind?: string } | null) => p?.role === 'satellite' || (p?.role === 'member' && p.kind !== 'phone'),
   checkBruteForce: vi.fn().mockReturnValue({ allowed: true, delayMs: 0, locked: false, attemptsRemaining: 3 }),
   recordFailedAttempt: vi.fn(),
   recordSuccessfulAttempt: vi.fn(),
@@ -2269,6 +2276,86 @@ describe('annex-server', () => {
         } finally {
           vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: false, deviceName: 'Test Machine', alias: 'Test Machine', icon: 'computer', color: 'indigo', autoReconnect: false } as any);
         }
+      });
+    });
+
+    describe('the phone as a member (#3062)', () => {
+      const AA_FP = Array(16).fill('aa').join(':');
+      const CC_FP = Array(16).fill('cc').join(':');
+      const memberRecord = (fp: string) => ({
+        fingerprint: fp, publicKey: `key-${fp}`, certFingerprint: Array(32).fill('CD').join(':'), certPem: '-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n',
+        name: 'Studio', icon: 'computer', color: 'indigo', kind: 'desktop', hosts: ['192.168.1.9'], port: 7432, joinedAt: '2026-11-08T10:00:00.000Z',
+      });
+
+      it('makes a phone that asks a member of kind phone, says so, and still locks the screen', async () => {
+        await startServer();
+        const phone = device();
+        const res = await pair(phone, { network: 1, pairingMode: 'persistent', icon: 'iphone' });
+        expect(res.body.network).toBe(1);
+        expect(peers.get(phone.fingerprint)).toMatchObject({ role: 'member', kind: 'phone' });
+        // It still may use the phone routes.
+        expect((await call('GET', '/api/v1/mobile/capabilities', phone)).body.controlAvailable).toBe(true);
+      });
+
+      it('never joins a session-only pairing', async () => {
+        await startServer();
+        const phone = device();
+        const res = await pair(phone, { network: 1, pairingMode: 'session' });
+        expect(res.body).not.toHaveProperty('network');
+      });
+
+      it('offers the network in capabilities while Annex Network is on', async () => {
+        await startServer();
+        const phone = device();
+        await pair(phone, { pairingMode: 'persistent' });
+        expect((await call('GET', '/api/v1/mobile/capabilities', phone)).body.network).toEqual({
+          version: 1, path: '/api/v1/mobile/network', membersPath: '/api/v1/mobile/network/members', event: 'network:changed', pairField: 'network',
+        });
+      });
+
+      it('lists the network for a member phone, and only this desktop for a one-to-one phone', async () => {
+        await startServer();
+        const membershipMod = await import('./annex-network-membership');
+        vi.mocked(membershipMod.currentView).mockReturnValue({ members: [memberRecord(AA_FP) as never], removals: [{ fingerprint: CC_FP, removedAt: '2026-11-08T12:00:00.000Z' }] });
+        const member = device();
+        await pair(member, { network: 1, pairingMode: 'persistent' });
+        const listed = await call('GET', '/api/v1/mobile/network', member);
+        expect(listed).toMatchObject({ status: 200, body: { version: 1, joined: true, removals: [{ fingerprint: CC_FP }] } });
+        expect(listed.body.members[0]).toMatchObject({ fingerprint: AA_FP, publicKey: `key-${AA_FP}`, kind: 'desktop', hosts: ['192.168.1.9'], port: 7432, certPem: expect.stringContaining('BEGIN'), online: false });
+        const oneToOne = device();
+        await pair(oneToOne, { pairingMode: 'persistent' });
+        expect((await call('GET', '/api/v1/mobile/network', oneToOne)).body).toMatchObject({ joined: false, removals: [] });
+        expect((await call('GET', '/api/v1/mobile/network', null)).status).toBe(403);
+      });
+
+      it('tells a removed phone on its open connections, before they are cut', async () => {
+        await startServer();
+        const phone = device();
+        await pair(phone, { network: 1, pairingMode: 'persistent' });
+        const { EventEmitter } = await import('events');
+        const ws = Object.assign(new EventEmitter(), { send: vi.fn(), ping: vi.fn(), close: vi.fn(), terminate: vi.fn(), readyState: 1 }) as any;
+        annexServer._testing.registerPeerSocket(ws, phone.fingerprint, phone.certFingerprint);
+        annexServer._testing.wss!.clients.add(ws);
+        annexServer.revokePeer(phone.fingerprint);
+        const sent = ws.send.mock.calls.map((c: unknown[]) => JSON.parse(String(c[0])));
+        expect(sent.some((f: { type: string }) => f.type === 'network:changed')).toBe(true);
+        expect(ws.close).toHaveBeenCalledWith(4401, 'peer_not_paired');
+        annexServer._testing.wss!.clients.delete(ws);
+      });
+
+      it('takes members a member phone vouches for, as listed, and refuses others', async () => {
+        await startServer();
+        const membershipMod = await import('./annex-network-membership');
+        vi.mocked(membershipMod.vouchFromPhone).mockReturnValue({ added: [AA_FP], skipped: [] });
+        const member = device();
+        await pair(member, { network: 1, pairingMode: 'persistent' });
+        const listed = { ...memberRecord(AA_FP), online: true, self: true };
+        expect(await call('POST', '/api/v1/mobile/network/members', member, { members: [listed] })).toEqual({ status: 200, body: { added: [AA_FP], skipped: [] } });
+        expect(membershipMod.vouchFromPhone).toHaveBeenCalledWith(member.fingerprint, [memberRecord(AA_FP)]);
+        expect((await call('POST', '/api/v1/mobile/network/members', member, { members: [{ ...memberRecord(AA_FP), command: 'agent:spawn' }] })).body.error).toBe('invalid_members');
+        const oneToOne = device();
+        await pair(oneToOne, { pairingMode: 'persistent' });
+        expect((await call('POST', '/api/v1/mobile/network/members', oneToOne, { members: [memberRecord(AA_FP)] })).body.error).toBe('not_a_member');
       });
     });
 

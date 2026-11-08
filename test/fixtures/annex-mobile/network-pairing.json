@@ -1,0 +1,30 @@
+{
+  "request": {
+    "body": {
+      "alias": "Mason’s iPhone",
+      "color": "emerald",
+      "icon": "iphone",
+      "network": 1,
+      "pairingMode": "persistent",
+      "pin": "123456",
+      "publicKey": "<base64 Ed25519 SPKI DER>"
+    },
+    "method": "POST",
+    "path": "/pair"
+  },
+  "response": {
+    "body": {
+      "alias": "Studio Mac",
+      "color": "indigo",
+      "fingerprint": "AA:BB:CC:DD",
+      "icon": "computer",
+      "mobileProtocolVersion": 1,
+      "network": 1,
+      "pairingMode": "persistent",
+      "publicKey": "fixture-public-key",
+      "tlsCertificateFingerprint": "AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB:AB",
+      "token": "<ignored>"
+    },
+    "status": 200
+  }
+}

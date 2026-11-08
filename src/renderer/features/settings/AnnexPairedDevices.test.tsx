@@ -56,6 +56,16 @@ describe('AnnexPairedDevices', () => {
     expect(screen.queryByText('Satellite Mac')).not.toBeInTheDocument();
   });
 
+  it('lists a phone in this machine\'s network, and not a computer member (#3062)', async () => {
+    listPeers.mockResolvedValueOnce([
+      peer({ fingerprint: 'fp-member-phone', alias: 'Network Phone', role: 'member', kind: 'phone' }),
+      peer({ fingerprint: 'fp-member-mac', alias: 'Network Mac', role: 'member', kind: 'desktop' }),
+    ]);
+    render(<AnnexPairedDevices />);
+    expect(await screen.findByText('Network Phone')).toBeInTheDocument();
+    expect(screen.queryByText('Network Mac')).not.toBeInTheDocument();
+  });
+
   it('shows when each device was paired and last seen', async () => {
     listPeers.mockResolvedValueOnce([peer({})]);
     render(<AnnexPairedDevices />);
