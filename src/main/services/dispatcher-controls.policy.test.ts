@@ -34,6 +34,7 @@ vi.mock('./orchestration-settings', () => ({
 vi.mock('./dispatcher/dispatcher-service', () => ({
   isDispatcherEnabled: () => true,
   isDispatcherAgentId: (id: string) => id === 'dispatcher',
+  isDispatcherIdentityAgentId: (id: string) => id === 'dispatcher',
   isDispatcherPath: () => false,
   onDispatcherChanged: vi.fn(() => () => undefined),
 }));

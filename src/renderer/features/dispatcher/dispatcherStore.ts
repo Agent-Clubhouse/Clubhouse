@@ -9,6 +9,10 @@ import { useProjectStore } from '../../stores/projectStore';
  * subscription. The Dispatcher isn't in projectStore (#2533): its agent runs
  * under DISPATCHER_PROJECT_ID with its folder as the project path, and
  * `project` is that pair, set while it's turned on or still running.
+ *
+ * The agent shown is the Dispatcher's chat (#3036), in the chat's folder. The
+ * agent that holds its connections, links and grants is never loaded or shown;
+ * only its id is used, for those (dispatcherWiresAgentId).
  */
 
 /** What agent views need of an agent's project: its id, name and folder. */
@@ -36,7 +40,7 @@ export const useDispatcherStore = create<DispatcherStoreState>((set, get) => ({
   loadError: null,
   loadAttempt: 0,
   setState: (state) => {
-    const path = (state?.enabled || state?.running) && state.agentId ? state.path : null;
+    const path = (state?.enabled || state?.running) && state.chatAgentId ? state.chatPath : null;
     // Keep the same object while the folder is the same, so selectors stay stable.
     const current = get().project;
     const project = !path ? null : current?.path === path ? current : { id: DISPATCHER_PROJECT_ID, name: 'Dispatcher', path };
@@ -51,20 +55,35 @@ export function isDispatcherProjectId(projectId: string | null | undefined): boo
 }
 
 /**
- * Whether this is the Dispatcher's agent. Its id decides, so a record that
- * came into the store with the wrong projectId (an update-restart resume
- * before the Dispatcher's state loaded, #2552) is still recognised.
+ * Whether this is the Dispatcher's agent: either of its two (#3036). Its id
+ * decides, so a record that came into the store with the wrong projectId (an
+ * update-restart resume before the Dispatcher's state loaded, #2552) is still
+ * recognised.
  */
 export function isDispatcherAgent(agent: Pick<Agent, 'id' | 'projectId'> | null | undefined): boolean {
   if (!agent) return false;
   if (agent.projectId === DISPATCHER_PROJECT_ID) return true;
-  const agentId = useDispatcherStore.getState().state?.agentId;
-  return !!agentId && agent.id === agentId;
+  const state = useDispatcherStore.getState().state;
+  return !!state && (agent.id === state.chatAgentId || agent.id === state.agentId);
 }
 
-/** The Dispatcher's agent id while it's turned on or still running. */
+/** The id of the agent shown as the Dispatcher (its chat), whatever state it is in. */
+export function visibleDispatcherAgentId(): string | null {
+  return useDispatcherStore.getState().state?.chatAgentId ?? null;
+}
+
+/**
+ * The id the Dispatcher's wires, links and grants are on, for an agent shown
+ * as the Dispatcher. Any other agent's own id.
+ */
+export function dispatcherWiresAgentId(agent: Pick<Agent, 'id' | 'projectId'>): string {
+  if (!isDispatcherAgent(agent)) return agent.id;
+  return useDispatcherStore.getState().state?.agentId ?? agent.id;
+}
+
+/** The id of the agent shown as the Dispatcher while it's turned on or still running. */
 export function useDispatcherAgentId(): string | null {
-  return useDispatcherStore((s) => (s.project ? s.state?.agentId ?? null : null));
+  return useDispatcherStore((s) => (s.project ? s.state?.chatAgentId ?? null : null));
 }
 
 /** A local project by id, or the Dispatcher's folder for its synthetic id. */

@@ -1426,6 +1426,11 @@ export type BuiltinThemeId =
   | 'tokyo-night'
   | 'gruvbox-dark'
   | 'cyberpunk'
+  // Designed around their gradients (#2916), in src/renderer/themes/gradient-themes.ts.
+  | 'aurora'
+  | 'canyon'
+  | 'daybreak'
+  | 'mist'
   // The seven Workshop packs (#2753), in src/renderer/themes/packs.
 | 'maple'
 | 'harvest'

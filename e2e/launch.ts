@@ -10,6 +10,7 @@ import {
 import { recordElectronApp, trackOpenApp, untrackOpenApp } from './e2e-cleanup';
 import { installFrameMonitor, reportActionFailure } from './renderer-diagnostics';
 import { observeOwnedProcess } from './owned-process-receipts';
+import { withRunLayout } from './layout';
 
 const APP_PATH = path.resolve(__dirname, '..');
 const MAIN_ENTRY = path.join(APP_PATH, '.webpack', process.arch, 'main');
@@ -23,7 +24,9 @@ export interface LaunchOptions {
    * mount — UI surfaces gated on these flags read them once on mount and
    * won't react to a later IPC write.
    *
-   * Seeded as `experimental-settings.json` in the launch's profile.
+   * Seeded as `experimental-settings.json` in the launch's profile. Leave
+   * `newChrome` unset to launch on the run's layout: the new one, or classic in
+   * the Classic layout E2E job (e2e/classic-specs.mjs).
    */
   experimental?: Record<string, boolean>;
 
@@ -102,7 +105,7 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   let electronApp: ElectronApp;
   try {
     if (!ownsProfile) assertDisposableProfile(profile);
-    seedProfile(profile, { experimental: opts.experimental, userDataFiles: opts.userDataFiles });
+    seedProfile(profile, { experimental: withRunLayout(opts.experimental), userDataFiles: opts.userDataFiles });
     const env = buildLaunchEnv(process.env, { profile, pluginsDir: opts.pluginsDir, env: opts.env });
     electronApp = await electron.launch({
       ...(opts.executablePath ? { executablePath: opts.executablePath } : {}),

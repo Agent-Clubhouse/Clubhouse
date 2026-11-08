@@ -68,11 +68,16 @@ vi.mock('./dispatcher/dispatcher-service', () => {
   const config = () => (W.durables[DISPATCHER_PATH] ?? [])[0] ?? null;
   const enabled = () => W.dispatcher.enabled;
   const state = () => ({ enabled: enabled(), flagOn: true, savedOn: W.dispatcher.enabled, classic: !W.dispatcher.newLayout, offReason: enabled() ? null : W.dispatcher.classicUnsaved ? 'classic_layout' : 'switch_off', running: W.dispatcher.running, agentId: config()?.id ?? null,
-    path: config() ? DISPATCHER_PATH : null, config: config() ? { ...config() } : null });
+    path: config() ? DISPATCHER_PATH : null, config: config() ? { ...config() } : null,
+    // Phones see the Dispatcher's chat (#3036); here the one record stands for it, so the contract is unchanged.
+    chatAgentId: config()?.id ?? null, chatPath: config() ? DISPATCHER_PATH : null, chatRunning: W.dispatcher.running });
   return {
     DISPATCHER_NAME: 'Dispatcher',
     getDispatcherPath: () => DISPATCHER_PATH,
+    getDispatcherChatPath: () => DISPATCHER_PATH,
+    getDispatcherChatConfig: () => (config() ? { ...config() } : null),
     isDispatcherAgentId: (id?: string | null) => !!id && id === config()?.id,
+    isDispatcherChatAgentId: (id?: string | null) => !!id && id === config()?.id,
     isDispatcherEnabled: enabled,
     getDispatcherState: state,
     onDispatcherChanged: (l: (s: unknown) => void) => { W.dispatcherListeners.add(l); return () => W.dispatcherListeners.delete(l); },

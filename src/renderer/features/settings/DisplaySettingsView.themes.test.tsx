@@ -1,5 +1,5 @@
 /**
- * The theme picker with the real 44 built-ins plus plugin themes (#2754),
+ * The theme picker with the real 48 built-ins plus plugin themes (#2754),
  * and a larger set, so the design isn't tuned to one count.
  */
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
@@ -32,7 +32,7 @@ const cards = () => screen.getAllByRole('button', { pressed: false }).concat(scr
   .filter((b) => b.dataset.testid?.startsWith('theme-card-'));
 const search = () => screen.getByRole('searchbox', { name: 'Search themes' });
 
-describe('theme picker with 44 built-ins and plugin themes (#2754)', () => {
+describe('theme picker with 48 built-ins and plugin themes (#2754)', () => {
   let pluginIds: ThemeId[];
 
   beforeEach(() => {
@@ -59,9 +59,9 @@ describe('theme picker with 44 built-ins and plugin themes (#2754)', () => {
 
   it('shows every built-in and plugin theme, grouped by where it comes from', () => {
     show([...builtinIds, ...pluginIds]);
-    expect(cards()).toHaveLength(49);
+    expect(cards()).toHaveLength(53);
     const headings = within(screen.getByTestId('theme-picker')).getAllByRole('heading', { level: 4 }).map((h) => h.textContent);
-    expect(headings).toEqual(['Clubhouse', 'Fall', 'Winter', 'Spring', 'Summer', 'Ocean', 'Tech Modern', 'Neon', 'Acme Themes', 'Beta Colors']);
+    expect(headings).toEqual(['Clubhouse', 'Gradients', 'Fall', 'Winter', 'Spring', 'Summer', 'Ocean', 'Tech Modern', 'Neon', 'Acme Themes', 'Beta Colors']);
     // Every group is a named region, Tech Modern's space included.
     for (const name of ['Clubhouse', 'Tech Modern', 'Acme Themes']) expect(screen.getByRole('region', { name })).toBeInTheDocument();
     const winter = screen.getByRole('region', { name: 'Winter' });
@@ -98,7 +98,7 @@ describe('theme picker with 44 built-ins and plugin themes (#2754)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show all themes' }));
     expect(search()).toHaveValue('');
     expect(search()).toHaveFocus();
-    expect(cards()).toHaveLength(49);
+    expect(cards()).toHaveLength(53);
     expect(screen.getByTestId('theme-card-nord')).toHaveAttribute('aria-pressed', 'true');
   });
 
@@ -112,7 +112,7 @@ describe('theme picker with 44 built-ins and plugin themes (#2754)', () => {
     expect(search()).toHaveFocus();
     expect(screen.getByRole('status')).toHaveTextContent('');
     expect(screen.getByRole('combobox', { name: 'Show' })).toHaveValue('all');
-    expect(cards()).toHaveLength(49);
+    expect(cards()).toHaveLength(53);
   });
 
   it('picks with the keyboard: search, then filter, then the cards in order', async () => {
@@ -145,11 +145,11 @@ describe('theme picker with 44 built-ins and plugin themes (#2754)', () => {
     expect(setTheme).not.toHaveBeenCalled();
   });
 
-  it('handles a larger set the same way (60 themes)', () => {
+  it('handles a larger set the same way (64 themes)', () => {
     const extra: ThemeId[] = [];
     for (let i = 0; i < 11; i++) extra.push(addPluginTheme('beta-pack', `extra-${i}`, `Extra ${i}`, i % 2 ? 'light' : 'dark'));
     show([...builtinIds, ...pluginIds, ...extra]);
-    expect(cards()).toHaveLength(60);
+    expect(cards()).toHaveLength(64);
     act(() => { fireEvent.change(search(), { target: { value: 'extra 1' } }); });
     expect(cards().map((c) => c.textContent)).toEqual(['Extra 1', 'Extra 10']);
   });

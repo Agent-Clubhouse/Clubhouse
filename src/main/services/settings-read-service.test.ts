@@ -36,6 +36,8 @@ vi.mock('./mobile-control', () => ({ MobileControlError: class extends Error {} 
 vi.mock('./helper-index', () => ({ listHelpersEverywhere: vi.fn(async () => []) }));
 vi.mock('./dispatcher/dispatcher-service', () => ({
   isDispatcherAgentId: (id: string) => id === 'dispatcher',
+  isDispatcherChatAgentId: () => false,
+  isDispatcherIdentityAgentId: (id: string) => id === 'dispatcher',
   getDispatcherState: () => ({ enabled: true, flagOn: true, agentId: 'dispatcher', path: path.join(dirs.base, 'dispatcher'), config: null }),
 }));
 

@@ -975,7 +975,7 @@ The snapshot's `dispatcher` is `null` while the Dispatcher is off (or was never 
   "detailedStatus":null,"executionMode":null,"hasSession":true,"lastActivityAt":1800000000000}}
 ```
 
-`agent` is the `agents[projectId][]` shape with `projectId: "__dispatcher__"` and `isDispatcher: true`, and no `orchestration` (its orchestration settings are locked). It is in `agentIcons` when it has an image icon and in `agentsMeta` while it runs. `GET /api/v1/mobile/agents/state` has a row for it (`projectId: "__dispatcher__"`, `isDispatcher: true`) while it is on.
+`agent` is the `agents[projectId][]` shape with `projectId: "__dispatcher__"` and `isDispatcher: true`, and no `orchestration` (its orchestration settings are locked). It is the Dispatcher you talk to (#3036). Since that change its `id` is a new one, and its conversation starts fresh: work on agents happens out of sight under the Dispatcher's name, and only this agent is ever listed. Its chat, agent routes and commands take this `id`, and a phone should not keep an older one. It is in `agentIcons` when it has an image icon and in `agentsMeta` while it runs. `GET /api/v1/mobile/agents/state` has a row for it (`projectId: "__dispatcher__"`, `isDispatcher: true`) while it is on.
 
 ### Live changes
 

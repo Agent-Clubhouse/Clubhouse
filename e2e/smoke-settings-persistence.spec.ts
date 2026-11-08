@@ -5,7 +5,8 @@
  * project switches, and multiple roundtrips. Tests settings sub-page
  * navigation and completed-section collapse persistence.
  *
- * Issue #233 — Consolidated from smoke.spec.ts + PR #257
+ * Issue #233 — Consolidated from smoke.spec.ts + PR #257. Runs on the new
+ * layout, and on classic in the Classic layout E2E job (#2843).
  */
 import { test, expect, _electron as electron, Page } from '@playwright/test';
 import { launchApp } from './launch';
@@ -14,17 +15,23 @@ import {
   FIXTURE_B,
   addProject,
   assertNotBlankScreen,
+  assertRunLayout,
   openSettings,
+  closeSettings,
+  openSettingsPage,
   navigateToDisplaySettings,
   navigateToSmokeProject,
+  selectProject,
   getBaseColorVar,
 } from './smoke-helpers';
+import { isNewLayout } from './layout';
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
+  ({ electronApp, window } = await launchApp());
+  await assertRunLayout(window);
 
   await addProject(electronApp, window, FIXTURE_SMOKE);
   await addProject(electronApp, window, FIXTURE_B);
@@ -95,14 +102,10 @@ test.describe('Settings Persistence — Theme', () => {
   test('theme persists after switching projects (project-b roundtrip)', async () => {
     const colorBefore = await getBaseColorVar(window);
 
-    // Close settings
-    const settingsBtn = window.locator('[data-testid="nav-settings"]');
-    await settingsBtn.click();
-    await window.waitForTimeout(500);
+    await closeSettings(window);
 
     // Switch to project-b
-    const projB = window.locator('[title="project-b"]').first();
-    await projB.click();
+    await selectProject(window, 'project-b');
     await window.waitForTimeout(500);
 
     // Switch back to smoke project
@@ -125,11 +128,11 @@ test.describe('Settings Persistence — Theme', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Display settings in the classic layout (the Home toggle was removed for v1)
+// Display settings (the Home toggle was removed for v1)
 // ---------------------------------------------------------------------------
 
 test.describe('Settings Persistence — Display', () => {
-  test('classic Display settings have no Home toggle', async () => {
+  test('Display settings have the Classic layout switch and no Home toggle', async () => {
     const titleBar = window.locator('[data-testid="title-bar"]');
     const titleText = await titleBar.textContent();
     if (!titleText?.includes('Settings')) {
@@ -154,24 +157,31 @@ test.describe('Settings Persistence — Navigation & Stability', () => {
       await openSettings(window);
     }
 
-    const subPages = ['Notifications', 'Logging', 'About', 'Display & UI'];
-    for (const pageName of subPages) {
-      const btn = window.locator(`button:has-text("${pageName}")`);
-      const visible = await btn.isVisible({ timeout: 2_000 }).catch(() => false);
-      if (visible) {
-        await btn.click();
-        await window.waitForTimeout(300);
+    const subPages: Array<[string, string]> = [['notifications', 'Notifications'], ['logging', 'Logging'], ['about', 'About'], ['display', 'Display & UI']];
+    if (await isNewLayout(window)) {
+      // Every page is in the sidebar's settings list.
+      for (const [page, label] of subPages) {
+        await openSettingsPage(window, page, label);
+        await expect(window.getByTestId(`settings-nav-app-${page}`)).toHaveAttribute('aria-current', 'page');
         await assertNotBlankScreen(window);
+      }
+    } else {
+      for (const [, pageName] of subPages) {
+        const btn = window.locator(`button:has-text("${pageName}")`);
+        const visible = await btn.isVisible({ timeout: 2_000 }).catch(() => false);
+        if (visible) {
+          await btn.click();
+          await window.waitForTimeout(300);
+          await assertNotBlankScreen(window);
+        }
       }
     }
 
-    // Close settings
-    const settingsBtn = window.locator('[data-testid="nav-settings"]');
-    await settingsBtn.click();
-    await window.waitForTimeout(500);
+    await closeSettings(window);
   });
 
   test('completed section collapse persists in localStorage', async () => {
+    test.skip(await isNewLayout(window), 'The Completed footer is classic only; the new layout lists finished quick agents in its tree.');
     await navigateToSmokeProject(window);
     await window.waitForTimeout(500);
 

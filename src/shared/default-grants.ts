@@ -15,6 +15,11 @@ import type { OrchestrationControl } from './orchestration-policy';
  */
 export interface GrantCallerFacts {
   dispatcher: boolean;
+  /**
+   * The Dispatcher's chat (#3036). It has no permissions of its own: it reads,
+   * and hands every action to the Dispatcher. Its grants replace all others.
+   */
+  dispatcherChat?: boolean;
   /** Has an orchestrator. */
   helper: boolean;
   /** "Let this agent orchestrate" is on. */
@@ -59,7 +64,25 @@ const ANY_PROJECT: GrantTarget = { kind: 'project', project: 'any' };
 const APP: GrantTarget = { kind: 'app' };
 const ANY: GrantTarget = { kind: 'any' };
 
+/**
+ * The Dispatcher's chat (#3036): reading only, `agent.message` on itself,
+ * which is how it hands work to the Dispatcher (one identity, two agents), and
+ * `agent.wake` on the Dispatcher alone, so a hand-off wakes it (#3037).
+ * Nothing that acts on another agent, a project, an Action or a setting.
+ */
+function dispatcherChatGrants(): Grant[] {
+  const structural = g('structural');
+  return [
+    structural('agent.read', SELF), structural('agent.read', CONNECTED), structural('agent.read', ANY),
+    structural('agent.message', SELF),
+    structural('agent.wake', { kind: 'connected', onlyDispatcher: true }),
+    structural('project.read', ANY_PROJECT),
+    structural('settings.app.read', APP), structural('models.read', APP), structural('action.read', APP),
+  ];
+}
+
 export function defaultGrants(facts: GrantCallerFacts): Grant[] {
+  if (facts.dispatcherChat) return dispatcherChatGrants();
   const every = g('every_agent');
   const structural = g('structural');
   const out: Grant[] = [

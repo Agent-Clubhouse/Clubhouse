@@ -709,7 +709,7 @@ function initNotificationClearing(): () => void {
     const activeAgentId = useAgentStore.getState().activeAgentId;
     const activeProjectId = useProjectStore.getState().activeProjectId;
     const { explorerTab, dispatcherOpen } = useUIStore.getState();
-    const dispatcherAgentId = useDispatcherStore.getState().state?.agentId;
+    const dispatcherAgentId = useDispatcherStore.getState().state?.chatAgentId;
     const key = `${activeAgentId}|${activeProjectId}|${explorerTab}|${dispatcherOpen}|${dispatcherAgentId}`;
     if (key !== prevKey) {
       prevKey = key;
