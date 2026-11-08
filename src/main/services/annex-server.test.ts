@@ -150,6 +150,8 @@ vi.mock('./file-service', () => ({
 
 // Mock annex-identity
 vi.mock('./annex-identity', () => ({
+  // No identity yet as far as the Annex Network hello goes: it then sends none.
+  getIdentity: vi.fn().mockReturnValue(null),
   getOrCreateIdentity: vi.fn().mockReturnValue({
     publicKey: 'fake-public-key',
     privateKey: 'fake-private-key',

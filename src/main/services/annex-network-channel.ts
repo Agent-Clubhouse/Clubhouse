@@ -199,7 +199,13 @@ function refuse(ch: Channel, code: number, reason: string, detail: string): void
 }
 
 function sendHello(ch: Channel): void {
-  const self = localMember();
+  let self: NetworkMember | null;
+  try {
+    self = localMember();
+  } catch (err) { // telemetry-exempt: logged; a socket callback must never throw
+    appLog('core:annex', 'warn', 'Could not describe this machine for the Annex Network hello', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    return;
+  }
   if (!self) return;
   send(ch, { v: NETWORK_PROTOCOL_VERSION, type: 'hello', member: self });
   send(ch, { v: NETWORK_PROTOCOL_VERSION, type: 'members', members: localMembers(), removals: [] });
