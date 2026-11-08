@@ -2748,6 +2748,17 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     } finally { clearSessionCaptures(); W.guidedAvailable = false; }
   });
 
+  it('machine-qualified agent addresses (#3063)', async () => {
+    const ws = await connect();
+    const [snapshot] = frames(ws);
+    expect(snapshot.payload.machine).toEqual({ fingerprint: NET.self.fingerprint, name: 'Studio Mac' });
+    // A command for an agent on another machine is refused, naming the machine to send it to.
+    const other = Array(16).fill('bb').join(':');
+    const refused = await command('common:agent on another machine', { type: 'agent.stop', agentId: `durable_chat@${other}` });
+    expect(refused.body).toMatchObject({ status: 'rejected', error: { code: 'wrong_machine' }, machine: other });
+    fixtures.set('agent-address.json', { snapshotField: { machine: snapshot.payload.machine }, wrongMachine: refused });
+  });
+
   it('Annex Network: listing machines, joining through the phone, and new members (#3062)', async () => {
     // Paired one-to-one: only this desktop, and nothing can be vouched for.
     const oneToOne = await exchange('GET', '/api/v1/mobile/network');

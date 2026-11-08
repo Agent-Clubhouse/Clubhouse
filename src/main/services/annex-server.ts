@@ -52,6 +52,7 @@ import { withReachableAs } from './annex-reach';
 import * as networkChannel from './annex-network-channel';
 import * as membership from './annex-network-membership';
 import { NETWORK_MESSAGE_MAX_BYTES, NETWORK_PROTOCOL_VERSION, parseNetworkMessage } from '../../shared/annex-network-protocol';
+import { parseAgentAddress, routeOf } from '../../shared/agent-address';
 import * as annexEventBus from './annex-event-bus';
 import * as annexSettings from './annex-settings';
 import { annexNetworkProfile } from './annex-network-profile';
@@ -1255,6 +1256,8 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
 
   return { icons, iconRefs, payload: {
     protocolVersion: ANNEX_PROTOCOL_VERSION,
+    // Which machine this is (#3063): its agents' addresses are `<agentId>@<fingerprint>`.
+    ...thisMachine(),
     projects,
     agents,
     quickAgents,
@@ -3481,6 +3484,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     providerControl: { version: 1, preview: 'agent.providerPreview', change: 'agent.providerChange', stoppedAcknowledgment: true, strictStart: true },
     // Every agent's live state in one read, for catching up after a reconnect.
     agentState: { version: 1, path: '/api/v1/mobile/agents/state' },
+    // Machine-qualified agent addresses (#3063): a command's agentId may carry the machine.
+    agentAddress: { version: 1, format: '{agentId}@{machine}', snapshotField: 'machine', wrongMachineCode: 'wrong_machine' },
     // Annex Network (#3062): the machines in this phone's network, and joining through the phone.
     ...(annexSettings.networkEnabled() && { network: NETWORK_CAPABILITY }),
     helperRequests: { version: 1, snapshotField: 'helperRequests', commands: ['helper.approve', 'helper.decline'] },
@@ -3808,8 +3813,32 @@ async function handleMobileHelperRoutingRoute(ctx: AnnexRouteContext): Promise<v
   }
 }
 
-async function runMobileCommand(command: MobileCommand, assertAuthorized: () => void, principal: string): Promise<unknown> {
+/** This machine, as snapshots and addresses name it (#3063). */
+function thisMachine(): { machine?: { fingerprint: string; name: string } } {
+  const identity = annexIdentity.getIdentity();
+  if (!identity) return {};
+  const settings = annexSettings.getSettings();
+  return { machine: { fingerprint: identity.fingerprint.toLowerCase(), name: settings.alias || settings.deviceName || 'Clubhouse' } };
+}
+
+/**
+ * A command's agent may be named with its machine (`<agentId>@<machine>`, #3063).
+ * This machine's becomes the bare id; another machine's is refused, naming it,
+ * so the phone sends the command there.
+ */
+function localizeCommandAgent(command: MobileCommand): MobileCommand {
+  if (!('agentId' in command) || typeof command.agentId !== 'string') return command;
+  const address = parseAgentAddress(command.agentId);
+  const route = routeOf(address, annexIdentity.getIdentity()?.fingerprint);
+  if ('machine' in route) {
+    throw new MobileControlError('wrong_machine', 409, 'rejected', 'That agent is on another machine. Send this to that machine.', { machine: route.machine });
+  }
+  return address.agentId === command.agentId ? command : { ...command, agentId: address.agentId } as MobileCommand;
+}
+
+async function runMobileCommand(input: MobileCommand, assertAuthorized: () => void, principal: string): Promise<unknown> {
   assertAuthorized();
+  const command = localizeCommandAgent(input);
   if (command.type === 'helperRouting.update') return runHelperRoutingUpdate(command, assertAuthorized, findProjectById);
   if (command.type === 'dispatcher.setEnabled') {
     // onDispatcherChanged broadcasts dispatcher:changed and refreshes the snapshot.
