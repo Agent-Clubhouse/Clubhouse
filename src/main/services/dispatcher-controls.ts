@@ -44,7 +44,7 @@ import {
   type DispatcherConnection,
   type OrchestratorEntry,
 } from './dispatcher-connections';
-import { isDispatcherAgentId, isDispatcherEnabled } from './dispatcher/dispatcher-service';
+import { isDispatcherIdentityAgentId as isDispatcherAgentId, isDispatcherEnabled } from './dispatcher/dispatcher-service';
 import { listHelpersEverywhere } from './helper-index';
 import { getHelperSummary, setOrchestrationPolicy } from './orchestration-policy';
 import * as orchestrationSettings from './orchestration-settings';

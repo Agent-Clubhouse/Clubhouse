@@ -29,6 +29,8 @@ vi.mock('./agent-config', () => ({
 let dispatcherState = { enabled: true, path: '/dispatcher' as string | null };
 vi.mock('./dispatcher/dispatcher-service', () => ({
   isDispatcherAgentId: (id: string) => id === 'dispatcher',
+  isDispatcherChatAgentId: () => false,
+  getDispatcherChatPath: () => '/dispatcher-chat',
   getDispatcherState: () => dispatcherState,
 }));
 vi.mock('./dispatcher/dispatcher-paths', () => ({ getDispatcherPath: () => '/dispatcher' }));

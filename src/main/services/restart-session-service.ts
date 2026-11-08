@@ -13,6 +13,7 @@ import type { AgentKind, RestartSessionEntry, RestartSessionState, LiveAgentInfo
 import * as freeAgentSettings from './free-agent-settings';
 import { getDurableConfig } from './agent-config';
 import { isAssistantAgent } from '../../shared/assistant-utils';
+import { isDispatcherCoordinatorPath } from './dispatcher/dispatcher-paths';
 
 const SCHEMA_VERSION = 1;
 const STALENESS_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -163,6 +164,12 @@ export async function loadPendingResume(): Promise<RestartSessionState | null> {
   const validSessions: RestartSessionEntry[] = [];
   for (const session of state.sessions) {
     if (isAssistantAgent(session.agentId)) continue;
+    // The Dispatcher's hidden agent (#3036) is never handed to a window, which would list it.
+    // It resumes its last session at its next hand-off.
+    if (isDispatcherCoordinatorPath(session.projectPath)) {
+      appLog('update:session-resume', 'info', 'Skipping resume for the Dispatcher; it resumes when next needed', { meta: { agentId: session.agentId } });
+      continue;
+    }
     const dirExists = await pathExists(session.worktreePath || session.projectPath);
     if (dirExists) {
       validSessions.push(session);

@@ -134,6 +134,41 @@ async function dispatcherIds(): Promise<string[]> {
   return (await dispatcherConfigs()).map((c) => c.id);
 }
 
+/** The chat the user talks to as the Dispatcher (#3036), in its own folder beside the Dispatcher's. */
+async function chatConfigs(): Promise<Array<{ id: string; name: string }>> {
+  const file = path.join(profile!.userDataDir, '.clubhouse-dev', 'dispatcher-chat', '.clubhouse', 'agents.json');
+  return fs.existsSync(file) ? JSON.parse(await fs.promises.readFile(file, 'utf8')) : [];
+}
+
+/** The id the fake CLI last started with: each start rewrites its report. */
+async function startedAs(): Promise<string | null | undefined> {
+  return (await fakes!.report('claude').catch(() => undefined))?.env.CLUBHOUSE_AGENT_ID;
+}
+
+/**
+ * Start the Dispatcher as a user does (#3036): wake its chat from its view,
+ * then the chat hands a request over with start_work, which starts the agent
+ * that holds its grants and wires. Returns an MCP client as that agent.
+ */
+async function startDispatcher(w: Page, dispatcherId: string) {
+  await expect.poll(async () => (await chatConfigs()).length).toBe(1);
+  const chatId = (await chatConfigs())[0].id;
+  expect(chatId).not.toBe(dispatcherId);
+  await rowItem(w).click();
+  await expect(w.locator('[data-testid="dispatcher-view"]')).toHaveAttribute('data-agent-id', chatId);
+  await w.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
+  await expect.poll(startedAs, { timeout: 20_000 }).toBe(chatId);
+  const chat = await connectMcp((await fakes!.report('claude')).env);
+  const chatTools = await chat.toolNames();
+  expect(chatTools).toContain('start_work');
+  expect(chatTools).not.toContain('create_action');
+  expect(chatTools.some((n) => n.endsWith('__wake_agent'))).toBe(false);
+  const handed = await chat.callText('start_work', { request: 'check in on everyone' });
+  expect(handed.isError).toBe(false);
+  await expect.poll(startedAs, { timeout: 20_000 }).toBe(dispatcherId);
+  return { chatId, mcp: await connectMcp((await fakes!.report('claude')).env) };
+}
+
 const row = (w: Page) => w.locator('[data-testid="dispatcher-row"]');
 const rowItem = (w: Page) => row(w).locator('[role="treeitem"]');
 
@@ -325,10 +360,7 @@ test('the Dispatcher wakes a connected agent with a message and sleeps it again'
     await expect.poll(() => hasWire(w, dispatcherId)).toBe(true);
 
     // Start the Dispatcher. The fake reports the bridge credentials it was given.
-    await rowItem(w).click();
-    await w.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
-    await expect.poll(async () => (await fakes!.report('claude').catch(() => undefined))?.env.CLUBHOUSE_AGENT_ID, { timeout: 20_000 }).toBe(dispatcherId);
-    const mcp = await connectMcp((await fakes!.report('claude')).env);
+    const { mcp } = await startDispatcher(w, dispatcherId);
 
     const toolFor = (names: string[], suffix: string) => names.find((n) => n.endsWith(`__${suffix}`) && n.includes('conductor'));
 
@@ -379,10 +411,7 @@ test('an Ask-first call waits in Needs you, and goes through once the user allow
     await expect.poll(async () => (await dispatcherConfigs()).length).toBe(1);
     const dispatcherId = (await dispatcherConfigs())[0].id;
 
-    await rowItem(w).click();
-    await w.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
-    await expect.poll(async () => (await fakes!.report('claude').catch(() => undefined))?.env.CLUBHOUSE_AGENT_ID, { timeout: 20_000 }).toBe(dispatcherId);
-    const mcp = await connectMcp((await fakes!.report('claude')).env);
+    const { chatId, mcp } = await startDispatcher(w, dispatcherId);
 
     // Changing app settings is Ask first for the Dispatcher: the tool is offered, and the call asks.
     expect(await mcp.toolNames()).toContain('set_helper_presets');
@@ -392,8 +421,9 @@ test('an Ask-first call waits in Needs you, and goes through once the user allow
     expect(asked.isError).toBe(true);
     expect(asked.text).toContain('needs the user\'s approval');
 
-    // It waits in Needs you; selecting it opens the request, and the user allows it.
-    const needsRow = w.locator(`[data-testid="needs-you-row-${dispatcherId}"]`);
+    // It waits in Needs you, on the Dispatcher's own row; selecting it opens the request, and the user allows it.
+    await expect(w.locator(`[data-testid="needs-you-row-${dispatcherId}"]`)).toHaveCount(0);
+    const needsRow = w.locator(`[data-testid="needs-you-row-${chatId}"]`);
     await expect(needsRow).toBeVisible({ timeout: 10_000 });
     await expect(needsRow).toContainText('Asks to make a call');
     await needsRow.click();
