@@ -114,7 +114,7 @@ describe('tool grant declarations (#2967)', () => {
       update_agent: agent.display on agent_arg
       list_settings: settings.app.read on app
       read_settings: agent.read on agent_arg; project.read on project_arg; settings.app.read on app
-      set_orchestrator_helpers: agent.grant on agent_arg
+      set_orchestrator_helpers: agent.configure on agent_arg
       connect_orchestrators: connection.manage on agent_arg
       disconnect_orchestrators: connection.manage on agent_arg
       list_orchestrator_controls: agent.read on connected
@@ -131,7 +131,7 @@ describe('tool grant declarations (#2967)', () => {
       save_agent_template: template.write on library
       push_agent_template: template.write on library; template.push on agent_arg if agents
       delete_agent_template: template.write on library
-      create_managed_agent: agent.create on project_arg; agent.grant on project_arg if settings
+      create_managed_agent: agent.create on project_arg; agent.grant on project_arg if settings or templateId
       restart_agent: agent.restart on agent_arg
       answer_helper_question: agent.message on my_helpers
       create_group_project: connection.manage on agent_arg

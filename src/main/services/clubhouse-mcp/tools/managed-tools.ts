@@ -282,7 +282,7 @@ export function registerManagedTools(): void {
       return json(await asDispatcher(callerId, () => svc().updatePart({ id, expectedRevision, expectedName, expectedDescription, name, description, content, actor: ACTOR })));
     });
 
-  tool('fork_agent_part', [{ actions: ['library.write'], target: 'library' }, { actions: ['agent.grant'], target: 'agent_arg', ifArgs: ['agent'] }],
+  tool('fork_agent_part', [{ actions: ['library.write'], target: 'library' }, { actions: ['agent.grant'], target: 'agent_arg', ifArgs: ['agent'], from: { args: ['agent'], project: 'project' } }],
     'Make a custom copy of a part in the library (forking a built-in is how to change one). With project and agent, that agent switches to the copy and the others keep the original.',
     { id: S, project: PROJECT, agent: AGENT, name: S }, ['id'],
     async (callerId, args) => {
@@ -317,7 +317,7 @@ export function registerManagedTools(): void {
       return json({ status: 'deleted' });
     });
 
-  tool('get_agent_setup', { actions: ['agent.read'], target: 'agent_arg' },
+  tool('get_agent_setup', { actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
     'Read what a managed agent is built from (block ids in order, skill ids, MCP ids, its template) and whether a running session is behind its setup.',
     { project: PROJECT, agent: AGENT }, ['project', 'agent'],
     async (_c, args) => {
@@ -325,7 +325,7 @@ export function registerManagedTools(): void {
       return json({ setup: await svc().getSetup(t.project.path, t.agentId), status: await statusFor(t.project.path, t.agentId) });
     });
 
-  tool('set_agent_setup', { actions: ['agent.grant'], target: 'agent_arg' },
+  tool('set_agent_setup', { actions: ['agent.grant'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
     'Replace a managed agent\'s parts: blocks in the order it reads them, skills and MCP servers. The Clubhouse MCP part always stays in the setup. Applies at its next start; use restart_agent for a running one.',
     { project: PROJECT, agent: AGENT, blocks: IDS, skills: IDS, mcps: IDS }, ['project', 'agent', 'blocks', 'skills', 'mcps'],
     async (callerId, args) => {
@@ -338,7 +338,7 @@ export function registerManagedTools(): void {
       return json(keptClubhousePart(next.mcps, saved));
     });
 
-  tool('preview_agent_setup', { actions: ['agent.read'], target: 'agent_arg' },
+  tool('preview_agent_setup', { actions: ['agent.read'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
     'The exact result a managed agent gets at its next start: instruction text with each block\'s lines, skills and where they go, MCP servers.',
     { project: PROJECT, agent: AGENT }, ['project', 'agent'],
     async (_c, args) => {
@@ -400,7 +400,7 @@ export function registerManagedTools(): void {
       return json(keptClubhousePart(input.setup.mcps, await asDispatcher(callerId, () => svc().saveTemplate(input))));
     });
 
-  tool('push_agent_template', [{ actions: ['template.write'], target: 'library' }, { actions: ['template.push'], target: 'agent_arg', ifArgs: ['agents'] }],
+  tool('push_agent_template', [{ actions: ['template.write'], target: 'library' }, { actions: ['template.push'], target: 'agent_arg', ifArgs: ['agents'], from: { args: ['agents'] } }],
     'Save a template edit and apply its changes to agents made from it. Call once without confirm, naming in agents the agent ids to apply to: it returns the changes, every agent made from the template with how many changes apply to each, and a confirm token for that choice. Then call again with the same arguments and confirm. Settings left out stay as the template has them. A token is yours only, works once, expires after 10 minutes, and is refused if the template changed since the preview.',
     { id: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ, agents: IDS, confirm: S }, ['id', 'blocks', 'skills', 'mcps'],
     async (callerId, args) => {
@@ -463,7 +463,7 @@ export function registerManagedTools(): void {
       return json({ status: 'deleted' });
     });
 
-  tool('create_managed_agent', [{ actions: ['agent.create'], target: 'project_arg' }, { actions: ['agent.grant'], target: 'project_arg', ifArgs: ['settings'] }],
+  tool('create_managed_agent', [{ actions: ['agent.create'], target: 'project_arg', from: { args: ['project'] } }, { actions: ['agent.grant'], target: 'project_arg', ifArgs: ['settings', 'templateId'], from: { args: ['project'] } }],
     'Create a durable agent, asleep; wake it with wake_agent. By default it is Clubhouse managed, from a template or a full setup, in its own worktree (or folder). managed: false makes a plain agent instead, in its own worktree, that reads its own files; it takes settings but no template or parts.',
     { project: PROJECT, name: S, color: S, managed: { type: 'boolean', description: 'false for a plain (unmanaged) agent. Default true.' }, templateId: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, ['project', 'name'],
     async (callerId, args) => {
@@ -492,7 +492,7 @@ export function registerManagedTools(): void {
       return json({ id: config.id, name: config.name, project: project.name, managed: !!config.managed, status: 'sleeping' });
     });
 
-  tool('restart_agent', { actions: ['agent.restart'], target: 'agent_arg' },
+  tool('restart_agent', { actions: ['agent.restart'], target: 'agent_arg', from: { args: ['agent'], project: 'project' } },
     'Restart a running managed agent so it picks up its setup. By default it waits for the agent\'s current turn to end first; now: true restarts it at once, cutting the turn off. It resumes the same conversation unless fresh is true, or the CLI changed. Only running managed agents, and never yourself: a sleeping agent gets its setup when it next starts (wake_agent).',
     { project: PROJECT, agent: AGENT, fresh: { type: 'boolean' }, now: { type: 'boolean', description: 'Restart at once instead of after the current turn.' } }, ['project', 'agent'],
     async (callerId, args) => {
