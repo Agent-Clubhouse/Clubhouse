@@ -19,6 +19,8 @@ import { applyManagedSettings, createManagedAgent } from '../../managed-agents/a
 import { previewManagedSetup } from '../../managed-agents/delivery';
 import { ManagedError } from '../../managed-agents/service';
 import { resolveOrchestrator } from '../../agent-system';
+import { getDefaultAccess, getPermissionMode } from '../../free-agent-settings';
+import { callerAccess, withAccess, type AccessLevel } from '../../../../shared/agent-access';
 import { optionalBoolean, optionalString, requireString } from './validation';
 import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_ALWAYS_ON, isListed, type ManagedPartContent, type ManagedPartKind, type ManagedTemplateSettings } from '../../../../shared/managed-agents-types';
 import type { Project } from '../../../../shared/types';
@@ -305,12 +307,21 @@ export function registerManagedTools(): void {
       return json(await previewManagedSetup({ service: svc(), projectPath: t.project.path, agent, provider }));
     });
 
+  /**
+   * Template settings as a caller sent them: a level it names wins over the legacy
+   * flag it read back beside it, so lowering a level never comes out higher (#2761, D103).
+   */
+  const sentSettings = (settings: ManagedTemplateSettings, from: ManagedTemplateSettings | undefined): ManagedTemplateSettings =>
+    callerAccess(settings, levelOf(from), getPermissionMode());
+  const levelOf = (s: ManagedTemplateSettings | undefined): AccessLevel =>
+    (s ? withAccess(s, getPermissionMode()).access : undefined) ?? getDefaultAccess();
+
   tool('list_agent_templates', { actions: ['library.read'], target: 'library' }, 'List templates (built-in and custom) with their parts, settings and how many agents were made from each. Retired built-in templates are left out; agents made from one keep working.',
     {}, [],
     async () => json((await svc().listTemplates()).filter(isListed)));
 
   tool('save_agent_template', { actions: ['template.write'], target: 'library' },
-    'Create a custom template (name required), or edit one by id. Editing an id keeps every field you leave out as saved; settings, when given, replaces the template\'s settings as a whole. Editing changes future agents only; use push_agent_template to apply it to agents made from it. settings: orchestrator, model, effort, freeAgentMode, orchestration {...}, idleSleep (minutes or "never"), helperTemplateId.',
+    'Create a custom template (name required), or edit one by id. Editing an id keeps every field you leave out as saved; settings, when given, replaces the template\'s settings as a whole. Editing changes future agents only; use push_agent_template to apply it to agents made from it. settings: orchestrator, model, effort, access (plan, ask, auto_edit, auto or full_access), orchestration {...}, idleSleep (minutes or "never"), helperTemplateId. A legacy freeAgentMode beside access is ignored.',
     { id: S, name: S, description: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, [],
     async (callerId, args) => {
       const id = optionalString(args, 'id');
@@ -319,7 +330,7 @@ export function registerManagedTools(): void {
         const input = {
           name: requireString(args, 'name'), description: optionalString(args, 'description') ?? '',
           setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') },
-          settings: settings ?? {},
+          settings: settings ? sentSettings(settings, undefined) : {},
         };
         return json(keptClubhousePart(input.setup.mcps, await asDispatcher(callerId, () => svc().saveTemplate(input))));
       }
@@ -334,7 +345,7 @@ export function registerManagedTools(): void {
           skills: idListOr(args, 'skills', current.setup.skills),
           mcps: idListOr(args, 'mcps', current.setup.mcps),
         },
-        settings: settings ?? current.settings,
+        settings: settings ? sentSettings(settings, current.settings) : current.settings,
       };
       return json(keptClubhousePart(input.setup.mcps, await asDispatcher(callerId, () => svc().saveTemplate(input))));
     });
@@ -345,9 +356,10 @@ export function registerManagedTools(): void {
     async (callerId, args) => {
       const id = requireString(args, 'id');
       const current = await svc().getTemplate(id);
+      const sent = objectArg<ManagedTemplateSettings>(args, 'settings');
       const next = {
         setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') },
-        settings: objectArg<ManagedTemplateSettings>(args, 'settings') ?? current.settings,
+        settings: sent ? sentSettings(sent, current.settings) : current.settings,
       };
       const preview = await svc().previewTemplatePush(id, next);
       const chosen = [...new Set(idList(args, 'agents'))].sort();

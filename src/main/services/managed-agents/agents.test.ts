@@ -739,4 +739,22 @@ describe('applying settings a template or the builder carries (#2895)', () => {
     await user(() => createManagedAgent('/p', { name: 'tmpl', color: 'indigo', templateId: t.id }));
     expect(agentConfig.createDurable).toHaveBeenLastCalledWith('/p', 'tmpl', 'indigo', undefined, true, 'claude-code', 'full_access');
   });
+
+  it('a caller\'s legacy on/off keeps the template\'s level when it is already on that side (#2997)', async () => {
+    let n = 0;
+    vi.mocked(agentConfig.createDurable).mockImplementation(async (_p, name) => {
+      const made: DurableAgentConfig = { id: `m${++n}`, name, color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: wt };
+      h.agents.set(made.id, made);
+      return made;
+    });
+    const auto = await user(() => service.saveTemplate({ name: 'Auto', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: { orchestrator: 'claude-code', access: 'auto' } }));
+    const plan = await user(() => service.saveTemplate({ name: 'Plan', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: { orchestrator: 'claude-code', access: 'plan' } }));
+    await user(() => createManagedAgent('/p', { name: 'on', color: 'indigo', templateId: auto.id, settings: { freeAgentMode: true } }));
+    expect(agentConfig.createDurable).toHaveBeenLastCalledWith('/p', 'on', 'indigo', undefined, true, 'claude-code', 'auto');
+    await user(() => createManagedAgent('/p', { name: 'off', color: 'indigo', templateId: plan.id, settings: { freeAgentMode: false } }));
+    expect(agentConfig.createDurable).toHaveBeenLastCalledWith('/p', 'off', 'indigo', undefined, true, 'claude-code', 'plan');
+    // A level the caller names wins over the legacy flag it read back beside it.
+    await user(() => createManagedAgent('/p', { name: 'named', color: 'indigo', templateId: auto.id, settings: { access: 'plan', freeAgentMode: true } }));
+    expect(agentConfig.createDurable).toHaveBeenLastCalledWith('/p', 'named', 'indigo', undefined, true, 'claude-code', 'plan');
+  });
 });
