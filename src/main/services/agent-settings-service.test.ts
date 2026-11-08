@@ -659,6 +659,18 @@ describe('applyAgentDefaults', () => {
     expect(written('.mcp.json')).toContain('"bold-falcon"');
   });
 
+  it('escapes filled values inside MCP JSON, so a quote in a name or command keeps it valid (#2439)', async () => {
+    vi.mocked(fsp.readFile).mockImplementation(async () => JSON.stringify({
+      defaults: {}, quickOverrides: {},
+      agentDefaults: { mcpJson: '{"mcpServers":{"x":{"command":"@@BuildCommand","args":["@@AgentName"]}}}' },
+    }));
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    await applyAgentDefaults(WORKTREE, PROJECT, undefined, undefined, { agentName: 'say "hi"', standbyBranch: 'b', agentPath: 'p/', buildCommand: '"C:\\tools\\build.cmd"' });
+    const json = String(vi.mocked(fsp.writeFile).mock.calls.find((c) => String(c[0]).endsWith('.mcp.json'))![1]);
+    expect(JSON.parse(json).mcpServers.x).toEqual({ command: '"C:\\tools\\build.cmd"', args: ['say "hi"'] });
+  });
+
   it('writes mcp.json when default is set', async () => {
     const mcpContent = '{"mcpServers": {"test": {"command": "npx"}}}';
     vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({

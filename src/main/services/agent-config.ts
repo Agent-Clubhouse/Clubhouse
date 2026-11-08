@@ -12,6 +12,8 @@ import { isDisposedAgent, isEffortValue, parentLinkError } from '../../shared/ag
 import { appLog } from './log-service';
 import { forgetAutoHelper } from './helper-auto-state';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
+import type { WildcardContext } from '../../shared/wildcard-replacer';
+import type { ProjectAgentDefaults } from '../../shared/types';
 import { tagError } from '../telemetry/types';
 import { resolveOrchestrator } from './agent-system';
 import type { HelperContextStatus } from '../../shared/helper-routing';
@@ -1924,6 +1926,21 @@ async function mutateAgentRecord(
   return cloneAgent(agent);
 }
 
+/**
+ * A new agent's `@@` values for the project defaults written into its folder,
+ * as the MCP servers get at start (#2439). Without a source control provider
+ * if that can't be read; the defaults are still written.
+ */
+async function newAgentWildcards(projectPath: string, agent: DurableAgentConfig): Promise<WildcardContext> {
+  const { buildWildcardContext, resolveAgentCommands, resolveSourceControlProvider } = await import('./agent-wildcards');
+  const defaults = await readProjectAgentDefaults(projectPath).catch((): ProjectAgentDefaults => ({}));
+  const scp = await resolveSourceControlProvider(projectPath, agent).catch((err: unknown): undefined => {
+    appLog('core:agent-config', 'warn', 'Could not read the source control provider for a new agent\'s defaults', { meta: { agentName: agent.name, error: errorMessage(err) } });
+    return undefined;
+  });
+  return buildWildcardContext(agent, projectPath, scp, resolveAgentCommands(agent, defaults));
+}
+
 async function removeAgentRecord(projectPath: string, agentId: string): Promise<void> {
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   if (!agentsById.has(agentId)) return;
@@ -2381,13 +2398,7 @@ async function runDurableCreation(
       const worktreePath = initial.worktreePath;
       try {
         const provider = await resolveOrchestrator(projectPath, initial.orchestrator);
-        // The defaults' @@ wildcards name this agent, as the MCP servers' do at start (#2439).
-        const { buildWildcardContext, resolveAgentCommands, resolveSourceControlProvider } = await import('./agent-wildcards');
-        const wildcards = buildWildcardContext(
-          initial, projectPath,
-          await resolveSourceControlProvider(projectPath, initial),
-          resolveAgentCommands(initial, await readProjectAgentDefaults(projectPath)),
-        );
+        const wildcards = await newAgentWildcards(projectPath, initial);
         await applyAgentDefaults(
           worktreePath,
           projectPath,

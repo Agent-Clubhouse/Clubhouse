@@ -728,6 +728,15 @@ async function writeProjectAgentDefaultsInner(projectPath: string, defaults: Pro
   if (defaults.helperAuto !== previousAuto) noteRoutingPolicyChanged();
 }
 
+function jsonEscapedWildcards(ctx: WildcardContext): WildcardContext {
+  const esc = (v: string | undefined) => (v === undefined ? undefined : JSON.stringify(v).slice(1, -1));
+  return {
+    agentName: esc(ctx.agentName)!, standbyBranch: esc(ctx.standbyBranch)!, agentPath: esc(ctx.agentPath)!,
+    sourceControlProvider: esc(ctx.sourceControlProvider),
+    buildCommand: esc(ctx.buildCommand ?? 'npm run build'), testCommand: esc(ctx.testCommand ?? 'npm test'), lintCommand: esc(ctx.lintCommand ?? 'npm run lint'),
+  };
+}
+
 /**
  * Apply project-level agent defaults as snapshots into an agent's worktree.
  * Called during agent creation. Uses the provided writeInstructions function
@@ -751,10 +760,12 @@ export async function applyAgentDefaults(
   const raw = await readProjectAgentDefaults(projectPath);
   if (!raw) return;
   const fill = (text: string) => (wildcards ? replaceWildcards(text, wildcards) : text);
+  // Inside JSON a filled value is escaped, so a quote or backslash in a name or command can't break it.
+  const fillJson = (json: string) => (wildcards ? replaceWildcards(json, jsonEscapedWildcards(wildcards)) : json);
   const defaults = {
     ...raw,
     ...(raw.instructions && { instructions: fill(raw.instructions) }),
-    ...(raw.mcpJson && { mcpJson: fill(raw.mcpJson) }),
+    ...(raw.mcpJson && { mcpJson: fillJson(raw.mcpJson) }),
     ...(raw.permissions && {
       permissions: {
         ...(raw.permissions.allow && { allow: raw.permissions.allow.map(fill) }),
