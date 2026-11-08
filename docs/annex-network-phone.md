@@ -34,7 +34,7 @@ Add `"network": 1` to the `POST /pair` body, with `"pairingMode": "persistent"` 
 { "pin": "123456", "publicKey": "…", "alias": "Mason’s iPhone", "icon": "iphone", "color": "emerald", "pairingMode": "persistent", "network": 1 }
 ```
 
-If the desktop agrees, the answer carries `"network": 1` beside the usual fields, and the phone is now a member of that desktop's network. Without it, the pairing is one-to-one, as before. The desktop tells its other members, and each of them accepts this phone's pinned certificate from then on: the phone can connect to any of them with no more pairing.
+If the desktop agrees, the answer carries `"network": 1` beside the usual fields, and the phone is now a member of that desktop's network. It also carries `pairing` (`{ "id", "joinedAt" }`: this phone's pairing into the network) and `serverPairing` (the desktop's own). Keep `pairing`: it's the phone's pairing into the network. When a phone that's already a member pairs with another desktop (joining a new computer, below), it sends that kept `pairing` back as `"selfPairing": { "id", "joinedAt" }` in the `POST /pair` body, so it keeps its one pairing; otherwise the new desktop makes it a new one, and a removal of the phone made elsewhere could be undone. A desktop pairing with another desktop does the same. Without it, the pairing is one-to-one, as before. The desktop tells its other members, and each of them accepts this phone's pinned certificate from then on: the phone can connect to any of them with no more pairing.
 
 A member phone still shows "Controlled by" on a desktop it connects to, like any phone.
 
@@ -51,11 +51,11 @@ A member phone still shows "Controlled by" on a desktop it connects to, like any
       "fingerprint": "aa:…", "publicKey": "MCowBQYDK2VwAyEA…", "name": "Studio", "icon": "computer", "color": "indigo", "kind": "desktop",
       "hosts": ["192.168.1.9", "studio.tail1234.ts.net"], "port": 7432,
       "certFingerprint": "AB:CD:…", "certPem": "-----BEGIN CERTIFICATE-----…",
-      "online": true, "self": true, "joinedAt": "2026-11-08T10:00:00.000Z"
+      "online": true, "self": true, "joinedAt": "2026-11-08T10:00:00.000Z", "pairingId": "6f1c2a3e-…"
     },
     { "fingerprint": "bb:…", "name": "Mason’s iPhone", "kind": "phone", "hosts": [], "certFingerprint": "…", "online": true, "joinedAt": "…" }
   ],
-  "removals": [{ "fingerprint": "cc:…", "removedAt": "2026-11-08T12:00:00.000Z" }]
+  "removals": [{ "fingerprint": "cc:…", "removedAt": "2026-11-08T12:00:00.000Z", "pairingId": "9b2e…", "joinedAt": "2026-11-05T09:00:00.000Z" }]
 }
 ```
 
@@ -64,7 +64,8 @@ A member phone still shows "Controlled by" on a desktop it connects to, like any
 - `certFingerprint` is the SHA-256 of the member's TLS certificate. Pin it exactly as at pairing: never connect to an address that shows another certificate.
 - `certPem` is there so the phone can vouch for that desktop to another one (below). Desktops only.
 - `joined: false`: this phone isn't a member here (paired one-to-one, or Annex Network off). `members` then lists only this desktop.
-- `removals`: devices removed from the network. Forget any listed here.
+- `pairingId` names the pairing that put a member in the network. The member that paired it made it once, and every member carries it unchanged with that pairing's `joinedAt`; pairing again makes a new one. A member a desktop hasn't learned the id for yet has none.
+- `removals`: devices removed from the network. Each names the pairing it ended (`pairingId`, with that pairing's `joinedAt`). Forget a device when its `pairingId` is that one, or it has none. If it has a different `pairingId`, forget it only if its `joinedAt` is no later than the removal's `joinedAt`: a later pairing means it was paired again since, and it stays. Never compare with `removedAt` or the phone's clock. A removal saved before this existed has neither field; forget the device if its `joinedAt` is no later than `removedAt`.
 
 ## Connecting to a new machine by itself
 
@@ -77,7 +78,7 @@ Over the `/ws` connection, a member phone receives:
 The payload is the same as `GET /api/v1/mobile/network`. On each one:
 
 1. Connect to every desktop in `members` that the phone isn't connected to yet, at `hosts`/`port`, pinned to `certFingerprint`, with the phone's own pinned client certificate. No pairing: the desktop already accepts this phone.
-2. Disconnect from, and forget, every device in `removals`.
+2. Disconnect from, and forget, every device in `removals` whose pairing it ends (above).
 3. If this phone is in `removals`, it was removed: forget the whole network.
 
 When this phone is removed, each desktop it's connected to sends it a last `network:changed` with its own fingerprint in `removals`, then closes the connection (WebSocket close code 4401, reason `peer_not_paired`). A desktop that refuses with 401 `peer_not_paired` later no longer has this phone (it was removed while the phone was off, for example): if every desktop does, the phone was removed from the network.
@@ -100,9 +101,9 @@ Each answers which records were added, and why any weren't:
 { "added": ["dd:…"], "skipped": [{ "fingerprint": "aa:…", "reason": "member" }] }
 ```
 
-`reason` is `member` (already a member there), `one-to-one` (paired with that desktop one-to-one; pair it again with `network: 1` to join it), `self` (the desktop itself) or `invalid` (the record doesn't hold together). Joining through the phone counts as a fresh join, so an earlier removal of those devices doesn't stop it. From there the desktops do the rest: `A` tells its other members about `D`, and each connects to `D`; `D` connects to the members it was given. The phone gets `network:changed` from each desktop as that happens.
+`reason` is `member` (already a member there), `one-to-one` (paired with that desktop one-to-one; pair it again with `network: 1` to join it), `self` (the desktop itself) or `invalid` (the record doesn't hold together). A device keeps the pairing its record carries (`pairingId`); only a removal on the receiving desktop is overridden, by joining it again through the phone (a new pairing there). From there the desktops do the rest: `A` tells its other members about `D`, and each connects to `D`; `D` connects to the members it was given. The phone gets `network:changed` from each desktop as that happens.
 
-Each record must hold together, or it's ignored: its public key hashes to its fingerprint, and its `certPem` to its `certFingerprint`. Send members exactly as `GET /api/v1/mobile/network` lists them; `online` and `self` are ignored. The record is `fingerprint`, `publicKey`, `certFingerprint`, `certPem`, `name`, `icon`, `color`, `kind`, `hosts`, `port` and `joinedAt`; anything else is refused. Sending a member that's already known changes nothing.
+Each record must hold together, or it's ignored: its public key hashes to its fingerprint, and its `certPem` to its `certFingerprint`. Send members exactly as `GET /api/v1/mobile/network` lists them; `online` and `self` are ignored. The record is `fingerprint`, `publicKey`, `certFingerprint`, `certPem`, `name`, `icon`, `color`, `kind`, `hosts`, `port`, `joinedAt` and `pairingId`; anything else is refused. Send `pairingId` as listed: the device keeps that pairing, unless the desktop removed it, in which case joining it through the phone is a new pairing. Sending a member that's already known changes nothing.
 
 Refusals:
 

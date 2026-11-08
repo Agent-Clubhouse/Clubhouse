@@ -2438,6 +2438,8 @@ async function pairOverTls(target: {
       certBinding: annexTls.signCertBinding(localIdentity),
       // Ask to join as an Annex Network member (#3061); a satellite with it on agrees.
       ...(annexSettings.networkEnabled(localSettings) && { network: 1 }),
+      // This machine's pairing into its network, if it has one, so it keeps it (#3107).
+      ...(annexSettings.networkEnabled(localSettings) && membership.ownPairing() && { selfPairing: membership.ownPairing() }),
     });
   } catch (err) { // telemetry-exempt: shown to the person pairing; the pair flow records the result
     return { success: false, error: pairingReachError(err, target.alias ?? '') };
@@ -2464,13 +2466,18 @@ async function pairOverTls(target: {
   const alias = typeof body.alias === 'string' && body.alias ? body.alias : 'Clubhouse';
   const icon = typeof body.icon === 'string' && body.icon ? body.icon : 'computer';
   const color = typeof body.color === 'string' && body.color ? body.color : 'indigo';
+  // As a member: the server's pairing into the network, never a stamp of this machine's own (#3107).
+  const joined = body.network === 1 && annexSettings.networkEnabled(localSettings);
+  const serverPairing = joined ? membership.readPairing(body.serverPairing) : undefined;
+  const myPairing = joined ? membership.readPairing(body.pairing) : undefined;
   annexPeers.addPeer({
     fingerprint,
     publicKey,
     alias,
     icon,
     color,
-    pairedAt: new Date().toISOString(),
+    pairedAt: serverPairing?.joinedAt ?? new Date().toISOString(),
+    ...(serverPairing && { pairingId: serverPairing.id }),
     lastSeen: new Date().toISOString(),
     // We paired with them, so they're our satellite; as network members each controls the other.
     role: body.network === 1 && annexSettings.networkEnabled(localSettings) ? 'member' : 'satellite',
@@ -2484,6 +2491,7 @@ async function pairOverTls(target: {
   });
 
   probedCertificates.delete(fingerprint);
+  if (myPairing) membership.adoptOwnPairing(myPairing);
   if (body.network === 1 && annexSettings.networkEnabled(localSettings)) membership.noteLocalJoin(fingerprint);
   if (discoveredServices.delete(fingerprint)) broadcastDiscoveredChanged();
   const previous = satellites.get(fingerprint);

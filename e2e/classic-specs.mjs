@@ -3,16 +3,15 @@
  *
  * Specs launch on the default (new) layout. The Classic layout E2E job sets
  * CLUBHOUSE_E2E_LAYOUT=classic, which makes launchApp seed `newChrome: false`
- * unless a spec chose a layout itself, and runs only CLASSIC_RUN_SPECS. A spec
- * moved to the new layout stays in that list until its new-layout run is stable
- * on CI, so classic keeps its coverage meanwhile.
+ * unless a spec chose a layout itself, and runs CLASSIC_SHARDS, one list per
+ * shard. Those are specs moved to the new layout that keep classic coverage
+ * until their new-layout runs are stable, and CLASSIC_ONLY_SPECS.
  *
- * PINNED_CLASSIC_SPECS are the files that still seed `newChrome: false`, so
- * they run on classic in every job. A shared harness that pins would pin every
- * spec using it. Each one leaves that list when it moves. LAYOUT_SWITCH_SPECS seed both
- * layouts on purpose.
- * test/e2e-classic-layout.test.ts fails if a file pins classic and is in
- * neither list.
+ * CLASSIC_ONLY_SPECS test UI only classic has (its agent list, rail, flyout,
+ * onboarding modal). They pin classic themselves and run only in the Classic
+ * layout job, while classic still ships. LAYOUT_SWITCH_SPECS seed both
+ * layouts on purpose. test/e2e-classic-layout.test.ts fails if any other file
+ * pins classic.
  *
  * Plain .mjs with no Playwright imports, so the config and that test can both load it.
  */
@@ -33,18 +32,22 @@ export const CLASSIC_LAYOUT_ENV = 'CLUBHOUSE_E2E_LAYOUT';
  */
 export const CLASSIC_SHARDS = {
   1: [
+    'agent-list-ui.spec.ts',
     'telemetry-export.spec.ts',
     'terminal.spec.ts',
     'terminal-e2e.spec.ts',
     'annex-v2/remote-control.spec.ts',
   ],
   2: [
+    'rail-pin.spec.ts',
+    'rail-hover-flyout.spec.ts',
     'plugin-system.spec.ts',
     'popout-window.spec.ts',
     'mermaid-preview.spec.ts',
     'command-palette.spec.ts',
   ],
   3: [
+    'onboarding.spec.ts',
     'chat-rich/queue-merging.spec.ts',
     'chat-rich/question-dock.spec.ts',
     'chat-rich/reading.spec.ts',
@@ -78,10 +81,9 @@ export const CLASSIC_RUN_SPECS = Object.values(CLASSIC_SHARDS).flat();
 
 export const CLASSIC_SHARD_ENV = 'PLAYWRIGHT_CLASSIC_SHARD';
 
-/** Still pinned to classic, waiting to move. */
-export const PINNED_CLASSIC_SPECS = [
+/** Classic-only UI: pinned to classic, and run only in the Classic layout job. */
+export const CLASSIC_ONLY_SPECS = [
   'agent-list-ui.spec.ts',
-  'annex-v2/agents-across-machines.spec.ts',
   'onboarding.spec.ts',
   'rail-hover-flyout.spec.ts',
   'rail-pin.spec.ts',
@@ -91,10 +93,13 @@ export const PINNED_CLASSIC_SPECS = [
 export const LAYOUT_SWITCH_SPECS = ['layout-default.spec.ts'];
 
 /**
- * One classic shard's specs as `testMatch` globs. An unknown or empty shard
- * throws, rather than running everything or nothing.
+ * One classic shard's specs as `testMatch` globs, or every classic spec when no
+ * shard is given (a local run of one spec: CLUBHOUSE_E2E_LAYOUT=classic npx
+ * playwright test e2e/rail-pin.spec.ts). An unknown or empty shard throws,
+ * rather than running everything or nothing.
  */
 export function classicTestMatch(shard, shards = CLASSIC_SHARDS) {
+  if (shard === undefined || shard === '') return Object.values(shards).flat().map((spec) => `**/${spec}`);
   const specs = shards[shard];
   if (!specs) throw new Error(`${CLASSIC_SHARD_ENV} is ${shard}, and e2e/classic-specs.mjs has shards ${Object.keys(shards).join(', ')}`);
   if (specs.length === 0) throw new Error(`Classic shard ${shard} in e2e/classic-specs.mjs has no specs`);
