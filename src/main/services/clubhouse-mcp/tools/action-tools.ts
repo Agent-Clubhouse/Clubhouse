@@ -52,6 +52,8 @@ export const ACTION_TOOL_PERMISSIONS = {
   delete_action: 'action.delete',
   run_action: 'action.run',
   action_history: 'action.history',
+  // A subscription is an action the caller owns (#3042): creating one is creating an action.
+  subscribe: 'action.create',
 } as const;
 
 export type ActionToolName = keyof typeof ACTION_TOOL_PERMISSIONS;
@@ -261,6 +263,39 @@ function createAction(scope: ActionScope, args: Obj): unknown {
   input.trigger = prepareTrigger(args.trigger, ctx);
   input.steps = prepareSteps(args.steps, ctx);
   return { action: present(actions.createAction(input, scope.owner)) };
+}
+
+/**
+ * A subscription's trigger from the tool's flat arguments. Left out, the
+ * source is Clubhouse for app and project events, and the caller's own
+ * project for the rest (the Dispatcher has no project, so it names one).
+ */
+function subscriptionTrigger(args: Obj, ctx: InputContext): unknown {
+  const event = args.event;
+  const appEvent = typeof event === 'string' && (event.startsWith('app.') || event.startsWith('project.'));
+  let source = args.source;
+  if (source === undefined || source === null) {
+    if (appEvent) source = { kind: 'app' };
+    else if (ctx.agentId) source = { kind: 'project' };
+    else throw new ActionError('invalid_input', 'source is required: the agent to watch, as {"kind":"agent","agentId":...}.');
+  }
+  return prepareTrigger({
+    kind: 'event',
+    event,
+    source,
+    ...(args.branch !== undefined && { branch: args.branch }),
+    ...(args.delayMinutes !== undefined && { delayMinutes: args.delayMinutes }),
+  }, ctx);
+}
+
+function subscribe(scope: ActionScope, args: Obj): unknown {
+  const ctx = contextFor(scope);
+  const input = {
+    trigger: subscriptionTrigger(args, ctx),
+    ...(args.note !== undefined && { note: args.note }),
+    ...(args.name !== undefined && { name: args.name }),
+  };
+  return { action: present(actions.subscribe(input, scope.owner)) };
 }
 
 function listActions(scope: ActionScope): unknown {
@@ -556,5 +591,30 @@ export function registerActionTools(): void {
     },
     (callerId, args) => guarded('action_history', callerId, args, actionHistory),
     LIST,
+  );
+  registerGlobalTool(
+    'subscribe',
+    {
+      description:
+        'Ask to be told when something happens, e.g. when main is pushed or when an agent finishes a turn. ' +
+        'Clubhouse sends you a message each time it happens, saying what happened, with your note; it wakes you first if you are asleep. ' +
+        'The subscription is an action you own: it shows in Settings > Actions, counts toward your actions, and follows the same rights ' +
+        'as any action\'s trigger. Stop it with delete_action, or pause it with update_action and enabled false. ' + RESULT_NOTE,
+      inputSchema: schema({
+        event: TRIGGER_SCHEMA.properties.event,
+        source: {
+          ...TRIGGER_SCHEMA.properties.source,
+          description:
+            'What to watch: {"kind":"agent","agentId":"<id or self>"} or {"kind":"project","projectId":"<id, name or path>"}. ' +
+            'Left out: your own project, or Clubhouse for app and project events.',
+        },
+        branch: TRIGGER_SCHEMA.properties.branch,
+        delayMinutes: TRIGGER_SCHEMA.properties.delayMinutes,
+        note: { type: 'string', description: 'Optional. What the message should remind you of, e.g. "Tag the release." Left out, it says you asked to be told.' },
+        name: ACTION_FIELDS.name,
+      }, ['event']),
+    },
+    (callerId, args) => guarded('subscribe', callerId, args, subscribe),
+    CREATE,
   );
 }

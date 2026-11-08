@@ -113,6 +113,7 @@ describe('tool grant declarations (#2967)', () => {
       start_work: agent.message on self
       read_memory: agent.read on self
       tell_user: user.notify on app
+      search_memory: agent.read on self
       update_project: project.display on project_arg
       update_agent: agent.display on agent_arg
       list_settings: settings.app.read on app
@@ -148,6 +149,7 @@ describe('tool grant declarations (#2967)', () => {
       delete_action: action.write on action_arg
       run_action: action.run on action_arg
       action_history: action.read on app
+      subscribe: action.write on app
       read_helper_presets: settings.app.read on app
       set_helper_presets: settings.app.write on app
       request_grant: grant.request on self"
