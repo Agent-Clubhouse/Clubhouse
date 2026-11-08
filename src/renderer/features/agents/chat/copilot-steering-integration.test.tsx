@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Agent } from '../../../../shared/types';
-import type { ChatEvent } from '../../../../shared/chat';
+import type { ChatDriverId, ChatEvent } from '../../../../shared/chat';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../../shared/chat';
 
 type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
@@ -42,8 +42,11 @@ beforeEach(() => {
 });
 afterEach(async () => { cleanup(); for (const runtime of runtimes.splice(0)) await runtime.stop(); });
 
+/** A session from a build that still had the legacy ACP driver (#2868): its transcript can still be on disk. */
+const OLD_ACP_DRIVER = 'copilot_acp' as ChatDriverId;
+
 async function running(steer: boolean, resumed = false) {
-  const driver = new FakeChatDriver(steer ? 'copilot_sdk' : 'copilot_acp', 'copilot-cli', { ...MINIMAL_CHAT_CAPABILITIES, steer, interrupt: true, queue: 'client' });
+  const driver = new FakeChatDriver(steer ? 'copilot_sdk' : OLD_ACP_DRIVER, 'copilot-cli', { ...MINIMAL_CHAT_CAPABILITIES, steer, interrupt: true, queue: 'client' });
   const runtime = new ChatAgentRuntime({ agentId: agent.id, provider: 'copilot-cli', driverId: driver.id, cwd: '/synthetic', level: 'ask', idleTimeoutMs: 0, resumeNativeSessionId: resumed ? 'synthetic-resume' : undefined,
     startSession: (resumeNativeSessionId) => driver.start({ agentId: agent.id, provider: 'copilot-cli', cwd: '/synthetic', binaryPath: '/never-executed', level: 'ask', resumeNativeSessionId }),
   });
@@ -70,38 +73,22 @@ async function running(steer: boolean, resumed = false) {
 }
 
 describe('Copilot composer through renderer store, real IPC handlers and runtime (fake driver only)', () => {
-  it.each(['copilot_sdk', 'copilot_acp'])('the single toggle selects successive sessions despite legacy %s, leaving an existing session unchanged', async (legacy) => {
-    preferences.saved = { 'copilot-cli': { mode: 'chat', driver: legacy } };
+  // The steerless sessions below stand for a transcript left by the removed ACP driver, or any driver without steer.
+  it.each(['copilot_sdk', 'copilot_acp', undefined])('every session is SDK whatever an older build saved (%s), and Experimental has no ACP switch', async (legacy) => {
+    preferences.saved = legacy ? { 'copilot-cli': { mode: 'chat', driver: legacy } } : {};
+    preferences.flags = { copilotLegacyAcp: true, copilotSdk: false };
     window.clubhouse.app.getExperimentalSettings = vi.fn(async () => preferences.flags);
-    window.clubhouse.app.saveExperimentalSettings = vi.fn(async (next) => { preferences.flags = next; });
-    const old = await running(resolveRuntimeMode('copilot-cli').driver === 'copilot_sdk');
+    expect(resolveRuntimeMode('copilot-cli').driver).toBe('copilot_sdk');
+    const session = await running(resolveRuntimeMode('copilot-cli').driver === 'copilot_sdk');
+    expect(session.state.driver).toBe('copilot_sdk');
     expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Steer');
-    const settings = render(<ExperimentalSettingsView />);
-    const toggle = await screen.findByRole('switch', { name: 'Use legacy Copilot ACP' });
-    fireEvent.click(toggle);
-    await waitFor(() => expect(resolveRuntimeMode('copilot-cli').driver).toBe('copilot_acp'));
-    expect(old.driver.id).toBe('copilot_sdk');
-    expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Steer');
-    old.view.unmount();
-    const first = await running(resolveRuntimeMode('copilot-cli').driver === 'copilot_sdk');
-    expect(first.state.driver).toBe('copilot_acp');
-    expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Stop & send');
-    first.view.unmount();
-    const second = await running(resolveRuntimeMode('copilot-cli').driver === 'copilot_sdk');
-    expect(second.state.capabilities?.steer).toBe(false);
-    expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Stop & send');
-    fireEvent.click(toggle);
-    await waitFor(() => expect(resolveRuntimeMode('copilot-cli').driver).toBe('copilot_sdk'));
-    expect(second.driver.id).toBe('copilot_acp');
-    expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Stop & send');
-    second.view.unmount(); settings.unmount();
-    const last = await running(resolveRuntimeMode('copilot-cli').driver === 'copilot_sdk');
-    expect(last.state.driver).toBe('copilot_sdk');
-    expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Steer');
-    expect(preferences.saved).toEqual({ 'copilot-cli': { mode: 'chat', driver: legacy } });
+    render(<ExperimentalSettingsView />);
+    await screen.findByRole('switch', { name: 'Goobers' });
+    expect(screen.queryByRole('switch', { name: /Copilot ACP/ })).not.toBeInTheDocument();
+    expect(preferences.saved).toEqual(legacy ? { 'copilot-cli': { mode: 'chat', driver: legacy } } : {});
   });
 
-  it.each(['click', 'Enter'] as const)('Stop & send actually interrupts before the next send via %s', async (input) => {
+  it.each(['click', 'Enter'] as const)('Stop & send on a driver that cannot steer interrupts before the next send via %s', async (input) => {
     const { operations } = await running(false);
     expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Stop & send');
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'synthetic message' } });
@@ -171,7 +158,7 @@ describe('Copilot composer through renderer store, real IPC handlers and runtime
     expect(operations).toEqual(['send:steer']);
   });
 
-  it('helper auto delivery queues on a steerless active session without cancelling it', async () => {
+  it('helper auto delivery queues on a session that cannot steer without cancelling it', async () => {
     const { runtime, operations } = await running(false);
     expect(await runtime.sendMessage('synthetic helper', { source: 'mcp' })).toMatchObject({ delivery: 'queued' });
     expect(operations).toEqual([]);

@@ -15,12 +15,6 @@ export interface AgentUISlice {
   activeAgentId: string | null;
   agentSettingsOpenFor: string | null;
   deleteDialogAgent: string | null;
-  /** Agent ID for the "Apply persona" dialog, or null when closed. */
-  applyPersonaDialogAgent: string | null;
-  /** Agent ID for the "Extract persona" dialog, or null when closed. */
-  extractPersonaDialogAgent: string | null;
-  configChangesDialogAgent: string | null;
-  configChangesProjectPath: string | null;
   /** Agent ID that should be prompted for a session name (set on quit if setting enabled) */
   sessionNamePromptFor: string | null;
   projectActiveAgent: Record<string, string | null>;
@@ -36,12 +30,6 @@ export interface AgentUISlice {
   closeAgentSettings: () => void;
   openDeleteDialog: (agentId: string) => void;
   closeDeleteDialog: () => void;
-  openApplyPersonaDialog: (agentId: string) => void;
-  closeApplyPersonaDialog: () => void;
-  openExtractPersonaDialog: (agentId: string) => void;
-  closeExtractPersonaDialog: () => void;
-  openConfigChangesDialog: (agentId: string, projectPath: string) => void;
-  closeConfigChangesDialog: () => void;
   setSessionNamePrompt: (agentId: string | null) => void;
 }
 
@@ -86,6 +74,8 @@ export interface AgentLifecycleSlice {
     pluginMetadata?: Record<string, string>,
     /** Run in this directory instead of the parent's worktree (e.g. retry in the same worktree). */
     cwdOverride?: string,
+    /** Clubhouse-managed agents (#2893): start it from this template. */
+    options?: { managedTemplateId?: string },
   ) => Promise<string>;
   spawnDurableAgent: (
     projectId: string,

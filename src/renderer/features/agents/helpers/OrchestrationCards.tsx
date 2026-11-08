@@ -66,7 +66,6 @@ export function OrchestrationCardPair({ agent, model, isOpen, onToggle }: {
           helpers={everywhere}
           maxHelpers={orch.policy?.maxHelpers}
           orchestrating={orchestrating}
-          mcpOff={!!orch.policy?.mcpOff}
           open={isOpen('helpers')}
           onToggle={() => onToggle('helpers')}
           approvals={approvals}
@@ -87,8 +86,7 @@ export function OrchestrationCardPair({ agent, model, isOpen, onToggle }: {
 export function SleepingOrchestration({ agent, projectPath }: { agent: Agent; projectPath: string | undefined }) {
   const model = useOrchestrationCards(agent, projectPath);
   const waiting = model.approvals.pending.length > 0;
-  // Saved on with MCP off still shows, so the card can say why it reads off.
-  const relevant = model.orchestrating || !!model.orch.policy?.mcpOff?.orchestrate || model.helpers.live.length > 0 || waiting;
+  const relevant = model.orchestrating || model.helpers.live.length > 0 || waiting;
   const [shownFor, setShownFor] = useState<string | null>(null);
   useEffect(() => { if (relevant) setShownFor(agent.id); }, [relevant, agent.id]);
   const shown = relevant || shownFor === agent.id;

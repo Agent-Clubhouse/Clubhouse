@@ -24,7 +24,6 @@ export function validateBuiltinPlugin(plugin: BuiltinPlugin): ValidationResult {
   const hasPanel =
     mod.MainPanel !== undefined ||
     mod.SidebarPanel !== undefined ||
-    mod.HubPanel !== undefined ||
     mod.SettingsPanel !== undefined;
 
   if (!hasActivate && !hasPanel) {

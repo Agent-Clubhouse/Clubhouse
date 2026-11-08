@@ -18,9 +18,7 @@ Turn on **Let this agent orchestrate** for a durable agent. The switch is in the
 
 When it's on, the agent's Clubhouse MCP gets the helper and connection tools. If the agent isn't running, the tools appear the next time it starts.
 
-Orchestration needs Clubhouse MCP. Where MCP is off for an agent, in the app, its project or the agent itself, **Let this agent orchestrate** and **Connect to Dispatcher** are off and can't be changed, and the settings say why. The agent gets no helper tools and the Dispatcher can't reach it. Your settings are kept and come back when MCP is on. Helpers it already has keep running, and you can still manage them.
-
-A helper always gets Clubhouse MCP, even in a project where it's off, because it can't report to its orchestrator without it. The project's other MCP servers still follow the project's setting. If the MCP bridge can't run, the helper doesn't start and its orchestrator is told why.
+Orchestration goes through Clubhouse MCP, which is always on for every agent. If the MCP bridge can't run, a helper doesn't start and its orchestrator is told why, because it couldn't report without it.
 
 If you turn it off while the agent has helpers, Clubhouse asks what to do with them, including helpers in other projects.
 
@@ -30,17 +28,19 @@ If you turn it off while the agent has helpers, Clubhouse asks what to do with t
 
 Turn on **Cross-project helpers** to let the agent start helpers in other projects you have added to Clubhouse. It sits with the other orchestration settings, is off by default, and only shows while orchestration is on. Turning it off stops new starts in other projects. Helpers already started there keep running, and the orchestrator can still manage them.
 
-Agents using the **Orchestrator** persona start with the switch on. The persona also tells the agent how to plan, start helpers, hand off and dispose. Give helpers the **Workhorse** persona when no other role fits.
+A Clubhouse managed agent gets it from **Can start helpers** in its setup. The built-in Orchestrator template has it on, and its blocks tell the agent how to plan, start helpers, hand off and dispose. An agent that used the Orchestrator persona keeps the switch on when it switches to managed.
 
 While the Dispatcher is turned on, a **Connect to Dispatcher** switch shows in the same places, with orchestration on or off. It lets the Dispatcher message the agent and get its reports. Agents that orchestrate are connected by default. Turn the switch off and the agent stays off. You can also turn it on for an agent that doesn't orchestrate, which adds no helper tools. Helpers talk only to their orchestrator, so they never connect to the Dispatcher and don't have this switch.
 
 ## Starting helpers
 
-The orchestrator calls `start_helper` with a name, a task and, if it wants, a persona, a CLI, a model, a reasoning effort, a difficulty and a branch to start from. A helper runs on the same CLI as its orchestrator unless the orchestrator picks another.
+The orchestrator calls `start_helper` with a name, a task and, if it wants, a CLI, a model, a reasoning effort, a difficulty and a branch to start from. A helper runs on the same CLI as its orchestrator unless the orchestrator picks another.
 
-With a difficulty (easy, medium or hard), the model and effort come from **Settings > Helpers**, for Claude Code and Codex. These presets are starting choices, not measured best ones, so change them to suit your work. A difficulty never changes the helper's CLI. Anything the orchestrator names itself wins, even over a persona's settings. If a preset is no longer offered, the default is used and the helper says so, and if nothing valid is left the start is refused, never run on some other model. After signing in to a CLI again, press **Check again** there to update its models and limits right away.
+Every helper is a Clubhouse managed agent built from a template. It gets the **Default helper template** from **Settings > Managed agents > Helpers**, which starts as the built-in **Helper** template. Turn on **Let orchestrators choose helper templates** there to let an orchestrator name another template, or add and leave out parts, for one helper. Nothing it picks is saved. With the switch off, a start that names another template or changes parts is refused, and the orchestrator is told to ask you. Helpers don't take a persona: one passed by an older orchestrator is ignored, and the orchestrator is told so.
 
-With **Auto provider** on, in Settings > Helpers or on the orchestrator, it can also let Clubhouse pick between Claude Code and Codex for each helper. It compares how many helpers each is running and how close each is to its plan limit, and it chooses once, for the helper's whole task. A limit Clubhouse can't read counts as fine but shows as unknown. This balances helper counts, not cost. A project or a persona can turn Auto off, but not on.
+With a difficulty (easy, medium or hard), the model and effort come from **Settings > Managed agents > Helpers**, for Claude Code and Codex. These presets are starting choices, not measured best ones, so change them to suit your work. A difficulty never changes the helper's CLI. Anything the orchestrator names itself wins, even over the helper template's settings. If a preset is no longer offered, the default is used and the helper says so, and if nothing valid is left the start is refused, never run on some other model. After signing in to a CLI again, press **Check again** there to update its models and limits right away.
+
+With **Smart helper selection** on in **Settings > Managed agents > Helpers**, or **Auto provider** on in the orchestrator's settings, it can also let Clubhouse pick between Claude Code and Codex for each helper. It favors the CLI that has used less of its weekly plan limit, and it chooses once, for the helper's whole task. A CLI close to any of its limits goes last, and one that has hit a limit isn't picked. If Clubhouse can't read a CLI's weekly limit, it shows as unknown, and that CLI gets helpers only when every CLI it can read is close to its limit or out. How many helpers each CLI is running only settles an exact tie, and after that they take turns. This balances use of your plans, not cost. A project can turn it off, but not on.
 
 `list_models` lists the models each CLI accepts. Each CLI is asked for its list without sending a prompt, so no tokens are used, and the list is kept for about ten minutes. The CLI is asked from an empty folder, so the list follows its login and user-level settings, not a project's model restriction. If a CLI can't be asked, Clubhouse uses an older list that may be out of date, and says so. `start_helper` refuses a model that the CLI's own list doesn't have. If it only has the older list, it starts the helper anyway and warns the orchestrator.
 
@@ -52,7 +52,7 @@ The **Helpers** card in the orchestrator's details lists its helpers with their 
 
 ## Helpers in other projects
 
-With **Cross-project helpers** on, the orchestrator can pass `project` to `start_helper` with the name or path of another project. The helper is created there like any agent of that project, with a worktree of that project's repository, and the persona comes from that project's personas. `list_projects` lists the projects it can use, with each one's path, default branch and personas, and marks the orchestrator's own. It only appears while the switch is on.
+With **Cross-project helpers** on, the orchestrator can pass `project` to `start_helper` with the name or path of another project. The helper is created there like any agent of that project, with a worktree of that project's repository, and is built from a template as any helper is. `list_projects` lists the projects it can use, with each one's path and default branch, and marks the orchestrator's own. It only appears while the switch is on.
 
 Remote projects and group projects can't take helpers. A project in the same Git repository as the orchestrator's, such as another worktree of it, is refused, and so is a folder that isn't a Git repository.
 
@@ -92,7 +92,7 @@ Under **Ask before starting** and **Ask for everything**, `start_helper` creates
 ## Limits
 
 - **Helpers at once** caps how many helpers one orchestrator can have. The default is 5. The Orchestration card shortens the label to **At once**.
-- **Helpers running at once** in **Settings > Helpers** sets a cap across every orchestrator in every project. The default is 20, and no agent can be set above it.
+- **Helpers running at once** in **Settings > Managed agents > Helpers** sets a cap across every orchestrator in every project. The default is 20, and no agent can be set above it.
 
 Both count helpers in every project, so a helper in another project counts against its orchestrator's limit.
 
@@ -123,7 +123,7 @@ When the orchestrator calls `dispose_helper`:
 
 When you dispose of a helper yourself from the Helpers card, the dialog runs the same checks. A clean helper shows **Dispose**, work at risk shows **Dispose anyway**, and a failed check only offers **Check again**. **Just sleep** stops the helper and keeps everything.
 
-Disposed helpers move to a **Disposed** section at the end of the Helpers card, where **Remove** deletes them for good. **Settings > Helpers** lists disposed helpers whose orchestrator was deleted.
+Disposed helpers move to a **Disposed** section at the end of the Helpers card, where **Remove** deletes them for good. **Settings > Managed agents > Helpers** lists disposed helpers whose orchestrator was deleted.
 
 If you delete an orchestrator that still has helpers, Clubhouse asks whether to dispose of them, with the same checks, or keep them as normal agents.
 
@@ -144,21 +144,15 @@ These tools only reach the orchestrator and its own helpers, in any project. Con
 
 The **Connections** card in an agent's details lists its wires. Wires made by the connection tools have **Disconnect**. Others are read-only. A connection you remove stays removed, even after a restart.
 
-## Setting the defaults for a project
+## Where an agent's policy comes from
 
-Policy for an agent comes from its own settings first, then its persona's front-matter, then the **Orchestrator** persona, then the built-in defaults. To ship a policy with a project, add `.clubhouse/personas/orchestrator.md` with an `orchestration` line in its front-matter:
+An agent's orchestration settings come from its own settings, then the built-in defaults. A project used to set defaults with `.clubhouse/personas/orchestrator.md` and an agent's persona could set some too. Personas are retired: when an agent switches to managed, or at the first start after the update for one that stays unmanaged, Clubhouse copies what those files gave it into its own settings, so its policy stays the same. Editing those files changes nothing after that.
 
-```
----
-orchestration: {"orchestrate": true, "access": "same", "control": "hands-off", "maxHelpers": 5}
----
-```
-
-| Key | Values |
+| Setting | Values |
 |-----|--------|
-| `orchestrate` | `true` or `false`. From the Orchestrator persona, it only applies to agents using that persona. |
+| `orchestrate` | `true` or `false` |
 | `access` | `same`, `standard`, `auto` or `bypass` |
 | `control` | `hands-off`, `ask-before-start` or `ask-everything` |
 | `maxHelpers` | How many helpers at once |
 | `crossProjectHelpers` | `true` or `false`. Whether the agent can start helpers in other projects. |
-| `connectToDispatcher` | `true` or `false`. Whether the Dispatcher can message the agent and get its reports. If it isn't set, it follows `orchestrate`. A helper is never connected, whatever this says. Like `orchestrate`, from the Orchestrator persona it only applies to agents using that persona. |
+| `connectToDispatcher` | `true` or `false`. Whether the Dispatcher can message the agent and get its reports. If it isn't set, it follows `orchestrate`. A helper is never connected, whatever this says. |

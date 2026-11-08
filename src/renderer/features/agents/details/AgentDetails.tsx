@@ -243,7 +243,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   // Session: live stats only; the settings are in the Settings card.
   const session = chat?.usage.session;
   const cost = session?.costUsd !== undefined ? formatCost(session.costUsd, session.costIsEstimate) : null;
-  // Drivers without a session total (ACP) report per turn: sum those.
+  // Drivers without a session total report per turn: sum those.
   const tokens = tokensOf(session?.tokens ?? chat?.usage.turnTotal ?? undefined);
   const runningFor = running && spawnedAt ? formatDuration(now - spawnedAt) : null;
   const sessionSummary = [runningFor, cost].filter(Boolean).join(' · ');
@@ -378,6 +378,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
 
       {!asleep && <McpCard
         agent={agent}
+        projectPath={projectPath}
         live={chat?.mcpServers ?? null}
         spawnedAt={spawnedAt}
         refreshKey={refreshKey}

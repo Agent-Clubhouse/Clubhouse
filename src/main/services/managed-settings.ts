@@ -53,6 +53,8 @@ export interface ManagedSettingsOptions<T> {
   mode?: number;
   /** Use this store instead of creating one: for a file a settings service already holds a cache of. */
   store?: SettingsStore<T>;
+  /** What the get channel returns, when the UI should show an effective value rather than the file as saved. */
+  read?: () => T;
 }
 
 /**
@@ -89,7 +91,7 @@ export function createManagedSettings<T>(
 
       const channels = settingsChannels(definition.key);
 
-      ipcMain.handle(channels.get, () => store.get());
+      ipcMain.handle(channels.get, () => (options?.read ? options.read() : store.get()));
 
       ipcMain.handle(channels.save, async (_event: Electron.IpcMainInvokeEvent, settings: T, ...extraArgs: unknown[]) => {
         await store.save(settings);

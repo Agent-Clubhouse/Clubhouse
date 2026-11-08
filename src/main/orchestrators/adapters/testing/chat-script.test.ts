@@ -1,8 +1,9 @@
 /**
  * Dry check of the scripted-turn builder (#2480): every script it builds
- * replays to the end through the real fake CLI, the Claude normalizer gets
- * the tool's image, and Copilot's asset reader finds the journaled bytes.
- * The chat E2E specs that use these scripts only run in CI.
+ * replays to the end through the real fake CLI, and the Claude normalizer
+ * gets the tool's image. Copilot's scripts replay through the real Copilot
+ * SDK driver, since the SDK protocol is framed TCP. The chat E2E specs that
+ * use these scripts only run in CI.
  */
 import { spawn } from 'child_process';
 import * as fs from 'fs';
@@ -14,9 +15,13 @@ import { ClaudeStreamTransport } from '../../../chat/claude/stream-transport';
 import type { ClaudeChatEvent } from '../../../chat/claude/events';
 import { permissionRequestFromWire } from '../../../chat/claude/normalizer';
 import { sniffMediaType } from '../../../../shared/chat';
-import { CopilotAssetReader } from '../copilot-assets';
+import type { ChatEventDraft } from '../../../../shared/chat/events';
+import type { ChatDriverSession } from '../../../../shared/chat/runtime';
+import { CopilotSdkChatDriver } from '../../../chat/copilot/driver';
+import { COPILOT_OPTION_ALLOW } from '../../../chat/copilot/normalizer';
+import { fakeCopilotEnv } from '../../../chat/copilot/test-env';
 import { CHAT_MEDIA, buildChatScript, md, writeChatScript, type BuiltChatScript, type ChatScript } from './chat-script';
-import { EventLog, NdjsonPeer, createFakeCli, type ChatFixtureCli, type FakeCli } from './fake-cli';
+import { EventLog, NdjsonPeer, createFakeCli, writeFakeCliShims, type FakeCli } from './fake-cli';
 
 vi.mock('../../../util/shell', async (importActual) => {
   const actual = await importActual<typeof import('../../../util/shell')>();
@@ -24,23 +29,60 @@ vi.mock('../../../util/shell', async (importActual) => {
 });
 
 const PNG = { path: CHAT_MEDIA.png, mimeType: 'image/png' };
-const CLI_ARGS: Record<ChatFixtureCli, string[]> = { claude: [], codex: ['app-server'], copilot: ['--acp'] };
+const CLI_ARGS: Record<'claude' | 'codex', string[]> = { claude: [], codex: ['app-server'] };
 
 let tmp: string;
 const cleanups: Array<() => unknown> = [];
+let originalEnv: NodeJS.ProcessEnv;
 beforeEach(async () => {
   tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'chat-script-test-'));
+  originalEnv = process.env;
 });
 afterEach(async () => {
-  while (cleanups.length) await cleanups.pop()?.();
+  try {
+    while (cleanups.length) await cleanups.pop()?.();
+  } finally {
+    process.env = originalEnv;
+  }
   await fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });
 
-async function fakeFor(built: BuiltChatScript, name = 'script'): Promise<{ fake: FakeCli; copilotHome?: string }> {
+async function fakeFor(built: BuiltChatScript, name = 'script'): Promise<{ fake: FakeCli }> {
+  if (built.cli === 'copilot') throw new Error('Copilot scripts replay through the SDK driver: use copilotSession');
   const written = await writeChatScript(tmp, name, built);
   const fake = await createFakeCli(written.fixture, { cliArgs: CLI_ARGS[built.cli] });
   cleanups.push(() => fake.dispose());
-  return { fake, copilotHome: written.copilotHome };
+  return { fake };
+}
+
+// The SDK handshake was recorded logged out, with a provider standing in for the login.
+const LOGIN_STAND_IN = { COPILOT_PROVIDER_BASE_URL: 'http://127.0.0.1:0/v1', COPILOT_MODEL: 'fake-model' };
+
+/** The real Copilot SDK driver against the fake replaying `built`, in a home of its own. */
+async function copilotSession(built: BuiltChatScript, name = 'script'): Promise<{ fake: FakeCli; session: ChatDriverSession; drafts: EventLog<ChatEventDraft> }> {
+  const home = await fs.promises.mkdtemp(path.join(fs.realpathSync(os.tmpdir()), 'chat-script-copilot-home-'));
+  cleanups.push(() => fs.promises.rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+  process.env = fakeCopilotEnv(originalEnv, home);
+  const { fixture } = await writeChatScript(tmp, name, built);
+  const fake = await createFakeCli(fixture);
+  cleanups.push(() => fake.dispose());
+  const shims = await writeFakeCliShims(path.join(tmp, `${name}-bin`), { copilot: { fixture, report: fake.reportPath } });
+  const session = await new CopilotSdkChatDriver().start({
+    agentId: 'a1', provider: 'copilot-cli', cwd: tmp, binaryPath: shims.copilot, level: 'ask', env: LOGIN_STAND_IN,
+  });
+  cleanups.push(() => session.close());
+  return { fake, session, drafts: EventLog.fromAsyncIterable(session.events) };
+}
+
+const say = (session: ChatDriverSession, text: string, delivery: 'prompt' | 'steer' = 'prompt') => session.send([{ type: 'text', text }], delivery);
+
+/** Check the replay, then close: the fake answers the closing session.detach as a standing query. */
+async function expectCopilotComplete(session: ChatDriverSession, fake: FakeCli): Promise<void> {
+  const report = await fake.waitForReport((r) => r.complete || r.mismatch !== null);
+  expect(report.mismatch).toBeNull();
+  expect(report.complete).toBe(true);
+  await session.close();
+  expect((await fake.readReport()).unexpected).toEqual([]);
 }
 
 /**
@@ -78,7 +120,7 @@ const imageThenHeld: ChatScript = {
 };
 
 describe('buildChatScript', () => {
-  for (const cli of ['claude', 'codex', 'copilot'] as const) {
+  for (const cli of ['claude', 'codex'] as const) {
     it(`${cli}: the built script replays to the end through the fake CLI`, async () => {
       const built = buildChatScript(cli, imageThenHeld);
       const header = built.lines[0] as { kind: string; source: string; description: string; synthesized?: string[] };
@@ -179,7 +221,7 @@ describe('buildChatScript', () => {
     await expectComplete(fake);
   });
 
-  for (const cli of ['claude', 'codex', 'copilot'] as const) {
+  for (const cli of ['claude', 'codex'] as const) {
     it(`${cli}: a pinned prompt completes only with its own text`, async () => {
       const script: ChatScript = { description: 'pinned', turns: [{ prompt: 'Keep me.', pinPrompt: true, steps: [{ type: 'text', text: 'Kept.' }] }] };
       const built = buildChatScript(cli, script);
@@ -197,7 +239,7 @@ describe('buildChatScript', () => {
   }
 
   it('steers need a held turn, and a provider that can take them', () => {
-    expect(() => buildChatScript('copilot', { description: 'x', turns: [{ steps: [], end: 'held', steers: [{}] }] })).toThrow(/copilot has no steer shape/);
+    expect(() => buildChatScript('copilot', { description: 'x', turns: [{ steps: [], end: 'held', steers: [{ priority: 'later' }] }] })).toThrow(/copilot has no later steer shape/);
     expect(() => buildChatScript('codex', { description: 'x', turns: [{ steps: [], end: 'held', steers: [{ priority: 'later' }] }] })).toThrow(/codex has no later steer shape/);
     expect(() => buildChatScript('claude', { description: 'x', turns: [{ steps: [], steers: [{}] }] })).toThrow(/steers need a held turn/);
     expect(() => buildChatScript('claude', { description: 'x', turns: [{ steps: [], pinPrompt: true }] })).toThrow(/pinPrompt needs a prompt/);
@@ -225,7 +267,7 @@ describe('buildChatScript', () => {
     expect(report.mismatch).not.toBeNull();
   });
 
-  for (const cli of ['codex', 'copilot'] as const) {
+  for (const cli of ['codex'] as const) {
     it(`${cli}: two command approvals in a script replay to the end with their allows`, async () => {
       const approval = (n: number) => ({ type: 'approval' as const, approval: { tool: 'Bash', input: { command: `echo 'step ${n}'` }, title: `Run step ${n}`, description: `Step ${n} writes to out/.` } });
       const built = buildChatScript(cli, {
@@ -241,28 +283,65 @@ describe('buildChatScript', () => {
     });
   }
 
-  it('copilot: the binary result names an asset the session journal holds', async () => {
-    const built = buildChatScript('copilot', { description: 'one asset', turns: [{ steps: [{ type: 'image-tool', image: PNG }] }] });
-    const update = built.lines.find((l) => JSON.stringify(l).includes('binaryResultsForLlm')) as { msg: { params: { update: { rawOutput: { binaryResultsForLlm: Array<{ assetId: string }> } } } } };
-    const assetId = update.msg.params.update.rawOutput.binaryResultsForLlm[0].assetId;
-    const { copilotHome } = await writeChatScript(tmp, 'copilot-asset', built);
-    expect(copilotHome).toBeDefined();
-    const result = await new CopilotAssetReader(path.join(copilotHome!, 'session-state'), { retryDelaysMs: [] }).read(built.sessionId, assetId);
-    expect(result.ok).toBe(true);
-    expect(result.ok && Buffer.from(result.bytes).equals(fs.readFileSync(CHAT_MEDIA.png))).toBe(true);
-  });
+  describe('copilot, through the SDK driver', () => {
+    const approval = (n: number) => ({ type: 'approval' as const, approval: { tool: 'Bash', input: { command: `echo 'step ${n}'` }, title: `Run step ${n}`, description: `Step ${n} writes to out/.` } });
 
-  it('copilot: inline and omitted images need no journal', () => {
-    const built = buildChatScript('copilot', {
-      description: 'inline and omitted',
-      turns: [{ steps: [{ type: 'image-tool', image: PNG, variant: 'inline' }, { type: 'image-tool', image: PNG, variant: 'omitted' }] }],
+    it('text, two approvals and a held turn with a steer replay to the end', async () => {
+      const built = buildChatScript('copilot', {
+        description: 'text, approvals, a held turn with a steer, then a plain turn',
+        turns: [
+          { prompt: 'Run the steps.', steps: [{ type: 'text', text: 'Starting.' }, approval(1), approval(2), { type: 'text', text: 'Both ran.' }] },
+          { prompt: 'Wait.', steps: [{ type: 'text', text: 'Waiting.' }], end: 'held', steers: [{ text: 'Use tabs.' }] },
+          { prompt: 'Done?', steps: [{ type: 'text', text: 'Done.' }] },
+        ],
+      });
+      expect(built.lines[0]).toMatchObject({ kind: 'header', protocol: 'copilot-sdk', source: 'hand-made' });
+      const { fake, session, drafts } = await copilotSession(built);
+
+      await say(session, 'Run the steps.');
+      for (const n of [1, 2]) {
+        const ask = await drafts.waitFor({ type: 'permission_request' } as Partial<ChatEventDraft>);
+        const data = (ask as Extract<ChatEventDraft, { type: 'permission_request' }>).data;
+        // The approval card's title, and the command the dock previews from the tool call.
+        expect(data).toMatchObject({ title: `Run step ${n}`, description: `echo 'step ${n}'`, toolName: 'bash' });
+        const call = drafts.items.find((d) => d.type === 'tool_call' && d.data.toolCallId === data.toolCallId) as Extract<ChatEventDraft, { type: 'tool_call' }>;
+        expect(call.data).toMatchObject({ kind: 'execute', rawInput: { command: `echo 'step ${n}'`, description: `Step ${n} writes to out/.` } });
+        await session.respondPermission(data.requestId, COPILOT_OPTION_ALLOW);
+      }
+      await drafts.waitFor({ type: 'turn_ended' } as Partial<ChatEventDraft>);
+
+      await say(session, 'Wait.');
+      await drafts.waitFor({ type: 'tool_call', data: { rawInput: { command: 'sleep 600' } } } as Partial<ChatEventDraft>);
+      expect(await say(session, 'Use tabs.', 'steer')).toBe('steer');
+      await session.interrupt();
+      expect(((await drafts.waitFor({ type: 'turn_ended' } as Partial<ChatEventDraft>)) as Extract<ChatEventDraft, { type: 'turn_ended' }>).data.stopReason).toBe('cancelled');
+
+      await say(session, 'Done?');
+      await drafts.waitFor({ type: 'turn_ended' } as Partial<ChatEventDraft>);
+      await expectCopilotComplete(session, fake);
+      const ends = drafts.items.filter((d): d is Extract<ChatEventDraft, { type: 'turn_ended' }> => d.type === 'turn_ended').map((d) => d.data.stopReason);
+      expect(ends).toEqual(['end_turn', 'cancelled', 'end_turn']);
     });
-    expect(built.copilotJournal).toEqual([]);
-    const results = built.lines.flatMap((l) => (l.msg as { params?: { update?: { rawOutput?: { binaryResultsForLlm?: unknown[] } } } } | undefined)?.params?.update?.rawOutput?.binaryResultsForLlm ?? []);
-    expect(results).toEqual([
-      expect.objectContaining({ type: 'image', data: expect.any(String) }),
-      expect.objectContaining({ type: 'image', omittedReason: 'too_large' }),
-    ]);
+
+    it('a pinned prompt completes only with its own text', async () => {
+      const script: ChatScript = { description: 'pinned', turns: [{ prompt: 'Keep me.', pinPrompt: true, steps: [{ type: 'text', text: 'Kept.' }] }] };
+      const built = buildChatScript('copilot', script);
+      const first = await copilotSession(built);
+      await say(first.session, 'Keep me.');
+      await first.drafts.waitFor({ type: 'turn_ended' } as Partial<ChatEventDraft>);
+      await expectCopilotComplete(first.session, first.fake);
+
+      const second = await copilotSession(built, 'pinned-again');
+      void say(second.session, 'Removed.').catch(() => undefined);
+      const report = await second.fake.waitForReport((r) => r.mismatch !== null);
+      expect(report.mismatch?.reason).toMatch(/did not contain/);
+    });
+
+    it('a steer matches on its text and mode', () => {
+      const built = buildChatScript('copilot', { description: 'x', turns: [{ steps: [], end: 'held', steers: [{ text: 'Use tabs.' }, {}] }] });
+      const steers = built.lines.filter((l) => l.from === 'client' && (l.msg as { params?: { mode?: string } }).params?.mode === 'immediate');
+      expect(steers.map((l) => l.match)).toEqual([{ params: { mode: 'immediate', prompt: 'Use tabs.' } }, { params: { mode: 'immediate' } }]);
+    });
   });
 
   for (const cli of ['claude', 'codex'] as const) {
@@ -292,7 +371,9 @@ describe('buildChatScript', () => {
   it('refuses a step a provider has no shape for', () => {
     const questions = { type: 'questions' as const, questions: [{ question: 'Q?', header: 'Q', options: [{ label: 'A' }] }], answers: { 'Q?': 'A' } };
     expect(() => buildChatScript('codex', { description: 'x', turns: [{ steps: [questions] }] })).toThrow(/codex has no question shape/);
-    expect(() => buildChatScript('claude', { description: 'x', turns: [{ steps: [{ type: 'image-tool', image: PNG, variant: 'asset' }] }] })).toThrow(/claude has no asset image shape/);
+    expect(() => buildChatScript('claude', { description: 'x', turns: [{ steps: [{ type: 'image-tool', image: PNG, variant: 'view' }] }] })).toThrow(/claude has no view image shape/);
+    // The SDK driver shows no image from a tool's result, so there is nothing to script.
+    expect(() => buildChatScript('copilot', { description: 'x', turns: [{ steps: [{ type: 'image-tool', image: PNG }] }] })).toThrow(/copilot has no image tool shape/);
     expect(() => buildChatScript('copilot', { description: 'x', turns: [{ steps: [{ type: 'command', command: 'ls', output: '' }] }] })).toThrow(/copilot has no command shape/);
     const edit = { type: 'approval' as const, approval: { tool: 'Edit', input: { file_path: '/tmp/a.ts' } } };
     expect(() => buildChatScript('copilot', { description: 'x', turns: [{ steps: [edit] }] })).toThrow(/copilot has no approval without input.command shape/);

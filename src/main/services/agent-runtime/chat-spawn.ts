@@ -20,13 +20,10 @@ import { agentRegistry, untrackAgent } from '../agent-registry';
 import * as configPipeline from '../config-pipeline';
 import { agentEndpointUrl, NONCE_HEADER, waitReady as waitMcpBridgeReady } from '../clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp, buildClubhouseMcpDef, CLUBHOUSE_NONCE_ENV } from '../clubhouse-mcp/injection';
-import { clubhouseMcpOverride } from '../../../shared/agent-helpers';
-import { isMcpEnabled } from '../mcp-settings';
-import { resolveAgentMcpServers } from '../materialization-service';
+import { resolveAgentMcpServers } from '../agent-mcp-servers';
 import { touchSessionEntry } from '../agent-config';
 import { broadcastAgentExit } from '../agent-exit-broadcast';
 import { appLog } from '../log-service';
-import { isPreviewEligible } from '../preview-eligible';
 import { resolveRuntimeMode } from '../chat-runtime-settings';
 import { isGraduatedFeatureOn } from '../experimental-settings';
 import { RICH_CHAT_CONTENT_FLAG } from '../../../shared/chat';
@@ -51,6 +48,7 @@ import { chatIdleTimeoutMs, onAgentIdleSleepChange, setAgentIdleSleep } from '..
 import { codePart, recordBreadcrumb } from '../breadcrumbs';
 import { routeHelperQuestion } from '../clubhouse-mcp/tools/helper-question-tools';
 import { cleanSpawnEnv, getShellEnvironment, summarizeSpawnEnv } from '../../util/shell';
+import { missingEnvNotice, missingMcpEnv } from '../../../shared/mcp-start-problems';
 
 export interface ChatSpawnParams {
   agentId: string;
@@ -88,6 +86,15 @@ export async function findChatSessionFor(agentId: string, nativeSessionId: strin
   return session ? { sessionId: session.sessionId, lastSeq: session.lastSeq } : undefined;
 }
 
+/** Remember a managed agent's MCP start problems for its Details. Never fails the start. */
+async function noteMcpStartProblems(agentId: string, problems: ReturnType<typeof missingMcpEnv>): Promise<void> {
+  try {
+    (await import('../managed-agents')).recordMcpStartProblems(agentId, problems);
+  } catch {
+    // telemetry-exempt: Details only; the chat notice already says it
+  }
+}
+
 /** A chat runtime notice, also shown to the user when an agent falls back. */
 export interface ChatRuntimeNotice {
   level: 'info' | 'warn';
@@ -99,20 +106,17 @@ const DRIVER_LABELS: Record<string, string> = {
   claude_agent_sdk: 'Agent SDK',
   claude_stream_json: 'stream-json',
   codex_app_server: 'app-server',
-  copilot_acp: 'ACP',
   copilot_sdk: 'Copilot SDK',
-  acp: 'ACP',
 };
 
 function driverLabel(driver: ChatDriver): string {
   return `${cliLabel(driver.provider)} (${DRIVER_LABELS[driver.id] ?? driver.id})`;
 }
 
+/** Copilot has one chat driver, so a failed start opens the CLI view (#2868); say what to do next. */
 function copilotRecoveryHint(provider: string, driver?: ChatDriver['id']): string {
   return provider === 'copilot-cli' && driver === 'copilot_sdk'
-    ? (isPreviewEligible()
-      ? '. Copilot SDK chat failed. Retry after resolving the reported problem, or explicitly enable Use legacy Copilot ACP in Settings > Experimental for the next start.'
-      : '. Copilot SDK chat failed. Retry after resolving the reported problem. The legacy ACP escape hatch requires Preview eligibility in Settings > Updates, then Use legacy Copilot ACP in Settings > Experimental; it applies at the next start.')
+    ? '. Copilot chat failed to start. Resolve the reported problem, then restart the agent to try chat again.'
     : '';
 }
 
@@ -123,7 +127,7 @@ function copilotRecoveryHint(provider: string, driver?: ChatDriver['id']): strin
  * opt-in driver only appears when it is the preferred one.
  */
 export function chatDriverCandidates(provider: string, preferred?: ChatDriver['id']): ChatDriver[] {
-  // Copilot has one next-start choice. Never silently change adapters when it fails.
+  // Copilot has one chat driver; when it fails the agent opens in the CLI view.
   if (provider === 'copilot-cli') {
     const selected = preferred ?? 'copilot_sdk';
     return listChatDrivers().filter((driver) => driver.provider === provider && driver.id === selected);
@@ -283,7 +287,7 @@ export async function cancelChatStart(agentId: string, opts: { throwOnFailure?: 
 /**
  * Stop every chat agent for quit or update (#2053): cancel the starts in
  * progress, then stop each running session. Each driver closes its CLI its
- * own way (the Agent SDK query, the Codex app-server, the ACP process), and
+ * own way (the Agent SDK query, the Codex app-server, the Copilot server), and
  * each session ends the usual way: its native session id is saved, its MCP
  * config restored and its exit broadcast. Settles when every stop has, even
  * ones that fail.
@@ -328,7 +332,6 @@ export function hasChatStartInFlight(agentId: string): boolean {
 export async function tryStartChatAgent(
   params: ChatSpawnParams,
   provider: OrchestratorProvider,
-  profileEnv: Record<string, string> | undefined,
   commandPrefix: string | undefined,
   durableConfig: DurableAgentConfig | null | undefined,
   onStarting?: () => void,
@@ -387,7 +390,7 @@ export async function tryStartChatAgent(
   }
   onStarting?.();
   try {
-    return await runChatStart(params, provider, profileEnv, commandPrefix, durableConfig, candidates, binaryPath, start, facts, unavailablePreference);
+    return await runChatStart(params, provider, commandPrefix, durableConfig, candidates, binaryPath, start, facts, unavailablePreference);
   } catch (err) {
     if (!(err instanceof ChatStartCancelledError)) {
       facts.reason = 'error';
@@ -402,14 +405,13 @@ export async function tryStartChatAgent(
 }
 
 /** Exactly the environment passed to both a launch probe and session start. */
-export function chatLaunchEnvironment(profileEnv?: Record<string, string>): Record<string, string> {
-  return cleanSpawnEnv({ ...getShellEnvironment(), ...profileEnv });
+export function chatLaunchEnvironment(): Record<string, string> {
+  return cleanSpawnEnv({ ...getShellEnvironment() });
 }
 
 async function runChatStart(
   params: ChatSpawnParams,
   provider: OrchestratorProvider,
-  profileEnv: Record<string, string> | undefined,
   commandPrefix: string | undefined,
   durableConfig: DurableAgentConfig | null | undefined,
   candidates: ChatDriver[],
@@ -426,8 +428,8 @@ async function runChatStart(
 
   // Electron's inherited PATH may not contain Node for npm CLI shims. Match
   // the terminal launch and use the same effective env for probing, health
-  // keys and the actual session; profile values remain overrides.
-  const launchEnv = chatLaunchEnvironment(profileEnv);
+  // keys and the actual session.
+  const launchEnv = chatLaunchEnvironment();
   const level = levelForFreeAgent(params.freeAgentMode, params.permissionMode);
   const resumeNativeSessionId = params.resume ? params.sessionId : undefined;
   appLog('core:chat', 'info', 'Chat start requested', {
@@ -437,7 +439,6 @@ async function runChatStart(
       candidates: candidates.map((d) => d.id),
       resumeSessionId: resumeNativeSessionId ?? null,
       binaryPath,
-      profileEnvKeys: profileEnv ? Object.keys(profileEnv) : [],
     },
   });
   let prepared: { env: Record<string, string>; mcpServers: Record<string, unknown>; mcpHttpEndpoints: Record<string, McpHttpEndpoint>; mcpNotices: ChatRuntimeNotice[]; continued?: { sessionId: string; lastSeq: number } } | undefined;
@@ -538,28 +539,23 @@ async function runChatStart(
   async function prepare(): Promise<NonNullable<typeof prepared>> {
     const nonce = randomUUID();
 
-    // A helper always gets the bridge; project servers keep following the settings (#2610).
-    const bridgeOverride = clubhouseMcpOverride(durableConfig);
-    const mcpEnabled = isMcpEnabled(params.projectPath, bridgeOverride);
-    const projectServersEnabled = isMcpEnabled(params.projectPath, durableConfig?.mcpOverride);
+    // Every agent gets the bridge and its MCP servers: the Clubhouse MCP always runs.
     // Resolve before bridge injection or any write, including on a missing local file.
     const mcpNotices: ChatRuntimeNotice[] = [];
-    const configuredServers = projectServersEnabled
-      ? await resolveAgentMcpServers(params.projectPath, durableConfig ?? undefined, { cwd: params.cwd, conventions: provider.conventions, onNotice: (message) => mcpNotices.push({ level: 'warn', code: 'mcp_configuration', message }) })
-      : {};
+    const configuredServers = await resolveAgentMcpServers(params.projectPath, durableConfig ?? undefined, { cwd: params.cwd, conventions: provider.conventions, onNotice: (message) => mcpNotices.push({ level: 'warn', code: 'mcp_configuration', message }) });
     checkpoint();
     agentRegistry.setNonce(params.agentId, nonce);
     agentRegistry.setRuntime(params.agentId, 'chat');
     start.prepared = true;
     const mcpJsonPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
     const injectFile = provider.conventions.settingsFormat !== 'toml';
-    if (mcpEnabled && injectFile) configPipeline.snapshotFile(params.agentId, mcpJsonPath);
+    if (injectFile) configPipeline.snapshotFile(params.agentId, mcpJsonPath);
     let mcpPort = 0;
     try {
       mcpPort = await waitMcpBridgeReady();
       // A newer start has its own nonce: don't overwrite its MCP config with this one.
       checkpoint();
-      if (injectFile) await injectClubhouseMcp(params.cwd, params.agentId, mcpPort, provider.conventions, { projectPath: params.projectPath, agentOverride: bridgeOverride });
+      if (injectFile) await injectClubhouseMcp(params.cwd, params.agentId, mcpPort, provider.conventions);
     } catch (err) {
       if (err instanceof ChatStartCancelledError) throw err;
       appLog('core:mcp', 'warn', 'MCP bridge injection skipped for chat agent', {
@@ -568,11 +564,11 @@ async function runChatStart(
     }
     const mcpServers = {
       ...configuredServers,
-      // The bridge too follows the agent > project > global setting (#2223).
-      ...(mcpEnabled && mcpPort > 0 ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId) } : {}),
+      // The bridge is last so a configured server of the same name can't shadow it.
+      ...(mcpPort > 0 ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId) } : {}),
     };
     // The bridge's own endpoint, for drivers whose agent takes HTTP MCP
-    // servers (ACP agents such as Copilot, which refuse stdio, #2240). The
+    // servers (Copilot, #2240). The
     // nonce header is resolved from `env` by the driver, so it too travels
     // only over the RPC pipe.
     const mcpHttpEndpoints: Record<string, McpHttpEndpoint> = mcpPort > 0
@@ -582,12 +578,17 @@ async function runChatStart(
       ...launchEnv,
       CLUBHOUSE_AGENT_ID: params.agentId,
       // The only place the nonce goes: the bridge inherits it from the CLI
-      // (Codex via env_vars, ACP via toAcpMcpServers), never a file (#2222).
+      // (Codex via env_vars, Copilot via the HTTP endpoint's header), never a file (#2222).
       CLUBHOUSE_HOOK_NONCE: nonce,
       ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
     };
     // No bridge here: never point the agent at a port from its base env (#2620).
     if (mcpPort <= 0) delete env.CLUBHOUSE_MCP_PORT;
+    // A server whose variables aren't set won't start: say which, by name, in the chat and Details (D95).
+    // A command prefix (such as `source .env`) can set them, and Clubhouse can't see what it sets, so then nothing is said.
+    const envProblems = commandPrefix ? [] : missingMcpEnv(configuredServers, env);
+    for (const problem of envProblems) mcpNotices.push({ level: 'warn', code: 'mcp_server_env_missing', message: missingEnvNotice(problem) });
+    if (durableConfig?.managed) await noteMcpStartProblems(params.agentId, envProblems);
     const continued = resumeNativeSessionId ? await findChatSessionFor(params.agentId, resumeNativeSessionId) : undefined;
     return { env, mcpServers, mcpHttpEndpoints, mcpNotices, continued };
   }
@@ -642,7 +643,7 @@ async function runChatStart(
       driverId: driver.id,
       cwd: params.cwd,
       richMedia: () => isGraduatedFeatureOn(RICH_CHAT_CONTENT_FLAG),
-      // Read from the env the CLI runs with: a profile's COPILOT_HOME moves it.
+      // Read from the env the CLI runs with: COPILOT_HOME moves it.
       sessionOutputDir: (nativeSessionId) => sessionOutputDir(provider.id, nativeSessionId, env),
       level,
       // A resumed session already has its instructions; only new sessions need them.

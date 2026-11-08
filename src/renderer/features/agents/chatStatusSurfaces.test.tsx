@@ -10,7 +10,6 @@ import { getAgentStatus, onChatStatusChange, useAgentStatus, useAgentStatuses } 
 import { AgentAvatarWithRing } from './AgentAvatar';
 import { AgentListItem } from './AgentListItem';
 import { TerminalPaneToolbar } from './pane/AgentPaneToolbar';
-import { Dashboard } from '../projects/Dashboard';
 import { createAgentsAPI } from '../../plugins/plugin-api-agents';
 import { createMockContext } from '../../plugins/testing';
 import type { Agent } from '../../../shared/types';
@@ -120,16 +119,6 @@ describe.each(cases)('status surfaces: $name', ({ setup, dot }) => {
     expect(agentDot(agent, one.result.current)).toBe(dot);
     expect(agentDot(agent, all.result.current[ID])).toBe(dot);
     expect(agentDot(agent, getAgentStatus(ID))).toBe(dot);
-  });
-
-  it('Dashboard: agent row, avatar ring and Working count', () => {
-    setup();
-    render(<Dashboard />);
-    const row = screen.getByTestId(`dashboard-agent-row-${ID}`);
-    expect(row).toHaveTextContent(word);
-    expect(!!row.querySelector('.animate-pulse-ring')).toBe(dot === 'working');
-    const stat = screen.getAllByText('Working').find((el) => el.previousElementSibling?.className.includes('text-xl'));
-    expect(stat?.previousElementSibling).toHaveTextContent(dot === 'working' ? '1' : '0');
   });
 
   it('avatar ring (AgentAvatarWithRing)', () => {

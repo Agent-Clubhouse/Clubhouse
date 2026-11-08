@@ -169,6 +169,15 @@ describe('CommandPalette', () => {
     expect(groups).toContain('Help');
   });
 
+  it('finds no Clubhouse Mode or persona article (#2901)', () => {
+    const titles = () => screen.queryAllByRole('option').map((o) => o.textContent ?? '');
+    useCommandPaletteStore.setState({ isOpen: true, query: 'clubhouse mode', mode: 'all' });
+    render(<CommandPalette />);
+    expect(titles().some((t) => t.includes('Clubhouse Mode'))).toBe(false);
+    act(() => { useCommandPaletteStore.setState({ query: 'researcher' }); });
+    expect(titles().some((t) => t.includes('Agent Personas'))).toBe(false);
+  });
+
   it('shows the mode as a label when a prefix is typed', () => {
     useCommandPaletteStore.setState({ isOpen: true });
     useCommandPaletteStore.getState().setQuery('#');

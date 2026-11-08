@@ -61,7 +61,7 @@ export const NEVER_SENT = [
   'Terminal output, tool input and output',
   'File contents, diffs, commit messages and search queries',
   'File paths, repository URLs and branch names',
-  'Project, agent, canvas and profile names',
+  'Project, agent and canvas names',
   'Error messages and raw stack traces (only sanitized frames)',
   'Hostnames, IP addresses, tokens and environment variables',
 ];

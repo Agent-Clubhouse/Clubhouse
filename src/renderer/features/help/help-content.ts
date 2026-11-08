@@ -1,5 +1,4 @@
 import gettingStarted from './content/general-getting-started.md';
-import dashboard from './content/general-dashboard.md';
 import commandPalette from './content/general-command-palette.md';
 import navigation from './content/general-navigation.md';
 import keyboardShortcuts from './content/general-keyboard-shortcuts.md';
@@ -10,7 +9,6 @@ import projectsSettings from './content/projects-settings.md';
 import agentsOverview from './content/agents-overview.md';
 import agentsDurable from './content/agents-durable.md';
 import agentsQuick from './content/agents-quick.md';
-import agentsClubhouseMode from './content/agents-clubhouse-mode.md';
 import agentsTerminal from './content/agents-terminal.md';
 import agentsOrchestratedHelpers from './content/agents-orchestrated-helpers.md';
 import settingsOrchestrators from './content/settings-orchestrators.md';
@@ -42,18 +40,6 @@ import settingsAnnexChrome from './content/settings-annex.chrome.md';
 import troubleshootingCommonChrome from './content/troubleshooting-common.chrome.md';
 import troubleshootingSafeModeChrome from './content/troubleshooting-safe-mode.chrome.md';
 import { isNewChromeEnabled } from '../../chrome/chromeFlag';
-import personaProjectManager from '../personas/project-manager.md';
-import personaQa from '../personas/qa.md';
-import personaUiLead from '../personas/ui-lead.md';
-import personaQualityAuditor from '../personas/quality-auditor.md';
-import personaExecutorPrOnly from '../personas/executor-pr-only.md';
-import personaExecutorMerge from '../personas/executor-merge.md';
-import personaDocUpdater from '../personas/doc-updater.md';
-import personaJudge from '../personas/judge.md';
-import personaResearcher from '../personas/researcher.md';
-import personaOrchestrator from '../personas/orchestrator.md';
-import personaWorkhorse from '../personas/workhorse.md';
-import { stripPersonaFrontMatter } from '../../../shared/persona-pattern';
 
 export interface HelpTopic {
   id: string;
@@ -74,7 +60,6 @@ export const HELP_SECTIONS: HelpSection[] = [
     title: 'General',
     topics: [
       { id: 'getting-started', title: 'Getting Started', content: gettingStarted },
-      { id: 'dashboard', title: 'Dashboard', content: dashboard },
       { id: 'command-palette', title: 'Command Palette', content: commandPalette },
       { id: 'navigation', title: 'Navigation & Layout', content: navigation },
       { id: 'keyboard-shortcuts', title: 'Keyboard Shortcuts', content: keyboardShortcuts },
@@ -97,7 +82,6 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'agents-overview', title: 'Agent Overview', content: agentsOverview },
       { id: 'agents-durable', title: 'Durable Agents', content: agentsDurable },
       { id: 'agents-quick', title: 'Quick Agents', content: agentsQuick },
-      { id: 'agents-clubhouse-mode', title: 'Clubhouse Mode', content: agentsClubhouseMode },
       { id: 'agents-terminal', title: 'CLI & Transcripts', content: agentsTerminal },
       { id: 'agents-orchestrated-helpers', title: 'Orchestrated Helpers', content: agentsOrchestratedHelpers },
       { id: 'orchestrators', title: 'Agent providers', content: settingsOrchestrators },
@@ -131,43 +115,12 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'troubleshooting-safe-mode', title: 'Safe Mode & Recovery', content: troubleshootingSafeMode },
     ],
   },
-  {
-    id: 'personas',
-    title: 'Agent Personas & Team Roles',
-    topics: [
-      { id: 'persona-project-manager', title: 'Project Manager / Coordinator', content: personaProjectManager },
-      { id: 'persona-qa', title: 'QA / Quality Control', content: personaQa },
-      { id: 'persona-ui-lead', title: 'UI / Design Lead', content: personaUiLead },
-      { id: 'persona-quality-auditor', title: 'Quality Auditor', content: personaQualityAuditor },
-      { id: 'persona-executor-pr-only', title: 'Executor (PR Only)', content: personaExecutorPrOnly },
-      { id: 'persona-executor-merge', title: 'Executor (Full Merge)', content: personaExecutorMerge },
-      { id: 'persona-doc-updater', title: 'Documentation Updater', content: personaDocUpdater },
-      { id: 'persona-judge', title: 'Judge', content: personaJudge },
-      { id: 'persona-researcher', title: 'Researcher', content: personaResearcher },
-      // Persona files can carry settings front-matter; help shows only the body.
-      { id: 'persona-orchestrator', title: 'Orchestrator', content: stripPersonaFrontMatter(personaOrchestrator) },
-      { id: 'persona-workhorse', title: 'Workhorse', content: stripPersonaFrontMatter(personaWorkhorse) },
-    ],
-  },
 ];
-
-const section = (id: string) => HELP_SECTIONS.find((s) => s.id === id)!;
-const retitle = (topics: HelpTopic[], titles: Record<string, string>) => topics.map((t) => ({ ...t, title: titles[t.id] ?? t.title }));
-
-const PERSONA_TITLES: Record<string, string> = {
-  'persona-project-manager': 'Project manager or coordinator',
-  'persona-qa': 'QA and quality control',
-  'persona-ui-lead': 'UI and design lead',
-  'persona-quality-auditor': 'Quality auditor',
-  'persona-executor-pr-only': 'Executor (PR only)',
-  'persona-executor-merge': 'Executor (full merge)',
-  'persona-doc-updater': 'Documentation updater',
-};
 
 /**
  * The new shell's articles (#2017, decided 2026-10-17): one version per shell.
  * Articles that describe the layout are rewritten for the sidebar and title
- * bar, titles are sentence case, and Dashboard is gone with Home. Topic ids
+ * bar and titles are sentence case. Topic ids
  * match the classic set so links and saved selections carry over.
  */
 export const CHROME_HELP_SECTIONS: HelpSection[] = [
@@ -198,7 +151,6 @@ export const CHROME_HELP_SECTIONS: HelpSection[] = [
       { id: 'agents-overview', title: 'Agents', content: agentsOverviewChrome },
       { id: 'agents-durable', title: 'Durable agents', content: agentsDurableChrome },
       { id: 'agents-quick', title: 'Quick agents', content: agentsQuickChrome },
-      { id: 'agents-clubhouse-mode', title: 'Clubhouse mode', content: agentsClubhouseMode },
       { id: 'agents-terminal', title: 'CLI and transcripts', content: agentsTerminalChrome },
       { id: 'agents-orchestrated-helpers', title: 'Orchestrated helpers', content: agentsOrchestratedHelpers },
       { id: 'orchestrators', title: 'Agent providers', content: settingsOrchestrators },
@@ -231,17 +183,15 @@ export const CHROME_HELP_SECTIONS: HelpSection[] = [
       { id: 'troubleshooting-safe-mode', title: 'Safe mode and recovery', content: troubleshootingSafeModeChrome },
     ],
   },
-  { ...section('personas'), title: 'Agent personas', topics: retitle(section('personas').topics, PERSONA_TITLES) },
 ];
 
-/** Annex lives in Settings only on builds that show the Annex pages (preview-eligible). */
+/** Annex has no classic article, so the new shell adds it to Settings. Annex is stable, so every build lists it (#2811). */
 const ANNEX_TOPIC: HelpTopic = { id: 'settings-annex', title: 'Annex', content: settingsAnnexChrome };
+const CHROME_SECTIONS_WITH_ANNEX: HelpSection[] = CHROME_HELP_SECTIONS.map((s) => (s.id === 'settings'
+  ? { ...s, topics: [...s.topics.slice(0, 3), ANNEX_TOPIC, ...s.topics.slice(3)] }
+  : s));
 
 /** The active shell's built-in sections. */
-export function getHelpSections(opts: { annex?: boolean } = {}): HelpSection[] {
-  if (!isNewChromeEnabled()) return HELP_SECTIONS;
-  if (!opts.annex) return CHROME_HELP_SECTIONS;
-  return CHROME_HELP_SECTIONS.map((s) => (s.id === 'settings'
-    ? { ...s, topics: [...s.topics.slice(0, 3), ANNEX_TOPIC, ...s.topics.slice(3)] }
-    : s));
+export function getHelpSections(): HelpSection[] {
+  return isNewChromeEnabled() ? CHROME_SECTIONS_WITH_ANNEX : HELP_SECTIONS;
 }

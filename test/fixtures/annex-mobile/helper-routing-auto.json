@@ -41,33 +41,6 @@
       },
       "source": "dispatcher_locked"
     },
-    "mcpOff": {
-      "effective": false,
-      "reason": "mcp_off",
-      "scopes": {
-        "agent": {
-          "editable": true,
-          "value": null
-        },
-        "app": {
-          "editable": true,
-          "value": true
-        },
-        "persona": {
-          "editable": false,
-          "value": null
-        },
-        "project": {
-          "choices": [
-            "off",
-            null
-          ],
-          "editable": true,
-          "value": null
-        }
-      },
-      "source": "mcp_off"
-    },
     "notOrchestrating": {
       "effective": false,
       "reason": "orchestration_off",

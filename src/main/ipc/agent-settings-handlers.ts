@@ -6,11 +6,7 @@ import { SettingsConventions } from '../services/agent-settings-service';
 import { resolveOrchestrator } from '../services/agent-system';
 import * as path from 'path';
 import { withAgentTransition } from '../services/agent-transition';
-import { isClubhouseModeEnabled } from '../services/clubhouse-mode-settings';
 import { peekDurableConfigs, getDurableConfig } from '../services/agent-config';
-import { extractAgentPersona, getAgentWildcards, listAvailablePersonas, materializeAgent, previewMaterialization, readPersonaForEdit, resetProjectAgentDefaults } from '../services/materialization-service';
-import { applyPersonaToAgent } from '../services/persona-application';
-import { computeConfigDiff, propagateChanges } from '../services/config-diff-service';
 import { getProjectConfigBreakdown, removePluginInjectionItem } from '../services/config-provenance-service';
 import { appLog } from '../services/log-service';
 import { withValidatedArgs, stringArg, objectArg, arrayArg, booleanArg } from './validation';
@@ -47,7 +43,7 @@ async function withSkillTarget<T>(worktreePath: string, projectPath: string | un
 async function getMcpContext(worktreePath: string, projectPath?: string, agentId?: string) {
   if (!projectPath) {
     if (agentId) throw new Error('A project is required for agent MCP settings.');
-    return { conventions: undefined, managed: false, agentId: undefined as string | undefined, target: undefined as string | undefined };
+    return { conventions: undefined, agentId: undefined as string | undefined, target: undefined as string | undefined };
   }
   const agents = await peekDurableConfigs(projectPath);
   const matches = agents.filter((a) => path.resolve(a.worktreePath || projectPath) === path.resolve(worktreePath));
@@ -56,16 +52,14 @@ async function getMcpContext(worktreePath: string, projectPath?: string, agentId
   if (!agentId && matches.length > 1) throw new Error('This folder is shared by agents. Select an agent for MCP settings.');
   if (!agent && path.resolve(worktreePath) !== path.resolve(projectPath)) throw new Error('No agent in this project owns this MCP settings folder.');
   const provider = await resolveOrchestrator(projectPath, agent?.orchestrator);
-  const managed = !!agent && isClubhouseModeEnabled(projectPath) && !agent.clubhouseModeOverride;
-  return { conventions: provider.conventions, managed, agentId: agent?.id,
-    target: JSON.stringify([agent?.id, path.resolve(agent?.worktreePath || projectPath), provider.id, provider.conventions, managed]) };
+  return { conventions: provider.conventions, agentId: agent?.id,
+    target: JSON.stringify([agent?.id, path.resolve(agent?.worktreePath || projectPath), provider.id, provider.conventions]) };
 }
 
 async function saveAgentMcp(worktreePath: string, content: string, projectPath?: string, agentId?: string) {
   const save = async (expected?: Awaited<ReturnType<typeof getMcpContext>>) => {
     const context = await getMcpContext(worktreePath, projectPath, agentId);
     if (expected && expected.target !== context.target) throw new Error('Agent MCP target changed. Reload before saving.');
-    if (context.managed) return { ok: false, error: 'Clubhouse Mode manages MCP from project defaults. Turn on Local overrides in General before saving agent MCP settings.' };
     return agentSettings.writeMcpRawJson(worktreePath, content, context.conventions, async () => {
       const current = await getMcpContext(worktreePath, projectPath, context.agentId);
       if (current.target !== context.target) throw new Error('Agent MCP target changed. Reload before saving.');
@@ -121,20 +115,6 @@ export function registerAgentSettingsHandlers(): void {
     [stringArg(), stringArg({ optional: true })],
     async (_event, worktreePath, projectPath) => {
       return agentSettings.listAgentTemplates(worktreePath, await getConventions(projectPath));
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.LIST_SOURCE_SKILLS, withValidatedArgs(
-    [stringArg()],
-    async (_event, projectPath) => {
-      return agentSettings.listSourceSkills(projectPath);
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.LIST_SOURCE_AGENT_TEMPLATES, withValidatedArgs(
-    [stringArg()],
-    async (_event, projectPath) => {
-      return agentSettings.listSourceAgentTemplates(projectPath);
     },
   ));
 
@@ -259,13 +239,6 @@ export function registerAgentSettingsHandlers(): void {
     },
   ));
 
-  ipcMain.handle(IPC.AGENT.RESET_PROJECT_AGENT_DEFAULTS, withValidatedArgs(
-    [stringArg()],
-    async (_event, projectPath) => {
-      await resetProjectAgentDefaults(projectPath);
-    },
-  ));
-
   // --- Orchestrator conventions ---
 
   ipcMain.handle(IPC.AGENT.GET_CONVENTIONS, withValidatedArgs(
@@ -281,14 +254,7 @@ export function registerAgentSettingsHandlers(): void {
     },
   ));
 
-  // --- Source skill/template content CRUD ---
-
-  ipcMain.handle(IPC.AGENT.READ_SOURCE_SKILL_CONTENT, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, skillName) => {
-      return agentSettings.readSourceSkillContent(projectPath, skillName);
-    },
-  ));
+  // --- Project source skills and agent templates: the plugin agentConfig API's inject and remove (#2901) ---
 
   ipcMain.handle(IPC.AGENT.WRITE_SOURCE_SKILL_CONTENT, withValidatedArgs(
     [stringArg(), stringArg(), stringArg({ minLength: 0 })],
@@ -301,13 +267,6 @@ export function registerAgentSettingsHandlers(): void {
     [stringArg(), stringArg()],
     async (_event, projectPath, skillName) => {
       await agentSettings.deleteSourceSkill(projectPath, skillName);
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.READ_SOURCE_AGENT_TEMPLATE_CONTENT, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, agentName) => {
-      return agentSettings.readSourceAgentTemplateContent(projectPath, agentName);
     },
   ));
 
@@ -325,92 +284,6 @@ export function registerAgentSettingsHandlers(): void {
     },
   ));
 
-  // --- Clubhouse-mode wildcard library (missions + personas) + per-agent actuals ---
-
-  ipcMain.handle(IPC.AGENT.GET_AGENT_WILDCARDS, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, agentId) => {
-      const agent = await getDurableConfig(projectPath, agentId);
-      if (!agent) return null;
-      return getAgentWildcards(projectPath, agent);
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.LIST_SOURCE_MISSIONS, withValidatedArgs(
-    [stringArg()],
-    async (_event, projectPath) => {
-      return agentSettings.listSourceMissions(projectPath);
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.READ_SOURCE_MISSION_CONTENT, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, missionId) => {
-      return agentSettings.readSourceMissionContent(projectPath, missionId);
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.WRITE_SOURCE_MISSION_CONTENT, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg({ minLength: 0 })],
-    async (_event, projectPath, missionId, content) => {
-      await agentSettings.writeSourceMissionContent(projectPath, missionId, content);
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.DELETE_SOURCE_MISSION, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, missionId) => {
-      await agentSettings.deleteSourceMission(projectPath, missionId);
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.LIST_SOURCE_PERSONAS, withValidatedArgs(
-    [stringArg()],
-    async (_event, projectPath) => {
-      return listAvailablePersonas(projectPath);
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.READ_SOURCE_PERSONA_CONTENT, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, personaId) => {
-      return readPersonaForEdit(projectPath, personaId);
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.WRITE_SOURCE_PERSONA_CONTENT, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg({ minLength: 0 }), stringArg({ optional: true })],
-    async (_event, projectPath, personaId, content, scope) => {
-      await agentSettings.writeSourcePersonaContent(projectPath, personaId, content, scope === 'user' ? 'user' : 'project');
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.DELETE_SOURCE_PERSONA, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg({ optional: true })],
-    async (_event, projectPath, personaId, scope) => {
-      await agentSettings.deleteSourcePersona(projectPath, personaId, scope === 'user' ? 'user' : 'project');
-    },
-  ));
-
-  // Apply a persona (content + any front-matter settings) to an existing agent.
-  ipcMain.handle(IPC.AGENT.APPLY_PERSONA_TO_AGENT, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg()],
-    async (_event, projectPath, agentId, personaId) => {
-      await applyPersonaToAgent(projectPath, agentId, personaId);
-    },
-  ));
-
-  // Extract an agent's instructions + settings into a reusable persona payload.
-  ipcMain.handle(IPC.AGENT.EXTRACT_AGENT_PERSONA, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, agentId) => {
-      const agent = await getDurableConfig(projectPath, agentId);
-      if (!agent) return null;
-      const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
-      return extractAgentPersona({ projectPath, agent, provider });
-    },
-  ));
-
   // --- Project config breakdown with provenance ---
 
   ipcMain.handle(IPC.AGENT.GET_PROJECT_CONFIG_BREAKDOWN, withValidatedArgs(
@@ -424,50 +297,6 @@ export function registerAgentSettingsHandlers(): void {
     [stringArg(), stringArg()],
     async (_event, projectPath: string, itemId: string) => {
       return removePluginInjectionItem(projectPath, itemId);
-    },
-  ));
-
-  // --- Materialization ---
-
-  ipcMain.handle(IPC.AGENT.MATERIALIZE_AGENT, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, agentId) => {
-      const agent = await getDurableConfig(projectPath, agentId);
-      if (!agent) return;
-      const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
-      await materializeAgent({ projectPath, agent, provider });
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.PREVIEW_MATERIALIZATION, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, agentId) => {
-      const agent = await getDurableConfig(projectPath, agentId);
-      if (!agent) return null;
-      const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
-      return previewMaterialization({ projectPath, agent, provider });
-    },
-  ));
-
-  // --- Config diff detection ---
-
-  ipcMain.handle(IPC.AGENT.COMPUTE_CONFIG_DIFF, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, agentId) => {
-      const agent = await getDurableConfig(projectPath, agentId);
-      if (!agent) return { agentId, agentName: '', hasDiffs: false, items: [] };
-      const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
-      return computeConfigDiff({ projectPath, agentId, provider });
-    },
-  ));
-
-  ipcMain.handle(IPC.AGENT.PROPAGATE_CONFIG_CHANGES, withValidatedArgs(
-    [stringArg(), stringArg(), arrayArg(stringArg())],
-    async (_event, projectPath, agentId, selectedItemIds) => {
-      const agent = await getDurableConfig(projectPath, agentId);
-      if (!agent) return { ok: false, message: 'Agent not found', propagatedCount: 0 };
-      const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
-      return propagateChanges({ projectPath, agentId, selectedItemIds, provider });
     },
   ));
 }

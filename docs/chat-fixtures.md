@@ -1,13 +1,14 @@
 # Chat protocol fixtures
 
-Native chat drives three CLI protocols over stdio, and one over TCP:
+Native chat drives two CLI protocols over stdio, and one over TCP:
 
 | Fixture folder | `protocol` | CLI and mode |
 |---|---|---|
 | `test/chat-fixtures/claude/` | `claude-stream-json` | `claude -p --input-format stream-json --output-format stream-json` plus the control protocol (what the Agent SDK spawns) |
 | `test/chat-fixtures/codex/` | `codex-app-server` | `codex app-server` v2 JSON-RPC (no `jsonrpc` field) |
-| `test/chat-fixtures/copilot/` | `acp` | `copilot --acp` (Agent Client Protocol v1) |
 | `test/chat-fixtures/copilot-sdk/` | `copilot-sdk` | `copilot --headless --port 0`, then JSON-RPC in `Content-Length` frames over TCP (what `@github/copilot-sdk` speaks) |
+
+The legacy Copilot ACP driver and its `acp` fixtures were removed with #2868; `chatFixturePath('copilot', …)` now reads `copilot-sdk/`.
 
 CI never sends a real prompt (docs/structured-chat-research.md §8, decision 4). Drivers are tested by replaying fixtures through a fake CLI instead. This page covers the format, the tools, and how to record a new fixture.
 
@@ -17,10 +18,10 @@ CI never sends a real prompt (docs/structured-chat-research.md §8, decision 4).
 - `scripts/chat-fixtures/record.mjs` captures a session with a real CLI into a fixture.
 - `scripts/chat-fixtures/fixture-format.mjs` holds the format, matching and redaction code both share.
 - `src/main/orchestrators/adapters/testing/fake-cli.ts` is the vitest helper: `createFakeCli`, `writeFakeCliShims`, `EventLog` and `NdjsonPeer`.
-- `src/main/orchestrators/adapters/fixture-replay.test.ts` drives `AcpClient`, `CodexAppServerClient`, a stream-json peer and the `copilot_acp` `ChatDriver` through the committed fixtures. `src/main/chat/claude/fixture-replay.test.ts` does the same for `ClaudeStreamTransport` and its normalizer. `src/main/chat/copilot/fixture-replay.test.ts` runs `CopilotSdkChatDriver` and the real SDK through theirs. Start there for examples.
+- `src/main/services/agent-runtime/chat-fake-cli-flows.test.ts` drives each chat driver, inside the chat runtime, through the committed fixtures the E2E flows use. `src/main/chat/claude/fixture-replay.test.ts` does the same for `ClaudeStreamTransport` and its normalizer. `src/main/chat/copilot/fixture-replay.test.ts` runs `CopilotSdkChatDriver` and the real SDK through theirs. Start there for examples.
 - `src/main/chat/fake-model-smoke.test.ts` runs the Dispatcher flow with a real CLI and driver against `src/main/chat/testing/fake-model-server.ts`, a model server on 127.0.0.1. It needs no login and sends no paid request. Set `CLUBHOUSE_FAKE_MODEL_SMOKE=1` and `CLUBHOUSE_FAKE_MODEL_BIN_DIR`.
 - `e2e/chat-fake-cli.ts` installs fake `claude`/`codex`/`copilot` executables on the app's PATH for Playwright.
-- `src/main/orchestrators/adapters/testing/chat-script.ts` builds fixtures from scripted turns at run time (tool images, Copilot binary results and their session journal, Markdown with paths, AskUserQuestion, held turns). The rich chat E2E specs use it; see docs/testing/chat-e2e-plan.md.
+- `src/main/orchestrators/adapters/testing/chat-script.ts` builds fixtures from scripted turns at run time (tool images, Markdown with paths, AskUserQuestion, approvals, held turns and steers; Copilot's in SDK shapes, checked through the real SDK driver in `chat-script.test.ts`). The rich chat E2E specs use it; see docs/testing/chat-e2e-plan.md.
 
 ## Format
 
@@ -59,7 +60,7 @@ The fake CLI walks the entries in order:
 - **Ids are remapped.** Drivers number their own requests. When a client request matches, its live id (JSON-RPC `id`, or Claude's `request_id`) replaces the recorded one in the response. Requests the CLI starts keep their recorded ids, since the driver echoes those back.
 - **A mismatch** writes `fake-cli: fixture mismatch at <file>:<line>: <reason>` to stderr and exits with code 3. `--fake-lenient` skips non-matching client messages instead.
 - When the fixture runs out without an `exit` entry, the fake stays up until stdin closes, like a real CLI between turns. Messages sent after that are listed in the report as `unexpected`.
-- Unknown arguments (`app-server`, `--acp`, `-p …`) are accepted and listed in the report's `argv`, so a test can check how the CLI was launched.
+- Unknown arguments (`app-server`, `--headless`, `-p …`) are accepted and listed in the report's `argv`, so a test can check how the CLI was launched.
 
 `--fake-report <file>` (or `CLUBHOUSE_FAKE_CLI_REPORT`) gets a JSON progress report, rewritten after every step: `consumed`/`total`, `complete`, `mismatch`, `unexpected`, `argv`, `exitCode`. Tests should assert `complete` and a null `mismatch` at the end, otherwise a driver that stops early still passes.
 
@@ -74,21 +75,21 @@ The same rules apply, with these differences:
 - **Session ids are remapped too.** Clients pick their own, so the id in a client entry's `params.sessionId` is replaced with the live one everywhere it appears in later CLI messages.
 - **Connection token.** When `COPILOT_CONNECTION_TOKEN` is set, a `connect` with a different token gets `AUTHENTICATION_FAILED`, and the fake exits with code 3.
 - **Hanging up.** A client that disconnects doesn't stop the fake, as it doesn't stop the real CLI. The driver has to kill it. The report's `stdinClosed` means the client disconnected.
-- **Standing queries:** `models.list` and `session.commands.list`. The driver calls them in the background, so the recording test drops them from fixtures, except `slash-command`, where a command waits for the list.
+- **Standing queries:** `models.list` and `session.commands.list`. The driver calls them in the background, so the recording test drops them from fixtures, except `slash-command`, where a command waits for the list. `session.detach`, which every session closes with, is answered too when a fixture doesn't record it, as scripts from `chat-script.ts` don't.
 
 The driver only takes a binary path, so its tests use `writeFakeCliShims` with `createFakeCli`'s `reportPath`, as `src/main/chat/copilot/fixture-replay.test.ts` does.
 
-### Copilot app E2E transport selection
+### Copilot app E2E
 
-The existing rich-chat Copilot scripts speak ACP, including client-queue and session-journal image coverage. `e2e/chat-rich/harness.ts` explicitly enables `copilotLegacyAcp` only for that fixture path, then checks flag readback, preview eligibility, the actual transcript driver, fake protocol and launch arguments. Contradictory transport/flag choices are rejected. This does not change production selection or global fake defaults.
+Every rich-chat Copilot case runs on the SDK driver, the only one, with nothing saved to choose it. `e2e/chat-rich/harness.ts` takes a committed `copilot-sdk` fixture by name or a script from `chat-script.ts`, and `copilot-sdk-fixture.ts` writes a copy into the test's temporary directory with only its logged-out auth response changed to a synthetic authenticated one. A recording's closing `session.detach` and what follows it are dropped, so the fixture is complete once the test's turns are. The derived header is marked hand-made, with its source and a `synthesized` entry. The committed recordings stay unchanged. No real login, provider, model request or fixture recording is performed. This checks app selection and replayed transport and UI behavior, not installed-runtime or real-auth compatibility. The harness checks the fake's protocol and launch arguments and the transcript's driver.
 
-`providers.spec.ts` separately exercises the SDK standard default with `copilotTransport: 'sdk'` and no legacy flag or driver preference. `copilot-sdk-fixture.ts` copies the committed SDK `multi-turn` recording into the test's temporary directory, changes only its logged-out auth response to synthetic authenticated status, and marks the derived header as hand-made with its source and synthesized field. The original recording stays unchanged. No real login, provider, model request or fixture recording is performed. This checks app selection and replayed transport/UI behavior, not installed-runtime or real-auth compatibility.
+The recordings' `session.create` entries have no explicit payload `match`, so the strict matcher checks the method, not the recorded BYOK `provider` object. Successful replay can't establish provider-payload or authentication parity.
 
-The recording's `session.create` entry has no explicit payload `match`, so the existing strict matcher checks its method, not the recorded BYOK `provider` object. No matcher or leniency setting changes. Successful replay cannot establish provider-payload or authentication parity.
+Every provider binary remains pinned to a Node replay shim or a nonexistent path, and model probes remain disabled. Copilot state uses a test-owned `COPILOT_HOME`, and `HOME`, `USERPROFILE` and the XDG config and state homes point there too. Explicit provider/model overrides are applied in the app's launch environment (provider profiles, which used to layer them over the login shell's environment, were removed in #2749), so a runner whose login shell exports the same names would override them: an empty provider base URL disables provider mapping, provider keys/commands are empty, and the model is `fake-model`. The app's remaining environment is inherited; this is neither a general environment allowlist nor an OS network sandbox. The fake replays messages and has no model client.
 
-Every provider binary remains pinned to a Node replay shim or a nonexistent path, and model probes remain disabled. Copilot state uses a test-owned `COPILOT_HOME`; the SDK path also points `HOME`, `USERPROFILE` and XDG config/state homes there. Explicit provider/model overrides are applied at app launch and through a test-owned project profile after shell-env resolution: an empty provider base URL disables provider mapping, provider keys/commands are empty, and the model is `fake-model`. The app's remaining environment is inherited; this is neither a general environment allowlist nor an OS network sandbox. The fake replays messages and has no model client.
+Cases the ACP driver had that the SDK doesn't: tool-result images (`binaryResultsForLlm`), and a client queue that can be edited (the SDK queues in the CLI, like Claude). Those Copilot E2E cases were removed with the driver.
 
-Proposed fake-only selection (requires a separately authorized prepared app/E2E run; not a build command): `npx playwright test e2e/chat-rich/providers.spec.ts --grep 'copilot SDK standard default|copilot legacy ACP'`. To include the existing ACP image, client-queue and long-approval cases, use `npx playwright test e2e/chat-rich --grep copilot`. The SDK case stays in the existing providers spec on Chat E2E shard 2; ACP scenarios keep their existing shards.
+Fake-only selection (needs a prepared app and an authorized E2E run; not a build command): `npx playwright test e2e/chat-rich --grep copilot`.
 
 ## Using it in tests
 
@@ -123,18 +124,18 @@ Each CLI has seven hand-made fixtures, plus two Claude-only ones, shaped on the 
 | Name | Covers |
 |---|---|
 | `multi-turn` | Handshake, then two turns with streamed text and usage |
-| `interrupt` | A running tool call stopped by the client (`interrupt`, `turn/interrupt`, `session/cancel`) |
+| `interrupt` | A running tool call stopped by the client (`interrupt`, `turn/interrupt`); Copilot's stops a model call with `session.abort` |
 | `permission-approve-edit` | An edit approval that the client allows, with the resulting diff |
 | `permission-deny` | A shell command approval that the client denies |
 | `turn-error` | A failed request or turn, then recovery |
 | `schema-drift` | Unknown event types and fields, an unknown CLI→client request the driver must refuse, and a stray non-JSON stdout line |
-| `session-info` | Session metadata: Claude's `system/init` (after the first prompt, then again with a new model), Codex `thread/name/updated` on two turns, ACP `session_info_update` titles and `session/close` |
+| `session-info` | Session metadata: Claude's `system/init` (after the first prompt, then again with a new model), Codex `thread/name/updated` on two turns, a model and effort change for Copilot |
 | `ask-user-question` (Claude) | `AskUserQuestion` with two questions, the second `multiSelect`, answered through `can_use_tool` with `answers` in `updatedInput` |
 | `subagent-task` (Claude) | A `Task` subagent: `task_started`/`task_progress`/`task_notification`, and its messages, partials and tool calls tagged with `parent_tool_use_id` |
 
-Each CLI also has a recorded `model-list` fixture (2026-10-31: Claude Code 2.1.312, Codex 0.163.0, Copilot 1.0.103). It is handshake only, with no prompt: Claude's `initialize`, Codex's `initialize` and `model/list`, and Copilot's `initialize`, `session/new` and `session/close`. `list_models` and `start_helper`'s model check read these lists (#2569), and `src/main/orchestrators/model-probes.test.ts` replays them. Claude's commands, agents and account are trimmed, and so are Copilot's command lists.
+Claude and Codex also have a recorded `model-list` fixture (2026-10-31: Claude Code 2.1.312, Codex 0.163.0). It is handshake only, with no prompt: Claude's `initialize`, and Codex's `initialize` and `model/list`. Copilot's, in `copilot-sdk/`, is `connect` then the SDK's `models.list`, hand-made because `models.list` needs a login (see below). `list_models` and `start_helper`'s model check read these lists (#2569), and `src/main/orchestrators/model-probes.test.ts` replays them. Claude's commands, agents and account are trimmed.
 
-`copilot-sdk/` has the shared scenarios except `model-list`, which needs a real login and comes in phase 4 (docs/copilot-sdk-driver.md). All were recorded with the driver against a local fake model, except the hand-made ones:
+`copilot-sdk/` has the shared scenarios. All were recorded with the driver against a local fake model, except the hand-made ones:
 
 | Name | Covers |
 |---|---|
@@ -144,7 +145,8 @@ Each CLI also has a recorded `model-list` fixture (2026-10-31: Claude Code 2.1.3
 | `slash-command` | Recorded: the command list, then `/session` and a refused `/compact`, with the command's name pinned by `match` |
 | `elicitation-accept`, `elicitation-decline` | Recorded: a stdio server's form, with the result sent back pinned by `match` |
 | `schema-drift` | Hand-made from `multi-turn`: unknown event types and fields, an unknown CLI request, a stray stdout line |
-| `protocol-mismatch`, `exit-at-launch`, `hang-at-launch`, `no-answer` | Hand-made: the triggers for falling back to ACP |
+| `model-list` | Hand-made, outside the recorder: `connect` and a `models.list` result in the SDK's `ModelInfo` shape, with the ids and multipliers of the last ACP recording (1.0.103). Replace it with a real-login recording in phase 4 (docs/copilot-sdk-driver.md) |
+| `protocol-mismatch`, `exit-at-launch`, `hang-at-launch`, `no-answer` | Hand-made: the triggers for opening the CLI view instead |
 | `died-mid-turn` | Hand-made from `multi-turn`: the CLI exits while a turn streams |
 
 Hand-made fixtures are approximations: field sets were taken from real captures, but they weren't recorded end to end. Replace them with recordings as each driver lands, and keep the hand-made `schema-drift` ones, since no real session produces those on purpose.
@@ -206,16 +208,6 @@ node scripts/chat-fixtures/record.mjs --protocol codex-app-server --cli-name cod
 ```
 
 For an approval, add `{"await":{"method":"item/commandExecution/requestApproval"},"save":"ask"}` and `{"send":{"id":"{{ask.id}}","result":{"decision":"decline"}}}`.
-
-### Copilot
-
-Launch it the way the driver does, `copilot --acp --stdio` without `--no-auto-update`: that flag makes the Homebrew/WinGet shim run its bundled runtime instead of the installed Copilot (#2154), so `--cli-version` would be wrong. Pick the cheapest model in the `session/new` result (each entry's `_meta.copilotUsage` is its premium-request multiplier) and set it with `session/set_config_option` (`configId: "model"`) before the prompt. Approvals arrive as `session/request_permission`; answer with `{"outcome":{"outcome":"selected","optionId":"allow_once"}}` or `reject_once`.
-
-```sh
-node scripts/chat-fixtures/record.mjs --protocol acp --cli-name copilot \
-  --cli-version "$(copilot --version)" --out test/chat-fixtures/copilot/one-turn.jsonl \
-  --script steps.jsonl -- copilot --acp --stdio
-```
 
 ### Copilot SDK
 

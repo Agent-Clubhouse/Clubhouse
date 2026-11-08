@@ -173,6 +173,7 @@ test('stable upgrader: projects, order and shortcuts come through, on the defaul
     'switch-agent-1': 'Meta+Shift+1',
     // Retired in the new layout: left out there, kept for classic.
     'switch-project-1': 'Meta+Alt+P',
+    // Go to Home was removed with Home: unused, but the saved binding stays on disk.
     'go-home': 'Meta+Shift+J',
   };
 
@@ -387,6 +388,11 @@ test.describe.serial('default path smoke', () => {
     await w.getByRole('button', { name: `New agent in ${alpha.name}`, exact: true }).click();
     await expect(newAgentPage()).toBeVisible({ timeout: 10_000 });
 
+    // A plain agent: Clubhouse managed is on by default, and its Start with template flow is managed-agents.spec's.
+    const managed = newAgentPage().getByRole('switch', { name: 'Clubhouse managed' });
+    await expect(managed).toHaveAttribute('aria-checked', 'true');
+    await managed.click();
+    await expect(managed).toHaveAttribute('aria-checked', 'false');
     await w.locator('[data-testid="new-agent-name"]').fill(CREATED_AGENT);
     await expect(w.locator('[data-testid="new-agent-submit"]')).toBeEnabled({ timeout: 10_000 });
     await w.locator('[data-testid="new-agent-submit"]').click();

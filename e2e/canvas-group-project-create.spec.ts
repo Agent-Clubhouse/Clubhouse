@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type Page } from '@playwright/test
 import * as fs from 'fs';
 import * as path from 'path';
 import { launchApp } from './launch';
-import { addProject } from './smoke-helpers';
+import { addProject, clickExplorerTab } from './smoke-helpers';
 
 const FIXTURE_PROJECT = path.resolve(__dirname, 'fixtures/project-group-project');
 const FIXTURE_STATE = path.join(FIXTURE_PROJECT, '.clubhouse');
@@ -15,7 +15,8 @@ let userDataDir: string | undefined;
 async function navigateToCanvas(page: Page): Promise<void> {
   const canvasButton = page.locator('[data-testid="explorer-tab-plugin:canvas"]');
   await expect(canvasButton).toBeVisible({ timeout: 10_000 });
-  await canvasButton.click();
+  // addProject leaves the pointer on the rail, whose hover flyout covers the tab.
+  await clickExplorerTab(electronApp, page, 'explorer-tab-plugin:canvas');
   await expect(page.locator('[data-testid="canvas-panel"]')).toBeVisible({ timeout: 10_000 });
 }
 
@@ -23,15 +24,11 @@ test.beforeAll(async () => {
   fs.rmSync(FIXTURE_STATE, { recursive: true, force: true });
   ({ electronApp, window, userDataDir } = await launchApp({
     experimental: { newChrome: false },
+    // An old saved "off" is ignored: the Clubhouse MCP always runs, so group projects work.
     userDataFiles: {
       'mcp-settings.json': { enabled: false, projectDefault: false },
     },
   }));
-  await window.evaluate(async () => {
-    await window.clubhouse.settings.save('mcp', { enabled: true, projectDefault: true });
-  });
-  await window.reload();
-  await window.waitForLoadState('load');
   await addProject(electronApp, window, FIXTURE_PROJECT);
   await navigateToCanvas(window);
 });

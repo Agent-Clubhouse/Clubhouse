@@ -25,7 +25,10 @@ export const ORCHESTRATOR = 'claude-code';
 export const LAST_SESSION = '11111111-2222-4333-8444-555555555555';
 export const CHROME_STORAGE_KEY = 'clubhouse_chrome_v2';
 export const SAVED_SIDEBAR_WIDTH = 300;
-export const PREVIEW_PAGES = ['Experimental', 'Annex', 'Annex control', 'Goobers'];
+/** Settings pages every build lists, Preview or not: Annex is stable (#2811). */
+export const ANNEX_PAGES = ['Annex', 'Annex control'];
+/** Settings pages listed only with Preview on. Goobers also needs its saved flag. */
+export const PREVIEW_PAGES = ['Experimental', 'Goobers'];
 
 /** Preview-gated files a stable launch must not change, byte for byte. */
 export const UNTOUCHED_FILES = [

@@ -38,11 +38,11 @@ import { telemetry } from './telemetry';
 import { chat } from './chat';
 import { dispatcher } from './dispatcher';
 import { plugin } from './plugin';
-import { profile } from './profile';
 import { marketplace } from './marketplace';
 import { file } from './file';
 import { agentSettings } from './agentSettings';
 import { skillBundle } from './skillBundle';
+import { managedAgents } from './managedAgents';
 import { pty } from './pty';
 import { agent } from './agent';
 import { canvas } from './canvas';
@@ -65,6 +65,7 @@ describe('preload IPC bridge', () => {
       git,
       agentSettings,
       skillBundle,
+      managedAgents,
       file,
       blueprint,
       plugin,
@@ -73,7 +74,6 @@ describe('preload IPC bridge', () => {
       log,
       processApi,
       app,
-      profile,
       annex,
       annexClient,
       windowApi,
@@ -223,7 +223,6 @@ describe('preload IPC bridge', () => {
         false,
         ['mcp-1'],
         { 'mcp-1': { mode: 'safe' } },
-        'persona',
         { folderName: 'builder', branchName: 'builder/work', branchFrom: 'main' },
       )).resolves.toBe('bridge-result');
 
@@ -238,7 +237,6 @@ describe('preload IPC bridge', () => {
         false,
         ['mcp-1'],
         { 'mcp-1': { mode: 'safe' } },
-        'persona',
         { folderName: 'builder', branchName: 'builder/work', branchFrom: 'main' },
       );
     });

@@ -79,9 +79,12 @@ export function HeadlessRunFinished({ completed, onDismiss, onDelete, onRetried,
     if (!project || retrying) return;
     setRetrying(true);
     try {
+      // The same template (D25).
+      const managedTemplateId = completed.managedTemplateId;
       await spawnQuickAgent(
         completed.projectId, project.path, completed.mission, completed.model, completed.parentAgentId,
         completed.orchestrator, completed.freeAgentMode, completed.pluginMetadata, completed.cwd,
+        ...(managedTemplateId ? [{ managedTemplateId }] as const : []),
       );
       onRetried?.();
     } catch {

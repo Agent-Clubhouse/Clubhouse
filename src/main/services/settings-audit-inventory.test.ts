@@ -68,12 +68,27 @@ describe('settings audit inventory', () => {
     expect(read('ipc/index.ts')).toContain('enableSettingsAudit()');
   });
 
+  it('managed agents\' setups, parts, templates and helper settings are hooked (D13)', () => {
+    const read = (rel: string) => fs.readFileSync(path.join(MAIN, rel), 'utf8');
+    // Every setup write, whoever makes it (the builder, a push, a fork, a helper's start, unmanage).
+    expect(read('services/agent-config.ts')).toContain("auditChanges('agent', 'agent', agentId, managedBefore, managedAuditFields(agent), MANAGED_AUDIT_CATALOG)");
+    expect(read('services/agent-config.ts')).toContain("{ clubhouseFeatures: 'value' }");
+    // managed-agents/state.json isn't a settings store: its writers report by key.
+    const service = read('services/managed-agents/service.ts');
+    for (const key of ['managed.part.created', 'managed.part.updated', 'managed.part.deleted', 'managed.template.saved', 'managed.template.deleted', 'managed.template.pushed']) {
+      expect(service).toContain(`auditManaged('${key}'`);
+    }
+    expect(service).toContain("auditManagedSetting('defaultHelperTemplate'");
+    expect(service).toContain("auditManagedSetting('helperTemplateChoice'");
+  });
+
   it('each entry point says who is asking', () => {
     const read = (rel: string) => fs.readFileSync(path.join(MAIN, rel), 'utf8');
     expect(read('ipc/validation.ts')).toContain("withSettingsSurface('ui'");
     expect(read('services/clubhouse-mcp/tool-registry.ts')).toContain("withSettingsSurface('mcp', agentId");
     expect(read('services/mobile-control.ts')).toContain("withSettingsSurface('mobile'");
     expect(read('services/cli-endpoint.ts')).toContain("withSettingsSurface('cli'");
-    expect(read('services/persona-application.ts')).toContain("withSettingsSurface('persona'");
+    // Personas were retired (#2901): the 'persona' surface stays for the orchestration fields carried from the old persona layer.
+    expect(read('services/orchestration-policy.ts')).toContain("surface: 'persona'");
   });
 });

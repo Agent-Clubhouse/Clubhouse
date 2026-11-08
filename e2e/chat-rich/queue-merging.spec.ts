@@ -120,12 +120,13 @@ test('claude: a burst of helper updates becomes one steer, and user steers are n
 });
 
 /*
- * Codex and Copilot hold queued messages in the runtime (a client queue), so
- * the queue can be edited, and a message only reaches the CLI as the prompt
- * of a later turn. Those turns pin their prompt text: a removed message that
- * went anyway, or two messages merged that shouldn't be, is a mismatch.
+ * Codex holds queued messages in the runtime (a client queue), so the queue
+ * can be edited, and a message only reaches the CLI as the prompt of a later
+ * turn. Those turns pin their prompt text: a removed message that went
+ * anyway, or two messages merged that shouldn't be, is a mismatch. Copilot's
+ * SDK driver queues in the CLI, like Claude, so its queue isn't edited here.
  */
-for (const cli of ['codex', 'copilot'] as const) {
+for (const cli of ['codex'] as const) {
   test(`${cli}: 30 queued messages stay capped, and removed or cleared ones are never delivered`, async () => {
     const queued = Array.from({ length: 30 }, (_, i) => `Queued message ${i + 1}`);
     const kept = 'Sent after clearing.';
@@ -169,21 +170,14 @@ for (const cli of ['codex', 'copilot'] as const) {
   });
 }
 
-test('copilot: a burst of helper updates becomes one queued turn, and user messages are never merged', async () => {
-  const burst = [fromHelper('helper-1', 'Tests pass.'), fromHelper('helper-2', 'Lint is clean.'), '[Clubhouse] Helper helper-3 is ready.'];
-  const late = fromHelper('helper-4', 'Docs updated.');
-  const users = ['First user message.', 'Second user message.'];
-  const prompts = [users[0], coalesceUpdateTexts(burst), users[1], late];
-  // The CLI gets the tagged text above; the queue shows each sender and message (#2599).
-  const burstRows = ['helper-1: Tests pass.', 'helper-2: Lint is clean.', 'Clubhouse: Helper helper-3 is ready.'];
+test('copilot: a burst of helper updates becomes one steer, and a user steer stays apart', async () => {
+  const updates = Array.from({ length: 10 }, (_, i) => fromHelper(`helper-${i + 1}`, `Step ${i + 1} done.`));
+  const userSteer = 'Use tabs, not spaces.';
   session = await openRichChat({
     cli: 'copilot',
     script: {
-      description: 'user, helper burst, user, helper: four queued turns',
-      turns: [
-        { prompt: 'Start.', steps: [{ type: 'text', text: 'Working.' }], end: 'held' },
-        ...prompts.map((prompt) => ({ prompt, pinPrompt: true, steps: [{ type: 'text' as const, text: 'Noted.' }] })),
-      ],
+      description: 'a user steer, then ten helper updates in one steer',
+      turns: [{ prompt: 'Start.', steps: [{ type: 'text', text: 'Working.' }], end: 'held', steers: [{ text: userSteer }, { text: coalesceUpdateTexts(updates) }] }],
     },
   });
   const { window, chat } = session;
@@ -191,28 +185,19 @@ test('copilot: a burst of helper updates becomes one queued turn, and user messa
   await session.send('Start.');
   await expect(chat).toHaveAttribute('data-state', 'running', { timeout: TURN_TIMEOUT });
 
-  await session.queue(users[0]);
-  await expect(dom.queueItems).toHaveCount(1, { timeout: TURN_TIMEOUT });
-  // Updates sent one by one each join the item at the tail (the runtime's merge, #2414);
-  // a user message after them starts a new item, and so does the next update.
-  for (const [i, text] of burst.entries()) {
-    await session.sendHelperUpdates([text]);
-    await expect(dom.queueItems.nth(1)).toContainText(burstRows[i], { timeout: TURN_TIMEOUT });
-    await expect(dom.queueItems).toHaveCount(2);
-  }
-  await session.queue(users[1]);
-  await expect(dom.queueItems).toHaveCount(3, { timeout: TURN_TIMEOUT });
-  await session.sendHelperUpdates([late]);
-  await expect(dom.queueItems).toHaveCount(4, { timeout: TURN_TIMEOUT });
-  await expect(dom.queueItems.nth(0)).toContainText(users[0]);
-  for (const row of burstRows) await expect(dom.queueItems.nth(1)).toContainText(row);
-  await expect(dom.queueItems.nth(1)).not.toContainText('[FROM HELPER');
-  await expect(dom.queueItems.nth(2)).toContainText(users[1]);
-  await expect(dom.queueItems.nth(3)).toContainText('helper-4: Docs updated.');
+  const steered = dom.userMessages.and(window.locator('[data-delivery="steer"]'));
+  await session.send(userSteer);
+  await expect(steered.and(window.locator('[data-source="user"]'))).toHaveCount(1, { timeout: TURN_TIMEOUT });
+
+  // The SDK driver steers, so the updates wait out the batching window and go as one steer (session.send, mode immediate).
+  await session.sendHelperUpdates(updates);
+  const fromAgents = steered.and(window.locator('[data-source="mcp"]'));
+  await expect(fromAgents).toHaveCount(1, { timeout: TURN_TIMEOUT });
+  for (let i = 1; i <= updates.length; i++) await expect(fromAgents).toContainText(`Step ${i} done.`);
+  await expect(fromAgents).not.toContainText('[FROM HELPER');
 
   await dom.stop.click();
-  // One turn per queued item, in order, each with exactly its own text.
-  await expect(dom.turnFooters).toHaveCount(5, { timeout: TURN_TIMEOUT });
+  await expect(dom.turnFooters).toHaveCount(1, { timeout: TURN_TIMEOUT });
   await session.expectScriptComplete();
 });
 

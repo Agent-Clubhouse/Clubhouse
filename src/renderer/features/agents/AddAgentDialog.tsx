@@ -6,12 +6,11 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { Modal } from '../../components/Modal';
 import { Spinner } from '../../components/Spinner';
-import { PERSONA_TEMPLATES } from '../personas';
 import type { McpCatalogEntry } from '../../../shared/types';
 
 interface Props {
   onClose: () => void;
-  onCreate: (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], persona?: string) => void;
+  onCreate: (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[]) => void;
   projectPath?: string;
   /** Surfaced when the most recent create attempt failed, so the user sees why instead of a silently dead button. */
   error?: string | null;
@@ -23,12 +22,11 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
   const [model, setModel] = useState('default');
   const [useWorktree, setUseWorktree] = useState(false);
   const [freeAgentMode, setFreeAgentMode] = useState(false);
-  const [persona, setPersona] = useState('');
   const [mcpCatalog, setMcpCatalog] = useState<McpCatalogEntry[]>([]);
   const [selectedMcps, setSelectedMcps] = useState<string[]>([]);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const availability = useOrchestratorStore((s) => s.availability);
-  const { effectiveOrchestrators: enabledOrchestrators } = useEffectiveOrchestrators(projectPath);
+  const { effectiveOrchestrators: enabledOrchestrators } = useEffectiveOrchestrators();
   const [orchestrator, setOrchestrator] = useState(enabledOrchestrators[0]?.id || 'claude-code');
   const selectedAvail = availability[orchestrator];
   const { options: MODEL_OPTIONS, loading: modelsLoading } = useModelOptions(orchestrator);
@@ -55,7 +53,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || nameProblem) return;
-    onCreate(name.trim(), color, model, useWorktree, orchestrator, freeAgentMode || undefined, selectedMcps.length > 0 ? selectedMcps : undefined, persona || undefined);
+    onCreate(name.trim(), color, model, useWorktree, orchestrator, freeAgentMode || undefined, selectedMcps.length > 0 ? selectedMcps : undefined);
   };
 
   return (
@@ -161,23 +159,6 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
                 ⚠ {selectedAvail.error || 'CLI not found — agent may fail to start'}
               </p>
             )}
-          </label>
-
-          {/* Persona */}
-          <label className="block mb-3">
-            <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Persona</span>
-            <select
-              value={persona}
-              onChange={(e) => setPersona(e.target.value)}
-              className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
-                text-ctp-text focus-ring"
-              data-testid="add-agent-persona-select"
-            >
-              <option value="">Project default</option>
-              {PERSONA_TEMPLATES.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
           </label>
 
           {/* Use Worktree */}

@@ -32,6 +32,7 @@ import { PLUGIN_PROTOCOL_SCHEME } from '../shared/plugin-protocol-url';
 import { getCommunityPluginsDir } from './services/plugin-discovery';
 import { getGlobalPluginDataDir } from './services/plugin-storage';
 import { cleanupRetiredPluginData } from './services/retired-plugin-cleanup';
+import { noteRetiredPlugins } from './services/retired-plugin-data';
 import * as projectStore from './services/project-store';
 import { initTelemetry, recordAppSession, flushBeforeExit, tel, ATTR } from './telemetry';
 import { installCrashTelemetry, reportMainProcessError } from './telemetry/crash-handlers';
@@ -60,6 +61,7 @@ import { isPreviewEligible } from './services/preview-eligible';
 import { isChatEnabled } from './services/chat-runtime-settings';
 import { shutdownFeedback, startFeedback } from './services/framebriar';
 import { installHelperDeliverySeam } from './services/clubhouse-mcp/tools/helper-delivery-seam';
+import { codeOf } from './services/managed-agents/log-code';
 
 // On macOS, Electron's readable PTY handles can occupy the default four libuv
 // workers indefinitely, starving every fs.promises operation after an agent
@@ -275,6 +277,17 @@ app.on('ready', () => {
   markStartup('register_ipc_end');
   // E2E only: a no-op unless unpackaged and asked for (#2490).
   installHelperDeliverySeam();
+  // In the background, never blocking startup: the settings migration (D61), and the built-in
+  // agent parts (#2902) install or update, then sleeping legacy-configured agents switch to managed once (D59).
+  void import('./services/managed-agents/auto-migrate').then(({ startManagedAtAppStart }) => startManagedAtAppStart(
+    () => import('./services/managed-agents').then(({ ensureBuiltinsOnce }) => ensureBuiltinsOnce()),
+  )).catch((err) => {
+    appLog('core:managed', 'warn', 'The managed agents startup work stopped', { meta: { code: codeOf(err) } });
+  });
+  // Provider profiles were removed (#2749): one log line, once, for anyone who had saved some.
+  void import('./services/provider-profiles-removed').then(({ noteRemovedProviderProfiles }) => noteRemovedProviderProfiles()).catch((err) => {
+    appLog('core:agent', 'warn', 'Could not check for removed provider profiles', { meta: { code: codeOf(err) } });
+  });
   buildMenu();
 
   // Resume satellite connections when the machine wakes from sleep
@@ -408,6 +421,19 @@ app.on('ready', () => {
     }))
     .catch((err) => {
       appLog('core:plugins', 'warn', `Retired plugin cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+
+  // Retired Workshop plugins (Lounge, KanBoss, Bug Report; #2756) keep their
+  // data: log once where it is, never delete it.
+  projectStore.list()
+    .then((projects) => noteRetiredPlugins({
+      globalPluginDataDir: getGlobalPluginDataDir(),
+      communityPluginsDir: getCommunityPluginsDir(),
+      projects,
+      markerFile: path.join(getGlobalPluginDataDir(), '_system', 'retired-plugins-noted.json'),
+    }))
+    .catch((err) => {
+      appLog('core:plugins', 'warn', `Retired plugin check failed: ${err instanceof Error ? err.message : String(err)}`);
     });
 
   // Start stale session sweeps (safety net for leaked sessions)

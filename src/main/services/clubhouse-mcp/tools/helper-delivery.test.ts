@@ -173,7 +173,7 @@ describe('deliverHelperUpdate (#2414)', () => {
     await expect(Promise.all(results)).resolves.toEqual(['stopping', 'stopping']);
   });
 
-  it('skips the window for a chat parent that merges its own queue (ACP)', async () => {
+  it('skips the window for a chat parent that merges its own queue (no steer, client queue)', async () => {
     const rt = addRuntime('p', 'chat', 'running');
     rt.caps = { steer: false, queue: 'client' };
     await expect(deliverHelperUpdate('p', 'one')).resolves.toBe('delivered');

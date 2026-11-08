@@ -2,7 +2,6 @@ import { parseMcpJson } from '../../shared/mcp-config';
 import { auditChanges, projectAuditTarget, type AuditKeyFormat } from './settings-audit';
 import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import * as fsp from 'fs/promises';
-import { notifyProjectDefaultPersonaChanged } from './persona-change-hook';
 import * as path from 'path';
 import * as os from 'os';
 import { McpServerEntry, SkillEntry, AgentTemplateEntry, PermissionsConfig, ProjectAgentDefaults, LaunchWrapperConfig, McpCatalogEntry, WrapperCatalogSnapshot } from '../../shared/types';
@@ -13,6 +12,7 @@ import { validateCommandPrefix } from './command-prefix-validation';
 const LOG_NS = 'core:agent-settings';
 
 import { UnsupportedPermissionRulesError } from './permission-rules-error';
+import { skillsFolderOf } from '../../shared/skills-folder';
 export { UnsupportedPermissionRulesError } from './permission-rules-error';
 
 /** Check whether an error is a filesystem "file not found" (ENOENT). */
@@ -27,6 +27,7 @@ function isEnoent(err: unknown): boolean {
 export interface SettingsConventions {
   configDir: string;           // e.g. '.claude', '.github', '.codex'
   skillsDir: string;           // e.g. 'skills'
+  skillsRoot?: string;         // e.g. '.agents/skills' (Codex); see skillsFolderOf
   agentTemplatesDir: string;   // e.g. 'agents'
   mcpConfigFile: string;       // e.g. '.mcp.json', '.github/mcp.json'
   localSettingsFile: string;   // e.g. 'settings.local.json', 'hooks/hooks.json'
@@ -120,7 +121,7 @@ export async function readMcpConfig(worktreePath: string, conv?: SettingsConvent
 
 export async function listSkills(worktreePath: string, conv?: SettingsConventions): Promise<SkillEntry[]> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const skillsDir = path.join(worktreePath, c.configDir, c.skillsDir);
+  const skillsDir = path.join(worktreePath, skillsFolderOf(c));
   try {
     const entries = await fsp.readdir(skillsDir, { withFileTypes: true });
     const dirs = entries.filter((e) => e.isDirectory());
@@ -339,83 +340,6 @@ export async function deleteSourceMission(projectPath: string, missionId: string
 }
 
 /**
- * The scope of an on-disk persona store.
- * - 'project': <projectPath>/.clubhouse/personas/ — scoped to one project.
- * - 'user': ~/.clubhouse/personas/ — the user's personal library, reusable across projects.
- */
-export type PersonaScope = 'project' | 'user';
-
-/**
- * Resolve the personas directory for a given scope. The user-global library
- * lives under the home directory (consistent with ~/.clubhouse/group-projects,
- * ~/.clubhouse/agent-icons); the project library lives under the project's
- * .clubhouse directory. `projectPath` is ignored for the 'user' scope.
- */
-export function personasDirFor(projectPath: string, scope: PersonaScope = 'project'): string {
-  return scope === 'user'
-    ? path.join(os.homedir(), '.clubhouse', 'personas')
-    : path.join(projectPath, '.clubhouse', 'personas');
-}
-
-/**
- * List user-authored persona files for a scope (project or user-global).
- * Each persona is a single .md file; the persona ID is the basename without extension.
- * Built-in persona templates are layered on top of these by the materialization service.
- */
-export async function listSourcePersonaFiles(projectPath: string, scope: PersonaScope = 'project'): Promise<Array<{ id: string; path: string }>> {
-  const personasDir = personasDirFor(projectPath, scope);
-  try {
-    const entries = await fsp.readdir(personasDir, { withFileTypes: true });
-    return entries
-      .filter((e) => e.isFile() && e.name.endsWith('.md'))
-      .map((e) => ({ id: e.name.replace(/\.md$/, ''), path: path.join(personasDir, e.name) }));
-  } catch (err) {
-    if (!isEnoent(err)) {
-      appLog(LOG_NS, 'warn', `Failed to list personas from ${personasDir}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
-    }
-    return [];
-  }
-}
-
-/**
- * Read the on-disk content of a persona file for a scope. Returns empty string
- * when the file does not exist (callers fall back to the next layer / built-in).
- */
-export async function readSourcePersonaContent(projectPath: string, personaId: string, scope: PersonaScope = 'project'): Promise<string> {
-  if (!personaId) return '';
-  const filePath = path.join(personasDirFor(projectPath, scope), `${personaId}.md`);
-  try {
-    return await fsp.readFile(filePath, 'utf-8');
-  } catch (err) {
-    if (!isEnoent(err)) {
-      appLog(LOG_NS, 'warn', `Failed to read persona "${personaId}" at ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
-    }
-    return '';
-  }
-}
-
-/**
- * Write the content of a persona file for a scope, creating the directory if
- * needed. A project persona overrides a user persona overrides the built-in
- * template of the same ID at materialization.
- */
-export async function writeSourcePersonaContent(projectPath: string, personaId: string, content: string, scope: PersonaScope = 'project'): Promise<void> {
-  const dir = personasDirFor(projectPath, scope);
-  await fsp.mkdir(dir, { recursive: true });
-  await fsp.writeFile(path.join(dir, `${personaId}.md`), content, 'utf-8');
-}
-
-/**
- * Delete a persona file for a scope. No-op if missing. Built-in persona
- * templates of the same ID remain available afterward, as do personas in other
- * scopes.
- */
-export async function deleteSourcePersona(projectPath: string, personaId: string, scope: PersonaScope = 'project'): Promise<void> {
-  const filePath = path.join(personasDirFor(projectPath, scope), `${personaId}.md`);
-  await fsp.rm(filePath, { force: true });
-}
-
-/**
  * Read the content of a source agent template's README.md file (project-level .clubhouse/agent-templates/).
  */
 export async function readSourceAgentTemplateContent(projectPath: string, agentName: string): Promise<string> {
@@ -460,7 +384,7 @@ export async function createSkillDir(basePath: string, name: string, isSource: b
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   const dir = isSource
     ? path.join(basePath, name)
-    : path.join(basePath, c.configDir, c.skillsDir, name);
+    : path.join(basePath, skillsFolderOf(c), name);
   await fsp.mkdir(dir, { recursive: true });
   const readmePath = path.join(dir, 'README.md');
   if (!(await pathExists(readmePath))) {
@@ -543,7 +467,7 @@ export async function readPermissions(worktreePath: string, conv?: SettingsConve
  */
 export async function readSkillContent(worktreePath: string, skillName: string, conv?: SettingsConventions): Promise<string> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const filePath = path.join(worktreePath, c.configDir, c.skillsDir, skillName, 'SKILL.md');
+  const filePath = path.join(worktreePath, skillsFolderOf(c), skillName, 'SKILL.md');
   try {
     return await fsp.readFile(filePath, 'utf-8');
   } catch (err) {
@@ -557,7 +481,7 @@ export async function readSkillContent(worktreePath: string, skillName: string, 
  */
 export async function writeSkillContent(worktreePath: string, skillName: string, content: string, conv?: SettingsConventions): Promise<void> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const dir = path.join(worktreePath, c.configDir, c.skillsDir, skillName);
+  const dir = path.join(worktreePath, skillsFolderOf(c), skillName);
   await fsp.mkdir(dir, { recursive: true });
   await fsp.writeFile(path.join(dir, 'SKILL.md'), content, 'utf-8');
 }
@@ -567,7 +491,7 @@ export async function writeSkillContent(worktreePath: string, skillName: string,
  */
 export async function deleteSkill(worktreePath: string, skillName: string, conv?: SettingsConventions): Promise<void> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const dir = path.join(worktreePath, c.configDir, c.skillsDir, skillName);
+  const dir = path.join(worktreePath, skillsFolderOf(c), skillName);
   await fsp.rm(dir, { recursive: true, force: true });
 }
 
@@ -794,25 +718,13 @@ async function writeProjectAgentDefaultsInner(projectPath: string, defaults: Pro
     validateCommandPrefix(defaults.commandPrefix);
   }
   const settings = await readSettings(projectPath);
-  const previousDefault = settings.agentDefaults?.persona;
   const previousAuto = settings.agentDefaults?.helperAuto;
   const previous = settings.agentDefaults ?? {};
   settings.agentDefaults = defaults;
   await writeSettings(projectPath, settings);
   await auditChanges('project', 'project.defaults', projectAuditTarget(projectPath), previous as Record<string, unknown>, defaults as Record<string, unknown>, PROJECT_DEFAULTS_AUDIT_CATALOG);
-  // A project's `off`, or the persona its agents default to, decides Auto (#2671).
-  if (defaults.helperAuto !== previousAuto || defaults.persona !== previousDefault) noteRoutingPolicyChanged();
-  if (defaults.persona !== previousDefault) {
-    // The orchestration policy re-checks agents that use the default persona (#2228).
-    try {
-      await notifyProjectDefaultPersonaChanged(projectPath, previousDefault);
-    } catch (err) {
-      // telemetry-exempt: logged; the defaults themselves are saved
-      appLog('core:agent-settings', 'warn', 'Project default persona hook failed', {
-        meta: { error: err instanceof Error ? err.message : String(err) },
-      });
-    }
-  }
+  // A project's `off` decides Auto (#2671).
+  if (defaults.helperAuto !== previousAuto) noteRoutingPolicyChanged();
 }
 
 /**

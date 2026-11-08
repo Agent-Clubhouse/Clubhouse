@@ -542,8 +542,8 @@ export function isSessionEnded(state: ChatViewState): boolean {
 
 /**
  * The file changes a permission request would allow: the diff content of its
- * tool call, whichever driver supplied it (Claude from the tool input, ACP
- * from the tool_call content). Empty when there's nothing to preview.
+ * tool call, whichever driver supplied it (Claude from the tool input,
+ * Copilot from the permission request's diff). Empty when there's nothing to preview.
  */
 export function diffsForRequest(items: ChatItem[], req: PendingPermission): Array<Extract<ToolCallContent, { type: 'diff' }>> {
   if (!req.toolCallId) return [];
@@ -566,7 +566,7 @@ function inputCommand(input: unknown): string | undefined {
 /**
  * The command a permission request would run, so the card never asks to
  * approve one blind: from the request's input (Claude's Bash), else from its
- * execute tool call (Codex, ACP). Undefined when the request's own content
+ * execute tool call (Codex, Copilot). Undefined when the request's own content
  * already shows it, or when it isn't a command.
  */
 export function commandForRequest(items: ChatItem[], req: PendingPermission): string | undefined {

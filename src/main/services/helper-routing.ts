@@ -1,7 +1,7 @@
 /**
  * Helper presets and what a start decides from them (#2671,
  * docs/helper-auto-routing.md). Stage 2: `difficulty` picks a model and effort on
- * one CLI. Explicit arguments win over a persona's pins, which win over a preset.
+ * one CLI. Explicit arguments win over a preset.
  *
  * Presets are checked against the CLI's own list when written and again when
  * used. A saved value is never rewritten: one no longer offered shows as stale,
@@ -10,7 +10,6 @@
  */
 
 import { createHash, randomUUID } from 'crypto';
-import { parsePersonaFile } from '../../shared/persona-pattern';
 import {
   BUILTIN_PRESETS,
   HELPER_DIFFICULTIES,
@@ -50,9 +49,7 @@ import type { OrchestratorId } from '../orchestrators';
 import { helperPresetsChanged } from '../telemetry/feature-events';
 import { appLog } from './log-service';
 import { forceProviderQuota, isProviderCoolingDown, readProviderQuota } from './provider-quota';
-import { noteRoutingPolicyChanged, setRoutingPolicyListener } from './helper-routing-changes';
-import { onMcpEnablementChanged } from './mcp-settings';
-import { readLayeredPersonaRaw } from './materialization-service';
+import { setRoutingPolicyListener } from './helper-routing-changes';
 import { checkHelperEffort, checkHelperModel, modelListFor } from './model-check';
 import * as orchestrationSettings from './orchestration-settings';
 import { appendSettingsAudit, type SettingsAuditSurface } from './settings-audit';
@@ -80,16 +77,16 @@ interface CellCheck {
   message?: string;
 }
 
-/** Check a model and effort against the CLI's list, under a project's profile. Never throws. */
-async function checkCell(provider: string, cell: PresetCell, projectPath: string | undefined): Promise<CellCheck> {
+/** Check a model and effort against the CLI's list. Never throws. */
+async function checkCell(provider: string, cell: PresetCell): Promise<CellCheck> {
   // A difficulty must not run on whatever the CLI happens to default to.
   if (cell.model === CLI_DEFAULT_MODEL) {
     return { state: 'stale', staleReason: 'model_unavailable', message: 'A preset has to name a model, not the CLI\'s default.' };
   }
-  const model = await checkHelperModel(provider, cell.model, projectPath);
+  const model = await checkHelperModel(provider, cell.model);
   if (model.ok === false) return { state: 'stale', staleReason: 'model_unavailable', message: model.message };
   if (!cell.effort) return model.warning ? { state: 'unverified', message: model.warning } : { state: 'valid' };
-  const effort = await checkHelperEffort(provider, cell.model, cell.effort, projectPath);
+  const effort = await checkHelperEffort(provider, cell.model, cell.effort);
   if (effort.ok === false) return { state: 'stale', staleReason: 'effort_unavailable', message: effort.message };
   const warning = model.warning ?? effort.warning;
   return warning ? { state: 'unverified', message: warning } : { state: 'valid' };
@@ -109,13 +106,12 @@ interface ResolvedCell {
 async function resolveCell(
   provider: PresetProvider,
   difficulty: HelperDifficulty,
-  projectPath: string | undefined,
 ): Promise<{ resolved: ResolvedCell | null; problems: string[] }> {
   const custom = orchestrationSettings.getPresets()[provider]?.[difficulty];
   const builtin = BUILTIN_PRESETS[provider][difficulty];
   const problems: string[] = [];
   if (custom) {
-    const check = await checkCell(provider, custom, projectPath);
+    const check = await checkCell(provider, custom);
     if (check.state !== 'stale') {
       return {
         resolved: {
@@ -128,7 +124,7 @@ async function resolveCell(
     }
     problems.push(`your saved choice (${check.message})`);
   }
-  const check = await checkCell(provider, builtin, projectPath);
+  const check = await checkCell(provider, builtin);
   if (check.state === 'stale') {
     problems.push(`the default (${check.message})`);
     return { resolved: null, problems };
@@ -157,10 +153,9 @@ export interface StartPlanRequest {
   model?: string;
   effort?: string;
   difficulty?: string;
-  persona?: string;
   /** The CLI the helper gets when nothing else names one. */
   orchestratorCli?: string;
-  /** The project the helper is created in: its persona, and the profile whose login the lists follow. */
+  /** The project the helper is created in: Auto checks its CLIs there. */
   projectPath: string;
 }
 
@@ -169,7 +164,7 @@ interface AutoOption {
   provider: PresetProvider;
   cell: ResolvedCell;
   quota: QuotaView;
-  /** Provider and profile: see candidateKey. */
+  /** Provider: see candidateKey. */
   key: string;
 }
 
@@ -181,8 +176,6 @@ export interface StartPlan {
   provider?: string;
   model?: string;
   effort?: string;
-  /** What the persona must leave alone, because the request named it. */
-  keep: ReadonlyArray<'orchestrator' | 'model'>;
   routing: HelperRouting;
   /** A preset that couldn't be fully checked. */
   warning?: string;
@@ -193,50 +186,26 @@ export type StartPlanResult =
   /** `message` is for the orchestrator. `userReason` follows "because" in what a person who approved the start reads. */
   | { ok: false; code: 'no_valid_mapping' | 'auto_not_supported' | 'auto_off' | 'no_candidate'; message: string; userReason: string; decision?: HelperDecisionRecord };
 
-/** What a persona's front-matter sets for a CLI and model. Unreadable means nothing: the creation refuses a missing persona. */
-async function personaPins(projectPath: string, persona: string | undefined): Promise<{ orchestrator?: string; model?: string }> {
-  if (!persona) return {};
-  try {
-    const raw = await readLayeredPersonaRaw(projectPath, persona);
-    if (!raw) return {};
-    const settings = parsePersonaFile(raw).settings as { orchestrator?: unknown; model?: unknown };
-    return {
-      ...(typeof settings.orchestrator === 'string' && settings.orchestrator && { orchestrator: settings.orchestrator }),
-      ...(typeof settings.model === 'string' && settings.model && { model: settings.model }),
-    };
-  } catch (err) {
-    // telemetry-exempt: logged; the start goes on as if the persona pinned nothing
-    appLog('core:mcp', 'warn', 'start_helper: could not read a persona', { meta: { persona, error: errorText(err) } });
-    return {};
-  }
-}
-
 /**
- * The order is: the request, then the persona's pins, then a preset (with
- * `difficulty`), then nothing passed, so the CLI's own default. A preset's effort
+ * The order is: the request, then a preset (with `difficulty`), then nothing
+ * passed, so the CLI's own default. A preset's effort
  * belongs to its model, so it isn't used when the model came from elsewhere.
  * Returns no plan for a start that asked for nothing: that is today's path, and
  * it records nothing.
  */
 export async function planHelperStart(request: StartPlanRequest): Promise<StartPlanResult> {
-  const { cli, model, effort, difficulty, persona, orchestratorCli, projectPath } = request;
+  const { cli, model, effort, difficulty, orchestratorCli } = request;
   if (!cli && !model && !effort && !difficulty) return { ok: true, plan: null };
 
-  const pinned = await personaPins(projectPath, persona);
-  const wantsAuto = cli === AUTO_CLI;
-  if (wantsAuto) {
+  if (cli === AUTO_CLI) {
     if (!request.auto?.effective) return autoOffRefusal(request.auto);
-    // A persona's pin decides, and Auto has nothing to balance. Its CLI or the orchestrator's is used.
-    if (!pinned.orchestrator && !pinned.model) return prepareAuto(request);
+    return prepareAuto(request);
   }
-  // A persona's model goes with its CLI: it can't run on another one the request named.
-  const otherCli = !!cli && !wantsAuto && !!pinned.orchestrator && pinned.orchestrator !== cli;
-  const pins = otherCli ? {} : pinned;
-  const namedCli = wantsAuto ? undefined : cli;
-  const provider = namedCli ?? pins.orchestrator ?? orchestratorCli;
-  const providerSource: HelperRoutingFieldSource = namedCli ? 'request' : pins.orchestrator ? 'persona' : 'orchestrator';
-  let resolvedModel = model ?? pins.model;
-  let modelSource: HelperRoutingFieldSource = model ? 'request' : pins.model ? 'persona' : 'cli_default';
+  const namedCli = cli;
+  const provider = namedCli ?? orchestratorCli;
+  const providerSource: HelperRoutingFieldSource = namedCli ? 'request' : 'orchestrator';
+  let resolvedModel = model;
+  let modelSource: HelperRoutingFieldSource = model ? 'request' : 'cli_default';
   let resolvedEffort = effort;
   let effortSource: HelperRoutingFieldSource = effort ? 'request' : 'cli_default';
   let fallback: HelperRoutingFallback = 'none';
@@ -253,7 +222,7 @@ export async function planHelperStart(request: StartPlanRequest): Promise<StartP
       };
     }
     if (!resolvedModel) {
-      const { resolved, problems } = await resolveCell(provider, validDifficulty, projectPath);
+      const { resolved, problems } = await resolveCell(provider, validDifficulty);
       if (!resolved) {
         return {
           ok: false,
@@ -274,27 +243,6 @@ export async function planHelperStart(request: StartPlanRequest): Promise<StartP
     }
   }
 
-  // A persona's model comes unchecked, and it may not be one this CLI runs (`opus` on Codex).
-  if (modelSource === 'persona' && resolvedModel) {
-    const check = await checkHelperModel(provider, resolvedModel, projectPath);
-    if (check.ok === false) {
-      // A preset was asked for and can't be honoured. Otherwise it's the persona's call, as before: say so.
-      if (validDifficulty) {
-        return {
-          ok: false,
-          code: 'no_valid_mapping',
-          message: `This helper's persona sets the model "${resolvedModel}", which ${provider} doesn't offer: ${check.message} ` +
-            'Name a CLI and model yourself, or use another persona.',
-          userReason: `its persona sets the model "${resolvedModel}", which ${provider} doesn't offer.`,
-        };
-      }
-      warning = check.message;
-    } else if (check.warning) {
-      warning = check.warning;
-      if (validDifficulty) fallback = 'model_unverified';
-    }
-  }
-
   const usedPreset = modelSource === 'custom_mapping' || modelSource === 'builtin_mapping';
   // 'default' passes no --model, and is saved as no model.
   const passedModel = resolvedModel && resolvedModel !== 'default' ? resolvedModel : undefined;
@@ -304,18 +252,16 @@ export async function planHelperStart(request: StartPlanRequest): Promise<StartP
       ...(provider && { provider }),
       ...(passedModel && { model: passedModel }),
       ...(resolvedEffort && { effort: resolvedEffort }),
-      keep: [...(namedCli ? ['orchestrator' as const] : []), ...(model || otherCli ? ['model' as const] : [])],
       ...(warning && { warning }),
       routing: {
-        mode: wantsAuto ? 'auto' : validDifficulty ? 'preset' : 'explicit',
+        mode: validDifficulty ? 'preset' : 'explicit',
         balanced: false,
         decidedAt: new Date().toISOString(),
         policyVersion: HELPER_ROUTING_POLICY_VERSION,
         requested: { provider: cli ?? null, model: model ?? null, effort: effort ?? null, difficulty: validDifficulty },
         resolved: { provider: provider ?? null, model: passedModel ?? null, effort: resolvedEffort ?? null, difficulty: validDifficulty },
         source: { provider: providerSource, model: modelSource, effort: effortSource },
-        reason: wantsAuto && (pinned.orchestrator || pinned.model) ? 'persona_pinned'
-          : usedPreset ? 'preset_on_cli' : namedCli || model || effort ? 'explicit_request' : 'persona_pinned',
+        reason: usedPreset ? 'preset_on_cli' : 'explicit_request',
         fallback,
         context: { status: 'none' },
       },
@@ -347,13 +293,12 @@ async function providerUsable(provider: string, projectPath: string): Promise<bo
 }
 
 /**
- * What a candidate runs under: its provider and the project's profile. A proxy
- * for a subscription, never more: two profiles on one account can't be told
- * apart without reading credentials, which this never does.
+ * What a candidate runs under: its provider, on the one login the local
+ * environment has. A proxy for a subscription, never more. `:default` is the
+ * suffix Auto's saved tie history used before profiles were removed (#2749).
  */
-async function candidateKey(provider: string, projectPath: string): Promise<string> {
-  const profileId = await readProjectAgentDefaults(projectPath).then((d) => d?.profileId, (): undefined => undefined);
-  return `${provider}:${profileId ?? 'default'}`;
+function candidateKey(provider: string): string {
+  return `${provider}:default`;
 }
 
 /**
@@ -373,11 +318,11 @@ async function prepareAuto(request: StartPlanRequest): Promise<StartPlanResult> 
   await Promise.all(PRESET_PROVIDERS.map(async (provider) => {
     if (enabled.length > 0 && !enabled.includes(provider)) { skipped[provider] = 'cli_disabled'; return; }
     if (!(await providerUsable(provider, projectPath))) { skipped[provider] = 'cli_unavailable'; return; }
-    if (await isProviderCoolingDown(provider, projectPath)) { skipped[provider] = 'cooling_down'; return; }
-    const { resolved } = await resolveCell(provider, difficulty, projectPath);
+    if (await isProviderCoolingDown(provider)) { skipped[provider] = 'cooling_down'; return; }
+    const { resolved } = await resolveCell(provider, difficulty);
     if (!resolved) { skipped[provider] = 'no_valid_mapping'; return; }
-    const quota = await readProviderQuota(provider, projectPath, { model: resolved.cell.model });
-    options.push({ provider, cell: resolved, quota, key: await candidateKey(provider, projectPath) });
+    const quota = await readProviderQuota(provider, { model: resolved.cell.model });
+    options.push({ provider, cell: resolved, quota, key: candidateKey(provider) });
   }));
   // A stable order for what's shown. The choice doesn't depend on it.
   options.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
@@ -387,7 +332,6 @@ async function prepareAuto(request: StartPlanRequest): Promise<StartPlanResult> 
     ok: true,
     plan: {
       pendingAuto: { options, skipped, difficulty, ...(orchestratorCli && { orchestratorCli }) },
-      keep: ['orchestrator', 'model'],
       routing: {} as HelperRouting,
     },
   };
@@ -621,7 +565,6 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, Au
       provider: decision.provider,
       model: cell.cell.model,
       ...(effort && { effort }),
-      keep: ['orchestrator', 'model'],
       routing,
       decision: autoDecisionRecord({ decisionId, now, difficulty, orchestratorCli, options, skipped, load, decision, routing }),
       ...(cell.warning && { warning: cell.warning }),
@@ -630,8 +573,8 @@ export function decideAutoPlan(plan: StartPlan, load: Readonly<Record<string, Au
 }
 
 /**
- * Whether `cli: "auto"` is allowed, at the scope asked about. A project or a
- * persona can turn it off and never on, so a cloned repository can't spend another
+ * Whether `cli: "auto"` is allowed, at the scope asked about. A project can
+ * turn it off and never on, so a cloned repository can't spend another
  * provider's quota. Then the orchestrator's own choice, then the app's.
  */
 export async function readHelperAuto(context: {
@@ -655,7 +598,8 @@ export async function readHelperAuto(context: {
       app: { value: app, editable: true },
       ...(projectPath && { project: { value: projectOff ? 'off' as const : null, choices: ['off', null] as ['off', null], editable: true } }),
       ...(agent && {
-        persona: { value: policy?.personaAutoOff ? false as const : null, editable: false as const },
+        // Personas were retired (#2901): always null, kept for clients that read it.
+        persona: { value: null, editable: false as const },
         agent: { value: stored, editable: true },
       }),
     },
@@ -709,11 +653,11 @@ function savedPartOf(revision: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
-async function viewCell(provider: PresetProvider, difficulty: HelperDifficulty, projectPath: string | undefined): Promise<PresetCellView> {
+async function viewCell(provider: PresetProvider, difficulty: HelperDifficulty): Promise<PresetCellView> {
   const custom = orchestrationSettings.getPresets()[provider]?.[difficulty] ?? null;
   const builtin = BUILTIN_PRESETS[provider][difficulty];
-  const shown = await checkCell(provider, custom ?? builtin, projectPath);
-  const { resolved } = await resolveCell(provider, difficulty, projectPath);
+  const shown = await checkCell(provider, custom ?? builtin);
+  const { resolved } = await resolveCell(provider, difficulty);
   const fallback = resolved?.fallback;
   return {
     effective: resolved?.cell ?? null,
@@ -727,18 +671,18 @@ async function viewCell(provider: PresetProvider, difficulty: HelperDifficulty, 
   };
 }
 
-async function viewProvider(provider: PresetProvider, projectPath: string | undefined, refresh: boolean): Promise<ProviderRoutingView> {
+async function viewProvider(provider: PresetProvider, refresh: boolean): Promise<ProviderRoutingView> {
   const instance = getProvider(provider as OrchestratorId);
   let choices: Extract<ProviderRoutingView, { autoEligible: true }>['choices'] = { source: 'fallback', asOf: null, models: [] };
-  const forcedQuota = refresh ? forceProviderQuota(provider, projectPath) : null;
+  const forcedQuota = refresh ? forceProviderQuota(provider) : null;
   let listSource = 'none';
   let modelCount = 0;
   let listFailed = false;
   if (instance) {
     try {
-      // App-wide, whatever profile the cells are read under: presets are app-wide, so this is what a write takes.
+      // App-wide: presets are app-wide, so this is what a write takes.
       // Forced first, so the cells below read the new list from the cache.
-      const list = await modelListFor(instance, undefined, refresh);
+      const list = await modelListFor(instance, refresh);
       if (list) {
         listSource = list.source;
         modelCount = list.models.length;
@@ -752,8 +696,8 @@ async function viewProvider(provider: PresetProvider, projectPath: string | unde
     }
   }
   const [cells, quota] = await Promise.all([
-    Promise.all(HELPER_DIFFICULTIES.map((d) => viewCell(provider, d, projectPath))),
-    forcedQuota ? forcedQuota.then((forced) => forced.quota) : readProviderQuota(provider, projectPath),
+    Promise.all(HELPER_DIFFICULTIES.map((d) => viewCell(provider, d))),
+    forcedQuota ? forcedQuota.then((forced) => forced.quota) : readProviderQuota(provider),
   ]);
   if (forcedQuota) {
     const quotaOutcome = (await forcedQuota).outcome;
@@ -771,18 +715,17 @@ async function viewProvider(provider: PresetProvider, projectPath: string | unde
 
 /**
  * The page's data. A CLI's list can take a handshake, cached for about ten
- * minutes. `projectPath` reads cells under that project's profile, so their state
- * says what a start there would do; `choices` stay app-wide, since a write is.
- * Reads made without one also notice a cell whose state changed, and move the
+ * minutes. Cells and `choices` are app-wide, since a write is; `projectPath`
+ * adds that project's Auto setting. Reads made without one also notice a cell whose state changed, and move the
  * revision. `refresh` asks each preset CLI again first, for its app-wide list and
  * its limits, for someone who just signed in. A project's own list isn't forced.
  */
 export async function readHelperRouting(options: { projectPath?: string; autoContext?: Parameters<typeof readHelperAuto>[0]; refresh?: boolean } = {}): Promise<HelperRoutingSettings> {
   const providers: Record<string, ProviderRoutingView> = {};
-  await Promise.all(PRESET_PROVIDERS.map(async (p) => { providers[p] = await viewProvider(p, options.projectPath, options.refresh === true); }));
+  await Promise.all(PRESET_PROVIDERS.map(async (p) => { providers[p] = await viewProvider(p, options.refresh === true); }));
   for (const other of getAllProviders()) {
     if (!isPresetProvider(other.id)) {
-      providers[other.id] = { autoEligible: false, reason: 'auto_not_supported', quota: await readProviderQuota(other.id, options.projectPath), cells: null };
+      providers[other.id] = { autoEligible: false, reason: 'auto_not_supported', quota: await readProviderQuota(other.id), cells: null };
     }
   }
   if (!options.projectPath) {
@@ -923,7 +866,7 @@ async function writePresets(update: HelperRoutingUpdate, { surface, projectPath 
   if (savedPartOf(update.revision) !== orchestrationSettings.getPresetsRevision()) return stale();
 
   for (const { provider, model, effort } of update.cells ?? []) {
-    const check = await checkCell(provider, { model, effort }, undefined);
+    const check = await checkCell(provider, { model, effort });
     if (check.state === 'stale') {
       return refuse(new HelperRoutingError(check.staleReason as HelperRoutingErrorCode, check.message ?? 'That choice isn\'t offered.'));
     }
@@ -992,11 +935,6 @@ setRoutingPolicyListener(() => {
     appLog('core:orchestration', 'warn', 'Could not move the helper routing revision', { meta: { error: errorText(err) } });
   });
 });
-
-/** MCP going on or off decides Auto for every agent under it. Returns the unsubscribe function. */
-export function watchRoutingPolicy(): () => void {
-  return onMcpEnablementChanged(() => noteRoutingPolicyChanged());
-}
 
 /** For testing: wait for writes and revision moves to settle. */
 export function _settleHelperRoutingForTesting(): Promise<unknown> {

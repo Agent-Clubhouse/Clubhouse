@@ -6,7 +6,7 @@ import { CommandPaletteList, optionId } from './CommandPaletteList';
 import { useCommandSource } from './use-command-source';
 import { fuzzyFilter, FuzzyFilterItem } from './fuzzy-match';
 import { CATEGORY, CommandItem } from './command-registry';
-import { HELP_SECTIONS } from '../help/help-content';
+import { HELP_SECTIONS, type HelpSection } from '../help/help-content';
 import { searchHelpTopics } from '../help/help-search';
 import { pushModal, removeModal } from '../../components/layers';
 
@@ -28,8 +28,8 @@ function stripPrefix(query: string): string {
   return query;
 }
 
-function helpItems(query: string): FuzzyFilterItem<CommandItem>[] {
-  return searchHelpTopics(HELP_SECTIONS, query).slice(0, HELP_RESULTS).map((r) => ({
+function helpItems(sections: HelpSection[], query: string): FuzzyFilterItem<CommandItem>[] {
+  return searchHelpTopics(sections, query).slice(0, HELP_RESULTS).map((r) => ({
     item: {
       id: `help:${r.sectionId}:${r.topic.id}`,
       label: r.topic.title,
@@ -122,7 +122,7 @@ export function CommandPalette() {
 
     // Re-sort with boosted scores
     const ranked = [...recents, ...rest].sort((a, b) => b.score - a.score);
-    return mode === 'all' ? [...ranked, ...helpItems(searchQuery)] : ranked;
+    return mode === 'all' ? [...ranked, ...helpItems(HELP_SECTIONS, searchQuery)] : ranked;
   }, [modeFiltered, query, mode, isRecent]);
 
   const executeItem = useCallback((item: CommandItem) => {

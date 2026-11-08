@@ -7,6 +7,8 @@ import { openDispatcherSettings } from '../dispatcher/dispatcherNav';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { wakeDurableAgent, type WakeMode } from './wake-durable-agent';
+import { useManagedStatus } from '../managed/managedApi';
+import { requestManagedRestart } from '../managed/restart';
 
 /**
  * The agent row's actions, shared by the legacy list row and the new chrome's
@@ -117,8 +119,6 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
   const removeAgent = useAgentStore((s) => s.removeAgent);
   const openAgentSettings = useAgentStore((s) => s.openAgentSettings);
   const openDeleteDialog = useAgentStore((s) => s.openDeleteDialog);
-  const openApplyPersonaDialog = useAgentStore((s) => s.openApplyPersonaDialog);
-  const openExtractPersonaDialog = useAgentStore((s) => s.openExtractPersonaDialog);
   const sendAgentWake = useAnnexClientStore((s) => s.sendAgentWake);
   const sendAgentKill = useAnnexClientStore((s) => s.sendAgentKill);
   // The agent's own project: the new chrome's tree shows rows from every project.
@@ -128,6 +128,11 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
 
   const isCreating = agent.status === 'creating';
   const isDurable = agent.kind === 'durable';
+
+  // Clubhouse-managed agents (#2896): a running one can restart onto its current setup.
+  const managedEligible = isDurable && !isRemote && agent.status === 'running' && !!activeProject;
+  const { value: managedStatus } = useManagedStatus(managedEligible ? activeProject?.path : undefined, managedEligible ? agent.id : undefined);
+  const canRestartManaged = managedEligible && !!managedStatus?.managed && managedStatus.running;
 
   // ── Action handlers ────────────────────────────────────────────
 
@@ -161,14 +166,6 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
     openDeleteDialog(agent.id);
   }, [agent.id, openDeleteDialog]);
 
-  const handleApplyPersona = useCallback(() => {
-    openApplyPersonaDialog(agent.id);
-  }, [agent.id, openApplyPersonaDialog]);
-
-  const handleExtractPersona = useCallback(() => {
-    openExtractPersonaDialog(agent.id);
-  }, [agent.id, openExtractPersonaDialog]);
-
   const handlePopOut = useCallback(async () => {
     await window.clubhouse.window.createPopout({
       type: 'agent',
@@ -183,6 +180,13 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
     if (isDispatcher) openDispatcherSettings();
     else openAgentSettings(agent.id);
   }, [agent.id, openAgentSettings, isDispatcher]);
+
+  const restartManaged = useCallback((fresh: boolean) => {
+    if (!activeProject) return;
+    void requestManagedRestart({ projectPath: activeProject.path, agentId: agent.id, agentName: agent.name }, { fresh });
+  }, [activeProject, agent.id, agent.name]);
+  const handleRestart = useCallback(() => restartManaged(false), [restartManaged]);
+  const handleRestartFresh = useCallback(() => restartManaged(true), [restartManaged]);
 
   const handleSpawnChild = useCallback(() => {
     if (onSpawnQuickChild) onSpawnQuickChild(agent.id);
@@ -273,37 +277,29 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
       });
     }
 
-    // Priority 4b: Apply persona / Extract pattern (local durable agents).
-    // The Dispatcher's persona is built in and can't be changed (#2533).
-    if (isDurable && !isRemote && !isDispatcher) {
+    // Priority 4a: Restart a running managed agent, resuming its conversation or starting a new one.
+    if (canRestartManaged) {
+      const restartIcon = (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+          <polyline points="21 3 21 9 15 9" />
+        </svg>
+      );
       list.push({
-        id: 'apply-persona',
-        label: 'Apply persona…',
-        icon: (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-            <circle cx="9" cy="7" r="4" />
-            <line x1="19" y1="8" x2="19" y2="14" />
-            <line x1="22" y1="11" x2="16" y2="11" />
-          </svg>
-        ),
+        id: 'restart',
+        label: 'Restart',
+        icon: restartIcon,
         hoverColor: 'hover:text-ctp-accent',
         visible: true,
-        handler: handleApplyPersona,
+        handler: handleRestart,
       });
       list.push({
-        id: 'extract-persona',
-        label: 'Extract persona…',
-        icon: (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-        ),
+        id: 'restart-fresh',
+        label: 'Restart with a new conversation',
+        icon: restartIcon,
         hoverColor: 'hover:text-ctp-accent',
         visible: true,
-        handler: handleExtractPersona,
+        handler: handleRestartFresh,
       });
     }
 
@@ -330,7 +326,7 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
     }
 
     return list;
-  }, [agent.status, agent.kind, isDurable, isRemote, isDispatcher, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeNewSession, handlePopOut, handleSpawnChild, handleSettings, handleDelete, handleApplyPersona, handleExtractPersona]);
+  }, [agent.status, agent.kind, isDurable, isRemote, isDispatcher, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeNewSession, handlePopOut, handleSpawnChild, handleSettings, canRestartManaged, handleRestart, handleRestartFresh, handleDelete]);
 
   return actions;
 }

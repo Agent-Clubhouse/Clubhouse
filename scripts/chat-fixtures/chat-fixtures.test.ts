@@ -59,24 +59,26 @@ const parseLines = (text: string) => text.split('\n').filter((l) => l.trim()).ma
 describe('fixture format', () => {
   it('parses a header and entries and drops notes', () => {
     const { header: h, entries } = parseFixture(jsonl([
-      header('acp'),
+      header('codex-app-server'),
       { kind: 'note', text: 'ignored' },
       { from: 'client', msg: { jsonrpc: '2.0', id: 1, method: 'initialize' } },
       { from: 'cli', t: 5, msg: { jsonrpc: '2.0', id: 1, result: {} } },
     ]));
-    expect(h.protocol).toBe('acp');
+    expect(h.protocol).toBe('codex-app-server');
     expect(entries.map((e: { from: string }) => e.from)).toEqual(['client', 'cli']);
   });
 
   it('rejects malformed fixtures with the offending line', () => {
     expect(() => parseFixture(jsonl([{ from: 'cli', msg: {} }]))).toThrow('missing header');
     expect(() => parseFixture(jsonl([header('smoke-signals')]))).toThrow('unknown protocol');
-    expect(() => parseFixture(jsonl([header('acp'), { from: 'client', raw: 'x' }]))).toThrow(':2: client entries must carry "msg"');
-    expect(() => parseFixture(`${JSON.stringify(header('acp'))}\n{nope\n`)).toThrow(':2: invalid JSON');
+    expect(() => parseFixture(jsonl([header('codex-app-server'), { from: 'client', raw: 'x' }]))).toThrow(':2: client entries must carry "msg"');
+    expect(() => parseFixture(`${JSON.stringify(header('codex-app-server'))}\n{nope\n`)).toThrow(':2: invalid JSON');
+    // The legacy Copilot ACP protocol went with its driver (#2868).
+    expect(() => parseFixture(jsonl([header('acp')]))).toThrow('unknown protocol');
   });
 
   it('keys client messages by protocol shape, ignoring ids', () => {
-    expect(messageKey('acp', { jsonrpc: '2.0', id: 7, method: 'session/prompt' })).toBe('request:session/prompt');
+    expect(messageKey('copilot-sdk', { jsonrpc: '2.0', id: 7, method: 'session.send' })).toBe('request:session.send');
     expect(messageKey('codex-app-server', { method: 'initialized' })).toBe('notification:initialized');
     expect(messageKey('codex-app-server', { id: 0, result: { decision: 'accept' } })).toBe('response:result');
     expect(messageKey('claude-stream-json', { type: 'control_request', request: { subtype: 'interrupt' } })).toBe('control_request:interrupt');
@@ -92,9 +94,9 @@ describe('fixture format', () => {
 
   it('remaps response ids to the ids the live driver used', () => {
     const ids = new Map<unknown, unknown>([[3, 41], ['req_1', 'live-1']]);
-    expect(remapCliMessage('acp', { jsonrpc: '2.0', id: 3, result: {} }, ids)).toEqual({ jsonrpc: '2.0', id: 41, result: {} });
+    expect(remapCliMessage('codex-app-server', { id: 3, result: {} }, ids)).toEqual({ id: 41, result: {} });
     // Server-initiated requests keep the CLI's own id.
-    expect(remapCliMessage('acp', { jsonrpc: '2.0', id: 3, method: 'session/request_permission' }, ids).id).toBe(3);
+    expect(remapCliMessage('codex-app-server', { id: 3, method: 'item/commandExecution/requestApproval' }, ids).id).toBe(3);
     const claude = remapCliMessage('claude-stream-json', { type: 'control_response', response: { subtype: 'success', request_id: 'req_1' } }, ids);
     expect(claude.response.request_id).toBe('live-1');
   });
@@ -112,12 +114,11 @@ describe('fixture format', () => {
     const extra: Record<string, string[]> = {
       claude: ['ask-user-question', 'subagent-task'],
       codex: [],
-      copilot: ['handshake-1.0.82'],
       'copilot-sdk': ['died-mid-turn', 'elicitation-accept', 'elicitation-decline', 'exit-at-launch', 'handshake', 'hang-at-launch', 'no-answer', 'plan-approval', 'protocol-mismatch', 'slash-command', 'question', 'queue', 'resume', 'resume-not-found', 'steer', 'subagent'],
     };
-    // The model list needs a real login, so copilot-sdk gets it in phase 4 (docs/copilot-sdk-driver.md).
-    const missing: Record<string, string[]> = { 'copilot-sdk': ['model-list'] };
-    for (const [cli, protocol] of [['claude', 'claude-stream-json'], ['codex', 'codex-app-server'], ['copilot', 'acp'], ['copilot-sdk', 'copilot-sdk']]) {
+    // copilot-sdk/model-list is hand-made: models.list needs a real login, so a recording waits for phase 4 (docs/copilot-sdk-driver.md).
+    const missing: Record<string, string[]> = {};
+    for (const [cli, protocol] of [['claude', 'claude-stream-json'], ['codex', 'codex-app-server'], ['copilot-sdk', 'copilot-sdk']]) {
       const names = (await fs.promises.readdir(path.join(FIXTURES, cli))).map((f) => f.replace(/\.jsonl$/, '')).sort();
       expect(names).toEqual([...shared.filter((n) => !missing[cli]?.includes(n)), ...extra[cli]].sort());
       for (const name of names) {
@@ -304,7 +305,7 @@ describe('fake-cli', () => {
 
   it('honours exit entries and answers --version from the header', async () => {
     const crash = await writeFixture('crash.jsonl', [
-      header('acp'),
+      header('codex-app-server'),
       { from: 'cli', raw: 'panic: something broke' },
       { from: 'cli', exit: { code: 101 } },
     ]);
@@ -517,53 +518,55 @@ describe('fake-cli and record over TCP (copilot-sdk)', () => {
 });
 
 describe('record', () => {
-  const source = path.join(FIXTURES, 'copilot', 'multi-turn.jsonl');
-  const fakeCommand = ['--', process.execPath, FAKE_CLI, '--fake-fixture', source, '--acp'];
+  const source = path.join(FIXTURES, 'codex', 'multi-turn.jsonl');
+  const fakeCommand = ['--', process.execPath, FAKE_CLI, '--fake-fixture', source, 'app-server'];
   const cliMessages = (entries: Array<{ from: string; msg?: unknown }>) =>
     entries.filter((e) => e.from === 'cli' && e.msg).map((e) => e.msg);
 
   it('script mode: records a session that matches the replayed fixture', async () => {
     const script = path.join(tmp, 'steps.jsonl');
     await fs.promises.writeFile(script, jsonl([
-      { send: { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 1 } } },
+      { send: { id: 1, method: 'initialize', params: { clientInfo: { name: 'clubhouse', version: '1.0.0' }, capabilities: {} } } },
       { await: { id: 1 } },
-      { send: { jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/workspace/project', mcpServers: [] } } },
-      { await: { id: 2 }, save: 'session' },
-      { send: { jsonrpc: '2.0', id: 3, method: 'session/prompt', params: { sessionId: '{{session.result.sessionId}}', prompt: [{ type: 'text', text: 'Reply with the word one.' }] } } },
-      { await: { id: 3, result: { stopReason: 'end_turn' } } },
-      { send: { jsonrpc: '2.0', id: 4, method: 'session/prompt', params: { sessionId: '{{session.result.sessionId}}', prompt: [{ type: 'text', text: 'Now reply with the word two.' }] } } },
+      { send: { method: 'initialized' } },
+      { send: { id: 2, method: 'thread/start', params: { cwd: '/workspace/project' } }, },
+      { await: { id: 2 }, save: 'thread' },
+      { send: { id: 3, method: 'turn/start', params: { threadId: '{{thread.result.thread.id}}', input: [{ type: 'text', text: 'Reply with the word one.' }] } } },
+      { await: { method: 'turn/completed' } },
+      { send: { id: 4, method: 'turn/start', params: { threadId: '{{thread.result.thread.id}}', input: [{ type: 'text', text: 'Now reply with the word two.' }] } } },
       { await: { id: 4 } },
     ]));
     const out = path.join(tmp, 'recorded.jsonl');
-    const result = await run([RECORD, '--protocol', 'acp', '--out', out, '--cli-version', '1.0.92',
+    const result = await run([RECORD, '--protocol', 'codex-app-server', '--out', out, '--cli-version', '0.159.3',
       '--description', 'round trip', '--redact', 'Now reply=Then reply', '--script', script, ...fakeCommand]);
     expect(result.stderr).toContain('record: wrote');
     expect(result.code).toBe(0);
 
     const recorded = await loadFixture(out);
     const original = await loadFixture(source);
-    expect(recorded.header).toMatchObject({ protocol: 'acp', source: 'recorded', description: 'round trip', cli: { version: '1.0.92' } });
-    expect(cliMessages(recorded.entries)).toEqual(cliMessages(original.entries));
+    expect(recorded.header).toMatchObject({ protocol: 'codex-app-server', source: 'recorded', description: 'round trip', cli: { version: '0.159.3' } });
+    // The redaction applies to everything recorded, including what the CLI echoes back.
+    expect(cliMessages(recorded.entries)).toEqual(JSON.parse(JSON.stringify(cliMessages(original.entries)).replaceAll('Now reply', 'Then reply')));
     const sent = recorded.entries.filter((e: { from: string }) => e.from === 'client');
-    expect(sent).toHaveLength(4);
-    expect(sent[2].msg.params.sessionId).toBe(original.entries[4].msg.result.sessionId);
-    expect(sent[3].msg.params.prompt[0].text).toBe('Then reply with the word two.');
+    expect(sent).toHaveLength(5);
+    expect(sent[3].msg.params.threadId).toBe('019a0000-0000-7000-8000-00000000c001');
+    expect(sent[4].msg.params.input[0].text).toBe('Then reply with the word two.');
     expect(recorded.entries.at(-1)).toMatchObject({ from: 'cli', exit: { code: 0 } });
     expect(recorded.entries.every((e: { t?: number }) => typeof e.t === 'number')).toBe(true);
   });
 
   it('proxy mode: passes traffic through and records both directions', async () => {
     const out = path.join(tmp, 'proxied.jsonl');
-    const child = spawn(process.execPath, [RECORD, '--protocol', 'acp', '--out', out, ...fakeCommand], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [RECORD, '--protocol', 'codex-app-server', '--out', out, ...fakeCommand], { stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     child.stdout.setEncoding('utf8').on('data', (c: string) => { stdout += c; });
     const exited = new Promise<number | null>((resolve) => child.on('exit', resolve));
-    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) + '\n');
+    child.stdin.write(JSON.stringify({ id: 1, method: 'initialize', params: {} }) + '\n');
     while (!stdout.includes('"id":1')) await new Promise((r) => setTimeout(r, 10));
     child.stdin.end();
     expect(await exited).toBe(0);
 
-    expect(parseLines(stdout)[0]).toMatchObject({ id: 1, result: { protocolVersion: 1 } });
+    expect(parseLines(stdout)[0]).toMatchObject({ id: 1, result: { userAgent: expect.any(String) } });
     const recorded = await loadFixture(out);
     expect(recorded.entries.map((e: { from: string; msg?: { method?: string } }) => `${e.from}:${e.msg?.method ?? ''}`).slice(0, 2))
       .toEqual(['client:initialize', 'cli:']);
@@ -571,7 +574,7 @@ describe('record', () => {
   it('scrubs temp paths and secrets by default, even ones the CLI prints', async () => {
     const tmpReal = await fs.promises.realpath(os.tmpdir());
     const leaky = await writeFixture('leaky.jsonl', [
-      header('acp'),
+      header('codex-app-server'),
       { from: 'client', msg: { jsonrpc: '2.0', id: 1, method: 'initialize' } },
       { from: 'cli', msg: { jsonrpc: '2.0', id: 1, result: {
         account: { email: 'jane@corp.example.io' },
@@ -582,7 +585,7 @@ describe('record', () => {
     const script = path.join(tmp, 'steps.jsonl');
     await fs.promises.writeFile(script, jsonl([{ send: { jsonrpc: '2.0', id: 1, method: 'initialize' } }, { await: { id: 1 } }]));
     const out = path.join(tmp, 'leaky-recorded.jsonl');
-    const result = await run([RECORD, '--protocol', 'acp', '--out', out, '--script', script,
+    const result = await run([RECORD, '--protocol', 'codex-app-server', '--out', out, '--script', script,
       '--', process.execPath, FAKE_CLI, '--fake-fixture', leaky]);
     expect(result.code).toBe(0);
     const text = await fs.promises.readFile(out, 'utf8');
@@ -603,7 +606,7 @@ describe('record', () => {
     const tail = path.join(tmp, 'tail.js');
     await fs.promises.writeFile(tail, `process.stdout.write('{"tail":true}');\n`);
     const out = path.join(tmp, 'tail.jsonl');
-    const result = await run([RECORD, '--protocol', 'acp', '--out', out, '--', process.execPath, tail]);
+    const result = await run([RECORD, '--protocol', 'codex-app-server', '--out', out, '--', process.execPath, tail]);
     expect(result.code).toBe(0);
     const recorded = await loadFixture(out);
     expect(recorded.entries.map((e: { msg?: unknown; exit?: unknown }) => e.msg ?? e.exit))
@@ -612,7 +615,7 @@ describe('record', () => {
 
   it('records an exit entry when the CLI cannot be started', async () => {
     const out = path.join(tmp, 'missing.jsonl');
-    const result = await run([RECORD, '--protocol', 'acp', '--out', out, '--', 'clubhouse-no-such-cli-xyz']);
+    const result = await run([RECORD, '--protocol', 'codex-app-server', '--out', out, '--', 'clubhouse-no-such-cli-xyz']);
     const recorded = await loadFixture(out);
     const last = recorded.entries.at(-1);
     expect(last.exit.code).not.toBe(0);
@@ -631,7 +634,7 @@ describe('fake CLI lifetime', () => {
     const fixture = path.join(tmp, 'wait.jsonl');
     // A client entry the fake waits on forever.
     await fs.promises.writeFile(fixture, jsonl([
-      header('acp'),
+      header('codex-app-server'),
       { from: 'client', msg: { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} } },
     ]));
     // The launcher plays cmd.exe running a shim. The fake's stdin is the

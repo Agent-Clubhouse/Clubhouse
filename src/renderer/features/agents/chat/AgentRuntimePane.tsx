@@ -23,6 +23,7 @@ import { ConfirmDestructiveAction } from '../../../components/ConfirmDestructive
 import { TerminalPaneToolbar } from '../pane/AgentPaneToolbar';
 import { AgentDetails } from '../details/AgentDetails';
 import { HelperHeader } from '../helpers/HelperHeader';
+import { SetupChangedBar } from '../../managed/SetupChangedBar';
 import { DetailsToggle } from '../details/DetailsToggle';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { useNarrow } from '../pane/useNarrow';
@@ -290,6 +291,7 @@ function MainTerminal({ agent, terminal, runtime }: { agent: Agent; terminal: Re
         />
       </div>
       <HelperHeader agent={agent} />
+      <SetupChangedBar agent={agent} variant="strip" />
       {review.active && review.cwd && (
         <ChangesReview agentName={agent.name} cwd={review.cwd} branch={review.branch} onChanged={review.reload} />
       )}

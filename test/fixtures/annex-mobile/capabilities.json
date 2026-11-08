@@ -66,7 +66,7 @@
         ],
         "enabled": false,
         "event": "dispatcher:changed",
-        "flagOn": false,
+        "flagOn": true,
         "newLayout": true,
         "projectId": "__dispatcher__",
         "snapshotField": "dispatcher",
@@ -93,7 +93,6 @@
         "autoOffReasons": [
           "not_enabled",
           "project_off",
-          "persona_off",
           "orchestration_off",
           "mcp_off",
           "dispatcher_locked"

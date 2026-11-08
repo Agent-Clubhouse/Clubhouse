@@ -44,22 +44,9 @@ vi.mock('../services/agent-system', () => ({
   })),
 }));
 
-vi.mock('../services/agent-config', async () => ({
-  // The real persona rule (#2551).
-  assertPersonaAllowed: (await vi.importActual<typeof import('../services/agent-config')>('../services/agent-config')).assertPersonaAllowed,
+vi.mock('../services/agent-config', () => ({
   getDurableConfig: vi.fn(() => ({ id: 'a1', name: 'Bot', orchestrator: 'claude-code' })),
   updateDurableConfig: vi.fn(async () => undefined),
-}));
-
-vi.mock('../services/materialization-service', () => ({
-  materializeAgent: vi.fn(async () => undefined),
-  previewMaterialization: vi.fn(async () => ({ instructions: 'merged', permissions: {}, mcpJson: null, skills: [], agentTemplates: [] })),
-  resetProjectAgentDefaults: vi.fn(async () => undefined),
-}));
-
-vi.mock('../services/config-diff-service', () => ({
-  computeConfigDiff: vi.fn(async () => ({ agentId: 'a1', agentName: 'Bot', hasDiffs: true, items: [{ id: 'i1' }] })),
-  propagateChanges: vi.fn(async () => ({ ok: true, message: 'done', propagatedCount: 2 })),
 }));
 
 vi.mock('../services/log-service', () => ({
@@ -72,9 +59,6 @@ import { registerAgentSettingsHandlers } from './agent-settings-handlers';
 import * as agentSettings from '../services/agent-settings-service';
 import * as agentSystem from '../services/agent-system';
 import * as agentConfig from '../services/agent-config';
-import { materializeAgent, previewMaterialization, resetProjectAgentDefaults } from '../services/materialization-service';
-import { computeConfigDiff, propagateChanges } from '../services/config-diff-service';
-import { getDispatcherPath } from '../services/dispatcher/dispatcher-paths';
 
 describe('agent-settings-handlers', () => {
   let handlers: Map<string, (...args: any[]) => any>;
@@ -151,20 +135,16 @@ describe('agent-settings-handlers', () => {
     const expectedChannels = [
       IPC.AGENT.READ_INSTRUCTIONS, IPC.AGENT.SAVE_INSTRUCTIONS,
       IPC.AGENT.READ_MCP_CONFIG, IPC.AGENT.LIST_SKILLS, IPC.AGENT.LIST_AGENT_TEMPLATES,
-      IPC.AGENT.LIST_SOURCE_SKILLS, IPC.AGENT.LIST_SOURCE_AGENT_TEMPLATES,
       IPC.AGENT.CREATE_SKILL, IPC.AGENT.CREATE_AGENT_TEMPLATE,
       IPC.AGENT.READ_PERMISSIONS, IPC.AGENT.SAVE_PERMISSIONS,
       IPC.AGENT.READ_SKILL_CONTENT, IPC.AGENT.WRITE_SKILL_CONTENT, IPC.AGENT.DELETE_SKILL,
       IPC.AGENT.READ_AGENT_TEMPLATE_CONTENT, IPC.AGENT.WRITE_AGENT_TEMPLATE_CONTENT, IPC.AGENT.DELETE_AGENT_TEMPLATE,
       IPC.AGENT.LIST_AGENT_TEMPLATE_FILES,
       IPC.AGENT.READ_MCP_RAW_JSON, IPC.AGENT.WRITE_MCP_RAW_JSON,
-      IPC.AGENT.READ_PROJECT_AGENT_DEFAULTS, IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, IPC.AGENT.RESET_PROJECT_AGENT_DEFAULTS,
+      IPC.AGENT.READ_PROJECT_AGENT_DEFAULTS, IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS,
       IPC.AGENT.GET_CONVENTIONS,
-      IPC.AGENT.READ_SOURCE_SKILL_CONTENT, IPC.AGENT.WRITE_SOURCE_SKILL_CONTENT, IPC.AGENT.DELETE_SOURCE_SKILL,
-      IPC.AGENT.READ_SOURCE_AGENT_TEMPLATE_CONTENT, IPC.AGENT.WRITE_SOURCE_AGENT_TEMPLATE_CONTENT,
-      IPC.AGENT.DELETE_SOURCE_AGENT_TEMPLATE,
-      IPC.AGENT.MATERIALIZE_AGENT, IPC.AGENT.PREVIEW_MATERIALIZATION,
-      IPC.AGENT.COMPUTE_CONFIG_DIFF, IPC.AGENT.PROPAGATE_CONFIG_CHANGES,
+      IPC.AGENT.WRITE_SOURCE_SKILL_CONTENT, IPC.AGENT.DELETE_SOURCE_SKILL,
+      IPC.AGENT.WRITE_SOURCE_AGENT_TEMPLATE_CONTENT, IPC.AGENT.DELETE_SOURCE_AGENT_TEMPLATE,
     ];
     for (const channel of expectedChannels) {
       expect(handlers.has(channel)).toBe(true);
@@ -229,13 +209,6 @@ describe('agent-settings-handlers', () => {
     expect(result).toEqual(['skill-a']);
   });
 
-  it('LIST_SOURCE_SKILLS delegates to agentSettings.listSourceSkills', async () => {
-    const handler = handlers.get(IPC.AGENT.LIST_SOURCE_SKILLS)!;
-    const result = await handler({}, '/project');
-    expect(agentSettings.listSourceSkills).toHaveBeenCalledWith('/project');
-    expect(result).toEqual(['src-skill']);
-  });
-
   it('CREATE_SKILL delegates to agentSettings.createSkillDir', async () => {
     const handler = handlers.get(IPC.AGENT.CREATE_SKILL)!;
     const result = await handler({}, '/base', 'my-skill', false);
@@ -264,13 +237,6 @@ describe('agent-settings-handlers', () => {
 
   // --- Source skills ---
 
-  it('READ_SOURCE_SKILL_CONTENT delegates to agentSettings.readSourceSkillContent', async () => {
-    const handler = handlers.get(IPC.AGENT.READ_SOURCE_SKILL_CONTENT)!;
-    const result = await handler({}, '/project', 'src-skill');
-    expect(agentSettings.readSourceSkillContent).toHaveBeenCalledWith('/project', 'src-skill');
-    expect(result).toBe('src skill content');
-  });
-
   it('WRITE_SOURCE_SKILL_CONTENT delegates to agentSettings.writeSourceSkillContent', async () => {
     const handler = handlers.get(IPC.AGENT.WRITE_SOURCE_SKILL_CONTENT)!;
     await handler({}, '/project', 'src-skill', 'new content');
@@ -290,13 +256,6 @@ describe('agent-settings-handlers', () => {
     const result = await handler({}, '/worktree');
     expect(agentSettings.listAgentTemplates).toHaveBeenCalled();
     expect(result).toEqual(['template-a']);
-  });
-
-  it('LIST_SOURCE_AGENT_TEMPLATES delegates to agentSettings.listSourceAgentTemplates', async () => {
-    const handler = handlers.get(IPC.AGENT.LIST_SOURCE_AGENT_TEMPLATES)!;
-    const result = await handler({}, '/project');
-    expect(agentSettings.listSourceAgentTemplates).toHaveBeenCalledWith('/project');
-    expect(result).toEqual(['src-template']);
   });
 
   it('CREATE_AGENT_TEMPLATE delegates to agentSettings.createAgentTemplateDir', async () => {
@@ -333,13 +292,6 @@ describe('agent-settings-handlers', () => {
   });
 
   // --- Source agent templates ---
-
-  it('READ_SOURCE_AGENT_TEMPLATE_CONTENT delegates to agentSettings', async () => {
-    const handler = handlers.get(IPC.AGENT.READ_SOURCE_AGENT_TEMPLATE_CONTENT)!;
-    const result = await handler({}, '/project', 'src-template');
-    expect(agentSettings.readSourceAgentTemplateContent).toHaveBeenCalledWith('/project', 'src-template');
-    expect(result).toBe('src template content');
-  });
 
   it('WRITE_SOURCE_AGENT_TEMPLATE_CONTENT delegates to agentSettings', async () => {
     const handler = handlers.get(IPC.AGENT.WRITE_SOURCE_AGENT_TEMPLATE_CONTENT)!;
@@ -383,12 +335,6 @@ describe('agent-settings-handlers', () => {
     expect(agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith('/project', { model: 'opus' });
   });
 
-  it('RESET_PROJECT_AGENT_DEFAULTS delegates to resetProjectAgentDefaults', async () => {
-    const handler = handlers.get(IPC.AGENT.RESET_PROJECT_AGENT_DEFAULTS)!;
-    await handler({}, '/project');
-    expect(resetProjectAgentDefaults).toHaveBeenCalledWith('/project');
-  });
-
   // --- Conventions ---
 
   it('GET_CONVENTIONS returns provider conventions', async () => {
@@ -402,80 +348,6 @@ describe('agent-settings-handlers', () => {
     const handler = handlers.get(IPC.AGENT.GET_CONVENTIONS)!;
     const result = await handler({}, '/project');
     expect(result).toBeNull();
-  });
-
-  // --- Materialization ---
-
-  it('MATERIALIZE_AGENT calls materializeAgent with agent config', async () => {
-    const handler = handlers.get(IPC.AGENT.MATERIALIZE_AGENT)!;
-    await handler({}, '/project', 'a1');
-    expect(agentConfig.getDurableConfig).toHaveBeenCalledWith('/project', 'a1');
-    expect(materializeAgent).toHaveBeenCalledWith(expect.objectContaining({
-      projectPath: '/project',
-      agent: expect.objectContaining({ id: 'a1' }),
-    }));
-  });
-
-  it('MATERIALIZE_AGENT returns early when agent config is null', async () => {
-    vi.mocked(agentConfig.getDurableConfig).mockReturnValueOnce(null as any);
-    const handler = handlers.get(IPC.AGENT.MATERIALIZE_AGENT)!;
-    await handler({}, '/project', 'missing');
-    expect(materializeAgent).not.toHaveBeenCalled();
-  });
-
-  it('PREVIEW_MATERIALIZATION returns preview result', async () => {
-    const handler = handlers.get(IPC.AGENT.PREVIEW_MATERIALIZATION)!;
-    const result = await handler({}, '/project', 'a1');
-    expect(agentConfig.getDurableConfig).toHaveBeenCalledWith('/project', 'a1');
-    expect(previewMaterialization).toHaveBeenCalled();
-    expect(result).toEqual(expect.objectContaining({ instructions: 'merged' }));
-  });
-
-  it('PREVIEW_MATERIALIZATION returns null when agent config is null', async () => {
-    vi.mocked(agentConfig.getDurableConfig).mockReturnValueOnce(null as any);
-    const handler = handlers.get(IPC.AGENT.PREVIEW_MATERIALIZATION)!;
-    const result = await handler({}, '/project', 'missing');
-    expect(result).toBeNull();
-  });
-
-  // --- Config diff ---
-
-  it('COMPUTE_CONFIG_DIFF returns diff result', async () => {
-    const handler = handlers.get(IPC.AGENT.COMPUTE_CONFIG_DIFF)!;
-    const result = await handler({}, '/project', 'a1');
-    expect(agentConfig.getDurableConfig).toHaveBeenCalledWith('/project', 'a1');
-    expect(computeConfigDiff).toHaveBeenCalledWith(expect.objectContaining({
-      projectPath: '/project',
-      agentId: 'a1',
-    }));
-    expect(result).toEqual(expect.objectContaining({ hasDiffs: true }));
-  });
-
-  it('COMPUTE_CONFIG_DIFF returns empty result when agent not found', async () => {
-    vi.mocked(agentConfig.getDurableConfig).mockReturnValueOnce(null as any);
-    const handler = handlers.get(IPC.AGENT.COMPUTE_CONFIG_DIFF)!;
-    const result = await handler({}, '/project', 'missing');
-    expect(result).toEqual({ agentId: 'missing', agentName: '', hasDiffs: false, items: [] });
-    expect(computeConfigDiff).not.toHaveBeenCalled();
-  });
-
-  it('PROPAGATE_CONFIG_CHANGES propagates selected items', async () => {
-    const handler = handlers.get(IPC.AGENT.PROPAGATE_CONFIG_CHANGES)!;
-    const result = await handler({}, '/project', 'a1', ['i1', 'i2']);
-    expect(propagateChanges).toHaveBeenCalledWith(expect.objectContaining({
-      projectPath: '/project',
-      agentId: 'a1',
-      selectedItemIds: ['i1', 'i2'],
-    }));
-    expect(result).toEqual({ ok: true, message: 'done', propagatedCount: 2 });
-  });
-
-  it('PROPAGATE_CONFIG_CHANGES returns error when agent not found', async () => {
-    vi.mocked(agentConfig.getDurableConfig).mockReturnValueOnce(null as any);
-    const handler = handlers.get(IPC.AGENT.PROPAGATE_CONFIG_CHANGES)!;
-    const result = await handler({}, '/project', 'missing', ['i1']);
-    expect(result).toEqual({ ok: false, message: 'Agent not found', propagatedCount: 0 });
-    expect(propagateChanges).not.toHaveBeenCalled();
   });
 
   // --- Input validation ---
@@ -505,22 +377,19 @@ describe('agent-settings-handlers', () => {
     expect(() => handler({}, '/project', 'not-an-object')).toThrow('must be an object');
   });
 
-  it('rejects non-array selectedItemIds for PROPAGATE_CONFIG_CHANGES', () => {
-    const handler = handlers.get(IPC.AGENT.PROPAGATE_CONFIG_CHANGES)!;
-    expect(() => handler({}, '/project', 'a1', 'not-an-array')).toThrow('must be an array');
+  it('registers no Clubhouse Mode channels: Clubhouse Mode was retired (#2901)', () => {
+    for (const name of [
+      'agent:list-source-skills', 'agent:list-source-agent-templates', 'agent:read-source-skill-content', 'agent:read-source-agent-template-content',
+      'agent:get-agent-wildcards', 'agent:list-source-missions', 'agent:read-source-mission-content', 'agent:write-source-mission-content', 'agent:delete-source-mission',
+      'agent:materialize-agent', 'agent:preview-materialization', 'agent:compute-config-diff', 'agent:propagate-config-changes', 'agent:reset-project-agent-defaults',
+    ]) {
+      expect(handlers.has(name)).toBe(false);
+    }
   });
 
-  describe('APPLY_PERSONA_TO_AGENT and the dispatcher persona (#2551)', () => {
-    it('refuses the dispatcher persona for a project agent', async () => {
-      const handler = handlers.get(IPC.AGENT.APPLY_PERSONA_TO_AGENT)!;
-      await expect(handler({}, 'project', 'a1', 'dispatcher')).rejects.toThrow('The Dispatcher persona is only for the Dispatcher.');
-      expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
-    });
-
-    it('refuses another persona for the Dispatcher', async () => {
-      const handler = handlers.get(IPC.AGENT.APPLY_PERSONA_TO_AGENT)!;
-      await expect(handler({}, getDispatcherPath(), 'disp', 'orchestrator')).rejects.toThrow("The Dispatcher's persona can't be changed.");
-      expect(agentConfig.updateDurableConfig).not.toHaveBeenCalled();
-    });
+  it('registers no persona channels: personas were retired (#2901)', () => {
+    for (const name of ['agent:list-source-personas', 'agent:apply-persona-to-agent', 'agent:extract-agent-persona']) {
+      expect(handlers.has(name)).toBe(false);
+    }
   });
 });

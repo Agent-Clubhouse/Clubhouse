@@ -4,7 +4,6 @@ import type { Agent } from '../../../../shared/types';
 import { createChatViewState, type ChatViewState } from '../../../stores/chatStore';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useChatIdleSettingsStore } from '../../../stores/chatIdleSettingsStore';
-import { useClubhouseModeStore } from '../../../stores/clubhouseModeStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useAgentSettingsPages } from '../agentSettingsPages';
@@ -43,7 +42,6 @@ beforeEach(() => {
       { id: 'codex-cli', displayName: 'Codex', shortName: 'CX', capabilities: { permissions: false } },
     ] as never,
   });
-  useClubhouseModeStore.setState({ enabled: true, projectOverrides: {}, loadSettings: vi.fn(async () => {}) } as never);
   window.clubhouse.settings.get = vi.fn(async () => ({ idleTimeoutMinutes: 60 })) as never;
   window.clubhouse.git.branchChanges = vi.fn(async () => ({ available: false, files: [] }));
   window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: 'a1', ...saved })) as never;
@@ -92,11 +90,10 @@ describe('settings helpers', () => {
     expect(accessLabel(undefined, true, true)).toBe('Free agent');
     expect(accessLabel(undefined, false, true)).toBe('Ask before edits');
     expect(accessLabel(undefined, true, false)).toBe('Set by the CLI');
-    expect(instructionsLabel('project-manager', null)).toBe('Project Manager');
-    expect(instructionsLabel('dispatcher', null)).toBe('Dispatcher');
-    expect(instructionsLabel(undefined, 'a\nb\n')).toBe('Custom, 2 lines');
-    expect(instructionsLabel(undefined, 'a')).toBe('Custom, 1 line');
-    expect(instructionsLabel(undefined, '  \n')).toBeNull();
+    expect(instructionsLabel(true, 'whatever Clubhouse wrote')).toBe('Dispatcher');
+    expect(instructionsLabel(false, 'a\nb\n')).toBe('Custom, 2 lines');
+    expect(instructionsLabel(false, 'a')).toBe('Custom, 1 line');
+    expect(instructionsLabel(false, '  \n')).toBeNull();
   });
 });
 
@@ -129,16 +126,17 @@ describe('Settings card (#2280)', () => {
     expect(card.getByTestId('details-setting-model')).toHaveTextContent('Opus 5.5');
     expect(card.getByTestId('details-setting-effort')).toHaveTextContent('High');
     expect(card.getByTestId('details-setting-access')).toHaveTextContent('Full access');
-    expect(card.getByTestId('details-setting-clubhouse-mode')).toHaveTextContent('On');
+    expect(card.queryByTestId('details-setting-clubhouse-mode')).not.toBeInTheDocument();
     // github from the wrapper (the agent's own pick) plus playwright from .mcp.json.
     await waitFor(() => expect(card.getByTestId('details-setting-mcp')).toHaveTextContent('2 configured'));
     expect(window.clubhouse.project.readDefaultMcps).not.toHaveBeenCalled();
-    await waitFor(() => expect(card.getByTestId('details-setting-instructions')).toHaveTextContent('Project Manager'));
+    // A legacy persona no longer names the instructions (#2901): the file's own text decides.
+    await waitFor(() => expect(card.getByTestId('details-setting-instructions')).toHaveTextContent('Custom, 3 lines'));
 
     // Spawn settings are locked while it runs, with one hint tied to them.
     const hint = card.getByTestId('details-settings-locked-hint');
     expect(hint).toHaveTextContent(LOCKED_HINT);
-    for (const id of ['cli', 'runs-in', 'model', 'access', 'clubhouse-mode']) {
+    for (const id of ['cli', 'runs-in', 'model', 'access']) {
       const row = card.getByTestId(`details-setting-${id}`);
       expect(row).toHaveAttribute('data-locked', 'true');
       expect(row).toHaveAttribute('aria-describedby', hint.id);
@@ -190,12 +188,11 @@ describe('Settings card (#2280)', () => {
     expect(window.clubhouse.project.readDefaultMcps).toHaveBeenCalledWith('/work/proj');
   });
 
-  it('shows Free agent mode for a terminal Claude agent and Clubhouse mode off for this agent', async () => {
+  it('shows Free agent mode for a terminal Claude agent', async () => {
     saved = { freeAgentMode: true, clubhouseModeOverride: true };
     render(<AgentDetails agent={agent} />);
     const card = openSettings();
     await waitFor(() => expect(card.getByTestId('details-setting-access')).toHaveTextContent('Free agent'));
-    expect(card.getByTestId('details-setting-clubhouse-mode')).toHaveTextContent('Off for this agent');
   });
 
   it('has no hint and no locked rows when the agent isn\'t running', async () => {
@@ -285,6 +282,58 @@ describe('Settings card edge cases', () => {
     expect(screen.getByTestId('details-card-settings-summary')).not.toHaveTextContent('from-a1');
     await act(async () => { pending.a2({ id: 'a2', model: 'from-a2' }); });
     expect(screen.getByTestId('details-card-settings-summary')).toHaveTextContent('from-a2');
+  });
+});
+
+describe('Settings card for legacy configuration (#2901)', () => {
+  afterEach(() => {
+    useAgentSettingsPages.getState().reset();
+  });
+
+  it('has no Clubhouse mode row, and offers the switch to an agent with a persona', async () => {
+    saved = { idleSleep: 30, persona: 'qa' };
+    const open = vi.fn();
+    const real = useAgentStore.getState().openAgentSettings;
+    useAgentStore.setState({ openAgentSettings: open });
+    try {
+      render(<AgentDetails agent={agent} chat={chatState()} />);
+      const card = openSettings();
+      expect(await card.findByTestId('details-settings-legacy')).toHaveTextContent('faithful-urchin uses the Quality Assurance persona.');
+      expect(card.queryByTestId('details-setting-clubhouse-mode')).not.toBeInTheDocument();
+      useAgentSettingsPages.getState().setPage('helpers');
+      fireEvent.click(card.getByRole('button', { name: 'Switch to managed…' }));
+      expect(open).toHaveBeenCalledWith('a1');
+      expect(useAgentSettingsPages.getState().page).toBe('general');
+    } finally {
+      useAgentStore.setState({ openAgentSettings: real });
+    }
+  });
+
+  it('says why the automatic switch failed beside the switch offer, for an agent that used Clubhouse Mode too (D59)', async () => {
+    const status = vi.spyOn(window.clubhouse.managed, 'status').mockResolvedValue({ ok: true, value: { managed: false, running: false, waiting: false, changes: [], cliChanged: false, migrationFailed: 'It was changing state at the time.' } } as never);
+    try {
+      render(<AgentDetails agent={agent} chat={chatState()} />);
+      const card = openSettings();
+      expect(await card.findByTestId('details-settings-migration-failed')).toHaveTextContent("Clubhouse couldn't switch it when it updated. It was changing state at the time.");
+      expect(card.getByTestId('details-settings-legacy')).not.toHaveTextContent('uses');
+      expect(card.getByRole('button', { name: 'Switch to managed…' })).toBeTruthy();
+    } finally {
+      status.mockRestore();
+    }
+  });
+
+  it('names the persona, and says nothing for a plain agent, whatever an old Clubhouse Mode field says', async () => {
+    saved = { idleSleep: 30, persona: 'qa' };
+    const { unmount } = render(<AgentDetails agent={agent} chat={chatState()} />);
+    expect(await openSettings().findByTestId('details-settings-legacy')).toHaveTextContent('faithful-urchin uses the Quality Assurance persona.');
+    unmount();
+
+    saved = { idleSleep: 30, clubhouseModeOverride: false };
+    render(<AgentDetails agent={agent} chat={chatState()} />);
+    // The card stays open from before.
+    const card = within(screen.getByTestId('details-card-settings'));
+    await waitFor(() => expect(card.getByTestId('details-setting-instructions')).toHaveTextContent('Custom, 3 lines'));
+    expect(card.queryByTestId('details-settings-legacy')).not.toBeInTheDocument();
   });
 });
 

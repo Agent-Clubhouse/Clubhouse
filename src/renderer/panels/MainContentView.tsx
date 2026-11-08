@@ -16,7 +16,6 @@ import { ProjectSettings } from '../features/settings/ProjectSettings';
 import { NotificationSettingsView } from '../features/settings/NotificationSettingsView';
 import { DisplaySettingsView } from '../features/settings/DisplaySettingsView';
 import { OrchestratorSettingsView } from '../features/settings/OrchestratorSettingsView';
-import { ProfilesSettingsView } from '../features/settings/ProfilesSettingsView';
 import { PluginContentView } from './PluginContentView';
 import { PluginDetailSettings } from '../features/settings/PluginDetailSettings';
 import { PluginListSettings } from '../features/settings/PluginListSettings';
@@ -29,10 +28,13 @@ import { WhatsNewSettingsView } from '../features/settings/WhatsNewSettingsView'
 import { KeyboardShortcutsSettingsView } from '../features/settings/KeyboardShortcutsSettingsView';
 import { EditorSettingsView } from '../features/settings/EditorSettingsView';
 import { ExperimentalSettingsView } from '../features/settings/ExperimentalSettingsView';
-import { McpSettingsView } from '../features/settings/McpSettingsView';
 import { GoobersSettingsView } from '../features/settings/GoobersSettingsView';
 import { HelpersSettingsView } from '../features/settings/HelpersSettingsView';
 import { DispatcherSettingsView } from '../features/settings/DispatcherSettingsView';
+import { PartLibraryView } from '../features/managed/PartLibraryView';
+import { TemplatesSettingsView } from '../features/managed/TemplatesSettingsView';
+import { OrchestrationSettingsView } from '../features/managed/OrchestrationSettingsView';
+import { SwitchAgentsSettingsView } from '../features/managed/SwitchAgentsSettingsView';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
 import { AnnexDisabledView } from './AnnexDisabledView';
 import { SatelliteDisconnectedOverlay } from './SatelliteDisconnectedOverlay';
@@ -265,7 +267,6 @@ export function MainContentView() {
   if (explorerTab === 'settings') {
     const projectId = settingsContext !== 'app' ? settingsContext : undefined;
     if (settingsSubPage === 'orchestrators') return <OrchestratorSettingsView projectId={projectId} />;
-    if (settingsSubPage === 'profiles') return <ProfilesSettingsView />;
     if (settingsSubPage === 'notifications') return <NotificationSettingsView projectId={projectId} />;
     if (settingsSubPage === 'logging') return <LoggingSettingsView />;
     if (settingsSubPage === 'display') return <DisplaySettingsView />;
@@ -277,11 +278,16 @@ export function MainContentView() {
     if (settingsSubPage === 'updates') return <UpdateSettingsView />;
     if (settingsSubPage === 'whats-new') return <WhatsNewSettingsView />;
     if (settingsSubPage === 'keyboard-shortcuts') return <KeyboardShortcutsSettingsView />;
-    if (settingsSubPage === 'mcp') return <McpSettingsView />;
     if (settingsSubPage === 'experimental') return <ExperimentalSettingsView />;
     if (settingsSubPage === 'goobers') return <GoobersSettingsView />;
     if (settingsSubPage === 'helpers') return <HelpersSettingsView />;
     if (settingsSubPage === 'dispatcher') return <DispatcherSettingsView />;
+    if (settingsSubPage === 'managed-blocks') return <PartLibraryView key="block" kind="block" />;
+    if (settingsSubPage === 'managed-skills') return <PartLibraryView key="skill" kind="skill" />;
+    if (settingsSubPage === 'managed-mcp') return <PartLibraryView key="mcp" kind="mcp" />;
+    if (settingsSubPage === 'managed-templates') return <TemplatesSettingsView />;
+    if (settingsSubPage === 'managed-orchestration') return <OrchestrationSettingsView />;
+    if (settingsSubPage === 'managed-switch') return <SwitchAgentsSettingsView />;
     if (settingsSubPage === 'feedback') return <FeedbackSettingsView />;
     if (settingsSubPage === 'about') return <AboutSettingsView />;
     return <ProjectSettings projectId={projectId} />;

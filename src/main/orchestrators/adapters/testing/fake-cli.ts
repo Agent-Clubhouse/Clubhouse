@@ -18,10 +18,19 @@ export const FAKE_CLI_SCRIPT = path.join(REPO_ROOT, 'scripts', 'chat-fixtures', 
 /** Committed fixtures, one folder per CLI. */
 export const CHAT_FIXTURES_DIR = path.join(REPO_ROOT, 'test', 'chat-fixtures');
 
+/** A CLI the fake stands in for, by its binary name. */
 export type ChatFixtureCli = 'claude' | 'codex' | 'copilot';
 
+/** Each CLI's fixture folder. Copilot's speak the SDK protocol; the legacy ACP ones went with that driver (#2868). */
+const FIXTURE_DIRS: Record<ChatFixtureCli | 'copilot-sdk', string> = {
+  claude: 'claude',
+  codex: 'codex',
+  copilot: 'copilot-sdk',
+  'copilot-sdk': 'copilot-sdk',
+};
+
 export function chatFixturePath(cli: ChatFixtureCli | 'copilot-sdk', name: string): string {
-  return path.join(CHAT_FIXTURES_DIR, cli, `${name}.jsonl`);
+  return path.join(CHAT_FIXTURES_DIR, FIXTURE_DIRS[cli], `${name}.jsonl`);
 }
 
 /** Progress report the fake CLI rewrites after every replayed line. */
@@ -29,7 +38,7 @@ export interface FakeCliReport {
   /** The fake's own process id (under a Windows .cmd shim, not the cmd.exe one). */
   pid: number;
   fixture: string;
-  protocol: 'claude-stream-json' | 'codex-app-server' | 'acp' | 'copilot-sdk';
+  protocol: 'claude-stream-json' | 'codex-app-server' | 'copilot-sdk';
   /** Arguments the fake was launched with, minus its own `--fake-*` options. */
   argv: string[];
   /**
@@ -55,7 +64,7 @@ export interface FakeCliOptions {
   speed?: number;
   /** Skip client messages that don't match instead of exiting with code 3. */
   lenient?: boolean;
-  /** Extra arguments, as the real CLI would receive them (`app-server`, `--acp`, …). */
+  /** Extra arguments, as the real CLI would receive them (`app-server`, `--headless`, …). */
   cliArgs?: string[];
 }
 

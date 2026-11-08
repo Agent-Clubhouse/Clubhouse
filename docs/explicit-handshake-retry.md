@@ -14,8 +14,8 @@ counts one failure. A successful policy-allowed check clears only its matching
 failure key. Retry does not cache successful readiness.
 
 Main resolves the registered project and durable agent, effective provider,
-selected registered driver, binary, profile environment and prefix. The real
-launch and retry share `resolveOrchestrator`, `resolveProfileEnv`,
+selected registered driver, binary, launch environment and prefix. The real
+launch and retry share `resolveOrchestrator`,
 `resolveCommandPrefix`, `chatLaunchEnvironment`, `resolveRuntimeMode` and
 `resolveChatDriver`. The action accepts no renderer-provided binary, environment,
 prefix or alternate driver.
@@ -40,11 +40,10 @@ The action calls only the registered driver's existing `probe`, never `start`:
 | Driver | Probe protocol |
 | --- | --- |
 | Codex app-server | `initialize`, `initialized`, then kill; no thread/turn |
-| ACP, including Copilot | `initialize`, then kill; no session/prompt |
 | Claude stream-json / Agent SDK | Initialize transport, then close; no prompt |
 | Copilot SDK | Connect, `getStatus` and `getAuthStatus`, then close; no session |
 
-The Codex and ACP protocol tests assert the exact message list. Claude and
+The Codex protocol tests assert the exact message list. Claude and
 Copilot have synthetic probe tests too. Recovery regressions use temporary fake
 binary files and a fake probe that reads a repaired fixture; no installed provider,
 authentication or model is called. This shared path applies on all three platforms.
@@ -60,7 +59,7 @@ This also applies when receipt validation discards the result.
 
 Every asynchronous context resolution ends with synchronous checks of current
 config/lifecycle generations, registry and project-settings pending/generation
-state, live registry/driver/runtime/profile/environment inputs and binary identity.
+state, live registry/driver/runtime/environment inputs and binary identity.
 The caller checks again after awaiting the final resolution, directly before
 probe dispatch or failure-state clearing. Pending writes already present at capture
 are refused. Known primary/backup input files are fingerprinted to observe external

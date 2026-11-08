@@ -25,7 +25,7 @@
 // script mode as "{{connectionToken}}", and is always redacted.
 //
 // Options:
-//   --protocol claude-stream-json | codex-app-server | acp | copilot-sdk   (required)
+//   --protocol claude-stream-json | codex-app-server | copilot-sdk   (required)
 //   --out <path>                fixture to write (required)
 //   --description <text>        what the session covers
 //   --cli-name <name> --cli-version <version>   recorded in the header

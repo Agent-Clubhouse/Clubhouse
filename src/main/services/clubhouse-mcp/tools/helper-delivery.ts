@@ -1,10 +1,10 @@
 /**
  * Helper updates to a parent, batched (#2414). message_parent reports and
  * Clubhouse's helper notices reach a busy parent as one message per short
- * window rather than one steer (Claude, Codex) or terminal injection each.
- * Updates for an idle parent go at once, and the window closes early when a
- * chat parent goes idle. A chat parent that queues client-side (ACP) skips
- * the window: its runtime merges queued updates itself.
+ * window rather than one steer (Claude, Codex, Copilot) or terminal injection
+ * each. Updates for an idle parent go at once, and the window closes early
+ * when a chat parent goes idle. A chat parent that can't steer and queues
+ * client-side skips the window: its runtime merges queued updates itself.
  *
  * A terminal's turn state is only known in the renderer, so a terminal parent
  * always waits out the window.

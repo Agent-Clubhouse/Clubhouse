@@ -111,7 +111,7 @@ export async function routeHelperQuestion(helperId: string, question: QuestionDa
     const found = await findParent(projectPath, helper);
     if (!found || isDisposedAgent(found.config)) return null;
     const parent = found.config;
-    // It couldn't call answer_helper_question. A helper parent resolves on through its forced bridge, so this says more than its policy.
+    // It couldn't call answer_helper_question: the call gate doesn't know it (its settings couldn't be read).
     if (mcpCallAccess(parent.id, found.projectPath) !== 'open') return null;
     const policy = await getOrchestrationPolicy(found.projectPath, parent.id);
     if (!policy?.orchestrate || policy.control !== 'hands-off') return null;
@@ -175,10 +175,10 @@ function handQuestionsToUser(parentId: string, why: string): void {
   }
 }
 
-/** A parent that has lost Clubhouse MCP can't answer: its open questions go to the user now. */
+/** A parent that can't use Clubhouse tools can't answer: its open questions go to the user now. */
 function onParentAccessChanged(parentId: string): void {
   if (mcpCallAccess(parentId, agentRegistry.get(parentId)?.projectPath) === 'open') return;
-  handQuestionsToUser(parentId, 'Clubhouse MCP is off for the agent that was asked, so this question is yours.');
+  handQuestionsToUser(parentId, 'The agent that was asked can\'t use Clubhouse tools right now, so this question is yours.');
 }
 
 /** Forget questions answered elsewhere (the user, in the helper's chat) or whose helper stopped. */

@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// What the gate decides is covered in mcp-call-gate.test.ts and test/mcp-off.
+// What the gate decides is covered in mcp-call-gate.test.ts.
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
 import type { DurableAgentConfig } from '../../../../shared/types';
 import type { ChatEvent } from '../../../../shared/chat';
@@ -38,7 +38,7 @@ vi.mock('../../agent-config', () => ({
   isSameProject: vi.fn(async (a: string, b: string) => path.resolve(a) === path.resolve(b)),
   onAgentConfigChanged: vi.fn(() => () => {}),
 }));
-vi.mock('../../agent-creation', () => ({ startDurableCreation: vi.fn(), personaInjection: vi.fn(() => ({})) }));
+vi.mock('../../agent-creation', () => ({ startDurableCreation: vi.fn() }));
 vi.mock('../../helper-index', () => ({
   // A helper is in the project it is listed in; its parent is in its parentProjectPath, else there.
   listHelpersEverywhere: vi.fn(async (home: string, id: string) => {
@@ -53,7 +53,7 @@ vi.mock('../../helper-index', () => ({
   findParent: vi.fn(async () => null),
 }));
 vi.mock('../../project-store', () => ({ list: async () => [...projects] }));
-vi.mock('../../materialization-service', () => ({ listAvailablePersonas: vi.fn(async () => []) }));
+vi.mock('../../agent-mcp-servers', () => ({}));
 vi.mock('../../agent-system', () => ({
   spawnAgent: vi.fn(),
   killAgent: vi.fn(),
@@ -79,7 +79,6 @@ vi.mock('../../git-service', () => ({
   findGitCommonDir: async (dir: string) => (dir === DISPATCHER_DIR ? null : path.join(dir, '.git')),
   getDefaultBranch: async () => 'main',
 }));
-vi.mock('../../persona-application', () => ({ applyPersonaToAgent: vi.fn() }));
 vi.mock('../../orchestration-policy', () => ({
   isCrossProjectAllowed: vi.fn(async () => false),
   checkHelperLimitFor: vi.fn(),
@@ -145,7 +144,7 @@ function runAgent(id: string, projectPath: string): void {
 }
 
 async function runDispatcher(): Promise<void> {
-  addAgent(DISPATCHER_DIR, { id: 'dispatcher', name: 'Dispatcher', persona: 'dispatcher' });
+  addAgent(DISPATCHER_DIR, { id: 'dispatcher', name: 'Dispatcher' });
   runAgent('dispatcher', DISPATCHER_DIR);
   await syncDispatcherGate(DISPATCHER_DIR, 'dispatcher');
 }
@@ -312,7 +311,7 @@ describe('list_agents', () => {
     addAgent(PROJECT_A, { id: 'h', parentAgentId: 'lead', orchestration: { connectToDispatcher: true } });
     // Once: only the project with agents resolves.
     vi.mocked(resolveOrchestrationPolicies).mockImplementationOnce(async (_p, agents) =>
-      new Map(agents.map((a) => [a.id, resolveOrchestrationPolicy(a.orchestration, undefined, { helper: !!a.parentAgentId })])));
+      new Map(agents.map((a) => [a.id, resolveOrchestrationPolicy(a.orchestration, { helper: !!a.parentAgentId })])));
     const rows = parse(await callTool('dispatcher', 'list_agents', {})).agents as Array<{ id: string }>;
     expect(rows.map((r) => r.id)).toEqual(['lead']);
   });
@@ -615,23 +614,9 @@ describe('list_projects for the Dispatcher', () => {
     await runDispatcher();
     const body = parse(await callTool('dispatcher', 'list_projects', {}));
     expect(body.projects).toEqual([
-      { name: 'alpha', path: PROJECT_A, defaultBranch: 'main', personas: [] },
-      { name: 'Beta', path: PROJECT_B, defaultBranch: 'main', personas: [] },
+      { name: 'alpha', path: PROJECT_A, defaultBranch: 'main' },
+      { name: 'Beta', path: PROJECT_B, defaultBranch: 'main' },
     ]);
   });
 });
 
-describe('list_agents with Clubhouse MCP off (#2589)', () => {
-  it('leaves out an agent whose saved switch is on but MCP is off, and lists it again when MCP is back', async () => {
-    await runDispatcher();
-    addAgent(PROJECT_A, { id: 'lead-a', name: 'Lead A' });
-    policies.set('lead-a', {
-      ...policy({ orchestrate: false, connectToDispatcher: false }),
-      mcpOff: { orchestrate: true, crossProjectHelpers: false, connectToDispatcher: true },
-    });
-    expect(parse(await callTool('dispatcher', 'list_agents', {})).agents).toEqual([]);
-
-    policies.set('lead-a', policy({ connectToDispatcher: true }));
-    expect(parse(await callTool('dispatcher', 'list_agents', {})).agents.map((a: { id: string }) => a.id)).toEqual(['lead-a']);
-  });
-});

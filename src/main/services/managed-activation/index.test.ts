@@ -5,16 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 const W = vi.hoisted(() => ({ home: '', binary: '', config: null as DurableAgentConfig | null,
   // Supported fixture has preexisting user choices. Activation never saves these settings.
-  hooks: false, mcp: false, mode: false, runtime: 'terminal', wrapper: undefined as unknown,
+  hooks: false, runtime: 'terminal', wrapper: undefined as unknown,
+  // The real path never delivers the Clubhouse MCP bridge yet, so it always refuses (D69). `mcp` stands for that gap.
+  mcp: false,
   execute: vi.fn(), settingsSave: vi.fn() }));
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => W.home } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../agent-config', () => ({ peekDurableConfigs: async () => W.config ? [W.config] : [] }));
 vi.mock('../agent-registry', () => ({ agentRegistry: { getAllRegistrations: () => new Map() }, resolveOrchestrator: async () => ({ id: W.config?.orchestrator, getBinaryPath: () => W.binary }) }));
 vi.mock('../chat-runtime-settings', () => ({ resolveRuntimeMode: () => ({ mode: W.runtime }) }));
-vi.mock('../clubhouse-mode-settings', () => ({ isClubhouseModeEnabled: () => W.mode, saveSettings: W.settingsSave }));
 vi.mock('../orchestrator-settings', () => ({ isHookServerEnabled: () => W.hooks, saveSettings: W.settingsSave }));
-vi.mock('../mcp-settings', () => ({ isMcpEnabled: () => W.mcp, saveSettings: W.settingsSave }));
+vi.mock('./bridge-delivery', () => ({ managedPathDeliversMcpBridge: () => !W.mcp }));
 vi.mock('../agent-settings-service', () => ({ readLaunchWrapper: async () => W.wrapper, readProjectAgentDefaults: async () => ({}) }));
 vi.mock('child_process', () => ({ execFile: (...args: unknown[]) => W.execute(...args) }));
 import { createAssetCatalogStore } from '../asset-catalog/store';
@@ -32,7 +33,7 @@ beforeEach(async () => {
   await fs.mkdir(workspacePath, { recursive: true });
   W.binary = path.join(W.home, 'fake-claude-A'); await fs.writeFile(W.binary, 'fake binary A');
   W.config = { id: 'agent-1', name: 'agent', worktreePath: workspacePath, orchestrator: 'claude-code', model: 'sonnet', lastSessionId: 'untouched-session', runtimeMode: 'terminal' } as DurableAgentConfig;
-  W.hooks = false; W.mcp = false; W.mode = false; W.runtime = 'terminal'; W.wrapper = undefined;
+  W.hooks = false; W.mcp = false; W.runtime = 'terminal'; W.wrapper = undefined;
   W.execute.mockImplementation((_binary: string, args: string[], _options: unknown, callback: (error: unknown, stdout: string) => void) => callback(null, args[0] === '--version' ? '2.1.316 (Claude Code)' : '  --append-system-prompt-file <path>\n  --plugin-dir <path>'));
   const catalog = createAssetCatalogStore({ dir: path.join(W.home, '.clubhouse-dev', 'asset-catalog') });
   const block = await catalog.createAsset({ kind: 'block', name: 'Identity', owner: { kind: 'agent', agentId: 'agent-1' }, payload: { content: 'literal @@AgentName' } });
@@ -80,7 +81,7 @@ describe('guarded production activation entry points with fake CLI flag evidence
     await expect(withManagedActivationLaunch(params(), () => false, runtime)).rejects.toMatchObject({ code: 'activation_capability_stale' });
     expect(runtime).not.toHaveBeenCalled(); expect(await fs.readdir(workspacePath)).toEqual([]);
   });
-  it.each(['hooks', 'mcp', 'mode'] as const)('refuses existing enabled %s instead of changing it', async (setting) => {
+  it.each(['hooks', 'mcp'] as const)('refuses existing enabled %s instead of changing it', async (setting) => {
     W[setting] = true;
     await expect(preview()).rejects.toMatchObject({ code: 'activation_incompatible_config' });
     expect(W.execute).not.toHaveBeenCalled(); expect(W.settingsSave).not.toHaveBeenCalled();
@@ -107,6 +108,10 @@ describe('guarded production activation entry points with fake CLI flag evidence
     });
     const state = (await readManagedActivation('agent-1'))!;
     expect(state.generations[state.desired!].runs[0]).toMatchObject({ outcome: 'process_not_created', endedAt: expect.any(String) });
+  });
+  it('the real path refuses for now: it does not deliver the Clubhouse MCP bridge yet (D69)', async () => {
+    const actual = await vi.importActual<typeof import('./bridge-delivery')>('./bridge-delivery');
+    expect(actual.managedPathDeliversMcpBridge()).toBe(false);
   });
 
 });

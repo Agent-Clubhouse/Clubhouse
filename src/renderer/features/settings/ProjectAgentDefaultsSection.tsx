@@ -1,12 +1,7 @@
 import { useEffect, useId, useState, useCallback, useMemo, type ReactNode } from 'react';
 
 import type { SourceControlProvider, ProjectConfigBreakdown, ProvenancedConfigItem } from '../../../shared/types';
-import { SourceSkillsSection } from './SourceSkillsSection';
-import { SourceAgentTemplatesSection } from './SourceAgentTemplatesSection';
-import { useProfileStore } from '../../stores/profileStore';
-import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { usePluginStore } from '../../plugins/plugin-store';
-import { PERSONA_TEMPLATES } from '../personas';
 import { Toggle } from '../../components/Toggle';
 import { Modal } from '../../components/Modal';
 import {
@@ -18,10 +13,6 @@ import { Button } from '../../components/Button';
 const CODE_CLASS = 'font-mono text-ctp-subtext1';
 const SELECT_CLASS = `${settingsInput} w-[220px]`;
 const TEXT_INPUT_CLASS = `${settingsInput} w-[220px] font-mono`;
-const CLUBHOUSE_WILDCARDS = [
-  '@@AgentName', '@@StandbyBranch', '@@Path', '@@BuildCommand', '@@TestCommand',
-  '@@LintCommand', '@@SourceControlProvider', '@@Mission', '@@Persona',
-];
 
 function Code({ children }: { children: ReactNode }) {
   return <code className={CODE_CLASS}>{children}</code>;
@@ -39,13 +30,11 @@ interface ProjectAgentDefaults {
   lintCommand?: string;
   mission?: string;
   persona?: string;
-  profileId?: string;
   commandPrefix?: string;
 }
 
 interface Props {
   projectPath: string;
-  clubhouseMode?: boolean;
 }
 
 // ── Provenance meta text ─────────────────────────────────────────────────
@@ -228,30 +217,23 @@ function ConfigItemList({
 
 // ── Main component ───────────────────────────────────────────────────────
 
-export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Props) {
-  const [_defaults, setDefaults] = useState<ProjectAgentDefaults>({});
+export function ProjectAgentDefaultsSection({ projectPath }: Props) {
+  const [defaults, setDefaults] = useState<ProjectAgentDefaults>({});
   const [instructions, setInstructions] = useState('');
   const [permAllow, setPermAllow] = useState('');
   const [permDeny, setPermDeny] = useState('');
   const [mcpJson, setMcpJson] = useState('');
   const [freeAgentMode, setFreeAgentMode] = useState(false);
   const [helperAutoOff, setHelperAutoOff] = useState(false);
-  const [sourceControlProvider, setSourceControlProvider] = useState<SourceControlProvider>('github');
+  // Empty: the project uses the app setting.
+  const [sourceControlProvider, setSourceControlProvider] = useState<SourceControlProvider | ''>('');
   const [buildCommand, setBuildCommand] = useState('');
   const [testCommand, setTestCommand] = useState('');
   const [lintCommand, setLintCommand] = useState('');
-  const [mission, setMission] = useState('');
-  const [persona, setPersona] = useState('');
-  const [profileId, setProfileId] = useState<string | undefined>(undefined);
   const [commandPrefix, setCommandPrefix] = useState('');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  const profiles = useProfileStore((s) => s.profiles);
-  const loadProfiles = useProfileStore((s) => s.loadProfiles);
-  const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const idBase = useId();
 
   // Provenance breakdown state
@@ -276,13 +258,10 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
       setMcpJson(d.mcpJson || '');
       setFreeAgentMode(d.freeAgentMode ?? false);
       setHelperAutoOff(d.helperAuto === 'off');
-      setSourceControlProvider(d.sourceControlProvider ?? 'github');
+      setSourceControlProvider(d.sourceControlProvider ?? '');
       setBuildCommand(d.buildCommand || '');
       setTestCommand(d.testCommand || '');
       setLintCommand(d.lintCommand || '');
-      setMission(d.mission || '');
-      setPersona(d.persona || '');
-      setProfileId(d.profileId);
       setCommandPrefix(d.commandPrefix || '');
       setLoaded(true);
       setDirty(false);
@@ -304,8 +283,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
 
   useEffect(() => {
     loadDefaults();
-    loadProfiles();
-  }, [loadDefaults, loadProfiles]);
+  }, [loadDefaults]);
 
   useEffect(() => {
     if (loaded) {
@@ -354,27 +332,18 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
     if (mcpJson.trim()) newDefaults.mcpJson = mcpJson;
     if (freeAgentMode) newDefaults.freeAgentMode = true;
     if (helperAutoOff) newDefaults.helperAuto = 'off';
-    if (sourceControlProvider !== 'github') newDefaults.sourceControlProvider = sourceControlProvider;
+    if (sourceControlProvider) newDefaults.sourceControlProvider = sourceControlProvider;
     if (buildCommand.trim()) newDefaults.buildCommand = buildCommand.trim();
     if (testCommand.trim()) newDefaults.testCommand = testCommand.trim();
     if (lintCommand.trim()) newDefaults.lintCommand = lintCommand.trim();
-    if (mission.trim()) newDefaults.mission = mission.trim();
-    if (persona) newDefaults.persona = persona;
-    if (profileId) newDefaults.profileId = profileId;
+    // Personas and missions aren't offered (#2901); a saved default stays for the switch to managed to read.
+    if (defaults.mission) newDefaults.mission = defaults.mission;
+    if (defaults.persona) newDefaults.persona = defaults.persona;
     if (commandPrefix.trim()) newDefaults.commandPrefix = commandPrefix.trim();
 
     await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, newDefaults);
     setDirty(false);
     setSaving(false);
-    await loadBreakdown();
-  };
-
-  const handleReset = async () => {
-    setResetting(true);
-    await window.clubhouse.agentSettings.resetProjectAgentDefaults(projectPath);
-    setShowResetConfirm(false);
-    setResetting(false);
-    await loadDefaults();
     await loadBreakdown();
   };
 
@@ -441,12 +410,6 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
   const hasPluginPerms = pluginAllowRules.length > 0 || pluginDenyRules.length > 0;
   const hasPluginMcp = pluginMcpServers.length > 0;
 
-  const activeProfile = profiles.find((p) => p.id === profileId);
-  const coveredNames = activeProfile
-    ? Object.keys(activeProfile.orchestrators).map(
-        (id) => allOrchestrators.find((o) => o.id === id)?.displayName || id
-      )
-    : [];
   const markDirty = () => setDirty(true);
 
   return (
@@ -455,9 +418,6 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
         title="Default agent settings"
         actions={
           <>
-            <Button onClick={() => setShowResetConfirm(true)} kind="quiet">
-              Reset to defaults
-            </Button>
             <Button onClick={handleSave} disabled={!dirty || saving} kind="primary">
               {saving ? 'Saving…' : 'Save defaults'}
             </Button>
@@ -465,20 +425,8 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
         }
       >
         <p className={`${settingsHelp} mb-2`}>
-          {clubhouseMode
-            ? 'Clubhouse Mode is on. These settings are live-managed and pushed to agent worktrees each time an agent wakes.'
-            : 'These settings are applied as snapshots when new durable agents are created. Changes here do not affect existing agents.'}
+          These settings are applied as snapshots when new durable agents are created. Changes here do not affect existing agents.
         </p>
-        {clubhouseMode && (
-          <div className="mb-2">
-            <p className="text-xs flex flex-wrap gap-x-2.5 gap-y-0.5">
-              {CLUBHOUSE_WILDCARDS.map((w) => <Code key={w}>{w}</Code>)}
-            </p>
-            <p className={`${settingsHelp} mt-1`}>
-              Full reference in <Code>.clubhouse/clubhouse-mode.md</Code> in this project.
-            </p>
-          </div>
-        )}
 
         {orphanedPluginIds.length > 0 && (
           <OrphanBanner
@@ -490,45 +438,20 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
 
         <SettingsField
           label="Source control provider"
-          help={<>Replaces <Code>@@SourceControlProvider</Code> in skill templates and controls conditional blocks.</>}
+          help={<>Fills <Code>@@SourceControlProvider</Code> for agents that aren't Clubhouse-managed. Managed agents work out the host from the repository.</>}
           htmlFor={`${idBase}-scp`}
         >
           <select
             id={`${idBase}-scp`}
             value={sourceControlProvider}
-            onChange={(e) => { setSourceControlProvider(e.target.value as SourceControlProvider); markDirty(); }}
+            onChange={(e) => { setSourceControlProvider(e.target.value as SourceControlProvider | ''); markDirty(); }}
             className={SELECT_CLASS}
           >
+            <option value="">Use app setting</option>
             <option value="github">GitHub (gh CLI)</option>
             <option value="azure-devops">Azure DevOps (az CLI)</option>
           </select>
         </SettingsField>
-
-        {profiles.length > 0 && (
-          <SettingsField
-            label="Default profile"
-            help={
-              <>
-                Profile env vars are injected when agents in this project start.
-                {activeProfile && ' Agent creation only offers the orchestrators the profile configures.'}
-                {coveredNames.length > 0 && <span className="block mt-px">Covers {coveredNames.join(', ')}.</span>}
-              </>
-            }
-            htmlFor={`${idBase}-profile`}
-          >
-            <select
-              id={`${idBase}-profile`}
-              value={profileId || ''}
-              onChange={(e) => { setProfileId(e.target.value || undefined); markDirty(); }}
-              className={SELECT_CLASS}
-            >
-              <option value="">None (default credentials)</option>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </SettingsField>
-        )}
 
         <SettingsField
           label="Command prefix"
@@ -543,51 +466,6 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             className={TEXT_INPUT_CLASS}
             spellCheck={false}
           />
-        </SettingsField>
-
-        <SettingsField
-          label="Default mission"
-          help={
-            <>
-              ID of a markdown file in <Code>.clubhouse/missions/</Code>, like <Code>implement-and-ship</Code>. Its content
-              replaces <Code>@@Mission</Code> in instructions, skills and permissions. An agent&apos;s own <Code>mission</Code> in{' '}
-              <Code>.clubhouse/agents.json</Code> wins. Leave blank for no mission.
-            </>
-          }
-          htmlFor={`${idBase}-mission`}
-        >
-          <input
-            id={`${idBase}-mission`}
-            value={mission}
-            onChange={(e) => { setMission(e.target.value); markDirty(); }}
-            placeholder="implement-and-ship"
-            className={TEXT_INPUT_CLASS}
-            spellCheck={false}
-          />
-        </SettingsField>
-
-        <SettingsField
-          label="Default persona"
-          help={
-            <>
-              Used by every agent in this project that has no persona of its own. Override it in agent settings or in{' '}
-              <Code>.clubhouse/agents.json</Code> (see <Code>.clubhouse/clubhouse-mode.md</Code>). Resolves
-              to <Code>@@Persona</Code>, and is appended to CLAUDE.md when the template lacks that token.
-            </>
-          }
-          htmlFor={`${idBase}-persona`}
-        >
-          <select
-            id={`${idBase}-persona`}
-            value={persona}
-            onChange={(e) => { setPersona(e.target.value); markDirty(); }}
-            className={SELECT_CLASS}
-          >
-            <option value="">None</option>
-            {PERSONA_TEMPLATES.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
         </SettingsField>
 
         <SettingsField
@@ -617,8 +495,8 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
 
       <SettingsSection title="Project commands">
         <p className={`${settingsHelp} mb-2`}>
-          Commands agents use to build, test and lint the project. They replace <Code>@@BuildCommand</Code>,{' '}
-          <Code>@@TestCommand</Code> and <Code>@@LintCommand</Code> in skills.
+          Commands that fill <Code>@@BuildCommand</Code>, <Code>@@TestCommand</Code> and{' '}
+          <Code>@@LintCommand</Code> for agents that aren't Clubhouse-managed. Managed agents use their build, test, lint and validate skills.
         </p>
         <SettingsField label="Build" htmlFor={`${idBase}-build`}>
           <input
@@ -776,44 +654,6 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
           </SettingsBlock>
         )}
       </SettingsSection>
-
-      {/* Managed skills (provenance) above the source skill list */}
-      {breakdown && breakdown.skills.length > 0 && (
-        <SettingsSection title="Managed skills">
-          <ConfigItemList
-            items={breakdown.skills}
-            orphanedPluginIds={orphanedPluginIds}
-            onRemove={setRemoveTarget}
-            removing={removing}
-          />
-        </SettingsSection>
-      )}
-      <SourceSkillsSection projectPath={projectPath} />
-
-      {/* Managed agent definitions (provenance) above the source list */}
-      {breakdown && breakdown.agentTemplates.length > 0 && (
-        <SettingsSection title="Managed agent definitions">
-          <ConfigItemList
-            items={breakdown.agentTemplates}
-            orphanedPluginIds={orphanedPluginIds}
-            onRemove={setRemoveTarget}
-            removing={removing}
-          />
-        </SettingsSection>
-      )}
-      <SourceAgentTemplatesSection projectPath={projectPath} />
-
-      <ConfirmDialog
-        open={showResetConfirm}
-        title="Reset to defaults?"
-        message="This replaces every project-level agent default (instructions, permissions and commands) with the built-in defaults. Plugin-injected configs stay. Your customizations will be lost."
-        onConfirm={handleReset}
-        onCancel={() => setShowResetConfirm(false)}
-        confirming={resetting}
-        confirmLabel="Reset"
-        confirmingLabel="Resetting…"
-        testId="reset-defaults-confirm"
-      />
 
       <ConfirmDialog
         open={removeTarget !== null}

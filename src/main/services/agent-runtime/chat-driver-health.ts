@@ -1,8 +1,8 @@
 /**
  * Per-driver health for automatic Chat → Terminal fallback
  * (docs/structured-chat-research.md §7.1). Everything here lives for the
- * main process only and is keyed by driver + binary + profile env, so one
- * broken install or profile doesn't pause the driver for the others.
+ * main process only and is keyed by driver + binary + launch env, so one
+ * broken install or environment doesn't pause the driver for the others.
  *
  * - Handshake probes are cached per key (re-probed when the binary changes
  *   on disk: mtime, size or inode), so the zero-token handshake runs once per CLI install rather
@@ -50,7 +50,7 @@ const health = new Map<string, Health>();
 const probes = new Map<string, { identity: string; probe: ChatDriverProbe }>();
 const inFlight = new Map<string, { identity: string | undefined; probe: Promise<ChatDriverProbe>; cacheSuccess: boolean }>();
 
-/** Health and probe-cache key: driver, binary, the profile env it runs with and any command prefix it's launched through. */
+/** Health and probe-cache key: driver, binary, the env it runs with and any command prefix it's launched through. */
 export function driverHealthKey(driver: Pick<ChatDriver, 'id'>, binaryPath: string, env?: Record<string, string>, commandPrefix?: string): string {
   const envHash = env && Object.keys(env).length
     ? createHash('sha1').update(JSON.stringify(Object.entries(env).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))).digest('hex').slice(0, 12)
@@ -120,7 +120,7 @@ async function runProbe(driver: ChatDriver, binaryPath: string, env: Record<stri
     }), PROBE_DEADLINE_MS);
   });
   try {
-    // Launched the way start() will be, through the profile's command prefix.
+    // Launched the way start() will be, through the project's command prefix.
     return await Promise.race([driver.probe(binaryPath, env, commandPrefix ? { commandPrefix } : undefined), deadline]);
   } catch (err) { // telemetry-exempt: a throwing probe is a failed handshake, recorded by the caller and reported by chat-spawn
     return { handshakeOk: false, capabilities: MINIMAL_CHAT_CAPABILITIES, error: err instanceof Error ? err.message : String(err) };

@@ -40,8 +40,7 @@ vi.mock('../clubhouse-mcp/injection', () => ({
   buildClubhouseMcpDef: vi.fn(() => ({ type: 'http', url: 'http://127.0.0.1:4321/mcp' })),
   CLUBHOUSE_NONCE_ENV: 'CLUBHOUSE_HOOK_NONCE',
 }));
-vi.mock('../mcp-settings', () => ({ isMcpEnabled: vi.fn(() => true) }));
-vi.mock('../materialization-service', () => ({ resolveAgentMcpServers: vi.fn(async () => ({})) }));
+vi.mock('../agent-mcp-servers', () => ({ resolveAgentMcpServers: vi.fn(async () => ({})) }));
 vi.mock('../agent-config', () => ({ touchSessionEntry: vi.fn(async () => {}), updateDurableConfig: vi.fn(async () => {}) }));
 vi.mock('../agent-exit-broadcast', () => ({ broadcastAgentExit: vi.fn() }));
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
@@ -89,7 +88,7 @@ async function receiveManifestWith(list: unknown[]) {
   await applyRemoteCliDenylist(JSON.parse(text).chatCliDenylist);
 }
 
-const start = () => tryStartChatAgent(params, provider, undefined, undefined, null);
+const start = () => tryStartChatAgent(params, provider, undefined, null);
 const toasts = () => vi.mocked(broadcastToAllWindows).mock.calls
   .filter((c) => c[0] === IPC.CHAT.RUNTIME_NOTICE)
   .map((c) => c[2] as { code: string; message: string });

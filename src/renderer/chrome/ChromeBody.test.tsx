@@ -5,7 +5,7 @@ import { render, screen, act } from '@testing-library/react';
 vi.mock('./ChromeSidebar', () => ({ ChromeSidebar: () => <div data-testid="chrome-sidebar" /> }));
 vi.mock('../panels/MainContentView', () => ({ MainContentView: () => <div data-testid="main-content" /> }));
 vi.mock('./pages/ProjectStartPage', () => ({ ProjectStartPage: ({ project }: { project: { id: string } }) => <div data-testid="start-page">{project.id}</div> }));
-vi.mock('./sidebar/ChromeAgentDialogs', () => ({ ChromeAgentDialogs: () => <div data-testid="chrome-agent-dialogs" />, useChromeDialogStore: { getState: () => ({}) } }));
+vi.mock('./sidebar/ChromeAgentDialogs', () => ({ ChromeAgentDialogs: () => <div data-testid="chrome-agent-dialogs" /> }));
 vi.mock('./pages/FirstRun', () => ({ FirstRun: () => <div data-testid="first-run" /> }));
 vi.mock('./pages/SatelliteStartPage', () => ({ SatelliteStartPage: ({ activeHostId }: { activeHostId: string }) => <div data-testid="satellite-start-page">{activeHostId}</div> }));
 vi.mock('../features/dispatcher/DispatcherView', () => ({ DispatcherView: () => <div data-testid="dispatcher-view" /> }));

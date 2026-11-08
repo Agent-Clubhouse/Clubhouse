@@ -1,12 +1,12 @@
 /**
  * Chat event contract: the normalized event model every chat driver emits.
  *
- * Drivers (Claude Agent SDK / stream-json, Codex app-server, Copilot ACP / SDK)
+ * Drivers (Claude Agent SDK / stream-json, Codex app-server, Copilot SDK)
  * translate their native protocol into these events in the main process. The
  * main process stamps the envelope, appends it to the agent's transcript and
  * publishes it on the chat event bus; the renderer, Annex and telemetry are
  * consumers. Event names follow the Agent Client Protocol's `session/update`
- * vocabulary where one exists, so ACP agents map almost one-to-one.
+ * vocabulary where one exists.
  *
  * Contract rules:
  * - Additive changes only within a major `v`. Consumers must ignore unknown
@@ -284,6 +284,8 @@ export type ChatMcpServerStatus = 'connected' | 'pending' | 'needs_auth' | 'fail
 export interface ChatMcpServer {
   name: string;
   status: ChatMcpServerStatus;
+  /** Why it failed, when the CLI says: its first error line (an exit code, the first stderr line), never env values (D95). */
+  error?: string;
 }
 
 export interface AvailableCommand {

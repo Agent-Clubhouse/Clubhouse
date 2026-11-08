@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { TitleBar } from './components/TitleBar';
 import { RailSection } from './components/RailSection';
 import { ProjectPanelLayout } from './components/ProjectPanelLayout';
-import { Dashboard } from './features/projects/Dashboard';
+import { NoProjectView } from './features/projects/NoProjectView';
 import { GitBanner } from './features/projects/GitBanner';
 import { useProjectStore } from './stores/projectStore';
 import { useAgentStore } from './stores/agentStore';
@@ -26,7 +26,6 @@ import { QuickAgentDialog } from './features/agents/QuickAgentDialog';
 import { BlueprintGallery } from './features/blueprints/BlueprintGallery';
 import { PluginUpdateBanner } from './features/plugins/PluginUpdateBanner';
 import { CollapsedSidebarNotices } from './features/app/AppNotices';
-import { ConfigChangesDialog } from './features/agents/ConfigChangesDialog';
 import { initApp } from './app-initializer';
 import { initAppEventBridge } from './app-event-bridge';
 import { ToastContainer } from './components/ToastContainer';
@@ -37,6 +36,7 @@ import { useLockStore } from './stores/lockStore';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from './stores/remoteProjectStore';
 import { AnnexDisabledView } from './panels/AnnexDisabledView';
 import { useChromeFlagStore } from './chrome/chromeFlag';
+import { useChromeStore } from './chrome/chromeStore';
 import { ChromeTitleBar } from './chrome/ChromeTitleBar';
 import { ChromeBody } from './chrome/ChromeBody';
 
@@ -111,7 +111,7 @@ export function App() {
 
   // ── Reactive effects (depend on state already subscribed for routing) ───
 
-  // Load durable agents for all projects so the dashboard shows them
+  // Load durable agents for all projects, so every project's agents are known up front
   useEffect(() => {
     const loadDurableAgents = useAgentStore.getState().loadDurableAgents;
     for (const p of projects) {
@@ -149,6 +149,8 @@ export function App() {
 
       const project = projects.find((p) => p.id === activeProjectId);
       const isRemote = isRemoteProjectId(activeProjectId);
+      // The project to reopen when none is open (the classic layout has no Home; NoProjectView).
+      if (project) useChromeStore.getState().setLastProjectId(activeProjectId);
 
       if (project || isRemote) {
         // Load project plugin config then activate
@@ -259,7 +261,7 @@ export function App() {
   // ── Derived routing state ──────────────────────────────────────────────
   const isAppPlugin = explorerTab.startsWith('plugin:app:');
   const isHelp = explorerTab === 'help';
-  const isHome = activeProjectId === null && explorerTab !== 'settings' && !isAppPlugin && !isHelp;
+  const noProject = activeProjectId === null && explorerTab !== 'settings' && !isAppPlugin && !isHelp;
 
   // Lock overlay element (shared across all return paths)
   const lockOverlay = (
@@ -295,7 +297,6 @@ export function App() {
         <BlueprintGallery />
         <WhatsNewDialog />
         <OnboardingModal />
-        <ConfigChangesDialog />
         <FeedbackDialogHost />
         <FilePreviewHost />
         <ToastContainer />
@@ -303,7 +304,7 @@ export function App() {
     );
   }
 
-  if (isHome) {
+  if (noProject) {
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
         {lockOverlay}
@@ -323,14 +324,13 @@ export function App() {
         <RailSection>
           {activeHostId
             ? <SatelliteDashboard activeHostId={activeHostId} />
-            : <Dashboard />}
+            : <NoProjectView />}
         </RailSection>
         <CommandPalette />
         <QuickAgentDialog />
         <BlueprintGallery />
         <WhatsNewDialog />
         <OnboardingModal />
-        <ConfigChangesDialog />
         <FeedbackDialogHost />
         <FilePreviewHost />
         <ToastContainer />
@@ -384,7 +384,6 @@ export function App() {
         <BlueprintGallery />
         <WhatsNewDialog />
         <OnboardingModal />
-        <ConfigChangesDialog />
         <FeedbackDialogHost />
         <FilePreviewHost />
         <ToastContainer />
@@ -417,7 +416,6 @@ export function App() {
         <BlueprintGallery />
         <WhatsNewDialog />
         <OnboardingModal />
-        <ConfigChangesDialog />
         <FeedbackDialogHost />
         <FilePreviewHost />
         <ToastContainer />
@@ -450,7 +448,6 @@ export function App() {
       <BlueprintGallery />
       <WhatsNewDialog />
       <OnboardingModal />
-      <ConfigChangesDialog />
       <FeedbackDialogHost />
       <FilePreviewHost />
       <ToastContainer />

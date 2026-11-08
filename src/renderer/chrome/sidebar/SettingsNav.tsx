@@ -55,7 +55,21 @@ export function SettingsNav() {
   return (
     <nav aria-label="Settings" data-testid="settings-nav" className="flex-1 min-h-0 overflow-y-auto pb-2 flex flex-col gap-px px-1.5">
       <div className="px-1.5 pt-1 pb-1 text-xs font-semibold text-ctp-subtext0">App</div>
-      {app.map((c) => pageButton('app', c, 'pl-3'))}
+      {app.map((c, i) => {
+        if (c.group !== 'managed') return pageButton('app', c, 'pl-3');
+        const prev = app[i - 1];
+        const firstInGroup = prev?.group !== 'managed';
+        const firstPart = c.part && !prev?.part;
+        return (
+          <div key={`app:${c.page}`} className="contents">
+            {firstInGroup && (
+              <div className="px-3 pt-1.5 pb-0.5 text-[13px] text-ctp-subtext0" data-testid="settings-nav-group-managed">Managed agents</div>
+            )}
+            {firstPart && <div className="pl-6 pr-2 pt-0.5 pb-0.5 text-xs text-ctp-overlay1">Agent parts</div>}
+            {pageButton('app', c, c.part ? 'pl-9' : 'pl-6')}
+          </div>
+        );
+      })}
 
       {projects.length > 0 && (
         <>

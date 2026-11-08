@@ -405,7 +405,7 @@ export async function initializePluginSystem(): Promise<void> {
 
     // Clean up stale experimental flags in a single pass.
     // - 'canvas': migrated to app-enabled above
-    // - 'mcp': promoted to regular setting (mcp-settings.json)
+    // - 'mcp': the Clubhouse MCP always runs now, with no setting (D69)
     // - retired features (Assistant, Agent Queue, Sessions): removed outright
     // - 'annex', 'clubhouseMcp', 'review': graduated long ago, and nothing reads them
     {

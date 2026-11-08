@@ -107,9 +107,6 @@ vi.stubGlobal('window', {
       onDiscoveredChanged: vi.fn(() => mockRemovers.onDiscoveredChanged),
       onSatelliteEvent: vi.fn(() => mockRemovers.onSatelliteEvent),
     },
-    agentSettings: {
-      computeConfigDiff: vi.fn(),
-    },
     mcpBinding: {
       getBindings: vi.fn(async () => []),
       bind: vi.fn(),
@@ -175,7 +172,6 @@ vi.mock('./stores/agentStore', () => ({
         clearStaleStatuses: vi.fn(),
         setActiveAgent: vi.fn(),
         restoreProjectAgent: vi.fn(),
-        openConfigChangesDialog: vi.fn(),
         setSessionNamePrompt: vi.fn(),
         noteLaunchFailure: mockNoteLaunchFailure,
       })),
@@ -265,17 +261,6 @@ vi.mock('./stores/quickAgentStore', () => ({
     {
       getState: vi.fn(() => ({
         addCompleted: vi.fn(),
-      })),
-    },
-  ),
-}));
-
-vi.mock('./stores/clubhouseModeStore', () => ({
-  useClubhouseModeStore: Object.assign(
-    vi.fn(),
-    {
-      getState: vi.fn(() => ({
-        isEnabledForProject: vi.fn(() => false),
       })),
     },
   ),
@@ -422,7 +407,6 @@ describe('initAppEventBridge', () => {
       clearStaleStatuses: vi.fn(),
       setActiveAgent: vi.fn(),
       restoreProjectAgent: vi.fn(),
-      openConfigChangesDialog: vi.fn(),
       setSessionNamePrompt: vi.fn(),
     } as any);
 
@@ -451,7 +435,6 @@ describe('initAppEventBridge', () => {
         clearStaleStatuses: vi.fn(),
         setActiveAgent: vi.fn(),
         restoreProjectAgent: vi.fn(),
-        openConfigChangesDialog: vi.fn(),
         setSessionNamePrompt: vi.fn(),
       } as any);
       vi.mocked(useQuickAgentStore.getState).mockReturnValue({ addCompleted, selectCompleted } as any);
@@ -510,6 +493,15 @@ describe('initAppEventBridge', () => {
       expect(record.stderrTail).toBeUndefined();
     });
 
+    it('keeps the template a run started from, for Retry (D25)', async () => {
+      const record = await exitQuickAgent({ ...headlessAgent, managedTemplateId: 'custom-workiq' }, '', 1);
+      expect(record.managedTemplateId).toBe('custom-workiq');
+    });
+
+    it('adds no template to a run that started without one', async () => {
+      expect(await exitQuickAgent(headlessAgent, '', 1)).not.toHaveProperty('managedTemplateId');
+    });
+
     it('keeps the stderr tail and the failing exit code when a headless run fails', async () => {
       const record = await exitQuickAgent(headlessAgent, '', 1, 'Error: invalid API key');
       expect(record).toMatchObject({ summary: null, exitCode: 1, stderrTail: 'Error: invalid API key', filesModified: [] });
@@ -550,7 +542,7 @@ describe('initAppEventBridge', () => {
     onMaterializationFailed('agent-1', 'malformed wildcard template');
 
     expect(mockAddToast).toHaveBeenCalledWith(
-      'Agent agent-1 started without the latest Clubhouse Mode settings: malformed wildcard template',
+      'Agent agent-1 started without its latest setup: malformed wildcard template',
       'error',
     );
   });
@@ -635,7 +627,6 @@ describe('initAppEventBridge', () => {
       clearStaleStatuses: vi.fn(),
       setActiveAgent: vi.fn(),
       restoreProjectAgent: vi.fn(),
-      openConfigChangesDialog: vi.fn(),
       setSessionNamePrompt: vi.fn(),
     } as any);
 
@@ -663,7 +654,6 @@ describe('initAppEventBridge', () => {
       clearStaleStatuses: vi.fn(),
       setActiveAgent: vi.fn(),
       restoreProjectAgent: vi.fn(),
-      openConfigChangesDialog: vi.fn(),
       setSessionNamePrompt: vi.fn(),
     } as any);
 
@@ -714,7 +704,6 @@ describe('initAppEventBridge', () => {
       clearStaleStatuses: vi.fn(),
       setActiveAgent: vi.fn(),
       restoreProjectAgent: vi.fn(),
-      openConfigChangesDialog: vi.fn(),
       setSessionNamePrompt: vi.fn(),
     } as any);
 
@@ -775,7 +764,6 @@ describe('initAppEventBridge', () => {
       clearStaleStatuses: vi.fn(),
       setActiveAgent: vi.fn(),
       restoreProjectAgent: vi.fn(),
-      openConfigChangesDialog: vi.fn(),
       setSessionNamePrompt: vi.fn(),
     } as any);
 
@@ -804,7 +792,6 @@ describe('initAppEventBridge', () => {
       clearStaleStatuses: vi.fn(),
       setActiveAgent: vi.fn(),
       restoreProjectAgent: vi.fn(),
-      openConfigChangesDialog: vi.fn(),
       setSessionNamePrompt: vi.fn(),
     } as any);
 

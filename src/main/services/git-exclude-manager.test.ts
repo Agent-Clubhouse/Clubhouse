@@ -6,11 +6,12 @@ vi.mock('fs/promises', () => ({
   writeFile: vi.fn(() => Promise.resolve(undefined)),
   rename: vi.fn(() => Promise.resolve(undefined)),
   rm: vi.fn(() => Promise.resolve(undefined)),
+  copyFile: vi.fn(() => Promise.resolve(undefined)),
   mkdir: vi.fn(() => Promise.resolve(undefined)),
 }));
 
 import * as fsp from 'fs/promises';
-import { addExclusions, removeExclusions } from './git-exclude-manager';
+import { addExclusions, removeExclusions, replaceExclusions } from './git-exclude-manager';
 
 function normalizedPath(value: unknown): string {
   return String(value).replaceAll('\\', '/');
@@ -22,18 +23,16 @@ describe('git-exclude-manager', () => {
     vi.mocked(fsp.stat).mockResolvedValue({ isFile: () => false } as any);
   });
 
+  const written = (call = 0) => vi.mocked(fsp.writeFile).mock.calls[call][1] as string;
+
   describe('addExclusions', () => {
-    it('adds tagged patterns to empty exclude file', async () => {
+    it('adds the patterns in a block of their own, one pattern per line', async () => {
       vi.mocked(fsp.readFile).mockResolvedValue('');
-      vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
-      vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
 
       await addExclusions('/project', 'clubhouse-mode', ['CLAUDE.md', '.mcp.json']);
 
       expect(fsp.writeFile).toHaveBeenCalledTimes(1);
-      const written = vi.mocked(fsp.writeFile).mock.calls[0][1] as string;
-      expect(written).toContain('CLAUDE.md # clubhouse-mode');
-      expect(written).toContain('.mcp.json # clubhouse-mode');
+      expect(written()).toBe('# >>> clubhouse-mode\nCLAUDE.md\n.mcp.json\n# <<< clubhouse-mode\n');
       expect(fsp.rename).toHaveBeenCalledTimes(1);
       const [tempPath, excludePath] = vi.mocked(fsp.rename).mock.calls[0];
       expect(normalizedPath(tempPath)).toContain('.tmp.');
@@ -42,41 +41,38 @@ describe('git-exclude-manager', () => {
 
     it('appends to existing exclude file content', async () => {
       vi.mocked(fsp.readFile).mockResolvedValue('# existing\n*.log\n');
-      vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
-      vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
 
       await addExclusions('/project', 'clubhouse-mode', ['CLAUDE.md']);
 
-      const written = vi.mocked(fsp.writeFile).mock.calls[0][1] as string;
-      expect(written).toContain('# existing\n*.log\n');
-      expect(written).toContain('CLAUDE.md # clubhouse-mode');
+      expect(written()).toBe('# existing\n*.log\n# >>> clubhouse-mode\nCLAUDE.md\n# <<< clubhouse-mode\n');
     });
 
-    it('skips patterns already present', async () => {
-      vi.mocked(fsp.readFile).mockResolvedValue('CLAUDE.md # clubhouse-mode\n');
-      vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
-      vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    it('keeps what the block lists and adds only new patterns', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('# >>> clubhouse-mode\nCLAUDE.md\n# <<< clubhouse-mode\n');
 
       await addExclusions('/project', 'clubhouse-mode', ['CLAUDE.md', '.mcp.json']);
 
-      const written = vi.mocked(fsp.writeFile).mock.calls[0][1] as string;
-      expect(written).toContain('.mcp.json # clubhouse-mode');
-      expect(written.split('CLAUDE.md # clubhouse-mode').length).toBe(2);
+      expect(written()).toBe('# >>> clubhouse-mode\nCLAUDE.md\n.mcp.json\n# <<< clubhouse-mode\n');
     });
 
     it('does nothing when all patterns already present', async () => {
-      vi.mocked(fsp.readFile).mockResolvedValue('CLAUDE.md # clubhouse-mode\n');
-      vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+      vi.mocked(fsp.readFile).mockResolvedValue('# >>> clubhouse-mode\nCLAUDE.md\n# <<< clubhouse-mode\n');
 
       await addExclusions('/project', 'clubhouse-mode', ['CLAUDE.md']);
 
       expect(fsp.writeFile).not.toHaveBeenCalled();
     });
 
+    it('replaces lines in the old trailing-tag format, which git never matched', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('*.log\nCLAUDE.md # clubhouse-mode\nkeep # other\n');
+
+      await addExclusions('/project', 'clubhouse-mode', ['CLAUDE.md']);
+
+      expect(written()).toBe('*.log\n# >>> clubhouse-mode\nCLAUDE.md\n# <<< clubhouse-mode\nkeep # other\n');
+    });
+
     it('creates info directory if needed', async () => {
-      vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
       vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
-      vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
 
       await addExclusions('/project', 'clubhouse-mode', ['CLAUDE.md']);
 
@@ -104,23 +100,43 @@ describe('git-exclude-manager', () => {
         addExclusions('/project', 'second', ['second.txt']),
       ]);
 
-      expect(excludeContent).toContain('first.txt # first');
-      expect(excludeContent).toContain('second.txt # second');
+      expect(excludeContent).toBe('# >>> first\nfirst.txt\n# <<< first\n# >>> second\nsecond.txt\n# <<< second\n');
     });
 
-    it('removes an existing target before rename on platforms that reject overwrites', async () => {
+    it('tries a refused rename again and never removes the exclude file first', async () => {
       vi.mocked(fsp.readFile).mockResolvedValue('');
-      vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
-      vi.mocked(fsp.rename).mockRejectedValueOnce(Object.assign(new Error('EEXIST'), { code: 'EEXIST' }));
-      vi.mocked(fsp.rm).mockResolvedValue(undefined);
+      vi.mocked(fsp.rename).mockRejectedValueOnce(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
 
       await addExclusions('/project', 'clubhouse-mode', ['CLAUDE.md']);
 
-      expect(fsp.rm).toHaveBeenCalledTimes(1);
-      const [removedPath, options] = vi.mocked(fsp.rm).mock.calls[0];
-      expect(normalizedPath(removedPath)).toContain('.git/info/exclude');
-      expect(options).toEqual({ force: true });
       expect(fsp.rename).toHaveBeenCalledTimes(2);
+      expect(fsp.rm).not.toHaveBeenCalled();
+    });
+
+    it('copies over the exclude file when a rename keeps being refused, then removes the temporary file', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('');
+      vi.mocked(fsp.rename).mockRejectedValue(Object.assign(new Error('EEXIST'), { code: 'EEXIST' }));
+
+      await addExclusions('/project', 'clubhouse-mode', ['CLAUDE.md']);
+
+      expect(fsp.copyFile).toHaveBeenCalledTimes(1);
+      const [from, to] = vi.mocked(fsp.copyFile).mock.calls[0];
+      expect(normalizedPath(to)).toMatch(/\.git\/info\/exclude$/);
+      expect(normalizedPath(from)).toContain('.git/info/exclude.tmp.');
+      expect(fsp.rm).toHaveBeenCalledTimes(1);
+      expect(normalizedPath(vi.mocked(fsp.rm).mock.calls[0][0])).toBe(normalizedPath(from));
+      vi.mocked(fsp.rename).mockResolvedValue(undefined);
+    });
+
+    it('keeps the temporary file, with the whole content, when nothing can replace the exclude file', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('');
+      vi.mocked(fsp.rename).mockRejectedValue(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
+      vi.mocked(fsp.copyFile).mockRejectedValueOnce(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
+
+      await expect(addExclusions('/project', 'clubhouse-mode', ['CLAUDE.md'])).rejects.toThrow('EPERM');
+
+      expect(fsp.rm).not.toHaveBeenCalled();
+      vi.mocked(fsp.rename).mockResolvedValue(undefined);
     });
 
     it('continues a queued write after an earlier write fails', async () => {
@@ -138,24 +154,44 @@ describe('git-exclude-manager', () => {
     });
   });
 
+  describe('a block whose end line was removed by hand', () => {
+    it('takes only the lines up to the next blank line or comment, and keeps the person\'s lines after it', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('# >>> clubhouse-managed-claude-code\n/CLAUDE.md\n/.mcp.json\n\n# mine\nsecrets/\n*.log\n');
+
+      await replaceExclusions('/project', 'clubhouse-managed-claude-code', ['/CLAUDE.md']);
+
+      expect(written()).toBe('# >>> clubhouse-managed-claude-code\n/CLAUDE.md\n# <<< clubhouse-managed-claude-code\n\n# mine\nsecrets/\n*.log\n');
+    });
+
+    it('stops at the next block\'s start line', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('# >>> a\none\n# >>> b\ntwo\n# <<< b\n');
+
+      await removeExclusions('/project', 'a');
+
+      expect(written()).toBe('# >>> b\ntwo\n# <<< b\n');
+    });
+
+    it('drops a stray end line whose start was removed, and nothing else', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('mine/\n# <<< a\nalso-mine/\n');
+
+      await removeExclusions('/project', 'a');
+
+      expect(written()).toBe('mine/\nalso-mine/\n');
+    });
+  });
+
   describe('removeExclusions', () => {
-    it('removes all lines matching the tag', async () => {
-      vi.mocked(fsp.stat).mockResolvedValue({ isFile: () => false } as any);
+    it('removes the tag\'s block and its old-format lines, leaving the rest', async () => {
       vi.mocked(fsp.readFile).mockResolvedValue(
-        '# existing\n*.log\nCLAUDE.md # clubhouse-mode\n.mcp.json # clubhouse-mode\n',
+        '# existing\n*.log\n# >>> clubhouse-mode\nCLAUDE.md\n# <<< clubhouse-mode\n.mcp.json # clubhouse-mode\n',
       );
-      vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
 
       await removeExclusions('/project', 'clubhouse-mode');
 
-      const written = vi.mocked(fsp.writeFile).mock.calls[0][1] as string;
-      expect(written).not.toContain('clubhouse-mode');
-      expect(written).toContain('# existing');
-      expect(written).toContain('*.log');
+      expect(written()).toBe('# existing\n*.log\n');
     });
 
     it('handles non-existent exclude file gracefully', async () => {
-      vi.mocked(fsp.stat).mockResolvedValue({ isFile: () => false } as any);
       vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
 
       await removeExclusions('/project', 'clubhouse-mode');
@@ -164,14 +200,62 @@ describe('git-exclude-manager', () => {
     });
 
     it('leaves file clean when all lines are removed', async () => {
-      vi.mocked(fsp.stat).mockResolvedValue({ isFile: () => false } as any);
-      vi.mocked(fsp.readFile).mockResolvedValue('CLAUDE.md # clubhouse-mode\n');
-      vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+      vi.mocked(fsp.readFile).mockResolvedValue('# >>> clubhouse-mode\nCLAUDE.md\n# <<< clubhouse-mode\n');
 
       await removeExclusions('/project', 'clubhouse-mode');
 
-      const written = vi.mocked(fsp.writeFile).mock.calls[0][1] as string;
-      expect(written).toBe('');
+      expect(written()).toBe('');
+    });
+  });
+
+  describe('replaceExclusions', () => {
+    // fs is mocked, so the project is only a name.
+    const project = 'project';
+
+    it('makes the block exactly the patterns, in place, leaving other lines and tags alone', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue(
+        '# existing\n# >>> clubhouse-managed-claude-code\nCLAUDE.md\n.mcp.json\n# <<< clubhouse-managed-claude-code\n# >>> other\nx\n# <<< other\n',
+      );
+
+      await replaceExclusions(project, 'clubhouse-managed-claude-code', ['/CLAUDE.md', '.mcp.json']);
+
+      expect(written()).toBe('# existing\n# >>> clubhouse-managed-claude-code\n/CLAUDE.md\n.mcp.json\n# <<< clubhouse-managed-claude-code\n# >>> other\nx\n# <<< other\n');
+    });
+
+    it('turns old trailing-tag lines into a block where they were', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('top\n/CLAUDE.md # clubhouse-managed-claude-code\n.mcp.json # clubhouse-managed-claude-code\nbottom\n');
+
+      await replaceExclusions(project, 'clubhouse-managed-claude-code', ['.mcp.json']);
+
+      expect(written()).toBe('top\n# >>> clubhouse-managed-claude-code\n.mcp.json\n# <<< clubhouse-managed-claude-code\nbottom\n');
+    });
+
+    it('does not touch a longer tag that starts the same', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('# >>> clubhouse-managed-claude-code-extra\na\n# <<< clubhouse-managed-claude-code-extra\n');
+
+      await replaceExclusions(project, 'clubhouse-managed-claude-code', ['b']);
+
+      expect(written()).toBe('# >>> clubhouse-managed-claude-code-extra\na\n# <<< clubhouse-managed-claude-code-extra\n# >>> clubhouse-managed-claude-code\nb\n# <<< clubhouse-managed-claude-code\n');
+    });
+
+    it('writes nothing when the file already says it, and keeps other CRLF lines as they are', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('# existing\n# >>> t\n.mcp.json\n# <<< t\n');
+      await replaceExclusions(project, 't', ['.mcp.json']);
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+
+      vi.mocked(fsp.readFile).mockResolvedValue('# existing\r\n# >>> t\r\n.mcp.json\r\n# <<< t\r\n');
+      await replaceExclusions(project, 't', ['.mcp.json', 'x']);
+      expect(written()).toBe('# existing\r\n# >>> t\n.mcp.json\nx\n# <<< t\n');
+    });
+
+    it('creates the file when there is none, and writes nothing for no patterns', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+      await replaceExclusions(project, 't', []);
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+
+      await replaceExclusions(project, 't', ['.mcp.json']);
+      expect(fsp.mkdir).toHaveBeenCalled();
+      expect(written()).toBe('# >>> t\n.mcp.json\n# <<< t\n');
     });
   });
 });

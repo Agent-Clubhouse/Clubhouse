@@ -6,11 +6,7 @@ import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { AgentListItem } from './AgentListItem';
 import { AddAgentDialog } from './AddAgentDialog';
-import { AgentGalleryDialog } from './AgentGalleryDialog';
-import { TemplateConfigDialog, type TemplateConfig } from './TemplateConfigDialog';
 import { DeleteAgentDialog } from './DeleteAgentDialog';
-import { ApplyPersonaDialog } from './ApplyPersonaDialog';
-import { ExtractPersonaDialog } from './ExtractPersonaDialog';
 import { QuickAgentGhostCompact } from './QuickAgentGhost';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
@@ -19,14 +15,14 @@ import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../
 import { useToastStore } from '../../stores/toastStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
-import type { PersonaTemplate } from '../personas';
 import { EmptyState } from '../../components/EmptyState';
 import { requestLeaveAgentSettings } from './agentSettingsPages';
-import { createDurableAgent, createDurableAgentFromTemplate } from './create-agent';
+import { createDurableAgent } from './create-agent';
 import { buildAgentForest, forestSiblingGroups, helperRollup, localParentId, moveWithinGroup, type AgentNode } from '../../chrome/sidebar/treeModel';
 import { OtherProjectParentLine } from './helpers/OtherProjectParentLine';
 import { useAgentStatuses } from './agent-status-store';
 import { useChromeStore, syncCollapsedAgentsWithAgents, ensureChromeStateLoaded } from '../../chrome/chromeStore';
+import { ManagedRestartHost } from '../managed/restart';
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
 const EMPTY_AGENTS: Agent[] = [];
@@ -104,8 +100,6 @@ function AgentListInner() {
   const spawnQuickAgent = useAgentStore((s) => s.spawnQuickAgent);
   const loadDurableAgents = useAgentStore((s) => s.loadDurableAgents);
   const deleteDialogAgent = useAgentStore((s) => s.deleteDialogAgent);
-  const applyPersonaDialogAgent = useAgentStore((s) => s.applyPersonaDialogAgent);
-  const extractPersonaDialogAgent = useAgentStore((s) => s.extractPersonaDialogAgent);
   const reorderAgents = useAgentStore((s) => s.reorderAgents);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const projects = useProjectStore((s) => s.projects);
@@ -126,7 +120,7 @@ function AgentListInner() {
     }
     return projects.find((p) => p.id === activeProjectId);
   }, [activeProjectId, isRemote, projects, satelliteProjects]);
-  const { effectiveOrchestrators: enabledOrchestrators, activeProfile, isOrchestratorInProfile } = useEffectiveOrchestrators(activeProject?.path);
+  const { effectiveOrchestrators: enabledOrchestrators } = useEffectiveOrchestrators();
   const allCompleted = useQuickAgentStore((s) => s.completedAgents);
   const completedAgents = useMemo(
     () => (activeProjectId ? allCompleted[activeProjectId] ?? EMPTY_COMPLETED : EMPTY_COMPLETED),
@@ -136,8 +130,6 @@ function AgentListInner() {
   const clearCompleted = useQuickAgentStore((s) => s.clearCompleted);
   const selectCompleted = useQuickAgentStore((s) => s.selectCompleted);
   const [showDialog, setShowDialog] = useState(false);
-  const [showGallery, setShowGallery] = useState(false);
-  const [pendingTemplate, setPendingTemplate] = useState<{ persona: PersonaTemplate; color: string } | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showMissionInput, setShowMissionInput] = useState(false);
   const [quickTargetParentId, setQuickTargetParentId] = useState<string | null>(null);
@@ -370,24 +362,13 @@ function AgentListInner() {
 
   const sendAgentReorder = useAnnexClientStore((s) => s.sendAgentReorder);
 
-  const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], persona?: string) => {
+  const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[]) => {
     if (!activeProject) return;
     setShowDialog(false);
     await createDurableAgent(
       { id: activeProject.id, path: activeProject.path },
-      { name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, persona },
+      { name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds },
     );
-  };
-
-  const handleGallerySelect = (persona: PersonaTemplate, color: string) => {
-    setShowGallery(false);
-    setPendingTemplate({ persona, color });
-  };
-
-  const handleCreateFromTemplate = async (templateConfig: TemplateConfig) => {
-    if (!activeProject) return;
-    setPendingTemplate(null);
-    await createDurableAgentFromTemplate({ id: activeProject.id, path: activeProject.path }, templateConfig);
   };
 
   const isThinking = useCallback((id: string) => {
@@ -660,14 +641,6 @@ function AgentListInner() {
                 {...(depth > 0 && { indent })}
               />
             )}
-            {activeProfile && durable.orchestrator && !isOrchestratorInProfile(durable.orchestrator) && (
-              <span
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-yellow-500"
-                title={`${durable.orchestrator} is not configured in the "${activeProfile.name}" profile`}
-              >
-                ⚠
-              </span>
-            )}
           </div>
           {durable.parentProjectPath && (
             // Under the name: past the avatar and its gap.
@@ -750,19 +723,6 @@ function AgentListInner() {
                     <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
                   </svg>
                   Quick Agent
-                </button>
-                <div className="border-t border-surface-0/50 my-1" />
-                <button
-                  onClick={() => { setShowDropdown(false); setShowGallery(true); }}
-                  className="w-full px-3 py-1.5 text-xs text-left text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer flex items-center gap-2 whitespace-nowrap"
-                >
-                  <svg className="flex-shrink-0" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="7" height="7" rx="1" />
-                    <rect x="14" y="3" width="7" height="7" rx="1" />
-                    <rect x="3" y="14" width="7" height="7" rx="1" />
-                    <rect x="14" y="14" width="7" height="7" rx="1" />
-                  </svg>
-                  From Template
                 </button>
               </div>
             );
@@ -873,24 +833,8 @@ function AgentListInner() {
           projectPath={activeProject?.path}
         />
       )}
-      {showGallery && (
-        <AgentGalleryDialog
-          onClose={() => setShowGallery(false)}
-          onCreate={handleGallerySelect}
-        />
-      )}
-      {pendingTemplate && (
-        <TemplateConfigDialog
-          persona={pendingTemplate.persona}
-          personaColor={pendingTemplate.color}
-          projectPath={activeProject?.path}
-          onClose={() => setPendingTemplate(null)}
-          onCreate={handleCreateFromTemplate}
-        />
-      )}
       {deleteDialogAgent && <DeleteAgentDialog />}
-      {applyPersonaDialogAgent && <ApplyPersonaDialog />}
-      {extractPersonaDialogAgent && <ExtractPersonaDialog />}
+      <ManagedRestartHost />
     </div>
   );
 }

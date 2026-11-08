@@ -8,7 +8,6 @@ import type {
 import { hasPermission, handlePermissionViolation } from './plugin-api-shared';
 import { usePluginStore } from './plugin-store';
 import { useProjectStore } from '../stores/projectStore';
-import { registerPluginAgentTemplate } from './plugin-agent-template-registry';
 
 // ── Plugin instruction markers ──────────────────────────────────────────
 const PLUGIN_INSTRUCTION_START = (pluginId: string) => `\n\n<!-- plugin:${pluginId}:start -->`;
@@ -337,19 +336,11 @@ export function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManife
       return (data as Record<string, unknown>) || {};
     },
 
-    registerAgentTemplate(template: {
-      name: string;
-      description?: string;
-      icon?: string;
-      promptContent: string;
-      skills?: Record<string, string>;
-      mcpServers?: Record<string, unknown>;
-    }) {
-      const entry = usePluginStore.getState().plugins[pluginId];
-      const displayName = entry?.manifest?.name || pluginId;
-      const disposable = registerPluginAgentTemplate(pluginId, displayName, template);
-      ctx.subscriptions.push(disposable);
-      return disposable;
+    // Agent templates from plugins had nowhere to show once the legacy
+    // template UI went (#2901). Kept in the API as a no-op so plugins that
+    // call it keep working.
+    registerAgentTemplate() {
+      return { dispose: () => {} };
     },
 
     async contributeWrapperPreset(preset: {

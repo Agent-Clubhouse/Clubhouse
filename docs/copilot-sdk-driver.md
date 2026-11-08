@@ -1,12 +1,12 @@
 # Copilot SDK chat driver: spike results and plan
 
-Status: spike done, phases 0 to 3 done (opt-in driver, off by default) · Date: 2026-11-01 · Issue: [#2616](https://github.com/Agent-Clubhouse/Clubhouse/issues/2616) · Context: [docs/structured-chat-research.md](structured-chat-research.md) §7 and §8 (Phase 5)
+Status: phases 0 to 3 done; the SDK is the only Copilot chat driver since the legacy ACP driver was removed (#2868). Phase 4's real-login QA is still open · Date: 2026-11-01, updated 2026-11-07 · Issue: [#2616](https://github.com/Agent-Clubhouse/Clubhouse/issues/2616) · Context: [docs/structured-chat-research.md](structured-chat-research.md) §7 and §8 (Phase 5)
 
-Copilot chat runs today on the ACP driver (`copilot_acp`, `src/main/orchestrators/adapters/acp-chat-driver.ts`). This note records what the SDK does on real CLI versions and how to move to it. Codex is covered in [its own section](#codex-stay-on-app-server).
+Copilot chat runs on this driver (`copilot_sdk`, `src/main/chat/copilot/driver.ts`). It replaced the ACP driver (`copilot_acp`), which was the default until #2871 and was removed for v1 (#2868). This note records what the SDK does on real CLI versions and how the move went. Comparisons with ACP below are from the spike, kept for the record. Codex is covered in [its own section](#codex-stay-on-app-server).
 
 ## Recommendation
 
-**Build the `copilot_sdk` driver. Fallback order: SDK, then ACP, then terminal** (maintainer decision, 2026-11-01). ACP stays for Copilot and stays the generic driver.
+**Build the `copilot_sdk` driver** (maintainer decision, 2026-11-01). The fallback order was SDK, then ACP, then terminal; since #2868 it is SDK, then terminal.
 
 | Question | Answer |
 |---|---|
@@ -170,9 +170,11 @@ The TCP listener is safe enough for this: it bound to `127.0.0.1`, and with `COP
 
 **Sessions carry over between drivers, so falling back doesn't lose context.** An SDK session loaded over ACP `session/load`, and an ACP session opened with `resumeSession`. In both directions the model saw the earlier messages. This held on 1.0.82, 1.0.83, 1.0.98 and 1.0.106-2. So existing Copilot agents need no migration, and the transcript stays Clubhouse's.
 
-**Selection (2026-11-05, superseding SDK opt-in).** Copilot SDK is the standard chat adapter in every build. In preview-eligible builds, Settings > Experimental > Use legacy Copilot ACP is the sole escape hatch, off by default. Old `copilotSdk` flags and per-provider `driver` preferences remain stored for downgrade compatibility but cannot opt into legacy ACP. Only an explicit `copilotLegacyAcp: true` selects it. The change applies at the next start; running sessions retain their driver, and saved CLI mode remains CLI. There is no separate driver selector. Missing or failed SDK never automatically selects ACP; the existing CLI recovery path reports the failure with an explicit legacy opt-in route. Stable builds with Preview off explain that eligibility is required to expose that route. Details > Session > Runs on identifies the actual driver. SDK offers Steer; ACP offers interrupting Stop & send. The v0.42 report (#2862) was confirmed ACP, not SDK steering failure.
+**Selection (2026-11-07, #2868).** The Copilot SDK is the only Copilot chat driver. There is no setting to choose a driver: an old `copilotSdk` flag or a saved per-provider `driver` stays on disk for downgrades but is never read. If the SDK can't start (a failed handshake, a CLI below its floor, no login), the agent opens in the CLI view and says why, and a restart tries chat again. Details > Session > Runs on shows the actual driver.
 
-ACP removal remains a follow-up: three-platform installed-runtime validation, migration notice, no-ACP failure behavior, fixtures/E2E, telemetry/mobile driver contract, documentation and #1534 parity. No arbitrary removal date or release-QA waiver. Synthetic tests establish selection/transport wiring only; real-login and runtime QA remain outstanding.
+Anyone who had turned on the removed **Use legacy Copilot ACP** opt-in gets a one-time notice at the next launch that Copilot chat now uses the SDK; the experimental-settings migration drops the flag (`COPILOT_ACP_REMOVED_NOTICE_KEY`). A transcript written by an ACP session still loads: its `session_started` names `copilot_acp`, which the header and Details show as that id.
+
+Still open from the removal checklist: phase 4's three-platform real-login QA, and #1534's parity items. Tool results that carry images (`binaryResultsForLlm`) were shown over ACP; the SDK driver doesn't map them yet.
 
 ## Shape of the code
 
@@ -183,20 +185,18 @@ Mirror `src/main/chat/claude/`, in `src/main/chat/copilot/`:
 - `transport.ts`: wraps `CopilotClient` and `CopilotSession`.
 - `normalizer.ts`: SDK events to `ChatEventDraft`. My rough estimate is that about 40 of the 149 event types carry something the chat contract shows.
 
-Reused from the ACP driver:
+Carried over from the ACP driver:
 
 - the `session_info` shape and level names;
 - the MCP bridge endpoint, sent as `type: 'http'` with the nonce header, plus stdio servers as they are.
 
 Capabilities: `steer: true`, `queue: 'native'`, `planApproval: true`, `questions: true`, `subagents: 'full'`, `resume: 'native'`, `usage: 'tokens'` until credits are confirmed on a real login, then `'cost'`.
 
-Levels: `plan` is `mode.set('plan')`, `ask` is the handler, `full_access` is `setApproveAll`, autopilot is `mode.set('autopilot')` (all observed). `auto_edit` would be the handler approving `write` requests (proposed, not run). Whether mode and `setApproveAll` survive a resume is untested, so check it in phase 2. ACP re-sends them after a resume because a loaded session's values were stale (#2174).
+Levels: `plan` is `mode.set('plan')`, `ask` is the handler, `full_access` is `setApproveAll`, autopilot is `mode.set('autopilot')` (all observed). `auto_edit` would be the handler approving `write` requests (proposed, not run). Whether mode and `setApproveAll` survive a resume is untested, so check it in phase 2. The ACP driver re-sent them after a resume because a loaded session's values were stale (#2174), and this driver always sends the mode too.
 
 ## Trying it
 
-For Copilot agents with Runtime set to Chat, a fresh start selects SDK by default. Existing running sessions keep their current driver until a user restarts them. No restart is triggered by changing the setting.
-
-To explicitly select legacy ACP in a preview-eligible build, turn on **Use legacy Copilot ACP** in Settings > Experimental. Turn it off to select SDK for the next start. Both choices still need Chat enabled. Failure does not automatically switch between them.
+For Copilot agents with Runtime set to Chat, every start uses the SDK, including the first one after updating from a build where the ACP opt-in was on.
 
 **Which driver is running:** the chat opens with “This chat runs on the Copilot SDK driver with Copilot CLI x.y.z”. Details > Session > Runs on and the agent glyph tooltip identify the actual session driver/version, independently of the next-start selection.
 
@@ -214,7 +214,7 @@ To explicitly select legacy ACP in a preview-eligible build, turn on **Use legac
 
 - An Auto level. It asks first and says so, because Copilot's autopilot keeps going on its own, which isn't what Auto means elsewhere.
 - Editing a plan while approving it. Send it back with a reason instead.
-- `/allow-all`, `/permissions` and `/autopilot`, which ACP lists. They change access from inside the CLI, where the level menu can't see it, so the driver refuses them and points at the menu.
+- `/allow-all`, `/permissions` and `/autopilot`, which the ACP driver listed. They change access from inside the CLI, where the level menu can't see it, so the driver refuses them and points at the menu.
 - Credits. Usage shows tokens only until a real login confirms the fields (phase 4).
 
 ## Commands and elicitation
@@ -235,14 +235,14 @@ Sizes are engineer-days. Each phase ships on its own, behind the Experimental ch
 | Phase | Work | Size |
 |---|---|---|
 | **0. Dependency** (done, #2624) | Add the pinned SDK, the loader and the `koffi` alias. Add `scripts/check-copilot-sdk-chunk.mjs`, like the Claude one. Confirm `npm ci` and the bundled smoke on macOS, Windows and Linux in CI. | 1 to 2 |
-| **1. Driver, opt-in** | Launch, transport, probe with timeout, version policy, auth check. Text, tools, permissions and interrupt. Registered after ACP. | 3 to 4 |
+| **1. Driver, opt-in** | Launch, transport, probe with timeout, version policy, auth check. Text, tools, permissions and interrupt. Registered after ACP (since removed, #2868). | 3 to 4 |
 | **2. Full features** | Steer, native queue, plan approval, questions, subagents, usage, model and effort, stdio MCP. Add the Windows launch and resume-level checks. | 4 to 5 |
 | **3. Fixtures and CI** (#2632) | Teach `scripts/chat-fixtures/fake-cli.mjs` and the recorder a `copilot-sdk` protocol: `Content-Length` framing over TCP. Replay through the driver in unit tests. Add the driver to the nightly handshake. No prompts in CI. | 2 to 3 |
 | **4. Default** | Maintainer QA with a real login on the three platforms, covering credits, the model list and real steering. Record real fixtures. Register SDK first. | 1 to 2 |
 
 Total: 11 to 16 days. **The earlier 1.5 to 2 weeks was light.** The features need less investigation than expected, but it didn't count the launch path or the new fixture protocol.
 
-The main risks left are real-login behaviour, which nothing here could test, and Windows launch. Phase 4 and phase 2 cover those, and until then ACP is what users get.
+The main risks left are real-login behaviour, which nothing here could test, and Windows launch. Phase 4 and phase 2 cover those. Since #2868 there is no ACP to fall back on: the CLI view is the fallback.
 
 ## Codex: stay on app-server
 

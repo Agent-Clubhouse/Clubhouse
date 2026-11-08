@@ -4,11 +4,9 @@
 
 import { auditChanged } from '../services/settings-audit';
 import { watchSessionQuota } from '../services/provider-quota';
-import { watchRoutingPolicy } from '../services/helper-routing';
 import { BrowserWindow, ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import { isMcpEnabledForAny, notifyMcpEnablementChanged } from '../services/mcp-settings';
-import { watchMcpForOrchestration } from '../services/orchestration-policy';
+import { watchMcpCallers } from '../services/orchestration-policy';
 import { bindingManager, bridgeServer } from '../services/clubhouse-mcp';
 import type { BindingTargetKind } from '../services/clubhouse-mcp';
 import { registerAgentTools } from '../services/clubhouse-mcp/tools/agent-tools';
@@ -24,6 +22,7 @@ import { registerDispatcherTools } from '../services/clubhouse-mcp/tools/dispatc
 import { registerAppearanceTools } from '../services/clubhouse-mcp/tools/appearance-tools';
 import { registerSettingsReadTools } from '../services/clubhouse-mcp/tools/settings-read-tools';
 import { registerDispatcherControlTools } from '../services/clubhouse-mcp/tools/dispatcher-control-tools';
+import { registerManagedTools } from '../services/clubhouse-mcp/tools/managed-tools';
 import { onDisposeRequestsChanged } from '../services/helper-dispose-requests';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import { agentRegistry } from '../services/agent-registry';
@@ -94,10 +93,6 @@ let handlersRegistered = false;
 
 export function registerMcpBindingHandlers(): void {
   if (handlersRegistered) return; // Already registered — idempotent
-  if (!isMcpEnabledForAny()) {
-    return; // Feature not enabled for any project — don't register handlers
-  }
-
   handlersRegistered = true;
 
   // Register tool templates
@@ -112,10 +107,10 @@ export function registerMcpBindingHandlers(): void {
   registerAppearanceTools();
   registerSettingsReadTools();
   registerDispatcherControlTools();
+  registerManagedTools();
   registerHelperQuestionTools();
   // Running chat sessions report plan limits between reads (#2671).
   watchSessionQuota();
-  watchRoutingPolicy();
   // Held helper starts (#2234) go to the main window only, for Needs you.
   watchHelperStartRequests((channel, payload) => {
     findMainWindow()?.webContents.send(channel, payload);
@@ -194,7 +189,7 @@ export function registerMcpBindingHandlers(): void {
       // Allow unbinding for sleeping/exited agents to support cleanup of stale
       // wire definitions without requiring the agent to be running.
       bindingManager.unbind(agentId as string, targetId as string);
-      // A restore re-run (MCP settings save, Clubhouse Mode toggle) must not
+      // A restore re-run (an MCP settings save) must not
       // bring this back from a store whose save hasn't landed yet.
       markBindingRemovedByUser(agentId as string, targetId as string);
       appLog('core:mcp', 'info', 'Binding removed', { meta: { agentId, targetId } });
@@ -273,18 +268,16 @@ export function registerMcpBindingHandlers(): void {
 
 let bridgeState: 'idle' | 'starting' | 'started' = 'idle';
 
-/** Conditionally start the MCP bridge server if MCP is enabled for any project. */
-export function maybeStartMcpBridge(): void {
+/** Start the MCP bridge server. It always runs; a failed start is retried on the next call. */
+export function startMcpBridge(): void {
   if (bridgeState !== 'idle') return; // Already started or in progress
-  if (!isMcpEnabledForAny()) {
-    return;
-  }
-
   bridgeState = 'starting';
 
   bridgeServer.start().then(() => {
     bridgeState = 'started';
   }).catch((err) => {
+    // Close the dead server and drop its subscriptions, so the retry starts clean.
+    bridgeServer.stop();
     bridgeState = 'idle'; // Allow retry on failure
     appLog('core:mcp', 'error', 'Failed to start MCP bridge server', {
       meta: { error: err instanceof Error ? err.message : String(err) },
@@ -293,29 +286,16 @@ export function maybeStartMcpBridge(): void {
 }
 
 /**
- * Called when MCP or Clubhouse Mode settings change. Tells whatever follows
- * MCP (gates, Dispatcher wires, views) first, since that matters most when MCP
- * has just gone off everywhere. If MCP becomes enabled for any project, lazily
- * start the bridge and register handlers without requiring an app restart.
+ * Make sure the bridge and its tools are up (ensureMcpBridge), for a spawn or
+ * a helper start. startMcpBridge has the bridge's ready promise set when this
+ * returns, so the caller can wait on it, and a bridge that failed to start at
+ * app start is tried again. Bindings are restored only the first time: wires
+ * don't change because an agent started.
  */
-export function onMcpSettingsChanged(): void {
-  notifyMcpEnablementChanged();
-  if (!isMcpEnabledForAny()) return;
-  registerMcpBindingHandlers();
-  maybeStartMcpBridge();
-  restorePersistedBindings();
-}
-
-/**
- * Bring up the bridge and its tools for an agent starting with MCP on
- * (ensureMcpBridgeForAgent). maybeStartMcpBridge has the bridge's ready promise
- * set when this returns, so the spawn can wait on it. Bindings are restored
- * only the first time: wires don't change because an agent started.
- */
-export function startMcpBridgeForAgent(): void {
+export function ensureMcpBridgeStarted(): void {
   const first = !handlersRegistered;
   registerMcpBindingHandlers();
-  maybeStartMcpBridge();
+  startMcpBridge();
   if (first) void restorePersistedBindings();
 }
 
@@ -324,15 +304,16 @@ let stopWatchingHelperWires: (() => void) | null = null;
 let stopWatchingOrchestratorConnections: (() => void) | null = null;
 let stopWatchingDispatcherWires: (() => void) | null = null;
 let stopWatchingDispatcherConnections: (() => void) | null = null;
-let stopWatchingMcpForOrchestration: (() => void) | null = null;
+let stopWatchingMcpCallers: (() => void) | null = null;
 
 /**
  * Rebuild bindings from every persisted wire store (canvas wires, #1544,
  * orchestrator ↔ helper wires from the agent config, #2225, and connections
  * made with the orchestrator connection tools, #2230, and Dispatcher ↔
  * orchestrator wires from the orchestration policy, #2537) so tools and
- * group-project membership don't wait for a canvas to be opened. Runs only
- * once MCP is on, and again whenever a project's helper wires change.
+ * group-project membership don't wait for a canvas to be opened. Runs once
+ * the handlers are registered at app start, and again whenever a project's
+ * helper wires change.
  * Idempotent: bindings that already exist are left alone, so calling it again
  * (or the canvas binding the same wires later) creates nothing twice.
  */
@@ -350,7 +331,7 @@ export function restorePersistedBindings(): Promise<void> {
     // After the canvas source, so a pair the user also drew stays the user's.
     registerPersistedBindingSource(dispatcherConnectionSource);
     stopWatchingDispatcherConnections = watchDispatcherConnections(() => restorePersistedBindings());
-    stopWatchingMcpForOrchestration = watchMcpForOrchestration();
+    stopWatchingMcpCallers = watchMcpCallers();
   }
   return rebuildPersistedBindings().then((): void => undefined, (err): void => {
     appLog('core:mcp', 'error', 'Persisted binding rebuild failed', {
@@ -371,7 +352,7 @@ export function _resetHandlersForTesting(): void {
   stopWatchingDispatcherWires = null;
   stopWatchingDispatcherConnections?.();
   stopWatchingDispatcherConnections = null;
-  stopWatchingMcpForOrchestration?.();
-  stopWatchingMcpForOrchestration = null;
+  stopWatchingMcpCallers?.();
+  stopWatchingMcpCallers = null;
   bridgeState = 'idle';
 }

@@ -49,8 +49,7 @@ interface ConnectedAgent {
 
 /**
  * The agents in one project connected to the Dispatcher. Resolved as the
- * Dispatcher wires are (#2537), reading agents.json, the defaults and each
- * persona once.
+ * Dispatcher wires are (#2537), reading agents.json and the defaults once.
  */
 async function connectedAgents(project: Project): Promise<ConnectedAgent[]> {
   const agents = (await agentConfig.listDurable(project.path)).filter((a) => !isDisposedAgent(a));

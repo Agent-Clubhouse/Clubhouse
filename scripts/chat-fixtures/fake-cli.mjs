@@ -10,14 +10,15 @@
 // client line (`from: "client"`) the fake waits for the driver to send a
 // matching message, then remaps ids so recorded responses answer the ids the
 // driver actually used. A mismatch exits with code 3 and a diagnostic on
-// stderr. Every other argument (`-p`, `app-server`, `--acp`, …) is accepted
+// stderr. Every other argument (`-p`, `app-server`, `--headless`, …) is accepted
 // and recorded in the report, so a test can assert how the CLI was launched.
 // The report also records the CLIs' state-dir variables and Clubhouse's bridge
 // variables (REPORTED_ENV), so a test can check the app passed them through to
 // the CLI's environment, and call MCP tools as the agent.
 //
 // Standing queries: read-only requests a driver may send at any point (the
-// applied model and effort, plan usage, the model list) are answered with an empty result
+// applied model and effort, plan usage, the model list, and Copilot's closing
+// session.detach) are answered with an empty result
 // whenever they arrive, unless the fixture records that request itself. So a
 // fixture recorded before a driver started asking still replays. A fixture that
 // records one must record every one the driver sends: the Claude driver reads
@@ -102,6 +103,9 @@ const STANDING_QUERIES = {
   'copilot-sdk': {
     'request:models.list': (msg) => ({ jsonrpc: '2.0', id: msg.id, result: { models: [] } }),
     'request:session.commands.list': (msg) => ({ jsonrpc: '2.0', id: msg.id, result: { commands: [] } }),
+    // The detach every session closes with. Recordings end with it; scripts
+    // built by chat-script.ts don't, and the driver would wait out its close grace.
+    'request:session.detach': (msg) => ({ jsonrpc: '2.0', id: msg.id, result: { success: true } }),
   },
 };
 const recordedKeys = new Set(entries.filter((e) => e.from === 'client' && e.msg).map((e) => messageKey(protocol, e.msg)));

@@ -107,7 +107,7 @@ export const NONCE_HEADER = 'X-Clubhouse-Nonce';
 /**
  * An agent's MCP endpoint (Streamable HTTP: POST JSON-RPC, JSON replies).
  * The stdio bridge script proxies to it; agents that take HTTP MCP servers
- * (Copilot over ACP, #2240) connect to it directly with {@link NONCE_HEADER}.
+ * (Copilot, #2240) connect to it directly with {@link NONCE_HEADER}.
  */
 export function agentEndpointUrl(port: number, agentId: string): string {
   return `http://127.0.0.1:${port}/mcp/${agentId}`;
@@ -318,7 +318,6 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     res.end();
     return;
   }
-
   // SSE endpoint for the stdio bridge script.
   if (req.method === 'GET' && action === 'events') {
     handleSSE(agentId, res);
@@ -471,7 +470,19 @@ let unsubscribeBindingChanges: (() => void) | null = null;
 let unsubscribeOrchestrationGate: (() => void) | null = null;
 let unsubscribeAgentAuth: (() => void) | null = null;
 
+/** Drop the change subscriptions, so a restart doesn't notify each change twice. */
+function unsubscribeAll(): void {
+  unsubscribeBindingChanges?.();
+  unsubscribeBindingChanges = null;
+  unsubscribeAgentAuth?.();
+  unsubscribeAgentAuth = null;
+  unsubscribeOrchestrationGate?.();
+  unsubscribeOrchestrationGate = null;
+}
+
 export function start(): Promise<number> {
+  // A retry after a failed start: the last attempt's subscriptions go first.
+  unsubscribeAll();
   // Subscribe to binding changes to notify agents
   unsubscribeBindingChanges = bindingManager.onChange((agentId) => {
     notifyToolsChanged(agentId);
@@ -515,14 +526,7 @@ export function start(): Promise<number> {
 }
 
 export function stop(): void {
-  if (unsubscribeBindingChanges) {
-    unsubscribeBindingChanges();
-    unsubscribeBindingChanges = null;
-  }
-  unsubscribeAgentAuth?.();
-  unsubscribeAgentAuth = null;
-  unsubscribeOrchestrationGate?.();
-  unsubscribeOrchestrationGate = null;
+  unsubscribeAll();
 
   // Close all SSE connections
   for (const connections of sseConnections.values()) {

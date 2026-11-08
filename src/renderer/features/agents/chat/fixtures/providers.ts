@@ -8,6 +8,24 @@ import { MINIMAL_CHAT_CAPABILITIES } from '../../../../../shared/chat';
 import type { ChatCapabilities, ChatDriverId, PermissionOption, ToolCallContent, UsageLimit } from '../../../../../shared/chat';
 
 export type FixtureProvider = 'claude' | 'codex' | 'copilot';
+
+/**
+ * A driver that reports fewer capabilities than the built-in ones: it can
+ * interrupt but not steer, holds the queue client-side, has no plan approval,
+ * no subagent ids and no permission extras. Pass it to `chatFixture` to cover
+ * the composer's and the view's fallbacks (Stop and send, Clubhouse's plan
+ * hand-off), which no built-in driver needs since legacy Copilot ACP (#2868).
+ */
+export const FEWER_CAPABILITIES: Partial<ChatCapabilities> = {
+  steer: false,
+  queue: 'client',
+  planApproval: false,
+  questions: false,
+  subagents: 'none',
+  effortSwitch: 'none',
+  liveLevels: ['plan', 'ask', 'full_access'],
+  permissionExtras: undefined,
+};
 export const FIXTURE_PROVIDERS: readonly FixtureProvider[] = ['claude', 'codex', 'copilot'];
 
 export interface ProviderFixtureProfile {
@@ -138,30 +156,33 @@ export const PROFILES: Record<FixtureProvider, ProviderFixtureProfile> = {
     ],
   },
   copilot: {
-    driver: 'copilot_acp',
+    driver: 'copilot_sdk',
     provider: 'copilot-cli',
     model: 'claude-sonnet-5.5',
     effort: 'medium',
-    cliVersion: '1.0.92',
-    // As the copilot_acp driver reports them (acp-chat-mapper.ts): no Auto level
-    // over ACP, unverified subagent ids claimed as none, per-turn token totals.
+    cliVersion: '1.0.105',
+    // As the copilot_sdk driver reports them (COPILOT_SDK_CAPABILITIES in
+    // src/main/chat/copilot/driver.ts): no Auto level, tokens only, and the
+    // system prompt goes with the first message.
     capabilities: {
       ...MINIMAL_CHAT_CAPABILITIES,
-      steer: false,
-      queue: 'client',
+      steer: true,
+      queue: 'native',
       interrupt: true,
-      resume: 'replay',
-      planApproval: false,
-      questions: false,
-      subagents: 'none',
+      resume: 'native',
+      planApproval: true,
+      questions: true,
+      subagents: 'full',
       usage: 'tokens',
       limits: false,
       images: true,
       slashCommands: true,
       modelSwitch: 'live',
-      liveLevels: ['plan', 'ask', 'full_access'],
+      effortSwitch: 'live',
+      liveLevels: ['plan', 'ask', 'auto_edit', 'full_access'],
       login: 'terminal',
       systemPrompt: false,
+      permissionExtras: { denyMessage: true, updatedInput: false },
     },
     installTitle: 'Run shell command: npm install zod@4 --save',
     installOptions: [

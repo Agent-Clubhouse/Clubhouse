@@ -1,5 +1,5 @@
 import { NdjsonRpcBase, DEFAULT_RPC_TIMEOUT_MS, type BaseRpcOpts, type RpcRequestOptions } from './ndjson-rpc-base';
-import { RpcError } from './acp-client';
+import { RpcError } from './rpc-error';
 import {
   isKnownNotificationMethod,
   isKnownServerRequestMethod,

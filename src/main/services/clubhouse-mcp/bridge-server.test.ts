@@ -4,6 +4,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('./mcp-call-gate', async (original) => ({ ...await original<typeof import('./mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
 import * as http from 'http';
 
+// A start can be made to fail (a port in use) by handing it a dead server once.
+const createServerOverride = vi.hoisted(() => ({ next: null as unknown }));
+vi.mock('http', async (original) => {
+  const actual = await original<typeof import('http')>();
+  const createServer = ((...args: Parameters<typeof actual.createServer>) => {
+    const dead = createServerOverride.next;
+    createServerOverride.next = null;
+    return dead ?? actual.createServer(...args);
+  }) as typeof actual.createServer;
+  return { ...actual, createServer, default: { ...actual, createServer } };
+});
+
 vi.mock('electron', () => {
   const _os = require('os');
   const _path = require('path');
@@ -935,5 +947,38 @@ describe('BridgeServer', () => {
       const hasNotification = events.some(e => e.includes('list_changed'));
       expect(hasNotification).toBe(true);
     });
+  });
+});
+
+describe('BridgeServer restart after a failed start', () => {
+  afterEach(() => {
+    createServerOverride.next = null;
+    bridgeServer.stop();
+  });
+
+  it('a binding change after a failed start and a good one sends one tools/list_changed', async () => {
+    bindingManager._resetForTesting();
+    resetTools();
+    _resetOrchestrationGateForTesting();
+    mockGetAgentNonce.mockReturnValue('test-nonce');
+    registerToolTemplate('agent', 'test', { description: 'Test', inputSchema: { type: 'object' } }, vi.fn());
+    // The first start fails as a port in use would, leaving its subscriptions behind.
+    const { EventEmitter } = await import('events');
+    const dead = Object.assign(new EventEmitter(), {
+      listen: () => { setImmediate(() => dead.emit('error', new Error('EADDRINUSE'))); },
+      address: () => null,
+      close: vi.fn(),
+    });
+    createServerOverride.next = dead;
+    await expect(bridgeServer.start()).rejects.toThrow('EADDRINUSE');
+    const port = await bridgeServer.start();
+
+    const stream = await openStream(port, '/mcp/agent-1/events', { 'X-Clubhouse-Nonce': 'test-nonce' });
+    expect(stream.statusCode).toBe(200);
+    bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'A2' });
+    await vi.waitFor(() => expect(stream.chunks.join('')).toContain('list_changed'));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(stream.chunks.join('').match(/list_changed/g)).toHaveLength(1);
+    stream.close();
   });
 });

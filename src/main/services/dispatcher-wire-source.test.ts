@@ -46,16 +46,13 @@ vi.mock('./agent-config', () => ({
   }),
 }));
 // The policy resolves from the agent's own orchestration config here, with the
-// real resolver; the persona layer is covered by orchestration-policy's own tests.
+// real resolver.
 vi.mock('./orchestration-policy', async () => {
   const { resolveOrchestrationPolicy } = await import('../../shared/orchestration-policy');
   return {
     resolveOrchestrationPolicies: vi.fn(async (projectPath: string, agents: DurableAgentConfig[]) => {
-      if (unreadablePolicies.has(projectPath)) throw new Error('persona unreadable');
-      return new Map(agents.map((a) => [a.id, resolveOrchestrationPolicy(a.orchestration, undefined, {
-        helper: !!a.parentAgentId,
-        mcpOff: !(a.mcpOverride ?? mcp.projects.get(projectPath) ?? mcp.app),
-      })]));
+      if (unreadablePolicies.has(projectPath)) throw new Error('policy unreadable');
+      return new Map(agents.map((a) => [a.id, resolveOrchestrationPolicy(a.orchestration, { helper: !!a.parentAgentId })]));
     }),
   };
 });
@@ -70,16 +67,6 @@ vi.mock('./dispatcher/dispatcher-service', () => ({
   },
 }));
 vi.mock('./pty-manager', () => ({ write: vi.fn(), isRunning: vi.fn(() => true) }));
-/** App and project MCP settings, with isMcpEnabled's real precedence over them. */
-const mcp = vi.hoisted(() => ({ app: true, projects: new Map<string, boolean>(), listeners: new Set<() => void>() }));
-vi.mock('./mcp-settings', () => ({
-  isMcpEnabled: (projectPath?: string, agentOverride?: boolean) =>
-    agentOverride ?? (projectPath ? mcp.projects.get(projectPath) : undefined) ?? mcp.app,
-  onMcpEnablementChanged: (listener: () => void) => {
-    mcp.listeners.add(listener);
-    return () => mcp.listeners.delete(listener);
-  },
-}));
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { buildToolKey } from './clubhouse-mcp/tool-registry';
@@ -95,7 +82,6 @@ import {
   _resetDispatcherWireSourceForTesting,
 } from './dispatcher-wire-source';
 import { helperWireBindingSource, _resetHelperWireSourceForTesting } from './helper-wire-source';
-import { notifyPersonaChanged, notifyProjectDefaultPersonaChanged } from './persona-change-hook';
 import { listDurable } from './agent-config';
 import { resolveOrchestrationPolicies } from './orchestration-policy';
 
@@ -142,9 +128,6 @@ beforeEach(() => {
   configs.clear();
   configListeners.clear();
   unreadablePolicies.clear();
-  mcp.app = true;
-  mcp.projects.clear();
-  mcp.listeners.clear();
   dispatcher.enabled = true;
   dispatcher.id = DISPATCHER;
   dispatcher.path = path.join(os.tmpdir(), 'clubhouse-dispatcher-wires', 'dispatcher');
@@ -168,7 +151,7 @@ beforeEach(() => {
 const stops: Array<() => void> = [];
 
 afterEach(() => {
-  // The persona hook's listeners outlive a test, so every watcher is stopped.
+  // Listeners outlive a test, so every watcher is stopped.
   for (const stop of stops.splice(0)) stop();
   vi.useRealTimers();
 });
@@ -447,16 +430,6 @@ describe('watchDispatcherWires', () => {
     expect(boundPairs()).toEqual([`${DISPATCHER}->durable_lead`, `durable_lead->${DISPATCHER}`]);
   });
 
-  it('rebuilds after a persona change turns the policy on', async () => {
-    const { onChange, flush } = await watched();
-    // The persona's defaults moved; agents.json itself is untouched, so only the persona hook says so.
-    configs.set(projectPath, [agent('durable_lead', { orchestration: connected }), agent('durable_quiet', { orchestration: connected })]);
-    await notifyPersonaChanged(projectPath, 'durable_quiet', undefined);
-    await flush();
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(boundPairs()).toContain(`${DISPATCHER}->durable_quiet`);
-  });
-
   it('rebuilds when a project with a connected orchestrator is removed, and when one is added', async () => {
     configs.set(otherProjectPath, [agent('durable_o1', { orchestration: connected })]);
     const { onChange, flush } = await watched();
@@ -531,15 +504,6 @@ describe('watchDispatcherWires', () => {
       expect(vi.mocked(resolveOrchestrationPolicies).mock.calls.map(([p]) => p)).toEqual([projectPath]);
     });
 
-    it('a persona change reads only its project', async () => {
-      const { flush } = await watchedAndCleared();
-      await notifyPersonaChanged(projectPath, 'durable_quiet', undefined);
-      await notifyProjectDefaultPersonaChanged(projectPath, undefined);
-      await flush();
-      expect(readPaths()).not.toContain(otherProjectPath);
-      expect(readPaths()).toContain(projectPath);
-    });
-
     it('a write to the Dispatcher\'s own folder reads nothing', async () => {
       const { onChange, flush } = await watchedAndCleared();
       for (const listener of configListeners) listener(dispatcher.path);
@@ -582,67 +546,10 @@ describe('watchDispatcherWires', () => {
   });
 });
 
-describe('no Clubhouse MCP, no wire (#2589)', () => {
-  const lead = [`${DISPATCHER}->durable_lead`, `durable_lead->${DISPATCHER}`].sort();
-  const changeMcp = (apply: () => void) => {
-    apply();
-    for (const listener of mcp.listeners) listener();
-  };
-
-  it.each<[string, () => void]>([
-    ['app', () => { mcp.app = false; }],
-    ['project', () => { mcp.projects.set(projectPath, false); }],
-    ['agent', () => { configs.get(projectPath)![0].mcpOverride = false; }],
-  ])('gives no wire with MCP off at %s level, and the saved switch brings it back', async (_level, off) => {
+describe('the Clubhouse MCP always runs', () => {
+  it('keeps the wire whatever an old saved mcpOverride says', async () => {
+    (configs.get(projectPath)![0] as unknown as Record<string, unknown>).mcpOverride = false;
     await rebuild();
-    expect(boundPairs()).toEqual(lead);
-    off();
-    await rebuild();
-    expect(boundPairs()).toEqual([]);
-    expect(configs.get(projectPath)![0].orchestration).toEqual(connected);
-    mcp.app = true;
-    mcp.projects.clear();
-    delete configs.get(projectPath)![0].mcpOverride;
-    await rebuild();
-    expect(boundPairs()).toEqual(lead);
-  });
-
-  it('keeps the wire of an agent turned on when its project and the app are off', async () => {
-    configs.get(projectPath)![0].mcpOverride = true;
-    mcp.app = false;
-    mcp.projects.set(projectPath, false);
-    await rebuild();
-    expect(boundPairs()).toEqual(lead);
-  });
-
-  it('rebuilds live when an app or project MCP setting changes', async () => {
-    await rebuild();
-    expect(boundPairs()).toEqual(lead);
-    const onChanged = vi.fn(() => rebuild());
-    stops.push(watchDispatcherWires(onChanged));
-
-    changeMcp(() => { mcp.projects.set(projectPath, false); });
-    await vi.waitFor(() => expect(boundPairs()).toEqual([]));
-
-    changeMcp(() => { mcp.projects.clear(); });
-    await vi.waitFor(() => expect(boundPairs()).toEqual(lead));
-
-    changeMcp(() => { mcp.app = false; });
-    await vi.waitFor(() => expect(boundPairs()).toEqual([]));
-  });
-
-  it('rebuilds live when an agent\'s own MCP setting changes', async () => {
-    await rebuild();
-    stops.push(watchDispatcherWires(() => rebuild()));
-    const [first, ...rest] = configs.get(projectPath)!;
-    setAgents(projectPath, [{ ...first, mcpOverride: false }, ...rest]);
-    await vi.waitFor(() => expect(boundPairs()).toEqual([]));
-  });
-
-  it('stops listening once unsubscribed', async () => {
-    const stop = watchDispatcherWires(() => undefined);
-    expect(mcp.listeners.size).toBe(1);
-    stop();
-    expect(mcp.listeners.size).toBe(0);
+    expect(boundPairs()).toEqual([`${DISPATCHER}->durable_lead`, `durable_lead->${DISPATCHER}`].sort());
   });
 });

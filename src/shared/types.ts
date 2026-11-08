@@ -39,12 +39,16 @@ export interface OrchestratorInfo {
   shortName: string;
   badge?: string;
   capabilities: ProviderCapabilities;
+  /** The CLI takes MCP servers as launch flags, not only from the folder's MCP file. */
+  mcpLaunchFlags?: boolean;
   conventions?: {
     configDir: string;
     localInstructionsFile: string;
     legacyInstructionsFile: string;
     mcpConfigFile: string;
     skillsDir: string;
+    /** The skills folder relative to the worktree, when it isn't `<configDir>/<skillsDir>`. */
+    skillsRoot?: string;
     agentTemplatesDir: string;
     localSettingsFile: string;
     permissionRules?: boolean;
@@ -133,6 +137,8 @@ export interface Agent {
   runCwd?: string;
   /** Quick agents: HEAD sha of `runCwd` when the run was spawned (best-effort). */
   runBaseSha?: string;
+  /** Quick agents started from a template (D25): its id, so Retry keeps it. */
+  managedTemplateId?: string;
 }
 
 export interface CompletedQuickAgent {
@@ -170,24 +176,8 @@ export interface CompletedQuickAgent {
   inputTokens?: number;
   /** Headless runs: output tokens. */
   outputTokens?: number;
-}
-
-// --- Profile types ---
-
-/** Per-orchestrator env config within a profile */
-export interface OrchestratorProfileEntry {
-  env: Record<string, string>;  // e.g. { CLAUDE_CONFIG_DIR: "~/.claude-work" }
-}
-
-/** Named profile containing env configs for multiple orchestrators */
-export interface OrchestratorProfile {
-  id: string;
-  name: string;           // e.g. "Work", "Personal"
-  orchestrators: Record<string, OrchestratorProfileEntry>;
-}
-
-export interface ProfilesSettings {
-  profiles: OrchestratorProfile[];
+  /** The template the run started from (D25), for Retry. */
+  managedTemplateId?: string;
 }
 
 // --- Config inheritance types ---
@@ -227,6 +217,11 @@ export interface QuickAgentDefaults {
 
 export type SourceControlProvider = 'github' | 'azure-devops';
 
+/** The app-level source control provider (D61), in source-control-settings.json. Unset falls back to the old Clubhouse Mode value. */
+export interface SourceControlSettings {
+  provider?: SourceControlProvider;
+}
+
 /** Project-level default settings applied as snapshots when creating new agents. */
 export interface ProjectAgentDefaults {
   instructions?: string;
@@ -237,15 +232,23 @@ export interface ProjectAgentDefaults {
   buildCommand?: string;
   testCommand?: string;
   lintCommand?: string;
-  /** Default profile to use for agents in this project */
+  /**
+   * @deprecated Provider profiles were removed (#2749): every agent runs on its
+   * provider's own login. Old project settings may still hold an id. Nothing
+   * applies it; only the one-time removal log reads it.
+   */
   profileId?: string;
   /** `off` stops `cli: "auto"` in this project (#2671). A project can't turn it on. */
   helperAuto?: 'off';
   /** Shell command prefix prepended before the CLI binary (e.g. ". ./init.ps1 &&") */
   commandPrefix?: string;
-  /** Default mission ID. Resolved at materialization to .clubhouse/missions/<id>.md content; substituted for @@mission. */
+  /** Default mission ID. Only Clubhouse Mode filled @@Mission with it; retired (#2901), read only by the switch to managed. */
   mission?: string;
-  /** Default persona template ID. Applied to every agent in the project unless the agent has its own `persona` set. */
+  /**
+   * @deprecated Personas were retired (#2901). A project default persona id
+   * saved before then. Only the switch to managed reads it (managed-agents/
+   * legacy-migration); nothing writes or applies it.
+   */
   persona?: string;
 }
 
@@ -278,9 +281,10 @@ export interface DurableAgentConfig {
   /** Why a saved context choice was cleared, shown until the next choice. */
   contextWindowNotice?: string;
   /**
-   * The reasoning effort start_helper asked for (#2671), passed on every launch.
-   * Only the start writes it. A new model or CLI clears it, since a level means
-   * something only to the model it was checked against.
+   * The reasoning effort (#2671), passed on every launch. start_helper writes
+   * it, and so do a managed agent's Settings and templates. A new model or CLI
+   * clears it, since a level means something only to the model it was checked
+   * against.
    */
   effort?: string;
   /** What start_helper decided and why (#2671). A later change of model or CLI clears it. */
@@ -288,6 +292,7 @@ export interface DurableAgentConfig {
   quickAgentDefaults?: QuickAgentDefaults;
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;
+  /** Clubhouse Mode turned off for this agent. Clubhouse Mode was retired (#2901); read only by the switch to managed. */
   clubhouseModeOverride?: boolean;
   /** Last CLI session ID, used to resume previous session on wake */
   lastSessionId?: string;
@@ -309,9 +314,12 @@ export interface DurableAgentConfig {
   mcpIds?: string[];
   /** Per-MCP configuration values keyed by MCP ID then flag name */
   mcpConfigs?: Record<string, Record<string, string>>;
-  /** Per-agent override for the Clubhouse MCP bridge feature. A helper always gets the bridge: see clubhouseMcpOverride. */
-  mcpOverride?: boolean;
-  /** Persona template ID applied at creation. Used to re-inject instructions on materialization. */
+  /**
+   * @deprecated Personas were retired (#2901). The persona id an agent had
+   * before then, kept as a legacy field: the switch to managed reads it
+   * (managed-agents/legacy-migration) and drops it. Nothing writes it, and an
+   * old Dispatcher's `persona: 'dispatcher'` means nothing.
+   */
   persona?: string;
   /** Mission ID overriding the project default. Resolved to .clubhouse/missions/<id>.md content; substituted for @@mission. */
   mission?: string;
@@ -379,10 +387,49 @@ export interface DurableAgentConfig {
   creation?: DurableAgentCreation;
   /**
    * Orchestration policy (#2228): only the fields set on this agent. Unset
-   * fields come from the persona's front-matter, then the defaults. Written
+   * fields come from the defaults. Written
    * only through services/orchestration-policy.ts, never updateDurableConfig.
    */
   orchestration?: import('./orchestration-policy').OrchestrationPolicyConfig;
+  /**
+   * Clubhouse-managed agents (#2819): what the agent is built from. Present
+   * means Clubhouse writes its instructions, skills and MCP servers into its
+   * folder at each session start. Written only through
+   * services/managed-agents, never updateDurableConfig.
+   */
+  managed?: import('./managed-agents-types').ManagedAgentSetup;
+  /**
+   * The template this agent's helpers start from when start_helper names
+   * none (#2895). Unset, or a template that no longer exists, means the app's
+   * default helper template.
+   */
+  helperTemplateId?: string;
+  /**
+   * Unmanaged agents only (#2893): false turns off Clubhouse's hooks and MCP
+   * bridge for a plain CLI. Unset means on.
+   */
+  clubhouseFeatures?: false;
+  /**
+   * Set when Clubhouse switched this agent to managed on its own (D59). Kept
+   * after the notice is dismissed, so it is never switched automatically
+   * again. Written only through services/managed-agents.
+   */
+  managedMigration?: import('./managed-agents-types').ManagedMigration;
+  /**
+   * When this agent first went from unmanaged to managed, by hand or on its
+   * own (D59). Written in the same save as its first setup, and kept after
+   * Stop managing, so Clubhouse never switches it on its own again.
+   */
+  switchedToManagedAt?: string;
+  /** The last automatic switch to managed failed (D59). Cleared when it switches. */
+  managedMigrationFailure?: import('./managed-agents-types').ManagedMigrationFailure;
+  /**
+   * When the orchestration fields the retired persona layer (a project or
+   * user `orchestrator.md`, or its persona) decided for this unmanaged agent
+   * were kept as its own (D62). Set once, so it isn't done again. A new
+   * agent gets it at creation: it never had that layer.
+   */
+  personaLayerCarriedAt?: string;
 }
 
 /** How an orchestrator took a helper's work (#2229). */
@@ -466,6 +513,7 @@ export type HelperDisposeDecision = 'disposed' | 'declined';
 export interface HelperStartArgs {
   name: string;
   task: string;
+  /** @deprecated Accepted and ignored (#2901): helpers start from a template. start_helper says so in `personaNote`. */
   persona?: string;
   cli?: string;
   model?: string;
@@ -483,6 +531,16 @@ export interface HelperStartArgs {
    * orchestrator's own project.
    */
   project?: string;
+  /**
+   * Clubhouse-managed helpers (#2899): the template to build the helper from.
+   * Unset means the orchestrator's helper template, else the app's default
+   * helper template (#2895).
+   */
+  template?: string;
+  /** Agent part ids to add for this helper only (#2899). Nothing is saved to the template. */
+  addParts?: string[];
+  /** Agent part ids to leave out for this helper only (#2899). */
+  removeParts?: string[];
 }
 
 /**
@@ -602,7 +660,6 @@ export interface StartDurableCreationParams extends DurableWorktreeOptions {
   freeAgentMode?: boolean;
   mcpIds?: string[];
   mcpConfigs?: Record<string, Record<string, string>>;
-  persona?: string;
   /** Helpers (#2224): make the new agent a helper of this durable agent. */
   parentAgentId?: string;
   /**
@@ -680,89 +737,23 @@ export interface DurableConfigUpdates {
   /** A provider's choice for this model; null clears it. Refused when the model doesn't offer it. */
   contextWindow?: string | null;
   freeAgentMode?: boolean;
-  clubhouseModeOverride?: boolean;
   lastSessionId?: string | null;
   lastSleep?: AgentSleepInfo | null;
   mcpIds?: string[] | null;
   mcpConfigs?: Record<string, Record<string, string>> | null;
-  /** Per-agent Clubhouse MCP bridge override; null clears it (project and app settings decide). */
-  mcpOverride?: boolean | null;
   /** Per-agent Chat / CLI override; null clears it (provider default). */
   runtimeMode?: import('./chat').AgentRuntimeMode | null;
   /** Per-agent auto-sleep; 'inherit' or null clears it (app default). */
   idleSleep?: import('./idle-sleep').AgentIdleSleep | null;
-  persona?: string;
+  /** Reasoning effort for the model it runs; null clears it (the CLI's default). Applied after a model or CLI change. */
+  effort?: string | null;
+  /** The template its helpers start from; null clears it (the app's default helper template). */
+  helperTemplateId?: string | null;
   mission?: string;
   buildCommand?: string;
   testCommand?: string;
   lintCommand?: string;
   sourceControlProvider?: SourceControlProvider | null;
-}
-
-/**
- * A single per-agent wildcard override, paired with the effective resolved value.
- * `override` is the value stored on the agent record (null when inheriting);
- * `resolved` is what the wildcard actually substitutes to (override → project
- * default → built-in fallback).
- */
-export interface WildcardOverride {
-  override: string | null;
-  resolved: string;
-}
-
-/**
- * Resolved wildcard actuals for a single agent, used to populate the per-agent
- * simple settings form when Clubhouse Mode manages the agent. Identity fields
- * are read-only computed actuals; command/provider fields carry per-agent
- * overrides; mission/persona expose the override, the project default, and the
- * lists of authorable library items.
- */
-export interface AgentWildcardSettings {
-  agentName: string;
-  standbyBranch: string;
-  agentPath: string;
-  sourceControlProvider: { override: SourceControlProvider | null; resolved: SourceControlProvider };
-  buildCommand: WildcardOverride;
-  testCommand: WildcardOverride;
-  lintCommand: WildcardOverride;
-  mission: { override: string | null; projectDefault: string | null; resolved: string | null };
-  persona: { override: string | null; projectDefault: string | null; resolved: string | null };
-  missions: Array<{ id: string }>;
-  personas: Array<{ id: string; name: string; source: 'builtin' | 'user' | 'project' }>;
-}
-
-export interface ClubhouseModeSettings {
-  enabled: boolean;
-  projectOverrides?: Record<string, boolean>;
-  sourceControlProvider?: SourceControlProvider;
-}
-
-export type ConfigDiffCategory = 'instructions' | 'permissions-allow' | 'permissions-deny' | 'mcp' | 'skills' | 'agent-templates';
-export type ConfigDiffAction = 'added' | 'removed' | 'modified';
-
-export interface ConfigDiffItem {
-  id: string;                    // e.g. "permissions-allow:Read(.clubhouse/agents/x/**)"
-  category: ConfigDiffCategory;
-  action: ConfigDiffAction;
-  label: string;                 // Human-readable
-  agentValue?: string;           // Current agent value (resolved)
-  defaultValue?: string;         // Project default value (resolved)
-  rawAgentValue?: string;        // Agent value with wildcards re-applied (for propagation)
-}
-
-export interface ConfigDiffResult {
-  agentId: string;
-  agentName: string;
-  hasDiffs: boolean;
-  items: ConfigDiffItem[];
-}
-
-export interface MaterializationPreview {
-  instructions: string;
-  permissions: PermissionsConfig;
-  mcpJson: string | null;
-  skills: string[];
-  agentTemplates: string[];
 }
 
 /** Provenance of a config item — who added it */
@@ -956,7 +947,9 @@ export interface SoundSettings {
   }>;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'mcp' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher';
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'goobers' | 'feedback' | 'helpers' | 'dispatcher'
+  // Clubhouse-managed agents (#2819).
+  | 'managed-blocks' | 'managed-skills' | 'managed-mcp' | 'managed-templates' | 'managed-orchestration' | 'managed-switch';
 
 // --- Chat idle settings ---
 
@@ -966,12 +959,6 @@ export interface ChatIdleSettings {
 }
 
 // --- MCP settings ---
-
-export interface McpSettings {
-  enabled: boolean;
-  projectDefault?: boolean;
-  projectOverrides?: Record<string, boolean>;
-}
 
 /** An agent's connection to the Clubhouse MCP: when it finished the handshake and how many tools it was last given. */
 export interface AgentMcpConnection {
@@ -987,7 +974,7 @@ export interface DispatcherLink {
   targetName: string;
   /** `active` is bound now. `suspended` is saved but not bound; `reason` says why. */
   status: 'active' | 'suspended';
-  reason?: 'dispatcher_off' | 'store_unwritable' | 'mcp_off' | 'orchestration_off' | 'not_connected_to_dispatcher';
+  reason?: 'dispatcher_off' | 'store_unwritable' | 'orchestration_off' | 'not_connected_to_dispatcher';
 }
 
 // --- Editor settings ---
@@ -1027,6 +1014,13 @@ export interface ExperimentalSettings {
 export const STRUCTURED_MODE_REMOVED_NOTICE_KEY = 'structuredModeRemovedNotice';
 
 /**
+ * Set by the same migration when the removed `copilotLegacyAcp` opt-in was on
+ * (#2868), for a one-time notice that Copilot chat now uses the SDK. The
+ * renderer clears it after showing the notice.
+ */
+export const COPILOT_ACP_REMOVED_NOTICE_KEY = 'copilotLegacyAcpRemovedNotice';
+
+/**
  * Experimental features that count only in preview-eligible builds, where the
  * Experimental settings page is shown. Elsewhere they read as off and stay saved,
  * so a stable build never runs a feature it offers no way to turn off.
@@ -1035,7 +1029,6 @@ export const STRUCTURED_MODE_REMOVED_NOTICE_KEY = 'structuredModeRemovedNotice';
 export const PREVIEW_ONLY_EXPERIMENTAL_FLAGS: readonly string[] = [
   'goobers',
   'copilotSdk', // Legacy preference retained for downgrade compatibility only.
-  'copilotLegacyAcp',
 ];
 
 // --- Security settings ---
@@ -1534,6 +1527,8 @@ export interface SpawnAgentParams {
   agentFile?: string;
   /** Source directory for agent file (e.g. --source ~/.copilot/agents/) */
   agentSource?: string;
+  /** Clubhouse-managed quick agents (#2893): start from this template. */
+  managedTemplate?: { id: string; agentName: string };
 }
 
 export type AgentDetailedState = 'idle' | 'working' | 'needs_permission' | 'tool_error';

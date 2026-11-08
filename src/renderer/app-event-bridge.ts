@@ -20,7 +20,6 @@ import { useHelperStartRequestStore } from './stores/helperStartRequestStore';
 import { useFilePreviewStore } from './stores/filePreviewStore';
 import { useToastStore } from './stores/toastStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
-import { useClubhouseModeStore } from './stores/clubhouseModeStore';
 import { handleShortcutKeydown } from './shortcut-dispatch';
 import { pluginEventBus } from './plugins/plugin-events';
 import { useAppCanvasStore, getProjectCanvasStore, hasProjectCanvasStore, getKnownProjectIds } from './plugins/builtin/canvas/main';
@@ -38,6 +37,8 @@ import { initChatEventListener } from './stores/chatStore';
 import { initToolActivityListener } from './plugins/builtin/canvas/useWireActivity';
 import { usePendingPermissionStore } from './stores/pendingPermissionStore';
 import { showStructuredModeRemovedNotice } from './services/structured-mode-removal-notice';
+import { showCopilotAcpRemovedNotice } from './services/copilot-acp-removal-notice';
+import { showRetiredPluginNotices } from './services/retired-plugin-notice';
 import { showChatDefaultTip } from './features/agents/chat/chat-default-tip';
 import { isDispatcherAgent, isDispatcherProjectId, useDispatcherStore } from './features/dispatcher/dispatcherStore';
 import { DISPATCHER_PROJECT_ID } from '../shared/dispatcher-types';
@@ -284,6 +285,7 @@ function initPtyExitListener(): () => void {
           toolCalls,
           inputTokens,
           outputTokens,
+          ...(agent.managedTemplateId && { managedTemplateId: agent.managedTemplateId }),
         });
 
         // Keep the finished run on screen when it was the one being viewed,
@@ -300,24 +302,6 @@ function initPtyExitListener(): () => void {
         pluginEventBus.emit('agent:completed', { agentId, exitCode, name: agent?.name });
       } catch {
         // Plugin listener error — don't break the app
-      }
-
-      // Config changes detection for durable agents in clubhouse mode
-      if (agent?.kind === 'durable' && agent.worktreePath) {
-        const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
-        if (project) {
-          const cmEnabled = useClubhouseModeStore.getState().isEnabledForProject(project.path);
-          if (cmEnabled) {
-            try {
-              const diff = await window.clubhouse.agentSettings.computeConfigDiff(project.path, agentId);
-              if (diff.hasDiffs) {
-                useAgentStore.getState().openConfigChangesDialog(agentId, project.path);
-              }
-            } catch (err) {
-              console.warn('[app-event-bridge] Failed to compute config diff for agent', agentId, err);
-            }
-          }
-        }
       }
     },
   );
@@ -336,7 +320,7 @@ function initAgentWakingListener(): () => void {
   });
   const removeMaterializationFailedListener = window.clubhouse.agent.onAgentMaterializationFailed((agentId: string, errorMessage: string) => {
     useToastStore.getState().addToast(
-      `Agent ${agentId} started without the latest Clubhouse Mode settings: ${errorMessage}`,
+      `Agent ${agentId} started without its latest setup: ${errorMessage}`,
       'error',
     );
   });
@@ -851,7 +835,10 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initAgentAttentionListener());
   cleanups.push(initStaleStatusCleanup());
 
-  showStructuredModeRemovedNotice().catch(() => { /* best-effort one-time notice */ });
+  // One after the other: each reads the flags and saves them back without its own marker.
+  showStructuredModeRemovedNotice().catch(() => { /* best-effort one-time notice */ })
+    .then(() => showCopilotAcpRemovedNotice()).catch(() => { /* best-effort one-time notice */ });
+  showRetiredPluginNotices().catch(() => { /* best-effort one-time notice */ });
   // The one call site for the first-launch Chat tip: a welcome intro (#2814) can run first or gate it here.
   showChatDefaultTip().catch(() => { /* best-effort one-time tip; asked again next launch */ });
   cleanups.push(initKeyboardShortcuts());

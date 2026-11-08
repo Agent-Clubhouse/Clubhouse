@@ -5,23 +5,28 @@
  * saves on its own, like the card, so this page never joins the save bar.
  */
 
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
 import { Toggle } from '../../../components/Toggle';
 import { Field, SectionHeading, inputClass, selectClass } from '../agentSettingsUi';
 import { controlHelp } from './helper-model';
 import { maxHelpersCeiling, useOrchestration } from './orchestration-hooks';
 import {
-  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, AutoHelpersToggle, AUTO_HELPERS_HELP, CrossProjectToggle, DISPATCHER_HELP, DISPATCHER_MCP_OFF_HELP, DispatcherToggle, HelperCountInput, accessNote, mcpOffNote,
+  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, AutoHelpersToggle, AUTO_HELPERS_HELP, CrossProjectToggle, DISPATCHER_HELP, DispatcherToggle, HelperCountInput, accessNote,
 } from './OrchestrationFields';
 import { useDispatcherConnection } from '../../dispatcher/useDispatcherEnabled';
 import { TurnOffOrchestrationDialog } from './TurnOffOrchestrationDialog';
 
-export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; projectPath: string | undefined }) {
+export function AgentHelpersSettings({ agent, projectPath, helperDefaults }: {
+  agent: Agent;
+  projectPath: string | undefined;
+  /** More rows under "Defaults for new helpers" (a managed agent's helper template). */
+  helperDefaults?: ReactNode;
+}) {
   const orch = useOrchestration(projectPath, agent);
   const ids = { auto: useId(), toggle: useId(), access: useId(), control: useId(), count: useId(), crossProject: useId(), dispatcher: useId() };
-  // Connect to Dispatcher shows while the Dispatcher is turned on, with orchestration on or off (#2578), and off for want of MCP.
-  const { show: showDispatcher, offForMcp } = useDispatcherConnection();
+  // Connect to Dispatcher shows while the Dispatcher is turned on, with orchestration on or off (#2578).
+  const { show: showDispatcher } = useDispatcherConnection();
   const [countError, setCountError] = useState<string | null>(null);
   const { policy, access, saving } = orch;
   const running = agent.status === 'running';
@@ -34,7 +39,6 @@ export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; pro
   return (
     <div data-testid="agent-helpers-settings">
       <SectionHeading title="Orchestrating" />
-      {policy.mcpOff && <p className="py-1.5 text-xs text-ctp-subtext1" data-testid="settings-orchestrate-mcp-off">{mcpOffNote(agent.name)}</p>}
       <Field
         label="Let this agent orchestrate"
         htmlFor={ids.toggle}
@@ -43,7 +47,7 @@ export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; pro
         <Toggle
           id={ids.toggle}
           checked={policy.orchestrate}
-          disabled={saving || !!policy.mcpOff}
+          disabled={saving}
           onChange={(on) => void orch.setOrchestrate(on)}
           aria-label={`Let ${agent.name} orchestrate`}
           data-testid="settings-orchestrate-toggle"
@@ -101,12 +105,12 @@ export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; pro
         </Field>
       )}
       {showDispatcher && (
-        <Field label="Connect to Dispatcher" htmlFor={ids.dispatcher} help={offForMcp ? DISPATCHER_MCP_OFF_HELP : DISPATCHER_HELP}>
+        <Field label="Connect to Dispatcher" htmlFor={ids.dispatcher} help={DISPATCHER_HELP}>
           <DispatcherToggle
             id={ids.dispatcher}
-            checked={policy.connectToDispatcher && !offForMcp}
+            checked={policy.connectToDispatcher}
             name={agent.name}
-            disabled={saving || !!policy.mcpOff || offForMcp}
+            disabled={saving}
             onChange={(on) => void orch.setConnectToDispatcher(on)}
             testId="settings-orchestrate-dispatcher"
           />
@@ -131,6 +135,7 @@ export function AgentHelpersSettings({ agent, projectPath }: { agent: Agent; pro
           testId="settings-orchestrate-access"
         />
       </Field>
+      {helperDefaults}
       {orch.error && <p className="py-1.5 text-xs text-ctp-error" role="alert" data-testid="settings-orchestrate-error">{orch.error}</p>}
 
       {orch.turnOff && (

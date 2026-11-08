@@ -439,17 +439,9 @@ export interface PluginModule {
   deactivate?(): void | Promise<void>;
   MainPanel?: React.ComponentType<{ api: PluginAPI }>;
   SidebarPanel?: React.ComponentType<{ api: PluginAPI }>;
-  /** @deprecated The built-in Hub was removed; this export is never rendered. Kept for SDK compatibility. */
-  HubPanel?: React.ComponentType<HubPanelProps>;
   SettingsPanel?: React.ComponentType<{ api: PluginAPI }>;
   /** Global dialog panel rendered as a modal overlay (v0.7+). */
   DialogPanel?: React.ComponentType<{ api: PluginAPI; onClose: () => void }>;
-}
-
-/** @deprecated The built-in Hub was removed. Kept for SDK compatibility. */
-export interface HubPanelProps {
-  paneId: string;
-  resourceId?: string;
 }
 
 // ── Sub-API interfaces ─────────────────────────────────────────────────
@@ -673,6 +665,7 @@ export interface AgentsAPI {
     mcpIds?: string[];
     /** @deprecated Structured mode was removed. Accepted for compatibility and ignored; will be removed in the next plugin API major. */
     structuredMode?: boolean;
+    /** @deprecated Personas were retired (#2901). Accepted for compatibility and ignored; will be removed in the next plugin API major. */
     persona?: string;
   }): Promise<string>;
   runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string; orchestrator?: string; freeAgentMode?: boolean; metadata?: Record<string, string> }): Promise<string>;
@@ -699,12 +692,6 @@ export interface AgentsAPI {
   getCompanionStatus(): Promise<'sleeping' | 'waking' | 'active' | 'none'>;
   /** Get the companion agent's workspace path. Requires 'companion' permission. @since 0.9 */
   getCompanionWorkspace(): Promise<string>;
-}
-
-/** @deprecated The built-in Hub was removed; `api.hub` is an empty namespace kept for SDK compatibility. */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface HubAPI {
-  // Intentionally empty
 }
 
 export interface NavigationAPI {
@@ -820,10 +807,8 @@ export interface CanvasWidgetComponentProps {
 export interface PopoutEntry {
   windowId: number;
   params: {
-    type: 'agent' | 'hub' | 'canvas';
+    type: 'agent' | 'canvas';
     agentId?: string;
-    /** @deprecated Hub pop-outs no longer exist. */
-    hubId?: string;
     canvasId?: string;
     projectId?: string;
   };
@@ -833,8 +818,6 @@ export interface PopoutEntry {
 export interface PopoutState {
   popouts: PopoutEntry[];
   findAgentPopout(agentId: string): PopoutEntry | undefined;
-  /** @deprecated Hub pop-outs no longer exist; always returns undefined. */
-  findHubPopout(hubId: string): PopoutEntry | undefined;
   findCanvasPopout(canvasId: string): PopoutEntry | undefined;
 }
 
@@ -997,11 +980,17 @@ export interface AgentConfigTargetOptions {
   projectId?: string;
 }
 
+/**
+ * Since Clubhouse Mode was retired (#2901), these methods still read and write
+ * the project's files (`.clubhouse/skills`, `.clubhouse/agent-templates` and
+ * the project's default agent settings), so a plugin's remove and list calls
+ * keep working. No agent reads those files when it starts any more, apart from
+ * project MCP servers, which reach an unmanaged agent without an MCP file of
+ * its own. A Clubhouse-managed agent gets only its setup.
+ */
 export interface AgentConfigAPI {
   /**
-   * Inject a skill definition for project agents.
-   * When clubhouse mode is on, integrates with materialization.
-   * When off, writes directly to the orchestrator's skills directory.
+   * Inject a skill definition into the project's source skills folder.
    * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
   injectSkill(name: string, content: string, opts?: AgentConfigTargetOptions): Promise<void>;
@@ -1010,9 +999,7 @@ export interface AgentConfigAPI {
   /** List skills injected by this plugin. */
   listInjectedSkills(opts?: AgentConfigTargetOptions): Promise<string[]>;
   /**
-   * Inject an agent template definition for project agents.
-   * When clubhouse mode is on, integrates with materialization.
-   * When off, writes directly to the orchestrator's agent templates directory.
+   * Inject an agent template definition into the project's source agent templates folder.
    * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
   injectAgentTemplate(name: string, content: string, opts?: AgentConfigTargetOptions): Promise<void>;
@@ -1021,10 +1008,8 @@ export interface AgentConfigAPI {
   /** List agent templates injected by this plugin. */
   listInjectedAgentTemplates(opts?: AgentConfigTargetOptions): Promise<string[]>;
   /**
-   * Append content to the project instruction file.
+   * Append content to the project's default instructions.
    * Content is added at the end with a plugin attribution comment.
-   * When clubhouse mode is on, integrates with materialization pipeline.
-   * When off, appends directly to the instruction file.
    * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
   appendInstructions(content: string, opts?: AgentConfigTargetOptions): Promise<void>;
@@ -1035,7 +1020,7 @@ export interface AgentConfigAPI {
   /**
    * Add permission allow rules for project agents.
    * Requires the elevated 'agent-config.permissions' permission.
-   * Rules are namespaced per plugin and merged during materialization.
+   * Rules are namespaced per plugin and saved in the project's default permissions.
    * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
   addPermissionAllowRules(rules: string[], opts?: AgentConfigTargetOptions): Promise<void>;
@@ -1052,7 +1037,7 @@ export interface AgentConfigAPI {
   /**
    * Inject MCP server configuration for project agents.
    * Requires the elevated 'agent-config.mcp' permission.
-   * Configuration is merged into the agent's .mcp.json during materialization.
+   * Saved in the project's default MCP servers.
    * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
   injectMcpServers(servers: Record<string, unknown>, opts?: AgentConfigTargetOptions): Promise<void>;
@@ -1062,9 +1047,9 @@ export interface AgentConfigAPI {
   getInjectedMcpServers(opts?: AgentConfigTargetOptions): Promise<Record<string, unknown>>;
   /**
    * Register an agent template at runtime (v0.9+).
-   * The template appears in the agent template gallery alongside built-in templates,
-   * grouped under the plugin name. Returns a Disposable to unregister the template.
-   * Template creation injects the specified prompt content, skills, and MCP servers.
+   * @deprecated Does nothing since Clubhouse-managed agents replaced the agent
+   * template gallery (#2901). Kept so plugins that call it keep working; the
+   * returned Disposable is a no-op.
    */
   registerAgentTemplate(template: {
     name: string;
@@ -1336,8 +1321,6 @@ export interface PluginAPI {
   events: EventsAPI;
   settings: SettingsAPI;
   agents: AgentsAPI;
-  /** @deprecated The built-in Hub was removed; empty namespace kept for SDK compatibility. */
-  hub: HubAPI;
   navigation: NavigationAPI;
   widgets: WidgetsAPI;
   terminal: TerminalAPI;

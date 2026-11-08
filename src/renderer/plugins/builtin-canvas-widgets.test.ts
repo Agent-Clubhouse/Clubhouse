@@ -394,10 +394,10 @@ describe('pre-registered widgets without activation do not crash renderer', () =
   });
 });
 
-// ── Canvas context menu filters disabled and MCP-dependent widgets ──────
+// ── Canvas context menu filters disabled widgets ──────
 
-describe('CanvasContextMenu filters widgets by enabled state and MCP', () => {
-  it('filters against appEnabled and requiresMcp (structural)', () => {
+describe('CanvasContextMenu filters widgets by enabled state', () => {
+  it('filters against appEnabled only: MCP always runs (structural)', () => {
     const fs = require('fs');
     const path = require('path');
     const source = fs.readFileSync(
@@ -412,11 +412,9 @@ describe('CanvasContextMenu filters widgets by enabled state and MCP', () => {
     // Must read appEnabled from the store
     expect(source).toContain('appEnabled');
 
-    // Must check requiresMcp on the manifest
-    expect(source).toContain('requiresMcp');
-
-    // Must check mcpEnabled
-    expect(source).toContain('mcpEnabled');
+    // No MCP gate: the Clubhouse MCP always runs
+    expect(source).not.toContain('mcpEnabled');
+    expect(source).not.toContain('mcpSettingsStore');
   });
 });
 

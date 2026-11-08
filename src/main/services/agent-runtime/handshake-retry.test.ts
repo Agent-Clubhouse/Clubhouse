@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { OrchestratorProvider } from '../../orchestrators';
-const state = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], projects: [] as { path: string }[], binary: '', prefix: '', env: { SAFE: 'synthetic' }, mode: { mode: 'chat' } as { mode: 'chat' | 'terminal'; driver?: 'codex_app_server' | 'copilot_sdk' | 'copilot_acp' }, active: undefined as unknown, registry: { generation: 0, pending: false }, defaults: { generation: 0, pending: false }, configGeneration: 0, profiles: {} as object }));
+const state = vi.hoisted(() => ({ agents: [] as DurableAgentConfig[], projects: [] as { path: string }[], binary: '', prefix: '', env: { SAFE: 'synthetic' }, mode: { mode: 'chat' } as { mode: 'chat' | 'terminal'; driver?: 'codex_app_server' | 'copilot_sdk' | 'copilot_acp' }, active: undefined as unknown, registry: { generation: 0, pending: false }, defaults: { generation: 0, pending: false }, configGeneration: 0 }));
 vi.mock('node:fs', async (actual) => {
   const real = await actual<typeof import('node:fs')>();
   return { ...real, lstatSync: vi.fn(real.lstatSync), openSync: vi.fn(real.openSync) };
@@ -12,22 +12,21 @@ vi.mock('node:fs', async (actual) => {
 vi.mock('../agent-config', () => ({ peekDurableConfigs: vi.fn(async () => state.agents), agentConfigGeneration: () => state.configGeneration }));
 vi.mock('../project-store', () => ({ peekProjects: vi.fn(async () => state.projects), projectRegistryMutationState: () => ({ ...state.registry }) }));
 vi.mock('../base-dir', () => ({ getBaseDirPath: () => state.projects[0]?.path || '/synthetic-unregistered' }));
-vi.mock('../profile-settings', () => ({ getSettings: () => state.profiles }));
 vi.mock('../agent-settings-service', () => ({ projectSettingsMutationState: () => ({ ...state.defaults }) }));
 vi.mock('../dispatcher/dispatcher-paths', () => ({ isDispatcherPath: () => false }));
 vi.mock('../agent-registry', () => ({ agentRegistry: { get: () => state.active } }));
 vi.mock('../agent-system', () => ({
   resolveOrchestrator: vi.fn(async (_p: string, provider?: string) => ({ id: provider || 'codex-cli', getBinaryPath: () => state.binary }) as OrchestratorProvider),
-  resolveProfileEnv: vi.fn(async () => state.env), resolveCommandPrefix: vi.fn(async () => state.prefix),
+  resolveCommandPrefix: vi.fn(async () => state.prefix),
 }));
 vi.mock('../chat-runtime-settings', () => ({ resolveRuntimeMode: () => state.mode }));
-vi.mock('./chat-spawn', () => ({ chatLaunchEnvironment: vi.fn((env) => env) }));
+vi.mock('./chat-spawn', () => ({ chatLaunchEnvironment: vi.fn(() => state.env) }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 import { MAX_HANDSHAKE_INPUT_BYTES, retryAgentHandshake } from './handshake-retry';
 import { FakeChatDriver } from './fake-chat-driver';
 import { clearChatDrivers, registerChatDriver } from './chat-drivers';
 import { clearDriverHealth, driverHealthKey, driverPausedReason, probeDriver, recordDriverFailure, DRIVER_FAILURE_THRESHOLD } from './chat-driver-health';
-import { resolveCommandPrefix, resolveProfileEnv, resolveOrchestrator } from '../agent-system';
+import { resolveCommandPrefix, resolveOrchestrator } from '../agent-system';
 import { chatLaunchEnvironment } from './chat-spawn';
 import { withAgentActivity } from '../agent-transition';
 let dir: string, script: string, driver: FakeChatDriver;
@@ -37,7 +36,7 @@ beforeEach(() => {
   vi.clearAllMocks(); clearChatDrivers(); clearDriverHealth();
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-2851-')); script = path.join(dir, 'init.sh');
   state.binary = path.join(dir, 'fake-cli'); fs.writeFileSync(state.binary, 'synthetic binary; never executed'); fs.writeFileSync(script, 'broken');
-  state.registry = { generation: 0, pending: false }; state.defaults = { generation: 0, pending: false }; state.configGeneration = 0; state.profiles = {};
+  state.registry = { generation: 0, pending: false }; state.defaults = { generation: 0, pending: false }; state.configGeneration = 0;
   state.prefix = `. "${script}"`; state.mode = { mode: 'chat' }; state.env = { SAFE: 'synthetic' }; state.active = undefined;
   state.projects = [{ path: dir }]; state.agents = [{ id: 'a', name: 'test', color: 'blue', createdAt: '', worktreePath: dir, orchestrator: 'codex-cli' }];
   driver = new FakeChatDriver('codex_app_server', 'codex-cli');
@@ -46,13 +45,11 @@ beforeEach(() => {
 });
 afterEach(() => { clearChatDrivers(); clearDriverHealth(); fs.rmSync(dir, { recursive: true, force: true }); });
 describe('explicit scoped handshake retry', () => {
-  it.each([
-    ['copilot_sdk', 'copilot_acp'], ['copilot_acp', 'copilot_sdk'],
-  ] as const)('does not probe %s selection through registered %s', async (selected, registered) => {
+  it('does not probe the Copilot SDK selection through another provider\'s driver', async () => {
     clearChatDrivers();
     state.agents[0].orchestrator = 'copilot-cli';
-    state.mode = { mode: 'chat', driver: selected };
-    const other = new FakeChatDriver(registered, 'copilot-cli');
+    state.mode = { mode: 'chat', driver: 'copilot_sdk' };
+    const other = new FakeChatDriver('codex_app_server', 'codex-cli');
     const probe = vi.spyOn(other, 'probe');
     registerChatDriver(other);
     expect(await retryAgentHandshake(dir, 'a')).toMatchObject({ status: 'cannot_probe' });
@@ -68,7 +65,7 @@ describe('explicit scoped handshake retry', () => {
     expect(driverPausedReason('unrelated')).toBeTruthy();
     await probeDriver(driver, state.binary, state.env, state.prefix);
     expect(driver.probe).toHaveBeenCalledTimes(5); // explicit success was not cached as readiness
-    expect(resolveProfileEnv).toHaveBeenCalledWith(dir, 'codex-cli'); expect(resolveCommandPrefix).toHaveBeenCalledWith(dir); expect(chatLaunchEnvironment).toHaveBeenCalledWith(state.env);
+    expect(resolveCommandPrefix).toHaveBeenCalledWith(dir); expect(chatLaunchEnvironment).toHaveBeenCalledWith();
   });
   it('bypasses only its cached success and preserves failed retry backoff and unrelated keys', async () => {
     fs.writeFileSync(script, 'repaired'); await probeDriver(driver, state.binary, state.env, state.prefix); pause(); pause('unrelated');
@@ -132,7 +129,7 @@ describe('explicit scoped handshake retry', () => {
     expect(driver.probe).toHaveBeenCalledTimes(phase === 'dispatch' ? 0 : 1); expect(driverPausedReason(original)).toBeTruthy();
   });
   it.each(['dispatch', 'receipt'])('rejects final %s interleavings for live state witnesses', async (phase) => {
-    for (const change of ['registry', 'registry_completed', 'defaults', 'binary', 'lifecycle', 'profiles', 'driver', 'external_settings']) {
+    for (const change of ['registry', 'registry_completed', 'defaults', 'binary', 'lifecycle', 'launch_env', 'driver', 'external_settings']) {
       clearDriverHealth(); pause(); const original = key(); fs.writeFileSync(script, 'repaired');
       let finish!: () => void; const wait = new Promise<void>((r) => { finish = r; }); let calls = 0;
       vi.mocked(resolveCommandPrefix).mockImplementation(async () => { if (++calls === (phase === 'dispatch' ? 2 : 3)) await wait; return state.prefix; });
@@ -145,10 +142,10 @@ describe('explicit scoped handshake retry', () => {
       if (change === 'defaults') { state.defaults.generation++; state.defaults.pending = true; }
       if (change === 'binary') fs.writeFileSync(state.binary, 'changed-'+Math.random());
       if (change === 'lifecycle') await withAgentActivity('a', async () => {});
-      if (change === 'profiles') state.profiles = { changed: true };
+      if (change === 'launch_env') state.env = { SAFE: 'changed' };
       finish(); expect((await check).status, change).toBe('stale');
       expect(driver.probe, change).toHaveBeenCalledTimes(phase === 'dispatch' ? 0 : 1); expect(driverPausedReason(original), change).toBeTruthy();
-      state.registry.pending = false; state.defaults.pending = false; state.projects = [{ path: dir }]; state.profiles = {}; registerChatDriver(driver);
+      state.registry.pending = false; state.defaults.pending = false; state.projects = [{ path: dir }]; state.env = { SAFE: 'synthetic' }; registerChatDriver(driver);
       fs.rmSync(path.join(dir, '.clubhouse'), { recursive: true, force: true });
     }
   });

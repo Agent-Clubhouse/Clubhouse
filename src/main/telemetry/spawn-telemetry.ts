@@ -19,10 +19,7 @@ export interface SpawnFacts {
   orchestrator?: string;
   /** Unset until the spawn picks a runtime; omitted from attributes until then. */
   runtime?: Runtime;
-  clubhouseMode?: boolean;
-  mcpEnabled?: boolean;
   hooksEnabled?: boolean;
-  profileActive?: boolean;
   wrapperApplied?: boolean;
   model?: string;
   /** Headless only: the process never got a PID. */
@@ -47,10 +44,7 @@ export function modelFamily(model: string | undefined): Parameters<typeof ATTR.m
 export function spawnAttrs(f: SpawnFacts): TelAttr[] {
   const attrs: TelAttr[] = [ATTR.orchestrator(orchestratorAttr(f.orchestrator)), ATTR.modelFamily(modelFamily(f.model))];
   if (f.runtime) attrs.push(ATTR.agentRuntime(f.runtime));
-  if (f.clubhouseMode !== undefined) attrs.push(ATTR.clubhouseMode(f.clubhouseMode));
-  if (f.mcpEnabled !== undefined) attrs.push(ATTR.mcpEnabled(f.mcpEnabled));
   if (f.hooksEnabled !== undefined) attrs.push(ATTR.hooksEnabled(f.hooksEnabled));
-  if (f.profileActive !== undefined) attrs.push(ATTR.profileActive(f.profileActive));
   if (f.wrapperApplied !== undefined) attrs.push(ATTR.wrapperApplied(f.wrapperApplied));
   return attrs;
 }

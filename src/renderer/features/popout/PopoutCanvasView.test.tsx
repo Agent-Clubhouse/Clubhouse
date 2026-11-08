@@ -124,7 +124,7 @@ describe('PopoutCanvasView', () => {
 
     expect(agentId).toBe('new-agent-id');
     expect(window.clubhouse.agent.createDurable).toHaveBeenCalledWith(
-      '/projects/proj-1', 'fresh', 'blue', undefined, true, undefined, undefined, undefined, undefined,
+      '/projects/proj-1', 'fresh', 'blue', undefined, true, undefined, undefined, undefined,
     );
     expect(mockSpawnDurableAgent).toHaveBeenCalled();
     expect(window.clubhouse.window.requestDurableReload).toHaveBeenCalledWith('proj-1');

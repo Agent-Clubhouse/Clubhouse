@@ -212,7 +212,7 @@ export interface ChatUsage {
   /** Plan / rate-limit windows; account-wide, so kept across sessions. */
   limits: UsageLimit[];
   context: { used: number; size: number; window?: 'input' | 'total' } | null;
-  /** Every completed turn's tokens summed, for drivers that send no session total (ACP). */
+  /** Every completed turn's tokens summed, for drivers that send no session total. */
   turnTotal: TokenUsage | null;
 }
 
@@ -629,7 +629,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       // A native queue (and an older transcript) reports no dispatch, so a new
       // turn delivers the oldest message no queue_state has named. A 'system'
       // turn is the agent's own work (/compact, a permission or question with
-      // no turn open, an ACP agent starting on its own) and delivers nothing.
+      // no turn open, an agent starting on its own) and delivers nothing.
       const next = event.data.trigger === 'system' ? -1 : state.queued.findIndex((q) => !q.runtimeOwned);
       const delivered = state.queued[next];
       return {

@@ -7,20 +7,10 @@ vi.mock('../panels/AccessoryPanel', async (orig) => ({
   AccessoryPanel: () => <div data-testid="accessory-panel" />,
 }));
 
-vi.mock('./sidebar/ChromeAgentDialogs', async () => {
-  const { create } = await import('zustand');
-  const store = create<{ request: unknown; openNewAgent: (id: string) => void; openGallery: (id: string) => void; close: () => void }>((set) => ({
-    request: null,
-    openNewAgent: (projectId) => set({ request: { kind: 'durable', projectId } }),
-    openGallery: (projectId) => set({ request: { kind: 'gallery', projectId } }),
-    close: () => set({ request: null }),
-  }));
-  return { ChromeAgentDialogs: () => null, useChromeDialogStore: store };
-});
+vi.mock('./sidebar/ChromeAgentDialogs', () => ({ ChromeAgentDialogs: () => null }));
 
 import { ChromeSidebar } from './ChromeSidebar';
 import { feedbackStatus, setFeedback } from '../features/feedback/feedback-test-utils';
-import { useChromeDialogStore } from './sidebar/ChromeAgentDialogs';
 import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useAgentStore } from '../stores/agentStore';
@@ -86,7 +76,6 @@ beforeEach(() => {
   });
   usePluginStore.setState({ plugins: {}, appEnabled: [] });
   useChromeStore.setState({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
-  useChromeDialogStore.setState({ request: null });
   useUIStore.setState({ activeHostId: null });
   useAnnexClientStore.setState({ satellites: [] });
   useRemoteProjectStore.setState({ satelliteProjects: {}, remoteAgents: {}, remoteAgentDetailedStatus: {}, remoteProjectIcons: {} });
@@ -206,7 +195,6 @@ describe('ChromeSidebar', () => {
       fireEvent.mouseEnter(header);
       fireEvent.click(screen.getByLabelText('New agent in Goobers'));
       expect(useChromeStore.getState().newAgent).toMatchObject({ kind: 'durable', projectId: 'p2' });
-      expect(useChromeDialogStore.getState().request).toBeNull();
     });
 
     it('opens from each New menu item with that kind chosen', () => {
@@ -218,6 +206,13 @@ describe('ChromeSidebar', () => {
       fireEvent.click(screen.getByTestId('chrome-new'));
       fireEvent.click(screen.getByRole('menuitem', { name: /Durable agent/ }));
       expect(useChromeStore.getState().newAgent).toMatchObject({ kind: 'durable' });
+    });
+
+    it('leaves out Agent from a template: New agent offers templates (#2901)', () => {
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId('chrome-new'));
+      expect(screen.getByRole('menuitem', { name: /Durable agent/ })).toBeTruthy();
+      expect(screen.queryByRole('menuitem', { name: /Agent from a template/ })).toBeNull();
     });
 
     it("shows the New agent shortcut the platform's way", () => {

@@ -251,7 +251,8 @@ export type GitOp = (typeof GIT_OPS)[number];
  */
 export const SETTINGS_KEYS = [
   'clipboard', 'editor', 'mcp', 'security', 'goobers', 'annex', 'notifications', 'orchestrators', 'headless',
-  'free_agent', 'badge', 'update', 'logging', 'sound', 'session', 'clubhouse_mode', 'experimental', 'marketplace', 'theme', 'chat_idle', 'orchestration',
+  'free_agent', 'badge', 'update', 'logging', 'sound', 'session', 'experimental', 'marketplace', 'theme', 'chat_idle', 'orchestration',
+  'source_control',
 ] as const;
 
 /** Built-in theme ids (shared/types.ts BuiltinThemeId); plugin themes report `other`. */
@@ -399,7 +400,6 @@ export const ATTR = {
   // Config snapshot (§5.4): counts and switches only, never names.
   projectsCount: intAttr('clubhouse.projects.count'),
   themeKind: enumAttr('clubhouse.theme.kind', ['builtin', 'plugin']),
-  clubhouseMode: boolAttr('clubhouse.clubhouse_mode'),
   annexServer: boolAttr('clubhouse.annex.server'),
   annexClient: boolAttr('clubhouse.annex.client'),
   loggingEnabled: boolAttr('clubhouse.logging.enabled'),
@@ -433,7 +433,7 @@ export const ATTR = {
   // closed enums only; never message text, tool inputs or paths.
   /** The chat transport, from the driver's `session_started` (research §7). */
   chatDriver: enumAttr('clubhouse.chat.driver', [
-    'claude_agent_sdk', 'claude_stream_json', 'codex_app_server', 'copilot_acp', 'copilot_sdk', 'acp',
+    'claude_agent_sdk', 'claude_stream_json', 'codex_app_server', 'copilot_sdk',
   ]),
   turnEndReason: enumAttr('clubhouse.turn.end_reason', ['complete', 'error', 'cancelled', 'timeout']),
   turnToolCalls: intAttr('clubhouse.turn.tool_calls'),
@@ -477,7 +477,7 @@ export const ATTR = {
    * reports the requested id until its init arrives.
    */
   chatResumeHonored: boolAttr('clubhouse.chat.resume_honored'),
-  /** A native session load (ACP `session/load`), request to answer or to giving up, in milliseconds (#2296). */
+  /** A native session load, request to answer or to giving up, in milliseconds, for a driver that times it (#2296). */
   chatResumeLoadMs: intAttr('clubhouse.chat.resume.load_ms'),
   /** The same load, request to its first replayed update, in milliseconds. */
   chatResumeFirstReplyMs: intAttr('clubhouse.chat.resume.first_reply_ms'),
@@ -544,14 +544,12 @@ export const ATTR = {
    * Why the tool registry refused a call before any handler ran (#2308). Only on
    * `clubhouse.mcp.tool_call` spans whose result is `tool_error`.
    */
-  mcpRefusalReason: enumAttr('clubhouse.mcp.refusal.reason', ['group_off', 'unparseable', 'no_binding', 'unknown_tool', 'invalid_args', 'tool_denied', 'mcp_off']),
+  mcpRefusalReason: enumAttr('clubhouse.mcp.refusal.reason', ['group_off', 'unparseable', 'no_binding', 'unknown_tool', 'invalid_args', 'tool_denied', 'caller_unknown']),
   binaryLookupTier: enumAttr('clubhouse.binary.lookup_tier', ['cache', 'well_known', 'path_scan', 'login_shell', 'not_found']),
   // Phase 4b: spawn, create, delete, kill, shoulder taps
   agentResume: boolAttr('clubhouse.agent.resume'),
   usesWorktree: boolAttr('clubhouse.agent.uses_worktree'),
-  mcpEnabled: boolAttr('clubhouse.mcp.enabled'),
   hooksEnabled: boolAttr('clubhouse.hooks.enabled'),
-  profileActive: boolAttr('clubhouse.profile.active'),
   wrapperApplied: boolAttr('clubhouse.wrapper.applied'),
   // A helper's start and the presets behind it (#2671). Codes only: never a raw model id, a task or a persona.
   helperRoutingRequestedCli: enumAttr('clubhouse.helper_routing.requested_cli', ['claude-code', 'codex-cli', 'copilot-cli', 'auto', 'other', 'unset']),
@@ -983,9 +981,8 @@ export const SPANS = {
   'clubhouse.ipc.invoke': { level: 'detailed', root: true },
   /** pre_tool → post_tool / tool_error from the hook server. Detailed only. */
   'clubhouse.agent.tool_call': { level: 'detailed', root: true },
-  /** Durable agent creation (IPC entry → config written, persona applied). */
+  /** Durable agent creation (IPC entry → config written). */
   'clubhouse.agent.create': { level: 'standard', root: true },
-  'clubhouse.agent.persona_inject': { level: 'standard', root: false },
   /** Durable agent deletion, any mode. */
   'clubhouse.agent.delete': { level: 'standard', root: true },
   /** spawnAgent entry → process launched (or the throw). */

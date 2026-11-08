@@ -5,7 +5,7 @@
  * a prefix of it to check intermediate (streaming) states.
  */
 
-import type { ChatEvent } from '../../../../../shared/chat';
+import type { ChatCapabilities, ChatEvent } from '../../../../../shared/chat';
 import { ChatFixture } from './builder';
 import { PROFILES, type FixtureProvider } from './providers';
 
@@ -23,10 +23,17 @@ export const FIXTURE_SCENARIOS: readonly FixtureScenario[] = [
   'conversation', 'approval', 'plan', 'steer', 'subagents', 'agent_map', 'turn_error', 'protocol_drift',
 ];
 
+/** Capability overrides for the scenario being built (chatFixture's last argument). */
+let overrides: Partial<ChatCapabilities> = {};
+
+function capabilitiesOf(p: FixtureProvider): ChatCapabilities {
+  return { ...PROFILES[p].capabilities, ...overrides } as ChatCapabilities;
+}
+
 function begin(p: FixtureProvider, agentId?: string): ChatFixture {
   const prof = PROFILES[p];
   const f = new ChatFixture(agentId);
-  f.start(prof.driver, prof.provider, prof.capabilities, { model: prof.model, cliVersion: prof.cliVersion });
+  f.start(prof.driver, prof.provider, capabilitiesOf(p), { model: prof.model, cliVersion: prof.cliVersion });
   if (prof.effort) f.emit('model_changed', { modelId: prof.model, effort: prof.effort });
   return f;
 }
@@ -184,13 +191,14 @@ function subagents(p: FixtureProvider, agentId?: string): ChatEvent[] {
   f.prompt(t, 'Audit every place that renders agent chips and make them consistent.');
   const sub = p === 'claude' ? 'Explore' : 'worker-1';
   f.emit('tool_call', { toolCallId: 'task-1', kind: 'other', title: 'Find every consumer of AgentChips', status: 'in_progress', toolName: p === 'codex' ? 'collabAgentToolCall' : 'Task' }, { turnId: t });
-  if (p !== 'copilot') {
+  const reportsSubagents = capabilitiesOf(p).subagents !== 'none';
+  if (reportsSubagents) {
     f.emit('subagent', { subagentId: 'sub-1', name: sub, description: 'Find every consumer of AgentChips', status: 'running', parentToolCallId: 'task-1' }, { turnId: t });
   }
   f.tool(t, { toolCallId: 'sub-read-1', kind: 'read', title: 'Read src/renderer/features/agents/AgentListItem.tsx', status: 'in_progress', subagentId: 'sub-1' });
   f.tool(t, { toolCallId: 'sub-search-1', kind: 'search', title: 'Search "AgentChips" in src', status: 'in_progress', subagentId: 'sub-1' });
   f.say(t, 'sub-m-1', 'Found 3 consumers: AgentListItem, AgentHoverCard (new), DurableAgentRow. Only AgentListItem renders chips inline.', { subagentId: 'sub-1' });
-  if (p !== 'copilot') {
+  if (reportsSubagents) {
     f.emit('subagent', { subagentId: 'sub-1', name: sub, status: 'completed', parentToolCallId: 'task-1', toolCount: 12, usage: { total: 9800 } }, { turnId: t, advanceMs: 41000 });
   }
   f.emit('tool_call_update', { toolCallId: 'task-1', status: 'completed', durationMs: 41000 }, { turnId: t });
@@ -256,6 +264,12 @@ const BUILDERS: Record<FixtureScenario, (p: FixtureProvider, agentId?: string) =
   protocol_drift: protocolDrift,
 };
 
-export function chatFixture(provider: FixtureProvider, scenario: FixtureScenario, agentId?: string): ChatEvent[] {
-  return BUILDERS[scenario](provider, agentId);
+/** A scenario's events for `provider`, with `capabilities` overriding what its driver reports (say, FEWER_CAPABILITIES). */
+export function chatFixture(provider: FixtureProvider, scenario: FixtureScenario, agentId?: string, capabilities: Partial<ChatCapabilities> = {}): ChatEvent[] {
+  overrides = capabilities;
+  try {
+    return BUILDERS[scenario](provider, agentId);
+  } finally {
+    overrides = {};
+  }
 }

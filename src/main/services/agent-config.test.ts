@@ -54,6 +54,12 @@ vi.mock('fs/promises', () => ({
 }));
 
 // Mock fs-utils
+const legacyMode = vi.hoisted(() => ({ on: false }));
+vi.mock('./managed-agents/legacy-migration', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./managed-agents/legacy-migration')>(),
+  legacyClubhouseModeEnabled: () => legacyMode.on,
+}));
+
 vi.mock('./fs-utils', () => ({
   pathExists: vi.fn(),
 }));
@@ -67,11 +73,17 @@ vi.mock('./chat-idle-settings', () => ({
   setAgentIdleSleep: vi.fn(),
 }));
 
+vi.mock('./managed-agents/changed-notice', () => ({
+  noteManagedSettingsChanged: vi.fn(),
+}));
+
 import * as fsp from 'fs/promises';
 import { watch } from 'fs';
 import { setAgentIdleSleep } from './chat-idle-settings';
+import { noteManagedSettingsChanged } from './managed-agents/changed-notice';
 import { execFile } from 'child_process';
 import { pathExists } from './fs-utils';
+import { delivered } from './managed-agents/delivery-records';
 import { assertProviderSelection, noteProviderSelection } from './agent-transition';
 import { registerProvider } from '../orchestrators/registry';
 import { isInsideGitRepo } from './git-service';
@@ -334,6 +346,21 @@ describe('createDurable', () => {
   it('generates durable_ prefixed ID', async () => {
     const config = await createDurable(PROJECT_PATH, 'my-agent', 'indigo');
     expect(config.id).toMatch(/^durable_/);
+  });
+
+  it('stamps a new agent as carried: it never had the retired persona layer (D62)', async () => {
+    const config = await createDurable(PROJECT_PATH, 'my-agent', 'indigo');
+    expect(config.personaLayerCarriedAt).toBe(config.createdAt);
+  });
+
+  it('marks a new agent in a project the old Clubhouse Mode setting covers as not using it, so the switch never takes it (#2901)', async () => {
+    legacyMode.on = true;
+    try {
+      expect((await createDurable(PROJECT_PATH, 'my-agent', 'indigo')).clubhouseModeOverride).toBe(true);
+    } finally {
+      legacyMode.on = false;
+    }
+    expect((await createDurable(PROJECT_PATH, 'other-agent', 'indigo')).clubhouseModeOverride).toBeUndefined();
   });
 
   it('branch = {name}/standby', async () => {
@@ -1248,9 +1275,12 @@ describe('deleteUnregister', () => {
     captureMainAgentWrite((value) => { writtenAgents = value; });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
 
+    // What a managed session started with is freed with the agent (D79).
+    delivered.set('durable_unreg', { fingerprint: 'f', deliveredAt: 't', parts: {}, order: [] });
     const result = await deleteUnregister(PROJECT_PATH, 'durable_unreg');
     await flushAgentConfig(PROJECT_PATH);
     expect(result.ok).toBe(true);
+    expect(delivered.has('durable_unreg')).toBe(false);
     const remaining = JSON.parse(writtenAgents);
     expect(remaining.length).toBe(0);
     // No rm or git commands
@@ -1378,6 +1408,37 @@ describe('updateDurableConfig', () => {
     const result = await getDurableConfig(PROJECT_PATH, 'durable_model');
     expect(result).not.toBeNull();
     expect(result!.model).toBe('sonnet');
+  });
+
+  it('tells open windows when a managed agent\'s model or Free Agent Mode changes, so its bar refreshes (#2819)', async () => {
+    const managed = { version: 1, blocks: [], skills: [], mcps: [] };
+    const agents = [
+      { id: 'durable_managed', name: 'managed-one', color: 'indigo', createdAt: '2024-01-01', managed },
+      { id: 'durable_plain', name: 'plain-one', color: 'indigo', createdAt: '2024-01-01' },
+    ];
+    const writtenData: Record<string, string> = { [path.join(PROJECT_PATH, '.clubhouse', 'agents.json')]: JSON.stringify(agents) };
+    vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('agents.json'));
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => writtenData[String(p)] || '[]');
+    vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => { writtenData[String(p)] = String(data); });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    vi.mocked(noteManagedSettingsChanged).mockClear();
+    await updateDurableConfig(PROJECT_PATH, 'durable_managed', { model: 'sonnet' });
+    await updateDurableConfig(PROJECT_PATH, 'durable_managed', { freeAgentMode: true });
+    // The effort is passed at launch, so the bar compares it too (#2895).
+    await updateDurableConfig(PROJECT_PATH, 'durable_managed', { effort: 'high' });
+    expect(noteManagedSettingsChanged).toHaveBeenCalledTimes(3);
+    // Auto-sleep and the helper template apply at once, but Settings and Preview show them (#2895).
+    await updateDurableConfig(PROJECT_PATH, 'durable_managed', { idleSleep: 15 });
+    await updateDurableConfig(PROJECT_PATH, 'durable_managed', { helperTemplateId: 'builtin-template-helper' });
+    expect(noteManagedSettingsChanged).toHaveBeenCalledTimes(5);
+    // Not for a field neither shows, nor for an unmanaged agent.
+    await updateDurableConfig(PROJECT_PATH, 'durable_managed', { buildCommand: 'make' });
+    await updateDurableConfig(PROJECT_PATH, 'durable_plain', { model: 'sonnet' });
+    expect(noteManagedSettingsChanged).toHaveBeenCalledTimes(5);
   });
 
   it('persists and clears the per-agent auto-sleep, and applies it live (#2143)', async () => {
@@ -1629,33 +1690,7 @@ describe('updateDurableConfig', () => {
     expect(result!.mission).toBeUndefined();
   });
 
-  it('persists persona field and round-trips', async () => {
-    const agents = [
-      { id: 'durable_persona', name: 'pers', color: 'indigo', createdAt: '2024-01-01' },
-    ];
-    const writtenData: Record<string, string> = {};
-    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
-    writtenData[agentsJsonPath] = JSON.stringify(agents);
-
-    vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('agents.json'));
-    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => writtenData[String(p)] || '[]');
-    vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
-      writtenData[String(p)] = String(data);
-    });
-    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
-      writtenData[String(dest)] = writtenData[String(src)] || '';
-      delete writtenData[String(src)];
-    });
-    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
-
-    await updateDurableConfig(PROJECT_PATH, 'durable_persona', { persona: 'qa' });
-
-    const result = await getDurableConfig(PROJECT_PATH, 'durable_persona');
-    expect(result).not.toBeNull();
-    expect(result!.persona).toBe('qa');
-  });
-
-  it('removes persona field when set to empty string', async () => {
+  it('keeps a legacy persona field and no longer writes it (#2901)', async () => {
     const agents = [
       { id: 'durable_clearpersona', name: 'clearper', color: 'indigo', persona: 'qa', createdAt: '2024-01-01' },
     ];
@@ -1674,11 +1709,12 @@ describe('updateDurableConfig', () => {
     });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
 
-    await updateDurableConfig(PROJECT_PATH, 'durable_clearpersona', { persona: '' });
+    await updateDurableConfig(PROJECT_PATH, 'durable_clearpersona', { persona: '', model: 'opus' } as never);
 
     const result = await getDurableConfig(PROJECT_PATH, 'durable_clearpersona');
     expect(result).not.toBeNull();
-    expect(result!.persona).toBeUndefined();
+    expect(result!.persona).toBe('qa');
+    expect(result!.model).toBe('opus');
   });
 
   it('persists per-agent command + provider wildcard overrides', async () => {
@@ -1881,6 +1917,34 @@ describe('updateDurableConfig: a new CLI (#2593)', () => {
     expect(await effortAfter({ model: 'opus' })).toBe('high');
     expect(await effortAfter({ orchestrator: 'claude-code' })).toBe('high');
     expect(await effortAfter({ name: 'renamed' } as never)).toBe('high');
+  });
+
+  it('sets and clears an effort, keeps one set with a new model, and refuses a bad one without changing anything (#2895)', async () => {
+    const after = async (updates: Parameters<typeof updateDurableConfig>[2]) => {
+      setup({ orchestrator: 'claude-code', model: 'opus', effort: 'high' });
+      clearAgentConfigCache(PROJECT_PATH);
+      await updateDurableConfig(PROJECT_PATH, 'durable_cli', updates);
+      return getDurableConfig(PROJECT_PATH, 'durable_cli');
+    };
+    expect((await after({ effort: 'low' }))!.effort).toBe('low');
+    expect((await after({ effort: null }))!.effort).toBeUndefined();
+    // A level chosen with a new model is for that model, so the model's change doesn't clear it.
+    const both = await after({ model: 'sonnet', effort: 'medium' });
+    expect([both!.model, both!.effort]).toEqual(['sonnet', 'medium']);
+    setup({ orchestrator: 'claude-code', model: 'opus', effort: 'high' });
+    clearAgentConfigCache(PROJECT_PATH);
+    await expect(updateDurableConfig(PROJECT_PATH, 'durable_cli', { model: 'sonnet', effort: 'High; rm -rf' })).rejects.toThrow(/effort/);
+    const unchanged = await getDurableConfig(PROJECT_PATH, 'durable_cli');
+    expect([unchanged!.model, unchanged!.effort]).toEqual(['opus', 'high']);
+  });
+
+  it('sets and clears the helper template its helpers start from (#2895)', async () => {
+    setup({ orchestrator: 'claude-code' });
+    clearAgentConfigCache(PROJECT_PATH);
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { helperTemplateId: 'builtin-template-quality-assurance' });
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.helperTemplateId).toBe('builtin-template-quality-assurance');
+    await updateDurableConfig(PROJECT_PATH, 'durable_cli', { helperTemplateId: null });
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_cli'))!.helperTemplateId).toBeUndefined();
   });
 
   it('keeps a model chosen in the same update', async () => {

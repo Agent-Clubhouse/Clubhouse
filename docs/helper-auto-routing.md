@@ -12,8 +12,8 @@ Auto applies only where it is selected, and only to a new helper. It never write
 
 **Is Auto allowed?** Asked only for `cli: "auto"`. The first of these that is set wins:
 
-1. `dispatcher_locked` or `mcp_off`: always off. See [Where Auto is off](#where-auto-is-off).
-2. Project or persona `off`. These two can only turn it off, so a cloned repository can't spend another provider's quota.
+1. `dispatcher_locked`: always off. (`mcp_off` is kept as a code for older saved decisions and is never sent: the Clubhouse MCP always runs.) See [Where Auto is off](#where-auto-is-off).
+2. Project `off`. It can only turn it off, so a cloned repository can't spend another provider's quota. (A persona's `off` did the same until personas were retired in #2901; `scopes.persona` is always null now.)
 3. The orchestrator's `orchestration.autoHelpers`.
 4. The app setting.
 5. Built-in: off.
@@ -28,26 +28,22 @@ Auto applies only where it is selected, and only to a new helper. It never write
 
 `cli: "auto"` while Auto isn't allowed is refused, not ignored.
 
-`preset` has no switch. It only changes anything when an orchestrator sends `difficulty`, it stays on one CLI, and an orchestrator can already name any model. This also means turning on a stage 2 setting can't quietly authorize cross-provider routing when stage 4 ships. The limitation: a project or persona `off` stops Auto but doesn't stop presets.
+`preset` has no switch. It only changes anything when an orchestrator sends `difficulty`, it stays on one CLI, and an orchestrator can already name any model. This also means turning on a stage 2 setting can't quietly authorize cross-provider routing when stage 4 ships. The limitation: a project `off` stops Auto but doesn't stop presets.
 
-A start that names no CLI, model, effort or difficulty is today's path. Nothing is decided and no `routing` is recorded, whatever its persona sets.
+A start that names no CLI, model, effort or difficulty is today's path. Nothing is decided and no `routing` is recorded.
 
 **Each of CLI, model and effort**, highest first:
 
 1. An explicit request argument. A saved Sol choice that Go sends lands here and is authoritative.
-2. A persona front-matter pin, for values the request didn't name.
-3. A mapping cell (`preset` or `auto` only): custom, then built-in.
-4. `explicit` mode only: nothing passed, so the CLI's own default and the user's CLI config apply.
+2. A mapping cell (`preset` or `auto` only): custom, then built-in.
+3. `explicit` mode only: nothing passed, so the CLI's own default and the user's CLI config apply.
 
-`preset` and `auto` have no step 4. With no valid cell they refuse with `no_valid_mapping`.
+`preset` and `auto` have no step 3. With no valid cell they refuse with `no_valid_mapping`.
 
-A persona's model isn't known to fit the CLI, so it is checked. In `preset` mode, one a live list refuses is `no_valid_mapping`. In `explicit` mode it only warns, as nothing asked for a preset. A persona's `default` is that persona's own choice, and is allowed.
+Personas were retired (#2901), and with them the persona front-matter pin that sat between steps 1 and 2: `start_helper` accepts and ignores `persona`, and says so in `personaNote`. A decision saved before then can still read `persona_pinned` with a `persona` source.
 
-A persona's model goes with its CLI. If the request names a different CLI from the one the persona pins, the persona's model is dropped too, and the model comes from below that step.
+A cell's effort belongs to its model. So an explicit model takes no effort from a preset: it gets an explicit effort or the CLI's default. An explicit effort on a preset's model is checked against that model.
 
-A cell's effort belongs to its model. So an explicit or pinned model takes no effort from a preset: it gets an explicit effort or the CLI's default. An explicit effort on a preset's model is checked against that model.
-
-**Behaviour change in stage 2.** Until stage 2, a persona with `model:` or `orchestrator:` in its front-matter overwrote an explicit `start_helper` CLI or model, because it is applied during creation. Now the persona step leaves alone what the request named, and still applies the rest. A start that names nothing is unchanged, so its persona still sets them.
 
 ## Difficulty
 
@@ -68,16 +64,16 @@ Per provider, difficulty to model and effort, stored in `orchestration-settings`
 
 Cells are app-scope in v1. Reset removes overrides per cell, per provider or for all.
 
-**Validation.** Both model and effort are checked at write and again at resolve, against the list for the target project's profile, since a profile can be a different login. The effort check is `checkHelperEffort`.
+**Validation.** Both model and effort are checked at write and again at resolve, against the CLI's list for its one local login. The effort check is `checkHelperEffort`.
 
 - Live list: a missing model, or an effort that model lacks, makes the cell `stale` (`model_unavailable`, `effort_unavailable`). A good model with a bad effort is still stale, and never runs at a default effort.
 - Fallback or unreadable list: the cell is `unverified` and usable, with fallback code `model_unverified`. Verified candidates rank ahead within a tier.
 - A cell can have `effort: null` for a model that takes no levels.
 - A cell has to name a model. `default` is refused on write and treated as stale if it's saved, because a `hard` task on an unknown default is a silent substitute.
 
-**Which list.** A write is checked against the app-wide list, because presets are app-wide, and `choices` are that same list, so a value picked from them is accepted. Cells read with `projectId` or `agentId` are checked under that project's profile, so their state says what a start there would do. A model only a project's profile offers can't be saved as a preset. Name it on the start instead.
+**Which list.** Each CLI has one login, from the environment Clubhouse starts in (provider profiles were removed in #2749), so there is one list per CLI. A write is checked against it, and `choices` are that same list, so a value picked from them is accepted. Cells read with `projectId` or `agentId` use it too.
 
-**Check again.** Settings > Helpers has a Check again action, for after signing in to a CLI, because nothing notices a login change. It forces each preset provider's app-wide model list once, before cells are built, and forces a quota read, then shows the result. A probe that fails doesn't fail the page. It writes nothing, so there's no audit row, and the revision moves only as for any app-wide read that finds a cell's state changed. It's desktop only, and doesn't force a list or read kept under a project's profile. Each provider logs one `core:mcp` line with its list source, model count and outcome.
+**Check again.** Settings > Helpers has a Check again action, for after signing in to a CLI, because nothing notices a login change. It forces each preset provider's app-wide model list once, before cells are built, and forces a quota read, then shows the result. A probe that fails doesn't fail the page. It writes nothing, so there's no audit row, and the revision moves only as for any app-wide read that finds a cell's state changed. It's desktop only. Each provider logs one `core:mcp` line with its list source, model count and outcome.
 
 **Fallback.** Custom cell, then the built-in cell if valid (`builtin_preset`), then the next provider (Auto only, `candidate_skipped`), then a refusal with `no_valid_mapping` naming each cell and reason. Neither mode falls back to the CLI's default model, because a `hard` task on an unknown default is a silent substitute. Saved values are never rewritten. Settings and the phone show a stale cell with Reset.
 
@@ -92,7 +88,7 @@ Read token-free, with no prompt. Checked on one login on Claude Code 2.1.312 and
 - **Codex:** `account/rateLimits/read` on `app-server`, plus `account/rateLimits/updated` from running chat sessions. `primary` can be the weekly window, so windows are classified by duration. `accountId` and `planType` are dropped and never stored.
 - **Claude:** the `get_usage` control request with `skip_behaviors`, plus `rate_limit_event` from running chat sessions. The SDK labels it experimental, so shape drift reads as `unknown` and never throws, and a fixture schema check guards the fields we read. Fields are picked by name, because the reply holds many unrelated keys.
 - **No plan:** a login with no plan limits is `not_applicable`. Claude says so with `rate_limits_available: false`. Codex says so only as an error, `authentication required to read rate limits`, seen on 0.163.0 with no login and with an API key, so it is matched by its words and a new wording reads as `read_failed`.
-- **Reads** run only when Auto routes or Settings is open, with no background polling. Shared in flight, cached 5 minutes, 1 minute backoff after a failure, 3 second budget at route time, keyed by provider and profile. Check again skips the cache and the backoff and waits up to 12 seconds, still sharing a read already in flight.
+- **Reads** run only when Auto routes or Settings is open, with no background polling. Shared in flight, cached 5 minutes, 1 minute backoff after a failure, 3 second budget at route time, keyed by provider. Check again skips the cache and the backoff and waits up to 12 seconds, still sharing a read already in flight.
 - **Model-scoped caps** apply only on an exact name match, and only to a choice of that model. A provider's own state leaves them out, since they apply to one model. So a model-scoped cap can be missed, and the UI says so.
 - **Claude's other keys** aren't read: `locked_reason` isn't in the SDK's types, so a reported limit on Claude comes from `rate_limit_event` in a running chat session. A terminal session or an idle provider shows `near_limit` at most, never `exhausted`.
 
@@ -130,9 +126,9 @@ Policy 2 (#2887) balances plan consumption. Nothing in it knows who asked, which
 4. **Pressure:** the weekly percent used, in basis points. Lowest wins. An `unmeasured` tier has no pressure: all of it ties.
 5. **Ties:** pressures within the tie band, 0 by default, so only equal readings. Among them the lowest load wins, then the rotation.
 
-**Rotation.** Keyed by the sorted set of tied candidates, each a provider plus the project's profile. The next one after the key this same set chose last, in sorted order. Saved in `helper-auto-rotation.json`, so a restart doesn't hand the next tie to the first provider. It moves only when a decision commits, once the helper exists, so a refused start doesn't take a turn. Within a run it is exact, from memory: decisions the rotation alone settled for one set differ by at most one. Across restarts the saved file is best-effort history, since a failed or unflushed write, an evicted set or an unreadable file brings back an older cursor or none. Each run is still a round robin, so after R restarts the counts differ by at most R + 1, whatever was lost.
+**Rotation.** Keyed by the sorted set of tied candidates, each a provider (`<provider>:default`, the key used before profiles were removed). The next one after the key this same set chose last, in sorted order. Saved in `helper-auto-rotation.json`, so a restart doesn't hand the next tie to the first provider. It moves only when a decision commits, once the helper exists, so a refused start doesn't take a turn. Within a run it is exact, from memory: decisions the rotation alone settled for one set differ by at most one. Across restarts the saved file is best-effort history, since a failed or unflushed write, an evicted set or an unreadable file brings back an older cursor or none. Each run is still a round robin, so after R restarts the counts differ by at most R + 1, whatever was lost.
 
-**Profiles, not accounts.** A candidate's key is its provider and the project's profile. That's a proxy for a subscription: two profiles signed in to one account can't be told apart without reading credentials, which this never does, so the record says `accountKnown: false` and claims no per-account accounting.
+**Providers, not accounts.** A candidate's key is its provider, on the one login the local environment has. That's a proxy for a subscription, never more: Auto doesn't tell accounts apart, and never reads credentials, so the record says `accountKnown: false` and claims no per-account accounting. Starting Clubhouse under another login (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`) changes the account for the whole app.
 
 **Reset-relative scoring** (`reset_schedule`) is built but off. It subtracts the share of the week gone from the percent used, so a plan that resets sooner is used first. It needs every measured candidate to have a provider-declared seven-day window (Claude's `seven_day`, Codex's 10080 minutes) with a reset inside the coming week, and falls back to weekly use otherwise. The replay tests compare it with the default; it isn't on until that comparison is reviewed.
 
@@ -148,7 +144,7 @@ A burst on equal readings spreads by load; a burst on unequal readings goes to t
 
 Classified from existing signals: `auth_required`, `account_issue`, `rate_limited`, `isLoginRequiredError` and spawn failures.
 
-| Class | Signal | Cooldown (Auto only, per provider and profile) | Retry |
+| Class | Signal | Cooldown (Auto only, per provider) | Retry |
 |---|---|---|---|
 | `auth` | Login required, account issue | 10 minutes | Allowed before delivery |
 | `quota` | `rate_limited` | Until `resetsAt`, else 30 minutes. The provider said so, so the state becomes `exhausted`. | Allowed before delivery |
@@ -158,7 +154,7 @@ Classified from existing signals: `auth_required`, `account_issue`, `rate_limite
 - A failed start can exclude a provider whose quota is unknown, but only for `auth`, `quota` or `availability`, and only for that cooldown. Unknown quota alone never excludes.
 - A `quota` or `auth` error after delivery sets the cooldown for future starts. That helper isn't moved or retried.
 - Cooldowns are fixed and in memory, and kept per class, so a later failure never shortens another class's cooldown.
-- A successful read from Check again ends an `auth` cooldown older than that read, for the same provider and profile. It takes a reading with windows, since Codex also answers `not_applicable` when logged out, so an API-key login waits out its cooldown. `quota` and `availability` cooldowns stay, and a failed read clears nothing.
+- A successful read from Check again ends an `auth` cooldown older than that read, for the same provider. It takes a reading with windows, since Codex also answers `not_applicable` when logged out, so an API-key login waits out its cooldown. `quota` and `availability` cooldowns stay, and a failed read clears nothing.
 - **No retry on another provider.** A worktree is set up for one CLI when it's created: its instructions file, skills and config follow that CLI's conventions. So a failed spawn isn't moved. It fails as any helper does, with its task saved for `wake_helper`, and the cooldown keeps the next start off that provider. `retried_after_spawn_failure` is not used.
 
 ## Context window
@@ -168,7 +164,7 @@ Auto adds no rule to #2660's context setting:
 - A saved choice is per CLI and model. A model change keeps one the model offers and clears one it doesn't. A CLI change clears it.
 - At launch, `contextWindowForLaunch` clears a refused choice and keeps, without passing, one it can't check. Both emit the `context_window_not_applied` notice.
 
-v1 has no context column and `start_helper` has no context argument, so the only case is a persona supplying a choice against the model Auto picked. It is reported as `routing.context.status`: `none`, `applied`, `reset` or `not_applied`. A wake doesn't change the model, so it adds no case.
+v1 has no context column and `start_helper` has no context argument, so the only case was a persona supplying a choice against the model Auto picked, which can't happen since personas were retired (#2901). It is reported as `routing.context.status`: `none`, `applied`, `reset` or `not_applied`. A wake doesn't change the model, so it adds no case.
 
 `status` is a code with no text of its own. The words come from #2660's existing `contextWindowNotice`, `contextWindowReset` and `context_window_not_applied` notice, so a client shows those and doesn't add a second warning.
 
@@ -196,7 +192,7 @@ Stable codes:
 - `fallback`: `none`, `builtin_preset`, `candidate_skipped`, `model_unverified`, `retried_after_spawn_failure`.
 - `source`: `request`, `persona`, `auto`, `orchestrator`, `custom_mapping`, `builtin_mapping`, `cli_default`.
 - `skipped`, per provider: `cli_disabled`, `cli_unavailable`, `auto_not_supported`, `no_valid_mapping`, `cooling_down`, `quota_near_limit`, `quota_exhausted`.
-- `auto.reason`, when Auto is off: `not_enabled`, `project_off`, `persona_off`, `orchestration_off`, `mcp_off`, `dispatcher_locked`.
+- `auto.reason`, when Auto is off: `not_enabled`, `project_off`, `orchestration_off`, `dispatcher_locked`. `mcp_off` stays in `autoOffReasons` as a code only and is never sent.
 
 MCP calls the provider `cli`, as `start_helper` does.
 
@@ -270,7 +266,6 @@ What each provider gives, as of this source:
 | Claude stream-json | Same figures | Same figures | No such declaration for this transport, so scope is `unscoped` |
 | Codex | Difference of the thread's running totals (`cumulative_delta`) | One total per thread, with the thread id; a thread a subagent tool call named is flagged `subagent`. No scope is claimed: the pinned protocol types don't say whether a thread's total excludes the threads it spawned, so the closing sample is `unscoped` (and `subagent_excluded`) and no inclusive sum is made | A total that goes down leaves that figure out of the turn instead of showing zero |
 | Copilot SDK | Our sum of the turn's `assistant.usage` calls, subagents included (`summed_calls`, `inclusive`) | Our sum over the session (`summed_calls`, `inclusive`) | A figure no call reported is absent. No per-call id, so calls cannot be deduplicated |
-| Copilot ACP and other ACP agents | The prompt's usage; the mapper drops an exact repeat of the previous report (a local command re-sent it), which is the only place equality is used | Context and cost only, no tokens | Scope is `unscoped` |
 
 Parent and helper are never added: a helper's usage is its own run. The session transcript reader (`getSessionSummary`) counts each message once even though Claude writes one record per content block, keeps the usage of tool-only and thinking-only messages, and marks `tokenUsage` as `partial` when a message has none or repeated records disagree. A conflicting message keeps the highest figure per field, which may match no actual record, so it is flagged and must not be used as a measured sample.
 
@@ -329,7 +324,7 @@ jq -s 'map(select(.t=="event")) as $e
 |---|---|---|
 | Agent | `updateDurableConfig` | Exhaustive by type. Bookkeeping (`lastSleep`, session ids) is left out |
 | Agent | `updateDurable`, `saveAgentIcon`, so appearance too | Name, color, emoji, icon |
-| Agent | `setOrchestrationPolicy`, `turnOffOrchestration`, a persona pinning | Each policy field, refusals too |
+| Agent | `setOrchestrationPolicy`, `turnOffOrchestration`, the persona layer carried at a switch | Each policy field, refusals too |
 | Agent | Instructions, permissions, MCP binding instructions and disabled tools | Changed only |
 | Project | `projectStore.update`, so appearance too | Color, CLI, name, emoji, icon |
 | Project | `writeProjectAgentDefaults`, including reset | Exhaustive by type |
@@ -379,9 +374,9 @@ App-wide preset editing from the phone is in scope.
   "copilot-cli":{"autoEligible":false,"reason":"auto_not_supported","quota":{"state":"unknown","unknownReason":"not_supported","asOf":null},"cells":null}}}
 ```
 
-A cell with nothing valid has `effective: null`. Until the `auto` mode is advertised, `autoEligible` only says whether a provider has presets. With `agentId`, stage 2 also returns `agent:{usable,reason?}`, where `reason` is `dispatcher_locked`, `mcp_off` or `orchestration_off`. The `auto` block appears from stage 4 and `quota` from stage 3. `source` under `auto` is `agent`, `project`, `persona`, `app`, `default`, `mcp_off` or `dispatcher_locked`, and `auto.reason` is set whenever `effective` is false.
+A cell with nothing valid has `effective: null`. Until the `auto` mode is advertised, `autoEligible` only says whether a provider has presets. With `agentId`, stage 2 also returns `agent:{usable,reason?}`, where `reason` is `dispatcher_locked` or `orchestration_off`. The `auto` block appears from stage 4 and `quota` from stage 3. `source` under `auto` is `agent`, `project`, `app`, `default`, `mcp_off` or `dispatcher_locked`, and `auto.reason` is set whenever `effective` is false.
 
-**Revisions.** The full snapshot has `helperRoutingRevision`, and a `helper_routing:changed` event carries `{revision}`, so an open or cached page knows to refetch. The revision moves when a saved value changes, when an app-wide read finds that a cell's state changed, or when something that decides Auto changes: a project's `off` or default persona from any surface, an orchestrator's switch or persona, or Clubhouse MCP. It doesn't move for a quota sample, and no snapshot is broadcast for one. It is opaque to a client. A list changing doesn't make a write stale: only a saved value does.
+**Revisions.** The full snapshot has `helperRoutingRevision`, and a `helper_routing:changed` event carries `{revision}`, so an open or cached page knows to refetch. The revision moves when a saved value changes, when an app-wide read finds that a cell's state changed, or when something that decides Auto changes: a project's `off` from any surface, an orchestrator's switch, or Clubhouse MCP. It doesn't move for a quota sample, and no snapshot is broadcast for one. It is opaque to a client. A list changing doesn't make a write stale: only a saved value does.
 
 **Quota freshness** is pulled. See `docs/mobile-control-v1.md#quota` for the rule: the smallest `refreshAfterSeconds` across providers, at least 5 seconds, with age measured from a `serverTime` anchor on suspend-aware monotonic time, never the phone's clock.
 
@@ -438,7 +433,7 @@ A cell with nothing valid has `effective: null`. Until the `auto` mode is advert
 
 **Held starts.** The helper request gets `requestedRouting`, with no resolved choice. `no_valid_mapping` is checked before holding, so the person isn't asked about a start that can't run, and again at approval, since a cell can go stale meanwhile. If it fails at approval, `helper.approve` returns 409 with `status: "rejected"`, because nothing was created, `error.code: "no_valid_mapping"`, a sentence for a person in `error.message`, and no `routing`. The request is used up, the orchestrator is told why, and a snapshot without the row is sent, in either order with the receipt. A phone shows the sentence and offers no retry. The same `commandId` replays the receipt, and a new one gets 404 `helper_request_not_found`, so nothing can be created twice. Only a helper that starts gets `routing`.
 
-**Fixtures:** the capability at each stage, and absent; each quota state, including `near_limit` with quota remaining, `exhausted` as reported, and `unknown` with and without a stale `asOf`; a limiting window with another window unreadable; an explicit override (Sol, `explicit_request`, `balanced: false`); a preset on a CLI; a persona pin; project-disabled; `mcp_off`; `dispatcher_locked`; a stale preset falling back to built-in; stale with nothing valid; Copilot excluded; a held approval failing with `no_valid_mapping`; context `reset` and `not_applied`; a stale-write 409 and reset results; labels, including an unknown code; the revision in the snapshot and the changed event.
+**Fixtures:** the capability at each stage, and absent; each quota state, including `near_limit` with quota remaining, `exhausted` as reported, and `unknown` with and without a stale `asOf`; a limiting window with another window unreadable; an explicit override (Sol, `explicit_request`, `balanced: false`); a preset on a CLI; a persona pin; project-disabled; `dispatcher_locked`; a stale preset falling back to built-in; stale with nothing valid; Copilot excluded; a held approval failing with `no_valid_mapping`; context `reset` and `not_applied`; a stale-write 409 and reset results; labels, including an unknown code; the revision in the snapshot and the changed event.
 
 ## Where Auto is off
 
@@ -446,7 +441,7 @@ From stage 4 these are `auto` states, as below. At stage 2 they are the `agent` 
 
 **Dispatcher (`dispatcher_locked`).** The Dispatcher doesn't start helpers, and this feature doesn't expand its authority. It gets no `start_helper`, no write tools and no routing inputs. For the Dispatcher's agent, `auto` is `{effective: false, source: "dispatcher_locked", reason: "dispatcher_locked"}`, with every scope `editable: false`, and `orchestration.autoHelpers` in `agent.update` stays refused as its other orchestration fields are. App-wide preset editing is a person's action from Settings or a phone, never the Dispatcher's. There are no MCP write tools for any of this.
 
-**No Clubhouse MCP (`mcp_off`).** No MCP means no orchestration (#2589), so the agent can't call `start_helper`. `auto` is `{effective: false, source: "mcp_off", reason: "mcp_off"}`, and saved values stay and come back with MCP. Turning `autoHelpers` on while MCP is off is refused with the existing `mcpRequired` result. Clearing or turning it off still works. Helpers already running keep their `routing`.
+**No Clubhouse MCP (`mcp_off`).** Retired: the Clubhouse MCP always runs (managed-agents D69), so nothing sends `mcp_off` and `mcpRequired` is gone. The code and its label stay so an older saved decision still reads.
 
 ## Orchestrator guidance
 

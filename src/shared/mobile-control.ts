@@ -41,7 +41,7 @@ export type MobileCommand = CommandBase & (
 export interface MobileAgentCreate {
   projectId: string; name: string; color: string; orchestrator?: string; model?: string; persona?: string;
   freeAgentMode?: boolean; useWorktree?: boolean; mcpIds?: string[]; branchName?: string; branchFrom?: string; folderName?: string;
-  /** The agent's orchestration policy fields to set (#2228); unset ones follow the persona or defaults. */
+  /** The agent's orchestration policy fields to set (#2228); unset ones follow the defaults. `persona` is refused (409 managed_agent): personas were retired (#2901). */
   orchestration?: Partial<OrchestrationPolicy>;
 }
 /** Settings a phone may change; null clears. */
@@ -50,7 +50,7 @@ export interface MobileAgentUpdate {
   runtime?: 'default' | 'chat' | 'terminal'; persona?: string | null; clubhouseMode?: boolean; freeAgentMode?: boolean; idleSleep?: AgentIdleSleep;
   /** A `settings.contextWindow.choices[].id`, or null to clear it. */
   contextWindow?: string | null;
-  /** Orchestration policy fields; a field set to null, or the whole object null, goes back to the persona or default. */
+  /** Orchestration policy fields; a field set to null, or the whole object null, goes back to the default. A `persona` value is refused (409 managed_agent) and `null` is a no-op: personas were retired (#2901). */
   orchestration?: OrchestrationPolicyPatch | null;
 }
 /** What the desktop windows patch into their agent list after a phone's agent.update. */

@@ -52,16 +52,15 @@ export interface OrchestrationPolicy {
   connectToDispatcher: boolean;
   /**
    * "Auto provider" (#2671): this agent's `cli: "auto"` may pick a helper's
-   * provider. Unset follows the app setting. A persona can only turn it off:
-   * see resolveOrchestrationPolicy, and services/helper-routing.ts for the rest.
+   * provider. Unset follows the app setting. A project can only turn it off:
+   * see decideHelperAuto, and services/helper-routing.ts for the rest.
    */
   autoHelpers: boolean;
 }
 
 /**
- * What is stored on DurableAgentConfig.orchestration and in persona
- * front-matter: only the fields set explicitly. Unset fields fall back to the
- * persona's front-matter, then to ORCHESTRATION_DEFAULTS.
+ * What is stored on DurableAgentConfig.orchestration: only the fields set
+ * explicitly. Unset fields fall back to ORCHESTRATION_DEFAULTS.
  */
 export type OrchestrationPolicyConfig = Partial<OrchestrationPolicy>;
 
@@ -92,89 +91,46 @@ export const ORCHESTRATION_OFF_MESSAGE = 'Orchestration is turned off for this a
 /** The refusal a cross-project tool returns for an agent with cross-project helpers off. */
 export const CROSS_PROJECT_OFF_MESSAGE = 'Cross-project helpers are turned off for this agent.';
 
-/** The refusal for turning orchestration or the Dispatcher connection on where Clubhouse MCP is off (#2589). */
-export const MCP_REQUIRED_MESSAGE = 'This needs Clubhouse MCP, which is off for this agent. Turn it on first.';
-
-/** The refusal for any Clubhouse tool once MCP is off for the caller: see clubhouse-mcp/mcp-call-gate. */
-export const MCP_OFF_TOOL_MESSAGE = 'Clubhouse MCP is off for this agent, so Clubhouse tools are unavailable. Tell the user.';
-
-/** The same for a helper, which can still report to its parent. */
-export const MCP_OFF_HELPER_TOOL_MESSAGE = 'Clubhouse MCP is off for this agent, so the only Clubhouse tool available is message_parent. Tell your parent or the user.';
+/**
+ * The refusal for any Clubhouse tool from a caller the call gate doesn't know,
+ * such as an agent whose settings couldn't be read at its start: see
+ * clubhouse-mcp/mcp-call-gate. The Clubhouse MCP itself is always on.
+ */
+export const MCP_CALLER_UNKNOWN_MESSAGE = 'Clubhouse couldn\'t read this agent\'s settings, so Clubhouse tools are unavailable. Restart the agent, or tell the user.';
 
 /** Where each field of a resolved policy came from. */
-export type OrchestrationPolicySource = 'agent' | 'persona' | 'default';
-
-/** The switches that need Clubhouse MCP (#2589). */
-export type McpDependentSwitches = Pick<OrchestrationPolicy, 'orchestrate' | 'crossProjectHelpers' | 'connectToDispatcher' | 'autoHelpers'>;
+export type OrchestrationPolicySource = 'agent' | 'default';
 
 export interface ResolvedOrchestrationPolicy extends OrchestrationPolicy {
   sources: Record<keyof OrchestrationPolicy, OrchestrationPolicySource>;
-  /** A persona turned Auto off (#2671). It wins even over the agent's own switch, whose value stays in `autoHelpers`. */
-  personaAutoOff?: true;
   /** Whether `cli: "auto"` would work for this agent, once the app and the project have had their say. Set by the main side. */
   autoEffective?: { effective: boolean; reason?: HelperAutoOffReason; source: HelperAutoSource };
-  /**
-   * Set only while Clubhouse MCP is off for this agent (#2589). The switches
-   * above then read false, and this holds what they resolve to from the saved
-   * settings, which come back when MCP does.
-   */
-  mcpOff?: McpDependentSwitches;
-  /**
-   * A helper whose own MCP setting resolves off. Its forced bridge keeps `mcpOff`
-   * unset, so it can start and report, but the call gate leaves it only message_parent.
-   * The switches above hold what is saved: as with `mcpOff`, none can be turned on
-   * and none opens a gate. Decide with {@link isMcpDependentOff}.
-   */
-  mcpReportOnly?: true;
 }
-
-/** No Clubhouse MCP for this agent's own calls, a helper's forced bridge aside: its switches can't be turned on and open nothing. */
-export function isMcpDependentOff(policy: Pick<ResolvedOrchestrationPolicy, 'mcpOff' | 'mcpReportOnly'>): boolean {
-  return !!policy.mcpOff || !!policy.mcpReportOnly;
-}
-
-/** A report-only helper as the surfaces show one: its switches off, what is saved in `mcpOff`, as for any agent without MCP. */
-export function asShownPolicy(policy: ResolvedOrchestrationPolicy): ResolvedOrchestrationPolicy {
-  if (!policy.mcpReportOnly) return policy;
-  const { orchestrate, crossProjectHelpers, connectToDispatcher, autoHelpers } = policy;
-  return {
-    ...policy, orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false, autoHelpers: false,
-    mcpOff: { orchestrate, crossProjectHelpers, connectToDispatcher, autoHelpers },
-  };
-}
-
-/** What `orchestrate` resolves to from the saved settings, MCP on or off. */
-export function savedOrchestrate(policy: Pick<ResolvedOrchestrationPolicy, 'orchestrate' | 'mcpOff'>): boolean {
-  return policy.mcpOff ? policy.mcpOff.orchestrate : policy.orchestrate;
-}
-
-export type HelperAutoOffReason = 'not_enabled' | 'project_off' | 'persona_off' | 'orchestration_off' | 'mcp_off' | 'dispatcher_locked';
-export type HelperAutoSource = 'agent' | 'project' | 'persona' | 'app' | 'default' | 'mcp_off' | 'dispatcher_locked';
 
 /**
- * Whether `cli: "auto"` is allowed for an agent (#2671). Off for good without
- * MCP. Then a project's or a persona's `off`, which never turn it on. Then the
- * agent's own switch, then the app's. A repository's files can't spend another
- * provider's quota, so nothing in one enables this.
+ * `mcp_off` is kept as a code only, so an older saved helper decision still
+ * reads: the Clubhouse MCP always runs, so nothing decides it any more.
+ */
+export type HelperAutoOffReason = 'not_enabled' | 'project_off' | 'orchestration_off' | 'mcp_off' | 'dispatcher_locked';
+export type HelperAutoSource = 'agent' | 'project' | 'app' | 'default' | 'mcp_off' | 'dispatcher_locked';
+
+/**
+ * Whether `cli: "auto"` is allowed for an agent (#2671). A project's `off`,
+ * which never turns it on. Then the agent's own switch, then the app's. A
+ * repository's files can't spend another provider's quota, so nothing in one
+ * enables this.
  */
 export function decideHelperAuto(input: {
   app: boolean;
   projectOff: boolean;
-  policy?: Pick<ResolvedOrchestrationPolicy, 'orchestrate' | 'autoHelpers' | 'sources' | 'personaAutoOff' | 'mcpOff' | 'mcpReportOnly'>;
+  policy?: Pick<ResolvedOrchestrationPolicy, 'orchestrate' | 'autoHelpers' | 'sources'>;
 }): { effective: boolean; reason?: HelperAutoOffReason; source: HelperAutoSource } {
   const { app, projectOff, policy } = input;
-  if (policy && isMcpDependentOff(policy)) return { effective: false, source: 'mcp_off', reason: 'mcp_off' };
   if (projectOff) return { effective: false, source: 'project', reason: 'project_off' };
-  if (policy?.personaAutoOff) return { effective: false, source: 'persona', reason: 'persona_off' };
   const own = policy?.sources.autoHelpers === 'agent' ? policy.autoHelpers : undefined;
   if (policy && !policy.orchestrate) return { effective: false, source: own !== undefined ? 'agent' : app ? 'app' : 'default', reason: 'orchestration_off' };
   if (own !== undefined) return own ? { effective: true, source: 'agent' } : { effective: false, source: 'agent', reason: 'not_enabled' };
   return app ? { effective: true, source: 'app' } : { effective: false, source: 'default', reason: 'not_enabled' };
-}
-
-/** Whether a patch sets one of the switches that need Clubhouse MCP to on. Clearing or turning off never does. */
-export function patchTurnsOnMcpSwitch(patch: { [K in keyof McpDependentSwitches]?: boolean | null }): boolean {
-  return patch.orchestrate === true || patch.crossProjectHelpers === true || patch.connectToDispatcher === true || patch.autoHelpers === true;
 }
 
 function isAccess(value: unknown): value is OrchestrationAccess {
@@ -210,7 +166,7 @@ export function normalizeOrchestrationConfig(raw: unknown): OrchestrationPolicyC
 /**
  * Validate a policy patch from IPC or a tool. Unlike normalize, an invalid
  * field is an error, so a bad request never half-applies. `null` for a field
- * clears it back to the persona or default value.
+ * clears it back to the default value.
  */
 export function validateOrchestrationPatch(raw: unknown): { [K in keyof OrchestrationPolicy]?: OrchestrationPolicy[K] | null } {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Orchestration policy must be an object');
@@ -268,32 +224,24 @@ export function applyOrchestrationPatch(
 }
 
 /**
- * Layer a policy: the agent's own fields, then its persona's front-matter,
- * then ORCHESTRATION_DEFAULTS.
+ * Resolve a policy: the agent's own fields, then ORCHESTRATION_DEFAULTS.
+ * (The persona layer that sat between them was retired in #2901: the switch
+ * to managed and the startup pass wrote what it decided to agents' own fields
+ * first, see managed-agents/legacy-migration.)
  *
  * An unset `connectToDispatcher` follows the resolved `orchestrate` (#2578),
  * with `default` as its source, so agents that orchestrate connect without a
  * bulk write.
  *
  * A helper talks only to its parent, so with `helper` it is always false,
- * whatever the agent or persona says. Its source is `default` then, since no
+ * whatever the agent says. Its source is `default` then, since no
  * stored value is in effect.
- *
- * No Clubhouse MCP, no orchestration (#2589): with `mcpOff`, `orchestrate`,
- * `crossProjectHelpers` and `connectToDispatcher` read false and `mcpOff` holds
- * what they would otherwise be. Sources still describe the saved settings,
- * which stay in place and can still be cleared.
  */
 export function resolveOrchestrationPolicy(
   agentConfig: OrchestrationPolicyConfig | undefined,
-  personaDefaults: OrchestrationPolicyConfig | undefined,
-  options: { helper?: boolean; mcpOff?: boolean; mcpReportOnly?: boolean } = {},
+  options: { helper?: boolean } = {},
 ): ResolvedOrchestrationPolicy {
   const agent = normalizeOrchestrationConfig(agentConfig) ?? {};
-  const persona = normalizeOrchestrationConfig(personaDefaults) ?? {};
-  // A cloned repository's persona can turn Auto off but never on: it would spend another provider's quota.
-  if (persona.autoHelpers === true) delete persona.autoHelpers;
-  const personaAutoOff = persona.autoHelpers === false ? { personaAutoOff: true as const } : {};
   const keys = Object.keys(ORCHESTRATION_DEFAULTS) as Array<keyof OrchestrationPolicy>;
   const policy = { ...ORCHESTRATION_DEFAULTS } as OrchestrationPolicy;
   const sources = {} as ResolvedOrchestrationPolicy['sources'];
@@ -301,9 +249,6 @@ export function resolveOrchestrationPolicy(
     if (agent[key] !== undefined) {
       (policy as unknown as Record<string, unknown>)[key] = agent[key];
       sources[key] = 'agent';
-    } else if (persona[key] !== undefined) {
-      (policy as unknown as Record<string, unknown>)[key] = persona[key];
-      sources[key] = 'persona';
     } else {
       sources[key] = 'default';
     }
@@ -314,14 +259,7 @@ export function resolveOrchestrationPolicy(
   } else if (sources.connectToDispatcher === 'default') {
     policy.connectToDispatcher = policy.orchestrate;
   }
-  if (options.mcpOff) {
-    const { orchestrate, crossProjectHelpers, connectToDispatcher, autoHelpers } = policy;
-    return {
-      ...policy, orchestrate: false, crossProjectHelpers: false, connectToDispatcher: false, autoHelpers: false, sources, ...personaAutoOff,
-      mcpOff: { orchestrate, crossProjectHelpers, connectToDispatcher, autoHelpers },
-    };
-  }
-  return { ...policy, sources, ...personaAutoOff, ...(options.mcpReportOnly && { mcpReportOnly: true as const }) };
+  return { ...policy, sources };
 }
 
 // ── Access ───────────────────────────────────────────────────────────────
@@ -368,7 +306,7 @@ export function launchAccessFor(level: AgentAccessLevel): AgentLaunchAccess {
  * - codex-cli: FAM off, no flags; auto, workspace-write sandbox with no
  *   approvals; skip-all, --dangerously-bypass-approvals-and-sandbox.
  * - copilot-cli: any FAM adds --yolo --autopilot (allow everything), and
- *   skip-all adds --allow-all-tools even with FAM off. Over ACP there is no
+ *   skip-all adds --allow-all-tools even with FAM off. Copilot chat has no
  *   `auto` level, only ask and allow-all. So FAM ranks as bypass, and
  *   skip-all without FAM as auto.
  * An unknown provider is ranked like Copilot, the most permissive mapping.
@@ -555,8 +493,6 @@ export interface SetOrchestrationPolicyResult {
    * running and can still be managed.
    */
   crossProjectHelpersKept?: number;
-  /** Set when the patch turns on a switch that needs Clubhouse MCP while it is off. Nothing changed. */
-  mcpRequired?: boolean;
 }
 
 /**
@@ -569,5 +505,5 @@ export interface TurnOffOrchestrationResult extends HelperCascadeResult {
   policy?: ResolvedOrchestrationPolicy;
 }
 
-/** A policy patch as IPC takes it: a field set to null goes back to the persona or default value. */
+/** A policy patch as IPC takes it: a field set to null goes back to the default value. */
 export type OrchestrationPolicyPatch = ReturnType<typeof validateOrchestrationPatch>;

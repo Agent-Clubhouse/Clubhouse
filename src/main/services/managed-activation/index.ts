@@ -10,13 +10,12 @@ import { peekDurableConfigs } from '../agent-config';
 import { withAgentActivity, withAgentTransition } from '../agent-transition';
 import { agentRegistry, resolveOrchestrator } from '../agent-registry';
 import { resolveRuntimeMode } from '../chat-runtime-settings';
-import { isClubhouseModeEnabled } from '../clubhouse-mode-settings';
 import { isHookServerEnabled } from '../orchestrator-settings';
-import { isMcpEnabled } from '../mcp-settings';
-import { clubhouseMcpOverride, isDisposedAgent } from '../../../shared/agent-helpers';
+import { isDisposedAgent } from '../../../shared/agent-helpers';
 import { readLaunchWrapper, readProjectAgentDefaults } from '../agent-settings-service';
 import { currentSettingsOrigin } from '../settings-audit';
 import { ManagedActivationError } from './types';
+import { managedPathDeliversMcpBridge } from './bridge-delivery';
 import { assertDeliveryCapability, cliIdentity, establishDeliveryCapability } from './capability';
 import { createManagedActivationService, type AdoptionRequest, type ManagedLaunchLease, type WorkspaceRequest } from './service';
 
@@ -35,10 +34,10 @@ function assertUser() {
   const origin = currentSettingsOrigin();
   if (origin.actorId || ['mcp', 'cli', 'dispatcher'].includes(origin.surface)) throw new ManagedActivationError('activation_not_permitted');
 }
-function assertSynchronousCompatibility(projectPath: string, config: DurableAgentConfig): void {
+function assertSynchronousCompatibility(config: DurableAgentConfig): void {
   if (process.platform !== 'darwin' || resolveRuntimeMode('claude-code', config.runtimeMode).mode !== 'terminal') throw new ManagedActivationError('activation_unsupported');
-  if ((isClubhouseModeEnabled(projectPath) && !config.clubhouseModeOverride) || isHookServerEnabled('claude-code')
-    || isMcpEnabled(projectPath, clubhouseMcpOverride(config))) throw new ManagedActivationError('activation_incompatible_config');
+  // The Clubhouse MCP always runs (D69), and this path doesn't deliver the bridge yet (docs/managed-activation.md).
+  if (isHookServerEnabled('claude-code') || !managedPathDeliversMcpBridge()) throw new ManagedActivationError('activation_incompatible_config');
 }
 async function context(projectPath: string, agentId: string, launch?: SpawnAgentParams): Promise<{ workspace: WorkspaceRequest; binary: string; assertCanCreate(): void }> {
   if (process.platform !== 'darwin') throw new ManagedActivationError('activation_unsupported');
@@ -52,16 +51,15 @@ async function context(projectPath: string, agentId: string, launch?: SpawnAgent
   if (launch && (launch.kind !== 'durable' || launch.systemPrompt || launch.agentFile || launch.agentSource
     || (launch.orchestrator && launch.orchestrator !== provider.id) || launch.cwd !== config.worktreePath)) throw new ManagedActivationError('activation_unsupported');
   if (config.agentFile || config.agentSource || config.parentAgentId || config.orchestration?.orchestrate
-    || (isClubhouseModeEnabled(projectPath) && !config.clubhouseModeOverride)
     || (await readProjectAgentDefaults(projectPath)).commandPrefix
-    || isHookServerEnabled(provider.id) || isMcpEnabled(projectPath, clubhouseMcpOverride(config)) || await readLaunchWrapper(projectPath)) {
+    || isHookServerEnabled(provider.id) || !managedPathDeliversMcpBridge() || await readLaunchWrapper(projectPath)) {
     throw new ManagedActivationError('activation_incompatible_config');
   }
   const otherWorkspaces = [...configs.filter((agent) => agent.id !== agentId).flatMap((agent) => agent.worktreePath ? [agent.worktreePath] : []),
     ...[...agentRegistry.getAllRegistrations()].filter(([id]) => id !== agentId).flatMap(([, registration]) => registration.cwd ? [registration.cwd] : [])];
   const selectedBinary = provider.getBinaryPath();
   return { binary: selectedBinary, assertCanCreate: () => {
-    assertSynchronousCompatibility(projectPath, config);
+    assertSynchronousCompatibility(config);
     if (fs.realpathSync(provider.getBinaryPath!()) !== fs.realpathSync(selectedBinary)) throw new ManagedActivationError('activation_capability_stale');
   }, workspace: { projectPath, workspacePath: config.worktreePath, agentName: config.name, provider: provider.id, otherWorkspaces } };
 }

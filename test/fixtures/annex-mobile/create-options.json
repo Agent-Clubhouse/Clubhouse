@@ -119,18 +119,7 @@
           "unavailableReason": "Codex CLI not found"
         }
       ],
-      "personas": [
-        {
-          "id": "qa",
-          "name": "QA",
-          "source": "builtin"
-        },
-        {
-          "id": "architect",
-          "name": "Architect",
-          "source": "project"
-        }
-      ],
+      "personas": [],
       "projectId": "proj_app",
       "suggestedName": "brave-otter",
       "version": 1

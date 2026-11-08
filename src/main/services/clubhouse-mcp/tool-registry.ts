@@ -12,8 +12,8 @@ import { deniedGroupProjectTools } from '../../../shared/group-project-admin';
 import { appLog } from '../log-service';
 import { isCrossProjectEnabled, isOrchestrationEnabled, onOrchestrationGateChange } from './orchestration-gate';
 import { isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
-import { HELPER_REPORT_TOOL, mcpCallAccess } from './mcp-call-gate';
-import { CROSS_PROJECT_OFF_MESSAGE, MCP_OFF_HELPER_TOOL_MESSAGE, MCP_OFF_TOOL_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
+import { mcpCallAccess } from './mcp-call-gate';
+import { CROSS_PROJECT_OFF_MESSAGE, MCP_CALLER_UNKNOWN_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
 import { getProvider } from '../../orchestrators';
 
 /** The refusal a Dispatcher tool returns for any other agent. */
@@ -111,6 +111,17 @@ function groupRefusal(group: ToolGroups): McpToolResult {
 export interface ToolRegistrationOptions {
   /** Gate the tool behind a tool group, or several. */
   group?: ToolGroups;
+  /**
+   * Gate the tool on app state as well as its group, such as an experimental
+   * flag: listed only while `isOn` returns true, and refused with `refusal`
+   * otherwise. Read at every listing and every call.
+   */
+  when?: ToolCondition;
+}
+
+export interface ToolCondition {
+  isOn: () => boolean;
+  refusal: string;
 }
 
 export interface ToolTemplate {
@@ -184,6 +195,7 @@ const globalTools = new Map<string, {
   definition: McpToolDefinition;
   handler: (agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
   group?: ToolGroups;
+  when?: ToolCondition;
 }>();
 
 /** Maximum length for wire instruction strings before truncation. */
@@ -272,8 +284,16 @@ export function registerGlobalTool(
     definition: { ...definition, name },
     handler,
     ...(options.group && { group: options.group }),
+    ...(options.when && { when: options.when }),
   });
   invalidateToolListCache();
+}
+
+/** Whether every global tool's condition is on, one character each: part of the cache key. */
+function conditionsKey(): string {
+  let key = '';
+  for (const [, tool] of globalTools) if (tool.when) key += tool.when.isOn() ? '1' : '0';
+  return key;
 }
 
 /** True if `name` is a registered global tool. */
@@ -340,7 +360,7 @@ export function parseToolName(name: string): { prefix: string; toolKey: string; 
 // internal version, plus which agent targets are awake, to detect when the
 // cache is stale.
 
-const toolListCache = new Map<string, { tools: McpToolDefinition[]; bindingVersion: number; wakeKey: string }>();
+const toolListCache = new Map<string, { tools: McpToolDefinition[]; bindingVersion: number; wakeKey: string; conditionsKey: string }>();
 
 /** Invalidate all cached tool lists. */
 export function invalidateToolListCache(): void {
@@ -373,16 +393,13 @@ function wakeKey(bindings: McpBinding[]): string {
 export function getScopedToolList(agentId: string): McpToolDefinition[] {
   const access = mcpCallAccess(agentId, agentRegistry.get(agentId)?.projectPath);
   if (access === 'closed') return [];
-  if (access === 'report_only') {
-    const report = globalTools.get(HELPER_REPORT_TOOL);
-    return report ? [report.definition] : [];
-  }
   const currentVersion = bindingManager.getVersion();
   const bindings = bindingManager.getBindingsForAgent(agentId);
   const allWireTools = keepsFirstToolList(agentId);
   const currentWakeKey = allWireTools ? 'all' : wakeKey(bindings);
+  const currentConditions = conditionsKey();
   const cached = toolListCache.get(agentId);
-  if (cached && cached.bindingVersion === currentVersion && cached.wakeKey === currentWakeKey) {
+  if (cached && cached.bindingVersion === currentVersion && cached.wakeKey === currentWakeKey && cached.conditionsKey === currentConditions) {
     return cached.tools;
   }
   const tools: McpToolDefinition[] = [];
@@ -451,11 +468,12 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
   // Append global tools (available regardless of bindings, unless gated by a group)
   for (const [, tool] of globalTools) {
     if (!groupAllows(tool.group, agentId)) continue;
+    if (tool.when && !tool.when.isOn()) continue;
     tools.push(tool.definition);
   }
 
   // Cache the result
-  toolListCache.set(agentId, { tools, bindingVersion: currentVersion, wakeKey: currentWakeKey });
+  toolListCache.set(agentId, { tools, bindingVersion: currentVersion, wakeKey: currentWakeKey, conditionsKey: currentConditions });
 
   return tools;
 }
@@ -468,10 +486,9 @@ export async function callTool(
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<McpToolResult> {
-  // Before everything else: without MCP, no tool is reached, whatever list the client holds.
+  // Before everything else: a caller the gate doesn't know reaches no tool, whatever list the client holds.
   const access = mcpCallAccess(agentId, agentRegistry.get(agentId)?.projectPath);
-  if (access === 'closed') return refuse('mcp_off', MCP_OFF_TOOL_MESSAGE);
-  if (access === 'report_only' && toolName !== HELPER_REPORT_TOOL) return refuse('mcp_off', MCP_OFF_HELPER_TOOL_MESSAGE);
+  if (access === 'closed') return refuse('caller_unknown', MCP_CALLER_UNKNOWN_MESSAGE);
 
   // Check global tools first (no binding required)
   const globalTool = globalTools.get(toolName);
@@ -482,6 +499,10 @@ export async function callTool(
         meta: { agentId, toolName, group: globalTool.group },
       });
       return groupRefusal(globalTool.group);
+    }
+    if (globalTool.when && !globalTool.when.isOn()) {
+      appLog('core:mcp', 'info', 'Tool call refused: the tool is turned off', { meta: { agentId, toolName } });
+      return refuse('group_off', globalTool.when.refusal);
     }
     const schema = globalTool.definition.inputSchema;
     if (schema && typeof schema === 'object') {

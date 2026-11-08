@@ -65,7 +65,8 @@ import { persist } from '../../telemetry/persist';
 import { getBaseDirPath } from '../base-dir';
 import { pathExists } from '../fs-utils';
 import { appLog } from '../log-service';
-import { appendSettingsAudit, auditChanged, currentSettingsOrigin } from '../settings-audit';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { appendSettingsAudit, auditChanged, currentSettingsOrigin, withSettingsSurface } from '../settings-audit';
 import {
   acceptedRefsOf,
   canonicalHash,
@@ -174,8 +175,21 @@ function isCompositionShape(composition: unknown): boolean {
 /** Agent-facing ways in. A user's are `ui` and `mobile`; `persona` and `system` are Clubhouse acting for one. */
 const AGENT_SURFACES = new Set(['mcp', 'cli', 'dispatcher']);
 
+/**
+ * The one agent write path (#2900): the Dispatcher's builder tools, which the
+ * maintainer gave full control of agent parts. Granted per call, for one
+ * agent id, and only on the Dispatcher surface; every other agent write is
+ * still refused. Writes stay attributed to the Dispatcher in the audit.
+ */
+const dispatcherGrant = new AsyncLocalStorage<string>();
+
+export function withDispatcherCatalogWrites<T>(dispatcherId: string, fn: () => T): T {
+  return dispatcherGrant.run(dispatcherId, () => withSettingsSurface('dispatcher', dispatcherId, fn));
+}
+
 function isUserWritePermitted(): boolean {
   const { surface, actorId } = currentSettingsOrigin();
+  if (surface === 'dispatcher' && actorId && dispatcherGrant.getStore() === actorId) return true;
   return !actorId && !AGENT_SURFACES.has(surface);
 }
 
@@ -245,6 +259,19 @@ export function installBuiltinAsset(store: object, input: BuiltinInstall): Promi
   const install = builtinInstallers.get(store);
   if (!install) throw new TypeError('not an asset catalog store');
   return install(input);
+}
+
+const builtinRemovers = new WeakMap<object, (input: { assetId: string; expectedRevision: number }) => Promise<void>>();
+
+/**
+ * The only way to remove a built-in: one an app update retired (D99). Like
+ * installBuiltinAsset, not on the store, and Clubhouse itself only. Refused
+ * while anything in the catalog still refers to it.
+ */
+export function removeBuiltinAsset(store: object, input: { assetId: string; expectedRevision: number }): Promise<void> {
+  const remove = builtinRemovers.get(store);
+  if (!remove) throw new TypeError('not an asset catalog store');
+  return remove(input);
 }
 
 /** Main-internal frozen input. Never expose through the catalog IPC or agent tools. */
@@ -829,6 +856,23 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       await commitIndex({ ...index, assets: { ...index.assets, [entry.id]: entry } });
       await auditCommitted('app', 'assetCatalog.builtin', entry.id);
       return entry;
+    }));
+  }
+
+  function removeBuiltin(input: { assetId: string; expectedRevision: number }): Promise<void> {
+    return guarded({ scope: 'app', key: 'assetCatalog.builtin', targetId: isAssetId(input.assetId) ? input.assetId : undefined }, () => serial(async () => {
+      if (currentSettingsOrigin().surface !== 'system') throw new AssetCatalogError('agent_not_permitted');
+      const index = await loadIndex();
+      const entry = getLiveEntry(index, input.assetId);
+      if (entry.source.kind !== 'builtin') throw new AssetCatalogError('asset_exists', { assetId: entry.id });
+      if (input.expectedRevision !== entry.headRevision) {
+        throw new AssetCatalogError('stale_revision', { assetId: entry.id, expected: input.expectedRevision, current: entry.headRevision });
+      }
+      if (hasHardReference(listConsumers(index, entry.id))) throw new AssetCatalogError('asset_in_use', { assetId: entry.id });
+      const next = pruneTombstones(tombstoned(index, entry, now()));
+      await commitIndex(next);
+      await auditCommitted('app', `assetCatalog.${entry.kind}.deleted`, entry.id);
+      await sweepAfterCommit(next);
     }));
   }
 
@@ -1507,5 +1551,6 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     },
   });
   builtinInstallers.set(api, installBuiltin);
+  builtinRemovers.set(api, removeBuiltin);
   return api;
 }

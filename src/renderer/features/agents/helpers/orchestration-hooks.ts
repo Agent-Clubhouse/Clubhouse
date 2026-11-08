@@ -16,7 +16,6 @@ import {
   type HelperProjectGroup,
   type OrchestrationPolicyPatch,
   type ResolvedOrchestrationPolicy,
-  asShownPolicy,
 } from '../../../../shared/orchestration-policy';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
@@ -183,8 +182,6 @@ export interface OrchestrationState {
  */
 export function useOrchestration(projectPath: string | undefined, agent: Pick<Agent, 'id' | 'name' | 'status'>): OrchestrationState {
   const [policy, setPolicyState] = useState<ResolvedOrchestrationPolicy | null>(null);
-  // A report-only helper reads off and disabled, as any agent without MCP does.
-  const shownPolicy = useMemo(() => policy && asShownPolicy(policy), [policy]);
   const [access, setAccess] = useState<HelperAccessResolution | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -207,15 +204,14 @@ export function useOrchestration(projectPath: string | undefined, agent: Pick<Ag
     return () => { alive = false; };
   }, [projectPath, agent.id, nonce]);
 
-  // Where MCP is off the policy reads off (#2589), and MCP can change at app, project or agent level.
+  // The policy follows the agent's config, which can change from elsewhere.
   useEffect(() => {
     if (!projectPath) return;
     const reread = () => setNonce((n) => n + 1);
-    const offMcp = window.clubhouse.agent.onMcpEnablementChanged?.(reread);
     const offConfigs = window.clubhouse.agent.onConfigsChanged?.((changed) => {
       if (sameProjectPath(changed, projectPath)) reread();
     });
-    return () => { offMcp?.(); offConfigs?.(); };
+    return () => { offConfigs?.(); };
   }, [projectPath]);
 
   // The ceiling follows the orchestrator's live level, so re-read as it starts and stops.
@@ -292,8 +288,8 @@ export function useOrchestration(projectPath: string | undefined, agent: Pick<Ag
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
   return useMemo(() => ({
-    policy: shownPolicy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, setCrossProjectHelpers, setAutoHelpers, setConnectToDispatcher, finishTurnOff, reload,
-  }), [shownPolicy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, setCrossProjectHelpers, setAutoHelpers, setConnectToDispatcher, finishTurnOff, reload]);
+    policy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, setCrossProjectHelpers, setAutoHelpers, setConnectToDispatcher, finishTurnOff, reload,
+  }), [policy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, setCrossProjectHelpers, setAutoHelpers, setConnectToDispatcher, finishTurnOff, reload]);
 }
 
 // ── Start approvals (#2234) ─────────────────────────────────────────────

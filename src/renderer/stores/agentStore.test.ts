@@ -82,8 +82,6 @@ describe('agentStore', () => {
       activeAgentId: null,
       agentSettingsOpenFor: null,
       deleteDialogAgent: null,
-      configChangesDialogAgent: null,
-      configChangesProjectPath: null,
       agentActivity: {},
       agentSpawnedAt: {},
       agentTerminalAt: {},
@@ -829,8 +827,6 @@ describe('agentStore', () => {
         activeAgentId: 'a_cleanup',
         agentSettingsOpenFor: 'a_cleanup',
         deleteDialogAgent: 'a_cleanup',
-        configChangesDialogAgent: 'a_cleanup',
-        configChangesProjectPath: '/project',
         sessionNamePromptFor: 'a_cleanup',
         agentActivity: { a_cleanup: 10, keep: 20 },
         agentSpawnedAt: { a_cleanup: 11, keep: 21 },
@@ -855,8 +851,6 @@ describe('agentStore', () => {
       expect(getState().activeAgentId).toBeNull();
       expect(getState().agentSettingsOpenFor).toBeNull();
       expect(getState().deleteDialogAgent).toBeNull();
-      expect(getState().configChangesDialogAgent).toBeNull();
-      expect(getState().configChangesProjectPath).toBeNull();
       expect(getState().sessionNamePromptFor).toBeNull();
       expect(getState().projectActiveAgent.proj_1).toBeUndefined();
       expect(getState().projectActiveAgent.proj_2).toBe('keep');
@@ -972,6 +966,18 @@ describe('agentStore', () => {
       const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
       expect(spawnCall.systemPrompt).toContain('Be concise and focused');
       expect(spawnCall.systemPrompt).toContain('clubhouse-summary');
+    });
+
+    it('passes a template to main with the generated name, and nothing without one (D25)', async () => {
+      const projectPath = path.join(path.sep, 'work', 'proj');
+      const id = await getState().spawnQuickAgent('proj_1', projectPath, 'do stuff', undefined, undefined, 'codex-cli', undefined, undefined, undefined, { managedTemplateId: 'tpl-1' });
+      const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
+      expect(spawnCall.managedTemplate).toEqual({ id: 'tpl-1', agentName: getState().agents[id].name });
+      // Kept on the agent, so its finished record can retry from the same template.
+      expect(getState().agents[id].managedTemplateId).toBe('tpl-1');
+      const plain = await getState().spawnQuickAgent('proj_1', projectPath, 'again');
+      expect(mockAgent.spawnAgent.mock.calls[1][0]).not.toHaveProperty('managedTemplate');
+      expect(getState().agents[plain]).not.toHaveProperty('managedTemplateId');
     });
 
     it('parent with allowedTools — passes to spawnAgent', async () => {

@@ -27,9 +27,8 @@ vi.mock('./agent-system', () => ({
     const { readProjectOrchestrator } = await import('./agent-registry');
     return { id: id ?? await readProjectOrchestrator(projectPath) ?? 'claude-code', getModelOptions };
   }),
-  resolveProfileEnv: vi.fn(),
 }));
-vi.mock('./agent-creation', () => ({ parseStartCreationParams: vi.fn(), personaInjection: vi.fn(), startDurableCreation: vi.fn() }));
+vi.mock('./agent-creation', () => ({ parseStartCreationParams: vi.fn(), startDurableCreation: vi.fn() }));
 vi.mock('./agent-runtime/chat-drivers', () => ({ resolveChatDriver: () => ({}) }));
 vi.mock('./agent-runtime', () => ({ isChatAgent: () => false }));
 vi.mock('./git-service', () => ({ isInsideGitRepo: vi.fn(), getBranchChanges: vi.fn() }));
@@ -242,20 +241,6 @@ describe('settings derived off, with a reason', () => {
     expect(await dispatcherEnabled()).toEqual({ stored: false, effective: false, source: 'app', reason: 'switch_off' });
   });
 
-  it('names MCP at app level, and keeps the saved value, with MCP off', async () => {
-    writeApp('dispatcher-settings.json', { enabled: true });
-    writeApp('mcp-settings.json', { enabled: false, projectOverrides: { [one]: true } });
-    layout(true);
-    expect(await dispatcherEnabled()).toEqual({ stored: true, effective: false, source: 'app', reason: 'mcp_off' });
-  });
-
-  it('counts the global Clubhouse mode as MCP on', async () => {
-    writeApp('mcp-settings.json', { enabled: false });
-    writeApp('clubhouse-mode-settings.json', { enabled: true });
-    layout(true);
-    expect(await dispatcherEnabled()).toEqual({ stored: null, effective: true, source: 'default' });
-  });
-
   it('reads a saved experimental false', async () => {
     writeApp('experimental-settings.json', { newChrome: true, dispatcher: false });
     resetNewChromeCacheForTests();
@@ -270,35 +255,6 @@ describe('settings derived off, with a reason', () => {
   const orchestrated = () => agent('a1', { orchestration: { orchestrate: true, crossProjectHelpers: true, autoHelpers: true, connectToDispatcher: true } });
   const policy = async () => (await read(ordinary('a1'), { select: ['agent.orchestration'], detail: true })).targets[0].settings;
 
-  it('reads orchestration off with MCP off at app level, keeping what is stored', async () => {
-    writeAgents(one, [orchestrated()]);
-    writeApp('mcp-settings.json', { enabled: false });
-    layout(true);
-    const off = { effective: false, source: 'app', reason: 'mcp_off' };
-    expect(await policy()).toMatchObject({
-      'agent.orchestration.orchestrate': { stored: true, ...off },
-      'agent.orchestration.cross_project_helpers': { stored: true, ...off },
-      'agent.orchestration.connect_to_dispatcher': { stored: true, ...off },
-      'agent.orchestration.auto_helpers': { stored: true, ...off },
-    });
-  });
-
-  it('names the project level when a project override turned MCP off', async () => {
-    writeAgents(one, [orchestrated()]);
-    writeApp('mcp-settings.json', { enabled: true, projectOverrides: { [one]: false } });
-    layout(true);
-    expect((await policy())['agent.orchestration.orchestrate']).toEqual({ stored: true, effective: false, source: 'project', reason: 'mcp_off' });
-  });
-
-  it('with its own MCP, an agent orchestrates, and its Dispatcher connection reads off for want of MCP at app level', async () => {
-    writeAgents(one, [{ ...orchestrated(), mcpOverride: true }]);
-    writeApp('mcp-settings.json', { enabled: false });
-    layout(true);
-    const settings = await policy();
-    expect(settings['agent.orchestration.orchestrate']).toEqual({ stored: true, effective: true, source: 'agent' });
-    expect(settings['agent.orchestration.connect_to_dispatcher']).toEqual({ stored: true, effective: false, source: 'app', reason: 'mcp_off' });
-  });
-
   it('with MCP on, reads the connection off while the Dispatcher\'s switch is', async () => {
     writeAgents(one, [orchestrated()]);
     writeApp('dispatcher-settings.json', { enabled: false });
@@ -306,9 +262,9 @@ describe('settings derived off, with a reason', () => {
     expect((await policy())['agent.orchestration.connect_to_dispatcher']).toEqual({ stored: true, effective: false, source: 'app', reason: 'dispatcher_off' });
   });
 
-  it('applies every saved value again with MCP back', async () => {
-    writeAgents(one, [orchestrated()]);
-    writeApp('mcp-settings.json', { enabled: true });
+  it('applies every saved value, whatever an old MCP setting or mcpOverride says', async () => {
+    writeAgents(one, [{ ...orchestrated(), mcpOverride: false } as never]);
+    writeApp('mcp-settings.json', { enabled: false, projectOverrides: { [one]: false } });
     layout(true);
     const settings = await policy();
     for (const key of ['orchestrate', 'cross_project_helpers', 'connect_to_dispatcher']) {
@@ -316,13 +272,13 @@ describe('settings derived off, with a reason', () => {
     }
   });
 
-  it('a helper with MCP off reads report-only, its orchestration off with the same reason, and is never connected', async () => {
+  it('a helper orchestrates as saved and is never connected', async () => {
     writeAgents(one, [agent('a1'), agent('h1', { parentAgentId: 'a1', orchestration: { orchestrate: true, connectToDispatcher: true } })]);
     writeApp('mcp-settings.json', { enabled: false });
     layout(true);
     const { settings } = (await read(ordinary('h1'), { select: ['agent.mcp.clubhouse_mcp', 'agent.orchestration.orchestrate', 'agent.orchestration.connect_to_dispatcher'], detail: true })).targets[0];
-    expect(settings['agent.mcp.clubhouse_mcp']).toEqual({ stored: null, effective: false, source: 'app', reason: 'helper_report_only' });
-    expect(settings['agent.orchestration.orchestrate']).toEqual({ stored: true, effective: false, source: 'app', reason: 'helper_report_only' });
+    expect(settings['agent.mcp.clubhouse_mcp']).toEqual({ stored: null, effective: true, source: 'default' });
+    expect(settings['agent.orchestration.orchestrate']).toEqual({ stored: true, effective: true, source: 'agent' });
     expect(settings['agent.orchestration.connect_to_dispatcher']).toMatchObject({ effective: false });
   });
 });
@@ -345,7 +301,7 @@ describe('a preview-only flag in a stable build', () => {
     });
   });
 
-  it('reports the new legacy choice separately from the retired SDK flag', async () => {
+  it('reads the removed legacy ACP choice as retired, and the retired SDK flag as saved (#2868)', async () => {
     writeApp('experimental-settings.json', { copilotSdk: false, copilotLegacyAcp: true });
     resetAllSettingsStoresForTests();
     packaged(false);
@@ -353,11 +309,8 @@ describe('a preview-only flag in a stable build', () => {
     const result = await read(dispatcher, { select: selection, detail: true });
     expect(result.targets[0].settings).toMatchObject({
       'app.system.experimental_copilot_sdk': { stored: false, effective: false, source: 'app' },
-      'app.system.experimental_copilot_legacy_acp': { stored: true, effective: true, source: 'app' },
+      'app.system.experimental_copilot_legacy_acp': { stored: null, effective: null, source: 'default' },
     });
-    packaged(true);
-    expect((await read(dispatcher, { select: selection, detail: true })).targets[0].settings)
-      .toMatchObject({ 'app.system.experimental_copilot_legacy_acp': { stored: true, effective: false, source: 'app' } });
   });
 
   it('reads Chat as off, and uncertain, while the file can\'t be read', async () => {
@@ -565,73 +518,68 @@ describe('values and sources', () => {
     });
   });
 
-  it('follows the MCP fallback chain: agent, project, app, Clubhouse mode', async () => {
-    const mcp = async () => (await read(ordinary(), { select: ['agent.mcp.clubhouse_mcp'] })).targets[0].settings['agent.mcp.clubhouse_mcp'];
-    expect(await mcp()).toEqual({ effective: true, source: 'default' });
-    writeApp('mcp-settings.json', { enabled: true });
-    resetAllSettingsStoresForTests();
-    expect(await mcp()).toEqual({ effective: true, source: 'app' });
+  it('reads every Clubhouse MCP key as always on, whatever old settings say (D69)', async () => {
     writeApp('mcp-settings.json', { enabled: false, projectOverrides: { [one]: false } });
+    writeAgents(one, [agent('a1', { mcpOverride: false } as never)]);
     resetAllSettingsStoresForTests();
-    expect(await mcp()).toEqual({ effective: false, source: 'project' });
-    writeAgents(one, [agent('a1', { mcpOverride: true })]);
-    expect(await mcp()).toEqual({ effective: true, source: 'agent' });
-    writeApp('mcp-settings.json', { enabled: false });
-    writeAgents(one, [agent('a1')]);
-    resetAllSettingsStoresForTests();
-    // Its own switch saved off decided, not Clubhouse mode's default.
-    expect(await mcp()).toEqual({ effective: false, source: 'app' });
-    writeApp('clubhouse-mode-settings.json', { enabled: true });
-    resetAllSettingsStoresForTests();
-    expect(await mcp()).toEqual({ effective: true, source: 'app' });
-  });
-
-  it('reports what a helper can call apart from whether its bridge is there', async () => {
-    const both = async (id: string) => {
-      const { settings } = (await read(ordinary(id), { select: ['agent.mcp.clubhouse_mcp', 'agent.mcp.clubhouse_bridge'], detail: true })).targets[0];
-      return [settings['agent.mcp.clubhouse_mcp'], settings['agent.mcp.clubhouse_bridge']];
-    };
-    const bridge = { stored: null, effective: true, source: 'default' };
-    writeAgents(one, [agent('off', { parentAgentId: 'a1', mcpOverride: false }), agent('on', { parentAgentId: 'a1', mcpOverride: true }), agent('unset', { parentAgentId: 'a1' }), agent('plain')]);
-    expect(await both('off')).toEqual([{ stored: false, effective: false, source: 'agent', reason: 'helper_report_only' }, bridge]);
-    expect(await both('on')).toEqual([{ stored: true, effective: true, source: 'agent' }, bridge]);
-    expect(await both('unset')).toEqual([{ stored: null, effective: true, source: 'default' }, bridge]);
-    writeApp('mcp-settings.json', { enabled: false });
-    resetAllSettingsStoresForTests();
-    expect(await both('unset')).toEqual([{ stored: null, effective: false, source: 'app', reason: 'helper_report_only' }, bridge]);
-    // Anyone else's bridge goes with its MCP: there is no second answer.
-    expect((await both('plain'))[1]).toEqual({ stored: null, effective: false, source: 'app' });
+    const on = { stored: null, effective: true, source: 'default' };
+    const { targets } = await read(ordinary(), { select: ['agent.mcp.clubhouse_mcp', 'agent.mcp.clubhouse_bridge', 'project.modes.mcp', 'app.defaults.mcp_enabled'], detail: true });
+    const all = Object.assign({}, ...targets.map((t) => t.settings));
+    for (const key of ['agent.mcp.clubhouse_mcp', 'agent.mcp.clubhouse_bridge', 'project.modes.mcp', 'app.defaults.mcp_enabled']) {
+      expect(all[key], key).toEqual(on);
+    }
     fs.rmSync(path.join(dirs.userData, 'mcp-settings.json'), { force: true });
     resetAllSettingsStoresForTests();
   });
 
-  it('inherits persona, mission, MCP ids and orchestrator from the project', async () => {
+  it('reads the retired Clubhouse Mode and mission keys as null, whatever an old config holds (#2901)', async () => {
+    writeApp('clubhouse-mode-settings.json', { enabled: true, projectOverrides: { [one]: true } });
+    writeProjectSettings(one, { agentDefaults: { mission: 'ship' } });
+    writeAgents(one, [agent('a1', { mission: 'mine', clubhouseModeOverride: true })]);
+    const retired = { stored: null, effective: null, source: 'default' };
+    const { targets } = await read(ordinary(), { select: ['agent.mcp.clubhouse_mode', 'agent.persona.mission', 'project.modes.clubhouse_mode', 'project.defaults.mission', 'app.defaults.clubhouse_mode_enabled'], detail: true });
+    const all = Object.assign({}, ...targets.map((t) => t.settings));
+    for (const key of ['agent.mcp.clubhouse_mode', 'agent.persona.mission', 'project.modes.clubhouse_mode', 'project.defaults.mission', 'app.defaults.clubhouse_mode_enabled']) {
+      expect(all[key], key).toEqual(retired);
+    }
+    fs.rmSync(path.join(dirs.userData, 'clubhouse-mode-settings.json'), { force: true });
+  });
+
+  it('inherits MCP ids and orchestrator from the project, and reads a retired persona and mission as null (#2901)', async () => {
     writeProjectSettings(one, { orchestrator: 'codex-cli', defaultMcps: ['ado'], agentDefaults: { persona: 'qa', mission: 'ship' } });
     const { targets } = await read(ordinary(), { select: ['agent.persona', 'agent.mcp.mcp_ids', 'agent.cli.orchestrator'], detail: true });
     expect(targets[0].settings).toMatchObject({
-      'agent.persona.persona': { stored: null, effective: 'qa', source: 'project' },
-      'agent.persona.mission': { stored: null, effective: 'ship', source: 'project' },
+      'agent.persona.persona': { stored: null, effective: null, source: 'default' },
+      'agent.persona.mission': { stored: null, effective: null, source: 'default' },
       'agent.mcp.mcp_ids': { stored: null, effective: ['ado'], source: 'project' },
       'agent.cli.orchestrator': { stored: null, effective: 'codex-cli', source: 'project' },
     });
     writeAgents(one, [agent('a1', { persona: 'dev', mission: 'mine', mcpIds: [], orchestrator: 'claude-code' })]);
     const own = await read(ordinary(), { select: ['agent.persona', 'agent.mcp.mcp_ids', 'agent.cli.orchestrator'] });
     expect(own.targets[0].settings).toMatchObject({
-      'agent.persona.persona': { effective: 'dev', source: 'agent' },
-      'agent.persona.mission': { effective: 'mine', source: 'agent' },
+      'agent.persona.persona': { effective: null, source: 'default' },
+      'agent.persona.mission': { effective: null, source: 'default' },
       'agent.mcp.mcp_ids': { effective: [], source: 'agent' },
       'agent.cli.orchestrator': { effective: 'claude-code', source: 'agent' },
     });
+    const project = (await read(ordinary(), { select: ['project.defaults.persona'], detail: true })).targets.find((t) => t.target === 'project');
+    expect(project?.settings['project.defaults.persona']).toEqual({ stored: null, effective: null, source: 'default' });
   });
 
-  it('reports orchestration with the policy\'s own sources, persona included', async () => {
+  it('reads a removed provider profile id as null, keeping the key (#2749)', async () => {
+    writeProjectSettings(one, { agentDefaults: { profileId: 'work' } });
+    const project = (await read(ordinary(), { select: ['project.defaults.profile_id'], detail: true })).targets.find((t) => t.target === 'project');
+    expect(project?.settings['project.defaults.profile_id']).toEqual({ stored: null, effective: null, source: 'default' });
+  });
+
+  it('reports orchestration with the policy\'s own sources, and a retired persona file decides nothing (#2901)', async () => {
     fs.mkdirSync(path.join(one, '.clubhouse', 'personas'), { recursive: true });
     fs.writeFileSync(path.join(one, '.clubhouse', 'personas', 'lead.md'), '---\norchestration: {"orchestrate": true, "maxHelpers": 3}\n---\nLead.\n');
     writeAgents(one, [agent('a1', { persona: 'lead', orchestration: { control: 'ask-everything' } })]);
     const { targets } = await read(ordinary(), { select: ['agent.orchestration'], detail: true });
     expect(targets[0].settings).toMatchObject({
-      'agent.orchestration.orchestrate': { stored: null, effective: true, source: 'persona' },
-      'agent.orchestration.max_helpers': { stored: null, effective: 3, source: 'persona' },
+      'agent.orchestration.orchestrate': { stored: null, effective: false, source: 'default' },
+      'agent.orchestration.max_helpers': { stored: null, effective: 5, source: 'default' },
       'agent.orchestration.control': { stored: 'ask-everything', effective: 'ask-everything', source: 'agent' },
       'agent.orchestration.access': { stored: null, effective: 'same', source: 'default' },
     });
@@ -700,11 +648,11 @@ describe('limits', () => {
 
   it('cuts a single target too big for a page, naming what it left out', async () => {
     const huge = 'x'.repeat(MAX_PAGE_CHARS);
-    writeAgents(one, [agent('a1', { mission: huge })]);
-    const { targets, next_cursor } = await read(ordinary(), { select: ['agent.identity.name', 'agent.persona.mission'] });
+    writeAgents(one, [agent('a1', { color: huge })]);
+    const { targets, next_cursor } = await read(ordinary(), { select: ['agent.identity.name', 'agent.identity.color'] });
     expect(JSON.stringify(targets).length).toBeLessThanOrEqual(MAX_PAGE_CHARS);
     expect(targets[0].truncated).toBe(true);
-    expect(targets[0].omitted).toEqual(['agent.persona.mission']);
+    expect(targets[0].omitted).toEqual(['agent.identity.color']);
     expect(targets[0].settings['agent.identity.name'].effective).toBe('a1-name');
     expect(next_cursor).toBeUndefined();
   });

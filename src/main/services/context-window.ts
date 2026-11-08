@@ -6,7 +6,7 @@
  */
 import { contextWindowRefusal, type ContextWindowOptions } from '../../shared/context-window';
 import { appLog } from './log-service';
-import { resolveOrchestrator, resolveProfileEnv } from './agent-system';
+import { resolveOrchestrator } from './agent-system';
 
 export type ContextWindowCheck =
   | { state: 'ok' }
@@ -23,13 +23,12 @@ const UNREADABLE: ContextWindowOptions = { configurable: false, state: 'unavaila
 export async function contextWindowOptionsFor(projectPath: string, orchestrator: string | undefined, model: string | undefined): Promise<ContextWindowOptions> {
   try {
     const provider = await resolveOrchestrator(projectPath, orchestrator);
-    const env = await resolveProfileEnv(projectPath, provider.id);
     if (!provider.getContextWindowOptions) {
       return { configurable: false, state: 'unsupported', label: 'Context', reason: `${provider.displayName} has no context setting.` };
     }
     // The read carries on and fills the cache; a settings screen or a start doesn't wait on it.
     return await Promise.race([
-      provider.getContextWindowOptions(model, env ? { env } : undefined),
+      provider.getContextWindowOptions(model),
       new Promise<ContextWindowOptions>((resolve) => { setTimeout(() => resolve(UNREADABLE), CATALOG_WAIT_MS).unref?.(); }),
     ]);
   } catch (err) {

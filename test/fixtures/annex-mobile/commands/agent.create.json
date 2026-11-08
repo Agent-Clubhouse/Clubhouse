@@ -14,7 +14,6 @@
         "model": "opus",
         "name": "calm-otter",
         "orchestrator": "claude-code",
-        "persona": "qa",
         "projectId": "proj_app",
         "type": "agent.create",
         "useWorktree": true,
@@ -333,13 +332,13 @@
       }
     },
     {
-      "name": "unknown_persona",
+      "name": "managed_agent (persona)",
       "request": {
         "color": "emerald",
         "commandId": "cmd_053",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "calm-otter",
-        "persona": "pirate",
+        "persona": "qa",
         "projectId": "proj_app",
         "type": "agent.create",
         "version": 1
@@ -349,13 +348,13 @@
           "commandId": "cmd_053",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
-            "code": "unknown_persona",
-            "message": "unknown_persona"
+            "code": "managed_agent",
+            "message": "Personas were retired, so calm-otter can't take one. Clubhouse-managed agents get their instructions from their setup."
           },
           "status": "rejected",
           "version": 1
         },
-        "status": 400
+        "status": 409
       }
     },
     {

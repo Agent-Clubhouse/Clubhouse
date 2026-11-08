@@ -11,7 +11,6 @@ import * as headlessSettings from '../services/headless-settings';
 import * as freeAgentSettings from '../services/free-agent-settings';
 import * as orchestrationSettings from '../services/orchestration-settings';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as badgeSettings from '../services/badge-settings';
 import { clipboardSettings } from './settings-handlers';
 import * as autoUpdateService from '../services/auto-update-service';
@@ -21,17 +20,14 @@ import * as sessionSettings from '../services/session-settings';
 import * as fsp from 'fs/promises';
 import * as logSettings from '../services/log-settings';
 import { isPreviewEligible } from '../services/preview-eligible';
-import { ClipboardSettings, ClubhouseModeSettings, ExperimentalSettings, SoundEvent, SoundSettings, UpdateSettings } from '../../shared/types';
-import { ensureDefaultTemplates, enableExclusions, disableExclusions } from '../services/materialization-service';
-import { resolveOrchestrator } from '../services/agent-system';
+import { takeRemovedProfilesNotice } from '../services/provider-profiles-removed';
+import { ClipboardSettings, ExperimentalSettings, SoundEvent, SoundSettings, UpdateSettings } from '../../shared/types';
 import * as annexServer from '../services/annex-server';
 import * as experimentalSettings from '../services/experimental-settings';
 import * as chatRuntimeSettings from '../services/chat-runtime-settings';
 import * as projectStore from '../services/project-store';
 import * as agentConfig from '../services/agent-config';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, arrayArg } from './validation';
-import { onMcpSettingsChanged } from './mcp-binding-handlers';
-import type { McpProposal } from '../services/mcp-settings';
 import { getLiveAgentsForUpdate, loadPendingResume, clearPendingResume, captureSessionState } from '../services/restart-session-service';
 import * as ptyManager from '../services/pty-manager';
 import * as headlessManager from '../services/headless-manager';
@@ -122,6 +118,8 @@ export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.IS_PREVIEW_ELIGIBLE, () => {
     return isPreviewEligible();
   });
+
+  ipcMain.handle(IPC.APP.TAKE_REMOVED_PROFILES_NOTICE, () => takeRemovedProfilesNotice());
 
   ipcMain.handle(IPC.APP.GET_CLI_INSTALL_STATUS, () => getCliInstallStatus());
   ipcMain.handle(IPC.APP.INSTALL_CLI, () => installCli());
@@ -500,55 +498,6 @@ export function registerAppHandlers(): void {
     async (_event, settings) => {
       await sessionSettings.saveSettings(settings);
       settingsChanged('session');
-    },
-  ));
-
-  // --- Clubhouse Mode ---
-  ipcMain.handle(IPC.APP.GET_CLUBHOUSE_MODE_SETTINGS, () => {
-    return clubhouseModeSettings.getSettings();
-  });
-
-  ipcMain.handle(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS, withValidatedArgs(
-    [objectArg<ClubhouseModeSettings>(), stringArg({ optional: true })],
-    async (_event, settings, projectPath) => {
-      const previousEnabled = projectPath
-        ? clubhouseModeSettings.isClubhouseModeEnabled(projectPath)
-        : clubhouseModeSettings.getSettings().enabled;
-
-      await clubhouseModeSettings.saveSettings(settings);
-      settingsChanged('clubhouse_mode');
-
-      const nowEnabled = projectPath
-        ? clubhouseModeSettings.isClubhouseModeEnabled(projectPath)
-        : settings.enabled;
-
-      // On first enable: create default templates and enable git excludes
-      if (!previousEnabled && nowEnabled && projectPath) {
-        await ensureDefaultTemplates(projectPath);
-        try {
-          const provider = await resolveOrchestrator(projectPath);
-          enableExclusions(projectPath, provider);
-        } catch {
-          // Orchestrator not available
-        }
-      }
-
-      // On disable: remove git excludes
-      if (previousEnabled && !nowEnabled && projectPath) {
-        await disableExclusions(projectPath);
-      }
-
-      // Clubhouse Mode affects MCP fallback — lazily start bridge if needed
-      onMcpSettingsChanged();
-    },
-  ));
-
-  ipcMain.handle(IPC.APP.GET_MCP_OFF_IMPACT, withValidatedArgs(
-    [objectArg<McpProposal>()],
-    async (_event, proposal) => {
-      // Loaded on use, as below: the service pulls in the agent system.
-      const { readMcpOffImpact } = await import('../services/mcp-off-impact');
-      return readMcpOffImpact(proposal);
     },
   ));
 

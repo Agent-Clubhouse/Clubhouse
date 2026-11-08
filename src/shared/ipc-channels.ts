@@ -1,4 +1,49 @@
 export const IPC = {
+  /** Clubhouse-managed agents (#2819): agent parts, templates, setups, delivery status and restart. */
+  MANAGED: {
+    LIST_PARTS: 'managed:list-parts',
+    GET_PART: 'managed:get-part',
+    CREATE_PART: 'managed:create-part',
+    UPDATE_PART: 'managed:update-part',
+    FORK_PART: 'managed:fork-part',
+    BACK_TO_SHARED: 'managed:back-to-shared',
+    DELETE_PART: 'managed:delete-part',
+    CONSUMERS: 'managed:consumers',
+    GET_SETUP: 'managed:get-setup',
+    SAVE_SETUP: 'managed:save-setup',
+    UNMANAGE: 'managed:unmanage',
+    /** Switch to plain (#2927): what stays in the agent's folder, and what can come back. */
+    PREVIEW_UNMANAGE: 'managed:preview-unmanage',
+    PREVIEW: 'managed:preview',
+    PREVIEW_DRAFT: 'managed:preview-draft',
+    MODEL_EFFORTS: 'managed:model-efforts',
+    LIST_TEMPLATES: 'managed:list-templates',
+    GET_TEMPLATE: 'managed:get-template',
+    SAVE_TEMPLATE: 'managed:save-template',
+    DELETE_TEMPLATE: 'managed:delete-template',
+    TEMPLATE_FROM_AGENT: 'managed:template-from-agent',
+    PREVIEW_TEMPLATE_PUSH: 'managed:preview-template-push',
+    PUSH_TEMPLATE: 'managed:push-template',
+    GET_DEFAULT_HELPER_TEMPLATE: 'managed:get-default-helper-template',
+    SET_DEFAULT_HELPER_TEMPLATE: 'managed:set-default-helper-template',
+    GET_HELPER_TEMPLATE_CHOICE: 'managed:get-helper-template-choice',
+    SET_HELPER_TEMPLATE_CHOICE: 'managed:set-helper-template-choice',
+    CREATE_AGENT: 'managed:create-agent',
+    CONVERT_AGENT: 'managed:convert-agent',
+    PREVIEW_CONVERT: 'managed:preview-convert',
+    APPLY_SETTINGS: 'managed:apply-settings',
+    STATUS: 'managed:status',
+    IS_WORKING: 'managed:is-working',
+    RESTART: 'managed:restart',
+    SET_CLUBHOUSE_FEATURES: 'managed:set-clubhouse-features',
+    DISMISS_MIGRATION_NOTICE: 'managed:dismiss-migration-notice',
+    /** The root-file names git ignores for the whole repository because of the project's managed agents (D97). */
+    PROJECT_GIT_EXCLUDES: 'managed:project-git-excludes',
+    /** Skill import: whether each dropped or picked file is executable, by its mode (D96). */
+    EXECUTABLE_BITS: 'managed:executable-bits',
+    /** Main to renderer: parts, templates or setups changed; refetch what's shown. */
+    CHANGED: 'managed:changed',
+  },
   CATALOG_SKILL_BUNDLE: {
     LIST: 'catalog-skill-bundle:list',
     READ: 'catalog-skill-bundle:read',
@@ -84,7 +129,6 @@ export const IPC = {
     REPORT_DISPOSE_DECISION: 'agent:report-dispose-decision',
     /** Main → renderer: a project's agents.json changed (parent links, creation, disposal, handoff). Payload: the project path. */
     CONFIGS_CHANGED: 'agent:configs-changed',
-    MCP_ENABLEMENT_CHANGED: 'agent:mcp-enablement-changed',
     /** Main → renderer (#2234): a helper start waiting on the user's approval. */
     HELPER_START_REQUEST: 'agent:helper-start-request',
     /** Main → renderer (#2234): start requests that were answered, expired or dropped. */
@@ -109,8 +153,6 @@ export const IPC = {
     GET_DURABLE_CONFIG: 'agent:get-durable-config',
     UPDATE_DURABLE_CONFIG: 'agent:update-durable-config',
     LIST_AGENT_TEMPLATES: 'agent:list-agent-templates',
-    LIST_SOURCE_SKILLS: 'agent:list-source-skills',
-    LIST_SOURCE_AGENT_TEMPLATES: 'agent:list-source-agent-templates',
     CREATE_SKILL: 'agent:create-skill',
     CREATE_AGENT_TEMPLATE: 'agent:create-agent-template',
     SPAWN_AGENT: 'agent:spawn-agent',
@@ -155,32 +197,14 @@ export const IPC = {
     WRITE_MCP_RAW_JSON: 'agent:write-mcp-raw-json',
     READ_PROJECT_AGENT_DEFAULTS: 'agent:read-project-agent-defaults',
     WRITE_PROJECT_AGENT_DEFAULTS: 'agent:write-project-agent-defaults',
-    RESET_PROJECT_AGENT_DEFAULTS: 'agent:reset-project-agent-defaults',
     GET_CONVENTIONS: 'agent:get-conventions',
-    MATERIALIZE_AGENT: 'agent:materialize-agent',
-    PREVIEW_MATERIALIZATION: 'agent:preview-materialization',
-    READ_SOURCE_SKILL_CONTENT: 'agent:read-source-skill-content',
+    // Project source skills and agent templates: only the plugin agentConfig API's inject and remove (#2901).
     WRITE_SOURCE_SKILL_CONTENT: 'agent:write-source-skill-content',
     DELETE_SOURCE_SKILL: 'agent:delete-source-skill',
-    READ_SOURCE_AGENT_TEMPLATE_CONTENT: 'agent:read-source-agent-template-content',
     WRITE_SOURCE_AGENT_TEMPLATE_CONTENT: 'agent:write-source-agent-template-content',
     DELETE_SOURCE_AGENT_TEMPLATE: 'agent:delete-source-agent-template',
-    // Clubhouse-mode wildcard library (missions + personas) and per-agent actuals
-    GET_AGENT_WILDCARDS: 'agent:get-agent-wildcards',
-    LIST_SOURCE_MISSIONS: 'agent:list-source-missions',
-    READ_SOURCE_MISSION_CONTENT: 'agent:read-source-mission-content',
-    WRITE_SOURCE_MISSION_CONTENT: 'agent:write-source-mission-content',
-    DELETE_SOURCE_MISSION: 'agent:delete-source-mission',
-    LIST_SOURCE_PERSONAS: 'agent:list-source-personas',
-    READ_SOURCE_PERSONA_CONTENT: 'agent:read-source-persona-content',
-    WRITE_SOURCE_PERSONA_CONTENT: 'agent:write-source-persona-content',
-    DELETE_SOURCE_PERSONA: 'agent:delete-source-persona',
-    APPLY_PERSONA_TO_AGENT: 'agent:apply-persona-to-agent',
-    EXTRACT_AGENT_PERSONA: 'agent:extract-agent-persona',
     GET_PROJECT_CONFIG_BREAKDOWN: 'agent:get-project-config-breakdown',
     REMOVE_PLUGIN_INJECTION_ITEM: 'agent:remove-plugin-injection-item',
-    COMPUTE_CONFIG_DIFF: 'agent:compute-config-diff',
-    PROPAGATE_CONFIG_CHANGES: 'agent:propagate-config-changes',
     LIST_SESSIONS: 'agent:list-sessions',
     UPDATE_SESSION_NAME: 'agent:update-session-name',
     READ_SESSION_TRANSCRIPT: 'agent:read-session-transcript',
@@ -307,6 +331,8 @@ export const IPC = {
     SET_ORCHESTRATOR_HOOK_SERVER: 'app:set-orchestrator-hook-server',
     GET_VERSION: 'app:get-version',
     IS_PREVIEW_ELIGIBLE: 'app:is-preview-eligible',
+    /** The one-time notice that provider profiles were removed (#2749); null once shown or when there were none. */
+    TAKE_REMOVED_PROFILES_NOTICE: 'app:take-removed-profiles-notice',
     GET_ARCH_INFO: 'app:get-arch-info',
     GET_CLI_INSTALL_STATUS: 'app:get-cli-install-status',
     INSTALL_CLI: 'app:install-cli',
@@ -337,10 +363,6 @@ export const IPC = {
     CONTENT_CONTEXT_MENU: 'app:content-context-menu',
     READ_CLIPBOARD_TEXT: 'app:read-clipboard-text',
     READ_CLIPBOARD_IMAGE: 'app:read-clipboard-image',
-    GET_CLUBHOUSE_MODE_SETTINGS: 'app:get-clubhouse-mode-settings',
-    /** What a proposed MCP or Clubhouse mode change would turn off, before it is saved. */
-    GET_MCP_OFF_IMPACT: 'app:get-mcp-off-impact',
-    SAVE_CLUBHOUSE_MODE_SETTINGS: 'app:save-clubhouse-mode-settings',
     GET_SOUND_SETTINGS: 'app:get-sound-settings',
     SAVE_SOUND_SETTINGS: 'app:save-sound-settings',
     LIST_SOUND_PACKS: 'app:list-sound-packs',
@@ -390,6 +412,12 @@ export const IPC = {
     UNINSTALL: 'plugin:uninstall',
     LOAD_MODULE_SOURCE: 'plugin:load-module-source',
     REFRESH_MANIFEST_FROM_DISK: 'plugin:refresh-manifest-from-disk',
+    /** Where a retired Workshop plugin's data is (#2756). */
+    RETIRED_DATA_FIND: 'plugin:retired-data-find',
+    /** Save a copy of a retired plugin's data to a file the person picks. */
+    RETIRED_DATA_EXPORT: 'plugin:retired-data-export',
+    /** Show a retired plugin's data folder in the file manager. */
+    RETIRED_DATA_REVEAL: 'plugin:retired-data-reveal',
     CLEANUP_PROJECT_INJECTIONS: 'plugin:cleanup-project-injections',
     LIST_PROJECT_INJECTIONS: 'plugin:list-project-injections',
     LIST_ORPHANED_PLUGIN_IDS: 'plugin:list-orphaned-plugin-ids',
@@ -443,12 +471,6 @@ export const IPC = {
     FETCH_CUSTOM_REGISTRIES: 'marketplace:fetch-custom-registries',
     GET_SETTINGS: 'marketplace:get-settings',
     SAVE_SETTINGS: 'marketplace:save-settings',
-  },
-  PROFILE: {
-    GET_SETTINGS: 'profile:get-settings',
-    SAVE_PROFILE: 'profile:save-profile',
-    DELETE_PROFILE: 'profile:delete-profile',
-    GET_PROFILE_ENV_KEYS: 'profile:get-profile-env-keys',
   },
   ANNEX: {
     GET_SETTINGS: 'annex:get-settings',
@@ -603,8 +625,6 @@ export const IPC = {
   DISPATCHER: {
     GET: 'dispatcher:get',
     SET_ENABLED: 'dispatcher:set-enabled',
-    /** Stop its running agent and keep every saved value. */
-    STOP: 'dispatcher:stop',
     /** Main → renderer broadcast: DispatcherState after any change. */
     CHANGED: 'dispatcher:changed',
   },

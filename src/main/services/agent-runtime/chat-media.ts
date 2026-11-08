@@ -157,8 +157,8 @@ function looksDataImage(value: string): boolean {
 /**
  * `rawOutput` with base64 image payloads replaced by a placeholder: data:
  * image URLs anywhere, `base64` fields, and `data` / `blob` fields of
- * objects that describe an image (Claude source blocks, MCP and ACP image
- * content, MCP embedded resources).
+ * objects that describe an image (Claude source blocks, MCP image content,
+ * MCP embedded resources).
  */
 export function scrubRawOutput(value: unknown, depth = 0): unknown {
   if (typeof value === 'string') return looksDataImage(value) ? RAW_IMAGE_PLACEHOLDER : value;
@@ -225,7 +225,7 @@ export class ChatMediaPolicy {
     }
     const media = draft.data.media ? await this.store(draft.data.media) : undefined;
     const lost = !!draft.data.media?.length && !media?.length;
-    // A media-only call that arrives with its image (ACP) and can't store it has nothing to show.
+    // A media-only call that arrives with its image and can't store it has nothing to show.
     if (mediaOnly && lost) { this.dropped.add(toolCallId); return null; }
     if (mediaOnly) this.mediaOnly.add(toolCallId);
     const data: Record<string, unknown> = { ...draft.data };

@@ -62,7 +62,6 @@ async function agentUse(agentId: string, info: AgentLookup): Promise<HelperRouti
   if (activeDispatcher(agentId) || isDisabledDispatcherId(agentId)) return { usable: false, reason: 'dispatcher_locked' };
   if (!info) return { usable: false };
   const policy = (await resolveOrchestrationPolicies(info.project.path, [info.config])).get(info.config.id);
-  if (policy?.mcpOff) return { usable: false, reason: 'mcp_off' };
   if (!policy?.orchestrate) return { usable: false, reason: 'orchestration_off' };
   return { usable: true };
 }
@@ -70,7 +69,7 @@ async function agentUse(agentId: string, info: AgentLookup): Promise<HelperRouti
 /**
  * The route's body. No `agentId` or `projectId` reads app-wide. Either way every
  * label family comes back, so a client can cache them once per revision.
- * `projectId` or `agentId` reads the model lists under that project's profile.
+ * `projectId` or `agentId` adds that project's Auto setting; model lists are the CLI's own.
  */
 export async function mobileHelperRouting(options: { projectPath?: string; agentId?: string; agent?: AgentLookup }): Promise<HelperRoutingSettings> {
   const dispatcher = !!options.agentId && (!!activeDispatcher(options.agentId) || isDisabledDispatcherId(options.agentId));

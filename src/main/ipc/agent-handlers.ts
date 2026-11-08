@@ -15,13 +15,10 @@ import { normalizeSessionEvents, buildSessionSummary, paginateEvents, SUMMARY_TR
 import { appLog } from '../services/log-service';
 import { broadcastSnapshotRefresh } from '../services/annex-server';
 import { bindingManager } from '../services/clubhouse-mcp/binding-manager';
-import { refreshClubhouseModeReadme } from '../services/materialization-service';
 import * as orchestrationPolicy from '../services/orchestration-policy';
 import * as dispatcher from '../services/dispatcher/dispatcher-service';
 import * as projectStore from '../services/project-store';
 import { listHelpersEverywhere } from '../services/helper-index';
-import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
-import { onMcpEnablementChanged } from '../services/mcp-settings';
 import * as permissionQueue from '../services/annex-permission-queue';
 import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanArg } from './validation';
 import { ATTR } from '../../shared/telemetry/attributes';
@@ -34,7 +31,7 @@ import { orchestratorAttr } from '../telemetry/spawn-telemetry';
 import { assertAgentGitName } from '../../shared/agent-name';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableWorktreeOptions } from '../../shared/types';
-import { cancelDurableCreation, injectPersona, onDurableCreationEvent, parseStartCreationParams, parseWorktreeOptions, personaInjection, startDurableCreation } from '../services/agent-creation';
+import { cancelDurableCreation, onDurableCreationEvent, parseStartCreationParams, parseWorktreeOptions, startDurableCreation } from '../services/agent-creation';
 
 export { parseStartCreationParams };
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -78,7 +75,6 @@ async function createDurableAgent(
   freeAgentMode: boolean | undefined,
   mcpIds: string[] | undefined,
   mcpConfigs: Record<string, Record<string, string>> | undefined,
-  persona: string | undefined,
   worktreeOptions: DurableWorktreeOptions | undefined,
 ) {
   // The name becomes a folder and a git branch; refuse a bad one up front (#2221).
@@ -92,16 +88,10 @@ async function createDurableAgent(
 
   let config: Awaited<ReturnType<typeof agentConfig.createDurable>>;
   try {
-    config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator as OrchestratorId | undefined, freeAgentMode, mcpIds, mcpConfigs, persona, worktreeOptions);
+    config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator as OrchestratorId | undefined, freeAgentMode, mcpIds, mcpConfigs, worktreeOptions);
   } catch (err) {
     // worktree_failed and validation are tagged at their throw sites; anything else is a write failure.
     throw tagError(err, 'write_failed');
-  }
-
-  if (persona && config.worktreePath) {
-    if (await injectPersona(projectPath, config.id, persona, name)) {
-      config = (await agentConfig.getDurableConfig(projectPath, config.id)) ?? config;
-    }
   }
 
   broadcastSnapshotRefresh();
@@ -165,7 +155,6 @@ function forwardConfigChanges(): void {
       void refreshSnapshotOnDisplayChange(projectPath);
     }, CONFIG_CHANGE_DEBOUNCE_MS));
   });
-  onMcpEnablementChanged(() => broadcastToAllWindows(IPC.AGENT.MCP_ENABLEMENT_CHANGED));
 }
 
 // --- Dispatcher singleton guards (#2535) ---
@@ -182,10 +171,9 @@ function assertNotDispatcher(projectPath: string, agentId: string, what: string)
 }
 
 /**
- * Nothing is created in the Dispatcher's folder (no duplicates). The persona
- * rules (no other agent gets the dispatcher persona, and the Dispatcher keeps
- * it) live in agentConfig.assertPersonaAllowed, which every create and config
- * update runs (#2551).
+ * Nothing is created in the Dispatcher's folder (no duplicates). The
+ * Dispatcher is known by its folder and agent id (isDispatcherAgent above),
+ * never by a persona (#2901).
  */
 function assertCreatable(projectPath: string): void {
   if (dispatcher.isDispatcherPath(projectPath)) {
@@ -198,17 +186,6 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.LIST_DURABLE, withValidatedArgs(
     [stringArg()],
     async (_event, projectPath) => {
-      // Refresh the CH-mode self-edit guide once per project per session.
-      // LIST_DURABLE fires when the user opens / activates a project in the UI,
-      // so this is a low-overhead place to pick up updated readme content even
-      // when no agent is woken.
-      if (clubhouseModeSettings.isClubhouseModeEnabled(projectPath)) {
-        refreshClubhouseModeReadme(projectPath).catch((err) => {
-          appLog('core:materialization', 'warn', 'Failed to refresh clubhouse-mode.md from LIST_DURABLE', {
-            meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
-          });
-        });
-      }
       return agentConfig.listDurable(projectPath);
     },
   ));
@@ -228,15 +205,15 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(
     IPC.AGENT.CREATE_DURABLE,
     withValidatedArgs(
-      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), booleanArg({ optional: true }), arrayArg(stringArg(), { optional: true }), objectArg({ optional: true }), stringArg({ optional: true }), objectArg<Record<string, unknown>>({ optional: true })],
-      async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona, worktreeOptions) => tel.flow(
+      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), booleanArg({ optional: true }), arrayArg(stringArg(), { optional: true }), objectArg({ optional: true }), objectArg<Record<string, unknown>>({ optional: true })],
+      async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, worktreeOptions) => tel.flow(
         'clubhouse.agent.create',
         { attrs: [ATTR.usesWorktree(useWorktree !== false), ATTR.orchestrator(orchestratorAttr(orchestrator))] },
         () => {
           assertCreatable(projectPath);
           return createDurableAgent(
             projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds,
-            mcpConfigs as Record<string, Record<string, string>> | undefined, persona,
+            mcpConfigs as Record<string, Record<string, string>> | undefined,
             worktreeOptions ? parseWorktreeOptions(worktreeOptions) : undefined,
           );
         },
@@ -252,7 +229,7 @@ export function registerAgentHandlers(): void {
     async (_event, projectPath, rawParams) => {
       const params = parseStartCreationParams(rawParams);
       assertCreatable(projectPath);
-      const { agentId, config } = await startDurableCreation(projectPath, params, personaInjection(projectPath, params));
+      const { agentId, config } = await startDurableCreation(projectPath, params);
       return { agentId, config };
     },
   ));
@@ -574,6 +551,13 @@ export function registerAgentHandlers(): void {
         if (typeof v.projectPath !== 'string' || !v.projectPath) throw new Error(`${name}.projectPath must be a non-empty string`);
         if (typeof v.cwd !== 'string' || !v.cwd) throw new Error(`${name}.cwd must be a non-empty string`);
         if (typeof v.kind !== 'string' || !v.kind) throw new Error(`${name}.kind must be a non-empty string`);
+        if (v.managedTemplate !== undefined) {
+          const t = v.managedTemplate as { id?: unknown; agentName?: unknown } | null;
+          if (!t || typeof t.id !== 'string' || !t.id || t.id.length > 128 || typeof t.agentName !== 'string' || t.agentName.length > 200) {
+            throw new Error(`${name}.managedTemplate must be { id, agentName }`);
+          }
+          if (v.kind !== 'quick') throw new Error(`${name}.managedTemplate is for quick agents`);
+        }
       },
     })],
     async (_event, params) => {
@@ -628,9 +612,7 @@ export function registerAgentHandlers(): void {
     [stringArg(), stringArg({ optional: true })],
     async (_event, projectPath, orchestrator) => {
       const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator);
-      // A profile can change the CLI's login, and so the models it lists (#2569).
-      const env = await agentSystem.resolveProfileEnv(projectPath, provider.id);
-      return provider.getModelOptions(env ? { env } : undefined);
+      return provider.getModelOptions();
     },
   ));
 
@@ -734,9 +716,7 @@ export function registerAgentHandlers(): void {
           const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator || config?.orchestrator);
           if (!isSessionCapable(provider)) return null;
           const cwd = config?.worktreePath || projectPath;
-          // Pass profileEnv so the provider resolves the correct config directory
-          const profileEnv = await agentSystem.resolveProfileEnv(projectPath, provider.id);
-          const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv);
+          const rawEvents = await provider.readSessionTranscript(sessionId, cwd);
           if (!rawEvents) return null;
           const events = normalizeSessionEvents(rawEvents);
           return paginateEvents(events, offset, limit);
@@ -766,11 +746,9 @@ export function registerAgentHandlers(): void {
           timing.provider = provider?.id;
           if (!isSessionCapable(provider)) return null;
           const cwd = config?.worktreePath || projectPath;
-          // Pass profileEnv so the provider resolves the correct config directory
-          const profileEnv = await agentSystem.resolveProfileEnv(projectPath, provider.id);
           timing.resolveMs = lap();
           const stats: TranscriptReadStats = {};
-          const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv, { maxBytes: SUMMARY_TRANSCRIPT_MAX_BYTES, stats });
+          const rawEvents = await provider.readSessionTranscript(sessionId, cwd, { maxBytes: SUMMARY_TRANSCRIPT_MAX_BYTES, stats });
           timing.transcriptMs = lap();
           Object.assign(timing, roundStats(stats));
           if (!rawEvents) return null;

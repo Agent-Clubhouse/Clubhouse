@@ -88,7 +88,6 @@ describe('plugin-api-factory', () => {
       expect(api.events).toBeDefined();
       expect(api.settings).toBeDefined();
       expect(api.agents).toBeDefined();
-      expect(api.hub).toBeDefined();
       expect(api.navigation).toBeDefined();
       expect(api.widgets).toBeDefined();
       expect(api.terminal).toBeDefined();
@@ -671,12 +670,19 @@ describe('plugin-api-factory', () => {
     });
   });
 
-  // ── HubAPI ────────────────────────────────────────────────────────────
+  // ── Hub (removed) ─────────────────────────────────────────────────────
 
   describe('hub API', () => {
-    it('hub namespace exists', () => {
-      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
-      expect(api.hub).toBeDefined();
+    it('has no hub namespace on API 0.9, since the built-in Hub was removed', () => {
+      const api = createPluginAPI(makeCtx(), undefined, { ...allPermsManifest, engine: { api: 0.9 } });
+      expect('hub' in api).toBe(false);
+    });
+
+    it.each([0.5, 0.6, 0.7, 0.8])('keeps an empty, frozen hub namespace on API %s, so reading it still works', (version) => {
+      const api = createPluginAPI(makeCtx(), undefined, { ...allPermsManifest, engine: { api: version } });
+      const hub = (api as unknown as { hub?: object }).hub;
+      expect(hub).toEqual({});
+      expect(Object.isFrozen(hub)).toBe(true);
     });
   });
 
@@ -2766,7 +2772,7 @@ describe('plugin-api-factory', () => {
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const result = await api.agents.createDurable({ name: 'test-agent', color: 'blue' });
         expect(mockAgent.createDurable).toHaveBeenCalledWith(
-          '/projects/my-project', 'test-agent', 'blue', undefined, false, undefined, undefined, undefined, undefined, undefined,
+          '/projects/my-project', 'test-agent', 'blue', undefined, false, undefined, undefined, undefined,
         );
         expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', durableConfig, false);
         expect(result).toBe('new-agent');
@@ -2786,7 +2792,7 @@ describe('plugin-api-factory', () => {
         const api = createPluginAPI(makeCtx({ projectId: 'proj-1', projectPath: '/projects/p1' }), undefined, allPermsManifest);
         await api.agents.createDurable({ projectId: 'proj-2', name: 'other-agent', color: 'red' });
         expect(mockAgent.createDurable).toHaveBeenCalledWith(
-          '/projects/p2', 'other-agent', 'red', undefined, false, undefined, undefined, undefined, undefined, undefined,
+          '/projects/p2', 'other-agent', 'red', undefined, false, undefined, undefined, undefined,
         );
         expect(spawnSpy).toHaveBeenCalledWith('proj-2', '/projects/p2', durableConfig, false);
       });
@@ -2813,7 +2819,7 @@ describe('plugin-api-factory', () => {
           useWorktree: true, orchestrator: 'claude-code', mcpIds: ['mcp-1'],
         });
         expect(mockAgent.createDurable).toHaveBeenCalledWith(
-          '/projects/my-project', 'full-agent', 'green', 'opus', true, 'claude-code', undefined, ['mcp-1'], undefined, undefined,
+          '/projects/my-project', 'full-agent', 'green', 'opus', true, 'claude-code', undefined, ['mcp-1'],
         );
       });
 
@@ -2824,7 +2830,7 @@ describe('plugin-api-factory', () => {
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.createDurable({ name: 'agent', color: 'red', model: 'default' });
         expect(mockAgent.createDurable).toHaveBeenCalledWith(
-          '/projects/my-project', 'agent', 'red', undefined, false, undefined, undefined, undefined, undefined, undefined,
+          '/projects/my-project', 'agent', 'red', undefined, false, undefined, undefined, undefined,
         );
       });
 
@@ -2842,7 +2848,7 @@ describe('plugin-api-factory', () => {
           expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', durableConfig, false);
           // ...but structuredMode is not forwarded to the bridge.
           expect(mockAgent.createDurable).toHaveBeenCalledWith(
-            '/projects/my-project', 'legacy-agent', 'blue', undefined, false, undefined, undefined, undefined, undefined, undefined,
+            '/projects/my-project', 'legacy-agent', 'blue', undefined, false, undefined, undefined, undefined,
           );
           expect(mockAgent.createDurable.mock.calls[0]).not.toContain(true);
           expect(warnSpy).toHaveBeenCalledTimes(1);
@@ -2880,15 +2886,22 @@ describe('plugin-api-factory', () => {
         }
       });
 
-      it('passes persona through (#1565)', async () => {
-        const durableConfig = { id: 'new-agent', name: 'qa-agent' };
-        mockAgent.createDurable.mockResolvedValue(durableConfig);
-        vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
-        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
-        await api.agents.createDurable({ name: 'qa-agent', color: 'blue', persona: 'qa' });
-        expect(mockAgent.createDurable).toHaveBeenCalledWith(
-          '/projects/my-project', 'qa-agent', 'blue', undefined, false, undefined, undefined, undefined, undefined, 'qa',
-        );
+      it('ignores the deprecated persona option and warns (personas retired, #2901)', async () => {
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+          mockAgent.createDurable.mockResolvedValue({ id: 'new-agent', name: 'qa-agent' });
+          vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
+          const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+          await expect(api.agents.createDurable({ name: 'qa-agent', color: 'blue', persona: 'qa' })).resolves.toBe('new-agent');
+          expect(mockAgent.createDurable).toHaveBeenCalledWith(
+            '/projects/my-project', 'qa-agent', 'blue', undefined, false, undefined, undefined, undefined,
+          );
+          expect(mockAgent.createDurable.mock.calls[0]).not.toContain('qa');
+          expect(warnSpy).toHaveBeenCalledTimes(1);
+          expect(warnSpy.mock.calls[0][0]).toContain('persona');
+        } finally {
+          warnSpy.mockRestore();
+        }
       });
 
       it('throws when freeAgentMode is requested without the agents.free-agent-mode permission (#1564)', async () => {
@@ -2911,7 +2924,7 @@ describe('plugin-api-factory', () => {
           api.agents.createDurable({ name: 'free-agent', color: 'red', freeAgentMode: true }),
         ).resolves.toBe('new-agent');
         expect(mockAgent.createDurable).toHaveBeenCalledWith(
-          '/projects/my-project', 'free-agent', 'red', undefined, false, undefined, true, undefined, undefined, undefined,
+          '/projects/my-project', 'free-agent', 'red', undefined, false, undefined, true, undefined,
         );
       });
     });
@@ -3134,11 +3147,6 @@ describe('plugin-api-factory', () => {
         expect(typeof api.settings.onChange).toBe('function');
       });
 
-      it('api.hub is available with empty permissions', () => {
-        const manifest = v05Manifest([]);
-        const api = createPluginAPI(makeCtx(), undefined, manifest);
-        expect(api.hub).toBeDefined();
-      });
     });
 
     // ── permissionDeniedProxy React dev-mode safety ────────────────────

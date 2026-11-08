@@ -14,17 +14,15 @@
  *   blocks, `can_use_tool` control requests, one `result` per turn, and
  *   mid-turn `user` messages (steers) on held turns.
  * - Codex app-server: `turn/start`, `item/*` notifications, `turn/completed`.
- * - Copilot ACP: `session/prompt`, `session/update` notifications, and for
- *   images `rawOutput.binaryResultsForLlm` with the bytes in a session-state
- *   journal (`<COPILOT_HOME>/session-state/<sessionId>/events.jsonl`), the way
- *   Copilot itself keeps them (copilot-assets.ts).
+ * - Copilot SDK: `session.send` (with `mode: "immediate"` for a steer),
+ *   `session.event` notifications in the recorded shapes (copilot-sdk/), the
+ *   permission round trip and `session.abort`.
  *
  * Shapes no capture backs are listed in the header's `synthesized` field, as
  * for hand-made fixtures (docs/chat-fixtures.md).
  *
  * Test-only: production code must not import this module.
  */
-import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
@@ -52,11 +50,9 @@ export interface ScriptImage {
  *   `read-result` (Read's `tool_use_result.file.base64`, no image block).
  * - Codex: `view` (an `imageView` item naming the file, the default) or
  *   `generated` (an `imageGeneration` item with base64 `result`).
- * - Copilot: `asset` (a `binaryResultsForLlm` asset id, bytes in the session
- *   journal, the default), `inline` (base64 `data` in the binary result) or
- *   `omitted` (an `omittedReason` and no bytes).
+ * - Copilot: none. The SDK driver shows no image from a tool's result.
  */
-export type ImageVariant = 'content' | 'read-result' | 'view' | 'generated' | 'asset' | 'inline' | 'omitted';
+export type ImageVariant = 'content' | 'read-result' | 'view' | 'generated';
 
 export interface ScriptQuestion {
   question: string;
@@ -98,7 +94,7 @@ export interface ScriptApproval {
    * title. Codex has none; the app titles it "Run <command>".
    */
   title?: string;
-  /** Why it asks: Claude's description, Codex's `reason`, Copilot's `rawInput.description`. */
+  /** Why it asks: Claude's description, Codex's `reason`, the `description` argument of Copilot's bash call. */
   description?: string;
   /** The tool's result once approved. Default: "Done." */
   result?: string;
@@ -121,15 +117,15 @@ export interface ScriptTurn {
    */
   end?: 'end_turn' | 'held';
   /**
-   * Claude and Codex, held turns only: messages the CLI takes while the turn
-   * runs, in the order they must arrive, before the Stop that ends it. These
-   * are what Steer, Claude's Queue and a parent's helper updates send
-   * mid-turn. Anything else that arrives mid-turn is a mismatch.
+   * Held turns only: messages the CLI takes while the turn runs, in the
+   * order they must arrive, before the Stop that ends it. These are what
+   * Steer, Claude's Queue and a parent's helper updates send mid-turn.
+   * Anything else that arrives mid-turn is a mismatch.
    */
   steers?: ScriptSteer[];
 }
 
-/** A message sent into a running turn: a Claude `user` with a `priority`, or a Codex `turn/steer`. */
+/** A message sent into a running turn: a Claude `user` with a `priority`, a Codex `turn/steer`, or a Copilot `session.send` with `mode: "immediate"`. */
 export interface ScriptSteer {
   /**
    * `next` (default) steers at the next tool boundary; `later` (Claude only)
@@ -153,10 +149,8 @@ export interface BuiltChatScript {
   cli: ChatFixtureCli;
   /** Header first, then entries in wire order. */
   lines: Entry[];
-  /** The session id the handshake hands out (Claude `session_id`, Codex thread id, ACP `sessionId`). */
+  /** The session id the handshake hands out (Claude `session_id`, Codex thread id, Copilot `sessionId`). */
   sessionId: string;
-  /** Copilot only: the session journal lines its binary assets need. */
-  copilotJournal: Entry[];
 }
 
 /** Markdown snippets for `text` steps. */
@@ -189,7 +183,7 @@ function isPrompt(cli: ChatFixtureCli, e: Entry): boolean {
   const m = e.from === 'client' ? msgOf(e) : undefined;
   if (!m) return false;
   if (cli === 'claude') return m.type === 'user';
-  return m.method === (cli === 'codex' ? 'turn/start' : 'session/prompt');
+  return m.method === (cli === 'codex' ? 'turn/start' : 'session.send');
 }
 
 /** Header, handshake entries, and what the turns need from them. */
@@ -216,9 +210,9 @@ function handshake(cli: ChatFixtureCli, base: string) {
   return { header, prefix, sessionId, claudeInit, nextId: Math.max(0, ...ids) + 1 };
 }
 
-function imageBytes(image: ScriptImage): { data: string; byteLength: number; assetId: string } {
+function imageBytes(image: ScriptImage): { data: string; byteLength: number } {
   const bytes = fs.readFileSync(image.path);
-  return { data: bytes.toString('base64'), byteLength: bytes.length, assetId: `sha256:${createHash('sha256').update(bytes).digest('hex')}` };
+  return { data: bytes.toString('base64'), byteLength: bytes.length };
 }
 
 const cliEntry = (msg: Entry): Entry => ({ from: 'cli', msg });
@@ -226,16 +220,14 @@ const clientEntry = (msg: Entry, match?: Entry): Entry => ({ from: 'client', msg
 
 /** Build `script` for `cli`. Throws on a step the provider has no shape for. */
 export function buildChatScript(cli: ChatFixtureCli, script: ChatScript): BuiltChatScript {
-  if (cli === 'copilot' && script.turns.some((t) => t.steers?.length)) unsupported(cli, 'steer');
-  if (cli === 'codex' && script.turns.some((t) => t.steers?.some((st) => st.priority === 'later'))) unsupported(cli, 'later steer');
+  if (cli !== 'claude' && script.turns.some((t) => t.steers?.some((st) => st.priority === 'later'))) unsupported(cli, 'later steer');
   if (script.turns.some((t) => t.pinPrompt && t.prompt === undefined)) throw new Error('chat-script: pinPrompt needs a prompt');
   if (script.turns.some((t) => t.steers?.length && t.end !== 'held')) throw new Error('chat-script: steers need a held turn');
   const hs = handshake(cli, script.base ?? 'multi-turn');
   const synthesized = new Set<string>();
-  const journal: Entry[] = [];
   const out: Entry[] = [...hs.prefix];
   const build = { claude: claudeTurn, codex: codexTurn, copilot: copilotTurn }[cli];
-  const ctx: TurnContext = { sessionId: hs.sessionId, nextId: hs.nextId, seq: 0, synthesized, journal, claudeInit: hs.claudeInit, cliRequestId: 0 };
+  const ctx: TurnContext = { sessionId: hs.sessionId, nextId: hs.nextId, seq: 0, synthesized, claudeInit: hs.claudeInit, cliRequestId: 0 };
   script.turns.forEach((turn, i) => out.push(...build(turn, i, ctx)));
   const header: Entry = {
     ...hs.header,
@@ -244,23 +236,15 @@ export function buildChatScript(cli: ChatFixtureCli, script: ChatScript): BuiltC
     ...(synthesized.size && { synthesized: [...synthesized] }),
   };
   delete header.recordedAt;
-  return { cli, lines: [header, ...out], sessionId: hs.sessionId, copilotJournal: journal };
+  return { cli, lines: [header, ...out], sessionId: hs.sessionId };
 }
 
-/**
- * Write a built script to `<dir>/<name>.jsonl`. For Copilot, also write its
- * session journal under `<dir>/copilot-home`; pass that as COPILOT_HOME.
- */
-export async function writeChatScript(dir: string, name: string, built: BuiltChatScript): Promise<{ fixture: string; copilotHome?: string }> {
+/** Write a built script to `<dir>/<name>.jsonl`. */
+export async function writeChatScript(dir: string, name: string, built: BuiltChatScript): Promise<{ fixture: string }> {
   await fs.promises.mkdir(dir, { recursive: true });
   const fixture = path.join(dir, `${name}.jsonl`);
   await fs.promises.writeFile(fixture, built.lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
-  if (built.cli !== 'copilot') return { fixture };
-  const copilotHome = path.join(dir, 'copilot-home');
-  const sessionDir = path.join(copilotHome, 'session-state', built.sessionId);
-  await fs.promises.mkdir(sessionDir, { recursive: true });
-  await fs.promises.writeFile(path.join(sessionDir, 'events.jsonl'), built.copilotJournal.map((l) => JSON.stringify(l)).join('\n') + (built.copilotJournal.length ? '\n' : ''));
-  return { fixture, copilotHome };
+  return { fixture };
 }
 
 interface TurnContext {
@@ -269,9 +253,8 @@ interface TurnContext {
   /** Counter for unique message, tool and item ids across the script. */
   seq: number;
   synthesized: Set<string>;
-  journal: Entry[];
   claudeInit?: Entry;
-  /** Ids of requests the CLI sends (Codex and Copilot approvals), from 0 as the fixtures number them. */
+  /** Ids of requests the CLI sends (Codex approvals), from 0 as the fixtures number them. */
   cliRequestId: number;
 }
 
@@ -479,83 +462,103 @@ function codexTurn(turn: ScriptTurn, index: number, ctx: TurnContext): Entry[] {
   return out;
 }
 
-// ── Copilot ACP ─────────────────────────────────────────────────────────────
+// ── Copilot SDK ─────────────────────────────────────────────────────────────
+
+/** A Copilot session event, as the CLI sends one (copilot-sdk/ recordings). */
+function copilotEvent(ctx: TurnContext, type: string, data: Entry, ephemeral = false): Entry {
+  const n = ++ctx.seq;
+  return cliEntry({
+    jsonrpc: '2.0',
+    method: 'session.event',
+    params: {
+      sessionId: ctx.sessionId,
+      event: {
+        type,
+        data,
+        id: `00000000-0000-4000-8000-${String(800000000000 + n).padStart(12, '0')}`,
+        timestamp: new Date(Date.UTC(2026, 10, 1) + n).toISOString(),
+        parentId: null,
+        ...(ephemeral && { ephemeral: true }),
+      },
+    },
+  });
+}
 
 function copilotTurn(turn: ScriptTurn, index: number, ctx: TurnContext): Entry[] {
   const sessionId = ctx.sessionId;
-  const update = (u: Entry) => cliEntry({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: u } });
+  const ev = (type: string, data: Entry, ephemeral = false) => copilotEvent(ctx, type, data, ephemeral);
   const id = ctx.nextId++;
-  const out: Entry[] = [clientEntry(
-    { jsonrpc: '2.0', id, method: 'session/prompt', params: { sessionId, prompt: [{ type: 'text', text: turn.prompt ?? `Turn ${index + 1}.` }] } },
-    turn.pinPrompt ? { params: { prompt: [{ type: 'text', text: turn.prompt }] } } : undefined,
-  )];
+  const prompt = turn.prompt ?? `Turn ${index + 1}.`;
+  const messageId = `00000000-0000-4000-8000-${String(700000000000 + ++ctx.seq).padStart(12, '0')}`;
+  const interactionId = `00000000-0000-4000-8000-${String(600000000000 + ++ctx.seq).padStart(12, '0')}`;
+  const turnId = '0';
+  // As copilot-sdk/multi-turn: the send is answered with the message id, then the turn runs.
+  const out: Entry[] = [
+    clientEntry(
+      { jsonrpc: '2.0', id, method: 'session.send', params: { sessionId, prompt } },
+      turn.pinPrompt ? { params: { prompt } } : undefined,
+    ),
+    cliEntry({ jsonrpc: '2.0', id, result: { messageId } }),
+    ev('user.message', { content: prompt, messageId, delivery: 'idle', interactionId, turnId }),
+    ev('assistant.turn_start', { turnId, interactionId }),
+  ];
   for (const step of turn.steps) {
     if (step.type === 'text') {
-      out.push(update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: step.text } }));
-    } else if (step.type === 'image-tool') {
-      const variant = step.variant ?? 'asset';
-      const toolCallId = `call_script_${++ctx.seq}`;
-      const img = imageBytes(step.image);
-      let binary: Entry;
-      if (variant === 'asset') {
-        binary = { type: 'image', assetId: img.assetId, mimeType: step.image.mimeType, byteLength: img.byteLength };
-        // Copilot journals the bytes just before the tool's result (copilot-assets.ts).
-        ctx.synthesized.add('session.binary_asset journal line fields beyond type, assetId and data');
-        ctx.journal.push({ type: 'session.binary_asset', data: { assetId: img.assetId, mimeType: step.image.mimeType, byteLength: img.byteLength, data: img.data } });
-      } else if (variant === 'inline') {
-        binary = { type: 'image', mimeType: step.image.mimeType, data: img.data };
-      } else if (variant === 'omitted') {
-        binary = { type: 'image', mimeType: step.image.mimeType, omittedReason: 'too_large' };
-      } else {
-        unsupported('copilot', `${variant} image`);
-      }
+      const msg = `msg_script_${++ctx.seq}`;
       out.push(
-        update({ sessionUpdate: 'tool_call', toolCallId, title: 'View image', kind: 'read', status: 'pending', rawInput: { path: step.image.path }, locations: [{ path: step.image.path }] }),
-        update({ sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', rawOutput: { content: 'Viewed image', binaryResultsForLlm: [binary] } }),
+        ev('assistant.message_delta', { messageId: msg, deltaContent: step.text }, true),
+        ev('assistant.message', { messageId: msg, originatingMessageId: messageId, content: step.text, toolRequests: [], interactionId, turnId }),
       );
-    } else if (step.type === 'command') {
-      unsupported('copilot', 'command');
     } else if (step.type === 'approval') {
-      // As copilot/permission-deny, with allow_once.
+      // As copilot-sdk/permission-deny, with an approve-once.
       const command = approvalCommand('copilot', step.approval);
-      const requestId = ctx.cliRequestId++;
       const toolCallId = `call_script_${++ctx.seq}`;
-      const rawInput = { command, ...(step.approval.description && { description: step.approval.description }) };
-      const title = step.approval.title ?? `Run ${command}`;
+      const requestId = `00000000-0000-4000-8000-${String(500000000000 + ++ctx.seq).padStart(12, '0')}`;
+      const intention = step.approval.title ?? step.approval.description ?? `Run ${command}`;
+      const args = { command, ...(step.approval.description && { description: step.approval.description }), mode: 'sync' };
       out.push(
-        update({ sessionUpdate: 'tool_call', toolCallId, title, kind: 'execute', status: 'pending', rawInput }),
-        cliEntry({ jsonrpc: '2.0', id: requestId, method: 'session/request_permission', params: {
-          sessionId,
-          toolCall: { toolCallId, title, kind: 'execute', status: 'pending', rawInput },
-          options: [
-            { optionId: 'allow_once', kind: 'allow_once', name: 'Allow once' },
-            { optionId: 'allow_always', kind: 'allow_always', name: 'Always allow' },
-            { optionId: 'reject_once', kind: 'reject_once', name: 'Deny' },
-          ],
-        } }),
+        ev('tool.execution_start', { toolCallId, toolName: 'bash', arguments: args, turnId, toolTitle: 'Running command' }),
+        ev('permission.requested', { requestId, permissionRequest: { kind: 'shell', toolCallId, fullCommandText: command, shellType: 'bash', intention, commands: [{ identifier: command, readOnly: false }] } }),
         clientEntry(
-          { jsonrpc: '2.0', id: requestId, result: { outcome: { outcome: 'selected', optionId: 'allow_once' } } },
-          { id: requestId, result: { outcome: { outcome: 'selected', optionId: 'allow_once' } } },
+          { jsonrpc: '2.0', id: ctx.nextId++, method: 'session.permissions.handlePendingPermissionRequest', params: { requestId, result: { kind: 'approve-once' }, sessionId } },
+          { params: { result: { kind: 'approve-once' } } },
         ),
-        update({ sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', rawOutput: { content: step.approval.result ?? 'Done.' } }),
+        ev('permission.completed', { requestId, toolCallId, result: { kind: 'approved' } }),
+        cliEntry({ jsonrpc: '2.0', id: ctx.nextId - 1, result: { success: true } }),
+        ev('tool.execution_complete', { toolCallId, interactionId, turnId, success: true, result: { content: step.approval.result ?? 'Done.' } }),
       );
     } else {
-      unsupported('copilot', 'question');
+      unsupported('copilot', step.type === 'image-tool' ? 'image tool' : step.type === 'command' ? 'command' : 'question');
     }
   }
-  const usage = { inputTokens: 100, outputTokens: 10, totalTokens: 110, thoughtTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0 };
+  out.push(ev('assistant.usage', { model: 'fake-model', inputTokens: 100, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 }, true));
   if ((turn.end ?? 'end_turn') === 'end_turn') {
-    out.push(cliEntry({ jsonrpc: '2.0', id, result: { stopReason: 'end_turn', usage } }));
+    out.push(ev('assistant.turn_end', { turnId }), ev('session.idle', { mode: 'interactive' }, true));
     return out;
   }
-  // Held (as copilot/interrupt).
+  // Held (as copilot-sdk/interrupt, on a tool instead of a model call): a long
+  // command runs until the client aborts. Steers arrive while it runs.
   const toolCallId = `call_script_${++ctx.seq}`;
+  out.push(ev('tool.execution_start', { toolCallId, toolName: 'bash', arguments: { command: 'sleep 600', mode: 'sync' }, turnId, toolTitle: 'Running command' }));
+  for (const steer of turn.steers ?? []) {
+    const steerId = ctx.nextId++;
+    out.push(
+      clientEntry(
+        { jsonrpc: '2.0', id: steerId, method: 'session.send', params: { sessionId, prompt: steer.text ?? 'Steer.', mode: 'immediate' } },
+        { params: { mode: 'immediate', ...(steer.text !== undefined && { prompt: steer.text }) } },
+      ),
+      cliEntry({ jsonrpc: '2.0', id: steerId, result: { messageId: `00000000-0000-4000-8000-${String(400000000000 + ++ctx.seq).padStart(12, '0')}` } }),
+    );
+  }
+  const abortId = ctx.nextId++;
+  ctx.synthesized.add('tool.execution_complete for a command the abort cancelled');
   out.push(
-    update({ sessionUpdate: 'tool_call', toolCallId, title: 'Run sleep 600', kind: 'execute', status: 'pending', rawInput: { command: 'sleep 600' } }),
-    update({ sessionUpdate: 'tool_call_update', toolCallId, status: 'in_progress' }),
-    clientEntry({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } }),
-    update({ sessionUpdate: 'tool_call_update', toolCallId, status: 'failed', rawOutput: { content: 'The user cancelled the operation.' } }),
-    cliEntry({ jsonrpc: '2.0', id, result: { stopReason: 'cancelled', usage } }),
+    clientEntry({ jsonrpc: '2.0', id: abortId, method: 'session.abort', params: { sessionId } }),
+    ev('abort', { reason: 'user_initiated' }),
+    ev('tool.execution_complete', { toolCallId, interactionId, turnId, success: false, error: { message: 'The user cancelled the operation.', code: 'aborted' } }),
+    ev('assistant.turn_end', { turnId }),
+    cliEntry({ jsonrpc: '2.0', id: abortId, result: { success: true } }),
+    ev('session.idle', { aborted: true, mode: 'interactive' }, true),
   );
   return out;
 }

@@ -18,7 +18,6 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'rea
 import type { Agent, DurableConfigUpdates } from '../../../../shared/types';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { useAgentStore } from '../../../stores/agentStore';
-import { useClubhouseModeStore } from '../../../stores/clubhouseModeStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { isRemoteProjectId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { Button } from '../../../components/Button';
@@ -27,7 +26,6 @@ import { useEffectiveOrchestrators } from '../../../hooks/useEffectiveOrchestrat
 import { useModelOptions } from '../../../hooks/useModelOptions';
 import { useContextWindowOptions } from '../../../hooks/useContextWindowOptions';
 import { ContextWindowSelect, contextSummary, contextWindowHelp, formatContextChoice } from '../ContextWindowField';
-import { getPersonaTemplate } from '../../personas';
 import { useAgentSettingsPages } from '../agentSettingsPages';
 import { buildOrchestratorOptions } from '../orchestrator-options';
 import { useCliChangeConfirm } from '../useCliChangeConfirm';
@@ -40,6 +38,9 @@ import { useAgentDetailsStore } from './detailsStore';
 import { useDurableConfig } from './useDurableConfig';
 import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
 import { openDispatcherSettings } from '../../dispatcher/dispatcherNav';
+import { useManagedSetup, useManagedStatus } from '../../managed/managedApi';
+import { legacyLine, legacyUse, migrationFailedLine } from '../../managed/legacy';
+import { SetupCard } from './SetupCard';
 
 /**
  * When a row's setting can change: at any time (applied live), only while the
@@ -83,10 +84,9 @@ export function accessLabel(
   return freeAgentMode ? 'Free agent' : 'Ask before edits';
 }
 
-/** "Custom, 12 lines", or null for none. */
-export function instructionsLabel(persona: string | undefined, text: string | null): string | null {
-  // Hidden personas too, so the Dispatcher's reads "Dispatcher" (#2557).
-  if (persona) return getPersonaTemplate(persona)?.name ?? persona;
+/** "Custom, 12 lines", or null for none. The Dispatcher's reads "Dispatcher" (#2557): Clubhouse writes it. */
+export function instructionsLabel(dispatcher: boolean, text: string | null): string | null {
+  if (dispatcher) return 'Dispatcher';
   if (!text || !text.trim()) return null;
   const lines = text.trimEnd().split(/\r?\n/).length;
   return `Custom, ${lines} ${lines === 1 ? 'line' : 'lines'}`;
@@ -166,7 +166,7 @@ function runtimeName(mode: string | undefined): 'Chat' | 'CLI' | null {
 /** "Applied on the next wake": spawn settings of a sleeping agent take effect when it wakes. */
 export const NEXT_WAKE_NOTE = 'Applied on the next wake';
 
-export function SettingsCard({ agent, chat, projectPath, provider }: {
+interface SettingsCardProps {
   agent: Agent;
   /** The chat session, when the agent runs in chat. */
   chat?: ChatViewState;
@@ -174,7 +174,23 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
   projectPath: string | undefined;
   /** The CLI's name ("Claude Code"). */
   provider: string;
-}) {
+}
+
+/**
+ * Settings, or Setup for a Clubhouse-managed agent (#2896). An unmanaged
+ * agent keeps Settings.
+ */
+export function SettingsCard(props: SettingsCardProps) {
+  const { agent, chat, projectPath, provider } = props;
+  const local = agent.kind === 'durable' && !isRemoteProjectId(agent.projectId) && !!projectPath;
+  const { value: setup } = useManagedSetup(local ? projectPath : undefined, local ? agent.id : undefined);
+  if (!local || !setup || !projectPath) return <AgentSettingsCard {...props} />;
+  const awake = agent.status !== 'sleeping' && agent.status !== 'error';
+  const runsOn = `${provider} · ${modelLabel(chat && awake ? chat.model : agent.model, awake ? chat : undefined)}`;
+  return <SetupCard agent={agent} projectPath={projectPath} setup={setup} runsOn={runsOn} />;
+}
+
+function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardProps) {
   const open = useAgentDetailsStore((s) => s.settingsOpen);
   const setOpen = useAgentDetailsStore((s) => s.setSettingsOpen);
   const hintId = useId();
@@ -185,9 +201,12 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
   const appMinutes = useAppIdleMinutes();
   const orchestrator = agent.orchestrator ?? 'claude-code';
   const permissionsSupported = useOrchestratorStore((s) => s.allOrchestrators.find((o) => o.id === orchestrator)?.capabilities.permissions ?? true);
-  const clubhouseOn = useClubhouseModeStore((s) => (projectPath ? s.isEnabledForProject(projectPath) : false));
-  const loadClubhouse = useClubhouseModeStore((s) => s.loadSettings);
-  useEffect(() => { if (local) void loadClubhouse(); }, [local, loadClubhouse]);
+  // An unmanaged agent that still names a persona is offered the switch (#2901).
+  const unmanaged = local && loaded && !!config && !config.managed && !isDispatcherAgent(agent);
+  const legacy = unmanaged ? legacyUse(config) : null;
+  // Why the automatic switch didn't happen, if it was tried (D59).
+  const { value: managedStatus } = useManagedStatus(unmanaged ? projectPath : undefined, agent.id);
+  const migrationFailed = unmanaged ? managedStatus?.migrationFailed : undefined;
   const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
   const host = remote ? Object.values(satelliteProjects).flat().find((p) => p.id === agent.projectId)?.satelliteName : undefined;
 
@@ -275,7 +294,7 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
   const contextNow = !asleep && chat ? contextSummary(chat.contextLimits, chat.usage.context?.size) : null;
 
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
-  const { effectiveOrchestrators } = useEffectiveOrchestrators(local ? projectPath : undefined);
+  const { effectiveOrchestrators } = useEffectiveOrchestrators();
   const cliOptions = useMemo(
     () => buildOrchestratorOptions(effectiveOrchestrators, allOrchestrators, orchestrator)
       .map((o) => ({ id: o.id, label: o.displayName })),
@@ -367,22 +386,8 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
       render: () => <AutoSleepRow key="auto-sleep" idle={idle} onChange={(next) => update({ idleSleep: next === 'inherit' ? null : next })} />,
     }] : []),
     ...(local ? [
-      {
-        id: 'clubhouse-mode', label: 'Clubhouse mode', editable: 'sleeping' as const,
-        value: !clubhouseOn ? 'Off' : config?.clubhouseModeOverride ? 'Off for this agent' : 'On',
-        // Only an agent in a Clubhouse mode project can opt out of it.
-        control: editing && clubhouseOn ? (
-          <ToggleControl
-            label="Clubhouse mode for this agent"
-            text={config?.clubhouseModeOverride ? 'Off for this agent' : 'On'}
-            checked={!config?.clubhouseModeOverride}
-            disabled={busy('clubhouse-mode')}
-            onChange={(v) => void save('clubhouse-mode', { clubhouseModeOverride: !v })}
-          />
-        ) : undefined,
-      },
       { id: 'mcp', label: 'MCP servers', editable: 'never' as const, value: readText(mcp, (names) => (names.length === 0 ? 'None' : `${names.length} configured`)) },
-      { id: 'instructions', label: 'Instructions', editable: 'never' as const, value: readText(instructions, (text) => instructionsLabel(config?.persona, typeof text === 'string' ? text : null) ?? 'None') },
+      { id: 'instructions', label: 'Instructions', editable: 'never' as const, value: readText(instructions, (text) => instructionsLabel(isDispatcherAgent(agent), typeof text === 'string' ? text : null) ?? 'None') },
     ] : []),
   ];
   const anyLocked = rows.some((r) => isRowLocked(r.editable, running));
@@ -411,6 +416,15 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
       {anyControl && <CardNote><span data-testid="details-settings-next-wake">{NEXT_WAKE_NOTE}</span></CardNote>}
       {remote && agent.kind === 'durable' && (
         <CardNote><span data-testid="details-settings-remote">Change on {host ?? 'the other machine'}</span></CardNote>
+      )}
+      {(legacy || migrationFailed) && (
+        <div className="pr-3.5 pl-[33px] pt-1 pb-1.5 flex items-center gap-2" data-testid="details-settings-legacy">
+          <span className="flex-1 min-w-0 text-xs leading-normal text-ctp-subtext1">
+            {legacy && legacyLine(agent.name, legacy)}
+            {migrationFailed && <span className="block" data-testid="details-settings-migration-failed">{migrationFailedLine(migrationFailed)}</span>}
+          </span>
+          <Button kind="ghost" onClick={() => openAllSettings(agent.id)} data-testid="details-settings-switch">Switch to managed…</Button>
+        </div>
       )}
       {local && (
         <div className="pr-3.5 pl-[33px] pt-1">

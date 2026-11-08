@@ -15,13 +15,12 @@ import * as headlessManager from './headless-manager';
 import * as headlessSettings from './headless-settings';
 import * as freeAgentSettings from './free-agent-settings';
 import * as orchestratorSettings from './orchestrator-settings';
-import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as configPipeline from './config-pipeline';
 import { getDurableConfig, addSessionEntry, updateDurableConfig } from './agent-config';
-import { clubhouseMcpOverride, isDisposedAgent, isEffortValue } from '../../shared/agent-helpers';
-import { materializeAgent, cleanupStaleJsonInTomlConfigs } from './materialization-service';
-import * as profileSettings from './profile-settings';
-import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs, UnsupportedPermissionRulesError } from './agent-settings-service';
+import type { QuickManagedLaunch } from './managed-agents/delivery';
+import { isDisposedAgent, isEffortValue } from '../../shared/agent-helpers';
+import { cleanupStaleJsonInTomlConfigs } from './toml-config-cleanup';
+import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
 import { applyLaunchWrapper, validateWrapperConfig } from '../orchestrators/shared';
 import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode } from '../../shared/types';
 import type { RoutedMessagePart } from '../../shared/chat';
@@ -33,7 +32,7 @@ import { setMcpCaller, setMcpCallerQuick, setMcpCallerUnreadable } from './clubh
 import { isDispatcherPath } from './dispatcher/dispatcher-paths';
 import { dispatcherEnablement } from './dispatcher/dispatcher-settings';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
-import { ensureMcpBridgeForAgent, isMcpEnabled } from './mcp-settings';
+import { ensureMcpBridge } from './mcp-bridge-starter';
 import { resolveHelperLaunchSettings, syncOrchestrationGate } from './orchestration-policy';
 import { findParent } from './helper-index';
 import {
@@ -43,7 +42,6 @@ import {
   rankHelperLaunch,
   type AgentLaunchAccess,
   type HelperLaunch,
-  MCP_REQUIRED_MESSAGE,
 } from '../../shared/orchestration-policy';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
@@ -51,6 +49,7 @@ import * as os from 'os';
 import { getAgentRuntime, isChatAgent } from './agent-runtime';
 import { cancelChatStart, tryStartChatAgent, type ChatRuntimeNotice, type ChatStartFacts, type ChatStartResult } from './agent-runtime/chat-spawn';
 import { clearStaleResume, isSessionNotFound, takeChatStartFailure, type StaleResumeReason } from './agent-runtime/stale-session';
+import { removedProfileStateDirs } from './provider-profiles-removed';
 import { noteKillRequest, recordSleep, sleepInfoForExit, takeKillRequest } from './agent-runtime/sleep-reason';
 import { onAgentExit } from './agent-exit-broadcast';
 import { sessionCaptureFor, trackSessionCapture, noteSessionCaptureFailure } from './session-capture-barrier';
@@ -118,6 +117,12 @@ export interface SpawnAgentParams {
   agentFile?: string;
   /** Source directory for agent file (e.g. --source ~/.copilot/agents/) */
   agentSource?: string;
+  /**
+   * Clubhouse-managed quick agents (#2893, D25): build a quick agent from this
+   * template. Its instructions go in the system prompt and its MCP servers in
+   * the launch flags; nothing is written into the folder it runs in.
+   */
+  managedTemplate?: { id: string; agentName: string };
 }
 
 export function isHeadlessAgent(agentId: string): boolean {
@@ -184,12 +189,11 @@ function helperMcpError(err: unknown): Error {
 }
 
 /**
- * The bridge runs for any durable agent that resolves MCP on, even with MCP off
- * in the app and its project (#2610). A helper can't start without it.
+ * The bridge always runs; this retries one that failed to start at app start.
+ * A helper can't start without it (#2610).
  */
-async function prepareMcpBridge(projectPath: string, config: DurableAgentConfig | null | undefined): Promise<void> {
-  if (!isMcpEnabled(projectPath, clubhouseMcpOverride(config))) return;
-  ensureMcpBridgeForAgent();
+async function prepareMcpBridge(config: DurableAgentConfig | null | undefined): Promise<void> {
+  ensureMcpBridge();
   if (!config?.parentAgentId) return;
   await waitMcpBridgeReady().catch((err: unknown) => { throw helperMcpError(err); });
 }
@@ -285,13 +289,12 @@ async function spawnAgentTracked(params: SpawnAgentParams, managed: ManagedLaunc
 /**
  * The Dispatcher starts only while it is on. Every way of starting one comes
  * through here, so a wake from a view, a phone, a tool or an update resume is
- * refused alike. Its own `mcpOverride` says nothing about this.
+ * refused alike.
  */
 function assertDispatcherCanStart({ kind, projectPath }: SpawnAgentParams): void {
   if (kind !== 'durable' || !isDispatcherPath(projectPath)) return;
-  const { enabled, reason } = dispatcherEnablement();
-  if (enabled) return;
-  throw tagError(new Error(reason === 'mcp_off' ? MCP_REQUIRED_MESSAGE : 'The Dispatcher is turned off.'), 'preflight_failed');
+  if (dispatcherEnablement().enabled) return;
+  throw tagError(new Error('The Dispatcher is turned off.'), 'preflight_failed');
 }
 
 async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, managed: ManagedLaunchLease | null): Promise<void> {
@@ -299,10 +302,13 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
   assertDispatcherCanStart(params);
   // An agent still being created has no worktree yet, and a failed one never
   // will (#2226): refuse before anything touches its folder.
+  // Read once here; the managed delivery step below uses the same read.
+  let firstConfig: DurableAgentConfig | null = null;
   if (params.kind === 'durable') {
     let creation: DurableAgentConfig['creation'];
     try {
-      creation = (await getDurableConfig(params.projectPath, params.agentId))?.creation;
+      firstConfig = await getDurableConfig(params.projectPath, params.agentId);
+      creation = firstConfig?.creation;
     } catch {
       // telemetry-exempt: config not available; the spawn proceeds as before.
     }
@@ -320,12 +326,6 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
   // Copilot discovers repository hooks in every runtime, even with the Clubhouse hook server off.
   if (provider.id === 'copilot-cli') await readCopilotHooksConfig(params.cwd);
 
-  // Resolve profile env early so it can be passed to checkAvailability.
-  // This ensures auth checks (e.g. CLAUDE_CONFIG_DIR) use the correct
-  // config directory when a profile is active.
-  const profileEnv = await resolveProfileEnv(params.projectPath, provider.id);
-  facts.profileActive = profileEnv !== undefined;
-
   // Read project-level command prefix for shell environment setup
   const commandPrefix = await resolveCommandPrefix(params.projectPath);
 
@@ -333,7 +333,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
   // This catches missing binaries and auth issues early with clear errors,
   // rather than letting the PTY start and exit immediately.
   await tel.step('clubhouse.provider.check_availability', async () => {
-    const availability = await provider.checkAvailability(profileEnv);
+    const availability = await provider.checkAvailability();
     if (!availability.available) {
       const msg = availability.error || `${provider.displayName} CLI is not available`;
       appLog('core:agent', 'error', `Pre-flight check failed for ${provider.id}`, {
@@ -363,24 +363,45 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       }
     }
 
-    // Clubhouse Mode: materialize project defaults into worktree before spawn
-    facts.clubhouseMode = params.kind === 'durable' && clubhouseModeSettings.isClubhouseModeEnabled(params.projectPath);
-    if (facts.clubhouseMode && !managed) {
-      try {
-        const config = await getDurableConfig(params.projectPath, params.agentId);
-        if (config && !config.clubhouseModeOverride && config.worktreePath) {
+    // Clubhouse-managed agents (#2896): write the agent's setup into its folder
+    // before every start. An agent that used Clubhouse Mode or a
+    // persona switches to managed first, keeping what it has, and this start is
+    // its first managed one (D59). A failed switch starts it as it is.
+    if (params.kind === 'durable' && !managed && firstConfig && !firstConfig.managed) {
+      const { migrateAtSpawn } = await import('./managed-agents/auto-migrate');
+      const migrated = await migrateAtSpawn(params.projectPath, firstConfig);
+      if (migrated) firstConfig = migrated;
+    }
+    if (params.kind === 'durable' && !managed) {
+      const config = firstConfig;
+      if (config?.managed) {
+        try {
+          const { deliverForSpawn } = await import('./managed-agents');
           await tel.step('clubhouse.agent.materialize', () =>
-            withErrorType('materialize_failed', () => materializeAgent({ projectPath: params.projectPath, agent: config, provider })),
+            withErrorType('materialize_failed', () => deliverForSpawn(params.projectPath, config, provider)),
           );
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          appLog('core:agent', 'warn', 'Managed setup delivery failed, continuing spawn', {
+            meta: { agentId: params.agentId, error: errorMessage },
+          });
+          broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, errorMessage);
         }
-      } catch (err) {
-        if (err instanceof UnsupportedPermissionRulesError) throw err;
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        appLog('core:agent', 'warn', 'Clubhouse mode materialization failed, continuing spawn', {
-          meta: { agentId: params.agentId, error: errorMessage },
-        });
-        broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, errorMessage);
       }
+    }
+
+    // A quick agent built from a template (#2893, D25): its instructions lead
+    // the system prompt. A template that can't be read fails the start, since
+    // the person chose it.
+    let quickManaged: QuickManagedLaunch | null = null;
+    if (params.kind === 'quick' && params.managedTemplate) {
+      const template = params.managedTemplate;
+      const { quickLaunchFor } = await import('./managed-agents');
+      quickManaged = await tel.step('clubhouse.agent.materialize', () =>
+        withErrorType('materialize_failed', () => quickLaunchFor(params.projectPath, params.cwd, params.agentId, template, provider)),
+      );
+      const instructions = quickManaged.instructions;
+      params = { ...params, systemPrompt: [instructions, params.systemPrompt].filter(Boolean).join('\n\n') };
     }
 
     const allowedTools = params.allowedTools
@@ -455,7 +476,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       params = { ...params, freeAgentMode: capped.freeAgentMode, permissionMode: capped.permissionMode };
       permissionMode = capped.permissionMode;
     }
-    if (params.kind === 'durable') await prepareMcpBridge(params.projectPath, durableConfig);
+    // Every spawn retries a bridge that failed at app start; only a helper waits for it.
+    await prepareMcpBridge(durableConfig);
     // The final launch access, the ceiling for this agent's helpers (#2228).
     // Every runtime below starts with exactly these values.
     agentRegistry.setLaunchCap(params.agentId, { freeAgentMode: params.freeAgentMode === true, permissionMode });
@@ -485,10 +507,21 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     if (params.kind === 'durable' && params.resume && params.sessionId) {
       const madeBy = durableConfig?.sessionHistory?.find((s) => s.sessionId === params.sessionId)?.orchestrator;
       const exists = madeBy && madeBy !== provider.id ? false
-        : isSessionCapable(provider) && provider.hasSession ? await provider.hasSession(params.sessionId, profileEnv).catch((): undefined => undefined)
+        : isSessionCapable(provider) && provider.hasSession ? await provider.hasSession(params.sessionId).catch((): undefined => undefined)
           : undefined;
-      if (params.strictResume && (exists === false || madeBy !== provider.id)) throw new AgentResumeError('resume_unverified');
-      if (exists === false) {
+      // A session a removed provider profile saved under its own config folder
+      // (#2749): the CLI can't resume it from here, but it stays in history, and
+      // resumes again if Clubhouse is started with that folder's variable set.
+      const inRemovedProfile = exists !== true && !(madeBy && madeBy !== provider.id)
+        && await inRemovedProfileStore(provider, params.sessionId);
+      if (params.strictResume && (exists === false || inRemovedProfile || madeBy !== provider.id)) throw new AgentResumeError('resume_unverified');
+      if (inRemovedProfile) {
+        appLog('core:agent', 'warn', 'Saved session is in a removed provider profile\'s store; starting fresh and keeping it in history', {
+          meta: { agentId: params.agentId, sessionId: params.sessionId },
+        });
+        recordResumeOutcome(provider.id, params.agentId, 'fresh_not_found');
+        params = { ...params, resume: false, sessionId: undefined };
+      } else if (exists === false) {
         appLog('core:agent', 'warn', 'Saved session is gone from the CLI store; starting fresh', {
           meta: { agentId: params.agentId, sessionId: params.sessionId },
         });
@@ -544,7 +577,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
           strictResume: p.strictResume,
           sessionId: p.sessionId,
           interactive: p.interactive,
-        }, provider, profileEnv, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }, chatFacts));
+        }, provider, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }, chatFacts));
         recordChatStart(chatStartMs, result, chatFacts, chatContext);
         return result;
       } catch (err) {
@@ -600,6 +633,37 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         // Plugin-enabled lookup is treated as always-true: plugins live renderer-side,
         // main has no real-time view. Binary-on-PATH check still catches the common case.
         let { binary: headlessBin, args: headlessArgs } = headlessResult;
+        // The Clubhouse MCP always runs, so a headless quick agent gets the
+        // bridge as a terminal one does: in the folder's MCP config (snapshot
+        // first, restored on exit), which Claude reads, and in the launch flags
+        // for CLIs that take MCP servers only that way (Codex, Copilot).
+        const mcpPort = await waitMcpBridgeReady().catch(() => 0);
+        if (mcpPort > 0) {
+          const mcpConfigPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
+          configPipeline.snapshotFile(params.agentId, mcpConfigPath);
+          await tel.step('clubhouse.mcp.inject', () => injectClubhouseMcp(params.cwd, params.agentId, mcpPort, provider.conventions)).catch((err) => {
+            appLog('core:mcp', 'warn', 'MCP bridge injection skipped', {
+              meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+            });
+          });
+        }
+        // A quick agent's template servers (D25) and the bridge, as the terminal path
+        // passes them. Only CLIs with launch flags have template servers here
+        // (quickLaunchFor empties them otherwise), and their headless commands take
+        // options after the prompt.
+        if (provider.buildMcpArgs) {
+          const { buildClubhouseMcpDef } = await import('./clubhouse-mcp/injection');
+          const servers = {
+            ...quickManaged?.servers,
+            // The bridge is last so a template server of the same name can't shadow it.
+            ...(mcpPort > 0 ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId) } : {}),
+          };
+          if (Object.keys(servers).length > 0) {
+            headlessArgs = [...headlessArgs, ...provider.buildMcpArgs(servers, (message) => {
+              broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, message);
+            })];
+          }
+        }
         let wrapperApplied = false;
         if (wrapperConfig) {
           const v = validateWrapperConfig(wrapperConfig, provider.id, { isPluginEnabled: () => true });
@@ -618,10 +682,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         // agent), and the bridge there takes both from this env (#2222).
         const nonce = randomUUID();
         agentRegistry.setNonce(params.agentId, nonce);
-        const mcpPort = await waitMcpBridgeReady().catch(() => 0);
         const spawnEnv: Record<string, string> = {
           ...headlessResult.env,
-          ...profileEnv,
           ...(wrapperApplied ? wrapperConfig?.env : undefined),
           CLUBHOUSE_AGENT_ID: params.agentId,
           CLUBHOUSE_HOOK_NONCE: nonce,
@@ -656,7 +718,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
 
     // Fall back to PTY mode
     facts.runtime = 'pty';
-    await spawnPtyAgent(params, provider, allowedTools, profileEnv, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts, managed);
+    await spawnPtyAgent(params, provider, allowedTools, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts, managed, quickManaged);
     if (!managed || ptyManager.isRunning(params.agentId)) broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
   } catch (err) {
     if (!(err instanceof ProcessStartedReceiptError)) untrackAgent(params.agentId);
@@ -664,17 +726,39 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
   }
 }
 
+/**
+ * A managed agent starting in the terminal: its MCP servers whose variables
+ * aren't set in the environment the CLI gets (the shell's plus Clubhouse's)
+ * won't start. Say which by name in the terminal's setup notice, and keep them
+ * for Details (D95). Never fails the start.
+ */
+async function noteTerminalMcpProblems(projectPath: string, agentId: string, config: DurableAgentConfig, spawnEnv: Record<string, string>, commandPrefix?: string): Promise<void> {
+  try {
+    // A command prefix (such as `source .env`) runs before the CLI and can set them: nothing to say then.
+    if (commandPrefix) { (await import('./managed-agents')).recordMcpStartProblems(agentId, []); return; }
+    const { resolveProjectMcpServers } = await import('./agent-mcp-servers');
+    const { missingEnvNotice, missingMcpEnv } = await import('../../shared/mcp-start-problems');
+    const { getShellEnvironment } = await import('../util/shell');
+    const problems = missingMcpEnv(await resolveProjectMcpServers(projectPath, config), { ...getShellEnvironment(), ...spawnEnv });
+    (await import('./managed-agents')).recordMcpStartProblems(agentId, problems);
+    for (const problem of problems) broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, agentId, missingEnvNotice(problem));
+  } catch (err) {
+    // telemetry-exempt: a hint only; the CLI reports the server's own failure
+    appLog('core:agent', 'warn', 'Could not check managed MCP server variables', { meta: { agentId, error: err instanceof Error ? err.message : String(err) } });
+  }
+}
+
 async function spawnPtyAgent(
   params: SpawnAgentParams,
   provider: OrchestratorProvider,
   allowedTools: string[] | undefined,
-  profileEnv: Record<string, string> | undefined,
   commandPrefix?: string,
   wrapperConfig?: LaunchWrapperConfig,
   mcpIds?: string[],
   mcpConfigs?: Record<string, Record<string, string>>,
   facts: SpawnFacts = {},
   managed: ManagedLaunchLease | null = null,
+  quickManaged: QuickManagedLaunch | null = null,
 ): Promise<void> {
   const nonce = randomUUID();
   agentRegistry.setNonce(params.agentId, nonce);
@@ -685,24 +769,20 @@ async function spawnPtyAgent(
     configPipeline.snapshotFile(params.agentId, hookConfigPath);
   }
 
-  // Snapshot MCP config before injection so we can restore on exit
-  // Only snapshot when the MCP feature is enabled
+  // Snapshot MCP config before injection so we can restore on exit.
+  // The Clubhouse MCP always runs, so every agent gets the bridge.
   const mcpJsonPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
-  let agentMcpOverride: boolean | undefined;
-  // Also reused below to resolve the project's MCP servers with agent-scoped
+  // Reused below to resolve the project's MCP servers with agent-scoped
   // wildcards applied — fetch it once.
   let durableConfig: Awaited<ReturnType<typeof getDurableConfig>> | undefined;
   if (params.kind === 'durable') {
     try {
       durableConfig = await getDurableConfig(params.projectPath, params.agentId);
-      agentMcpOverride = clubhouseMcpOverride(durableConfig);
     } catch { /* config not available */ }
   }
-  const mcpEnabledForSpawn = isMcpEnabled(params.projectPath, agentMcpOverride);
-  facts.mcpEnabled = mcpEnabledForSpawn;
   // Snapshot MCP config for all formats — TOML injection is now supported
   // and the config-pipeline restore logic handles both JSON and TOML files.
-  if (mcpEnabledForSpawn && !managed) {
+  if (!managed) {
     configPipeline.snapshotFile(params.agentId, mcpJsonPath);
   }
 
@@ -718,7 +798,8 @@ async function spawnPtyAgent(
       // user has opted this orchestrator into the hook server (app-level).
       // Default: on for Claude Code, off for every other orchestrator.
       facts.hooksEnabled = false;
-      if (!managed && isHookCapable(provider) && orchestratorSettings.isHookServerEnabled(provider.id)) {
+      // An unmanaged agent with Clubhouse features off (#2893) is a plain CLI: no Clubhouse hooks.
+      if (!managed && durableConfig?.clubhouseFeatures !== false && isHookCapable(provider) && orchestratorSettings.isHookServerEnabled(provider.id)) {
         facts.hooksEnabled = true;
         const hookUrl = `http://127.0.0.1:${port}/hook`;
         await provider.writeHooksConfig(params.cwd, hookUrl);
@@ -726,7 +807,7 @@ async function spawnPtyAgent(
     })),
     managed ? Promise.resolve() : waitMcpBridgeReady().then((port) => tel.step('clubhouse.mcp.inject', async () => {
       mcpPort = port;
-      await injectClubhouseMcp(params.cwd, params.agentId, port, provider.conventions, { projectPath: params.projectPath, agentOverride: agentMcpOverride });
+      await injectClubhouseMcp(params.cwd, params.agentId, port, provider.conventions);
     })).catch((err) => {
       // A helper without the bridge couldn't report to its parent, so it doesn't start (#2610).
       if (durableConfig?.parentAgentId) throw helperMcpError(err);
@@ -763,27 +844,33 @@ async function spawnPtyAgent(
     args = [...args, '--append-system-prompt-file', managed.instructionFile,
       ...(managed.pluginDir ? ['--plugin-dir', managed.pluginDir] : [])];
   }
-  // Only when MCP is on for this agent (agent > project > global): an agent
-  // with it turned off gets neither the bridge nor project servers (#2223). A
-  // helper always gets the bridge; project servers keep following the settings
-  // (#2610).
-  if (mcpEnabledForSpawn && mcpPort > 0 && provider.buildMcpArgs) {
+  // Every agent gets the bridge (the Clubhouse MCP always runs) and its MCP
+  // servers: the project's, a managed agent's setup (#2896), or a quick agent's
+  // template servers in place of the project's (D25).
+  const bridgeOn = mcpPort > 0;
+  if (provider.buildMcpArgs) {
     const { buildClubhouseMcpDef } = await import('./clubhouse-mcp/injection');
-    const { resolveProjectMcpServers } = await import('./materialization-service');
+    const { resolveProjectMcpServers } = await import('./agent-mcp-servers');
 
     // Codex and Copilot read MCP only from their own user-level config, so the
     // project MCP file materialised into the worktree never reaches them.
     // Launch flags are the only path — hand over the project's servers here
     // alongside the Clubhouse bridge.
-    const projectServers = isMcpEnabled(params.projectPath, durableConfig?.mcpOverride)
-      ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined)
-      : {};
-
-    args = [...args, ...provider.buildMcpArgs({
+    const projectServers = quickManaged
+      ? quickManaged.servers
+      : await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined, (message) => {
+        broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, message);
+      });
+    const servers = {
       ...projectServers,
       // The bridge is last so a project server of the same name can't shadow it.
-      clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId),
-    })];
+      ...(bridgeOn ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId) } : {}),
+    };
+    if (Object.keys(servers).length > 0) {
+      args = [...args, ...provider.buildMcpArgs(servers, (message) => {
+        broadcastToAllWindows(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, params.agentId, message);
+      })];
+    }
   }
   // trailingArgs (e.g. Codex's bare mission prompt) must come after any
   // dynamically-injected flags above, not before — see SpawnCommandResult.
@@ -827,7 +914,6 @@ async function spawnPtyAgent(
 
   const spawnEnv: Record<string, string> = {
     ...env,
-    ...profileEnv,
     ...(wrapperApplied ? wrapperConfig?.env : undefined),
     CLUBHOUSE_AGENT_ID: params.agentId,
     // The only place the nonce goes: hooks and the MCP bridge read it from
@@ -839,11 +925,8 @@ async function spawnPtyAgent(
   // No bridge here: never point the agent at a port from its base env (#2620).
   if (mcpPort <= 0) delete spawnEnv.CLUBHOUSE_MCP_PORT;
 
-  if (profileEnv) {
-    appLog('core:agent', 'info', 'Profile env injected', {
-      meta: { agentId: params.agentId, profileKeys: Object.keys(profileEnv).join(',') },
-    });
-  }
+  // A managed agent's MCP server whose variables aren't set won't start: say which, by name (D95).
+  if (params.kind === 'durable' && durableConfig?.managed) await noteTerminalMcpProblems(params.projectPath, params.agentId, durableConfig, spawnEnv, commandPrefix);
 
   noteSpawnKind(params.agentId, params.kind);
   const spawnedAt = Date.now();
@@ -871,7 +954,7 @@ async function spawnPtyAgent(
       // A kill nobody asked for through killAgent is Clubhouse's own (quitting): no reason to show.
       if (kill || !killed) void recordSleep(params.projectPath, exitAgentId, sleepInfoForExit(kill, exitCode));
       const capture = captureSessionOnExit(params, provider, exitAgentId, {
-        exitCode, buffer, killed: killed === true, runMs: Date.now() - spawnedAt, profileEnv, assignedId: spawnCmd.sessionId,
+        exitCode, buffer, killed: killed === true, runMs: Date.now() - spawnedAt, assignedId: spawnCmd.sessionId,
       });
       if (capture) trackSessionCapture(exitAgentId, capture);
     }
@@ -924,7 +1007,7 @@ function captureSessionOnExit(
   params: SpawnAgentParams,
   provider: OrchestratorProvider,
   agentId: string,
-  exit: { exitCode: number; buffer?: string; killed: boolean; runMs: number; profileEnv?: Record<string, string>; assignedId?: string },
+  exit: { exitCode: number; buffer?: string; killed: boolean; runMs: number; assignedId?: string },
 ): Promise<void> {
   // Async: the id may come from the CLI's own session files (it never rejects; failures are logged).
   return captureSession(params, provider, agentId, exit);
@@ -934,7 +1017,7 @@ async function captureSession(
   params: SpawnAgentParams,
   provider: OrchestratorProvider,
   agentId: string,
-  { exitCode, buffer, killed, runMs, profileEnv, assignedId }: { exitCode: number; buffer?: string; killed: boolean; runMs: number; profileEnv?: Record<string, string>; assignedId?: string },
+  { exitCode, buffer, killed, runMs, assignedId }: { exitCode: number; buffer?: string; killed: boolean; runMs: number; assignedId?: string },
 ): Promise<void> {
   const resumedId = params.resume ? params.sessionId : undefined;
   // Only a resume that quit on its own with an error can have failed to resume.
@@ -961,7 +1044,7 @@ async function captureSession(
     // `assigned`: the run's own id, which the CLI may simply not have created yet; not a bad id.
     const exists = async (id: string | null, assigned = false): Promise<string | null> => {
       if (!id || !isSessionCapable(provider) || !provider.hasSession) return id;
-      const has = await provider.hasSession(id, profileEnv).catch((): undefined => undefined);
+      const has = await provider.hasSession(id).catch((): undefined => undefined);
       if (has === false) {
         appLog('core:agent', 'warn', 'Ignoring a session id the CLI store does not have', { meta: { agentId, sessionId: id } });
         if (!assigned) rejected = 'ignored_not_in_store';
@@ -973,7 +1056,7 @@ async function captureSession(
     // so: the conversation can mention a real session from another cwd.
     const scraped = async (id: string | null): Promise<string | null> => {
       if (!id || !isSessionCapable(provider) || !provider.hasSessionForCwd) return exists(id);
-      const ours = await provider.hasSessionForCwd(id, params.cwd, profileEnv).catch((): undefined => undefined);
+      const ours = await provider.hasSessionForCwd(id, params.cwd).catch((): undefined => undefined);
       if (ours === false) {
         appLog('core:agent', 'warn', 'Ignoring a scraped session id that is not this agent\'s', { meta: { agentId, sessionId: id } });
         rejected = 'ignored_foreign';
@@ -992,7 +1075,7 @@ async function captureSession(
     // A resume that failed wrote no session of its own, so there's nothing to look up.
     if (!sessionId && !failedResume && isSessionCapable(provider) && provider.findRunSession) {
       const endedAt = Date.now();
-      sessionId = await provider.findRunSession({ cwd: params.cwd, startedAt: endedAt - runMs, endedAt, resumedId, profileEnv });
+      sessionId = await provider.findRunSession({ cwd: params.cwd, startedAt: endedAt - runMs, endedAt, resumedId });
       if (sessionId) source = 'run_store';
     }
     if (!sessionId && resumedId && exitCode === 0) {
@@ -1051,6 +1134,19 @@ async function captureSession(
  * Clear a dead resume id (#2113). `reason` is where it was found dead; only a
  * resume that quit right away is `exited_early` to the user.
  */
+/**
+ * Whether `sessionId` may be in a removed provider profile's store (#2749): the
+ * CLAUDE_CONFIG_DIR, CODEX_HOME or COPILOT_HOME a saved profile gave this
+ * provider, read-only. "Can't tell" counts as yes, so nothing is erased on a guess.
+ */
+async function inRemovedProfileStore(provider: OrchestratorProvider, sessionId: string): Promise<boolean> {
+  if (!isSessionCapable(provider) || !provider.hasSessionInStore) return false;
+  for (const dir of await removedProfileStateDirs(provider.id)) {
+    if (await provider.hasSessionInStore(sessionId, dir).catch((): undefined => undefined) !== false) return true;
+  }
+  return false;
+}
+
 async function clearResume(projectPath: string, orchestrator: string, agentId: string, sessionId: string, reason: SessionStaleReason): Promise<void> {
   const userReason: StaleResumeReason = reason === 'exit_early' ? 'exited_early' : 'not_found';
   try {
@@ -1164,37 +1260,12 @@ export async function checkAvailability(
   if (!provider) {
     return { available: false, error: `Unknown orchestrator: ${id}` };
   }
-  const profileEnv = projectPath ? await resolveProfileEnv(projectPath, id) : undefined;
-  return provider.checkAvailability(profileEnv);
+  return provider.checkAvailability();
 }
 
 /** Shared by actual launch and an explicit handshake check. */
 export async function resolveCommandPrefix(projectPath: string): Promise<string | undefined> {
   return (await readProjectAgentDefaults(projectPath))?.commandPrefix || undefined;
-}
-
-/**
- * Resolve the profile env vars for an agent spawn.
- * Uses project-level profileId, then looks up the orchestrator-specific entry.
- * If the orchestrator is not configured in the profile, logs a warning and returns undefined.
- */
-export async function resolveProfileEnv(projectPath: string, orchestratorId: string): Promise<Record<string, string> | undefined> {
-  const defaults = await readProjectAgentDefaults(projectPath);
-  const profileId = defaults?.profileId;
-  if (!profileId) return undefined;
-
-  const profile = profileSettings.getProfile(profileId);
-  if (!profile) return undefined;
-
-  const resolved = profileSettings.resolveProfileEnv(profile, orchestratorId);
-  if (!resolved) {
-    appLog('core:agent', 'warn', `Profile "${profile.name}" has no config for orchestrator "${orchestratorId}" — spawning without profile env`, {
-      meta: { profileId, orchestratorId },
-    });
-    return undefined;
-  }
-
-  return resolved;
 }
 
 /**
@@ -1225,8 +1296,7 @@ export async function listSessions(
   let providerSessions: Array<{ sessionId: string; startedAt: string; lastActiveAt: string }> = [];
   if (isSessionCapable(provider)) {
     try {
-      const profileEnv = await resolveProfileEnv(projectPath, provider.id);
-      providerSessions = await provider.listSessions(cwd, profileEnv);
+      providerSessions = await provider.listSessions(cwd);
     } catch (err) {
       appLog('core:agent', 'warn', 'Failed to list provider sessions', {
         meta: { agentId, error: err instanceof Error ? err.message : String(err) },
@@ -1251,10 +1321,11 @@ export async function listSessions(
     // Another CLI's session: not this one's to offer, and not missing either (#2593).
     if (s.orchestrator && s.orchestrator !== provider.id) continue;
     if (isSessionCapable(provider) && provider.hasSession) {
-      const profileEnv = await resolveProfileEnv(projectPath, provider.id);
-      const has = await provider.hasSession(s.sessionId, profileEnv).catch((): undefined => undefined);
+      const has = await provider.hasSession(s.sessionId).catch((): undefined => undefined);
       if (has === false) {
-        missing.push(s.sessionId);
+        // Saved under a removed provider profile's own store (#2749): not offered, since it can't
+        // resume from here, but never pruned.
+        if (!(await inRemovedProfileStore(provider, s.sessionId))) missing.push(s.sessionId);
         continue;
       }
     }
@@ -1282,12 +1353,15 @@ export function getAvailableOrchestrators() {
     shortName: p.shortName,
     badge: p.badge,
     capabilities: p.getCapabilities(),
+    // MCP servers can be handed over at launch, not only through the folder's MCP file.
+    mcpLaunchFlags: !!p.buildMcpArgs,
     conventions: {
       configDir: p.conventions.configDir,
       localInstructionsFile: p.conventions.localInstructionsFile,
       legacyInstructionsFile: p.conventions.legacyInstructionsFile,
       mcpConfigFile: p.conventions.mcpConfigFile,
       skillsDir: p.conventions.skillsDir,
+      ...(p.conventions.skillsRoot && { skillsRoot: p.conventions.skillsRoot }),
       agentTemplatesDir: p.conventions.agentTemplatesDir,
       localSettingsFile: p.conventions.localSettingsFile,
       permissionRules: p.conventions.permissionRules,

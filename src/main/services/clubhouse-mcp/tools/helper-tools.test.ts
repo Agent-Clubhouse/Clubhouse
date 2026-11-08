@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
 
 // What the gate decides is covered in mcp-call-gate.test.ts and test/mcp-off.
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => 'open' }));
@@ -53,19 +53,44 @@ vi.mock('../../agent-config', () => ({
   }),
 }));
 
+// Clubhouse-managed helpers (#2899): a real managed-agents service on a temp folder.
+vi.mock('../../managed-agents', async (original) => {
+  const actual = await original<typeof import('../../managed-agents')>();
+  const fs = await import('fs');
+  const os = await import('os');
+  const nodePath = await import('path');
+  const { createManagedAgentsService } = await import('../../managed-agents/service');
+  const { createAssetCatalogStore } = await import('../../asset-catalog/store');
+  const { createManagedStateStore } = await import('../../managed-agents/state-store');
+  let svc: ReturnType<typeof createManagedAgentsService> | null = null;
+  return {
+    ...actual,
+    managedAgents: () => {
+      if (!svc) {
+        const base = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'helper-managed-'));
+        svc = createManagedAgentsService({
+          catalog: createAssetCatalogStore({ dir: nodePath.join(base, 'catalog') }),
+          state: createManagedStateStore(nodePath.join(base, 'managed')),
+          listProjects: async () => [],
+          listAgents: async () => [...agents.values()],
+          getAgent: async (_p, id) => agents.get(id) ?? null,
+          setManagedSetup: async (_p, id, setup) => {
+            const a = agents.get(id);
+            if (!a) throw new Error('missing');
+            if (setup) a.managed = setup; else delete a.managed;
+          },
+          isRunning: () => false,
+        });
+      }
+      return svc;
+    },
+  };
+});
+
 const mockStartDurableCreation = vi.fn();
 
-/** The real persona rule creation runs (#2551), for a mocked creation step to apply. */
-async function realPersonaRule(projectPath: string, params: { persona?: string }): Promise<void> {
-  const { assertPersonaAllowed } = await vi.importActual<typeof import('../../agent-config')>('../../agent-config');
-  assertPersonaAllowed(projectPath, params.persona);
-}
-const mockPersonaInjection = vi.fn((projectPath: string, params: { persona?: string }) => ({
-  inject: params.persona ? async (created: DurableAgentConfig) => mockApplyPersona(projectPath, created.id, params.persona) : undefined,
-}));
 vi.mock('../../agent-creation', () => ({
   startDurableCreation: (...args: unknown[]) => mockStartDurableCreation(...args),
-  personaInjection: (projectPath: string, params: { persona?: string }, keep?: unknown) => mockPersonaInjection(projectPath, params, ...(keep ? [keep] : [])),
 }));
 
 const helperPathOf = (id: string) => where.get(id) ?? PROJECT;
@@ -88,12 +113,9 @@ vi.mock('../../helper-index', () => ({
 const projects: Array<{ id: string; name: string; path: string; displayName?: string }> = [];
 const gitDirs = new Map<string, string | null>();
 vi.mock('../../project-store', () => ({ list: async () => [...projects] }));
-const mockListPersonas = vi.fn();
-const personaFiles = new Map<string, string>();
 vi.mock('../../orchestrator-settings', () => ({ getSettings: () => ({ enabled: ['claude-code', 'codex-cli', 'copilot-cli'] }) }));
 const mockContextCheck = vi.fn();
 vi.mock('../../context-window', () => ({ contextWindowCheck: (...args: unknown[]) => mockContextCheck(...args) }));
-vi.mock('../../materialization-service', () => ({ readLayeredPersonaRaw: async (_p: string, id: string) => personaFiles.get(id), listAvailablePersonas: (...args: unknown[]) => mockListPersonas(...args) }));
 
 const running = new Set<string>();
 /** Helpers told to stop whose process has not exited: id → the exit the test triggers. */
@@ -101,7 +123,6 @@ const stopping = new Map<string, { exited: Promise<void>; exit: () => void }>();
 const mockSpawnAgent = vi.fn();
 const mockKillAgent = vi.fn();
 vi.mock('../../agent-system', () => ({
-  resolveProfileEnv: (...args: unknown[]) => mockResolveProfileEnv(...args),
   spawnAgent: (...args: unknown[]) => mockSpawnAgent(...args),
   killAgent: (...args: unknown[]) => mockKillAgent(...args),
   isAgentRunning: (id: string) => running.has(id),
@@ -153,8 +174,6 @@ vi.mock('../../git-service', () => ({
   getDefaultBranch: async (dir: string) => (gitDirs.get(dir) === null ? null : 'main'),
 }));
 
-const mockApplyPersona = vi.fn();
-vi.mock('../../persona-application', () => ({ applyPersonaToAgent: (...args: unknown[]) => mockApplyPersona(...args) }));
 
 const mockCheckLimit = vi.fn();
 const mockGetPolicy = vi.fn();
@@ -171,7 +190,6 @@ vi.mock('../../orchestration-policy', () => ({
 const modelLists = new Map<string, ModelList>();
 /** Claude Code's real alias rules, loaded in beforeAll. */
 let claudeAcceptsModel: (model: string, list: ModelList) => boolean;
-const mockResolveProfileEnv = vi.fn(async (..._args: unknown[]): Promise<Record<string, string> | undefined> => undefined);
 vi.mock('../../../orchestrators', () => ({
   getProvider: (id: string) => (['claude-code', 'codex-cli', 'copilot-cli'].includes(id)
     ? {
@@ -194,12 +212,13 @@ vi.mock('../bridge-server', async (importOriginal) => ({
   ...await importOriginal<typeof import('../bridge-server')>(),
   waitReady: () => mockBridgeReady(),
 }));
-vi.mock('../../mcp-settings', () => ({ ensureMcpBridgeForAgent: () => mockEnsureBridge() }));
+vi.mock('../../mcp-bridge-starter', () => ({ ensureMcpBridge: () => mockEnsureBridge() }));
 
 import { AgentStoppingError } from '../../agent-runtime/agent-stopping';
 import {
   approveHelperStart,
   declineHelperStart,
+  HELPER_PERSONA_IGNORED,
   registerHelperTools,
   watchHelperStartRequests,
   _resetHelperToolsForTesting,
@@ -213,6 +232,10 @@ import { _resetProviderQuotaForTesting, noteProviderFailure } from '../../provid
 import { _resetHelperRoutingForTesting } from '../../helper-routing';
 import { reservationSummary } from '../../helper-auto-state';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
+import { managedAgents } from '../../managed-agents';
+import { HELPER_KEEPS_CLUBHOUSE_PART, HELPER_TEMPLATE_CHOICE_OFF } from '../../managed-agents/helpers';
+import { withSettingsSurface } from '../../settings-audit';
+import { CLUBHOUSE_MCP_PART_ID } from '../../../../shared/managed-agents-types';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -289,6 +312,8 @@ beforeAll(async () => {
     '../../../orchestrators/claude-code-provider',
   );
   claudeAcceptsModel = (m, l) => ClaudeCodeProvider.prototype.acceptsModel.call(null, m, l);
+  // Every helper is built from a template (#2899): the default helper template must exist.
+  await managedAgents().ensureBuiltins();
 });
 
 beforeEach(() => {
@@ -313,7 +338,6 @@ beforeEach(() => {
   registerHelperTools();
 
   mockCrossAllowed.mockResolvedValue(true);
-  mockListPersonas.mockResolvedValue([{ id: 'workhorse', name: 'Workhorse', source: 'builtin' }]);
   mockCheckLimit.mockResolvedValue({ ok: true, helperCount: 0, totalHelperCount: 0, maxHelpers: 5, globalCap: 20 });
   mockGetPolicy.mockResolvedValue({ orchestrate: true, access: 'same', control: 'hands-off', maxHelpers: 5 });
   live = { freeAgentMode: true, permissionMode: 'auto' };
@@ -374,15 +398,6 @@ describe('gating', () => {
 // ── start_helper ───────────────────────────────────────────────────────────
 
 describe('start_helper', () => {
-  it('refuses the dispatcher persona up front, with nothing created (#2551)', async () => {
-    mockStartDurableCreation.mockImplementationOnce(realPersonaRule);
-    const result = await callTool('orch', 'start_helper', { name: 'h', task: 't', persona: 'dispatcher' });
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toBe('Could not start helper "h": The Dispatcher persona is only for the Dispatcher.');
-    expect(mockApplyPersona).not.toHaveBeenCalled();
-    expect(parse(await callTool('orch', 'list_helpers', {})).helpers).toEqual([]);
-  });
-
   it('returns "starting" before the creation completes, then spawns with the task and tells the orchestrator', async () => {
     const creation = controllableCreation();
     const result = await callTool('orch', 'start_helper', { name: 'fixer', task: 'Fix the bug', folder: 'fixer-1', branchFrom: 'main' });
@@ -499,15 +514,160 @@ describe('start_helper', () => {
     expect(list.helpers).toEqual([expect.objectContaining({ helperId: 'helper_h', status: 'failed', reason: 'claude CLI is not available' })]);
   });
 
-  it('applies a persona in the creation inject step', async () => {
-    controllableCreation();
-    await callTool('orch', 'start_helper', { name: 'h', task: 't', persona: 'workhorse' });
-    const [, params, options] = mockStartDurableCreation.mock.calls[0];
-    expect(params.persona).toBe('workhorse');
-    expect(mockPersonaInjection).toHaveBeenCalledWith(PROJECT, params);
-    await options.inject(agents.get('helper_h'));
-    expect(mockApplyPersona).toHaveBeenCalledWith(PROJECT, 'helper_h', 'workhorse');
+});
+
+describe('start_helper with Clubhouse-managed agents (#2899)', () => {
+  // The template arguments below need "Let orchestrators choose helper templates" (D31); off is tested on its own.
+  beforeEach(async () => {
+    await withSettingsSurface('ui', undefined, () => managedAgents().setHelperTemplateChoice(true));
   });
+  afterEach(async () => {
+    await withSettingsSurface('ui', undefined, () => managedAgents().setHelperTemplateChoice(false));
+  });
+
+  it('with the choice off, refuses another template or part changes and points to Settings, creating nothing', async () => {
+    await withSettingsSurface('ui', undefined, () => managedAgents().setHelperTemplateChoice(false));
+    for (const args of [{ template: 'builtin-template-quality-assurance' }, { addParts: [CLUBHOUSE_MCP_PART_ID] }, { removeParts: ['builtin-block-clubhouse-basics'] }]) {
+      const result = await callTool('orch', 'start_helper', { name: 'off', task: 't', ...args });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toBe(`Could not start helper "off": ${HELPER_TEMPLATE_CHOICE_OFF}`);
+    }
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('with the choice off, still starts a helper from the default template', async () => {
+    await withSettingsSurface('ui', undefined, () => managedAgents().setHelperTemplateChoice(false));
+    controllableCreation();
+    const result = await callTool('orch', 'start_helper', { name: 'plain', task: 't' });
+    expect(result.isError).toBeFalsy();
+    expect(parse(result)).not.toHaveProperty('personaNote');
+    const [, , options] = mockStartDurableCreation.mock.calls[0];
+    await options.inject(agents.get('helper_plain'));
+    expect(agents.get('helper_plain')!.managed).toMatchObject({ templateId: 'builtin-template-helper' });
+  });
+
+  it('with no template named, uses the orchestrator\'s own helper template, even with the choice off (#2895)', async () => {
+    await withSettingsSurface('ui', undefined, () => managedAgents().setHelperTemplateChoice(false));
+    agents.set('orch', { ...agents.get('orch')!, helperTemplateId: 'builtin-template-quality-assurance' });
+    controllableCreation();
+    const result = await callTool('orch', 'start_helper', { name: 'own', task: 't' });
+    expect(result.isError).toBeFalsy();
+    const [, , options] = mockStartDurableCreation.mock.calls[0];
+    await options.inject(agents.get('helper_own'));
+    expect(agents.get('helper_own')!.managed).toMatchObject({ templateId: 'builtin-template-quality-assurance' });
+  });
+
+  it('falls back to the app\'s default helper template when the orchestrator\'s is gone (#2895)', async () => {
+    agents.set('orch', { ...agents.get('orch')!, helperTemplateId: 'template-deleted' });
+    controllableCreation();
+    const result = await callTool('orch', 'start_helper', { name: 'fallback', task: 't' });
+    expect(result.isError).toBeFalsy();
+    const [, , options] = mockStartDurableCreation.mock.calls[0];
+    await options.inject(agents.get('helper_fallback'));
+    expect(agents.get('helper_fallback')!.managed).toMatchObject({ templateId: 'builtin-template-helper' });
+  });
+
+  it('a template start_helper names wins over the orchestrator\'s own (#2895)', async () => {
+    agents.set('orch', { ...agents.get('orch')!, helperTemplateId: 'builtin-template-quality-assurance' });
+    controllableCreation();
+    const result = await callTool('orch', 'start_helper', { name: 'named', task: 't', template: 'builtin-template-developer-no-merge' });
+    expect(result.isError).toBeFalsy();
+    const [, , options] = mockStartDurableCreation.mock.calls[0];
+    await options.inject(agents.get('helper_named'));
+    expect(agents.get('helper_named')!.managed).toMatchObject({ templateId: 'builtin-template-developer-no-merge' });
+  });
+
+  it('builds the helper from the default template in a required inject step, with no persona anywhere', async () => {
+    controllableCreation();
+    const result = await callTool('orch', 'start_helper', { name: 'm', task: 't', persona: 'workhorse' });
+    expect(result.isError).toBeFalsy();
+    // The orchestrator is told its persona was ignored, not left to guess.
+    expect(parse(result).personaNote).toBe(HELPER_PERSONA_IGNORED);
+    const [, params, options] = mockStartDurableCreation.mock.calls[0];
+    expect(params.persona).toBeUndefined();
+    expect(options.injectRequired).toBe(true);
+    await options.inject(agents.get('helper_m'));
+    expect(agents.get('helper_m')!.managed).toMatchObject({ templateId: 'builtin-template-helper', mcps: [CLUBHOUSE_MCP_PART_ID] });
+  });
+
+  it('checks and holds a start for approval without its persona', async () => {
+    mockGetPolicy.mockResolvedValue({ orchestrate: true, access: 'same', control: 'ask-before-start', maxHelpers: 5 });
+    const held = parse(await callTool('orch', 'start_helper', { name: 'held', task: 't', persona: 'workhorse' }));
+    expect(held.state).toBe('needs_approval');
+    expect(held.personaNote).toBe(HELPER_PERSONA_IGNORED);
+    expect(mockCheckDurableCreation).toHaveBeenCalledTimes(1);
+    expect(mockCheckDurableCreation.mock.calls[0][1]).not.toHaveProperty('persona');
+    expect(listStartRequests()[0].args).not.toHaveProperty('persona');
+  });
+
+  it('refuses removing the Clubhouse MCP part, creating nothing', async () => {
+    const result = await callTool('orch', 'start_helper', { name: 'cut', task: 't', removeParts: [CLUBHOUSE_MCP_PART_ID] });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toBe(`Could not start helper "cut": ${HELPER_KEEPS_CLUBHOUSE_PART}`);
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unknown part id to add or remove, creating nothing', async () => {
+    for (const args of [{ addParts: ['no-such-part'] }, { removeParts: ['no-such-part'] }]) {
+      const result = await callTool('orch', 'start_helper', { name: 'x', task: 't', ...args });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toMatch(/no agent part "no-such-part"/);
+    }
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('refuses two skills with one folder name before anything is created', async () => {
+    const svc = managedAgents();
+    const make = (name: string) => withSettingsSurface('ui', undefined, () => svc.createPart({ name, content: { kind: 'skill', skillName: 'release', files: [{ path: 'SKILL.md', content: `# ${name}` }] } }));
+    const one = await make('Release one');
+    const two = await make('Release two');
+    const result = await callTool('orch', 'start_helper', { name: 'dup', task: 't', addParts: [one.id, two.id] });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/Release one and Release two both install to release\/\. Pick one\./);
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('starts on the helper template\'s model when start_helper leaves model out (D52)', async () => {
+    controllableCreation();
+    const svc = managedAgents();
+    const t = await withSettingsSurface('ui', undefined, () => svc.saveTemplate({ name: 'Haiku helper', description: '', setup: { blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, settings: { model: 'haiku' } }));
+    const result = await callTool('orch', 'start_helper', { name: 'quick', task: 't', template: t.id });
+    expect(result.isError).toBeFalsy();
+    expect(mockStartDurableCreation.mock.calls[0][1]).toMatchObject({ model: 'haiku' });
+    // The start's own model wins.
+    await callTool('orch', 'start_helper', { name: 'quick2', task: 't', template: t.id, model: 'opus' });
+    expect(mockStartDurableCreation.mock.calls[1][1]).toMatchObject({ model: 'opus' });
+  });
+
+  it('lets a difficulty pick the model over the helper template\'s (D52)', async () => {
+    controllableCreation();
+    modelLists.set('claude-code', {
+      source: 'live', via: 'handshake', fetchedAt: 0,
+      models: [{ id: 'haiku', label: 'Haiku', efforts: ['low'] }, { id: 'sonnet', label: 'Sonnet', efforts: ['medium'] }, { id: 'opus', label: 'Opus', efforts: ['low', 'high'] }],
+    });
+    const svc = managedAgents();
+    const t = await withSettingsSurface('ui', undefined, () => svc.saveTemplate({ name: 'Haiku preset helper', description: '', setup: { blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, settings: { model: 'haiku' } }));
+    const result = await callTool('orch', 'start_helper', { name: 'hard', task: 't', template: t.id, difficulty: 'hard' });
+    expect(result.isError).toBeFalsy();
+    expect(mockStartDurableCreation.mock.calls[0][1]).toMatchObject({ model: 'opus' });
+  });
+
+  it('gives a template with no CLI its model only when the helper\'s CLI takes it (D52)', async () => {
+    controllableCreation();
+    modelLists.set('claude-code', { source: 'live', via: 'handshake', fetchedAt: 0, models: [{ id: 'haiku', label: 'Haiku' }, { id: 'opus', label: 'Opus' }] });
+    modelLists.set('codex-cli', { source: 'live', via: 'handshake', fetchedAt: 0, models: [{ id: 'gpt-6-luna', label: 'Luna' }] });
+    const svc = managedAgents();
+    const t = await withSettingsSurface('ui', undefined, () => svc.saveTemplate({ name: 'Luna helper', description: '', setup: { blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, settings: { model: 'gpt-6-luna' } }));
+    // On the orchestrator's CLI (Claude Code) the model doesn't fit: left out, and the start isn't refused.
+    const onClaude = await callTool('orch', 'start_helper', { name: 'luna1', task: 't', template: t.id });
+    expect(onClaude.isError).toBeFalsy();
+    expect(mockStartDurableCreation.mock.calls[0][1]).not.toHaveProperty('model');
+    // On Codex, asked for by name, it does.
+    const onCodex = await callTool('orch', 'start_helper', { name: 'luna2', task: 't', template: t.id, cli: 'codex-cli' });
+    expect(onCodex.isError).toBeFalsy();
+    expect(mockStartDurableCreation.mock.calls[1][1]).toMatchObject({ orchestrator: 'codex-cli', model: 'gpt-6-luna' });
+  });
+
 });
 
 // ── start_helper: what changes during creation ─────────────────────────────
@@ -570,13 +730,6 @@ describe('start_helper model check (#2569)', () => {
     const result = await callTool('orch', 'start_helper', { name: 'h', task: 't', cli: 'codex-cli', model: 'opus' });
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('not one codex-cli accepts');
-  });
-
-  it('lists under the profile of the project the helper is created in', async () => {
-    controllableCreation();
-    modelLists.set('claude-code', claudeLive);
-    await callTool('orch', 'start_helper', { name: 'h', task: 't', model: 'opus', project: 'far' });
-    expect(mockResolveProfileEnv).toHaveBeenCalledWith(FAR, 'claude-code');
   });
 
   it('refuses before holding a start for approval', async () => {
@@ -674,6 +827,23 @@ describe('start_helper effort (#2671)', () => {
     expect(body.effortWarning).toContain('doesn\'t report effort levels');
   });
 
+  it('checks Copilot levels from its SDK model list: a listed one starts, any other is refused (#2868)', async () => {
+    controllableCreation();
+    // As probeCopilotModels reports models.list: Clubhouse's Default, then models with their reasoning efforts.
+    modelLists.set('copilot-cli', { source: 'live', via: 'handshake', fetchedAt: 0, models: [
+      { id: 'default', label: 'Default' },
+      { id: 'claude-sonnet-5.5', label: 'Claude Sonnet 5.5', costHint: '1x', efforts: ['low', 'medium', 'high'] },
+      { id: 'claude-opus-5.5', label: 'Claude Opus 5.5', costHint: '15x' },
+    ] });
+    const ok = parse(await start({ cli: 'copilot-cli', model: 'claude-sonnet-5.5', effort: 'high' }));
+    expect(ok).toMatchObject({ state: 'starting', effort: 'high' });
+    expect(ok.effortWarning).toBeUndefined();
+    const refused = await start({ name: 'h2', cli: 'copilot-cli', model: 'claude-sonnet-5.5', effort: 'auto' });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0].text).toContain('Model "claude-sonnet-5.5" doesn\'t take effort "auto". Its levels: low, medium, high.');
+    expect(mockStartDurableCreation).toHaveBeenCalledTimes(1);
+  });
+
   it('warns and starts when the list doesn\'t have a model the CLI accepts', async () => {
     controllableCreation();
     modelLists.set('claude-code', claudeLive);
@@ -710,10 +880,10 @@ describe('start_helper effort (#2671)', () => {
     expect(parse(await start({ model: 'opus', effort: 'low' })).reused).toBe(true);
   });
 
-  it('says so when a persona changed the model during creation and the level was cleared', async () => {
+  it('says so when the model changed during creation and the level was cleared', async () => {
     const creation = controllableCreation();
     modelLists.set('claude-code', claudeLive);
-    await start({ model: 'opus', effort: 'high', persona: 'other-model' });
+    await start({ model: 'opus', effort: 'high' });
     const { effort: _cleared, ...rest } = agents.get('helper_h')!;
     agents.set('helper_h', { ...rest, model: 'haiku' });
     creation.ready('helper_h');
@@ -743,14 +913,12 @@ describe('start_helper difficulty (#2671)', () => {
   };
   const start = (args: Record<string, unknown>) => callTool('orch', 'start_helper', { name: 'h', task: 't', ...args });
   beforeEach(() => {
-    personaFiles.clear();
     modelLists.set('claude-code', claudeLive);
     modelLists.set('codex-cli', codexLive);
   });
 
-  it('a start that names nothing is today\'s path: no routing, no fields, and a persona is left to set what it sets', async () => {
+  it('a start that names nothing is today\'s path: no routing, no fields, and an ignored persona changes nothing', async () => {
     controllableCreation();
-    personaFiles.set('pinned', '---\nmodel: sonnet\n---\nBody');
     const body = parse(await start({ persona: 'pinned' }));
     expect(body).not.toHaveProperty('routing');
     const params = mockStartDurableCreation.mock.calls[0][1];
@@ -804,34 +972,6 @@ describe('start_helper difficulty (#2671)', () => {
     expect(refused.content[0].text).toContain('Model "haiku" doesn\'t take effort "high"');
   });
 
-  it('a persona\'s pin wins over a preset, and an explicit field wins over a persona (behaviour change)', async () => {
-    controllableCreation();
-    personaFiles.set('pinned', '---\nmodel: gpt-6.1-sol\norchestrator: codex-cli\n---\nBody');
-
-    // A pin fills what the request left open, so nothing is kept from the persona.
-    const pinned = parse(await start({ difficulty: 'easy', persona: 'pinned', name: 'a' }));
-    expect(pinned.routing).toMatchObject({ reason: 'persona_pinned', resolved: { provider: 'codex-cli', model: 'gpt-6.1-sol', effort: null } });
-
-    // What the request named stays, and the persona step is told to leave it.
-    const named = parse(await start({ cli: 'claude-code', model: 'opus', persona: 'pinned', name: 'b' }));
-    expect(named.routing).toMatchObject({ reason: 'explicit_request', resolved: { provider: 'claude-code', model: 'opus' } });
-    expect(mockStartDurableCreation.mock.calls[1][1]).toMatchObject({ orchestrator: 'claude-code', model: 'opus' });
-    expect(mockPersonaInjection).toHaveBeenLastCalledWith(PROJECT, expect.objectContaining({ persona: 'pinned' }), ['orchestrator', 'model']);
-  });
-
-  it('a persona\'s model the CLI doesn\'t offer is refused with a difficulty, and only warned about without one', async () => {
-    controllableCreation();
-    personaFiles.set('claude-model', '---\nmodel: opus\n---\nBody');
-    const refused = await start({ cli: 'codex-cli', difficulty: 'hard', persona: 'claude-model' });
-    expect(refused.isError).toBe(true);
-    expect(refused.content[0].text).toContain('persona sets the model "opus"');
-    expect(mockStartDurableCreation).not.toHaveBeenCalled();
-
-    const warned = parse(await start({ cli: 'codex-cli', persona: 'claude-model' }));
-    expect(warned.state).toBe('starting');
-    expect(warned.modelWarning).toContain('"opus"');
-  });
-
   it('refuses with no_valid_mapping and creates nothing, with no CLI default as a substitute', async () => {
     modelLists.set('codex-cli', { ...codexLive, models: [{ id: 'gpt-6-luna', label: 'Luna', efforts: ['low'] }] });
     const result = await start({ cli: 'codex-cli', difficulty: 'hard' });
@@ -872,7 +1012,7 @@ describe('start_helper difficulty (#2671)', () => {
     expect(helpers.find((h) => h.helperId === 'routed')).toMatchObject({ routing });
   });
 
-  it('records what became of a persona\'s context choice, using #2660\'s check', async () => {
+  it('records what became of a context choice made during creation, using #2660\'s check', async () => {
     const creation = controllableCreation();
     await start({ difficulty: 'easy' });
     agents.set('helper_h', { ...agents.get('helper_h')!, contextWindow: '500000', routing: { context: { status: 'none' } } as never });
@@ -891,7 +1031,6 @@ describe('start_helper cli "auto" (#2671)', () => {
   beforeEach(() => {
     _resetProviderQuotaForTesting();
     _resetHelperRoutingForTesting();
-    personaFiles.clear();
     modelLists.set('claude-code', live([['opus', ['high']], ['sonnet', ['medium']], ['haiku', ['low']]]));
     modelLists.set('codex-cli', live([['gpt-6.1-sol', ['high']], ['gpt-6.1-terra', ['medium']], ['gpt-6-luna', ['low']]]));
     mockGetPolicy.mockResolvedValue(policy);
@@ -950,8 +1089,8 @@ describe('start_helper cli "auto" (#2671)', () => {
   });
 
   it('a refusal records a refused decision and holds nothing', async () => {
-    await noteProviderFailure('claude-code', PROJECT, 'auth');
-    await noteProviderFailure('codex-cli', PROJECT, 'auth');
+    await noteProviderFailure('claude-code', 'auth');
+    await noteProviderFailure('codex-cli', 'auth');
     const result = await start({});
     expect(result.isError).toBe(true);
     expect(mockRecordDecision).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'refused', refusalCode: 'no_candidate' }));
@@ -992,7 +1131,6 @@ describe('start_helper cli "auto" (#2671)', () => {
     const body = parse(await start({}));
     expect(body).toMatchObject({ effort: 'high', routing: { mode: 'auto', balanced: true, requested: { provider: 'auto' }, resolved: { provider: 'claude-code', model: 'opus', effort: 'high' } } });
     expect(mockStartDurableCreation.mock.calls[0][1]).toMatchObject({ orchestrator: 'claude-code', model: 'opus', effort: 'high' });
-    expect(mockPersonaInjection).toHaveBeenLastCalledWith(PROJECT, expect.anything(), ['orchestrator', 'model']);
   });
 
   it('a burst of parallel starts spreads out', async () => {
@@ -1035,7 +1173,7 @@ describe('start_helper cli "auto" (#2671)', () => {
 
   it('an explicit start on a cooling provider isn\'t blocked, only told', async () => {
     controllableCreation();
-    await noteProviderFailure('codex-cli', PROJECT, 'auth');
+    await noteProviderFailure('codex-cli', 'auth');
     const body = parse(await callTool('orch', 'start_helper', { name: 'h', task: 't', cli: 'codex-cli', model: 'gpt-6.1-sol', effort: 'high' }));
     expect(body.state).toBe('starting');
     expect(body.quotaWarning).toContain('as asked');
@@ -1045,7 +1183,7 @@ describe('start_helper cli "auto" (#2671)', () => {
 
   it('a held start keeps the warning for the person, and an approval decides it again', async () => {
     mockGetPolicy.mockResolvedValue({ ...policy, control: 'ask-before-start' });
-    await noteProviderFailure('codex-cli', PROJECT, 'auth');
+    await noteProviderFailure('codex-cli', 'auth');
     await callTool('orch', 'start_helper', { name: 'h', task: 't', cli: 'codex-cli', model: 'gpt-6.1-sol' });
     const [request] = listStartRequests();
     expect(request.warning).toMatchObject({ code: 'cooling_down' });
@@ -1095,11 +1233,11 @@ describe('start_helper cli "auto" (#2671)', () => {
 });
 
 describe('start_helper re-checks at spawn time', () => {
-  it('ranks access again when a persona switched the CLI during creation', async () => {
+  it('ranks access again when the CLI changed during creation', async () => {
     // A Claude orchestrator at auto: Claude auto is --permission-mode auto,
     // but any Free Agent Mode on Copilot is --yolo.
     const creation = controllableCreation();
-    const started = parse(await callTool('orch', 'start_helper', { name: 'h', task: 't', persona: 'copilot-fan' }));
+    const started = parse(await callTool('orch', 'start_helper', { name: 'h', task: 't' }));
     expect(started.access).toBe('auto');
 
     agents.set('helper_h', { ...agents.get('helper_h')!, orchestrator: 'copilot-cli' });
@@ -1255,7 +1393,7 @@ describe('start approvals', () => {
 
   it('holds the start with a request id and says requests are kept in memory and expire', async () => {
     const result = await callTool('orch', 'start_helper', {
-      name: 'impl-api', task: 'Build the API', persona: 'qa', cli: 'codex-cli', model: 'm', access: 'auto', branchFrom: 'main', folder: 'api',
+      name: 'impl-api', task: 'Build the API', cli: 'codex-cli', model: 'm', access: 'auto', branchFrom: 'main', folder: 'api',
     });
     const body = parse(result);
     expect(body).toMatchObject({ state: 'needs_approval', control: 'ask-before-start', requestId: expect.stringMatching(/^hstart_/) });
@@ -1264,7 +1402,7 @@ describe('start approvals', () => {
     expect(mockStartDurableCreation).not.toHaveBeenCalled();
     expect(listStartRequests()).toEqual([expect.objectContaining({
       requestId: body.requestId, projectPath: PROJECT, orchestratorId: 'orch', orchestratorName: 'Orch',
-      args: { name: 'impl-api', task: 'Build the API', persona: 'qa', cli: 'codex-cli', model: 'm', access: 'auto', branchFrom: 'main', folder: 'api' },
+      args: { name: 'impl-api', task: 'Build the API', cli: 'codex-cli', model: 'm', access: 'auto', branchFrom: 'main', folder: 'api' },
     })]);
     // The desktop notice stays.
     expect(mockBroadcast).toHaveBeenCalledWith(IPC.APP.AGENT_ATTENTION, 'orch', expect.anything());
@@ -1275,15 +1413,6 @@ describe('start approvals', () => {
     expect(mockCheckDurableCreation).toHaveBeenCalledWith(PROJECT, expect.objectContaining({
       name: 'impl-api', parentAgentId: 'orch', disposable: true, folderName: 'api', branchFrom: 'main',
     }));
-  });
-
-  it('refuses the dispatcher persona before asking, and records no request (#2551)', async () => {
-    mockCheckDurableCreation.mockImplementationOnce(realPersonaRule);
-    const result = await callTool('orch', 'start_helper', { name: 'h', task: 't', persona: 'dispatcher' });
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('The Dispatcher persona is only for the Dispatcher.');
-    expect(listStartRequests()).toEqual([]);
-    expect(mockStartDurableCreation).not.toHaveBeenCalled();
   });
 
   it('refuses at once a start that could never run, and records no request', async () => {
@@ -1777,15 +1906,6 @@ describe('helpers in another project', () => {
   }
 
   describe('start_helper with project', () => {
-    it('refuses the dispatcher persona in the target project, with nothing created (#2551)', async () => {
-      mockStartDurableCreation.mockImplementationOnce(realPersonaRule);
-      const result = await callTool('orch', 'start_helper', { name: 'api', task: 't', project: 'Far Away', persona: 'dispatcher' });
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toBe('Could not start helper "api": The Dispatcher persona is only for the Dispatcher.');
-      expect(mockStartDurableCreation.mock.calls[0][0]).toBe(FAR);
-      expect(mockApplyPersona).not.toHaveBeenCalled();
-    });
-
     it('refuses a helper in another project when the bridge can\'t run, creating nothing (#2610)', async () => {
       mockBridgeReady.mockRejectedValueOnce(new Error('port in use'));
       const result = await callTool('orch', 'start_helper', { name: 'api', task: 't', project: 'Far Away' });
@@ -1796,7 +1916,7 @@ describe('helpers in another project', () => {
 
     it('creates and spawns the helper in the target project, with limits and launch from home', async () => {
       const creation = controllableCreation();
-      const body = parse(await callTool('orch', 'start_helper', { name: 'api', task: 'Build it', project: 'Far Away', persona: 'workhorse' }));
+      const body = parse(await callTool('orch', 'start_helper', { name: 'api', task: 'Build it', project: 'Far Away' }));
       expect(body).toMatchObject({ state: 'starting', helperId: 'helper_api', project: 'Far Away', projectPath: FAR });
       expect(body.message).toContain('in Far Away');
 
@@ -1804,9 +1924,9 @@ describe('helpers in another project', () => {
       expect(mockCheckLimit).toHaveBeenCalledWith(PROJECT, 'orch');
       const [createdIn, params, options] = mockStartDurableCreation.mock.calls[0];
       expect(createdIn).toBe(FAR);
-      expect(params).toMatchObject({ name: 'api', parentAgentId: 'orch', parentProjectPath: PROJECT, persona: 'workhorse' });
-      expect(mockPersonaInjection).toHaveBeenCalledWith(FAR, params);
-      expect(options).toBe(mockPersonaInjection.mock.results[0].value);
+      expect(params).toMatchObject({ name: 'api', parentAgentId: 'orch', parentProjectPath: PROJECT });
+      expect(params).not.toHaveProperty('persona');
+      expect(options).toMatchObject({ injectRequired: true });
 
       creation.ready('helper_api');
       await _settleHelperStartsForTesting();
@@ -1853,12 +1973,13 @@ describe('helpers in another project', () => {
       expect(mockStartDurableCreation).not.toHaveBeenCalled();
     });
 
-    it('passes an unknown persona to the creation, which refuses it', async () => {
-      mockStartDurableCreation.mockRejectedValueOnce(new Error('Unknown persona "nope".'));
+    it('drops a persona before the creation in the other project', async () => {
+      controllableCreation();
       const result = await callTool('orch', 'start_helper', { name: 'a', task: 't', project: 'far', persona: 'nope' });
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toBe('Could not start helper "a": Unknown persona "nope".');
+      expect(result.isError).toBeFalsy();
+      expect(parse(result).personaNote).toBe(HELPER_PERSONA_IGNORED);
       expect(mockStartDurableCreation.mock.calls[0][0]).toBe(FAR);
+      expect(mockStartDurableCreation.mock.calls[0][1]).not.toHaveProperty('persona');
     });
   });
 
@@ -1937,22 +2058,20 @@ describe('helpers in another project', () => {
       expect(getScopedToolList('orch').map((t) => t.name)).toContain('list_projects');
     });
 
-    it('lists each project with its default branch and personas, and marks the caller\'s', async () => {
+    it('lists each project with its default branch, no personas, and marks the caller\'s', async () => {
       setOrchestrationEnabled('orch', true, { crossProject: true });
       const same = path.join(path.sep, 'tmp', 'project-wt');
       const plain = path.join(path.sep, 'tmp', 'plain-folder');
       projects.push({ id: 'proj_wt', name: 'wt', path: same }, { id: 'proj_plain', name: 'plain', path: plain });
       gitDirs.set(same, path.join(PROJECT, '.git'));
       gitDirs.set(plain, null);
-      mockListPersonas.mockImplementation(async (p: string) =>
-        (p === FAR ? [{ id: 'far-only', name: 'Far only', source: 'project' }, { id: 'workhorse', name: 'Workhorse', source: 'builtin' }] : []));
 
       const body = parse(await callTool('orch', 'list_projects', {}));
       expect(body.projects).toEqual([
-        { name: 'home', path: PROJECT, defaultBranch: 'main', personas: [], yours: true },
-        { name: 'Far Away', path: FAR, defaultBranch: 'main', personas: ['far-only', 'workhorse'] },
-        { name: 'wt', path: same, defaultBranch: 'main', personas: [], sameRepository: true },
-        { name: 'plain', path: plain, defaultBranch: null, personas: [], notGit: true },
+        { name: 'home', path: PROJECT, defaultBranch: 'main', yours: true },
+        { name: 'Far Away', path: FAR, defaultBranch: 'main' },
+        { name: 'wt', path: same, defaultBranch: 'main', sameRepository: true },
+        { name: 'plain', path: plain, defaultBranch: null, notGit: true },
       ]);
     });
   });

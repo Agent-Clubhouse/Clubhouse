@@ -14,14 +14,14 @@ import { addProject } from './smoke-helpers';
  * are spent:
  * - on by default in the new layout: one Dispatcher folder, its row and view,
  *   and the CLI never starts for it;
- * - a saved experimental false, or Clubhouse MCP saved off: no row or folder,
- *   Settings > Dispatcher still there saying why, and for MCP no bridge;
+ * - a saved experimental false: no row or folder, Settings > Dispatcher still
+ *   there saying why;
+ * - an old Clubhouse MCP off setting is ignored: the Clubhouse MCP always runs,
+ *   so the Dispatcher is on and the bridge is up;
  * - an orchestrator connects by default, Connect to Dispatcher removes and
  *   adds the wire live, and it survives a restart;
  * - turning its switch off stops it and drops its row and wires, keeps its
  *   folder, and it comes back with the same id;
- * - Clubhouse MCP going off asks first, leaves it running without wires, and
- *   coming back rebuilds them without starting anything;
  * - the Dispatcher wakes a connected agent with a message over MCP, and can't
  *   sleep it mid-turn without force.
  *
@@ -188,32 +188,25 @@ test('a saved experimental false: no row or Connect switch, and its page says it
   await expect.poll(async () => (await dispatcherConfigs()).length).toBe(1);
 });
 
-test('Clubhouse MCP saved off: no Dispatcher, no bridge, until MCP is turned on', async () => {
+test('an old Clubhouse MCP off setting is ignored: the Dispatcher is on and the bridge is up', async () => {
   fakes = await installFakeClis({ claude: 'session-info' });
-  profile = createDisposableProfile({ label: 'dispatcher-no-mcp' });
+  profile = createDisposableProfile({ label: 'dispatcher-mcp-always-on' });
   const w = (await launch({}, { 'mcp-settings.json': { enabled: false } })).window;
 
-  await expect(w.locator('[data-testid="chrome-sidebar"]')).toBeVisible({ timeout: 15_000 });
-  await expect(row(w)).toHaveCount(0);
-  expect(fs.existsSync(dispatcherDir())).toBe(false);
-  // The bridge and these handlers share one gate, and only this one can be seen from here.
-  expect(await w.evaluate(() => window.clubhouse.mcpBinding.getBindings().then(() => 'up', () => 'down'))).toBe('down');
+  await expect(row(w)).toBeVisible({ timeout: 15_000 });
+  await expect.poll(async () => (await dispatcherConfigs()).length).toBe(1);
+  // The bridge and these handlers start together, whatever the old file says.
+  expect(await w.evaluate(() => window.clubhouse.mcpBinding.getBindings().then(() => 'up', () => 'down'))).toBe('up');
 
   await openSettingsPage(w, 'Dispatcher');
   const enabled = w.locator('[data-testid="dispatcher-enabled"]');
-  await expect(enabled).toHaveAttribute('aria-checked', 'false');
-  await expect(enabled).toBeDisabled();
-  await expect(w.locator('#dispatcher-enabled-help')).toContainText('Turn on Clubhouse MCP in Settings');
-
-  // Saved value untouched: it comes on with MCP, created and not started, with no restart.
-  await openSettingsPage(w, 'Clubhouse MCP');
-  await w.getByRole('switch', { name: 'MCP bridge' }).click();
-  await expect(row(w)).toBeVisible({ timeout: 15_000 });
-  await expect.poll(async () => (await dispatcherConfigs()).length).toBe(1);
+  await expect(enabled).toHaveAttribute('aria-checked', 'true');
+  await expect(enabled).not.toBeDisabled();
+  await expect(w.locator('#dispatcher-enabled-help')).not.toContainText('Clubhouse MCP');
   expect(await promptsConsumed()).toBe(0);
 });
 
-test('on by default, wire an orchestrator, restart, switch off and on, MCP off and on', async () => {
+test('on by default, wire an orchestrator, restart, switch off and on, and wake it', async () => {
   fakes = await installFakeClis({ claude: 'session-info' });
   profile = createDisposableProfile({ label: 'dispatcher-on' });
   projectDir = makeProject();
@@ -225,7 +218,8 @@ test('on by default, wire an orchestrator, restart, switch off and on, MCP off a
   await expect.poll(async () => (await dispatcherConfigs()).length).toBe(1);
   const [config] = await dispatcherConfigs();
   const dispatcherId = config.id;
-  expect(config.persona).toBe('dispatcher');
+  // Known by its folder and id, never a persona (#2901): the only agent in its folder, with no persona.
+  expect(config.persona).toBeUndefined();
   expect(fs.existsSync(path.join(dispatcherDir(), 'notes'))).toBe(true);
   expect(await fs.promises.readFile(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf8')).toContain('Dispatcher');
   expect(await promptsConsumed()).toBe(0);
@@ -283,7 +277,7 @@ test('on by default, wire an orchestrator, restart, switch off and on, MCP off a
   expect(await dispatcherIds()).toEqual([dispatcherId]);
   await expect.poll(() => hasWire(w, dispatcherId)).toBe(true);
 
-  // Start it, then turn MCP off while it runs: asked first, and cancel changes nothing.
+  // Start it from its view.
   await closeSettings(w);
   await rowItem(w).click();
   await w.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
@@ -292,50 +286,6 @@ test('on by default, wire an orchestrator, restart, switch off and on, MCP off a
   await expect(w.locator('[data-testid="dispatcher-view"] [data-testid="chat-view"]')).toBeVisible({ timeout: 15_000 });
   await expect(w.locator('[data-testid="title-bar"]')).toContainText('Dispatcher');
   await expect(w.locator('[data-testid="title-bar"]')).not.toContainText('dispatcher-e2e-');
-
-  await openSettingsPage(w, 'Clubhouse MCP');
-  await expect(w.getByRole('switch', { name: 'Project default' })).toHaveCount(0);
-  const bridge = w.getByRole('switch', { name: 'MCP bridge' });
-  const dialog = w.locator('[data-testid="mcp-off-dialog"]');
-  await bridge.click();
-  await expect(dialog).toBeVisible();
-  await expect(w.locator('[data-testid="mcp-off-lead"]')).toContainText('the Dispatcher itself');
-  await expect(w.locator('[data-testid="mcp-off-counts"]')).toContainText('The Dispatcher is running.');
-  await expect(w.locator('[data-testid="mcp-off-stop-dispatcher"]')).not.toBeChecked();
-  await w.locator('[data-testid="mcp-off-cancel"]').click();
-  await expect(dialog).toHaveCount(0);
-  await expect(bridge).toHaveAttribute('aria-checked', 'true');
-  await expect.poll(() => hasWire(w, dispatcherId)).toBe(true);
-
-  // Confirmed: it keeps running with its row, its wires go, and its page says why.
-  await bridge.click();
-  await w.locator('[data-testid="mcp-off-confirm"]').click();
-  await expect(bridge).toHaveAttribute('aria-checked', 'false');
-  await expect.poll(() => hasWire(w, dispatcherId)).toBe(false);
-  await expect(row(w)).toBeVisible();
-  await openSettingsPage(w, 'Dispatcher');
-  await expect(w.locator('[data-testid="dispatcher-enabled"]')).toBeDisabled();
-  await expect(w.locator('[data-testid="dispatcher-still-running"]')).toBeVisible();
-
-  // Back on: the wires rebuild and it was never stopped.
-  await openSettingsPage(w, 'Clubhouse MCP');
-  await bridge.click();
-  await expect.poll(() => hasWire(w, dispatcherId)).toBe(true);
-  await expect(row(w)).toBeVisible();
-
-  // Off again, this time choosing to stop it: its row goes, and MCP back leaves it stopped.
-  await bridge.click();
-  await w.locator('[data-testid="mcp-off-stop-dispatcher"]').check();
-  await w.locator('[data-testid="mcp-off-confirm"]').click();
-  await expect(row(w)).toHaveCount(0, { timeout: 15_000 });
-  const consumed = await promptsConsumed();
-  await bridge.click();
-  await expect(row(w)).toBeVisible({ timeout: 15_000 });
-  expect(await dispatcherIds()).toEqual([dispatcherId]);
-  await closeSettings(w);
-  await rowItem(w).click();
-  await expect(w.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]')).toBeVisible();
-  expect(await promptsConsumed()).toBe(consumed);
 });
 
 test('the Dispatcher wakes a connected agent with a message and sleeps it again', async () => {

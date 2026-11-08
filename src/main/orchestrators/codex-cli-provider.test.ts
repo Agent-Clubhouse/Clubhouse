@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import * as path from 'path';
 import * as os from 'os';
 
@@ -48,7 +48,17 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as childProcess from 'child_process';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
+import { appLog } from '../services/log-service';
 import { CodexCliProvider, parseCodexDebugModels } from './codex-cli-provider';
+import { skillsFolderOf } from '../../shared/skills-folder';
+
+const DEFAULT_SHELL_ENV = { PATH: `/usr/local/bin${path.delimiter}/usr/bin`, OPENAI_API_KEY: 'sk-test-key' };
+
+/** CODEX_HOME as the environment Clubhouse launches agents with sets it, for one test. */
+function withLaunchCodexHome(home: string): void {
+  vi.mocked(getShellEnvironment).mockReturnValue({ ...DEFAULT_SHELL_ENV, CODEX_HOME: home });
+  onTestFinished(() => { vi.mocked(getShellEnvironment).mockReturnValue({ ...DEFAULT_SHELL_ENV }); });
+}
 
 /** Match any path whose basename is 'codex' (with or without .exe/.cmd) */
 function isCodexPath(p: string | Buffer | URL): boolean {
@@ -103,6 +113,11 @@ describe('CodexCliProvider', () => {
 
     it('uses skills dir', () => {
       expect(provider.conventions.skillsDir).toBe('skills');
+    });
+
+    it('reads repository skills from .agents/skills, and used .codex/skills before', () => {
+      expect(skillsFolderOf(provider.conventions)).toBe('.agents/skills');
+      expect(provider.conventions.previousSkillsRoots).toEqual(['.codex/skills']);
     });
 
     it('uses agents dir for templates', () => {
@@ -858,6 +873,47 @@ describe('CodexCliProvider', () => {
       expect(args.filter(a => a.startsWith('mcp_servers.')).every(a => a.startsWith('mcp_servers.good.'))).toBe(true);
     });
 
+    it('skips only env keys that are empty or have "." or "=", and says so (#2932)', () => {
+      vi.mocked(appLog).mockClear();
+      const onNotice = vi.fn();
+      const args = provider.buildMcpArgs({
+        linear: {
+          command: 'npx',
+          env: { 'A.B': 'nested', 'K=X': 'split', '': 'unnamed', GOOD_KEY: 'kept', 'MY-KEY': 'kept', '1LEAD': 'kept', 'has space': 'kept', 'has"quote': 'kept' },
+        },
+        docs: { command: 'node', env: { 'x.y': 'nested' } },
+        clean: { command: 'node', env: { FINE: 'kept' } },
+      }, onNotice);
+      // Codex 0.163 takes these as written: only a "." (fails the launch) or "=" (sets the wrong key) breaks the override.
+      expect(args.filter(a => a.includes('.env.'))).toEqual([
+        'mcp_servers.linear.env.GOOD_KEY="kept"',
+        'mcp_servers.linear.env.MY-KEY="kept"',
+        'mcp_servers.linear.env.1LEAD="kept"',
+        'mcp_servers.linear.env.has space="kept"',
+        'mcp_servers.linear.env.has"quote="kept"',
+        'mcp_servers.clean.env.FINE="kept"',
+      ]);
+      // The servers themselves still start.
+      expect(args).toContain('mcp_servers.linear.command="npx"');
+      expect(args).toContain('mcp_servers.docs.command="node"');
+      // One notice for the person, naming each server and its skipped keys.
+      expect(onNotice).toHaveBeenCalledOnce();
+      expect(onNotice.mock.calls[0][0]).toContain('linear ("A.B", "K=X", "")');
+      expect(onNotice.mock.calls[0][0]).toContain('docs ("x.y")');
+      expect(onNotice.mock.calls[0][0]).not.toContain('clean');
+      // And a log line per server.
+      const logged = vi.mocked(appLog).mock.calls
+        .filter(c => String(c[2]).startsWith('Skipping MCP server env variables'))
+        .map(c => (c[3] as { meta: unknown }).meta);
+      expect(logged).toEqual([{ server: 'linear', keys: ['A.B', 'K=X', ''] }, { server: 'docs', keys: ['x.y'] }]);
+    });
+
+    it('sends no notice when every env key can be passed', () => {
+      const onNotice = vi.fn();
+      provider.buildMcpArgs({ clubhouse: mockServerDef }, onNotice);
+      expect(onNotice).not.toHaveBeenCalled();
+    });
+
     it('returns no args for an empty server set', () => {
       expect(provider.buildMcpArgs({})).toEqual([]);
     });
@@ -1346,8 +1402,9 @@ describe('CodexCliProvider', () => {
       expect(sessions[0].sessionId).toBe('019d0eff-598f-7ce2-92f2-200d97c54271');
     });
 
-    it('honours CODEX_HOME from a profile instead of the default store', async () => {
-      const profileHome = path.join(path.sep, 'profiles', 'agent-a', '.codex');
+    it('honours CODEX_HOME from the launch environment instead of the default store', async () => {
+      const profileHome = path.join(path.sep, 'launch', 'codex-home');
+      withLaunchCodexHome(profileHome);
       const profileSessions = path.join(profileHome, 'sessions');
       mockCodexStore(profileSessions, {
         [profileSessions]: [{ name: '2026', dir: true }],
@@ -1358,7 +1415,7 @@ describe('CodexCliProvider', () => {
         [F1]: rolloutMeta(PROJECT, '2026-09-05T17:28:00.000Z', '01a0741d-6c83-7720-8fc2-6412909a95ab'),
       });
 
-      const sessions = await provider.listSessions(PROJECT, { CODEX_HOME: profileHome });
+      const sessions = await provider.listSessions(PROJECT);
       expect(sessions).toHaveLength(1);
       // The default store must not have been consulted
       expect(vi.mocked(fsp.readdir)).not.toHaveBeenCalledWith(SESSIONS, expect.anything());
@@ -1416,10 +1473,11 @@ describe('CodexCliProvider', () => {
       expect(await provider.readSessionTranscript('does-not-exist', '/any')).toBeNull();
     });
 
-    it('reads from the profile store when CODEX_HOME is set', async () => {
-      const profileHome = path.join(path.sep, 'profiles', 'agent-a', '.codex');
+    it('reads from CODEX_HOME when the launch environment sets it', async () => {
+      const profileHome = path.join(path.sep, 'launch', 'codex-home');
+      withLaunchCodexHome(profileHome);
       vi.mocked(fsp.readdir).mockImplementation((async () => { throw new Error('ENOENT'); }) as never);
-      expect(await provider.readSessionTranscript(ID, '/any', { CODEX_HOME: profileHome })).toBeNull();
+      expect(await provider.readSessionTranscript(ID, '/any')).toBeNull();
       expect(vi.mocked(fsp.readdir)).toHaveBeenCalledWith(
         path.join(profileHome, 'sessions'),
         expect.anything(),

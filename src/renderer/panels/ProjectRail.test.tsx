@@ -70,7 +70,6 @@ function resetStores() {
   });
   useUIStore.setState({
     explorerTab: 'agents',
-    showHome: false,
     activeHostId: null,
   });
   usePluginStore.setState({
@@ -653,6 +652,20 @@ describe('ProjectRail host switching', () => {
     expect(rows).toHaveLength(1);
   });
 
+  it('clicking the active satellite opens its overview, since the rail has no Home', () => {
+    useAnnexClientStore.setState({
+      satellites: [makeSatellite({ id: 'sat-1', alias: 'Office Mac' })],
+    });
+    useUIStore.setState({ activeHostId: 'sat-1' });
+    useProjectStore.setState({ activeProjectId: 'remote||sat-1||rp-1' });
+
+    render(<ProjectRail />);
+    expect(screen.queryByTestId('nav-home')).toBeNull();
+    fireEvent.click(screen.getByTestId('host-satellite-sat-1'));
+    expect(useProjectStore.getState().activeProjectId).toBeNull();
+    expect(useUIStore.getState().activeHostId).toBe('sat-1');
+  });
+
   it('satellite host mode shows other satellites as collapsed rows', () => {
     useAnnexClientStore.setState({
       satellites: [
@@ -887,7 +900,6 @@ describe('ProjectRail exitSettingsAndNavigate', () => {
     useUIStore.setState({
       explorerTab: 'help',
       previousExplorerTab: 'agents',
-      showHome: true,
     });
 
     render(<ProjectRail />);
@@ -911,7 +923,6 @@ describe('ProjectRail exitSettingsAndNavigate', () => {
     useUIStore.setState({
       explorerTab: 'help',
       previousExplorerTab: 'agents',
-      showHome: true,
     });
 
     render(<ProjectRail />);
@@ -931,7 +942,6 @@ describe('ProjectRail exitSettingsAndNavigate', () => {
     useUIStore.setState({
       explorerTab: 'settings',
       previousExplorerTab: 'agents',
-      showHome: true,
     });
 
     render(<ProjectRail />);
@@ -952,7 +962,6 @@ describe('ProjectRail exitSettingsAndNavigate', () => {
     useUIStore.setState({
       explorerTab: 'help',
       previousExplorerTab: 'agents',
-      showHome: true,
     });
 
     render(<ProjectRail />);

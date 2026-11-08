@@ -72,8 +72,6 @@ interface CanvasViewComponentProps {
   attention?: CanvasViewAttention | null;
   /** All views on the canvas (needed for LinkDropdown target list). */
   allViews?: CanvasView[];
-  /** Whether MCP is enabled — controls visibility of Link/Wire buttons. */
-  mcpEnabled?: boolean;
   /** Zone theme ID override — used to propagate zone theme to terminal. */
   zoneThemeId?: string;
   /** Callback to start wire drag from this agent view. */
@@ -112,7 +110,6 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
   dragOffset,
   attention,
   allViews,
-  mcpEnabled,
   zoneThemeId,
   onStartWireDrag,
   onClose,
@@ -767,7 +764,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
         {/* Quick action buttons */}
         <div className="flex items-center gap-0.5 flex-shrink-0">
           {/* MCP Link button (agent views with assigned agent, when MCP enabled) */}
-          {mcpEnabled && view.type === 'agent' && (view as AgentCanvasViewType).agentId && (
+          {view.type === 'agent' && (view as AgentCanvasViewType).agentId && (
             <div className="relative">
               <Tooltip content="Link to widget">
                 <button
@@ -797,7 +794,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
             </div>
           )}
           {/* MCP Wire drag button (agent views with assigned agent, when MCP enabled) */}
-          {mcpEnabled && view.type === 'agent' && (view as AgentCanvasViewType).agentId && onStartWireDrag && (
+          {view.type === 'agent' && (view as AgentCanvasViewType).agentId && onStartWireDrag && (
             <Tooltip content="Drag to connect">
               <button
                 className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors"

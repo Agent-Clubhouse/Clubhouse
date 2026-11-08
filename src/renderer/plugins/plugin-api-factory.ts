@@ -8,7 +8,7 @@ import type {
 import { gated, hasPermission } from './plugin-api-shared';
 import { createStorageAPI } from './plugin-api-storage';
 import { createProjectAPI, createProjectsAPI, createGitAPI } from './plugin-api-project';
-import { createUIAPI, createCommandsAPI, createEventsAPI, createHubAPI, createNavigationAPI, createWidgetsAPI } from './plugin-api-ui';
+import { createUIAPI, createCommandsAPI, createEventsAPI, createNavigationAPI, createWidgetsAPI } from './plugin-api-ui';
 import { createSettingsAPI } from './plugin-api-settings';
 import { createAgentsAPI } from './plugin-api-agents';
 import { createFilesAPI } from './plugin-api-files';
@@ -88,7 +88,6 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
       true, scopeLabel, 'agents', 'agents',
       ctx.pluginId, manifest, () => createAgentsAPI(ctx, manifest),
     ),
-    hub: createHubAPI(), // always available
     navigation: gated(
       true, scopeLabel, 'navigation', 'navigation',
       ctx.pluginId, manifest, () => createNavigationAPI(),
@@ -151,6 +150,13 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
     ),
     context: contextInfo, // always available
   };
+
+  // The Hub was removed, and `api.hub` with it, from API 0.9. A plugin on an
+  // older API that only reads it still gets the empty namespace it always had,
+  // until those versions stop loading (#2947 removes this).
+  if ((manifest?.engine?.api ?? 0.9) < 0.9) {
+    Object.defineProperty(api, 'hub', { value: Object.freeze({}), enumerable: true });
+  }
 
   apiRef.current = api;
   return api;

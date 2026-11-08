@@ -38,7 +38,7 @@ export function settingsChannels(key: string) {
 // Concrete definitions — importable from both main and renderer
 // ---------------------------------------------------------------------------
 
-import type { ChatIdleSettings, ClipboardSettings, EditorSettings, GoobersSettings, McpSettings, SecuritySettings } from './types';
+import type { ChatIdleSettings, ClipboardSettings, EditorSettings, GoobersSettings, SecuritySettings, SourceControlSettings } from './types';
 import type { TelemetrySettingsFile } from './telemetry/settings-types';
 
 export const CLIPBOARD_COMPAT_DEFAULT = false;
@@ -56,12 +56,6 @@ export const EDITOR_SETTINGS: SettingsDefinition<EditorSettings> = {
   defaults: { editorCommand: 'code', editorName: 'VS Code' },
 };
 
-export const MCP_SETTINGS: SettingsDefinition<McpSettings> = {
-  key: 'mcp',
-  filename: 'mcp-settings.json',
-  defaults: { enabled: true, projectDefault: true },
-};
-
 /** Choices offered for the chat idle timeout, in minutes; 0 is Never. */
 export const CHAT_IDLE_TIMEOUT_CHOICES = [15, 30, 60, 240, 0] as const;
 
@@ -75,6 +69,13 @@ export const SECURITY_SETTINGS: SettingsDefinition<SecuritySettings> = {
   key: 'security',
   filename: 'security-settings.json',
   defaults: { allowLocalFileWebviews: false },
+};
+
+/** The app-level source control provider (D61). Main shares the store source-control-settings.ts reads. */
+export const SOURCE_CONTROL_SETTINGS: SettingsDefinition<SourceControlSettings> = {
+  key: 'source_control',
+  filename: 'source-control-settings.json',
+  defaults: {},
 };
 
 // GOOBERS_SETTINGS is read by the main-process service at app startup —

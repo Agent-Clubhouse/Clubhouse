@@ -6,93 +6,39 @@ export interface WildcardContext {
   buildCommand?: string;   // e.g. "npm run build"
   testCommand?: string;    // e.g. "npm test"
   lintCommand?: string;    // e.g. "npm run lint"
-  mission?: string;        // resolved mission content (full markdown body)
-  persona?: string;        // resolved persona content (full markdown body)
 }
 
 /**
- * Replace @@AgentName, @@StandbyBranch, @@Path, and @@SourceControlProvider
- * wildcards in a string, and process @@If(value)...@@EndIf conditional blocks.
- * Returns the input unchanged if no wildcards are found.
+ * The wildcards a Clubhouse-managed agent's text can use (#2902). Managed
+ * delivery, quick-agent templates and Preview fill these and leave every other
+ * `@@` token as written: @@SourceControlProvider, @@BuildCommand,
+ * @@TestCommand and @@LintCommand (the built-in build, test, lint and validate
+ * skills replace them), @@Mission and @@Persona (D60), and @@If / @@EndIf (D10).
  */
-export function replaceWildcards(text: string, ctx: WildcardContext): string {
-  let result = text
+export const MANAGED_WILDCARDS = ['AgentName', 'StandbyBranch', 'Path'] as const;
+
+/** Replace only the managed wildcards (MANAGED_WILDCARDS). */
+export function replaceManagedWildcards(text: string, ctx: Pick<WildcardContext, 'agentName' | 'standbyBranch' | 'agentPath'>): string {
+  return text
     .replace(/@@AgentName/g, ctx.agentName)
     .replace(/@@StandbyBranch/g, ctx.standbyBranch)
-    .replace(/@@Path/g, ctx.agentPath)
+    .replace(/@@Path/g, ctx.agentPath);
+}
+
+/**
+ * Replace @@AgentName, @@StandbyBranch, @@Path, @@SourceControlProvider,
+ * @@BuildCommand, @@TestCommand and @@LintCommand in a string. Returns the
+ * input unchanged if no wildcards are found. For what isn't Clubhouse-managed:
+ * an unmanaged agent's project MCP JSON, and the switch to managed
+ * (managed-agents/legacy-migration). Managed text uses replaceManagedWildcards.
+ *
+ * Anything else stays exactly as written: @@Mission and @@Persona (D60), and
+ * @@If / @@EndIf, which only Clubhouse Mode resolved (D10, retired in #2901).
+ */
+export function replaceWildcards(text: string, ctx: WildcardContext): string {
+  return replaceManagedWildcards(text, ctx)
     .replace(/@@SourceControlProvider/g, ctx.sourceControlProvider || '')
     .replace(/@@BuildCommand/g, ctx.buildCommand || 'npm run build')
     .replace(/@@TestCommand/g, ctx.testCommand || 'npm test')
-    .replace(/@@LintCommand/g, ctx.lintCommand || 'npm run lint')
-    .replace(/@@Mission/g, ctx.mission || '')
-    .replace(/@@Persona/g, ctx.persona || '');
-
-  // Process @@If(value)...@@EndIf conditional blocks
-  result = processConditionalBlocks(result, ctx);
-
-  return result;
-}
-
-/**
- * Reverse of replaceWildcards — replaces resolved agent-specific values back
- * to wildcard tokens. Processes longest values first to avoid partial matches
- * (e.g. agentPath before agentName when agentPath contains agentName).
- *
- * Cannot reverse @@If/@@EndIf blocks (lossy), but this is acceptable since
- * the primary use case is permissions and simple string values.
- */
-export function unreplaceWildcards(text: string, ctx: WildcardContext): string {
-  // Build replacement pairs sorted by value length (longest first)
-  const pairs: Array<{ value: string; token: string }> = [
-    { value: ctx.standbyBranch, token: '@@StandbyBranch' },
-    { value: ctx.agentPath, token: '@@Path' },
-    { value: ctx.agentName, token: '@@AgentName' },
-  ];
-  if (ctx.sourceControlProvider) {
-    pairs.push({ value: ctx.sourceControlProvider, token: '@@SourceControlProvider' });
-  }
-  if (ctx.buildCommand) {
-    pairs.push({ value: ctx.buildCommand, token: '@@BuildCommand' });
-  }
-  if (ctx.testCommand) {
-    pairs.push({ value: ctx.testCommand, token: '@@TestCommand' });
-  }
-  if (ctx.lintCommand) {
-    pairs.push({ value: ctx.lintCommand, token: '@@LintCommand' });
-  }
-  if (ctx.mission) {
-    pairs.push({ value: ctx.mission, token: '@@Mission' });
-  }
-  if (ctx.persona) {
-    pairs.push({ value: ctx.persona, token: '@@Persona' });
-  }
-
-  // Sort longest-value-first to avoid partial matches
-  pairs.sort((a, b) => b.value.length - a.value.length);
-
-  let result = text;
-  for (const { value, token } of pairs) {
-    if (value) {
-      result = result.split(value).join(token);
-    }
-  }
-  return result;
-}
-
-/**
- * Process @@If(value)...@@EndIf conditional blocks.
- * Keeps content when sourceControlProvider matches value, strips it otherwise.
- * Handles multiple blocks in the same text.
- */
-function processConditionalBlocks(text: string, ctx: WildcardContext): string {
-  // Match @@If(value)...@@EndIf — non-greedy, handles multiline
-  return text.replace(
-    /@@If\(([^)]+)\)\s*\n?([\s\S]*?)@@EndIf\s*\n?/g,
-    (_match, value: string, content: string) => {
-      if (ctx.sourceControlProvider === value) {
-        return content;
-      }
-      return '';
-    },
-  );
+    .replace(/@@LintCommand/g, ctx.lintCommand || 'npm run lint');
 }

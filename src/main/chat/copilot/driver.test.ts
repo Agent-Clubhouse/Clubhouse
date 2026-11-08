@@ -31,7 +31,7 @@ function fakeCli(dir: string, script: string): string {
   return bin;
 }
 
-describe('CopilotSdkChatDriver handshake failures, which fall back to ACP', () => {
+describe('CopilotSdkChatDriver handshake failures, which open the CLI view', () => {
   const driver = new CopilotSdkChatDriver({ probeTimeoutMs: 3_000 });
   const dirs: string[] = [];
   const dir = () => { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'copilot-fake-')); dirs.push(d); return d; };

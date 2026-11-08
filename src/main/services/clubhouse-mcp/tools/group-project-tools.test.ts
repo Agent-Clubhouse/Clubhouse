@@ -1142,7 +1142,7 @@ describe('GroupProjectTools', () => {
     agentRegistry.untrack('agent-2');
   });
 
-  it('nudge_polling refuses a member without Clubhouse MCP, which can\'t poll, and injects nothing', async () => {
+  it('nudge_polling refuses a member the call gate keeps closed, which can\'t poll, and injects nothing', async () => {
     const project = await groupProjectRegistry.create('Nudge off');
     await groupProjectRegistry.update(project.id, { metadata: { admins: ['agent-1'] } });
     bindingManager.bind('agent-1', { targetId: project.id, targetKind: 'group-project', label: 'Nudge off' });
@@ -1154,7 +1154,7 @@ describe('GroupProjectTools', () => {
     const result = await callTool('agent-1', buildToolName(binding, 'nudge_polling'), { target_agent_id: 'agent-2' });
     gateClosed.delete('agent-2');
     expect(result.isError).toBe(true);
-    expect(result.content[0]).toMatchObject({ text: expect.stringContaining('has Clubhouse MCP off, so it can\'t poll and wasn\'t nudged') });
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining('can\'t use Clubhouse tools right now, so it can\'t poll and wasn\'t nudged') });
     expect(mockPtyWrite).not.toHaveBeenCalled();
   });
 

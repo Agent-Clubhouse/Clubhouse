@@ -200,9 +200,9 @@ import {
   updateDurable,
   updateDurableConfig,
 } from './agent-config';
-import { setPersonaChangeHook } from './persona-change-hook';
 import { _resetHelperAutoStateForTesting, commitAutoDecision, reservationSummary, reservedLoad, reserveAutoDecision, settleAutoDecision } from './helper-auto-state';
 import type { DurableAgentConfig } from '../../shared/types';
+import { delivered } from './managed-agents/delivery-records';
 
 const PROJECT_PATH = path.resolve('helpers-project');
 const CONFIG_PATH = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
@@ -574,21 +574,12 @@ describe('orchestration config (#2228)', () => {
     expect((await listDurable(PROJECT_PATH))[0]).not.toHaveProperty('orchestration');
   });
 
-  it('tells the persona hook about a persona change, with the old persona', async () => {
+  it('never writes a persona: a legacy one stays as it was for the switch to read (#2901)', async () => {
     seed([agent('durable_1_orch', { persona: 'orchestrator' })]);
-    const hook = vi.fn(async () => undefined);
-    setPersonaChangeHook(hook);
-    try {
-      await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { model: 'opus' });
-      expect(hook).not.toHaveBeenCalled();
-      await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { persona: 'developer' });
-      expect(hook).toHaveBeenCalledWith({ kind: 'agent', projectPath: PROJECT_PATH, agentId: 'durable_1_orch', previousPersona: 'orchestrator' });
-      // A failing hook doesn't fail the update.
-      hook.mockRejectedValueOnce(new Error('boom'));
-      await expect(updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { persona: 'qa' })).resolves.toBeUndefined();
-    } finally {
-      setPersonaChangeHook(null);
-    }
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { persona: 'developer', model: 'opus' } as never);
+    expect((await listDurable(PROJECT_PATH))[0]).toMatchObject({ persona: 'orchestrator', model: 'opus' });
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { persona: '' } as never);
+    expect((await listDurable(PROJECT_PATH))[0].persona).toBe('orchestrator');
   });
 
   it('throws for an unknown agent', async () => {
@@ -937,6 +928,13 @@ describe('delete cascade', () => {
       expect(await disposeHelper(PROJECT_PATH, 'durable_2_h')).toMatchObject({ ok: true });
       expect(reservationSummary().held).toBe(0);
       expect(reservedLoad(unseen)).toEqual({});
+    });
+
+    it('a disposal frees what the helper\'s managed sessions kept: it never starts again (D79)', async () => {
+      seedFamily({ durable_2_h: {} });
+      delivered.set('durable_2_h', { fingerprint: 'f', deliveredAt: 't', parts: {}, order: [] });
+      expect(await disposeHelper(PROJECT_PATH, 'durable_2_h')).toMatchObject({ ok: true });
+      expect(delivered.has('durable_2_h')).toBe(false);
     });
 
     it('a cascade disposal releases each helper it disposed', async () => {

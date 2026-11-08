@@ -7,11 +7,6 @@ vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/clubhouse-test' },
 }));
 
-const mockIsMcpEnabled = vi.fn();
-vi.mock('../mcp-settings', () => ({
-  isMcpEnabled: (...args: unknown[]) => mockIsMcpEnabled(...args),
-}));
-
 vi.mock('../log-service', () => ({
   appLog: vi.fn(),
 }));
@@ -49,15 +44,7 @@ describe('MCP Injection', () => {
   });
 
   describe('injectClubhouseMcp', () => {
-    it('does nothing when feature is disabled', async () => {
-      mockIsMcpEnabled.mockReturnValue(false);
-      await injectClubhouseMcp(tmpDir, 'agent-1', 12345);
-      // .mcp.json should not exist
-      await expect(fsp.access(path.join(tmpDir, '.mcp.json'))).rejects.toThrow();
-    });
-
-    it('creates .mcp.json with clubhouse entry when feature is enabled', async () => {
-      mockIsMcpEnabled.mockReturnValue(true);
+    it('creates .mcp.json with the clubhouse entry: every agent gets it', async () => {
       await injectClubhouseMcp(tmpDir, 'agent-1', 12345);
 
       const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
@@ -71,52 +58,6 @@ describe('MCP Injection', () => {
       expect(content.mcpServers.clubhouse.env_vars).toEqual(['CLUBHOUSE_AGENT_ID', 'CLUBHOUSE_HOOK_NONCE', 'CLUBHOUSE_MCP_PORT']);
     });
 
-    it('passes the project path and the agent\'s own setting to the enablement check (#2223)', async () => {
-      mockIsMcpEnabled.mockReturnValueOnce(true);
-      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, undefined, { projectPath: '/projects/on', agentOverride: false });
-      expect(mockIsMcpEnabled).toHaveBeenLastCalledWith('/projects/on', false);
-    });
-
-    // Real precedence (agent > project > global) for each combination that
-    // decides the outcome. Mirrors isMcpEnabled in mcp-settings.ts.
-    describe('precedence: agent > project > global (#2223)', () => {
-      function precedence(global: boolean, projectOverrides: Record<string, boolean>) {
-        return (projectPath?: string, agentOverride?: boolean) => {
-          if (agentOverride !== undefined) return agentOverride;
-          if (projectPath && projectOverrides[projectPath] !== undefined) return projectOverrides[projectPath];
-          return global;
-        };
-      }
-      async function injected(): Promise<boolean> {
-        try { await fsp.access(path.join(tmpDir, '.mcp.json')); return true; } catch { return false; }
-      }
-
-      it.each([
-        // [case, global, project override, agent override, injected]
-        ['global on, nothing else', true, undefined, undefined, true],
-        ['global off, nothing else', false, undefined, undefined, false],
-        ['project on beats global off', false, true, undefined, true],
-        ['project off beats global on', true, false, undefined, false],
-        ['agent off beats global on', true, undefined, false, false],
-        ['agent off beats project on', false, true, false, false],
-        ['agent off beats global and project on', true, true, false, false],
-        ['agent on beats global off', false, undefined, true, true],
-        ['agent on beats project off', true, false, true, true],
-        ['agent on beats global and project off', false, false, true, true],
-      ] as const)('%s', async (_case, global, project, agent, expected) => {
-        const projectPath = '/projects/p';
-        mockIsMcpEnabled.mockImplementationOnce(precedence(global, project === undefined ? {} : { [projectPath]: project }));
-        await injectClubhouseMcp(tmpDir, 'agent-1', 12345, undefined, { projectPath, agentOverride: agent });
-        expect(await injected()).toBe(expected);
-      });
-
-      it('a different project\'s override does not count', async () => {
-        mockIsMcpEnabled.mockImplementationOnce(precedence(false, { '/projects/other': true }));
-        await injectClubhouseMcp(tmpDir, 'agent-1', 12345, undefined, { projectPath: '/projects/p' });
-        expect(await injected()).toBe(false);
-      });
-    });
-
     describe('keeps the nonce out of the worktree (#2222)', () => {
       const NONCE = 'b1f0c3a4-5e6d-4f70-8a9b-0c1d2e3f4a5b';
 
@@ -128,14 +69,12 @@ describe('MCP Injection', () => {
       }
 
       it('a sibling reading the JSON worktree config finds no nonce field', async () => {
-        mockIsMcpEnabled.mockReturnValue(true);
         await injectClubhouseMcp(tmpDir, 'agent-1', 12345);
         const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
         expect(JSON.stringify(content)).not.toMatch(/CLUBHOUSE_HOOK_NONCE"\s*:/);
       });
 
       it('a sibling reading the TOML worktree config finds no nonce', async () => {
-        mockIsMcpEnabled.mockReturnValue(true);
         await injectClubhouseMcp(tmpDir, 'agent-1', 12345, { configDir: '.codex', mcpConfigFile: '.codex/config.toml', settingsFormat: 'toml' });
         const content = await fsp.readFile(path.join(tmpDir, '.codex', 'config.toml'), 'utf-8');
         expect(content).not.toMatch(/CLUBHOUSE_HOOK_NONCE\s*=/);
@@ -143,7 +82,6 @@ describe('MCP Injection', () => {
       });
 
       it('migrates a stale nonce away from .mcp.json on the next injection', async () => {
-        mockIsMcpEnabled.mockReturnValue(true);
         const bridge = { command: 'node', args: ['/x/clubhouse-mcp-bridge.js'], env: { CLUBHOUSE_MCP_PORT: '1', CLUBHOUSE_AGENT_ID: 'agent-1', CLUBHOUSE_HOOK_NONCE: NONCE } };
         await fsp.writeFile(path.join(tmpDir, '.mcp.json'), JSON.stringify({
           mcpServers: { clubhouse: bridge, 'clubhouse-old': bridge, user: { command: 'u', env: { KEEP: '1' } } },
@@ -159,7 +97,6 @@ describe('MCP Injection', () => {
       });
 
       it('migrates a stale nonce away from the Codex TOML on the next injection', async () => {
-        mockIsMcpEnabled.mockReturnValue(true);
         await fsp.mkdir(path.join(tmpDir, '.codex'), { recursive: true });
         await fsp.writeFile(path.join(tmpDir, '.codex', 'config.toml'), [
           'model = "gpt"',
@@ -186,7 +123,6 @@ describe('MCP Injection', () => {
     });
 
     it('preserves existing MCP servers', async () => {
-      mockIsMcpEnabled.mockReturnValue(true);
       const existing = {
         mcpServers: {
           'my-server': { command: 'my-cmd', args: ['--flag'] },
@@ -202,7 +138,6 @@ describe('MCP Injection', () => {
     });
 
     it('overwrites existing clubhouse entry', async () => {
-      mockIsMcpEnabled.mockReturnValue(true);
       const existing = {
         mcpServers: {
           clubhouse: { command: 'old', args: [] },
@@ -217,7 +152,6 @@ describe('MCP Injection', () => {
     });
 
     it('uses custom conventions for config file path', async () => {
-      mockIsMcpEnabled.mockReturnValue(true);
       await injectClubhouseMcp(tmpDir, 'agent-1', 12345, {
         mcpConfigFile: 'custom-mcp.json',
       });
@@ -227,7 +161,6 @@ describe('MCP Injection', () => {
     });
 
     it('handles malformed existing JSON gracefully', async () => {
-      mockIsMcpEnabled.mockReturnValue(true);
       await fsp.writeFile(path.join(tmpDir, '.mcp.json'), 'not valid json!!!', 'utf-8');
 
       await injectClubhouseMcp(tmpDir, 'agent-1', 12345);
@@ -237,7 +170,6 @@ describe('MCP Injection', () => {
     });
 
     it('serializes concurrent injections (no clobbering)', async () => {
-      mockIsMcpEnabled.mockReturnValue(true);
 
       // Run 3 injections concurrently
       await Promise.all([
@@ -256,7 +188,6 @@ describe('MCP Injection', () => {
     });
 
     it('serializes mixed inject + template calls via shared mutex', async () => {
-      mockIsMcpEnabled.mockReturnValue(true);
 
       // Fire both injectClubhouseMcp and injectTemplateMcpServers concurrently.
       // Without a proper mutex, file corruption can occur.
@@ -276,7 +207,6 @@ describe('MCP Injection', () => {
     });
 
     it('creates parent directory if it does not exist', async () => {
-      mockIsMcpEnabled.mockReturnValue(true);
       const nestedDir = path.join(tmpDir, 'nested', 'deep');
 
       await injectClubhouseMcp(nestedDir, 'agent-1', 12345, {
@@ -289,7 +219,6 @@ describe('MCP Injection', () => {
     });
 
     it('injects TOML MCP config for TOML config format (Codex CLI)', async () => {
-      mockIsMcpEnabled.mockReturnValue(true);
       const codexDir = path.join(tmpDir, '.codex');
       await fsp.mkdir(codexDir, { recursive: true });
 
@@ -309,7 +238,6 @@ describe('MCP Injection', () => {
     });
 
     it('preserves existing TOML content when injecting', async () => {
-      mockIsMcpEnabled.mockReturnValue(true);
       const codexDir = path.join(tmpDir, '.codex');
       await fsp.mkdir(codexDir, { recursive: true });
       await fsp.writeFile(
@@ -330,7 +258,6 @@ describe('MCP Injection', () => {
     });
 
     it('replaces existing clubhouse section in TOML', async () => {
-      mockIsMcpEnabled.mockReturnValue(true);
       const codexDir = path.join(tmpDir, '.codex');
       await fsp.mkdir(codexDir, { recursive: true });
       await fsp.writeFile(
@@ -351,7 +278,6 @@ describe('MCP Injection', () => {
     });
 
     it('still injects for JSON config format', async () => {
-      mockIsMcpEnabled.mockReturnValue(true);
       await injectClubhouseMcp(tmpDir, 'agent-1', 12345, {
         configDir: '.claude',
         mcpConfigFile: '.mcp.json',
@@ -363,7 +289,6 @@ describe('MCP Injection', () => {
     });
 
     it('no temp files left behind after injection', async () => {
-      mockIsMcpEnabled.mockReturnValue(true);
       await injectClubhouseMcp(tmpDir, 'agent-1', 12345);
 
       const files = await fsp.readdir(tmpDir);

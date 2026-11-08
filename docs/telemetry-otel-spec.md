@@ -124,7 +124,7 @@ Today's `meta` bags contain values that P1–P3 forbid:
 |---|---|
 | `agent-system.ts:462` (`core:agent`) | Full `args`, which include **the mission and system prompt** |
 | `headless-manager.ts:540` | Full `args`, which include **`-p <mission>`** |
-| `acp-client.ts:103`, `codex-app-server-client.ts:60` | RPC params, which include **prompt text** |
+| `codex-app-server-client.ts:60` (and the removed `acp-client.ts`) | RPC params, which include **prompt text** |
 | `core:pty` exit | `lastOutput`: the last 500 characters of terminal output |
 | `core:headless` | First 200 characters of stdout |
 | `core:agent-config`, `core:project-store`, `core:config-pipeline` | `projectPath`, `configPath`, `filePath` |
@@ -275,7 +275,7 @@ c.agent.create            (durable only; root)
 c.agent.spawn             (root; ends when process launched)
   ├─ c.provider.resolve
   ├─ c.provider.check_availability   [binary lookup tier, cache hit]
-  ├─ c.agent.materialize             (durable + Clubhouse Mode)
+  ├─ c.agent.materialize             (managed setup or quick-agent template)
   ├─ c.agent.prepare_pty             (PTY only; 3 parallel children)
   │    ├─ c.hooks.configure
   │    ├─ c.mcp.inject
@@ -293,7 +293,7 @@ Both flows start in the IPC handlers, so the git and config work below them (`ag
 
 | Span | Children | Attributes / result | Level |
 |---|---|---|---|
-| `c.agent.create` | `c.git.worktree_create` (Phase 5, in `agent-config.ts`), `c.agent.persona_inject` | `c.agent.uses_worktree`, orchestrator; `error.type ∈ {worktree_failed, write_failed}`. A persona failure is non-fatal: the child span records it, the create stays `ok` | S |
+| `c.agent.create` | `c.git.worktree_create` (Phase 5, in `agent-config.ts`) | `c.agent.uses_worktree`, orchestrator; `error.type ∈ {worktree_failed, write_failed}`. Personas were retired (#2901), so its `c.agent.persona_inject` child span is gone | S |
 | `c.agent.delete` | `c.git.worktree_remove` (Phase 5) | `c.agent.delete.mode` (`standard`/`commit_push`/`cleanup_branch`/`save_patch`/`force`/`unregister`); a throw or a result with `ok: false` is `error.type = delete_failed` (cancelling the save-patch dialog returns before the flow and is not recorded) | S |
 
 Quick agents have no main-process create step. The renderer `spawnQuickAgent` (`agentLifecycleSlice.ts:25`) starts a renderer span `c.agent.quick_launch` that is propagated into `SPAWN_AGENT` (§6.2). That is how the renderer-side work (summary instruction fetch, template expansion) gets measured.
@@ -301,15 +301,15 @@ Quick agents have no main-process create step. The renderer `spawnQuickAgent` (`
 #### Spawn (`agent-system.ts:98`)
 
 - **Boundaries:** `spawnAgent` entry to the process launched (after `AGENT_AWOKE`), or the throw. Recorded with `tel.flow` around the whole function; the children are `tel.step`s.
-- **Children:** `c.provider.resolve`, `c.provider.check_availability`, `c.agent.materialize` (Clubhouse Mode, non-fatal), then for PTY `c.agent.prepare_pty` with its three parallel children (`c.hooks.configure`, `c.mcp.inject`, `c.provider.build_command`) and `c.pty.spawn`, or `c.headless.spawn` for headless. `c.chat.start` covers a chat start from the moment a driver and CLI are found (`tryStartChatAgent`'s `onStarting`) to started, fallen back or cancelled; a fallback to the terminal is `error.type = chat_start_failed`, a cancel is outcome `cancelled`, and spawns that were never chat record no chat span. Its attributes (#2304): `c.chat.start.result` (`chat`, `fallback` for chat on a lower driver, `terminal`, `cancelled`, `failed`), `c.chat.start.reason` (a closed set), the driver it ended on, `c.chat.drivers_tried`, `c.chat.check_ms`, `c.chat.session_start_ms`, `c.chat.cli_version.status`, `c.agent.resume`, `c.chat.resume_honored` and, for ACP, `c.chat.resume.load_ms` / `.first_reply_ms`. Each driver a start leaves, and a chat agent sent to the terminal before any driver was checked (no driver, binary missing), is a `c.chat.fallback` event (Standard) with the driver, `c.chat.fallback.to` (`driver` or `terminal`), the reason and a registered `error.type`; the reason's text stays in the local log. Turns and the rest of chat come from the chat event bus (§9.1). `provider.check_availability` matters most: it can run a **synchronous `execFileSync(shell -ilc which)` for up to 5 s on the main thread** (`orchestrators/shared.ts:100`), and Codex also runs `codex --version` on every spawn. The lookup tier is recorded on every lookup as `c.provider.binary_lookup.duration` (§4.4 metrics), not on the span.
+- **Children:** `c.provider.resolve`, `c.provider.check_availability`, `c.agent.materialize` (a managed agent's setup delivery, non-fatal; a quick agent's template, which fails the start), then for PTY `c.agent.prepare_pty` with its three parallel children (`c.hooks.configure`, `c.mcp.inject`, `c.provider.build_command`) and `c.pty.spawn`, or `c.headless.spawn` for headless. `c.chat.start` covers a chat start from the moment a driver and CLI are found (`tryStartChatAgent`'s `onStarting`) to started, fallen back or cancelled; a fallback to the terminal is `error.type = chat_start_failed`, a cancel is outcome `cancelled`, and spawns that were never chat record no chat span. Its attributes (#2304): `c.chat.start.result` (`chat`, `fallback` for chat on a lower driver, `terminal`, `cancelled`, `failed`), `c.chat.start.reason` (a closed set), the driver it ended on, `c.chat.drivers_tried`, `c.chat.check_ms`, `c.chat.session_start_ms`, `c.chat.cli_version.status`, `c.agent.resume`, `c.chat.resume_honored` and, for ACP, `c.chat.resume.load_ms` / `.first_reply_ms`. Each driver a start leaves, and a chat agent sent to the terminal before any driver was checked (no driver, binary missing), is a `c.chat.fallback` event (Standard) with the driver, `c.chat.fallback.to` (`driver` or `terminal`), the reason and a registered `error.type`; the reason's text stays in the local log. Turns and the rest of chat come from the chat event bus (§9.1). `provider.check_availability` matters most: it can run a **synchronous `execFileSync(shell -ilc which)` for up to 5 s on the main thread** (`orchestrators/shared.ts:100`), and Codex also runs `codex --version` on every spawn. The lookup tier is recorded on every lookup as `c.provider.binary_lookup.duration` (§4.4 metrics), not on the span.
 - **Attributes:**
   - `c.agent.kind` (`durable`/`quick`/`companion`)
   - `c.orchestrator` (`claude-code`/`codex-cli`/`copilot-cli`/`other`)
   - `c.agent.runtime` (`pty`/`headless`/`chat`)
-  - `c.chat.driver` (`claude_agent_sdk`/`claude_stream_json`/`codex_app_server`/`copilot_acp`/`acp` for other ACP agents, later `copilot_sdk`), from chat's capability record, added by the chat telemetry work (§9.1). Claude chat is designed to default to the Agent SDK, with raw `-p` stream-json as a second mode.
+  - `c.chat.driver` (`claude_agent_sdk`/`claude_stream_json`/`codex_app_server`/`copilot_sdk`), from chat's capability record. Data from before #2868 can also carry `copilot_acp`, and the allowlist sends anything else as `other`. It is added by the chat telemetry work (§9.1). Claude chat is designed to default to the Agent SDK, with raw `-p` stream-json as a second mode.
   - `c.agent.resume` (bool)
   - `c.model.family` (bucketed from the model string: `opus`/`sonnet`/`haiku`/`gpt-5`/`default`/`other`; the raw model is never sent)
-  - `c.clubhouse_mode`, `c.mcp.enabled`, `c.hooks.enabled`, `c.profile.active`, `c.wrapper.applied` (all bool; each only once the spawn reached the step that decides it)
+  - `c.hooks.enabled`, `c.wrapper.applied` (all bool; each only once the spawn reached the step that decides it)
   - Not recorded: `c.agent.runtime.reason` (the fallback decision is implicit in the runtime) and per-agent hashed IDs on spawn spans.
 - **`error.type`:** `orchestrator_unknown`, `preflight_failed` (CLI missing or unauthenticated), `cwd_invalid`, `pty_spawn_failed` (or, when the spawn error names one, its errno: `ENOENT`, `EACCES`, `EPERM`, `ENOTDIR`, `EISDIR`, `EMFILE`, `ENOSPC`; #2306), `headless_no_pid` (the span ends `error` though the call returns), `chat_start_failed`; `materialize_failed` on the non-fatal child only. Errors are typed with `tagError` / `withErrorType` at the throw site (§6.5); anything untagged is `unknown`.
 - **Metrics:** `c.agent.spawns` (counter: kind, orchestrator, runtime, outcome, `error.type`) and `c.agent.spawn.duration` (histogram, s, successful spawns only).
@@ -356,7 +356,7 @@ Structured mode (`structured-manager.ts` and its StreamJson, ACP and Codex adapt
 | Span | Boundaries | Attributes / errors | Level |
 |---|---|---|---|
 | `c.agent.turn` | chat bus turn-start → turn-end event | `c.turn.end_reason` (`complete`/`error`/`cancelled`/`timeout`); `c.turn.time_to_first_token` (s, also an event); `c.turn.tool_calls` (count); token usage as `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens` (numbers only); `c.chat.driver`; `error.type` from chat's closed error set (for example `max_tokens`, `refusal`, `rpc_timeout`, `process_exited`, `unhandled_server_request`) | S |
-| ↳ `c.chat.rpc` | per-driver protocol calls (Codex `thread/start` / `turn/start`, ACP `session/prompt`, …), if chat exposes them on the bus | `rpc.method` from a fixed list | D |
+| ↳ `c.chat.rpc` | per-driver protocol calls (Codex `thread/start` / `turn/start`, Copilot `session.send`, …), if chat exposes them on the bus | `rpc.method` from a fixed list | D |
 
 Metrics: `c.agent.turn.duration` (s), `c.agent.tokens` counter (unit `{token}`, split by `gen_ai.token.type` = `input`/`output`), `c.agent.cost` (USD, from headless `result.total_cost_usd` or chat usage events where present).
 
@@ -428,7 +428,7 @@ The trigger is recorded where the caller is known, before the runtime manager is
 | Instrument | Boundaries / attributes | Level |
 |---|---|---|
 | `c.mcp.bridge.start` span | `bridge-server.ts:302` | S |
-| `c.mcp.tool_call` span | `handleToolsCall` → JSON-RPC return. Attributes: `c.mcp.tool_kind` (`clubhouse`/`browser`/`terminal`/`group`/`plugin`/`global`/`other`, from the tool-name prefix or global-tool membership), `c.mcp.tool` (the **built-in Clubhouse tool suffix or global tool name only**, from a fixed list kept in sync with `clubhouse-mcp/tools` by a test; plugin tools are always `other`; the binding segment of the name is never sent), `c.mcp.result` (`ok`/`tool_error`/`threw`), `error.type ∈ {mcp_tool_error, mcp_tool_threw}`, `c.agent.id_hash` (the calling agent), `c.mcp.refusal.reason` (`group_off`/`unparseable`/`no_binding`/`unknown_tool`/`invalid_args`/`tool_denied`, only when the registry refused the call before a handler ran) (#2308). Tool arguments are never recorded in any tier; the local `core:mcp` line keeps only their names. | S |
+| `c.mcp.tool_call` span | `handleToolsCall` → JSON-RPC return. Attributes: `c.mcp.tool_kind` (`clubhouse`/`browser`/`terminal`/`group`/`plugin`/`global`/`other`, from the tool-name prefix or global-tool membership), `c.mcp.tool` (the **built-in Clubhouse tool suffix or global tool name only**, from a fixed list kept in sync with `clubhouse-mcp/tools` by a test; plugin tools are always `other`; the binding segment of the name is never sent), `c.mcp.result` (`ok`/`tool_error`/`threw`), `error.type ∈ {mcp_tool_error, mcp_tool_threw}`, `c.agent.id_hash` (the calling agent), `c.mcp.refusal.reason` (`group_off`/`unparseable`/`no_binding`/`unknown_tool`/`invalid_args`/`tool_denied`/`caller_unknown`, only when the registry refused the call before a handler ran; `caller_unknown` is a caller the call gate doesn't know, such as an agent whose settings couldn't be read at start) (#2308). Tool arguments are never recorded in any tier; the local `core:mcp` line keeps only their names. | S |
 | `c.mcp.tool_calls` counter | tool kind, tool, result | S |
 | `c.mcp.tool_call.duration` histogram | tool kind | S |
 | `c.mcp.auth_rejected` counter | nonce 403s (`:71-82`) | E |
@@ -758,10 +758,10 @@ Explicitly **not set**: `host.name`, `os.description`, `process.command_args`, `
 
 | Area | Attributes |
 |---|---|
-| Counts | `c.projects.count`, `c.projects.git.count`, `c.projects.remote.count`, `c.agents.durable.count`, `c.profiles.count` |
+| Counts | `c.projects.count`, `c.projects.git.count`, `c.projects.remote.count`, `c.agents.durable.count` |
 | Orchestrators | `c.orchestrators.used` (sorted CSV from the enum) |
 | Theme | `c.theme.kind`, `c.theme.builtin_id` |
-| Feature flags | `c.clubhouse_mode`, `c.headless.enabled`, `c.mcp.enabled`, `c.annex.server`, `c.annex.client`, `c.annex.satellites.count` |
+| Feature flags | `c.headless.enabled`, `c.annex.server`, `c.annex.client`, `c.annex.satellites.count` |
 | Experimental | `c.experimental.*` (known keys only: `goobers`, `themeGradients`, plus chat's flag once it exists) |
 | Plugins | `c.plugins.builtin_enabled` (CSV of built-in IDs), `c.plugins.community.count`, `c.marketplace.custom.count`, `c.plugins.external_enabled` |
 | Logging | `c.logging.enabled`, `c.logging.min_level` |
@@ -782,7 +782,7 @@ Never sent:
 - MCP tool names other than Clubhouse built-ins; MCP server names;
 - error messages and raw stacks (only sanitized frames are sent);
 - hostnames, device names and aliases, IPs, Annex fingerprints, bearer tokens, PINs, nonces;
-- environment variables and profile env;
+- environment variables;
 - model strings other than the bucketed `c.model.family`.
 
 ---
@@ -1494,7 +1494,7 @@ These came out of the code survey and log analysis. They are independent of tele
 |---|---|---|---|---|
 | F1 | [#1917](https://github.com/Agent-Clubhouse/Clubhouse/issues/1917) · **closed**: fixed in [#1928](https://github.com/Agent-Clubhouse/Clubhouse/pull/1928); the code is removed by [#1937](https://github.com/Agent-Clubhouse/Clubhouse/pull/1937) | **Structured exits bypass `broadcastAgentExit`.** `onAgentExit` listeners (the queue runner) never see them, so structured queue tasks never complete. | `structured-manager.ts:125-126`, `agent-queue-runner.ts:252` | exit metrics would undercount structured runs |
 | F2 | [#1918](https://github.com/Agent-Clubhouse/Clubhouse/issues/1918) · **closed**: fixed in [#1928](https://github.com/Agent-Clubhouse/Clubhouse/pull/1928) | **A headless exit by signal is reported as code 0** (`code ?? 0`, signal dropped). Killed headless queue tasks are marked "completed". | `headless-manager.ts:486,488` | exit class would be wrong |
-| F3 | [#1919](https://github.com/Agent-Clubhouse/Clubhouse/issues/1919) | **Prompts and missions are written to local logs** through `args` and RPC params | `agent-system.ts:462`, `headless-manager.ts:540`, `acp-client.ts:103`, `codex-app-server-client.ts:60` | no export impact (never bridged), but a local privacy issue |
+| F3 | [#1919](https://github.com/Agent-Clubhouse/Clubhouse/issues/1919) | **Prompts and missions are written to local logs** through `args` and RPC params | `agent-system.ts:462`, `headless-manager.ts:540`, `codex-app-server-client.ts:60` (`acp-client.ts` was removed with #2868) | no export impact (never bridged), but a local privacy issue |
 | F4 | [#1575](https://github.com/Agent-Clubhouse/Clubhouse/issues/1575) · **closed**: fixed in [#1929](https://github.com/Agent-Clubhouse/Clubhouse/pull/1929) (comment) | **Safe-mode logic appears inverted.** "Safe Mode" clears the marker so the renderer loads plugins; "Try Again Normally" keeps it, so the renderer enters safe mode. Also, `CLUBHOUSE_SAFE_MODE` is read in `initializeTrustedManifests` before it is set. | `safe-mode.ts:58-83`, `plugin-loader.ts:239`, `plugin-handlers.ts:30` | safe-mode events would be mislabeled |
 | F5 | [#1920](https://github.com/Agent-Clubhouse/Clubhouse/issues/1920) · **closed**: fixed in [#1929](https://github.com/Agent-Clubhouse/Clubhouse/pull/1929) | **The update apply-attempt marker is never written on macOS/Windows relaunch**, because `app.exit(0)` runs before `recordSuccessfulApply`, so `update:apply-detect` cannot fire there | `auto-update-service.ts:826,852,945` | the update failure funnel would be blind on two OSes |
 | F6 | [#1921](https://github.com/Agent-Clubhouse/Clubhouse/issues/1921) | **Uncaught `send EADDRNOTAVAIL 224.0.0.251`** from the mDNS socket. It happens twice in 10 days of logs, at fatal level, and the process continues. | `bonjour-service` via `annex-server.ts:2777` / `annex-client.ts:706` | first real crash class telemetry would report |

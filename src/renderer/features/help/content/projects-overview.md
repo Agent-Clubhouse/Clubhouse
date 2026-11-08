@@ -23,14 +23,10 @@ Clubhouse creates a `.clubhouse/` folder in your project root to store its confi
 | Path | Contents |
 |------|----------|
 | `agents/` | Agent definitions and per-agent config |
-| `skills/` | Custom skill scripts |
+| `skills/` | Skills Clubhouse Mode used before it was retired. Only the switch to managed reads them. |
 | `templates/` | Reusable agent templates |
 | `instructions/` | Project-level instructions for agent behavior |
 
 - Safe to commit to Git for team sharing, or add to `.gitignore` for local-only use
 - Deleting `.clubhouse/` resets all Clubhouse config for that project (your source code is unaffected)
 - Clubhouse never modifies your source files outside of agent-driven actions you initiate
-
-## Dashboard View
-
-Each project appears as a card on the Dashboard with agent status pills, quick-action buttons, and recent activity. See the **Dashboard** help topic for details.

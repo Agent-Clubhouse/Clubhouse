@@ -18,7 +18,7 @@ vi.mock('../../helper-index', () => ({
   }),
 }));
 
-const access = vi.hoisted(() => ({ value: 'open' as 'open' | 'report_only' | 'closed' }));
+const access = vi.hoisted(() => ({ value: 'open' as 'open' | 'closed' }));
 vi.mock('../mcp-call-gate', async (original) => ({ ...await original<typeof import('../mcp-call-gate')>(), mcpCallAccess: () => access.value }));
 
 const mockGetPolicy = vi.fn();
@@ -201,7 +201,7 @@ describe('routeHelperQuestion', () => {
 
 // ── answer_helper_question ─────────────────────────────────────────────────
 
-describe('a parent without Clubhouse MCP', () => {
+describe('a parent the call gate keeps closed', () => {
   afterEach(() => { access.value = 'open'; });
 
   it('never gets the question: it couldn\'t call answer_helper_question, so it stays with the user', async () => {
@@ -210,14 +210,12 @@ describe('a parent without Clubhouse MCP', () => {
     const parent = run('lead', true);
     run('worker');
     mockGetPolicy.mockResolvedValue({ orchestrate: true, control: 'hands-off' });
-    for (const closed of ['closed', 'report_only'] as const) {
-      access.value = closed;
-      expect(await routeHelperQuestion('worker', question('q1', [BRANCH]))).toBeNull();
-    }
+    access.value = 'closed';
+    expect(await routeHelperQuestion('worker', question('q1', [BRANCH]))).toBeNull();
     expect(parent.sent).toEqual([]);
   });
 
-  it('hands over an open question when it loses MCP, so the helper isn\'t left waiting', async () => {
+  it('hands over an open question when it loses its Clubhouse tools, so the helper isn\'t left waiting', async () => {
     addAgent({ id: 'lead' });
     addAgent({ id: 'worker', parentAgentId: 'lead' });
     run('lead', true);
@@ -227,14 +225,14 @@ describe('a parent without Clubhouse MCP', () => {
     registerHelperQuestionTools();
     expect(await routeHelperQuestion('worker', question('q1', [BRANCH]))).toEqual({ agentId: 'lead', name: 'lead' });
 
-    // A gate change that leaves it with MCP hands over nothing.
+    // A gate change that leaves it open hands over nothing.
     notifyToolGateChange('lead');
     expect(helper.escalated).toEqual([]);
 
     access.value = 'closed';
     notifyToolGateChange('lead');
-    await vi.waitFor(() => expect(helper.escalated).toEqual([{ requestId: 'q1', notice: 'Clubhouse MCP is off for the agent that was asked, so this question is yours.' }]));
-    // Once: it's the user's now, and MCP coming back doesn't take it away.
+    await vi.waitFor(() => expect(helper.escalated).toEqual([{ requestId: 'q1', notice: 'The agent that was asked can\'t use Clubhouse tools right now, so this question is yours.' }]));
+    // Once: it's the user's now, and the gate opening again doesn't take it away.
     access.value = 'open';
     notifyToolGateChange('lead');
     expect(helper.escalated).toHaveLength(1);

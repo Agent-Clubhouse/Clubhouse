@@ -27,7 +27,7 @@ vi.mock('./dispatcher/dispatcher-service', async () => {
   return {
     getDispatcherState: () => {
       const { enabled, savedOn, reason } = settings.dispatcherEnablement();
-      return { enabled, savedOn, offReason: reason, flagOn: reason !== 'mcp_off', mcpOff: reason === 'mcp_off', classic: false, running: false, agentId: null, path: null, config: null };
+      return { enabled, savedOn, offReason: reason, flagOn: true, classic: false, running: false, agentId: null, path: null, config: null };
     },
     isDispatcherAgentId: () => false,
     onDispatcherChanged: () => () => {},
@@ -37,9 +37,8 @@ vi.mock('./dispatcher/dispatcher-service', async () => {
 import { resetAllSettingsStoresForTests } from './settings-store';
 import { getSettings, getSettingsForRenderer, getStoredSettings, isGraduatedFeatureOn, saveSettings } from './experimental-settings';
 import { isPreviewEligible } from './preview-eligible';
-import { isChatEnabled, isCopilotSdkEnabled, resolveRuntimeMode } from './chat-runtime-settings';
+import { isChatEnabled, resolveRuntimeMode } from './chat-runtime-settings';
 import { dispatcherEnablement, isDispatcherEnabled } from './dispatcher/dispatcher-settings';
-import { isMcpEnabledForAny, isMcpOnAtAppLevel } from './mcp-settings';
 import { dispatcherCapability } from './mobile-dispatcher';
 import { applyExportGraduation, getTelemetrySettings } from '../telemetry/settings';
 import { isTelemetryConfigured, uiChrome } from '../telemetry/bootstrap';
@@ -48,7 +47,7 @@ import { NEW_CHROME_FLAG } from '../../shared/chrome-flag';
 import { COPILOT_SDK_FLAG, RICH_CHAT_CONTENT_FLAG } from '../../shared/chat';
 import { isGraduatedFlagOn } from '../../shared/graduated-flags';
 import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
-import { PREVIEW_ONLY_EXPERIMENTAL_FLAGS, STRUCTURED_MODE_REMOVED_NOTICE_KEY } from '../../shared/types';
+import { COPILOT_ACP_REMOVED_NOTICE_KEY, PREVIEW_ONLY_EXPERIMENTAL_FLAGS, STRUCTURED_MODE_REMOVED_NOTICE_KEY } from '../../shared/types';
 
 const ALL_SAVED = {
   newChrome: true,
@@ -164,8 +163,20 @@ describe('chat and rich content, in any build', () => {
 describe('the preview-only list', () => {
   it('names each feature by the same key its reader uses', () => {
     expect([...PREVIEW_ONLY_EXPERIMENTAL_FLAGS].sort()).toEqual([
-      'goobers', COPILOT_SDK_FLAG, 'copilotLegacyAcp',
+      'goobers', COPILOT_SDK_FLAG,
     ].sort());
+  });
+});
+
+describe('the removed legacy Copilot ACP opt-in, in a packaged stable build (#2868)', () => {
+  it.each([false, true])('Preview %s: the flag is dropped, with a notice only when it selected ACP', (previewChannel) => {
+    write(UPDATE_FILE, { autoUpdate: false, previewChannel, lastCheck: null, dismissedVersion: null, lastSeenVersion: null });
+    write(EXPERIMENTAL_FILE, { goobers: true, copilotLegacyAcp: true });
+    relaunch();
+    const stored = getStoredSettings();
+    expect(stored).not.toHaveProperty('copilotLegacyAcp');
+    expect(stored.goobers).toBe(true);
+    expect(stored[COPILOT_ACP_REMOVED_NOTICE_KEY] === true).toBe(previewChannel);
   });
 });
 
@@ -174,23 +185,16 @@ describe('the Dispatcher on the real default layout and the real Classic setting
   const CLASSIC = { enabled: false, savedOn: false, reason: 'classic_layout' };
   const exists = (name: string) => fs.existsSync(path.join(h.userData, name));
 
-  it.each([false, true])('a fresh profile has it on, with MCP and nothing saved (Preview %s)', (previewChannel) => {
+  it.each([false, true])('a fresh profile has it on, with nothing saved (Preview %s)', (previewChannel) => {
     if (previewChannel) write(UPDATE_FILE, { autoUpdate: false, previewChannel, lastCheck: null, dismissedVersion: null, lastSeenVersion: null });
     relaunch();
     expect(newChromeEnabled()).toBe(true);
-    expect(isMcpOnAtAppLevel()).toBe(true);
-    expect(isMcpEnabledForAny()).toBe(true);
     expect(dispatcherEnablement()).toEqual(ON);
     for (const name of [EXPERIMENTAL_FILE, DISPATCHER_FILE, 'mcp-settings.json']) expect(exists(name)).toBe(false);
   });
 
-  it('MCP saved off derives it off on the default layout, and it returns to on without a save of its own', async () => {
+  it('ignores an MCP switch saved off before the Clubhouse MCP was always on', () => {
     write('mcp-settings.json', { enabled: false, projectDefault: false });
-    relaunch();
-    expect(dispatcherEnablement()).toEqual({ enabled: false, savedOn: true, reason: 'mcp_off' });
-    expect(exists(DISPATCHER_FILE)).toBe(false);
-
-    write('mcp-settings.json', { enabled: true, projectDefault: false });
     relaunch();
     expect(dispatcherEnablement()).toEqual(ON);
     expect(exists(DISPATCHER_FILE)).toBe(false);
@@ -284,7 +288,7 @@ describe('a packaged stable build with Preview off', () => {
   it('runs a Chat-mode agent in chat, with the standard Copilot SDK, and leaves its saved choices alone', () => {
     const saved = bytes(CHAT_RUNTIME_FILE);
     expect(isChatEnabled()).toBe(true);
-    expect(isCopilotSdkEnabled()).toBe(true);
+    expect(resolveRuntimeMode('copilot-cli', 'chat')).toEqual({ mode: 'chat', driver: 'copilot_sdk' });
     expect(resolveRuntimeMode('claude-code', 'chat')).toEqual({ mode: 'chat' });
     expect(resolveRuntimeMode('claude-code')).toEqual({ mode: 'chat' });
     expect(bytes(CHAT_RUNTIME_FILE)).toBe(saved);
@@ -299,12 +303,11 @@ describe('a packaged stable build with Preview off', () => {
     expect(bytes(CHAT_RUNTIME_FILE)).toBe(saved);
   });
 
-  it('keeps the Dispatcher off with MCP off, without changing its saved switch, and starts no bridge for it', () => {
+  it('keeps the Dispatcher on with an MCP switch saved off from before, without changing its saved switch', () => {
     write('mcp-settings.json', { enabled: false, projectDefault: false });
     relaunch();
     const saved = bytes(DISPATCHER_FILE);
-    expect(isDispatcherEnabled()).toBe(false);
-    expect(isMcpEnabledForAny()).toBe(false);
+    expect(isDispatcherEnabled()).toBe(true);
     expect(bytes(DISPATCHER_FILE)).toBe(saved);
   });
 
@@ -443,7 +446,7 @@ describe.each([
     expect(newChromeEnabled()).toBe(true);
     expect(uiChrome()).toBe('v2');
     expect(isChatEnabled()).toBe(true);
-    expect(isCopilotSdkEnabled()).toBe(true);
+    expect(resolveRuntimeMode('copilot-cli', 'chat')).toEqual({ mode: 'chat', driver: 'copilot_sdk' });
     expect(resolveRuntimeMode('claude-code').mode).toBe('chat');
     expect(isDispatcherEnabled()).toBe(true);
     expect(dispatcherCapability()).toMatchObject({ newLayout: true, flagOn: true, enabled: true });

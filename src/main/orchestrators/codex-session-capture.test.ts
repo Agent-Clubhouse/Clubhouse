@@ -10,6 +10,7 @@ import * as path from 'path';
 vi.mock('../services/log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../util/shell', () => ({ getShellEnvironment: vi.fn(() => ({ PATH: '' })), invalidateShellEnvironmentCache: vi.fn() }));
 
+import { getShellEnvironment } from '../util/shell';
 import { CodexCliProvider } from './codex-cli-provider';
 
 const CWD = '/work/radiant-bobcat';
@@ -23,7 +24,6 @@ const ID_OLD = '01a0ffff-0000-7000-8000-000000000004';
 
 let home: string;
 const provider = new CodexCliProvider();
-const env = () => ({ CODEX_HOME: home });
 
 /** Write a rollout like Codex does: `sessions/YYYY/MM/DD/rollout-<local stamp>-<id>.jsonl`, opened by session_meta. */
 function rollout(id: string, opts: { cwd: string; started: number; lastWrite: number; pad?: number }): string {
@@ -46,11 +46,15 @@ function rollout(id: string, opts: { cwd: string; started: number; lastWrite: nu
   return file;
 }
 
-beforeEach(() => { home = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-')); });
+// CODEX_HOME comes from the environment agents launch with.
+beforeEach(() => {
+  home = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'));
+  vi.mocked(getShellEnvironment).mockReturnValue({ PATH: '', CODEX_HOME: home });
+});
 afterEach(() => { fs.rmSync(home, { recursive: true, force: true }); });
 
 describe('CodexCliProvider.findRunSession (#2132)', () => {
-  const find = (resumedId?: string) => provider.findRunSession({ cwd: CWD, startedAt: RUN_START, endedAt: RUN_END, resumedId, profileEnv: env() });
+  const find = (resumedId?: string) => provider.findRunSession({ cwd: CWD, startedAt: RUN_START, endedAt: RUN_END, resumedId });
 
   it('finds the rollout this run wrote for its cwd', async () => {
     rollout(ID_A, { cwd: CWD, started: RUN_START + 7_000, lastWrite: RUN_END - 1_000 });
@@ -97,7 +101,8 @@ describe('CodexCliProvider.findRunSession (#2132)', () => {
     rollout(ID_A, { cwd: CWD, started: RUN_START + 7_000, lastWrite: RUN_END - 1_000 });
     const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-empty-'));
     try {
-      expect(await provider.findRunSession({ cwd: CWD, startedAt: RUN_START, endedAt: RUN_END, profileEnv: { CODEX_HOME: elsewhere } })).toBeNull();
+      vi.mocked(getShellEnvironment).mockReturnValue({ PATH: '', CODEX_HOME: elsewhere });
+      expect(await provider.findRunSession({ cwd: CWD, startedAt: RUN_START, endedAt: RUN_END })).toBeNull();
     } finally {
       fs.rmSync(elsewhere, { recursive: true, force: true });
     }
@@ -107,12 +112,12 @@ describe('CodexCliProvider.findRunSession (#2132)', () => {
 describe('CodexCliProvider.hasSession (#2132)', () => {
   it('is true for a rollout in the store and false for a made-up id', async () => {
     rollout(ID_A, { cwd: CWD, started: RUN_START, lastWrite: RUN_END });
-    expect(await provider.hasSession(ID_A, env())).toBe(true);
-    expect(await provider.hasSession('fba922a2-0000-4000-8000-000000000000', env())).toBe(false);
+    expect(await provider.hasSession(ID_A)).toBe(true);
+    expect(await provider.hasSession('fba922a2-0000-4000-8000-000000000000')).toBe(false);
   });
 
   it('is false when CODEX_HOME has no session store at all', async () => {
-    expect(await provider.hasSession(ID_A, env())).toBe(false);
+    expect(await provider.hasSession(ID_A)).toBe(false);
   });
 });
 

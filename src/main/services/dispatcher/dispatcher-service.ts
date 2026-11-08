@@ -4,10 +4,13 @@
  * folder's `.clubhouse/agents.json` like any agent's, so the usual agent
  * config store reads and writes it; it is never added to projectStore.
  *
- * Instructions are a file, like every other persona's: the resolved
- * `dispatcher` persona is written to the provider's instructions file in the
- * folder at create, on app start and whenever its CLI changes. There is no
- * systemPrompt path.
+ * Instructions are a file: Clubhouse's own Dispatcher text
+ * (`dispatcher-instructions.md`) is written to the provider's instructions
+ * file in the folder at create, on app start and whenever its CLI changes.
+ * There is no systemPrompt path. The Dispatcher is known by its folder and
+ * its agent id (isDispatcherPath, isDispatcherAgentId), never by a persona:
+ * one created before #2901 still has `persona: 'dispatcher'` in its config,
+ * which nothing reads.
  *
  * On by default in the new layout: a missing switch creates the agent's record
  * and writes its instructions. Nothing here ever starts it, so that costs no
@@ -24,23 +27,23 @@ import * as agentConfig from '../agent-config';
 import * as agentSystem from '../agent-system';
 import { getAllProviders, getProvider, type OrchestratorId } from '../../orchestrators';
 import { getSettings as getOrchestratorSettings, whenDefaultsDetected } from '../orchestrator-settings';
-import { resolvePersonaContent } from '../materialization-service';
+import dispatcherInstructions from './dispatcher-instructions.md';
 import { appLog } from '../log-service';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import type { DispatcherState } from '../../../shared/dispatcher-types';
 import type { DurableAgentConfig } from '../../../shared/types';
 import { agentRegistry } from '../agent-registry';
-import { isMcpOnAtAppLevel, onMcpEnablementChanged } from '../mcp-settings';
 import { newChromeEnabled } from '../../window-chrome';
-import { MCP_REQUIRED_MESSAGE } from '../../../shared/orchestration-policy';
 import { DISPATCHER_CLASSIC_MESSAGE } from '../../../shared/dispatcher-types';
-import { DISPATCHER_PERSONA, getDispatcherNotesPath, getDispatcherPath, isDispatcherPath } from './dispatcher-paths';
+import { getDispatcherNotesPath, getDispatcherPath, isDispatcherPath } from './dispatcher-paths';
 import { dispatcherEnablement, getSettings as getDispatcherSettings, isDispatcherEnabled, updateSettings } from './dispatcher-settings';
 
-export { DISPATCHER_PERSONA, getDispatcherPath, getDispatcherNotesPath, isDispatcherPath } from './dispatcher-paths';
+export { getDispatcherPath, getDispatcherNotesPath, isDispatcherPath } from './dispatcher-paths';
 export { isDispatcherEnabled, DISPATCHER_FLAG } from './dispatcher-settings';
 
 const NS = 'core:dispatcher';
+/** What the Dispatcher's instructions file holds. Clubhouse owns it: there is no project or user copy. */
+export const DISPATCHER_INSTRUCTIONS: string = dispatcherInstructions;
 export const DISPATCHER_NAME = 'Dispatcher';
 
 /** The last config read from disk; null before the Dispatcher was first created. */
@@ -69,10 +72,9 @@ export function getDispatcherState(): DispatcherState {
   const { enabled, savedOn, reason } = dispatcherEnablement();
   return {
     enabled,
-    flagOn: isMcpOnAtAppLevel(),
+    flagOn: true,
     savedOn,
     offReason: reason,
-    mcpOff: !isMcpOnAtAppLevel(),
     classic: !newChromeEnabled(),
     running: !!config && !!agentRegistry.get(config.id),
     agentId: config?.id ?? null,
@@ -152,16 +154,13 @@ async function ensureCreated(): Promise<DurableAgentConfig> {
     false,
     orchestrator,
     true, // free agent mode
-    undefined,
-    undefined,
-    DISPATCHER_PERSONA,
   );
-  await agentConfig.updateDurableConfig(dir, created.id, { idleSleep: 'never', runtimeMode: 'chat', mcpOverride: true });
+  await agentConfig.updateDurableConfig(dir, created.id, { idleSleep: 'never', runtimeMode: 'chat' });
   appLog(NS, 'info', 'Dispatcher created', { meta: { agentId: created.id, orchestrator } });
   return (await agentConfig.getDurableConfig(dir, created.id)) ?? created;
 }
 
-/** Write the resolved `dispatcher` persona to the CLI's instructions file in the folder. */
+/** Write the Dispatcher's instructions to the CLI's instructions file in the folder. */
 async function writeInstructions(agent: DurableAgentConfig): Promise<void> {
   const dir = getDispatcherPath();
   const providerId = agent.orchestrator ?? defaultDispatcherOrchestrator();
@@ -170,9 +169,7 @@ async function writeInstructions(agent: DurableAgentConfig): Promise<void> {
     appLog(NS, 'warn', 'No provider to write Dispatcher instructions for', { meta: { orchestrator: providerId } });
     return;
   }
-  const content = await resolvePersonaContent(dir, agent.persona ?? DISPATCHER_PERSONA);
-  if (!content) return;
-  await provider.writeInstructions(dir, content);
+  await provider.writeInstructions(dir, DISPATCHER_INSTRUCTIONS);
   instructionsWrittenFor = provider.id;
 }
 
@@ -217,22 +214,14 @@ function watchChanges(): void {
       });
     });
   }),
-  // MCP at app level turns it off and on, without touching what is saved.
-  onMcpEnablementChanged(() => {
-    void enqueue(reconcile).catch((err) => {
-      appLog(NS, 'warn', 'Dispatcher update after an MCP change failed', {
-        meta: { error: err instanceof Error ? err.message : String(err) },
-      });
-    });
-  }),
-  // Its row and view stay while it runs, whatever MCP does.
+  // Its row and view stay while it runs.
   agentRegistry.onAuthChange((agentId) => { if (agentId === config?.id) emitChanged(); })];
   stopWatching = () => { for (const unsubscribe of unsubscribers) unsubscribe(); };
 }
 
 /**
  * At app start: read the existing record, and when the Dispatcher is on,
- * create it if needed and rewrite its instructions so persona updates reach it.
+ * create it if needed and rewrite its instructions so a new app version's text reaches it.
  * Creates nothing while it is off, and never starts it.
  */
 export function initDispatcher(): Promise<void> {
@@ -246,26 +235,15 @@ export function initDispatcher(): Promise<void> {
 /**
  * Turn the Dispatcher on or off from Settings > Dispatcher or a phone. Resolves
  * with the new state. Off always works. On is refused, with nothing saved, where
- * it couldn't take effect: without MCP at app level, and in the classic layout
- * unless its saved value is already on (#2565).
+ * it couldn't take effect: in the classic layout unless its saved value is
+ * already on (#2565).
  */
 export async function setDispatcherEnabled(on: boolean): Promise<DispatcherState> {
   if (on && getDispatcherSettings().enabled !== true) {
-    if (!isMcpOnAtAppLevel()) throw new Error(MCP_REQUIRED_MESSAGE);
     if (!newChromeEnabled()) throw new Error(DISPATCHER_CLASSIC_MESSAGE);
   }
   await updateSettings((current) => ({ ...current, enabled: on }));
   await enqueue(reconcile);
-  return getDispatcherState();
-}
-
-/** Stop the running agent and keep every saved value. For the choice in the MCP turn-off dialog. */
-export async function stopDispatcherNow(): Promise<DispatcherState> {
-  await enqueue(async () => {
-    config = await readConfig();
-    if (config) await stopAgent(config);
-    emitChanged();
-  });
   return getDispatcherState();
 }
 

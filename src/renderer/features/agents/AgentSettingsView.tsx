@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { Agent, QuickAgentDefaults, MaterializationPreview, McpCatalogArg, McpCatalogEntry, McpCatalogEntryWithState } from '../../../shared/types';
+import { Agent, QuickAgentDefaults, McpCatalogArg, McpCatalogEntry, McpCatalogEntryWithState } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useContextWindowOptions } from '../../hooks/useContextWindowOptions';
@@ -10,21 +10,13 @@ import { useCliChangeConfirm } from './useCliChangeConfirm';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
-import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { HandshakeRetry } from './HandshakeRetry';
 import { UtilityTerminal } from './UtilityTerminal';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
 import { EmojiPicker } from '../../components/EmojiPicker';
 import { SkillsSection } from './SkillsSection';
-import { AgentTemplatesSection } from './AgentTemplatesSection';
 import { McpJsonSection } from './McpJsonSection';
-import { WildcardSettingsForm } from './WildcardSettingsForm';
 import { AgentAvatar } from './AgentAvatar';
-import { TemplateConfigDialog, type TemplateConfig } from './TemplateConfigDialog';
-import type { RegisteredPluginAgentTemplate } from '../../plugins/plugin-agent-template-registry';
-import { exportAgentAsTemplate } from '../blueprints/agent-template-export';
-import { serializeManifest } from '../blueprints/blueprint-export';
-import { PERSONA_TEMPLATES } from '../personas';
 import type { AgentRuntimeMode } from '../../../shared/chat';
 import { Toggle } from '../../components/Toggle';
 import { Button } from '../../components/Button';
@@ -44,6 +36,13 @@ import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { Field, FieldLabel, inputClass, PageTitle, SectionHeading, selectClass, textareaClass } from './agentSettingsUi';
 import { AgentHelpersSettings } from './helpers/AgentHelpersSettings';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
+import type { ManagedAgentSetup } from '../../../shared/managed-agents-types';
+import { ManagedBuilder, PreviewPane } from '../managed/ManagedBuilder';
+import { ManagedEffortField, ManagedHelperTemplateField, ManagedIdleSleepField } from '../managed/ManagedAgentSettingsFields';
+import { ManagedGeneralSection } from '../managed/ManagedGeneralSection';
+import { legacyUse } from '../managed/legacy';
+import { isDispatcherAgent } from '../dispatcher/dispatcherStore';
+import { skillsFolderOf } from '../../../shared/skills-folder';
 
 interface Props {
   agent: Agent;
@@ -153,22 +152,22 @@ function McpConfigRow({
 
 export function AgentSettingsView({ agent }: Props) {
   const isRunning = agent.status === 'running';
-  const { closeAgentSettings, updateAgent, loadDurableAgents } = useAgentStore();
+  const { closeAgentSettings, updateAgent } = useAgentStore();
   const { projects, activeProjectId } = useProjectStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const worktreePath = agent.worktreePath || activeProject?.path || '';
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
-  // Resolve orchestrators the same way AddAgentDialog does — profile-aware and scoped
-  // to this agent's project — so the selector behaves consistently with agent creation.
+  // Resolve orchestrators the same way AddAgentDialog does, so the selector
+  // behaves consistently with agent creation.
   const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
-  const { effectiveOrchestrators } = useEffectiveOrchestrators(projectPath);
+  const { effectiveOrchestrators } = useEffectiveOrchestrators();
   const agentOrchestrator = agent.orchestrator || 'claude-code';
   // Scope the model list to *this agent's* orchestrator, not the project default —
   // otherwise a Codex/Copilot agent is offered (and validated against) Claude's ids.
   const { options: MODEL_OPTIONS, loading: modelOptionsLoading } = useModelOptions(agentOrchestrator);
   // Always offer the agent's current orchestrator, even if it's disabled app-wide or
-  // missing from this machine's settings (e.g. a worktree-synced agent whose project
-  // profile wasn't synced). See buildOrchestratorOptions / #fix-orchestrator-selector AC #2.
+  // missing from this machine's settings (e.g. a worktree-synced agent from a
+  // machine with other CLIs enabled). See buildOrchestratorOptions / #fix-orchestrator-selector AC #2.
   const orchestratorOptions = useMemo(
     () => buildOrchestratorOptions(effectiveOrchestrators, allOrchestrators, agentOrchestrator),
     [effectiveOrchestrators, allOrchestrators, agentOrchestrator],
@@ -189,16 +188,49 @@ export function AgentSettingsView({ agent }: Props) {
     resetPages();
   }, [agent.id, resetPages]);
 
+  // Clubhouse-managed agents (#2893): the setup on the agent's config, kept fresh as parts change.
+  const [managedSetup, setManagedSetup] = useState<ManagedAgentSetup | null>(null);
+  const [clubhouseFeatures, setClubhouseFeatures] = useState(true);
+  useEffect(() => {
+    if (!projectPath || isRemoteProjectId(agent.projectId)) { setManagedSetup(null); return; }
+    let cancelled = false;
+    const load = () => {
+      window.clubhouse.agent.getDurableConfig(projectPath, agent.id)
+        .then((c) => { if (!cancelled) { setManagedSetup(c?.managed ?? null); setClubhouseFeatures(c?.clubhouseFeatures !== false); } })
+        .catch(() => { /* telemetry-exempt: the General page shows the agent as unmanaged until a read works */ });
+    };
+    load();
+    const off = window.clubhouse.managed.onChanged(load);
+    return () => { cancelled = true; off(); };
+  }, [projectPath, agent.id, agent.projectId]);
+  const isManagedAgent = !!managedSetup;
+  // One object per agent, so the builder doesn't see a new target on every render.
+  const builderAgent = useMemo(
+    () => (projectPath ? { projectPath, agentId: agent.id, agentName: agent.name } : null),
+    [projectPath, agent.id, agent.name],
+  );
+  const builderTarget = useMemo(() => (builderAgent ? { kind: 'agent' as const, agent: builderAgent } : null), [builderAgent]);
+
   // Helpers (#2232): not for a helper or an agent on another machine, like the Orchestration card.
   const setHiddenPages = useAgentSettingsPages((s) => s.setHiddenPages);
   const hiddenPages = useMemo(
-    () => hiddenAgentSettingsPages(agent, isRemoteProjectId(agent.projectId)),
-    [agent.parentAgentId, agent.projectId],
+    () => hiddenAgentSettingsPages(agent, isRemoteProjectId(agent.projectId), !!managedSetup),
+    [agent.parentAgentId, agent.projectId, !!managedSetup],
   );
   useEffect(() => {
     setHiddenPages(hiddenPages);
   }, [agent.id, hiddenPages, setHiddenPages]);
   const showHelpers = !hiddenPages.includes('helpers');
+
+  // A page asked for by whoever opened settings ("What changed" asks for Preview),
+  // selected once it shows for this agent: a managed agent's builder pages appear after its setup loads.
+  const requestedPage = useAgentSettingsPages((s) => s.requestedPage);
+  useEffect(() => {
+    if (!requestedPage || requestedPage.agentId !== agent.id || hiddenPages.includes(requestedPage.page)) return;
+    setPage(requestedPage.page);
+    // The classic shell stacks the pages: bring the asked-for section into view instead.
+    if (!pageMode) document.getElementById(`agent-settings-section-${requestedPage.page}`)?.scrollIntoView?.({ block: 'start' });
+  }, [requestedPage, agent.id, hiddenPages, setPage, pageMode]);
 
   // Shell in worktree: the sidebar row (new chrome) or the row under the page
   // (classic) opens it. It stays mounted once opened.
@@ -320,6 +352,11 @@ export function AgentSettingsView({ agent }: Props) {
       };
     });
   };
+
+  // A managed agent's model, Free Agent Mode and effort can change while it runs: they
+  // apply at its next start, and the setup-changed bar offers Restart (D7, D18).
+  // Its CLI still waits for it to stop, as for any agent.
+  const lockedWhileRunning = isRunning && !managedSetup;
 
   const { requestCliChange, cliChangeDialog } = useCliChangeConfirm({
     projectPath,
@@ -465,16 +502,8 @@ export function AgentSettingsView({ agent }: Props) {
   const [agentMcpConfigs, setAgentMcpConfigs] = useState<Record<string, Record<string, string>>>({});
   const [mcpLoaded, setMcpLoaded] = useState(false);
 
-  // Clubhouse Mode state
-  const isClubhouseModeEnabled = useClubhouseModeStore((s) => s.isEnabledForProject);
-  const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
-  const [clubhouseModeOverride, setClubhouseModeOverride] = useState(false);
-  const [preview, setPreview] = useState<MaterializationPreview | null>(null);
-  const [showResolvedPreview, setShowResolvedPreview] = useState(false);
-  const clubhouseActive = projectPath ? isClubhouseModeEnabled(projectPath) : false;
-  const isManagedByClubhouse = clubhouseActive && !clubhouseModeOverride;
-
-  // Persona state (per-agent override of project default)
+  // The persona an unmanaged agent that couldn't switch still names (#2901):
+  // General › Setup says so beside the offer to switch.
   const [agentPersona, setAgentPersona] = useState('');
 
   // Chat / CLI runtime override ('' = provider default). Only offered
@@ -492,10 +521,6 @@ export function AgentSettingsView({ agent }: Props) {
 
 
   useEffect(() => {
-    loadClubhouseSettings();
-  }, [loadClubhouseSettings]);
-
-  useEffect(() => {
     let cancelled = false;
     // Same gate as main: on unless the flag is saved off.
     window.clubhouse.app.getExperimentalSettings()
@@ -504,7 +529,7 @@ export function AgentSettingsView({ agent }: Props) {
     return () => { cancelled = true; };
   }, []);
 
-  // Load clubhouse mode override + persona from durable config
+  // Load the persona and runtime from durable config
   useEffect(() => {
     if (!projectPath) return;
     let cancelled = false;
@@ -515,7 +540,6 @@ export function AgentSettingsView({ agent }: Props) {
       try {
         const config = await window.clubhouse.agent.getDurableConfig(projectPath, agent.id);
         if (cancelled || request !== runtimeRequest.current) return;
-        setClubhouseModeOverride(config?.clubhouseModeOverride ?? false);
         setAgentPersona(config?.persona ?? '');
         if (request.epoch === epoch) setRuntimeMode(config?.runtimeMode ?? '');
         setRuntimeLoadedTarget(runtimeTarget);
@@ -526,12 +550,6 @@ export function AgentSettingsView({ agent }: Props) {
     })();
     return () => { cancelled = true; request.epoch++; };
   }, [projectPath, agent.id, runtimeLoadAttempt]);
-
-  const handlePersonaChange = async (value: string) => {
-    if (!projectPath) return;
-    setAgentPersona(value);
-    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { persona: value });
-  };
 
   const handleRuntimeModeChange = async (value: AgentRuntimeMode | '') => {
     const request = runtimeRequest.current;
@@ -552,38 +570,6 @@ export function AgentSettingsView({ agent }: Props) {
     }
   };
 
-  // Load materialization preview when managed
-  useEffect(() => {
-    if (!projectPath || !isManagedByClubhouse) {
-      setPreview(null);
-      return;
-    }
-    (async () => {
-      try {
-        const p = await window.clubhouse.agentSettings.previewMaterialization(projectPath, agent.id);
-        setPreview(p);
-      } catch {
-        setPreview(null);
-      }
-    })();
-  }, [projectPath, agent.id, isManagedByClubhouse]);
-
-  const handleClubhouseOverrideChange = async (enabled: boolean) => {
-    if (!projectPath) return;
-    if (!enabled) {
-      // Clubhouse Mode takes these files over, so unsaved edits to them can't be saved any more.
-      const managed = barItems.filter((i) => i.key === 'instructions' || i.key === 'mcp' || i.key === 'permissions');
-      const openEditors = [sectionDirty.skills && 'skills', sectionDirty.definitions && 'agent definitions'].filter(Boolean) as string[];
-      for (const item of managed) item.discard();
-      const dropped = [...managed.map((i) => i.name), ...openEditors];
-      if (dropped.length > 0) {
-        useToastStore.getState().addToast(`Discarded unsaved changes to ${joinNames(dropped)}. Clubhouse Mode manages them now.`, 'info');
-      }
-    }
-    setClubhouseModeOverride(enabled);
-    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { clubhouseModeOverride: enabled });
-  };
-
   // Refresh counter — increment to force re-read from disk
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -592,101 +578,6 @@ export function AgentSettingsView({ agent }: Props) {
     setInstructionsDirty(false);
     setPermDirty(false);
     setQadDirty(false);
-  };
-
-  const [exportingTemplate, setExportingTemplate] = useState(false);
-
-  const handleExportAsTemplate = async () => {
-    if (exportingTemplate) return;
-    setExportingTemplate(true);
-    try {
-      const readPath = worktreePath || projectPath;
-      let instructionContent: string | undefined;
-      if (readPath && projectPath) {
-        try {
-          const content = await window.clubhouse.agentSettings.readInstructions(readPath, projectPath);
-          if (content) instructionContent = content;
-        } catch {
-          // Proceed without instructions
-        }
-      }
-
-      const manifest = exportAgentAsTemplate(agent, {
-        instructionContent,
-        mcpServers: agent.mcpIds,
-      });
-      const json = serializeManifest(manifest);
-      await navigator.clipboard.writeText(json);
-    } catch {
-      // Silent failure (consistent with codebase pattern)
-    } finally {
-      setExportingTemplate(false);
-    }
-  };
-
-  // Plugin template → TemplateConfigDialog flow
-  const [pendingPluginTemplate, setPendingPluginTemplate] = useState<RegisteredPluginAgentTemplate | null>(null);
-
-  const handleCreateFromPluginTemplate = (entry: RegisteredPluginAgentTemplate) => {
-    setPendingPluginTemplate(entry);
-  };
-
-  const handlePluginTemplateCreate = async (templateConfig: TemplateConfig) => {
-    const entry = pendingPluginTemplate;
-    setPendingPluginTemplate(null);
-    if (!entry || !projectPath) return;
-
-    try {
-      const { name, color, model, orchestrator: orch, useWorktree, freeAgentMode, mcpIds } = templateConfig;
-
-      // Create durable agent with user-chosen config
-      const config = await window.clubhouse.agent.createDurable(
-        projectPath, name, color, model !== 'default' ? model : undefined, useWorktree,
-        orch, freeAgentMode || undefined, mcpIds, undefined,
-      );
-
-      const agentWorktree = config.worktreePath || worktreePath;
-
-      // Write plugin template prompt as the agent's instructions
-      if (entry.template.promptContent) {
-        await window.clubhouse.agentSettings.saveInstructions(agentWorktree, entry.template.promptContent, projectPath);
-      }
-
-      // Inject skills from the plugin template
-      if (entry.template.skills) {
-        for (const [skillName, content] of Object.entries(entry.template.skills)) {
-          await window.clubhouse.agentSettings.writeSkillContent(agentWorktree, skillName, content, projectPath);
-        }
-      }
-
-      // Inject MCP servers from the plugin template into the agent's .mcp.json
-      if (entry.template.mcpServers && Object.keys(entry.template.mcpServers).length > 0) {
-        const rawJson = await window.clubhouse.agentSettings.readMcpRawJson(agentWorktree, projectPath, config.id);
-        let mcpConfig: Record<string, unknown>;
-        try {
-          mcpConfig = JSON.parse(rawJson);
-        } catch {
-          mcpConfig = {};
-        }
-        if (!mcpConfig.mcpServers || typeof mcpConfig.mcpServers !== 'object') {
-          mcpConfig.mcpServers = {};
-        }
-        const servers = mcpConfig.mcpServers as Record<string, unknown>;
-        for (const [serverName, serverDef] of Object.entries(entry.template.mcpServers)) {
-          servers[serverName] = serverDef;
-        }
-        await window.clubhouse.agentSettings.writeMcpRawJson(agentWorktree, JSON.stringify(mcpConfig, null, 2), projectPath, config.id);
-      }
-
-      // Refresh agent list so the new agent appears
-      if (activeProject) {
-        await loadDurableAgents(activeProject.id, projectPath);
-      }
-
-      setRefreshKey((k) => k + 1);
-    } catch (err) {
-      console.error('Failed to create from plugin template:', err);
-    }
   };
 
   // Load quick agent defaults and agent model from config
@@ -858,8 +749,7 @@ export function AgentSettingsView({ agent }: Props) {
     if (localInstructionsFile === 'CLAUDE.md') return 'CLAUDE.md';
     return `${configDir}/${localInstructionsFile}`;
   })();
-  const skillsPathLabel = conventions ? `${conventions.configDir}/${conventions.skillsDir}/` : '.claude/skills/';
-  const agentTemplatesPathLabel = conventions ? `${conventions.configDir}/${conventions.agentTemplatesDir}/` : '.claude/agents/';
+  const skillsPathLabel = conventions ? `${skillsFolderOf(conventions)}/` : '.claude/skills/';
   const mcpPathLabel = conventions?.mcpConfigFile || '.mcp.json';
   const permissionsPathLabel = conventions?.permissionRules === false ? 'Not supported by this provider' : conventions ? `${conventions.configDir}/${conventions.localSettingsFile}` : '.claude/settings.local.json';
 
@@ -890,9 +780,9 @@ export function AgentSettingsView({ agent }: Props) {
   // ── One save bar ───────────────────────────────────────────────
   //
   // Text edits on this view (instructions, permissions, quick agent defaults)
-  // and the sections that join the bar (.mcp.json, wildcards) save and discard
-  // together. Skills and agent definition editors keep their own Save and
-  // Cancel, but their open edits still mark the page and guard leaving.
+  // and the .mcp.json section save and discard together. The skills editor
+  // keeps its own Save and Cancel, but its open edits still mark the page and
+  // guard leaving.
 
   const [sectionDirty, setSectionDirty] = useState<Record<SectionKey, boolean>>(NO_SECTION_DIRTY);
   const sectionHandles = useRef<Partial<Record<BarSectionKey, SaveHandle>>>({});
@@ -904,15 +794,14 @@ export function AgentSettingsView({ agent }: Props) {
     };
     const count = (p: AgentSettingsPage) => (n: number) => setCount(p, n);
     return {
-      mcpDirty: dirty('mcp'), wildcardsDirty: dirty('wildcards'), skillsDirty: dirty('skills'), definitionsDirty: dirty('definitions'),
-      mcpRegister: register('mcp'), wildcardsRegister: register('wildcards'),
-      skillsCount: count('skills'), definitionsCount: count('definitions'), mcpCount: count('mcp'),
+      mcpDirty: dirty('mcp'), skillsDirty: dirty('skills'),
+      mcpRegister: register('mcp'),
+      skillsCount: count('skills'), mcpCount: count('mcp'),
     };
   }, [setCount]);
 
   /** What the bar saves and discards, in page order. */
   const barItems: BarItem[] = [];
-  if (sectionDirty.wildcards) barItems.push({ key: 'wildcards', name: 'wildcards', save: () => sectionHandles.current.wildcards?.save() ?? Promise.resolve(), discard: () => sectionHandles.current.wildcards?.discard() });
   if (instructionsDirty) barItems.push({ key: 'instructions', name: 'instructions', save: handleSaveInstructions, discard: () => discardInstructions() });
   if (sectionDirty.mcp) barItems.push({ key: 'mcp', name: 'MCP servers', save: () => sectionHandles.current.mcp?.save() ?? Promise.resolve(), discard: () => sectionHandles.current.mcp?.discard() });
   if (permDirty) barItems.push({ key: 'permissions', name: 'permissions', save: handleSavePermissions, discard: () => discardPermissions() });
@@ -920,10 +809,8 @@ export function AgentSettingsView({ agent }: Props) {
 
   const dirtyPages = useMemo(() => {
     const dirty = new Set<AgentSettingsPage>();
-    if (sectionDirty.wildcards) dirty.add('general');
     if (instructionsDirty) dirty.add('instructions');
     if (sectionDirty.skills) dirty.add('skills');
-    if (sectionDirty.definitions) dirty.add('definitions');
     if (sectionDirty.mcp) dirty.add('mcp');
     if (permDirty) dirty.add('permissions');
     if (qadDirty) dirty.add('quick');
@@ -999,16 +886,6 @@ export function AgentSettingsView({ agent }: Props) {
   useEffect(() => () => setDirtyPages([]), [setDirtyPages]);
   const dirtyPageNames = dirtyPages.map((p) => AGENT_SETTINGS_PAGES.find((x) => x.page === p)?.label ?? p);
 
-  // ── Sidebar counts ─────────────────────────────────────────────
-  //
-  // The sections report their own counts as they load and change. Clubhouse
-  // Mode hides those sections, so their counts no longer apply.
-
-  const clearCounts = useAgentSettingsPages((s) => s.clearCounts);
-  useEffect(() => {
-    if (isManagedByClubhouse) clearCounts();
-  }, [isManagedByClubhouse, clearCounts]);
-
   // ── Pieces ─────────────────────────────────────────────────────
 
   const relativeWorktree = projectPath && worktreePath.startsWith(`${projectPath}/`)
@@ -1040,7 +917,7 @@ export function AgentSettingsView({ agent }: Props) {
     <div data-testid="agent-settings-running" className="h-10 mb-2 flex items-center gap-2 border-b border-surface-0 text-[13px]">
       <span className="w-2 h-2 rounded-full flex-shrink-0 bg-ctp-success" aria-hidden="true" />
       <span className="text-ctp-text">Working</span>
-      <span className="text-xs text-ctp-overlay1 truncate">Stop the agent to change these settings.</span>
+      <span className="text-xs text-ctp-overlay1 truncate">{isManagedAgent ? 'Stop the agent to change its name or CLI. Other changes apply when it restarts.' : 'Stop the agent to change these settings.'}</span>
       <Button
         kind="ghost"
         onClick={handleStop}
@@ -1055,6 +932,118 @@ export function AgentSettingsView({ agent }: Props) {
   const freeAgentModeHelp = !permissionsSupported
     ? `Not supported by ${orchestratorName}.`
     : 'Handle permissions using the configured Free agent permission mode.';
+
+  // Runtime: on General for a plain agent, on Settings for a managed one (#2895).
+  const runtimeFields = (
+    <>
+      <SectionHeading title="Runtime" sub={isManagedAgent && isRunning ? 'Applies when it restarts' : 'Applied on the next wake'} />
+      {orchestratorOptions.length > 1 ? (
+        <Field label="Runs on" htmlFor="agent-settings-orchestrator">
+          <select
+            id="agent-settings-orchestrator"
+            value={agentOrchestrator}
+            onChange={(e) => void requestCliChange(e.target.value)}
+            disabled={isRunning}
+            title={stopFirst}
+            className={selectClass}
+          >
+            {orchestratorOptions.map((o) => (
+              <option key={o.id} value={o.id}>{o.displayName}</option>
+            ))}
+          </select>
+        </Field>
+      ) : (orchestratorInfo || orchestratorOptions[0]) ? (
+        <Field label="Runs on">
+          <span className="text-xs text-ctp-subtext1">{(orchestratorInfo || orchestratorOptions[0]).displayName}</span>
+        </Field>
+      ) : null}
+      <Field label="Model" htmlFor="agent-settings-model">
+        {agentModel === 'custom' && (
+          <input
+            type="text"
+            aria-label="Custom model"
+            value={agentCustomModel}
+            onChange={(e) => setAgentCustomModel(e.target.value)}
+            onBlur={handleCustomModelBlur}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCustomModelBlur(); }}
+            placeholder="e.g. claude-opus-4-6"
+            disabled={lockedWhileRunning}
+            spellCheck={false}
+            className={`${inputClass} w-44`}
+          />
+        )}
+        <select
+          id="agent-settings-model"
+          value={agentModel}
+          onChange={(e) => handleModelChange(e.target.value)}
+          disabled={lockedWhileRunning}
+          title={lockedWhileRunning ? stopFirst : undefined}
+          className={selectClass}
+        >
+          {MODEL_OPTIONS.map((opt) => (
+            <option key={opt.id} value={opt.id}>{opt.label}</option>
+          ))}
+          <option value="custom">Custom...</option>
+        </select>
+      </Field>
+      {isManagedAgent && projectPath && (
+        <ManagedEffortField projectPath={projectPath} agentId={agent.id} orchestrator={agentOrchestrator} model={savedModel} />
+      )}
+      <Field label={contextOptions?.label ?? 'Context'} help={contextWindowHelp(contextOptions)} htmlFor="agent-settings-context">
+        {/* Awake it can't change, so the saved choice is enough and the CLI's catalog isn't read. */}
+        {isRunning ? (
+          <span title={stopFirst} data-testid="agent-settings-context-saved">
+            {contextWindow ? `${formatContextChoice(contextWindow)} on the next start` : 'CLI default'}
+          </span>
+        ) : (
+          <ContextWindowSelect
+            id="agent-settings-context"
+            options={contextOptions}
+            value={contextWindow}
+            className={selectClass}
+            onChange={(v) => void handleContextWindowChange(v)}
+          />
+        )}
+        {contextWindowNotice && <p className="text-ctp-subtext0 mt-1" data-testid="agent-settings-context-notice">{contextWindowNotice}</p>}
+      </Field>
+      {chatFlagEnabled && (
+        <Field label="Runtime" help="Chat or CLI for this agent. Overrides the provider setting." htmlFor="agent-settings-runtime">
+          <select
+            id="agent-settings-runtime"
+            aria-label="Runtime"
+            value={runtimeMode}
+            onChange={(e) => handleRuntimeModeChange(e.target.value as AgentRuntimeMode | '')}
+            disabled={isRunning || runtimeSaving || runtimeLoadedTarget !== runtimeTarget}
+            title={stopFirst}
+            className={selectClass}
+          >
+            <option value="">Provider default</option>
+            <option value="chat">Chat</option>
+            <option value="terminal">CLI</option>
+          </select>
+          {runtimeLoadFailed && <p role="alert" className="text-ctp-error mt-1">Couldn't load the saved runtime. <button type="button" onClick={() => setRuntimeLoadAttempt((n) => n + 1)}>Retry loading runtime</button></p>}
+          {runtimeSaveFailed && <p role="alert" className="text-ctp-error mt-1">Couldn't save that setting, so it wasn't changed. Try again.</p>}
+        </Field>
+      )}
+      {chatFlagEnabled && projectPath && !isRemoteProjectId(agent.projectId) && (
+        <HandshakeRetry projectPath={projectPath} agentId={agent.id} provider={agentOrchestrator} runtime={runtimeMode} />
+      )}
+      <Field
+        label="Free Agent Mode"
+        help={freeAgentMode && permissionsSupported
+          ? <span className="text-ctp-error">Permissions follow the configured Free agent permission mode.</span>
+          : freeAgentModeHelp}
+        testId="agent-settings-free-agent-mode"
+      >
+        <Toggle
+          checked={freeAgentMode}
+          onChange={handleFreeAgentModeChange}
+          disabled={lockedWhileRunning || !permissionsSupported}
+          aria-label="Free Agent Mode"
+        />
+      </Field>
+    </>
+  );
 
   const general = (
     <>
@@ -1118,240 +1107,25 @@ export function AgentSettingsView({ agent }: Props) {
         </div>
       </Field>
 
-      <SectionHeading title="Runtime" sub="Applied on the next wake" />
-      {orchestratorOptions.length > 1 ? (
-        <Field label="Runs on" htmlFor="agent-settings-orchestrator">
-          <select
-            id="agent-settings-orchestrator"
-            value={agentOrchestrator}
-            onChange={(e) => void requestCliChange(e.target.value)}
-            disabled={isRunning}
-            title={stopFirst}
-            className={selectClass}
-          >
-            {orchestratorOptions.map((o) => (
-              <option key={o.id} value={o.id}>{o.displayName}</option>
-            ))}
-          </select>
-        </Field>
-      ) : (orchestratorInfo || orchestratorOptions[0]) ? (
-        <Field label="Runs on">
-          <span className="text-xs text-ctp-subtext1">{(orchestratorInfo || orchestratorOptions[0]).displayName}</span>
-        </Field>
-      ) : null}
-      <Field label="Model" htmlFor="agent-settings-model">
-        {agentModel === 'custom' && (
-          <input
-            type="text"
-            aria-label="Custom model"
-            value={agentCustomModel}
-            onChange={(e) => setAgentCustomModel(e.target.value)}
-            onBlur={handleCustomModelBlur}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleCustomModelBlur(); }}
-            placeholder="e.g. claude-opus-4-6"
-            disabled={isRunning}
-            spellCheck={false}
-            className={`${inputClass} w-44`}
-          />
-        )}
-        <select
-          id="agent-settings-model"
-          value={agentModel}
-          onChange={(e) => handleModelChange(e.target.value)}
-          disabled={isRunning}
-          title={stopFirst}
-          className={selectClass}
-        >
-          {MODEL_OPTIONS.map((opt) => (
-            <option key={opt.id} value={opt.id}>{opt.label}</option>
-          ))}
-          <option value="custom">Custom...</option>
-        </select>
-      </Field>
-      <Field label={contextOptions?.label ?? 'Context'} help={contextWindowHelp(contextOptions)} htmlFor="agent-settings-context">
-        {/* Awake it can't change, so the saved choice is enough and the CLI's catalog isn't read. */}
-        {isRunning ? (
-          <span title={stopFirst} data-testid="agent-settings-context-saved">
-            {contextWindow ? `${formatContextChoice(contextWindow)} on the next start` : 'CLI default'}
-          </span>
-        ) : (
-          <ContextWindowSelect
-            id="agent-settings-context"
-            options={contextOptions}
-            value={contextWindow}
-            className={selectClass}
-            onChange={(v) => void handleContextWindowChange(v)}
-          />
-        )}
-        {contextWindowNotice && <p className="text-ctp-subtext0 mt-1" data-testid="agent-settings-context-notice">{contextWindowNotice}</p>}
-      </Field>
-      {chatFlagEnabled && (
-        <Field label="Runtime" help="Chat or CLI for this agent. Overrides the provider setting." htmlFor="agent-settings-runtime">
-          <select
-            id="agent-settings-runtime"
-            aria-label="Runtime"
-            value={runtimeMode}
-            onChange={(e) => handleRuntimeModeChange(e.target.value as AgentRuntimeMode | '')}
-            disabled={isRunning || runtimeSaving || runtimeLoadedTarget !== runtimeTarget}
-            title={stopFirst}
-            className={selectClass}
-          >
-            <option value="">Provider default</option>
-            <option value="chat">Chat</option>
-            <option value="terminal">CLI</option>
-          </select>
-          {runtimeLoadFailed && <p role="alert" className="text-ctp-error mt-1">Couldn't load the saved runtime. <button type="button" onClick={() => setRuntimeLoadAttempt((n) => n + 1)}>Retry loading runtime</button></p>}
-          {runtimeSaveFailed && <p role="alert" className="text-ctp-error mt-1">Couldn't save that setting, so it wasn't changed. Try again.</p>}
-        </Field>
-      )}
-      {chatFlagEnabled && projectPath && !isRemoteProjectId(agent.projectId) && (
-        <HandshakeRetry projectPath={projectPath} agentId={agent.id} provider={agentOrchestrator} runtime={runtimeMode} />
-      )}
-      <Field
-        label="Persona"
-        help={<>Overrides the project persona when Clubhouse Mode is on. See <code className="font-mono">.clubhouse/clubhouse-mode.md</code>.</>}
-        htmlFor="agent-settings-persona"
-      >
-        <select
-          id="agent-settings-persona"
-          value={agentPersona}
-          onChange={(e) => handlePersonaChange(e.target.value)}
-          disabled={isRunning}
-          title={stopFirst}
-          className={selectClass}
-        >
-          <option value="">Project default</option>
-          {PERSONA_TEMPLATES.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-      </Field>
-      <Field
-        label="Free Agent Mode"
-        help={freeAgentMode && permissionsSupported
-          ? <span className="text-ctp-error">Permissions follow the configured Free agent permission mode.</span>
-          : freeAgentModeHelp}
-        testId="agent-settings-free-agent-mode"
-      >
-        <Toggle
-          checked={freeAgentMode}
-          onChange={handleFreeAgentModeChange}
-          disabled={isRunning || !permissionsSupported}
-          aria-label="Free Agent Mode"
+      {!isManagedAgent && runtimeFields}
+
+
+      {projectPath && !isRemoteProjectId(agent.projectId) && (
+        <ManagedGeneralSection
+          projectPath={projectPath}
+          agentId={agent.id}
+          agentName={agent.name}
+          setup={managedSetup}
+          clubhouseFeatures={clubhouseFeatures}
+          onClubhouseFeaturesChange={setClubhouseFeatures}
+          isRunning={isRunning}
+          legacy={isDispatcherAgent(agent) ? null : legacyUse({ managed: managedSetup ?? undefined, persona: agentPersona })}
         />
-      </Field>
-
-      {clubhouseActive && (
-        <>
-          <SectionHeading title="Clubhouse Mode" />
-          <Field
-            label="Local overrides"
-            help={isManagedByClubhouse
-              ? 'Off: settings come from project defaults and refresh when the agent wakes.'
-              : 'On: this agent keeps its own instructions, skills, MCP servers and permissions.'}
-            testId="agent-settings-clubhouse-mode"
-          >
-            <Toggle
-              checked={clubhouseModeOverride}
-              onChange={handleClubhouseOverrideChange}
-              disabled={isRunning}
-              aria-label="Local overrides"
-            />
-          </Field>
-          {isManagedByClubhouse && projectPath && (
-            <div className="pt-2">
-              <p className="text-xs text-ctp-overlay1 mb-2">
-                Personalize this agent with the wildcard values below. They save as overrides for this agent.
-              </p>
-              <WildcardSettingsForm
-                projectPath={projectPath}
-                agentId={agent.id}
-                disabled={isRunning}
-                refreshKey={refreshKey}
-                onDirtyChange={sectionCallbacks.wildcardsDirty}
-                onRegisterSave={sectionCallbacks.wildcardsRegister}
-              />
-            </div>
-          )}
-          {isManagedByClubhouse && preview && (
-            <button
-              type="button"
-              onClick={() => setShowResolvedPreview((v) => !v)}
-              aria-expanded={showResolvedPreview}
-              className="mt-3 h-7 text-xs text-ctp-subtext1 hover:text-ctp-text cursor-pointer flex items-center gap-1"
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
-                className={`transition-transform ${showResolvedPreview ? 'rotate-90' : ''}`}>
-                <path d="M9 18l6-6-6-6" />
-              </svg>
-              {showResolvedPreview ? 'Hide resolved preview' : 'Show resolved preview'}
-            </button>
-          )}
-          {isManagedByClubhouse && preview && showResolvedPreview && (
-            <div>
-              {preview.instructions && (
-                <>
-                  <SectionHeading title="Resolved instructions" />
-                  <pre className="bg-ctp-crust text-ctp-subtext1 text-xs font-mono rounded-md px-2.5 py-2 border border-surface-1 whitespace-pre-wrap max-h-40 overflow-y-auto">
-                    {preview.instructions}
-                  </pre>
-                </>
-              )}
-              {(preview.permissions.allow?.length || preview.permissions.deny?.length) ? (
-                <>
-                  <SectionHeading title="Resolved permissions" />
-                  {preview.permissions.allow && preview.permissions.allow.length > 0 && (
-                    <div className="mb-2">
-                      <div className="text-xs text-ctp-overlay1 mb-1">Allow</div>
-                      <pre className="bg-ctp-crust text-ctp-subtext1 text-xs font-mono rounded-md px-2.5 py-2 border border-surface-1">
-                        {preview.permissions.allow.join('\n')}
-                      </pre>
-                    </div>
-                  )}
-                  {preview.permissions.deny && preview.permissions.deny.length > 0 && (
-                    <div>
-                      <div className="text-xs text-ctp-overlay1 mb-1">Deny</div>
-                      <pre className="bg-ctp-crust text-ctp-subtext1 text-xs font-mono rounded-md px-2.5 py-2 border border-surface-1">
-                        {preview.permissions.deny.join('\n')}
-                      </pre>
-                    </div>
-                  )}
-                </>
-              ) : null}
-              {preview.mcpJson && (
-                <>
-                  <SectionHeading title="Resolved MCP config" />
-                  <pre className="bg-ctp-crust text-ctp-subtext1 text-xs font-mono rounded-md px-2.5 py-2 border border-surface-1 whitespace-pre-wrap max-h-32 overflow-y-auto">
-                    {preview.mcpJson}
-                  </pre>
-                </>
-              )}
-              {preview.skills.length > 0 && (
-                <>
-                  <SectionHeading title="Managed skills" />
-                  <p className="text-xs text-ctp-subtext1 font-mono">{preview.skills.join(', ')}</p>
-                </>
-              )}
-              {preview.agentTemplates.length > 0 && (
-                <>
-                  <SectionHeading title="Managed agent definitions" />
-                  <p className="text-xs text-ctp-subtext1 font-mono">{preview.agentTemplates.join(', ')}</p>
-                </>
-              )}
-            </div>
-          )}
-        </>
       )}
 
-      <SectionHeading title="Template" />
-      <Field label="Copy as template" help="Copies this agent's definition to the clipboard to share or reuse.">
-        <Button onClick={handleExportAsTemplate} disabled={exportingTemplate}>
-          Copy
-        </Button>
-      </Field>
-      {!isManagedByClubhouse && !pageMode && (
+      {!isManagedAgent && !pageMode && (
         <p className="mt-3 text-xs text-ctp-overlay1">
-          Skills, agent definitions and MCP settings live in the agent worktree. Agents that share a root directory share them.
+          Skills and MCP settings live in the agent worktree. Agents that share a root directory share them.
         </p>
       )}
     </>
@@ -1390,20 +1164,6 @@ export function AgentSettingsView({ agent }: Props) {
       hideTitle={pageMode}
       onDirtyChange={sectionCallbacks.skillsDirty}
       onCountChange={sectionCallbacks.skillsCount}
-    />
-  );
-
-  const definitionsSection = (
-    <AgentTemplatesSection
-      worktreePath={worktreePath}
-      projectPath={projectPath}
-      disabled={isRunning}
-      refreshKey={refreshKey}
-      pathLabel={agentTemplatesPathLabel}
-      onCreateFromPluginTemplate={handleCreateFromPluginTemplate}
-      hideTitle={pageMode}
-      onDirtyChange={sectionCallbacks.definitionsDirty}
-      onCountChange={sectionCallbacks.definitionsCount}
     />
   );
 
@@ -1536,17 +1296,24 @@ export function AgentSettingsView({ agent }: Props) {
   );
 
   // Orchestration (#2232): saved by its own controls, like the Orchestration card.
-  const helpersSettings = showHelpers ? <AgentHelpersSettings agent={agent} projectPath={projectPath} /> : null;
-
-  const managedNote = (
-    <p data-testid="agent-settings-managed" className="mt-3 text-[13px] text-ctp-subtext1">
-      Clubhouse Mode manages this from project defaults.{' '}
-      <button type="button" onClick={() => setPage('general')} className="text-ctp-accent hover:underline cursor-pointer">
-        Turn on local overrides in General
-      </button>{' '}
-      to edit it here.
-    </p>
-  );
+  // A managed agent has it on its Settings page, with its helper template (#2895).
+  const canOrchestrate = !agent.parentAgentId && !isRemoteProjectId(agent.projectId);
+  const helpersSettings = showHelpers || (isManagedAgent && canOrchestrate) ? (
+    <AgentHelpersSettings
+      agent={agent}
+      projectPath={projectPath}
+      helperDefaults={isManagedAgent && projectPath ? <ManagedHelperTemplateField projectPath={projectPath} agentId={agent.id} /> : undefined}
+    />
+  ) : null;
+  // A managed agent's Settings (#2895): everything that isn't a part, in one place.
+  const managedSettings = isManagedAgent && projectPath ? (
+    <>
+      {runtimeFields}
+      <SectionHeading title="Sleep" />
+      <ManagedIdleSleepField projectPath={projectPath} agentId={agent.id} />
+      {helpersSettings}
+    </>
+  ) : null;
 
   // ── Page content ───────────────────────────────────────────────
 
@@ -1556,49 +1323,83 @@ export function AgentSettingsView({ agent }: Props) {
       general: `How ${agent.name} looks and what it runs on`,
       instructions: <><span className="font-mono">{instructionsFileLabel}</span> in the agent worktree</>,
       skills: undefined,
-      definitions: undefined,
       mcp: undefined,
       permissions: <span className="font-mono">{permissionsPathLabel}</span>,
+      settings: <>Instructions don't grant access. These settings do.{isRunning ? <span className="ml-2 text-ctp-overlay1">· Changes apply when it restarts</span> : null}</>,
       helpers: `How ${agent.name} starts, runs and disposes of helper agents. The same switches are in its Orchestration card beside the chat.`,
       quick: `Defaults for quick agents ${agent.name} starts`,
+      preview: `What ${agent.name} gets at its next start`,
     };
+    const builderNote = isRunning ? <span className="ml-2 text-ctp-overlay1">· Changes apply when the next session starts</span> : null;
+    if (isManagedAgent && builderAgent) {
+      sub.instructions = <>In the order {agent.name} reads them{builderNote}</>;
+      sub.skills = <>Copied into {agent.name}'s folder at its next start{builderNote}</>;
+      sub.mcp = <>Sign-in comes from your environment{builderNote}</>;
+    }
     const content: Record<AgentSettingsPage, React.ReactNode> = {
       general,
       instructions: instructionsEditor,
       skills: skillsSection,
-      definitions: definitionsSection,
       mcp: mcpSections,
+      settings: managedSettings,
       permissions: permissionsEditor,
       helpers: helpersSettings,
       quick: quickDefaults,
+      preview: isManagedAgent && builderAgent ? <PreviewPane agent={builderAgent} /> : null,
     };
+    if (isManagedAgent && builderTarget) {
+      content.instructions = <ManagedBuilder target={builderTarget} tab="instructions" />;
+      content.skills = <ManagedBuilder target={builderTarget} tab="skills" />;
+      content.mcp = <ManagedBuilder target={builderTarget} tab="mcp" />;
+    }
     // Every page stays mounted and only the selected one shows, so edits held
     // inside a page (an open skill editor, .mcp.json) survive a page switch.
-    body = AGENT_SETTINGS_PAGES.filter(({ page: p }) => !hiddenPages.includes(p)).map(({ page: p, label }) => {
-      // Clubhouse Mode manages files in the worktree; the orchestration policy isn't one.
-      const managed = isManagedByClubhouse && p !== 'general' && p !== 'quick' && p !== 'helpers';
-      return (
-        <div key={p} data-testid={`agent-settings-page-${p}`} hidden={p !== page}>
-          <PageTitle title={label} sub={sub[p]} right={p === page ? reloadButton : undefined} />
-          {managed ? managedNote : content[p]}
+    body = AGENT_SETTINGS_PAGES.filter(({ page: p }) => !hiddenPages.includes(p)).map(({ page: p, label }) => (
+      <div key={p} data-testid={`agent-settings-page-${p}`} hidden={p !== page}>
+        <PageTitle title={label} sub={sub[p]} right={p === page ? reloadButton : undefined} />
+        {content[p]}
+      </div>
+    ));
+  } else if (isManagedAgent && builderAgent && builderTarget) {
+    // Classic shell, managed agent: Clubhouse writes its instructions, skills and
+    // MCP files at every start, so the builder takes the place of the file editors.
+    const builderNote = isRunning ? 'Changes apply when the next session starts' : undefined;
+    body = (
+      <>
+        {general}
+        <div id="agent-settings-section-instructions" data-testid="agent-settings-section-instructions">
+          <SectionHeading title="Instructions" sub={builderNote ?? `In the order ${agent.name} reads them`} />
+          <ManagedBuilder target={builderTarget} tab="instructions" />
         </div>
-      );
-    });
+        <div id="agent-settings-section-skills" data-testid="agent-settings-section-skills">
+          <SectionHeading title="Skills" sub={builderNote ?? `Copied into ${agent.name}'s folder at its next start`} />
+          <ManagedBuilder target={builderTarget} tab="skills" />
+        </div>
+        <div id="agent-settings-section-mcp" data-testid="agent-settings-section-mcp">
+          <SectionHeading title="MCP servers" sub={builderNote ?? 'Sign-in comes from your environment'} />
+          <ManagedBuilder target={builderTarget} tab="mcp" />
+        </div>
+        <div id="agent-settings-section-settings" data-testid="agent-settings-section-settings">
+          {managedSettings}
+        </div>
+        <div id="agent-settings-section-preview" data-testid="agent-settings-section-preview">
+          <SectionHeading title="Preview" sub={`What ${agent.name} gets at its next start`} />
+          <PreviewPane agent={builderAgent} />
+        </div>
+        <SectionHeading title="Quick agents" sub={`Defaults for quick agents ${agent.name} starts`} />
+        {quickDefaults}
+      </>
+    );
   } else {
     body = (
       <>
         {general}
-        {!isManagedByClubhouse && (
-          <>
-            <SectionHeading title="Instructions" sub={<span className="font-mono">{instructionsFileLabel}</span>} />
-            {instructionsEditor}
-            {skillsSection}
-            {definitionsSection}
-            {mcpSections}
-            <SectionHeading title="Permissions" sub={<span className="font-mono">{permissionsPathLabel}</span>} />
-            {permissionsEditor}
-          </>
-        )}
+        <SectionHeading title="Instructions" sub={<span className="font-mono">{instructionsFileLabel}</span>} />
+        {instructionsEditor}
+        {skillsSection}
+        {mcpSections}
+        <SectionHeading title="Permissions" sub={<span className="font-mono">{permissionsPathLabel}</span>} />
+        {permissionsEditor}
         {helpersSettings}
         <SectionHeading title="Quick agents" sub={`Defaults for quick agents ${agent.name} starts`} />
         {quickDefaults}
@@ -1706,32 +1507,18 @@ export function AgentSettingsView({ agent }: Props) {
         }}
       />
 
-      {pendingPluginTemplate && (
-        <TemplateConfigDialog
-          persona={{
-            id: `plugin-${pendingPluginTemplate.pluginId}-${pendingPluginTemplate.template.name}`,
-            name: pendingPluginTemplate.template.name,
-            description: pendingPluginTemplate.template.description || '',
-            content: pendingPluginTemplate.template.promptContent,
-          }}
-          personaColor="indigo"
-          projectPath={projectPath}
-          onClose={() => setPendingPluginTemplate(null)}
-          onCreate={handlePluginTemplateCreate}
-        />
-      )}
     </div>
   );
 }
 
 /** Sections that hold their own edits. */
-type SectionKey = 'mcp' | 'wildcards' | 'skills' | 'definitions';
+type SectionKey = 'mcp' | 'skills';
 /** Sections whose edits the save bar saves. */
-type BarSectionKey = 'mcp' | 'wildcards';
-const NO_SECTION_DIRTY: Record<SectionKey, boolean> = { mcp: false, wildcards: false, skills: false, definitions: false };
+type BarSectionKey = 'mcp';
+const NO_SECTION_DIRTY: Record<SectionKey, boolean> = { mcp: false, skills: false };
 
 interface BarItem {
-  key: 'wildcards' | 'instructions' | 'mcp' | 'permissions' | 'quick';
+  key: 'instructions' | 'mcp' | 'permissions' | 'quick';
   /** How the bar and its toast name it. */
   name: string;
   save: () => Promise<void>;

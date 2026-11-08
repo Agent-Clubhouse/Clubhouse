@@ -8,6 +8,7 @@ vi.mock('./git-handlers', () => ({ registerGitHandlers: vi.fn() }));
 vi.mock('./agent-handlers', () => ({ registerAgentHandlers: vi.fn() }));
 vi.mock('./agent-settings-handlers', () => ({ registerAgentSettingsHandlers: vi.fn() }));
 vi.mock('./skill-bundle-handlers', () => ({ registerSkillBundleHandlers: vi.fn() }));
+vi.mock('./managed-agents-handlers', () => ({ registerManagedAgentsHandlers: vi.fn() }));
 vi.mock('./app-handlers', () => ({ registerAppHandlers: vi.fn() }));
 vi.mock('./plugin-handlers', () => ({ registerPluginHandlers: vi.fn() }));
 vi.mock('./plugin-mcp-handlers', () => ({ registerPluginMcpHandlers: vi.fn() }));
@@ -19,7 +20,6 @@ vi.mock('./annex-handlers', () => ({
   maybeStartAnnexClient: vi.fn(),
 }));
 vi.mock('./marketplace-handlers', () => ({ registerMarketplaceHandlers: vi.fn() }));
-vi.mock('./profile-handlers', () => ({ registerProfileHandlers: vi.fn() }));
 vi.mock('./goobers-handlers', () => ({ registerGoobersHandlers: vi.fn() }));
 vi.mock('../orchestrators', () => ({ registerBuiltinProviders: vi.fn(), getAllProviders: vi.fn(() => []) }));
 vi.mock('../services/orchestrator-settings', () => ({ autoDetectDefaults: vi.fn(async () => {}) }));
@@ -46,6 +46,7 @@ import { registerGitHandlers } from './git-handlers';
 import { registerAgentHandlers } from './agent-handlers';
 import { registerAgentSettingsHandlers } from './agent-settings-handlers';
 import { registerSkillBundleHandlers } from './skill-bundle-handlers';
+import { registerManagedAgentsHandlers } from './managed-agents-handlers';
 import { registerAppHandlers } from './app-handlers';
 import { registerPluginHandlers } from './plugin-handlers';
 import { registerPluginMcpHandlers } from './plugin-mcp-handlers';
@@ -53,7 +54,6 @@ import { registerProcessHandlers } from './process-handlers';
 import { registerWindowHandlers } from './window-handlers';
 import { registerAnnexHandlers, maybeStartAnnex, maybeStartAnnexClient } from './annex-handlers';
 import { registerMarketplaceHandlers } from './marketplace-handlers';
-import { registerProfileHandlers } from './profile-handlers';
 import { registerGoobersHandlers } from './goobers-handlers';
 import { registerBuiltinProviders } from '../orchestrators';
 import * as hookServer from '../services/hook-server';
@@ -74,6 +74,7 @@ describe('registerAllHandlers', () => {
     expect(registerAgentHandlers).toHaveBeenCalled();
     expect(registerAgentSettingsHandlers).toHaveBeenCalled();
     expect(registerSkillBundleHandlers).toHaveBeenCalled();
+    expect(registerManagedAgentsHandlers).toHaveBeenCalled();
     expect(registerAppHandlers).toHaveBeenCalled();
     expect(registerPluginHandlers).toHaveBeenCalled();
     expect(registerPluginMcpHandlers).toHaveBeenCalled();
@@ -81,7 +82,6 @@ describe('registerAllHandlers', () => {
     expect(registerWindowHandlers).toHaveBeenCalled();
     expect(registerAnnexHandlers).toHaveBeenCalled();
     expect(registerMarketplaceHandlers).toHaveBeenCalled();
-    expect(registerProfileHandlers).toHaveBeenCalled();
     expect(registerGoobersHandlers).toHaveBeenCalled();
     expect(registerDefaultBroadcastPolicies).toHaveBeenCalled();
   });

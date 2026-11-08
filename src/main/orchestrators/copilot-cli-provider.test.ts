@@ -1082,11 +1082,16 @@ describe('CopilotCliProvider', () => {
         expect(await provider.listSessions('/project')).toEqual([]);
       });
 
-      it('finds a terminal run\'s session in the store, honoring the profile\'s COPILOT_HOME', async () => {
+      it('finds a terminal run\'s session in the store, honoring the launch environment\'s COPILOT_HOME', async () => {
         vi.mocked(findCopilotRunSession).mockResolvedValue('real-id');
-        const run = { cwd: '/wt', startedAt: 1, endedAt: 2, resumedId: 'r', profileEnv: { COPILOT_HOME: '/custom-copilot' } };
-        expect(await provider.findRunSession(run)).toBe('real-id');
-        expect(findCopilotRunSession).toHaveBeenCalledWith(custom, run);
+        vi.mocked(getShellEnvironment).mockReturnValue({ PATH: '/usr/bin', COPILOT_HOME: '/custom-copilot' });
+        try {
+          const run = { cwd: '/wt', startedAt: 1, endedAt: 2, resumedId: 'r' };
+          expect(await provider.findRunSession(run)).toBe('real-id');
+          expect(findCopilotRunSession).toHaveBeenCalledWith(custom, run);
+        } finally {
+          vi.mocked(getShellEnvironment).mockReturnValue({ PATH: '/usr/bin' });
+        }
       });
 
       describe('COPILOT_HOME', () => {
@@ -1098,7 +1103,7 @@ describe('CopilotCliProvider', () => {
           vi.mocked(getShellEnvironment).mockReturnValue({ PATH: '/usr/bin' });
         });
 
-        it('comes from the login shell when the profile has none', async () => {
+        it('comes from the login shell', async () => {
           vi.mocked(getShellEnvironment).mockReturnValue({ PATH: '/usr/bin', COPILOT_HOME: '/shell-copilot' });
           await provider.hasSession('id');
           expect(hasCopilotSession).toHaveBeenCalledWith(path.join('/shell-copilot', 'session-state'), 'id');
@@ -1110,28 +1115,30 @@ describe('CopilotCliProvider', () => {
           expect(hasCopilotSession).toHaveBeenCalledWith(path.join('/proc-copilot', 'session-state'), 'id');
         });
 
-        it('prefers the profile over the shell and process env', async () => {
+        it('prefers the login shell over Clubhouse\'s own environment', async () => {
           process.env.COPILOT_HOME = '/proc-copilot';
-          vi.mocked(getShellEnvironment).mockReturnValue({ COPILOT_HOME: '/shell-copilot' });
-          await provider.listSessions('/wt', { COPILOT_HOME: '/custom-copilot' });
+          vi.mocked(getShellEnvironment).mockReturnValue({ COPILOT_HOME: '/custom-copilot' });
+          await provider.listSessions('/wt');
           expect(listCopilotSessions).toHaveBeenCalledWith(custom, '/wt');
         });
 
         it('expands a leading ~', async () => {
-          await provider.hasSession('id', { COPILOT_HOME: '~/alt' });
+          vi.mocked(getShellEnvironment).mockReturnValue({ PATH: '/usr/bin', COPILOT_HOME: '~/alt' });
+          await provider.hasSession('id');
           expect(hasCopilotSession).toHaveBeenCalledWith(path.join('/home/user/alt', 'session-state'), 'id');
         });
 
         it('ignores the undocumented GH_COPILOT_CONFIG_DIR', async () => {
-          await provider.hasSession('id', { GH_COPILOT_CONFIG_DIR: '/custom-copilot' });
+          vi.mocked(getShellEnvironment).mockReturnValue({ PATH: '/usr/bin', GH_COPILOT_CONFIG_DIR: '/custom-copilot' });
+          await provider.hasSession('id');
           expect(hasCopilotSession).toHaveBeenCalledWith(store, 'id');
         });
       });
 
       it('checks a scraped id against the agent\'s cwd', async () => {
         vi.mocked(copilotSessionInCwd).mockResolvedValue(false);
-        expect(await provider.hasSessionForCwd('id', '/wt', { COPILOT_HOME: '/custom-copilot' })).toBe(false);
-        expect(copilotSessionInCwd).toHaveBeenCalledWith(custom, 'id', '/wt');
+        expect(await provider.hasSessionForCwd('id', '/wt')).toBe(false);
+        expect(copilotSessionInCwd).toHaveBeenCalledWith(store, 'id', '/wt');
       });
 
       it('checks a saved id against the store', async () => {
@@ -1186,7 +1193,7 @@ describe('CopilotCliProvider', () => {
         });
         readsAs('{"type":"result"}\n');
         const stats: TranscriptReadStats = {};
-        await provider.readSessionTranscript(sessionId, '/project', undefined, { stats });
+        await provider.readSessionTranscript(sessionId, '/project', { stats });
         expect(stats).toMatchObject({ probes: 3, found: true, bytesRead: 18 });
         expect(typeof stats.lookupMs).toBe('number');
         expect(typeof stats.readMs).toBe('number');

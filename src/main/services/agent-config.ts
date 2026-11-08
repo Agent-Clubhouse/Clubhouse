@@ -8,7 +8,7 @@ import { createHash, randomUUID } from 'crypto';
 import { app } from 'electron';
 import { DurableAgentConfig, DurableConfigUpdates, OrchestratorId, SessionInfo, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry, HelperCascadeResult, HelperDeleteChoice, HelperDisposeBlock, HelperDisposeChecks, HelperHandoff, HelperHandoffHow, HELPER_HANDOFF_HOWS } from '../../shared/types';
 import type { DurableAgentCreation, DurableCreationEvent, DurableCreationStage, DurableWorktreeOptions, StartDurableCreationParams } from '../../shared/types';
-import { isDisposedAgent, parentLinkError } from '../../shared/agent-helpers';
+import { isDisposedAgent, isEffortValue, parentLinkError } from '../../shared/agent-helpers';
 import { appLog } from './log-service';
 import { forgetAutoHelper } from './helper-auto-state';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
@@ -25,9 +25,12 @@ import { normalizeIdleSleep } from '../../shared/idle-sleep';
 import { setAgentIdleSleep } from './chat-idle-settings';
 import { assertAgentGitName, validateAgentGitName } from '../../shared/agent-name';
 import { ACCESS_LEVELS, type AgentAccessLevel, type OrchestrationPolicyConfig } from '../../shared/orchestration-policy';
-import { notifyPersonaChanged } from './persona-change-hook';
 import { uncommittedPorcelain } from './clubhouse-owned-files';
-import { DISPATCHER_PERSONA, isDispatcherPath } from './dispatcher/dispatcher-paths';
+import { isDispatcherPath } from './dispatcher/dispatcher-paths';
+import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedMigration, type ManagedMigrationFailure } from '../../shared/managed-agents-types';
+import { noteManagedSettingsChanged } from './managed-agents/changed-notice';
+import { forgetDelivery } from './managed-agents/delivery-records';
+import { legacyClubhouseModeEnabled } from './managed-agents/legacy-migration';
 
 /**
  * Non-blocking git command execution. Prevents UI freezes in large repos.
@@ -144,7 +147,29 @@ async function readAgentsEntry(projectPath: string): Promise<{ agents: DurableAg
 }
 
 const configCache = new Map<string, CacheEntry>();
-const configWatchers = new Map<string, FSWatcher>();
+
+/**
+ * A project's agents.json watcher. It stays open across its own events and
+ * cache clears (#2729): macOS can deliver events late or drop them when a
+ * watcher in the process opens or closes, so reopening on every event made
+ * later hand edits easy to miss. `check` is the backstop for a lost event.
+ */
+interface ConfigWatch {
+  /** Null once it has failed: the check keeps running until a read or write opens a new one. */
+  watcher: FSWatcher | null;
+  check: ReturnType<typeof setInterval>;
+  /** agents.json as last seen: inode, size and mtime, 'missing', or null before the first look. */
+  signature: string | null;
+  checking: boolean;
+}
+
+const configWatchers = new Map<string, ConfigWatch>();
+
+/**
+ * How often a watched agents.json is checked for a change the watcher missed.
+ * The watcher stays the fast path; this bounds how late a missed edit is seen.
+ */
+export const AGENTS_FILE_CHECK_INTERVAL_MS = 5_000;
 
 // ---------------------------------------------------------------------------
 // Cross-project durable ID ownership
@@ -696,6 +721,9 @@ async function writeAgentsToDiskWithOptions(
     await fsp.writeFile(tmpPath, JSON.stringify(agents, null, 2), 'utf-8');
     await fsp.rename(tmpPath, configPath);
   });
+  // The watcher reports this write, so the backstop check needn't report it again.
+  const watched = configWatchers.get(projectPath);
+  if (watched) void refreshAgentsFileSignature(watched, projectPath);
 
   if (!skipBackup && previousConfig !== null) {
     const backupTmpPath = backupPath + '.tmp.' + randomUUID().slice(0, 8);
@@ -765,27 +793,120 @@ function mergeExternalAgents(
 }
 
 function ensureConfigWatcher(projectPath: string): void {
-  if (configWatchers.has(projectPath)) return;
+  const previous = configWatchers.get(projectPath);
+  if (previous?.watcher) return;
+  let watcher: FSWatcher;
   try {
-    const watcher = watch(clubhouseDir(projectPath), (_eventType, filename) => {
+    watcher = watch(clubhouseDir(projectPath), (_eventType, filename) => {
       if (String(filename) !== 'agents.json') return;
-      const entry = configCache.get(projectPath);
-      if (entry && !entry.dirty && !entry.pendingFlush) {
-        clearAgentConfigCache(projectPath);
-      }
-      notifyAgentConfigChanged(projectPath);
+      onAgentsFileChanged(projectPath);
+      const watched = configWatchers.get(projectPath);
+      if (watched?.watcher === watcher) void refreshAgentsFileSignature(watched, projectPath);
     });
     watcher.on('error', (err) => {
       appLog('core:agent-config', 'warn', 'Failed to watch agents.json for external changes', {
         meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
       });
+      const watched = configWatchers.get(projectPath);
+      if (watched?.watcher === watcher) onConfigWatcherFailed(projectPath, watched);
     });
-    configWatchers.set(projectPath, watcher);
   } catch (err) {
     appLog('core:agent-config', 'warn', 'Failed to watch agents.json for external changes', {
       meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
     });
+    return;
   }
+  // A failed watcher's check hands over what it last saw, so a change in between is still found.
+  if (previous) closeConfigWatch(projectPath, previous);
+  const watched: ConfigWatch = {
+    watcher,
+    check: setInterval(() => { void checkAgentsFile(projectPath, watched); }, AGENTS_FILE_CHECK_INTERVAL_MS),
+    signature: previous?.signature ?? null,
+    checking: false,
+  };
+  watched.check.unref?.();
+  configWatchers.set(projectPath, watched);
+  if (watched.signature === null) void refreshAgentsFileSignature(watched, projectPath);
+}
+
+/**
+ * A watcher that errored reports nothing more. Close it but keep its check, so
+ * an idle project still sees hand edits, and drop a clean cache entry, so the
+ * next read opens a new watcher.
+ */
+function onConfigWatcherFailed(projectPath: string, watched: ConfigWatch): void {
+  watched.watcher?.close();
+  watched.watcher = null;
+  const entry = configCache.get(projectPath);
+  if (entry && !entry.dirty && !entry.pendingFlush) dropCacheEntry(projectPath, entry);
+}
+
+/** An external change to agents.json: drop a clean cache entry and tell listeners. The watcher stays open. */
+function onAgentsFileChanged(projectPath: string): void {
+  const entry = configCache.get(projectPath);
+  if (entry && !entry.dirty && !entry.pendingFlush) {
+    dropCacheEntry(projectPath, entry);
+  }
+  notifyAgentConfigChanged(projectPath);
+}
+
+/** agents.json's inode, size and mtime; 'missing' if it isn't there; null if that can't be told. */
+async function agentsFileSignature(projectPath: string): Promise<string | null> {
+  try {
+    const stats = await fsp.stat(agentsConfigPath(projectPath));
+    if (!stats) return null;
+    return `${stats.ino}:${stats.size}:${stats.mtimeMs}`;
+  } catch (err) {
+    return isMissingFileError(err) ? 'missing' : null;
+  }
+}
+
+/** Looks at agents.json still in flight, so a test can wait for them rather than guess how long a stat takes. */
+const agentsFileLookups = new Set<Promise<void>>();
+
+function trackLookup(lookup: Promise<void>): Promise<void> {
+  agentsFileLookups.add(lookup);
+  void lookup.finally(() => agentsFileLookups.delete(lookup));
+  return lookup;
+}
+
+/** Test hook: resolves once no look at a watched agents.json is in flight. */
+export async function settleAgentsFileChecksForTests(): Promise<void> {
+  while (agentsFileLookups.size > 0) await Promise.allSettled([...agentsFileLookups]);
+}
+
+function refreshAgentsFileSignature(watched: ConfigWatch, projectPath: string): Promise<void> {
+  return trackLookup((async () => {
+    const signature = await agentsFileSignature(projectPath);
+    if (signature !== null && configWatchers.get(projectPath) === watched) watched.signature = signature;
+  })());
+}
+
+/** The backstop: a change the watcher didn't report, found by looking at the file. */
+function checkAgentsFile(projectPath: string, watched: ConfigWatch): Promise<void> {
+  if (watched.checking) return Promise.resolve();
+  return trackLookup(checkAgentsFileNow(projectPath, watched));
+}
+
+async function checkAgentsFileNow(projectPath: string, watched: ConfigWatch): Promise<void> {
+  watched.checking = true;
+  try {
+    const signature = await agentsFileSignature(projectPath);
+    if (signature === null || configWatchers.get(projectPath) !== watched) return;
+    const previous = watched.signature;
+    watched.signature = signature;
+    if (previous === null || previous === signature) return;
+    appLog('core:agent-config', 'debug', 'agents.json changed without a watcher event', { meta: { projectPath } });
+    onAgentsFileChanged(projectPath);
+  } finally {
+    watched.checking = false;
+  }
+}
+
+function closeConfigWatch(projectPath: string, watched: ConfigWatch): void {
+  clearInterval(watched.check);
+  watched.watcher?.close();
+  if (configWatchers.get(projectPath) === watched) configWatchers.delete(projectPath);
 }
 
 /**
@@ -1041,7 +1162,21 @@ export async function flushAllAgentConfigs(): Promise<void> {
   } while ([...configCache.values()].some((entry) => entry.dirty || entry.pendingFlush));
 }
 
-/** Clear the in-memory cache (cancels pending timers without flushing). Useful for tests. */
+/** Drop one project's cache entry and its pending flush timer. Its watcher stays open. */
+function dropCacheEntry(projectPath: string, entry: CacheEntry): void {
+  configGeneration++;
+  if (entry.flushTimer) {
+    clearTimeout(entry.flushTimer);
+    entry.flushTimer = null;
+  }
+  configCache.delete(projectPath);
+}
+
+/**
+ * Clear the in-memory cache (cancels pending timers without flushing) and close
+ * the agents.json watchers. Useful for tests. The watcher's own events use
+ * dropCacheEntry instead, so the watcher stays open (#2729).
+ */
 export function clearAgentConfigCache(projectPath?: string): void {
   configGeneration++;
   const entries = projectPath ? [configCache.get(projectPath)].filter((entry): entry is CacheEntry => !!entry) : configCache.values();
@@ -1053,15 +1188,14 @@ export function clearAgentConfigCache(projectPath?: string): void {
   }
   if (projectPath) {
     configCache.delete(projectPath);
-    configWatchers.get(projectPath)?.close();
-    configWatchers.delete(projectPath);
+    const watched = configWatchers.get(projectPath);
+    if (watched) closeConfigWatch(projectPath, watched);
   } else {
     configCache.clear();
     agentIdOwners.clear();
     creationRecoveries.clear();
-    for (const [watchedProjectPath, watcher] of configWatchers) {
-      watcher.close();
-      configWatchers.delete(watchedProjectPath);
+    for (const [watchedProjectPath, watched] of configWatchers) {
+      closeConfigWatch(watchedProjectPath, watched);
     }
   }
 }
@@ -1173,20 +1307,42 @@ export async function peekDurableConfigs(projectPath: string): Promise<readonly 
 }
 
 /**
- * The hidden dispatcher persona belongs to the Dispatcher, and the Dispatcher
- * keeps it (#2535, #2551). Every persona write checks this: creation, and
- * updateDurableConfig (so Apply persona and every settings path too).
- * `persona` is the persona the agent would end up with; '' or undefined is
- * none. Throws tagged `validation`.
+ * peekDurableConfigs, also saying whether the agents could be read, for a
+ * change that must not act on a project it can't see (D99). Not readable: the
+ * project folder is missing or can't be read (an unmounted drive), or
+ * agents.json or its backup is there but can't be read or doesn't parse into
+ * agents. A readable folder with neither file has no agents. Changes nothing.
  */
-export function assertPersonaAllowed(projectPath: string, persona: string | undefined): void {
-  if (isDispatcherPath(projectPath)) {
-    if (persona !== DISPATCHER_PERSONA) {
-      throw tagError(new Error("The Dispatcher's persona can't be changed."), 'validation');
-    }
-  } else if (persona === DISPATCHER_PERSONA) {
-    throw tagError(new Error('The Dispatcher persona is only for the Dispatcher.'), 'validation');
+export async function peekDurableConfigsChecked(projectPath: string): Promise<{ agents: readonly DurableAgentConfig[]; readable: boolean }> {
+  const entry = configCache.get(projectPath);
+  if (entry) return { agents: entry.agents, readable: true };
+  try {
+    if (!(await fsp.stat(projectPath)).isDirectory()) return { agents: [], readable: false };
+  } catch {
+    // telemetry-exempt: the caller is told the project couldn't be read
+    return { agents: [], readable: false };
   }
+  let present = false;
+  for (const file of [agentsConfigPath(projectPath), agentsBackupPath(projectPath)]) {
+    let raw: string;
+    try {
+      raw = await fsp.readFile(file, 'utf-8');
+    } catch (err) {
+      // telemetry-exempt: no file is no agents; any other error means it couldn't be read, which the caller is told
+      if (!isMissingFileError(err)) present = true;
+      continue;
+    }
+    present = true;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed)) continue;
+      const valid = parsed.filter(isAgentRecord);
+      if (valid.length > 0 || parsed.length === 0) return { agents: valid, readable: true };
+    } catch {
+      // telemetry-exempt: a file that doesn't parse; the caller is told it couldn't be read
+    }
+  }
+  return { agents: [], readable: !present };
 }
 
 /** What the catalog said about a saved context choice, checked before an update touches the agent. */
@@ -1248,11 +1404,10 @@ const AGENT_AUDIT_KEYS: Record<keyof DurableConfigUpdates, AuditKeyFormat | 'boo
   model: 'value',
   contextWindow: 'value',
   freeAgentMode: 'value',
-  clubhouseModeOverride: 'value',
-  mcpOverride: 'value',
   runtimeMode: 'value',
   idleSleep: 'value',
-  persona: 'value',
+  effort: 'value',
+  helperTemplateId: 'value',
   mission: 'value',
   sourceControlProvider: 'value',
   // These can hold commands, env or credentials, so never their values.
@@ -1268,8 +1423,6 @@ const AGENT_AUDIT_KEYS: Record<keyof DurableConfigUpdates, AuditKeyFormat | 'boo
 
 const AGENT_AUDIT_CATALOG: Readonly<Record<string, AuditKeyFormat>> = {
   ...Object.fromEntries(Object.entries(AGENT_AUDIT_KEYS).filter((e): e is [string, AuditKeyFormat] => e[1] !== 'bookkeeping')),
-  // Cleared by a change of model or CLI, not set through here.
-  effort: 'value',
 };
 
 /** updateDurable's fields: a name or an emoji says nothing about behaviour, and a name is free text. */
@@ -1286,7 +1439,14 @@ async function updateDurableConfigInner(
   updates: DurableConfigUpdates,
   beforeCommit?: () => void | Promise<void>,
 ): Promise<void> {
-  if (updates.persona !== undefined) assertPersonaAllowed(projectPath, updates.persona);
+  // Checked before anything changes, so a bad value never half-applies.
+  if (updates.effort !== undefined && updates.effort !== null && !isEffortValue(updates.effort)) {
+    throw new Error('effort must be an effort level such as low, medium or high');
+  }
+  if (updates.helperTemplateId !== undefined && updates.helperTemplateId !== null
+    && (typeof updates.helperTemplateId !== 'string' || updates.helperTemplateId.length > 128)) {
+    throw new Error('helperTemplateId must be a template id');
+  }
   const preflight = await preflightContextWindow(projectPath, agentId, updates);
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
@@ -1294,7 +1454,6 @@ async function updateDurableConfigInner(
   if (beforeCommit) await beforeCommit();
   const rollbackProvider = beforeCommit && updates.orchestrator !== undefined ? structuredClone(agent) : undefined;
   const auditBefore = pickAudited(agent, AGENT_AUDIT_CATALOG);
-  const previousPersona = agent.persona;
   if (updates.quickAgentDefaults !== undefined) {
     agent.quickAgentDefaults = updates.quickAgentDefaults;
   }
@@ -1333,6 +1492,17 @@ async function updateDurableConfigInner(
       delete agent.routing;
     }
   }
+  // After the CLI and model, which clear it: a level set with a new model is for that model.
+  if (updates.effort === null) {
+    delete agent.effort;
+  } else if (updates.effort !== undefined) {
+    agent.effort = updates.effort;
+  }
+  if (updates.helperTemplateId === null || updates.helperTemplateId === '') {
+    delete agent.helperTemplateId;
+  } else if (updates.helperTemplateId !== undefined) {
+    agent.helperTemplateId = updates.helperTemplateId;
+  }
   if (updates.contextWindow === null) {
     delete agent.contextWindow;
     delete agent.contextWindowNotice;
@@ -1348,13 +1518,6 @@ async function updateDurableConfigInner(
       agent.freeAgentMode = true;
     } else {
       delete agent.freeAgentMode;
-    }
-  }
-  if (updates.clubhouseModeOverride !== undefined) {
-    if (updates.clubhouseModeOverride) {
-      agent.clubhouseModeOverride = true;
-    } else {
-      delete agent.clubhouseModeOverride;
     }
   }
   if (updates.lastSleep !== undefined) {
@@ -1407,17 +1570,6 @@ async function updateDurableConfigInner(
       delete agent.mission;
     }
   }
-  if (updates.mcpOverride !== undefined) {
-    if (updates.mcpOverride === null) delete agent.mcpOverride;
-    else agent.mcpOverride = updates.mcpOverride;
-  }
-  if (updates.persona !== undefined) {
-    if (updates.persona) {
-      agent.persona = updates.persona;
-    } else {
-      delete agent.persona;
-    }
-  }
   if (updates.buildCommand !== undefined) {
     if (updates.buildCommand) {
       agent.buildCommand = updates.buildCommand;
@@ -1464,20 +1616,13 @@ async function updateDurableConfigInner(
     throw err;
   }
   if (updates.orchestrator !== undefined) noteProviderSelection(agentId, updates.orchestrator);
+  // A managed agent's setup-changed bar compares these with what its session started on.
+  // Auto-sleep and the helper template apply at once, but Settings and Preview show them, so they refresh too.
+  if (agent.managed && (updates.orchestrator !== undefined || updates.model !== undefined || updates.freeAgentMode !== undefined
+    || updates.effort !== undefined || updates.idleSleep !== undefined || updates.helperTemplateId !== undefined)) noteManagedSettingsChanged();
   await auditChanges('agent', 'agent', agentId, auditBefore, pickAudited(agent, AGENT_AUDIT_CATALOG), AGENT_AUDIT_CATALOG);
   // A running chat session picks the new timeout up now.
   if (updates.idleSleep !== undefined) setAgentIdleSleep(agentId, agent.idleSleep);
-  if (agent.persona !== previousPersona) {
-    // The orchestration policy re-checks its persona defaults (#2228).
-    try {
-      await notifyPersonaChanged(projectPath, agentId, previousPersona);
-    } catch (err) {
-      // telemetry-exempt: logged; the persona change itself is saved
-      appLog('core:agent-config', 'warn', 'Persona change hook failed', {
-        meta: { agentId, error: err instanceof Error ? err.message : String(err) },
-      });
-    }
-  }
 }
 
 /** Persist the last CLI session ID for a durable agent */
@@ -1745,8 +1890,10 @@ export interface DurableCreationRunOptions {
    * createDurable removes it because its caller gets the error instead.
    */
   keepFailedRecord?: boolean;
-  /** Extra injection into the new worktree after the project defaults (e.g. a persona). Failures are logged, not fatal. */
+  /** Extra injection into the new worktree after the project defaults (e.g. a managed helper's setup). Failures are logged, not fatal, unless `injectRequired`. */
   inject?: (config: DurableAgentConfig) => Promise<void>;
+  /** An inject failure fails the creation: the agent can't work without it (a managed helper's setup, #2899). */
+  injectRequired?: boolean;
 }
 
 export interface DurableCreationHandle {
@@ -1781,6 +1928,7 @@ async function removeAgentRecord(projectPath: string, agentId: string): Promise<
   if (!agentsById.has(agentId)) return;
   await writeAgents(projectPath, agents.filter((a) => a.id !== agentId));
   await flushAgentConfig(projectPath);
+  forgetDelivery(agentId);
 }
 
 function errorMessage(err: unknown): string {
@@ -1949,30 +2097,14 @@ async function foreignParentProject(projectPath: string, params: StartDurableCre
 }
 
 /**
- * Refuse a persona id that resolves to nothing in the target project
- * (project > user > built-in), so no agent records an id with no content
- * (#2511), or one the agent may not have (assertPersonaAllowed). Throws
- * tagged `validation`.
- */
-async function assertPersonaExists(projectPath: string, persona: string | undefined): Promise<void> {
-  assertPersonaAllowed(projectPath, persona);
-  if (!persona) return;
-  const { readLayeredPersonaRaw } = await import('./materialization-service');
-  if (await readLayeredPersonaRaw(projectPath, persona) === undefined) {
-    throw tagError(new Error(`Unknown persona "${persona}". Use a persona id from this project, your user personas or the built-in ones.`), 'validation');
-  }
-}
-
-/**
  * Run a creation's up-front checks without creating anything: the name,
- * folder, branch and base rules, the persona id, and whether the parent,
+ * folder, branch and base rules, and whether the parent,
  * folder or branch is free right now. Throws (tagged `validation`) with the
  * message the creation itself would refuse with. A later creation checks
  * everything again.
  */
 export async function checkDurableCreation(projectPath: string, params: StartDurableCreationParams): Promise<void> {
   const plan = params.useWorktree !== false ? planDurableWorktree(projectPath, params.name, params) : undefined;
-  await assertPersonaExists(projectPath, params.persona);
   const folderOnDisk = plan ? await pathExists(plan.wtPath) : false;
   const agents = await readAgents(projectPath);
   const parentProject = await foreignParentProject(projectPath, params);
@@ -1992,11 +2124,10 @@ export async function beginDurableCreation(
   params: StartDurableCreationParams,
   options: DurableCreationRunOptions = {},
 ): Promise<DurableCreationHandle> {
-  const { name, color, model, effort, routing, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona } = params;
+  const { name, color, model, effort, routing, orchestrator, freeAgentMode, mcpIds, mcpConfigs } = params;
   const useWorktree = params.useWorktree !== false;
   // The folder and branch come from the request; refuse bad ones before anything touches disk.
   const plan = useWorktree ? planDurableWorktree(projectPath, name, params) : undefined;
-  await assertPersonaExists(projectPath, persona);
   const parentProject = await foreignParentProject(projectPath, params);
   const parentAgents = parentProject ? await readAgents(parentProject) : undefined;
 
@@ -2035,6 +2166,8 @@ export async function beginDurableCreation(
     color,
     ...(plan ? { branch: plan.branch, worktreePath: plan.wtPath, branchOwned: false } : {}),
     createdAt: startedAt,
+    // A new agent never had the retired persona layer, so there is nothing to carry onto it (D62).
+    personaLayerCarriedAt: startedAt,
     ...(model && model !== 'default' ? { model } : {}),
     ...(effort ? { effort } : {}),
     ...(routing ? { routing } : {}),
@@ -2042,11 +2175,13 @@ export async function beginDurableCreation(
     ...(effectiveFreeAgent ? { freeAgentMode: effectiveFreeAgent } : {}),
     ...(mcpIds && mcpIds.length > 0 ? { mcpIds } : {}),
     ...(mcpConfigs && Object.keys(mcpConfigs).length > 0 ? { mcpConfigs } : {}),
-    ...(persona ? { persona } : {}),
     // Helpers (#2224): a new agent can start life as a helper of another.
     ...(parentAgentId !== undefined ? { parentAgentId } : {}),
     ...(parentAgentId !== undefined && parentProject ? { parentProjectPath: parentProject } : {}),
     ...(parentAgentId !== undefined && params.disposable ? { disposable: true } : {}),
+    // Clubhouse Mode was retired (#2901). A new agent never used it, so the switch to managed
+    // must not take it for one that did where the old setting is still on for the project (D59).
+    ...(legacyClubhouseModeEnabled(projectPath) ? { clubhouseModeOverride: true } : {}),
     creation: {
       state: 'creating',
       startedAt,
@@ -2262,10 +2397,11 @@ async function runDurableCreation(
       try {
         await options.inject(cloneAgent(initial));
       } catch (err) {
-        // telemetry-exempt: injection is best effort, like the project defaults above; logged.
+        // telemetry-exempt: injection is best effort, like the project defaults above; logged. A required one fails the creation below.
         appLog('core:agent-config', 'warn', 'Failed to inject config into the new agent', {
-          meta: { agentName: initial.name, error: errorMessage(err) },
+          meta: { agentName: initial.name, error: errorMessage(err), required: options.injectRequired === true },
         });
+        if (options.injectRequired) throw tagError(new Error(`Could not set up the new agent: ${errorMessage(err)}`), 'write_failed');
       }
     }
     checkCancelled();
@@ -2438,12 +2574,11 @@ export async function createDurable(
   freeAgentMode?: boolean,
   mcpIds?: string[],
   mcpConfigs?: Record<string, Record<string, string>>,
-  persona?: string,
   worktreeOptions: DurableWorktreeOptions = {},
 ): Promise<DurableAgentConfig> {
   const handle = await beginDurableCreation(projectPath, {
     ...worktreeOptions,
-    name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona,
+    name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs,
   }, { keepFailedRecord: false });
   // The caller gets the error, so a failed agent leaves no record behind.
   return handle.done;
@@ -2523,6 +2658,7 @@ async function deleteDurableGuardedInner(projectPath: string, agentId: string): 
   const released: string[] = [];
   await writeAgents(projectPath, releaseHelpersOf(agents.filter((a) => a.id !== agentId), agentId, released));
   helpersEnded([agentId, ...released]);
+  forgetDelivery(agentId);
   await releaseForeignHelpersOf(projectPath, agentId);
 }
 
@@ -2884,6 +3020,7 @@ async function deleteUnregisterGuardedInner(projectPath: string, agentId: string
   const released: string[] = [];
   await writeAgents(projectPath, releaseHelpersOf(filtered, agentId, released));
   helpersEnded([agentId, ...released]);
+  forgetDelivery(agentId);
   await releaseForeignHelpersOf(projectPath, agentId);
   return { ok: true, message: 'Removed from agents list (files left on disk)' };
 }
@@ -3065,6 +3202,112 @@ async function setOrchestrationConfigInner(
   if (config && Object.keys(config).length > 0) agent.orchestration = { ...config };
   else delete agent.orchestration;
   await writeAgents(projectPath, agents);
+}
+
+/**
+ * Clubhouse-managed agents (#2819): set or clear what an agent is built from.
+ * Written only by services/managed-agents. Clearing leaves the files the last
+ * managed start wrote, now the person's to manage. A missing agent throws.
+ */
+async function setManagedSetupInner(projectPath: string, agentId: string, setup: ManagedAgentSetup | null): Promise<void> {
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) throw new Error('Agent not found');
+  const managedBefore = managedAuditFields(agent);
+  if (setup) {
+    // Switched once, by hand or on its own: never switched automatically again, even after Stop managing (D59).
+    if (!agent.managed && !agent.switchedToManagedAt) agent.switchedToManagedAt = new Date().toISOString();
+    // The Clubhouse MCP part is in every managed setup and can't be left out: the Clubhouse MCP always runs.
+    const mcps = setup.mcps.includes(CLUBHOUSE_MCP_PART_ID) ? [...setup.mcps] : [CLUBHOUSE_MCP_PART_ID, ...setup.mcps];
+    agent.managed = {
+      version: 1, blocks: [...setup.blocks], skills: [...setup.skills], mcps,
+      ...(setup.templateId ? { templateId: setup.templateId } : {}),
+      // Bookkeeping for Details (D90, D91): what start_helper changed, and who saved it when.
+      ...(setup.helperChanges ? { helperChanges: { added: [...setup.helperChanges.added], removed: [...setup.helperChanges.removed] } } : {}),
+      ...(setup.updatedAt ? { updatedAt: setup.updatedAt } : {}),
+      ...(setup.updatedBy ? { updatedBy: setup.updatedBy } : {}),
+    };
+    delete agent.clubhouseFeatures;
+    delete agent.persona;
+    // Switched, by hand or on its own: an earlier automatic switch's failure no longer applies (D59).
+    delete agent.managedMigrationFailure;
+  } else {
+    delete agent.managed;
+  }
+  await writeAgents(projectPath, agents);
+  await auditChanges('agent', 'agent', agentId, managedBefore, managedAuditFields(agent), MANAGED_AUDIT_CATALOG);
+}
+
+/**
+ * The automatic switch to managed (D59): record that it happened, that it
+ * failed, or that the person dismissed the notice. Bookkeeping, not a
+ * setting: the switch itself is audited by setManagedSetup. Written only by
+ * services/managed-agents. A missing agent is a no-op.
+ */
+async function setManagedMigrationInner(
+  projectPath: string,
+  agentId: string,
+  change: { migrated: ManagedMigration } | { failed: ManagedMigrationFailure } | { dismissed: true } | { layerCarriedAt: string },
+): Promise<void> {
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) return;
+  if ('layerCarriedAt' in change) {
+    agent.personaLayerCarriedAt = change.layerCarriedAt;
+  } else if ('migrated' in change) {
+    agent.managedMigration = { ...change.migrated };
+    delete agent.managedMigrationFailure;
+  } else if ('failed' in change) {
+    agent.managedMigrationFailure = { ...change.failed };
+  } else {
+    if (!agent.managedMigration || agent.managedMigration.dismissed) return;
+    agent.managedMigration = { ...agent.managedMigration, dismissed: true };
+  }
+  await writeAgents(projectPath, agents);
+}
+
+/**
+ * A managed setup in the settings audit (D13): whether the agent is managed
+ * and the template it came from as values; the part lists only as changed.
+ * Part ids say nothing secret, but a list isn't a value to keep.
+ */
+const MANAGED_AUDIT_CATALOG: Readonly<Record<string, AuditKeyFormat>> = {
+  managed: 'value',
+  'managed.templateId': 'value',
+  'managed.blocks': 'changed',
+  'managed.skills': 'changed',
+  'managed.mcps': 'changed',
+  // Managing an agent clears these two.
+  clubhouseFeatures: 'value',
+  persona: 'value',
+};
+
+function managedAuditFields(agent: DurableAgentConfig): Record<string, unknown> {
+  return {
+    managed: !!agent.managed,
+    'managed.templateId': agent.managed?.templateId,
+    'managed.blocks': agent.managed?.blocks,
+    'managed.skills': agent.managed?.skills,
+    'managed.mcps': agent.managed?.mcps,
+    clubhouseFeatures: agent.clubhouseFeatures,
+    persona: agent.persona,
+  };
+}
+
+/**
+ * Unmanaged agents (#2893): false turns off Clubhouse hooks (status,
+ * permission prompts). The Clubhouse MCP always runs, so it stays on.
+ */
+async function setClubhouseFeaturesInner(projectPath: string, agentId: string, on: boolean): Promise<void> {
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) throw new Error('Agent not found');
+  if (agent.managed) throw new Error('Clubhouse features are part of a managed agent\'s setup');
+  const before = { clubhouseFeatures: agent.clubhouseFeatures };
+  if (on) delete agent.clubhouseFeatures;
+  else agent.clubhouseFeatures = false;
+  await writeAgents(projectPath, agents);
+  await auditChanges('agent', 'agent', agentId, before, { clubhouseFeatures: agent.clubhouseFeatures }, { clubhouseFeatures: 'value' });
 }
 
 /** What start_helper keeps on a helper (#2227). null clears a field; undefined leaves it. */
@@ -3372,6 +3615,8 @@ async function disposeAgent(projectPath: string, agentId: string, options: { exp
   delete row.worktreePath;
   await writeAgents(projectPath, agents);
   helpersEnded([agentId]);
+  // A disposed helper never starts again, and the next one gets a new id: free what its sessions kept.
+  forgetDelivery(agentId);
 }
 
 /**
@@ -3719,6 +3964,18 @@ export async function updateDurable(projectPath: string, agentId: string, update
 
 export async function setOrchestrationConfig(projectPath: string, agentId: string, config: OrchestrationPolicyConfig | undefined): Promise<void> {
   return withAgentActivity(agentId, () => setOrchestrationConfigInner(projectPath, agentId, config));
+}
+
+export async function setManagedSetup(projectPath: string, agentId: string, setup: ManagedAgentSetup | null): Promise<void> {
+  return withAgentActivity(agentId, () => setManagedSetupInner(projectPath, agentId, setup));
+}
+
+export async function setManagedMigration(...args: Parameters<typeof setManagedMigrationInner>): Promise<void> {
+  return withAgentActivity(args[1], () => setManagedMigrationInner(...args));
+}
+
+export async function setClubhouseFeatures(projectPath: string, agentId: string, on: boolean): Promise<void> {
+  return withAgentActivity(agentId, () => setClubhouseFeaturesInner(projectPath, agentId, on));
 }
 
 export async function setHelperStartFields(projectPath: string, agentId: string, fields: HelperStartFields): Promise<void> {

@@ -5,7 +5,6 @@
  * that list can be stale.
  */
 
-import { resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
 import { getProvider } from '../orchestrators';
 import type { ModelInfo, ModelList, OrchestratorId, OrchestratorProvider } from '../orchestrators';
@@ -14,11 +13,10 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** The provider's model list under the project's profile, or null when the provider can't list models. */
-export async function modelListFor(provider: OrchestratorProvider, projectPath: string | undefined, refresh = false): Promise<ModelList | null> {
+/** The provider's model list for its local login, or null when the provider can't list models. */
+export async function modelListFor(provider: OrchestratorProvider, refresh = false): Promise<ModelList | null> {
   if (!provider.listModels) return null;
-  const env = projectPath ? await resolveProfileEnv(projectPath, provider.id) : undefined;
-  return provider.listModels({ ...(env && { env }), ...(refresh && { refresh: true }) });
+  return provider.listModels(refresh ? { refresh: true } : {});
 }
 
 function accepts(provider: OrchestratorProvider, model: string, list: ModelList): boolean {
@@ -35,15 +33,15 @@ export type ModelCheck = { ok: true; warning?: string } | { ok: false; message: 
 
 /**
  * Check `model` for a helper on `cli` (the provider id it will run on),
- * with the profile of the project it is created in. Never throws: if the
+ * against that CLI's local login. Never throws: if the
  * list can't be read at all, the start goes ahead with a warning.
  */
-export async function checkHelperModel(cli: string | undefined, model: string, projectPath: string | undefined): Promise<ModelCheck> {
+export async function checkHelperModel(cli: string | undefined, model: string): Promise<ModelCheck> {
   const provider = cli ? getProvider(cli as OrchestratorId) : undefined;
   if (!provider?.listModels) return { ok: true };
   let list: ModelList | null;
   try {
-    list = await modelListFor(provider, projectPath);
+    list = await modelListFor(provider);
   } catch (err) {
     // telemetry-exempt: logged; the caller is warned in the start_helper result
     appLog('core:mcp', 'warn', 'start_helper: could not list models', { meta: { cli, error: errorText(err) } });
@@ -77,10 +75,12 @@ function modelEntry(list: ModelList, model: string | undefined): ModelInfo | und
  * default), as checkHelperModel checks a model: a live list refuses a level the
  * model doesn't have, and a fallback list only warns. A warning, never a
  * refusal, when nothing says what the model takes: the list can't be read, it
- * has no levels at all (Copilot's doesn't report them), or it doesn't have the
- * model (an alias the CLI accepts). Never throws.
+ * has no levels at all (Copilot's fallback `--help` list, say), or it doesn't
+ * have the model (an alias the CLI accepts). Copilot's live list, from the
+ * SDK's models.list, reports each model's levels, so it refuses like the
+ * others (#2868). Never throws.
  */
-export async function checkHelperEffort(cli: string | undefined, model: string | undefined, effort: string, projectPath: string | undefined): Promise<ModelCheck> {
+export async function checkHelperEffort(cli: string | undefined, model: string | undefined, effort: string): Promise<ModelCheck> {
   const unchecked = (why: string): ModelCheck => ({
     ok: true,
     warning: `Could not check effort "${effort}" for ${cli ?? 'this CLI'}: ${why} The helper is started with it anyway; if its CLI rejects it, it fails to start or uses its default.`,
@@ -89,7 +89,7 @@ export async function checkHelperEffort(cli: string | undefined, model: string |
   if (!provider?.listModels) return unchecked('it has no model list.');
   let list: ModelList | null;
   try {
-    list = await modelListFor(provider, projectPath);
+    list = await modelListFor(provider);
   } catch (err) {
     // telemetry-exempt: logged; the caller is warned in the start_helper result
     appLog('core:mcp', 'warn', 'start_helper: could not list models', { meta: { cli, error: errorText(err) } });

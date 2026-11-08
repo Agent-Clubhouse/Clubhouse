@@ -12,8 +12,8 @@ export const agent = {
     ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
   getRunningStatuses: (agentIds: string[]): Promise<string[]> =>
     ipcRenderer.invoke(IPC.AGENT.GET_RUNNING_STATUSES, agentIds),
-  createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], mcpConfigs?: Record<string, Record<string, string>>, persona?: string, worktreeOptions?: DurableWorktreeOptions) =>
-    ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona, worktreeOptions),
+  createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], mcpConfigs?: Record<string, Record<string, string>>, worktreeOptions?: DurableWorktreeOptions) =>
+    ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, worktreeOptions),
   /** Asynchronous create (#2226): resolves with the id while the worktree is still being made. */
   startDurableCreation: (projectPath: string, params: StartDurableCreationParams): Promise<{ agentId: string; config: DurableAgentConfig }> =>
     ipcRenderer.invoke(IPC.AGENT.START_DURABLE_CREATION, projectPath, params),
@@ -100,12 +100,6 @@ export const agent = {
     ipcRenderer.on(IPC.AGENT.CONFIGS_CHANGED, listener);
     return () => { ipcRenderer.removeListener(IPC.AGENT.CONFIGS_CHANGED, listener); };
   },
-  /** Clubhouse MCP or Clubhouse Mode settings changed, so policies that depend on MCP may read differently (#2589). */
-  onMcpEnablementChanged: (callback: () => void) => {
-    const listener = () => callback();
-    ipcRenderer.on(IPC.AGENT.MCP_ENABLEMENT_CHANGED, listener);
-    return () => { ipcRenderer.removeListener(IPC.AGENT.MCP_ENABLEMENT_CHANGED, listener); };
-  },
   /** A helper start waiting on the user's approval (#2234). Sent to the main window only. */
   onHelperStartRequest: (callback: (request: HelperStartRequest) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, request: HelperStartRequest) => callback(request);
@@ -183,6 +177,8 @@ export const agent = {
     pluginOwner?: string;
     companionWorkspace?: string;
     permissionMode?: 'auto' | 'skip-all';
+    /** Clubhouse-managed quick agents: start from this template. */
+    managedTemplate?: { id: string; agentName: string };
   }) => ipcRenderer.invoke(IPC.AGENT.SPAWN_AGENT, params),
 
   /** `waitForExit`: resolve once the PTY exited and its session id is saved (restart-with-resume). */

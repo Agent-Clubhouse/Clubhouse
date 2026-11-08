@@ -145,6 +145,16 @@ describe('HeadlessRunFinished', () => {
       );
     });
 
+    it('Retry keeps the template the run started from (D25)', async () => {
+      const onRetried = vi.fn();
+      render(<HeadlessRunFinished completed={{ ...failed, managedTemplateId: 'custom-workiq' }} onDismiss={vi.fn()} onRetried={onRetried} />);
+      fireEvent.click(screen.getByTestId('run-retry-button'));
+      await waitFor(() => expect(onRetried).toHaveBeenCalled());
+      expect(spawnQuickAgent).toHaveBeenCalledWith(
+        'proj-1', '/projects/p', failed.mission, 'sonnet', 'durable-1', 'claude-code', true, { card: '7' }, '/wt', { managedTemplateId: 'custom-workiq' },
+      );
+    });
+
     it('offers no Retry and titles the run by name when it has no mission (#2813)', () => {
       render(<HeadlessRunFinished completed={{ ...failed, mission: '' }} onDismiss={vi.fn()} />);
       expect(screen.queryByTestId('run-retry-button')).not.toBeInTheDocument();

@@ -61,6 +61,17 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
     unmount();
   });
 
+  it('lists the Annex pages when isPreviewEligible returns false, since Annex is stable (#2811)', async () => {
+    window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
+    const { unmount } = render(<AccessoryPanel />);
+    await waitFor(() => {
+      expect(window.clubhouse.app.isPreviewEligible).toHaveBeenCalled();
+    });
+    expect(screen.getByText('Annex')).toBeInTheDocument();
+    expect(screen.getByText('Annex control')).toBeInTheDocument();
+    unmount();
+  });
+
   it('re-evaluates preview eligibility when previewChannel changes', async () => {
     window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
     const { unmount, rerender } = render(<AccessoryPanel />);
@@ -85,10 +96,10 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
     expect(screen.getByText('External editor')).toBeInTheDocument();
   });
 
-  it('always shows Clubhouse MCP nav item (no longer experimental)', async () => {
+  it('has no Clubhouse MCP page: the Clubhouse MCP always runs, so there is nothing to set', async () => {
     window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
     render(<AccessoryPanel />);
-    expect(screen.getByText('Clubhouse MCP')).toBeInTheDocument();
+    expect(screen.queryByText('Clubhouse MCP')).toBeNull();
   });
 
   it('hides Goobers nav item when the goobers experimental flag is off', async () => {

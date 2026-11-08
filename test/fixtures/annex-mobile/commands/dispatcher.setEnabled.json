@@ -1,29 +1,6 @@
 {
   "cases": [
     {
-      "name": "dispatcher_flag_off",
-      "request": {
-        "commandId": "cmd_119",
-        "enabled": true,
-        "epoch": "00000000-0000-4000-8000-000000000001",
-        "type": "dispatcher.setEnabled",
-        "version": 1
-      },
-      "response": {
-        "body": {
-          "commandId": "cmd_119",
-          "epoch": "00000000-0000-4000-8000-000000000001",
-          "error": {
-            "code": "dispatcher_flag_off",
-            "message": "Turn on Dispatcher in Settings > Experimental on the desktop first."
-          },
-          "status": "rejected",
-          "version": 1
-        },
-        "status": 409
-      }
-    },
-    {
       "name": "dispatcher_layout_off",
       "request": {
         "commandId": "cmd_120",

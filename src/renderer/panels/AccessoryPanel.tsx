@@ -13,7 +13,25 @@ import { SettingsSubPage } from '../../shared/types';
 import { useFeedbackStore } from '../stores/feedbackStore';
 
 
-export interface SettingsCategory { label: string; page: SettingsSubPage }
+export interface SettingsCategory {
+  label: string;
+  page: SettingsSubPage;
+  /** The sidebar group the page sits in. Pages without one are plain App pages. */
+  group?: 'managed';
+  /** Indented under the group's "Agent parts" label. */
+  part?: boolean;
+}
+
+/** Clubhouse-managed agents (#2819): the group that follows About and Agents & providers. */
+const MANAGED_PAGES: SettingsCategory[] = [
+  { label: 'Instruction blocks', page: 'managed-blocks', group: 'managed', part: true },
+  { label: 'Skills', page: 'managed-skills', group: 'managed', part: true },
+  { label: 'MCP servers', page: 'managed-mcp', group: 'managed', part: true },
+  { label: 'Templates', page: 'managed-templates', group: 'managed' },
+  { label: 'Orchestration', page: 'managed-orchestration', group: 'managed' },
+  { label: 'Helpers', page: 'helpers', group: 'managed' },
+  { label: 'Switch agents', page: 'managed-switch', group: 'managed' },
+];
 
 /**
  * The settings categories, split into app-wide and per-project pages. Shared by
@@ -22,15 +40,12 @@ export interface SettingsCategory { label: string; page: SettingsSubPage }
 export function useSettingsCategories(): { app: SettingsCategory[]; project: SettingsCategory[] } {
   const previewChannel = useUpdateStore((s) => s.settings.previewChannel);
   const [showExperimental, setShowExperimental] = useState(false);
-  const [showAnnex, setShowAnnex] = useState(false);
   const [showGoobers, setShowGoobers] = useState(false);
   const initFeedback = useFeedbackStore((s) => s.init);
   useEffect(() => { void initFeedback(); }, [initFeedback]);
   useEffect(() => {
     window.clubhouse.app.isPreviewEligible().then((isPreview) => {
       setShowExperimental(isPreview);
-      // Annex is always available on preview-eligible builds
-      setShowAnnex(isPreview);
     });
     window.clubhouse.app.getExperimentalSettings().then((s) => {
       setShowGoobers(!!s.goobers);
@@ -40,16 +55,16 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
   const app: SettingsCategory[] = [
     { label: 'About', page: 'about' },
     { label: 'Agents & providers', page: 'orchestrators' },
-    { label: 'Helpers', page: 'helpers' },
+    ...MANAGED_PAGES,
     { label: 'Dispatcher', page: 'dispatcher' },
-    { label: 'Profiles', page: 'profiles' },
     { label: 'Display & UI', page: 'display' },
     { label: 'External editor', page: 'editor' },
     { label: 'Keyboard shortcuts', page: 'keyboard-shortcuts' },
     { label: 'Notifications & alerts', page: 'notifications' },
     { label: 'Plugins', page: 'plugins' },
-    ...(showAnnex ? [{ label: 'Annex', page: 'annex' as SettingsSubPage }, { label: 'Annex control', page: 'annex-control' as SettingsSubPage }] : []),
-    { label: 'Clubhouse MCP', page: 'mcp' },
+    // Annex is stable (#1151), so its pages show with Preview off too (#2811).
+    { label: 'Annex', page: 'annex' },
+    { label: 'Annex control', page: 'annex-control' },
     ...(showGoobers ? [{ label: 'Goobers', page: 'goobers' as SettingsSubPage }] : []),
     { label: 'Updates', page: 'updates' },
     { label: 'Logging', page: 'logging' },

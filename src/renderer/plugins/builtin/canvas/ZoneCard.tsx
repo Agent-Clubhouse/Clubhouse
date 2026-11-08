@@ -14,7 +14,6 @@ import { Tooltip } from '../../../components/Tooltip';
 
 interface ZoneCardProps {
   zone: ZoneCanvasView;
-  mcpEnabled: boolean;
   /** Offset to apply during drag. */
   dragOffset?: { dx: number; dy: number };
   onRename: (name: string) => void;
@@ -24,7 +23,7 @@ interface ZoneCardProps {
   onStartWireDrag: () => void;
 }
 
-export const ZoneCard = React.memo(function ZoneCard({ zone, mcpEnabled, dragOffset, onRename, onThemeChange, onDelete, onDragStart, onStartWireDrag }: ZoneCardProps) {
+export const ZoneCard = React.memo(function ZoneCard({ zone, dragOffset, onRename, onThemeChange, onDelete, onDragStart, onStartWireDrag }: ZoneCardProps) {
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -112,23 +111,21 @@ export const ZoneCard = React.memo(function ZoneCard({ zone, mcpEnabled, dragOff
         document.body,
       )}
 
-      {/* Wire handle — only when MCP enabled */}
-      {mcpEnabled && (
-        <Tooltip content="Connect zone">
-        <button
-          className="w-7 h-7 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text flex-shrink-0"
-          onClick={(e) => { e.stopPropagation(); onStartWireDrag(); }}
-          onMouseDown={(e) => e.stopPropagation()}
-          aria-label="Connect zone"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <circle cx="5" cy="12" r="3" />
-            <circle cx="19" cy="12" r="3" />
-            <line x1="8" y1="12" x2="16" y2="12" />
-          </svg>
-        </button>
-        </Tooltip>
-      )}
+      {/* Wire handle */}
+      <Tooltip content="Connect zone">
+      <button
+        className="w-7 h-7 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text flex-shrink-0"
+        onClick={(e) => { e.stopPropagation(); onStartWireDrag(); }}
+        onMouseDown={(e) => e.stopPropagation()}
+        aria-label="Connect zone"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <circle cx="5" cy="12" r="3" />
+          <circle cx="19" cy="12" r="3" />
+          <line x1="8" y1="12" x2="16" y2="12" />
+        </svg>
+      </button>
+      </Tooltip>
 
       {/* Delete button */}
       <Tooltip content="Delete zone">

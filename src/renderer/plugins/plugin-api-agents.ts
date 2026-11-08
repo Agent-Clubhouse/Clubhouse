@@ -66,6 +66,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
       mcpIds?: string[];
       /** @deprecated Structured mode was removed; ignored. */
       structuredMode?: boolean;
+      /** @deprecated Personas were retired; ignored. */
       persona?: string;
     }): Promise<string> {
       if (options.freeAgentMode && !hasPermission(manifest, 'agents.free-agent-mode')) {
@@ -73,6 +74,9 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
       }
       if (options.structuredMode !== undefined) {
         console.warn(`[plugin:${ctx.pluginId}] agents.createDurable: 'structuredMode' is deprecated and ignored (structured mode was removed).`);
+      }
+      if (options.persona !== undefined) {
+        console.warn(`[plugin:${ctx.pluginId}] agents.createDurable: 'persona' is deprecated and ignored (personas were retired).`);
       }
 
       let projectId = ctx.projectId;
@@ -91,7 +95,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
 
       const model = options.model && options.model !== 'default' ? options.model : undefined;
       const config = await window.clubhouse.agent.createDurable(
-        projectPath, options.name, options.color, model, options.useWorktree ?? false, options.orchestrator, options.freeAgentMode, options.mcpIds, undefined, options.persona,
+        projectPath, options.name, options.color, model, options.useWorktree ?? false, options.orchestrator, options.freeAgentMode, options.mcpIds,
       );
       return useAgentStore.getState().spawnDurableAgent(projectId, projectPath, config, false);
     },

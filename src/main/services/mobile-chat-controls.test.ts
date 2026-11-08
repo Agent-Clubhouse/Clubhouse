@@ -83,7 +83,7 @@ describe('chatControls snapshot fields', () => {
     expect(c).toMatchObject({ model: null, modelUnknown: true, effort: null, effortReported: false, switchNote: null });
   });
   it('a new session clears the last one\'s lists', () => {
-    const c = chatControls([...sessionEvents(), event('session_started', { driver: 'acp', provider: 'x', cwd: '/', resumed: true, capabilities: caps() })], caps());
+    const c = chatControls([...sessionEvents(), event('session_started', { driver: 'copilot_sdk', provider: 'x', cwd: '/', resumed: true, capabilities: caps() })], caps());
     expect(c).toMatchObject({ models: [], efforts: [], levelNames: {}, model: 'opus', level: 'ask' });
   });
   it('is conservative without capabilities', () => {

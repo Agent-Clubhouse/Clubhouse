@@ -13,21 +13,23 @@ export type AgentSettingsPage =
   | 'general'
   | 'instructions'
   | 'skills'
-  | 'definitions'
   | 'mcp'
+  | 'settings'
   | 'permissions'
   | 'helpers'
-  | 'quick';
+  | 'quick'
+  | 'preview';
 
 export const AGENT_SETTINGS_PAGES: ReadonlyArray<{ page: AgentSettingsPage; label: string }> = [
   { page: 'general', label: 'General' },
   { page: 'instructions', label: 'Instructions' },
   { page: 'skills', label: 'Skills' },
-  { page: 'definitions', label: 'Agent definitions' },
   { page: 'mcp', label: 'MCP servers' },
+  { page: 'settings', label: 'Settings' },
   { page: 'permissions', label: 'Permissions' },
   { page: 'helpers', label: 'Helpers' },
   { page: 'quick', label: 'Quick agents' },
+  { page: 'preview', label: 'Preview' },
 ];
 
 interface AgentSettingsPagesState {
@@ -44,14 +46,20 @@ interface AgentSettingsPagesState {
    * confirm, then closes settings and runs this (what the user was going to).
    */
   pendingLeave: (() => void) | null;
+  /**
+   * A page asked for by whoever opened settings (openAgentSettingsOn). The view
+   * selects it once the page is shown for that agent: a managed agent's
+   * builder pages appear only after its setup loads.
+   */
+  requestedPage: { agentId: string; page: AgentSettingsPage } | null;
   setPage: (page: AgentSettingsPage) => void;
   setDirtyPages: (pages: AgentSettingsPage[]) => void;
   setCount: (page: AgentSettingsPage, count: number) => void;
   setHiddenPages: (pages: AgentSettingsPage[]) => void;
-  clearCounts: () => void;
   setShellOpen: (open: boolean) => void;
   setPendingLeave: (then: (() => void) | null) => void;
-  /** Back to General with nothing dirty, for a newly opened agent. */
+  setRequestedPage: (request: { agentId: string; page: AgentSettingsPage } | null) => void;
+  /** Back to General with nothing dirty, for a newly opened agent. Keeps a requested page. */
   reset: () => void;
 }
 
@@ -59,14 +67,17 @@ const INITIAL: Pick<AgentSettingsPagesState, 'page' | 'dirtyPages' | 'counts' | 
   page: 'general',
   dirtyPages: [],
   counts: {},
-  hiddenPages: [],
+  // Preview is for managed agents only (#2895); the view unhides it.
+  hiddenPages: ['preview'],
   shellOpen: false,
   pendingLeave: null,
 };
 
 export const useAgentSettingsPages = create<AgentSettingsPagesState>((set, get) => ({
   ...INITIAL,
-  setPage: (page) => set({ page }),
+  requestedPage: null,
+  // Picking a page drops a request that hasn't been met yet.
+  setPage: (page) => set({ page, requestedPage: null }),
   setDirtyPages: (pages) => {
     const prev = get().dirtyPages;
     if (prev.length === pages.length && prev.every((p, i) => p === pages[i])) return;
@@ -82,13 +93,20 @@ export const useAgentSettingsPages = create<AgentSettingsPagesState>((set, get) 
     // A hidden page can't stay selected.
     set((s) => ({ hiddenPages: pages, page: pages.includes(s.page) ? 'general' : s.page }));
   },
-  clearCounts: () => {
-    if (Object.keys(get().counts).length > 0) set({ counts: {} });
-  },
   setShellOpen: (shellOpen) => set({ shellOpen }),
   setPendingLeave: (pendingLeave) => set({ pendingLeave }),
+  setRequestedPage: (requestedPage) => set({ requestedPage }),
   reset: () => set(INITIAL),
 }));
+
+/**
+ * Open an agent's settings on one page (the setup-changed bar's "What changed"
+ * opens Preview). The view selects it once that page is shown for the agent.
+ */
+export function openAgentSettingsOn(agentId: string, page: AgentSettingsPage): void {
+  useAgentSettingsPages.getState().setRequestedPage({ agentId, page });
+  useAgentStore.getState().openAgentSettings(agentId);
+}
 
 const NOTHING_NEXT = () => {};
 
@@ -105,6 +123,7 @@ export function requestLeaveAgentSettings(then?: () => void): void {
     return;
   }
   if (settingsOpen) useAgentStore.getState().closeAgentSettings();
+  useAgentSettingsPages.getState().setRequestedPage(null);
   then?.();
 }
 
@@ -166,6 +185,16 @@ export function useAgentSettingsTarget(explorerTab: string): Agent | null {
  * orchestrate in v1, and for an agent on another machine, whose policy lives
  * there. The same rule as the Orchestration card.
  */
-export function hiddenAgentSettingsPages(agent: Pick<Agent, 'parentAgentId' | 'projectId'>, remote: boolean): AgentSettingsPage[] {
-  return agent.parentAgentId || remote ? ['helpers'] : [];
+export function hiddenAgentSettingsPages(
+  agent: Pick<Agent, 'parentAgentId' | 'projectId'>,
+  remote: boolean,
+  managed: boolean,
+): AgentSettingsPage[] {
+  const hidden: AgentSettingsPage[] = agent.parentAgentId || remote ? ['helpers'] : [];
+  // Clubhouse-managed agents (#2893): the builder takes over the file pages for
+  // a managed agent; an unmanaged agent keeps one basic page plus orchestration.
+  // A managed agent's Settings page holds what Helpers had (#2895).
+  if (remote) return [...hidden, 'settings', 'preview'];
+  if (managed) return ['helpers', 'permissions'];
+  return [...hidden, 'instructions', 'skills', 'mcp', 'settings', 'permissions', 'preview'];
 }

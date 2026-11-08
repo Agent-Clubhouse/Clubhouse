@@ -199,7 +199,7 @@ describe('ChatAgentRuntime', () => {
   });
 
   it('queues client-side when the driver cannot steer, and sends the queue at turn end', async () => {
-    const driver = new FakeChatDriver('copilot_acp', 'copilot-cli', STEERLESS);
+    const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli', STEERLESS);
     const { runtime } = makeRuntime(driver);
     await runtime.start();
     driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
@@ -218,7 +218,7 @@ describe('ChatAgentRuntime', () => {
 
   describe('queue editing (#2413)', () => {
     async function queuedRuntime() {
-      const driver = new FakeChatDriver('copilot_acp', 'copilot-cli', STEERLESS);
+      const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli', STEERLESS);
       const { runtime } = makeRuntime(driver);
       await runtime.start();
       driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
@@ -271,7 +271,7 @@ describe('ChatAgentRuntime', () => {
     });
 
     it('does not claim native provider queued messages are locally removable', async () => {
-      const driver = new FakeChatDriver('copilot_acp', 'copilot-cli', { ...STEERLESS, queue: 'native' });
+      const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli', { ...STEERLESS, queue: 'native' });
       const { runtime } = makeRuntime(driver);
       await runtime.start();
       const result = await runtime.sendMessage('provider-owned', { source: 'annex', delivery: 'queued' });
@@ -318,7 +318,7 @@ describe('ChatAgentRuntime', () => {
   });
 
   it.each([true, false])('sends /compact through mid-turn delivery and records it (steer=%s)', async (steer) => {
-    const driver = new FakeChatDriver('copilot_acp', 'copilot-cli', { ...STEERLESS, steer });
+    const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli', { ...STEERLESS, steer });
     const { runtime } = makeRuntime(driver);
     await runtime.start();
     driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
@@ -508,7 +508,7 @@ describe('ChatAgentRuntime', () => {
     expect(a.runtime.isRunning()).toBe(true);
 
     transcript.length = 0;
-    const plain = new FakeChatDriver('copilot_acp', 'copilot-cli', { ...STEERLESS, interrupt: false });
+    const plain = new FakeChatDriver('copilot_sdk', 'copilot-cli', { ...STEERLESS, interrupt: false });
     const b = makeRuntime(plain);
     await b.runtime.start();
     await b.runtime.interrupt();
@@ -924,7 +924,7 @@ describe('ChatAgentRuntime', () => {
   });
 
   it('prepends the system prompt once when the driver cannot pass it', async () => {
-    const driver = new FakeChatDriver('copilot_acp', 'copilot-cli', { ...STEERLESS, systemPrompt: false });
+    const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli', { ...STEERLESS, systemPrompt: false });
     const { runtime } = makeRuntime(driver, { systemPrompt: 'You are the release agent.' });
     await runtime.start('Cut 0.43');
     await runtime.sendMessage('and tag it', { source: 'user' });
@@ -959,7 +959,7 @@ describe('ChatAgentRuntime', () => {
   });
 
   it('closes the CLI when handling an event throws', async () => {
-    const driver = new FakeChatDriver('copilot_acp', 'copilot-cli', STEERLESS);
+    const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli', STEERLESS);
     const { runtime, onEnded } = makeRuntime(driver);
     await runtime.start();
     driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
@@ -1301,7 +1301,7 @@ describe('ChatAgentRuntime helper questions (#2366)', () => {
 
 describe('ChatAgentRuntime coalesced helper updates (#2414)', () => {
   async function midTurn(caps: ChatCapabilities, extra: Partial<ConstructorParameters<typeof ChatAgentRuntime>[0]> = {}) {
-    const driver = new FakeChatDriver('copilot_acp', 'copilot-cli', caps);
+    const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli', caps);
     const { runtime } = makeRuntime(driver, extra);
     await runtime.start();
     driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });

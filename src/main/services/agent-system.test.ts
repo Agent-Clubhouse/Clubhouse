@@ -55,19 +55,10 @@ vi.mock('./hook-server', () => ({
   waitReady: vi.fn(() => Promise.resolve(12345)),
 }));
 
-// Mock clubhouse-mode-settings
-const mockIsClubhouseModeEnabled = vi.fn(() => false);
-vi.mock('./clubhouse-mode-settings', () => ({
-  isClubhouseModeEnabled: (...args: unknown[]) => mockIsClubhouseModeEnabled(...args),
-}));
-
-// Most agent-system tests target non-MCP behavior. Enable MCP explicitly only
-// in tests that exercise MCP injection so snapshot assertions stay focused.
-const mockIsMcpEnabled = vi.fn(() => false);
+// The Clubhouse MCP always runs: every spawn asks for the bridge.
 const mockEnsureMcpBridge = vi.fn();
-vi.mock('./mcp-settings', () => ({
-  isMcpEnabled: (...args: unknown[]) => mockIsMcpEnabled(...args),
-  ensureMcpBridgeForAgent: (...args: unknown[]) => mockEnsureMcpBridge(...args),
+vi.mock('./mcp-bridge-starter', () => ({
+  ensureMcpBridge: (...args: unknown[]) => mockEnsureMcpBridge(...args),
 }));
 
 // The real gate, watched, so a test can see what it held when a nonce was set.
@@ -93,6 +84,10 @@ vi.mock('./context-window', () => ({
   contextWindowForLaunch: (...args: unknown[]) => mockContextWindowForLaunch(...args),
 }));
 
+// Saved provider profiles' old state folders (#2749): none unless a test says so.
+const mockRemovedProfileStateDirs = vi.fn(async (_providerId: string): Promise<string[]> => []);
+vi.mock('./provider-profiles-removed', () => ({ removedProfileStateDirs: (id: string) => mockRemovedProfileStateDirs(id) }));
+
 vi.mock('./agent-config', () => ({
   getSessionHistory: (...args: unknown[]) => mockGetSessionHistory(...(args as [])),
   removeSessionEntries: (...args: unknown[]) => mockRemoveSessionEntries(...(args as [])),
@@ -111,19 +106,24 @@ vi.mock('./agent-runtime/chat-spawn', async (importOriginal) => {
   return { ...actual, tryStartChatAgent: (...args: Parameters<typeof actual.tryStartChatAgent>) => mockTryStartChatAgent(...args) };
 });
 
-// Mock materialization-service
-const mockMaterializeAgent = vi.fn();
 const mockCleanupStaleJsonInTomlConfigs = vi.fn();
-vi.mock('./materialization-service', () => ({
-  resolveProjectMcpServers: vi.fn(async () => ({})),
-  materializeAgent: (...args: unknown[]) => mockMaterializeAgent(...args),
-  cleanupStaleJsonInTomlConfigs: (...args: unknown[]) => mockCleanupStaleJsonInTomlConfigs(...args),
+const mockDeliverForSpawn = vi.fn(async () => {});
+const mockQuickLaunchFor = vi.fn();
+vi.mock('./managed-agents', () => ({
+  deliverForSpawn: (...args: unknown[]) => mockDeliverForSpawn(...(args as [])),
+  quickLaunchFor: (...args: unknown[]) => mockQuickLaunchFor(...args),
+}));
+// The automatic switch to managed (D59): null starts the agent as it is. auto-migrate.test covers the switch.
+const mockMigrateAtSpawn = vi.fn(async (..._args: unknown[]): Promise<unknown> => null);
+vi.mock('./managed-agents/auto-migrate', () => ({
+  migrateAtSpawn: (...args: unknown[]) => mockMigrateAtSpawn(...args),
 }));
 
-// Mock profile-settings
-vi.mock('./profile-settings', () => ({
-  getProfile: vi.fn(() => null),
-  resolveProfileEnv: vi.fn(() => undefined),
+vi.mock('./agent-mcp-servers', () => ({
+  resolveProjectMcpServers: vi.fn(async () => ({})),
+}));
+vi.mock('./toml-config-cleanup', () => ({
+  cleanupStaleJsonInTomlConfigs: (...args: unknown[]) => mockCleanupStaleJsonInTomlConfigs(...args),
 }));
 
 // Mock agent-settings-service
@@ -201,7 +201,6 @@ const mockProvider = {
   getModelOptions: vi.fn(() => []),
   getDefaultPermissions: vi.fn((kind: string) => kind === 'quick' ? ['Read', 'Write'] : []),
   toolVerb: vi.fn(),
-  getProfileEnvKeys: vi.fn(() => ['CLAUDE_CONFIG_DIR']),
   getCapabilities: vi.fn(() => ({
     headless: true, structuredOutput: true, hooks: true,
     sessionResume: true, permissions: true,
@@ -230,7 +229,6 @@ const mockCodexProvider = {
     headless: true, structuredOutput: false, hooks: false,
     sessionResume: true, permissions: true,
   })),
-  getProfileEnvKeys: vi.fn(() => ['OPENAI_API_KEY']),
   // Codex passes its mission as a bare trailing positional argument, so
   // buildSpawnCommand puts it in trailingArgs (see SpawnCommandResult) and
   // buildMcpArgs must be spliced in ahead of it, never appended after.
@@ -336,7 +334,7 @@ import {
 import * as os from 'os';
 import { broadcastAgentExit } from './agent-exit-broadcast';
 import { agentRegistry } from './agent-registry';
-import { resolveProjectMcpServers } from './materialization-service';
+import { resolveProjectMcpServers } from './agent-mcp-servers';
 
 /** Give a mock provider the SessionCapable surface, with the real CLIs' "resume <uuid>" pattern. */
 function sessionCapable(provider: Record<string, unknown>): void {
@@ -352,12 +350,12 @@ function notSessionCapable(provider: Record<string, unknown>): void {
   delete provider.findRunSession;
   delete provider.hasSession;
   delete provider.hasSessionForCwd;
+  delete provider.hasSessionInStore;
 }
 
 describe('agent-system', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockIsMcpEnabled.mockReturnValue(false);
     mockHeadlessSpawn.mockImplementation((agentId: string) => {
       mockIsHeadless.mockImplementation((trackedAgentId: string) => trackedAgentId === agentId);
     });
@@ -627,6 +625,19 @@ describe('agent-system', () => {
       );
     });
 
+    it('starts on the provider\'s own environment when old settings still name a profile (#2749)', async () => {
+      mockReadProjectAgentDefaults.mockReturnValue({ profileId: 'work' } as never);
+      try {
+        await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project/worktree', kind: 'durable' });
+        expect(mockProvider.checkAvailability).toHaveBeenCalledWith();
+        const env = mockPtySpawn.mock.calls.at(-1)![4] as Record<string, string>;
+        expect(env).toMatchObject({ CLUBHOUSE_AGENT_ID: 'agent-1' });
+        expect(env).not.toHaveProperty('CLAUDE_CONFIG_DIR');
+      } finally {
+        mockReadProjectAgentDefaults.mockReturnValue({});
+      }
+    });
+
     it('uses quick default permissions when kind is quick and no allowedTools', async () => {
       await spawnAgent({
         agentId: 'agent-1',
@@ -733,8 +744,8 @@ describe('agent-system', () => {
       } as unknown as TelemetryRuntime);
       const realStart = mockTryStartChatAgent.getMockImplementation()!;
       mockTryStartChatAgent.mockImplementationOnce(async (...args: unknown[]) => {
-        (args[5] as () => void)();
-        Object.assign(args[6] as object, { attempts: [{ driver: 'claude_agent_sdk', checkMs: 5 }], reason: 'killed' });
+        (args[4] as () => void)();
+        Object.assign(args[5] as object, { attempts: [{ driver: 'claude_agent_sdk', checkMs: 5 }], reason: 'killed' });
         return 'cancelled';
       });
       try {
@@ -950,7 +961,6 @@ describe('agent-system', () => {
       ['claude-code', undefined],
       ['codex-cli', 'codex-cli'],
     ] as const)('%s PTY: the nonce is in the spawn env, not in the config or argv', async (_label, orchestrator) => {
-      mockIsMcpEnabled.mockReturnValue(true);
       mockMcpWaitReady.mockResolvedValueOnce(23456);
       await spawnAgent({
         agentId: 'agent-1',
@@ -964,12 +974,12 @@ describe('agent-system', () => {
       const [, , , args, env] = mockPtySpawn.mock.calls[0] as unknown as [string, string, string, string[], Record<string, string>];
       expect(env).toMatchObject({ CLUBHOUSE_AGENT_ID: 'agent-1', CLUBHOUSE_HOOK_NONCE: nonce, CLUBHOUSE_MCP_PORT: '23456' });
       expect(args.join(' ')).not.toContain(nonce);
-      // injectClubhouseMcp(cwd, agentId, port, conventions, scope): no nonce argument.
+      // injectClubhouseMcp(cwd, agentId, port, conventions): no nonce argument.
       expect(mockInjectClubhouseMcp).toHaveBeenCalledTimes(1);
       const injectArgs = (mockInjectClubhouseMcp.mock.calls[0] as unknown[]);
       expect(injectArgs.slice(0, 3)).toEqual(['/project/worktree', 'agent-1', 23456]);
-      // The project path rides along so project-only MCP enablement counts (#2223).
-      expect(injectArgs[4]).toEqual({ projectPath: '/project', agentOverride: undefined });
+      // Nothing decides whether it's injected: every agent gets the bridge.
+      expect(injectArgs).toHaveLength(4);
       expect(JSON.stringify(injectArgs)).not.toContain(nonce);
       // Codex takes MCP servers as `-c` launch flags built from this definition.
       if (orchestrator === 'codex-cli') expect(mockBuildClubhouseMcpDef).toHaveBeenCalled();
@@ -1014,8 +1024,6 @@ describe('agent-system', () => {
   });
 
   describe('MCP arg injection ordering (spawnPtyAgent)', () => {
-    beforeEach(() => { mockIsMcpEnabled.mockReturnValue(true); });
-
     it('inserts buildMcpArgs output before trailingArgs so a positional mission stays last', async () => {
       mockMcpWaitReady.mockResolvedValueOnce(23456);
       (mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
@@ -1071,9 +1079,7 @@ describe('agent-system', () => {
     });
   });
 
-  describe('Clubhouse MCP for helpers and agent overrides (#2610)', () => {
-    /** MCP off in the app and project, with isMcpEnabled's real precedence. */
-    const mcpOffEverywhere = () => mockIsMcpEnabled.mockImplementation(((_p: string, agentOverride?: boolean) => agentOverride ?? false) as never);
+  describe('the Clubhouse MCP for every agent (#2610)', () => {
     const spawn = () => spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', orchestrator: 'codex-cli' });
     const withConfig = (config: Record<string, unknown>) =>
       mockGetDurableConfig.mockImplementation((async () => ({ id: 'agent-1', ...config })) as never);
@@ -1084,7 +1090,6 @@ describe('agent-system', () => {
       (mockCodexProvider.buildMcpArgs as ReturnType<typeof vi.fn>).mockClear();
       mockInjectClubhouseMcp.mockClear();
       mockPtySpawn.mockClear();
-      mcpOffEverywhere();
       mockMcpWaitReady.mockResolvedValue(23456);
       (mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mockResolvedValue({ binary: '/usr/local/bin/codex', args: ['--full-auto'] });
       vi.mocked(resolveProjectMcpServers).mockResolvedValue({ github: { command: 'gh' } } as never);
@@ -1093,7 +1098,6 @@ describe('agent-system', () => {
     afterEach(() => {
       mockGetDurableConfig.mockReset();
       mockGetDurableConfig.mockImplementation(() => null);
-      mockIsMcpEnabled.mockReset();
       mockMcpWaitReady.mockReset();
       mockMcpWaitReady.mockImplementation(() => Promise.reject(new Error('MCP bridge server not started')));
       vi.mocked(resolveProjectMcpServers).mockReset();
@@ -1103,21 +1107,105 @@ describe('agent-system', () => {
     });
 
     it.each([
-      ['no setting of its own', {}],
-      ['its own setting off', { mcpOverride: false }],
-    ])('gives a helper the bridge in an MCP-off project, with %s, and no project servers', async (_label, own) => {
-      withConfig({ parentAgentId: 'orch-1', ...own });
+      ['a plain agent', {}],
+      ['a helper', { parentAgentId: 'orch-1' }],
+      ['an agent with a saved mcpOverride false from before', { mcpOverride: false }],
+    ])('gives %s the bridge and its project servers', async (_label, own) => {
+      withConfig(own);
       await spawn();
       expect(mockEnsureMcpBridge).toHaveBeenCalled();
-      expect(mockInjectClubhouseMcp.mock.calls[0][4]).toEqual({ projectPath: '/project', agentOverride: true });
-      expect(Object.keys(flagsFromBuild()!)).toEqual(['clubhouse']);
+      expect(mockInjectClubhouseMcp).toHaveBeenCalledTimes(1);
+      expect(Object.keys(flagsFromBuild()!).sort()).toEqual(['clubhouse', 'github']);
     });
 
-    it('gives a helper its project servers too where MCP is on for them', async () => {
-      mockIsMcpEnabled.mockImplementation(((_p: string, agentOverride?: boolean) => agentOverride ?? true) as never);
-      withConfig({ parentAgentId: 'orch-1' });
+    it('tells the person through the setup notice when project MCP servers were left out (D10)', async () => {
+      withConfig({});
+      vi.mocked(resolveProjectMcpServers).mockImplementation((async (_p: string, _a: unknown, onNotice?: (m: string) => void) => {
+        onNotice?.('left out');
+        return {};
+      }) as never);
+      mockBroadcastToAllWindows.mockClear();
+      await spawn();
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, 'agent-1', 'left out');
+    });
+
+    it('tells the person through the setup notice when Codex launch flags left MCP env variables out (#2932)', async () => {
+      withConfig({});
+      const build = mockCodexProvider.buildMcpArgs as ReturnType<typeof vi.fn>;
+      build.mockImplementationOnce((_servers: unknown, onNotice?: (m: string) => void) => {
+        onNotice?.('env left out');
+        return [];
+      });
+      mockBroadcastToAllWindows.mockClear();
+      await spawn();
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, 'agent-1', 'env left out');
+    });
+
+    it('gives a managed agent its own MCP servers and the bridge, a saved mcpOverride from before ignored (#2896)', async () => {
+      withConfig({ mcpOverride: false, worktreePath: '/project/wt', managed: { version: 1, blocks: [], skills: [], mcps: ['part-github'] } });
       await spawn();
       expect(Object.keys(flagsFromBuild()!).sort()).toEqual(['clubhouse', 'github']);
+    });
+
+    describe('a quick agent started from a template (D25)', () => {
+      const PROJECT = path.join(path.sep, 'work', 'project');
+      const launch = (over: Record<string, unknown> = {}) => ({
+        templateId: 'tpl', instructions: 'You are swift-otter.', servers: { workiq: { command: 'workiq' } }, skippedSkills: 0, missing: 0, ...over,
+      });
+      const quick = (extra: Record<string, unknown> = {}) => spawnAgent({
+        agentId: 'quick-1', projectPath: PROJECT, cwd: PROJECT, kind: 'quick', orchestrator: 'codex-cli',
+        mission: 'Fix it', systemPrompt: 'Write a summary.', managedTemplate: { id: 'tpl', agentName: 'swift-otter' }, ...extra,
+      });
+      beforeEach(() => {
+        mockQuickLaunchFor.mockReset().mockResolvedValue(launch());
+        (mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mockClear();
+      });
+      afterEach(() => {
+        untrackAgent('quick-1');
+      });
+
+      it('puts the template\'s instructions first in the system prompt and its servers in the launch flags, in place of the project\'s', async () => {
+        await quick();
+        expect(mockQuickLaunchFor).toHaveBeenCalledWith(PROJECT, PROJECT, 'quick-1', { id: 'tpl', agentName: 'swift-otter' }, expect.objectContaining({ id: 'codex-cli' }));
+        expect((mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0].systemPrompt).toBe('You are swift-otter.\n\nWrite a summary.');
+        expect(Object.keys(flagsFromBuild()!).sort()).toEqual(['clubhouse', 'workiq']);
+        expect(resolveProjectMcpServers).not.toHaveBeenCalled();
+      });
+
+      it('always gets the bridge, which its hooks share the nonce with', async () => {
+        await quick();
+        expect(mockInjectClubhouseMcp).toHaveBeenCalled();
+        expect(Object.keys(flagsFromBuild()!).sort()).toEqual(['clubhouse', 'workiq']);
+        const env = mockPtySpawn.mock.calls.at(-1)![4] as Record<string, string>;
+        expect(env.CLUBHOUSE_HOOK_NONCE).toBe(agentRegistry.get('quick-1')?.nonce);
+      });
+
+      it('fails the start when the template can\'t be read', async () => {
+        mockQuickLaunchFor.mockRejectedValue(new Error('not_found'));
+        await expect(quick()).rejects.toThrow('not_found');
+        expect(mockPtySpawn).not.toHaveBeenCalled();
+      });
+
+      it('passes the template\'s servers to a headless run too, after its own flags', async () => {
+        mockGetSpawnMode.mockReturnValueOnce('headless');
+        const codex = mockCodexProvider as unknown as { buildHeadlessCommand?: unknown };
+        codex.buildHeadlessCommand = vi.fn(() => Promise.resolve({ binary: 'codex', args: ['exec', 'prompt', '--json'], outputKind: 'stream-json' as const }));
+        (mockCodexProvider.buildMcpArgs as ReturnType<typeof vi.fn>).mockClear();
+        try {
+          await quick();
+        } finally {
+          delete codex.buildHeadlessCommand;
+        }
+        expect(Object.keys(flagsFromBuild()!).sort()).toEqual(['clubhouse', 'workiq']);
+        expect(flagsFromBuild()!.workiq).toEqual({ command: 'workiq' });
+        expect(mockHeadlessSpawn.mock.calls.at(-1)![3]).toEqual(['exec', 'prompt', '--json', '-c', 'mcp_servers.clubhouse.command=node']);
+      });
+
+      it('leaves a quick agent without a template as it was', async () => {
+        await quick({ managedTemplate: undefined });
+        expect(mockQuickLaunchFor).not.toHaveBeenCalled();
+        expect((mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0].systemPrompt).toBe('Write a summary.');
+      });
     });
 
     it('does not start a helper the bridge cannot serve, and says why', async () => {
@@ -1135,54 +1223,108 @@ describe('agent-system', () => {
       expect(mockPtySpawn).not.toHaveBeenCalled();
     });
 
-    it('starts the bridge for an agent turned on with everything else off', async () => {
-      withConfig({ mcpOverride: true });
-      await spawn();
-      expect(mockEnsureMcpBridge).toHaveBeenCalled();
-      expect(mockInjectClubhouseMcp.mock.calls[0][4]).toEqual({ projectPath: '/project', agentOverride: true });
-      expect(Object.keys(flagsFromBuild()!).sort()).toEqual(['clubhouse', 'github']);
-    });
-
-    it('leaves the bridge alone for an agent with MCP off, and still starts it without', async () => {
+    it('still starts a plain agent whose bridge couldn\'t start, without the bridge', async () => {
       withConfig({});
       mockMcpWaitReady.mockReset();
       mockMcpWaitReady.mockImplementation(() => Promise.reject(new Error('MCP bridge server not started')));
       await spawn();
-      expect(mockEnsureMcpBridge).not.toHaveBeenCalled();
+      expect(mockEnsureMcpBridge).toHaveBeenCalled();
       expect(mockPtySpawn).toHaveBeenCalled();
-    });
-
-    it('a helper handed off goes back to the normal settings', async () => {
-      withConfig({ parentAgentId: undefined });
-      await spawn();
-      expect(mockEnsureMcpBridge).not.toHaveBeenCalled();
+      expect(Object.keys(flagsFromBuild()!)).toEqual(['github']);
     });
   });
 
-  describe('per-agent MCP setting (#2223)', () => {
-    it.each([
-      [false, false],
-      [true, true],
-    ] as const)('mcpOverride=%s reaches the injection check and decides the launch flags', async (override, flagged) => {
-      mockGetDurableConfig.mockImplementation((async () => ({ id: 'agent-1', mcpOverride: override })) as never);
-      mockIsMcpEnabled.mockImplementation(((_p: string, agentOverride?: boolean) => agentOverride ?? !override) as never);
+  describe('headless quick agents get the bridge too (D69)', () => {
+    type HeadlessMock = { buildHeadlessCommand?: unknown; buildMcpArgs?: unknown; getCapabilities: ReturnType<typeof vi.fn> };
+    const withHeadless = async (provider: HeadlessMock, orchestrator: string | undefined, binary: string) => {
+      mockGetSpawnMode.mockReturnValueOnce('headless');
       mockMcpWaitReady.mockResolvedValueOnce(23456);
-      (mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        binary: '/usr/local/bin/codex',
-        args: ['--full-auto'],
-      });
+      const caps = provider.getCapabilities;
+      const hadMcpArgs = 'buildMcpArgs' in provider;
+      const mcpArgs = vi.fn(() => ['--mcp-flag']);
+      provider.getCapabilities = vi.fn(() => ({ ...caps(), headless: true }));
+      provider.buildHeadlessCommand = vi.fn(() => Promise.resolve({ binary, args: ['-p', 'mission'], env: {}, outputKind: 'stream-json' as const }));
+      if (orchestrator) provider.buildMcpArgs = mcpArgs;
       try {
-        await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', orchestrator: 'codex-cli' });
-
-        expect(mockIsMcpEnabled).toHaveBeenCalledWith('/project', override);
-        expect(mockInjectClubhouseMcp.mock.calls[0][4]).toEqual({ projectPath: '/project', agentOverride: override });
-        const args = (mockPtySpawn.mock.calls[0] as unknown as unknown[])[3];
-        expect(args).toEqual(flagged ? ['--full-auto', '-c', 'mcp_servers.clubhouse.command=node'] : ['--full-auto']);
+        await spawnAgent({ agentId: 'quick-1', projectPath: '/project', cwd: '/project/parent-wt', kind: 'quick', mission: 'do thing', ...(orchestrator ? { orchestrator } : {}) } as never);
       } finally {
-        mockGetDurableConfig.mockReset();
-        mockGetDurableConfig.mockImplementation(() => null);
-        mockIsMcpEnabled.mockReset();
+        provider.getCapabilities = caps;
+        delete provider.buildHeadlessCommand;
+        if (!hadMcpArgs) delete provider.buildMcpArgs;
+        untrackAgent('quick-1');
       }
+      return mcpArgs;
+    };
+
+    beforeEach(() => {
+      mockInjectClubhouseMcp.mockClear();
+      mockSnapshotFile.mockClear();
+      mockBuildClubhouseMcpDef.mockClear();
+      mockEnsureMcpBridge.mockClear();
+    });
+
+    it('Claude: the bridge goes in the folder\'s MCP config, snapshotted first and restored on exit', async () => {
+      await withHeadless(mockProvider as unknown as HeadlessMock, undefined, '/usr/local/bin/claude');
+      expect(mockSnapshotFile).toHaveBeenCalledWith('quick-1', path.join('/project/parent-wt', '.mcp.json'));
+      expect(mockInjectClubhouseMcp).toHaveBeenCalledWith('/project/parent-wt', 'quick-1', 23456, mockClaudeConventions);
+      expect(mockSnapshotFile.mock.invocationCallOrder[0]).toBeLessThan(mockInjectClubhouseMcp.mock.invocationCallOrder[0]);
+      expect(mockHeadlessSpawn.mock.calls.at(-1)![3]).toEqual(['-p', 'mission']);
+      const onExit = mockHeadlessSpawn.mock.calls.at(-1)![6] as (id: string) => void;
+      mockRestoreForAgent.mockClear();
+      onExit('quick-1');
+      expect(mockRestoreForAgent).toHaveBeenCalledWith('quick-1');
+    });
+
+    it.each([
+      ['Codex', mockCodexProvider, 'codex-cli', '/usr/local/bin/codex'],
+      ['Copilot', mockCopilotProvider, 'copilot-cli', '/usr/local/bin/copilot'],
+    ] as const)('%s: the bridge is in the launch flags, after the command\'s own', async (_label, provider, orchestrator, binary) => {
+      const mcpArgs = await withHeadless(provider as unknown as HeadlessMock, orchestrator, binary);
+      expect(mcpArgs).toHaveBeenCalledTimes(1);
+      expect(Object.keys((mcpArgs.mock.calls[0] as unknown[])[0] as Record<string, unknown>)).toEqual(['clubhouse']);
+      expect(mockBuildClubhouseMcpDef).toHaveBeenCalledWith(23456, 'quick-1');
+      expect(mockHeadlessSpawn.mock.calls.at(-1)![3]).toEqual(['-p', 'mission', '--mcp-flag']);
+      expect(mockInjectClubhouseMcp).toHaveBeenCalledWith('/project/parent-wt', 'quick-1', 23456, provider.conventions);
+    });
+
+    it('starts without the bridge when it isn\'t up, after asking for it again', async () => {
+      mockGetSpawnMode.mockReturnValueOnce('headless');
+      const codex = mockCodexProvider as unknown as HeadlessMock;
+      codex.buildHeadlessCommand = vi.fn(() => Promise.resolve({ binary: 'codex', args: ['exec'], env: {}, outputKind: 'stream-json' as const }));
+      (mockCodexProvider.buildMcpArgs as ReturnType<typeof vi.fn>).mockClear();
+      try {
+        await spawnAgent({ agentId: 'quick-1', projectPath: '/project', cwd: '/project', kind: 'quick', orchestrator: 'codex-cli', mission: 'x' });
+      } finally {
+        delete codex.buildHeadlessCommand;
+        untrackAgent('quick-1');
+      }
+      expect(mockEnsureMcpBridge).toHaveBeenCalled();
+      expect(mockInjectClubhouseMcp).not.toHaveBeenCalled();
+      expect(mockCodexProvider.buildMcpArgs).not.toHaveBeenCalled();
+      expect(mockHeadlessSpawn.mock.calls.at(-1)![3]).toEqual(['exec']);
+    });
+  });
+
+  describe('a bridge that failed at app start is retried for every spawn', () => {
+    beforeEach(() => mockEnsureMcpBridge.mockClear());
+
+    it.each([
+      ['a quick agent', 'quick'],
+      ['a durable agent', 'durable'],
+    ] as const)('%s asks for the bridge again', async (_label, kind) => {
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind, mission: 'x' });
+      expect(mockEnsureMcpBridge).toHaveBeenCalledTimes(1);
+    });
+
+    it('a quick agent doesn\'t wait for or fail on a bridge that is still down', async () => {
+      mockMcpWaitReady.mockImplementation(() => Promise.reject(new Error('port in use')));
+      try {
+        await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'quick', mission: 'x' });
+      } finally {
+        mockMcpWaitReady.mockImplementation(() => Promise.reject(new Error('MCP bridge server not started')));
+      }
+      expect(mockEnsureMcpBridge).toHaveBeenCalled();
+      expect(mockPtySpawn).toHaveBeenCalled();
     });
   });
 
@@ -1726,7 +1868,7 @@ describe('agent-system', () => {
         const { onExit } = await wake('codex-cli');
         onExit('agent-1', 0, `session: ${OTHER}`);
         await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
-        expect(hasSessionForCwd).toHaveBeenCalledWith(OTHER, '/project', undefined);
+        expect(hasSessionForCwd).toHaveBeenCalledWith(OTHER, '/project');
         expect(mockAddSessionEntry).not.toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: OTHER }));
       });
 
@@ -1942,6 +2084,23 @@ describe('agent-system', () => {
           const { onExit } = await wake('codex-cli');
           onExit('agent-1', 0, 'bye');
           expect(await capture()).toMatchObject({ 'clubhouse.session.capture.result': 'capture_failed' });
+        });
+
+        it('a saved id only a removed provider profile\'s store has: fresh, kept, nothing cleared (#2749)', async () => {
+          (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => false);
+          const inStore = vi.fn(async () => true);
+          (mockCodexProvider as Record<string, unknown>).hasSessionInStore = inStore;
+          mockRemovedProfileStateDirs.mockResolvedValueOnce(['/old/codex-home']);
+          mockCodexProvider.buildSpawnCommand.mockClear();
+          const { resumedWith } = await wake('codex-cli');
+          expect(resumedWith).toBeTruthy();
+          expect(inStore).toHaveBeenCalledWith(resumedWith, '/old/codex-home');
+          expect(mockCodexProvider.buildSpawnCommand.mock.calls.at(-1)![0]).toMatchObject({ resume: false });
+          expect(recorded('clubhouse.agent.session_stale_cleared')).toEqual([]);
+          expect(recorded('clubhouse.agent.resume_outcome')).toEqual([
+            { 'clubhouse.orchestrator': 'codex-cli', 'clubhouse.agent.id_hash': 'agent-1', 'clubhouse.session.resume.result': 'fresh_not_found' },
+          ]);
+          expect(config.lastSessionId).toBe(resumedWith);
         });
 
         it('a saved id the store lacks at wake: cleared store_missing, fresh_not_found', async () => {
@@ -2164,17 +2323,12 @@ describe('agent-system', () => {
         conventions: expect.objectContaining({ configDir: '.codex' }),
       });
     });
-
-    it('uses provider fixtures with the expected profile env keys', () => {
-      expect(mockProvider.getProfileEnvKeys()).toEqual(['CLAUDE_CONFIG_DIR']);
-      expect(mockCodexProvider.getProfileEnvKeys()).toEqual(['OPENAI_API_KEY']);
-    });
   });
 
   describe('config pipeline integration', () => {
     it('calls snapshotFile before writeHooksConfig', async () => {
       const callOrder: string[] = [];
-      mockSnapshotFile.mockImplementation(() => { callOrder.push('snapshot'); });
+      mockSnapshotFile.mockImplementation((_agentId: string, file: string) => { callOrder.push(file.endsWith('settings.local.json') ? 'snapshot' : 'snapshot-mcp'); });
       mockProvider.writeHooksConfig.mockImplementation(() => {
         callOrder.push('writeHooks');
         return Promise.resolve();
@@ -2188,7 +2342,7 @@ describe('agent-system', () => {
       });
 
       expect(mockSnapshotFile).toHaveBeenCalledWith('agent-1', '/project/.claude/settings.local.json');
-      expect(callOrder).toEqual(['snapshot', 'writeHooks']);
+      expect(callOrder.filter((c) => c !== 'snapshot-mcp')).toEqual(['snapshot', 'writeHooks']);
     });
 
     it('passes onExit callback to pty spawn that calls restoreForAgent', async () => {
@@ -2330,7 +2484,7 @@ describe('agent-system', () => {
       expect(mockRestoreForAgent).toHaveBeenCalledWith('test-headless');
     });
 
-    it('skips snapshot when provider does not support hooks', async () => {
+    it('skips the hooks snapshot when provider does not support hooks, and still snapshots the MCP file', async () => {
       mockGetHooksConfigPath.mockReturnValueOnce(null);
 
       await spawnAgent({
@@ -2340,7 +2494,8 @@ describe('agent-system', () => {
         kind: 'durable',
       });
 
-      expect(mockSnapshotFile).not.toHaveBeenCalled();
+      // The Clubhouse MCP always runs, so only the MCP file is snapshotted.
+      expect(mockSnapshotFile.mock.calls.map(([, file]) => path.basename(file as string))).toEqual(['.mcp.json']);
     });
   });
 
@@ -2576,144 +2731,86 @@ describe('agent-system', () => {
     });
   });
 
-  describe('clubhouse mode materialization', () => {
-    it('calls materializeAgent for durable agents when clubhouse mode is enabled', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
+  describe('managed agent delivery (#2896)', () => {
+    it('delivers a managed setup before the start', async () => {
+      mockDeliverForSpawn.mockClear();
+      const config = {
+        id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1',
+        managed: { version: 1, blocks: ['builtin-block-identity'], skills: [], mcps: [] },
+      };
+      mockGetDurableConfig.mockReturnValue(config);
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockDeliverForSpawn).toHaveBeenCalledWith('/project', expect.objectContaining({ id: 'agent-1' }), expect.objectContaining({ id: 'claude-code' }));
+    });
+
+    it('keeps starting when delivery fails, and says why', async () => {
+      mockDeliverForSpawn.mockRejectedValueOnce(new Error('disk full'));
       mockGetDurableConfig.mockReturnValue({
-        id: 'agent-1',
-        name: 'agent-1',
-        worktreePath: '/project/.clubhouse/agents/agent-1',
+        id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1',
+        managed: { version: 1, blocks: [], skills: [], mcps: [] },
       });
-
-      await spawnAgent({
-        agentId: 'agent-1',
-        projectPath: '/project',
-        cwd: '/project',
-        kind: 'durable',
-      });
-
-      expect(mockMaterializeAgent).toHaveBeenCalledWith({
-        projectPath: '/project',
-        agent: expect.objectContaining({
-          id: 'agent-1',
-          worktreePath: '/project/.clubhouse/agents/agent-1',
-        }),
-        provider: expect.objectContaining({ id: 'claude-code' }),
-      });
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, 'agent-1', 'disk full');
     });
 
-    it('skips materialization when clubhouse mode is disabled', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(false);
+    it('delivers to an agent from the start after it switches to managed (#2901)', async () => {
+      mockDeliverForSpawn.mockClear();
+      const legacy = { id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1', persona: 'qa' };
+      mockGetDurableConfig.mockReturnValue(legacy);
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockDeliverForSpawn).not.toHaveBeenCalled();
 
-      await spawnAgent({
-        agentId: 'agent-1',
-        projectPath: '/project',
-        cwd: '/project',
-        kind: 'durable',
-      });
-
-      expect(mockMaterializeAgent).not.toHaveBeenCalled();
+      // Switch to managed saves a setup on the config and leaves the rest as it was.
+      mockGetDurableConfig.mockReturnValue({ ...legacy, managed: { version: 1, blocks: ['agent-1-notes'], skills: [], mcps: [] } });
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockDeliverForSpawn).toHaveBeenCalledTimes(1);
     });
 
-    it('skips materialization for quick agents', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
-
-      await spawnAgent({
-        agentId: 'agent-1',
-        projectPath: '/project',
-        cwd: '/project',
-        kind: 'quick',
+    it('switches a legacy-configured agent to managed before anything is written, and starts it as managed (D59)', async () => {
+      mockDeliverForSpawn.mockClear();
+      mockMigrateAtSpawn.mockClear();
+      const legacy = { id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1' };
+      const managedConfig = { ...legacy, managed: { version: 1, blocks: ['agent-1-notes'], skills: [], mcps: [] } };
+      mockGetDurableConfig.mockReturnValue(legacy);
+      mockMigrateAtSpawn.mockImplementationOnce(async () => {
+        // Nothing has been written into its folder yet.
+        expect(mockDeliverForSpawn).not.toHaveBeenCalled();
+        mockGetDurableConfig.mockReturnValue(managedConfig);
+        return managedConfig;
       });
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockMigrateAtSpawn).toHaveBeenCalledWith('/project', expect.objectContaining({ id: 'agent-1' }));
+      expect(mockDeliverForSpawn).toHaveBeenCalledWith('/project', managedConfig, expect.objectContaining({ id: 'claude-code' }));
 
-      expect(mockMaterializeAgent).not.toHaveBeenCalled();
+      // The next start is an ordinary managed one: no switch.
+      mockMigrateAtSpawn.mockClear();
+      mockDeliverForSpawn.mockClear();
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockMigrateAtSpawn).not.toHaveBeenCalled();
+      expect(mockDeliverForSpawn).toHaveBeenCalledTimes(1);
     });
 
-    it('skips materialization when getDurableConfig returns null', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
-      mockGetDurableConfig.mockReturnValue(null);
-
-      await spawnAgent({
-        agentId: 'agent-1',
-        projectPath: '/project',
-        cwd: '/project',
-        kind: 'durable',
-      });
-
-      expect(mockMaterializeAgent).not.toHaveBeenCalled();
-    });
-
-    it('skips materialization when clubhouseModeOverride is true', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
-      mockGetDurableConfig.mockReturnValue({
-        id: 'agent-1',
-        name: 'agent-1',
-        worktreePath: '/project/.clubhouse/agents/agent-1',
-        clubhouseModeOverride: true,
-      });
-
-      await spawnAgent({
-        agentId: 'agent-1',
-        projectPath: '/project',
-        cwd: '/project',
-        kind: 'durable',
-      });
-
-      expect(mockMaterializeAgent).not.toHaveBeenCalled();
-    });
-
-    it('skips materialization when config has no worktreePath', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
-      mockGetDurableConfig.mockReturnValue({
-        id: 'agent-1',
-        name: 'agent-1',
-      });
-
-      await spawnAgent({
-        agentId: 'agent-1',
-        projectPath: '/project',
-        cwd: '/project',
-        kind: 'durable',
-      });
-
-      expect(mockMaterializeAgent).not.toHaveBeenCalled();
-    });
-
-    it('stops launch when inherited permission rules cannot be applied', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
-      mockGetDurableConfig.mockReturnValue({ id: 'agent-1', name: 'agent-1', worktreePath: '/project/agent' });
-      const { UnsupportedPermissionRulesError } = await import('./agent-settings-service');
-      mockMaterializeAgent.mockRejectedValueOnce(new UnsupportedPermissionRulesError('Rules not applied'));
-      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' }))
-        .rejects.toThrow('Rules not applied');
-      expect(mockPtySpawn).not.toHaveBeenCalled();
-    });
-
-    it('continues spawn when materialization throws', async () => {
-      mockIsClubhouseModeEnabled.mockReturnValue(true);
-      mockGetDurableConfig.mockReturnValue({
-        id: 'agent-1',
-        name: 'agent-1',
-        worktreePath: '/project/.clubhouse/agents/agent-1',
-      });
-      mockMaterializeAgent.mockImplementation(() => {
-        throw new Error('materialization failed');
-      });
-
-      // Should not throw — materialization errors are caught
-      await spawnAgent({
-        agentId: 'agent-1',
-        projectPath: '/project',
-        cwd: '/project',
-        kind: 'durable',
-      });
-
-      expect(mockMaterializeAgent).toHaveBeenCalled();
+    it('starts the agent on the files in its folder when the switch fails or does not apply (D59, #2901)', async () => {
+      mockDeliverForSpawn.mockClear();
+      mockMigrateAtSpawn.mockClear();
+      mockGetDurableConfig.mockReturnValue({ id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1' });
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockMigrateAtSpawn).toHaveBeenCalledTimes(1);
+      expect(mockDeliverForSpawn).not.toHaveBeenCalled();
       expect(mockPtySpawn).toHaveBeenCalled();
-      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
-        'agent:agent-materialization-failed',
-        'agent-1',
-        'materialization failed',
-      );
+    });
+
+    it('never asks to switch a quick agent', async () => {
+      mockMigrateAtSpawn.mockClear();
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'quick' });
+      expect(mockMigrateAtSpawn).not.toHaveBeenCalled();
+    });
+
+    it('does nothing for an agent that is not managed', async () => {
+      mockDeliverForSpawn.mockClear();
+      mockGetDurableConfig.mockReturnValue({ id: 'agent-1', name: 'agent-1', worktreePath: '/project/.clubhouse/agents/agent-1' });
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockDeliverForSpawn).not.toHaveBeenCalled();
     });
   });
 
@@ -3212,6 +3309,41 @@ describe('listSessions: saved ids the CLI store lacks (#2156)', () => {
     expect(mockRemoveSessionEntries).not.toHaveBeenCalled();
   });
 
+  it('never prunes an entry a removed provider profile\'s store has; still prunes a truly missing one (#2749)', async () => {
+    sessionCapable(mockCodexProvider);
+    mockRemoveSessionEntries.mockClear();
+    mockGetDurableConfig.mockResolvedValue({ id: 'durable_cp', orchestrator: 'codex-cli' });
+    mockGetSessionHistory.mockResolvedValue([entry('old-profile-1'), entry('dead-1'), entry('real-1')]);
+    (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async (id: string) => id === 'real-1');
+    const inStore = vi.fn(async (id: string, dir: string) => dir === '/old/codex-home' && id === 'old-profile-1');
+    (mockCodexProvider as Record<string, unknown>).hasSessionInStore = inStore;
+    mockRemovedProfileStateDirs.mockResolvedValue(['/old/codex-home']);
+    try {
+      const sessions = await listSessions('/project', 'durable_cp', 'codex-cli');
+      expect(sessions.map((s) => s.sessionId)).toEqual(['real-1']);
+      expect(mockRemoveSessionEntries).toHaveBeenCalledWith('/project', 'durable_cp', ['dead-1']);
+      expect(mockRemovedProfileStateDirs).toHaveBeenCalledWith('codex-cli');
+    } finally {
+      mockRemovedProfileStateDirs.mockResolvedValue([]);
+    }
+  });
+
+  it('keeps an entry when a removed profile\'s store can\'t be read (#2749)', async () => {
+    sessionCapable(mockCodexProvider);
+    mockRemoveSessionEntries.mockClear();
+    mockGetDurableConfig.mockResolvedValue({ id: 'durable_cp', orchestrator: 'codex-cli' });
+    mockGetSessionHistory.mockResolvedValue([entry('old-profile-1')]);
+    (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => false);
+    (mockCodexProvider as Record<string, unknown>).hasSessionInStore = vi.fn(async () => undefined);
+    mockRemovedProfileStateDirs.mockResolvedValue(['/old/codex-home']);
+    try {
+      await listSessions('/project', 'durable_cp', 'codex-cli');
+      expect(mockRemoveSessionEntries).not.toHaveBeenCalled();
+    } finally {
+      mockRemovedProfileStateDirs.mockResolvedValue([]);
+    }
+  });
+
   it('prunes nothing when every entry exists', async () => {
     sessionCapable(mockCodexProvider);
     mockRemoveSessionEntries.mockClear();
@@ -3239,7 +3371,6 @@ describe('helper launch ceiling on the normal spawn path', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockIsMcpEnabled.mockReturnValue(false);
     mockMcpWaitReady.mockResolvedValue(23456);
     mockGetPermissionMode.mockReturnValue('skip-all');
     orchestratorLive = launchAccessFor('auto');
@@ -3371,7 +3502,6 @@ describe('the MCP call gate is set before anything can call a tool', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     atNonce = [];
-    mockIsMcpEnabled.mockImplementation(((_path: unknown, override: unknown) => override ?? true) as never);
     mockMcpWaitReady.mockResolvedValue(23456);
     const real = agentRegistry.setNonce.bind(agentRegistry);
     setNonce = vi.spyOn(agentRegistry, 'setNonce').mockImplementation((agentId: string, nonce: string) => {
@@ -3383,34 +3513,23 @@ describe('the MCP call gate is set before anything can call a tool', () => {
   afterEach(() => {
     setNonce.mockRestore();
     untrackAgent(id);
-    mockIsMcpEnabled.mockReset();
     mockGetDurableConfig.mockReset();
     mockGetDurableConfig.mockImplementation(() => null);
   });
 
-  it('an agent saved off reads closed when its nonce arrives: with no entry it would read open', async () => {
-    mockGetDurableConfig.mockImplementation((async () => ({ id, name: 'off', mcpOverride: false })) as never);
-    await start();
-    expect(atNonce.length).toBeGreaterThan(0);
-    expect(atNonce.every((access) => access === 'closed')).toBe(true);
-  });
-
-  it('a helper saved off keeps message_parent when its nonce arrives', async () => {
-    mockGetDurableConfig.mockImplementation((async () => ({ id, name: 'helper', parentAgentId: 'lead', mcpOverride: false })) as never);
-    await start();
-    expect(atNonce.length).toBeGreaterThan(0);
-    expect(atNonce.every((access) => access === 'report_only')).toBe(true);
-  });
-
-  it('an agent saved on reads open when its nonce arrives, with its project off', async () => {
-    mockIsMcpEnabled.mockImplementation(((_path: unknown, override: unknown) => override ?? false) as never);
-    mockGetDurableConfig.mockImplementation((async () => ({ id, name: 'on', mcpOverride: true })) as never);
-    await start();
-    expect(atNonce.every((access) => access === 'open')).toBe(true);
+  it('an agent reads open when its nonce arrives, a helper and a saved mcpOverride false from before included', async () => {
+    for (const config of [{ id, name: 'plain' }, { id, name: 'helper', parentAgentId: 'lead' }, { id, name: 'old', mcpOverride: false }]) {
+      atNonce = [];
+      mockGetDurableConfig.mockImplementation((async () => config) as never);
+      await start();
+      untrackAgent(id);
+      expect(atNonce.length).toBeGreaterThan(0);
+      expect(atNonce.every((access) => access === 'open')).toBe(true);
+    }
   });
 
   it('goes before the chat runtime, which sets its nonce inside', async () => {
-    mockGetDurableConfig.mockImplementation((async () => ({ id, name: 'off', mcpOverride: false })) as never);
+    mockGetDurableConfig.mockImplementation((async () => { throw new Error('unreadable'); }) as never);
     const atChat: string[] = [];
     // Stands in for the runtime, and goes on to the terminal as the real one can.
     mockTryStartChatAgent.mockImplementationOnce(async () => {
@@ -3445,7 +3564,7 @@ describe('the MCP call gate is set before anything can call a tool', () => {
     expect(mockPtySpawn).toHaveBeenCalled();
   });
 
-  it('a missing row isn\'t unreadable: no config, so it follows its project', async () => {
+  it('a missing row isn\'t unreadable: no config, and it is open', async () => {
     mockGetDurableConfig.mockImplementation((async () => null) as never);
     await start();
     expect(mockSetMcpCaller).toHaveBeenCalledWith('config', id, projectPath, null);
@@ -3462,7 +3581,6 @@ import { withAgentActivity } from './agent-transition';
 describe('managed instructions in the real terminal launch seam', () => {
   let lease: ManagedLaunchLease;
   beforeEach(() => {
-    mockIsMcpEnabled.mockReturnValue(false);
     mockPtyIsRunning.mockReturnValue(false);
     mockGetDurableConfig.mockResolvedValue({ id: 'managed-launch', name: 'managed', worktreePath: '/workspace', orchestrator: 'claude-code', model: 'opus', runtimeMode: 'terminal' } as never);
     lease = { attemptId: 'attempt-fixture', instructionFile: '/private/generation/instructions.txt', pluginDir: '/private/generation/plugin', binary: '/usr/local/bin/claude',
@@ -3475,13 +3593,12 @@ describe('managed instructions in the real terminal launch seam', () => {
   afterEach(() => { untrackAgent('managed-launch'); });
   const start = () => spawnAgent({ agentId: 'managed-launch', projectPath: '/project', cwd: '/workspace', kind: 'durable', orchestrator: 'claude-code' });
   it('passes only private file paths, preserves launch settings and skips legacy writes/restoration/chat', async () => {
-    mockIsClubhouseModeEnabled.mockReturnValue(true); // The actual production gate refuses this combination.
     await start();
     expect(mockPtySpawn).toHaveBeenCalledWith('managed-launch', '/workspace', '/usr/local/bin/claude',
       ['--model', 'opus', '--append-system-prompt-file', lease.instructionFile, '--plugin-dir', lease.pluginDir], expect.any(Object), expect.any(Function), undefined, expect.any(Object));
     expect(lease.beforeStart).toHaveBeenCalledWith('/usr/local/bin/claude');
     expect(lease.started).toHaveBeenCalledWith('pty:fixture:123');
-    expect(mockMaterializeAgent).not.toHaveBeenCalled(); expect(mockSnapshotFile).not.toHaveBeenCalled();
+    expect(mockSnapshotFile).not.toHaveBeenCalled();
     expect(mockProvider.writeHooksConfig).not.toHaveBeenCalled(); expect(mockTryStartChatAgent).not.toHaveBeenCalled();
     const args = mockPtySpawn.mock.calls[0];
     args[7].onObservedExit(); args[5]('managed-launch', 0, '', false);

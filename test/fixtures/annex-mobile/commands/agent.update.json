@@ -12,7 +12,6 @@
         "idleSleep": 30,
         "model": "sonnet",
         "name": "bright-otter",
-        "persona": "architect",
         "runtime": "chat",
         "type": "agent.update",
         "version": 1
@@ -34,14 +33,14 @@
               "autoHelpers": null,
               "autoHelpersEffective": false,
               "connectToDispatcher": false,
-              "control": "ask-before-start",
+              "control": "hands-off",
               "controls": [
                 "hands-off",
                 "ask-before-start",
                 "ask-everything"
               ],
               "crossProjectHelpers": false,
-              "maxHelpers": 4,
+              "maxHelpers": 5,
               "maxHelpersCap": 20,
               "mcpEnabled": true,
               "orchestrate": false,
@@ -49,9 +48,9 @@
                 "access": "default",
                 "autoHelpers": "default",
                 "connectToDispatcher": "default",
-                "control": "persona",
+                "control": "default",
                 "crossProjectHelpers": "default",
-                "maxHelpers": "persona",
+                "maxHelpers": "default",
                 "orchestrate": "default"
               }
             },
@@ -148,8 +147,8 @@
                 "value": null
               },
               "persona": {
-                "editable": "sleeping",
-                "value": "architect"
+                "editable": "never",
+                "value": null
               },
               "runtime": {
                 "editable": "sleeping",
@@ -174,7 +173,6 @@
         "emoji": null,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "idleSleep": "inherit",
-        "persona": null,
         "runtime": "default",
         "type": "agent.update",
         "version": 1
@@ -310,8 +308,8 @@
                 "value": null
               },
               "persona": {
-                "editable": "sleeping",
-                "value": ""
+                "editable": "never",
+                "value": null
               },
               "runtime": {
                 "editable": "sleeping",
@@ -470,8 +468,8 @@
                 "value": "claude-code"
               },
               "persona": {
-                "editable": "sleeping",
-                "value": ""
+                "editable": "never",
+                "value": null
               },
               "runtime": {
                 "editable": "sleeping",
@@ -629,7 +627,7 @@
                 "value": "claude-code"
               },
               "persona": {
-                "editable": "sleeping",
+                "editable": "never",
                 "value": null
               },
               "runtime": {
@@ -818,7 +816,7 @@
       }
     },
     {
-      "name": "clubhouse_mode_unavailable",
+      "name": "managed_agent (clubhouseMode)",
       "request": {
         "agentId": "durable_sleepy",
         "clubhouseMode": true,
@@ -832,8 +830,8 @@
           "commandId": "cmd_072",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
-            "code": "clubhouse_mode_unavailable",
-            "message": "clubhouse_mode_unavailable"
+            "code": "managed_agent",
+            "message": "Clubhouse Mode was retired, so bright-otter can't use it. Clubhouse-managed agents get their instructions, skills and MCP servers from their setup."
           },
           "status": "rejected",
           "version": 1
@@ -842,12 +840,12 @@
       }
     },
     {
-      "name": "unknown_persona",
+      "name": "managed_agent (persona)",
       "request": {
         "agentId": "durable_sleepy",
         "commandId": "cmd_073",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "persona": "pirate",
+        "persona": "qa",
         "type": "agent.update",
         "version": 1
       },
@@ -856,421 +854,28 @@
           "commandId": "cmd_073",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
-            "code": "unknown_persona",
-            "message": "unknown_persona"
+            "code": "managed_agent",
+            "message": "Personas were retired, so bright-otter can't take one. Clubhouse-managed agents get their instructions from their setup."
           },
           "status": "rejected",
           "version": 1
         },
-        "status": 400
+        "status": 409
       }
     },
     {
-      "name": "invalid_color",
+      "name": "accepted persona clear (no-op)",
       "request": {
         "agentId": "durable_sleepy",
-        "color": "chartreuse",
         "commandId": "cmd_074",
         "epoch": "00000000-0000-4000-8000-000000000001",
+        "persona": null,
         "type": "agent.update",
         "version": 1
       },
       "response": {
         "body": {
           "commandId": "cmd_074",
-          "epoch": "00000000-0000-4000-8000-000000000001",
-          "error": {
-            "code": "invalid_color",
-            "message": "invalid_color"
-          },
-          "status": "rejected",
-          "version": 1
-        },
-        "status": 400
-      }
-    },
-    {
-      "name": "invalid_command (no settings)",
-      "request": {
-        "agentId": "durable_sleepy",
-        "commandId": "cmd_075",
-        "epoch": "00000000-0000-4000-8000-000000000001",
-        "type": "agent.update",
-        "version": 1
-      },
-      "response": {
-        "body": {
-          "epoch": "00000000-0000-4000-8000-000000000001",
-          "error": {
-            "code": "invalid_command",
-            "message": "invalid_command"
-          },
-          "status": "rejected",
-          "version": 1
-        },
-        "status": 400
-      }
-    },
-    {
-      "name": "invalid_command (unknown field)",
-      "request": {
-        "agentId": "durable_sleepy",
-        "commandId": "cmd_076",
-        "epoch": "00000000-0000-4000-8000-000000000001",
-        "instructions": "be nice",
-        "type": "agent.update",
-        "version": 1
-      },
-      "response": {
-        "body": {
-          "epoch": "00000000-0000-4000-8000-000000000001",
-          "error": {
-            "code": "invalid_command",
-            "message": "invalid_command"
-          },
-          "status": "rejected",
-          "version": 1
-        },
-        "status": 400
-      }
-    },
-    {
-      "name": "accepted orchestration",
-      "request": {
-        "agentId": "durable_chat",
-        "commandId": "cmd_077",
-        "epoch": "00000000-0000-4000-8000-000000000001",
-        "orchestration": {
-          "access": "auto",
-          "control": "ask-everything",
-          "maxHelpers": 20
-        },
-        "type": "agent.update",
-        "version": 1
-      },
-      "response": {
-        "body": {
-          "commandId": "cmd_077",
-          "epoch": "00000000-0000-4000-8000-000000000001",
-          "result": {
-            "agentId": "durable_chat",
-            "orchestration": {
-              "access": "auto",
-              "accessLevels": [
-                "same",
-                "standard",
-                "auto",
-                "bypass"
-              ],
-              "autoHelpers": null,
-              "autoHelpersEffective": false,
-              "connectToDispatcher": true,
-              "control": "ask-everything",
-              "controls": [
-                "hands-off",
-                "ask-before-start",
-                "ask-everything"
-              ],
-              "crossProjectHelpers": false,
-              "maxHelpers": 20,
-              "maxHelpersCap": 20,
-              "mcpEnabled": true,
-              "orchestrate": true,
-              "sources": {
-                "access": "agent",
-                "autoHelpers": "default",
-                "connectToDispatcher": "default",
-                "control": "agent",
-                "crossProjectHelpers": "default",
-                "maxHelpers": "agent",
-                "orchestrate": "agent"
-              }
-            },
-            "projectId": "proj_app",
-            "settings": {
-              "clubhouseMode": {
-                "editable": "never",
-                "projectEnabled": false,
-                "value": null
-              },
-              "color": {
-                "editable": "sleeping",
-                "value": "indigo"
-              },
-              "contextWindow": {
-                "applies": [
-                  "launch",
-                  "resume"
-                ],
-                "choices": [
-                  {
-                    "id": "100000",
-                    "label": "100K",
-                    "tokens": 100000
-                  },
-                  {
-                    "id": "200000",
-                    "label": "200K",
-                    "tokens": 200000
-                  },
-                  {
-                    "id": "300000",
-                    "label": "300K",
-                    "tokens": 300000
-                  },
-                  {
-                    "id": "500000",
-                    "label": "500K",
-                    "tokens": 500000
-                  },
-                  {
-                    "id": "750000",
-                    "label": "750K",
-                    "tokens": 750000
-                  },
-                  {
-                    "id": "1000000",
-                    "label": "1M",
-                    "tokens": 1000000
-                  }
-                ],
-                "configurable": true,
-                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
-                "defaultLabel": "Auto",
-                "defaultTokens": null,
-                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
-                "editable": "sleeping",
-                "kind": "working_window",
-                "label": "Working context",
-                "maxTokens": 1000000,
-                "notice": null,
-                "reason": null,
-                "state": null,
-                "value": null
-              },
-              "emoji": {
-                "editable": "sleeping",
-                "value": "🦊"
-              },
-              "freeAgentMode": {
-                "editable": "sleeping",
-                "value": false
-              },
-              "hasImageIcon": true,
-              "idleSleep": {
-                "applies": true,
-                "editable": "always",
-                "minutes": 0,
-                "source": "agent",
-                "value": "never"
-              },
-              "model": {
-                "editable": "sleeping",
-                "value": "opus"
-              },
-              "name": {
-                "editable": "sleeping",
-                "value": "planner"
-              },
-              "orchestrator": {
-                "changeStartsNewSession": true,
-                "editable": "sleeping",
-                "resolved": "claude-code",
-                "value": "claude-code"
-              },
-              "persona": {
-                "editable": "sleeping",
-                "value": null
-              },
-              "runtime": {
-                "editable": "sleeping",
-                "resolved": "chat",
-                "value": "default"
-              }
-            },
-            "sleeping": false,
-            "state": "running"
-          },
-          "status": "completed",
-          "version": 1
-        },
-        "status": 200
-      }
-    },
-    {
-      "name": "accepted orchestration clear field",
-      "request": {
-        "agentId": "durable_chat",
-        "commandId": "cmd_078",
-        "epoch": "00000000-0000-4000-8000-000000000001",
-        "orchestration": {
-          "maxHelpers": null
-        },
-        "type": "agent.update",
-        "version": 1
-      },
-      "response": {
-        "body": {
-          "commandId": "cmd_078",
-          "epoch": "00000000-0000-4000-8000-000000000001",
-          "result": {
-            "agentId": "durable_chat",
-            "orchestration": {
-              "access": "auto",
-              "accessLevels": [
-                "same",
-                "standard",
-                "auto",
-                "bypass"
-              ],
-              "autoHelpers": null,
-              "autoHelpersEffective": false,
-              "connectToDispatcher": true,
-              "control": "ask-everything",
-              "controls": [
-                "hands-off",
-                "ask-before-start",
-                "ask-everything"
-              ],
-              "crossProjectHelpers": false,
-              "maxHelpers": 5,
-              "maxHelpersCap": 20,
-              "mcpEnabled": true,
-              "orchestrate": true,
-              "sources": {
-                "access": "agent",
-                "autoHelpers": "default",
-                "connectToDispatcher": "default",
-                "control": "agent",
-                "crossProjectHelpers": "default",
-                "maxHelpers": "default",
-                "orchestrate": "agent"
-              }
-            },
-            "projectId": "proj_app",
-            "settings": {
-              "clubhouseMode": {
-                "editable": "never",
-                "projectEnabled": false,
-                "value": null
-              },
-              "color": {
-                "editable": "sleeping",
-                "value": "indigo"
-              },
-              "contextWindow": {
-                "applies": [
-                  "launch",
-                  "resume"
-                ],
-                "choices": [
-                  {
-                    "id": "100000",
-                    "label": "100K",
-                    "tokens": 100000
-                  },
-                  {
-                    "id": "200000",
-                    "label": "200K",
-                    "tokens": 200000
-                  },
-                  {
-                    "id": "300000",
-                    "label": "300K",
-                    "tokens": 300000
-                  },
-                  {
-                    "id": "500000",
-                    "label": "500K",
-                    "tokens": 500000
-                  },
-                  {
-                    "id": "750000",
-                    "label": "750K",
-                    "tokens": 750000
-                  },
-                  {
-                    "id": "1000000",
-                    "label": "1M",
-                    "tokens": 1000000
-                  }
-                ],
-                "configurable": true,
-                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
-                "defaultLabel": "Auto",
-                "defaultTokens": null,
-                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
-                "editable": "sleeping",
-                "kind": "working_window",
-                "label": "Working context",
-                "maxTokens": 1000000,
-                "notice": null,
-                "reason": null,
-                "state": null,
-                "value": null
-              },
-              "emoji": {
-                "editable": "sleeping",
-                "value": "🦊"
-              },
-              "freeAgentMode": {
-                "editable": "sleeping",
-                "value": false
-              },
-              "hasImageIcon": true,
-              "idleSleep": {
-                "applies": true,
-                "editable": "always",
-                "minutes": 0,
-                "source": "agent",
-                "value": "never"
-              },
-              "model": {
-                "editable": "sleeping",
-                "value": "opus"
-              },
-              "name": {
-                "editable": "sleeping",
-                "value": "planner"
-              },
-              "orchestrator": {
-                "changeStartsNewSession": true,
-                "editable": "sleeping",
-                "resolved": "claude-code",
-                "value": "claude-code"
-              },
-              "persona": {
-                "editable": "sleeping",
-                "value": null
-              },
-              "runtime": {
-                "editable": "sleeping",
-                "resolved": "chat",
-                "value": "default"
-              }
-            },
-            "sleeping": false,
-            "state": "running"
-          },
-          "status": "completed",
-          "version": 1
-        },
-        "status": 200
-      }
-    },
-    {
-      "name": "accepted orchestration clear all",
-      "request": {
-        "agentId": "durable_sleepy",
-        "commandId": "cmd_079",
-        "epoch": "00000000-0000-4000-8000-000000000001",
-        "orchestration": null,
-        "type": "agent.update",
-        "version": 1
-      },
-      "response": {
-        "body": {
-          "commandId": "cmd_079",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -1399,8 +1004,560 @@
                 "value": "claude-code"
               },
               "persona": {
+                "editable": "never",
+                "value": null
+              },
+              "runtime": {
                 "editable": "sleeping",
-                "value": ""
+                "resolved": "chat",
+                "value": "default"
+              }
+            },
+            "sleeping": true,
+            "state": "sleeping"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "invalid_color",
+      "request": {
+        "agentId": "durable_sleepy",
+        "color": "chartreuse",
+        "commandId": "cmd_075",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_075",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_color",
+            "message": "invalid_color"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_command (no settings)",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_076",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "invalid_command (unknown field)",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_077",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "instructions": "be nice",
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "invalid_command",
+            "message": "invalid_command"
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "accepted orchestration",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_078",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": {
+          "access": "auto",
+          "control": "ask-everything",
+          "maxHelpers": 20
+        },
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_078",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_chat",
+            "orchestration": {
+              "access": "auto",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
+              "connectToDispatcher": true,
+              "control": "ask-everything",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "crossProjectHelpers": false,
+              "maxHelpers": 20,
+              "maxHelpersCap": 20,
+              "mcpEnabled": true,
+              "orchestrate": true,
+              "sources": {
+                "access": "agent",
+                "autoHelpers": "default",
+                "connectToDispatcher": "default",
+                "control": "agent",
+                "crossProjectHelpers": "default",
+                "maxHelpers": "agent",
+                "orchestrate": "agent"
+              }
+            },
+            "projectId": "proj_app",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "indigo"
+              },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": "🦊"
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": false
+              },
+              "hasImageIcon": true,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 0,
+                "source": "agent",
+                "value": "never"
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "opus"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "planner"
+              },
+              "orchestrator": {
+                "changeStartsNewSession": true,
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "never",
+                "value": null
+              },
+              "runtime": {
+                "editable": "sleeping",
+                "resolved": "chat",
+                "value": "default"
+              }
+            },
+            "sleeping": false,
+            "state": "running"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted orchestration clear field",
+      "request": {
+        "agentId": "durable_chat",
+        "commandId": "cmd_079",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": {
+          "maxHelpers": null
+        },
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_079",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_chat",
+            "orchestration": {
+              "access": "auto",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
+              "connectToDispatcher": true,
+              "control": "ask-everything",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "crossProjectHelpers": false,
+              "maxHelpers": 5,
+              "maxHelpersCap": 20,
+              "mcpEnabled": true,
+              "orchestrate": true,
+              "sources": {
+                "access": "agent",
+                "autoHelpers": "default",
+                "connectToDispatcher": "default",
+                "control": "agent",
+                "crossProjectHelpers": "default",
+                "maxHelpers": "default",
+                "orchestrate": "agent"
+              }
+            },
+            "projectId": "proj_app",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "indigo"
+              },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": "🦊"
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": false
+              },
+              "hasImageIcon": true,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 0,
+                "source": "agent",
+                "value": "never"
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "opus"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "planner"
+              },
+              "orchestrator": {
+                "changeStartsNewSession": true,
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "never",
+                "value": null
+              },
+              "runtime": {
+                "editable": "sleeping",
+                "resolved": "chat",
+                "value": "default"
+              }
+            },
+            "sleeping": false,
+            "state": "running"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted orchestration clear all",
+      "request": {
+        "agentId": "durable_sleepy",
+        "commandId": "cmd_080",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "orchestration": null,
+        "type": "agent.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_080",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "agentId": "durable_sleepy",
+            "orchestration": {
+              "access": "same",
+              "accessLevels": [
+                "same",
+                "standard",
+                "auto",
+                "bypass"
+              ],
+              "autoHelpers": null,
+              "autoHelpersEffective": false,
+              "connectToDispatcher": false,
+              "control": "hands-off",
+              "controls": [
+                "hands-off",
+                "ask-before-start",
+                "ask-everything"
+              ],
+              "crossProjectHelpers": false,
+              "maxHelpers": 5,
+              "maxHelpersCap": 20,
+              "mcpEnabled": true,
+              "orchestrate": false,
+              "sources": {
+                "access": "default",
+                "autoHelpers": "default",
+                "connectToDispatcher": "default",
+                "control": "default",
+                "crossProjectHelpers": "default",
+                "maxHelpers": "default",
+                "orchestrate": "default"
+              }
+            },
+            "projectId": "proj_app",
+            "settings": {
+              "clubhouseMode": {
+                "editable": "never",
+                "projectEnabled": false,
+                "value": null
+              },
+              "color": {
+                "editable": "sleeping",
+                "value": "rose"
+              },
+              "contextWindow": {
+                "applies": [
+                  "launch",
+                  "resume"
+                ],
+                "choices": [
+                  {
+                    "id": "100000",
+                    "label": "100K",
+                    "tokens": 100000
+                  },
+                  {
+                    "id": "200000",
+                    "label": "200K",
+                    "tokens": 200000
+                  },
+                  {
+                    "id": "300000",
+                    "label": "300K",
+                    "tokens": 300000
+                  },
+                  {
+                    "id": "500000",
+                    "label": "500K",
+                    "tokens": 500000
+                  },
+                  {
+                    "id": "750000",
+                    "label": "750K",
+                    "tokens": 750000
+                  },
+                  {
+                    "id": "1000000",
+                    "label": "1M",
+                    "tokens": 1000000
+                  }
+                ],
+                "configurable": true,
+                "costNote": "A larger size sends more history with each message, so long sessions use more tokens. Your plan or the model can cap it; a running session shows what it got.",
+                "defaultLabel": "Auto",
+                "defaultTokens": null,
+                "description": "How much conversation Claude Code keeps before it compacts. This doesn't change the model's own context window, and a lower value compacts sooner. It compacts a little below this size.",
+                "editable": "sleeping",
+                "kind": "working_window",
+                "label": "Working context",
+                "maxTokens": 1000000,
+                "notice": null,
+                "reason": null,
+                "state": null,
+                "value": null
+              },
+              "emoji": {
+                "editable": "sleeping",
+                "value": null
+              },
+              "freeAgentMode": {
+                "editable": "sleeping",
+                "value": true
+              },
+              "hasImageIcon": false,
+              "idleSleep": {
+                "applies": true,
+                "editable": "always",
+                "minutes": 30,
+                "source": "app",
+                "value": "inherit"
+              },
+              "model": {
+                "editable": "sleeping",
+                "value": "default"
+              },
+              "name": {
+                "editable": "sleeping",
+                "value": "bright-otter"
+              },
+              "orchestrator": {
+                "changeStartsNewSession": false,
+                "editable": "sleeping",
+                "resolved": "claude-code",
+                "value": "claude-code"
+              },
+              "persona": {
+                "editable": "never",
+                "value": null
               },
               "runtime": {
                 "editable": "sleeping",
@@ -1421,7 +1578,7 @@
       "name": "invalid_orchestration (maxHelpers above the cap)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_080",
+        "commandId": "cmd_081",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "maxHelpers": 21
@@ -1431,7 +1588,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_080",
+          "commandId": "cmd_081",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_orchestration",
@@ -1447,7 +1604,7 @@
       "name": "invalid_orchestration (control)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_081",
+        "commandId": "cmd_082",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "control": "yolo"
@@ -1457,7 +1614,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_081",
+          "commandId": "cmd_082",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_orchestration",
@@ -1473,7 +1630,7 @@
       "name": "invalid_orchestration (unknown field)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_082",
+        "commandId": "cmd_083",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "helpers": 2
@@ -1483,7 +1640,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_082",
+          "commandId": "cmd_083",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_orchestration",
@@ -1499,7 +1656,7 @@
       "name": "orchestration_has_helpers",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_083",
+        "commandId": "cmd_084",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "orchestrate": false
@@ -1509,7 +1666,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_083",
+          "commandId": "cmd_084",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "orchestration_has_helpers",
@@ -1525,7 +1682,7 @@
       "name": "invalid_command (orchestration not an object)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_084",
+        "commandId": "cmd_085",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": "on",
         "type": "agent.update",
@@ -1708,7 +1865,7 @@
               },
               "persona": {
                 "editable": "never",
-                "value": "dispatcher"
+                "value": null
               },
               "runtime": {
                 "editable": "always",
@@ -1838,7 +1995,7 @@
               },
               "persona": {
                 "editable": "never",
-                "value": "dispatcher"
+                "value": null
               },
               "runtime": {
                 "editable": "never",
@@ -2097,7 +2254,7 @@
                 "value": "claude-code"
               },
               "persona": {
-                "editable": "sleeping",
+                "editable": "never",
                 "value": null
               },
               "runtime": {
@@ -2116,36 +2273,10 @@
       }
     },
     {
-      "name": "mcp_off",
-      "request": {
-        "agentId": "durable_chat",
-        "commandId": "cmd_138",
-        "epoch": "00000000-0000-4000-8000-000000000001",
-        "orchestration": {
-          "orchestrate": true
-        },
-        "type": "agent.update",
-        "version": 1
-      },
-      "response": {
-        "body": {
-          "commandId": "cmd_138",
-          "epoch": "00000000-0000-4000-8000-000000000001",
-          "error": {
-            "code": "mcp_off",
-            "message": "This needs Clubhouse MCP, which is off for this agent. Turn it on first."
-          },
-          "status": "rejected",
-          "version": 1
-        },
-        "status": 409
-      }
-    },
-    {
       "name": "accepted autoHelpers on",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_158",
+        "commandId": "cmd_157",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "autoHelpers": true
@@ -2155,7 +2286,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_158",
+          "commandId": "cmd_157",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_chat",
@@ -2284,7 +2415,7 @@
                 "value": "claude-code"
               },
               "persona": {
-                "editable": "sleeping",
+                "editable": "never",
                 "value": null
               },
               "runtime": {
@@ -2306,7 +2437,7 @@
       "name": "accepted autoHelpers off",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_159",
+        "commandId": "cmd_158",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "autoHelpers": false
@@ -2316,7 +2447,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_159",
+          "commandId": "cmd_158",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_chat",
@@ -2445,7 +2576,7 @@
                 "value": "claude-code"
               },
               "persona": {
-                "editable": "sleeping",
+                "editable": "never",
                 "value": null
               },
               "runtime": {
@@ -2467,7 +2598,7 @@
       "name": "accepted autoHelpers cleared (inherits)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_160",
+        "commandId": "cmd_159",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "autoHelpers": null
@@ -2477,7 +2608,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_160",
+          "commandId": "cmd_159",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_chat",
@@ -2606,7 +2737,7 @@
                 "value": "claude-code"
               },
               "persona": {
-                "editable": "sleeping",
+                "editable": "never",
                 "value": null
               },
               "runtime": {
@@ -2628,7 +2759,7 @@
       "name": "invalid_orchestration (autoHelpers)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_161",
+        "commandId": "cmd_160",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "orchestration": {
           "autoHelpers": "yes"
@@ -2638,7 +2769,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_161",
+          "commandId": "cmd_160",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_orchestration",
@@ -2651,36 +2782,10 @@
       }
     },
     {
-      "name": "mcp_off (autoHelpers)",
-      "request": {
-        "agentId": "durable_chat",
-        "commandId": "cmd_162",
-        "epoch": "00000000-0000-4000-8000-000000000001",
-        "orchestration": {
-          "autoHelpers": true
-        },
-        "type": "agent.update",
-        "version": 1
-      },
-      "response": {
-        "body": {
-          "commandId": "cmd_162",
-          "epoch": "00000000-0000-4000-8000-000000000001",
-          "error": {
-            "code": "mcp_off",
-            "message": "This needs Clubhouse MCP, which is off for this agent. Turn it on first."
-          },
-          "status": "rejected",
-          "version": 1
-        },
-        "status": 409
-      }
-    },
-    {
       "name": "accepted contextWindow",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_166",
+        "commandId": "cmd_164",
         "contextWindow": "500000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2688,7 +2793,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_166",
+          "commandId": "cmd_164",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -2817,7 +2922,7 @@
                 "value": "claude-code"
               },
               "persona": {
-                "editable": "sleeping",
+                "editable": "never",
                 "value": null
               },
               "runtime": {
@@ -2839,7 +2944,7 @@
       "name": "accepted contextWindow null reset",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_167",
+        "commandId": "cmd_165",
         "contextWindow": null,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -2847,7 +2952,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_167",
+          "commandId": "cmd_165",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -2976,7 +3081,7 @@
                 "value": "claude-code"
               },
               "persona": {
-                "editable": "sleeping",
+                "editable": "never",
                 "value": null
               },
               "runtime": {
@@ -2998,7 +3103,7 @@
       "name": "invalid_context_window",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_168",
+        "commandId": "cmd_166",
         "contextWindow": "123",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -3006,7 +3111,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_168",
+          "commandId": "cmd_166",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_context_window",
@@ -3022,7 +3127,7 @@
       "name": "agent_running (contextWindow)",
       "request": {
         "agentId": "durable_chat",
-        "commandId": "cmd_169",
+        "commandId": "cmd_167",
         "contextWindow": "500000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -3030,7 +3135,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_169",
+          "commandId": "cmd_167",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "agent_running",
@@ -3046,7 +3151,7 @@
       "name": "accepted model change resets contextWindow",
       "request": {
         "agentId": "durable_sleepy",
-        "commandId": "cmd_170",
+        "commandId": "cmd_168",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "model": "sonnet",
         "type": "agent.update",
@@ -3054,7 +3159,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_170",
+          "commandId": "cmd_168",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_sleepy",
@@ -3167,7 +3272,7 @@
                 "value": "claude-code"
               },
               "persona": {
-                "editable": "sleeping",
+                "editable": "never",
                 "value": null
               },
               "runtime": {
@@ -3189,7 +3294,7 @@
       "name": "accepted contextWindow (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_171",
+        "commandId": "cmd_169",
         "contextWindow": "300000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -3197,7 +3302,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_171",
+          "commandId": "cmd_169",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_dispatcher",
@@ -3297,7 +3402,7 @@
               },
               "persona": {
                 "editable": "never",
-                "value": "dispatcher"
+                "value": null
               },
               "runtime": {
                 "editable": "always",
@@ -3318,7 +3423,7 @@
       "name": "accepted contextWindow null reset (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_172",
+        "commandId": "cmd_170",
         "contextWindow": null,
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -3326,7 +3431,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_172",
+          "commandId": "cmd_170",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "agentId": "durable_dispatcher",
@@ -3426,7 +3531,7 @@
               },
               "persona": {
                 "editable": "never",
-                "value": "dispatcher"
+                "value": null
               },
               "runtime": {
                 "editable": "always",
@@ -3447,7 +3552,7 @@
       "name": "invalid_context_window (Dispatcher)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_173",
+        "commandId": "cmd_171",
         "contextWindow": "123",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "type": "agent.update",
@@ -3455,7 +3560,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_173",
+          "commandId": "cmd_171",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_context_window",
@@ -3471,7 +3576,7 @@
       "name": "dispatcher_locked (name, with contextWindow)",
       "request": {
         "agentId": "durable_dispatcher",
-        "commandId": "cmd_174",
+        "commandId": "cmd_172",
         "contextWindow": "300000",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "name": "Boss",
@@ -3480,7 +3585,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_174",
+          "commandId": "cmd_172",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "dispatcher_locked",

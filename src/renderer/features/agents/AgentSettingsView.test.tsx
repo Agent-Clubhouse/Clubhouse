@@ -1,15 +1,14 @@
 import { claudeContextWindowOptions } from '../../../shared/context-window';
-import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
-import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { AgentSettingsView } from './AgentSettingsView';
 import { useAgentSettingsPages, requestCloseAgentSettings, requestLeaveAgentSettings } from './agentSettingsPages';
 import { useToastStore } from '../../stores/toastStore';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
-import type { Agent, MaterializationPreview } from '../../../shared/types';
+import type { Agent } from '../../../shared/types';
 
 // Mock heavy child components
 vi.mock('../../components/SettingsMonacoEditor', () => ({
@@ -39,45 +38,11 @@ vi.mock('./SkillsSection', () => ({
   },
 }));
 
-let capturedOnCreateFromPluginTemplate: ((entry: any) => void) | undefined;
-vi.mock('./AgentTemplatesSection', () => ({
-  AgentTemplatesSection: (props: any) => {
-    capturedOnCreateFromPluginTemplate = props.onCreateFromPluginTemplate;
-    return <div data-testid="agent-templates-section" data-disabled={String(props.disabled)} />;
-  },
-}));
-
 let mcpProps: any;
 vi.mock('./McpJsonSection', () => ({
   McpJsonSection: (props: any) => {
     mcpProps = props;
     return <div data-testid="mcp-json-section" data-disabled={String(props.disabled)} />;
-  },
-}));
-
-let _capturedTemplateOnCreate: ((config: any) => void) | undefined;
-let _capturedTemplateOnClose: (() => void) | undefined;
-vi.mock('./TemplateConfigDialog', () => ({
-  TemplateConfigDialog: (props: any) => {
-    _capturedTemplateOnCreate = props.onCreate;
-    _capturedTemplateOnClose = props.onClose;
-    return (
-      <div data-testid="template-config-dialog">
-        <span data-testid="template-dialog-persona">{props.persona?.name}</span>
-        <button data-testid="template-dialog-create" onClick={() => props.onCreate({
-          persona: props.persona,
-          name: props.persona.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-          color: 'indigo',
-          model: 'default',
-          orchestrator: 'claude-code',
-          useWorktree: true,
-          freeAgentMode: false,
-        })}>
-          Create Agent
-        </button>
-        <button data-testid="template-dialog-close" onClick={props.onClose}>Cancel</button>
-      </div>
-    );
   },
 }));
 
@@ -99,14 +64,6 @@ const defaultAgent: Agent = {
   status: 'sleeping',
   color: 'indigo',
   worktreePath: '/project/.clubhouse/agents/bold-falcon',
-};
-
-const mockPreview: MaterializationPreview = {
-  instructions: 'You are bold-falcon.',
-  permissions: { allow: ['Read(**)', 'Edit(**)'], deny: ['WebFetch'] },
-  mcpJson: '{"mcpServers": {}}',
-  skills: ['mission', 'review'],
-  agentTemplates: ['researcher'],
 };
 
 function resetStores() {
@@ -143,12 +100,6 @@ function resetStores() {
       },
     }],
   });
-  useClubhouseModeStore.setState({
-    enabled: false,
-    projectOverrides: {},
-    loadSettings: vi.fn().mockResolvedValue(undefined),
-    isEnabledForProject: () => false,
-  });
 }
 
 function renderSettings(agentOverrides: Partial<Agent> = {}) {
@@ -168,7 +119,6 @@ describe('AgentSettingsView', () => {
     window.clubhouse.agentSettings.saveInstructions = vi.fn().mockResolvedValue(undefined);
     window.clubhouse.agentSettings.readPermissions = vi.fn().mockResolvedValue({ allow: ['Read(**)'] });
     window.clubhouse.agentSettings.savePermissions = vi.fn().mockResolvedValue(undefined);
-    window.clubhouse.agentSettings.previewMaterialization = vi.fn().mockResolvedValue(mockPreview);
     (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({});
     (window.clubhouse.agent as any).updateDurableConfig = vi.fn().mockResolvedValue(undefined);
     (window.clubhouse.agent as any).getModelOptions = vi.fn().mockResolvedValue(MODEL_OPTION_LIST);
@@ -308,6 +258,62 @@ describe('AgentSettingsView', () => {
       expect(screen.getByRole('heading', { name: 'Quick agents' })).toBeInTheDocument();
       expect(screen.queryByTestId('agent-settings-nav')).not.toBeInTheDocument();
     });
+
+    it('shows the builder instead of the file editors for a managed agent, and scrolls to a requested section', async () => {
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+      const getSetup = vi.spyOn(window.clubhouse.managed, 'getSetup').mockResolvedValue({ ok: true, value: { version: 1, blocks: [], skills: [], mcps: [] } } as never);
+      const scroll = vi.fn();
+      Element.prototype.scrollIntoView = scroll;
+      useAgentSettingsPages.getState().setRequestedPage({ agentId: defaultAgent.id, page: 'preview' });
+      try {
+        const { rerender } = renderSettings();
+        expect(await screen.findByTestId('managed-builder-instructions')).toBeInTheDocument();
+        expect(screen.getByTestId('managed-builder-skills')).toBeInTheDocument();
+        expect(screen.getByTestId('managed-builder-mcp')).toBeInTheDocument();
+        expect(await screen.findByTestId('managed-preview')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Instructions')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('skills-section')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('mcp-json-section')).not.toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: 'Permissions' })).not.toBeInTheDocument();
+        await waitFor(() => expect(scroll).toHaveBeenCalled());
+        expect(scroll.mock.contexts[0]).toBe(screen.getByTestId('agent-settings-section-preview'));
+        // A re-render with an equal agent doesn't load the setup again.
+        const loads = getSetup.mock.calls.length;
+        rerender(<AgentSettingsView agent={{ ...defaultAgent }} />);
+        await act(async () => { await Promise.resolve(); });
+        expect(getSetup.mock.calls.length).toBe(loads);
+      } finally {
+        useAgentSettingsPages.getState().setRequestedPage(null);
+        delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+      }
+    });
+  });
+
+  describe('legacy configuration with Clubhouse-managed agents (#2901)', () => {
+    it('offers no Clubhouse Mode, whatever an old config holds, and keeps the file editors (#2901)', async () => {
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ clubhouseModeOverride: false });
+      renderSettings();
+      expect(await screen.findByTestId('managed-general-off')).toHaveTextContent('uses the instructions, skills and MCP config in its folder');
+      expect(await screen.findByTestId('skills-section')).toBeInTheDocument();
+      expect(screen.queryByRole('switch', { name: 'Clubhouse Mode for this agent' })).not.toBeInTheDocument();
+      expect(screen.queryByTestId('managed-clubhouse-mode')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Persona')).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Clubhouse Mode' })).not.toBeInTheDocument();
+    });
+
+    it('names the persona of an unmanaged agent, with the offer to switch, and keeps its file editors', async () => {
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'qa' });
+      renderSettings();
+      expect(await screen.findByTestId('managed-general-legacy')).toHaveTextContent('bold-falcon uses the Quality Assurance persona. Switch to managed keeps what it has now.');
+      expect(screen.getByRole('button', { name: 'Switch to managed…' })).toBeInTheDocument();
+      expect(await screen.findByTestId('skills-section')).toBeInTheDocument();
+    });
+
+    it('a plain agent gets the usual Setup text', async () => {
+      renderSettings();
+      expect(await screen.findByTestId('managed-general-off')).toHaveTextContent("uses the instructions, skills and MCP config in its folder");
+      expect(screen.queryByTestId('managed-general-legacy')).not.toBeInTheDocument();
+    });
   });
 
   describe('main agent tab - editable mode', () => {
@@ -319,11 +325,6 @@ describe('AgentSettingsView', () => {
     it('renders skills section', async () => {
       renderSettings();
       expect(await screen.findByTestId('skills-section')).toBeInTheDocument();
-    });
-
-    it('renders agent templates section', async () => {
-      renderSettings();
-      expect(await screen.findByTestId('agent-templates-section')).toBeInTheDocument();
     });
 
     it('renders MCP JSON section', async () => {
@@ -352,7 +353,7 @@ describe('AgentSettingsView', () => {
 
     it('shows shared settings info note', () => {
       renderSettings();
-      expect(screen.getByText(/Skills, agent definitions and MCP settings live in the agent worktree/)).toBeInTheDocument();
+      expect(screen.getByText(/Skills and MCP settings live in the agent worktree/)).toBeInTheDocument();
     });
   });
 
@@ -576,183 +577,6 @@ describe('AgentSettingsView', () => {
     });
   });
 
-  describe('persona dropdown', () => {
-    it('renders with "Project default" selected when agent has no persona', async () => {
-      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({});
-      renderSettings();
-      await waitFor(() => {
-        expect(screen.getByDisplayValue('Project default')).toBeInTheDocument();
-      });
-    });
-
-    it('loads the agent\'s current persona', async () => {
-      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'qa' });
-      renderSettings();
-      await waitFor(() => {
-        expect(screen.getByDisplayValue('Quality Assurance')).toBeInTheDocument();
-      });
-    });
-
-    it('persists the new persona via updateDurableConfig (independent of override)', async () => {
-      // No clubhouseModeOverride manipulation — persona should be settable regardless.
-      const updateMock = vi.fn().mockResolvedValue(undefined);
-      (window.clubhouse.agent as any).updateDurableConfig = updateMock;
-      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({});
-      renderSettings();
-      const select = await screen.findByDisplayValue('Project default') as HTMLSelectElement;
-      fireEvent.change(select, { target: { value: 'qa' } });
-
-      await waitFor(() => {
-        expect(updateMock).toHaveBeenCalledWith('/project', 'agent-1', { persona: 'qa' });
-      });
-    });
-
-    it('clears the persona when set back to "Project default"', async () => {
-      const updateMock = vi.fn().mockResolvedValue(undefined);
-      (window.clubhouse.agent as any).updateDurableConfig = updateMock;
-      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'qa' });
-      renderSettings();
-      const select = await screen.findByDisplayValue('Quality Assurance') as HTMLSelectElement;
-      fireEvent.change(select, { target: { value: '' } });
-
-      await waitFor(() => {
-        expect(updateMock).toHaveBeenCalledWith('/project', 'agent-1', { persona: '' });
-      });
-    });
-  });
-
-  describe('clubhouse mode', () => {
-    beforeEach(() => {
-      useClubhouseModeStore.setState({
-        enabled: true,
-        isEnabledForProject: () => true,
-      });
-    });
-
-    it('shows a Clubhouse Mode section when active', () => {
-      renderSettings();
-      expect(screen.getByRole('heading', { name: 'Clubhouse Mode' })).toBeInTheDocument();
-    });
-
-    it('shows managed mode message when no override', () => {
-      renderSettings();
-      expect(screen.getByText(/settings come from project defaults/)).toBeInTheDocument();
-    });
-
-    it('shows local override switch', () => {
-      renderSettings();
-      expect(screen.getByRole('switch', { name: 'Local overrides' })).toBeInTheDocument();
-    });
-
-    it('hides editable sections when managed by clubhouse', async () => {
-      renderSettings();
-      // When managed, these should not render
-      await waitFor(() => {
-        expect(screen.queryByTestId('skills-section')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('agent-templates-section')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('mcp-json-section')).not.toBeInTheDocument();
-      });
-    });
-
-    it('shows the wildcard settings form when managed', async () => {
-      (window.clubhouse.agentSettings as any).getAgentWildcards = vi.fn().mockResolvedValue({
-        agentName: 'bold-falcon',
-        standbyBranch: 'bold-falcon/standby',
-        agentPath: '.clubhouse/agents/bold-falcon/',
-        sourceControlProvider: { override: null, resolved: 'github' },
-        buildCommand: { override: null, resolved: 'npm run build' },
-        testCommand: { override: null, resolved: 'npm test' },
-        lintCommand: { override: null, resolved: 'npm run lint' },
-        mission: { override: null, projectDefault: null, resolved: null },
-        persona: { override: null, projectDefault: null, resolved: null },
-        missions: [],
-        personas: [],
-      });
-      renderSettings();
-      expect(await screen.findByText('Wildcards')).toBeInTheDocument();
-      expect(screen.getByText('@@BuildCommand')).toBeInTheDocument();
-      expect(screen.getByText('@@Mission')).toBeInTheDocument();
-    });
-
-    it('shows materialization preview behind the collapsible toggle when managed', async () => {
-      renderSettings();
-      fireEvent.click(await screen.findByText('Show resolved preview'));
-      expect(await screen.findByText('Resolved instructions')).toBeInTheDocument();
-      expect(screen.getByText('You are bold-falcon.')).toBeInTheDocument();
-    });
-
-    it('shows resolved permissions in preview', async () => {
-      renderSettings();
-      fireEvent.click(await screen.findByText('Show resolved preview'));
-      expect(await screen.findByText('Resolved permissions')).toBeInTheDocument();
-    });
-
-    it('shows managed skills in preview', async () => {
-      renderSettings();
-      fireEvent.click(await screen.findByText('Show resolved preview'));
-      expect(await screen.findByText('Managed skills')).toBeInTheDocument();
-      expect(screen.getByText('mission, review')).toBeInTheDocument();
-    });
-
-    it('shows managed agent templates in preview', async () => {
-      renderSettings();
-      fireEvent.click(await screen.findByText('Show resolved preview'));
-      expect(await screen.findByText('Managed agent definitions')).toBeInTheDocument();
-      expect(screen.getByText('researcher')).toBeInTheDocument();
-    });
-
-    it('shows override message when override is enabled', async () => {
-      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({
-        clubhouseModeOverride: true,
-      });
-
-      renderSettings();
-      await waitFor(() => {
-        expect(screen.getByText(/this agent keeps its own instructions/)).toBeInTheDocument();
-      });
-    });
-
-    it('shows editable sections when override is enabled', async () => {
-      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({
-        clubhouseModeOverride: true,
-      });
-
-      renderSettings();
-      await waitFor(() => {
-        expect(screen.getByTestId('skills-section')).toBeInTheDocument();
-        expect(screen.getByTestId('agent-templates-section')).toBeInTheDocument();
-        expect(screen.getByTestId('mcp-json-section')).toBeInTheDocument();
-      });
-    });
-
-    it('toggles override on switch click', async () => {
-      renderSettings();
-      fireEvent.click(await screen.findByRole('switch', { name: 'Local overrides' }));
-
-      await waitFor(() => {
-        expect((window.clubhouse.agent as any).updateDurableConfig).toHaveBeenCalledWith(
-          '/project', 'agent-1', { clubhouseModeOverride: true },
-        );
-      });
-    });
-
-    it('shows the personalize info note when managed', () => {
-      renderSettings();
-      expect(screen.getByText(/Personalize this agent with the wildcard values/)).toBeInTheDocument();
-    });
-  });
-
-  describe('clubhouse mode banner not shown when off', () => {
-    it('does not show clubhouse banner when mode is off', () => {
-      useClubhouseModeStore.setState({
-        enabled: false,
-        isEnabledForProject: () => false,
-      });
-      renderSettings();
-      expect(screen.queryByRole('heading', { name: 'Clubhouse Mode' })).not.toBeInTheDocument();
-    });
-  });
-
   describe('shell in worktree', () => {
     it('renders the Shell in worktree row', () => {
       renderSettings();
@@ -885,45 +709,12 @@ describe('AgentSettingsView', () => {
     });
   });
 
-  describe('new chrome pages', () => {
+  // The classic shell still edits a plain agent's files (D65), so the save bar,
+  // the leave guard and the section reports are covered there.
+  describe('classic shell editors', () => {
     beforeEach(() => {
-      useChromeFlagStore.setState({ enabled: true });
-      useToastStore.setState({ toasts: [] });
-    });
-    afterEach(() => {
       useChromeFlagStore.setState({ enabled: false });
-    });
-
-    const visiblePage = () => screen.getAllByTestId(/^agent-settings-page-/).filter((el) => !el.hidden);
-
-    it('has no header and opens on General', () => {
-      renderSettings();
-      expect(screen.queryByTitle('Back')).not.toBeInTheDocument();
-      expect(visiblePage().map((el) => el.dataset.testid)).toEqual(['agent-settings-page-general']);
-      expect(screen.getByRole('heading', { name: 'General' })).toBeInTheDocument();
-    });
-
-    it('shows the page the sidebar selects and keeps the others mounted but hidden', async () => {
-      renderSettings();
-      act(() => useAgentSettingsPages.getState().setPage('skills'));
-      expect(visiblePage().map((el) => el.dataset.testid)).toEqual(['agent-settings-page-skills']);
-      expect(screen.getByTestId('skills-section')).toBeVisible();
-      expect(screen.getByLabelText('Name')).not.toBeVisible();
-    });
-
-    it('keeps edits when switching pages', async () => {
-      renderSettings();
-      act(() => useAgentSettingsPages.getState().setPage('instructions'));
-      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'Kept' } });
-      act(() => useAgentSettingsPages.getState().setPage('general'));
-      act(() => useAgentSettingsPages.getState().setPage('instructions'));
-      expect(screen.getByLabelText('Instructions')).toHaveValue('Kept');
-    });
-
-    it('resets to General when another agent opens', () => {
-      useAgentSettingsPages.getState().setPage('permissions');
-      renderSettings();
-      expect(useAgentSettingsPages.getState().page).toBe('general');
+      useToastStore.setState({ toasts: [] });
     });
 
     it('collects text edits in one save bar and marks the dirty pages', async () => {
@@ -967,6 +758,7 @@ describe('AgentSettingsView', () => {
     it('discards text edits back to what was loaded', async () => {
       renderSettings();
       const editor = await screen.findByLabelText('Instructions');
+      await waitFor(() => expect(editor).toHaveValue('Agent instructions'));
       fireEvent.change(editor, { target: { value: 'Scratch' } });
       fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
       expect(editor).toHaveValue('Agent instructions');
@@ -996,18 +788,6 @@ describe('AgentSettingsView', () => {
       act(() => skillsProps.onDirtyChange(true));
       expect(useAgentSettingsPages.getState().dirtyPages).toEqual(['skills']);
       expect(screen.queryByTestId('agent-settings-save-bar')).not.toBeInTheDocument();
-    });
-
-    it('saves quick agent defaults from the save bar', async () => {
-      renderSettings();
-      fireEvent.change(await screen.findByLabelText('Extra instructions'), { target: { value: 'Be brief.' } });
-      expect(screen.getByTestId('agent-settings-save-bar')).toHaveTextContent('quick agent defaults');
-      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-      await waitFor(() => {
-        expect((window.clubhouse.agent as any).updateDurableConfig).toHaveBeenCalledWith(
-          '/project', 'agent-1', { quickAgentDefaults: { systemPrompt: 'Be brief.' } },
-        );
-      });
     });
 
     it('asks before leaving with unsaved edits', async () => {
@@ -1042,6 +822,67 @@ describe('AgentSettingsView', () => {
       expect(next).toHaveBeenCalled();
     });
 
+    it('shows the launch wrapper states as plain words', async () => {
+      (window.clubhouse.project as any).readMcpCatalog = vi.fn().mockResolvedValue([
+        { id: 'fs', name: 'Filesystem', command: 'fs' },
+      ]);
+      renderSettings();
+      const wrapper = await screen.findByTestId('agent-settings-launch-wrapper');
+      expect(wrapper).toHaveTextContent('Launch wrapper');
+      expect(wrapper).toHaveTextContent('Filesystem');
+      expect(wrapper.querySelector('.uppercase')).toBeNull();
+    });
+  });
+
+  describe('new chrome pages', () => {
+    beforeEach(() => {
+      useChromeFlagStore.setState({ enabled: true });
+      useToastStore.setState({ toasts: [] });
+    });
+    afterEach(() => {
+      useChromeFlagStore.setState({ enabled: false });
+    });
+
+    const visiblePage = () => screen.getAllByTestId(/^agent-settings-page-/).filter((el) => !el.hidden);
+
+    it('takes sidebar counts from the sections for an agent on another machine, the one that has those pages', async () => {
+      const remoteProject = 'remote||sat-1||proj-1';
+      useProjectStore.setState({ projects: [{ id: remoteProject, name: 'far-app', path: '/remote/project' }], activeProjectId: remoteProject });
+      renderSettings({ projectId: remoteProject });
+      expect(screen.getByTestId('agent-settings-page-skills')).toContainElement(await screen.findByTestId('skills-section'));
+      expect(screen.getByTestId('agent-settings-page-mcp')).toContainElement(screen.getByTestId('mcp-json-section'));
+      act(() => {
+        skillsProps.onCountChange(2);
+        mcpProps.onCountChange(3);
+      });
+      expect(useAgentSettingsPages.getState().counts).toEqual({ skills: 2, mcp: 3 });
+    });
+
+    it('has no header and opens on General', () => {
+      renderSettings();
+      expect(screen.queryByTitle('Back')).not.toBeInTheDocument();
+      expect(visiblePage().map((el) => el.dataset.testid)).toEqual(['agent-settings-page-general']);
+      expect(screen.getByRole('heading', { name: 'General' })).toBeInTheDocument();
+    });
+
+    it('resets to General when another agent opens', () => {
+      useAgentSettingsPages.getState().setPage('permissions');
+      renderSettings();
+      expect(useAgentSettingsPages.getState().page).toBe('general');
+    });
+
+    it('saves quick agent defaults from the save bar', async () => {
+      renderSettings();
+      fireEvent.change(await screen.findByLabelText('Extra instructions'), { target: { value: 'Be brief.' } });
+      expect(screen.getByTestId('agent-settings-save-bar')).toHaveTextContent('quick agent defaults');
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => {
+        expect((window.clubhouse.agent as any).updateDurableConfig).toHaveBeenCalledWith(
+          '/project', 'agent-1', { quickAgentDefaults: { systemPrompt: 'Be brief.' } },
+        );
+      });
+    });
+
     it('closes at once when nothing is unsaved', () => {
       const closeAgentSettings = vi.fn();
       useAgentStore.setState({ closeAgentSettings });
@@ -1050,43 +891,65 @@ describe('AgentSettingsView', () => {
       expect(closeAgentSettings).toHaveBeenCalled();
     });
 
-    it('discards edits to managed files when local overrides are turned off', async () => {
-      useClubhouseModeStore.setState({ enabled: true, isEnabledForProject: () => true });
-      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ clubhouseModeOverride: true });
-      renderSettings();
-      const toggle = await screen.findByRole('switch', { name: 'Local overrides' });
-      await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
-      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'Unsaved' } });
-      fireEvent.change(screen.getByLabelText('Extra instructions'), { target: { value: 'Kept' } });
+    it('gives a managed agent one Settings page with its runtime, effort, auto-sleep, orchestration and helper template (#2895)', async () => {
+      const managedConfig = { managed: { version: 1, blocks: [], skills: [], mcps: [] }, effort: 'high', helperTemplateId: 'builtin-template-quality-assurance' };
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue(managedConfig);
+      vi.spyOn(window.clubhouse.managed, 'modelEfforts').mockResolvedValue({ ok: true, value: { default: ['low', 'high'] } } as never);
+      vi.spyOn(window.clubhouse.managed, 'listTemplates').mockResolvedValue({ ok: true, value: [
+        { id: 'builtin-template-helper', name: 'Helper', description: '', builtin: true, setup: { blocks: [], skills: [], mcps: [] }, settings: {}, usedBy: 0 },
+        { id: 'builtin-template-quality-assurance', name: 'Quality Assurance', description: '', builtin: true, setup: { blocks: [], skills: [], mcps: [] }, settings: {}, usedBy: 0 },
+      ] } as never);
+      (window.clubhouse.agent as any).getOrchestrationPolicy = vi.fn().mockResolvedValue({ policy: { orchestrate: true, access: 'same', control: 'hands-off', maxHelpers: 5, crossProjectHelpers: false, connectToDispatcher: true, autoHelpers: false, sources: {} } });
+      const apply = vi.spyOn(window.clubhouse.managed, 'applySettings').mockResolvedValue({ ok: true, value: undefined } as never);
+      renderSettings({ status: 'running' });
+      await waitFor(() => expect(useAgentSettingsPages.getState().hiddenPages).toEqual(['helpers', 'permissions']));
+      const page = screen.getByTestId('agent-settings-page-settings');
+      // Runtime moved off General for a managed agent.
+      expect(screen.getByTestId('agent-settings-page-general')).not.toContainElement(document.getElementById('agent-settings-model'));
+      expect(page).toContainElement(document.getElementById('agent-settings-model'));
+      // While it runs, its model can change: it applies when it restarts. Its CLI waits for it to stop.
+      expect(document.getElementById('agent-settings-model')).not.toBeDisabled();
+      expect(screen.getByTestId('agent-settings-running')).toHaveTextContent('Other changes apply when it restarts.');
 
-      fireEvent.click(toggle);
-      await waitFor(() => expect(screen.getByTestId('agent-settings-save-bar')).toHaveTextContent('Unsaved changes to quick agent defaults'));
-      expect(screen.getByTestId('agent-settings-save-bar')).not.toHaveTextContent('instructions and');
-      expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual([
-        'Discarded unsaved changes to instructions. Clubhouse Mode manages them now.',
-      ]);
+      const effort = await screen.findByLabelText('Effort') as HTMLSelectElement;
+      await waitFor(() => expect(effort.value).toBe('high'));
+      fireEvent.change(effort, { target: { value: 'low' } });
+      await waitFor(() => expect(apply).toHaveBeenCalledWith('/project', 'agent-1', { effort: 'low' }));
+      fireEvent.change(effort, { target: { value: '' } });
+      await waitFor(() => expect(apply).toHaveBeenLastCalledWith('/project', 'agent-1', { effort: null }));
+
+      fireEvent.change(screen.getByLabelText('Auto-sleep'), { target: { value: 'never' } });
+      await waitFor(() => expect(apply).toHaveBeenLastCalledWith('/project', 'agent-1', { idleSleep: 'never' }));
+
+      const helperTemplate = screen.getByLabelText('Helper template') as HTMLSelectElement;
+      await waitFor(() => expect(helperTemplate.value).toBe('builtin-template-quality-assurance'));
+      expect(page).toContainElement(helperTemplate);
+      fireEvent.change(helperTemplate, { target: { value: '' } });
+      await waitFor(() => expect(apply).toHaveBeenLastCalledWith('/project', 'agent-1', { helperTemplateId: null }));
+      expect(page).toContainElement(screen.getByTestId('agent-helpers-settings'));
     });
 
-    it('shows the launch wrapper states as plain words', async () => {
-      (window.clubhouse.project as any).readMcpCatalog = vi.fn().mockResolvedValue([
-        { id: 'fs', name: 'Filesystem', command: 'fs' },
-      ]);
-      renderSettings();
-      act(() => useAgentSettingsPages.getState().setPage('mcp'));
-      const wrapper = await screen.findByTestId('agent-settings-launch-wrapper');
-      expect(wrapper).toHaveTextContent('Launch wrapper');
-      expect(wrapper).toHaveTextContent('Filesystem');
-      expect(wrapper.querySelector('.uppercase')).toBeNull();
+    it('opens on a requested page once a managed agent\'s setup shows it (#2896)', async () => {
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ managed: { version: 1, blocks: [], skills: [], mcps: [] } });
+      useAgentSettingsPages.getState().setRequestedPage({ agentId: defaultAgent.id, page: 'preview' });
+      try {
+        renderSettings();
+        await waitFor(() => expect(useAgentSettingsPages.getState().page).toBe('preview'));
+        expect(useAgentSettingsPages.getState().requestedPage).toBeNull();
+      } finally {
+        useAgentSettingsPages.getState().setRequestedPage(null);
+      }
     });
 
-    it('points managed pages back to General', async () => {
-      useClubhouseModeStore.setState({ enabled: true, isEnabledForProject: () => true });
-      renderSettings();
-      act(() => useAgentSettingsPages.getState().setPage('skills'));
-      const page = screen.getByTestId('agent-settings-page-skills');
-      expect(within(page).getByTestId('agent-settings-managed')).toBeInTheDocument();
-      fireEvent.click(within(page).getByRole('button', { name: /Turn on local overrides in General/ }));
-      expect(useAgentSettingsPages.getState().page).toBe('general');
+    it('ignores a page requested for another agent', async () => {
+      useAgentSettingsPages.getState().setRequestedPage({ agentId: 'someone-else', page: 'mcp' });
+      try {
+        renderSettings();
+        await act(async () => { await Promise.resolve(); });
+        expect(useAgentSettingsPages.getState().page).toBe('general');
+      } finally {
+        useAgentSettingsPages.getState().setRequestedPage(null);
+      }
     });
 
     it('opens the shell from the store and hides its row while closed', () => {
@@ -1095,204 +958,6 @@ describe('AgentSettingsView', () => {
       act(() => useAgentSettingsPages.getState().setShellOpen(true));
       expect(screen.getByTestId('agent-settings-shell')).not.toHaveClass('hidden');
       expect(screen.getByTestId('utility-terminal')).toBeInTheDocument();
-    });
-
-    it('takes sidebar counts from the sections and clears them under Clubhouse Mode', async () => {
-      renderSettings();
-      await screen.findByTestId('skills-section');
-      act(() => {
-        skillsProps.onCountChange(2);
-        mcpProps.onCountChange(3);
-      });
-      expect(useAgentSettingsPages.getState().counts).toEqual({ skills: 2, mcp: 3 });
-    });
-
-    it('clears counts when Clubhouse Mode manages the agent', () => {
-      useAgentSettingsPages.getState().setCount('skills', 4);
-      useClubhouseModeStore.setState({ enabled: true, isEnabledForProject: () => true });
-      renderSettings();
-      expect(useAgentSettingsPages.getState().counts).toEqual({});
-    });
-  });
-
-  describe('plugin template → TemplateConfigDialog flow', () => {
-    const mockPluginTemplate = {
-      pluginId: 'test-plugin',
-      pluginName: 'Test Plugin',
-      template: {
-        name: 'Code Reviewer',
-        description: 'Reviews pull requests',
-        promptContent: '# Code Reviewer\nYou review code.',
-        skills: { review: '# Review Skill\nDo reviews.' },
-        mcpServers: {
-          'review-server': { command: 'node', args: ['review-server.js'] },
-        },
-      },
-    };
-
-    beforeEach(() => {
-      capturedOnCreateFromPluginTemplate = undefined;
-      _capturedTemplateOnCreate = undefined;
-      _capturedTemplateOnClose = undefined;
-      (window.clubhouse.agent as any).createDurable = vi.fn().mockResolvedValue({
-        id: 'new-agent-1',
-        name: 'code-reviewer',
-        color: 'indigo',
-        worktreePath: '/project/.clubhouse/agents/code-reviewer',
-        createdAt: new Date().toISOString(),
-      });
-      window.clubhouse.agentSettings.saveInstructions = vi.fn().mockResolvedValue(undefined);
-      window.clubhouse.agentSettings.writeSkillContent = vi.fn().mockResolvedValue(undefined);
-      window.clubhouse.agentSettings.readMcpRawJson = vi.fn().mockResolvedValue('{"mcpServers":{}}');
-      window.clubhouse.agentSettings.writeMcpRawJson = vi.fn().mockResolvedValue({ ok: true });
-      useAgentStore.setState({
-        loadDurableAgents: vi.fn().mockResolvedValue(undefined),
-      });
-    });
-
-    it('opens TemplateConfigDialog when plugin template Create is clicked', async () => {
-      renderSettings();
-      await waitFor(() => {
-        expect(capturedOnCreateFromPluginTemplate).toBeDefined();
-      });
-
-      // No dialog initially
-      expect(screen.queryByTestId('template-config-dialog')).not.toBeInTheDocument();
-
-      // Simulate clicking Create on a plugin template
-      capturedOnCreateFromPluginTemplate!(mockPluginTemplate);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('template-config-dialog')).toBeInTheDocument();
-        expect(screen.getByTestId('template-dialog-persona')).toHaveTextContent('Code Reviewer');
-      });
-    });
-
-    it('closes dialog on cancel without creating agent', async () => {
-      renderSettings();
-      await waitFor(() => {
-        expect(capturedOnCreateFromPluginTemplate).toBeDefined();
-      });
-
-      capturedOnCreateFromPluginTemplate!(mockPluginTemplate);
-      await waitFor(() => {
-        expect(screen.getByTestId('template-config-dialog')).toBeInTheDocument();
-      });
-
-      fireEvent.click(screen.getByTestId('template-dialog-close'));
-      await waitFor(() => {
-        expect(screen.queryByTestId('template-config-dialog')).not.toBeInTheDocument();
-      });
-      expect((window.clubhouse.agent as any).createDurable).not.toHaveBeenCalled();
-    });
-
-    it('creates durable agent with config from dialog', async () => {
-      renderSettings();
-      await waitFor(() => {
-        expect(capturedOnCreateFromPluginTemplate).toBeDefined();
-      });
-
-      capturedOnCreateFromPluginTemplate!(mockPluginTemplate);
-      await waitFor(() => {
-        expect(screen.getByTestId('template-config-dialog')).toBeInTheDocument();
-      });
-
-      fireEvent.click(screen.getByTestId('template-dialog-create'));
-
-      await waitFor(() => {
-        expect((window.clubhouse.agent as any).createDurable).toHaveBeenCalledWith(
-          '/project', 'code-reviewer', 'indigo', undefined, true,
-          'claude-code', undefined, undefined, undefined,
-        );
-      });
-    });
-
-    it('writes plugin template instructions to new agent worktree', async () => {
-      renderSettings();
-      await waitFor(() => {
-        expect(capturedOnCreateFromPluginTemplate).toBeDefined();
-      });
-
-      capturedOnCreateFromPluginTemplate!(mockPluginTemplate);
-      await waitFor(() => {
-        expect(screen.getByTestId('template-config-dialog')).toBeInTheDocument();
-      });
-
-      fireEvent.click(screen.getByTestId('template-dialog-create'));
-
-      await waitFor(() => {
-        expect(window.clubhouse.agentSettings.saveInstructions).toHaveBeenCalledWith(
-          '/project/.clubhouse/agents/code-reviewer',
-          '# Code Reviewer\nYou review code.',
-          '/project',
-        );
-      });
-    });
-
-    it('injects plugin template skills into new agent', async () => {
-      renderSettings();
-      await waitFor(() => {
-        expect(capturedOnCreateFromPluginTemplate).toBeDefined();
-      });
-
-      capturedOnCreateFromPluginTemplate!(mockPluginTemplate);
-      await waitFor(() => {
-        expect(screen.getByTestId('template-config-dialog')).toBeInTheDocument();
-      });
-
-      fireEvent.click(screen.getByTestId('template-dialog-create'));
-
-      await waitFor(() => {
-        expect(window.clubhouse.agentSettings.writeSkillContent).toHaveBeenCalledWith(
-          '/project/.clubhouse/agents/code-reviewer',
-          'review',
-          '# Review Skill\nDo reviews.',
-          '/project',
-        );
-      });
-    });
-
-    it('injects plugin template MCP servers into new agent mcp.json', async () => {
-      renderSettings();
-      await waitFor(() => {
-        expect(capturedOnCreateFromPluginTemplate).toBeDefined();
-      });
-
-      capturedOnCreateFromPluginTemplate!(mockPluginTemplate);
-      await waitFor(() => {
-        expect(screen.getByTestId('template-config-dialog')).toBeInTheDocument();
-      });
-
-      fireEvent.click(screen.getByTestId('template-dialog-create'));
-
-      await waitFor(() => {
-        expect(window.clubhouse.agentSettings.writeMcpRawJson).toHaveBeenCalledWith(
-          '/project/.clubhouse/agents/code-reviewer',
-          expect.stringContaining('"review-server"'),
-          '/project',
-          'new-agent-1',
-        );
-      });
-    });
-
-    it('refreshes agent list after creating from plugin template', async () => {
-      const loadDurableAgents = vi.fn().mockResolvedValue(undefined);
-      useAgentStore.setState({ loadDurableAgents });
-      renderSettings();
-      await waitFor(() => {
-        expect(capturedOnCreateFromPluginTemplate).toBeDefined();
-      });
-
-      capturedOnCreateFromPluginTemplate!(mockPluginTemplate);
-      await waitFor(() => {
-        expect(screen.getByTestId('template-config-dialog')).toBeInTheDocument();
-      });
-
-      fireEvent.click(screen.getByTestId('template-dialog-create'));
-
-      await waitFor(() => {
-        expect(loadDurableAgents).toHaveBeenCalledWith('proj-1', '/project');
-      });
     });
   });
 });

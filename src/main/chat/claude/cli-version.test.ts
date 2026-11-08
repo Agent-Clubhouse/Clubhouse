@@ -79,7 +79,7 @@ describe('lookupClaudeCliVersion', () => {
     expect(spawns).toHaveLength(1);
   });
 
-  it('keys the cache by profile env and command prefix', async () => {
+  it('keys the cache by env and command prefix', async () => {
     await lookupClaudeCliVersion(binary, { env: { VERSION_OUT: '2.1.296' } }, { spawn });
     expect(await lookupClaudeCliVersion(binary, { env: { VERSION_OUT: '2.1.297' } }, { spawn })).toBe('2.1.297');
     expect(spawns).toHaveLength(2);

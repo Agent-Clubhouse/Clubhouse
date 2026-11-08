@@ -2,33 +2,25 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useOrchestratorStore, DEFAULT_HOOK_SERVER_ORCHESTRATOR } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore, SpawnMode } from '../../stores/headlessStore';
-import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
-import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import { useFreeAgentSettingsStore } from '../../stores/freeAgentSettingsStore';
 import { Toggle } from '../../components/Toggle';
-import { Modal } from '../../components/Modal';
 import { useUIStore } from '../../stores/uiStore';
 import { resetChatFlagCache } from '../agents/chat/AgentRuntimePane';
 import { RICH_CHAT_CONTENT_FLAG, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
-import { useMcpOffConfirm } from './McpOffConfirm';
+import { ManagedGitExcludesSection } from '../managed/ManagedGitExcludesSection';
 import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsHelp, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
 import type { FreeAgentPermissionMode, SourceControlProvider } from '../../../shared/types';
 import { type AgentRuntimeMode, type ChatRuntimeSettings } from '../../../shared/chat';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
-import { Button } from '../../components/Button';
 import { useChatIdleSettingsStore } from '../../stores/chatIdleSettingsStore';
+import { useSourceControlSettingsStore } from '../../stores/sourceControlSettingsStore';
 import { CHAT_IDLE_TIMEOUT_CHOICES } from '../../../shared/settings-definitions';
 
 interface Props {
   projectId?: string;
 }
-
-const CLUBHOUSE_WILDCARDS = [
-  '@@AgentName', '@@StandbyBranch', '@@Path', '@@SourceControlProvider',
-  '@@BuildCommand', '@@TestCommand', '@@LintCommand', '@@Mission', '@@Persona',
-];
 
 const SELECT_CLASS = `${settingsInput} w-[200px]`;
 const CODE_CLASS = 'font-mono text-ctp-subtext1';
@@ -193,24 +185,21 @@ function AppAgentSettings() {
   const checkAllAvailability = useOrchestratorStore((s) => s.checkAllAvailability);
   const defaultMode = useHeadlessStore((s) => s.defaultMode);
   const setDefaultMode = useHeadlessStore((s) => s.setDefaultMode);
-  const clubhouseEnabled = useClubhouseModeStore((s) => s.enabled);
-  const setClubhouseEnabled = useClubhouseModeStore((s) => s.setEnabled);
-  const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
-  const clubhouseScp = useClubhouseModeStore((s) => s.sourceControlProvider);
-  const setClubhouseScp = useClubhouseModeStore((s) => s.setSourceControlProvider);
-  const { requestMcpChange, mcpOffDialog } = useMcpOffConfirm();
   const promptForName = useSessionSettingsStore((s) => s.promptForName);
   const setPromptForName = useSessionSettingsStore((s) => s.setPromptForName);
   const loadSessionSettings = useSessionSettingsStore((s) => s.loadSettings);
   const freeAgentDefaultMode = useFreeAgentSettingsStore((s) => s.defaultMode);
   const setFreeAgentDefaultMode = useFreeAgentSettingsStore((s) => s.setDefaultMode);
   const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
-  const [showConfirm, setShowConfirm] = useState(false);
   const { chatEnabled, richChatEnabled, chatResolved, flagSaveFailed, runtimeSaving, runtimeSaveFailed, runtimeSettings, setChatFlag, setRichChatFlag, setRuntimeMode } = useChatRuntimeSettings();
   const idleMinutes = useChatIdleSettingsStore((st) => st.idleTimeoutMinutes as number);
   const saveIdle = useChatIdleSettingsStore((st) => st.saveSettings);
   const loadIdle = useChatIdleSettingsStore((st) => st.loadSettings);
   useEffect(() => { if (chatEnabled) void loadIdle(); }, [chatEnabled, loadIdle]);
+  const sourceControlProvider = useSourceControlSettingsStore((st) => st.provider);
+  const loadSourceControl = useSourceControlSettingsStore((st) => st.loadSettings);
+  const saveSourceControl = useSourceControlSettingsStore((st) => st.saveSettings);
+  useEffect(() => { void loadSourceControl(); }, [loadSourceControl]);
   const idBase = useId();
 
   // Deep link (uiStore.openRuntimeSettings): scroll to the provider's runtime
@@ -252,24 +241,9 @@ function AppAgentSettings() {
 
   useEffect(() => {
     loadSettings().then(() => checkAllAvailability());
-    loadClubhouseSettings();
     loadSessionSettings();
     loadFreeAgentSettings();
-  }, [loadSettings, checkAllAvailability, loadClubhouseSettings, loadSessionSettings, loadFreeAgentSettings]);
-
-  const handleClubhouseToggle = () => {
-    if (!clubhouseEnabled) {
-      setShowConfirm(true);
-    } else {
-      // MCP falls back to Clubhouse mode, so this can turn MCP off too.
-      void requestMcpChange({ proposal: { clubhouseMode: { enabled: false } }, apply: () => setClubhouseEnabled(false), saved: () => useClubhouseModeStore.getState().enabled === false });
-    }
-  };
-
-  const confirmEnable = () => {
-    setShowConfirm(false);
-    setClubhouseEnabled(true);
-  };
+  }, [loadSettings, checkAllAvailability, loadSessionSettings, loadFreeAgentSettings]);
 
   return (
     <>
@@ -308,47 +282,26 @@ function AppAgentSettings() {
 
       <SettingsSection title="Durable agents">
         <SettingsField
-          label="Clubhouse Mode"
-          help="Manage agent instructions, permissions and MCP config in one place. Clubhouse pushes them to worktrees when an agent wakes."
-          testId="clubhouse-mode-row"
-        >
-          <Toggle aria-label="Clubhouse Mode" checked={clubhouseEnabled} onChange={handleClubhouseToggle} />
-        </SettingsField>
-        {clubhouseEnabled && (
-          <SettingsBlock>
-            <p className={settingsHelp}>
-              Project defaults can use these wildcards, resolved for each agent when it wakes.
-            </p>
-            <p className="text-xs mt-1 flex flex-wrap gap-x-2.5 gap-y-0.5">
-              {CLUBHOUSE_WILDCARDS.map((w) => <code key={w} className={CODE_CLASS}>{w}</code>)}
-            </p>
-            <p className={`${settingsHelp} mt-1.5`}>
-              Each project with Clubhouse Mode on gets a self-edit guide at <code className={CODE_CLASS}>.clubhouse/clubhouse-mode.md</code> that covers every setting on disk.
-            </p>
-          </SettingsBlock>
-        )}
-        {clubhouseEnabled && (
-          <SettingsField
-            label="Default source control provider"
-            help="Used by every project unless it sets its own."
-            htmlFor={`${idBase}-scp`}
-          >
-            <select
-              id={`${idBase}-scp`}
-              value={clubhouseScp}
-              onChange={(e) => setClubhouseScp(e.target.value as SourceControlProvider)}
-              className={SELECT_CLASS}
-            >
-              <option value="github">GitHub (gh CLI)</option>
-              <option value="azure-devops">Azure DevOps (az CLI)</option>
-            </select>
-          </SettingsField>
-        )}
-        <SettingsField
           label="Prompt for session name on quit"
           help="Ask to name the session when a durable agent stops. Projects can override this."
         >
           <Toggle aria-label="Prompt for session name on quit" checked={promptForName} onChange={setPromptForName} />
+        </SettingsField>
+        <SettingsField
+          label="Source control provider"
+          help={<>Fills <code className={CODE_CLASS}>@@SourceControlProvider</code> for agents that aren’t Clubhouse-managed, when their project and own settings don’t set one.</>}
+          htmlFor={`${idBase}-source-control`}
+        >
+          <select
+            id={`${idBase}-source-control`}
+            value={sourceControlProvider ?? 'github'}
+            onChange={(e) => { void saveSourceControl({ provider: e.target.value as SourceControlProvider }); }}
+            className={SELECT_CLASS}
+            data-testid="app-source-control-provider"
+          >
+            <option value="github">GitHub (gh CLI)</option>
+            <option value="azure-devops">Azure DevOps (az CLI)</option>
+          </select>
         </SettingsField>
         {chatEnabled && (
           <SettingsField
@@ -370,28 +323,6 @@ function AppAgentSettings() {
           </SettingsField>
         )}
       </SettingsSection>
-
-      {mcpOffDialog}
-      <Modal open={showConfirm} onClose={() => setShowConfirm(false)} title="Enable Clubhouse Mode?" width="w-[420px] max-w-[calc(100vw-32px)]" testId="clubhouse-mode-confirm" footer={
-        <>
-          <Button onClick={() => setShowConfirm(false)} kind="ghost">
-            Cancel
-          </Button>
-          <Button onClick={confirmEnable} kind="primary">
-            Enable
-          </Button>
-        </>
-      }>
-        <div>
-          <p className={`${settingsHelp} mb-2`}>
-            This will overwrite agent settings in worktrees with project-level defaults each time an agent wakes.
-            Commit or back up your current agent configurations first.
-          </p>
-          <p className={settingsHelp}>
-            Projects without defaults get starter templates that use wildcards.
-          </p>
-        </div>
-      </Modal>
 
       {chatResolved && (
         <SettingsSection title="Chat">
@@ -538,13 +469,6 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const setProjectMode = useHeadlessStore((s) => s.setProjectMode);
   const clearProjectMode = useHeadlessStore((s) => s.clearProjectMode);
 
-  const clubhouseGlobal = useClubhouseModeStore((s) => s.enabled);
-  const clubhouseOverrides = useClubhouseModeStore((s) => s.projectOverrides);
-  const setClubhouseOverride = useClubhouseModeStore((s) => s.setProjectOverride);
-  const clearClubhouseOverride = useClubhouseModeStore((s) => s.clearProjectOverride);
-  const { requestMcpChange, mcpOffDialog } = useMcpOffConfirm();
-  const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
-
   const sessionPromptGlobal = useSessionSettingsStore((s) => s.promptForName);
   const sessionOverrides = useSessionSettingsStore((s) => s.projectOverrides);
   const setSessionOverride = useSessionSettingsStore((s) => s.setProjectOverride);
@@ -557,23 +481,14 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const clearFreeAgentProjectMode = useFreeAgentSettingsStore((s) => s.clearProjectMode);
   const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
 
-  const mcpGlobalEnabled = useMcpSettingsStore((s) => s.enabled);
-  const mcpProjectOverrides = (useMcpSettingsStore((s) => s.projectOverrides) ?? {}) as Record<string, boolean>;
-  const mcpSaveSettings = useMcpSettingsStore((s) => s.saveSettings);
-  const mcpLoaded = useMcpSettingsStore((s) => s.loaded);
-  const loadMcpSettings = useMcpSettingsStore((s) => s.loadSettings);
-
   useEffect(() => {
-    loadClubhouseSettings();
     loadSessionSettings();
     loadFreeAgentSettings();
-    loadMcpSettings();
-  }, [loadClubhouseSettings, loadSessionSettings, loadFreeAgentSettings, loadMcpSettings]);
+  }, [loadSessionSettings, loadFreeAgentSettings]);
 
   if (!project) return null;
 
   const projectPath = project.path;
-  const projectName = project.displayName || project.name;
   const currentOrchestrator = project.orchestrator || 'claude-code';
 
   // Headless mode
@@ -582,28 +497,6 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const handleHeadlessModeChange = (value: string) => {
     if (value === 'global') clearProjectMode(projectPath);
     else setProjectMode(projectPath, value as SpawnMode);
-  };
-
-  // Clubhouse mode
-  const hasClubhouseOverride = projectPath in clubhouseOverrides;
-  const currentClubhouseMode = hasClubhouseOverride
-    ? (clubhouseOverrides[projectPath] ? 'on' : 'off')
-    : 'global';
-  const clubhouseEffective = hasClubhouseOverride
-    ? clubhouseOverrides[projectPath]
-    : clubhouseGlobal;
-  const handleClubhouseModeChange = (value: string) => {
-    const apply = () => (value === 'global' ? clearClubhouseOverride(projectPath) : setClubhouseOverride(projectPath, value === 'on'));
-    const projectOverrides = { ...clubhouseOverrides };
-    if (value === 'global') delete projectOverrides[projectPath];
-    else projectOverrides[projectPath] = value === 'on';
-    // MCP falls back to Clubhouse mode, so this can turn MCP off for the project too.
-    void requestMcpChange({
-      proposal: { clubhouseMode: { projectOverrides } },
-      projectName,
-      apply,
-      saved: () => useClubhouseModeStore.getState().projectOverrides[projectPath] === projectOverrides[projectPath],
-    });
   };
 
   // Session name
@@ -621,24 +514,6 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const handleFreeAgentModeChange = (value: string) => {
     if (value === 'global') clearFreeAgentProjectMode(projectPath);
     else setFreeAgentProjectMode(projectPath, value as FreeAgentPermissionMode);
-  };
-
-  // MCP override
-  const mcpOverride = mcpProjectOverrides[projectPath];
-  const currentMcpMode = mcpOverride === undefined ? 'global' : (mcpOverride ? 'on' : 'off');
-  const handleMcpModeChange = (value: string) => {
-    const updated: Record<string, boolean> = { ...mcpProjectOverrides };
-    if (value === 'global') {
-      delete updated[projectPath];
-    } else {
-      updated[projectPath] = value === 'on';
-    }
-    void requestMcpChange({
-      proposal: { mcp: { projectOverrides: updated } },
-      projectName,
-      apply: () => mcpSaveSettings({ projectOverrides: Object.keys(updated).length > 0 ? updated : undefined }),
-      saved: () => (useMcpSettingsStore.getState().projectOverrides as Record<string, boolean> | undefined)?.[projectPath] === updated[projectPath],
-    });
   };
 
   const onOff = (v: boolean) => (v ? 'On' : 'Off');
@@ -699,39 +574,10 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
             <option value="off">Off</option>
           </select>
         </SettingsField>
-
-        <SettingsField label="Clubhouse Mode" help="Manage agent config in one place and push it to worktrees." htmlFor={`${idBase}-clubhouse`}>
-          <select
-            id={`${idBase}-clubhouse`}
-            value={currentClubhouseMode}
-            onChange={(e) => handleClubhouseModeChange(e.target.value)}
-            className={SELECT_CLASS}
-          >
-            <option value="global">Global default ({onOff(clubhouseGlobal)})</option>
-            <option value="on">On</option>
-            <option value="off">Off</option>
-          </select>
-        </SettingsField>
-
-        {/* Shown with the app-wide MCP bridge off too: an override keeps working then, and this is where to see it. */}
-        {mcpLoaded && (
-          <SettingsField label="MCP override" help="Override MCP bridge injection for this project. An override here doesn’t keep the Dispatcher on." htmlFor={`${idBase}-mcp`}>
-            <select
-              id={`${idBase}-mcp`}
-              value={currentMcpMode}
-              onChange={(e) => handleMcpModeChange(e.target.value)}
-              className={SELECT_CLASS}
-            >
-              <option value="global">Global default ({onOff(mcpGlobalEnabled)})</option>
-              <option value="on">On</option>
-              <option value="off">Off</option>
-            </select>
-          </SettingsField>
-        )}
       </SettingsSection>
 
-      {mcpOffDialog}
-      <ProjectAgentDefaultsSection projectPath={project.path} clubhouseMode={clubhouseEffective} />
+      <ProjectAgentDefaultsSection projectPath={project.path} />
+      <ManagedGitExcludesSection projectPath={project.path} />
     </>
   );
 }

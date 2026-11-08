@@ -16,8 +16,8 @@ export const DEFAULT_RPC_TIMEOUT_MS = 30_000;
 export interface RpcRequestOptions {
   /**
    * Per-request timeout override in milliseconds.  `null` disables the
-   * timeout — for requests whose reply legitimately takes minutes, such as an
-   * ACP `session/prompt`, which only answers when the whole turn has ended.
+   * timeout — for requests whose reply legitimately takes minutes, such as
+   * one that only answers when the whole turn has ended.
    */
   timeoutMs?: number | null;
 }
@@ -112,7 +112,7 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
     this.proc = spawn(this.opts.binary, this.opts.args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: this.opts.cwd,
-      // Codex app-server and Copilot ACP: never hand them the host Claude
+      // Codex app-server: never hand it the host Claude
       // Code session's markers or messaging socket, even if a caller's env
       // (or process.env, when none is given) carries them. process.env is
       // Clubhouse's own, so it also loses any inherited agent nonce (#2222).

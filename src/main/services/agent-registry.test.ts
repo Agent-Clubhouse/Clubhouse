@@ -37,6 +37,7 @@ import {
   readProjectOrchestrator,
   DEFAULT_ORCHESTRATOR,
 } from './agent-registry';
+import { delivered } from './managed-agents/delivery-records';
 
 describe('agent-registry', () => {
   beforeEach(() => {
@@ -281,5 +282,17 @@ describe('agent-registry', () => {
       agentRegistry.untrack('la-2');
       expect(isOrchestrationEnabled('la-2')).toBe(false);
     });
+  });
+});
+
+describe('untrackAgent and managed delivery records (D79)', () => {
+  it('drops what a managed session started with once it ends, keeping the fingerprint', () => {
+    delivered.set('agent-ended', {
+      fingerprint: 'f', deliveredAt: 't', parts: {}, order: [],
+      snapshot: { deliveredAt: 't', instructions: 'x', rawInstructions: 'x', skills: [], mcps: [], settings: [] },
+    });
+    untrackAgent('agent-ended');
+    expect(delivered.get('agent-ended')).toEqual({ fingerprint: 'f', deliveredAt: 't', parts: {}, order: [] });
+    delivered.delete('agent-ended');
   });
 });

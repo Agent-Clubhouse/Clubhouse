@@ -23,7 +23,7 @@ describe('buildOrchestratorOptions', () => {
   });
 
   it('prepends the current orchestrator (from the global list) with a (disabled) suffix when not in the effective set', () => {
-    // Worktree-synced agent on codex-cli, but the profile only enables claude-code.
+    // Worktree-synced agent on codex-cli, but this machine only enables claude-code.
     const opts = buildOrchestratorOptions([claudeCode], allOrchestrators, 'codex-cli');
     expect(opts.map((o) => o.id)).toEqual(['codex-cli', 'claude-code']);
     // Suffixed so the user understands why a non-enabled orchestrator appears.

@@ -1,7 +1,7 @@
 /**
  * The clubhouse CLI's endpoint (#2598): display settings for programs outside
- * the app, on the always-running hook server, so it adds no port and works
- * with MCP off. That server only listens on 127.0.0.1.
+ * the app, on the always-running hook server, so it adds no port. That
+ * server only listens on 127.0.0.1.
  *
  * The CLI finds it through a user-only file under the Clubhouse base dir,
  * holding the port and a token made fresh at each start. Agent nonces play no

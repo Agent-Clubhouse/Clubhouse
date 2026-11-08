@@ -8,6 +8,7 @@ import { agent } from './agent';
 import { git } from './git';
 import { agentSettings } from './agentSettings';
 import { skillBundle } from './skillBundle';
+import { managedAgents } from './managedAgents';
 import { file } from './file';
 import { blueprint } from './blueprint';
 import { plugin } from './plugin';
@@ -16,7 +17,6 @@ import { pluginMcp } from './pluginMcp';
 import { log } from './log';
 import { process as processApi } from './process';
 import { app } from './app';
-import { profile } from './profile';
 import { annex } from './annex';
 import { annexClient } from './annexClient';
 import { window } from './window';
@@ -61,6 +61,7 @@ export const api = {
   ...git,
   ...agentSettings,
   ...skillBundle,
+  ...managedAgents,
   ...file,
   ...blueprint,
   ...plugin,
@@ -69,7 +70,6 @@ export const api = {
   ...log,
   ...processApi,
   ...app,
-  ...profile,
   ...annex,
   ...annexClient,
   ...window,

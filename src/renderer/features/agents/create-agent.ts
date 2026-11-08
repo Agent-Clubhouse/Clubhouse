@@ -2,7 +2,6 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useToastStore } from '../../stores/toastStore';
 import { isRemoteProjectId, parseNamespacedId } from '../../stores/remoteProjectStore';
-import type { TemplateConfig } from './TemplateConfigDialog';
 import { ATTR, tel } from '../../telemetry';
 
 /**
@@ -24,7 +23,22 @@ export interface DurableAgentInput {
   orchestrator?: string;
   freeAgentMode?: boolean;
   mcpIds?: string[];
-  persona?: string;
+  /**
+   * False turns Clubhouse's hooks and permission prompts off (#2893, D70),
+   * set before the first session starts so it never gets them. The Clubhouse
+   * MCP always runs (D69).
+   */
+  clubhouseFeatures?: false;
+}
+
+/** Delete an agent that was created but never started. A failure is logged; the caller reports its own error. */
+async function removeUnstartedAgent(projectPath: string, agentId: string): Promise<void> {
+  try {
+    await window.clubhouse.agent.deleteDurable(projectPath, agentId);
+  } catch (err) {
+    console.error('Failed to remove the agent after its setup failed:', err);
+    tel.exception(err, { handled: true, attrs: [ATTR.uiAction('agent_create')] });
+  }
 }
 
 function toastFailure(err: unknown): void {
@@ -42,7 +56,7 @@ export async function createDurableAgent(
   { onError }: { onError?: (message: string) => void } = {},
 ): Promise<string | null> {
   const fail = (err: unknown) => (onError ? onError(err instanceof Error ? err.message : String(err)) : toastFailure(err));
-  const { name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, persona } = input;
+  const { name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, clubhouseFeatures } = input;
 
   if (isRemoteProjectId(project.id)) {
     // Remote project — proxy create to satellite via REST
@@ -76,9 +90,17 @@ export async function createDurableAgent(
 
   try {
     const config = await window.clubhouse.agent.createDurable(
-      project.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds, undefined, persona,
+      project.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds,
     );
     if (tempId) removeAgent(tempId);
+    if (clubhouseFeatures === false) {
+      const off = await window.clubhouse.managed.setClubhouseFeatures(project.path, config.id, false);
+      if (off.ok === false) {
+        // Leave no half-made agent behind: it never started, so remove it before saying why.
+        await removeUnstartedAgent(project.path, config.id);
+        throw new Error(off.message || "Couldn't turn Clubhouse features off");
+      }
+    }
     await spawnDurableAgent(project.id, project.path, config, false);
     return config.id;
   } catch (err) {
@@ -87,30 +109,6 @@ export async function createDurableAgent(
     tel.event('clubhouse.ui.action_failed', [ATTR.uiAction('agent_create'), ATTR.errorType('unknown')]);
     tel.exception(err, { handled: true, attrs: [ATTR.uiAction('agent_create')] });
     fail(err);
-    return null;
-  }
-}
-
-/** Resolves to the new agent's id, or null when it failed (reported with a toast). */
-export async function createDurableAgentFromTemplate(project: AgentProjectRef, templateConfig: TemplateConfig): Promise<string | null> {
-  const { persona, name, color, model, useWorktree, orchestrator: orch, freeAgentMode: fam, mcpIds } = templateConfig;
-  const { registerCreatingAgent, removeAgent, spawnDurableAgent } = useAgentStore.getState();
-
-  const tempId = registerCreatingAgent(project.id, name, color, undefined, undefined);
-  try {
-    const config = await window.clubhouse.agent.createDurable(
-      project.path, name, color, model !== 'default' ? model : undefined, useWorktree,
-      orch, fam || undefined, mcpIds, undefined, persona.id,
-    );
-    if (tempId) removeAgent(tempId);
-    await spawnDurableAgent(project.id, project.path, config, false);
-    return config.id;
-  } catch (err) {
-    if (tempId) removeAgent(tempId);
-    console.error('Failed to create agent from template:', err);
-    tel.event('clubhouse.ui.action_failed', [ATTR.uiAction('agent_create'), ATTR.errorType('unknown')]);
-    tel.exception(err, { handled: true, attrs: [ATTR.uiAction('agent_create')] });
-    toastFailure(err);
     return null;
   }
 }

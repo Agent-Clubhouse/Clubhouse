@@ -26,7 +26,6 @@ import { HelpNav } from './sidebar/HelpNav';
 import { SidebarBreadcrumb } from './sidebar/SidebarBreadcrumb';
 import { useSidebarMode } from './listTabs';
 import { SCOPE_FOLLOWING_TABS } from './scope';
-import { useChromeDialogStore } from './sidebar/ChromeAgentDialogs';
 import { selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './sidebar/treeModel';
 import { useHelperDisposeRequestStore, describeHelperDispose } from '../stores/helperDisposeRequestStore';
 import { useHelperStartRequestStore, startRequestsByOrchestrator, describeHelperStarts } from '../stores/helperStartRequestStore';
@@ -622,7 +621,6 @@ export function ChromeSidebar() {
     pickAndAddProject().catch((err) => reportChromeActionFailed('add_project', err));
   };
 
-  const templateProjectId = activeProjectId ?? projects[0]?.id;
   const newItems = [
     {
       label: 'Durable agent…',
@@ -630,7 +628,6 @@ export function ChromeSidebar() {
       onSelect: () => { openNewAgentOrDialog('durable'); reportChromeFeature('new_agent_open'); },
     },
     { label: 'Quick agent…', onSelect: () => { openNewAgentOrDialog('quick'); reportChromeFeature('new_agent_open'); } },
-    ...(templateProjectId ? [{ label: 'Agent from a template…', onSelect: () => useChromeDialogStore.getState().openGallery(templateProjectId) }] : []),
   ];
 
   // The breadcrumb, or Esc inside the sidebar, returns from a list or Settings to Agents (spec §4.6).

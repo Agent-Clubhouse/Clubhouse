@@ -9,15 +9,8 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('../services/mcp-settings', () => ({
-  isMcpEnabledForAny: vi.fn(() => true),
-  notifyMcpEnablementChanged: vi.fn(),
-  onMcpEnablementChanged: vi.fn(() => () => undefined),
-  mcpSettingsStore: { get: vi.fn(() => ({})), save: vi.fn() },
-}));
-
 vi.mock('../services/orchestration-policy', () => ({
-  watchMcpForOrchestration: vi.fn(() => () => undefined),
+  watchMcpCallers: vi.fn(() => () => undefined),
 }));
 
 vi.mock('../services/clubhouse-mcp', () => ({
@@ -30,7 +23,7 @@ vi.mock('../services/clubhouse-mcp', () => ({
     getBindingsForAgent: vi.fn(() => []),
     onChange: vi.fn(),
   },
-  bridgeServer: { start: vi.fn(async () => 0), getAgentConnection: vi.fn(() => null) },
+  bridgeServer: { start: vi.fn(async () => 0), stop: vi.fn(), getAgentConnection: vi.fn(() => null) },
 }));
 
 vi.mock('../services/clubhouse-mcp/tools/agent-tools', () => ({
@@ -74,6 +67,10 @@ vi.mock('../services/clubhouse-mcp/tools/dispatcher-control-tools', () => ({
   registerDispatcherControlTools: vi.fn(),
 }));
 
+vi.mock('../services/clubhouse-mcp/tools/managed-tools', () => ({
+  registerManagedTools: vi.fn(),
+}));
+
 vi.mock('../services/persisted-bindings', () => ({
   registerPersistedBindingSource: vi.fn(),
   rebuildPersistedBindings: vi.fn(async () => ({ sources: [] })),
@@ -109,7 +106,6 @@ import { MCP_UNBIND_CANVAS_CLEANUP } from '../../shared/mcp-unbind';
 import { bindingManager, bridgeServer } from '../services/clubhouse-mcp';
 import { agentRegistry } from '../services/agent-registry';
 import { registerWebview, unregisterWebview } from '../services/clubhouse-mcp/tools/browser-tools';
-import { isMcpEnabledForAny, notifyMcpEnablementChanged } from '../services/mcp-settings';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import {
   registerPersistedBindingSource,
@@ -127,10 +123,9 @@ import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/d
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import {
   registerMcpBindingHandlers,
-  maybeStartMcpBridge,
-  onMcpSettingsChanged,
+  startMcpBridge,
   restorePersistedBindings,
-  _resetHandlersForTesting, startMcpBridgeForAgent } from './mcp-binding-handlers';
+  _resetHandlersForTesting, ensureMcpBridgeStarted } from './mcp-binding-handlers';
 
 type HandlerFn = (...args: unknown[]) => unknown;
 const handlers = new Map<string, HandlerFn>();
@@ -191,15 +186,6 @@ describe('mcp-binding-handlers registration', () => {
     const callCount = vi.mocked(ipcMain.handle).mock.calls.length;
     registerMcpBindingHandlers();
     expect(vi.mocked(ipcMain.handle).mock.calls.length).toBe(callCount);
-  });
-
-  it('does not register when MCP is disabled', () => {
-    vi.mocked(isMcpEnabledForAny).mockReturnValue(false);
-    handlers.clear();
-    vi.mocked(ipcMain.handle).mockClear();
-    _resetHandlersForTesting();
-    registerMcpBindingHandlers();
-    expect(ipcMain.handle).not.toHaveBeenCalled();
   });
 
   it('subscribes to binding onChange for broadcast', () => {
@@ -534,29 +520,23 @@ describe('UNREGISTER_WEBVIEW', () => {
 
 // ── Bridge Startup ──────────────────────────────────────────────────────
 
-describe('maybeStartMcpBridge', () => {
-  it('starts the bridge server when MCP is enabled', () => {
-    maybeStartMcpBridge();
+describe('startMcpBridge', () => {
+  it('starts the bridge server', () => {
+    startMcpBridge();
     expect(bridgeServer.start).toHaveBeenCalled();
   });
 
   it('is idempotent — second call does not restart', () => {
-    maybeStartMcpBridge();
-    maybeStartMcpBridge();
+    startMcpBridge();
+    startMcpBridge();
     expect(bridgeServer.start).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not start when MCP is disabled', () => {
-    vi.mocked(isMcpEnabledForAny).mockReturnValue(false);
-    maybeStartMcpBridge();
-    expect(bridgeServer.start).not.toHaveBeenCalled();
   });
 
   it('resets bridgeStarted on failure to allow retry', async () => {
     const error = new Error('port in use');
     vi.mocked(bridgeServer.start).mockRejectedValueOnce(error);
 
-    maybeStartMcpBridge();
+    startMcpBridge();
     // Wait for the async catch to fire
     await vi.waitFor(() => {
       expect(bridgeServer.start).toHaveBeenCalledTimes(1);
@@ -564,51 +544,34 @@ describe('maybeStartMcpBridge', () => {
     // Allow the promise rejection to settle
     await new Promise((r) => setTimeout(r, 0));
 
+    // The dead server is closed and its subscriptions dropped before the retry.
+    expect(bridgeServer.stop).toHaveBeenCalledTimes(1);
     // Now a retry should work because bridgeStarted was reset
     vi.mocked(bridgeServer.start).mockResolvedValueOnce(0 as any);
-    maybeStartMcpBridge();
+    startMcpBridge();
     expect(bridgeServer.start).toHaveBeenCalledTimes(2);
   });
 });
 
-// ── Settings Change ─────────────────────────────────────────────────────
-
-describe('startMcpBridgeForAgent (#2610)', () => {
+describe('ensureMcpBridgeStarted (#2610)', () => {
   it('starts the bridge once and leaves bindings alone when handlers already ran', () => {
     vi.mocked(rebuildPersistedBindings).mockClear();
-    vi.mocked(isMcpEnabledForAny).mockReturnValue(true);
-    startMcpBridgeForAgent();
+    ensureMcpBridgeStarted();
     expect(bridgeServer.start).toHaveBeenCalled();
     expect(rebuildPersistedBindings).not.toHaveBeenCalled();
   });
-});
 
-describe('onMcpSettingsChanged', () => {
-  it('does nothing when MCP is disabled', () => {
-    vi.mocked(isMcpEnabledForAny).mockReturnValue(false);
-    vi.mocked(ipcMain.handle).mockClear();
-    onMcpSettingsChanged();
-    // No new handler registrations since MCP is disabled
-    expect(bridgeServer.start).not.toHaveBeenCalled();
-  });
-
-  it('tells whatever follows MCP even when MCP just went off everywhere (#2589)', () => {
-    vi.mocked(notifyMcpEnablementChanged).mockClear();
-    vi.mocked(isMcpEnabledForAny).mockReturnValue(false);
-    onMcpSettingsChanged();
-    expect(notifyMcpEnablementChanged).toHaveBeenCalledTimes(1);
-  });
-
-  it('registers handlers and starts bridge when MCP becomes enabled', () => {
-    // Handlers already registered from beforeEach, so this primarily tests bridge start
-    vi.mocked(isMcpEnabledForAny).mockReturnValue(true);
-    onMcpSettingsChanged();
+  it('registers the handlers and restores bindings the first time', () => {
+    _resetHandlersForTesting();
+    vi.mocked(rebuildPersistedBindings).mockClear();
+    ensureMcpBridgeStarted();
     expect(bridgeServer.start).toHaveBeenCalled();
+    expect(rebuildPersistedBindings).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('restorePersistedBindings (#1544)', () => {
-  it('does nothing until MCP handlers are registered', () => {
+  it('does nothing until the MCP handlers are registered', () => {
     _resetHandlersForTesting();
     restorePersistedBindings();
     expect(rebuildPersistedBindings).not.toHaveBeenCalled();
@@ -661,11 +624,6 @@ describe('restorePersistedBindings (#1544)', () => {
     restorePersistedBindings();
     _resetHandlersForTesting();
     expect(stop).toHaveBeenCalledTimes(1);
-  });
-
-  it('runs when MCP is turned on later', () => {
-    onMcpSettingsChanged();
-    expect(rebuildPersistedBindings).toHaveBeenCalledTimes(1);
   });
 });
 

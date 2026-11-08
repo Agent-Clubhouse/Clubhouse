@@ -3,9 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import type { Agent } from '../../../../shared/types';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useChatIdleSettingsStore } from '../../../stores/chatIdleSettingsStore';
-import { useClubhouseModeStore } from '../../../stores/clubhouseModeStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
-import { useProfileStore } from '../../../stores/profileStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { resetChatFlagCache } from '../chat/AgentRuntimePane';
@@ -41,7 +39,6 @@ beforeEach(() => {
   useOrchestratorStore.setState({
     allOrchestrators: [{ id: 'claude-code', displayName: 'Claude Code', shortName: 'CC', capabilities: { permissions: true } }] as never,
   });
-  useClubhouseModeStore.setState({ enabled: true, projectOverrides: {}, loadSettings: vi.fn(async () => {}) } as never);
   window.clubhouse.app.getExperimentalSettings = vi.fn(async () => ({ chat: chatFlag })) as never;
   window.clubhouse.app.isPreviewEligible = vi.fn(async () => true) as never;
   // Main's answer for a sleeping agent: the runtime its next wake starts in.
@@ -91,7 +88,6 @@ describe('CLI row (#2593)', () => {
 
   beforeEach(() => {
     offer(['claude-code', 'codex-cli']);
-    useProfileStore.setState({ profiles: [], loadProfiles: vi.fn(async () => {}) } as never);
     window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn(async () => ({})) as never;
   });
 
@@ -110,12 +106,11 @@ describe('CLI row (#2593)', () => {
     expect(optionLabels(cli()!)).toEqual(['GitHub Copilot (disabled)', 'Claude Code', 'Codex']);
   });
 
-  it('narrows the list to the project\'s profile', async () => {
+  it('offers every enabled CLI, whatever an old saved profileId says (#2749)', async () => {
     offer(['claude-code', 'codex-cli', 'github-copilot']);
-    useProfileStore.setState({ profiles: [{ id: 'work', name: 'Work', orchestrators: { 'claude-code': {}, 'github-copilot': {} } }] } as never);
     window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn(async () => ({ profileId: 'work' })) as never;
     render(<AgentDetails agent={sleeping} />);
-    await waitFor(() => expect(cli() && optionLabels(cli()!)).toEqual(['Claude Code', 'GitHub Copilot']));
+    await waitFor(() => expect(cli() && optionLabels(cli()!)).toEqual(['Claude Code', 'Codex', 'GitHub Copilot']));
   });
 
   it('stays read-only with only one CLI on offer', async () => {
@@ -282,7 +277,8 @@ describe('Agent details for a sleeping agent (#2281)', () => {
     render(<AgentDetails agent={sleeping} />);
     await waitFor(() => expect(settings().getByRole('combobox', { name: 'Model' })).toBeInTheDocument());
     expect(settings().getByRole('switch', { name: 'Free agent mode' })).toBeInTheDocument();
-    expect(settings().getByRole('switch', { name: 'Clubhouse mode for this agent' })).toBeInTheDocument();
+    // Clubhouse Mode was retired (#2901): nothing offers it.
+    expect(settings().queryByRole('switch', { name: 'Clubhouse mode for this agent' })).not.toBeInTheDocument();
     await waitFor(() => expect(settings().getByRole('combobox', { name: 'Runs in' })).toBeInTheDocument());
     expect(settings().getByTestId('details-settings-next-wake')).toHaveTextContent(NEXT_WAKE_NOTE);
     expect(settings().queryByText(LOCKED_HINT)).not.toBeInTheDocument();
@@ -301,13 +297,10 @@ describe('Agent details for a sleeping agent (#2281)', () => {
     await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1', { freeAgentMode: true }));
     await waitFor(() => expect(settings().getByTestId('details-setting-access')).toHaveTextContent('Free agent'));
 
-    fireEvent.click(settings().getByRole('switch', { name: 'Clubhouse mode for this agent' }));
-    await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1', { clubhouseModeOverride: true }));
-
     const runsIn = await settings().findByRole('combobox', { name: 'Runs in' });
     fireEvent.change(runsIn, { target: { value: 'terminal' } });
     await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1', { runtimeMode: 'terminal' }));
-    expect(saved).toMatchObject({ model: 'opus', freeAgentMode: true, clubhouseModeOverride: true, runtimeMode: 'terminal' });
+    expect(saved).toMatchObject({ model: 'opus', freeAgentMode: true, runtimeMode: 'terminal' });
     // Waking into the terminal: no idle sleep, so the Auto-sleep row goes.
     await waitFor(() => expect(settings().queryByTestId('details-setting-auto-sleep')).not.toBeInTheDocument());
   });

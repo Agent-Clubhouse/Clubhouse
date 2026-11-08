@@ -102,6 +102,12 @@ export interface ClaudeTransport {
   contextUsage?(): Promise<unknown>;
   /** The raw `get_usage` reply (session totals and plan windows), skipping the transcript scan. */
   planUsage?(): Promise<unknown>;
+  /**
+   * The CLI's MCP server list (`mcp_status`) as it sends it: each entry's name,
+   * status and, for a failed server, its error. Local: nothing goes to the model.
+   * Resolves undefined when this SDK has no such call.
+   */
+  mcpServerStatus?(): Promise<unknown>;
   /** End the session: closes stdin and lets the CLI exit, killing it if it doesn't. */
   close(): Promise<void>;
 }
