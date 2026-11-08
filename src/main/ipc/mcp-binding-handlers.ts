@@ -23,6 +23,7 @@ import { registerAppearanceTools } from '../services/clubhouse-mcp/tools/appeara
 import { registerSettingsReadTools } from '../services/clubhouse-mcp/tools/settings-read-tools';
 import { registerDispatcherControlTools } from '../services/clubhouse-mcp/tools/dispatcher-control-tools';
 import { registerManagedTools } from '../services/clubhouse-mcp/tools/managed-tools';
+import { registerActionTools } from '../services/clubhouse-mcp/tools/action-tools';
 import { onDisposeRequestsChanged } from '../services/helper-dispose-requests';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import { agentRegistry } from '../services/agent-registry';
@@ -108,6 +109,7 @@ export function registerMcpBindingHandlers(): void {
   registerSettingsReadTools();
   registerDispatcherControlTools();
   registerManagedTools();
+  registerActionTools();
   registerHelperQuestionTools();
   // Running chat sessions report plan limits between reads (#2671).
   watchSessionQuota();

@@ -9,7 +9,7 @@
 
 import * as path from 'path';
 import { powerMonitor } from 'electron';
-import { ActionError, type Action, type ActionNotice, type ActionOwner, type ActionRun, type ActionView } from '../../../shared/actions';
+import { ActionError, type Action, type ActionNames, type ActionNotice, type ActionOwner, type ActionRun, type ActionView } from '../../../shared/actions';
 import { IPC } from '../../../shared/ipc-channels';
 import type { Project } from '../../../shared/types';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
@@ -200,7 +200,7 @@ export function stopActions(): void {
 }
 
 function requireEngine(): ActionsEngine {
-  if (!engine) throw new Error('Actions are still starting. Try again in a moment.');
+  if (!engine) throw new ActionError('unavailable', 'Actions are still starting. Try again in a moment.');
   return engine;
 }
 
@@ -265,6 +265,29 @@ export function actionHistory(id: string): ActionRun[] {
   const a = e.get(id);
   if (a?.owner.kind === 'app') return [];
   return e.history(id).sort((x, y) => y.startedAt - x.startedAt);
+}
+
+// ── Lookups for the Clubhouse MCP tools ─────────────────────────────────────
+
+/** Agent and project names, for describing actions in plain words. */
+export function actionNames(): ActionNames {
+  return { agent: (id) => facts.agentName(id), project: (id) => facts.projectName(id) };
+}
+
+/** The project an agent belongs to, from the last read. */
+export function projectIdOfAgent(agentId: string): string | undefined {
+  return facts.agentProjectId(agentId);
+}
+
+/** A project by id, name or path, or undefined when none matches. */
+export function findProjectId(ref: string): string | undefined {
+  const trimmed = ref.trim();
+  if (!trimmed) return undefined;
+  if (projectById(trimmed)) return trimmed;
+  const lower = trimmed.toLowerCase();
+  const byName = projects.find((p) => projectLabel(p).toLowerCase() === lower || p.name.toLowerCase() === lower);
+  if (byName) return byName.id;
+  return path.isAbsolute(trimmed) ? projectIdForPath(trimmed) : undefined;
 }
 
 // ── Clubhouse's own actions ─────────────────────────────────────────────────

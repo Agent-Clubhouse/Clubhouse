@@ -33,7 +33,9 @@ export type ActionErrorCode =
   | 'not_found'
   | 'not_allowed'
   | 'hidden'
-  | 'rate_limited';
+  | 'rate_limited'
+  /** Actions are still starting, so try again in a moment. */
+  | 'unavailable';
 
 export class ActionError extends Error {
   constructor(public readonly code: ActionErrorCode, message: string) {
