@@ -54,7 +54,9 @@ import { DISPATCHER_CLASSIC_MESSAGE } from '../../../shared/dispatcher-types';
 import { getDispatcherChatPath, getDispatcherPath, isDispatcherChatPath, isDispatcherCoordinatorPath } from './dispatcher-paths';
 import { isEmptyMirror, mirrorUpdates } from './dispatcher-identity';
 import { registerConcealedTools } from '../agent-runtime/concealed-tools';
+import { hasChatStartInFlight } from '../agent-runtime/chat-spawn';
 import { dispatcherEnablement, getSettings as getDispatcherSettings, isDispatcherEnabled, updateSettings } from './dispatcher-settings';
+import { setDispatcherIdLookup } from '../clubhouse-mcp/dispatcher-gate';
 
 export {
   getDispatcherPath, getDispatcherChatPath, getDispatcherNotesPath, getDispatcherNotesArchivePath, getDispatcherMemoryPath,
@@ -75,6 +77,7 @@ export const DISPATCHER_NAME = 'Dispatcher';
 export const DISPATCHER_INTERNAL_TOOLS: ReadonlySet<string> = new Set(['start_work', 'tell_user']);
 
 /** The coordinator's config as last read from disk; null before the Dispatcher was first created. */
+
 let config: DurableAgentConfig | null = null;
 /** The chat's config as last read from disk; null before it was first created. */
 let chatConfig: DurableAgentConfig | null = null;
@@ -102,6 +105,8 @@ export function getDispatcherAgentId(): string | null {
 export function isDispatcherAgentId(agentId: string | undefined | null): boolean {
   return !!agentId && agentId === config?.id;
 }
+// So the tool registry can tell a sleeping Dispatcher target apart (#3108).
+setDispatcherIdLookup(isDispatcherAgentId);
 
 /** The id of the agent the user talks to as the Dispatcher, or null before it was first created. */
 export function getDispatcherChatAgentId(): string | null {
@@ -313,7 +318,8 @@ async function writeInstructions(agent: DurableAgentConfig, dir: string = getDis
 }
 
 async function stopAgent(agent: DurableAgentConfig, dir: string = getDispatcherPath()): Promise<void> {
-  if (!agentSystem.isAgentRunning(agent.id)) return;
+  // A chat start still in progress isn't running yet, but killAgent cancels it (#3110).
+  if (!agentSystem.isAgentRunning(agent.id) && !hasChatStartInFlight(agent.id)) return;
   appLog(NS, 'info', 'Stopping the Dispatcher', { meta: { agentId: agent.id } });
   await agentSystem.killAgent(agent.id, dir, agent.orchestrator);
 }

@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type { DurableAgentConfig, DurableConfigUpdates } from '../../../shared/types';
 
+const chatStarting = vi.hoisted(() => new Set<string>());
 const h = vi.hoisted(() => ({
   baseDir: '',
   experimental: {} as Record<string, boolean>,
@@ -85,6 +86,7 @@ vi.mock('../agent-config', () => ({
 }));
 
 // Every way an agent starts goes through spawnAgent, so "never called" means no tokens.
+vi.mock('../agent-runtime/chat-spawn', () => ({ hasChatStartInFlight: (id: string) => chatStarting.has(id) }));
 vi.mock('../agent-system', () => ({
   isAgentRunning: (id: string) => h.running.has(id),
   killAgent: vi.fn(async (id: string) => { h.running.delete(id); }),
@@ -209,6 +211,17 @@ describe('gating', () => {
     expect(agentConfig.createDurable).not.toHaveBeenCalled();
     await svc.setDispatcherEnabled(true);
     expect(svc.getDispatcherState()).toMatchObject({ enabled: true, agentId: 'durable_1' });
+  });
+
+  it('turning it off cancels a chat start still in progress (#3110)', async () => {
+    await svc.initDispatcher();
+    chatStarting.add('durable_1');
+    try {
+      await svc.setDispatcherEnabled(false);
+      expect(agentSystem.killAgent).toHaveBeenCalledWith('durable_1', dispatcherDir(), 'claude-code');
+    } finally {
+      chatStarting.clear();
+    }
   });
 
   it('a saved experimental true changes nothing', async () => {
