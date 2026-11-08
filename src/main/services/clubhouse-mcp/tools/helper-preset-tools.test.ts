@@ -14,6 +14,11 @@ vi.mock('../grant-check', async (original) => {
 });
 
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
+const decisions = vi.hoisted(() => [] as unknown[]);
+vi.mock('../../grant-telemetry', async (original) => ({
+  ...await original<typeof import('../../grant-telemetry')>(),
+  recordGrantDecision: (d: unknown) => { decisions.push(d); },
+}));
 vi.mock('../../agent-config', () => ({ getDurableConfig: vi.fn(async () => ({ name: 'Dispatcher' })) }));
 vi.mock('../../helper-routing', () => {
   class HelperRoutingError extends Error {
@@ -50,6 +55,17 @@ describe('helper presets over MCP (#2785)', () => {
     expect(result.isError).toBeFalsy();
     expect(parse(result)).toEqual({ revision: 'r1', providers: { 'claude-code': { cells: [] } } });
     expect(getScopedToolList('plain').map((t) => t.name)).toContain('read_helper_presets');
+  });
+
+  it('records the refusal and the ask in the telemetry record, never the allowed calls (#2973)', async () => {
+    decisions.length = 0;
+    await callTool('plain', 'set_helper_presets', { revision: 'r1', reset: {} });
+    await callTool('dispatcher', 'set_helper_presets', { revision: 'r1', reset: {} });
+    await callTool('plain', 'read_helper_presets', {});
+    expect(decisions).toEqual([
+      expect.objectContaining({ agentId: 'plain', toolName: 'set_helper_presets', decision: 'refused', reason: 'no_grant', actions: ['settings.app.write'], targetKind: 'app' }),
+      expect.objectContaining({ agentId: 'dispatcher', decision: 'asked', reason: 'ask_first', actions: ['settings.app.write'] }),
+    ]);
   });
 
   it('an agent without the app settings permission is refused, and isn\'t offered the tool', async () => {

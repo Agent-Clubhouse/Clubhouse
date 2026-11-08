@@ -19,6 +19,7 @@ import { setOrchestrationPolicy } from './orchestration-policy';
 import { dropCallApprovalsFor } from './grant-requests';
 import { getAgentGrantChanges, updateAgentGrantChanges } from './agent-grants-store';
 import { isDispatcherAgentId, resolveDispatcherIdentity } from './dispatcher/dispatcher-service';
+import { recordGrantChange } from './grant-telemetry';
 
 function factsOf(agentId: string, config: DurableAgentConfig) {
   const dispatcher = isDispatcherAgentId(agentId);
@@ -116,6 +117,7 @@ export async function setAgentGrant(projectPath: string, agentId: string, change
   const row = controlRow(checked, facts);
   if (row) {
     await setControlRow(projectPath, agentId, row, checked.mode, facts.control);
+    recordGrantChange({ agentId, layer: 'control', mode: checked.mode, action: checked.action, target: checked.target });
     return viewOf(agentId, await configOf(projectPath, agentId));
   }
   const defaults = defaultsFor(agentId, config);
@@ -124,6 +126,7 @@ export async function setAgentGrant(projectPath: string, agentId: string, change
     if (row?.coveredBy) throw new Error('A wider permission for this allows it. Change that one instead.');
     return withGrantChange(current, { ...checked, by: 'user', at: new Date().toISOString() }, defaults);
   });
+  recordGrantChange({ agentId, layer: 'own', mode: checked.mode, action: checked.action, target: checked.target });
   return viewOf(agentId, config);
 }
 
@@ -133,6 +136,7 @@ export async function resetAgentGrants(projectPath: string, agentId: string): Pr
   const config = await configOf(projectPath, agentId);
   dropCallApprovalsFor(agentId);
   await updateAgentGrantChanges(agentId, withoutOwnChanges);
+  recordGrantChange({ agentId, layer: 'own', mode: 'reset' });
   return viewOf(agentId, config);
 }
 
@@ -146,6 +150,7 @@ export async function applyTemplateGrants(agentId: string, grants: readonly Temp
   if (grants.length === 0) return;
   dropCallApprovalsFor(agentId);
   await updateAgentGrantChanges(agentId, (saved) => withTemplateGrants(saved, grants));
+  for (const g of grants.slice(0, 32)) recordGrantChange({ agentId, layer: 'template', mode: g.mode ?? 'reset', action: g.action, target: g.target });
 }
 
 /** What an agent's template layer sets. */

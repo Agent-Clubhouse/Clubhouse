@@ -19,6 +19,7 @@ import {
   setConnectionLink, setConnectionTools,
 } from './connection-grants-store';
 import { appLog } from './log-service';
+import { recordConnectionChange } from './grant-telemetry';
 import * as agentConfig from './agent-config';
 import * as projectStore from './project-store';
 import { clearBindingRemovedByUser, registerPersistedBindingSource, rebuildPersistedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
@@ -44,7 +45,9 @@ function restoreTools(agentId: string, targetId: string, targetKind: BindingTarg
     return;
   }
   bindingManager.setDisabledTools(agentId, targetId, legacy);
-  void setConnectionTools(local(agentId), local(targetId), legacy).catch((err) => {
+  void setConnectionTools(local(agentId), local(targetId), legacy).then(() => {
+    recordConnectionChange({ fromAgentId: agentId, toAgentId: targetId, disabledTools: legacy, migrated: true });
+  }, (err) => {
     // telemetry-exempt: logged; the live binding already has the list, and the next restore tries again
     appLog('core:mcp', 'warn', 'Could not move a wire’s disabled tools into the connection store', { meta: { agentId, targetId, error: errorText(err) } });
   });
@@ -76,6 +79,7 @@ export async function applyConnectionTools(agentId: string, targetId: string, di
   }
   // An edit (the canvas popover, the Connections card), or a sleeping agent's wire: the store, then the binding follows.
   await setConnectionTools(local(agentId), local(targetId), disabledTools);
+  recordConnectionChange({ fromAgentId: agentId, toAgentId: targetId, disabledTools });
   return disabledTools;
 }
 
@@ -126,12 +130,14 @@ export async function makeTwoWay(fromAgentId: string, toAgentId: string): Promis
   // A new link starts like a new connection; only an existing link keeps its list.
   await setConnectionTools(local(fromAgentId), local(toAgentId), existing?.link ? existing.disabledTools : [...NEW_CONNECTION_DISABLED_TOOLS]);
   await setConnectionLink(local(fromAgentId), local(toAgentId), true);
+  recordConnectionChange({ fromAgentId, toAgentId, disabledTools: getConnectionDirection(local(fromAgentId), local(toAgentId))?.disabledTools ?? [], link: true });
   await rebuildPersistedBindings();
 }
 
 /** Remove the user's own link for one direction. */
 export async function removeUserLink(fromAgentId: string, toAgentId: string): Promise<void> {
   await setConnectionLink(local(fromAgentId), local(toAgentId), false);
+  recordConnectionChange({ fromAgentId, toAgentId, disabledTools: getConnectionDirection(local(fromAgentId), local(toAgentId))?.disabledTools ?? [], link: false });
   await rebuildPersistedBindings();
 }
 

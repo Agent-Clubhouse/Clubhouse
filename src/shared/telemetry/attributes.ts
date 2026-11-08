@@ -17,6 +17,7 @@ import { IPC } from '../ipc-channels';
 import { SUPPORTED_PLUGIN_API_VERSIONS } from '../marketplace-types';
 import type { BuiltinThemeId } from '../types';
 import { ACTION_EVENT_KINDS, ACTION_STEP_KINDS, MISSED_RUN_RULES } from '../actions/types';
+import { GRANT_ACTIONS } from '../agent-grants';
 import {
   DECISION_QUOTA_QUALITIES,
   DECISION_SCORE_BASES,
@@ -775,6 +776,15 @@ export const ATTR = {
   auditOutcome: enumAttr('clubhouse.audit.outcome', ['ok', 'refused', 'error']),
   auditTool: enumAttr('clubhouse.audit.tool', ['set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'change_provider', 'preview_provider']),
   auditActorIdHash: hashAttr('clubhouse.audit.actor.id_hash'),
+  // Clubhouse permissions (#2973, part of #2921): decisions, requests and changes. Enums only; ids hashed.
+  grantAction: enumAttr('clubhouse.grant.action', GRANT_ACTIONS),
+  grantDecision: enumAttr('clubhouse.grant.decision', ['refused', 'asked']),
+  grantRefusalReason: enumAttr('clubhouse.grant.refusal_reason', ['no_grant', 'raise_self', 'exceeds_caller', 'ask_first']),
+  grantTargetKind: enumAttr('clubhouse.grant.target_kind', ['agent', 'browser', 'project', 'group_project', 'app', 'library', 'action', 'connection']),
+  grantRequestKind: enumAttr('clubhouse.grant.request.kind', ['call', 'grant']),
+  grantRequestOutcome: enumAttr('clubhouse.grant.request.outcome', ['allowed', 'declined', 'expired']),
+  grantChangeMode: enumAttr('clubhouse.grant.change.mode', ['off', 'ask', 'allow', 'reset']),
+  grantChangeLayer: enumAttr('clubhouse.grant.change.layer', ['own', 'template', 'control', 'connection']),
   auditTargetIdHash: hashAttr('clubhouse.audit.target.id_hash'),
   themeBuiltinId: enumAttr('clubhouse.theme.builtin_id', [...BUILTIN_THEME_IDS, 'other']),
   popoutType: enumAttr('clubhouse.popout.type', ['agent', 'canvas']),
@@ -1749,6 +1759,21 @@ export const EVENTS = {
    * hash, what was requested, before and after, and the code. `list_orchestrator_controls` reads these back.
    */
   'clubhouse.audit.dispatcher_control': { level: 'standard', audit: true },
+  /**
+   * A Clubhouse MCP call the permissions refused or asked the user about (#2973). Attributes: action,
+   * decision, refusal reason, target kind, the caller's id hash. Detail: the tool (its built-in name or
+   * suffix only), and `asked` actions when there are several. Allowed calls aren't events: the
+   * `clubhouse.mcp.tool_call` span already counts every call.
+   */
+  'clubhouse.audit.grant_decision': { level: 'standard', audit: true },
+  /** The user's answer to a permission request, or its expiry (#2973). Attributes: kind, outcome, action, the asking agent's id hash. Detail: the request kind and actions. */
+  'clubhouse.audit.grant_request': { level: 'standard', audit: true },
+  /**
+   * A change to an agent's Clubhouse permissions or a connection's (#2973). Attributes: surface, layer,
+   * mode, action (absent for a reset or a connection), the actor's and the agent's id hashes. Detail:
+   * the target kind, and for a connection the disabled tools and the other end's id hash.
+   */
+  'clubhouse.audit.grant_change': { level: 'standard', audit: true },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 
