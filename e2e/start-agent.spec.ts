@@ -9,12 +9,18 @@
  * IPC stubs replace the real Claude CLI spawn with in-process fake events so the
  * spec runs in CI without any orchestrator installed. The exit is simulated with
  * the same `pty:exit` event the PTY manager sends when the CLI process ends.
+ *
+ * Runs on the new layout, and on classic in the Classic layout E2E job (#2843).
+ * Classic writes "sleeping" on the agent's row. The new layout instead puts a
+ * sleeping agent in its project's "N sleeping" fold, and its row's status dot
+ * says which state it is in.
  */
-import { test, expect, _electron as electron, Page } from '@playwright/test';
+import { test, expect, _electron as electron, Locator, Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 import { launchApp } from './launch';
-import { addProject } from './smoke-helpers';
+import { addProject, assertRunLayout, projectIdFor, revealAgent } from './smoke-helpers';
+import { isNewLayout } from './layout';
 
 type ElectronApp = Awaited<ReturnType<typeof electron.launch>>;
 
@@ -115,18 +121,28 @@ async function simulatePtyExit(app: ElectronApp, agentId: string) {
 let electronApp: ElectronApp;
 let window: Page;
 
+/** New layout: the fixture project's "N sleeping" fold row. */
+async function sleepingFold(): Promise<Locator> {
+  return window.locator(`[data-testid="sleeping-fold-${await projectIdFor(window, FIXTURE_DIR)}"]`);
+}
+
+/** New layout: the status dot on an agent's row, whose data-dot names the state. */
+function statusDot(row: Locator): Locator {
+  return row.locator('[data-dot]');
+}
+
 test.beforeAll(async () => {
   writeLifecycleAgent();
 
-  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false, chat: false } }));
+  ({ electronApp, window } = await launchApp({ experimental: { chat: false } }));
+  await assertRunLayout(window);
 
   await installLifecycleStub(electronApp);
   await addProject(electronApp, window, FIXTURE_DIR);
 
-  // Wait for the seeded agent to appear in the sidebar
-  await expect(
-    window.locator(`[data-testid="agent-item-${AGENT_ID}"]`),
-  ).toBeVisible({ timeout: 15_000 });
+  // Wait for the seeded agent to appear in the sidebar. On the new layout it
+  // is in the sleeping fold, which this opens.
+  await revealAgent(window, AGENT_ID, 15_000);
 });
 
 test.afterAll(async () => {
@@ -140,6 +156,14 @@ test.afterAll(async () => {
 
 test.describe('Agent Lifecycle — Sleeping State', () => {
   test('agent appears in list with sleeping status', async () => {
+    if (await isNewLayout(window)) {
+      // No "sleeping" word on the row here: the agent is the one in its
+      // project's sleeping fold, and its dot is the sleeping one.
+      await expect(await sleepingFold()).toContainText('1 sleeping', { timeout: 5_000 });
+      const row = await revealAgent(window, AGENT_ID);
+      await expect(statusDot(row)).toHaveAttribute('data-dot', 'sleeping');
+      return;
+    }
     const item = window.locator(`[data-testid="agent-item-${AGENT_ID}"]`);
     await expect(item).toBeVisible({ timeout: 5_000 });
 
@@ -148,7 +172,7 @@ test.describe('Agent Lifecycle — Sleeping State', () => {
   });
 
   test('selecting the agent shows the wake button', async () => {
-    const item = window.locator(`[data-testid="agent-item-${AGENT_ID}"]`);
+    const item = await revealAgent(window, AGENT_ID);
     await item.click();
 
     await expect(window.locator('[data-testid="wake-button"]')).toBeVisible({ timeout: 5_000 });
@@ -163,6 +187,13 @@ test.describe('Agent Lifecycle — Wake to Running', () => {
   test('clicking wake transitions agent to running state', async () => {
     const wakeBtn = window.locator('[data-testid="wake-button"]');
     await expect(wakeBtn).toBeVisible({ timeout: 5_000 });
+    if (await isNewLayout(window)) {
+      // The row's hover card opens beside it while the pointer rests there; move
+      // off to the title bar so it closes before the click. The selected agent
+      // keeps its fold open.
+      await window.getByTestId('chrome-title-bar').hover({ position: { x: 400, y: 19 } });
+      await expect(window.getByTestId('agent-hover-card')).toHaveCount(0, { timeout: 5_000 });
+    }
     await wakeBtn.click();
 
     await expect(window.locator('[data-testid="agent-terminal"]')).toBeVisible({ timeout: 10_000 });
@@ -171,6 +202,14 @@ test.describe('Agent Lifecycle — Wake to Running', () => {
 
   test('agent list item no longer shows sleeping while running', async () => {
     const item = window.locator(`[data-testid="agent-item-${AGENT_ID}"]`);
+    if (await isNewLayout(window)) {
+      // Awake, it leaves the fold. It was the project's only sleeping agent,
+      // so the fold row goes, and its own row shows with an awake dot.
+      await expect(await sleepingFold()).toHaveCount(0, { timeout: 5_000 });
+      await expect(item).toBeVisible();
+      await expect(statusDot(item)).toHaveAttribute('data-dot', /^(working|idle)$/);
+      return;
+    }
     await expect(item).not.toContainText(/sleeping/i, { timeout: 5_000 });
   });
 });
@@ -193,6 +232,13 @@ test.describe('Agent Lifecycle — Exit to Sleeping', () => {
   });
 
   test('agent list item shows sleeping status after exit', async () => {
+    if (await isNewLayout(window)) {
+      // Back in the fold, which opens for the selected agent, with the sleeping dot.
+      await expect(await sleepingFold()).toContainText('1 sleeping', { timeout: 5_000 });
+      const row = await revealAgent(window, AGENT_ID);
+      await expect(statusDot(row)).toHaveAttribute('data-dot', 'sleeping');
+      return;
+    }
     const item = window.locator(`[data-testid="agent-item-${AGENT_ID}"]`);
     await expect(item).toBeVisible({ timeout: 5_000 });
 

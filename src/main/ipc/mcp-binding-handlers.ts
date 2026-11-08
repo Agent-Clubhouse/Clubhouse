@@ -31,6 +31,7 @@ import { MCP_UNBIND_CANVAS_CLEANUP, type McpUnbindResult } from '../../shared/mc
 import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
 import { ORCHESTRATOR_CONNECTION_SOURCE_ID, orchestratorConnectionSource, watchOrchestratorConnections } from '../services/orchestrator-connections';
 import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/dispatcher-wire-source';
+import { watchAgentCards } from '../services/dispatcher/dispatcher-agent-cards-watch';
 import { dispatcherConnectionSource, isRemovalUnsaved, listDispatcherLinksForUser, watchDispatcherConnections } from '../services/dispatcher-connections';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
@@ -316,6 +317,7 @@ let persistedSourcesRegistered = false;
 let stopWatchingHelperWires: (() => void) | null = null;
 let stopWatchingOrchestratorConnections: (() => void) | null = null;
 let stopWatchingDispatcherWires: (() => void) | null = null;
+let stopWatchingAgentCards: (() => void) | null = null;
 let stopWatchingDispatcherConnections: (() => void) | null = null;
 let stopWatchingMcpCallers: (() => void) | null = null;
 
@@ -341,6 +343,8 @@ export function restorePersistedBindings(): Promise<void> {
     stopWatchingOrchestratorConnections = watchOrchestratorConnections(() => restorePersistedBindings());
     registerPersistedBindingSource(dispatcherWireBindingSource);
     stopWatchingDispatcherWires = watchDispatcherWires(() => restorePersistedBindings());
+    // Cards are asked for on connect and on a setup change (#3041), once the agent has its wire.
+    stopWatchingAgentCards = watchAgentCards();
     // After the canvas source, so a pair the user also drew stays the user's.
     registerPersistedBindingSource(dispatcherConnectionSource);
     stopWatchingDispatcherConnections = watchDispatcherConnections(() => restorePersistedBindings());
@@ -367,6 +371,8 @@ export function _resetHandlersForTesting(): void {
   stopWatchingOrchestratorConnections = null;
   stopWatchingDispatcherWires?.();
   stopWatchingDispatcherWires = null;
+  stopWatchingAgentCards?.();
+  stopWatchingAgentCards = null;
   stopWatchingDispatcherConnections?.();
   stopWatchingDispatcherConnections = null;
   stopWatchingMcpCallers?.();

@@ -18,16 +18,21 @@ import { IPC } from '../../shared/ipc-channels';
 export async function dispatcherProviderControl(callerId: string, targetId: string, change: boolean, args: Record<string, unknown>) {
   const suffix = change ? 'change_provider' : 'preview_provider';
   const refuse = (code: string): never => { throw new MobileControlError(code, 403); };
-  const version = bindingManager.getVersion();
+  // This wire alone, not the app-wide binding version: any wire anywhere changing bumps
+  // that, which made a preview's token stale for unrelated reasons (#3109).
+  const wireOf = () => bindingManager.getBindingsForAgent(callerId).find((b) => b.targetId === targetId && b.targetKind === 'agent');
+  const signatureOf = (wire: ReturnType<typeof wireOf>) => (wire ? JSON.stringify([...(wire.disabledTools ?? [])].sort()) : '');
+  const signature = signatureOf(wireOf());
   let projectPath = '';
   const assertAuthorized = async () => {
     const syncCheck = () => {
       if (!isDispatcherAgent(callerId) || mcpCallAccess(callerId, agentRegistry.get(callerId)?.projectPath) !== 'open') refuse('not_dispatcher');
       if (callerId === targetId) refuse('self_target');
-      const wire = bindingManager.getBindingsForAgent(callerId).find((b) => b.targetId === targetId && b.targetKind === 'agent');
-      if (!wire || isBindingRemovedByUser(callerId, targetId) || bindingManager.getVersion() !== version) refuse('permission_revoked');
+      const wire = wireOf();
+      if (!wire || isBindingRemovedByUser(callerId, targetId)) refuse('permission_revoked');
       // A denied sleep control cannot be bypassed by the new saved-provider control.
       if (wire!.disabledTools?.some((tool) => [suffix, 'sleep_agent'].includes(tool))) refuse('tool_denied');
+      if (signatureOf(wire) !== signature) refuse('permission_revoked');
     };
     syncCheck();
     const entry = (await readAgentCensus()).agents.get(targetId);
@@ -42,7 +47,7 @@ export async function dispatcherProviderControl(callerId: string, targetId: stri
       || typeof args.provider !== 'string' || !args.provider || args.provider.length > 128
       || (change && (typeof args.expectedState !== 'string' || !args.expectedState))) refuse('invalid_args');
     await assertAuthorized();
-    const actor = { key: `dispatcher:${callerId}:${targetId}:${version}`, assertAuthorized };
+    const actor = { key: `dispatcher:${callerId}:${targetId}:${signature}`, assertAuthorized };
     const result = change
       ? await changeAgentProvider(projectPath, targetId, args.provider as string, args.expectedState as string, actor)
       : await previewAgentProvider(projectPath, targetId, args.provider as string, actor);
