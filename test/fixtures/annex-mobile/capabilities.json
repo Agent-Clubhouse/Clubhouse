@@ -5,6 +5,12 @@
   },
   "response": {
     "body": {
+      "agentAddress": {
+        "format": "{agentId}@{machine}",
+        "snapshotField": "machine",
+        "version": 1,
+        "wrongMachineCode": "wrong_machine"
+      },
       "agentSettings": {
         "path": "/api/v1/mobile/agents/{agentId}/settings",
         "version": 1

@@ -114,9 +114,34 @@ Refusals:
 | 400 | `invalid_members` | A record isn't well formed, or there are more than 64. Nothing was added. |
 | 413 | `too_large` | Over 512 KB (`maxBytes` says the limit). |
 
+## Agent addresses (stage 6, #3063)
+
+Every snapshot says which machine it's from:
+
+```json
+"machine": { "fingerprint": "aa:…", "name": "Studio Mac" }
+```
+
+An agent's address across the network is `<agentId>@<machine fingerprint>`. Capabilities say so:
+
+```json
+"agentAddress": { "version": 1, "format": "{agentId}@{machine}", "snapshotField": "machine", "wrongMachineCode": "wrong_machine" }
+```
+
+A command's `agentId` may be an address. The bare id still means the desktop the command is sent to. An address for that desktop works the same as the bare id. An address for another machine is refused, naming the machine to send it to:
+
+```json
+{ "status": "rejected", "error": { "code": "wrong_machine", "message": "…" }, "machine": "bb:…" }
+```
+
+Only a command's `agentId` takes an address; routes with an agent id in the path (`/api/v1/mobile/agents/{agentId}/…`) take the bare id. Keep the form a command was first sent with when retrying its `commandId`: the receipt is tied to the command as sent, so the other form gets `command_conflict`.
+
+Fixture: `agent-address.json`.
+
 ## Order of work for the app
 
 1. Read `capabilities.network`; send `network: 1` when pairing a desktop that offers it.
 2. List machines from `GET /api/v1/mobile/network`; keep offline ones, dimmed.
 3. Handle `network:changed`: connect to new members, forget removed ones.
 4. Joining through the phone (the three steps above).
+5. Keep agents keyed by address (`agentId@machine`) when showing more than one machine's agents together.

@@ -20,6 +20,7 @@ import { askFirst } from './ask-first';
 import { resolveArgTargets } from './arg-targets';
 import { recordGrantDecision } from '../grant-telemetry';
 import { CONNECTION_TOOLS } from '../../../shared/connection-grants';
+import { localizeAgentArgs } from './agent-addresses';
 import { getProvider } from '../../orchestrators';
 
 /** The refusal a Dispatcher tool returns for any other agent. */
@@ -589,6 +590,10 @@ export async function callTool(
         }
       }
     }
+    // An agent named with this machine's address is the bare id from here on; another machine's is refused (#3063).
+    const localized = localizeAgentArgs(globalTool.grant, args);
+    if ('message' in localized) return refuse('other_machine', localized.message);
+    args = localized.args;
     // After the argument checks, as for wire tools: the user is never asked about a call that would fail on its arguments.
     const granted = checkToolGrant(agentId, globalTool.grant, args, undefined, await resolveArgTargets(agentId, globalTool.grant, args));
     if (granted.ok === false) {
@@ -691,6 +696,9 @@ export async function callTool(
     }
   }
 
+  const localized = localizeAgentArgs(template.grant, args);
+  if ('message' in localized) return refuse('other_machine', localized.message);
+  args = localized.args;
   const granted = checkToolGrant(agentId, template.grant, args, wireOf(binding), await resolveArgTargets(agentId, template.grant, args));
   if (granted.ok === false) {
     const refused = await grantRefusal(agentId, toolName, granted, args);

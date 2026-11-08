@@ -226,6 +226,30 @@
         },
         "status": 429
       }
+    },
+    {
+      "name": "agent on another machine",
+      "request": {
+        "agentId": "durable_chat@bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
+        "commandId": "cmd_other_machine",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "type": "agent.stop",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_other_machine",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "wrong_machine",
+            "message": "That agent is on another machine. Send this to that machine."
+          },
+          "machine": "bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb:bb",
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
     }
   ],
   "type": null
