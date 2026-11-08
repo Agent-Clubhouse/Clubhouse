@@ -662,6 +662,14 @@ describe('agent-system', () => {
       expect(await toolsFor({ access: 'full_access' })).toEqual(['Read', 'Write']);
       // Tools passed explicitly stay as given.
       expect(await toolsFor({ allowedTools: ['Bash(make:*)'] })).toEqual(['Bash(make:*)']);
+      // Copilot runs a terminal quick agent one-shot and can't ask: it keeps its defaults.
+      const provider = mockProvider as { id: string };
+      provider.id = 'copilot-cli';
+      try {
+        expect(await toolsFor({})).toEqual(['Read', 'Write']);
+      } finally {
+        provider.id = 'claude-code';
+      }
     });
 
     describe('a saved effort (#2671)', () => {
