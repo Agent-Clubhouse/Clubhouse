@@ -920,7 +920,7 @@ export const ATTR = {
   actionRunOutcome: enumAttr('clubhouse.action.run.outcome', ['done', 'failed', 'cancelled', 'skipped']),
   actionRunReason: enumAttr('clubhouse.action.run.reason', [
     'none', 'self_trigger', 'chain_limit', 'overlap', 'hourly_limit', 'missed', 'condition_changed', 'turned_off', 'edited',
-    'rights_refused', 'step_failed', 'step_threw',
+    'deleted', 'rights_refused', 'step_failed', 'step_threw',
   ]),
   actionRunSteps: intAttr('clubhouse.action.run.steps'),
   actionRunDurationMs: intAttr('clubhouse.action.run.duration_ms'),

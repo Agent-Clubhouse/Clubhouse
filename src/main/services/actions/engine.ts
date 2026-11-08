@@ -133,6 +133,7 @@ export type RunReasonCode =
   | 'condition_changed'
   | 'turned_off'
   | 'edited'
+  | 'deleted'
   | 'rights_refused'
   | 'step_failed'
   | 'step_threw';
@@ -436,13 +437,19 @@ export class ActionsEngine {
   }
 
   remove(id: string): void {
-    this.require(id);
+    const action = this.require(id);
     this.actions.delete(id);
     this.dropWaits(id);
     delete this.state.nextAt[id];
-    // A run going now finishes; nothing queued behind it starts.
+    // A run going now finishes; nothing queued behind it starts. The action is
+    // gone, so these are observed as cancelled but not written to history.
     const queue = this.running.get(id);
-    if (queue) queue.length = 0;
+    for (const q of queue?.splice(0) ?? []) {
+      this.observe(action, {
+        type: 'run', outcome: 'cancelled', trigger: q.trigger.kind, steps: 0, stepResults: [],
+        chainDepth: q.chain.length, durationMs: 0, reasonCode: 'deleted',
+      });
+    }
     this.persist();
   }
 
@@ -918,8 +925,10 @@ export class ActionsEngine {
     }
     if (!this.underHourlyLimit(actionId)) {
       const reason = `Ran ${MAX_RUNS_PER_HOUR} times in the last hour`;
-      this.recordOnly(latest, nextRun.trigger, nextRun.chain, 'skipped', 'hourly_limit', reason);
-      for (const rest of queue?.splice(0) ?? []) this.recordOnly(latest, rest.trigger, rest.chain, 'skipped', 'hourly_limit', reason);
+      for (const dropped of [nextRun, ...(queue?.splice(0) ?? [])]) {
+        this.observe(latest, { type: 'limit', what: 'hourly', chainDepth: dropped.chain.length });
+        this.recordOnly(latest, dropped.trigger, dropped.chain, 'skipped', 'hourly_limit', reason);
+      }
       return null;
     }
     return { action: latest, run: nextRun };

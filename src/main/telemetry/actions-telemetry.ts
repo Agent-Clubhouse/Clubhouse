@@ -15,35 +15,63 @@
  * - Clubhouse's own hidden actions are counted, marked `owner=app`.
  * - Nothing here changes a run: every function returns void and swallows its
  *   own errors, and with telemetry off nothing is built or recorded.
- * - Volume is capped per hour, so a busy event trigger can't crowd out other
- *   signals. Runs are already capped per action by the engine's hourly limit.
+ * - The chatty events (triggered, wait, overlap, step) are capped per event
+ *   name per hour, so a busy event trigger can't crowd out the others. Runs,
+ *   limit hits and catch-up are not capped here: the engine already limits
+ *   each action to 60 runs an hour. Drops are logged when the hour ends.
  */
+import { performance } from 'perf_hooks';
 import { ATTR, type EventName, type TelAttr } from '../../shared/telemetry/attributes';
 import type { ActionOwner } from '../../shared/actions/types';
 import type { EngineObservation } from '../services/actions/engine';
+import { appLog } from '../services/log-service';
 import { isTelemetryActive, tel, telemetryLevel } from './facade';
 
-/** Events per rolling hour, across all actions. */
-export const ACTIONS_TELEMETRY_MAX_EVENTS_PER_HOUR = 600;
+/** Each chatty event, per hour, across all actions. */
+export const ACTIONS_TELEMETRY_MAX_EVENTS_PER_HOUR = 300;
+
+const CAPPED: ReadonlySet<EventName> = new Set<EventName>([
+  'clubhouse.action.triggered',
+  'clubhouse.action.wait',
+  'clubhouse.action.overlap',
+  'clubhouse.action.step',
+]);
 
 const HOUR_MS = 60 * 60_000;
-let windowStart = 0;
-let used = 0;
-let clock: () => number = Date.now;
+let windowStart: number | null = null;
+const used = new Map<EventName, number>();
+const dropped = new Map<EventName, number>();
+// Monotonic, so a wall-clock change can't stretch or shorten the hour.
+let clock: () => number = () => performance.now();
 
-function admit(): boolean {
-  const t = clock();
-  if (t - windowStart >= HOUR_MS) {
-    windowStart = t;
-    used = 0;
+function rollWindow(t: number): void {
+  if (dropped.size > 0) {
+    // telemetry-exempt: this is telemetry's own drop report
+    appLog('core:actions', 'info', 'Actions telemetry dropped events over the hourly cap', {
+      meta: { dropped: Object.fromEntries(dropped) },
+    });
   }
-  if (used >= ACTIONS_TELEMETRY_MAX_EVENTS_PER_HOUR) return false;
-  used++;
+  windowStart = t;
+  used.clear();
+  dropped.clear();
+}
+
+/** Whether a capped event fits this hour. The hour starts with the first event and restarts if the clock goes back. */
+function admit(name: EventName): boolean {
+  if (!CAPPED.has(name)) return true;
+  const t = clock();
+  if (windowStart === null || t < windowStart || t - windowStart >= HOUR_MS) rollWindow(t);
+  const n = used.get(name) ?? 0;
+  if (n >= ACTIONS_TELEMETRY_MAX_EVENTS_PER_HOUR) {
+    dropped.set(name, (dropped.get(name) ?? 0) + 1);
+    return false;
+  }
+  used.set(name, n + 1);
   return true;
 }
 
 function emit(name: EventName, attrs: TelAttr[]): void {
-  if (!admit()) return;
+  if (!admit(name)) return;
   tel.event(name, attrs);
 }
 
@@ -132,7 +160,8 @@ export function installActionsTelemetry(observe: (fn: (o: EngineObservation) => 
 
 /** Tests: reset the hourly budget, optionally with a fake clock. */
 export function _resetActionsTelemetryForTests(now?: () => number): void {
-  windowStart = 0;
-  used = 0;
-  clock = now ?? Date.now;
+  windowStart = null;
+  used.clear();
+  dropped.clear();
+  clock = now ?? (() => performance.now());
 }

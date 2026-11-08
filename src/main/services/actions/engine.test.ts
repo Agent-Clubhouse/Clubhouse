@@ -627,6 +627,62 @@ describe('observations (for telemetry)', () => {
     ]);
   });
 
+  function heldSteps() {
+    const state = { hold: false, releases: [] as Array<() => void> };
+    const stepImpl = (step: ActionStep) => new Promise<ActionStepResult>((resolve) => {
+      const done = () => resolve({ kind: step.kind, outcome: 'done', detail: 'ok' });
+      if (state.hold) state.releases.push(done);
+      else done();
+    });
+    return { state, stepImpl };
+  }
+
+  it('reports the hourly limit for queued runs dropped when they come up', async () => {
+    const { state, stepImpl } = heldSteps();
+    const { engine, hooks, history } = setup({ stepImpl });
+    engine.start();
+    const a = engine.create({ trigger: weekdays9, steps: [notify], overlap: 'queue' }, user);
+    for (let i = 0; i < 59; i++) { engine.runNow(a.id); await flush(); }
+    state.hold = true;
+    engine.runNow(a.id); // the 60th run this hour
+    await flush();
+    engine.runNow(a.id);
+    engine.runNow(a.id);
+    hooks.observe.mockClear();
+    state.releases.forEach((r) => r());
+    await flush();
+    const obs = observed(hooks);
+    expect(obs.filter((o) => o.type === 'limit')).toEqual([
+      { type: 'limit', what: 'hourly', chainDepth: 0, actionId: a.id, owner: user },
+      { type: 'limit', what: 'hourly', chainDepth: 0, actionId: a.id, owner: user },
+    ]);
+    expect(obs.filter((o) => o.type === 'run' && o.reasonCode === 'hourly_limit')).toHaveLength(2);
+    expect(history(a.id).filter((r) => r.outcome === 'skipped')).toHaveLength(2);
+  });
+
+  it('observes queued runs of a deleted action as cancelled, without history', async () => {
+    const { state, stepImpl } = heldSteps();
+    state.hold = true;
+    const { engine, hooks, history } = setup({ stepImpl });
+    engine.start();
+    const a = engine.create({ trigger: weekdays9, steps: [notify], overlap: 'queue' }, user);
+    engine.runNow(a.id);
+    await flush();
+    engine.runNow(a.id);
+    engine.runNow(a.id);
+    hooks.observe.mockClear();
+    engine.remove(a.id);
+    expect(observed(hooks)).toEqual([0, 1].map(() => ({
+      type: 'run', outcome: 'cancelled', trigger: 'manual', steps: 0, stepResults: [], chainDepth: 0, durationMs: 0,
+      reasonCode: 'deleted', actionId: a.id, owner: user,
+    })));
+    state.releases.forEach((r) => r());
+    await flush();
+    // Only the run that was going finishes; nothing queued starts or is written.
+    expect(history(a.id).map((r) => r.outcome)).toEqual(['done']);
+    expect(observed(hooks).filter((o) => o.type === 'run').map((o) => o.type === 'run' && o.outcome)).toEqual(['cancelled', 'cancelled', 'done']);
+  });
+
   it('a throwing observer never breaks a run', async () => {
     const { engine, hooks, history } = setup();
     hooks.observe.mockImplementation(() => { throw new Error('telemetry broke'); });

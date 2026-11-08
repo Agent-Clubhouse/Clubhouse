@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../services/log-service', () => ({ appLog: vi.fn() }));
+
+import { appLog } from '../services/log-service';
 import { abortPending } from './facade';
 import { setProducingRuntime } from './__test-utils__/producing-runtime';
 import {
@@ -62,6 +66,7 @@ afterEach(() => {
   setProducingRuntime(null);
   abortPending();
   _resetActionsTelemetryForTests();
+  vi.mocked(appLog).mockClear();
 });
 
 describe('actions telemetry', () => {
@@ -222,17 +227,62 @@ describe('actions telemetry', () => {
     expect(events[0].attrs['clubhouse.action.event']).toBe('other');
   });
 
-  it('caps events per hour, then starts again', () => {
-    let now = 0;
+  it('caps each chatty event per hour on its own, and logs the drops when the hour ends', () => {
+    let now = 1_000;
     _resetActionsTelemetryForTests(() => now);
     setProducingRuntime(runtime());
     for (let i = 0; i < ACTIONS_TELEMETRY_MAX_EVENTS_PER_HOUR + 5; i++) {
-      recordActionObservation({ ...user, type: 'trigger', trigger: 'schedule' });
+      recordActionObservation({ ...user, type: 'wait', what: 'restarted', event: 'agent.idle' });
     }
+    // Another capped event has its own budget.
+    recordActionObservation({ ...user, type: 'trigger', trigger: 'event', event: 'agent.idle', delayed: true });
+    const count = (name: string) => events.filter((e) => e.name === name).length;
+    expect(count('clubhouse.action.wait')).toBe(ACTIONS_TELEMETRY_MAX_EVENTS_PER_HOUR);
+    expect(count('clubhouse.action.triggered')).toBe(1);
+    expect(appLog).not.toHaveBeenCalled();
+
+    now += 60 * 60_000;
+    recordActionObservation({ ...user, type: 'wait', what: 'started', event: 'agent.idle' });
+    expect(count('clubhouse.action.wait')).toBe(ACTIONS_TELEMETRY_MAX_EVENTS_PER_HOUR + 1);
+    expect(appLog).toHaveBeenCalledTimes(1);
+    expect(appLog).toHaveBeenCalledWith('core:actions', 'info', expect.any(String), {
+      meta: { dropped: { 'clubhouse.action.wait': 5 } },
+    });
+  });
+
+  it('never caps runs, limit hits or catch-up, so a busy trigger can’t push out outcomes', () => {
+    _resetActionsTelemetryForTests(() => 0);
+    setProducingRuntime(runtime());
+    for (let i = 0; i < ACTIONS_TELEMETRY_MAX_EVENTS_PER_HOUR; i++) {
+      recordActionObservation({ ...user, type: 'trigger', trigger: 'event', event: 'agent.idle' });
+      recordActionObservation({ ...user, type: 'overlap', what: 'skipped', trigger: 'event' });
+    }
+    // The steps' budget runs out partway; the run events keep coming.
+    for (let i = 0; i < ACTIONS_TELEMETRY_MAX_EVENTS_PER_HOUR; i++) recordActionObservation(run({ outcome: 'failed', reasonCode: 'step_failed' }));
+    recordActionObservation({ ...user, type: 'limit', what: 'hourly', chainDepth: 0 });
+    recordActionObservation({ ...user, type: 'catch_up', missed: 2, rule: 'once' });
+    const count = (name: string) => events.filter((e) => e.name === name).length;
+    expect(count('clubhouse.action.run')).toBe(ACTIONS_TELEMETRY_MAX_EVENTS_PER_HOUR);
+    expect(count('clubhouse.action.step')).toBe(ACTIONS_TELEMETRY_MAX_EVENTS_PER_HOUR);
+    expect(count('clubhouse.action.limit_hit')).toBe(1);
+    expect(count('clubhouse.action.catch_up')).toBe(1);
+  });
+
+  it('starts a new hour if the clock goes backwards', () => {
+    let now = 5 * 60 * 60_000;
+    _resetActionsTelemetryForTests(() => now);
+    setProducingRuntime(runtime());
+    for (let i = 0; i < ACTIONS_TELEMETRY_MAX_EVENTS_PER_HOUR + 1; i++) recordActionObservation({ ...user, type: 'trigger', trigger: 'schedule' });
     expect(events).toHaveLength(ACTIONS_TELEMETRY_MAX_EVENTS_PER_HOUR);
-    now = 60 * 60_000;
+    now -= 1;
     recordActionObservation({ ...user, type: 'trigger', trigger: 'schedule' });
     expect(events).toHaveLength(ACTIONS_TELEMETRY_MAX_EVENTS_PER_HOUR + 1);
+  });
+
+  it('records the deleted reason code', () => {
+    setProducingRuntime(runtime());
+    recordActionObservation(run({ outcome: 'cancelled', steps: 0, stepResults: [], durationMs: 0, reasonCode: 'deleted' }));
+    expect(events[0].attrs).toMatchObject({ 'clubhouse.action.run.outcome': 'cancelled', 'clubhouse.action.run.reason': 'deleted' });
   });
 
   it('never throws, even on a malformed observation', () => {
