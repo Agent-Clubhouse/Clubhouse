@@ -201,6 +201,19 @@ describe('root files of managed agents (D97)', () => {
   });
 });
 
+describe('queueManagedExcludes (D97)', () => {
+  it('says when a refresh has finished, so Settings reads the names as written', async () => {
+    addAgent('one', 'claude-code');
+    const { queueManagedExcludes } = await import('./git-excludes');
+    let ignoredThen: boolean | null = null;
+    // By the time it is called, the names are in the exclude file.
+    const refreshed = vi.fn(() => { ignoredThen = ignored(project, 'CLAUDE.md'); });
+    await queueManagedExcludes(project, { ...deps, onRefreshed: refreshed });
+    expect(refreshed).toHaveBeenCalledWith(project);
+    expect(ignoredThen).toBe(true);
+  });
+});
+
 describe('watchManagedExcludes (D97)', () => {
   it('refreshes when a project\'s managed agents change, not on every agent write', async () => {
     const one = addAgent('one', 'claude-code');

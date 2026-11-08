@@ -30,6 +30,8 @@ export interface ManagedExcludeDeps {
   /** The CLI the agent runs: its own, else the project's, else the app default. Null when it can't be told. */
   cliOf(projectPath: string, agent: DurableAgentConfig): Promise<string | null>;
   providers(): OrchestratorProvider[];
+  /** After a refresh finishes, so the project's settings page shows the names as written. */
+  onRefreshed?(projectPath: string): void;
 }
 
 const defaultDeps: ManagedExcludeDeps = {
@@ -40,6 +42,12 @@ const defaultDeps: ManagedExcludeDeps = {
     return resolveOrchestrator(projectPath, agent.orchestrator).then((p) => p.id, (): null => null);
   },
   providers: () => getAllProviders(),
+  onRefreshed: () => {
+    // Lazy: the broadcast reaches every window, which tests and the startup path don't have yet.
+    void Promise.all([import('../../util/ipc-broadcast'), import('../../../shared/ipc-channels')])
+      .then(([{ broadcastToAllWindows }, { IPC }]) => broadcastToAllWindows(IPC.MANAGED.CHANGED))
+      .catch(() => { /* telemetry-exempt: a refresh signal only; the page reloads on its next visit */ });
+  },
 };
 
 /**
@@ -102,7 +110,7 @@ const queues = new Map<string, Promise<void>>();
 /** One refresh per project at a time; a call while one runs waits for it, then runs again. */
 export function queueManagedExcludes(projectPath: string, deps: ManagedExcludeDeps = defaultDeps): Promise<void> {
   const previous = queues.get(projectPath) ?? Promise.resolve();
-  const run = () => refreshManagedExcludes(projectPath, deps).catch((err) => {
+  const run = () => refreshManagedExcludes(projectPath, deps).then(() => deps.onRefreshed?.(projectPath)).catch((err) => {
     // telemetry-exempt: not a git project, or the exclude file is read-only; the agents work either way.
     appLog('core:managed', 'warn', 'Could not update managed files in git excludes', { meta: { error: err instanceof Error ? err.message : String(err) } });
   });
