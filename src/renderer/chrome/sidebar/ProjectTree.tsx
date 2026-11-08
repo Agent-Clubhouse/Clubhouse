@@ -2,11 +2,11 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import type { Agent, AgentDetailedStatus, CompletedQuickAgent, Project } from '../../../shared/types';
 import { useChromeStore, foldKey, type ProjectFold } from '../chromeStore';
 import { ProjectGroup } from './ProjectGroup';
-import { buildProjectTree, holdOrder, isInSleepingFold, localParentId, moveProject, orderProjects } from './treeModel';
+import { buildProjectTree, holdOrder, isInSleepingFold, localParentId, moveProject } from './treeModel';
+import { sidebarProjectGroups } from './sidebarProjectOrder';
 import { useAgentStore } from '../../stores/agentStore';
 import { PopupMenu, type MenuEntry } from '../../components/PopupMenu';
 import { useToastStore } from '../../stores/toastStore';
-import { partitionIdle } from '../projectActivity';
 import { reportChromeFeature } from '../telemetry';
 import { Tooltip } from '../../components/Tooltip';
 
@@ -280,10 +280,10 @@ export function ProjectTree(props: ProjectTreeProps) {
   const runningIds = useMemo(() => new Set(
     Object.entries(agentsByProject).filter(([, list]) => list.some((a) => a.status === 'running')).map(([id]) => id),
   ), [agentsByProject]);
-  const { pinned, rest } = useMemo(() => orderProjects(projects, pinnedProjectIds), [projects, pinnedProjectIds]);
-  const { active, idle } = useMemo(() => partitionIdle(rest, {
-    activity: projectActivity, pinnedIds: pinnedProjectIds, runningIds, activeProjectId, idleDays, now: Date.now(), inactiveIds: inactiveProjectIds,
-  }), [rest, projectActivity, pinnedProjectIds, runningIds, activeProjectId, idleDays, inactiveProjectIds]);
+  // Already sorted (useSidebarOrder); the same grouping canvas pickers use (#2447).
+  const { pinned, active, idle } = useMemo(() => sidebarProjectGroups(projects, {
+    projectSort: 'manual', projectActivity, pinnedProjectIds, inactiveProjectIds, idleDays,
+  }, { runningIds, activeProjectId, now: Date.now() }), [projects, projectActivity, pinnedProjectIds, runningIds, activeProjectId, idleDays, inactiveProjectIds]);
 
   const collapsedSet = useMemo(() => new Set(collapsedProjectIds), [collapsedProjectIds]);
   const foldSet = useMemo(() => new Set(expandedFolds), [expandedFolds]);

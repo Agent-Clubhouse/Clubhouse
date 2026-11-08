@@ -47,7 +47,7 @@ describe('the Dispatcher\'s chat', () => {
   it('is offered reading tools and start_work, and nothing that acts', () => {
     // update_agent and update_project name their target in the arguments, so a listing can't
     // check it; the call is refused (below: the chat holds no agent.display or project.display).
-    expect(names('chat')).toEqual(['inspect_helper', 'list_agents', 'list_settings', 'read_helper_presets', 'read_memory', 'read_settings', 'start_work', 'update_agent', 'update_project']);
+    expect(names('chat')).toEqual(['inspect_helper', 'list_agents', 'list_settings', 'read_helper_presets', 'read_memory', 'read_settings', 'search_memory', 'start_work', 'update_agent', 'update_project']);
     for (const name of ['update_agent', 'update_project']) {
       const tool = listToolGrants().find((t) => t.kind === 'global' && t.name === name)!;
       const actions = toolGrantDeclarations(tool.grant!).flatMap((d) => d.actions);
@@ -83,7 +83,7 @@ describe('the Dispatcher\'s chat', () => {
 describe('the Dispatcher', () => {
   it('keeps its own tools, gets tell_user, and is not offered start_work', () => {
     const tools = names('dispatcher');
-    expect(tools).toEqual(expect.arrayContaining(['list_agents', 'inspect_helper', 'tell_user', 'create_action']));
+    expect(tools).toEqual(expect.arrayContaining(['list_agents', 'inspect_helper', 'tell_user', 'create_action', 'search_memory']));
     expect(tools).not.toContain('start_work');
     expect(tools).not.toContain('read_memory');
   });
