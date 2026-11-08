@@ -607,6 +607,8 @@ describe('rights on sources, counts and turning on (#2952)', () => {
     await flush();
     expect(engine.get(a.id)).toBeUndefined();
     expect(history(a.id)[0]).toMatchObject({ outcome: 'done', owner: lead });
+  });
+});
 
 describe('observations (for telemetry)', () => {
   type Obs = Parameters<NonNullable<EngineHooks['observe']>>[0];
