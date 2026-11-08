@@ -58,6 +58,12 @@ describe('start and dispose rows follow the approval setting (#2970)', () => {
     expect(mocks.setOrchestrationPolicy).not.toHaveBeenCalled();
   });
 
+  it('keeps the template\'s layer when a Helper control row changes (#2971)', async () => {
+    mocks.changes = { changes: [], template: [{ action: 'agent.message', target: { kind: 'connected' }, mode: 'off' }] };
+    await setAgentGrant('/p', 'o1', { action: 'agent.create', target: { kind: 'project', project: 'own' }, mode: 'ask' });
+    expect(mocks.changes).toEqual({ changes: [], template: [{ action: 'agent.message', target: { kind: 'connected' }, mode: 'off' }] });
+  });
+
   it('drops a change saved on the row before it followed the setting', async () => {
     mocks.changes = { changes: [
       { action: 'agent.dispose', target: { kind: 'my_helpers' }, mode: 'ask', by: 'user', at: 't' },

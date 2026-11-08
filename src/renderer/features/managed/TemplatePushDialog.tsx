@@ -36,7 +36,8 @@ export function changeText(c: ManagedTemplateChange): string {
   if (c.kind === 'order') return '~ Instruction block order';
   // What a new model or CLI does to the effort, which is for one model.
   if (c.followsModel) return c.to === 'CLI default' ? '~ Effort goes back to the CLI default with the new model' : `~ Effort ${c.to} goes with the new model`;
-  return `~ ${settingName(c.key)} ${valueText(c.from)} → ${valueText(c.to)}`;
+  // A Clubhouse permission (#2971) carries its own name.
+  return `~ ${c.label ?? settingName(c.key)} ${valueText(c.from)} → ${valueText(c.to)}`;
 }
 
 /**

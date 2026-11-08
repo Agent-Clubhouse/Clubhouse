@@ -28,6 +28,8 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { IS_MAC, Row, Rule, Segmented, footerLinkClass, inputClass, selectClass, tabPanelProps } from './newAgentUi';
+import { templateGrantSummary } from '../../../shared/grant-summary';
+import type { GrantChange } from '../../../shared/agent-grant-changes';
 
 /**
  * The managed steps of New agent (#2893): Start with template, the builder
@@ -76,6 +78,31 @@ export function templateSummary(t: Pick<ManagedTemplate, 'setup' | 'settings'>):
   const o = t.settings.orchestration;
   if (o?.orchestrate) parts.push(`helpers on, up to ${o.maxHelpers ?? DEFAULT_MAX_HELPERS}`);
   return parts.join(' · ');
+}
+
+/**
+ * What agents made from a template can do through Clubhouse (#2971): one
+ * line, and the full list by target when expanded. From the same default
+ * grants the call-time check uses, with the template's own over them.
+ */
+function TemplateGrants({ template }: { template: Pick<ManagedTemplate, 'id' | 'settings'> }) {
+  const { line, groups } = useMemo(
+    () => templateGrantSummary(template.settings.orchestration, template.settings.grants),
+    [template.settings.orchestration, template.settings.grants],
+  );
+  return (
+    <details className="text-xs text-ctp-overlay1 leading-normal" data-testid={`managed-template-grants-${template.id}`}>
+      <summary className="cursor-pointer select-none hover:text-ctp-subtext1">{line}</summary>
+      <dl className="mt-1 ml-3 flex flex-col gap-1">
+        {groups.map((g) => (
+          <div key={g.label}>
+            <dt className="text-ctp-subtext1">{g.label}</dt>
+            <dd>{g.actions.join(', ')}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
 }
 
 /** The step's heading takes focus, so a screen reader hears the new page. */
@@ -135,6 +162,7 @@ export function TemplateStep({ name, projectName, busy, error, onCreate, onCusto
                     </div>
                     {t.description && <div className="text-xs text-ctp-subtext0 leading-normal">{t.description}</div>}
                     <div className="text-xs text-ctp-overlay1 truncate">{templateSummary(t)}</div>
+                    <TemplateGrants template={t} />
                   </div>
                   <div className="flex items-center gap-2 pt-0.5">
                     <Button kind="ghost" onClick={() => onCustomize(t)} disabled={busy} aria-label={`Customize ${t.name}`} className="focus-ring">Customize</Button>
@@ -198,7 +226,7 @@ function useManagedAgents(): { list: CopyCandidate[] | null } {
 }
 
 /** What Copy another agent reads from the picked agent's durable config, besides what the agent list has. */
-type CopiedSettings = Pick<ManagedTemplateSettings, 'access' | 'orchestration' | 'effort' | 'idleSleep' | 'helperTemplateId'>;
+type CopiedSettings = Pick<ManagedTemplateSettings, 'access' | 'orchestration' | 'effort' | 'idleSleep' | 'helperTemplateId' | 'grants'>;
 
 export function copySeed(c: { agent: Agent; setup: SetupDraft; orchestration?: OrchestrationPolicyConfig; config?: CopiedSettings }): BuilderSeed {
   const orchestration = c.config?.orchestration ?? c.orchestration;
@@ -215,6 +243,7 @@ export function copySeed(c: { agent: Agent; setup: SetupDraft; orchestration?: O
       ...(c.config?.effort && { effort: c.config.effort }),
       ...(c.config?.idleSleep && { idleSleep: c.config.idleSleep }),
       ...(c.config?.helperTemplateId && { helperTemplateId: c.config.helperTemplateId }),
+      ...(c.config?.grants?.length && { grants: c.config.grants }),
     },
   };
 }
@@ -224,7 +253,14 @@ async function copiedSettingsOf(c: CopyCandidate): Promise<CopiedSettings | unde
   try {
     const config = await window.clubhouse.agent.getDurableConfig(c.project.path, c.agent.id);
     if (!config) return undefined;
+    // Its Clubhouse permissions over the defaults (#2971). Unreadable: copied without them.
+    const grants = await Promise.resolve()
+      .then(() => window.clubhouse.agent.getGrants(c.project.path, c.agent.id))
+      .then((v) => v?.carried ?? [])
+      // telemetry-exempt: copied without its permissions; the rest of its settings still copy.
+      .catch((): GrantChange[] => []);
     return {
+      ...(grants.length > 0 && { grants: grants.map((g) => ({ action: g.action, target: g.target, mode: g.mode })) }),
       ...(config.access && { access: config.access }),
       ...(config.orchestration && { orchestration: config.orchestration }),
       ...(config.effort && { effort: config.effort }),
@@ -361,6 +397,8 @@ export function builderSettings(draft: BuilderDraft, seed: BuilderSeed, opts: { 
     orchestration,
     ...(draft.idleSleep !== 'inherit' && { idleSleep: draft.idleSleep }),
     ...(draft.helperTemplateId && { helperTemplateId: draft.helperTemplateId }),
+    // The template's or the copied agent's Clubhouse permissions go with it (#2971).
+    ...(seed.settings.grants?.length && { grants: seed.settings.grants }),
   };
 }
 

@@ -106,6 +106,8 @@ import { contextWindowCheck } from '../../context-window';
 import { helperAutoRefused, helperRouted } from '../../../telemetry/feature-events';
 import { managedAgents } from '../../managed-agents';
 import { helperTemplateModel, managedHelperSetup } from '../../managed-agents/helpers';
+import { capToHolder } from '../grant-check';
+import { applyTemplateGrants } from '../../agent-grants-service';
 
 // ── Results ──────────────────────────────────────────────────────────────
 
@@ -818,9 +820,16 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
       };
       // A managed helper's setup is required: if it can't be saved, the creation fails rather than start a helper without it.
       // What start_helper changed from the template is kept for the helper's Details (D91).
-      const { settings: _templateSettings, helperChanges, ...setup } = managedHelper;
-      started = await startDurableCreation(target.path, params,
-        { inject: async (created) => { await managedAgents().saveSetup(target.path, created.id, setup, { helperChanges }); }, injectRequired: true });
+      const { settings: templateSettings, helperChanges, ...setup } = managedHelper;
+      // The helper template's Clubhouse permissions, capped by what the orchestrator holds (#2971).
+      const helperGrants = capToHolder(orchestratorId, templateSettings?.grants ?? [], { elsewhere: target.cross });
+      started = await startDurableCreation(target.path, params, {
+        inject: async (created) => {
+          await managedAgents().saveSetup(target.path, created.id, setup, { helperChanges });
+          if (helperGrants.length > 0) await applyTemplateGrants(created.id, helperGrants);
+        },
+        injectRequired: true,
+      });
     } catch (err) {
       // telemetry-exempt: the refusal reaches the calling agent as the tool result
       // Refused up front: a bad or taken name, folder, branch or base.
