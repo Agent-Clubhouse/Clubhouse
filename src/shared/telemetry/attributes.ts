@@ -547,6 +547,8 @@ export const ATTR = {
     'list_agents', 'inspect_helper',
     // the Dispatcher's two agents (#3036)
     'start_work', 'read_memory', 'tell_user',
+    // search over the Dispatcher's memory and transcripts (#3039)
+    'search_memory',
     // appearance (#2597)
     'update_project', 'update_agent',
     // settings reads (#2653)
