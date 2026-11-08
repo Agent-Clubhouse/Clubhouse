@@ -256,6 +256,7 @@ vi.mock('./annex-peers', () => ({
   checkBruteForce: () => ({ allowed: true, delayMs: 0, locked: false, attemptsRemaining: 3 }),
   recordFailedAttempt: () => {},
   recordSuccessfulAttempt: () => {},
+  forgiveFailedAttempt: () => {},
   addPeer: (peer: { fingerprint: string }) => { W.peers.set(peer.fingerprint, peer); },
   getPeer: (fp: string) => W.peers.get(fp),
   updateLastSeen: () => {},

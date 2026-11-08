@@ -2363,8 +2363,10 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
   // Counted now, before the body is read, so requests held open together can't all pass the check.
-  // A successful pairing clears it.
+  // A successful pairing clears it; an answer that wasn't a guess (an expired or used PIN,
+  // a device already paired) takes it back, so a real device retrying isn't locked out.
   annexPeers.recordFailedAttempt(source);
+  const notAGuess = (): void => annexPeers.forgiveFailedAttempt(source);
 
   let raw: string;
   try {
@@ -2375,6 +2377,14 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
     res.writeHead(400);
     res.end();
+    return;
+  }
+  // Checked again now the body is here: requests held open together all passed the first
+  // check. Nothing below awaits before a wrong PIN is counted, so at most PIN_FAILURE_LIMIT
+  // wrong PINs are ever checked.
+  if (pairingPaused) {
+    notAGuess();
+    pairReply(429, { error: 'pairing_locked', message: PAIR_MESSAGES.pairing_paused });
     return;
   }
   const body = parseJsonBody(raw);
@@ -2416,13 +2426,14 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     }
     pairReply(409, { error: 'invalid_pin', message: PAIR_MESSAGES.invalid_pin }); return;
   }
-  if (pinCheck.kind === 'expired') { pairReply(410, { error: 'pin_expired', message: PAIR_MESSAGES.pin_expired }); return; }
+  if (pinCheck.kind === 'expired') { notAGuess(); pairReply(410, { error: 'pin_expired', message: PAIR_MESSAGES.pin_expired }); return; }
   if (pinCheck.kind === 'spent') {
     const { spent } = pinCheck;
     if (spent.fingerprint === fingerprint && spent.certFingerprint === certFingerprint && findPairedPeer(fingerprint)?.tlsCertificateFingerprint === certFingerprint) {
       annexPeers.recordSuccessfulAttempt(source);
       pairReply(200, spent.response); return;
     }
+    notAGuess();
     pairReply(410, { error: 'pin_used', message: PAIR_MESSAGES.pin_used }); return;
   }
 
@@ -2430,6 +2441,7 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
   const previous = findPairedPeer(fingerprint);
   const replacesPin = !!previous?.tlsCertificateFingerprint && previous.tlsCertificateFingerprint !== certFingerprint;
   if (replacesPin && !annexTls.verifyCertBinding(clientPublicKey, certDer, body.certBinding)) {
+    notAGuess();
     pairReply(409, { error: 'peer_already_paired', message: PAIR_MESSAGES.peer_already_paired }); return;
   }
 

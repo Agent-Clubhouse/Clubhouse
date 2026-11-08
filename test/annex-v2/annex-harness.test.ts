@@ -109,6 +109,7 @@ import * as annexServer from '../../src/main/services/annex-server';
 import * as annexPeers from '../../src/main/services/annex-peers';
 import * as eventReplay from '../../src/main/services/annex-event-replay';
 import { clearChatRuntimes, publishChatEvent, registerChatRuntime } from '../../src/main/services/agent-runtime';
+import { agentRegistry } from '../../src/main/services/agent-registry';
 import { AnnexProtocolClient, UpgradeRefusedError } from '../../e2e/annex-v2/protocol-client';
 import { generateTestIdentity, signCertBinding, withNewCertificate } from '../../e2e/annex-v2/tls-test-utils';
 
@@ -492,21 +493,28 @@ describe('Annex harness', () => {
           : Buffer.from([0x81, 0x80 | 126, payload.length >> 8, payload.length & 0xff]);
         return Buffer.concat([header, mask, Buffer.from(payload.map((byte, i) => byte ^ mask[i % 4]))]);
       };
-      const kill = frame(JSON.stringify({ type: 'agent:kill', payload: { agentId: 'not-an-agent' } }));
-      socket.write(kill);
-      await vi.waitFor(() => expect(received.toString('latin1')).toContain('agent_not_found'), { timeout: 10_000 });
+      // Every kill the server acts on looks the agent up; nothing sent after the revoke may get that far.
+      const lookups = vi.spyOn(agentRegistry, 'get');
+      const killLookups = () => lookups.mock.calls.filter(([id]) => id === 'not-an-agent').length;
+      try {
+        const kill = frame(JSON.stringify({ type: 'agent:kill', payload: { agentId: 'not-an-agent' } }));
+        socket.write(kill);
+        await vi.waitFor(() => expect(received.toString('latin1')).toContain('agent_not_found'), { timeout: 10_000 });
+        expect(killLookups()).toBe(1);
 
-      const before = received.length;
-      const revokedAt = Date.now();
-      expect(annexServer.revokePeer(fingerprint)).toBe(true);
-      socket.write(kill);
-      socket.write(kill);
-      // Cut by the server within moments, not left open until the close handshake times out.
-      const cut = await Promise.race([closed.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5_000))]);
-      expect(cut).toBe(true);
-      expect(Date.now() - revokedAt).toBeLessThan(5_000);
-      expect(received.subarray(before).toString('latin1')).not.toContain('agent_not_found');
-      socket.destroy();
+        const revokedAt = Date.now();
+        expect(annexServer.revokePeer(fingerprint)).toBe(true);
+        socket.write(kill);
+        socket.write(kill);
+        // Cut by the server within moments, not left open until the close handshake times out.
+        const cut = await Promise.race([closed.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5_000))]);
+        expect(cut).toBe(true);
+        expect(Date.now() - revokedAt).toBeLessThan(5_000);
+        expect(killLookups()).toBe(1);
+      } finally {
+        lookups.mockRestore();
+        socket.destroy();
+      }
     }, 60_000);
 
     it('POST /pair on the plain pairing port is 410 update_required and adds no peer', async () => {

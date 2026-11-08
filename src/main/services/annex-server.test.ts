@@ -178,6 +178,7 @@ vi.mock('./annex-peers', () => ({
   checkBruteForce: vi.fn().mockReturnValue({ allowed: true, delayMs: 0, locked: false, attemptsRemaining: 3 }),
   recordFailedAttempt: vi.fn(),
   recordSuccessfulAttempt: vi.fn(),
+  forgiveFailedAttempt: vi.fn(),
   addPeer: vi.fn(),
   getPeer: vi.fn().mockReturnValue(null),
   updateLastSeen: vi.fn(),
@@ -2035,6 +2036,57 @@ describe('annex-server', () => {
       expect(peers.size).toBe(0);
     });
 
+    describe('per-address attempts with the real counter', () => {
+      beforeEach(async () => {
+        const actualPeers = await vi.importActual<typeof import('./annex-peers')>('./annex-peers');
+        actualPeers.resetForTests();
+        vi.mocked(annexPeers.checkBruteForce).mockImplementation(actualPeers.checkBruteForce);
+        vi.mocked(annexPeers.recordFailedAttempt).mockImplementation(actualPeers.recordFailedAttempt);
+        vi.mocked(annexPeers.recordSuccessfulAttempt).mockImplementation(actualPeers.recordSuccessfulAttempt);
+        vi.mocked(annexPeers.forgiveFailedAttempt).mockImplementation(actualPeers.forgiveFailedAttempt);
+      });
+
+      afterEach(async () => {
+        (await vi.importActual<typeof import('./annex-peers')>('./annex-peers')).resetForTests();
+      });
+
+      it('a device retrying an expired PIN is never slowed or locked out, and then pairs with the current one', async () => {
+        await startServer();
+        const phone = device();
+        const old = annexServer.getStatus().pin;
+        annexServer.regeneratePin();
+        // More retries than the per-address limit allows guesses.
+        for (let i = 0; i < 8; i++) {
+          expect(await pair(phone, {}, old)).toEqual({ status: 410, body: { error: 'pin_expired', message: expect.stringMatching(/expired/) } });
+        }
+        expect((await pair(phone)).status).toBe(200);
+      });
+
+      it('a PIN that ran out unused is not counted either', async () => {
+        await startServer();
+        const phone = device();
+        const pin = annexServer.getStatus().pin;
+        const now = Date.now();
+        vi.spyOn(Date, 'now').mockReturnValue(now + annexServer._testing.PIN_TTL_MS + 1);
+        for (let i = 0; i < 8; i++) expect((await pair(phone, {}, pin)).body.error).toBe('pin_expired');
+        expect(annexServer.getStatus().pairingPaused).toBe(false);
+      });
+
+      it('used-PIN and already-paired answers are not counted, but malformed requests are', async () => {
+        await startServer();
+        const first = device(); const second = device();
+        const pin = annexServer.getStatus().pin;
+        expect((await pair(first, {}, pin)).status).toBe(200);
+        for (let i = 0; i < 8; i++) expect((await pair(second, {}, pin)).body.error).toBe('pin_used');
+        // The same identity with a new certificate and no proof it holds it.
+        const swapped = device(undefined, first);
+        for (let i = 0; i < 8; i++) expect((await pair(swapped)).body.error).toBe('peer_already_paired');
+        // A body with no PIN is not a retry: three are free, then the address waits.
+        for (let i = 0; i < 3; i++) expect((await call('POST', '/pair', second, { publicKey: second.publicKey })).body.error).toBe('invalid_json');
+        expect(await call('POST', '/pair', second, { publicKey: second.publicKey })).toEqual({ status: 429, body: { error: 'rate_limited', retryAfterMs: expect.any(Number) } });
+      });
+    });
+
     it('a used PIN pairs nobody else, and the same device retrying gets the same answer with no change', async () => {
       await startServer();
       const first = device(); const second = device();
@@ -2281,6 +2333,36 @@ describe('annex-server', () => {
       socket.write(['POST /pair HTTP/1.1', 'Host: 127.0.0.1', 'Content-Type: application/json', 'Content-Length: 500', '', ''].join('\r\n'));
       await vi.waitFor(() => expect(annexPeers.recordFailedAttempt).toHaveBeenCalledTimes(1));
       socket.destroy();
+    });
+
+    it('requests held open together from many addresses get at most the install-wide number of wrong PINs checked', async () => {
+      await startServer();
+      const phone = device();
+      const pin = annexServer.getStatus().pin;
+      const wrong = pin === '000000' ? '111111' : '000000';
+      const raw = JSON.stringify({ pin: wrong, publicKey: phone.publicKey, alias: 'Phone', icon: 'phone', color: 'blue' });
+      // The per-address check is stubbed to allow every request, standing in for twelve different addresses.
+      const held = Array.from({ length: 12 }, () => {
+        let release!: () => void;
+        const answer = new Promise<Answer>((resolve, reject) => {
+          const req = https.request({ host: '127.0.0.1', port: annexServer.getStatus().port, path: '/pair', method: 'POST', cert: phone.cert, key: phone.key,
+            rejectUnauthorized: false, agent: false, headers: { 'Content-Type': 'application/json', 'Content-Length': String(Buffer.byteLength(raw)) } }, (res) => {
+            let data = ''; res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => resolve({ status: res.statusCode!, body: JSON.parse(data) }));
+          });
+          req.on('error', reject);
+          req.flushHeaders();
+          release = () => req.end(raw);
+        });
+        return { answer, release: () => release() };
+      });
+      // Every request has passed the check made before its body, and is waiting on it.
+      await vi.waitFor(() => expect(annexPeers.recordFailedAttempt).toHaveBeenCalledTimes(12));
+      for (const request of held) request.release();
+      const answers = await Promise.all(held.map((request) => request.answer));
+      expect(answers.filter((a) => a.status === 409 && a.body.error === 'invalid_pin')).toHaveLength(10);
+      expect(answers.filter((a) => a.status === 429 && a.body.error === 'pairing_locked')).toHaveLength(2);
+      expect(annexServer.getStatus().pairingPaused).toBe(true);
     });
 
     it('regenerating the PIN leaves paired devices connected', async () => {
