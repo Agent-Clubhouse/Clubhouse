@@ -57,6 +57,8 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
     { label: 'Agents & providers', page: 'orchestrators' },
     ...MANAGED_PAGES,
     { label: 'Dispatcher', page: 'dispatcher' },
+    // After Dispatcher for now; the settings reorganization (#2750) moves it.
+    { label: 'Actions', page: 'actions' },
     { label: 'Display & UI', page: 'display' },
     { label: 'External editor', page: 'editor' },
     { label: 'Keyboard shortcuts', page: 'keyboard-shortcuts' },

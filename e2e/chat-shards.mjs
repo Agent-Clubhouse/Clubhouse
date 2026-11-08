@@ -16,6 +16,7 @@ export const CHAT_SHARDS = {
     'chat-rich/question-dock.spec.ts',
   ],
   2: [
+    'actions.spec.ts',
     'chat-rich/media-cards.spec.ts',
     'chat-rich/media-images.spec.ts',
     'chat-rich/providers.spec.ts',

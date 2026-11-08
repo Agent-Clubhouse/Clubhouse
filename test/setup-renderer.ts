@@ -547,6 +547,17 @@ vi.stubGlobal('clubhouse', {
     setEnabled: async () => DISPATCHER_OFF,
     onChanged: () => noop,
   },
+  actions: {
+    list: async () => [],
+    create: async () => { throw new Error('not mocked'); },
+    update: async () => { throw new Error('not mocked'); },
+    setEnabled: async () => { throw new Error('not mocked'); },
+    delete: async () => undefined,
+    runNow: async () => ({ runId: 'run_1' }),
+    history: async () => [],
+    onChanged: () => noop,
+    onNotice: () => noop,
+  },
   feedback: {
     getStatus: async () => ({
       started: false, state: 'disconnected', connected: false, enrolled: false, canCapture: false, notice: null, expiresAt: null,
