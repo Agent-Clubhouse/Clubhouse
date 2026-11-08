@@ -224,6 +224,8 @@ export function registerManagedAgentsHandlers(): void {
   ipcMain.handle(IPC.MANAGED.STATUS, withValidatedArgs([stringArg(), idArg()], (_e, projectPath, agentId) => result(() => statusFor(projectPath, agentId))));
   ipcMain.handle(IPC.MANAGED.DISMISS_MIGRATION_NOTICE, withValidatedArgs([stringArg(), idArg()],
     (_e, projectPath, agentId) => result(() => dismissMigrationNotice(projectPath, agentId))));
+  ipcMain.handle(IPC.MANAGED.PROJECT_GIT_EXCLUDES, withValidatedArgs([stringArg()],
+    (_e, projectPath) => result(async () => (await import('../services/managed-agents/git-excludes')).managedRootExcludesInEffect(projectPath))));
   ipcMain.handle(IPC.MANAGED.IS_WORKING, withValidatedArgs([idArg()], (_e, agentId) => result(() => isAgentWorking(agentId))));
   ipcMain.handle(IPC.MANAGED.RESTART, withValidatedArgs(
     [stringArg(), idArg(), objectArg<{ fresh?: boolean; whenTurnEnds?: boolean }>({ optional: true })],
