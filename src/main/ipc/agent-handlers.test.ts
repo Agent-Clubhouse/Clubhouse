@@ -114,6 +114,7 @@ vi.mock('../services/finished-quick-agents-store', () => ({
 vi.mock('../services/dispatcher/dispatcher-service', () => ({
   isDispatcherPath: (p: string) => p === 'dispatcher-folder',
   isDispatcherAgentId: (id: string) => id === 'disp',
+  isDispatcherIdentityAgentId: (id: string) => id === 'disp',
 }));
 
 import { ipcMain, dialog, BrowserWindow } from 'electron';

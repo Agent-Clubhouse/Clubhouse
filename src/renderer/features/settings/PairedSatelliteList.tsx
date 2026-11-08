@@ -1,47 +1,94 @@
 import { useState } from 'react';
-import type { SatelliteConnection } from '../../stores/annexClientStore';
+import type { AnnexDevice } from '../../../shared/types';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
+import { useAnnexStore } from '../../stores/annexStore';
 import { getAgentColorHex } from '../../../shared/name-generator';
 import { Button } from '../../components/Button';
+import { settingsInput } from './SettingsLayout';
+
+/**
+ * Sets the host name or address a satellite is reached at, such as its tailnet
+ * name (#3058). Saving an empty value goes back to found addresses only.
+ */
+function AddressEditor({ device, onDone }: { device: AnnexDevice; onDone: () => void }) {
+  const [value, setValue] = useState(device.typedHost ?? '');
+  const [error, setError] = useState<string | null>(null);
+  const save = async (): Promise<void> => {
+    const result = await window.clubhouse.annexClient.setSatelliteHost(device.fingerprint, value);
+    if ('error' in result) setError(result.error);
+    else onDone();
+  };
+  return (
+    <div className="flex flex-col gap-1 pb-2" data-testid="annex-address-editor">
+      <div className="flex items-center gap-1.5">
+        <input
+          type="text"
+          aria-label={`Address for ${device.alias || 'this computer'}`}
+          value={value}
+          onChange={(e) => { setValue(e.target.value); setError(null); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
+          className={`${settingsInput} w-[260px]`}
+          placeholder="studio.tailnet.ts.net"
+        />
+        <Button onClick={() => void save()} kind="primary">Save</Button>
+        <Button onClick={onDone} kind="ghost">Cancel</Button>
+      </div>
+      <div className={`text-xs ${error ? 'text-ctp-error' : 'text-ctp-overlay1'}`}>
+        {error ?? 'A name or address it can be reached at, such as its tailnet name. Tried along with addresses found on the network.'}
+      </div>
+    </div>
+  );
+}
 
 interface Props {
-  satellites: SatelliteConnection[];
+  /** Devices this machine controls, from the one device list. */
+  devices: AnnexDevice[];
   /** Opens the pairing wizard for a satellite whose pairing can't be used any more. */
-  onPairAgain?: (satellite: SatelliteConnection) => void;
+  onPairAgain?: (device: AnnexDevice) => void;
 }
 
-
-function StatusDot({ state, lastError, needsPairing }: { state: SatelliteConnection['state']; lastError?: string | null; needsPairing?: boolean }) {
-  if (needsPairing) return <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-surface-2" />;
-  const isIncompatible = lastError?.toLowerCase().includes('incompatible');
-  const colors: Record<string, string> = {
+function StatusDot({ device }: { device: AnnexDevice }) {
+  if (device.problem?.code === 'incompatible') return <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-ctp-error" />;
+  const colors: Record<AnnexDevice['state'], string> = {
     connected: 'bg-ctp-success',
     connecting: 'bg-ctp-warning animate-pulse',
-    discovering: 'bg-ctp-info animate-pulse',
-    disconnected: 'bg-surface-2',
+    offline: 'bg-surface-2',
+    'needs-pairing': 'bg-surface-2',
+    removing: 'bg-ctp-warning',
   };
-  return <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isIncompatible ? 'bg-ctp-error' : colors[state] || 'bg-surface-2'}`} />;
+  return <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${colors[device.state]}`} />;
 }
 
-function stateLabel(state: SatelliteConnection['state'], lastError?: string | null, needsPairing?: boolean): string {
-  if (needsPairing) return 'Needs pairing again';
-  if (lastError?.toLowerCase().includes('incompatible')) return 'Incompatible';
-  switch (state) {
+function stateLabel(device: AnnexDevice): string {
+  if (device.problem?.code === 'incompatible') return 'Incompatible';
+  switch (device.state) {
     case 'connected': return 'Connected';
     case 'connecting': return 'Connecting…';
-    case 'discovering': return 'Discovering…';
-    case 'disconnected': return 'Offline';
+    case 'needs-pairing': return 'Needs pairing again';
+    case 'offline': return 'Offline';
+    case 'removing': return 'Removing';
   }
 }
 
-export function PairedSatelliteList({ satellites, onPairAgain }: Props) {
+/** Where a network join or removal has reached, as one sentence each way (#3061). */
+function confirmationText(confirmation: NonNullable<AnnexDevice['confirmation']>): string {
+  const list = (names: string[]) => names.join(', ');
+  const done = confirmation.confirmedBy.length > 0 ? `Confirmed on ${list(confirmation.confirmedBy)}.` : 'Not confirmed on any other device yet.';
+  const waiting = confirmation.waitingOn.length > 0
+    ? ` Waiting for ${list(confirmation.waitingOn)}, which ${confirmation.waitingOn.length === 1 ? 'hears' : 'hear'} when next connected.`
+    : '';
+  return `${done}${waiting}`;
+}
+
+export function PairedSatelliteList({ devices, onPairAgain }: Props) {
   const disconnect = useAnnexClientStore((s) => s.disconnect);
   const retry = useAnnexClientStore((s) => s.retry);
-  const forgetSatellite = useAnnexClientStore((s) => s.forgetSatellite);
+  const removeDevice = useAnnexStore((s) => s.removeDevice);
   const [confirmForget, setConfirmForget] = useState<string | null>(null);
+  const [editingAddress, setEditingAddress] = useState<string | null>(null);
 
-  // Sort: connected first, then alphabetical
-  const sorted = [...satellites].sort((a, b) => {
+  // Connected first, then alphabetical
+  const sorted = [...devices].sort((a, b) => {
     if (a.state === 'connected' && b.state !== 'connected') return -1;
     if (a.state !== 'connected' && b.state === 'connected') return 1;
     return a.alias.localeCompare(b.alias);
@@ -49,58 +96,75 @@ export function PairedSatelliteList({ satellites, onPairAgain }: Props) {
 
   return (
     <div data-testid="paired-satellite-list">
-      {sorted.map((sat) => (
+      {sorted.map((device) => (
+        <div key={device.fingerprint} className="border-t border-surface-0">
         <div
-          key={sat.id}
-          className="flex items-center gap-3 min-h-[46px] py-2 border-t border-surface-0"
+          data-testid="annex-device-row"
+          data-state={device.state}
+          className="flex items-center gap-3 min-h-[46px] py-2"
         >
           <div className="flex items-center gap-2.5 flex-1 min-w-0">
             <div
               className="w-[18px] h-[18px] rounded flex items-center justify-center text-xs font-bold leading-none shrink-0"
-              style={{ backgroundColor: `${getAgentColorHex(sat.color)}33`, color: getAgentColorHex(sat.color) }}
+              style={{ backgroundColor: `${getAgentColorHex(device.color)}33`, color: getAgentColorHex(device.color) }}
               aria-hidden="true"
             >
-              {sat.alias.slice(0, 1).toUpperCase()}
+              {(device.alias || '?').slice(0, 1).toUpperCase()}
             </div>
             <div className="min-w-0">
-              <div className="text-[13px] text-ctp-text truncate">{sat.alias}</div>
+              <div className="text-[13px] text-ctp-text truncate">{device.alias || 'Unnamed device'}</div>
               <div className="flex items-center gap-1.5 text-xs text-ctp-overlay1 min-w-0">
-                <StatusDot state={sat.state} lastError={sat.lastError} needsPairing={sat.needsPairing} />
-                <span>{stateLabel(sat.state, sat.lastError, sat.needsPairing)}</span>
-                {sat.lastError && sat.state === 'disconnected' && !sat.needsPairing && (
-                  <span className="text-ctp-error truncate">({sat.lastError})</span>
+                <StatusDot device={device} />
+                <span>{stateLabel(device)}</span>
+                {(device.address || device.typedHost) && (
+                  <span className="truncate" data-testid="annex-device-address">
+                    {device.address ? `at ${device.address}` : `at ${device.typedHost}`}
+                  </span>
                 )}
               </div>
-              {sat.needsPairing && sat.lastError && (
-                <div className="text-xs text-ctp-overlay1">{sat.lastError}</div>
+              {device.problem && (
+                <div className="text-xs text-ctp-overlay1" data-testid="annex-device-problem">
+                  {device.problem.message} {device.problem.action}
+                </div>
+              )}
+              {device.confirmation && (
+                <div className="text-xs text-ctp-overlay1" data-testid="annex-device-confirmation">
+                  {confirmationText(device.confirmation)}
+                </div>
               )}
             </div>
           </div>
 
           <div className="flex gap-1.5 shrink-0">
-            {sat.needsPairing && onPairAgain && (
-              <Button onClick={() => onPairAgain(sat)} kind="ghost">
+            {device.state === 'needs-pairing' && onPairAgain && (
+              <Button onClick={() => onPairAgain(device)} kind="ghost">
                 Pair again
               </Button>
             )}
-            {sat.state === 'disconnected' && !sat.needsPairing && (
-              <Button onClick={() => retry(sat.fingerprint)} kind="ghost">
+            {device.state === 'offline' && (
+              <Button onClick={() => retry(device.fingerprint)} kind="ghost">
                 Retry
               </Button>
             )}
-            {sat.state === 'connected' && (
-              <Button onClick={() => disconnect(sat.fingerprint)} kind="ghost">
+            {device.state === 'connected' && (
+              <Button onClick={() => disconnect(device.fingerprint)} kind="ghost">
                 Disconnect
               </Button>
             )}
-            {confirmForget === sat.fingerprint ? (
+            {/* Also while it needs pairing again: a mistyped address can be why. */}
+            {(device.role === 'satellite' || device.role === 'member') && device.state !== 'removing' && editingAddress !== device.fingerprint && (
+              <Button onClick={() => setEditingAddress(device.fingerprint)} kind="ghost">
+                Address
+              </Button>
+            )}
+            {device.state === 'removing' ? null : confirmForget === device.fingerprint ? (
               <>
                 <Button onClick={() => setConfirmForget(null)} kind="ghost">
                   Cancel
                 </Button>
                 <Button
                   onClick={() => {
-                    forgetSatellite(sat.fingerprint);
+                    void removeDevice(device.fingerprint);
                     setConfirmForget(null);
                   }}
                   kind="danger"
@@ -109,11 +173,15 @@ export function PairedSatelliteList({ satellites, onPairAgain }: Props) {
                 </Button>
               </>
             ) : (
-              <Button onClick={() => setConfirmForget(sat.fingerprint)} kind="danger">
+              <Button onClick={() => setConfirmForget(device.fingerprint)} kind="danger">
                 Forget
               </Button>
             )}
           </div>
+        </div>
+        {editingAddress === device.fingerprint && (
+          <AddressEditor device={device} onDone={() => setEditingAddress(null)} />
+        )}
         </div>
       ))}
     </div>

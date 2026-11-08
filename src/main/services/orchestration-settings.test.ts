@@ -87,4 +87,16 @@ describe('helper presets (#2671)', () => {
     expect(getPresets()).toEqual({ 'codex-cli': { hard: { model: 'ok', effort: 'high' } } });
     expect(getPresetsRevision()).toBe(0);
   });
+
+  it('reads a file from before minimum and maximum unchanged, and keeps them once saved (#3044)', async () => {
+    const before = { 'claude-code': { easy: { model: 'sonnet', effort: 'low' } }, 'codex-cli': { hard: { model: 'gpt-6.1-terra', effort: null } } };
+    fs.writeFileSync(file, JSON.stringify({ globalHelperCap: 5, helperPresets: before, helperPresetsRevision: 4 }));
+    resetAllSettingsStoresForTests();
+    expect(getPresets()).toEqual(before);
+    expect(getPresetsRevision()).toBe(4);
+    await savePresets({ ...before, 'claude-code': { ...before['claude-code'], minimum: { model: 'haiku', effort: null }, maximum: { model: 'opus', effort: 'max' } } });
+    resetAllSettingsStoresForTests();
+    expect(getPresets()['claude-code']).toEqual({ easy: { model: 'sonnet', effort: 'low' }, minimum: { model: 'haiku', effort: null }, maximum: { model: 'opus', effort: 'max' } });
+    expect(getPresets()['codex-cli']).toEqual(before['codex-cli']);
+  });
 });

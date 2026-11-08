@@ -8,7 +8,7 @@ import { useDispatcherSync } from './useDispatcherSync';
 import { findLocalProject, isDispatcherAgent, useDispatcherStore } from './dispatcherStore';
 
 const config = { id: 'disp', name: 'Dispatcher', color: 'indigo', createdAt: '2026-10-31T00:00:00.000Z', model: 'opus' } as DurableAgentConfig;
-const ON: DispatcherState = { ...DISPATCHER_OFF, enabled: true, savedOn: true, offReason: null, agentId: 'disp', path: 'dispatcher-dir', config };
+const ON: DispatcherState = { ...DISPATCHER_OFF, enabled: true, savedOn: true, offReason: null, agentId: 'disp-work', path: 'dispatcher-work-dir', chatAgentId: 'disp', chatPath: 'dispatcher-dir', config };
 
 describe('useDispatcherSync', () => {
   let emit: ((s: DispatcherState) => void) | null;

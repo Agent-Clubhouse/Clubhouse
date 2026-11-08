@@ -126,6 +126,7 @@ vi.mock('./orchestration-policy', () => {
 vi.mock('./dispatcher/dispatcher-service', () => ({
   isDispatcherEnabled: () => state.dispatcherOn,
   isDispatcherAgentId: (id: string) => id === 'dispatcher',
+  isDispatcherIdentityAgentId: (id: string) => id === 'dispatcher',
   isDispatcherPath: () => false,
   onDispatcherChanged: vi.fn((listener: () => void) => {
     state.dispatcherListeners.add(listener);

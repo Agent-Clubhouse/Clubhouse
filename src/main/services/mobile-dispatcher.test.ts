@@ -1,18 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+/** `config` is the chat a phone sees (#3036); `coordinatorId` the hidden agent that keeps the Dispatcher's id. */
 const S = vi.hoisted(() => ({
   enabled: false, newLayout: true, running: false, classicUnsaved: false,
   config: { id: 'durable_d', name: 'Dispatcher', color: 'indigo', createdAt: '2026-01-01' } as Record<string, unknown> | null,
+  coordinatorId: 'durable_coordinator',
 }));
 
 vi.mock('./dispatcher/dispatcher-service', () => {
   const state = () => ({ enabled: S.enabled, flagOn: true, savedOn: S.enabled, classic: !S.newLayout, running: S.running,
-    offReason: S.enabled ? null : S.classicUnsaved ? 'classic_layout' : 'switch_off', agentId: (S.config?.id as string) ?? null,
-    path: S.config ? '/base/dispatcher' : null, config: S.config });
+    offReason: S.enabled ? null : S.classicUnsaved ? 'classic_layout' : 'switch_off', agentId: S.config ? S.coordinatorId : null,
+    path: S.config ? '/base/dispatcher' : null, config: S.config ? { ...S.config, id: S.coordinatorId } : null,
+    chatAgentId: (S.config?.id as string) ?? null, chatPath: S.config ? '/base/dispatcher-chat' : null, chatRunning: S.running });
   return {
     DISPATCHER_NAME: 'Dispatcher',
     getDispatcherPath: () => '/base/dispatcher',
-    isDispatcherAgentId: (id?: string) => !!id && id === S.config?.id,
+    getDispatcherChatPath: () => '/base/dispatcher-chat',
+    getDispatcherChatConfig: () => S.config,
+    isDispatcherAgentId: (id?: string) => !!id && !!S.config && id === S.coordinatorId,
+    isDispatcherChatAgentId: (id?: string) => !!id && id === S.config?.id,
     isDispatcherEnabled: () => S.enabled,
     getDispatcherState: state,
     setDispatcherEnabled: vi.fn(async (on: boolean) => { S.enabled = on; return state(); }),
@@ -38,20 +44,31 @@ beforeEach(() => {
 });
 
 describe('resolving the Dispatcher for phones', () => {
-  it('resolves its id with its folder as the __dispatcher__ project only while it is on', () => {
+  it('resolves its chat\'s id with the chat\'s folder as the __dispatcher__ project only while it is on (#3036)', () => {
     expect(activeDispatcher('durable_d')).toBeNull();
     expect(isDisabledDispatcherId('durable_d')).toBe(true);
     expect(dispatcherFolderProject('__dispatcher__')).toBeUndefined();
     S.enabled = true;
     expect(activeDispatcher('durable_d')).toEqual({
-      config: S.config, project: { id: '__dispatcher__', name: 'Dispatcher', path: '/base/dispatcher' },
+      config: S.config, project: { id: '__dispatcher__', name: 'Dispatcher', path: '/base/dispatcher-chat' },
     });
     expect(activeDispatcher()).not.toBeNull();
     expect(activeDispatcher('durable_other')).toBeNull();
     expect(isDisabledDispatcherId('durable_d')).toBe(false);
     expect(isDisabledDispatcherId('durable_other')).toBe(false);
-    expect(dispatcherFolderProject('__dispatcher__')).toMatchObject({ path: '/base/dispatcher' });
+    expect(dispatcherFolderProject('__dispatcher__')).toMatchObject({ path: '/base/dispatcher-chat' });
     expect(dispatcherFolderProject('proj_app')).toBeUndefined();
+  });
+
+  it('never resolves the hidden agent that keeps the Dispatcher\'s id (#3036)', () => {
+    S.enabled = true;
+    expect(activeDispatcher(S.coordinatorId)).toBeNull();
+    expect(isDisabledDispatcherId(S.coordinatorId)).toBe(false);
+    expect(dispatcherChange().agentId).toBe('durable_d');
+    expect(() => assertDispatcherCommand('agent.start', S.coordinatorId)).not.toThrow();
+    S.enabled = false;
+    expect(dispatcherChange().agentId).toBeNull();
+    expect(isDisabledDispatcherId(S.coordinatorId)).toBe(false);
   });
 
   it('answers nothing switched off, or before it was ever created', () => {

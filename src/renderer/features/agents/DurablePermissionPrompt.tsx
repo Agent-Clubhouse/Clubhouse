@@ -153,7 +153,7 @@ export function DurablePermissionPrompt({ agentId }: Props) {
             Deny
           </button>
           <button
-            className="px-2.5 py-1 text-xs rounded bg-ctp-accent text-white hover:bg-ctp-accent/80 transition-colors disabled:opacity-50"
+            className="px-2.5 py-1 text-xs rounded bg-ctp-accent text-ctp-on-accent hover:bg-ctp-accent/80 transition-colors disabled:opacity-50"
             onClick={() => handleDecision('allow')}
             disabled={busy}
             data-testid="durable-permission-approve"

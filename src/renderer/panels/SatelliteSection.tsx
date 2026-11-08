@@ -36,7 +36,7 @@ export function LocalHostRow({ expanded, isActive, onClick }: {
           w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
           transition-colors duration-100
           ${isActive
-            ? 'bg-ctp-accent text-white shadow-lg shadow-ctp-accent/30'
+            ? 'bg-ctp-accent text-ctp-on-accent shadow-lg shadow-ctp-accent/30'
             : expanded
               ? 'bg-surface-1 text-ctp-subtext0'
               : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text'

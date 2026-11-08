@@ -1,4 +1,5 @@
 import { ThemeDefinition } from '../../shared/types';
+import { onAccentColor } from './theme-contrast';
 
 export function hexToRgbChannels(hex: string): string {
   if (!hex) return '0 0 0';
@@ -50,6 +51,8 @@ export function applyTheme(theme: ThemeDefinition, options?: ApplyThemeOptions):
     '--ctp-overlay': theme.colors.overlay,
     '--ctp-overlay0': theme.colors.overlay0,
     '--ctp-overlay1': theme.colors.overlay1,
+    // Text on accent-filled buttons and tiles (#3086).
+    '--ctp-on-accent': onAccentColor(theme.colors),
   };
 
   for (const [varName, hex] of Object.entries(colorMap)) {
@@ -208,6 +211,8 @@ export function themeToStyleVars(theme: ThemeDefinition): Record<string, string>
     '--ctp-overlay': theme.colors.overlay,
     '--ctp-overlay0': theme.colors.overlay0,
     '--ctp-overlay1': theme.colors.overlay1,
+    // Text on accent-filled buttons and tiles (#3086).
+    '--ctp-on-accent': onAccentColor(theme.colors),
   };
 
   for (const [varName, hex] of Object.entries(colorMap)) {

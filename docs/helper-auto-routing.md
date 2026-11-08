@@ -79,6 +79,23 @@ Cells are app-scope in v1. Reset removes overrides per cell, per provider or for
 
 **Copilot** is excluded from `preset` and `auto`, with reason `auto_not_supported`: its list reports no per-model efforts, and no quota source has been researched. Explicit Copilot starts are untouched.
 
+## Minimum and maximum (#3044)
+
+Auto has two more levels, `minimum` and `maximum`, mapped per provider like the difficulties and edited in the same table. The order is `minimum`, `easy`, `medium`, `hard`, `maximum` (`AUTO_LEVELS`). Minimum is the cheapest choice, for Clubhouse's own small background steps (the Dispatcher's rewrite step uses it). Maximum is the strongest.
+
+They are mapping levels only. `start_helper`'s `difficulty` still takes `easy`, `medium` and `hard`, so the helper contract, decision records and telemetry are unchanged.
+
+| | Saved choice | Unset |
+|---|---|---|
+| `minimum` | Used as chosen, checked like any cell | Uses `easy`, as it resolves now (the person's choice, else its built-in) |
+| `maximum` | Used as chosen, checked like any cell | Uses `hard`, as it resolves now |
+
+- **No built-ins of their own.** An app that never sets them behaves as before, and a change to Easy or Hard carries over. A saved minimum or maximum is kept as chosen, even when it matches a built-in, until it's reset.
+- **Stale.** A saved one no longer offered falls back to its difficulty, with `builtin_preset`. If that has nothing valid either, it resolves to `no_valid_mapping`. Never the CLI's default.
+- **Storage.** Sparse overrides in `orchestration-settings`, next to the difficulties. Files from before have none, so they read unchanged and nothing is migrated.
+- **Page and phone.** `cells` has all five levels. An unset minimum or maximum shows its difficulty's cell with `follows: "easy"` or `"hard"` and `custom: null`; `follows` also marks a stale saved one that is using its difficulty. `builtin` is the followed difficulty's built-in. Writes and resets take the level names in `difficulty`; a reset makes it follow again. The phone capability adds `levels`, and `difficulties` stays the three.
+- **Resolver.** `resolveAutoLevel(provider, level)` in `services/helper-routing.ts`, with `resolveProviderMinimum` and `resolveProviderMaximum`, returns the model, effort, source, fallback and `follows`, or `auto_not_supported` for a provider without presets (Copilot today) and `no_valid_mapping`. It doesn't depend on the Auto provider switch, which only governs choosing between providers.
+
 ## Inputs
 
 ### Quota

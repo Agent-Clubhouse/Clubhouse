@@ -65,9 +65,21 @@ export interface DispatcherState {
   classic: boolean;
   /** Its agent is running. It can be while `enabled` is false, until it stops. */
   running: boolean;
+  /**
+   * The id that holds its connections, links and grants (#3036). Not the one
+   * the user talks to: that is `chatAgentId`.
+   */
   agentId: string | null;
   path: string | null;
   config: DurableAgentConfig | null;
+  /**
+   * The agent the user sees and talks to as the Dispatcher (#3036): its row,
+   * view, notifications and phone entry. Null until it was first created.
+   */
+  chatAgentId: string | null;
+  chatPath: string | null;
+  /** The chat is running. */
+  chatRunning: boolean;
 }
 
 /**
@@ -78,4 +90,5 @@ export const DISPATCHER_PROJECT_ID = '__dispatcher__';
 
 export const DISPATCHER_OFF: DispatcherState = {
   enabled: false, flagOn: true, savedOn: false, offReason: 'switch_off', classic: false, running: false, agentId: null, path: null, config: null,
+  chatAgentId: null, chatPath: null, chatRunning: false,
 };

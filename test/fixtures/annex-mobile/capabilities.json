@@ -123,6 +123,13 @@
           "candidate_skipped",
           "model_unverified"
         ],
+        "levels": [
+          "minimum",
+          "easy",
+          "medium",
+          "hard",
+          "maximum"
+        ],
         "modes": [
           "explicit",
           "preset",
@@ -192,6 +199,13 @@
         "maxEntries": 2048,
         "scope": "peer-and-epoch",
         "ttlMs": 3600000
+      },
+      "network": {
+        "event": "network:changed",
+        "membersPath": "/api/v1/mobile/network/members",
+        "pairField": "network",
+        "path": "/api/v1/mobile/network",
+        "version": 1
       },
       "orchestration": {
         "version": 1

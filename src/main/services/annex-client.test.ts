@@ -40,6 +40,10 @@ vi.mock('bonjour-service', () => ({
   default: BonjourConstructor,
 }));
 
+// The membership channel has its own tests (annex-network-channel.test.ts).
+vi.mock('./annex-network-channel', () => ({ connectTo: vi.fn(), closeFor: vi.fn(), closeAll: vi.fn() }));
+vi.mock('./annex-network-membership', () => ({ noteLocalJoin: vi.fn(), noteLocalRemoval: vi.fn() }));
+
 vi.mock('ws', () => ({
   WebSocket: WebSocketMock,
 }));
@@ -66,6 +70,10 @@ vi.mock('./annex-tls', () => ({
 }));
 
 vi.mock('./annex-peers', () => ({
+  controlsThisMachine: (p?: { role?: string } | null) => p?.role === 'controller' || p?.role === 'member',
+  controlledFromHere: (p?: { role?: string; kind?: string } | null) => p?.role === 'satellite' || (p?.role === 'member' && p.kind !== 'phone'),
+  noteReached: vi.fn(),
+  setTypedHost: vi.fn(() => true),
   getPeer: vi.fn().mockReturnValue(undefined),
   addPeer: vi.fn(),
   updateLastSeen: vi.fn(),
@@ -77,6 +85,7 @@ vi.mock('./annex-peers', () => ({
 }));
 
 vi.mock('./annex-settings', () => ({
+  networkEnabled: (s?: { networkEnabled?: boolean }) => s?.networkEnabled !== false,
   getSettings: vi.fn().mockReturnValue({
     enableServer: true,
     enableClient: true,
@@ -603,7 +612,8 @@ describe('annex-client', () => {
       const sat = annexClient.getSatellites().find((s) => s.id === FINGERPRINT);
       expect(sat?.snapshot?.lastSeq).toBe(7);
       expect(sat?.state).toBe('disconnected');
-      expect(sat?.lastError).toBe('Incompatible Annex version');
+      expect(sat?.lastError).toMatch(/can't connect to this one\. Update Clubhouse on both computers\./);
+      expect(sat?.problem?.code).toBe('incompatible');
     });
   });
 
@@ -1638,7 +1648,7 @@ describe('annex-client', () => {
 
       const satsAfter = annexClient.getSatellites();
       expect(satsAfter[0].state).toBe('disconnected');
-      expect(satsAfter[0].lastError).toBe('Heartbeat ping failed');
+      expect(satsAfter[0].lastError).toMatch(/stopped answering\. Clubhouse is reconnecting/);
 
       vi.useRealTimers();
     });
@@ -1690,7 +1700,7 @@ describe('annex-client', () => {
       // One heartbeat ping, then no pong within the 10s timeout.
       vi.advanceTimersByTime(30_000 + 10_000);
 
-      expect(annexClient.getSatellites()[0].lastError).toBe('Heartbeat timeout');
+      expect(annexClient.getSatellites()[0].problem?.code).toBe('stopped-answering');
       const call = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'Heartbeat pong timeout — closing connection');
       expect(call?.[3]).toMatchObject({ telemetry: { event: 'clubhouse.annex.heartbeat_timeout' } });
       expect((call?.[3] as { telemetry: { attrs?: unknown } }).telemetry.attrs).toBeUndefined();
@@ -2046,7 +2056,7 @@ describe('annex-client', () => {
 
       const satsAfter = annexClient.getSatellites();
       expect(satsAfter[0].state).toBe('disconnected');
-      expect(satsAfter[0].lastError).toBe('Heartbeat timeout');
+      expect(satsAfter[0].problem?.code).toBe('stopped-answering');
 
       clearIntervalSpy.mockRestore();
       vi.useRealTimers();
@@ -2346,12 +2356,58 @@ describe('annex-client', () => {
       } finally { vi.useRealTimers(); }
     });
 
+    it.each([
+      ['ECONNREFUSED', 'refused', "Pinned Mac isn't accepting connections. Check that Clubhouse is open there with Annex turned on."],
+      ['EHOSTUNREACH', 'unreachable', "This computer can't reach Pinned Mac at its last address. Check this computer's network connection. Clubhouse tries again when it's back."],
+      ['ETIMEDOUT', 'timeout', "Pinned Mac didn't answer in time. Check that it is awake and on the same network or tailnet."],
+    ])('says what a socket error %s means and what to do', async (code, problem, text) => {
+      await discover();
+      vi.useFakeTimers();
+      try {
+        sockets[0].handlers.error(Object.assign(new Error(`connect ${code} 192.168.1.50:9000`), { code }));
+        expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'disconnected', lastError: text, problem: { code: problem } });
+        expect(annexClient.getSatellite(FP)?.needsPairing).toBeUndefined();
+      } finally { vi.useRealTimers(); }
+    });
+
+    it('clears the problem once a snapshot arrives', async () => {
+      await discover();
+      sockets[0].handlers.error(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }));
+      expect(annexClient.getSatellite(FP)?.problem).toBeDefined();
+      annexClient.retry(FP);
+      sockets.at(-1)!.handlers.open();
+      annexClient._receiveSatelliteMessageForTesting(FP, { type: 'snapshot', payload: { protocolVersion: 2, lastSeq: 1, projects: [], agents: {}, quickAgents: {} } });
+      expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'connected', lastError: null });
+      expect(annexClient.getSatellite(FP)?.problem).toBeUndefined();
+    });
+
+    it('Retry on a paired satellite not seen since startup starts looking for it, and connects once it is found', async () => {
+      expect(annexClient.getSatellite(FP)).toBeNull();
+      annexClient.retry(FP);
+      expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'discovering', alias: 'Pinned Mac' });
+      expect(WebSocketMock).not.toHaveBeenCalled();
+      await discover();
+      expect(WebSocketMock).toHaveBeenCalledTimes(1);
+      expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'connecting', host: '192.168.1.50' });
+    });
+
+    it('says what a 403 for the wrong role means, and keeps retrying', async () => {
+      await discover();
+      vi.useFakeTimers();
+      try {
+        refusal(403, { error: 'peer_role_not_allowed' });
+        await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.problem?.code).toBe('wrong-role'));
+        expect(annexClient.getSatellite(FP)?.problem?.action).toBe('Pair again from this computer to control it.');
+      } finally { vi.useRealTimers(); }
+    });
+
     it('retries after any other refusal', async () => {
       await discover();
       vi.useFakeTimers();
       try {
         refusal(503, { error: 'busy' });
-        await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.lastError).toContain('503'));
+        await vi.waitFor(() => expect(annexClient.getSatellite(FP)?.problem?.code).toBe('tls-unavailable'));
+        expect(annexClient.getSatellite(FP)?.lastError).toMatch(/couldn't start its secure connection\. Turn Annex off and on there/);
         expect(annexClient.getSatellite(FP)?.needsPairing).toBeUndefined();
         vi.advanceTimersByTime(120_000);
         expect(WebSocketMock.mock.calls.length).toBeGreaterThan(1);
@@ -2459,6 +2515,207 @@ describe('annex-client', () => {
     });
   });
 
+  describe('reachability (#3058)', () => {
+    const FP = 'cc:03:cc:03';
+    const base = { fingerprint: FP, alias: 'Studio', icon: 'server', color: 'green', publicKey: 'sat-pk', pairedAt: '2026-01-01',
+      lastSeen: '2026-01-01', role: 'satellite' as const, tlsCertificateFingerprint: 'AB:CD', tlsCertificatePem: 'SATELLITE-PEM' };
+    let sockets: Array<{ url: string; handlers: Record<string, (...args: any[]) => void> }>;
+    let peer: Record<string, unknown>;
+
+    beforeEach(() => {
+      sockets = [];
+      peer = { ...base, knownHosts: ['10.0.0.4', '10.0.0.5'], mainPort: 9443 };
+      WebSocketMock.mockImplementation(function (this: any, url: string) {
+        const handlers: Record<string, (...args: any[]) => void> = {};
+        Object.assign(this, { url, handlers, readyState: WebSocketMock.OPEN, send: vi.fn(), ping: vi.fn(), close: vi.fn(), terminate: vi.fn(),
+          removeListener: vi.fn(), on: vi.fn((event: string, cb: any) => { handlers[event] = cb; return this; }) });
+        sockets.push(this);
+        return this;
+      });
+      vi.mocked(annexPeers.getPeer).mockImplementation((fp: string) => (fp === FP ? { ...peer } : undefined) as any);
+      vi.mocked(annexPeers.listPeers).mockImplementation(() => [{ ...peer }] as any);
+    });
+
+    const refused = () => Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+
+    it('connects to a paired satellite at its remembered address at startup, without waiting for discovery', () => {
+      annexClient.startClient();
+      expect(sockets.map((x) => x.url)).toEqual(['wss://10.0.0.4:9443/ws?client=desktop']);
+      expect(annexClient.getSatellite(FP)).toMatchObject({ state: 'connecting', host: '10.0.0.4', mainPort: 9443 });
+    });
+
+    it('connects to a satellite reachable only by a typed host', () => {
+      peer = { ...base, typedHost: 'studio.tail1234.ts.net', mainPort: 9443 };
+      annexClient.startClient();
+      expect(sockets.map((x) => x.url)).toEqual(['wss://studio.tail1234.ts.net:9443/ws?client=desktop']);
+    });
+
+    it('leaves a satellite with no address at all to discovery, and one that needs pairing alone', () => {
+      peer = { ...base };
+      annexClient.startClient();
+      vi.mocked(annexPeers.peerNeedsPairing).mockReturnValue(true);
+      peer = { ...base, knownHosts: ['10.0.0.4'], mainPort: 9443 };
+      annexClient.startClient();
+      expect(sockets).toHaveLength(0);
+    });
+
+    it('remembers where it was reached', () => {
+      annexClient.startClient();
+      sockets[0].handlers.open();
+      expect(annexPeers.noteReached).toHaveBeenCalledWith(FP, '10.0.0.4', 9443);
+    });
+
+    it('tries each address in turn, then backs off and keeps retrying', async () => {
+      vi.useFakeTimers();
+      vi.spyOn(Math, 'random').mockReturnValue(0.5);
+      annexClient.startClient();
+      sockets[0].handlers.error(refused());
+      await vi.advanceTimersByTimeAsync(300);
+      expect(sockets.map((x) => x.url)).toEqual(['wss://10.0.0.4:9443/ws?client=desktop', 'wss://10.0.0.5:9443/ws?client=desktop']);
+      // Both failed: wait for the backoff (1s at attempt one), then start over at the first.
+      sockets[1].handlers.error(refused());
+      await vi.advanceTimersByTimeAsync(300);
+      expect(sockets).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(sockets[2].url).toBe('wss://10.0.0.4:9443/ws?client=desktop');
+      // And it doesn't stop after one round.
+      sockets[2].handlers.error(refused());
+      await vi.advanceTimersByTimeAsync(300);
+      sockets[3].handlers.error(refused());
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(sockets.length).toBeGreaterThanOrEqual(5);
+    });
+
+    it('picks a routable address from an announcement, IPv6 when that is all there is, never link-local', async () => {
+      peer = { ...base };
+      mockHttpGetIdentity({ fingerprint: FP, alias: 'Studio', icon: 'server', color: 'green', publicKey: 'sat-pk' });
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService({ addresses: ['fe80::1', '2001:db8::5'], referer: { address: 'fe80::1' } }));
+      expect(sockets.map((x) => x.url)).toEqual(['wss://[2001:db8::5]:9000/ws?client=desktop']);
+    });
+
+    it('takes a typed host, refuses one that is not a host, and tries it at once', () => {
+      peer = { ...base, mainPort: 9443 };
+      annexClient.startClient();
+      expect(annexClient.setSatelliteHost(FP, 'https://studio')).toEqual({ ok: false, error: expect.stringMatching(/name or address/) });
+      expect(annexPeers.setTypedHost).not.toHaveBeenCalled();
+      vi.mocked(annexPeers.setTypedHost).mockImplementation((_fp, host) => { peer = { ...peer, typedHost: host }; return true; });
+      expect(annexClient.setSatelliteHost(FP, 'studio.tail1234.ts.net')).toEqual({ ok: true });
+      expect(annexPeers.setTypedHost).toHaveBeenCalledWith(FP, 'studio.tail1234.ts.net');
+      expect(sockets.at(-1)!.url).toBe('wss://studio.tail1234.ts.net:9443/ws?client=desktop');
+      expect(annexClient.satelliteAddress(FP)).toBe('studio.tail1234.ts.net:9443');
+      expect(annexClient.setSatelliteHost(FP, '')).toEqual({ ok: true });
+      expect(annexPeers.setTypedHost).toHaveBeenLastCalledWith(FP, undefined);
+    });
+
+    const mismatch = () => Object.assign(new Error('pin'), { code: 'ERR_ANNEX_PIN_MISMATCH' });
+
+    it('goes to an address announced during an attempt next, at once, instead of the stale one again', async () => {
+      vi.useFakeTimers();
+      mockHttpGetIdentity({ fingerprint: FP, alias: 'Studio', icon: 'server', color: 'green', publicKey: 'sat-pk' });
+      annexClient.startClient();
+      expect(sockets[0].url).toBe('wss://10.0.0.4:9443/ws?client=desktop');
+      await bonjourFindCallback!(makeService({ addresses: ['192.168.1.77'], port: 9443 }));
+      sockets[0].handlers.error(refused());
+      await vi.advanceTimersByTimeAsync(300);
+      expect(sockets.map((x) => x.url)).toEqual(['wss://10.0.0.4:9443/ws?client=desktop', 'wss://192.168.1.77:9443/ws?client=desktop']);
+    });
+
+    it('moves on when one of several addresses shows another certificate, and stops only when all do', async () => {
+      vi.useFakeTimers();
+      annexClient.startClient();
+      sockets[0].handlers.error(mismatch());
+      expect(annexClient.getSatellite(FP)?.needsPairing).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(300);
+      expect(sockets[1].url).toBe('wss://10.0.0.5:9443/ws?client=desktop');
+      sockets[1].handlers.error(mismatch());
+      expect(annexClient.getSatellite(FP)).toMatchObject({ needsPairing: true, problem: { code: 'cert-mismatch' } });
+    });
+
+    it('a new address clears "showed a different certificate" and tries again', () => {
+      peer = { ...base, knownHosts: ['10.0.0.4'], mainPort: 9443 };
+      annexClient.startClient();
+      sockets[0].handlers.error(mismatch());
+      expect(annexClient.getSatellite(FP)?.needsPairing).toBe(true);
+      vi.mocked(annexPeers.setTypedHost).mockImplementation((_fp, host) => { peer = { ...peer, typedHost: host }; return true; });
+      expect(annexClient.setSatelliteHost(FP, 'studio.tail1234.ts.net').ok).toBe(true);
+      expect(sockets.at(-1)!.url).toBe('wss://studio.tail1234.ts.net:9443/ws?client=desktop');
+    });
+
+    it('asks for a port when it has never reached the satellite', () => {
+      peer = { ...base };
+      expect(annexClient.setSatelliteHost(FP, 'studio.local')).toEqual({ ok: false, error: expect.stringMatching(/add its port/) });
+      expect(annexClient.setSatelliteHost(FP, 'studio.local:9443')).toEqual({ ok: true });
+    });
+
+    it('saves a typed host without connecting while Connect to satellites is off', () => {
+      vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false } as any);
+      expect(annexClient.setSatelliteHost(FP, 'studio.local')).toEqual({ ok: true });
+      expect(annexPeers.setTypedHost).toHaveBeenCalledWith(FP, 'studio.local');
+      expect(sockets).toHaveLength(0);
+    });
+
+    it('keeps a typed address as typed: connecting through it is not remembered as a found address', () => {
+      peer = { ...base, typedHost: 'studio:7000', mainPort: 9443 };
+      annexClient.startClient();
+      expect(sockets[0].url).toBe('wss://studio:7000/ws?client=desktop');
+      sockets[0].handlers.open();
+      expect(annexPeers.noteReached).not.toHaveBeenCalled();
+      expect(annexPeers.updateLastSeen).toHaveBeenCalledWith(FP);
+    });
+
+    it('starts nothing more for a refusal that arrives after the client stopped', async () => {
+      vi.useFakeTimers();
+      annexClient.startClient();
+      const res = Object.assign(new EventEmitter(), { statusCode: 503 });
+      sockets[0].handlers['unexpected-response']({ destroy: vi.fn() }, res);
+      annexClient.stopClient();
+      res.emit('data', Buffer.from('{"error":"tls_unavailable"}'));
+      res.emit('end');
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(sockets).toHaveLength(1);
+    });
+
+    it('opens the membership channel with the main connection, and closes it when that drops (#3060)', async () => {
+      const channelMod = await import('./annex-network-channel');
+      annexClient.startClient();
+      sockets[0].handlers.open();
+      expect(channelMod.connectTo).toHaveBeenCalledWith(FP, '10.0.0.4', 9443, expect.objectContaining({ pinned: true }));
+      annexClient.disconnect(FP);
+      expect(channelMod.closeFor).toHaveBeenCalledWith(FP, 'out');
+      annexClient.stopClient();
+      expect(channelMod.closeAll).toHaveBeenCalledWith('out');
+    });
+
+    it('connects a member waiting to be found as soon as it has an address (#3061)', () => {
+      peer = { ...base, role: 'member' };
+      annexClient.connect(FP);
+      expect(annexClient.getSatellite(FP)?.state).toBe('discovering');
+      expect(sockets).toHaveLength(0);
+      peer = { ...base, role: 'member', knownHosts: ['10.0.0.8'], mainPort: 9443 };
+      annexClient.connect(FP);
+      expect(sockets.map((x) => x.url)).toEqual(['wss://10.0.0.8:9443/ws?client=desktop']);
+    });
+
+    it('forgetting a network member removes it everywhere first (#3061)', async () => {
+      const membershipMod = await import('./annex-network-membership');
+      annexClient.forgetSatellite(FP);
+      expect(membershipMod.noteLocalRemoval).toHaveBeenCalledWith(FP);
+    });
+
+    it('never sets a typed host on a device that controls this machine', () => {
+      peer = { ...base, role: 'controller' };
+      expect(annexClient.setSatelliteHost(FP, 'studio').ok).toBe(false);
+    });
+
+    it('does nothing on wake while Connect to satellites is off', () => {
+      vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false } as any);
+      annexClient.resumeAllConnections();
+      expect(sockets).toHaveLength(0);
+      expect(mockBonjourInstance.find).not.toHaveBeenCalled();
+    });
+  });
+
   describe('pairing over TLS', () => {
     const SAT_FP = 'bb:02:bb:02:bb:02:bb:02:bb:02:bb:02:bb:02:bb:02';
     const CERT = 'ab'.repeat(32);
@@ -2501,11 +2758,29 @@ describe('annex-client', () => {
       expect(posted).toHaveLength(1);
       expect(posted[0].url).toBe('https://192.168.1.60:9443/pair');
       expect(posted[0].options).toMatchObject({ pinned: true, method: 'POST' });
-      expect(posted[0].body).toEqual({ pin: '123456', publicKey: 'local-pub-key', alias: 'Test Mac', icon: 'computer', color: 'indigo', certBinding: 'cert-binding' });
+      // Annex Network is on by default, so it asks to join (#3061).
+      expect(posted[0].body).toEqual({ pin: '123456', publicKey: 'local-pub-key', alias: 'Test Mac', icon: 'computer', color: 'indigo', certBinding: 'cert-binding', network: 1 });
       expect(annexPeers.addPeer).toHaveBeenCalledWith(expect.objectContaining({
         fingerprint: SAT_FP, publicKey: 'sat-pk', alias: 'Mini', role: 'satellite', tlsCertificateFingerprint: CERT_COLONS, tlsCertificatePem: 'PROBED-PEM',
+        knownHosts: ['192.168.1.60'], mainPort: 9443,
       }));
+      // A satellite that didn't agree to join (older, or Annex Network off) stays a satellite.
+      expect(vi.mocked(annexPeers.addPeer).mock.calls[0][0].role).toBe('satellite');
       expect(annexClient.getSatellite(SAT_FP)).toMatchObject({ host: '192.168.1.60', mainPort: 9443 });
+    });
+
+    it('joins as a network member when the satellite agrees, and stays one-to-one when Annex Network is off (#3061)', async () => {
+      answerPair(200, { token: 't', fingerprint: SAT_FP, publicKey: 'sat-pk', alias: 'Mini', icon: 'server', color: 'teal', tlsCertificateFingerprint: CERT_COLONS, network: 1 });
+      await annexClient.pairWithLink(await link());
+      expect(annexPeers.addPeer).toHaveBeenLastCalledWith(expect.objectContaining({ role: 'member', kind: 'desktop', addedBy: LOCAL_IDENTITY.fingerprint }));
+      const membershipMod = await import('./annex-network-membership');
+      expect(membershipMod.noteLocalJoin).toHaveBeenCalledWith(SAT_FP);
+
+      vi.mocked(annexSettings.getSettings).mockReturnValue({ enableClient: true, alias: 'Test Mac', icon: 'computer', color: 'indigo', networkEnabled: false } as any);
+      posted = [];
+      await annexClient.pairWithLink(await link());
+      expect(posted[0].body).not.toHaveProperty('network');
+      expect(annexPeers.addPeer).toHaveBeenLastCalledWith(expect.objectContaining({ role: 'satellite' }));
     });
 
     it('sends nothing to an address showing another certificate, and tries the next', async () => {
@@ -2534,6 +2809,27 @@ describe('annex-client', () => {
       expect(await annexClient.pairWithLink(await link())).toEqual({ success: false, error: 'That code was already used. Show a new code.' });
       answerPair(404, { error: 'not_found' });
       expect((await annexClient.pairWithLink(await link())).error).toMatch(/newer version/);
+    });
+
+    it('says the certificate changed, not to retry blindly, when it changes between the check and the pairing', async () => {
+      vi.mocked(annexTls.createPinnedTlsClientOptions).mockReturnValueOnce({ pinned: true } as any);
+      vi.mocked(https.request).mockImplementationOnce(((_url: string, _options: unknown, _cb: unknown) => {
+        const req = Object.assign(new EventEmitter(), { setTimeout: vi.fn(), write: vi.fn(), end: () => req.emit('error', Object.assign(new Error('pin mismatch'), { code: 'ERR_ANNEX_PIN_MISMATCH' })), destroy: vi.fn() });
+        return req;
+      }) as any);
+      expect(await annexClient.pairWithLink(await link())).toEqual({
+        success: false,
+        error: "Mini showed a different certificate. The computer at that address isn't the one you meant. Check the link or code, then try again.",
+      });
+    });
+
+    it('says what happened and what to do when no address in the link answers', async () => {
+      vi.mocked(annexTls.probePeerCertificate).mockRejectedValue(Object.assign(new Error('connect ECONNREFUSED 192.168.1.60:9443'), { code: 'ECONNREFUSED' }));
+      expect(await annexClient.pairWithLink(await link())).toEqual({
+        success: false,
+        error: "Mini isn't accepting connections. Check that Clubhouse is open there with Annex turned on.",
+      });
+      expect(posted).toHaveLength(0);
     });
 
     it('rejects something that is not a pairing link without dialling anything', async () => {

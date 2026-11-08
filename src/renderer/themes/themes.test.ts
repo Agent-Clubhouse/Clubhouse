@@ -1,8 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import { GRADIENT_THEMES } from './gradient-themes';
 import { THEMES, THEME_IDS, PACK_THEMES, registerTheme, unregisterTheme, getTheme, getAllThemeIds, onRegistryChange } from './index';
 import {
   SYNTAX_COMMENT_FLOOR, SYNTAX_FLOOR, TERMINAL_COLOR_FLOOR, TERMINAL_COLOR_KEYS, TERMINAL_DARK_ONLY_KEYS,
-  TERMINAL_FOREGROUND_FLOOR, UI_FLOORS, gradientStops, contrastRatio as floorRatio,
+  TERMINAL_FOREGROUND_FLOOR, UI_FLOORS, gradientStops, contrastRatio as floorRatio, onAccentColor,
 } from './theme-contrast';
 import { ThemeId, ThemeDefinition } from '../../shared/types';
 import { NEON_CYBERPUNK_THEME } from '../../shared/__fixtures__/neon-cyberpunk-theme';
@@ -33,9 +34,10 @@ function contrastRatio(hex1: string, hex2: string): number {
 }
 
 describe('theme registry', () => {
-  it('exports all 44 themes: the original nine and 35 from the Workshop packs (#2753)', () => {
-    expect(THEME_IDS).toHaveLength(44);
-    expect(Object.keys(THEMES)).toHaveLength(44);
+  it('exports all 48 themes: the original nine, four gradient themes (#2916) and 35 from the Workshop packs (#2753)', () => {
+    expect(THEME_IDS).toHaveLength(48);
+    expect(Object.keys(THEMES)).toHaveLength(48);
+    expect(GRADIENT_THEMES).toHaveLength(4);
     expect(PACK_THEMES).toHaveLength(35);
   });
 
@@ -265,16 +267,16 @@ describe('Workshop pack themes (#2753)', () => {
     const neon = THEMES['neon-cyberpunk'];
     expect(neon.name).toBe('Neon Cyberpunk');
     expect(neon.collection).toBe('Neon');
-    expect(new Set(THEME_IDS.map((id) => THEMES[id].name)).size).toBe(44);
+    expect(new Set(THEME_IDS.map((id) => THEMES[id].name)).size).toBe(48);
   });
 
   it('has no two themes with the same palette', () => {
     const palettes = THEME_IDS.map((id) => JSON.stringify([THEMES[id].colors, THEMES[id].hljs, THEMES[id].terminal]));
-    expect(new Set(palettes).size).toBe(44);
+    expect(new Set(palettes).size).toBe(48);
   });
 
   it('keeps each dimmer step dimmer: overlay0 <= overlay1 <= subtext0 in contrast', () => {
-    for (const t of PACK_THEMES) {
+    for (const t of [...GRADIENT_THEMES, ...PACK_THEMES]) {
       const c = t.colors;
       const r = (k: keyof typeof c) => floorRatio(c[k]!, c.base);
       expect(r('overlay0'), `${t.id} overlay0`).toBeLessThanOrEqual(r('overlay1') + 0.01);
@@ -282,7 +284,8 @@ describe('Workshop pack themes (#2753)', () => {
     }
   });
 
-  for (const t of PACK_THEMES) {
+  // The gradient themes (#2916) are held to the same floors.
+  for (const t of [...GRADIENT_THEMES, ...PACK_THEMES]) {
     describe(t.id, () => {
       // With gradients on (the default) the background gradient replaces base, so text must read on every stop.
       const backdrops = [t.colors.base, ...gradientStops(t.gradients?.background)];
@@ -316,6 +319,55 @@ describe('Workshop pack themes (#2753)', () => {
       });
     });
   }
+});
+
+describe('text on the accent (#3086)', () => {
+  it('picks whichever of crust, text and white reads best on the accent', () => {
+    expect(onAccentColor({ accent: '#5ee6a8', crust: '#050e14', text: '#e3f1ef' })).toBe('#050e14');
+    expect(onAccentColor({ accent: '#1e66f5', crust: '#dce0e8', text: '#4c4f69' })).toBe('#ffffff');
+    expect(onAccentColor({ accent: '#e0a060', crust: '#f2e8dc', text: '#3a2a2a' })).toBe('#3a2a2a');
+  });
+
+  it('reads at 3:1 or better on every built-in, never worse than the white it replaced', () => {
+    for (const id of THEME_IDS) {
+      const { colors } = THEMES[id];
+      const onAccent = floorRatio(onAccentColor(colors), colors.accent);
+      expect(onAccent, id).toBeGreaterThanOrEqual(3);
+      expect(onAccent, id).toBeGreaterThanOrEqual(floorRatio('#ffffff', colors.accent));
+    }
+  });
+});
+
+describe('gradient themes (#2916)', () => {
+  it('are four built-ins in their own collection, dark and light, after the originals', () => {
+    expect(GRADIENT_THEMES.map((t) => t.id)).toEqual(['aurora', 'canyon', 'daybreak', 'mist']);
+    for (const t of GRADIENT_THEMES) {
+      expect(THEMES[t.id]).toBe(t);
+      expect(t.collection).toBe('Gradients');
+    }
+    expect(GRADIENT_THEMES.filter((t) => t.type === 'dark').map((t) => t.id)).toEqual(['aurora', 'canyon']);
+    expect(GRADIENT_THEMES.filter((t) => t.type === 'light').map((t) => t.id)).toEqual(['daybreak', 'mist']);
+    expect(THEME_IDS.indexOf('aurora')).toBe(9);
+  });
+
+  it('are designed around a background gradient of at least three stops, and no font or glow', () => {
+    for (const t of GRADIENT_THEMES) {
+      expect(gradientStops(t.gradients?.background).length, t.id).toBeGreaterThanOrEqual(3);
+      expect(t.fonts, t.id).toBeUndefined();
+      expect(t.fontOverride, t.id).toBeUndefined();
+      expect(JSON.stringify(t.gradients), t.id).not.toMatch(/shadow|blur|glow/);
+    }
+  });
+
+  it('keep the gradient close to base, so turning gradients off changes the mood, not the reading', () => {
+    // Every stop sits within a small lightness step of base, so a flat base reads like the gradient.
+    // Readability itself is the floors above, which every color meets on every stop.
+    for (const t of GRADIENT_THEMES) {
+      for (const stop of gradientStops(t.gradients?.background)) {
+        expect(floorRatio(stop, t.colors.base), `${t.id} ${stop}`).toBeLessThan(1.5);
+      }
+    }
+  });
 });
 
 describe('registerTheme color fallbacks (#2472)', () => {

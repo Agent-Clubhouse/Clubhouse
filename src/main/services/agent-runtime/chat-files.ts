@@ -68,10 +68,10 @@ async function findAgentFolders(agentId: string): Promise<string[]> {
     const projectStore = await import('../project-store');
     const { getDurableConfig } = await import('../agent-config');
     // The Dispatcher's folder is in no project, so it is searched too (#2535).
-    const { getDispatcherPath } = await import('../dispatcher/dispatcher-paths');
+    const { getDispatcherFolders } = await import('../dispatcher/dispatcher-paths');
     const candidates = [
       ...await projectStore.list().catch((): Awaited<ReturnType<typeof projectStore.list>> => []),
-      { path: getDispatcherPath() },
+      ...getDispatcherFolders().map((path) => ({ path })),
     ];
     for (const candidate of candidates) {
       if (!candidate.path) continue;

@@ -8,6 +8,10 @@ import * as annexClient from '../services/annex-client';
 import * as annexPeers from '../services/annex-peers';
 import * as annexIdentity from '../services/annex-identity';
 import * as annexTls from '../services/annex-tls';
+import * as annexDevices from '../services/annex-devices';
+import * as networkChannel from '../services/annex-network-channel';
+import * as membership from '../services/annex-network-membership';
+import { onDevicesChanged } from '../services/annex-device-signal';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, objectArg, stringArg, booleanArg } from './validation';
@@ -22,6 +26,32 @@ function broadcastPeersChanged(): void {
 }
 
 export function registerAnnexHandlers(): void {
+  // Annex Network membership (#3061): what members tell each other, and what to do about it.
+  membership.initNetworkMembership({
+    connect: (fingerprint) => annexClient.connect(fingerprint),
+    endDevice: (fingerprint) => {
+      // Revoke first: a removed phone is told on its open connections while it's still known.
+      annexServer.revokePeer(fingerprint);
+      annexClient.forgetSatellite(fingerprint);
+      broadcastPeersChanged();
+    },
+  });
+  onDevicesChanged(() => broadcastToAllWindows(IPC.ANNEX.DEVICES_CHANGED, annexDevices.listDevices()));
+
+  ipcMain.handle(IPC.ANNEX.LIST_DEVICES, () => annexDevices.listDevices());
+
+  // Who this machine has heard from on the Annex Network channel (#3060).
+  ipcMain.handle(IPC.ANNEX.LIST_NETWORK_MEMBERS, () => networkChannel.listMembers());
+
+  ipcMain.handle(IPC.ANNEX.REMOVE_DEVICE, withValidatedArgs(
+    [stringArg()],
+    (_event, fingerprint) => {
+      const removed = annexDevices.removeDevice(fingerprint);
+      if (removed) broadcastPeersChanged();
+      return removed;
+    },
+  ));
+
   ipcMain.handle(IPC.ANNEX.GET_SETTINGS, () => {
     return annexSettings.getSettings();
   });

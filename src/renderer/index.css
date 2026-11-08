@@ -13,6 +13,7 @@
   --color-surface-1: rgb(var(--ctp-surface1));
   --color-surface-2: rgb(var(--ctp-surface2));
   --color-ctp-accent: rgb(var(--ctp-accent));
+  --color-ctp-on-accent: rgb(var(--ctp-on-accent));
   --color-ctp-link: rgb(var(--ctp-link));
   --color-ctp-warning: rgb(var(--ctp-warning));
   --color-ctp-error: rgb(var(--ctp-error));
@@ -71,6 +72,8 @@
   --ctp-surface1: 69 71 90;
   --ctp-surface2: 88 91 112;
   --ctp-accent: 137 180 250;
+  /* Text on the accent: set per theme by apply-theme (#3086). Mocha's crust. */
+  --ctp-on-accent: 17 17 27;
   --ctp-link: 137 180 250;
   --ctp-warning: 249 226 175;
   --ctp-error: 243 139 168;

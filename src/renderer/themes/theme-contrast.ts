@@ -4,7 +4,8 @@
  * Every built-in theme meets the gate: primary text and the four notification
  * colors at 4.5:1 against `base` (WCAG AA for normal text).
  *
- * The Workshop pack themes (`./packs`) also meet the secondary, syntax and
+ * The Workshop pack themes (`./packs`) and the gradient themes
+ * (`./gradient-themes.ts`, #2916) also meet the secondary, syntax and
  * terminal floors below. Each is checked against its usual background and
  * every color stop of the theme's background gradient: gradients are on by
  * default, and then the app's base, code blocks and terminals go transparent
@@ -69,6 +70,17 @@ export function contrastRatio(a: string, b: string): number {
   const x = relativeLuminance(a);
   const y = relativeLuminance(b);
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+/**
+ * The text color for something filled with the accent (#3086): whichever of
+ * the theme's crust, its text color and white reads best on the accent. No
+ * single one works everywhere: white fails on a light accent in a dark theme
+ * (1.4:1 on Terminal), and crust is weaker than white on most light themes.
+ */
+export function onAccentColor(colors: { accent: string; crust: string; text: string }): string {
+  const candidates = [colors.crust, colors.text, '#ffffff'];
+  return candidates.reduce((best, c) => (contrastRatio(c, colors.accent) > contrastRatio(best, colors.accent) ? c : best));
 }
 
 /** The `#rrggbb` color stops of a CSS gradient. */

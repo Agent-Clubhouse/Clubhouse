@@ -15,7 +15,10 @@ vi.mock('./agent-grants-store', () => ({
   getAgentGrantChanges: () => mocks.changes,
   updateAgentGrantChanges: vi.fn(async (_id: string, fn: (c: unknown) => unknown) => { mocks.changes = fn(mocks.changes); }),
 }));
-vi.mock('./dispatcher/dispatcher-service', () => ({ isDispatcherAgentId: () => false }));
+vi.mock('./dispatcher/dispatcher-service', () => ({
+  isDispatcherAgentId: () => false,
+  resolveDispatcherIdentity: (projectPath: string, agentId: string) => ({ projectPath, agentId }),
+}));
 
 import { readAgentGrants, setAgentGrant } from './agent-grants-service';
 

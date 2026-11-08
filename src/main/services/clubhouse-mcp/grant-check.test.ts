@@ -9,7 +9,7 @@ vi.mock('../dispatcher/dispatcher-settings', async (original) => ({
 import { listToolGrants, _resetForTesting, type RegisteredToolGrant } from './tool-registry';
 import { mcpAdapter } from './mcp-adapter';
 import { registerClubhouseMcpTools } from './tools/register-all';
-import { capToHolder, checkToolGrant, isListable, registerActionOwnerLookup } from './grant-check';
+import { capToHolder, checkToolGrant, decideGrant, isListable, registerActionOwnerLookup } from './grant-check';
 import { updateAgentGrantChanges } from '../agent-grants-store';
 import { setMcpCaller, _resetMcpCallGateForTesting } from './mcp-call-gate';
 import { setOrchestrationEnabled, isOrchestrationEnabled, isCrossProjectEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
@@ -291,6 +291,25 @@ describe('a person\'s changes reach the next call (#2971)', () => {
   });
 });
 
+describe('waking the Dispatcher by messaging it (#3037)', () => {
+  beforeEach(setupCallers);
+  const dispatcher = { kind: 'agent' as const, relations: ['connected' as const], isDispatcher: true };
+
+  it('every agent may by default; a person can set it to Ask first or Off', async () => {
+    for (const caller of ['plain', 'orchestrator', 'helper'] as const) expect(decideGrant(caller, 'agent.wake', dispatcher).outcome).toBe('allow');
+    expect(decideGrant('plain', 'agent.wake', { kind: 'agent', relations: ['connected'] }).outcome).toBe('refuse');
+    const target = { kind: 'connected' as const, onlyDispatcher: true };
+    try {
+      await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'agent.wake', target, mode: 'ask' }] }));
+      expect(decideGrant('plain', 'agent.wake', dispatcher).outcome).toBe('ask');
+      await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'agent.wake', target, mode: 'off' }] }));
+      expect(decideGrant('plain', 'agent.wake', dispatcher).outcome).toBe('refuse');
+    } finally {
+      await updateAgentGrantChanges('plain', () => undefined);
+    }
+  });
+});
+
 describe('Ask first (#2970)', () => {
   beforeEach(setupCallers);
   const wire = { binding: { targetKind: 'agent' as const, targetId: 'peer' } };
@@ -343,6 +362,25 @@ describe('Ask first (#2970)', () => {
 
   it('the Dispatcher\'s app settings write asks by default', () => {
     expect(checkToolGrant('dispatcher', { actions: ['settings.app.write'], target: 'app' }, {})).toMatchObject({ reason: 'ask_first', asks: [{ where: 'the app' }] });
+  });
+
+  it('the Dispatcher asks first to add or open a project; no one else can (#3050)', () => {
+    const add: ToolGrant = { actions: ['project.add'], target: 'all_projects' };
+    expect(checkToolGrant('dispatcher', add, {})).toMatchObject({ reason: 'ask_first', asks: [{ action: 'project.add', where: 'projects' }] });
+    for (const caller of ['plain', 'orchestrator', 'helper']) expect(checkToolGrant(caller, add, {}), caller).toMatchObject({ ok: false, reason: 'no_grant' });
+  });
+
+  it('a person can switch the Dispatcher\'s project.add to Allow or Off (#3050)', async () => {
+    const add: ToolGrant = { actions: ['project.add'], target: 'all_projects' };
+    const target = { kind: 'project', project: 'any' } as const;
+    try {
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'project.add', target, mode: 'allow' }] }));
+      expect(checkToolGrant('dispatcher', add, {}).ok).toBe(true);
+      await updateAgentGrantChanges('dispatcher', () => ({ changes: [{ action: 'project.add', target, mode: 'off' }] }));
+      expect(checkToolGrant('dispatcher', add, {})).toMatchObject({ ok: false, reason: 'no_grant' });
+    } finally {
+      await updateAgentGrantChanges('dispatcher', () => undefined);
+    }
   });
 
   it('every agent can ask for a permission for itself', () => {

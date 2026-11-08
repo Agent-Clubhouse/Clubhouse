@@ -31,7 +31,7 @@ import * as projectStore from './project-store';
 import * as agentConfig from './agent-config';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
-import { getDispatcherPath } from './dispatcher/dispatcher-paths';
+import { getDispatcherFolders } from './dispatcher/dispatcher-paths';
 import { pathExists } from './fs-utils';
 
 const NS = 'core:hook-server-toggle';
@@ -146,9 +146,11 @@ async function reconcileStoppedDurableAgents(
 
   // The Dispatcher's folder is in no project, so it opts in here (#2535).
   // It has no worktree: the folder itself is where its CLI runs.
-  const dispatcherPath = getDispatcherPath();
+  // Both of its folders since #3036: the chat's agent runs in its own.
   const roots: Array<{ path: string; agentsRunInRoot?: boolean }> = [...projects];
-  if (await pathExists(dispatcherPath)) roots.push({ path: dispatcherPath, agentsRunInRoot: true });
+  for (const dispatcherPath of getDispatcherFolders()) {
+    if (await pathExists(dispatcherPath)) roots.push({ path: dispatcherPath, agentsRunInRoot: true });
+  }
 
   for (const project of roots) {
     // A durable agent with no explicit orchestrator inherits the project's

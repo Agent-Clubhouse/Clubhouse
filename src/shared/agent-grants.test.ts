@@ -21,6 +21,11 @@ describe('agent grants (#2966)', () => {
       [{ kind: 'my_helpers' }, { kind: 'agent', relations: [] }, false],
       [{ kind: 'connected' }, { kind: 'agent', relations: ['connected'] }, true],
       [{ kind: 'connected' }, { kind: 'agent', relations: ['parent'] }, false],
+      // Waking the Dispatcher by messaging it (#3037): the Dispatcher alone.
+      [{ kind: 'connected', onlyDispatcher: true }, { kind: 'agent', relations: ['connected'], isDispatcher: true }, true],
+      [{ kind: 'connected', onlyDispatcher: true }, { kind: 'agent', relations: ['connected'] }, false],
+      [{ kind: 'connected', onlyDispatcher: true }, { kind: 'agent', relations: ['parent'], isDispatcher: true }, false],
+      [{ kind: 'connected', excludeDispatcher: true }, { kind: 'agent', relations: ['connected'], isDispatcher: true }, false],
       [{ kind: 'group_members' }, { kind: 'agent', relations: ['group_member'] }, true],
       [{ kind: 'project', project: 'own' }, { kind: 'project', projectPath: '/p/' }, true],
       [{ kind: 'project', project: 'own' }, { kind: 'project', projectPath: '/q' }, false],
@@ -44,6 +49,31 @@ describe('agent grants (#2966)', () => {
     ];
     it.each(cases)('%j covers %j: %s', (grant, target, covered) => {
       expect(targetCovers(grant, agent, target)).toBe(covered);
+    });
+  });
+
+  describe('project.add (#3050)', () => {
+    const folder: GrantCallTarget = { kind: 'project', projectPath: '/new/repo' };
+    it.each<[Grant['target'], GrantCallTarget, boolean]>([
+      [{ kind: 'project', project: 'any' }, folder, true],
+      [{ kind: 'project', project: 'any' }, { kind: 'project' }, true],
+      [{ kind: 'project', project: { path: '/new/repo/' } }, folder, true],
+      [{ kind: 'project', project: { path: '/other' } }, folder, false],
+      [{ kind: 'project', project: { path: '/new/repo' } }, { kind: 'project' }, false],
+      // Its own project is already added; an agent target isn't a folder to add.
+      [{ kind: 'project', project: 'own' }, { kind: 'project', projectPath: '/p' }, false],
+      [{ kind: 'project', project: 'any' }, { kind: 'agent', projectPath: '/p' }, false],
+      [{ kind: 'app' }, folder, false],
+      [{ kind: 'any' }, folder, true],
+    ])('%j covers %j: %s', (grant, target, covered) => {
+      expect(targetCovers(grant, agent, target, 'project.add')).toBe(covered);
+    });
+
+    it('sits next to project.read, and asks first on an Ask first grant', () => {
+      expect(GRANT_ACTIONS.indexOf('project.add')).toBe(GRANT_ACTIONS.indexOf('project.read') + 1);
+      expect(evaluateGrant(call('project.add', folder), [ask('project.add', { kind: 'project', project: 'any' })]).outcome).toBe('ask');
+      expect(evaluateGrant(call('project.add', folder), [allow('project.read', { kind: 'project', project: 'any' })]))
+        .toEqual({ outcome: 'refuse', reason: 'no_grant' });
     });
   });
 
@@ -111,6 +141,10 @@ describe('agent grants (#2966)', () => {
       const give = (held: Grant[], g: Grant) => evaluateGrant(call('agent.grant', target, { change: { grants: [g] } }), [allow('agent.grant', { kind: 'connected' }), ...held]).outcome;
       expect(give([allow('agent.reset', { kind: 'connected' })], allow('agent.reset', { kind: 'connected', excludeDispatcher: true }))).toBe('allow');
       expect(give([allow('agent.reset', { kind: 'connected', excludeDispatcher: true })], allow('agent.reset', { kind: 'connected' }))).toBe('refuse');
+      // The Dispatcher alone is narrower than every connected agent, and not part of "all but the Dispatcher" (#3037).
+      expect(give([allow('agent.wake', { kind: 'connected' })], allow('agent.wake', { kind: 'connected', onlyDispatcher: true }))).toBe('allow');
+      expect(give([allow('agent.wake', { kind: 'connected', onlyDispatcher: true })], allow('agent.wake', { kind: 'connected' }))).toBe('refuse');
+      expect(give([allow('agent.wake', { kind: 'connected', excludeDispatcher: true })], allow('agent.wake', { kind: 'connected', onlyDispatcher: true }))).toBe('refuse');
       expect(give([allow('agent.create', { kind: 'project', project: 'any' })], allow('agent.create', { kind: 'project', project: 'own' }))).toBe('allow');
       expect(give([allow('agent.create', { kind: 'project', project: 'own' })], allow('agent.create', { kind: 'project', project: 'any' }))).toBe('refuse');
     });

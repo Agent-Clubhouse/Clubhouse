@@ -39,6 +39,7 @@ export const GRANT_ACTIONS = [
   'group_project.admin',
   // Projects
   'project.read',
+  'project.add', // add or open a project (#3050): the target is the folder, which may not be a project yet
   'project.display',
   'project.configure', // how agents in it run: defaults
   // The managed agents library (#2819): shared parts and templates. Edits reach every agent using them.
@@ -67,6 +68,8 @@ export type GrantAction = (typeof GRANT_ACTIONS)[number];
  * - `connected`: agents the caller sends to on a connection. For the
  *   Dispatcher, agents with Connect to Dispatcher on.
  * - `project`: `own` (the caller's project), `any`, or one project by path.
+ *   For `project.add` the path is the folder being added, which isn't a
+ *   Clubhouse project yet; `own` never covers it (there's nothing to add).
  * - `group_project`: groups the caller is a `member` of (admins are members),
  *   or that it is an `admin` of.
  * - `group_members`: agents in a group project the caller administers.
@@ -76,8 +79,11 @@ export type GrantTarget =
   | { kind: 'self' }
   | { kind: 'parent' }
   | { kind: 'my_helpers' }
-  /** `excludeDispatcher`: not the Dispatcher, which nothing connected to it may reset (#2921 gap fix). */
-  | { kind: 'connected'; excludeDispatcher?: boolean }
+  /**
+   * `excludeDispatcher`: not the Dispatcher, which nothing connected to it may reset (#2921 gap fix).
+   * `onlyDispatcher`: the Dispatcher alone, which a message from a connected agent wakes (#3037).
+   */
+  | { kind: 'connected'; excludeDispatcher?: boolean; onlyDispatcher?: boolean }
   | { kind: 'project'; project: 'own' | 'any' | { path: string } }
   | { kind: 'group_project'; role: 'member' | 'admin' }
   | { kind: 'group_members' }
@@ -158,14 +164,15 @@ export function isGrantAction(value: unknown): value is GrantAction {
 }
 
 /** Whether a grant's target covers what a call reaches. */
-export function targetCovers(grant: GrantTarget, caller: GrantCaller, target: GrantCallTarget): boolean {
+export function targetCovers(grant: GrantTarget, caller: GrantCaller, target: GrantCallTarget, action?: GrantAction): boolean {
   const rel = target.relations ?? [];
   switch (grant.kind) {
     case 'any': return true;
     case 'self': return rel.includes('self');
     case 'parent': return rel.includes('parent');
     case 'my_helpers': return rel.includes('my_helper');
-    case 'connected': return rel.includes('connected') && !(grant.excludeDispatcher && target.isDispatcher);
+    case 'connected':
+      return rel.includes('connected') && !(grant.excludeDispatcher && target.isDispatcher) && !(grant.onlyDispatcher && !target.isDispatcher);
     case 'group_members': return rel.includes('group_member');
     case 'app': return target.kind === 'app';
     case 'action': return target.kind === 'action' && target.actionId === grant.id;
@@ -174,6 +181,12 @@ export function targetCovers(grant: GrantTarget, caller: GrantCaller, target: Gr
       return grant.role === 'member' || target.groupRole === 'admin';
     case 'project': {
       if (target.kind !== 'project' && target.kind !== 'agent') return false;
+      if (action === 'project.add') {
+        // Adding a project: only a project target, and only `any` or that exact folder.
+        if (target.kind !== 'project' || grant.project === 'own') return false;
+        if (grant.project === 'any') return true;
+        return !!target.projectPath && samePath(grant.project.path, target.projectPath);
+      }
       if (grant.project === 'any') return true;
       if (!target.projectPath) return false;
       if (grant.project === 'own') return !!caller.projectPath && samePath(caller.projectPath, target.projectPath);
@@ -202,7 +215,10 @@ function holds(held: readonly Grant[], given: Grant): boolean {
 export function widerOrSame(held: GrantTarget, given: GrantTarget): boolean {
   if (held.kind === 'any') return true;
   if (held.kind !== given.kind) return false;
-  if (held.kind === 'connected' && given.kind === 'connected') return !held.excludeDispatcher || !!given.excludeDispatcher;
+  if (held.kind === 'connected' && given.kind === 'connected') {
+    if (held.onlyDispatcher) return !!given.onlyDispatcher;
+    return !held.excludeDispatcher || !!given.excludeDispatcher;
+  }
   if (held.kind === 'project' && given.kind === 'project') {
     return held.project === 'any' || JSON.stringify(held.project) === JSON.stringify(given.project);
   }
@@ -225,7 +241,7 @@ export function widerOrSame(held: GrantTarget, given: GrantTarget): boolean {
  */
 export function evaluateGrant(call: GrantCall, grants: readonly Grant[], held: readonly Grant[] = grants): GrantDecision {
   if (call.caller.kind === 'user') return { outcome: 'allow' };
-  const matching = grants.filter((g) => g.action === call.action && targetCovers(g.target, call.caller, call.target));
+  const matching = grants.filter((g) => g.action === call.action && targetCovers(g.target, call.caller, call.target, call.action));
   if (matching.length === 0) return { outcome: 'refuse', reason: 'no_grant' };
   if (call.action === 'agent.grant' && (call.target.relations ?? []).includes('self')) return { outcome: 'refuse', reason: 'raise_self' };
   if (call.action === 'agent.grant' && call.change) {

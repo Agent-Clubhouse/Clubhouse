@@ -45,7 +45,7 @@ export function targetKey(t: GrantTarget): string {
   switch (t.kind) {
     case 'project': return `project:${typeof t.project === 'string' ? t.project : `path:${t.project.path}`}`;
     case 'group_project': return `group_project:${t.role}`;
-    case 'connected': return t.excludeDispatcher ? 'connected:not_dispatcher' : 'connected';
+    case 'connected': return t.onlyDispatcher ? 'connected:dispatcher' : t.excludeDispatcher ? 'connected:not_dispatcher' : 'connected';
     case 'action': return `action:${t.id}`;
     default: return t.kind;
   }
@@ -167,7 +167,9 @@ function rebuildTarget(t: GrantTarget): GrantTarget {
   switch (t.kind) {
     case 'project': return { kind: 'project', project: typeof t.project === 'string' ? t.project : { path: t.project.path } };
     case 'group_project': return { kind: 'group_project', role: t.role };
-    case 'connected': return t.excludeDispatcher ? { kind: 'connected', excludeDispatcher: true } : { kind: 'connected' };
+    case 'connected':
+      return t.onlyDispatcher ? { kind: 'connected', onlyDispatcher: true }
+        : t.excludeDispatcher ? { kind: 'connected', excludeDispatcher: true } : { kind: 'connected' };
     case 'action': return { kind: 'action', id: t.id };
     default: return { kind: t.kind };
   }
@@ -298,6 +300,7 @@ export const GRANT_ACTION_LABELS: Readonly<Record<GrantAction, string>> = {
   'group_project.post': 'Post to the board',
   'group_project.admin': 'Manage the group project',
   'project.read': 'See project settings',
+  'project.add': 'Add or open projects',
   'project.display': 'Change project name, color and icon',
   'project.configure': 'Change project defaults',
   'library.read': 'See parts and templates',
@@ -322,7 +325,7 @@ export function grantTargetLabel(t: GrantTarget): string {
     case 'self': return 'Itself';
     case 'parent': return 'Its orchestrator';
     case 'my_helpers': return 'Its helpers';
-    case 'connected': return t.excludeDispatcher ? 'Connected agents, except the Dispatcher' : 'Connected agents';
+    case 'connected': return t.onlyDispatcher ? 'The Dispatcher, when connected' : t.excludeDispatcher ? 'Connected agents, except the Dispatcher' : 'Connected agents';
     case 'group_project': return t.role === 'admin' ? 'Group projects it runs' : 'Group projects it is in';
     case 'group_members': return 'Members of group projects it runs';
     case 'project': return t.project === 'own' ? 'Its project' : t.project === 'any' ? 'Every project' : `Project ${t.project.path}`;

@@ -134,6 +134,41 @@ async function dispatcherIds(): Promise<string[]> {
   return (await dispatcherConfigs()).map((c) => c.id);
 }
 
+/** The chat the user talks to as the Dispatcher (#3036), in its own folder beside the Dispatcher's. */
+async function chatConfigs(): Promise<Array<{ id: string; name: string }>> {
+  const file = path.join(profile!.userDataDir, '.clubhouse-dev', 'dispatcher-chat', '.clubhouse', 'agents.json');
+  return fs.existsSync(file) ? JSON.parse(await fs.promises.readFile(file, 'utf8')) : [];
+}
+
+/** The id the fake CLI last started with: each start rewrites its report. */
+async function startedAs(): Promise<string | null | undefined> {
+  return (await fakes!.report('claude').catch(() => undefined))?.env.CLUBHOUSE_AGENT_ID;
+}
+
+/**
+ * Start the Dispatcher as a user does (#3036): wake its chat from its view,
+ * then the chat hands a request over with start_work, which starts the agent
+ * that holds its grants and wires. Returns an MCP client as that agent.
+ */
+async function startDispatcher(w: Page, dispatcherId: string) {
+  await expect.poll(async () => (await chatConfigs()).length).toBe(1);
+  const chatId = (await chatConfigs())[0].id;
+  expect(chatId).not.toBe(dispatcherId);
+  await rowItem(w).click();
+  await expect(w.locator('[data-testid="dispatcher-view"]')).toHaveAttribute('data-agent-id', chatId);
+  await w.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
+  await expect.poll(startedAs, { timeout: 20_000 }).toBe(chatId);
+  const chat = await connectMcp((await fakes!.report('claude')).env);
+  const chatTools = await chat.toolNames();
+  expect(chatTools).toContain('start_work');
+  expect(chatTools).not.toContain('create_action');
+  expect(chatTools.some((n) => n.endsWith('__wake_agent'))).toBe(false);
+  const handed = await chat.callText('start_work', { request: 'check in on everyone' });
+  expect(handed.isError).toBe(false);
+  await expect.poll(startedAs, { timeout: 20_000 }).toBe(dispatcherId);
+  return { chatId, mcp: await connectMcp((await fakes!.report('claude')).env) };
+}
+
 const row = (w: Page) => w.locator('[data-testid="dispatcher-row"]');
 const rowItem = (w: Page) => row(w).locator('[role="treeitem"]');
 
@@ -219,7 +254,7 @@ test('on by default, wire an orchestrator, restart, switch off and on, and wake 
   projectDir = makeProject();
   let w = (await launch()).window;
 
-  // One Dispatcher with notes/ and its CLI's instructions file, and its row
+  // One Dispatcher with its memory and its CLI's instructions file, and its row
   // with zero projects, and nothing started.
   await expect(row(w)).toBeVisible({ timeout: 15_000 });
   await expect.poll(async () => (await dispatcherConfigs()).length).toBe(1);
@@ -227,8 +262,11 @@ test('on by default, wire an orchestrator, restart, switch off and on, and wake 
   const dispatcherId = config.id;
   // Known by its folder and id, never a persona (#2901): the only agent in its folder, with no persona.
   expect(config.persona).toBeUndefined();
-  expect(fs.existsSync(path.join(dispatcherDir(), 'notes'))).toBe(true);
-  expect(await fs.promises.readFile(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf8')).toContain('Dispatcher');
+  expect(fs.existsSync(path.join(dispatcherDir(), 'memory', 'index.md'))).toBe(true);
+  const instructions = await fs.promises.readFile(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf8');
+  expect(instructions).toContain('Dispatcher');
+  // Its memory index is loaded into the instructions file (#3038).
+  expect(instructions).toContain('## Your memory index');
   expect(await promptsConsumed()).toBe(0);
 
   // Off and on again keeps the one Dispatcher.
@@ -272,15 +310,23 @@ test('on by default, wire an orchestrator, restart, switch off and on, and wake 
   await expect(row(w)).toBeVisible({ timeout: 15_000 });
   await expect.poll(() => hasWire(w, dispatcherId), { timeout: 15_000 }).toBe(true);
 
-  // Turning the setting off drops the row and wires and keeps the folder.
-  fs.writeFileSync(path.join(dispatcherDir(), 'notes', 'plan.md'), 'kept\n');
+  // Turning the setting off drops the row and wires and keeps the folder and its memory.
+  fs.writeFileSync(path.join(dispatcherDir(), 'memory', 'topics', 'plan.md'), 'kept\n');
+  // An old notes/ folder, as the agent kept before memory (#3038).
+  fs.mkdirSync(path.join(dispatcherDir(), 'notes'), { recursive: true });
+  fs.writeFileSync(path.join(dispatcherDir(), 'notes', 'release.md'), 'old note\n');
   await openSettingsPage(w, 'Dispatcher');
   await w.locator('[data-testid="dispatcher-enabled"]').click();
   await expect(row(w)).toHaveCount(0);
   await expect.poll(() => hasWire(w, dispatcherId)).toBe(false);
-  expect(await fs.promises.readFile(path.join(dispatcherDir(), 'notes', 'plan.md'), 'utf8')).toBe('kept\n');
+  expect(await fs.promises.readFile(path.join(dispatcherDir(), 'memory', 'topics', 'plan.md'), 'utf8')).toBe('kept\n');
   await w.locator('[data-testid="dispatcher-enabled"]').click();
   await expect(row(w)).toBeVisible();
+  // Turning it on sorts the old notes into memory once and keeps the folder, renamed.
+  await expect.poll(() => fs.existsSync(path.join(dispatcherDir(), 'notes'))).toBe(false);
+  expect(await fs.promises.readFile(path.join(dispatcherDir(), 'notes-archive', 'release.md'), 'utf8')).toBe('old note\n');
+  expect(await fs.promises.readFile(path.join(dispatcherDir(), 'memory', 'topics', 'release.md'), 'utf8')).toMatch(/old note\n$/);
+  expect(await fs.promises.readFile(path.join(dispatcherDir(), 'memory', 'topics', 'plan.md'), 'utf8')).toBe('kept\n');
   expect(await dispatcherIds()).toEqual([dispatcherId]);
   await expect.poll(() => hasWire(w, dispatcherId)).toBe(true);
 
@@ -314,10 +360,7 @@ test('the Dispatcher wakes a connected agent with a message and sleeps it again'
     await expect.poll(() => hasWire(w, dispatcherId)).toBe(true);
 
     // Start the Dispatcher. The fake reports the bridge credentials it was given.
-    await rowItem(w).click();
-    await w.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
-    await expect.poll(async () => (await fakes!.report('claude').catch(() => undefined))?.env.CLUBHOUSE_AGENT_ID, { timeout: 20_000 }).toBe(dispatcherId);
-    const mcp = await connectMcp((await fakes!.report('claude')).env);
+    const { mcp } = await startDispatcher(w, dispatcherId);
 
     const toolFor = (names: string[], suffix: string) => names.find((n) => n.endsWith(`__${suffix}`) && n.includes('conductor'));
 
@@ -368,10 +411,7 @@ test('an Ask-first call waits in Needs you, and goes through once the user allow
     await expect.poll(async () => (await dispatcherConfigs()).length).toBe(1);
     const dispatcherId = (await dispatcherConfigs())[0].id;
 
-    await rowItem(w).click();
-    await w.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
-    await expect.poll(async () => (await fakes!.report('claude').catch(() => undefined))?.env.CLUBHOUSE_AGENT_ID, { timeout: 20_000 }).toBe(dispatcherId);
-    const mcp = await connectMcp((await fakes!.report('claude')).env);
+    const { chatId, mcp } = await startDispatcher(w, dispatcherId);
 
     // Changing app settings is Ask first for the Dispatcher: the tool is offered, and the call asks.
     expect(await mcp.toolNames()).toContain('set_helper_presets');
@@ -381,8 +421,9 @@ test('an Ask-first call waits in Needs you, and goes through once the user allow
     expect(asked.isError).toBe(true);
     expect(asked.text).toContain('needs the user\'s approval');
 
-    // It waits in Needs you; selecting it opens the request, and the user allows it.
-    const needsRow = w.locator(`[data-testid="needs-you-row-${dispatcherId}"]`);
+    // It waits in Needs you, on the Dispatcher's own row; selecting it opens the request, and the user allows it.
+    await expect(w.locator(`[data-testid="needs-you-row-${dispatcherId}"]`)).toHaveCount(0);
+    const needsRow = w.locator(`[data-testid="needs-you-row-${chatId}"]`);
     await expect(needsRow).toBeVisible({ timeout: 10_000 });
     await expect(needsRow).toContainText('Asks to make a call');
     await needsRow.click();

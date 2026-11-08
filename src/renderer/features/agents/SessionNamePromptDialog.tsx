@@ -81,7 +81,7 @@ export function SessionNamePromptDialog({ agentId, projectPath, onDone }: Sessio
           onClick={handleSave}
           disabled={saving || !name.trim()}
           data-testid="session-name-save"
-          className="px-4 py-1.5 text-xs rounded-lg bg-ctp-accent text-white hover:bg-ctp-accent/80
+          className="px-4 py-1.5 text-xs rounded-lg bg-ctp-accent text-ctp-on-accent hover:bg-ctp-accent/80
             cursor-pointer transition-colors font-medium disabled:opacity-40 disabled:cursor-default"
         >
           Save

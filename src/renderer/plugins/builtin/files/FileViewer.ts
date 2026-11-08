@@ -120,7 +120,7 @@ function UnsavedDialog({ fileName, onSave, onDiscard, onCancel }: UnsavedDialogP
           onClick: onDiscard,
         }, 'Discard'),
         React.createElement('button', {
-          className: 'px-4 py-1.5 text-xs rounded-lg bg-ctp-accent text-ctp-base hover:opacity-90 cursor-pointer transition-colors font-medium',
+          className: 'px-4 py-1.5 text-xs rounded-lg bg-ctp-accent text-ctp-on-accent hover:opacity-90 cursor-pointer transition-colors font-medium',
           onClick: onSave,
         }, 'Save'),
       ),

@@ -260,6 +260,8 @@ export const SETTINGS_KEYS = [
 /** Built-in theme ids (shared/types.ts BuiltinThemeId); plugin themes report `other`. */
 export const BUILTIN_THEME_IDS = [
   'catppuccin-mocha', 'catppuccin-latte', 'solarized-dark', 'terminal', 'nord', 'dracula', 'tokyo-night', 'gruvbox-dark', 'cyberpunk',
+  // Designed around their gradients (#2916).
+  'aurora', 'canyon', 'daybreak', 'mist',
   // The Workshop pack themes (#2753).
   'maple', 'harvest', 'pumpkin-spice', 'amber-forest', 'twilight-ember', 'frost',
   'evergreen', 'northern-lights', 'snowfall', 'polar-night', 'cherry-blossom', 'spring-meadow',
@@ -543,6 +545,8 @@ export const ATTR = {
     'answer_helper_question',
     // the Dispatcher (#2536)
     'list_agents', 'inspect_helper',
+    // the Dispatcher's two agents (#3036)
+    'start_work', 'read_memory', 'tell_user',
     // appearance (#2597)
     'update_project', 'update_agent',
     // settings reads (#2653)
@@ -878,6 +882,8 @@ export const ATTR = {
     'POST /api/v1/mobile/agents/:id/attachments',
     'GET /api/v1/mobile/agents/:id/content',
     'GET /api/v1/mobile/capabilities',
+    'GET /api/v1/mobile/network',
+    'POST /api/v1/mobile/network/members',
     'GET /api/v1/mobile/canvas',
     'GET /api/v1/mobile/canvas/:id',
     'DELETE /api/v1/mobile/pairing',

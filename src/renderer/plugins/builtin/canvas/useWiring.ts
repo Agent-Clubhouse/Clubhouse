@@ -6,6 +6,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import type { CanvasView, AgentCanvasView as AgentCanvasViewType, PluginCanvasView as PluginCanvasViewType, ZoneCanvasView as ZoneCanvasViewType, Position, Viewport } from './canvas-types';
 import { screenToCanvas } from './canvas-operations';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
+import { newWireDisabledTools } from '../../../../shared/wire-defaults';
 
 export interface WireDragState {
   /** The view initiating the drag (agent or zone). */
@@ -74,12 +75,17 @@ export function useWiring(
   containerRef: React.RefObject<HTMLDivElement | null>,
   onZoneWire?: ZoneWireCallback,
   /** Callback to persist a wire definition in the canvas store. */
-  onAddWireDefinition?: (entry: { agentId: string; targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }) => void,
+  onAddWireDefinition?: (entry: { agentId: string; targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string; disabledTools?: string[] }) => void,
   /** When true (default), agent-to-agent wires auto-create the reverse direction. */
   createBidirectional = true,
 ) {
   const [wireDrag, setWireDrag] = useState<WireDragState | null>(null);
   const bind = useMcpBindingStore((s) => s.bind);
+  const setDisabledTools = useMcpBindingStore((s) => s.setDisabledTools);
+  // Read at drop time: whether a pair already has a binding decides its default (#2969).
+  const bindings = useMcpBindingStore((s) => s.bindings);
+  const bindingsRef = useRef(bindings);
+  bindingsRef.current = bindings;
   const onAddWireDefRef = useRef(onAddWireDefinition);
   onAddWireDefRef.current = onAddWireDefinition;
   const onZoneWireRef = useRef(onZoneWire);
@@ -176,8 +182,16 @@ export function useWiring(
               targetName: targetLabel,
               projectName,
             };
-            bind(sourceAgentId, fwdTarget);
-            onAddWireDefRef.current?.({ agentId: sourceAgentId, ...fwdTarget });
+            // A new agent wire lets its sender read and message; reset needs turning on (#2969).
+            // A pair that already has a binding (a helper or Dispatcher wire) keeps its own list.
+            const existing = bindingsRef.current ?? [];
+            const disabledTools = newWireDisabledTools(existing, sourceAgentId, resolvedTargetId, kind);
+            void Promise.resolve(bind(sourceAgentId, fwdTarget)).then(() => {
+              if (disabledTools) return setDisabledTools(sourceAgentId, resolvedTargetId, disabledTools);
+            }).catch(() => {
+              // telemetry-exempt: the wire definition keeps the list, and the reconcile loop binds it again
+            });
+            onAddWireDefRef.current?.({ agentId: sourceAgentId, ...fwdTarget, ...(disabledTools && { disabledTools }) });
 
             // Agent-to-agent wires: optionally create reverse direction
             if (kind === 'agent' && createBidirectional) {
@@ -189,8 +203,13 @@ export function useWiring(
                 targetName: sourceLabel,
                 projectName,
               };
-              bind(resolvedTargetId, revTarget);
-              onAddWireDefRef.current?.({ agentId: resolvedTargetId, ...revTarget });
+              const revDisabled = newWireDisabledTools(existing, resolvedTargetId, sourceAgentId, 'agent');
+              void Promise.resolve(bind(resolvedTargetId, revTarget)).then(() => {
+                if (revDisabled) return setDisabledTools(resolvedTargetId, sourceAgentId, revDisabled);
+              }).catch(() => {
+                // telemetry-exempt: as above
+              });
+              onAddWireDefRef.current?.({ agentId: resolvedTargetId, ...revTarget, ...(revDisabled && { disabledTools: revDisabled }) });
             }
           }
         }

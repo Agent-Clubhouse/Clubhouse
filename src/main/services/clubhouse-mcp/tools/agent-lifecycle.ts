@@ -32,11 +32,14 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Find an agent's durable config across every project. */
-export async function findDurableAgentConfig(targetAgentId: string): Promise<{
+/** Where an agent's durable config lives: the config and the folder it is in. */
+export interface DurableAgentLocation {
   agentConfig: Awaited<ReturnType<typeof listDurable>>[number];
   projectPath: string;
-} | null> {
+}
+
+/** Find an agent's durable config across every project. */
+export async function findDurableAgentConfig(targetAgentId: string): Promise<DurableAgentLocation | null> {
   const projects = await projectStore.list();
   for (const proj of projects) {
     const durables = await listDurable(proj.path);
@@ -155,6 +158,11 @@ export interface WakeAgentRequest {
   mission?: string;
   /** Who sent it, for chat to show. */
   missionRouted?: RoutedMessagePart[];
+  /**
+   * Finds the target's config. Defaults to searching every project; the
+   * Dispatcher, which is in no project, passes its own folder (#3037).
+   */
+  locate?: (targetId: string) => Promise<DurableAgentLocation | null>;
 }
 
 /** Wakes in progress here: a parallel wake must not spawn the agent too. */
@@ -165,7 +173,7 @@ const waking = new Set<string>();
  * still stopping is waited on and then woken for real, so the mission goes to
  * a new session instead of the one that is exiting.
  */
-export async function wakeWiredAgent({ callerId, targetId, targetName, mission, missionRouted }: WakeAgentRequest): Promise<McpToolResult> {
+export async function wakeWiredAgent({ callerId, targetId, targetName, mission, missionRouted, locate = findDurableAgentConfig }: WakeAgentRequest): Promise<McpToolResult> {
   const target = { agentId: targetId, agentName: targetName };
   const undelivered = mission ? { messageDelivered: false } : {};
   const stillStopping = () => jsonResult({
@@ -193,7 +201,7 @@ export async function wakeWiredAgent({ callerId, targetId, targetName, mission, 
   let announced = false;
   try {
     // Read after any wait above: the exit just saved the session id this wake resumes.
-    const durable = await findDurableAgentConfig(targetId);
+    const durable = await locate(targetId);
     if (!durable) {
       return { content: [{ type: 'text', text: `Could not find durable config for agent ${targetId}.` }], isError: true };
     }

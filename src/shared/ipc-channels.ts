@@ -496,6 +496,10 @@ export const IPC = {
     REMOVE_ALL_PEERS: 'annex:remove-all-peers',
     UNLOCK_PAIRING: 'annex:unlock-pairing',
     PEERS_CHANGED: 'annex:peers-changed',
+    LIST_DEVICES: 'annex:list-devices',
+    REMOVE_DEVICE: 'annex:remove-device',
+    DEVICES_CHANGED: 'annex:devices-changed',
+    LIST_NETWORK_MEMBERS: 'annex:list-network-members',
     LOCK_STATE_CHANGED: 'annex:lock-state-changed',
     NOTIFY_PAUSE: 'annex:notify-pause',
     DISCONNECT_CONTROLLER: 'annex:disconnect-controller',
@@ -523,6 +527,7 @@ export const IPC = {
     PTY_GET_BUFFER: 'annex-client:pty-get-buffer',
     PTY_GET_BUFFER_SNAPSHOT: 'annex-client:pty-get-buffer-snapshot',
     FORGET_SATELLITE: 'annex-client:forget-satellite',
+    SET_SATELLITE_HOST: 'annex-client:set-satellite-host',
     FORGET_ALL_SATELLITES: 'annex-client:forget-all-satellites',
     FILE_TREE: 'annex-client:file-tree',
     FILE_READ: 'annex-client:file-read',
@@ -595,6 +600,12 @@ export const IPC = {
     GET_DISPATCHER_LINKS: 'mcp-binding:get-dispatcher-links',
     /** The sources behind an agent's connections (#2744). */
     GET_CONNECTION_SOURCES: 'mcp-binding:get-connection-sources',
+    /** Per-direction connection permissions touching an agent (D129, #2972). */
+    GET_CONNECTION_GRANTS: 'mcp-binding:get-connection-grants',
+    /** Main → renderer: one direction's saved tools changed (D129), so a canvas updates its own copy. */
+    CONNECTION_GRANTS_CHANGED: 'mcp-binding:connection-grants-changed',
+    /** The user's own link for the other direction of a one-way connection (#2972). */
+    MAKE_TWO_WAY: 'mcp-binding:make-two-way',
     /** Remove one source of one connection (#2744). */
     REMOVE_CONNECTION_SOURCE: 'mcp-binding:remove-connection-source',
     /** Main→renderer: the agent id whose connection or tool count changed. */

@@ -368,7 +368,7 @@ describe('notificationStore', () => {
         beforeEach(() => {
           useNotificationStore.setState({ settings: ALL_ON_SETTINGS });
           vi.spyOn(document, 'hasFocus').mockReturnValue(true);
-          useDispatcherStore.getState().setState({ enabled: true, agentId: 'disp', path: 'dispatcher-dir', config: null });
+          useDispatcherStore.getState().setState({ enabled: true, agentId: 'disp-work', path: 'dispatcher-work-dir', chatAgentId: 'disp', chatPath: 'dispatcher-dir', config: null });
           useAgentStore.setState({ activeAgentId: 'agent-1' });
           useUIStore.setState({ explorerTab: 'agents', dispatcherOpen: true });
           useProjectStore.setState({ activeProjectId: 'proj-1' });

@@ -30,6 +30,8 @@ vi.mock('./dispatcher/dispatcher-service', async () => {
       return { enabled, savedOn, offReason: reason, flagOn: true, classic: false, running: false, agentId: null, path: null, config: null };
     },
     isDispatcherAgentId: () => false,
+    isDispatcherChatAgentId: () => false,
+    getDispatcherChatConfig: () => null,
     onDispatcherChanged: () => () => {},
   };
 });
