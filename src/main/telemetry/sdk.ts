@@ -514,7 +514,8 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     const report: ReplayReport = { ok: true, spans: 0, logs: 0, metricPoints: 0, filtered: 0, skipped: 0 };
     const dest = destinations.find((d) => d.id === destinationId);
     const filter = dest ? filters.get(dest.id) : undefined;
-    if (!dest || !filter || shutDown) return { ...report, ok: false, reason: 'not_enabled' };
+    // Never to the developer destination: its purpose is live feedback correlation (#2920).
+    if (!dest || !filter || shutDown || dest.kind === 'framebriar') return { ...report, ok: false, reason: 'not_enabled' };
     const cumulative = dest.exporters.metricExporter.selectAggregationTemporality?.(InstrumentType.COUNTER) === AggregationTemporality.CUMULATIVE;
     const converted = convertRecordLines(lines, {
       resource: (run) => resourceFromAttributes({
@@ -549,8 +550,12 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     const spanExporter = new StampSpanExporter(new ObservedSpanExporter(dest.exporters.spanExporter, hooksFor(dest)), stampFor(dest));
     const logExporter = new StampLogExporter(new ObservedLogExporter(dest.exporters.logExporter, hooksFor(dest)), stampFor(dest));
     const metricExporter = new FilteredMetricExporter(new ObservedMetricExporter(dest.exporters.metricExporter, hooksFor(dest)), filter);
+    // An exporter that never answers counts as a failure, so a backfill can't hang.
     const send = <T>(exp: { export(items: T, cb: (r: ExportResult) => void): void }, items: T) =>
-      new Promise<boolean>((resolve) => exp.export(items, (r) => resolve(r.code === ExportResultCode.SUCCESS)));
+      new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), opts.exportTimeoutMs ?? 60_000);
+        exp.export(items, (r) => { clearTimeout(timer); resolve(r.code === ExportResultCode.SUCCESS); });
+      });
     const BATCH = 256;
     const stopped = () => runOpts.signal?.aborted === true || shutDown;
 

@@ -313,6 +313,28 @@ describe('telemetry settings control', () => {
     expect(backfillCalls).toEqual(['enabled:azure', 'disabled:azure']);
   });
 
+  it('marks live-sent history on every path that turns a destination off: clearing it, or deleting local data (#2920)', async () => {
+    backfillCalls.length = 0;
+    setEntry('azure', { enabled: true });
+    setEntry('otlp', { enabled: true });
+    await control.clearAzureConnectionString();
+    await control.clearOtlpConfig();
+    expect(backfillCalls).toEqual(['disabled:azure', 'disabled:otlp']);
+    backfillCalls.length = 0;
+    setEntry('azure', { enabled: true });
+    await control.deleteLocalData();
+    expect(backfillCalls).toContain('disabled:azure');
+    expect(backfillCalls).not.toContain('disabled:otlp');
+  });
+
+  it('notes no offer when a destination already on is turned on again (#2920)', async () => {
+    state.secrets.connectionString = CS;
+    expect(await control.setEnabled('azure', true, { consent: true, host: HOST })).toMatchObject({ ok: true });
+    backfillCalls.length = 0;
+    expect(await control.setEnabled('azure', true, { consent: true, host: HOST })).toMatchObject({ ok: true });
+    expect(backfillCalls).toEqual([]);
+  });
+
   it('never notes an offer when export comes on without the user turning a destination on: Feedback reconnecting or a resume (#2920)', async () => {
     backfillCalls.length = 0;
     await control.syncFramebriarDestination();

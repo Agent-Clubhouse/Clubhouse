@@ -1347,17 +1347,26 @@ The `tel.*` signals are also written to local files, so flow timings and classif
   - the converted data posted through the real OTLP trace, log and metric exporters is accepted by a mock collector, and the bodies hold neither the detail nor the diag text.
 
 **Backfill on connect** ([#2920](https://github.com/Agent-Clubhouse/Clubhouse/issues/2920)). When the user turns a destination on, Clubhouse can offer to send it the history the record already holds, within limits the user picks. It's never automatic. These are the defaults, with any open for the maintainer:
-- **When it's offered.** Only right after the user turns a destination on in Settings (`setEnabled` succeeded in this run of the app), and only if the record holds history from before that moment. Nothing is sent until the user accepts. Never on startup, by migration, or when Feedback reconnects.
+- **When it's offered.** Only right after the user turns a destination on from off in Settings (`setEnabled` succeeded in this run of the app), and only if the record holds history from before that moment. The moment is taken before the runtime starts, so anything buffered while it starts goes out live and isn't counted as history. Nothing is sent until the user accepts. Never on startup, by migration, when Feedback reconnects, on a resume, or when a destination already on is turned on again.
+- **Never across an identity change.** History from before the current hash salt came into use (`hashSaltSince`, set when an identity is adopted or reset; the local salt keeps its own `since`) is never sent. Stamped with today's install id, older hashes would link the old id to the new one, which a reset exists to prevent.
+  - An identity from before this was recorded counts from the start of the record.
+  - With no salt at all, nothing is offered.
 - **Not for the developer destination.** Its purpose is live feedback correlation.
 - **The limits.** The last 1, 7 or 30 days before the destination was turned on, or everything kept. Never more than the retention tier's total-size limit (500 MB when the tier has none). Runs of the app go oldest first.
-  - Each run's lines inside the window are sorted by time and cut into slices of one kind (spans, log records or metrics), up to 256 lines each. So each slice is exactly one export the destination confirms or not.
-  - A slice never splits lines with the same time.
-  - Every slice carries the run's session line. Cumulative totals carry across a run's slices. The error-tail rule uses every failed trace in the whole run.
+  - Each run's lines inside the window are sorted by time (stably, so lines with the same time keep their file order) and cut into slices of one kind (spans, log records or metrics), up to 256 lines each. So each slice is exactly one export the destination confirms or not.
+  - Every slice carries the run's session line. Cumulative totals carry across a run's slices.
+  - The error-tail rule uses every failed trace in the whole run. That's slightly more than live, which decides per local root segment: the healthy segments of a failing multi-request trace go too.
+  - A run whose session line is gone (its first chunk evicted, or past the byte limit) isn't sent, since nothing says which build or process recorded it.
+  - In all, one backfill sends at most the hourly session caps (50,000 spans and 10,000 log records), across slices. Slices are paced 50 ms apart, so a backfill never floods a destination.
 - **The path.** `backfill.ts` reads the files, then `bootstrap.replayToDestination` hands them to the runtime's `replay`. That runs the record converter, then that destination's own filter, error-tail rule, limits (the session caps by default), stamp and exporters, in batches of 256. Other destinations get nothing. No metrics go to Azure Monitor.
-- **Sent once.** `backfilledThrough` advances only past slices the destination's exporter confirmed, to the time of the slice's last line. A finished backfill sets it to when the destination was turned on. Turning a destination off also sets it to that moment, because it was sent everything live while it was on. So:
-  - turning it on again offers only what was recorded while it was off;
-  - nothing is ever sent twice.
-- **Stopping.** A failure stops the backfill, and it never retries on its own. Cancelling stops between slices, and so does turning the destination off. Either way the offer stays, and starting it again by hand resumes after the last confirmed slice: nothing repeated, nothing skipped.
+- **Sent once.** Two marks per destination:
+  - **`backfillProgress`:** per kind of line, the time of the last line the exporter confirmed and how many lines at that time were sent. It advances only past confirmed slices.
+  - **`backfilledThrough`:** how far history counts as sent. A finished backfill sets it to when the destination was turned on and clears the progress. Every path that turns a destination off sets it to that moment, taken after the runtime stops, because the destination was sent everything live while it was on. Those paths are its switch, clearing its settings, and deleting local data.
+
+  So turning a destination on again offers only what was recorded while it was off, and nothing is sent twice.
+- **Stopping.** A failure stops the backfill, and it never retries on its own. An exporter that doesn't answer within its export timeout counts as a failure. Cancelling stops between slices. Either way the offer stays, and starting it again by hand resumes after the progress marks: nothing repeated, nothing skipped. A second start while one runs is refused.
+- **Turning the destination off ends the offer.** It stops any backfill and marks everything up to that moment as sent, so history that wasn't backfilled then is never offered.
+- **Known limit, Azure Monitor.** Its exporter keeps batches it can't send (offline, throttled, server errors) in its own disk queue and reports success. A backfill to Azure while it can't reach the service fills that queue, under the queue's own limits, instead of stopping.
 - **Where the code lives.** The runtime method and converter are in the lazily loaded SDK chunk. `backfill.ts` is in the main bundle and imports no OpenTelemetry. The Settings offer comes in a later part.
 
 **Diagnostic lines** ([#2299](https://github.com/Agent-Clubhouse/Clubhouse/issues/2299), part of [#2295](https://github.com/Agent-Clubhouse/Clubhouse/issues/2295)). A local-only tier for the text that signals can't carry: error messages, paths, raw ids, stderr. `t:"diag"` lines share the file, chunking, rolling eviction and retention with the signals, but are not telemetry.

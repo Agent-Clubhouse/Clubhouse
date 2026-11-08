@@ -50,6 +50,12 @@ export interface TelemetryDestinationEntry {
   framebriar?: FramebriarDestinationSettings;
   /** Backfill (#2920): history up to this time (ms since the epoch) was sent once, so it's never offered again. */
   backfilledThrough?: number;
+  /**
+   * A backfill in progress: per kind of line, the time of the last line the
+   * destination confirmed and how many lines at that time were sent. A resume
+   * starts after it. Cleared when the backfill finishes or the destination is turned off.
+   */
+  backfillProgress?: Partial<Record<'span' | 'log' | 'metric', { t: number; n: number }>>;
 }
 
 /**
@@ -77,6 +83,13 @@ export interface TelemetrySettingsFile {
   weakStorageAccepted?: boolean;
   installId?: string;
   hashSalt?: string;
+  /**
+   * When the current hash salt came into use (ms since the epoch; #2920). Backfill
+   * never sends history from before it: hashes made with an earlier salt, stamped
+   * with this install id, would link the two. Missing on an identity from before
+   * this was recorded, which then counts from the start of the record.
+   */
+  hashSaltSince?: number;
   /** App version seen at the previous start, for `clubhouse.startup.kind`. */
   lastVersion?: string;
   /**

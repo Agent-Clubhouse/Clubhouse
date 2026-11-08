@@ -113,5 +113,12 @@ describe('runtime replay to one destination (#2920 backfill)', () => {
     const values = cumulative.metrics.getMetrics().flatMap((rm) => rm.scopeMetrics.flatMap((sm) => sm.metrics.flatMap((m) => m.dataPoints.map((p) => p.value))));
     expect(values).toEqual([2, 5]);
   });
+
+  it('never replays to the developer destination', async () => {
+    const dev = sink();
+    const r = start([dest('framebriar', 'framebriar', dev, 'standard')]);
+    expect(await r.replay!('framebriar', lines)).toMatchObject({ ok: false, reason: 'not_enabled' });
+    expect(dev.spans.getFinishedSpans()).toHaveLength(0);
+  });
 });
 

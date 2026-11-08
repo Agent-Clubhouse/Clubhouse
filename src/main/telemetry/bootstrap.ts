@@ -184,7 +184,7 @@ export function checkConfirmedHost(confirmedHost: string | undefined, host: stri
 async function ensureIdentity(settings: TelemetrySettings): Promise<TelemetryIdentity> {
   if (isValidIdentity(settings)) return { installId: settings.installId, hashSalt: settings.hashSalt };
   // The local record's salt carries over (#2920): what's recorded keeps its hashes.
-  return adoptIdentity(async (identity) => { await updateTelemetrySettings((s) => ({ ...s, ...identity })); });
+  return adoptIdentity(async (identity, hashSaltSince) => { await updateTelemetrySettings((s) => ({ ...s, ...identity, hashSaltSince })); });
 }
 
 function startOfflinePrune(): void {
@@ -554,6 +554,7 @@ export async function disableTelemetry({ deleteLocalData = false } = {}): Promis
       const next = { ...s };
       delete next.installId;
       delete next.hashSalt;
+      delete next.hashSaltSince;
       return next;
     });
     deleteLocalSalt();
