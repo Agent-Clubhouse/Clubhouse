@@ -354,13 +354,14 @@ describe('Setup card', () => {
   });
 
   it('says an agent Clubhouse switched on its own was switched, until the line is dismissed (D59)', async () => {
-    let listener: (() => void) | null = null;
-    vi.spyOn(m(), 'onChanged').mockImplementation((fn) => { listener = fn; return () => {}; });
+    // Every subscriber hears it, as the real event reaches them all (the card's config reads listen too).
+    const listeners = new Set<() => void>();
+    vi.spyOn(m(), 'onChanged').mockImplementation((fn) => { listeners.add(fn); return () => { listeners.delete(fn); }; });
     let current = status({ waiting: false, changes: [], migrated: { from: 'clubhouse-mode', backup: '~/.clubhouse/managed-agents/before-managed/a1' } });
     vi.spyOn(m(), 'status').mockImplementation(async () => ({ ok: true, value: current }) as never);
     const dismiss = vi.spyOn(m(), 'dismissMigrationNotice').mockImplementation(async () => {
       current = status({ waiting: false, changes: [] });
-      listener?.();
+      for (const fn of listeners) fn();
       return { ok: true, value: undefined } as never;
     });
     render(<SettingsCard agent={agent} projectPath="/work/proj" provider="Claude Code" />);
