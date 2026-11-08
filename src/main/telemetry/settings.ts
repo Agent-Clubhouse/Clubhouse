@@ -208,13 +208,41 @@ export const DEVELOPER_RULE = 2;
  * They're recorded as switched off, so it starts only when they turn it on.
  * Runs once: the marker keeps a later opt-in from being undone.
  */
+let developerRuleSwitchedOff = false;
+
+/** Whether the #2097 migration switched the developer destination off since the last call (#2523). */
+export function takeDeveloperRuleSwitchedOff(): boolean {
+  const was = developerRuleSwitchedOff;
+  developerRuleSwitchedOff = false;
+  return was;
+}
+
 function migrateDeveloperRule(settings: TelemetrySettings): void {
   if ((settings.developerRule ?? 0) >= DEVELOPER_RULE) return;
   settings.developerRule = DEVELOPER_RULE;
   const developer = settings.destinations.find((d) => d.kind === 'framebriar');
   if (!developer?.confirmedHost || developer.framebriar?.userOff) return;
   const ownOn = settings.destinations.some((d) => d.kind !== 'framebriar' && d.enabled);
-  if (!ownOn) developer.framebriar = { ...developer.framebriar, userOff: true };
+  if (!ownOn) {
+    developer.framebriar = { ...developer.framebriar, userOff: true };
+    developerRuleSwitchedOff = true;
+  }
+}
+
+/**
+ * Why the developer destination wouldn't export now, as a state name only
+ * (never a host or token), or null when nothing stops it (#2523).
+ */
+export function developerDestinationBlocker(settings: TelemetrySettings): 'no_entry' | 'no_consent' | 'paused' | 'user_off' | 'not_connected' | 'host_not_confirmed' | null {
+  const entry = settings.destinations.find((d) => d.kind === 'framebriar');
+  if (!entry) return 'no_entry';
+  if (settings.consentVersion < TELEMETRY_CONSENT_VERSION) return 'no_consent';
+  if (settings.exportSuspended !== undefined) return 'paused';
+  if (entry.framebriar?.userOff) return 'user_off';
+  const host = getFramebriarTelemetrySource()?.()?.host;
+  if (host === undefined) return 'not_connected';
+  if (entry.confirmedHost !== host) return 'host_not_confirmed';
+  return null;
 }
 
 /**

@@ -42,6 +42,7 @@ import { createIdentity } from './ids';
 import { countOfflineItems, deleteOfflineData, getOfflineDir } from './offline';
 import { getSecureStorageState, readSecrets, updateSecrets, type TelemetrySecrets } from './secret-store';
 import {
+  developerDestinationBlocker,
   enabledDestinations,
   exportPermitted,
   findDestination,
@@ -551,6 +552,10 @@ export function syncFramebriarDestination(): Promise<void> {
   syncing = syncing.then(async () => {
     const settings = getTelemetrySettings();
     const entry = findDestination(settings, 'framebriar');
+    // State names only, never the host or a token (#2523).
+    appLog('telemetry:control', 'info', 'Developer destination checked after a Feedback change', {
+      meta: { wanted: framebriarWanted(settings), state: developerDestinationBlocker(settings) ?? 'wanted', enabled: entry?.enabled ?? false },
+    });
     if (!entry) return;
     if (withFramebriarFollowing(settings) !== settings) {
       await updateTelemetrySettings(withFramebriarFollowing);

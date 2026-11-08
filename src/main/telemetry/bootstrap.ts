@@ -33,8 +33,10 @@ import {
   enabledDestinations,
   getTelemetrySettings,
   applyExportGraduation,
+  developerDestinationBlocker,
   exportPermitted,
   findDestination,
+  takeDeveloperRuleSwitchedOff,
   hasDestinationConfigured,
   migrateLegacySecrets,
   normalizeSampleRate,
@@ -51,7 +53,7 @@ import { getAdapter, resolveEntry } from './destinations/registry';
 import { getFramebriarTelemetrySource } from './destinations/framebriar-source';
 import { recordingLevel } from './filters';
 import type { TelemetryLevel } from '../../shared/telemetry/attributes';
-import type { TelemetryDestinationKind } from '../../shared/telemetry/settings-types';
+import { TELEMETRY_CONSENT_VERSION, type TelemetryDestinationKind } from '../../shared/telemetry/settings-types';
 import { previousSessionVersion, setStartupKind } from './lifecycle';
 
 const LOG_NS = 'core:telemetry';
@@ -372,15 +374,40 @@ export function initTelemetry(): void {
   try {
     if (getTelemetrySettings().legacyDestination) void migrateLegacySecretsOnReady();
     if (!isTelemetryConfigured()) {
-      if (awaitingFramebriar(getTelemetrySettings())) holdForFramebriar();
+      const held = awaitingFramebriar(getTelemetrySettings());
+      if (held) holdForFramebriar();
+      logExportGates(getTelemetrySettings(), held ? 'held_for_feedback' : 'not_started');
       return;
     }
+    logExportGates(getTelemetrySettings(), 'starting');
   } catch {
     return;
   }
   beginPending();
   starting = start().finally(() => {
     starting = null;
+  });
+}
+
+/**
+ * One local line at startup with every export gate (#2523): which one stops
+ * export, if any, so a quiet install can be explained from its log. Booleans
+ * and state names only, never a host, endpoint or token.
+ */
+function logExportGates(settings: TelemetrySettings, outcome: 'starting' | 'held_for_feedback' | 'not_started'): void {
+  const consent = settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
+  const configured = hasDestinationConfigured(settings);
+  appLog(LOG_NS, 'info', 'Telemetry export at startup', {
+    meta: {
+      outcome,
+      blockedBy: outcome === 'starting' ? null : !consent ? 'no_consent' : settings.exportSuspended !== undefined ? 'paused' : !configured ? 'no_destination_configured' : 'unknown',
+      consent,
+      paused: settings.exportSuspended ?? null,
+      enabled: enabledDestinations(settings).map((d) => d.kind),
+      configured,
+      developer: developerDestinationBlocker(settings) ?? 'wanted',
+      developerRuleSwitchedOff: takeDeveloperRuleSwitchedOff(),
+    },
   });
 }
 
