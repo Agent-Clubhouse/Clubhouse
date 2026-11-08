@@ -8,7 +8,7 @@ import { newAgentOrchestrator } from '../features/agents/effective-orchestrator'
 import { useQuickAgentAccess } from '../features/agents/useQuickAgentAccess';
 import { AccessSelect } from '../features/agents/AccessSelect';
 import type { AccessLevel } from '../../shared/agent-access';
-import { pushModal, removeModal } from '../components/layers';
+import { isTopModal, pushModal, removeModal } from '../components/layers';
 import { useQuickPromptStore } from './quickPromptStore';
 import { useChromeStore } from './chromeStore';
 import { useUIStore } from '../stores/uiStore';
@@ -16,6 +16,7 @@ import { startingProject } from './starting-project';
 import { openCreatedAgent } from './startPage';
 import { reportChromeActionFailed, reportChromeFeature } from './telemetry';
 
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const selectClass = 'bg-surface-0 border border-surface-2 rounded px-2 py-1 text-xs text-ctp-text focus-ring';
 
 /**
@@ -35,13 +36,14 @@ function QuickPromptPanel() {
   const projects = useProjectStore((s) => s.projects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const explorerTab = useUIStore((s) => s.explorerTab);
+  const dispatcherOpen = useUIStore((s) => s.dispatcherOpen);
   const lastProjectId = useChromeStore((s) => s.lastProjectId);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const { effectiveOrchestrators } = useEffectiveOrchestrators();
 
   // As the New agent page decides it, once per open. With no project in view (the
   // Dispatcher, Canvas, Settings), the field asks for one, starting at the last used.
-  const [initial] = useState(() => startingProject(projects, { activeProjectId, explorerTab, lastProjectId }));
+  const [initial] = useState(() => startingProject(projects, { activeProjectId, explorerTab, lastProjectId, dispatcherOpen }));
   const current = initial.inView;
   const [projectId, setProjectId] = useState(initial.id);
   const project = projects.find((p) => p.id === projectId);
@@ -66,20 +68,51 @@ function QuickPromptPanel() {
   const detailsId = useId();
   const errorId = useId();
 
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+
+  // Esc and Tab are handled for the whole document while it's open, as Modal does, so
+  // they work wherever focus is: Esc closes it (not mid-composition or while starting),
+  // and Tab stays inside.
   useEffect(() => {
     const token = Symbol('quick-prompt');
     pushModal(token);
     const previous = document.activeElement as HTMLElement | null;
     inputRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (!isTopModal(token)) return;
+      const dialog = dialogRef.current;
+      if (e.key === 'Escape') {
+        if (e.isComposing || e.defaultPrevented) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (!busyRef.current) close();
+        return;
+      }
+      if (e.key !== 'Tab' || !dialog) return;
+      const all = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)];
+      if (all.length === 0) { e.preventDefault(); dialog.focus(); return; }
+      const first = all[0];
+      const last = all[all.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || !dialog.contains(active))) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (active === last || !dialog.contains(active))) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', onKey, true);
     return () => {
+      document.removeEventListener('keydown', onKey, true);
       removeModal(token);
       if (previous?.isConnected && (document.activeElement === document.body || dialogRef.current?.contains(document.activeElement))) previous.focus();
     };
-  }, []);
+  }, [close]);
+
+  // A disabled field loses focus while starting: give it back when a start fails.
+  useEffect(() => { if (!busy) inputRef.current?.focus(); }, [busy]);
 
   const start = () => {
     const task = mission.trim();
-    if (!project || !task || busy) return;
+    if (!task || busy) return;
+    if (!project) { setError('Choose a project to start it in.'); return; }
     setBusy(true);
     setError(null);
     reportChromeFeature('quick_prompt_start');
@@ -99,14 +132,6 @@ function QuickPromptPanel() {
     });
   };
 
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape' && !busy) {
-      e.preventDefault();
-      e.stopPropagation();
-      close();
-    }
-  };
-
   const projectSelect = (
     <select
       aria-label="Project"
@@ -122,11 +147,12 @@ function QuickPromptPanel() {
 
   return (
     // eslint-disable-next-line no-restricted-syntax
-    <div className="fixed inset-0 z-modal" data-testid="quick-prompt-overlay" onKeyDown={onKeyDown}>
+    <div className="fixed inset-0 z-modal" data-testid="quick-prompt-overlay">
       <div className="absolute inset-0 bg-ctp-crust/40" onClick={() => { if (!busy) close(); }} />
       <div className="relative flex justify-center pt-[12vh] px-4 pointer-events-none">
         <div
           ref={dialogRef}
+          tabIndex={-1}
           role="dialog"
           aria-modal="true"
           aria-label="New quick agent"

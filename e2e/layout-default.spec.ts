@@ -419,7 +419,7 @@ test.describe.serial('default path smoke', () => {
 
   test('quick prompt: Cmd+N, type, Enter starts a quick agent (#2812)', async () => {
     const task = 'smoke-quick-prompt';
-    await w.keyboard.press('ControlOrMeta+n');
+    await w.keyboard.press('Meta+n');
     const prompt = w.getByRole('dialog', { name: 'New quick agent' });
     await expect(prompt).toBeVisible({ timeout: 5_000 });
     await expect(newAgentPage()).toBeHidden();
@@ -427,7 +427,7 @@ test.describe.serial('default path smoke', () => {
     await w.keyboard.press('Escape');
     await expect(prompt).toBeHidden({ timeout: 5_000 });
 
-    await w.keyboard.press('ControlOrMeta+n');
+    await w.keyboard.press('Meta+n');
     await expect(prompt).toBeVisible({ timeout: 5_000 });
     await w.keyboard.type(task);
     await w.keyboard.press('Enter');

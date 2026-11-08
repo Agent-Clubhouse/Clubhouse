@@ -35,7 +35,7 @@ beforeEach(() => {
     enabled: ['claude-code', 'codex-cli'],
     availability: {},
   });
-  useUIStore.setState({ explorerTab: 'agents', activeHostId: null });
+  useUIStore.setState({ explorerTab: 'agents', activeHostId: null, dispatcherOpen: false });
   useChromeStore.setState({ newAgent: null, lastProjectId: 'p2', projectScopeId: null });
   useQuickPromptStore.setState({ open: true });
 });
@@ -122,5 +122,40 @@ describe('QuickPrompt (#2812)', () => {
     expect(useQuickPromptStore.getState().open).toBe(true);
     expect((input() as HTMLInputElement).value).toBe('try it');
     expect(input()).not.toBeDisabled();
+  });
+
+  it('asks for a project in the Dispatcher, where the active project is out of view', () => {
+    useUIStore.setState({ dispatcherOpen: true });
+    render(<QuickPrompt />);
+    expect((screen.getByRole('combobox', { name: 'Project' }) as HTMLSelectElement).value).toBe('p2');
+  });
+
+  it('keeps Tab inside and closes on Esc wherever focus is', () => {
+    render(<QuickPrompt />);
+    const details = screen.getByRole('button', { name: 'Details' });
+    details.focus();
+    fireEvent.keyDown(details, { key: 'Tab' });
+    expect(input()).toHaveFocus();
+    fireEvent.keyDown(input(), { key: 'Tab', shiftKey: true });
+    expect(details).toHaveFocus();
+    // From the page itself, as after a click on a part of the panel that takes no focus.
+    document.body.focus();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(useQuickPromptStore.getState().open).toBe(false);
+  });
+
+  it('leaves Esc to an input method mid-composition', () => {
+    render(<QuickPrompt />);
+    fireEvent.keyDown(input(), { key: 'Escape', isComposing: true });
+    expect(useQuickPromptStore.getState().open).toBe(true);
+  });
+
+  it('gives the field focus back when a start fails', async () => {
+    spawnQuickAgent.mockRejectedValue(new Error('no CLI'));
+    render(<QuickPrompt />);
+    type('try it');
+    enter();
+    await screen.findByRole('alert');
+    expect(input()).toHaveFocus();
   });
 });
