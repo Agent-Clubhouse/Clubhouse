@@ -8,6 +8,17 @@ Epic: #3056. Stages land in order: #3057 (peer basics), #3058 (reachability), #3
 - **The device list** (`src/main/services/annex-devices.ts`) is every paired device with where it stands: `connected`, `connecting`, `offline` or `needs-pairing`, and a problem when one is known. Settings is built from it. IPC: `annex:list-devices`, `annex:remove-device`, `annex:devices-changed`.
 - **A problem** (`src/shared/annex-problems.ts`) is a classified reason a connection failed, shown as two sentences: what happened, and what to do.
 
+## Real-device checks
+
+Synthetic tests can't cover certificates under Electron or local network discovery. Each stage merges on green CI; these need two computers and a phone before a release.
+
+**Stage 1 (#3057)**
+- Pair two desktops with the pairing link; each lists the other as connected in its Annex settings.
+- Remove the controller on the satellite: the controller's row says "no longer paired" with Pair again, within a few seconds.
+- Quit and reopen the controller with the satellite off: the satellite is listed as offline, "hasn't been found on the network yet". Turn the satellite on: it connects without pressing anything.
+- Turn off Wi-Fi on the controller: the row says what happened and what to do, then reconnects when Wi-Fi is back.
+- Pair a phone running an older Clubhouse Go that sends the desktop's name: the lock overlay says "Controlled by Phone".
+
 ## Decision log
 
 Decisions made while building, for the maintainer to revisit. Newest last.
