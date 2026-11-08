@@ -281,13 +281,18 @@ async function switchRunningModel(agentId: string, model: string, effort: string
 
 /**
  * Change the Behavior from the composer chip, Settings or a phone (#3045).
- * Saves it, gives both agents their new models, and resolves with the state.
+ * Saves it and resolves with the state; giving both agents their new models
+ * runs queued after, so the caller never waits on a CLI switching models.
  */
 export async function setDispatcherBehavior(level: DispatcherBehavior): Promise<DispatcherState> {
   const changed = await saveDispatcherBehavior(level);
   if (changed) {
     emitChanged();
-    await enqueue(() => applyBehavior(behaviorTargets(), { live: true }));
+    const queuedIn = generation;
+    // applyBehavior logs its own failures and never throws.
+    void enqueue(async () => {
+      if (queuedIn === generation) await applyBehavior(behaviorTargets(), { live: true });
+    });
   }
   return getDispatcherState();
 }

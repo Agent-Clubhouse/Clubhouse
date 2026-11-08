@@ -694,6 +694,21 @@ describe('Behavior (#3045)', () => {
     expect(coordinator()).toMatchObject({ model: 'sol', effort: 'high' });
   });
 
+  it('answers once the level is saved, without waiting for a running chat to switch models', async () => {
+    await svc.setDispatcherEnabled(true);
+    await svc.prepareDispatcherSessionStart(chatDir(), 'durable_2');
+    await settle();
+    let release!: () => void;
+    const setModel = vi.fn(() => new Promise<void>((r) => { release = r; }));
+    h.runtimes.set('durable_2', { kind: 'chat', setModel });
+    agentRegistry.register('durable_2', { projectPath: chatDir(), cwd: chatDir(), orchestrator: 'claude-code', runtime: 'pty' });
+    const state = await svc.setDispatcherBehavior('light');
+    expect(state.behavior.level).toBe('light');
+    await vi.waitFor(() => expect(setModel).toHaveBeenCalledWith('haiku', 'low'));
+    release();
+    await settle();
+  });
+
   it('refuses a level that isn\'t one, and saves nothing', async () => {
     await svc.setDispatcherEnabled(true);
     await expect(svc.setDispatcherBehavior('extreme' as never)).rejects.toThrow(/Unknown Behavior/);
