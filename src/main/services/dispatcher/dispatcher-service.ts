@@ -16,7 +16,11 @@
  * and writes its instructions. Nothing here ever starts it, so that costs no
  * tokens. See resolveDispatcherEnablement for the rules.
  *
- * Turning its switch off stops the agent and leaves the folder, `notes/` and the
+ * Its memory (#3038) is plain markdown in the folder's `memory/`. The index is
+ * added to the instructions file each time Clubhouse writes it, and an old
+ * `notes/` folder is sorted into memory first (dispatcher-memory-migration.ts).
+ *
+ * Turning its switch off stops the agent and leaves the folder, its memory and the
  * config alone, so turning it back on resumes where it left off. MCP going off
  * at app level derives it off and stops nothing: a running Dispatcher keeps
  * running, loses its connections, and can't be started again until MCP is back,
@@ -29,6 +33,7 @@ import * as agentSystem from '../agent-system';
 import { getAllProviders, getProvider, type OrchestratorId } from '../../orchestrators';
 import { getSettings as getOrchestratorSettings, whenDefaultsDetected } from '../orchestrator-settings';
 import dispatcherInstructions from './dispatcher-instructions.md';
+import { withMemoryIndex } from './dispatcher-memory-migration';
 import { appLog } from '../log-service';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import type { DispatcherState } from '../../../shared/dispatcher-types';
@@ -36,10 +41,10 @@ import type { DurableAgentConfig } from '../../../shared/types';
 import { agentRegistry } from '../agent-registry';
 import { newChromeEnabled } from '../../window-chrome';
 import { DISPATCHER_CLASSIC_MESSAGE } from '../../../shared/dispatcher-types';
-import { getDispatcherNotesPath, getDispatcherPath, isDispatcherPath } from './dispatcher-paths';
+import { getDispatcherPath, isDispatcherPath } from './dispatcher-paths';
 import { dispatcherEnablement, getSettings as getDispatcherSettings, isDispatcherEnabled, updateSettings } from './dispatcher-settings';
 
-export { getDispatcherPath, getDispatcherNotesPath, isDispatcherPath } from './dispatcher-paths';
+export { getDispatcherPath, getDispatcherNotesPath, getDispatcherNotesArchivePath, getDispatcherMemoryPath, isDispatcherPath } from './dispatcher-paths';
 export { isDispatcherEnabled, DISPATCHER_FLAG } from './dispatcher-settings';
 
 const NS = 'core:dispatcher';
@@ -142,7 +147,7 @@ async function readConfig(): Promise<DurableAgentConfig | null> {
 /** Create the Dispatcher the first time. Idempotent: an existing record is kept as it is. */
 async function ensureCreated(): Promise<DurableAgentConfig> {
   const dir = getDispatcherPath();
-  await fsp.mkdir(getDispatcherNotesPath(), { recursive: true });
+  await fsp.mkdir(dir, { recursive: true });
   const existing = await readConfig();
   if (existing) return existing;
   // On by default means this can run at first launch: wait for what the probe finds, so it isn't pinned to a CLI the user doesn't have.
@@ -171,7 +176,7 @@ async function writeInstructions(agent: DurableAgentConfig): Promise<void> {
     appLog(NS, 'warn', 'No provider to write Dispatcher instructions for', { meta: { orchestrator: providerId } });
     return;
   }
-  await provider.writeInstructions(dir, DISPATCHER_INSTRUCTIONS);
+  await provider.writeInstructions(dir, await withMemoryIndex(DISPATCHER_INSTRUCTIONS));
   instructionsWrittenFor = provider.id;
 }
 

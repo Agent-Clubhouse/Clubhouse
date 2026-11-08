@@ -11,9 +11,28 @@ export function getDispatcherPath(): string {
   return path.join(getBaseDirPath(), 'dispatcher');
 }
 
-/** The Dispatcher's workspace for plans and state between sessions. */
+/**
+ * The Dispatcher's old workspace for plans and state between sessions. Retired
+ * by #3038: its contents are sorted into memory once, and the folder is renamed
+ * to getDispatcherNotesArchivePath().
+ */
 export function getDispatcherNotesPath(): string {
   return path.join(getDispatcherPath(), 'notes');
+}
+
+/**
+ * Where the retired `notes/` folder goes, as it was (#3038). Outside memory, so
+ * its bundles don't count toward memory size or search. It is memory from before
+ * the migration: Forget everything clears it too (a `notes/` that appeared again
+ * later goes to `notes-archive-2` and so on; see listNotesArchives).
+ */
+export function getDispatcherNotesArchivePath(): string {
+  return path.join(getDispatcherPath(), 'notes-archive');
+}
+
+/** The Dispatcher's memory (#3038): plain markdown, read by any provider. */
+export function getDispatcherMemoryPath(): string {
+  return path.join(getDispatcherPath(), 'memory');
 }
 
 /** Case-insensitive on Windows, like the helper index's project keys. */
