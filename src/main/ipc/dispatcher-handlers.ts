@@ -4,6 +4,10 @@ import type { DispatcherState } from '../../shared/dispatcher-types';
 import * as dispatcher from '../services/dispatcher/dispatcher-service';
 import { clearDispatcherChat, type ClearChatResult } from '../services/dispatcher/dispatcher-clear-chat';
 import { installGroupChat } from '../services/dispatcher/dispatcher-news';
+import { forgetEverything } from '../services/dispatcher/dispatcher-forget';
+import { readDispatcherUsage } from '../services/dispatcher/dispatcher-usage';
+import { listConnectableAgents } from '../services/dispatcher/dispatcher-connected-agents';
+import type { ConnectableAgent, DispatcherUsage, ForgetEverythingResult } from '../../shared/dispatcher-settings-page';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { restorePersistedBindings } from './mcp-binding-handlers';
 import { withValidatedArgs, booleanArg, objectArg, stringArg } from './validation';
@@ -30,6 +34,11 @@ export function registerDispatcherHandlers(): void {
     },
   ));
   ipcMain.handle(IPC.DISPATCHER.CLEAR_CHAT, (): Promise<ClearChatResult> => clearDispatcherChat());
+
+  // Settings > Dispatcher (#3046).
+  ipcMain.handle(IPC.DISPATCHER.FORGET_EVERYTHING, (): Promise<ForgetEverythingResult> => forgetEverything());
+  ipcMain.handle(IPC.DISPATCHER.GET_USAGE, (): Promise<DispatcherUsage> => readDispatcherUsage());
+  ipcMain.handle(IPC.DISPATCHER.LIST_CONNECTABLE_AGENTS, (): Promise<ConnectableAgent[]> => listConnectableAgents());
 
   // Its chat is a group chat (#3043): what reaches it is triaged, and agents' news rewritten.
   installGroupChat();

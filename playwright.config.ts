@@ -15,7 +15,7 @@ export default defineConfig({
   // E2E run sets these to skip them.
   testIgnore: [
     ...(process.env.PLAYWRIGHT_IGNORE_ANNEX ? ['**/annex-v2/**'] : []),
-    ...(process.env.PLAYWRIGHT_IGNORE_CHAT_RICH ? ['**/chat-rich/**', '**/actions.spec.ts', '**/dispatcher.spec.ts', '**/dispatcher-card.spec.ts', '**/managed-agents.spec.ts', '**/managed-agents-acceptance.spec.ts', '**/stable-mode.spec.ts', '**/layout-default.spec.ts', '**/default-shell-macos.spec.ts'] : []),
+    ...(process.env.PLAYWRIGHT_IGNORE_CHAT_RICH ? ['**/chat-rich/**', '**/actions.spec.ts', '**/dispatcher.spec.ts', '**/dispatcher-card.spec.ts', '**/dispatcher-settings.spec.ts', '**/managed-agents.spec.ts', '**/managed-agents-acceptance.spec.ts', '**/stable-mode.spec.ts', '**/layout-default.spec.ts', '**/default-shell-macos.spec.ts'] : []),
   ],
   timeout: 120_000,
   // CI keeps its flake tolerance. Locally a retry discards the worker and
