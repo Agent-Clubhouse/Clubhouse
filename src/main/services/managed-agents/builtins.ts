@@ -9,9 +9,10 @@
  * a Markdown file there. `scripts/sync-builtin-text.mjs` writes all of it from
  * an export of the maintainer's builder, so don't edit those files by hand.
  *
- * Built-ins the maintainer cut are retired, not deleted (D71): they stay
- * installed and are still delivered to agents and templates that list them,
- * but the UI hides them from the library and from new choices.
+ * Built-ins the maintainer cut are retired (D71): they stay in the manifest
+ * but are never installed. At startup, every agent and template that uses one
+ * switches to a custom copy with the same name and text, and the built-in is
+ * removed (D99, `adoptRetiredBuiltins` in service.ts).
  *
  * Built-in skills (build, test, lint, validate and the post-result skills)
  * come from the builder too: each is `builtin-text/skills/<name>/SKILL.md`,
@@ -28,7 +29,7 @@ export interface BuiltinPart {
   kind: 'block' | 'skill' | 'mcp';
   name: string;
   description: string;
-  /** Cut by the maintainer: still installed and delivered, hidden from new choices. */
+  /** Cut by the maintainer: never installed; what used it gets a custom copy (D99). */
   retired?: true;
   payload: BlockAssetPayload | SkillAssetPayload | McpAssetPayload;
 }

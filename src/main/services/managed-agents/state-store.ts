@@ -14,6 +14,8 @@ export interface PartMeta {
   description?: string;
   forkedFrom?: string;
   updatedBy?: string;
+  /** The person's copy of a built-in an app update retired: the built-in's id (D99). */
+  fromRetiredBuiltin?: string;
 }
 
 export interface ManagedState {
@@ -25,6 +27,8 @@ export interface ManagedState {
   helperTemplateChoice?: boolean;
   /** One-time settings migrations done for the switch away from Clubhouse Mode (D61, D63): id to when. */
   migrations?: Record<string, string>;
+  /** Each retired built-in part or template and the custom copy that took its place (D99), so it is copied once. */
+  retiredCopies?: Record<string, string>;
 }
 
 const EMPTY: ManagedState = { version: 1, parts: {}, templates: {} };

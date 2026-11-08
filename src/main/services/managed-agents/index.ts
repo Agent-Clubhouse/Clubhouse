@@ -11,7 +11,7 @@ import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
 import type { OrchestratorProvider } from '../../orchestrators/types';
 import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
-import type { ManagedAgentStatus, ManagedMcpProblem, ManagedRunningSnapshot } from '../../../shared/managed-agents-types';
+import type { ManagedAgentSetup, ManagedAgentStatus, ManagedMcpProblem, ManagedRunningSnapshot } from '../../../shared/managed-agents-types';
 import { createManagedAgentsService, ManagedError, type ManagedAgentsService } from './service';
 import { createManagedStateStore, managedStateDir } from './state-store';
 import { ensureBuiltinsOnceFor } from './builtins-once';
@@ -52,6 +52,8 @@ export function managedAgents(): ManagedAgentsService {
       setManagedSetup: (projectPath, agentId, setup) => agentConfig.setManagedSetup(projectPath, agentId, setup),
       isRunning,
       onChanged: () => broadcastToAllWindows(IPC.MANAGED.CHANGED),
+      setHelperTemplate: async (projectPath, agentId, templateId) => { await agentConfig.updateDurableConfig(projectPath, agentId, { helperTemplateId: templateId }); },
+      onSetupRemapped: (_projectPath, agent, before, after) => followRemappedSetup(agent, before, after),
       onUnmanaged: async (_projectPath, agent) => {
         if (!agent.worktreePath) return;
         try {
@@ -65,6 +67,22 @@ export function managedAgents(): ManagedAgentsService {
     });
   }
   return service;
+}
+
+/**
+ * A retired built-in swapped for its copy delivers the same text (D99), so a
+ * running session that was up to date stays so: its delivery record moves to
+ * the copy's ids, and no setup-changed bar shows. A session already waiting
+ * for a change keeps waiting.
+ */
+export async function followRemappedSetup(agent: DurableAgentConfig, before: ManagedAgentSetup, after: ManagedAgentSetup): Promise<void> {
+  const record = delivered.get(agent.id);
+  if (!record) return;
+  const svc = managedAgents();
+  const was = setupFingerprint({ ...agent, managed: before }, await resolveManagedSetup(svc, before));
+  if (was.fingerprint !== record.fingerprint) return;
+  const now = setupFingerprint({ ...agent, managed: after }, await resolveManagedSetup(svc, after));
+  delivered.set(agent.id, { ...record, fingerprint: now.fingerprint, parts: now.parts, order: now.order });
 }
 
 /**

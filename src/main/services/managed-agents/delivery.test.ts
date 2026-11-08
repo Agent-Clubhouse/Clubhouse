@@ -127,22 +127,6 @@ describe('deliverManagedSetup', () => {
     expect(launch.instructions.split('\n').slice(0, 4)).toEqual(['Host: @@SourceControlProvider', 'Build: @@BuildCommand', 'Test: @@TestCommand', 'Lint: @@LintCommand']);
   });
 
-  it('still delivers the cut Post result skill to an agent that has it (D71)', async () => {
-    agent.managed = { version: 1, blocks: [], skills: [BUILTIN_SKILL_IDS.postResult], mcps: [] };
-    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
-    expect(fs.readFileSync(path.join(agent.worktreePath!, '.claude', 'skills', 'post-result', 'SKILL.md'), 'utf-8')).toBe(BUILTIN_SKILL_TEXT['skills/post-result/SKILL.md']);
-  });
-
-  it('still delivers a retired built-in to an agent that uses it (D71)', async () => {
-    const { setup } = await user(() => service.setupFromTemplate('builtin-template-project-manager'));
-    agent.managed = setup;
-    await user(() => deliverManagedSetup({ service, projectPath: project, agent, provider: provider() }));
-    const delivered = fs.readFileSync(path.join(agent.worktreePath!, 'CLAUDE.md'), 'utf-8');
-    const pm = builtinParts().find((p) => p.id === BUILTIN_BLOCK_IDS.projectManager)!;
-    expect(pm.retired).toBe(true);
-    expect(delivered.endsWith((pm.payload as { content: string }).content)).toBe(true);
-  });
-
   it('delivers conditional wildcards as written: a variant is its own block (#2901)', async () => {
     const rules = await user(() => service.createPart({ name: 'Variant', content: { kind: 'block', content: '@@If(nope)\nOnly sometimes.\n@@EndIf' } }));
     agent.managed = { version: 1, blocks: [rules.id], skills: [], mcps: [] };

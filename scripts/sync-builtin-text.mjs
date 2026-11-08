@@ -30,9 +30,9 @@
  * export from before the builder had skills) keeps the skills the manifest
  * gives it.
  *
- * Cut blocks and templates that shipped (origin "builtin") stay as retired
- * built-ins: agents that list them keep working, and the UI hides them from
- * new choices. Cut documents that never shipped are dropped. Built-in ids
+ * Cut blocks and templates that shipped (origin "builtin") stay in the
+ * manifest as retired built-ins: the app no longer installs them, and at its
+ * next start whatever uses one switches to the person's own copy (D99). Cut documents that never shipped are dropped. Built-in ids
  * never disappear: an id in the manifest that's missing from the export is
  * a problem, not a removal.
  *

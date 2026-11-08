@@ -107,6 +107,56 @@ describe('delivery failure status (#2819)', () => {
   });
 });
 
+describe('a retired built-in swapped for its copy while the agent runs (D99)', () => {
+  it('shows no changes waiting: the copy delivers the same text', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const { createAssetCatalogStore, installBuiltinAsset } = await import('../asset-catalog/store');
+    const { createManagedStateStore } = await import('./state-store');
+    const { createManagedAgentsService } = await import('./service');
+    const { _setManagedAgentsForTesting, followRemappedSetup } = await import('./index');
+    const { _resetSettingsAuditForTesting, withSettingsSurface } = await import('../settings-audit');
+    const { builtinParts, BUILTIN_BLOCK_IDS } = await import('./builtins');
+    const { CLUBHOUSE_MCP_PART_ID } = await import('../../../shared/managed-agents-types');
+    const actual = await vi.importActual<typeof import('./delivery')>('./delivery');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-retired-running-'));
+    _resetSettingsAuditForTesting(false);
+    const catalog = createAssetCatalogStore({ dir: path.join(root, 'catalog') });
+    // As an earlier version left it: the retired built-ins installed too.
+    await withSettingsSurface('system', undefined, async () => {
+      for (const p of builtinParts()) await installBuiltinAsset(catalog, { assetId: p.id, kind: p.kind, name: p.name, builtinId: p.id, expectedRevision: 0, payload: p.payload });
+    });
+    const svc = createManagedAgentsService({
+      catalog,
+      state: createManagedStateStore(path.join(root, 'managed')),
+      listProjects: async () => [{ path: '/p', name: 'p' }],
+      listAgents: async () => [...state.agents.values()],
+      getAgent: async (_p, id) => state.agents.get(id) ?? null,
+      setManagedSetup: async (_p, id, setup) => { const a = state.agents.get(id)!; if (setup) a.managed = setup; else delete a.managed; },
+      isRunning: (id) => state.running.has(id),
+      onSetupRemapped: (_p, a, before, after) => followRemappedSetup(a, before, after),
+    });
+    _setManagedAgentsForTesting(svc);
+    try {
+      const provider = { id: 'claude-code', conventions: { configDir: '.claude', skillsDir: 'skills', mcpConfigFile: '.mcp.json', legacyInstructionsFile: 'CLAUDE.md', localSettingsFile: 'settings.local.json' }, writeInstructions: async () => {} } as unknown as OrchestratorProvider;
+      const worktreePath = path.join(root, 'wt');
+      fs.mkdirSync(worktreePath);
+      state.agents.set('pm', { id: 'pm', name: 'pm', color: 'indigo', createdAt: '', worktreePath, managed: { version: 1, blocks: [BUILTIN_BLOCK_IDS.projectManager], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] } });
+      state.running.add('pm');
+      deliver.mockImplementationOnce(actual.deliverManagedSetup as never);
+      await deliverForSpawn('/p', state.agents.get('pm')!, provider);
+      expect(await statusFor('/p', 'pm')).toMatchObject({ waiting: false });
+      await svc.ensureBuiltins();
+      expect(state.agents.get('pm')!.managed!.blocks[0]).not.toBe(BUILTIN_BLOCK_IDS.projectManager);
+      expect(await statusFor('/p', 'pm')).toMatchObject({ waiting: false, changes: [] });
+    } finally {
+      _setManagedAgentsForTesting(null);
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('a setup saved before the Clubhouse MCP part was required (D69)', () => {
   const provider = { id: 'claude-code', conventions: { configDir: '.claude', skillsDir: 'skills', mcpConfigFile: '.mcp.json', legacyInstructionsFile: 'CLAUDE.md', localSettingsFile: 'settings.local.json' }, writeInstructions: async () => {} } as unknown as OrchestratorProvider;
 
