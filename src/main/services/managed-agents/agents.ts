@@ -4,7 +4,7 @@
  * They combine the managed-agents service with agent config and
  * orchestration policy.
  */
-import { callerAccess, withAccess } from '../../../shared/agent-access';
+import { callerAccess, isAccessLevel, withAccess } from '../../../shared/agent-access';
 import { getDefaultAccess, getPermissionMode } from '../free-agent-settings';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -88,6 +88,9 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
   const base = input.templateId ? await service.setupFromTemplate(input.templateId) : null;
   // The caller's own Access wins over the template's (#2761): a level it names, or a legacy on/off that keeps
   // the template's level (else the Default access) when it is already on that side.
+  // An unknown level or a flag that isn't on/off is refused, never read as some level.
+  if (input.settings?.access !== undefined && !isAccessLevel(input.settings.access)) throw new ManagedError('invalid', 'access must be plan, ask, auto_edit, auto or full_access.');
+  if (input.settings?.freeAgentMode !== undefined && typeof input.settings.freeAgentMode !== 'boolean') throw new ManagedError('invalid', 'freeAgentMode must be true or false.');
   const from = (base?.settings ? withAccess(base.settings, getPermissionMode(projectPath)).access : undefined) ?? getDefaultAccess();
   const own = input.settings ? callerAccess(input.settings, from, getPermissionMode(projectPath)) : {};
   const settings: ManagedTemplateSettings = { ...(base?.settings ?? {}), ...own };

@@ -17,7 +17,7 @@ import { withDispatcherCatalogWrites } from '../../asset-catalog/store';
 import { managedAgents, restartManagedAgent, statusFor } from '../../managed-agents';
 import { applyManagedSettings, createManagedAgent } from '../../managed-agents/agents';
 import { previewManagedSetup } from '../../managed-agents/delivery';
-import { ManagedError } from '../../managed-agents/service';
+import { checkTemplateSettings, ManagedError } from '../../managed-agents/service';
 import { resolveOrchestrator } from '../../agent-system';
 import { getDefaultAccess, getPermissionMode } from '../../free-agent-settings';
 import { callerAccess, withAccess, type AccessLevel } from '../../../../shared/agent-access';
@@ -309,10 +309,14 @@ export function registerManagedTools(): void {
 
   /**
    * Template settings as a caller sent them: a level it names wins over the legacy
-   * flag it read back beside it, so lowering a level never comes out higher (#2761, D103).
+   * flag it read back beside it, so lowering a level never comes out higher (#2997, D103).
+   * A new template has no level yet for a bare legacy flag to keep.
    */
-  const sentSettings = (settings: ManagedTemplateSettings, from: ManagedTemplateSettings | undefined): ManagedTemplateSettings =>
-    callerAccess(settings, levelOf(from), getPermissionMode());
+  const sentSettings = (settings: ManagedTemplateSettings, from: ManagedTemplateSettings | undefined): ManagedTemplateSettings => {
+    // Refused as sent (an unknown level, a flag that isn't on/off), before anything reads them as a level.
+    checkTemplateSettings(settings);
+    return callerAccess(settings, from ? levelOf(from) : undefined, getPermissionMode());
+  };
   const levelOf = (s: ManagedTemplateSettings | undefined): AccessLevel =>
     (s ? withAccess(s, getPermissionMode()).access : undefined) ?? getDefaultAccess();
 

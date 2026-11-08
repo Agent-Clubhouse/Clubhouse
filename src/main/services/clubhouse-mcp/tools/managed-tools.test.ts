@@ -292,6 +292,24 @@ describe('templates', () => {
     expect(JSON.stringify(preview.json.changes)).not.toContain('Full access');
   });
 
+  it('refuses a level or legacy flag it can\'t read, never reading it as some level (#2997)', async () => {
+    const t = (await call('save_agent_template', { name: 'Plan', blocks: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: { access: 'plan' } })).json;
+    for (const settings of [{ freeAgentMode: 'false' }, { freeAgentMode: 1 }, { access: 'full' }, { access: 'full', freeAgentMode: true }]) {
+      const saved = await call('save_agent_template', { id: t.id, settings });
+      expect(saved.isError, JSON.stringify(settings)).toBe(true);
+      const pushed = await call('push_agent_template', { id: t.id, blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings });
+      expect(pushed.isError, JSON.stringify(settings)).toBe(true);
+      const made = await call('create_managed_agent', { project: 'Clubhouse', name: 'odd', templateId: t.id, settings });
+      expect(made.isError, JSON.stringify(settings)).toBe(true);
+    }
+    expect((await call('list_agent_templates', {})).json.find((x: { id: string }) => x.id === t.id).settings).toMatchObject({ access: 'plan' });
+  });
+
+  it('a new template with only a legacy flag maps it as a legacy record does, not to the Default access', async () => {
+    const t = (await call('save_agent_template', { name: 'Off', blocks: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: { freeAgentMode: false } })).json;
+    expect(t.settings).toMatchObject({ access: 'ask', freeAgentMode: false });
+  });
+
   it('a bare legacy flag keeps the template\'s level on that side (#2997)', async () => {
     const t = (await call('save_agent_template', { name: 'Auto', blocks: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: { access: 'auto' } })).json;
     const kept = (await call('save_agent_template', { id: t.id, settings: { freeAgentMode: true } })).json;
