@@ -172,6 +172,12 @@ export interface Action {
   offReason?: string;
   /** The last mechanical failure, shown under its name until a run succeeds or it is edited. */
   problem?: string;
+  /**
+   * A subscription (#3042): its owner asked to be told when something
+   * happens. An event trigger and one step that messages the owner. It stays
+   * one while an edit keeps that shape; see subscription.ts.
+   */
+  subscription?: true;
   createdAt: number;
   updatedAt: number;
 }

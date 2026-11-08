@@ -278,6 +278,12 @@ export interface SessionCapable {
     opts?: TranscriptReadOptions,
   ): Promise<StreamJsonEvent[] | null>;
 
+  /**
+   * The file `readSessionTranscript` reads for `sessionId`, or null when there
+   * is none. Lets a search link a hit to the file and line it came from (#3039).
+   */
+  transcriptPath?(sessionId: string, cwd: string): Promise<string | null>;
+
   /** Extract session ID from PTY buffer output, if recognizable */
   extractSessionId(ptyBuffer: string): string | null;
 

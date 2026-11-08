@@ -12,6 +12,7 @@ import { registerHelperTools } from './helper-tools';
 import { registerModelTools } from './model-tools';
 import { registerDispatcherTools } from './dispatcher-tools';
 import { registerDispatcherChatTools } from './dispatcher-chat-tools';
+import { registerDispatcherSearchTools } from './dispatcher-search-tools';
 import { registerAppearanceTools } from './appearance-tools';
 import { registerSettingsReadTools } from './settings-read-tools';
 import { registerDispatcherControlTools } from './dispatcher-control-tools';
@@ -33,6 +34,7 @@ export function registerClubhouseMcpTools(): void {
   registerModelTools();
   registerDispatcherTools();
   registerDispatcherChatTools();
+  registerDispatcherSearchTools();
   registerAppearanceTools();
   registerSettingsReadTools();
   registerDispatcherControlTools();

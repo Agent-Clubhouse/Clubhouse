@@ -7,6 +7,7 @@
  */
 
 import {
+  AUTO_CANDIDATE_PROVIDERS,
   AUTO_LEVELS,
   HELPER_DIFFICULTIES,
   HELPER_AUTO_OFF_REASONS,
@@ -15,6 +16,7 @@ import {
   HELPER_ROUTING_MODES,
   HELPER_ROUTING_REASONS,
   PRESET_CELL_STATES,
+  PRESET_PROVIDERS,
   QUOTA_SOURCES,
   QUOTA_STATES,
   QUOTA_UNKNOWN_REASONS,
@@ -50,6 +52,9 @@ export function helperRoutingCapability() {
     difficulties: HELPER_DIFFICULTIES,
     /** Every row in a provider's `cells`, minimum and maximum included (#3044). `difficulties` stays what start_helper takes. */
     levels: AUTO_LEVELS,
+    /** The providers with presets, Copilot included (#3085), and the ones `cli: "auto"` chooses between. */
+    presetProviders: PRESET_PROVIDERS,
+    autoCandidates: AUTO_CANDIDATE_PROVIDERS,
     reasons: HELPER_ROUTING_REASONS,
     fallbacks: HELPER_ROUTING_FALLBACKS,
     skipped: HELPER_ROUTING_SKIPS,
