@@ -117,6 +117,26 @@ describe('messages to the Dispatcher (#3037)', () => {
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
+  it('an action (#3042): the Dispatcher’s own subscription wakes it with no grant check', async () => {
+    const req = request({ senderId: 'disp', fromAction: true, toolName: 'action', args: { actionId: 'act-1' } });
+    await expect(deliverToDispatcher(req)).resolves.toEqual({ delivered: true, woke: true });
+    expect(mocks.decideGrant).not.toHaveBeenCalled();
+    expect(system.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'disp', mission: req.text }));
+  });
+
+  it('an action (#3042): an agent’s action follows that agent’s wake grant, and never parks an Ask first request', async () => {
+    mocks.decideGrant.mockReturnValue({ outcome: 'ask' });
+    const asked = await deliverToDispatcher(request({ senderId: 'lead', fromAction: true, toolName: 'action', args: { actionId: 'act-1' } }));
+    expect(mocks.decideGrant).toHaveBeenCalledWith('lead', 'agent.wake', expect.anything());
+    expect(asked).toMatchObject({ delivered: false });
+    if (!asked.delivered) expect(asked.text).toContain('waking it asks the user first');
+    expect(mocks.askFirst).not.toHaveBeenCalled();
+    expect(system.spawnAgent).not.toHaveBeenCalled();
+    mocks.decideGrant.mockReturnValue({ outcome: 'refuse' });
+    expect(await deliverToDispatcher(request({ senderId: 'lead', fromAction: true }))).toMatchObject({ delivered: false });
+    expect(system.spawnAgent).not.toHaveBeenCalled();
+  });
+
   it('tells the sender clearly when the Dispatcher fails to start', async () => {
     system.spawnAgent.mockRejectedValue(new Error('claude CLI not found'));
     const result = await deliverToDispatcher(request());

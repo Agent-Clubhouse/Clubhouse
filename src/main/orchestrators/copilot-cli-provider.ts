@@ -421,6 +421,11 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     return copilotSessionInCwd(this.sessionStateDir(), sessionId, cwd);
   }
 
+  /** The transcript file for `sessionId`, found by its id (#2277). null when there is none. */
+  async transcriptPath(sessionId: string, cwd: string): Promise<string | null> {
+    return findCopilotTranscript(this.sessionStateDir(), sessionId, cwd);
+  }
+
   /**
    * Read a historical session transcript from Copilot CLI's session storage.
    * Returns raw StreamJsonEvent[] or null if session not found.

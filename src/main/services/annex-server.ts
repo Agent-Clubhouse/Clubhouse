@@ -2378,13 +2378,15 @@ export function pairedDeviceAlias(
   own: { alias?: string; deviceName?: string },
   isPhone: boolean,
   fingerprint = '',
+  /** False when re-checking a stored name for display, so each connection doesn't log. */
+  log = true,
 ): string {
   const fallback = isPhone ? 'Phone' : 'Computer';
   const alias = typeof sent === 'string' ? sent.trim() : '';
   if (!alias) return fallback;
   const same = (name: string | undefined): boolean => !!name && name.trim().toLocaleLowerCase() === alias.toLocaleLowerCase();
   if (same(own.alias) || same(own.deviceName)) {
-    appLog('core:annex', 'warn', "A pairing device sent this machine's own name; storing a neutral name", {
+    if (log) appLog('core:annex', 'warn', "A pairing device sent this machine's own name; storing a neutral name", {
       meta: { fingerprint, fallback },
     });
     return fallback;
@@ -4871,7 +4873,10 @@ export function start(): void {
       sessionPauseOwner = fingerprint || null;
       broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
         locked: true,
-        controllerAlias: peer?.alias || 'Remote Controller',
+        // The same rule as at pairing, for a pairing saved before it or after this machine was renamed (#2442).
+        controllerAlias: peer?.alias
+          ? pairedDeviceAlias(peer.alias, annexSettings.getSettings(), peer.kind === 'phone' || /phone|pad|tablet|mobile/i.test(peer.icon ?? ''), fingerprint, false)
+          : 'Remote Controller',
         controllerIcon: peer?.icon || '',
         controllerColor: peer?.color || 'indigo',
         controllerFingerprint: fingerprint || '',
