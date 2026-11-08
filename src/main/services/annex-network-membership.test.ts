@@ -167,6 +167,20 @@ describe('Annex Network membership (#3061)', () => {
     expect(hooks.endDevice).toHaveBeenCalledWith(B);
   });
 
+  it('leaving announces no removals: no member is told to remove another, or itself', () => {
+    // As the app ends a device: removing its pairing records a removal (revokePeer → noteLocalRemoval), unless leaving.
+    hooks.endDevice.mockImplementation((f: string) => { membership.noteLocalRemoval(f); peers.delete(f.toLowerCase()); });
+    open = [A, B];
+    listener!(A, { v: 1, type: 'member-removed', removal: { fingerprint: SELF, removedAt: '2026-11-08T12:00:00.000Z' } });
+    expect(hooks.endDevice).toHaveBeenCalledWith(B);
+    expect(broadcasts.filter((b) => (b.message as { type: string }).type === 'member-removed')).toEqual([]);
+    expect(membership.currentView().removals.map((r) => r.fingerprint.toLowerCase())).not.toContain(B.toLowerCase());
+    // Afterwards, removing a member here is announced again.
+    peers.set(N.toLowerCase(), memberPeer(N, '0e', 'New Mac'));
+    membership.noteLocalRemoval(N);
+    expect(broadcasts.some((b) => (b.message as { type: string }).type === 'member-removed')).toBe(true);
+  });
+
   it('removing a member here tells every member, the removed one included, and tracks where it is confirmed', () => {
     peers.set(N.toLowerCase(), memberPeer(N, '0e', 'New Mac'));
     open = [A, B, N];
