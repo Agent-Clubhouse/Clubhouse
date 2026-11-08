@@ -77,6 +77,10 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
       // Resolve free agent mode: explicit param > parent's quickDefaults
       const resolvedFreeAgentMode = freeAgentMode ?? quickDefaults?.freeAgentMode;
 
+      // This launch's part changes from its template (#2928): kept on the agent for Details and Retry, never saved.
+      const quickChanges = options?.managedTemplateId && (options.addParts?.length || options.removeParts?.length)
+        ? { added: [...(options.addParts ?? [])], removed: [...(options.removeParts ?? [])] }
+        : undefined;
       const agent: Agent = {
         id: agentId,
         projectId,
@@ -93,6 +97,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         pluginMetadata,
         runCwd: cwd,
         ...(options?.managedTemplateId && { managedTemplateId: options.managedTemplateId }),
+        ...(quickChanges && { managedQuickChanges: quickChanges }),
       };
 
       set((s) => ({
@@ -143,7 +148,13 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
           allowedTools: quickDefaults?.allowedTools,
           orchestrator: resolvedOrchestrator,
           freeAgentMode: resolvedFreeAgentMode,
-          ...(options?.managedTemplateId && { managedTemplate: { id: options.managedTemplateId, agentName: name } }),
+          ...(options?.managedTemplateId && {
+            managedTemplate: {
+              id: options.managedTemplateId, agentName: name,
+              ...(quickChanges?.added.length && { addParts: quickChanges.added }),
+              ...(quickChanges?.removed.length && { removeParts: quickChanges.removed }),
+            },
+          }),
         });
 
         set((s) => {

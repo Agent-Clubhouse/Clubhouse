@@ -139,6 +139,8 @@ export interface Agent {
   runBaseSha?: string;
   /** Quick agents started from a template (D25): its id, so Retry keeps it. */
   managedTemplateId?: string;
+  /** What this launch added to or left out of its template (#2928), for Details and Retry. */
+  managedQuickChanges?: QuickRunChanges;
 }
 
 export interface CompletedQuickAgent {
@@ -178,6 +180,8 @@ export interface CompletedQuickAgent {
   outputTokens?: number;
   /** The template the run started from (D25), for Retry. */
   managedTemplateId?: string;
+  /** What the run added to or left out of its template (#2928), for Retry. */
+  managedQuickChanges?: QuickRunChanges;
 }
 
 // --- Config inheritance types ---
@@ -1527,8 +1531,28 @@ export interface SpawnAgentParams {
   agentFile?: string;
   /** Source directory for agent file (e.g. --source ~/.copilot/agents/) */
   agentSource?: string;
-  /** Clubhouse-managed quick agents (#2893): start from this template. */
-  managedTemplate?: { id: string; agentName: string };
+  /** Clubhouse-managed quick agents (#2893): start from this template, with this launch's part changes (#2928). */
+  managedTemplate?: QuickTemplateChoice;
+}
+
+/** At most this many parts added, and this many removed, for one quick launch (#2928). */
+export const MAX_QUICK_RUN_CHANGES = 50;
+
+/**
+ * A quick agent's template (#2893, D25), and what this one launch adds to it or
+ * leaves out (#2928, D102). Part ids; the template itself never changes.
+ */
+export interface QuickTemplateChoice {
+  id: string;
+  agentName: string;
+  addParts?: string[];
+  removeParts?: string[];
+}
+
+/** What one quick launch changed from its template (#2928): part ids, for Details and Retry. */
+export interface QuickRunChanges {
+  added: string[];
+  removed: string[];
 }
 
 export type AgentDetailedState = 'idle' | 'working' | 'needs_permission' | 'tool_error';

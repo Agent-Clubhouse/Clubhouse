@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { Agent, DurableConfigUpdates } from '../../../../shared/types';
+import type { Agent, DurableConfigUpdates, QuickRunChanges } from '../../../../shared/types';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
@@ -38,7 +38,8 @@ import { useAgentDetailsStore } from './detailsStore';
 import { useDurableConfig } from './useDurableConfig';
 import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
 import { openDispatcherSettings } from '../../dispatcher/dispatcherNav';
-import { useManagedSetup, useManagedStatus } from '../../managed/managedApi';
+import { useManagedParts, useManagedSetup, useManagedStatus, useManagedTemplates } from '../../managed/managedApi';
+import { builtFromLine } from '../../managed/attribution';
 import { legacyLine, legacyUse, migrationFailedLine } from '../../managed/legacy';
 import { SetupCard } from './SetupCard';
 
@@ -180,6 +181,23 @@ interface SettingsCardProps {
  * Settings, or Setup for a Clubhouse-managed agent (#2896). An unmanaged
  * agent keeps Settings.
  */
+/** "Release template, plus Extra, minus Tone": names once the library loads. */
+function QuickTemplateLine({ templateId, changes }: { templateId: string; changes?: QuickRunChanges }) {
+  const templates = useManagedTemplates();
+  const lists = [useManagedParts('block').value, useManagedParts('mcp').value, useManagedParts('skill').value];
+  const name = templates.value?.find((t) => t.id === templateId)?.name ?? null;
+  if (!templates.value) return <span className="text-ctp-overlay1">Loading</span>;
+  if (!changes || (changes.added.length === 0 && changes.removed.length === 0)) return <>{name ?? 'No longer in the library'}</>;
+  if (lists.some((l) => l === null)) return <span className="text-ctp-overlay1">Loading</span>;
+  const byId = new Map(lists.flatMap((l) => l!).map((p) => [p.id, p.name]));
+  return (
+    <span className="flex flex-col">
+      <span>{builtFromLine(name, changes, (id) => byId.get(id))}</span>
+      <span className="text-xs text-ctp-overlay1">For this run only</span>
+    </span>
+  );
+}
+
 export function SettingsCard(props: SettingsCardProps) {
   const { agent, chat, projectPath, provider } = props;
   const local = agent.kind === 'durable' && !isRemoteProjectId(agent.projectId) && !!projectPath;
@@ -310,6 +328,11 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
   });
 
   const rows: SettingRow[] = [
+    // A quick agent from a template (D25): which one, and what this run changed (#2928).
+    ...(agent.kind === 'quick' && agent.managedTemplateId ? [{
+      id: 'template', label: 'Template', editable: 'never' as const,
+      value: <QuickTemplateLine templateId={agent.managedTemplateId} changes={agent.managedQuickChanges} />,
+    }] : []),
     {
       id: 'cli', label: 'CLI', editable: 'sleeping',
       value: <>{provider}{chat?.cliVersion && !asleep ? <span className="text-ctp-overlay1"> {chat.cliVersion}</span> : null}</>,

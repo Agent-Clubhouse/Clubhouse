@@ -980,6 +980,16 @@ describe('agentStore', () => {
       expect(getState().agents[plain]).not.toHaveProperty('managedTemplateId');
     });
 
+    it('passes one launch\'s part changes to main and keeps them on the agent, and only that launch (#2928)', async () => {
+      const projectPath = path.join(path.sep, 'work', 'proj');
+      const id = await getState().spawnQuickAgent('proj_1', projectPath, 'do stuff', undefined, undefined, undefined, undefined, undefined, undefined, { managedTemplateId: 'tpl-1', addParts: ['p-a'], removeParts: ['p-b'] });
+      expect(mockAgent.spawnAgent.mock.calls[0][0].managedTemplate).toEqual({ id: 'tpl-1', agentName: getState().agents[id].name, addParts: ['p-a'], removeParts: ['p-b'] });
+      expect(getState().agents[id].managedQuickChanges).toEqual({ added: ['p-a'], removed: ['p-b'] });
+      const next = await getState().spawnQuickAgent('proj_1', projectPath, 'again', undefined, undefined, undefined, undefined, undefined, undefined, { managedTemplateId: 'tpl-1' });
+      expect(mockAgent.spawnAgent.mock.calls[1][0].managedTemplate).toEqual({ id: 'tpl-1', agentName: getState().agents[next].name });
+      expect(getState().agents[next]).not.toHaveProperty('managedQuickChanges');
+    });
+
     it('parent with allowedTools — passes to spawnAgent', async () => {
       seedAgent({ id: 'parent_2', kind: 'durable', worktreePath: '/wt/parent' });
       mockAgent.getDurableConfig.mockResolvedValue({

@@ -4,7 +4,7 @@ import * as path from 'path';
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { ICON_DATA_URL_MAX_LENGTH } from '../../shared/icon-limits';
-import { SpawnAgentParams } from '../../shared/types';
+import { MAX_QUICK_RUN_CHANGES, SpawnAgentParams } from '../../shared/types';
 import { isSessionCapable, type OrchestratorId, type TranscriptReadStats } from '../orchestrators';
 import * as agentConfig from '../services/agent-config';
 import * as agentSystem from '../services/agent-system';
@@ -552,9 +552,17 @@ export function registerAgentHandlers(): void {
         if (typeof v.cwd !== 'string' || !v.cwd) throw new Error(`${name}.cwd must be a non-empty string`);
         if (typeof v.kind !== 'string' || !v.kind) throw new Error(`${name}.kind must be a non-empty string`);
         if (v.managedTemplate !== undefined) {
-          const t = v.managedTemplate as { id?: unknown; agentName?: unknown } | null;
+          const t = v.managedTemplate as { id?: unknown; agentName?: unknown; addParts?: unknown; removeParts?: unknown } | null;
           if (!t || typeof t.id !== 'string' || !t.id || t.id.length > 128 || typeof t.agentName !== 'string' || t.agentName.length > 200) {
             throw new Error(`${name}.managedTemplate must be { id, agentName }`);
+          }
+          // One launch's part changes (#2928): part ids, a bounded few. Main checks each against the library.
+          for (const key of ['addParts', 'removeParts'] as const) {
+            const ids = t[key];
+            if (ids === undefined) continue;
+            if (!Array.isArray(ids) || ids.length > MAX_QUICK_RUN_CHANGES || ids.some((id) => typeof id !== 'string' || !id || id.length > 128)) {
+              throw new Error(`${name}.managedTemplate.${key} must be at most ${MAX_QUICK_RUN_CHANGES} part ids`);
+            }
           }
           if (v.kind !== 'quick') throw new Error(`${name}.managedTemplate is for quick agents`);
         }

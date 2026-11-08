@@ -242,6 +242,20 @@ describe('Settings card edge cases', () => {
     expect(card.getByTestId('details-setting-model')).toBeInTheDocument();
   });
 
+  it('a quick agent from a template shows the template, and what this run added or left out (#2928)', async () => {
+    const m = window.clubhouse.managed;
+    vi.spyOn(m, 'listTemplates').mockResolvedValue({ ok: true, value: [{ id: 'tpl', name: 'Release', description: '', builtin: false, setup: { blocks: [], skills: [], mcps: [] }, settings: {}, usedBy: 0 }] } as never);
+    vi.spyOn(m, 'listParts').mockImplementation(async (kind: string) => ({ ok: true, value: kind === 'block' ? [{ id: 'p-a', name: 'Extra', kind: 'block' }, { id: 'p-b', name: 'Tone', kind: 'block' }] : [] }) as never);
+    const quick: Agent = { ...agent, kind: 'quick', managedTemplateId: 'tpl', managedQuickChanges: { added: ['p-a'], removed: ['p-b'] } };
+    const { unmount } = render(<AgentDetails agent={quick} />);
+    openSettings();
+    await waitFor(() => expect(screen.getByTestId('details-setting-template')).toHaveTextContent('Release template, plus Extra, minus ToneFor this run only'));
+    unmount();
+    render(<AgentDetails agent={{ ...quick, managedQuickChanges: undefined }} />);
+    await waitFor(() => expect(screen.getByTestId('details-setting-template')).toHaveTextContent('Release'));
+    expect(screen.getByTestId('details-setting-template')).not.toHaveTextContent('For this run only');
+  });
+
   it('reads no config for an agent on another machine and leaves out local-only rows', () => {
     const remote: Agent = { ...agent, projectId: 'remote||sat-1||p1' };
     render(<AgentDetails agent={remote} chat={chatState()} />);

@@ -22,7 +22,7 @@ import { isDisposedAgent, isEffortValue } from '../../shared/agent-helpers';
 import { cleanupStaleJsonInTomlConfigs } from './toml-config-cleanup';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
 import { applyLaunchWrapper, validateWrapperConfig } from '../orchestrators/shared';
-import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode } from '../../shared/types';
+import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode, QuickTemplateChoice } from '../../shared/types';
 import type { RoutedMessagePart } from '../../shared/chat';
 import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrator, DEFAULT_ORCHESTRATOR } from './agent-registry';
 import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
@@ -122,7 +122,7 @@ export interface SpawnAgentParams {
    * template. Its instructions go in the system prompt and its MCP servers in
    * the launch flags; nothing is written into the folder it runs in.
    */
-  managedTemplate?: { id: string; agentName: string };
+  managedTemplate?: QuickTemplateChoice;
 }
 
 export function isHeadlessAgent(agentId: string): boolean {

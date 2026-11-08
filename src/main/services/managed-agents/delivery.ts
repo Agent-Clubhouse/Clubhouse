@@ -17,7 +17,7 @@ import { canonicalHash } from '../asset-catalog/planner';
 import { replaceManagedWildcards } from '../../../shared/wildcard-replacer';
 import { buildWildcardContext } from '../agent-wildcards';
 import { appLog } from '../log-service';
-import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
+import { MAX_QUICK_RUN_CHANGES, type DurableAgentConfig, type McpServerDef, type QuickRunChanges } from '../../../shared/types';
 import type { OrchestratorProvider } from '../../orchestrators/types';
 import {
   CLUBHOUSE_MCP_PART_ID,
@@ -30,8 +30,8 @@ import {
 } from '../../../shared/managed-agents-types';
 import { managedSettingsSummary } from '../../../shared/managed-settings-summary';
 import { resolveOrchestrationPolicy } from '../../../shared/orchestration-policy';
-import { withClubhouseSetup, type ManagedAgentsService } from './service';
-import { withWorkingIdentity } from './builtins';
+import { builtinPart, ManagedError, withClubhouseSetup, type ManagedAgentsService } from './service';
+import { BUILTIN_BLOCK_IDS, withWorkingIdentity } from './builtins';
 import { skillsFolderOf } from '../../../shared/skills-folder';
 import { helperTemplateFor } from './helpers';
 
@@ -787,6 +787,59 @@ export interface QuickManagedLaunch {
   skippedSkills: number;
   /** Parts the template lists that no longer exist. */
   missing: number;
+  /** What this launch added to or left out of the template (#2928). Empty lists when it changed nothing. */
+  changes: QuickRunChanges;
+}
+
+/**
+ * A quick launch's setup: the template's, as a quick agent gets it (the
+ * working Identity), with this launch's parts added and left out (#2928,
+ * D102). Only parts a person could put in a setup themselves: library parts
+ * that exist and aren't retired, never the Clubhouse MCP part left out, and
+ * the result passes the checks a saved setup does. Throws before anything
+ * starts. The template is only read.
+ */
+export async function quickRunSetup(
+  service: ManagedAgentsService,
+  working: { blocks: string[]; skills: string[]; mcps: string[] },
+  choice: { addParts?: string[]; removeParts?: string[] },
+): Promise<{ setup: { blocks: string[]; skills: string[]; mcps: string[] }; changes: QuickRunChanges }> {
+  const add = choice.addParts ?? [];
+  const remove = choice.removeParts ?? [];
+  if (add.length === 0 && remove.length === 0) return { setup: working, changes: { added: [], removed: [] } };
+  if (add.length > MAX_QUICK_RUN_CHANGES || remove.length > MAX_QUICK_RUN_CHANGES) {
+    throw new ManagedError('invalid', `A quick launch adds or leaves out at most ${MAX_QUICK_RUN_CHANGES} parts.`);
+  }
+  const live = await service.liveEntries();
+  // Either Identity id names the one the quick agent gets.
+  const asWorking = (id: string) => (id === BUILTIN_BLOCK_IDS.identity ? BUILTIN_BLOCK_IDS.identityHelper : id);
+  const inTemplate = new Set([...working.blocks, ...working.skills, ...working.mcps]);
+  const drop = new Set(remove.map(asWorking));
+  if (drop.has(CLUBHOUSE_MCP_PART_ID)) throw new ManagedError('invalid', 'The Clubhouse MCP part stays in every setup.');
+  for (const id of drop) {
+    if (!inTemplate.has(id)) throw new ManagedError('invalid', `${live[id]?.name ?? 'That part'} isn't in the template, so there is nothing to leave out.`);
+  }
+  const setup = {
+    blocks: working.blocks.filter((id) => !drop.has(id)),
+    skills: working.skills.filter((id) => !drop.has(id)),
+    mcps: working.mcps.filter((id) => !drop.has(id)),
+  };
+  const added: string[] = [];
+  for (const raw of add) {
+    const id = asWorking(raw);
+    const entry = live[id];
+    // What a person can add to a setup: a part in the library, not one an app update retired.
+    if (!entry || entry.owner.kind !== 'library' || builtinPart(id)?.retired) throw new ManagedError('not_found', 'A part to add isn\'t in the library.');
+    const list = entry.kind === 'block' ? setup.blocks : entry.kind === 'skill' ? setup.skills : entry.kind === 'mcp' ? setup.mcps : null;
+    if (!list) throw new ManagedError('not_found', 'A part to add isn\'t in the library.');
+    if (!list.includes(id)) list.push(id);
+    if ((!inTemplate.has(id) || drop.has(id)) && !added.includes(id)) added.push(id);
+  }
+  // Left out and added back is no change either way.
+  const changes = { added: added.filter((id) => !drop.has(id)), removed: [...drop].filter((id) => !added.includes(id)) };
+  // The checks a saved setup passes (two skills with one folder, parts that exist), so a launch can't do what a save couldn't.
+  const checked = await service.checkSetup(setup);
+  return { setup: { blocks: checked.blocks, skills: checked.skills, mcps: checked.mcps }, changes };
 }
 
 /**
@@ -805,13 +858,16 @@ export async function quickManagedLaunch(params: {
   templateId: string;
   /** The branch checked out in `cwd`, when there is one. */
   branch?: string | null;
+  /** This launch's part changes (#2928). */
+  addParts?: string[];
+  removeParts?: string[];
 }): Promise<QuickManagedLaunch> {
   // setupFromTemplate keeps only the parts that still exist, so what it dropped
   // is what's missing: the template's own list minus what came back.
   const template = await params.service.getTemplate(params.templateId);
   const { setup: fromTemplate } = await params.service.setupFromTemplate(params.templateId);
-  const setup = withWorkingIdentity(fromTemplate);
-  const resolved = await resolveSetup(params.service, setup);
+  const { setup, changes } = await quickRunSetup(params.service, withWorkingIdentity(fromTemplate), params);
+  const resolved = await resolveSetup(params.service, { version: 1, ...setup });
   const partCount = (s: { blocks: string[]; skills: string[]; mcps: string[] }) => s.blocks.length + s.skills.length + s.mcps.length;
   const dropped = partCount(template.setup) - partCount(fromTemplate);
   const agent: DurableAgentConfig = {
@@ -830,6 +886,7 @@ export async function quickManagedLaunch(params: {
     servers: mcpServersOf(resolved),
     skippedSkills: resolved.skills.length,
     missing: dropped + resolved.missing.length,
+    changes,
   };
 }
 
