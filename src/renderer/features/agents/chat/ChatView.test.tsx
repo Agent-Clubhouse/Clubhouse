@@ -5,7 +5,7 @@ import type { ChatEvent } from '../../../../shared/chat';
 import { foldChatEvents, useChatStore, type ChatViewState } from '../../../stores/chatStore';
 import { CANVAS_TRANSCRIPT_TAIL, ChatView, ChatViewBody } from './ChatView';
 import { useChatDraftStore, type ChatActions } from './useChatSession';
-import { chatFixture, FIXTURE_AGENT_ID, PROFILES, type FixtureProvider } from './fixtures';
+import { chatFixture, FEWER_CAPABILITIES, FIXTURE_AGENT_ID, PROFILES, type FixtureProvider } from './fixtures';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { useProjectStore } from '../../../stores/projectStore';
 
@@ -38,8 +38,8 @@ function renderState(state: ChatViewState, actions = makeActions()) {
   return { ...utils, actions };
 }
 
-function renderFixture(p: FixtureProvider, scenario: Parameters<typeof chatFixture>[1], actions = makeActions()) {
-  return renderState(fold(chatFixture(p, scenario)), actions);
+function renderFixture(p: FixtureProvider, scenario: Parameters<typeof chatFixture>[1], actions = makeActions(), capabilities?: Parameters<typeof chatFixture>[3]) {
+  return renderState(fold(chatFixture(p, scenario, undefined, capabilities)), actions);
 }
 
 beforeEach(() => {
@@ -287,7 +287,7 @@ describe('ChatView plans and questions', () => {
   });
 
   it('offers Clubhouse\'s own hand-off when the driver has no plan approval', async () => {
-    const { actions } = renderFixture('copilot', 'plan');
+    const { actions } = renderFixture('copilot', 'plan', makeActions(), FEWER_CAPABILITIES);
     expect(screen.getByTestId('chat-tasks')).toHaveTextContent('0/4');
     fireEvent.click(screen.getByText('Switch to Ask first and implement'));
     await waitFor(() => expect(actions.send).toHaveBeenCalledWith('Implement the plan.', 'auto'));
@@ -329,7 +329,7 @@ describe('ChatView composer', () => {
   });
 
   it('offers Stop & send when the driver cannot steer', async () => {
-    const { actions } = renderFixture('copilot', 'steer');
+    const { actions } = renderFixture('copilot', 'steer', makeActions(), FEWER_CAPABILITIES);
     expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Stop & send');
     type('Actually, skip the tests');
     fireEvent.click(screen.getByTestId('chat-send-primary'));
@@ -367,8 +367,8 @@ describe('ChatView composer', () => {
       }));
     }
 
-    it('offers remove on a queue without steering too (Copilot)', () => {
-      renderFixture('copilot', 'steer');
+    it('offers remove on a client queue without steering too', () => {
+      renderFixture('copilot', 'steer', makeActions(), FEWER_CAPABILITIES);
       expect(within(screen.getAllByTestId('chat-queue-item')[0]).getByRole('button', { name: /^Remove from queue/ })).toBeInTheDocument();
     });
 
@@ -428,7 +428,7 @@ describe('ChatView composer', () => {
   });
 
   it('lists only the levels the driver can switch to live', () => {
-    const { actions } = renderFixture('copilot', 'conversation');
+    const { actions } = renderFixture('copilot', 'conversation', makeActions(), FEWER_CAPABILITIES);
     fireEvent.click(screen.getByTestId('chat-level-pill'));
     const items = screen.getAllByRole('menuitemradio');
     expect(items).toHaveLength(3);
@@ -610,7 +610,7 @@ describe('ChatView subagents', () => {
   });
 
   it('shows subagent work as ordinary rows when only ids are reported', () => {
-    renderFixture('copilot', 'subagents');
+    renderFixture('copilot', 'subagents', makeActions(), FEWER_CAPABILITIES);
     expect(screen.queryByTestId('chat-subagent')).not.toBeInTheDocument();
     expect(screen.getByTestId('chat-explore-group')).toBeInTheDocument();
     expect(screen.getAllByTestId('chat-agent-message')).toHaveLength(2);
@@ -1057,8 +1057,8 @@ describe('ChatView permission extras', () => {
     expect(a2.respondPermission).toHaveBeenCalledWith('perm-1', 'allow');
   });
 
-  it.each(['codex', 'copilot'] as const)('offers no message field when the driver does not report it (%s)', (p) => {
-    renderFixture(p, 'approval');
+  it.each([['codex', {}], ['copilot', FEWER_CAPABILITIES]] as const)('offers no message field when the driver does not report it (%s)', (p, caps) => {
+    renderFixture(p, 'approval', makeActions(), caps);
     expect(screen.queryByTestId('chat-permission-feedback')).not.toBeInTheDocument();
   });
 
@@ -1167,7 +1167,7 @@ describe('ChatView login banner', () => {
 
 describe('compound actions stop when their first step fails (#2057)', () => {
   it('sends after a successful interrupt (Stop & send)', async () => {
-    const { actions } = renderFixture('copilot', 'steer');
+    const { actions } = renderFixture('copilot', 'steer', makeActions(), FEWER_CAPABILITIES);
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Skip the tests' } });
     fireEvent.click(screen.getByTestId('chat-send-primary'));
     await waitFor(() => expect(actions.send).toHaveBeenCalledWith('Skip the tests', 'auto'));
@@ -1177,7 +1177,7 @@ describe('compound actions stop when their first step fails (#2057)', () => {
   it('does not send when the interrupt fails, and puts the draft back', async () => {
     const actions = makeActions();
     actions.interrupt.mockResolvedValueOnce(false);
-    renderFixture('copilot', 'steer', actions);
+    renderFixture('copilot', 'steer', actions, FEWER_CAPABILITIES);
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Skip the tests' } });
     fireEvent.click(screen.getByTestId('chat-send-primary'));
     await waitFor(() => expect(actions.interrupt).toHaveBeenCalledTimes(1));
@@ -1186,7 +1186,7 @@ describe('compound actions stop when their first step fails (#2057)', () => {
   });
 
   it('implements the plan after a successful level change', async () => {
-    const { actions } = renderFixture('copilot', 'plan');
+    const { actions } = renderFixture('copilot', 'plan', makeActions(), FEWER_CAPABILITIES);
     fireEvent.click(screen.getByText('Switch to Ask first and implement'));
     await waitFor(() => expect(actions.send).toHaveBeenCalledWith('Implement the plan.', 'auto'));
     expect(actions.setLevel).toHaveBeenCalledWith('ask');
@@ -1195,7 +1195,7 @@ describe('compound actions stop when their first step fails (#2057)', () => {
   it('does not implement the plan when the level change fails', async () => {
     const actions = makeActions();
     actions.setLevel.mockResolvedValueOnce(false);
-    renderFixture('copilot', 'plan', actions);
+    renderFixture('copilot', 'plan', actions, FEWER_CAPABILITIES);
     fireEvent.click(screen.getByText('Switch to Ask first and implement'));
     await waitFor(() => expect(actions.setLevel).toHaveBeenCalledWith('ask'));
     // Let the failed level change settle and the handler finish before checking it didn't send.

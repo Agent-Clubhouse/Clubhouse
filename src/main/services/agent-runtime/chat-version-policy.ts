@@ -68,13 +68,6 @@ export const TESTED_CLI_VERSIONS: Readonly<Partial<Record<ChatDriverId, CliVersi
   // MCP bridge, no live prompt. Last live-tested on 0.163.0 on 2026-10-18
   // (resume, approvals, compaction, token usage).
   codex_app_server: { testedMax: '0.166.0' },
-  // Fixtures exist from 1.0.82, 1.0.92 and 1.0.98. The probe launches exactly
-  // like a session (no --no-auto-update, #2154), so probe.cliVersion is the
-  // version that actually runs: the user's installed Copilot, the same one
-  // Terminal runs. Nothing older is known to break, so there is no floor.
-  // Tested 2026-11-01 on 1.0.105 by handshake and a fake-model round trip
-  // through the MCP bridge, no live prompt. Last live prompt on 1.0.98.
-  copilot_acp: { testedMax: '1.0.105' },
   // @github/copilot-sdk 1.0.28 ships with CLI 1.0.105. The protocol check is too
   // weak to rely on: 1.0.81 and older report the same protocol but break on this
   // SDK (docs/copilot-sdk-driver.md "Version skew"). Tested by feature probes

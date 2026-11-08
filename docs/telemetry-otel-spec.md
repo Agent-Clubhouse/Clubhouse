@@ -124,7 +124,7 @@ Today's `meta` bags contain values that P1–P3 forbid:
 |---|---|
 | `agent-system.ts:462` (`core:agent`) | Full `args`, which include **the mission and system prompt** |
 | `headless-manager.ts:540` | Full `args`, which include **`-p <mission>`** |
-| `acp-client.ts:103`, `codex-app-server-client.ts:60` | RPC params, which include **prompt text** |
+| `codex-app-server-client.ts:60` (and the removed `acp-client.ts`) | RPC params, which include **prompt text** |
 | `core:pty` exit | `lastOutput`: the last 500 characters of terminal output |
 | `core:headless` | First 200 characters of stdout |
 | `core:agent-config`, `core:project-store`, `core:config-pipeline` | `projectPath`, `configPath`, `filePath` |
@@ -306,7 +306,7 @@ Quick agents have no main-process create step. The renderer `spawnQuickAgent` (`
   - `c.agent.kind` (`durable`/`quick`/`companion`)
   - `c.orchestrator` (`claude-code`/`codex-cli`/`copilot-cli`/`other`)
   - `c.agent.runtime` (`pty`/`headless`/`chat`)
-  - `c.chat.driver` (`claude_agent_sdk`/`claude_stream_json`/`codex_app_server`/`copilot_acp`/`acp` for other ACP agents, later `copilot_sdk`), from chat's capability record, added by the chat telemetry work (§9.1). Claude chat is designed to default to the Agent SDK, with raw `-p` stream-json as a second mode.
+  - `c.chat.driver` (`claude_agent_sdk`/`claude_stream_json`/`codex_app_server`/`copilot_sdk`), from chat's capability record. Data from before #2868 can also carry `copilot_acp`, and the allowlist sends anything else as `other`. It is added by the chat telemetry work (§9.1). Claude chat is designed to default to the Agent SDK, with raw `-p` stream-json as a second mode.
   - `c.agent.resume` (bool)
   - `c.model.family` (bucketed from the model string: `opus`/`sonnet`/`haiku`/`gpt-5`/`default`/`other`; the raw model is never sent)
   - `c.hooks.enabled`, `c.wrapper.applied` (all bool; each only once the spawn reached the step that decides it)
@@ -356,7 +356,7 @@ Structured mode (`structured-manager.ts` and its StreamJson, ACP and Codex adapt
 | Span | Boundaries | Attributes / errors | Level |
 |---|---|---|---|
 | `c.agent.turn` | chat bus turn-start → turn-end event | `c.turn.end_reason` (`complete`/`error`/`cancelled`/`timeout`); `c.turn.time_to_first_token` (s, also an event); `c.turn.tool_calls` (count); token usage as `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens` (numbers only); `c.chat.driver`; `error.type` from chat's closed error set (for example `max_tokens`, `refusal`, `rpc_timeout`, `process_exited`, `unhandled_server_request`) | S |
-| ↳ `c.chat.rpc` | per-driver protocol calls (Codex `thread/start` / `turn/start`, ACP `session/prompt`, …), if chat exposes them on the bus | `rpc.method` from a fixed list | D |
+| ↳ `c.chat.rpc` | per-driver protocol calls (Codex `thread/start` / `turn/start`, Copilot `session.send`, …), if chat exposes them on the bus | `rpc.method` from a fixed list | D |
 
 Metrics: `c.agent.turn.duration` (s), `c.agent.tokens` counter (unit `{token}`, split by `gen_ai.token.type` = `input`/`output`), `c.agent.cost` (USD, from headless `result.total_cost_usd` or chat usage events where present).
 
@@ -1494,7 +1494,7 @@ These came out of the code survey and log analysis. They are independent of tele
 |---|---|---|---|---|
 | F1 | [#1917](https://github.com/Agent-Clubhouse/Clubhouse/issues/1917) · **closed**: fixed in [#1928](https://github.com/Agent-Clubhouse/Clubhouse/pull/1928); the code is removed by [#1937](https://github.com/Agent-Clubhouse/Clubhouse/pull/1937) | **Structured exits bypass `broadcastAgentExit`.** `onAgentExit` listeners (the queue runner) never see them, so structured queue tasks never complete. | `structured-manager.ts:125-126`, `agent-queue-runner.ts:252` | exit metrics would undercount structured runs |
 | F2 | [#1918](https://github.com/Agent-Clubhouse/Clubhouse/issues/1918) · **closed**: fixed in [#1928](https://github.com/Agent-Clubhouse/Clubhouse/pull/1928) | **A headless exit by signal is reported as code 0** (`code ?? 0`, signal dropped). Killed headless queue tasks are marked "completed". | `headless-manager.ts:486,488` | exit class would be wrong |
-| F3 | [#1919](https://github.com/Agent-Clubhouse/Clubhouse/issues/1919) | **Prompts and missions are written to local logs** through `args` and RPC params | `agent-system.ts:462`, `headless-manager.ts:540`, `acp-client.ts:103`, `codex-app-server-client.ts:60` | no export impact (never bridged), but a local privacy issue |
+| F3 | [#1919](https://github.com/Agent-Clubhouse/Clubhouse/issues/1919) | **Prompts and missions are written to local logs** through `args` and RPC params | `agent-system.ts:462`, `headless-manager.ts:540`, `codex-app-server-client.ts:60` (`acp-client.ts` was removed with #2868) | no export impact (never bridged), but a local privacy issue |
 | F4 | [#1575](https://github.com/Agent-Clubhouse/Clubhouse/issues/1575) · **closed**: fixed in [#1929](https://github.com/Agent-Clubhouse/Clubhouse/pull/1929) (comment) | **Safe-mode logic appears inverted.** "Safe Mode" clears the marker so the renderer loads plugins; "Try Again Normally" keeps it, so the renderer enters safe mode. Also, `CLUBHOUSE_SAFE_MODE` is read in `initializeTrustedManifests` before it is set. | `safe-mode.ts:58-83`, `plugin-loader.ts:239`, `plugin-handlers.ts:30` | safe-mode events would be mislabeled |
 | F5 | [#1920](https://github.com/Agent-Clubhouse/Clubhouse/issues/1920) · **closed**: fixed in [#1929](https://github.com/Agent-Clubhouse/Clubhouse/pull/1929) | **The update apply-attempt marker is never written on macOS/Windows relaunch**, because `app.exit(0)` runs before `recordSuccessfulApply`, so `update:apply-detect` cannot fire there | `auto-update-service.ts:826,852,945` | the update failure funnel would be blind on two OSes |
 | F6 | [#1921](https://github.com/Agent-Clubhouse/Clubhouse/issues/1921) | **Uncaught `send EADDRNOTAVAIL 224.0.0.251`** from the mDNS socket. It happens twice in 10 days of logs, at fatal level, and the process continues. | `bonjour-service` via `annex-server.ts:2777` / `annex-client.ts:706` | first real crash class telemetry would report |

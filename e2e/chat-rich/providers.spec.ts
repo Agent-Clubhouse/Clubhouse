@@ -6,8 +6,10 @@ import { chatDom, openRichChat, TURN_TIMEOUT, type RichChat } from './harness';
  * fake CLIs, through the real app. e2e/chat-fake-cli.spec.ts runs these four
  * scenarios for Claude only (it marks the other two unregistered), so until
  * this spec their chat UI never ran end to end. Each test replays a committed
- * fixture (test/chat-fixtures/<cli>/), so a driver whose traffic drifts from
- * the fixture fails on the fake's mismatch.
+ * fixture (test/chat-fixtures/<cli>/, copilot-sdk/ for Copilot), so a driver
+ * whose traffic drifts from the fixture fails on the fake's mismatch. Copilot
+ * runs on the SDK driver, its only chat driver (#2868), with nothing saved to
+ * choose it.
  *
  * Two turns and the narrow-pane layout share one launch: the layout check
  * only needs finished turns on screen.
@@ -15,39 +17,8 @@ import { chatDom, openRichChat, TURN_TIMEOUT, type RichChat } from './harness';
 
 const PROVIDERS = ['codex', 'copilot'] as const;
 
-test('copilot SDK standard default: send, stream and finish two fake turns', async () => {
-  // No legacy flag or saved driver preference: exercise the production default.
-  // The harness derives only synthetic auth from the existing SDK recording.
-  const session = await openRichChat({ cli: 'copilot', copilotTransport: 'sdk', script: 'multi-turn' });
-  try {
-    const { window, chat } = session;
-    const dom = chatDom(window);
-    await session.send('Reply with the word one.');
-    await expect(dom.turnFooters).toHaveCount(1, { timeout: TURN_TIMEOUT });
-    await expect(dom.turnFooters.first()).toHaveAttribute('data-stop-reason', 'end_turn');
-    await expect(dom.agentMessages.first().locator('.chat-markdown')).toHaveText('one');
-    await expect(dom.agentMessages.first().getByLabel('Streaming')).toHaveCount(0);
-    await expect(chat).toHaveAttribute('data-state', 'idle');
-    await session.send('Now reply with the word two.');
-    await expect(dom.turnFooters).toHaveCount(2, { timeout: TURN_TIMEOUT });
-    await expect(dom.turnFooters.nth(1)).toHaveAttribute('data-stop-reason', 'end_turn');
-    await expect(dom.agentMessages.nth(1).locator('.chat-markdown')).toHaveText('two');
-    await expect(dom.userMessages).toHaveCount(2);
-    await expect(chat).toHaveAttribute('data-state', 'idle');
-    // The recording includes detach; stop through the app before checking every line.
-    await window.evaluate(({ agentId, projectDir }) =>
-      (window as unknown as { clubhouse: { agent: {
-        killAgent(id: string, projectPath: string, waitForExit?: boolean): Promise<void>;
-      } } }).clubhouse.agent.killAgent(agentId, projectDir, true),
-    { agentId: session.agentId, projectDir: session.projectDir });
-    await session.expectScriptComplete();
-  } finally {
-    await session.close();
-  }
-});
-
 for (const cli of PROVIDERS) {
-  test.describe(`${cli === 'copilot' ? 'copilot legacy ACP' : cli} chat over the fake CLI`, () => {
+  test.describe(`${cli} chat over the fake CLI`, () => {
     test.describe('multi-turn', () => {
       test.describe.configure({ mode: 'serial' });
       let session: RichChat;
@@ -63,7 +34,7 @@ for (const cli of PROVIDERS) {
         const dom = chatDom(window);
         if (cli === 'copilot') {
           // The app passed COPILOT_HOME through to the CLI's environment, so
-          // the driver reads session journals from the same place.
+          // the session folder Annex lists is the one the CLI writes.
           const report = await session.fakes.report(cli);
           expect(report.env.COPILOT_HOME).toBe(session.copilotHome);
         }
@@ -74,6 +45,8 @@ for (const cli of PROVIDERS) {
         await expect(dom.agentMessages.first()).toHaveText(/\S/);
         await expect(dom.agentMessages.first().getByLabel('Streaming')).toHaveCount(0);
         await expect(chat).toHaveAttribute('data-state', 'idle');
+
+        if (cli === 'copilot') await expect(dom.agentMessages.first().locator('.chat-markdown')).toHaveText('one');
 
         await session.send('Reply with the word two.');
         await expect(dom.turnFooters).toHaveCount(2, { timeout: TURN_TIMEOUT });
@@ -165,7 +138,13 @@ for (const cli of PROVIDERS) {
       });
 
       test('Stop interrupts a running turn', async () => {
-        session = await openRichChat({ cli, script: 'interrupt' });
+        // Copilot's recording interrupts a model call before any tool row, so it gets a turn held on a command.
+        session = await openRichChat({
+          cli,
+          script: cli === 'copilot'
+            ? { description: 'a turn held on a long command until Stop', turns: [{ prompt: 'Run the long command.', steps: [], end: 'held' }] }
+            : 'interrupt',
+        });
         const { window, chat } = session;
         const dom = chatDom(window);
         await session.send('Run the long command.');

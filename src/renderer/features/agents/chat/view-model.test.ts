@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../../shared/chat';
 import { foldChatEvents } from '../../../stores/chatStore';
-import { chatFixture, ChatFixture, FIXTURE_AGENT_ID, FIXTURE_PROVIDERS, FIXTURE_SCENARIOS, PROFILES } from './fixtures';
+import { chatFixture, ChatFixture, FEWER_CAPABILITIES, FIXTURE_AGENT_ID, FIXTURE_PROVIDERS, FIXTURE_SCENARIOS, PROFILES } from './fixtures';
 import type { AgentMessageItem, ChatItem, ToolCallItem } from '../../../stores/chatStore';
 import {
   agentMessagesToName,
@@ -138,7 +138,7 @@ describe('composerModes', () => {
   });
 
   it('offers stop-and-send when the driver can interrupt but not steer', () => {
-    expect(composerModes(PROFILES.copilot.capabilities, true)).toEqual({ primary: 'stop_and_send', secondary: 'queue', canStop: true });
+    expect(composerModes({ ...PROFILES.copilot.capabilities, ...FEWER_CAPABILITIES }, true)).toEqual({ primary: 'stop_and_send', secondary: 'queue', canStop: true });
   });
 
   it('only queues when the driver can neither steer nor interrupt', () => {
@@ -152,7 +152,7 @@ describe('composerModes', () => {
 
 describe('plan hand-off', () => {
   it('is offered when the driver has no plan approval and a plan is ready', () => {
-    const state = fold(chatFixture('copilot', 'plan'));
+    const state = fold(chatFixture('copilot', 'plan', undefined, FEWER_CAPABILITIES));
     expect(needsManualPlanHandoff(state)).toBe(true);
     expect(implementLevel(state.capabilities)).toBe('ask');
   });

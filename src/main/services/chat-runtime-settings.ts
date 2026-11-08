@@ -5,8 +5,7 @@
 
 import { createSettingsStore } from './settings-store';
 import * as experimentalSettings from './experimental-settings';
-import { isPreviewEligible } from './preview-eligible';
-import { LEGACY_COPILOT_ACP_FLAG, type AgentRuntimeMode, type ChatDriverId, type ChatRuntimeSettings } from '../../shared/chat';
+import type { AgentRuntimeMode, ChatDriverId, ChatRuntimeSettings } from '../../shared/chat';
 
 /** The flag's id in experimental settings (Settings › Agents & providers › Chat view). */
 export const CHAT_EXPERIMENTAL_FLAG = 'chat';
@@ -45,16 +44,6 @@ export function isChatEnabled(): boolean {
   return experimentalSettings.isGraduatedFeatureOn(CHAT_EXPERIMENTAL_FLAG);
 }
 
-/** ACP is an explicit experimental escape hatch; old SDK flags never opt in. */
-export function isLegacyCopilotAcpEnabled(): boolean {
-  return isPreviewEligible() && experimentalSettings.getSettings()[LEGACY_COPILOT_ACP_FLAG] === true;
-}
-
-/** SDK is standard, including builds without experimental settings. */
-export function isCopilotSdkEnabled(): boolean {
-  return !isLegacyCopilotAcpEnabled();
-}
-
 export interface ResolvedRuntimeMode {
   mode: AgentRuntimeMode;
   driver?: ChatDriverId;
@@ -64,11 +53,9 @@ export interface ResolvedRuntimeMode {
 export function resolveRuntimeMode(provider: string, agentOverride?: AgentRuntimeMode): ResolvedRuntimeMode {
   if (!isChatEnabled()) return { mode: 'terminal' };
   const setting = getSettings()[provider];
-  // The experimental flag is the sole Copilot choice. Legacy preferences are
-  // retained for downgrade compatibility but cannot override either flag state.
-  const driver = provider === 'copilot-cli'
-    ? (isCopilotSdkEnabled() ? 'copilot_sdk' : 'copilot_acp')
-    : setting?.driver;
+  // Copilot has one chat driver, the SDK. A saved driver from an older build
+  // (copilot_acp, or copilot_sdk) is kept on disk for downgrades but never read.
+  const driver: ChatDriverId | undefined = provider === 'copilot-cli' ? 'copilot_sdk' : setting?.driver;
   return {
     mode: agentOverride ?? setting?.mode ?? DEFAULT_CHAT_PROVIDER_MODE,
     ...(driver ? { driver } : {}),

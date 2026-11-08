@@ -15,8 +15,7 @@
  * The user's MCP servers and tools are switched off for the session by flags
  * only; no CLI config is written. Any permission request is denied and fails
  * the driver. Not everything goes off: Codex keeps its built-in tools, Copilot
- * over the SDK still connects github-mcp-server (its tools are disabled), and
- * over ACP nothing reports whether Copilot's tools went away.
+ * over the SDK still connects github-mcp-server (its tools are disabled).
  */
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
@@ -34,7 +33,6 @@ import { ClaudeChatDriver } from './claude';
 import { CopilotSdkChatDriver } from './copilot/driver';
 import { getProvider, registerBuiltinProviders, type OrchestratorId } from '../orchestrators';
 import { CodexChatDriver } from '../orchestrators/adapters/codex-chat-driver';
-import { createCopilotAcpChatDriver } from '../orchestrators/adapters/acp-chat-driver';
 import { evaluateCliVersion } from '../services/agent-runtime/chat-version-policy';
 import { cleanInheritedEnv, getShellEnvironment } from '../util/shell';
 
@@ -113,7 +111,7 @@ interface Spec {
   make(): ChatDriver;
   /** The chat runtime, not this driver, reports session_started and session_ended. */
   runtimeLifecycle?: boolean;
-  /** The event carrying the reply. ACP only streams chunks. */
+  /** The event carrying the reply, for a driver that only streams chunks. */
   messageEvent?: 'agent_message_chunk';
   /** Binary, flags and env that keep the user's MCP servers and tools out of this session. */
   isolate(binary: string, dir: string): { binary: string; extraArgs?: string[]; env?: Record<string, string>; isolation: string[] };
@@ -150,7 +148,6 @@ const SPECS: Spec[] = [
   { id: 'claude_agent_sdk', provider: 'claude-code', sdk: '@anthropic-ai/claude-agent-sdk', make: () => new ClaudeChatDriver('claude_agent_sdk'), isolate: claudeIsolation },
   { id: 'claude_stream_json', provider: 'claude-code', make: () => new ClaudeChatDriver('claude_stream_json'), isolate: claudeIsolation },
   { id: 'codex_app_server', provider: 'codex-cli', make: () => new CodexChatDriver(), isolate: codexIsolation },
-  { id: 'copilot_acp', provider: 'copilot-cli', runtimeLifecycle: true, messageEvent: 'agent_message_chunk', make: () => createCopilotAcpChatDriver(), isolate: copilotIsolation },
   {
     id: 'copilot_sdk',
     provider: 'copilot-cli',

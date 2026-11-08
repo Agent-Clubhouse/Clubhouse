@@ -42,7 +42,6 @@ import { ClaudeChatDriver } from './claude';
 import { CopilotSdkChatDriver } from './copilot/driver';
 import { getProvider, registerBuiltinProviders, type OrchestratorId } from '../orchestrators';
 import { CodexChatDriver } from '../orchestrators/adapters/codex-chat-driver';
-import { createCopilotAcpChatDriver } from '../orchestrators/adapters/acp-chat-driver';
 import { agentRegistry } from '../services/agent-registry';
 import { evaluateCliVersion } from '../services/agent-runtime/chat-version-policy';
 import { bindingManager } from '../services/clubhouse-mcp/binding-manager';
@@ -167,7 +166,6 @@ describe.skipIf(!enabled)('Dispatcher flow (real CLI, fake model)', () => {
     { driver: () => new ClaudeChatDriver('claude_agent_sdk'), provider: 'claude-code', bin: 'claude', env: claudeEnv },
     { driver: () => new ClaudeChatDriver('claude_stream_json'), provider: 'claude-code', bin: 'claude', env: claudeEnv },
     { driver: () => new CodexChatDriver(), provider: 'codex-cli', bin: 'codex', env: codexEnv },
-    { driver: () => createCopilotAcpChatDriver(), provider: 'copilot-cli', bin: 'copilot', env: copilotEnv },
     { driver: () => new CopilotSdkChatDriver(), provider: 'copilot-cli', bin: 'copilot', env: copilotEnv },
   ];
 

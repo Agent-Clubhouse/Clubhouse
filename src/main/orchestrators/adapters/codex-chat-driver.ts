@@ -30,7 +30,7 @@ import {
 import { resolveStructuredSpawn } from './structured-spawn';
 import { throwIfStartAborted, untilStartAborted } from './start-abort';
 import { ProcessExitedError } from './ndjson-rpc-base';
-import { RpcError } from './acp-client';
+import { RpcError } from './rpc-error';
 
 type LogFn = (level: 'debug' | 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
 
@@ -319,7 +319,7 @@ class CodexChatSession implements ChatDriverSession {
       onUnrecognizedMessage: (message) => this.mapper.mapUnrecognized(message).forEach((e) => this.emit(e)),
       onExit: (code, signal) => {
         // Close out what the dead process can no longer finish, as the Claude
-        // and ACP drivers do: the running turn, then any open approvals.
+        // and Copilot drivers do: the running turn, then any open approvals.
         if (this.turnRunning) {
           // A turn the user already asked to stop (close or interrupt) ends
           // as cancelled even if the process dies before confirming it.

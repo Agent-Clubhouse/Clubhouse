@@ -12,7 +12,7 @@
  */
 
 import * as path from 'path';
-import { copilotSessionStateDir } from '../../orchestrators/adapters/copilot-acp';
+import { copilotSessionStateDir } from '../../orchestrators/copilot-session-state';
 import { getAgentRuntime } from './index';
 import { sessionFolderIn, verifySessionOutputDir } from './session-output-dir';
 

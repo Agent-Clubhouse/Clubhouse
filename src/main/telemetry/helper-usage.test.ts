@@ -328,7 +328,7 @@ describe('usage through a helper run', () => {
   });
 
   it('two idless turns with equal usage are two samples', () => {
-    started('helper-1', { driver: 'acp' });
+    started('helper-1', { driver: 'claude_agent_sdk' });
     for (let i = 0; i < 2; i++) {
       handleHelperChatEvent(chat('turn_started', { trigger: 'prompt' }));
       handleHelperChatEvent(chat('turn_ended', { stopReason: 'end_turn', usage: { input: 5, output: 5 } }));

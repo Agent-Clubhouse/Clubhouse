@@ -1,18 +1,17 @@
-import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
-  acpSessionModels,
   parseClaudeInitializeModels,
   parseCodexModelList,
+  parseCopilotSdkModels,
   probeClaudeModels,
   probeCodexModels,
   probeCopilotModels,
-  removeUnpromptedCopilotSession,
+  type CopilotSdkModel,
   type ModelProbeContext,
 } from './model-probes';
-import { dedupeCopilotConfigOptions, dedupeCopilotLegacyModels, copilotModelCostHint } from './adapters/copilot-acp';
 import { chatFixturePath, writeFakeCliShims, type ChatFixtureCli } from './adapters/testing/fake-cli';
 import type { Model } from './adapters/codex-protocol';
 
@@ -25,7 +24,8 @@ function readEntries(file: string): Entry[] {
     .map((l) => JSON.parse(l))
     .filter((e) => e.from && e.msg) as Entry[];
 }
-const modelListFixture = (cli: ChatFixtureCli) => readEntries(chatFixturePath(cli, 'model-list'));
+type ProbeFixture = 'claude' | 'codex' | 'copilot-sdk';
+const modelListFixture = (cli: ProbeFixture) => readEntries(chatFixturePath(cli, 'model-list'));
 
 describe('parseClaudeInitializeModels (recorded initialize, Claude Code 2.1.312)', () => {
   const reply = modelListFixture('claude').find((e) => e.from === 'cli' && e.msg.type === 'control_response')!;
@@ -83,16 +83,12 @@ describe('parseCodexModelList (recorded model/list, codex-cli 0.163.0)', () => {
   });
 });
 
-describe('acpSessionModels (recorded Copilot session/new, 1.0.103)', () => {
-  const reply = modelListFixture('copilot').find((e) => e.from === 'cli' && e.msg.id === 2 && e.msg.result)!;
-  // What AcpSession stores with the Copilot profile applied.
-  const state = {
-    configOptions: dedupeCopilotConfigOptions(reply.msg.result.configOptions ?? []),
-    legacyModels: dedupeCopilotLegacyModels(reply.msg.result.models),
-  };
-  const models = acpSessionModels(state, copilotModelCostHint)!;
+describe('parseCopilotSdkModels (models.list, hand-made from the SDK ModelInfo type)', () => {
+  const reply = modelListFixture('copilot-sdk').find((e) => e.from === 'cli' && e.msg.id === 1 && e.msg.result)!;
+  const data = reply.msg.result.models as CopilotSdkModel[];
+  const models = parseCopilotSdkModels(data)!;
 
-  it('lists each model once, after Clubhouse\'s Default', () => {
+  it('lists each enabled model once, after Clubhouse\'s Default', () => {
     const ids = models.map((m) => m.id);
     expect(ids[0]).toBe('default');
     expect(ids).toContain('claude-sonnet-5.5');
@@ -100,17 +96,28 @@ describe('acpSessionModels (recorded Copilot session/new, 1.0.103)', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('carries Copilot\'s cost multiplier as the cost hint', () => {
-    expect(models.find((m) => m.id === 'claude-haiku-4.5')?.costHint).toBe('0.33x');
+  it('leaves out models the login\'s policy disables, and keeps ones that need enabling', () => {
+    expect(models.some((m) => m.id === 'gpt-5.6-sol-fast')).toBe(false);
+    expect(models.some((m) => m.id === 'gpt-6.1-sol')).toBe(true);
+  });
+
+  it('carries Copilot\'s cost multiplier as the cost hint, and the name as the label', () => {
+    expect(models.find((m) => m.id === 'claude-haiku-4.5')).toMatchObject({ label: 'Claude Haiku 4.5', costHint: '0.33x' });
     expect(models.find((m) => m.id === 'claude-opus-5.5')?.costHint).toBe('15x');
   });
 
-  it('does not claim a default model: session/new reports Copilot\'s built-in one', () => {
+  it('keeps reasoning efforts where the model has them', () => {
+    expect(models.find((m) => m.id === 'claude-sonnet-5.5')?.efforts).toEqual(['low', 'medium', 'high']);
+    expect(models.find((m) => m.id === 'claude-opus-5.5')?.efforts).toBeUndefined();
+  });
+
+  it('does not claim a default model: Copilot does not say which it would pick', () => {
     expect(models.some((m) => m.isDefault)).toBe(false);
   });
 
-  it('returns null for a session without models', () => {
-    expect(acpSessionModels({ configOptions: [], legacyModels: null })).toBeNull();
+  it('returns null when nothing usable is listed', () => {
+    expect(parseCopilotSdkModels([])).toBeNull();
+    expect(parseCopilotSdkModels([{ id: 'x', policy: { state: 'disabled' } }])).toBeNull();
   });
 });
 
@@ -125,7 +132,7 @@ describe('live probes, replayed through the fake CLI (no real CLI, no prompt)', 
     dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'model-probe-'));
     const reportPath = path.join(dir, 'report.json');
     const shims = await writeFakeCliShims(path.join(dir, 'bin'), {
-      [cli]: { fixture: chatFixturePath(cli, 'model-list'), report: reportPath },
+      [cli]: { fixture: chatFixturePath(cli === 'copilot' ? 'copilot-sdk' : cli, 'model-list'), report: reportPath },
     });
     return {
       ctx: { binary: shims[cli], cwd: dir, signal: new AbortController().signal, timeoutMs: 10_000 },
@@ -154,19 +161,23 @@ describe('live probes, replayed through the fake CLI (no real CLI, no prompt)', 
     expect(r.argv).toEqual(['app-server']);
   });
 
-  it('Copilot: initialize, session/new and session/close, never a prompt; removes only its own session folder', async () => {
+  it('Copilot: connect and models.list over the SDK, never a session or a prompt', async () => {
     const { ctx, report } = await fakeFor('copilot');
-    const stateDir = path.join(dir!, 'copilot-home', 'session-state');
-    const own = await unpromptedSession(stateDir, RECORDED_COPILOT_SESSION);
-    const other = await unpromptedSession(stateDir, OTHER_SESSION);
-    const models = await probeCopilotModels({ ...ctx, env: { COPILOT_HOME: path.join(dir!, 'copilot-home') } });
-    expect(fs.existsSync(own)).toBe(false);
-    expect(fs.existsSync(other)).toBe(true);
+    const models = await probeCopilotModels(ctx);
+    expect(models?.[0]).toEqual({ id: 'default', label: 'Default' });
     expect(models?.find((m) => m.id === 'claude-haiku-4.5')?.costHint).toBe('0.33x');
     const r = await report();
     expect(r.mismatch).toBeNull();
     expect(r.complete).toBe(true);
     expect(r.unexpected).toEqual([]);
+    expect(r.argv).toEqual(expect.arrayContaining(['--headless', '--port', '0']));
+  });
+
+  it('Copilot: an aborted probe never spawns the CLI', async () => {
+    const { ctx } = await fakeFor('copilot');
+    const controller = new AbortController();
+    controller.abort();
+    await expect(probeCopilotModels({ ...ctx, signal: controller.signal })).rejects.toThrow();
   });
 
   it('an aborted probe never spawns the CLI', async () => {
@@ -174,76 +185,5 @@ describe('live probes, replayed through the fake CLI (no real CLI, no prompt)', 
     const controller = new AbortController();
     controller.abort();
     await expect(probeCodexModels({ ...ctx, signal: controller.signal })).rejects.toThrow();
-  });
-});
-
-/** The session id in the recorded copilot/model-list.jsonl. */
-const RECORDED_COPILOT_SESSION = 'f8c7c8a0-c507-4ff9-9b1a-4f0b4d795aa9';
-const OTHER_SESSION = '11111111-2222-4333-8444-555555555555';
-
-/** What Copilot 1.0.103 leaves for a session/new that was closed unprompted. */
-async function unpromptedSession(stateDir: string, id: string, workspace = `id: ${id}\ncwd: /workspace/project\nsummary_count: 0\n`): Promise<string> {
-  const dir = path.join(stateDir, id);
-  await fs.promises.mkdir(path.join(dir, 'checkpoints'), { recursive: true });
-  await fs.promises.mkdir(path.join(dir, 'files'), { recursive: true });
-  await fs.promises.writeFile(path.join(dir, 'workspace.yaml'), workspace);
-  await fs.promises.writeFile(path.join(dir, '.workspace-fork.lock'), '');
-  await fs.promises.writeFile(path.join(dir, 'checkpoints', 'index.md'), '');
-  return dir;
-}
-
-describe('removeUnpromptedCopilotSession', () => {
-  let stateDir: string;
-  beforeEach(async () => {
-    stateDir = path.join(await fs.promises.mkdtemp(path.join(os.tmpdir(), 'copilot-state-')), 'session-state');
-  });
-  afterEach(async () => {
-    await fs.promises.rm(path.dirname(stateDir), { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
-  });
-
-  it('removes only the folder for the probe\'s own session id', async () => {
-    const own = await unpromptedSession(stateDir, RECORDED_COPILOT_SESSION);
-    const other = await unpromptedSession(stateDir, OTHER_SESSION);
-    expect(await removeUnpromptedCopilotSession(stateDir, RECORDED_COPILOT_SESSION)).toBe(true);
-    expect(fs.existsSync(own)).toBe(false);
-    expect(fs.existsSync(other)).toBe(true);
-    expect(fs.existsSync(stateDir)).toBe(true);
-  });
-
-  it('keeps a folder that shows a prompt, and logs why at debug', async () => {
-    const own = await unpromptedSession(stateDir, RECORDED_COPILOT_SESSION);
-    await fs.promises.writeFile(path.join(own, 'events.jsonl'), '{"type":"user.message"}\n');
-    const log = vi.fn();
-    expect(await removeUnpromptedCopilotSession(stateDir, RECORDED_COPILOT_SESSION, log)).toBe(false);
-    expect(fs.existsSync(path.join(own, 'events.jsonl'))).toBe(true);
-    expect(log).toHaveBeenCalledWith('debug', expect.any(String), expect.objectContaining({ reason: 'holds events.jsonl' }));
-  });
-
-  it('keeps a folder with summaries, files or another session\'s workspace', async () => {
-    const summarized = await unpromptedSession(stateDir, RECORDED_COPILOT_SESSION, `id: ${RECORDED_COPILOT_SESSION}\nsummary_count: 1\n`);
-    expect(await removeUnpromptedCopilotSession(stateDir, RECORDED_COPILOT_SESSION)).toBe(false);
-    expect(fs.existsSync(summarized)).toBe(true);
-
-    const withFile = await unpromptedSession(stateDir, OTHER_SESSION);
-    await fs.promises.writeFile(path.join(withFile, 'files', 'notes.md'), 'x');
-    expect(await removeUnpromptedCopilotSession(stateDir, OTHER_SESSION)).toBe(false);
-    expect(fs.existsSync(withFile)).toBe(true);
-
-    const mismatched = await unpromptedSession(stateDir, 'abc-123', `id: ${OTHER_SESSION}\nsummary_count: 0\n`);
-    expect(await removeUnpromptedCopilotSession(stateDir, 'abc-123')).toBe(false);
-    expect(fs.existsSync(mismatched)).toBe(true);
-  });
-
-  it('never resolves outside the session-state dir', async () => {
-    const other = await unpromptedSession(stateDir, OTHER_SESSION);
-    for (const id of ['..', '.', '', `..${path.sep}session-state`, `x${path.sep}..${path.sep}${OTHER_SESSION}`, '*']) {
-      expect(await removeUnpromptedCopilotSession(stateDir, id), id).toBe(false);
-    }
-    expect(fs.existsSync(other)).toBe(true);
-    expect(fs.existsSync(stateDir)).toBe(true);
-  });
-
-  it('does nothing when the folder is missing', async () => {
-    expect(await removeUnpromptedCopilotSession(stateDir, RECORDED_COPILOT_SESSION)).toBe(false);
   });
 });

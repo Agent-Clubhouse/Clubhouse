@@ -1,8 +1,8 @@
 /**
  * Per-driver capability record. Each chat driver publishes one in its
  * `session_started` event; the UI reads it to downgrade gracefully instead of
- * checking provider ids (e.g. Copilot over ACP v1 can't steer, so the composer
- * offers "Stop and send"). Values describe what the driver can do live, in an
+ * checking provider ids (e.g. a driver that can't steer gets "Stop and send"
+ * in the composer). Values describe what the driver can do live, in an
  * active session, on the installed CLI version. A flag is only added together
  * with the runtime method that uses it (fork and rewind come later; Clubhouse
  * checkpoints cover revert meanwhile).
@@ -17,18 +17,13 @@ export const CHAT_DRIVER_IDS = [
   'claude_agent_sdk',
   'claude_stream_json',
   'codex_app_server',
-  'copilot_acp',
   'copilot_sdk',
-  /** Any other ACP agent (Gemini CLI, etc.) through the generic ACP driver. */
-  'acp',
 ] as const;
 
 export type ChatDriverId = (typeof CHAT_DRIVER_IDS)[number];
 
 /** Retained legacy setting key; no longer selects a driver. */
 export const COPILOT_SDK_FLAG = 'copilotSdk';
-/** Explicit next-start opt-in to the deprecated Copilot ACP adapter. */
-export const LEGACY_COPILOT_ACP_FLAG = 'copilotLegacyAcp';
 
 /**
  * Clubhouse's five-level permission ladder. Each driver maps these to its

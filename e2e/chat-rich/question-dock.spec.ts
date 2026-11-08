@@ -11,9 +11,10 @@ import { chatDom, expectNoPageScroll, openRichChat, TURN_TIMEOUT, type RichChat 
  * walks the questions, the send button and the approval's options stay
  * reachable, and moving focus never scrolls the app around the pane.
  *
- * Claude asks the questions (AskUserQuestion); Codex and Copilot have no
- * question shape. The long approval runs on all three: a Bash call for
- * Claude, a command approval for Codex, an execute permission for Copilot.
+ * Claude asks the questions (AskUserQuestion); the scripts have no question
+ * shape for Codex or Copilot. The long approval runs on all three: a Bash
+ * call for Claude, a command approval for Codex, a shell permission for
+ * Copilot's SDK driver.
  */
 
 const LONG = 'which touches the build, the release notes and the migration guide, so it needs a decision before the helpers carry on with the rest of the plan';
@@ -39,7 +40,7 @@ const DESCRIPTION = Array.from({ length: 12 }, (_, i) => `Part ${i + 1}: this co
 /** Enough earlier text that the transcript overflows its share of a short window. */
 const FILLER = Array.from({ length: 10 }, (_, i) => ({ type: 'text' as const, text: `Note ${i + 1}. ${LONG}. ${LONG}.` }));
 
-/** A long shell command that asks first: Copilot shows no description, so its title is long too. */
+/** A long shell command that asks first: Copilot's card describes the command, not the reason, so its title is long too. */
 const APPROVAL: ScriptApproval = {
   tool: 'Bash',
   input: { command: COMMAND },
@@ -147,7 +148,7 @@ async function approveLongRequest(s: RichChat, cli: ChatFixtureCli, prompt: stri
   await expect(dom.permission).toBeVisible({ timeout: TURN_TIMEOUT });
   await expect(chat).toHaveAttribute('data-state', 'waiting_permission');
   await expect(dom.permission).toContainText(cli === 'codex' ? 'Run npm run step-1 ' : 'Run every step of the release build');
-  // Copilot's request has no description; the others carry theirs (Claude's description, Codex's reason).
+  // Copilot's request describes the command itself; the others carry their reason (Claude's description, Codex's reason).
   if (cli !== 'copilot') await expect(window.locator('[data-testid="chat-permission-description"]')).toContainText('Part 12');
   await expect(window.locator('[data-testid="chat-permission-text"]').first()).toContainText('npm run step-1 -- --workspace packages/helper-1 ');
   await expectDockBounded(window, PERMISSION_PARTS);

@@ -114,7 +114,7 @@ function probeErrorCode(err: unknown): NonNullable<ChatDriverProbe['errorCode']>
 /**
  * The session's MCP servers. The Clubhouse bridge goes over HTTP with its nonce
  * header, resolved from `env` so it stays out of the config; stdio servers go
- * as they are. Copilot takes both here, unlike over ACP (#2240).
+ * as they are. Copilot takes both here (over ACP it refused stdio, #2240).
  */
 export function toSdkMcpServers(
   servers: Record<string, unknown> | undefined,
@@ -289,7 +289,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
       streaming: true,
       workingDirectory: this.opts.cwd,
       // Off by default in the SDK. Without it the session ignores the user's own
-      // instructions, skills and MCP config, which Terminal and ACP both load.
+      // instructions, skills and MCP config, which Terminal loads.
       enableConfigDiscovery: true,
       ...(model && { model }),
       ...(this.opts.contextWindow && { contextTier: this.opts.contextWindow as SessionConfig['contextTier'] }),
@@ -315,7 +315,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     }
     this.sdk ??= await this.client.createSession(config);
     // Always sent, even if it looks right: a session opened on another driver or
-    // an earlier process can be in any mode, and ACP's stale values cost us #2174.
+    // an earlier process can be in any mode, and stale values cost us #2174.
     await this.sdk.rpc.mode.set({ mode: this.level === 'plan' ? 'plan' : 'interactive' }).catch((err: Error) => this.log('warn', 'Could not set the session mode', { error: err.message }));
     this.model = model ?? await this.sdk.rpc.model.getCurrent().then((c) => c.modelId, (err: Error): undefined => {
       this.log('warn', 'Could not read the current model', { error: err.message });
@@ -360,7 +360,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
     this.commandsLoaded = this.loadCommands();
   }
 
-  /** What the composer offers: the same list ACP gets, less the commands that change access. */
+  /** What the composer offers: Copilot's own command list, less the commands that change access. */
   private async loadCommands(): Promise<void> {
     let listed: SlashCommandInfo[];
     try {
@@ -1015,7 +1015,8 @@ export interface CopilotSdkDriverOptions {
 
 /**
  * Copilot chat over `@github/copilot-sdk`, running the user's own `copilot`.
- * Standard Copilot adapter. A failed probe never selects legacy ACP automatically.
+ * The only Copilot chat driver since legacy ACP was removed (#2868): a failed
+ * probe opens the agent in the CLI view.
  */
 export class CopilotSdkChatDriver implements ChatDriver {
   readonly id = 'copilot_sdk' as const;
@@ -1102,24 +1103,48 @@ export class CopilotSdkChatDriver implements ChatDriver {
   }
 }
 
+export interface CopilotModelListOptions {
+  /** Where the server runs. Defaults to a new empty folder, removed afterwards. */
+  cwd?: string;
+  timeoutMs?: number;
+  /** Kills the server when aborted. */
+  signal?: AbortSignal;
+}
+
+/**
+ * The SDK's models.list on a local server: the models this login can use. Opens
+ * no session and sends no prompt. Throws when it can't read them (no login).
+ */
+export async function listCopilotSdkModels(binary: string, env: Record<string, string>, opts: CopilotModelListOptions = {}): Promise<ModelInfo[]> {
+  const timeoutMs = opts.timeoutMs ?? TIER_CATALOG_TIMEOUT_MS;
+  const ownCwd = opts.cwd ? undefined : await fsp.mkdtemp(path.join(os.tmpdir(), 'clubhouse-copilot-models-'));
+  let server: CopilotServer | undefined;
+  let client: CopilotClient | undefined;
+  const onAbort = (): void => { void server?.kill(); };
+  opts.signal?.addEventListener('abort', onAbort, { once: true });
+  try {
+    server = await launchCopilotServer({ binary, cwd: opts.cwd ?? ownCwd, env, timeoutMs, signal: opts.signal });
+    const running = server;
+    const listing = (async () => {
+      client = await connect(running);
+      return client.listModels();
+    })();
+    return await withTimeout(Promise.race([listing, untilExit(running)]), timeoutMs, 'Listing models');
+  } finally {
+    opts.signal?.removeEventListener('abort', onAbort);
+    await client?.forceStop().catch(ignore);
+    await server?.kill();
+    if (ownCwd) await fsp.rm(ownCwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch(ignore);
+  }
+}
+
 /**
  * Each model's context tiers, from the SDK's models.list on a local server in
  * an empty folder. Sends no prompt. Throws when it can't read them (no login).
  */
 export async function readCopilotTierCatalog(binary: string, env: Record<string, string>): Promise<CopilotTierEntry[]> {
-  const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), 'clubhouse-copilot-tiers-'));
-  let server: CopilotServer | undefined;
-  let client: CopilotClient | undefined;
-  try {
-    server = await launchCopilotServer({ binary, cwd, env, timeoutMs: TIER_CATALOG_TIMEOUT_MS });
-    client = await connect(server);
-    const models = await withTimeout(client.listModels(), TIER_CATALOG_TIMEOUT_MS, 'Listing models');
-    return models.map((m) => copilotTierEntry(m as unknown as Record<string, unknown>)).filter((e): e is CopilotTierEntry => e !== null);
-  } finally {
-    await client?.forceStop().catch(ignore);
-    await server?.kill();
-    await fsp.rm(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch(ignore);
-  }
+  const models = await listCopilotSdkModels(binary, env);
+  return models.map((m) => copilotTierEntry(m as unknown as Record<string, unknown>)).filter((e): e is CopilotTierEntry => e !== null);
 }
 
 /** Register the standard Copilot driver. Returns the unregister function. */

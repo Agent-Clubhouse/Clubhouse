@@ -161,7 +161,7 @@ function parseProviderHeaders(value: string | undefined): Record<string, string>
 
 /**
  * The session's `provider` from the variables `copilot help environment`
- * documents. The CLI view and ACP honor them, but `--headless` ignores them and
+ * documents. The CLI view honors them, but `--headless` ignores them and
  * still wants a GitHub login, so the driver has to pass them on. Only the base
  * URL turns a provider on, as in the CLI.
  */

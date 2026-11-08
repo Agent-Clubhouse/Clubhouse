@@ -8,7 +8,7 @@ export const FIXTURE_FORMAT = 'clubhouse-chat-fixture';
 export const FIXTURE_VERSION = 1;
 
 /** Wire protocols a fixture can hold. */
-export const PROTOCOLS = ['claude-stream-json', 'codex-app-server', 'acp', 'copilot-sdk'];
+export const PROTOCOLS = ['claude-stream-json', 'codex-app-server', 'copilot-sdk'];
 
 /** Drivers reach this protocol over TCP, not stdio: `--headless --port 0`, then `Content-Length` frames. */
 export const TCP_PROTOCOLS = ['copilot-sdk'];

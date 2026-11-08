@@ -827,6 +827,23 @@ describe('start_helper effort (#2671)', () => {
     expect(body.effortWarning).toContain('doesn\'t report effort levels');
   });
 
+  it('checks Copilot levels from its SDK model list: a listed one starts, any other is refused (#2868)', async () => {
+    controllableCreation();
+    // As probeCopilotModels reports models.list: Clubhouse's Default, then models with their reasoning efforts.
+    modelLists.set('copilot-cli', { source: 'live', via: 'handshake', fetchedAt: 0, models: [
+      { id: 'default', label: 'Default' },
+      { id: 'claude-sonnet-5.5', label: 'Claude Sonnet 5.5', costHint: '1x', efforts: ['low', 'medium', 'high'] },
+      { id: 'claude-opus-5.5', label: 'Claude Opus 5.5', costHint: '15x' },
+    ] });
+    const ok = parse(await start({ cli: 'copilot-cli', model: 'claude-sonnet-5.5', effort: 'high' }));
+    expect(ok).toMatchObject({ state: 'starting', effort: 'high' });
+    expect(ok.effortWarning).toBeUndefined();
+    const refused = await start({ name: 'h2', cli: 'copilot-cli', model: 'claude-sonnet-5.5', effort: 'auto' });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0].text).toContain('Model "claude-sonnet-5.5" doesn\'t take effort "auto". Its levels: low, medium, high.');
+    expect(mockStartDurableCreation).toHaveBeenCalledTimes(1);
+  });
+
   it('warns and starts when the list doesn\'t have a model the CLI accepts', async () => {
     controllableCreation();
     modelLists.set('claude-code', claudeLive);

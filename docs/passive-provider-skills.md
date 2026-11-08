@@ -8,7 +8,7 @@ The pinned `@anthropic-ai/claude-agent-sdk` 0.3.316 `SDKSystemMessage` defines `
 
 Names alone do not identify filesystem scope, path, origin, version, or whether a skill was used/executed. This display is separate from configured/imported Clubhouse skills and the command menu. Commands, tools, MCP connections and plugin lists are not converted into skill identities. Mid-session command-list changes do not refresh this snapshot; a later root init can replace it. The card shows the report timestamp and shared/native session IDs. After the session ends it is labelled a last-session snapshot, not current readiness.
 
-This slice covers Claude Agent SDK and Claude stream-json root init frames only. Codex's generated `skills/list` types are not evidence that this driver already requests a list. Its passive `skills/changed` notification has no names, and we add no request. ACP/Copilot command availability mixes builtins and custom commands, so we infer no skills from it. Terminal sessions have no passive skill card. This is not all-provider native skill inventory.
+This slice covers Claude Agent SDK and Claude stream-json root init frames only. Codex's generated `skills/list` types are not evidence that this driver already requests a list. Its passive `skills/changed` notification has no names, and we add no request. Copilot command availability mixes builtins and custom commands, so we infer no skills from it. Terminal sessions have no passive skill card. This is not all-provider native skill inventory.
 
 ## Data contract
 

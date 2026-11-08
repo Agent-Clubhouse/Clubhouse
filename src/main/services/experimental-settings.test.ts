@@ -15,7 +15,7 @@ vi.mock('fs', () => ({
 import * as fs from 'fs';
 import { resetAllSettingsStoresForTests } from './settings-store';
 import { getSettings, saveSettings, migrateExperimentalSettings, isChatTipExperimentalReadUncertain } from './experimental-settings';
-import { STRUCTURED_MODE_REMOVED_NOTICE_KEY } from '../../shared/types';
+import { COPILOT_ACP_REMOVED_NOTICE_KEY, STRUCTURED_MODE_REMOVED_NOTICE_KEY } from '../../shared/types';
 
 describe('experimental-settings', () => {
   beforeEach(() => {
@@ -45,6 +45,29 @@ describe('experimental-settings', () => {
     it('preserves an existing notice key that has not been acknowledged yet', () => {
       expect(migrateExperimentalSettings({ [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true })).toEqual({
         [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true,
+      });
+    });
+
+    it('drops the legacy Copilot ACP opt-in, leaving a notice only when it was on and in effect (#2868)', () => {
+      const eligible = () => true;
+      expect(migrateExperimentalSettings({ copilotLegacyAcp: true, copilotSdk: false }, eligible)).toEqual({
+        copilotSdk: false,
+        [COPILOT_ACP_REMOVED_NOTICE_KEY]: true,
+      });
+      expect(migrateExperimentalSettings({ copilotLegacyAcp: false }, eligible)).toEqual({});
+      // Outside Preview the opt-in never selected ACP, so a leftover true is dropped without a notice.
+      expect(migrateExperimentalSettings({ copilotLegacyAcp: true, goobers: true }, () => false)).toEqual({ goobers: true });
+      // An old SDK = false was never an ACP opt-in, so it gets no notice.
+      expect(migrateExperimentalSettings({ copilotSdk: false })).toEqual({ copilotSdk: false });
+    });
+
+    it('handles both removed flags at once, and only the preview-only one depends on Preview', () => {
+      expect(migrateExperimentalSettings({ structuredMode: true, copilotLegacyAcp: true }, () => false)).toEqual({
+        [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true,
+      });
+      expect(migrateExperimentalSettings({ structuredMode: true, copilotLegacyAcp: true }, () => true)).toEqual({
+        [STRUCTURED_MODE_REMOVED_NOTICE_KEY]: true,
+        [COPILOT_ACP_REMOVED_NOTICE_KEY]: true,
       });
     });
 

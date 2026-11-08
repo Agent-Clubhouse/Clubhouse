@@ -24,7 +24,6 @@ import { resolveAgentMcpServers } from '../agent-mcp-servers';
 import { touchSessionEntry } from '../agent-config';
 import { broadcastAgentExit } from '../agent-exit-broadcast';
 import { appLog } from '../log-service';
-import { isPreviewEligible } from '../preview-eligible';
 import { resolveRuntimeMode } from '../chat-runtime-settings';
 import { isGraduatedFeatureOn } from '../experimental-settings';
 import { RICH_CHAT_CONTENT_FLAG } from '../../../shared/chat';
@@ -107,20 +106,17 @@ const DRIVER_LABELS: Record<string, string> = {
   claude_agent_sdk: 'Agent SDK',
   claude_stream_json: 'stream-json',
   codex_app_server: 'app-server',
-  copilot_acp: 'ACP',
   copilot_sdk: 'Copilot SDK',
-  acp: 'ACP',
 };
 
 function driverLabel(driver: ChatDriver): string {
   return `${cliLabel(driver.provider)} (${DRIVER_LABELS[driver.id] ?? driver.id})`;
 }
 
+/** Copilot has one chat driver, so a failed start opens the CLI view (#2868); say what to do next. */
 function copilotRecoveryHint(provider: string, driver?: ChatDriver['id']): string {
   return provider === 'copilot-cli' && driver === 'copilot_sdk'
-    ? (isPreviewEligible()
-      ? '. Copilot SDK chat failed. Retry after resolving the reported problem, or explicitly enable Use legacy Copilot ACP in Settings > Experimental for the next start.'
-      : '. Copilot SDK chat failed. Retry after resolving the reported problem. The legacy ACP escape hatch requires Preview eligibility in Settings > Updates, then Use legacy Copilot ACP in Settings > Experimental; it applies at the next start.')
+    ? '. Copilot chat failed to start. Resolve the reported problem, then restart the agent to try chat again.'
     : '';
 }
 
@@ -131,7 +127,7 @@ function copilotRecoveryHint(provider: string, driver?: ChatDriver['id']): strin
  * opt-in driver only appears when it is the preferred one.
  */
 export function chatDriverCandidates(provider: string, preferred?: ChatDriver['id']): ChatDriver[] {
-  // Copilot has one next-start choice. Never silently change adapters when it fails.
+  // Copilot has one chat driver; when it fails the agent opens in the CLI view.
   if (provider === 'copilot-cli') {
     const selected = preferred ?? 'copilot_sdk';
     return listChatDrivers().filter((driver) => driver.provider === provider && driver.id === selected);
@@ -291,7 +287,7 @@ export async function cancelChatStart(agentId: string, opts: { throwOnFailure?: 
 /**
  * Stop every chat agent for quit or update (#2053): cancel the starts in
  * progress, then stop each running session. Each driver closes its CLI its
- * own way (the Agent SDK query, the Codex app-server, the ACP process), and
+ * own way (the Agent SDK query, the Codex app-server, the Copilot server), and
  * each session ends the usual way: its native session id is saved, its MCP
  * config restored and its exit broadcast. Settles when every stop has, even
  * ones that fail.
@@ -572,7 +568,7 @@ async function runChatStart(
       ...(mcpPort > 0 ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId) } : {}),
     };
     // The bridge's own endpoint, for drivers whose agent takes HTTP MCP
-    // servers (ACP agents such as Copilot, which refuse stdio, #2240). The
+    // servers (Copilot, #2240). The
     // nonce header is resolved from `env` by the driver, so it too travels
     // only over the RPC pipe.
     const mcpHttpEndpoints: Record<string, McpHttpEndpoint> = mcpPort > 0
@@ -582,7 +578,7 @@ async function runChatStart(
       ...launchEnv,
       CLUBHOUSE_AGENT_ID: params.agentId,
       // The only place the nonce goes: the bridge inherits it from the CLI
-      // (Codex via env_vars, ACP via toAcpMcpServers), never a file (#2222).
+      // (Codex via env_vars, Copilot via the HTTP endpoint's header), never a file (#2222).
       CLUBHOUSE_HOOK_NONCE: nonce,
       ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
     };

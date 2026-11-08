@@ -138,7 +138,7 @@ describe('recordChatStart', () => {
     ['paused', undefined],
   ] as const)('records a check that sends the agent to the terminal: %s', (reason, errorType) => {
     recordChatStart(1000, 'terminal', {
-      attempts: [{ driver: 'copilot_acp', checkMs: 300, reason, ...(errorType && { errorCode: errorType }) }],
+      attempts: [{ driver: 'copilot_sdk', checkMs: 300, reason, ...(errorType && { errorCode: errorType }) }],
       reason,
     }, { orchestrator: 'copilot-cli', resume: false }, 1400);
     const [fallback] = fallbacks();
@@ -190,9 +190,9 @@ describe('recordChatStart', () => {
     expectNoFreeText();
   });
 
-  it('records the resume: whether it was honored and the load timings of a stalled Copilot resume (#2296)', () => {
+  it('records the resume: whether it was honored and the load timings the driver reports (#2296)', () => {
     recordChatStart(1000, 'chat', {
-      attempts: [{ driver: 'copilot_acp', checkMs: 400, versionStatus: 'untested', sessionStartMs: 21_000 }],
+      attempts: [{ driver: 'copilot_sdk', checkMs: 400, versionStatus: 'untested', sessionStartMs: 21_000 }],
       resumeHonored: false,
       resumeTiming: { loadMs: 20_001.6 },
     }, { orchestrator: 'copilot-cli', resume: true }, 22_000);
@@ -204,7 +204,7 @@ describe('recordChatStart', () => {
     expect(bag(spans()[0].attrs)).not.toHaveProperty('clubhouse.chat.resume.first_reply_ms');
     replaySpan.mockClear();
     recordChatStart(1000, 'chat', {
-      attempts: [{ driver: 'copilot_acp', checkMs: 400 }],
+      attempts: [{ driver: 'copilot_sdk', checkMs: 400 }],
       resumeHonored: true,
       resumeTiming: { loadMs: 6300, firstReplyMs: 1600 },
     }, { orchestrator: 'copilot-cli', resume: true }, 9000);
@@ -214,7 +214,7 @@ describe('recordChatStart', () => {
 
   it('drops an error code that is not a registered error.type, so no message text gets through', () => {
     recordChatStart(1000, 'terminal', {
-      attempts: [{ driver: 'acp', checkMs: 1, reason: 'start_failed', errorCode: 'Error: ENOTFOUND api.example.com /Users/me/secret' }],
+      attempts: [{ driver: 'copilot_sdk', checkMs: 1, reason: 'start_failed', errorCode: 'Error: ENOTFOUND api.example.com /Users/me/secret' }],
       reason: 'start_failed',
     }, ctx, 1001);
     expect(fallbacks()[0]).not.toHaveProperty('error.type');

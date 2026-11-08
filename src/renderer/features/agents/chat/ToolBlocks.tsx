@@ -307,7 +307,7 @@ const APPROVAL_PREVIEW_LINES = 12;
 /**
  * What a permission request would change, for the approval card: one compact
  * diff per file from generic diff content, so any driver's edit requests
- * (Claude Edit/MultiEdit/Write, ACP diffs) preview the same way.
+ * (Claude Edit/MultiEdit/Write, Copilot write requests) preview the same way.
  */
 export function ApprovalDiffPreview({ diffs }: { diffs: Array<Extract<ToolCallContent, { type: 'diff' }>> }) {
   if (diffs.length === 0) return null;

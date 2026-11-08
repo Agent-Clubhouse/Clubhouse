@@ -27,7 +27,6 @@ vi.mock('../util/shell', async (importOriginal) => ({
 import { ClaudeChatDriver } from './claude';
 import { CopilotSdkChatDriver } from './copilot/driver';
 import { CodexChatDriver } from '../orchestrators/adapters/codex-chat-driver';
-import { createCopilotAcpChatDriver } from '../orchestrators/adapters/acp-chat-driver';
 
 const enabled = process.env.CLUBHOUSE_FAKE_MODEL_SMOKE === '1';
 const TURN_MS = 90_000;
@@ -181,12 +180,4 @@ describe.skipIf(!enabled)('Context choice (real CLI, fake model)', () => {
     expect(await tier(chat)).toBe('default');
     await chat.close();
   }, 240_000);
-
-  it('Copilot / ACP: starts and answers with the flag', async () => {
-    const { home, cwd } = setup();
-    const start = starter(createCopilotAcpChatDriver(), 'copilot-cli', 'copilot', cwd, copilotEnv(home), {});
-    const chat = await start({ contextWindow: 'long_context' });
-    await chat.turn();
-    await chat.close();
-  }, 120_000);
 });

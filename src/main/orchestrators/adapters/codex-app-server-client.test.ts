@@ -14,7 +14,7 @@ import {
   textInput,
   type CodexAppServerClientOpts,
 } from './codex-app-server-client';
-import { RpcError } from './acp-client';
+import { RpcError } from './rpc-error';
 import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from '../../util/__fixtures__/host-session-env';
 import {
   commandApprovalDecisions,

@@ -8,7 +8,7 @@ import * as fsp from 'fs/promises';
 import { app, BrowserWindow, clipboard, ClipboardItem, ipcMain, nativeImage, net, shell, type IpcMainInvokeEvent } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { ChatAgentRuntimeInfo, ChatDriverId, ChatQuestionAnswers, ChatRuntimeSettings, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras } from '../../shared/chat';
-import { CHAT_ATTACHMENTS_MAX, CHAT_IMAGE_MAX_BYTES, PERMISSION_LEVELS, RICH_CHAT_CONTENT_FLAG, isMediaRef } from '../../shared/chat';
+import { CHAT_ATTACHMENTS_MAX, CHAT_DRIVER_IDS, CHAT_IMAGE_MAX_BYTES, PERMISSION_LEVELS, RICH_CHAT_CONTENT_FLAG, isMediaRef } from '../../shared/chat';
 import { getAgentRuntime, readChatTranscript, listChatSessions, onChatEvent } from '../services/agent-runtime';
 import { getAgentRuntimeInfo, type AgentRuntimeQuery } from '../services/agent-runtime/runtime-info';
 import { createStatusBridge } from '../services/agent-runtime/chat-status-bridge';
@@ -111,9 +111,8 @@ function validateRuntimeQuery(query: AgentRuntimeQuery, argName: string): void {
 }
 
 const DELIVERIES: ReadonlySet<string> = new Set(['auto', 'prompt', 'steer', 'queued']);
-const DRIVER_IDS: ReadonlySet<ChatDriverId> = new Set<ChatDriverId>([
-  'claude_agent_sdk', 'claude_stream_json', 'codex_app_server', 'copilot_acp', 'copilot_sdk', 'acp',
-]);
+/** A saved driver the app no longer has (copilot_acp, #2868) is dropped on the next save. */
+const DRIVER_IDS: ReadonlySet<ChatDriverId> = new Set<ChatDriverId>(CHAT_DRIVER_IDS);
 
 let unsubscribe: (() => void) | null = null;
 

@@ -306,7 +306,7 @@ export function launchAccessFor(level: AgentAccessLevel): AgentLaunchAccess {
  * - codex-cli: FAM off, no flags; auto, workspace-write sandbox with no
  *   approvals; skip-all, --dangerously-bypass-approvals-and-sandbox.
  * - copilot-cli: any FAM adds --yolo --autopilot (allow everything), and
- *   skip-all adds --allow-all-tools even with FAM off. Over ACP there is no
+ *   skip-all adds --allow-all-tools even with FAM off. Copilot chat has no
  *   `auto` level, only ask and allow-all. So FAM ranks as bypass, and
  *   skip-all without FAM as auto.
  * An unknown provider is ranked like Copilot, the most permissive mapping.

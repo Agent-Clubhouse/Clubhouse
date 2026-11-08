@@ -24,7 +24,7 @@ import { removeAllChatEventListeners } from './chat-event-bus';
 import * as permissionQueue from '../annex-permission-queue';
 import { ClaudeChatDriver } from '../../chat/claude';
 import { CodexChatDriver } from '../../orchestrators/adapters/codex-chat-driver';
-import { createCopilotAcpChatDriver } from '../../orchestrators/adapters/acp-chat-driver';
+import { CopilotSdkChatDriver } from '../../chat/copilot/driver';
 import {
   chatFixturePath,
   writeFakeCliShims,
@@ -36,13 +36,21 @@ interface Provider {
   cli: ChatFixtureCli;
   provider: string;
   driver: () => ChatDriver;
+  /** Env for the driver's start. */
+  env?: Record<string, string>;
+  /**
+   * The SDK recordings end with the `session.detach` the driver sends on
+   * close, so the fixture is only complete once the runtime has stopped.
+   */
+  completesOnStop?: boolean;
 }
 
 const PROVIDERS: Provider[] = [
   // The fixtures are stream-json; the E2E pins Claude to this transport too.
   { cli: 'claude', provider: 'claude-code', driver: () => new ClaudeChatDriver('claude_stream_json') },
   { cli: 'codex', provider: 'codex-cli', driver: () => new CodexChatDriver() },
-  { cli: 'copilot', provider: 'copilot-cli', driver: () => createCopilotAcpChatDriver() },
+  // The SDK fixtures were recorded logged out, with a provider standing in for the login.
+  { cli: 'copilot', provider: 'copilot-cli', driver: () => new CopilotSdkChatDriver(), env: { COPILOT_PROVIDER_BASE_URL: 'http://127.0.0.1:0/v1', COPILOT_MODEL: 'fake-model' }, completesOnStop: true },
 ];
 
 let tmp: string;
@@ -79,11 +87,16 @@ async function startRuntime(p: Provider, fixture: string, onNativeSessionId?: (i
     idleTimeoutMs: 0,
     onNativeSessionId,
     startSession: (resumeId) => driver.start({
-      agentId: 'agent-1', provider: p.provider, cwd, binaryPath: shims[p.cli], level: 'ask', resumeNativeSessionId: resumeId,
+      agentId: 'agent-1', provider: p.provider, cwd, binaryPath: shims[p.cli], level: 'ask', resumeNativeSessionId: resumeId, ...(p.env && { env: p.env }),
     }),
   });
   await runtime.start();
-  const readReport = async (): Promise<FakeCliReport> => JSON.parse(await fs.promises.readFile(report, 'utf8'));
+  const read = async (): Promise<FakeCliReport> => JSON.parse(await fs.promises.readFile(report, 'utf8'));
+  const started = runtime;
+  const readReport = async (): Promise<FakeCliReport> => {
+    if (p.completesOnStop) await started.stop();
+    return read();
+  };
   return { runtime, readReport };
 }
 
@@ -147,12 +160,21 @@ describe.each(PROVIDERS)('$cli chat over the fake CLI (the E2E flows)', (p) => {
     const { runtime, readReport } = await startRuntime(p, 'interrupt');
 
     await runtime.sendMessage('Run the long command', { source: 'user' });
-    await waitForEvent('tool_call');
+    // Claude's and Codex's fixtures hold the turn on a tool; Copilot's on a model call that has started streaming.
+    await waitForEvent(p.cli === 'copilot' ? 'agent_message_chunk' : 'tool_call');
     await runtime.interrupt();
 
     const ended = await waitForEvent('turn_ended');
-    await expectFixtureComplete(readReport);
     expect(ended.data.stopReason).toBe('cancelled');
-    expect(transcript.filter((e) => e.type === 'session_state').map((e) => e.data.state)).toEqual(['idle', 'running', 'idle']);
+    const states = ['idle', 'running', 'idle'];
+    if (p.cli === 'copilot') {
+      // The recording goes on to show the session is still usable.
+      await waitForEvent('session_state', 3);
+      await runtime.sendMessage('Are you there?', { source: 'user' });
+      expect((await waitForEvent('turn_ended', 2)).data.stopReason).toBe('end_turn');
+      states.push('running', 'idle');
+    }
+    expect(transcript.filter((e) => e.type === 'session_state').map((e) => e.data.state)).toEqual(states);
+    await expectFixtureComplete(readReport);
   });
 });

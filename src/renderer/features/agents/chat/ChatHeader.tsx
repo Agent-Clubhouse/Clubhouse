@@ -10,9 +10,7 @@ export const DRIVER_LABELS: Record<ChatDriverId, string> = {
   claude_agent_sdk: 'Agent SDK',
   claude_stream_json: 'stream-json',
   codex_app_server: 'app-server',
-  copilot_acp: 'ACP',
   copilot_sdk: 'Copilot SDK',
-  acp: 'ACP',
 };
 
 function useNow(active: boolean): number {
