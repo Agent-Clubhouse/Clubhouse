@@ -9,6 +9,7 @@
 import { createHash, randomBytes } from 'crypto';
 import { registerGlobalTool } from '../tool-registry';
 import type { McpToolResult } from '../types';
+import type { ToolGrant } from '../tool-grants';
 import { appLog } from '../../log-service';
 import * as projectStore from '../../project-store';
 import * as agentConfig from '../../agent-config';
@@ -151,7 +152,7 @@ function asDispatcher<T>(callerId: string, fn: () => Promise<T>): Promise<T> {
 
 type Handler = (callerId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
 
-function tool(name: string, description: string, properties: Record<string, unknown>, required: string[], handler: Handler): void {
+function tool(name: string, grant: ToolGrant, description: string, properties: Record<string, unknown>, required: string[], handler: Handler): void {
   registerGlobalTool(name, { description, inputSchema: { type: 'object', properties, required } }, async (callerId, args) => {
     try {
       // Writes run under asDispatcher, which attributes them to the calling Dispatcher (#2900).
@@ -163,7 +164,7 @@ function tool(name: string, description: string, properties: Record<string, unkn
       appLog('core:mcp', 'warn', `${name} failed`, { meta: { callerId, error: err instanceof Error ? err.message : String(err) } });
       return fail(err instanceof Error ? err.message : String(err));
     }
-  }, { group: 'dispatcher' });
+  }, { group: 'dispatcher', grant });
 }
 
 const S = { type: 'string' } as const;
@@ -175,7 +176,7 @@ const AGENT = { type: 'string', description: 'Agent id or name, from list_agents
 export function registerManagedTools(): void {
   const svc = () => managedAgents();
 
-  tool('list_agent_parts',
+  tool('list_agent_parts', { actions: ['library.read'], target: 'library' },
     'List the agent part library: instruction blocks, skills or MCP servers. Each part says whether it is built in, a short preview, and which agents and templates use it. Parts are used by reference: an edit reaches every agent using it at its next start. Retired built-ins are left out; agents that use one still get it, and get_agent_part reads it. source "builtin" or "custom" lists only those, as the library\'s source filter does.',
     { kind: { ...S, description: 'block, skill or mcp' }, source: { ...S, description: 'Optional: builtin or custom. Leave out for both.' } }, ['kind'],
     async (_c, args) => {
@@ -186,11 +187,11 @@ export function registerManagedTools(): void {
       return json(source === undefined ? parts : parts.filter((p) => p.builtin === (source === 'builtin')));
     });
 
-  tool('get_agent_part', 'Read one agent part with its full content and revision.',
+  tool('get_agent_part', { actions: ['library.read'], target: 'library' }, 'Read one agent part with its full content and revision.',
     { id: S }, ['id'],
     async (_c, args) => json(await svc().getPart(requireString(args, 'id'))));
 
-  tool('create_agent_part',
+  tool('create_agent_part', { actions: ['library.write'], target: 'library' },
     'Create a custom agent part in the library. It is not added to any agent; use set_agent_setup for that. content: block {content}, skill {skillName, files: [{path, content, encoding?, executable?}]}, mcp {serverKey, transport: stdio|http|sse, command?, args?, url?, envVars?: names only}. Never put secret values in parts.',
     { kind: S, name: S, description: S, content: OBJ }, ['kind', 'name', 'content'],
     async (callerId, args) => {
@@ -201,7 +202,7 @@ export function registerManagedTools(): void {
       return json(await asDispatcher(callerId, () => svc().createPart(input)));
     });
 
-  tool('update_agent_part',
+  tool('update_agent_part', { actions: ['library.write'], target: 'library' },
     'Edit or rename a custom part for every agent that uses it. Built-ins are read-only: fork them. A rename needs expectedName and a description edit needs expectedDescription: the name and description you read with get_agent_part, since neither changes the revision. When more than one agent uses it, the first call returns the agents and templates it reaches and a confirm token; call again with the same arguments and confirm to save. A token is yours only, works once, and expires after 10 minutes. Running agents keep their current setup until restarted.',
     { id: S, expectedRevision: { type: 'number' }, expectedName: S, expectedDescription: S, name: S, description: S, content: OBJ, confirm: S }, ['id', 'expectedRevision'],
     async (callerId, args) => {
@@ -237,7 +238,7 @@ export function registerManagedTools(): void {
       return json(await asDispatcher(callerId, () => svc().updatePart({ id, expectedRevision, expectedName, expectedDescription, name, description, content, actor: ACTOR })));
     });
 
-  tool('fork_agent_part',
+  tool('fork_agent_part', [{ actions: ['library.write'], target: 'library' }, { actions: ['agent.grant'], target: 'agent_arg', ifArgs: ['agent'] }],
     'Make a custom copy of a part in the library (forking a built-in is how to change one). With project and agent, that agent switches to the copy and the others keep the original.',
     { id: S, project: PROJECT, agent: AGENT, name: S }, ['id'],
     async (callerId, args) => {
@@ -247,7 +248,7 @@ export function registerManagedTools(): void {
       return json(await asDispatcher(callerId, () => svc().forkPart(input)));
     });
 
-  tool('delete_agent_part',
+  tool('delete_agent_part', { actions: ['library.write'], target: 'library' },
     'Delete a custom part. mode "copy" gives each agent that uses it its own copy; "remove" takes it out of those agents. Templates drop it either way. When agents or templates use it, the first call returns them and a confirm token; call again with the same arguments and confirm to delete.',
     { id: S, expectedRevision: { type: 'number' }, mode: { ...S, description: 'copy or remove' }, confirm: S }, ['id', 'expectedRevision', 'mode'],
     async (callerId, args) => {
@@ -272,7 +273,7 @@ export function registerManagedTools(): void {
       return json({ status: 'deleted' });
     });
 
-  tool('get_agent_setup',
+  tool('get_agent_setup', { actions: ['agent.read'], target: 'agent_arg' },
     'Read what a managed agent is built from (block ids in order, skill ids, MCP ids, its template) and whether a running session is behind its setup.',
     { project: PROJECT, agent: AGENT }, ['project', 'agent'],
     async (_c, args) => {
@@ -280,7 +281,7 @@ export function registerManagedTools(): void {
       return json({ setup: await svc().getSetup(t.project.path, t.agentId), status: await statusFor(t.project.path, t.agentId) });
     });
 
-  tool('set_agent_setup',
+  tool('set_agent_setup', { actions: ['agent.grant'], target: 'agent_arg' },
     'Replace a managed agent\'s parts: blocks in the order it reads them, skills and MCP servers. The Clubhouse MCP part always stays in the setup. Applies at its next start; use restart_agent for a running one.',
     { project: PROJECT, agent: AGENT, blocks: IDS, skills: IDS, mcps: IDS }, ['project', 'agent', 'blocks', 'skills', 'mcps'],
     async (callerId, args) => {
@@ -293,7 +294,7 @@ export function registerManagedTools(): void {
       return json(keptClubhousePart(next.mcps, saved));
     });
 
-  tool('preview_agent_setup',
+  tool('preview_agent_setup', { actions: ['agent.read'], target: 'agent_arg' },
     'The exact result a managed agent gets at its next start: instruction text with each block\'s lines, skills and where they go, MCP servers.',
     { project: PROJECT, agent: AGENT }, ['project', 'agent'],
     async (_c, args) => {
@@ -304,11 +305,11 @@ export function registerManagedTools(): void {
       return json(await previewManagedSetup({ service: svc(), projectPath: t.project.path, agent, provider }));
     });
 
-  tool('list_agent_templates', 'List templates (built-in and custom) with their parts, settings and how many agents were made from each. Retired built-in templates are left out; agents made from one keep working.',
+  tool('list_agent_templates', { actions: ['library.read'], target: 'library' }, 'List templates (built-in and custom) with their parts, settings and how many agents were made from each. Retired built-in templates are left out; agents made from one keep working.',
     {}, [],
     async () => json((await svc().listTemplates()).filter(isListed)));
 
-  tool('save_agent_template',
+  tool('save_agent_template', { actions: ['template.write'], target: 'library' },
     'Create a custom template (name required), or edit one by id. Editing an id keeps every field you leave out as saved; settings, when given, replaces the template\'s settings as a whole. Editing changes future agents only; use push_agent_template to apply it to agents made from it. settings: orchestrator, model, effort, freeAgentMode, orchestration {...}, idleSleep (minutes or "never"), helperTemplateId.',
     { id: S, name: S, description: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, [],
     async (callerId, args) => {
@@ -338,7 +339,7 @@ export function registerManagedTools(): void {
       return json(keptClubhousePart(input.setup.mcps, await asDispatcher(callerId, () => svc().saveTemplate(input))));
     });
 
-  tool('push_agent_template',
+  tool('push_agent_template', [{ actions: ['template.write'], target: 'library' }, { actions: ['template.push'], target: 'agent_arg', ifArgs: ['agents'] }],
     'Save a template edit and apply its changes to agents made from it. Call once without confirm, naming in agents the agent ids to apply to: it returns the changes, every agent made from the template with how many changes apply to each, and a confirm token for that choice. Then call again with the same arguments and confirm. Settings left out stay as the template has them. A token is yours only, works once, expires after 10 minutes, and is refused if the template changed since the preview.',
     { id: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ, agents: IDS, confirm: S }, ['id', 'blocks', 'skills', 'mcps'],
     async (callerId, args) => {
@@ -378,7 +379,7 @@ export function registerManagedTools(): void {
       return json({ status: 'pushed', applied, ...(skipped.length > 0 && { skipped }), failed });
     });
 
-  tool('delete_agent_template',
+  tool('delete_agent_template', { actions: ['template.write'], target: 'library' },
     'Delete a custom template. Built-in templates can\'t be deleted. Agents made from it keep their setup; new agents and helpers can\'t start from it, and if it was the default helper template, helpers go back to the built-in Helper template. The first call returns the agents made from it and a confirm token; call again with the same id and confirm to delete.',
     { id: S, confirm: S }, ['id'],
     async (callerId, args) => {
@@ -400,7 +401,7 @@ export function registerManagedTools(): void {
       return json({ status: 'deleted' });
     });
 
-  tool('create_managed_agent',
+  tool('create_managed_agent', [{ actions: ['agent.create'], target: 'project_arg' }, { actions: ['agent.grant'], target: 'project_arg', ifArgs: ['settings'] }],
     'Create a durable agent, asleep; wake it with wake_agent. By default it is Clubhouse managed, from a template or a full setup, in its own worktree (or folder). managed: false makes a plain agent instead, in its own worktree, that reads its own files; it takes settings but no template or parts.',
     { project: PROJECT, name: S, color: S, managed: { type: 'boolean', description: 'false for a plain (unmanaged) agent. Default true.' }, templateId: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, ['project', 'name'],
     async (callerId, args) => {
@@ -421,7 +422,7 @@ export function registerManagedTools(): void {
       return json({ id: config.id, name: config.name, project: project.name, managed: !!config.managed, status: 'sleeping' });
     });
 
-  tool('restart_agent',
+  tool('restart_agent', { actions: ['agent.restart'], target: 'agent_arg' },
     'Restart a running managed agent so it picks up its setup. By default it waits for the agent\'s current turn to end first; now: true restarts it at once, cutting the turn off. It resumes the same conversation unless fresh is true, or the CLI changed. Only running managed agents, and never yourself: a sleeping agent gets its setup when it next starts (wake_agent).',
     { project: PROJECT, agent: AGENT, fresh: { type: 'boolean' }, now: { type: 'boolean', description: 'Restart at once instead of after the current turn.' } }, ['project', 'agent'],
     async (callerId, args) => {
