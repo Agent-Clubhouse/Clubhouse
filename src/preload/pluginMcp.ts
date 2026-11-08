@@ -1,5 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import type { AccessLevel } from '../shared/agent-access';
 
 type PluginToolDef = { name: string; description: string; inputSchema: Record<string, unknown> };
 type PluginToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: boolean };
@@ -24,8 +25,8 @@ export const pluginMcp = {
     ipcRenderer.invoke(IPC.PLUGIN_MCP.REMOVE_TOOLS, token),
   listTools: (token: string) =>
     ipcRenderer.invoke(IPC.PLUGIN_MCP.LIST_TOOLS, token) as Promise<string[]>,
-  onToolCall: (callback: (data: { callId: string; pluginId: string; toolName: string; args: Record<string, unknown> }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: { callId: string; pluginId: string; toolName: string; args: Record<string, unknown> }) => callback(data);
+  onToolCall: (callback: (data: { callId: string; pluginId: string; toolName: string; args: Record<string, unknown>; callerAccess?: AccessLevel }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: { callId: string; pluginId: string; toolName: string; args: Record<string, unknown>; callerAccess?: AccessLevel }) => callback(data);
     ipcRenderer.on(IPC.PLUGIN_MCP.TOOL_CALL, listener);
     return () => { ipcRenderer.removeListener(IPC.PLUGIN_MCP.TOOL_CALL, listener); };
   },

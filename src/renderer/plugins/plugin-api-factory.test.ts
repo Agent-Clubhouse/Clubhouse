@@ -4147,7 +4147,7 @@ describe('plugin-api-factory', () => {
   });
 
   describe('mcp capability token', () => {
-    type ToolCall = { callId: string; pluginId: string; toolName: string; args: Record<string, unknown> };
+    type ToolCall = { callId: string; pluginId: string; toolName: string; args: Record<string, unknown>; callerAccess?: string };
     const bridge = window.clubhouse as unknown as { pluginMcp?: unknown };
     let original: unknown;
     let listeners: Array<(data: ToolCall) => void>;
@@ -4188,6 +4188,86 @@ describe('plugin-api-factory', () => {
     const dispose = (ctx: PluginContext) => { for (const sub of ctx.subscriptions) sub.dispose(); };
     const deliver = async (call: ToolCall) => { for (const l of [...listeners]) await l(call); };
     const settle = () => new Promise((r) => setTimeout(r, 0));
+
+    describe('while answering an agent\'s tool call (D126, #3161)', () => {
+      /** A plugin with every permission whose tool runs `body` and answers with what it returned or threw. */
+      const answering = (body: (api: PluginAPI) => Promise<unknown>, pluginId = 'test-plugin') => {
+        const ctx = makeCtx({ pluginId });
+        const api = createPluginAPI(ctx, undefined, makeAllPermsManifest());
+        api.mcp.onToolCall(async () => {
+          const value = await body(api);
+          return { content: [{ type: 'text' as const, text: String(value) }] };
+        });
+        return ctx;
+      };
+      const resultOf = (callId: string) => pluginMcp.sendToolResult.mock.calls.find((c) => c[1] === callId)?.[2] as { content: Array<{ text: string }>; isError?: boolean } | undefined;
+
+      it('an agent it creates stays at or below the calling agent\'s level, refused with both named', async () => {
+        const ctx = answering((api) => api.agents.createDurable({ name: 'made', color: 'blue', access: 'full_access' }));
+        await settle();
+        await deliver({ callId: 'c1', pluginId: ctx.pluginId, toolName: 't', args: {}, callerAccess: 'auto' });
+        await settle();
+        expect(resultOf('c1')).toMatchObject({ isError: true });
+        expect(resultOf('c1')!.content[0].text).toBe(`Plugin '${ctx.pluginId}' is answering a tool call from an agent that runs at Auto, so it can't start an agent at Full access: an agent never sets Access above its own, even through a plugin. Pass access at or below Auto, or start it from the plugin's own view.`);
+        expect(mockAgent.createDurable).not.toHaveBeenCalled();
+      });
+
+      it('at or below the caller goes ahead, sent as the level that was checked', async () => {
+        mockAgent.createDurable.mockResolvedValue({ id: 'made', name: 'made' });
+        vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('made');
+        const ctx = answering((api) => api.agents.createDurable({ name: 'made', color: 'blue', access: 'auto' }));
+        await settle();
+        await deliver({ callId: 'c2', pluginId: ctx.pluginId, toolName: 't', args: {}, callerAccess: 'auto' });
+        await settle();
+        expect(resultOf('c2')?.isError).toBeFalsy();
+        expect(mockAgent.createDurable.mock.calls[0][6]).toBe('auto');
+      });
+
+      it('no level named means the Default access, which is checked and sent as a level; a legacy on can mean Full access', async () => {
+        const app = window.clubhouse.app as unknown as { getDefaultAccess: () => Promise<string> };
+        const before = app.getDefaultAccess;
+        app.getDefaultAccess = async () => 'full_access';
+        try {
+          const ctx = answering((api) => api.agents.createDurable({ name: 'made', color: 'blue' }));
+          await settle();
+          await deliver({ callId: 'c3', pluginId: ctx.pluginId, toolName: 't', args: {}, callerAccess: 'auto_edit' });
+          await settle();
+          expect(resultOf('c3')!.content[0].text).toContain('can\'t start an agent at Full access (the Default access for new agents)');
+          const legacy = answering((api) => api.agents.runQuick('go', { freeAgentMode: true }), 'quick-plugin');
+          await settle();
+          await deliver({ callId: 'c4', pluginId: legacy.pluginId, toolName: 't', args: {}, callerAccess: 'auto' });
+          await settle();
+          expect(resultOf('c4')!.content[0].text).toContain('(freeAgentMode can mean Full access)');
+          expect(resultOf('c4')!.content[0].text).toContain('Leave freeAgentMode out');
+        } finally {
+          app.getDefaultAccess = before;
+        }
+        expect(mockAgent.createDurable).not.toHaveBeenCalled();
+      });
+
+      it('a call with no level from main reads as Ask first', async () => {
+        const spawn = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa');
+        const ctx = answering((api) => api.agents.runQuick('go', { freeAgentMode: true }));
+        await settle();
+        await deliver({ callId: 'c5', pluginId: ctx.pluginId, toolName: 't', args: {} });
+        await settle();
+        expect(resultOf('c5')!.content[0].text).toContain('runs at Ask first');
+        expect(spawn).not.toHaveBeenCalled();
+      });
+
+      it('outside a call, the plugin acts from its own view for the person, with what its manifest allows', async () => {
+        mockAgent.createDurable.mockResolvedValue({ id: 'made', name: 'made' });
+        vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('made');
+        const ctx = answering(async () => 'unused');
+        await settle();
+        // A call answered: the plugin is no longer limited by it.
+        await deliver({ callId: 'c6', pluginId: ctx.pluginId, toolName: 't', args: {}, callerAccess: 'plan' });
+        await settle();
+        const api = createPluginAPI(ctx, undefined, makeAllPermsManifest());
+        await expect(api.agents.createDurable({ name: 'mine', color: 'blue', access: 'full_access' })).resolves.toBe('made');
+        expect(mockAgent.createDurable.mock.calls[0][6]).toBe('full_access');
+      });
+    });
 
     it('is issued at activation, with the issuer secret, and sent on every call in place of the pluginId', async () => {
       const ctx = makeCtx();

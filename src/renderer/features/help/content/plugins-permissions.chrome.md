@@ -64,6 +64,8 @@ Any unlisted command is blocked.
 
 The `agents.free-agent-mode` permission lets a plugin start agents at Auto or Full access. The plugin passes `freeAgentMode: true` to `api.agents.runQuick()`. Without this permission declared, the call throws an error.
 
+While a plugin is answering an agent's call to one of its MCP tools, it can't start an agent above the level that agent runs at, as no agent can on its own. The call throws an error that names both levels. From the plugin's own view, for you, it starts agents with what its manifest allows.
+
 ```json
 {
   "permissions": ["agents", "agents.free-agent-mode"]
