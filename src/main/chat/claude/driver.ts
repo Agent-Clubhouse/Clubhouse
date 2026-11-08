@@ -997,7 +997,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         this.noteApplied();
         return;
       }
-      case 'session_started':
+      case 'session_started': {
         // system/init only arrives with the first prompt: the native session id and resolved model are known now.
         if (ev.parentToolCallId || this.closing) return;
         this.costIsEstimate = ev.apiKeySource === undefined || ev.apiKeySource === 'none';
@@ -1023,6 +1023,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         if (ev.permissionMode) this.changeLevel(levelFromClaudeMode(ev.permissionMode), ev.permissionMode);
         if (mcpServers) void this.readMcpStatus(mcpServers);
         return;
+      }
       case 'user_message':
         // The chat runtime records what it sent; CLI echoes add nothing.
         return;
