@@ -9,6 +9,7 @@ import { describeCron, formatClock, parseCron } from './cron';
 import type {
   ActionEventKind,
   ActionEventSource,
+  ActionOwner,
   ActionStep,
   ActionTrigger,
   MissedRunRule,
@@ -201,8 +202,13 @@ export function describeSteps(steps: ActionStep[], names: ActionNames = NO_NAMES
   }).join(', then ');
 }
 
-/** The list line: "Weekdays at 9:00 AM → Wake pm with a prompt". */
-export function describeAction(a: { trigger: ActionTrigger; steps: ActionStep[] }, names: ActionNames = NO_NAMES): string {
+/** The list line: "Weekdays at 9:00 AM → Wake pm with a prompt". A subscription (#3042) reads "→ Tell pm". */
+export function describeAction(a: { trigger: ActionTrigger; steps: ActionStep[]; subscription?: true; owner?: ActionOwner }, names: ActionNames = NO_NAMES): string {
+  const step = a.steps[0];
+  if (a.subscription && a.steps.length === 1 && step?.kind === 'message') {
+    const who = names.agent(step.agentId) ?? (a.owner?.kind === 'dispatcher' || a.owner?.kind === 'app' ? 'the Dispatcher' : 'an agent');
+    return `${describeTrigger(a.trigger, names)} → Tell ${who}`;
+  }
   return `${describeTrigger(a.trigger, names)} → ${describeSteps(a.steps, names)}`;
 }
 

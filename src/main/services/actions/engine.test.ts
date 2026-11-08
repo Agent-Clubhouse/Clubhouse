@@ -53,6 +53,8 @@ interface Setup {
   refuseSource?: (trigger: Action['trigger']) => string | null;
   maxActions?: number;
   start?: number;
+  /** The Dispatcher's agent id, for subscriptions that tell it. */
+  dispatcher?: string;
 }
 
 function setup(opts: Setup = {}) {
@@ -76,6 +78,7 @@ function setup(opts: Setup = {}) {
       for (const [id, a] of Object.entries(agents)) if (a.worktree === repo) return { agentId: id, projectId: a.projectId };
       return { projectId: ({ '/p1': 'p1', '/p2': 'p2' } as Record<string, string>)[repo] };
     },
+    dispatcherAgentId: () => opts.dispatcher,
   };
   const stepCalls: Array<{ step: ActionStep; ctx: StepContext }> = [];
   const hooks: Required<Pick<EngineHooks, 'failed' | 'turnedOff' | 'changed' | 'observe'>> = {
@@ -762,5 +765,100 @@ describe('observations (for telemetry)', () => {
     engine.runNow(a.id);
     await flush();
     expect(history(a.id)).toMatchObject([{ outcome: 'done' }]);
+  });
+});
+
+// ── Subscriptions (#3042) ───────────────────────────────────────────────────
+
+describe('subscriptions (#3042)', () => {
+  const pushedMain = { kind: 'event', event: 'git.remote_updated', source: { kind: 'project', projectId: 'p1' }, branch: 'main' } as const;
+  const leadAgent = { kind: 'agent', agentId: 'lead' } as const;
+
+  it('an agent’s subscription is its own action, with one step that messages it', () => {
+    const { engine } = setup();
+    engine.start();
+    const a = engine.subscribe({ trigger: pushedMain, note: 'Tag the release.' }, leadAgent);
+    expect(a).toMatchObject({
+      name: 'Tell release-lead when web is pushed, pulled or fetched (main)',
+      owner: leadAgent,
+      subscription: true,
+      overlap: 'queue',
+      enabled: true,
+      steps: [{ kind: 'message', agentId: 'lead', text: 'Tag the release.' }],
+    });
+    // It is an ordinary action: listed and counted with the others.
+    expect(engine.list().map((x) => x.id)).toContain(a.id);
+    expect(engine.subscribe({ trigger: pushedMain }, leadAgent).steps[0]).toMatchObject({ text: 'You asked to be told when this happens.' });
+  });
+
+  it('messages its owner when the event fires, saying what happened, and again for the next one', async () => {
+    const { engine, event, stepCalls, history } = setup();
+    engine.start();
+    const a = engine.subscribe({ trigger: pushedMain }, leadAgent);
+    event({ type: 'git.remote_updated', repoPath: '/p1', branch: 'dev' });
+    await flush();
+    expect(stepCalls).toHaveLength(0);
+    event({ type: 'git.remote_updated', repoPath: '/p1', branch: 'main' });
+    event({ type: 'git.remote_updated', repoPath: '/p1', branch: 'main' });
+    await flush();
+    expect(stepCalls).toHaveLength(2);
+    expect(stepCalls[0].step).toEqual({ kind: 'message', agentId: 'lead', text: 'You asked to be told when this happens.' });
+    expect(stepCalls[0].ctx.trigger).toMatchObject({ kind: 'event', detail: 'web is pushed, pulled or fetched (main)' });
+    expect(history(a.id).map((r) => r.outcome)).toEqual(['done', 'done']);
+  });
+
+  it('follows the owner’s rights, when made and on every run', async () => {
+    let refuse = false;
+    const { engine, event, stepCalls, history } = setup({ refuseSource: () => (refuse ? 'release-lead can’t act on that project.' : null) });
+    engine.start();
+    refuse = true;
+    expect(() => engine.subscribe({ trigger: pushedMain }, leadAgent)).toThrow(/can’t act on that project/);
+    refuse = false;
+    const a = engine.subscribe({ trigger: pushedMain }, leadAgent);
+    refuse = true;
+    event({ type: 'git.remote_updated', repoPath: '/p1', branch: 'main' });
+    await flush();
+    expect(stepCalls).toHaveLength(0);
+    expect(history(a.id)[0]).toMatchObject({ outcome: 'failed', reason: 'Couldn’t run: release-lead can’t act on that project.' });
+  });
+
+  it('the Dispatcher subscribes for itself the same way, and so can Clubhouse’s own upkeep', async () => {
+    const { engine, event, stepCalls } = setup({
+      dispatcher: 'disp',
+      agents: { lead: { name: 'release-lead', projectId: 'p1' }, disp: { name: 'Dispatcher', projectId: '' } },
+    });
+    engine.start();
+    const leadSlept = { kind: 'event', event: 'agent.slept', source: { kind: 'agent', agentId: 'lead' } } as const;
+    const mine = engine.subscribe({ trigger: leadSlept, note: 'Check its handoff.' }, { kind: 'dispatcher' });
+    expect(mine).toMatchObject({ owner: { kind: 'dispatcher' }, subscription: true, name: 'Tell Dispatcher when release-lead goes to sleep' });
+    const upkeep = engine.subscribe({ trigger: leadSlept, name: 'upkeep' }, { kind: 'app' });
+    expect(upkeep.steps).toEqual([{ kind: 'message', agentId: 'disp', text: 'You asked to be told when this happens.' }]);
+    event({ type: 'agent.asleep', agentId: 'lead' });
+    await flush();
+    expect(stepCalls.map((c) => [c.ctx.action.id, c.step])).toEqual([
+      [mine.id, { kind: 'message', agentId: 'disp', text: 'Check its handoff.' }],
+      [upkeep.id, { kind: 'message', agentId: 'disp', text: 'You asked to be told when this happens.' }],
+    ]);
+    expect(stepCalls[0].ctx.trigger?.detail).toBe('release-lead goes to sleep');
+  });
+
+  it('needs an event and someone to tell', () => {
+    const { engine } = setup();
+    engine.start();
+    expect(() => engine.subscribe({ trigger: weekdays9 }, leadAgent)).toThrow(/needs an event trigger/);
+    expect(() => engine.subscribe({ trigger: pushedMain }, user)).toThrow(/Only agents and the Dispatcher/);
+    // No Dispatcher yet: nobody to tell.
+    expect(() => engine.subscribe({ trigger: pushedMain }, { kind: 'dispatcher' })).toThrow(/Only agents and the Dispatcher/);
+    expect(() => engine.create({ trigger: pushedMain, steps: [notify] }, leadAgent, { subscription: true })).toThrow(/messages its owner/);
+  });
+
+  it('stays a subscription while an edit keeps its shape', () => {
+    const { engine } = setup();
+    engine.start();
+    const a = engine.subscribe({ trigger: pushedMain }, leadAgent);
+    const renamed = engine.update(a.id, { name: 'Pushes', trigger: { ...pushedMain, branch: 'release' }, steps: a.steps });
+    expect(renamed.subscription).toBe(true);
+    const changed = engine.update(a.id, { name: 'Pushes', trigger: pushedMain, steps: [{ kind: 'message', agentId: 'pm', text: 'hi' }] });
+    expect(changed.subscription).toBeUndefined();
   });
 });

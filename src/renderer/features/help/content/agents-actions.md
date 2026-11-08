@@ -40,6 +40,10 @@ If an agent an action uses is deleted, the action turns off and says why.
 
 You, the Dispatcher and agents can all make actions. An action's usage counts toward whoever made it. Agents manage their own actions through Clubhouse, and a helper's actions are deleted with the helper.
 
+### Being told when something happens
+
+An agent can ask to be told when something happens, for example "tell me when main is pushed". That becomes an action the agent owns, with one step that messages it, and shows in the list as "Tell" followed by the agent's name. The message says what happened. The Dispatcher keeps track of your agents the same way. You can turn these off or delete them like any other action.
+
 ## Limits
 
 An action set off by another action carries that chain along. A chain stops after three actions, an action can't set itself off, and one action runs at most 60 times an hour.
