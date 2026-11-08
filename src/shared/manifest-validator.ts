@@ -1,6 +1,6 @@
 import type { PluginManifest } from './plugin-types';
 import { ALL_PLUGIN_PERMISSIONS, PERMISSION_HIERARCHY } from './plugin-types';
-import { SUPPORTED_PLUGIN_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS } from './marketplace-types';
+import { SUPPORTED_PLUGIN_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS, unsupportedPluginApiMessage } from './marketplace-types';
 
 export { DEPRECATED_PLUGIN_API_VERSIONS };
 
@@ -56,11 +56,13 @@ export function validateManifest(raw: unknown): ValidationResult {
     if (typeof engine.api !== 'number') {
       errors.push('engine.api must be a number');
     } else if (!SUPPORTED_PLUGIN_API_VERSIONS.includes(engine.api)) {
-      errors.push(`Plugin requires API version ${engine.api}, which is not supported by this version of Clubhouse. Supported API versions: ${SUPPORTED_PLUGIN_API_VERSIONS.join(', ')}`);
+      // One clear refusal that names the version; nothing else about an
+      // unloadable manifest helps the person.
+      return { valid: false, errors: [unsupportedPluginApiMessage(engine.api)], warnings: [] };
     }
   }
 
-  // Deprecation warning for old API versions
+  // Deprecation warning for an API version that still loads but is going away
   {
     const engObj = m.engine as Record<string, unknown> | undefined;
     const ver = engObj && typeof engObj.api === 'number' ? engObj.api : 0;
@@ -70,21 +72,13 @@ export function validateManifest(raw: unknown): ValidationResult {
     }
   }
 
-  // Kind validation (v0.7+)
-  const engineObj = m.engine as Record<string, unknown> | undefined;
-  const apiVersion = engineObj && typeof engineObj.api === 'number' ? engineObj.api : 0;
+  // Kind validation
   const isPack = m.kind === 'pack';
   const isWorkspace = m.kind === 'workspace';
 
   if (m.kind !== undefined) {
     if (m.kind !== 'plugin' && m.kind !== 'pack' && m.kind !== 'workspace') {
       errors.push(`Invalid kind: "${String(m.kind)}". Must be "plugin", "pack", or "workspace"`);
-    }
-    if (isPack && apiVersion < 0.7) {
-      errors.push('Pack plugins require API >= 0.7');
-    }
-    if (isWorkspace && apiVersion < 0.9) {
-      errors.push('Workspace plugins require API >= 0.9');
     }
   }
 
@@ -127,11 +121,11 @@ export function validateManifest(raw: unknown): ValidationResult {
     // Dual-scoped plugins can have both tab and railItem — no restriction
   }
 
-  // v0.5+ requires contributes.help (packs get a pass — help is optional for packs)
-  if (apiVersion >= 0.5 && !isPack) {
+  // Plugins require contributes.help (packs get a pass — help is optional for packs)
+  if (!isPack) {
     const contrib = m.contributes as Record<string, unknown> | undefined;
     if (!contrib || typeof contrib.help !== 'object' || contrib.help === null) {
-      errors.push('Plugins targeting API >= 0.5 must include contributes.help');
+      errors.push('Plugins must include contributes.help');
     } else {
       const help = contrib.help as Record<string, unknown>;
       if (help.topics !== undefined) {
@@ -159,10 +153,10 @@ export function validateManifest(raw: unknown): ValidationResult {
     }
   }
 
-  // v0.5+ permission validation (packs don't require permissions array)
-  if (apiVersion >= 0.5 && !isPack) {
+  // Permission validation (packs don't require permissions array)
+  if (!isPack) {
     if (!Array.isArray(m.permissions)) {
-      errors.push('Plugins targeting API >= 0.5 must include a permissions array');
+      errors.push('Plugins must include a permissions array');
     }
   }
 
@@ -240,35 +234,9 @@ export function validateManifest(raw: unknown): ValidationResult {
         errors.push(`"${child}" requires the base "${parent}" permission`);
       }
     }
-
-    // Workspace permissions require API >= 0.7
-    const workspacePerms = permissions.filter((p: unknown) => typeof p === 'string' && (p === 'workspace' || p.startsWith('workspace.')));
-    if (workspacePerms.length > 0 && apiVersion < 0.7) {
-      errors.push('Workspace permissions require API >= 0.7');
-    }
-
-    // Canvas permission requires API >= 0.8
-    if (permissions.includes('canvas') && apiVersion < 0.8) {
-      errors.push('Canvas permission requires API >= 0.8');
-    }
-
-    // Annex permission requires API >= 0.8
-    if (permissions.includes('annex') && apiVersion < 0.8) {
-      errors.push('Annex permission requires API >= 0.8');
-    }
-
-    // Companion permission requires API >= 0.9
-    if (permissions.includes('companion') && apiVersion < 0.9) {
-      errors.push('Companion permission requires API >= 0.9');
-    }
-
-    // MCP tools permission requires API >= 0.9
-    if (permissions.includes('mcp.tools') && apiVersion < 0.9) {
-      errors.push('mcp.tools permission requires API >= 0.9');
-    }
   }
 
-  // Validate command declarations with defaultBinding (v0.6+ feature)
+  // Validate command declarations
   if (m.contributes && typeof m.contributes === 'object') {
     const contrib = m.contributes as Record<string, unknown>;
     if (Array.isArray(contrib.commands)) {
@@ -276,9 +244,7 @@ export function validateManifest(raw: unknown): ValidationResult {
         const cmd = contrib.commands[i] as Record<string, unknown>;
         if (cmd && typeof cmd === 'object') {
           if (cmd.defaultBinding !== undefined) {
-            if (apiVersion < 0.6) {
-              errors.push(`contributes.commands[${i}].defaultBinding requires API >= 0.6`);
-            } else if (typeof cmd.defaultBinding !== 'string') {
+            if (typeof cmd.defaultBinding !== 'string') {
               errors.push(`contributes.commands[${i}].defaultBinding must be a string`);
             }
           }
@@ -289,11 +255,9 @@ export function validateManifest(raw: unknown): ValidationResult {
       }
     }
 
-    // v0.7+ contributes.themes validation
+    // contributes.themes validation
     if (contrib.themes !== undefined) {
-      if (apiVersion < 0.7) {
-        errors.push('contributes.themes requires API >= 0.7');
-      } else if (!Array.isArray(contrib.themes)) {
+      if (!Array.isArray(contrib.themes)) {
         errors.push('contributes.themes must be an array');
       } else {
         for (let i = 0; i < contrib.themes.length; i++) {
@@ -354,11 +318,9 @@ export function validateManifest(raw: unknown): ValidationResult {
       }
     }
 
-    // v0.7+ contributes.agentConfig validation
+    // contributes.agentConfig validation
     if (contrib.agentConfig !== undefined) {
-      if (apiVersion < 0.7) {
-        errors.push('contributes.agentConfig requires API >= 0.7');
-      } else if (!contrib.agentConfig || typeof contrib.agentConfig !== 'object') {
+      if (!contrib.agentConfig || typeof contrib.agentConfig !== 'object') {
         errors.push('contributes.agentConfig must be an object');
       } else {
         const ac = contrib.agentConfig as Record<string, unknown>;
@@ -374,11 +336,9 @@ export function validateManifest(raw: unknown): ValidationResult {
       }
     }
 
-    // v0.7+ contributes.globalDialog validation
+    // contributes.globalDialog validation
     if (contrib.globalDialog !== undefined) {
-      if (apiVersion < 0.7) {
-        errors.push('contributes.globalDialog requires API >= 0.7');
-      } else if (!contrib.globalDialog || typeof contrib.globalDialog !== 'object') {
+      if (!contrib.globalDialog || typeof contrib.globalDialog !== 'object') {
         errors.push('contributes.globalDialog must be an object');
       } else {
         const gd = contrib.globalDialog as Record<string, unknown>;
@@ -397,13 +357,11 @@ export function validateManifest(raw: unknown): ValidationResult {
       }
     }
 
-    // v0.8+ contributes.tab.title / contributes.railItem.title validation
+    // contributes.tab.title / contributes.railItem.title validation
     if (contrib.tab && typeof contrib.tab === 'object') {
       const tab = contrib.tab as Record<string, unknown>;
       if (tab.title !== undefined) {
-        if (apiVersion < 0.8) {
-          errors.push('contributes.tab.title requires API >= 0.8');
-        } else if (typeof tab.title !== 'string' || !tab.title) {
+        if (typeof tab.title !== 'string' || !tab.title) {
           errors.push('contributes.tab.title must be a non-empty string');
         }
       }
@@ -411,19 +369,15 @@ export function validateManifest(raw: unknown): ValidationResult {
     if (contrib.railItem && typeof contrib.railItem === 'object') {
       const rail = contrib.railItem as Record<string, unknown>;
       if (rail.title !== undefined) {
-        if (apiVersion < 0.8) {
-          errors.push('contributes.railItem.title requires API >= 0.8');
-        } else if (typeof rail.title !== 'string' || !rail.title) {
+        if (typeof rail.title !== 'string' || !rail.title) {
           errors.push('contributes.railItem.title must be a non-empty string');
         }
       }
     }
 
-    // v0.8+ contributes.canvasWidgets validation
+    // contributes.canvasWidgets validation
     if (contrib.canvasWidgets !== undefined) {
-      if (apiVersion < 0.8) {
-        errors.push('contributes.canvasWidgets requires API >= 0.8');
-      } else if (!Array.isArray(contrib.canvasWidgets)) {
+      if (!Array.isArray(contrib.canvasWidgets)) {
         errors.push('contributes.canvasWidgets must be an array');
       } else {
         const seenIds = new Set<string>();
@@ -472,8 +426,6 @@ export function validateManifest(raw: unknown): ValidationResult {
             if (widget.pinnableToControls !== undefined) {
               if (typeof widget.pinnableToControls !== 'boolean') {
                 errors.push(`contributes.canvasWidgets[${i}].pinnableToControls must be a boolean`);
-              } else if (widget.pinnableToControls && apiVersion < 0.9) {
-                errors.push(`contributes.canvasWidgets[${i}].pinnableToControls requires API >= 0.9`);
               }
             }
           }
@@ -497,11 +449,8 @@ export function validateManifest(raw: unknown): ValidationResult {
     }
   }
 
-  // Companion config validation (v0.9+)
+  // Companion config validation
   if (m.companion !== undefined) {
-    if (apiVersion < 0.9) {
-      errors.push('companion config requires API >= 0.9');
-    }
     if (!m.companion || typeof m.companion !== 'object') {
       errors.push('companion must be an object');
     } else {

@@ -98,7 +98,7 @@ describe('plugin-discovery', () => {
         id: 'market-plugin',
         name: 'Market Plugin',
         version: '1.0.0',
-        engine: { api: 0.5 },
+        engine: { api: 0.9 },
         scope: 'project',
       }));
 
@@ -122,7 +122,7 @@ describe('plugin-discovery', () => {
         id: 'local-plugin',
         name: 'Local Plugin',
         version: '1.0.0',
-        engine: { api: 0.5 },
+        engine: { api: 0.9 },
         scope: 'project',
       }));
 
@@ -584,7 +584,7 @@ describe('plugin-discovery', () => {
         id: 'my-plugin',
         name: 'My Plugin',
         version: '1.0.0',
-        engine: { api: 0.5 },
+        engine: { api: 0.9 },
         scope: 'project',
         allowedCommands: ['git'],
       }));
@@ -610,7 +610,7 @@ describe('plugin-discovery', () => {
       vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
         name: 'No ID',
         version: '1.0.0',
-        engine: { api: 0.5 },
+        engine: { api: 0.9 },
         scope: 'project',
       }));
 
@@ -629,7 +629,7 @@ describe('plugin-discovery', () => {
         id: 'my-plugin',
         name: 'My Plugin',
         version: '2.0.0',
-        engine: { api: 0.5 },
+        engine: { api: 0.9 },
         scope: 'project',
         allowedCommands: ['node'],
       }));

@@ -50,7 +50,7 @@ const allPermsManifest: PluginManifest = {
   id: 'test-plugin',
   name: 'Test Plugin',
   version: '1.0.0',
-  engine: { api: 0.5 },
+  engine: { api: 0.9 },
   scope: 'project',
   permissions: [...ALL_PLUGIN_PERMISSIONS],
   contributes: { help: {} },
@@ -118,8 +118,8 @@ describe('plugin-api-factory', () => {
       expect(typeof api.git.status).toBe('function');
     });
 
-    it('throws when calling api.projects methods on project-scoped plugin', () => {
-      expect(() => api.projects.list()).toThrow('not available for project-scoped');
+    it('gives a project-scoped plugin api.projects (API 0.9 is the only version)', () => {
+      expect(() => api.projects.list()).not.toThrow();
     });
 
     it('does not throw on property access of unavailable API (React dev-mode safe)', () => {
@@ -2983,7 +2983,7 @@ describe('plugin-api-factory', () => {
       id: 'test-plugin',
       name: 'Test Plugin',
       version: '1.0.0',
-      engine: { api: 0.5 },
+      engine: { api: 0.9 },
       scope: 'project',
       contributes: { help: {} },
       permissions: permissions as PluginManifest['permissions'],
@@ -3224,21 +3224,6 @@ describe('plugin-api-factory', () => {
     // ── Scope vs permission priority ──────────────────────────────────
 
     describe('scope vs permission priority', () => {
-      it('scope denial takes priority over permission denial', () => {
-        // project-scoped plugin with 'projects' permission → scope denies before permission
-        const manifest = v05Manifest(['projects']);
-        const api = createPluginAPI(makeCtx({ scope: 'project' }), undefined, manifest);
-        expect(() => api.projects.list()).toThrow('not available for project-scoped');
-      });
-
-      it('scope denial message shown when both scope and permission deny', () => {
-        // project-scoped plugin, no 'projects' permission, scope also denies
-        const manifest = v05Manifest([]);
-        const api = createPluginAPI(makeCtx({ scope: 'project' }), undefined, manifest);
-        // Should get scope error, not permission error
-        expect(() => api.projects.list()).toThrow('not available for project-scoped');
-      });
-
       it('app-scoped plugin: scope denies project/git/files even with permissions', () => {
         const manifest = v05Manifest(['files', 'git'], { scope: 'app' });
         const api = createPluginAPI(
@@ -3256,7 +3241,7 @@ describe('plugin-api-factory', () => {
           id: 'test-plugin',
           name: 'Test Plugin',
           version: '1.0.0',
-          engine: { api: 0.8 },
+          engine: { api: 0.9 },
           scope: 'project',
           permissions: ['files', 'projects'] as PluginManifest['permissions'],
           contributes: { help: {} },
@@ -3267,18 +3252,12 @@ describe('plugin-api-factory', () => {
         expect(typeof api.projects.getActive).toBe('function');
       });
 
-      it('v0.5 project-scoped plugin: projects API still denied by scope', () => {
-        const manifest = v05Manifest(['projects']);
-        const api = createPluginAPI(makeCtx({ scope: 'project' }), undefined, manifest);
-        expect(() => api.projects.list()).toThrow('not available for project-scoped');
-      });
-
       it('v0.8 project-scoped plugin without projects permission: permission denied', () => {
         const manifest: PluginManifest = {
           id: 'test-plugin',
           name: 'Test Plugin',
           version: '1.0.0',
-          engine: { api: 0.8 },
+          engine: { api: 0.9 },
           scope: 'project',
           permissions: ['files'] as PluginManifest['permissions'],
           contributes: { help: {} },
@@ -3339,7 +3318,7 @@ describe('plugin-api-factory', () => {
         id: 'test-plugin',
         name: 'Test Plugin',
         version: '1.0.0',
-        engine: { api: 0.5 },
+        engine: { api: 0.9 },
         scope: 'project',
         contributes: { help: {} },
         permissions: ['files', 'files.external'],
@@ -3360,7 +3339,7 @@ describe('plugin-api-factory', () => {
     it('forRoot() without files.external permission → throws', () => {
       const manifest: PluginManifest = {
         id: 'test-plugin', name: 'Test', version: '1.0.0',
-        engine: { api: 0.5 }, scope: 'project', contributes: { help: {} },
+        engine: { api: 0.9 }, scope: 'project', contributes: { help: {} },
         permissions: ['files'],
       };
       const api = createPluginAPI(makeCtx(), undefined, manifest);
@@ -3599,7 +3578,7 @@ describe('plugin-api-factory', () => {
     it('resolves settings from app:pluginId for app-scoped plugin', () => {
       const manifest: PluginManifest = {
         id: 'test-plugin', name: 'Test', version: '1.0.0',
-        engine: { api: 0.5 }, scope: 'app', contributes: { help: {} },
+        engine: { api: 0.9 }, scope: 'app', contributes: { help: {} },
         permissions: ['files', 'files.external'],
         externalRoots: [{ settingKey: 'ext-path', root: 'ext' }],
       };
@@ -3827,7 +3806,7 @@ describe('plugin-api-factory', () => {
           id: 'test-plugin',
           name: 'Test Plugin',
           version: '1.0.0',
-          engine: { api: 0.5 },
+          engine: { api: 0.9 },
           scope: 'project',
           permissions: [],
           contributes: { help: {} },
@@ -3847,7 +3826,7 @@ describe('plugin-api-factory', () => {
         id: 'test-plugin',
         name: 'Test Plugin',
         version: '1.0.0',
-        engine: { api: 0.5 },
+        engine: { api: 0.9 },
         scope: 'project',
         permissions: [],
         contributes: { help: {} },
@@ -3869,7 +3848,7 @@ describe('plugin-api-factory', () => {
         id: 'test-plugin',
         name: 'Test Plugin',
         version: '1.0.0',
-        engine: { api: 0.5 },
+        engine: { api: 0.9 },
         scope: 'project',
         permissions: [],
         contributes: { help: {} },
@@ -3889,7 +3868,7 @@ describe('plugin-api-factory', () => {
         id: 'test-plugin',
         name: 'Test Plugin',
         version: '1.0.0',
-        engine: { api: 0.5 },
+        engine: { api: 0.9 },
         scope: 'project',
         permissions: [],
         contributes: { help: {} },
@@ -3911,7 +3890,7 @@ describe('plugin-api-factory', () => {
         id: 'test-plugin',
         name: 'Test Plugin',
         version: '1.0.0',
-        engine: { api: 0.5 },
+        engine: { api: 0.9 },
         scope: 'project',
         permissions: [],
         contributes: { help: {} },
@@ -3935,7 +3914,7 @@ describe('plugin-api-factory', () => {
       id: 'test-plugin',
       name: 'Test Plugin',
       version: '1.0.0',
-      engine: { api: 0.7 },
+      engine: { api: 0.9 },
       scope: 'app',
       permissions: [...ALL_PLUGIN_PERMISSIONS],
       contributes: { help: {} },
@@ -4011,7 +3990,7 @@ describe('plugin-api-factory', () => {
               id: 'other-plugin',
               name: 'Other Plugin',
               version: '1.0.0',
-              engine: { api: 0.7 },
+              engine: { api: 0.9 },
               scope: 'app',
               permissions: ['workspace'],
             },
@@ -4034,7 +4013,7 @@ describe('plugin-api-factory', () => {
               id: 'other-plugin',
               name: 'Other Plugin',
               version: '1.0.0',
-              engine: { api: 0.7 },
+              engine: { api: 0.9 },
               scope: 'app',
               permissions: ['workspace', 'workspace.shared'],
             },

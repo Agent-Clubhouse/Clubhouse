@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateManifest, DEPRECATED_PLUGIN_API_VERSIONS } from './manifest-validator';
-import { SUPPORTED_PLUGIN_API_VERSIONS } from '../../shared/marketplace-types';
+import { validateManifest } from './manifest-validator';
 import { PERMISSION_HIERARCHY } from '../../shared/plugin-types';
 
 describe('manifest-validator', () => {
@@ -8,55 +7,11 @@ describe('manifest-validator', () => {
     id: 'test-plugin',
     name: 'Test Plugin',
     version: '1.0.0',
-    engine: { api: 0.5 },
+    engine: { api: 0.9 },
     scope: 'project',
     permissions: ['files'],
     contributes: { help: {} },
   };
-
-  describe('SUPPORTED_PLUGIN_API_VERSIONS', () => {
-    it('includes version 0.5', () => {
-      expect(SUPPORTED_PLUGIN_API_VERSIONS).toContain(0.5);
-    });
-
-    it('does not include version 0.4', () => {
-      expect(SUPPORTED_PLUGIN_API_VERSIONS).not.toContain(0.4);
-    });
-  });
-
-  describe('DEPRECATED_PLUGIN_API_VERSIONS', () => {
-    it('marks 0.5 as deprecated', () => {
-      expect(DEPRECATED_PLUGIN_API_VERSIONS[0.5]).toBeDefined();
-    });
-
-    it('marks 0.6 as deprecated', () => {
-      expect(DEPRECATED_PLUGIN_API_VERSIONS[0.6]).toBeDefined();
-    });
-
-    it('does not mark 0.7 as deprecated', () => {
-      expect(DEPRECATED_PLUGIN_API_VERSIONS[0.7]).toBeUndefined();
-    });
-  });
-
-  describe('deprecation warnings', () => {
-    it('returns warnings for deprecated API version 0.5', () => {
-      const result = validateManifest(validManifest);
-      expect(result.valid).toBe(true);
-      expect(result.warnings.some(w => w.includes('deprecated'))).toBe(true);
-    });
-
-    it('returns no warnings for non-deprecated API version 0.7', () => {
-      const result = validateManifest({ ...validManifest, engine: { api: 0.7 } });
-      expect(result.valid).toBe(true);
-      expect(result.warnings).toHaveLength(0);
-    });
-
-    it('returns warnings array even for invalid manifests', () => {
-      const result = validateManifest(null);
-      expect(result.valid).toBe(false);
-      expect(result.warnings).toEqual([]);
-    });
-  });
 
   describe('validateManifest', () => {
     it('accepts a valid project-scoped manifest', () => {
@@ -166,7 +121,7 @@ describe('manifest-validator', () => {
     it('rejects unsupported API version', () => {
       const result = validateManifest({ ...validManifest, engine: { api: 99 } });
       expect(result.valid).toBe(false);
-      expect(result.errors[0]).toContain('not supported by this version of Clubhouse');
+      expect(result.errors).toEqual(["This plugin uses plugin API 99, which this version of Clubhouse can't load. Supported plugin API: 0.9."]);
     });
 
     // --- Scope checks ---
@@ -388,13 +343,9 @@ describe('manifest-validator', () => {
   describe('v0.5 permission validation', () => {
     const v05Base = {
       ...validManifest,
-      engine: { api: 0.5 },
+      engine: { api: 0.9 },
       permissions: ['files', 'git'],
     };
-
-    it('0.5 is in SUPPORTED_PLUGIN_API_VERSIONS', () => {
-      expect(SUPPORTED_PLUGIN_API_VERSIONS).toContain(0.5);
-    });
 
     it('rejects v0.5 without permissions array', () => {
       const { permissions: _permissions, ...rest } = v05Base;
@@ -576,15 +527,11 @@ describe('manifest-validator', () => {
       id: 'test-plugin',
       name: 'Test Plugin',
       version: '1.0.0',
-      engine: { api: 0.6 },
+      engine: { api: 0.9 },
       scope: 'project' as const,
       permissions: ['commands'],
       contributes: { help: {} },
     };
-
-    it('0.6 is in SUPPORTED_PLUGIN_API_VERSIONS', () => {
-      expect(SUPPORTED_PLUGIN_API_VERSIONS).toContain(0.6);
-    });
 
     it('accepts v0.6 manifest', () => {
       const result = validateManifest(v06Base);
@@ -594,7 +541,7 @@ describe('manifest-validator', () => {
     it('v0.5 manifests still work', () => {
       const result = validateManifest({
         ...validManifest,
-        engine: { api: 0.5 },
+        engine: { api: 0.9 },
       });
       expect(result.valid).toBe(true);
     });
@@ -610,22 +557,6 @@ describe('manifest-validator', () => {
         },
       });
       expect(result.valid).toBe(true);
-    });
-
-    it('rejects defaultBinding on v0.5', () => {
-      const result = validateManifest({
-        ...validManifest,
-        engine: { api: 0.5 },
-        permissions: ['commands'],
-        contributes: {
-          help: {},
-          commands: [
-            { id: 'run', title: 'Run', defaultBinding: 'Meta+Shift+R' },
-          ],
-        },
-      });
-      expect(result.valid).toBe(false);
-      expect(result.errors[0]).toContain('requires API >= 0.6');
     });
 
     it('rejects non-string defaultBinding', () => {
@@ -677,7 +608,7 @@ describe('manifest-validator', () => {
       id: 'test-plugin',
       name: 'Test Plugin',
       version: '1.0.0',
-      engine: { api: 0.6 },
+      engine: { api: 0.9 },
       scope: 'project' as const,
       contributes: { help: {} },
     };
@@ -757,7 +688,7 @@ describe('manifest-validator', () => {
       id: 'spring-themes',
       name: 'Spring Themes',
       version: '0.1.0',
-      engine: { api: 0.7 },
+      engine: { api: 0.9 },
       kind: 'pack',
       scope: 'app',
       contributes: {
@@ -773,10 +704,6 @@ describe('manifest-validator', () => {
         ],
       },
     };
-
-    it('0.7 is in SUPPORTED_PLUGIN_API_VERSIONS', () => {
-      expect(SUPPORTED_PLUGIN_API_VERSIONS).toContain(0.7);
-    });
 
     it('accepts a valid pack manifest', () => {
       const result = validateManifest(validPack);
@@ -794,12 +721,6 @@ describe('manifest-validator', () => {
       const result = validateManifest(validPack);
       expect(result.valid).toBe(true);
       expect(result.errors.filter((e: string) => e.includes('help'))).toHaveLength(0);
-    });
-
-    it('rejects pack with API < 0.7', () => {
-      const result = validateManifest({ ...validPack, engine: { api: 0.6 } });
-      expect(result.valid).toBe(false);
-      expect(result.errors.some((e: string) => e.includes('Pack plugins require API >= 0.7'))).toBe(true);
     });
 
     it('rejects pack with main entry', () => {
@@ -857,7 +778,7 @@ describe('manifest-validator', () => {
     it('accepts kind: "plugin" explicitly', () => {
       const result = validateManifest({
         ...validManifest,
-        engine: { api: 0.7 },
+        engine: { api: 0.9 },
         kind: 'plugin',
       });
       expect(result.valid).toBe(true);
@@ -871,24 +792,11 @@ describe('manifest-validator', () => {
       id: 'theme-plugin',
       name: 'Theme Plugin',
       version: '1.0.0',
-      engine: { api: 0.7 },
+      engine: { api: 0.9 },
       scope: 'app',
       permissions: [],
       contributes: { help: {} },
     };
-
-    it('rejects contributes.themes on API < 0.7', () => {
-      const result = validateManifest({
-        ...validManifest,
-        engine: { api: 0.6 },
-        contributes: {
-          help: {},
-          themes: [{ id: 'test', name: 'Test', type: 'dark', colors: {}, hljs: {}, terminal: {} }],
-        },
-      });
-      expect(result.valid).toBe(false);
-      expect(result.errors.some((e: string) => e.includes('requires API >= 0.7'))).toBe(true);
-    });
 
     it('rejects non-array contributes.themes', () => {
       const result = validateManifest({
@@ -1024,7 +932,7 @@ describe('manifest-validator', () => {
       id: 'test-plugin',
       name: 'Test Plugin',
       version: '1.0.0',
-      engine: { api: 0.5 },
+      engine: { api: 0.9 },
       scope: 'project' as const,
       contributes: { help: {} },
     };
@@ -1066,7 +974,7 @@ describe('manifest-validator', () => {
       id: 'test-plugin',
       name: 'Test Plugin',
       version: '1.0.0',
-      engine: { api: 0.7 },
+      engine: { api: 0.9 },
       scope: 'project',
       contributes: { help: {} },
     };
@@ -1077,26 +985,6 @@ describe('manifest-validator', () => {
         permissions: ['files', 'workspace'],
       });
       expect(result.valid).toBe(true);
-    });
-
-    it('rejects workspace permission on v0.6', () => {
-      const result = validateManifest({
-        ...v07Base,
-        engine: { api: 0.6 },
-        permissions: ['files', 'workspace'],
-      });
-      expect(result.valid).toBe(false);
-      expect(result.errors.some((e: string) => e.includes('Workspace permissions require API >= 0.7'))).toBe(true);
-    });
-
-    it('rejects workspace sub-permissions on v0.5', () => {
-      const result = validateManifest({
-        ...v07Base,
-        engine: { api: 0.5 },
-        permissions: ['files', 'workspace', 'workspace.watch'],
-      });
-      expect(result.valid).toBe(false);
-      expect(result.errors.some((e: string) => e.includes('Workspace permissions require API >= 0.7'))).toBe(true);
     });
 
     it('enforces hierarchy: workspace.watch requires workspace', () => {
@@ -1133,7 +1021,7 @@ describe('manifest-validator', () => {
       id: 'canvas-plugin',
       name: 'Canvas Plugin',
       version: '1.0.0',
-      engine: { api: 0.8 },
+      engine: { api: 0.9 },
       scope: 'project' as const,
       permissions: ['files', 'canvas'],
       contributes: {
@@ -1147,15 +1035,6 @@ describe('manifest-validator', () => {
     it('accepts valid canvasWidgets declaration', () => {
       const result = validateManifest(canvasBase);
       expect(result.valid).toBe(true);
-    });
-
-    it('rejects canvasWidgets with API < 0.8', () => {
-      const result = validateManifest({
-        ...canvasBase,
-        engine: { api: 0.7 },
-      });
-      expect(result.valid).toBe(false);
-      expect(result.errors.some((e: string) => e.includes('canvasWidgets requires API >= 0.8'))).toBe(true);
     });
 
     it('rejects canvasWidgets without canvas permission', () => {
@@ -1262,26 +1141,12 @@ describe('manifest-validator', () => {
       expect(result.valid).toBe(true);
     });
 
-    it('rejects canvas permission on API < 0.8', () => {
-      const result = validateManifest({
-        id: 'canvas-old',
-        name: 'Canvas Old',
-        version: '1.0.0',
-        engine: { api: 0.7 },
-        scope: 'project',
-        permissions: ['files', 'canvas'],
-        contributes: { help: {} },
-      });
-      expect(result.valid).toBe(false);
-      expect(result.errors.some((e: string) => e.includes('Canvas permission requires API >= 0.8'))).toBe(true);
-    });
-
     it('accepts canvas permission on API 0.8', () => {
       const result = validateManifest({
         id: 'canvas-new',
         name: 'Canvas New',
         version: '1.0.0',
-        engine: { api: 0.8 },
+        engine: { api: 0.9 },
         scope: 'project',
         permissions: ['files', 'canvas'],
         contributes: { help: {} },
@@ -1291,26 +1156,12 @@ describe('manifest-validator', () => {
   });
 
   describe('annex permission', () => {
-    it('rejects annex permission on API < 0.8', () => {
-      const result = validateManifest({
-        id: 'annex-old',
-        name: 'Annex Old',
-        version: '1.0.0',
-        engine: { api: 0.7 },
-        scope: 'project',
-        permissions: ['files', 'annex'],
-        contributes: { help: {} },
-      });
-      expect(result.valid).toBe(false);
-      expect(result.errors.some((e: string) => e.includes('Annex permission requires API >= 0.8'))).toBe(true);
-    });
-
     it('accepts annex permission on API 0.8', () => {
       const result = validateManifest({
         id: 'annex-new',
         name: 'Annex New',
         version: '1.0.0',
-        engine: { api: 0.8 },
+        engine: { api: 0.9 },
         scope: 'project',
         permissions: ['files', 'annex'],
         contributes: { help: {} },
@@ -1325,7 +1176,7 @@ describe('manifest-validator', () => {
         id: 'title-test',
         name: 'Title Test',
         version: '1.0.0',
-        engine: { api: 0.8 },
+        engine: { api: 0.9 },
         scope: 'project',
         permissions: ['files'],
         contributes: {
@@ -1341,7 +1192,7 @@ describe('manifest-validator', () => {
         id: 'rail-title',
         name: 'Rail Title',
         version: '1.0.0',
-        engine: { api: 0.8 },
+        engine: { api: 0.9 },
         scope: 'app',
         permissions: ['files'],
         contributes: {
@@ -1352,46 +1203,12 @@ describe('manifest-validator', () => {
       expect(result.valid).toBe(true);
     });
 
-    it('rejects tab.title on v0.7 manifest', () => {
-      const result = validateManifest({
-        id: 'title-old',
-        name: 'Title Old',
-        version: '1.0.0',
-        engine: { api: 0.7 },
-        scope: 'project',
-        permissions: ['files'],
-        contributes: {
-          help: {},
-          tab: { label: 'Tab', title: 'Custom' },
-        },
-      });
-      expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes('tab.title requires API >= 0.8'))).toBe(true);
-    });
-
-    it('rejects railItem.title on v0.7 manifest', () => {
-      const result = validateManifest({
-        id: 'rail-old',
-        name: 'Rail Old',
-        version: '1.0.0',
-        engine: { api: 0.7 },
-        scope: 'app',
-        permissions: ['files'],
-        contributes: {
-          help: {},
-          railItem: { label: 'Rail', title: 'Custom' },
-        },
-      });
-      expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes('railItem.title requires API >= 0.8'))).toBe(true);
-    });
-
     it('rejects empty string tab.title', () => {
       const result = validateManifest({
         id: 'empty-title',
         name: 'Empty Title',
         version: '1.0.0',
-        engine: { api: 0.8 },
+        engine: { api: 0.9 },
         scope: 'project',
         permissions: ['files'],
         contributes: {
@@ -1408,7 +1225,7 @@ describe('manifest-validator', () => {
         id: 'bad-title',
         name: 'Bad Title',
         version: '1.0.0',
-        engine: { api: 0.8 },
+        engine: { api: 0.9 },
         scope: 'project',
         permissions: ['files'],
         contributes: {
@@ -1425,7 +1242,7 @@ describe('manifest-validator', () => {
         id: 'no-title',
         name: 'No Title',
         version: '1.0.0',
-        engine: { api: 0.8 },
+        engine: { api: 0.9 },
         scope: 'project',
         permissions: ['files'],
         contributes: {

@@ -3031,8 +3031,8 @@ describe('annex-server', () => {
   describe('snapshot plugins', () => {
     it('listAllManifests is available for snapshot building', () => {
       vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([
-        { id: 'hub', name: 'Hub', version: '1.0.0', scope: 'app', engine: { api: 0.8 }, contributes: { tab: { label: 'Hub' } } },
-        { id: 'files', name: 'Files', version: '1.0.0', scope: 'project', engine: { api: 0.8 }, contributes: { tab: { label: 'Files' } } },
+        { id: 'hub', name: 'Hub', version: '1.0.0', scope: 'app', engine: { api: 0.9 }, contributes: { tab: { label: 'Hub' } } },
+        { id: 'files', name: 'Files', version: '1.0.0', scope: 'project', engine: { api: 0.9 }, contributes: { tab: { label: 'Files' } } },
       ] as any);
 
       // Verify mock is properly configured — buildSnapshot calls this on WS connect

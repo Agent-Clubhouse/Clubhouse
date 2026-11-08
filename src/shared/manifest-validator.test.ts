@@ -83,9 +83,17 @@ describe('validateManifest', () => {
     expect(r.errors).toContainEqual(expect.stringContaining('engine.api must be a number'));
   });
 
-  it('rejects unsupported API versions', () => {
+  it('rejects unsupported API versions with one message naming the version', () => {
     const r = validateManifest(validManifest({ engine: { api: 99.9 } }));
-    expect(r.errors).toContainEqual(expect.stringContaining('not supported'));
+    expect(r.errors).toEqual(["This plugin uses plugin API 99.9, which this version of Clubhouse can't load. Supported plugin API: 0.9."]);
+  });
+
+  it.each([0.5, 0.6, 0.7, 0.8])('refuses removed API %s with a clear message that names it (#2757)', (api) => {
+    const r = validateManifest(validManifest({ engine: { api } }));
+    expect(r.valid).toBe(false);
+    expect(r.errors).toEqual([
+      `This plugin uses plugin API ${api}, which was removed in Clubhouse 1.0. Clubhouse now loads only plugins built for API 0.9. Install an update built for API 0.9, or ask the plugin's author for one.`,
+    ]);
   });
 
   // --- Scope ---
@@ -133,19 +141,7 @@ describe('validateManifest', () => {
     expect(r.errors).toContainEqual(expect.stringContaining('must contribute at least one of'));
   });
 
-  it('rejects pack with API < 0.7', () => {
-    const m = validManifest({ kind: 'pack', engine: { api: 0.6 } });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('Pack plugins require API >= 0.7'));
-  });
-
   // --- Kind: workspace ---
-
-  it('rejects workspace with API < 0.9', () => {
-    const m = validManifest({ kind: 'workspace', engine: { api: 0.8 } });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('Workspace plugins require API >= 0.9'));
-  });
 
   it('requires workspace plugins to be app-scoped', () => {
     const m = validManifest({ kind: 'workspace', scope: 'project', permissions: ['files', 'companion'] });
@@ -246,44 +242,7 @@ describe('validateManifest', () => {
 
   // --- API-gated permissions ---
 
-  it('rejects canvas permission below API 0.8', () => {
-    const m = validManifest({ engine: { api: 0.7 }, permissions: ['files', 'canvas'] });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('Canvas permission requires API >= 0.8'));
-  });
-
-  it('rejects annex permission below API 0.8', () => {
-    const m = validManifest({ engine: { api: 0.7 }, permissions: ['files', 'annex'] });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('Annex permission requires API >= 0.8'));
-  });
-
-  it('rejects companion permission below API 0.9', () => {
-    const m = validManifest({ engine: { api: 0.8 }, permissions: ['files', 'companion'] });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('Companion permission requires API >= 0.9'));
-  });
-
-  it('rejects mcp.tools permission below API 0.9', () => {
-    const m = validManifest({ engine: { api: 0.8 }, permissions: ['files', 'mcp.tools'] });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('mcp.tools permission requires API >= 0.9'));
-  });
-
   // --- Commands ---
-
-  it('rejects defaultBinding below API 0.6', () => {
-    const m = validManifest({
-      engine: { api: 0.5 },
-      contributes: {
-        help: { topics: [{ id: 'a', title: 'A', content: 'c' }] },
-        commands: [{ id: 'cmd', defaultBinding: 'ctrl+k' }],
-        tab: {},
-      },
-    });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('defaultBinding requires API >= 0.6'));
-  });
 
   it('rejects non-boolean global in commands', () => {
     const m = validManifest({
@@ -298,12 +257,6 @@ describe('validateManifest', () => {
   });
 
   // --- Themes (v0.7+) ---
-
-  it('rejects themes below API 0.7', () => {
-    const m = validManifest({ engine: { api: 0.6 }, contributes: { help: { topics: [{ id: 'a', title: 'A', content: 'c' }] }, themes: [], tab: {} } });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('contributes.themes requires API >= 0.7'));
-  });
 
   it('validates theme required fields', () => {
     const m = validManifest({
@@ -321,19 +274,7 @@ describe('validateManifest', () => {
 
   // --- AgentConfig (v0.7+) ---
 
-  it('rejects agentConfig below API 0.7', () => {
-    const m = validManifest({ engine: { api: 0.6 }, contributes: { help: { topics: [{ id: 'a', title: 'A', content: 'c' }] }, agentConfig: {}, tab: {} } });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('contributes.agentConfig requires API >= 0.7'));
-  });
-
   // --- GlobalDialog (v0.7+) ---
-
-  it('rejects globalDialog below API 0.7', () => {
-    const m = validManifest({ engine: { api: 0.6 }, contributes: { help: { topics: [{ id: 'a', title: 'A', content: 'c' }] }, globalDialog: { label: 'Test' }, tab: {} } });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('contributes.globalDialog requires API >= 0.7'));
-  });
 
   it('requires globalDialog label', () => {
     const m = validManifest({
@@ -348,12 +289,6 @@ describe('validateManifest', () => {
   });
 
   // --- CanvasWidgets (v0.8+) ---
-
-  it('rejects canvasWidgets below API 0.8', () => {
-    const m = validManifest({ engine: { api: 0.7 }, contributes: { help: { topics: [{ id: 'a', title: 'A', content: 'c' }] }, canvasWidgets: [], tab: {} } });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('contributes.canvasWidgets requires API >= 0.8'));
-  });
 
   it('rejects duplicate canvasWidget ids', () => {
     const m = validManifest({
@@ -386,12 +321,6 @@ describe('validateManifest', () => {
 
   // --- Companion config (v0.9+) ---
 
-  it('rejects companion config below API 0.9', () => {
-    const m = validManifest({ engine: { api: 0.8 }, companion: { enabled: true } });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('companion config requires API >= 0.9'));
-  });
-
   it('requires companion.enabled to be boolean', () => {
     const m = validManifest({ companion: { enabled: 'yes' }, permissions: ['files', 'companion'] });
     const r = validateManifest(m);
@@ -406,12 +335,4 @@ describe('validateManifest', () => {
 
   // --- Tab/RailItem title (v0.8+) ---
 
-  it('rejects tab.title below API 0.8', () => {
-    const m = validManifest({
-      engine: { api: 0.7 },
-      contributes: { help: { topics: [{ id: 'a', title: 'A', content: 'c' }] }, tab: { title: 'T' } },
-    });
-    const r = validateManifest(m);
-    expect(r.errors).toContainEqual(expect.stringContaining('contributes.tab.title requires API >= 0.8'));
-  });
 });

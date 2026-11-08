@@ -105,7 +105,7 @@ function makeManifest(overrides?: Partial<PluginManifest>): PluginManifest {
     id: 'test-plugin',
     name: 'Test Plugin',
     version: '1.0.0',
-    engine: { api: 0.5 },
+    engine: { api: 0.9 },
     scope: 'project',
     permissions: [],
     contributes: {
@@ -194,6 +194,27 @@ describe('plugin-loader', () => {
       const store = usePluginStore.getState();
       expect(store.plugins['bad-plugin']).toBeDefined();
       expect(store.plugins['bad-plugin'].status).toBe('incompatible');
+    });
+
+    it('refuses a community plugin on a removed API, naming the version, and keeps the version on its entry (#2757)', async () => {
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        {
+          manifest: { id: 'old-tool', name: 'Old Tool', version: '1.2.0', engine: { api: 0.7 }, scope: 'project', permissions: [], contributes: { help: {} } },
+          pluginPath: '/plugins/old-tool',
+          fromMarketplace: true,
+        },
+      ]);
+      mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
+        if (req.key === 'external-plugins-enabled') return true;
+        return undefined;
+      });
+
+      await initializePluginSystem();
+
+      const entry = usePluginStore.getState().plugins['old-tool'];
+      expect(entry.status).toBe('incompatible');
+      expect(entry.manifest.engine.api).toBe(0.7);
+      expect(entry.error).toBe("This plugin uses plugin API 0.7, which was removed in Clubhouse 1.0. Clubhouse now loads only plugins built for API 0.9. Install an update built for API 0.9, or ask the plugin's author for one.");
     });
 
     it('activates safe mode when main reports safe mode active', async () => {
@@ -430,21 +451,21 @@ describe('plugin-loader', () => {
         id: 'hub',
         name: 'Hub',
         scope: 'dual',
-        engine: { api: 0.6 },
+        engine: { api: 0.9 },
         permissions: ['commands', 'storage', 'agents', 'projects', 'widgets', 'navigation', 'notifications'],
       });
       const terminalManifest = makeManifest({
         id: 'terminal',
         name: 'Terminal',
         scope: 'project',
-        engine: { api: 0.6 },
+        engine: { api: 0.9 },
         permissions: ['terminal', 'commands', 'agents'],
       });
       const filesManifest = makeManifest({
         id: 'files',
         name: 'Files',
         scope: 'project',
-        engine: { api: 0.6 },
+        engine: { api: 0.9 },
         permissions: ['files', 'files.watch', 'git', 'commands', 'notifications', 'storage'],
       });
 
@@ -1411,7 +1432,7 @@ describe('plugin-loader', () => {
       name: 'Spring Themes',
       scope: 'app',
       kind: 'pack',
-      engine: { api: 0.7 },
+      engine: { api: 0.9 },
       permissions: undefined,
       contributes: {
         themes: [
@@ -1504,7 +1525,7 @@ describe('plugin-loader', () => {
         name: 'Agent Config Pack',
         scope: 'app',
         kind: 'pack',
-        engine: { api: 0.7 },
+        engine: { api: 0.9 },
         permissions: undefined,
         contributes: {},
       });
@@ -1797,7 +1818,7 @@ describe('plugin-loader', () => {
       const mod: PluginModule = { activate: vi.fn() };
       mockDynamicImport.mockResolvedValue(mod);
 
-      const manifest = makeManifest({ id: 'annex-escalate', scope: 'app', engine: { api: 0.8 }, permissions: ['storage'] });
+      const manifest = makeManifest({ id: 'annex-escalate', scope: 'app', engine: { api: 0.9 }, permissions: ['storage'] });
       usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/annex-escalate', 'registered');
       usePluginStore.getState().enableApp('annex-escalate');
       await activatePlugin('annex-escalate');
@@ -1805,7 +1826,7 @@ describe('plugin-loader', () => {
       mockPlugin.discoverCommunity.mockResolvedValue([
         {
           manifest: makeManifest({
-            id: 'annex-escalate', scope: 'app', version: '2.0.0', engine: { api: 0.8 },
+            id: 'annex-escalate', scope: 'app', version: '2.0.0', engine: { api: 0.9 },
             permissions: ['storage', 'annex'],
           }),
           pluginPath: '/plugins/annex-escalate',
@@ -2036,7 +2057,7 @@ describe('plugin-loader', () => {
         id: 'my-theme',
         scope: 'app',
         kind: 'pack',
-        engine: { api: 0.7 },
+        engine: { api: 0.9 },
         permissions: [],
         contributes: {
           themes: [{
@@ -2239,7 +2260,7 @@ describe('plugin-loader', () => {
           id: 'theme-pack',
           scope: 'app',
           kind: 'pack',
-          engine: { api: 0.7 },
+          engine: { api: 0.9 },
           permissions: [],
           contributes: { themes: oldThemes },
         }),
@@ -2253,7 +2274,7 @@ describe('plugin-loader', () => {
           id: 'theme-pack',
           scope: 'app',
           kind: 'pack',
-          engine: { api: 0.7 },
+          engine: { api: 0.9 },
           permissions: [],
           contributes: { themes: newThemes },
         }),
@@ -2288,7 +2309,7 @@ describe('plugin-loader', () => {
         id: 'theme-pack',
         scope: 'app',
         kind: 'pack',
-        engine: { api: 0.7 },
+        engine: { api: 0.9 },
         permissions: [],
         contributes: { themes },
       });
@@ -2319,13 +2340,13 @@ describe('plugin-loader', () => {
     it('unregisters every pack theme when the refreshed manifest drops contributes.themes', async () => {
       const theme = { id: 'dark', name: 'Dark', type: 'dark' as const, colors: {}, hljs: {}, terminal: {} };
       usePluginStore.getState().registerPlugin(
-        makeManifest({ id: 'theme-pack', scope: 'app', kind: 'pack', engine: { api: 0.7 }, permissions: [], contributes: { themes: [theme] } }),
+        makeManifest({ id: 'theme-pack', scope: 'app', kind: 'pack', engine: { api: 0.9 }, permissions: [], contributes: { themes: [theme] } }),
         'community', '/plugins/theme-pack', 'activated',
       );
       usePluginStore.setState({ externalPluginsEnabled: true });
       mockPlugin.discoverCommunity.mockResolvedValue([{
         manifest: makeManifest({
-          id: 'theme-pack', scope: 'app', kind: 'pack', engine: { api: 0.7 }, permissions: [],
+          id: 'theme-pack', scope: 'app', kind: 'pack', engine: { api: 0.9 }, permissions: [],
           contributes: { sounds: { name: 'Sounds', sounds: { 'agent-done': 'done.mp3' } } },
         }),
         pluginPath: '/plugins/theme-pack',

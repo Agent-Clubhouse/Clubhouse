@@ -42,10 +42,6 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
 
   // For dual-scope plugins, project API is available only in project mode
   const projectAvailable = ctx.scope === 'project' || (isDual && effectiveMode === 'project');
-  // For dual-scope plugins, projects API is always available; for single scope it depends.
-  // v0.8+: project-scoped plugins can also access projects API (lifted scope restriction).
-  const apiVersion = manifest?.engine?.api ?? 0;
-  const projectsAvailable = ctx.scope === 'app' || isDual || (ctx.scope === 'project' && apiVersion >= 0.8);
   const scopeLabel = effectiveMode === 'app' ? 'app' : ctx.scope;
 
   const contextInfo: PluginContextInfo = {
@@ -60,7 +56,8 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
       ctx.pluginId, manifest, () => createProjectAPI(ctx),
     ),
     projects: gated(
-      projectsAvailable, 'project', 'projects', 'projects',
+      // Every scope gets api.projects: the 0.8 lift for project-scoped plugins, now the only API.
+      true, 'project', 'projects', 'projects',
       ctx.pluginId, manifest, () => createProjectsAPI(),
     ),
     git: gated(

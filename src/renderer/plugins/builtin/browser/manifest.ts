@@ -10,7 +10,7 @@ export const manifest: PluginManifest = {
   version: '1.0.0',
   description: 'Embedded browser for testing web applications and inspecting local files.',
   author: 'Clubhouse',
-  engine: { api: 0.8 },
+  engine: { api: 0.9 },
   scope: 'dual',
   permissions: ['commands', 'storage', 'canvas', 'widgets', 'projects'],
   contributes: {

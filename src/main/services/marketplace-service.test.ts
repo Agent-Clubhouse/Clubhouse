@@ -65,7 +65,7 @@ const sampleRegistry = {
       latest: '1.0.0',
       releases: {
         '1.0.0': {
-          api: 0.5,
+          api: 0.9,
           asset: 'https://example.com/test-plugin-1.0.0.zip',
           sha256: 'abc123',
           permissions: ['storage', 'logging'],
@@ -98,7 +98,7 @@ const sampleCustomRegistry = {
       latest: '2.0.0',
       releases: {
         '2.0.0': {
-          api: 0.5,
+          api: 0.9,
           asset: 'https://internal.example.com/custom-plugin-2.0.0.zip',
           sha256: 'def456',
           permissions: ['storage'],
