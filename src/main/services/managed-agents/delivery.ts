@@ -9,6 +9,8 @@
  * file) and hands the MCP servers to the existing launch merge points.
  */
 import { agentAccess } from '../free-agent-settings';
+import { resolveRuntimeMode } from '../chat-runtime-settings';
+import { startableAccess } from '../../../shared/agent-access';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -112,11 +114,17 @@ export async function managedSettingsRows(service: ManagedAgentsService, agent: 
       // telemetry-exempt: the summary leaves the helper template out.
     }
   }
+  // The level the start uses (#3004): the saved one, or the nearest lower one its CLI has in the
+  // runtime it will run in, as the spawn does.
+  const access = agentAccess(agent, projectPath);
+  const runtime = provider ? resolveRuntimeMode(provider.id, agent.runtimeMode ?? undefined).mode : undefined;
+  const startsAt = provider && runtime ? startableAccess(access, provider.id, runtime) : access;
   return managedSettingsSummary({
     cliName: provider?.displayName ?? agent.orchestrator,
     model: agent.model,
     effort: agent.effort,
-    access: agentAccess(agent, projectPath),
+    access,
+    ...(startsAt !== access && { accessStartsAt: { level: startsAt, runtime: runtime! } }),
     orchestration: agent.orchestration,
     helperTemplateName,
     helper,

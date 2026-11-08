@@ -243,6 +243,17 @@ describe('previewManagedSetup', () => {
     expect(preview.blocks.map((b) => [b.name, b.startLine, b.endLine])).toEqual([['Identity', 1, 2], ['Rules', 4, 5]]);
   });
 
+  it('says the level an agent starts at when its CLI has no start for the saved one in its runtime (#3004)', async () => {
+    agent.managed = { version: 1, blocks: [], skills: [], mcps: [] };
+    // Copilot in the terminal starts only at Ask first or Full access.
+    Object.assign(agent, { orchestrator: 'copilot-cli', access: 'auto', freeAgentMode: true, runtimeMode: 'terminal' });
+    const copilot = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider({}, 'copilot-cli') }));
+    expect(copilot.settings.find((r) => r.key === 'access')!.value).toBe('Auto, starts at Ask first in the terminal');
+    Object.assign(agent, { orchestrator: 'claude-code' });
+    const claude = await user(() => previewManagedSetup({ service, projectPath: project, agent, provider: provider() }));
+    expect(claude.settings.find((r) => r.key === 'access')!.value).toBe('Auto');
+  });
+
   it('gives the text with wildcards as written for "Show wildcards", and a settings summary (#2895)', async () => {
     const rules = await user(() => service.createPart({ name: 'Rules', content: { kind: 'block', content: 'Work in @@Path on @@StandbyBranch.' } }));
     agent.managed = { version: 1, blocks: [rules.id], skills: [], mcps: [] };
