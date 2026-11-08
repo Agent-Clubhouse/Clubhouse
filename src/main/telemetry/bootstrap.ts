@@ -296,6 +296,9 @@ async function start(): Promise<boolean> {
       exportLog: (lvl, message, meta) => appLog(LOG_NS, lvl, message, { meta }),
     });
     activeDestinations = destinations.map((d) => ({ id: d.id, kind: d.kind as TelemetryDestinationKind }));
+    // Signals held for Framebriar go to Framebriar only, not to a destination the user turned on meanwhile.
+    if (framebriarHoldTimer && !destinations.some((d) => d.kind === 'framebriar')) abortPending();
+    endFramebriarHold();
     lastStartError = undefined;
     setRuntime(runtime);
     if (activeDestinations.some((d) => getAdapter(d.kind).usesOfflineQueue)) startOfflinePrune();
@@ -403,12 +406,17 @@ function awaitingFramebriar(settings: TelemetrySettings): boolean {
  */
 function holdForFramebriar(): void {
   beginPending();
-  if (framebriarHoldTimer) clearTimeout(framebriarHoldTimer);
+  endFramebriarHold();
   framebriarHoldTimer = setTimeout(() => {
     framebriarHoldTimer = null;
     if (!getRuntime() && !starting) abortPending();
   }, FRAMEBRIAR_STARTUP_HOLD_MS);
   framebriarHoldTimer.unref?.();
+}
+
+function endFramebriarHold(): void {
+  if (framebriarHoldTimer) clearTimeout(framebriarHoldTimer);
+  framebriarHoldTimer = null;
 }
 
 /**

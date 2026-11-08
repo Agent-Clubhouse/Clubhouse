@@ -429,7 +429,9 @@ function stampSpan(span: ReadableSpan, stamp: DestinationStamp): ReadableSpan {
     status: span.status,
     attributes: stampAttributes(span.attributes, span.resource, stamp) as ReadableSpan['attributes'],
     links: span.links,
-    events: span.events,
+    events: stamp.dropAttributes?.length ? span.events.map((e) => (e.attributes && stamp.dropAttributes!.some((k) => k in e.attributes!)
+      ? { ...e, attributes: Object.fromEntries(Object.entries(e.attributes).filter(([k]) => !stamp.dropAttributes!.includes(k))) }
+      : e)) : span.events,
     duration: span.duration,
     ended: span.ended,
     resource: span.resource,
