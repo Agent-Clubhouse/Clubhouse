@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ChatDriverSession, ChatDriverStartOptions } from '../../../shared/chat/runtime';
 import { EventLog, chatFixturePath, createFakeCli, writeFakeCliShims, type FakeCli } from '../../orchestrators/adapters/testing/fake-cli';
 import { CopilotSdkChatDriver } from './driver';
+import { isFailedCopilotWrite } from './failed-writes';
 import { fakeCopilotEnv } from './test-env';
 import { COPILOT_OPTION_ALLOW, COPILOT_OPTION_DENY } from './normalizer';
 
@@ -346,6 +347,32 @@ describe('CopilotSdkChatDriver sessions against fake Copilot', () => {
       process.off('unhandledRejection', onUnhandled);
     }
     expect(unhandled).toEqual([]);
+  });
+
+  it('a send just after the connection breaks fails through its own promise, and the stray copy is marked (#2706)', async () => {
+    const { session } = await start('multi-turn');
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const { client } = session as unknown as { client: { socket: net.Socket } };
+      client.socket.write = ((...args: unknown[]) => {
+        const callback = args.at(-1) as (err: Error) => void;
+        callback(new Error('write EPIPE'));
+        return false;
+      }) as typeof client.socket.write;
+      const sent = await say(session, 'Reply with the word one.').then(() => null, (err: unknown) => err);
+      // The caller's own failure is a normal error, never filtered.
+      expect(sent).toBeTruthy();
+      expect(isFailedCopilotWrite(sent)).toBe(false);
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+    // vscode-jsonrpc still leaves its copy, and main can tell it apart from a real error.
+    expect(unhandled.length).toBeGreaterThan(0);
+    expect(unhandled.every(isFailedCopilotWrite)).toBe(true);
   });
 
   it('schema-drift: unknown events, fields and requests are tolerated, and the unknown request is refused', async () => {

@@ -5,6 +5,7 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useRemoteProjectStore, isRemoteAgentId } from '../../stores/remoteProjectStore';
 import { getOrchestratorColor, getModelColor, getOrchestratorLabel, formatModelLabel } from './orchestrator-colors';
 import { AgentAvatar } from './AgentAvatar';
+import { useEffectiveOrchestrator } from './effective-orchestrator';
 import { useAgentRowActions, AgentContextMenu, OverflowIcon } from './useAgentRowActions';
 import { describeHelperDispose, useHelperDisposeRequestStore } from '../../stores/helperDisposeRequestStore';
 import { describeHelperStarts, startRequestsFor, useHelperStartRequestStore } from '../../stores/helperStartRequestStore';
@@ -69,6 +70,7 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
   const remoteIconDataUrl = useRemoteProjectStore((s) => s.remoteAgentIcons[agent.id]);
   const iconDataUrl = isRemote ? remoteIconDataUrl : localIconDataUrl;
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
+  const orchestrator = useEffectiveOrchestrator(agent);
 
   const ringColor = statusRingColor(agent, detailed);
 
@@ -160,7 +162,7 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
           </div>
           <div className="flex items-center gap-1 mt-1 min-w-0">
             {(() => {
-              const orchId = agent.orchestrator || 'claude-code';
+              const orchId = orchestrator;
               const c = getOrchestratorColor(orchId);
               return (
                 <span className="text-xs px-1.5 py-0.5 rounded truncate min-w-0"

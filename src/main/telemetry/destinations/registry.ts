@@ -27,6 +27,7 @@ import {
 } from '../settings';
 import type { ExportRecord } from '../types';
 import type { DestinationAdapter } from './types';
+import { TELEMETRY_SCHEMA_VERSION } from '../../../shared/telemetry/attributes';
 
 function azureFailure(record: ExportRecord): string | undefined {
   const s = record.httpStatus;
@@ -101,7 +102,10 @@ const framebriar: DestinationAdapter<FramebriarTelemetryExport> = {
   },
   describeFailure: framebriarFailure,
   // Framebriar keeps service.* and session.id from the resource and drops the rest.
-  copyResourceAttributes: ['clubhouse.ui.chrome', 'clubhouse.channel'],
+  // The schema version, OS and Electron versions too, which crash triage needs (#2525).
+  copyResourceAttributes: ['clubhouse.ui.chrome', 'clubhouse.channel', 'clubhouse.telemetry.schema', 'os.version', 'clubhouse.electron.version'],
+  // Framebriar's cross-app name for the schema version (#2525).
+  itemAttributes: { 'app.telemetry.schema_version': TELEMETRY_SCHEMA_VERSION },
   // The install id outlives a Feedback enrollment, so it would link one person's
   // records across enrollments; Framebriar's own player id rotates (#2526).
   dropAttributes: FRAMEBRIAR_DROPPED_ATTRIBUTES,

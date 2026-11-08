@@ -38,6 +38,8 @@ export type EventSeverity = 'info' | 'warn' | 'error' | 'fatal';
 
 export interface EventOptions {
   severity?: EventSeverity;
+  /** Emit the record under this trace and span instead of the active one, linking it to them. */
+  trace?: TraceIds;
   /** Written to the local recording only; never handed to any export destination, whatever its level or preset. */
   localOnly?: boolean;
 }

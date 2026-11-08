@@ -8,6 +8,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { effectiveOrchestratorOf, newAgentOrchestrator } from '../../features/agents/effective-orchestrator';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
@@ -159,12 +160,16 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const [color, setColor] = useState<string>(AGENT_COLORS[0].id);
   const { effectiveOrchestrators } = useEffectiveOrchestrators();
   const [orchestrator, setOrchestrator] = useState('');
-  const resolvedOrchestrator = orchestrator || effectiveOrchestrators[0]?.id || 'claude-code';
+  // Until the person picks one, the project's "Agents run on" (#2975).
+  const resolvedOrchestrator = orchestrator || newAgentOrchestrator(project, effectiveOrchestrators);
   const [model, setModel] = useState('default');
   const [customModel, setCustomModel] = useState('');
   const [useWorktree, setUseWorktree] = useState(true);
   const [isGit, setIsGit] = useState<boolean | null>(null);
   const [pickedAccess, setPickedAccess] = useState<AccessLevel | null>(null);
+  // The level the current quick template filled in, so another template (or None) takes it back
+  // unless the person changed it since (#2999).
+  const templateAccess = useRef<AccessLevel | null>(null);
   const [mcpCatalog, setMcpCatalog] = useState<McpCatalogEntry[]>([]);
   const [selectedMcps, setSelectedMcps] = useState<string[]>([]);
   const [mission, setMission] = useState('');
@@ -198,7 +203,8 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   // Access (#2761) starts at the app's Default access (a quick agent in a durable agent's
   // worktree: that agent's quick agent defaults) until the person or a template picks one.
   const { start: startAccess, defaultAccess } = useQuickAgentAccess(project?.path, !durable && parentAgentId ? parentAgentId : undefined);
-  const runOrchestrator = !durable && parent?.orchestrator ? parent.orchestrator : resolvedOrchestrator;
+  // A parent with no CLI of its own runs on the project's, and so does its quick agent (#2975).
+  const runOrchestrator = !durable && parent ? effectiveOrchestratorOf(parent, project, allOrchestrators) : resolvedOrchestrator;
   const { options: modelOptions, loading: modelsLoading } = useModelOptions(runOrchestrator, project?.path);
   const selectedOrch = allOrchestrators.find((o) => o.id === runOrchestrator);
   const supportsPermissions = selectedOrch?.capabilities?.permissions ?? false;
@@ -228,15 +234,26 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
     setQuickTemplateId(t?.id ?? '');
     setQuickTemplate(t);
     setQuickChanges(NO_QUICK_CHANGES);
+    const level = t ? settingsAccess(t.settings) : undefined;
+    if (!level) {
+      if (templateAccess.current && pickedAccess === templateAccess.current) setPickedAccess(null);
+      templateAccess.current = null;
+    } else if (pickedAccess !== level) {
+      // Only a level the template changed is the template's to take back; one already picked stays the person's.
+      templateAccess.current = level;
+    }
     if (!t) return;
     const { orchestrator: cli, model: m } = t.settings;
-    const level = settingsAccess(t.settings);
     const switchCli = !!cli && !parent && effectiveOrchestrators.some((o) => o.id === cli);
     if (switchCli) setOrchestrator(cli);
     const willRun = switchCli ? cli : runOrchestrator;
     if (m && ((cli && cli === willRun) || modelOptions.some((o) => o.id === m))) setModel(m);
     if (level) setPickedAccess(level);
   };
+  // Leaving Quick (Durable, or a project without quick templates) takes the template, and the level it filled in, with it.
+  useEffect(() => {
+    if (!quickTemplates && quickTemplateId) pickQuickTemplate(null);
+  }, [quickTemplates]);
   useEffect(() => {
     if (!projectPath) return;
     let cancelled = false;

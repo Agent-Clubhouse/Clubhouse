@@ -819,7 +819,8 @@ export const ATTR = {
   goobersModel: enumAttr('clubhouse.goobers.model', ['instance', 'run', 'workflow']),
   sseTerminalReason: enumAttr('clubhouse.sse.terminal_reason', ['auth-required', 'no-read-model', 'schema-changed']),
   // Feedback (Framebriar screenshot feedback, #2309). States, counts and codes only:
-  // never notes, images, invitations or the report id (that stays in the local log).
+  // never notes, images or invitations. The report id is `feedbackReportId`, for the
+  // developer destination only (#2524).
   feedbackStage: enumAttr('clubhouse.feedback.stage', ['start', 'connect', 'capture', 'submit', 'deliver']),
   feedbackError: enumAttr('clubhouse.feedback.error', [
     // SDK and outbox codes, in their own spelling
@@ -833,6 +834,12 @@ export const ATTR = {
     'undeliverable',
     'unknown', 'other',
   ]),
+  /**
+   * The Framebriar report id, a random UUID with no report content, on
+   * `feedback.submitted` only. Framebriar's own name, and only the developer
+   * destination receives it (#2524): the others drop it.
+   */
+  feedbackReportId: uuidAttr('feedback.report.id'),
   feedbackScreenshot: boolAttr('clubhouse.feedback.screenshot'),
   feedbackAnnotated: boolAttr('clubhouse.feedback.annotated'),
   feedbackShots: intAttr('clubhouse.feedback.shots'),
@@ -1643,10 +1650,10 @@ export const EVENTS = {
   'clubhouse.agent.permission.stuck': { level: 'errors' },
   /** Restoring an agent's config file from its snapshot failed. Attributes: `clubhouse.config.format`. */
   'clubhouse.config.restore_failed': { level: 'errors' },
-  // Feedback (#2309). The report id is never an attribute: it stays in the local log.
+  // Feedback (#2309). The report id goes on `submitted` for the developer destination only (#2524).
   /** Screenshots taken for a review. Attributes: screenshot, shots, windows, trigger. */
   'clubhouse.feedback.captured': { level: 'standard' },
-  /** Reviewed feedback saved to the outbox. Attributes: screenshot, annotated, shots, access state. */
+  /** Reviewed feedback saved to the outbox. Attributes: screenshot, annotated, shots, access state, and the report id for the developer destination only (#2524). */
   'clubhouse.feedback.submitted': { level: 'standard' },
   /** The outbox delivered a report (Framebriar's receipt). */
   'clubhouse.feedback.delivered': { level: 'standard' },
