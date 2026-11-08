@@ -234,7 +234,9 @@ export async function withMemoryIndex(instructions: string, options: NotesMigrat
   try {
     await migrateNotesToMemory(options);
     const index = (await loadIndex(options.memoryRoot ?? getDispatcherMemoryPath())).trim();
-    return `${instructions.trimEnd()}\n\n${MEMORY_INSTRUCTIONS_HEADING}\n\nThis is \`memory/index.md\` as it was when this file was written.\n\n${index}\n`;
+    // The instructions stay byte for byte (a Windows checkout gives them CRLF line ends).
+    const gap = instructions.endsWith('\n') ? '\n' : '\n\n';
+    return `${instructions}${gap}${MEMORY_INSTRUCTIONS_HEADING}\n\nThis is \`memory/index.md\` as it was when this file was written.\n\n${index}\n`;
   } catch (err) {
     // telemetry-exempt: logged; the Dispatcher still gets its instructions, just without memory
     appLog(NS, 'warn', 'Dispatcher memory could not be loaded', {

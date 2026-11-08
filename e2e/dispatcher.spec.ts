@@ -219,7 +219,7 @@ test('on by default, wire an orchestrator, restart, switch off and on, and wake 
   projectDir = makeProject();
   let w = (await launch()).window;
 
-  // One Dispatcher with notes/ and its CLI's instructions file, and its row
+  // One Dispatcher with its memory and its CLI's instructions file, and its row
   // with zero projects, and nothing started.
   await expect(row(w)).toBeVisible({ timeout: 15_000 });
   await expect.poll(async () => (await dispatcherConfigs()).length).toBe(1);
@@ -227,8 +227,11 @@ test('on by default, wire an orchestrator, restart, switch off and on, and wake 
   const dispatcherId = config.id;
   // Known by its folder and id, never a persona (#2901): the only agent in its folder, with no persona.
   expect(config.persona).toBeUndefined();
-  expect(fs.existsSync(path.join(dispatcherDir(), 'notes'))).toBe(true);
-  expect(await fs.promises.readFile(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf8')).toContain('Dispatcher');
+  expect(fs.existsSync(path.join(dispatcherDir(), 'memory', 'index.md'))).toBe(true);
+  const instructions = await fs.promises.readFile(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf8');
+  expect(instructions).toContain('Dispatcher');
+  // Its memory index is loaded into the instructions file (#3038).
+  expect(instructions).toContain('## Your memory index');
   expect(await promptsConsumed()).toBe(0);
 
   // Off and on again keeps the one Dispatcher.
@@ -272,15 +275,23 @@ test('on by default, wire an orchestrator, restart, switch off and on, and wake 
   await expect(row(w)).toBeVisible({ timeout: 15_000 });
   await expect.poll(() => hasWire(w, dispatcherId), { timeout: 15_000 }).toBe(true);
 
-  // Turning the setting off drops the row and wires and keeps the folder.
-  fs.writeFileSync(path.join(dispatcherDir(), 'notes', 'plan.md'), 'kept\n');
+  // Turning the setting off drops the row and wires and keeps the folder and its memory.
+  fs.writeFileSync(path.join(dispatcherDir(), 'memory', 'topics', 'plan.md'), 'kept\n');
+  // An old notes/ folder, as the agent kept before memory (#3038).
+  fs.mkdirSync(path.join(dispatcherDir(), 'notes'), { recursive: true });
+  fs.writeFileSync(path.join(dispatcherDir(), 'notes', 'release.md'), 'old note\n');
   await openSettingsPage(w, 'Dispatcher');
   await w.locator('[data-testid="dispatcher-enabled"]').click();
   await expect(row(w)).toHaveCount(0);
   await expect.poll(() => hasWire(w, dispatcherId)).toBe(false);
-  expect(await fs.promises.readFile(path.join(dispatcherDir(), 'notes', 'plan.md'), 'utf8')).toBe('kept\n');
+  expect(await fs.promises.readFile(path.join(dispatcherDir(), 'memory', 'topics', 'plan.md'), 'utf8')).toBe('kept\n');
   await w.locator('[data-testid="dispatcher-enabled"]').click();
   await expect(row(w)).toBeVisible();
+  // Turning it on sorts the old notes into memory once and keeps the folder, renamed.
+  await expect.poll(() => fs.existsSync(path.join(dispatcherDir(), 'notes'))).toBe(false);
+  expect(await fs.promises.readFile(path.join(dispatcherDir(), 'notes-archive', 'release.md'), 'utf8')).toBe('old note\n');
+  expect(await fs.promises.readFile(path.join(dispatcherDir(), 'memory', 'topics', 'release.md'), 'utf8')).toMatch(/old note\n$/);
+  expect(await fs.promises.readFile(path.join(dispatcherDir(), 'memory', 'topics', 'plan.md'), 'utf8')).toBe('kept\n');
   expect(await dispatcherIds()).toEqual([dispatcherId]);
   await expect.poll(() => hasWire(w, dispatcherId)).toBe(true);
 

@@ -170,6 +170,8 @@ describe('withMemoryIndex', () => {
     write('checkout.md', 'x');
     const out = await withMemoryIndex('# Instructions\n', opts());
     expect(out.startsWith('# Instructions\n\n')).toBe(true);
+    // CRLF instructions, as a Windows checkout has them, are kept exactly.
+    expect((await withMemoryIndex('# A\r\nb\r\n', opts())).startsWith('# A\r\nb\r\n\n## ')).toBe(true);
     expect(out).toContain(MEMORY_INSTRUCTIONS_HEADING);
     expect(out).toContain('(topics/checkout.md)');
     expect(fs.existsSync(notesDir)).toBe(false);
