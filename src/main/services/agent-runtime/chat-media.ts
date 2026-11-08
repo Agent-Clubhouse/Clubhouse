@@ -89,7 +89,9 @@ export async function storeMedia(agentId: string, bytes: Uint8Array): Promise<Ch
   if (!fs.existsSync(path.dirname(dir))) return undefined;
   const mediaRef = `${createHash('sha256').update(bytes).digest('hex')}.${CHAT_MEDIA_TYPES[mimeType]}`;
   const file = path.join(dir, mediaRef);
-  if (!fs.existsSync(file)) {
+  // An existing copy is marked used first, so a prune running now keeps it; one
+  // removed in between is written again.
+  if (!fs.existsSync(file) || !await touchChatMedia(file)) {
     await fsp.mkdir(dir, { recursive: true });
     const temp = `${file}.${randomUUID()}.tmp`;
     try {
@@ -99,8 +101,6 @@ export async function storeMedia(agentId: string, bytes: Uint8Array): Promise<Ch
       await fsp.rm(temp, { force: true });
     }
     scheduleChatMediaPrune();
-  } else {
-    touchChatMedia(file);
   }
   return { type: 'image', mimeType, mediaRef, ...(size && { width: size.width, height: size.height }) };
 }
@@ -119,7 +119,7 @@ export async function readMedia(agentId: string, mediaRef: string): Promise<{ mi
   const data = new Uint8Array(await fsp.readFile(file));
   const mimeType = sniffMediaType(data);
   if (!mimeType) throw new Error('Image not available');
-  touchChatMedia(file);
+  void touchChatMedia(file);
   return { mimeType, data };
 }
 

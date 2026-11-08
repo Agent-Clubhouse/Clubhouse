@@ -80,6 +80,10 @@ export async function pruneChatMedia(opts: { capBytes?: number; targetBytes?: nu
   for (const f of files.sort((a, b) => a.usedAt - b.usedAt)) {
     if (total <= target || now - f.usedAt < minAge) break;
     try {
+      // Stored again or shown since the scan: it's in use, so keep it.
+      const st = await fsp.lstat(f.file).catch((): null => null);
+      if (!st) { total -= f.size; continue; }
+      if (st.mtimeMs !== f.usedAt) continue;
       await fsp.rm(f.file, { force: true });
       total -= f.size;
       result.removedFiles++;
@@ -102,7 +106,8 @@ export function scheduleChatMediaPrune(delayMs = PRUNE_DELAY_MS): void {
   if (timer) return;
   timer = setTimeout(() => {
     timer = undefined;
-    if (running) return;
+    // A check during a long prune runs once that one ends, so it isn't lost.
+    if (running) { void running.finally(() => scheduleChatMediaPrune(delayMs)); return; }
     running = pruneChatMedia()
       .catch((error: unknown) => {
         // telemetry-exempt: best-effort housekeeping; the next check retries.
@@ -113,16 +118,21 @@ export function scheduleChatMediaPrune(delayMs = PRUNE_DELAY_MS): void {
   timer.unref?.();
 }
 
-/** Mark a stored image as used, so the cap removes it last. */
-export function touchChatMedia(file: string): void {
+/** Mark a stored image as used, so the cap removes it last. False when it's gone. */
+export async function touchChatMedia(file: string): Promise<boolean> {
   const now = new Date();
-  void fsp.utimes(file, now, now).catch((): void => undefined);
+  try {
+    await fsp.utimes(file, now, now);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ENOENT';
+  }
 }
 
 /** Remove a deleted agent's media. Its transcripts are left as they are. */
 export async function removeAgentChatMedia(agentId: string): Promise<void> {
   try {
-    await fsp.rm(agentMediaDir(agentId), { recursive: true, force: true });
+    await fsp.rm(agentMediaDir(agentId), { recursive: true, force: true, maxRetries: 3 });
   } catch (error) {
     // telemetry-exempt: best-effort cleanup; the size cap removes it later.
     appLog('core:chat', 'warn', 'Could not remove a deleted agent\'s chat media', { meta: { agentId, error: error instanceof Error ? error.message : String(error) } });
