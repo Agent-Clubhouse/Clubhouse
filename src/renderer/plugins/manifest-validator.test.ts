@@ -165,7 +165,7 @@ describe('manifest-validator', () => {
     it('rejects unsupported API version', () => {
       const result = validateManifest({ ...validManifest, engine: { api: 99 } });
       expect(result.valid).toBe(false);
-      expect(result.errors).toEqual(["This plugin uses plugin API 99, which this version of Clubhouse can't load. Supported plugin API: 0.7, 0.8 or 0.9."]);
+      expect(result.errors).toEqual(["This plugin uses plugin API 99, which this version of Clubhouse can't load. Clubhouse loads plugins built for API 0.7, 0.8 or 0.9."]);
     });
 
     // --- Scope checks ---

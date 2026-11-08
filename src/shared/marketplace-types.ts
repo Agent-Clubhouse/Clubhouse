@@ -138,7 +138,7 @@ export function unsupportedPluginApiMessage(api: number): string {
   if (REMOVED_PLUGIN_API_VERSIONS.includes(api)) {
     return `This plugin uses plugin API ${api}, which was removed in Clubhouse 1.0. Clubhouse loads plugins built for API ${supported}. Install an update built for one of those, or ask the plugin's author for one.`;
   }
-  return `This plugin uses plugin API ${api}, which this version of Clubhouse can't load. Supported plugin API: ${supported}.`;
+  return `This plugin uses plugin API ${api}, which this version of Clubhouse can't load. Clubhouse loads plugins built for API ${supported}.`;
 }
 
 // ── Custom marketplace types ─────────────────────────────────────────

@@ -18,7 +18,7 @@ const manifest: PluginManifest = {
   id: 'canvas-plugin',
   name: 'Canvas Plugin',
   version: '1.0.0',
-  engine: { api: 0.9 },
+  engine: { api: 0.8 },
   scope: 'project',
   permissions: ['canvas'],
   contributes: {

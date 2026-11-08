@@ -16,7 +16,7 @@ describe('createWindowAPI', () => {
     id: 'test-plugin',
     name: 'Test Plugin',
     version: '1.0.0',
-    engine: { api: 0.9 },
+    engine: { api: 0.8 },
     scope: 'project',
     contributes: {
       tab: { label: 'My Tab', title: 'Custom Title' },
@@ -44,7 +44,7 @@ describe('createWindowAPI', () => {
       id: 'bare',
       name: 'Bare Plugin',
       version: '1.0.0',
-      engine: { api: 0.9 },
+      engine: { api: 0.8 },
       scope: 'project',
     };
     const ctx = createMockContext({ pluginId: 'bare' });
@@ -57,7 +57,7 @@ describe('createWindowAPI', () => {
       id: 'app-plugin',
       name: 'App Plugin',
       version: '1.0.0',
-      engine: { api: 0.9 },
+      engine: { api: 0.8 },
       scope: 'app',
       contributes: {
         railItem: { label: 'Rail Label', title: 'Rail Title' },

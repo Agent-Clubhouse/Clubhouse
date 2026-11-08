@@ -505,7 +505,7 @@ describe('PluginListSettings', () => {
       usePluginStore.setState({
         plugins: {
           fresh: {
-            manifest: { id: 'fresh', name: 'Fresh', version: '1.0.0', engine: { api: 0.9 }, scope: 'app' },
+            manifest: { id: 'fresh', name: 'Fresh', version: '1.0.0', engine: { api: 0.8 }, scope: 'app' },
             status: 'activated', source: 'builtin', pluginPath: '/builtin/fresh',
           },
         },
@@ -557,13 +557,13 @@ describe('PluginListSettings', () => {
       usePluginStore.setState({
         plugins: {
           canvas: {
-            manifest: { id: 'canvas', name: 'Canvas', version: '1.0.0', engine: { api: 0.9 }, scope: 'app' },
+            manifest: { id: 'canvas', name: 'Canvas', version: '1.0.0', engine: { api: 0.8 }, scope: 'app' },
             status: 'activated',
             source: 'builtin',
             pluginPath: '/builtin/canvas',
           },
           'group-project': {
-            manifest: { id: 'group-project', name: 'Group Project', version: '0.1.0', engine: { api: 0.9 }, scope: 'dual', requiresMcp: true },
+            manifest: { id: 'group-project', name: 'Group Project', version: '0.1.0', engine: { api: 0.8 }, scope: 'dual', requiresMcp: true },
             status: 'activated',
             source: 'builtin',
             pluginPath: '/builtin/group-project',

@@ -86,7 +86,7 @@ describe('validateManifest', () => {
   it('rejects an unknown API version with one message that names it', () => {
     const r = validateManifest(validManifest({ engine: { api: 99.9 } }));
     expect(r.valid).toBe(false);
-    expect(r.errors).toEqual(["This plugin uses plugin API 99.9, which this version of Clubhouse can't load. Supported plugin API: 0.7, 0.8 or 0.9."]);
+    expect(r.errors).toEqual(["This plugin uses plugin API 99.9, which this version of Clubhouse can't load. Clubhouse loads plugins built for API 0.7, 0.8 or 0.9."]);
   });
 
   it.each([0.5, 0.6])('refuses removed API %s with one message that names it and the supported versions (#2757)', (api) => {

@@ -1457,7 +1457,7 @@ describe('plugin-loader', () => {
       name: 'Spring Themes',
       scope: 'app',
       kind: 'pack',
-      engine: { api: 0.9 },
+      engine: { api: 0.7 },
       permissions: undefined,
       contributes: {
         themes: [
@@ -1550,7 +1550,7 @@ describe('plugin-loader', () => {
         name: 'Agent Config Pack',
         scope: 'app',
         kind: 'pack',
-        engine: { api: 0.9 },
+        engine: { api: 0.7 },
         permissions: undefined,
         contributes: {},
       });
@@ -1685,6 +1685,25 @@ describe('plugin-loader', () => {
 
       expect(usePluginStore.getState().plugins['vanished'].status).toBe('errored');
       expect(usePluginStore.getState().plugins['vanished'].error).toContain('not found');
+    });
+
+    it('an update on a removed API is refused, and the entry names the refused version (#2757)', async () => {
+      const manifest = makeManifest({ id: 'downgraded', scope: 'app', engine: { api: 0.8 } });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/downgraded', 'registered');
+      await activatePlugin('downgraded');
+
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'downgraded', scope: 'app', version: '2.0.0', engine: { api: 0.6 } }), pluginPath: '/plugins/downgraded', fromMarketplace: false },
+      ]);
+
+      await hotReloadPlugin('downgraded');
+
+      const entry = usePluginStore.getState().plugins['downgraded'];
+      expect(entry.status).toBe('incompatible');
+      expect(entry.manifest.engine.api).toBe(0.6);
+      expect(entry.source).toBe('community');
+      expect(entry.pluginPath).toBe('/plugins/downgraded');
+      expect(entry.error).toContain('plugin API 0.6, which was removed in Clubhouse 1.0');
     });
 
     it('re-activates app-level plugin when no contexts were active', async () => {
@@ -1843,7 +1862,7 @@ describe('plugin-loader', () => {
       const mod: PluginModule = { activate: vi.fn() };
       mockDynamicImport.mockResolvedValue(mod);
 
-      const manifest = makeManifest({ id: 'annex-escalate', scope: 'app', engine: { api: 0.9 }, permissions: ['storage'] });
+      const manifest = makeManifest({ id: 'annex-escalate', scope: 'app', engine: { api: 0.8 }, permissions: ['storage'] });
       usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/annex-escalate', 'registered');
       usePluginStore.getState().enableApp('annex-escalate');
       await activatePlugin('annex-escalate');
@@ -1851,7 +1870,7 @@ describe('plugin-loader', () => {
       mockPlugin.discoverCommunity.mockResolvedValue([
         {
           manifest: makeManifest({
-            id: 'annex-escalate', scope: 'app', version: '2.0.0', engine: { api: 0.9 },
+            id: 'annex-escalate', scope: 'app', version: '2.0.0', engine: { api: 0.8 },
             permissions: ['storage', 'annex'],
           }),
           pluginPath: '/plugins/annex-escalate',
@@ -2082,7 +2101,7 @@ describe('plugin-loader', () => {
         id: 'my-theme',
         scope: 'app',
         kind: 'pack',
-        engine: { api: 0.9 },
+        engine: { api: 0.7 },
         permissions: [],
         contributes: {
           themes: [{
@@ -2285,7 +2304,7 @@ describe('plugin-loader', () => {
           id: 'theme-pack',
           scope: 'app',
           kind: 'pack',
-          engine: { api: 0.9 },
+          engine: { api: 0.7 },
           permissions: [],
           contributes: { themes: oldThemes },
         }),
@@ -2299,7 +2318,7 @@ describe('plugin-loader', () => {
           id: 'theme-pack',
           scope: 'app',
           kind: 'pack',
-          engine: { api: 0.9 },
+          engine: { api: 0.7 },
           permissions: [],
           contributes: { themes: newThemes },
         }),
@@ -2334,7 +2353,7 @@ describe('plugin-loader', () => {
         id: 'theme-pack',
         scope: 'app',
         kind: 'pack',
-        engine: { api: 0.9 },
+        engine: { api: 0.7 },
         permissions: [],
         contributes: { themes },
       });
@@ -2365,13 +2384,13 @@ describe('plugin-loader', () => {
     it('unregisters every pack theme when the refreshed manifest drops contributes.themes', async () => {
       const theme = { id: 'dark', name: 'Dark', type: 'dark' as const, colors: {}, hljs: {}, terminal: {} };
       usePluginStore.getState().registerPlugin(
-        makeManifest({ id: 'theme-pack', scope: 'app', kind: 'pack', engine: { api: 0.9 }, permissions: [], contributes: { themes: [theme] } }),
+        makeManifest({ id: 'theme-pack', scope: 'app', kind: 'pack', engine: { api: 0.7 }, permissions: [], contributes: { themes: [theme] } }),
         'community', '/plugins/theme-pack', 'activated',
       );
       usePluginStore.setState({ externalPluginsEnabled: true });
       mockPlugin.discoverCommunity.mockResolvedValue([{
         manifest: makeManifest({
-          id: 'theme-pack', scope: 'app', kind: 'pack', engine: { api: 0.9 }, permissions: [],
+          id: 'theme-pack', scope: 'app', kind: 'pack', engine: { api: 0.7 }, permissions: [],
           contributes: { sounds: { name: 'Sounds', sounds: { 'agent-done': 'done.mp3' } } },
         }),
         pluginPath: '/plugins/theme-pack',

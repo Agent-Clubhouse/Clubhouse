@@ -974,7 +974,12 @@ export async function hotReloadPlugin(pluginId: string): Promise<void> {
     rendererLog('core:plugins', 'error', `Updated plugin ${pluginId} has invalid manifest`, {
       meta: { errors: validation.errors },
     });
-    store.setPluginStatus(pluginId, 'incompatible', validation.errors.join('; '));
+    // Keep the refused update's API version on the entry, so Settings and the
+    // removed-API notice name the version that was refused, not the old one.
+    store.registerPlugin(
+      { ...entry.manifest, engine: { ...entry.manifest.engine, api: declaredApiVersion(discovered.manifest) } },
+      entry.source, entry.pluginPath, 'incompatible', validation.errors.join('; '),
+    );
     return;
   }
 

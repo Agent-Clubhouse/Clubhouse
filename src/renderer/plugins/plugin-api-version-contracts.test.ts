@@ -410,7 +410,7 @@ describe('§2 Per-version manifest validation', () => {
         scope: 'project',
       });
       expect(result.valid).toBe(false);
-      expect(result.errors).toEqual(["This plugin uses plugin API 0.4, which this version of Clubhouse can't load. Supported plugin API: 0.7, 0.8 or 0.9."]);
+      expect(result.errors).toEqual(["This plugin uses plugin API 0.4, which this version of Clubhouse can't load. Clubhouse loads plugins built for API 0.7, 0.8 or 0.9."]);
     });
 
     it('error message mentions supported versions', () => {

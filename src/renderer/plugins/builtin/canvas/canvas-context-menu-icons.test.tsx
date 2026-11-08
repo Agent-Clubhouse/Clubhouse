@@ -36,7 +36,7 @@ function setupPluginStore(pluginIds: string[], opts?: { requiresMcp?: Record<str
   const plugins: Record<string, any> = {};
   for (const id of pluginIds) {
     plugins[id] = {
-      manifest: { id, name: id, version: '1.0.0', engine: { api: 0.9 }, scope: 'dual', requiresMcp: opts?.requiresMcp?.[id] },
+      manifest: { id, name: id, version: '1.0.0', engine: { api: 0.8 }, scope: 'dual', requiresMcp: opts?.requiresMcp?.[id] },
       status: 'activated',
       source: 'builtin',
       pluginPath: `/builtin/${id}`,
