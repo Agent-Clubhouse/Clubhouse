@@ -27,7 +27,7 @@ export interface StepDeps {
   isRunning(agentId: string): boolean;
   project(projectId: string): { id: string; path: string; orchestrator?: string; name: string } | undefined;
   /** wakeWiredAgent's JSON result: status, and whether a mission was delivered. */
-  wake(req: { callerId: string; targetId: string; targetName: string; mission?: string; missionRouted?: RoutedMessagePart[] }): Promise<{ ok: boolean; status?: string; text: string }>;
+  wake(req: { callerId: string; targetId: string; targetName: string; mission?: string; missionRouted?: RoutedMessagePart[] }): Promise<{ ok: boolean; status?: string; messageDelivered?: boolean; text: string }>;
   sleep(req: { callerId: string; targetId: string; targetName: string }): Promise<{ ok: boolean; status?: string; text: string }>;
   startQuick(req: { project: { id: string; path: string }; cwd: string; prompt: string; orchestrator: string; model?: string; freeAgentMode?: boolean; name: string }): Promise<{ id: string; name: string }>;
   notify(title: string, body: string): { shown: boolean; reason?: string };
@@ -100,6 +100,7 @@ export function createStepRunner(deps: StepDeps): StepRunner {
     if (!result.ok) return fail(step, `Couldn’t wake ${name}: ${result.text}`, id);
     if (result.status === 'stopping') return fail(step, `Couldn’t wake ${name}: it was still going to sleep.`, id);
     if (result.status === 'starting' && msg) return fail(step, `Couldn’t deliver the message: ${name} was already starting.`, id);
+    if (msg && result.messageDelivered === false) return fail(step, `Couldn’t deliver the message to ${name}.`, id);
     return done(step, msg ? `Woke ${name} with the message` : `Woke ${name}`, { agentId: id });
   }
 
@@ -115,6 +116,8 @@ export function createStepRunner(deps: StepDeps): StepRunner {
           const name = deps.agentName(id) ?? 'The agent';
           if (!deps.agentExists(id)) return fail(step, `${name} is gone.`, id);
           if (!deps.isRunning(id)) return done(step, `${name} was already asleep`, { agentId: id });
+          // Its sleep event counts as caused by this run, for loop protection.
+          setAgentChain(id, ctx.chain);
           await waitForIdle(id, deps.sleepWaitMs ?? SLEEP_WAIT_MS);
           const result = await deps.sleep({ callerId: `action:${ctx.action.id}`, targetId: id, targetName: name });
           if (!result.ok) return fail(step, `Couldn’t put ${name} to sleep: ${result.text}`, id);
@@ -140,6 +143,8 @@ export function createStepRunner(deps: StepDeps): StepRunner {
               ...(step.freeAgentMode !== undefined && { freeAgentMode: step.freeAgentMode }),
               name: ctx.action.name,
             });
+            // Commits it makes in a worktree carry this run's chain on.
+            setAgentChain(started.id, ctx.chain);
             return done(step, `Started a quick agent in ${project.name}`, { agentId: started.id, projectId: project.id });
           } catch (err) {
             // telemetry-exempt: the reason is the step's result, shown and toasted

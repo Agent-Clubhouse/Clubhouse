@@ -848,8 +848,10 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       const owner = { kind: 'library' as const };
       checkReferences(index, owner, projection);
       const record: AssetRevisionRecord = { revision: input.expectedRevision + 1, savedAt, contentHash: canonicalHash(payload), projection };
-      const entry: CatalogEntry = existing
-        ? { ...existing, headRevision: record.revision, revisions: [...existing.revisions, record] }
+      // The running build's name, and live again if a newer build removed it (D100).
+      const revived = existing ? (({ deletedAt: _gone, ...rest }) => rest)(existing) : null;
+      const entry: CatalogEntry = revived
+        ? { ...revived, name: input.name, headRevision: record.revision, revisions: [...revived.revisions, record] }
         : { id: input.assetId, kind: input.kind, name: input.name, owner, source, createdAt: savedAt, headRevision: record.revision, revisions: [record] };
       if (existing && previewAssetImpact(index, entry.id, record).blocked) throw new AssetCatalogError('consumer_conflict', { assetId: entry.id });
       await writeRevisionFile(entry, record, payload);

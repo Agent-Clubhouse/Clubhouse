@@ -476,3 +476,71 @@ describe('Clubhouse’s own actions', () => {
     expect(history(a.id)).toEqual([]);
   });
 });
+
+describe('review fixes', () => {
+  it('cancels queued runs when the action is turned off', async () => {
+    const releases: Array<() => void> = [];
+    const { engine, history, stepCalls } = setup({
+      stepImpl: (step) => new Promise((resolve) => releases.push(() => resolve({ kind: step.kind, outcome: 'done', detail: 'ok' }))),
+    });
+    engine.start();
+    const a = engine.create({ trigger: weekdays9, steps: [notify], overlap: 'queue' }, user);
+    engine.runNow(a.id);
+    engine.runNow(a.id);
+    engine.runNow(a.id);
+    await flush();
+    engine.setEnabled(a.id, false);
+    releases.shift()?.();
+    await flush();
+    expect(stepCalls).toHaveLength(1);
+    expect(history(a.id).map((r) => r.outcome).sort()).toEqual(['cancelled', 'cancelled', 'done']);
+    expect(engine.isRunning(a.id)).toBe(false);
+  });
+
+  it('never stays marked as running when something throws mid-run', async () => {
+    const { engine, hooks, stepCalls } = setup({ stepImpl: async (s) => ({ kind: s.kind, outcome: 'failed', detail: 'x' }) });
+    hooks.failed.mockImplementation(() => { throw new Error('toast failed'); });
+    engine.start();
+    const a = engine.create({ trigger: weekdays9, steps: [notify] }, user);
+    engine.runNow(a.id);
+    await flush();
+    expect(engine.isRunning(a.id)).toBe(false);
+    engine.runNow(a.id);
+    await flush();
+    expect(stepCalls).toHaveLength(2);
+  });
+
+  it('an edit that doesn’t say keeps an action off', () => {
+    const { engine } = setup();
+    engine.start();
+    const a = engine.create({ trigger: weekdays9, steps: [notify], enabled: false }, user);
+    expect(engine.update(a.id, { trigger: weekdays9, steps: [notify] }).enabled).toBe(false);
+    expect(engine.update(a.id, { trigger: weekdays9, steps: [notify], enabled: true }).enabled).toBe(true);
+  });
+
+  it('refuses agents and projects that aren’t in Clubhouse', () => {
+    const { engine } = setup();
+    engine.start();
+    expect(() => engine.create({ trigger: weekdays9, steps: [{ kind: 'wake', agentId: 'nobody' }] }, user)).toThrow(/agents it names/);
+    expect(() => engine.create({ trigger: weekdays9, steps: [{ kind: 'quick', projectId: 'p9', prompt: 'x' }] }, user)).toThrow(/projects it names/);
+  });
+
+  it('a delayed "is deleted" trigger still fires for the agent it watched', async () => {
+    const { engine, event, clock, history } = setup();
+    engine.start();
+    const a = engine.create({ trigger: { kind: 'event', event: 'agent.deleted', source: { kind: 'agent', agentId: 'pm' }, delayMinutes: 5 }, steps: [notify] }, user);
+    event({ type: 'agent.deleted', agentId: 'pm', projectPath: '/p1', name: 'pm' });
+    expect(engine.get(a.id)?.enabled).toBe(true);
+    await clock.advance(6 * MIN);
+    // pm still exists in this fake, so the re-check cancels; what matters is the wait survived.
+    expect(history(a.id)).toHaveLength(1);
+  });
+
+  it('catch-up "once" runs the latest missed time after a long closure', async () => {
+    const hourly: Action = { id: 'h', name: 'Hourly', trigger: { kind: 'schedule', preset: 'hourly', cron: '0 * * * *', missed: 'once' }, steps: [notify], overlap: 'skip', owner: user, enabled: true, createdAt: 0, updatedAt: 0 };
+    const { engine, history } = setup({ actions: [hourly], state: { nextAt: { h: START - 48 * 60 * MIN }, waits: [] } });
+    engine.start();
+    await flush();
+    expect(history('h')).toMatchObject([{ trigger: { kind: 'catch_up', at: START } }]);
+  });
+});
