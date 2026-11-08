@@ -509,6 +509,19 @@ describe('PluginListSettings', () => {
       expect(screen.queryByTestId('deprecated-api-fresh')).not.toBeInTheDocument();
     });
 
+    it('lists data left by an uninstalled retired plugin, so it can still be exported (#2756)', async () => {
+      const find = vi.spyOn(window.clubhouse.plugin, 'findRetiredData').mockImplementation(async (id: string) => (
+        id === 'kanboss' ? { installed: false, locations: [{ scope: 'project-local' as const, projectPath: '/p', dir: '/p/.clubhouse/plugin-data-local/kanboss' }] } : { installed: false, locations: [] }
+      ));
+      try {
+        render(<PluginListSettings />);
+        expect(await screen.findByText('Retired plugin data')).toBeInTheDocument();
+        expect(await screen.findByTestId('retired-plugin-section-kanboss')).toBeInTheDocument();
+      } finally {
+        find.mockRestore();
+      }
+    });
+
     it('renders Built-in and From the marketplace sections with counts', () => {
       render(<PluginListSettings />);
       expect(screen.getByRole('heading', { level: 3, name: 'Built-in' })).toBeInTheDocument();

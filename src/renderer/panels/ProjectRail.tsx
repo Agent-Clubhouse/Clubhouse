@@ -250,7 +250,6 @@ export function ProjectRail() {
   const explorerTab = useUIStore((s) => s.explorerTab);
   const setExplorerTab = useUIStore((s) => s.setExplorerTab);
   const previousExplorerTab = useUIStore((s) => s.previousExplorerTab);
-  const showHome = useUIStore((s) => s.showHome);
   const activeHostId = useUIStore((s) => s.activeHostId);
   const setActiveHost = useUIStore((s) => s.setActiveHost);
 
@@ -264,7 +263,6 @@ export function ProjectRail() {
   const inSettings = explorerTab === 'settings';
   const inHelp = explorerTab === 'help';
   const isAppPlugin = explorerTab.startsWith('plugin:app:');
-  const isHome = activeProjectId === null && !inSettings && !inHelp && !isAppPlugin;
 
   const isLocalHost = activeHostId === null;
   const activeSatellite = !isLocalHost ? satellites.find((s) => s.id === activeHostId) : null;
@@ -522,41 +520,11 @@ export function ProjectRail() {
             ================================================================ */}
         {(isLocalHost || !activeSatellite) && (
           <>
-            {/* Home button */}
-            {showHome && (
-              <button
-                onClick={() => exitSettingsAndNavigate(() => setActiveProject(null))}
-                title="Home"
-                data-testid="nav-home"
-                className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 ${
-                  expanded ? 'hover:bg-surface-0' : ''
-                }`}
-              >
-                <div
-                  className={`
-                    w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
-                    transition-colors duration-100
-                    ${isHome
-                      ? 'bg-ctp-accent text-white shadow-lg shadow-ctp-accent/30'
-                      : expanded
-                        ? 'bg-surface-1 text-ctp-subtext0'
-                        : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text'
-                    }
-                  `}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                    <polyline points="9 22 9 12 15 12 15 22" />
-                  </svg>
-                </div>
-                <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>Home</span>
-              </button>
-            )}
 
             {/* Top app-scoped plugin items */}
             {renderPluginButtons(topPluginItems, false)}
 
-            {(showHome || topPluginItems.length > 0) && (
+            {topPluginItems.length > 0 && (
               <div className="border-t border-surface-2 my-1 flex-shrink-0" />
             )}
 
@@ -646,49 +614,18 @@ export function ProjectRail() {
 
             <div className="border-t border-surface-2 my-1 flex-shrink-0" />
 
-            {/* Active satellite header (highlighted) */}
+            {/* Active satellite header (highlighted): opens the satellite's overview */}
             <SatelliteHostRow
               satellite={activeSatellite}
               expanded={expanded}
               isActive={true}
-              onClick={() => {}}
+              onClick={() => exitSettingsAndNavigate(() => setActiveProject(null))}
             />
-
-            {/* Home button (annex-gated) */}
-            {showHome && (
-              <button
-                onClick={() => exitSettingsAndNavigate(() => setActiveProject(null))}
-                title="Home"
-                data-testid="nav-home"
-                className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 ${
-                  expanded ? 'hover:bg-surface-0' : ''
-                }`}
-              >
-                <div
-                  className={`
-                    w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
-                    transition-colors duration-100
-                    ${isHome
-                      ? 'bg-ctp-accent text-white shadow-lg shadow-ctp-accent/30'
-                      : expanded
-                        ? 'bg-surface-1 text-ctp-subtext0'
-                        : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text'
-                    }
-                  `}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                    <polyline points="9 22 9 12 15 12 15 22" />
-                  </svg>
-                </div>
-                <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>Home</span>
-              </button>
-            )}
 
             {/* Top app-scoped plugin items (annex-gated) */}
             {renderPluginButtons(topPluginItems, true)}
 
-            {(showHome || topPluginItems.length > 0) && (
+            {topPluginItems.length > 0 && (
               <div className="border-t border-surface-2 my-1 flex-shrink-0" />
             )}
 

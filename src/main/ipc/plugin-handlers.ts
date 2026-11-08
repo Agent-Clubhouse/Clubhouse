@@ -1,4 +1,4 @@
-import { app, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { removePluginTools } from '../services/clubhouse-mcp/plugin-tool-registry';
 import { revokePluginTokens } from '../services/clubhouse-mcp/plugin-mcp-tokens';
 import * as fsp from 'fs/promises';
@@ -16,9 +16,27 @@ import * as pluginDiscovery from '../services/plugin-discovery';
 import * as gitignoreManager from '../services/gitignore-manager';
 import * as safeMode from '../services/safe-mode';
 import * as pluginManifestRegistry from '../services/plugin-manifest-registry';
+import * as projectStore from '../services/project-store';
+import { buildRetiredPluginExport, findRetiredPluginData, type RetiredPluginDataOptions } from '../services/retired-plugin-data';
+import { isRetiredPlugin } from '../../shared/retired-plugins';
+import { appLog } from '../services/log-service';
 import { arrayArg, objectArg, optional, stringArg, withValidatedArgs } from './validation';
 
 type PluginScope = 'project' | 'project-local' | 'global';
+
+function retiredPluginArg(value: unknown, argName: string): string {
+  const pluginId = stringArg()(value, argName);
+  if (!isRetiredPlugin(pluginId)) throw new Error(`${argName} must be a retired plugin`);
+  return pluginId;
+}
+
+async function retiredDataOptions(): Promise<RetiredPluginDataOptions> {
+  return {
+    globalPluginDataDir: pluginStorage.getGlobalPluginDataDir(),
+    communityPluginsDir: pluginDiscovery.getCommunityPluginsDir(),
+    projects: await projectStore.list(),
+  };
+}
 
 function pluginScopeArg(value: unknown, argName: string): PluginScope {
   const scope = stringArg()(value, argName);
@@ -179,6 +197,42 @@ export function registerPluginHandlers(): void {
     removePluginTools(pluginId);
     await pluginDiscovery.uninstallPlugin(pluginId);
     pluginManifestRegistry.unregisterManifest(pluginId);
+  }));
+
+  // ── Retired Workshop plugins (#2756): find, export and show their data; never delete it ──
+  ipcMain.handle(IPC.PLUGIN.RETIRED_DATA_FIND, withValidatedArgs([retiredPluginArg], async (_event, pluginId: string) => {
+    return findRetiredPluginData(pluginId, await retiredDataOptions());
+  }));
+
+  ipcMain.handle(IPC.PLUGIN.RETIRED_DATA_EXPORT, withValidatedArgs([retiredPluginArg], async (event, pluginId: string): Promise<{
+    canceled: boolean;
+    filePath?: string;
+    error?: string;
+  }> => {
+    // The dialog belongs to the window that asked.
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return { canceled: true };
+    const picked = await dialog.showSaveDialog(win, {
+      title: 'Export plugin data',
+      defaultPath: `${pluginId}-data.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (picked.canceled || !picked.filePath) return { canceled: true };
+    try {
+      const data = await buildRetiredPluginExport(pluginId, await retiredDataOptions());
+      await fsp.writeFile(picked.filePath, JSON.stringify(data, null, 2), 'utf-8');
+      appLog('core:plugins', 'info', 'Exported data for a retired plugin', { meta: { pluginId, locations: data.locations.length } });
+      return { canceled: false, filePath: picked.filePath };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      appLog('core:plugins', 'error', 'Failed to export data for a retired plugin', { meta: { pluginId, error: message } });
+      return { canceled: false, filePath: picked.filePath, error: message };
+    }
+  }));
+
+  ipcMain.handle(IPC.PLUGIN.RETIRED_DATA_REVEAL, withValidatedArgs([retiredPluginArg], async (_event, pluginId: string) => {
+    const { locations } = await findRetiredPluginData(pluginId, await retiredDataOptions());
+    if (locations[0]) shell.showItemInFolder(locations[0].dir);
   }));
 
   ipcMain.handle(IPC.PLUGIN.LIST_PROJECT_INJECTIONS, withValidatedArgs([stringArg(), stringArg()], async (_event, pluginId: string, projectPath: string) => {

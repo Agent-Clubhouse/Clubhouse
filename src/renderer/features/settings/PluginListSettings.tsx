@@ -13,6 +13,7 @@ import { showConfirmDialog } from '../../plugins/PluginDialog';
 import { Toggle } from '../../components/Toggle';
 import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsHelp } from './SettingsLayout';
 import { Button } from '../../components/Button';
+import { RetiredPluginDataSection } from './RetiredPluginSection';
 
 /** Plain source word shown in a plugin's meta line. */
 export function pluginSourceLabel(entry: PluginRegistryEntry): string | null {
@@ -933,6 +934,9 @@ export function PluginListSettings() {
               </SettingsField>
             )}
           </SettingsSection>
+
+          {/* Retired plugins that were uninstalled but left data (#2756) */}
+          <RetiredPluginDataSection />
         </>
       )}
 

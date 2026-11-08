@@ -53,7 +53,6 @@ describe('testing utilities', () => {
       expect(api.events).toBeDefined();
       expect(api.settings).toBeDefined();
       expect(api.agents).toBeDefined();
-      expect(api.hub).toBeDefined();
       expect(api.navigation).toBeDefined();
       expect(api.widgets).toBeDefined();
       expect(api.context).toBeDefined();
@@ -141,11 +140,6 @@ describe('testing utilities', () => {
       expect(api.project.projectPath).toBe('/custom');
       // Other namespaces still have defaults
       expect(api.projects.list()).toEqual([]);
-    });
-
-    it('hub namespace exists', () => {
-      const api = createMockAPI();
-      expect(api.hub).toBeDefined();
     });
 
     it('navigation API methods are callable', () => {

@@ -30,7 +30,6 @@ Open `Cmd+K`, then type a prefix:
 |----------|--------|
 | `Cmd+,` | Toggle Settings |
 | `Cmd+Shift+/` | Toggle Help |
-| `Cmd+Shift+H` | Go to Home |
 | `Cmd+B` | Toggle Sidebar |
 | `Cmd+Shift+B` | Toggle Accessory Panel |
 

@@ -1,7 +1,6 @@
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { DisplaySettingsView } from './DisplaySettingsView';
 import { useThemeStore } from '../../stores/themeStore';
-import { useUIStore } from '../../stores/uiStore';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 
 vi.mock('../../themes', async (importOriginal) => {
@@ -17,17 +16,12 @@ vi.mock('../../themes', async (importOriginal) => {
 
 const realSetThemeGradients = useThemeStore.getState().setThemeGradients;
 const mockSetTheme = vi.fn();
-const mockSetShowHome = vi.fn();
 
 function resetStores() {
   useThemeStore.setState({
     themeId: 'catppuccin-mocha' as any,
     availableThemeIds: ['catppuccin-mocha', 'catppuccin-latte'] as any,
     setTheme: mockSetTheme,
-  });
-  useUIStore.setState({
-    showHome: true,
-    setShowHome: mockSetShowHome,
   });
 }
 
@@ -83,12 +77,13 @@ describe('DisplaySettingsView', () => {
     expect(save).toHaveBeenCalledTimes(2);
   });
 
-  it('renders Home view toggle', () => {
+  it('has no Views section in the classic layout, since Home was removed', () => {
     render(<DisplaySettingsView />);
-    expect(screen.getByText('Home')).toBeInTheDocument();
+    expect(screen.queryByText('Views')).toBeNull();
+    expect(screen.queryByText('Home')).toBeNull();
   });
 
-  it('shows the idle window instead of Home in the new layout', async () => {
+  it('shows the idle window and sidebar order in the new layout', async () => {
     const { useChromeStore } = await import('../../chrome/chromeStore');
     useChromeFlagStore.setState({ enabled: true });
     try {

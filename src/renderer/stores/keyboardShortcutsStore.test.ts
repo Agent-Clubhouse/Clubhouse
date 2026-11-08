@@ -66,8 +66,8 @@ describe('keyboardShortcutsStore', () => {
     expect(shortcuts['toggle-help']).toBeDefined();
     expect(shortcuts['toggle-help'].defaultBinding).toBe('Meta+Shift+/');
     expect(shortcuts['toggle-assistant']).toBeUndefined();
-    expect(shortcuts['go-home']).toBeDefined();
-    expect(shortcuts['go-home'].defaultBinding).toBe('Meta+Shift+H');
+    // Removed with Home (v1).
+    expect(shortcuts['go-home']).toBeUndefined();
     expect(shortcuts['toggle-sidebar']).toBeDefined();
     expect(shortcuts['toggle-sidebar'].defaultBinding).toBe('Meta+B');
     expect(shortcuts['toggle-accessory']).toBeDefined();
