@@ -3,6 +3,7 @@ import { IPC } from '../shared/ipc-channels';
 import type { DispatcherState } from '../shared/dispatcher-types';
 import type { AgentCardFields, AgentCardView } from '../shared/dispatcher-agent-card';
 import type { DispatcherBehavior } from '../shared/dispatcher-behavior';
+import type { DispatcherUsageSplit } from '../shared/dispatcher-usage';
 
 export const dispatcher = {
   dispatcher: {
@@ -13,6 +14,8 @@ export const dispatcher = {
     setBehavior: (level: DispatcherBehavior): Promise<DispatcherState> => ipcRenderer.invoke(IPC.DISPATCHER.SET_BEHAVIOR, level),
     /** Starts its conversation over (#3043): now if it's running, else at its next start. Memory stays. */
     clearChat: (): Promise<{ cleared: 'now' | 'next_start' }> => ipcRenderer.invoke(IPC.DISPATCHER.CLEAR_CHAT),
+    /** Today's usage, conversations apart from background work (#3040). */
+    getUsage: (): Promise<DispatcherUsageSplit> => ipcRenderer.invoke(IPC.DISPATCHER.GET_USAGE),
     onChanged: (callback: (state: DispatcherState) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, state: DispatcherState) => callback(state);
       ipcRenderer.on(IPC.DISPATCHER.CHANGED, listener);
