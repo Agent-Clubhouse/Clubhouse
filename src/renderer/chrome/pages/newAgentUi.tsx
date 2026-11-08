@@ -6,7 +6,7 @@ export { tabPanelProps } from '../../components/TabList';
 export const IS_MAC = typeof window !== 'undefined' && window.clubhouse?.platform === 'darwin';
 
 export const inputClass = 'h-7 px-2 rounded-md border border-surface-1 bg-ctp-crust text-[13px] text-ctp-text placeholder:text-ctp-overlay0 focus-ring';
-export const selectClass = `${inputClass} pr-6 cursor-pointer`;
+export const selectClass = `${inputClass} cursor-pointer`;
 export const mono = 'font-mono text-xs';
 /** The quiet text link in a footer's left corner ("Copy another agent…", "Back"). */
 export const footerLinkClass = 'text-xs text-ctp-subtext0 hover:text-ctp-text cursor-pointer focus-ring rounded disabled:opacity-50 disabled:cursor-not-allowed';

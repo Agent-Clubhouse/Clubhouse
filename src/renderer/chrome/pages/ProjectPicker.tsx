@@ -92,12 +92,12 @@ export function ProjectPicker({ projects, projectIcons, activity, value, onChang
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className={`w-[340px] max-w-full h-7 px-2 rounded-md border bg-ctp-crust flex items-center gap-2 text-[13px] text-ctp-text cursor-pointer focus-ring ${open ? 'border-ctp-accent' : 'border-surface-1'}`}
+        className={`w-[340px] max-w-full h-7 pl-2 pr-2.5 rounded-md border bg-ctp-crust flex items-center gap-2 text-[13px] text-ctp-text cursor-pointer focus-ring ${open ? 'border-ctp-accent' : 'border-surface-1'}`}
       >
         {current && <ProjectSquare project={current} iconUrl={projectIcons[current.id]} />}
         <span className="truncate">{current ? label(current) : 'Choose a project'}</span>
         {current && <span className="text-xs text-ctp-overlay1 truncate">{current.path}</span>}
-        <span className="ml-auto flex text-ctp-overlay1">{ChevronDown}</span>
+        <span className="ml-auto flex shrink-0 text-ctp-overlay1">{ChevronDown}</span>
       </button>
       {open && (
         <div
