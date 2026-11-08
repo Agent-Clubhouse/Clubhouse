@@ -12,6 +12,11 @@
  * arrives while the first one is waking it is delivered to the woken session
  * instead of finding a wake in progress.
  *
+ * Actions use the same path (#3042). An agent's action wakes the Dispatcher
+ * only as far as that agent may. The Dispatcher's own subscriptions, and
+ * Clubhouse's actions, send as the Dispatcher itself: waking yourself needs no
+ * grant. An action can't wait for an Ask first answer, so it is not delivered.
+ *
  * dispatcherInboxId is the one place that says which session takes agents'
  * messages. Today that is the Dispatcher agent itself.
  */
@@ -79,6 +84,8 @@ export interface DispatcherDeliveryRequest {
   /** The call itself, for an Ask first request the user approves. */
   toolName: string;
   args: Record<string, unknown>;
+  /** Sent by an action's step (#3042): nobody can make the call again, so Ask first isn't asked. */
+  fromAction?: boolean;
 }
 
 export type DispatcherDelivery =
@@ -126,7 +133,9 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
     return { delivered: false, text: `${targetName} is turned off, so the message was not delivered.` };
   }
 
-  switch (dispatcherWakeDecision(senderId)) {
+  // The Dispatcher's own subscription (or Clubhouse acting for it) wakes itself: no grant to check.
+  const decision = senderId === inboxId ? 'allow' : dispatcherWakeDecision(senderId);
+  switch (decision) {
     case 'refuse':
       appLog('core:mcp', 'info', 'send_message: sender may not wake the Dispatcher', { meta });
       return {
@@ -135,6 +144,13 @@ async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise
           + 'so the message was not delivered. Only the user can grant it; ask them if you need it.',
       };
     case 'ask': {
+      if (req.fromAction) {
+        appLog('core:mcp', 'info', 'send_message: an action may not wake the Dispatcher without asking', { meta });
+        return {
+          delivered: false,
+          text: `${targetName} is asleep, and waking it asks the user first (agent.wake on the Dispatcher), so an action can't wake it.`,
+        };
+      }
       const outcome = await askFirst(senderId, req.toolName, req.args, [{ action: 'agent.wake', where: 'the Dispatcher' }]);
       if (outcome.kind === 'asked') return { delivered: false, text: `${targetName} is asleep, so the message was not delivered. ${outcome.text}` };
       break;
