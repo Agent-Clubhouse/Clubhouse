@@ -277,6 +277,7 @@ describe('Composer context beside model and effort (#2790)', () => {
     expect(pill.getAttribute('title')).toContain('Context 300K, compacts at 267K. Next start: 500K');
     fireEvent.click(pill);
     const section = screen.getByTestId('chat-model-menu-context');
+    expect(screen.getByRole('menu')).toHaveAttribute('aria-describedby', section.id);
     expect(section).toHaveTextContent('300K, compacts at 267K');
     expect(section).toHaveTextContent('Next start: 500K.');
     expect(section).toHaveTextContent('A running session keeps its context.');
@@ -290,7 +291,11 @@ describe('Composer context beside model and effort (#2790)', () => {
     renderComposer({ context: { now: '200K', next: null } }, { modelSwitch: 'none' });
     const pill = screen.getByTestId('chat-model-pill');
     expect(pill).not.toBeDisabled();
+    expect(pill).toHaveAttribute('aria-haspopup', 'dialog');
     fireEvent.click(pill);
+    // Nothing to pick, so a labelled dialog, not an empty menu.
+    expect(screen.getByRole('dialog', { name: 'Context' })).toBeInTheDocument();
+    expect(screen.queryByRole('menu')).toBeNull();
     expect(screen.queryAllByRole('menuitemradio')).toHaveLength(0);
     expect(screen.getByTestId('chat-model-menu-context')).toHaveTextContent('200K');
     expect(screen.queryByTestId('chat-model-menu-context-open')).toBeNull();

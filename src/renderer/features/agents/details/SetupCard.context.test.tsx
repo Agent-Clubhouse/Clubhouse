@@ -30,7 +30,7 @@ afterEach(() => {
 describe('Setup card context and session model (#2790)', () => {
   it('shows what the session runs with and what waits for the next start, and a model changed in the session', async () => {
     window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: 'm1', model: 'sonnet', contextWindow: '500000' })) as never;
-    const chat = { ...createChatViewState('m1'), model: 'opus', contextLimits: { effectiveTokens: 300000, compactAtTokens: 267000, reservedTokens: null } };
+    const chat = { ...createChatViewState('m1'), model: 'opus', startModel: 'sonnet', contextLimits: { effectiveTokens: 300000, compactAtTokens: 267000, reservedTokens: null } };
     render(<SettingsCard agent={agent} chat={chat} projectPath="/work/proj" provider="Claude Code" />);
     await waitFor(() => expect(screen.getByTestId('details-setup-context')).toHaveTextContent('300K, compacts at 267K. Next start: 500K'));
     expect(screen.getByTestId('details-setup-runs-on')).toHaveTextContent('Claude Code · opus. Next start: sonnet');
@@ -45,6 +45,15 @@ describe('Setup card context and session model (#2790)', () => {
     render(<SettingsCard agent={{ ...agent, status: 'sleeping' }} projectPath="/work/proj" provider="Claude Code" />);
     await waitFor(() => expect(screen.getByTestId('details-setup-runs-on')).toBeInTheDocument());
     expect(screen.queryByTestId('details-setup-context')).toBeNull();
+  });
+
+  it('says nothing is waiting when the session already runs at the saved size', async () => {
+    window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: 'm1', contextWindow: '300000' })) as never;
+    const chat = { ...createChatViewState('m1'), contextLimits: { effectiveTokens: 300000, compactAtTokens: 267000, reservedTokens: null } };
+    render(<SettingsCard agent={agent} chat={chat} projectPath="/work/proj" provider="Claude Code" />);
+    await waitFor(() => expect(window.clubhouse.agent.getDurableConfig).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('details-setup-context')).toHaveTextContent('300K, compacts at 267K'));
+    expect(screen.getByTestId('details-setup-context')).not.toHaveTextContent('Next start');
   });
 
   it('opens the Settings page, where model and context are changed', async () => {

@@ -24,7 +24,7 @@ import { Button } from '../../../components/Button';
 import { useEffectiveOrchestrators } from '../../../hooks/useEffectiveOrchestrators';
 import { useModelOptions } from '../../../hooks/useModelOptions';
 import { useContextWindowOptions } from '../../../hooks/useContextWindowOptions';
-import { ContextWindowSelect, contextSummary, contextWindowHelp, formatContextChoice, nowAndNextStart, sessionModelLine } from '../ContextWindowField';
+import { ContextWindowSelect, contextSummary, contextWindowHelp, formatContextChoice, nowAndNextStart, pendingContextChoice, sessionModelLine } from '../ContextWindowField';
 import { useAgentSettingsPages } from '../agentSettingsPages';
 import { buildOrchestratorOptions } from '../orchestrator-options';
 import { useCliChangeConfirm } from '../useCliChangeConfirm';
@@ -224,9 +224,9 @@ export function SettingsCard(props: SettingsCardProps) {
   const session = chat && awake ? chat : undefined;
   const modelNow = modelLabel(session ? session.model : agent.model, session);
   const savedModel = config ? config.model : agent.model;
-  const model = (session && sessionModelLine(modelNow, savedModel, modelLabel(savedModel, session))) || modelNow;
+  const model = sessionModelLine(session, modelNow, modelLabel(savedModel, session)) || modelNow;
   const runsOn = `${provider} · ${model}`;
-  const saved = config?.contextWindow ? formatContextChoice(config.contextWindow) : null;
+  const saved = pendingContextChoice(config?.contextWindow, session?.contextLimits);
   const context = nowAndNextStart(session ? contextSummary(session.contextLimits, session.usage.context?.size) : null, saved);
   return <SetupCard agent={agent} projectPath={projectPath} setup={setup} runsOn={runsOn} context={context} />;
 }
@@ -284,8 +284,9 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
   const modelId = chat && !asleep ? chat.model : (saved ? saved.model : agent.model);
   const model = modelLabel(modelId, asleep ? undefined : chat);
   // A model changed in the chat session isn't saved: the next start uses the saved one (#2790).
+  // Only an agent that starts again has a next start, so not a quick agent.
   const savedModelId = saved ? saved.model : agent.model;
-  const modelRow = (!asleep && chat && sessionModelLine(model, savedModelId, modelLabel(savedModelId, chat))) || model;
+  const modelRow = (!asleep && agent.kind === 'durable' && sessionModelLine(chat, model, modelLabel(savedModelId, chat))) || model;
   const savedLevel = recordAccess(saved ?? agent);
   // The level a chat session starts at: the saved one, or the nearest lower one chat has.
   const startLevel = savedLevel && chat && !asleep ? startableAccess(savedLevel, orchestrator, 'chat') : savedLevel;
@@ -342,7 +343,7 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
   const contextOptions = useContextWindowOptions(editing && open, projectPath, orchestrator, modelValue);
   // What the session reports now, kept apart from the saved next-start choice.
   const contextNow = !asleep && chat ? contextSummary(chat.contextLimits, chat.usage.context?.size) : null;
-  const contextRow = nowAndNextStart(contextNow, saved?.contextWindow && !asleep ? formatContextChoice(saved.contextWindow) : null);
+  const contextRow = nowAndNextStart(contextNow, !asleep ? pendingContextChoice(saved?.contextWindow, chat?.contextLimits) : null);
 
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const { effectiveOrchestrators } = useEffectiveOrchestrators();

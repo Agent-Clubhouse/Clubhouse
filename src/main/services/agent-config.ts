@@ -1631,7 +1631,9 @@ async function updateDurableConfigInner(
   // A managed agent's setup-changed bar compares these with what its session started on.
   // Auto-sleep and the helper template apply at once, but Settings and Preview show them, so they refresh too.
   if (agent.managed && (updates.orchestrator !== undefined || updates.model !== undefined || updates.freeAgentMode !== undefined || updates.access !== undefined
-    || updates.effort !== undefined || updates.idleSleep !== undefined || updates.helperTemplateId !== undefined)) noteManagedSettingsChanged();
+    || updates.effort !== undefined || updates.idleSleep !== undefined || updates.helperTemplateId !== undefined
+    // The Setup card and the composer show what the next start uses (#2790).
+    || updates.contextWindow !== undefined)) noteManagedSettingsChanged();
   await auditChanges('agent', 'agent', agentId, auditBefore, pickAudited(agent, AGENT_AUDIT_CATALOG), AGENT_AUDIT_CATALOG);
   // A running chat session picks the new timeout up now.
   if (updates.idleSleep !== undefined) setAgentIdleSleep(agentId, agent.idleSleep);

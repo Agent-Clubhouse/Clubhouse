@@ -8,7 +8,7 @@
  * the slash menu takes Up/Down/Tab/Enter/Esc only while it's open.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, messageSummary, switchNote, type AvailableCommand, type ChatCapabilities, type ChatModelOption, type PermissionLevel } from '../../../../shared/chat';
 import type { PlanEntry } from '../../../../shared/chat';
 import type { QueuedMessage } from '../../../stores/chatStore';
@@ -281,6 +281,7 @@ function ModelPill({ models, efforts, model, modelUnknown, effort, effortIsDefau
   const close = useCallback(() => setOpen(false), []);
   useCloseOnMouseDown(open, close);
   const contextLine = composerContextLine(context);
+  const contextId = useId();
   const modelSwitch = capabilities?.modelSwitch ?? 'none';
   const canChange = models.length > 0 && modelSwitch !== 'none';
   // The menu also opens just for the context, when the model can't change here.
@@ -300,7 +301,7 @@ function ModelPill({ models, efforts, model, modelUnknown, effort, effortIsDefau
         type="button"
         disabled={!canOpen}
         onClick={() => setOpen((o) => !o)}
-        aria-haspopup="menu"
+        aria-haspopup={canChange ? 'menu' : 'dialog'}
         aria-expanded={open}
         title={[canChange ? fullName : `${fullName}. This agent can't change model mid-session.`, contextLine].filter(Boolean).join('\n')}
         className={chipClass}
@@ -310,7 +311,12 @@ function ModelPill({ models, efforts, model, modelUnknown, effort, effortIsDefau
         {canOpen && <ChevronDown className="text-ctp-overlay1 flex-shrink-0" />}
       </button>
       {open && (
-        <div role="menu" className={`${menuClass} w-[300px] max-h-[360px] overflow-y-auto`} onMouseDown={(e) => e.stopPropagation()} data-testid="chat-model-menu">
+        <div
+          // Only the context to show, with nothing to pick: a dialog, not an empty menu.
+          role={canChange ? 'menu' : 'dialog'}
+          aria-label={canChange ? undefined : 'Context'}
+          aria-describedby={canChange && contextLine ? contextId : undefined}
+          className={`${menuClass} w-[300px] max-h-[360px] overflow-y-auto`} onMouseDown={(e) => e.stopPropagation()} data-testid="chat-model-menu">
           {canChange && <div className="px-2 py-1.5 text-[11.5px] font-semibold text-ctp-overlay1">Model</div>}
           {canChange && models.map((m) => {
             const selected = m.id === current?.id;
@@ -334,7 +340,7 @@ function ModelPill({ models, efforts, model, modelUnknown, effort, effortIsDefau
           })}
           {canChange && note && <div className="px-2 pt-1.5 text-[11px] text-ctp-overlay1">{note}</div>}
           {context && contextLine && (
-            <div className={canChange ? 'mt-1.5 pt-1.5 border-t border-surface-0' : ''} data-testid="chat-model-menu-context">
+            <div id={contextId} className={canChange ? 'mt-1.5 pt-1.5 border-t border-surface-0' : ''} data-testid="chat-model-menu-context">
               <div className="px-2 py-1 text-[11.5px] font-semibold text-ctp-overlay1">Context</div>
               <div className="px-2 text-[12px] text-ctp-text">{context.now ?? 'Not reported yet'}</div>
               <div className="px-2 pt-0.5 text-[11px] text-ctp-overlay1">
@@ -343,7 +349,7 @@ function ModelPill({ models, efforts, model, modelUnknown, effort, effortIsDefau
               {context.onOpen && (
                 <button
                   type="button"
-                  role="menuitem"
+                  role={canChange ? 'menuitem' : undefined}
                   onClick={() => { setOpen(false); context.onOpen?.(); }}
                   className="mx-2 mt-1 text-[11.5px] text-ctp-link underline focus-ring rounded-sm"
                   data-testid="chat-model-menu-context-open"

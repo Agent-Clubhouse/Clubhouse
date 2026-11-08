@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { claudeContextWindowOptions, copilotContextWindowOptions } from '../../../shared/context-window';
-import { ContextWindowSelect, contextSummary, contextWindowHelp, formatContextChoice, nowAndNextStart, sessionModelLine } from './ContextWindowField';
+import { ContextWindowSelect, contextSummary, contextWindowHelp, formatContextChoice, nowAndNextStart, pendingContextChoice, sessionModelLine } from './ContextWindowField';
 
 describe('ContextWindowSelect', () => {
   const options = claudeContextWindowOptions('claude-haiku-4-5');
@@ -65,11 +65,19 @@ describe('now and next start (#2790)', () => {
     expect(nowAndNextStart(null, null)).toBeNull();
   });
 
-  it('names a session model only when it differs from a saved named model', () => {
-    expect(sessionModelLine('Opus 5.5', 'sonnet', 'Sonnet 5.5')).toBe('Opus 5.5. Next start: Sonnet 5.5');
-    expect(sessionModelLine('Opus 5.5', 'opus', 'Opus 5.5')).toBeNull();
-    expect(sessionModelLine('Opus 5.5', 'default', 'Default model')).toBeNull();
-    expect(sessionModelLine('Opus 5.5', undefined, 'Default model')).toBeNull();
-    expect(sessionModelLine(null, 'sonnet', 'Sonnet 5.5')).toBeNull();
+  it('names the next start\'s model only when the session moved off the model it started on', () => {
+    expect(sessionModelLine({ model: 'opus', startModel: 'sonnet' }, 'Opus 5.5', 'Sonnet 5.5')).toBe('Opus 5.5. Next start: Sonnet 5.5');
+    expect(sessionModelLine({ model: 'opus', startModel: 'sonnet' }, 'Opus 5.5', 'Default model')).toBe('Opus 5.5. Next start: Default model');
+    // Started on it: a saved full id and the session's alias for it say nothing.
+    expect(sessionModelLine({ model: 'opus', startModel: 'opus' }, 'Opus 5.5', 'claude-opus-5-5')).toBeNull();
+    expect(sessionModelLine({ model: 'opus', startModel: null }, 'Opus 5.5', 'Sonnet 5.5')).toBeNull();
+    expect(sessionModelLine(undefined, 'Opus 5.5', 'Sonnet 5.5')).toBeNull();
+  });
+
+  it('treats a saved size the session already runs at as nothing waiting', () => {
+    expect(pendingContextChoice('300000', { effectiveTokens: 300000, compactAtTokens: 267000, reservedTokens: 33000 })).toBeNull();
+    expect(pendingContextChoice('500000', { effectiveTokens: 300000, compactAtTokens: null, reservedTokens: null })).toBe('500K');
+    expect(pendingContextChoice('500000', null)).toBe('500K');
+    expect(pendingContextChoice(undefined, null)).toBeNull();
   });
 });

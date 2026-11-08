@@ -456,15 +456,15 @@ describe('Settings card context row (#2660)', () => {
   it('says when a model changed in the session differs from the saved one the next start uses (#2790)', async () => {
     useAgentDetailsStore.setState({ settingsOpen: true });
     window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: 'a1', model: 'sonnet' })) as never;
-    const chat = { ...createChatViewState('a1'), model: 'opus' };
+    const chat = { ...createChatViewState('a1'), model: 'opus', startModel: 'sonnet' };
     render(<SettingsCard agent={{ ...agent, status: 'running' }} chat={chat} projectPath="/p" provider="Claude Code" />);
     await waitFor(() => expect(screen.getByTestId('details-setting-model').textContent).toContain('opus. Next start: sonnet'));
   });
 
-  it('says nothing extra when the saved model is the default or the same (#2790)', async () => {
+  it('says nothing extra when the session runs the model it started on, whatever the saved id looks like (#2790)', async () => {
     useAgentDetailsStore.setState({ settingsOpen: true });
-    window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: 'a1' })) as never;
-    const chat = { ...createChatViewState('a1'), model: 'opus' };
+    window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: 'a1', model: 'claude-opus-5-5' })) as never;
+    const chat = { ...createChatViewState('a1'), model: 'opus', startModel: 'opus' };
     render(<SettingsCard agent={{ ...agent, status: 'running' }} chat={chat} projectPath="/p" provider="Claude Code" />);
     await waitFor(() => expect(window.clubhouse.agent.getDurableConfig).toHaveBeenCalled());
     await act(async () => {});

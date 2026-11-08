@@ -1236,5 +1236,23 @@ describe('context beside model and effort (#2790)', () => {
     renderState(state);
     await waitFor(() => expect(screen.getByTestId('chat-model-pill').getAttribute('title')).toContain('Context 300K. Next start: 500K'));
     expect(window.clubhouse.agent.getDurableConfig).toHaveBeenCalledWith('/work/p', FIXTURE_AGENT_ID);
+    // Not managed: its Settings page locks context while it runs, so no link that leads nowhere.
+    fireEvent.click(screen.getByTestId('chat-model-pill'));
+    expect(screen.queryByTestId('chat-model-menu-context-open')).toBeNull();
+  });
+
+  it('links a managed agent to its Settings page from the main view only', async () => {
+    useProjectStore.setState({ projects: [{ id: 'proj-1', name: 'p', path: '/work/p' }] as never });
+    window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ id: FIXTURE_AGENT_ID, managed: true, contextWindow: '500000' })) as never;
+    const state = { ...fold(chatFixture('claude', 'conversation')), contextLimits: { effectiveTokens: 300000, compactAtTokens: null, reservedTokens: null } };
+    const { unmount } = renderState(state);
+    await waitFor(() => expect(screen.getByTestId('chat-model-pill').getAttribute('title')).toContain('Next start: 500K'));
+    fireEvent.click(screen.getByTestId('chat-model-pill'));
+    await waitFor(() => expect(screen.getByTestId('chat-model-menu-context-open')).toBeInTheDocument());
+    unmount();
+    render(<ChatViewBody agent={agent} state={state} actions={makeActions()} providerName="Provider" context="canvas" />);
+    await waitFor(() => expect(screen.getByTestId('chat-model-pill').getAttribute('title')).toContain('Next start: 500K'));
+    fireEvent.click(screen.getByTestId('chat-model-pill'));
+    expect(screen.queryByTestId('chat-model-menu-context-open')).toBeNull();
   });
 });
