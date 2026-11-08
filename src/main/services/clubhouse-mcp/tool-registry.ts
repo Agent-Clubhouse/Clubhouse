@@ -12,7 +12,7 @@ import { deniedGroupProjectTools } from '../../../shared/group-project-admin';
 import { appLog } from '../log-service';
 import { isCrossProjectEnabled, isOrchestrationEnabled, onOrchestrationGateChange } from './orchestration-gate';
 import { isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
-import { mcpCallAccess } from './mcp-call-gate';
+import { mcpCallAccess, mcpCallerKind } from './mcp-call-gate';
 import { CROSS_PROJECT_OFF_MESSAGE, MCP_CALLER_UNKNOWN_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
 import { getProvider } from '../../orchestrators';
 
@@ -49,10 +49,13 @@ function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
  *   the Dispatcher, whatever its policy says.
  * - `fixedToolList` (#2603): the way to a wire added after the session started,
  *   on for agents whose CLI never re-reads its tool list.
+ * - `actions` (#2952): the Actions tools, on for every agent that can own an
+ *   action: not for quick agents, which end with their task, and not for the
+ *   Dispatcher while it is turned off.
  *
  * A tool may name several groups; it is available when any of them is on.
  */
-export type ToolGroup = 'orchestration' | 'crossProject' | 'dispatcher' | 'fixedToolList';
+export type ToolGroup = 'orchestration' | 'crossProject' | 'dispatcher' | 'fixedToolList' | 'actions';
 
 /** One group, or several (any one of them opens the tool). */
 export type ToolGroups = ToolGroup | readonly ToolGroup[];
@@ -72,6 +75,10 @@ const toolGroupGates: Record<ToolGroup, ToolGroupGate> = {
     refusal: CROSS_PROJECT_OFF_MESSAGE,
   },
   dispatcher: { isEnabled: isDispatcherAgent, refusal: DISPATCHER_ONLY_MESSAGE },
+  actions: {
+    isEnabled: (agentId) => (isTrackedDispatcher(agentId) ? isDispatcherAgent(agentId) : mcpCallerKind(agentId) !== 'quick'),
+    refusal: 'Actions aren’t available to you: quick agents can’t own actions, and the Dispatcher can’t use them while it is turned off.',
+  },
   fixedToolList: {
     isEnabled: keepsFirstToolList,
     refusal: 'Your CLI refreshes its tool list, so call the wire\'s own tools instead.',

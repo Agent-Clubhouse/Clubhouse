@@ -204,6 +204,11 @@ export interface ActionStepResult {
 export interface ActionRun {
   id: string;
   actionId: string;
+  /**
+   * Who owned the action when it ran. Kept on the run so its owner can still
+   * read it after a one-time action deleted itself. Unset on runs from before.
+   */
+  owner?: ActionOwner;
   trigger: ActionRunTrigger;
   /** Ids of the actions whose runs led to this one, oldest first. */
   chain: string[];

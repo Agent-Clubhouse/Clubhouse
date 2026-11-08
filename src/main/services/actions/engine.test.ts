@@ -50,6 +50,8 @@ interface Setup {
   running?: Set<string>;
   stepImpl?: (step: ActionStep, ctx: StepContext) => Promise<ActionStepResult>;
   refuse?: (step: ActionStep) => string | null;
+  refuseSource?: (trigger: Action['trigger']) => string | null;
+  maxActions?: number;
   start?: number;
 }
 
@@ -99,7 +101,11 @@ function setup(opts: Setup = {}) {
         return { kind: step.kind, outcome: 'done', detail: 'ok' };
       },
     },
-    rights: { checkStep: (_owner, step) => opts.refuse?.(step) ?? null },
+    rights: {
+      checkStep: (_owner, step) => opts.refuse?.(step) ?? null,
+      checkSource: (_owner, trigger) => opts.refuseSource?.(trigger) ?? null,
+      maxActions: (owner) => (owner.kind === 'user' ? null : opts.maxActions ?? null),
+    },
     hooks,
     newId: () => String(++n),
   });
@@ -542,5 +548,64 @@ describe('review fixes', () => {
     engine.start();
     await flush();
     expect(history('h')).toMatchObject([{ trigger: { kind: 'catch_up', at: START } }]);
+  });
+});
+
+describe('rights on sources, counts and turning on (#2952)', () => {
+  const lead = { kind: 'agent', agentId: 'lead' } as const;
+  const whenPmSleeps = { kind: 'event', event: 'agent.slept', source: { kind: 'agent', agentId: 'pm' } } as const;
+
+  it('refuses a source the owner may not watch, before checking it exists', () => {
+    const { engine } = setup({ refuseSource: (t) => (t.kind === 'event' ? 'release-lead can’t act on that agent.' : null) });
+    engine.start();
+    expect(() => engine.create({ trigger: whenPmSleeps, steps: [notify] }, lead)).toThrow('release-lead can’t act on that agent.');
+    const missing = { ...whenPmSleeps, source: { kind: 'agent', agentId: 'nobody' } };
+    expect(() => engine.create({ trigger: missing, steps: [notify] }, lead)).toThrow('release-lead can’t act on that agent.');
+    const a = engine.create({ trigger: weekdays9, steps: [notify] }, lead);
+    expect(() => engine.update(a.id, { trigger: whenPmSleeps, steps: [notify] })).toThrow('can’t act on that agent');
+  });
+
+  it('a source no longer allowed when the trigger fires is a run that couldn’t run', async () => {
+    let allowed = true;
+    const { engine, event, history, stepCalls, hooks } = setup({ refuseSource: () => (allowed ? null : 'release-lead can’t act on that agent.') });
+    engine.start();
+    const a = engine.create({ trigger: whenPmSleeps, steps: [notify] }, lead);
+    allowed = false;
+    event({ type: 'agent.asleep', agentId: 'pm' });
+    await flush();
+    expect(stepCalls).toHaveLength(0);
+    expect(history(a.id)[0]).toMatchObject({ outcome: 'failed', reason: 'Couldn’t run: release-lead can’t act on that agent.' });
+    expect(hooks.failed).toHaveBeenCalled();
+  });
+
+  it('caps the actions one owner may have', () => {
+    const { engine } = setup({ maxActions: 2 });
+    engine.start();
+    engine.create({ trigger: weekdays9, steps: [notify] }, lead);
+    engine.create({ trigger: weekdays9, steps: [notify] }, { kind: 'agent', agentId: 'lead', helper: false });
+    expect(() => engine.create({ trigger: weekdays9, steps: [notify] }, lead)).toThrow(/2 actions already/);
+    expect(() => engine.create({ trigger: weekdays9, steps: [notify] }, { kind: 'agent', agentId: 'pm' })).not.toThrow();
+    for (let i = 0; i < 3; i++) engine.create({ trigger: weekdays9, steps: [notify] }, user);
+  });
+
+  it('checks rights again when an action is turned on', () => {
+    let allowed = true;
+    const { engine } = setup({ refuse: () => (allowed ? null : 'release-lead can’t act on that agent.') });
+    engine.start();
+    const a = engine.create({ trigger: weekdays9, steps: [{ kind: 'wake', agentId: 'pm' }] }, lead);
+    engine.setEnabled(a.id, false);
+    allowed = false;
+    expect(() => engine.setEnabled(a.id, true)).toThrow('can’t act on that agent');
+    expect(engine.setEnabled(a.id, false).enabled).toBe(false);
+  });
+
+  it('keeps the owner on each run, so a one-time action’s history says whose it was', async () => {
+    const { engine, clock, history } = setup();
+    engine.start();
+    const a = engine.create({ trigger: { kind: 'once', at: START + MIN }, steps: [notify] }, lead);
+    await clock.advance(2 * MIN);
+    await flush();
+    expect(engine.get(a.id)).toBeUndefined();
+    expect(history(a.id)[0]).toMatchObject({ outcome: 'done', owner: lead });
   });
 });

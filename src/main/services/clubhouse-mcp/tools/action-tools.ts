@@ -34,6 +34,7 @@ import {
   SCHEDULE_PRESETS,
   describeAction,
   presetToCron,
+  suggestActionName,
   DEFAULT_PRESET_FIELDS,
   type Action,
   type ActionErrorCode,
@@ -75,7 +76,9 @@ export interface ActionScope {
  * - A helper's actions are marked as a helper's: its steps may act only on
  *   itself (rights.ts), and they are deleted when it is disposed.
  * - A quick agent can't own actions: it ends when its task does.
- * What each step may do is checked by the engine on create, update and run.
+ * What each step may do and what a trigger may watch, and how many actions
+ * an owner may have, are the rest of the interim rule: rights.ts, which the
+ * engine checks on create, update, turning on and every run.
  */
 export function actionScope(callerId: string): ActionScope {
   if (isDispatcherAgent(callerId)) {
@@ -150,15 +153,29 @@ function agentRef(value: unknown, ctx: InputContext): unknown {
 }
 
 function projectRef(value: unknown, ctx: InputContext, field: string): unknown {
+  const own = ctx.agentId ? actions.projectIdOfAgent(ctx.agentId) : undefined;
   if (value === undefined || value === null || value === '') {
-    const own = ctx.agentId ? actions.projectIdOfAgent(ctx.agentId) : undefined;
     if (own) return own;
     throw new ActionError('invalid_input', `${field} is required: a project id, name or path.`);
   }
   if (typeof value !== 'string') return value;
-  const id = actions.findProjectId(value);
-  if (!id) throw new ActionError('invalid_input', `No project matches "${value}".`);
+  // An agent resolves only its own project, so a name never tells it whether another exists.
+  const id = actions.findProjectId(value, ctx.agentId ? (p) => p === own : undefined);
+  if (!id) throw new ActionError('invalid_input', 'No project you can use has that id, name or path.');
   return id;
+}
+
+/** A one-time action's time: epoch ms, or a local date and time. Never in the past. */
+function onceAt(value: unknown): unknown {
+  let at = value;
+  if (typeof value === 'string') {
+    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+    // Date.parse reads a bare date as UTC midnight; a person means local midnight.
+    at = dateOnly ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3])).getTime() : Date.parse(value);
+    if (!Number.isFinite(at)) throw new ActionError('invalid_input', `"${value}" isn’t a date and time. Use a form like 2026-11-08T09:00.`);
+  }
+  if (typeof at === 'number' && at < Date.now()) throw new ActionError('invalid_input', 'That time has already passed. Pick a time in the future.');
+  return at;
 }
 
 /** A whole number in range, the fallback when left out, or invalid_input. */
@@ -183,11 +200,7 @@ function prepareTrigger(raw: unknown, ctx: InputContext): unknown {
     };
     t.cron = presetToCron(preset, fields);
   }
-  if (t.kind === 'once' && typeof t.at === 'string') {
-    const at = Date.parse(t.at);
-    if (!Number.isFinite(at)) throw new ActionError('invalid_input', `"${t.at}" isn’t a date and time. Use a form like 2026-11-08T09:00.`);
-    t.at = at;
-  }
+  if (t.kind === 'once') t.at = onceAt(t.at);
   if (t.kind === 'event' && isObject(t.source)) {
     const source: Obj = { ...t.source };
     // App and project events take no source, or may name one project.
@@ -250,9 +263,12 @@ function updateAction(scope: ActionScope, args: Obj): unknown {
     return { action: present(actions.setActionEnabled(id, args.enabled)) };
   }
   const ctx = contextFor(scope);
+  // A name that was the suggestion for the old trigger and steps follows them.
+  const suggested = current.name === suggestActionName(current, actions.actionNames());
+  const followsSuggestion = args.name === undefined && suggested && (args.trigger !== undefined || args.steps !== undefined);
   // Fields left out keep their current value. The owner always stays.
   const input = {
-    name: args.name !== undefined ? args.name : current.name,
+    name: args.name !== undefined ? args.name : followsSuggestion ? undefined : current.name,
     trigger: args.trigger !== undefined ? prepareTrigger(args.trigger, ctx) : current.trigger,
     steps: args.steps !== undefined ? prepareSteps(args.steps, ctx) : current.steps,
     overlap: args.overlap !== undefined ? args.overlap : current.overlap,
@@ -288,9 +304,8 @@ function actionHistory(scope: ActionScope, args: Obj): unknown {
     return { actionId: id, action: present(view), runs: actions.actionHistory(id) };
   }
   // A one-time action deletes itself after it runs, and its history stays.
-  // Whose it was isn't kept, so only the Dispatcher reads that history.
-  if (scope.owner.kind !== 'dispatcher') throw new ActionError('not_found', NOT_FOUND);
-  const runs = actions.actionHistory(id);
+  // Each run keeps its owner; runs from before that are the Dispatcher's to read.
+  const runs = actions.actionHistory(id).filter((r) => (r.owner ? scope.canSee({ owner: r.owner }) : scope.owner.kind === 'dispatcher'));
   if (runs.length === 0) throw new ActionError('not_found', NOT_FOUND);
   return { actionId: id, runs };
 }
@@ -317,6 +332,8 @@ const TRIGGER_SCHEMA = {
     'helper.finished. Git events (local only, nothing is fetched): git.commit, git.branch_switched, ' +
     'git.remote_updated (pushed, pulled or fetched), with an optional branch filter. ' +
     'App events: app.started, project.added, project.removed. ' +
+    'What an action may watch follows the same rights as its steps: an agent may watch itself, its helpers, agents it is connected to ' +
+    'and its own project; a helper only itself; the Dispatcher agents connected to it and app events. ' +
     `delayMinutes (up to ${MAX_DELAY_MINUTES}) waits before running; when the wait ends the condition is checked again, ` +
     'and the run is cancelled if it no longer holds (for example the agent woke up again). The wait starts over on the next matching event.',
   properties: {
@@ -327,7 +344,7 @@ const TRIGGER_SCHEMA = {
     weekday: { type: 'number', description: 'Weekly schedules: 0 (Sunday) to 6 (Saturday). Default 1.' },
     cron: { type: 'string', description: 'Schedules: a 5-field cron line in local time. Required for preset "cron"; filled in from hour and minute for the others.' },
     missed: { type: 'string', enum: [...MISSED_RUN_RULES], description: 'Schedules: skip (default), once or each.' },
-    at: { type: ['string', 'number'], description: 'Once: a date and time like 2026-11-08T09:00 (local time when no zone is given), or epoch milliseconds.' },
+    at: { type: ['string', 'number'], description: 'Once: a date and time like 2026-11-08T09:00 (local time when no zone is given; a date alone is local midnight), or epoch milliseconds. Must be in the future.' },
     event: { type: 'string', enum: [...ACTION_EVENT_KINDS], description: 'Events: what should happen.' },
     source: {
       type: 'object',
@@ -351,11 +368,12 @@ const STEPS_SCHEMA = {
     '- {"kind":"wake","agentId":...,"prompt"?:...} wakes an agent, resuming its last session, with an optional first message.\n' +
     '- {"kind":"message","agentId":...,"text":...} messages an agent. A busy agent gets it on its next turn; a sleeping one is woken with it.\n' +
     '- {"kind":"quick","projectId"?:...,"worktreeAgentId"?:...,"prompt":...} starts a quick agent in a project\'s root, or in another agent\'s worktree. ' +
-    'Optional overrides: orchestrator, model, freeAgentMode.\n' +
+    'Optional overrides: orchestrator, model. It runs with the app\'s default access; only the person can choose Free Agent mode, in Settings.\n' +
     '- {"kind":"sleep","agentId":...} puts an agent to sleep.\n' +
     '- {"kind":"notify","text":...} sends the person a Clubhouse notification, following their notification settings.\n' +
-    'agentId "self" means you. Your actions may act on yourself, your helpers and agents you are connected to, and start quick agents ' +
-    'in your own project; a helper\'s actions may act only on itself. These rights are checked again on every run.',
+    'agentId "self" means you. An agent\'s actions may act on itself, its helpers and agents it is connected to, and start quick agents ' +
+    'in its own project; a helper\'s actions may act only on itself. The Dispatcher\'s actions may act on agents connected to it, ' +
+    'and can\'t start quick agents. These rights are checked again on every run.',
   items: {
     type: 'object',
     properties: {
@@ -367,7 +385,6 @@ const STEPS_SCHEMA = {
       worktreeAgentId: { type: 'string', description: 'quick: run in this agent\'s worktree instead of the project root.' },
       orchestrator: { type: 'string', description: 'quick: which CLI to use. Default: the Auto mapping.' },
       model: { type: 'string', description: 'quick: which model to use.' },
-      freeAgentMode: { type: 'boolean', description: 'quick: override the app\'s default access.' },
     },
     required: ['kind'],
   },
@@ -414,6 +431,9 @@ async function guarded(tool: ActionToolName, callerId: string, args: Obj, handle
   }
 }
 
+/** Listed for agents that can own actions: not quick agents, nor a turned-off Dispatcher. */
+const ACTIONS_GROUP = { group: 'actions' } as const;
+
 function schema(properties: Obj, required: string[] = []): McpToolDefinition['inputSchema'] {
   return { type: 'object', properties, ...(required.length > 0 && { required }) };
 }
@@ -425,10 +445,12 @@ export function registerActionTools(): void {
       description:
         'Create an action: a workflow Clubhouse runs on a schedule, when something happens, or once, whenever the app is open. ' +
         'You own it, and its usage counts toward you. There is no notice to the person; it shows in Settings > Actions with you as owner. ' +
+        'An agent may own up to 20 actions, a helper 5 and the Dispatcher 50. ' +
         RESULT_NOTE,
       inputSchema: schema(ACTION_FIELDS, ['trigger', 'steps']),
     },
     (callerId, args) => guarded('create_action', callerId, args, createAction),
+    ACTIONS_GROUP,
   );
   registerGlobalTool(
     'list_actions',
@@ -439,6 +461,7 @@ export function registerActionTools(): void {
       inputSchema: schema({}),
     },
     (callerId, args) => guarded('list_actions', callerId, args, (scope) => listActions(scope)),
+    ACTIONS_GROUP,
   );
   registerGlobalTool(
     'update_action',
@@ -450,6 +473,7 @@ export function registerActionTools(): void {
       inputSchema: schema({ ...ID_FIELD, ...ACTION_FIELDS }, ['id']),
     },
     (callerId, args) => guarded('update_action', callerId, args, updateAction),
+    ACTIONS_GROUP,
   );
   registerGlobalTool(
     'delete_action',
@@ -460,6 +484,7 @@ export function registerActionTools(): void {
       inputSchema: schema(ID_FIELD, ['id']),
     },
     (callerId, args) => guarded('delete_action', callerId, args, deleteAction),
+    ACTIONS_GROUP,
   );
   registerGlobalTool(
     'run_action',
@@ -470,6 +495,7 @@ export function registerActionTools(): void {
       inputSchema: schema(ID_FIELD, ['id']),
     },
     (callerId, args) => guarded('run_action', callerId, args, runAction),
+    ACTIONS_GROUP,
   );
   registerGlobalTool(
     'action_history',
@@ -480,5 +506,6 @@ export function registerActionTools(): void {
       inputSchema: schema(ID_FIELD, ['id']),
     },
     (callerId, args) => guarded('action_history', callerId, args, actionHistory),
+    ACTIONS_GROUP,
   );
 }
