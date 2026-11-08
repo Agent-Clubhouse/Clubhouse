@@ -1,5 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { THEMES, THEME_IDS, registerTheme, unregisterTheme, getTheme, getAllThemeIds, onRegistryChange } from './index';
+import { THEMES, THEME_IDS, PACK_THEMES, registerTheme, unregisterTheme, getTheme, getAllThemeIds, onRegistryChange } from './index';
+import {
+  SYNTAX_COMMENT_FLOOR, SYNTAX_FLOOR, TERMINAL_COLOR_FLOOR, TERMINAL_COLOR_KEYS, TERMINAL_DARK_ONLY_KEYS,
+  TERMINAL_FOREGROUND_FLOOR, UI_FLOORS, gradientStops, contrastRatio as floorRatio,
+} from './theme-contrast';
 import { ThemeId, ThemeDefinition } from '../../shared/types';
 import { NEON_CYBERPUNK_THEME } from '../../shared/__fixtures__/neon-cyberpunk-theme';
 
@@ -29,9 +33,10 @@ function contrastRatio(hex1: string, hex2: string): number {
 }
 
 describe('theme registry', () => {
-  it('exports all 9 themes', () => {
-    expect(THEME_IDS).toHaveLength(9);
-    expect(Object.keys(THEMES)).toHaveLength(9);
+  it('exports all 44 themes: the original nine and 35 from the Workshop packs (#2753)', () => {
+    expect(THEME_IDS).toHaveLength(44);
+    expect(Object.keys(THEMES)).toHaveLength(44);
+    expect(PACK_THEMES).toHaveLength(35);
   });
 
   it('contains all expected theme IDs', () => {
@@ -58,8 +63,8 @@ describe('theme registry', () => {
     }
   });
 
-  it('catppuccin-latte is the only light theme', () => {
-    const lightThemes = THEME_IDS.filter((id) => THEMES[id].type === 'light');
+  it('catppuccin-latte is the only light theme among the original nine', () => {
+    const lightThemes = THEME_IDS.filter((id) => THEMES[id].type === 'light' && !THEMES[id].collection);
     expect(lightThemes).toEqual(['catppuccin-latte']);
   });
 
@@ -83,7 +88,7 @@ describe('theme registry', () => {
       'warning', 'error', 'info', 'success', 'accent2', 'overlay', 'overlay0', 'overlay1',
     ];
 
-    for (const id of ['catppuccin-mocha', 'catppuccin-latte', 'solarized-dark', 'terminal', 'nord', 'dracula', 'tokyo-night', 'gruvbox-dark', 'cyberpunk'] as ThemeId[]) {
+    for (const id of THEME_IDS) {
       it(`${id} has all required color keys`, () => {
         const colors = THEMES[id].colors;
         for (const key of requiredColorKeys) {
@@ -242,6 +247,71 @@ describe('theme registry', () => {
       expect(mocha.terminal.blue).toBe('#89b4fa');
     });
   });
+});
+
+describe('Workshop pack themes (#2753)', () => {
+  const COLLECTIONS = ['Fall', 'Winter', 'Spring', 'Summer', 'Ocean', 'Tech Modern', 'Neon'];
+
+  it('are 35 new, unique ids in seven collections of five, none replacing an original', () => {
+    const ids = PACK_THEMES.map((t) => t.id);
+    expect(new Set(ids).size).toBe(35);
+    expect(ids).not.toContain('cyberpunk');
+    expect(THEMES['cyberpunk'].collection).toBeUndefined();
+    for (const name of COLLECTIONS) expect(PACK_THEMES.filter((t) => t.collection === name)).toHaveLength(5);
+    for (const t of PACK_THEMES) expect(THEMES[t.id]).toBe(t);
+  });
+
+  it('gives the Neon pack\'s Cyberpunk its own id and name', () => {
+    const neon = THEMES['neon-cyberpunk'];
+    expect(neon.name).toBe('Neon Cyberpunk');
+    expect(neon.collection).toBe('Neon');
+    expect(new Set(THEME_IDS.map((id) => THEMES[id].name)).size).toBe(44);
+  });
+
+  it('has no two themes with the same palette', () => {
+    const palettes = THEME_IDS.map((id) => JSON.stringify([THEMES[id].colors, THEMES[id].hljs, THEMES[id].terminal]));
+    expect(new Set(palettes).size).toBe(44);
+  });
+
+  it('keeps each dimmer step dimmer: overlay0 <= overlay1 <= subtext0 in contrast', () => {
+    for (const t of PACK_THEMES) {
+      const c = t.colors;
+      const r = (k: keyof typeof c) => floorRatio(c[k]!, c.base);
+      expect(r('overlay0'), `${t.id} overlay0`).toBeLessThanOrEqual(r('overlay1') + 0.01);
+      expect(r('overlay1'), `${t.id} overlay1`).toBeLessThanOrEqual(r('subtext0') + 0.01);
+    }
+  });
+
+  for (const t of PACK_THEMES) {
+    describe(t.id, () => {
+      // With gradients on (the default) the background gradient replaces base, so text must read on every stop.
+      const backdrops = [t.colors.base, ...gradientStops(t.gradients?.background)];
+
+      it('meets the UI floors against base and every background gradient stop', () => {
+        for (const [key, floor] of Object.entries(UI_FLOORS)) {
+          for (const bg of backdrops) {
+            expect(floorRatio(t.colors[key as keyof typeof UI_FLOORS], bg), `${key} on ${bg}`).toBeGreaterThanOrEqual(floor);
+          }
+        }
+      });
+
+      it('meets the syntax floors against base and mantle', () => {
+        for (const [key, color] of Object.entries(t.hljs)) {
+          const floor = key === 'comment' ? SYNTAX_COMMENT_FLOOR : SYNTAX_FLOOR;
+          for (const bg of [t.colors.base, t.colors.mantle]) {
+            expect(floorRatio(color, bg), `${key} on ${bg}`).toBeGreaterThanOrEqual(floor);
+          }
+        }
+      });
+
+      it('meets the terminal floors against the terminal background', () => {
+        const bg = t.terminal.background;
+        expect(floorRatio(t.terminal.foreground, bg)).toBeGreaterThanOrEqual(TERMINAL_FOREGROUND_FLOOR);
+        const keys = [...TERMINAL_COLOR_KEYS, ...(t.type === 'dark' ? TERMINAL_DARK_ONLY_KEYS : [])];
+        for (const key of keys) expect(floorRatio(t.terminal[key], bg), key).toBeGreaterThanOrEqual(TERMINAL_COLOR_FLOOR);
+      });
+    });
+  }
 });
 
 describe('registerTheme color fallbacks (#2472)', () => {
