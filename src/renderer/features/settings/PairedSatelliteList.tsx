@@ -6,10 +6,13 @@ import { Button } from '../../components/Button';
 
 interface Props {
   satellites: SatelliteConnection[];
+  /** Opens the pairing wizard for a satellite whose pairing can't be used any more. */
+  onPairAgain?: (satellite: SatelliteConnection) => void;
 }
 
 
-function StatusDot({ state, lastError }: { state: SatelliteConnection['state']; lastError?: string | null }) {
+function StatusDot({ state, lastError, needsPairing }: { state: SatelliteConnection['state']; lastError?: string | null; needsPairing?: boolean }) {
+  if (needsPairing) return <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-surface-2" />;
   const isIncompatible = lastError?.toLowerCase().includes('incompatible');
   const colors: Record<string, string> = {
     connected: 'bg-ctp-success',
@@ -20,7 +23,8 @@ function StatusDot({ state, lastError }: { state: SatelliteConnection['state']; 
   return <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isIncompatible ? 'bg-ctp-error' : colors[state] || 'bg-surface-2'}`} />;
 }
 
-function stateLabel(state: SatelliteConnection['state'], lastError?: string | null): string {
+function stateLabel(state: SatelliteConnection['state'], lastError?: string | null, needsPairing?: boolean): string {
+  if (needsPairing) return 'Needs pairing again';
   if (lastError?.toLowerCase().includes('incompatible')) return 'Incompatible';
   switch (state) {
     case 'connected': return 'Connected';
@@ -30,7 +34,7 @@ function stateLabel(state: SatelliteConnection['state'], lastError?: string | nu
   }
 }
 
-export function PairedSatelliteList({ satellites }: Props) {
+export function PairedSatelliteList({ satellites, onPairAgain }: Props) {
   const disconnect = useAnnexClientStore((s) => s.disconnect);
   const retry = useAnnexClientStore((s) => s.retry);
   const forgetSatellite = useAnnexClientStore((s) => s.forgetSatellite);
@@ -61,17 +65,25 @@ export function PairedSatelliteList({ satellites }: Props) {
             <div className="min-w-0">
               <div className="text-[13px] text-ctp-text truncate">{sat.alias}</div>
               <div className="flex items-center gap-1.5 text-xs text-ctp-overlay1 min-w-0">
-                <StatusDot state={sat.state} lastError={sat.lastError} />
-                <span>{stateLabel(sat.state, sat.lastError)}</span>
-                {sat.lastError && sat.state === 'disconnected' && (
+                <StatusDot state={sat.state} lastError={sat.lastError} needsPairing={sat.needsPairing} />
+                <span>{stateLabel(sat.state, sat.lastError, sat.needsPairing)}</span>
+                {sat.lastError && sat.state === 'disconnected' && !sat.needsPairing && (
                   <span className="text-ctp-error truncate">({sat.lastError})</span>
                 )}
               </div>
+              {sat.needsPairing && sat.lastError && (
+                <div className="text-xs text-ctp-overlay1">{sat.lastError}</div>
+              )}
             </div>
           </div>
 
           <div className="flex gap-1.5 shrink-0">
-            {sat.state === 'disconnected' && (
+            {sat.needsPairing && onPairAgain && (
+              <Button onClick={() => onPairAgain(sat)} kind="ghost">
+                Pair again
+              </Button>
+            )}
+            {sat.state === 'disconnected' && !sat.needsPairing && (
               <Button onClick={() => retry(sat.fingerprint)} kind="ghost">
                 Retry
               </Button>

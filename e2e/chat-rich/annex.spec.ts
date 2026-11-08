@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import * as https from 'https';
 import * as path from 'path';
 import { CHAT_MEDIA, md } from '../../src/main/orchestrators/adapters/testing/chat-script';
-import { enableAnnexViaPreload, getAnnexStatus, pairViaHttp } from '../annex-v2/helpers';
+import { enableAnnexViaPreload, getAnnexStatus, plainPairingPortRequest } from '../annex-v2/helpers';
 import { generateTestIdentity, type TestIdentity } from '../annex-v2/tls-test-utils';
 import { chatDom, openRichChat, setExperimentalFlags, TURN_TIMEOUT, type RichChat } from './harness';
 
@@ -122,11 +122,12 @@ test('claude: a missing file, and a controller without a pinned certificate, get
   const missing = await content(path.join(session.outsideDir, 'missing.pdf'));
   expect(missing).toEqual({ status: 404, body: { error: 'content_unavailable' } });
 
-  // A desktop-style controller pairs on the plain pairing port, so its certificate isn't pinned.
+  // The plain pairing port no longer pairs, so this identity never gets a pinned certificate.
   const status = await getAnnexStatus(session.window);
-  const desktop = generateTestIdentity();
-  await pairViaHttp('127.0.0.1', status.pairingPort, status.pin, desktop.ed25519PublicKeyBase64);
-  expect(await content(pdfPath, desktop)).toEqual({ status: 403, body: { error: 'client_certificate_required' } });
+  const unpinned = generateTestIdentity();
+  const plain = await plainPairingPortRequest('127.0.0.1', status.pairingPort, 'POST', '/pair', { pin: status.pin, publicKey: unpinned.ed25519PublicKeyBase64 });
+  expect(plain).toEqual({ status: 410, body: { error: 'update_required', message: expect.any(String) } });
+  expect(await content(pdfPath, unpinned)).toEqual({ status: 401, body: { error: 'peer_not_paired', message: expect.any(String) } });
 });
 
 test('claude: with rich content off, the snapshot drops contentAnyPath and previews stop', async () => {
