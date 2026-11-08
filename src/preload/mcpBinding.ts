@@ -27,6 +27,12 @@ export const mcpBinding = {
   /** Per-direction connection permissions touching an agent (D129, #2972). */
   getConnectionGrants: (agentId: string): Promise<ConnectionDirection[]> =>
     ipcRenderer.invoke(IPC.MCP_BINDING.GET_CONNECTION_GRANTS, agentId),
+  /** One direction's saved tools changed (D129): a canvas updates its own copy of that wire. */
+  onConnectionGrantsChanged: (callback: (from: string, to: string, disabledTools: string[]) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, from: string, to: string, disabledTools: string[]) => callback(from, to, disabledTools);
+    ipcRenderer.on(IPC.MCP_BINDING.CONNECTION_GRANTS_CHANGED, listener);
+    return () => { ipcRenderer.removeListener(IPC.MCP_BINDING.CONNECTION_GRANTS_CHANGED, listener); };
+  },
   /** Make a one-way connection two-way: the user's own link for the other direction (#2972). */
   makeTwoWay: (fromAgentId: string, toAgentId: string): Promise<void> =>
     ipcRenderer.invoke(IPC.MCP_BINDING.MAKE_TWO_WAY, fromAgentId, toAgentId),

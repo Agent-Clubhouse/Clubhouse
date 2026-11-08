@@ -110,7 +110,12 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
   const handleSavePermissions = async (disabledTools: string[]) => {
     // This direction only: each direction of a connection has its own permissions, saved in the
     // connection store (D129). The other direction is edited from its own wire or the Connections card.
-    await setDisabledTools(binding.agentId, binding.targetId, disabledTools);
+    try {
+      await setDisabledTools(binding.agentId, binding.targetId, disabledTools);
+    } catch {
+      // telemetry-exempt: not saved (the connection store refused it); the wire keeps its list
+      return;
+    }
     onUpdateWireDefinition?.(binding.agentId, binding.targetId, { disabledTools });
     // Dismiss the wire popover after saving — the dismissible-layer hook is
     // disabled while the dialog is open, so we close explicitly here.

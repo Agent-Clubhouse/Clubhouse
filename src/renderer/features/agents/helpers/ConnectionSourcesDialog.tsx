@@ -6,7 +6,7 @@
  * helper links are removed where they live, and the dialog says where.
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CONNECTION_TOOLS, type ConnectionDirection } from '../../../../shared/connection-grants';
 import { Toggle } from '../../../components/Toggle';
 import {
@@ -67,6 +67,10 @@ function DirectionColumn({ from, to, fromName, toName, connected, disabledTools,
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Changed here first, so a second quick switch builds on the first (#2972).
+  const [tools, setTools] = useState<readonly string[]>(disabledTools);
+  const writes = useRef(0);
+  useEffect(() => { if (writes.current === 0) setTools(disabledTools); }, [disabledTools]);
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
@@ -80,8 +84,20 @@ function DirectionColumn({ from, to, fromName, toName, connected, disabledTools,
     setBusy(false);
   };
   const toggle = (tool: string, on: boolean) => {
-    const next = on ? disabledTools.filter((t) => t !== tool) : [...new Set([...disabledTools, tool])];
-    void run(() => window.clubhouse.mcpBinding.setDisabledTools(from, to, next));
+    const next = on ? tools.filter((t) => t !== tool) : [...new Set([...tools, tool])];
+    const before = tools;
+    setTools(next);
+    writes.current += 1;
+    setError(null);
+    void Promise.resolve().then(() => window.clubhouse.mcpBinding.setDisabledTools(from, to, next)).then(
+      () => { writes.current -= 1; onChanged(); },
+      (err) => {
+        writes.current -= 1;
+        reportChromeActionFailed('agent_settings_save', err);
+        setTools(before);
+        setError('Couldn\u2019t save that, so it wasn\u2019t changed. Try again.');
+      },
+    );
   };
   return (
     <section className="flex-1 min-w-0 flex flex-col gap-1.5" aria-label={`${fromName} to ${toName}`} data-testid={`connection-direction-${from}-${to}`}>
@@ -89,11 +105,11 @@ function DirectionColumn({ from, to, fromName, toName, connected, disabledTools,
       {connected ? (
         <ul className="flex flex-col gap-1">
           {CONNECTION_TOOLS.map(({ tool, label }) => {
-            const on = !disabledTools.includes(tool);
+            const on = !tools.includes(tool);
             return (
               <li key={tool} className="flex items-center gap-2 text-xs text-ctp-subtext1">
                 <span className="flex-1 min-w-0 truncate">{label}</span>
-                <Toggle aria-label={`${label} (${fromName} to ${toName})`} checked={on} disabled={busy} onChange={(next) => toggle(tool, next)} data-testid={`connection-tool-${from}-${to}-${tool}`} />
+                <Toggle aria-label={`${label} (${fromName} to ${toName})`} checked={on} onChange={(next) => toggle(tool, next)} data-testid={`connection-tool-${from}-${to}-${tool}`} />
               </li>
             );
           })}

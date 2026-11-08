@@ -597,6 +597,8 @@ export const IPC = {
     GET_CONNECTION_SOURCES: 'mcp-binding:get-connection-sources',
     /** Per-direction connection permissions touching an agent (D129, #2972). */
     GET_CONNECTION_GRANTS: 'mcp-binding:get-connection-grants',
+    /** Main → renderer: one direction's saved tools changed (D129), so a canvas updates its own copy. */
+    CONNECTION_GRANTS_CHANGED: 'mcp-binding:connection-grants-changed',
     /** The user's own link for the other direction of a one-way connection (#2972). */
     MAKE_TWO_WAY: 'mcp-binding:make-two-way',
     /** Remove one source of one connection (#2744). */

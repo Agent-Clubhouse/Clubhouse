@@ -21,7 +21,8 @@ import {
 import { appLog } from './log-service';
 import * as agentConfig from './agent-config';
 import * as projectStore from './project-store';
-import { registerPersistedBindingSource, rebuildPersistedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
+import { clearBindingRemovedByUser, registerPersistedBindingSource, rebuildPersistedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
+import { removeConnectionDirections } from './connection-grants-store';
 
 export const USER_CONNECTION_SOURCE_ID = 'user-connections';
 
@@ -55,19 +56,27 @@ function restoreTools(agentId: string, targetId: string, targetKind: BindingTarg
  * binding alone for any other target. `restore`: a canvas wire bound again,
  * whose list only fills a store that has none.
  */
-export async function applyConnectionTools(agentId: string, targetId: string, disabledTools: string[], options: { restore?: boolean } = {}): Promise<void> {
+export async function applyConnectionTools(agentId: string, targetId: string, disabledTools: string[], options: { restore?: boolean } = {}): Promise<string[]> {
   const binding = bindingManager.getBindingsForAgent(agentId).find((b) => b.targetId === targetId);
   const targetKind = binding?.targetKind;
   if (targetKind && targetKind !== 'agent') {
     bindingManager.setDisabledTools(agentId, targetId, disabledTools);
-    return;
+    return disabledTools;
   }
-  if (options.restore && binding) {
+  if (options.restore) {
+    // A canvas wire bound again only fills a store that has nothing, live binding or not.
+    const saved = deniedConnectionTools(local(agentId), local(targetId));
+    if (saved) {
+      if (binding) bindingManager.setDisabledTools(agentId, targetId, saved);
+      return saved;
+    }
+    if (!binding) return disabledTools; // kind unknown: nothing is written
     restoreTools(agentId, targetId, 'agent', disabledTools);
-    return;
+    return disabledTools;
   }
-  // An edit, or a sleeping agent's wire with no live binding: the store, then the binding follows.
+  // An edit (the canvas popover, the Connections card), or a sleeping agent's wire: the store, then the binding follows.
   await setConnectionTools(local(agentId), local(targetId), disabledTools);
+  return disabledTools;
 }
 
 /** The user's links: one binding per direction with a link. */
@@ -78,7 +87,8 @@ const userConnectionSource: PersistedBindingSource = {
     const linked = allLinked();
     if (linked.length === 0) return [];
     const names = await agentNames();
-    return linked.map((d): PersistedBinding => ({
+    // Only between agents that still exist: a deleted agent's link isn't bound again.
+    return linked.filter((d) => names.has(d.from.agentId) && names.has(d.to.agentId)).map((d): PersistedBinding => ({
       agentId: d.from.agentId,
       targetId: d.to.agentId,
       targetKind: 'agent',
@@ -99,8 +109,8 @@ async function agentNames(): Promise<Map<string, string>> {
   const names = new Map<string, string>();
   const projects = await Promise.resolve().then(() => projectStore.peekProjects()).catch((): Array<{ path: string }> => []);
   for (const p of projects) {
-    const agents = await Promise.resolve().then(() => agentConfig.peekDurableConfigs(p.path)).catch((): ReadonlyArray<{ id: string; name: string }> => []);
-    for (const a of agents) names.set(a.id, a.name);
+    const agents = await Promise.resolve().then(() => agentConfig.peekDurableConfigs(p.path)).catch((): ReadonlyArray<{ id: string; name: string; disposedAt?: string }> => []);
+    for (const a of agents) if (!(a as { disposedAt?: string }).disposedAt) names.set(a.id, a.name);
   }
   return names;
 }
@@ -110,8 +120,12 @@ async function agentNames(): Promise<Map<string, string>> {
  * other direction, starting like any new connection (read and message).
  */
 export async function makeTwoWay(fromAgentId: string, toAgentId: string): Promise<void> {
+  // The user's own act: a pair they removed this session may be connected again.
+  clearBindingRemovedByUser(fromAgentId, toAgentId);
   const existing = getConnectionDirection(local(fromAgentId), local(toAgentId));
-  await setConnectionLink(local(fromAgentId), local(toAgentId), true, existing ? existing.disabledTools : NEW_CONNECTION_DISABLED_TOOLS);
+  // A new link starts like a new connection; only an existing link keeps its list.
+  await setConnectionTools(local(fromAgentId), local(toAgentId), existing?.link ? existing.disabledTools : [...NEW_CONNECTION_DISABLED_TOOLS]);
+  await setConnectionLink(local(fromAgentId), local(toAgentId), true);
   await rebuildPersistedBindings();
 }
 
@@ -122,7 +136,18 @@ export async function removeUserLink(fromAgentId: string, toAgentId: string): Pr
 }
 
 /** Wire the store into the live bindings. Returns the undo, for tests. */
-export function startConnectionGrants(): () => void {
+/** Listeners in the renderer: a canvas updates its own copy of a wire's list (older builds read it). */
+let notifyRenderer: ((from: string, to: string, disabledTools: string[]) => void) | null = null;
+
+/** An agent was deleted: its directions go, and nothing binds them again. */
+export async function forgetConnectionAgent(agentId: string): Promise<void> {
+  await removeConnectionDirections(agentId).catch((err) => {
+    appLog('core:mcp', 'warn', 'Could not drop a deleted agent\u2019s connection permissions', { meta: { agentId, error: errorText(err) } });
+  });
+}
+
+export function startConnectionGrants(options: { notify?: (from: string, to: string, disabledTools: string[]) => void } = {}): () => void {
+  notifyRenderer = options.notify ?? null;
   bindingManager.setConnectionToolsSource(
     (agentId, targetId, targetKind) => (targetKind === 'agent' ? deniedConnectionTools(local(agentId), local(targetId)) : undefined),
     restoreTools,
@@ -132,10 +157,22 @@ export function startConnectionGrants(): () => void {
     if (from.machineId || to.machineId) return;
     const entry = getConnectionDirection(from, to);
     bindingManager.setDisabledTools(from.agentId, to.agentId, entry?.disabledTools ?? []);
+    notifyRenderer?.(from.agentId, to.agentId, entry?.disabledTools ?? []);
   });
+  // Names and deletions: the user's links follow agents and projects, as the other sources do.
+  let pending: ReturnType<typeof setTimeout> | null = null;
+  const changed = () => {
+    if (listLinkedDirections().length === 0) return;
+    if (pending) clearTimeout(pending);
+    pending = setTimeout(() => { pending = null; void rebuildPersistedBindings().catch(() => {}); }, 100);
+  };
+  const unwatch = [agentConfig.onAgentConfigChanged(changed), projectStore.onProjectsChanged(changed)];
   return () => {
     bindingManager.setConnectionToolsSource(null, null);
     unregister();
     unsubscribe();
+    for (const u of unwatch) u();
+    if (pending) clearTimeout(pending);
+    notifyRenderer = null;
   };
 }

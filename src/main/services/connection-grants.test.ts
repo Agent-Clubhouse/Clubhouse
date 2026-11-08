@@ -6,16 +6,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ base: '' }));
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => state.base } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
-vi.mock('./project-store', () => ({ peekProjects: async () => [{ path: '/p' }] }));
-vi.mock('./agent-config', () => ({ peekDurableConfigs: async () => [{ id: 'a', name: 'alpha' }, { id: 'b', name: 'beta' }] }));
+vi.mock('./project-store', () => ({ peekProjects: async () => [{ path: '/p' }], onProjectsChanged: () => () => {} }));
+vi.mock('./agent-config', () => ({ peekDurableConfigs: async () => [{ id: 'a', name: 'alpha' }, { id: 'b', name: 'beta' }], onAgentConfigChanged: () => () => {} }));
 state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'connection-grants-'));
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
   deniedConnectionTools, getConnectionDirection, listConnectionDirections, removeConnectionDirections, setConnectionTools,
 } from './connection-grants-store';
-import { applyConnectionTools, makeTwoWay, removeUserLink, startConnectionGrants } from './connection-grants';
-import { applyPersistedBinding, rebuildPersistedBindings, _resetPersistedBindingSourcesForTesting } from './persisted-bindings';
+import { applyConnectionTools, forgetConnectionAgent, makeTwoWay, removeUserLink, startConnectionGrants } from './connection-grants';
+import { applyPersistedBinding, markBindingRemovedByUser, rebuildPersistedBindings, _resetPersistedBindingSourcesForTesting } from './persisted-bindings';
 
 const A = { agentId: 'a' };
 const B = { agentId: 'b' };
@@ -65,6 +65,25 @@ describe('connection permissions (D129)', () => {
     await applyConnectionTools('a', 'b', ['clear_agent']);
     await applyConnectionTools('a', 'b', ['send_message'], { restore: true });
     expect(deniedConnectionTools(A, B)).toEqual(['clear_agent']);
+  });
+
+  it('a canvas wire bound again with no live binding writes nothing', async () => {
+    await applyConnectionTools('a', 'b', ['send_message'], { restore: true });
+    expect(getConnectionDirection(A, B)).toBeUndefined();
+  });
+
+  it('a deleted agent\'s link isn\'t bound again, and its entries go', async () => {
+    await makeTwoWay('a', 'gone');
+    expect(bindingManager.getBindingsForAgent('a').some((b) => b.targetId === 'gone')).toBe(false);
+    await forgetConnectionAgent('gone');
+    expect(listConnectionDirections('gone')).toEqual([]);
+  });
+
+  it('Make two-way connects a pair the user removed this session, starting like a new connection', async () => {
+    await setConnectionTools(B, A, []); // a leftover entry, everything on
+    markBindingRemovedByUser('b', 'a');
+    await makeTwoWay('b', 'a');
+    expect(toolsOf('b', 'a')).toEqual(['clear_agent', 'compact_agent']);
   });
 
   it('other targets keep their list on the binding alone', async () => {

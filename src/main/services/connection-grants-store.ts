@@ -33,11 +33,13 @@ interface ConnectionGrantsFile {
   directions: unknown[];
 }
 
+// Atomic, and a failed save rolls back, so the store and the live bindings never disagree.
+// Audited like every settings store (the inventory requires it).
 const store = createSettingsStore<ConnectionGrantsFile>(
   'connection-grants.json',
   { version: CONNECTION_GRANTS_VERSION, directions: [] },
   undefined,
-  { audit: { key: 'connection_grants' } },
+  { atomic: true, rollBackFailedSaves: true, audit: { key: 'connection_grants' } },
 );
 
 type Listener = (from: AgentAddress, to: AgentAddress) => void;

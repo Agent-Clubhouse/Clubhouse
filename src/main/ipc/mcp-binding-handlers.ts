@@ -345,7 +345,9 @@ export function restorePersistedBindings(): Promise<void> {
     registerPersistedBindingSource(dispatcherConnectionSource);
     stopWatchingDispatcherConnections = watchDispatcherConnections(() => restorePersistedBindings());
     // Connection permissions (D129): the store sets each direction's tools, and the user's links are a source.
-    startConnectionGrants();
+    startConnectionGrants({
+      notify: (from, to, disabledTools) => broadcastToAllWindows(IPC.MCP_BINDING.CONNECTION_GRANTS_CHANGED, from, to, disabledTools),
+    });
     stopWatchingMcpCallers = watchMcpCallers();
   }
   return rebuildPersistedBindings().then((): void => undefined, (err): void => {

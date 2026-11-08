@@ -131,7 +131,16 @@ describe('Connections card (#2232)', () => {
       { from: { agentId: 'lead' }, to: { agentId: 'rev' }, disabledTools: ['clear_agent', 'compact_agent'], updatedAt: 't' },
     ]);
     const setDisabledTools = vi.fn(async () => {});
-    const makeTwoWay = vi.fn(async () => {});
+    const makeTwoWay = vi.fn(async () => {
+      // After Make two-way, main lists the user's link for the other direction.
+      window.clubhouse.mcpBinding.getConnectionSources = vi.fn(async () => ({
+        pairs: [
+          { agentId: 'lead', targetId: 'rev', bound: true, sources: [{ kind: 'canvas' as const, sourceId: 'canvas-wires' }] },
+          { agentId: 'rev', targetId: 'lead', bound: true, sources: [{ kind: 'user_link' as const, sourceId: 'user-connections' }] },
+        ],
+        unreadable: [],
+      }));
+    });
     window.clubhouse.mcpBinding.setDisabledTools = setDisabledTools as never;
     window.clubhouse.mcpBinding.makeTwoWay = makeTwoWay;
     render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={vi.fn()} />);
@@ -147,6 +156,8 @@ describe('Connections card (#2232)', () => {
     expect(incoming).toHaveTextContent('Not connected this way.');
     fireEvent.click(within(incoming).getByTestId('connection-make-two-way-rev-lead'));
     await waitFor(() => expect(makeTwoWay).toHaveBeenCalledWith('rev', 'lead'));
+    // The new direction shows as connected, with its switches.
+    expect(await within(screen.getByTestId('connection-direction-rev-lead')).findByRole('switch', { name: 'Send messages (reviewer to epic-lead)' })).toBeInTheDocument();
   });
 
   it('a helper link says to dispose the helper; it can\'t be removed here', async () => {

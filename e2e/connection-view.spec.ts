@@ -83,7 +83,9 @@ test('the connection view: both directions with their own tools, saved in the st
     if (await fold.isVisible().catch(() => false)) await fold.click();
   }
   await conductor.click();
+  // The Connections card is in the agent's details panel.
   const head = w.locator('[data-testid="details-card-connections-toggle"]').first();
+  if (!(await head.isVisible().catch(() => false))) await w.getByRole('button', { name: 'Agent details' }).first().click();
   await expect(head).toBeVisible({ timeout: 15_000 });
   if ((await head.getAttribute('aria-expanded')) !== 'true') await head.click();
 

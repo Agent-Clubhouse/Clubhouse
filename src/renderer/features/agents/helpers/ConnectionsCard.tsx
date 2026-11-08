@@ -163,7 +163,9 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
   // Where each connection comes from (#2744), re-read with the bindings and after a removal.
   const sources = useConnectionSources(open && !!onDisconnect, agent.id, bindings, removals);
   const grants = useConnectionGrants(open && !!onDisconnect, agent.id, bindings, removals);
-  const [managing, setManaging] = useState<Connection | null>(null);
+  // The row being managed, by the other end's id: looked up each render so a new direction shows (#2972).
+  const [managingId, setManagingId] = useState<string | null>(null);
+  const managing = managingId ? connections.find((c) => c.id === managingId) ?? null : null;
   const pairSources = (c: Connection): ConnectionPairSources[] =>
     c.pairs.map((p) => sources?.pairs.find((s) => s.agentId === p.agentId && s.targetId === p.targetId)).filter((s): s is ConnectionPairSources => !!s);
 
@@ -189,7 +191,7 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
                   <span className="text-xs text-ctp-overlay1 whitespace-nowrap" title={sourcesNote(pairSources(c)) ?? suspendedNote(c)} data-testid="connection-meta">{connectionMeta(c)}</span>
                   <span className="ml-auto flex items-center gap-2.5">
                     {onDisconnect && c.kind === 'agent' && pairSources(c).length > 0 && (
-                      <button type="button" onClick={() => setManaging(c)} className="text-xs text-ctp-overlay1 hover:text-ctp-text cursor-pointer" data-testid="connection-sources">
+                      <button type="button" onClick={() => setManagingId(c.id)} className="text-xs text-ctp-overlay1 hover:text-ctp-text cursor-pointer" data-testid="connection-sources">
                         Manage
                       </button>
                     )}
@@ -218,11 +220,11 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
         grants={grants}
         liveTools={new Map(bindings.filter((b) => b.targetKind === 'agent').map((b) => [`${b.agentId}>${b.targetId}`, b.disabledTools ?? []]))}
         agentName={agent.name}
-        otherName={managing.name}
+        otherName={rail[managing.id]?.name ?? managing.name}
         dispatcherEnd={isDispatcherAgent(agent) ? managing.name : rail[managing.id] && isDispatcherAgent(rail[managing.id]) ? agent.name : undefined}
-        pairs={pairSources(managing)}
+        pairs={(sources?.pairs ?? []).filter((p) => (p.agentId === agent.id && p.targetId === managing.id) || (p.agentId === managing.id && p.targetId === agent.id))}
         unreadable={sources?.unreadable ?? []}
-        onClose={() => setManaging(null)}
+        onClose={() => setManagingId(null)}
         onRemoved={() => setRemovals((n) => n + 1)}
       />
     )}
