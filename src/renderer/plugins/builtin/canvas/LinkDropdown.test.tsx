@@ -118,4 +118,21 @@ describe('LinkDropdown', () => {
       targetKind: 'browser',
     }));
   });
+
+  it('a new agent wire starts with clear and compact off; a browser wire doesn\'t (#2969)', async () => {
+    const agentView = makeAgentView('a1', 'agent-1');
+    const otherView = makeAgentView('a2', 'agent-2');
+    const browserView = makeBrowserView('b1');
+    const bindMock = vi.fn().mockResolvedValue(undefined);
+    const setDisabledTools = vi.fn().mockResolvedValue(undefined);
+    useMcpBindingStore.setState({ bindings: [], bind: bindMock, setDisabledTools } as any);
+    const { getByTestId } = render(
+      <LinkDropdown agentView={agentView} views={[agentView, otherView, browserView]} onClose={vi.fn()} />,
+    );
+    fireEvent.click(getByTestId('link-target-a2'));
+    await vi.waitFor(() => expect(setDisabledTools).toHaveBeenCalledWith('agent-1', 'agent-2', ['clear_agent', 'compact_agent']));
+    fireEvent.click(getByTestId('link-target-b1'));
+    await vi.waitFor(() => expect(bindMock).toHaveBeenCalledTimes(2));
+    expect(setDisabledTools).toHaveBeenCalledTimes(1);
+  });
 });

@@ -29,6 +29,7 @@ export async function bindWireDefinition(def: McpBindingEntry, current: () => Mc
     await window.clubhouse.mcpBinding.setInstructions(def.agentId, def.targetId, latest.instructions);
   }
   if (latest.disabledTools && latest.disabledTools.length > 0) {
-    await window.clubhouse.mcpBinding.setDisabledTools(def.agentId, def.targetId, latest.disabledTools);
+    // Bound again: the connection store's list wins, this one only fills it (D129).
+    await window.clubhouse.mcpBinding.setDisabledTools(def.agentId, def.targetId, latest.disabledTools, { restore: true });
   }
 }

@@ -43,6 +43,7 @@ export { parseStartCreationParams };
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { applyFinishedQuickAgentChange, hydrateFinishedQuickAgents, onFinishedQuickAgentsChange } from '../services/finished-quick-agents-store';
 import { parseFinishedQuickAgentOp } from '../../shared/finished-quick-agents';
+import { forgetConnectionAgent } from '../services/connection-grants';
 
 type DeleteMode = Parameters<typeof ATTR.deleteMode>[0];
 
@@ -261,6 +262,8 @@ export function registerAgentHandlers(): void {
       const result = await deleteFlow('standard', () => agentConfig.deleteDurable(projectPath, agentId));
       bindingManager.unbindAgent(agentId);
       bindingManager.unbindTarget(agentId);
+      // Its connection permissions and the user's links go too (D129).
+      void forgetConnectionAgent(agentId);
       broadcastSnapshotRefresh();
       return result;
     },

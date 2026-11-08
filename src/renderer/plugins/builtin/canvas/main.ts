@@ -24,6 +24,7 @@ import { rendererLog } from '../../renderer-logger';
 import { bindWireDefinition } from './wire-binding';
 import { createWireReconciler } from './wire-reconcile';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
+import { syncWireTools } from './connection-grants-sync';
 
 /**
  * Collect the real IDs a canvas view participates in for MCP bindings.
@@ -114,6 +115,11 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
     return store.getState().queryViews(filter);
   });
   ctx.subscriptions.push({ dispose: () => setCanvasQueryProvider(null) });
+  // A wire's saved tools changed in the connection store: update this window's canvas copies (D129).
+  const offGrants = window.clubhouse.mcpBinding.onConnectionGrantsChanged?.((from, to, disabledTools) => {
+    syncWireTools([useAppCanvasStore, ...getKnownProjectIds().map((id) => getProjectCanvasStore(id))], from, to, disabledTools);
+  });
+  if (offGrants) ctx.subscriptions.push({ dispose: offGrants });
 
   // Commands are registered in the shared singleton pluginCommandRegistry. For 'dual'-scope
   // plugins the loader calls activate() twice (app + project context). Skip registration in the
