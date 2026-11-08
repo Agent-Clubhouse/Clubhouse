@@ -35,12 +35,13 @@ vi.mock('../dispatcher-gate', async (original) => ({
 vi.mock('../../app-event-sources', () => ({ knownAgent: (id: string) => h.known.get(id) }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
 
-// The Actions service over a real engine with the real interim rights, and
+// The Actions service over a real engine with the real grant rights, and
 // facts from the table above. Mirrors src/main/services/actions/index.ts.
 vi.mock('../../actions', async () => {
   const shared = await import('../../../../shared/actions');
   const { ActionsEngine } = await import('../../actions/engine');
-  const { createInterimRights } = await import('../../actions/rights');
+  const { createGrantRights } = await import('../../actions/rights');
+  const { defaultGrants } = await import('../../../../shared/default-grants');
   const { matchProjectRef } = await import('../../actions/project-ref');
   const projects = [
     { id: 'proj-1', name: 'web', path: 'web-root' },
@@ -72,7 +73,7 @@ vi.mock('../../actions', async () => {
         dispatcherAgentId: () => (h.dispatchers.has('dispatcher') ? 'dispatcher' : undefined),
       },
       steps: { run: async (step, ctx) => { h.stepCalls.push({ step, ctx }); return { kind: step.kind, outcome: 'done', detail: 'ok' }; } },
-      rights: createInterimRights({
+      rights: createGrantRights({
         agentName,
         parentOf: (id) => h.known.get(id)?.parentAgentId,
         isConnected: (from, to) => h.wires.has(`${from}>${to}`),
@@ -80,6 +81,15 @@ vi.mock('../../actions', async () => {
         dispatcherAgentId: () => (h.dispatchers.has('dispatcher') ? 'dispatcher' : undefined),
         canStartAgents: () => true,
         agentAccess: (id) => (h.access.get(id) ?? 'full_access') as AccessLevel,
+        // The default permissions for what each agent is; every agent here may start helpers.
+        grantsOf: (id) => defaultGrants({
+          dispatcher: h.dispatchers.has(id),
+          helper: !!h.known.get(id)?.parentAgentId,
+          orchestrates: !h.dispatchers.has(id),
+          crossProject: false,
+        }),
+        agentProjectPath: (id) => projects.find((p) => p.id === agentProjectId(id))?.path,
+        projectPath: (id) => projects.find((p) => p.id === id)?.path,
       }),
     });
   };
@@ -195,13 +205,13 @@ describe('action tools', () => {
       expect(r.body.action.description).toBe('Every day at 9:00 AM → Notify you');
     });
 
-    it('a helper owns its actions as a helper, and may act only on itself', async () => {
+    it('a helper owns its actions as a helper, and acts as its permissions allow', async () => {
       expect(actionScope('helper-a').owner).toEqual({ kind: 'agent', agentId: 'helper-a', helper: true });
       const own = await call('helper-a', 'create_action', { trigger: DAILY, steps: [{ kind: 'wake', agentId: 'self' }] });
       expect(own.body.action.owner).toEqual({ kind: 'agent', agentId: 'helper-a', helper: true });
       expect(own.body.action.steps[0]).toEqual({ kind: 'wake', agentId: 'helper-a' });
       const other = await call('helper-a', 'create_action', { trigger: DAILY, steps: [{ kind: 'wake', agentId: 'agent-a' }] });
-      expect(other).toEqual({ isError: true, body: { error: { code: 'not_allowed', message: 'helper is a helper, so its actions can only act on itself.' } } });
+      expect(other).toEqual({ isError: true, body: { error: { code: 'not_allowed', message: 'helper doesn’t have the Clubhouse permission agent.wake on that agent. Change it on its Clubhouse permissions page.' } } });
     });
 
     it('treats an agent with a parent as a helper even before its caller kind is known', () => {
@@ -300,10 +310,10 @@ describe('action tools', () => {
       expect(r.body.action.steps[0]).not.toHaveProperty('access');
     });
 
-    it('the Dispatcher reaches only agents connected to it, and starts no quick agents', async () => {
+    it('the Dispatcher acts only on agents connected to it, and starts no quick agents', async () => {
       expect((await call('dispatcher', 'create_action', { trigger: DAILY, steps: [{ kind: 'wake', agentId: 'agent-a' }] })).isError).toBe(false);
       const unconnected = await call('dispatcher', 'create_action', { trigger: DAILY, steps: [{ kind: 'wake', agentId: 'agent-c' }] });
-      expect(unconnected.body.error).toEqual({ code: 'not_allowed', message: 'The Dispatcher can’t act on that agent.' });
+      expect(unconnected.body.error).toEqual({ code: 'not_allowed', message: 'The Dispatcher doesn’t have the Clubhouse permission agent.wake on that agent. Change it on its Clubhouse permissions page.' });
       const quick = await call('dispatcher', 'create_action', { trigger: DAILY, steps: [{ kind: 'quick', projectId: 'web', prompt: 'x' }] });
       expect(quick.body.error.code).toBe('not_allowed');
     });
@@ -314,7 +324,8 @@ describe('action tools', () => {
       expect((await call('agent-a', 'create_action', { trigger: watch('agent-b'), steps: [NOTIFY] })).body.error.code).toBe('not_allowed');
       expect((await call('helper-a', 'create_action', { trigger: watch('agent-a'), steps: [NOTIFY] })).body.error.code).toBe('not_allowed');
       expect((await call('dispatcher', 'create_action', { trigger: watch('agent-b'), steps: [NOTIFY] })).isError).toBe(false);
-      expect((await call('dispatcher', 'create_action', { trigger: watch('agent-c'), steps: [NOTIFY] })).body.error.code).toBe('not_allowed');
+      // The Dispatcher may read any agent, so it may watch any (D131).
+      expect((await call('dispatcher', 'create_action', { trigger: watch('agent-c'), steps: [NOTIFY] })).isError).toBe(false);
     });
 
     it('an agent’s refusal reads the same whether or not the agent or project exists', async () => {
@@ -322,7 +333,7 @@ describe('action tools', () => {
       const exists = await call('agent-a', 'create_action', step('agent-c'));
       const missing = await call('agent-a', 'create_action', step('no-such-agent'));
       expect(exists).toEqual(missing);
-      expect(exists.body.error).toEqual({ code: 'not_allowed', message: 'release-lead can’t act on that agent.' });
+      expect(exists.body.error).toEqual({ code: 'not_allowed', message: 'release-lead doesn’t have the Clubhouse permission agent.wake on that agent. Change it on its Clubhouse permissions page.' });
       const project = (projectId: string) => ({ trigger: DAILY, steps: [{ kind: 'quick', projectId, prompt: 'x' }] });
       expect(await call('agent-a', 'create_action', project('api'))).toEqual(await call('agent-a', 'create_action', project('nowhere')));
       expect(await call('agent-a', 'create_action', project('proj-2'))).toEqual(await call('agent-a', 'create_action', project('proj-9')));
@@ -341,7 +352,7 @@ describe('action tools', () => {
       const made = await call('agent-a', 'create_action', { trigger: DAILY, steps: [{ kind: 'wake', agentId: 'helper-a' }], enabled: false });
       h.known.set('helper-a', { ...h.known.get('helper-a')!, parentAgentId: 'agent-b' });
       const r = await call('agent-a', 'update_action', { id: made.body.action.id, enabled: true });
-      expect(r.body.error).toEqual({ code: 'not_allowed', message: 'release-lead can’t act on that agent.' });
+      expect(r.body.error).toEqual({ code: 'not_allowed', message: 'release-lead doesn’t have the Clubhouse permission agent.wake on that agent. Change it on its Clubhouse permissions page.' });
     });
   });
 
@@ -514,7 +525,7 @@ describe('action tools', () => {
     it('follows the same rights as any action: an agent watches only what it may', async () => {
       // agent-b isn't connected to agent-a, and api is another project.
       const peer = await call('agent-a', 'subscribe', { event: 'agent.turn_ended', source: { kind: 'agent', agentId: 'agent-b' } });
-      expect(peer.body.error).toEqual({ code: 'not_allowed', message: 'release-lead can’t act on that agent.' });
+      expect(peer.body.error).toEqual({ code: 'not_allowed', message: 'release-lead doesn’t have the Clubhouse permission agent.read on that agent. Change it on its Clubhouse permissions page.' });
       const other = await call('agent-a', 'subscribe', { event: 'git.commit', source: { kind: 'project', projectId: 'api-root' } });
       expect(other.body.error.code).toBe('invalid_input');
       h.wires.add('agent-a>agent-b');
@@ -525,7 +536,7 @@ describe('action tools', () => {
       expect((await call('quick-1', 'subscribe', { event: 'app.started' })).isError).toBe(true);
     });
 
-    it('the Dispatcher subscribes to a connected agent’s events for itself the same way', async () => {
+    it('the Dispatcher subscribes to an agent’s events for itself the same way', async () => {
       const r = await call('dispatcher', 'subscribe', { event: 'agent.slept', source: { kind: 'agent', agentId: 'agent-a' }, note: 'Read its handoff.' });
       expect(r.isError).toBe(false);
       expect(r.body.action).toMatchObject({
@@ -537,8 +548,8 @@ describe('action tools', () => {
       fire({ type: 'agent.asleep', agentId: 'agent-a' });
       await flush();
       expect(h.stepCalls).toMatchObject([{ step: { kind: 'message', agentId: 'dispatcher' }, ctx: { trigger: { detail: 'release-lead goes to sleep' } } }]);
-      // Only agents connected to it, and it names what it watches.
-      expect((await call('dispatcher', 'subscribe', { event: 'agent.slept', source: { kind: 'agent', agentId: 'agent-c' } })).body.error.code).toBe('not_allowed');
+      // Any agent it may read (D131), and it names what it watches.
+      expect((await call('dispatcher', 'subscribe', { event: 'agent.slept', source: { kind: 'agent', agentId: 'agent-c' } })).isError).toBe(false);
       expect((await call('dispatcher', 'subscribe', { event: 'agent.slept' })).body.error.code).toBe('invalid_input');
       expect((await call('dispatcher', 'subscribe', { event: 'app.started' })).isError).toBe(false);
     });

@@ -87,6 +87,9 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
   const structural = g('structural');
   const out: Grant[] = [
     every('agent.read', SELF), every('agent.display', SELF),
+    // On itself: what an agent's own Actions need to remind it, wake it or put it to sleep (#2960).
+    // No tool reaches an agent's own runtime this way, so this opens nothing else.
+    every('agent.message', SELF), every('agent.wake', SELF), every('agent.sleep', SELF),
     every('agent.read', CONNECTED), every('agent.message', CONNECTED),
     every('agent.reset', { kind: 'connected', excludeDispatcher: true }),
     // A message to a sleeping Dispatcher wakes it to deliver the message (#3037).

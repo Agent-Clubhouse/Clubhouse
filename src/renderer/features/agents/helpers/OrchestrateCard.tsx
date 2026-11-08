@@ -12,9 +12,8 @@ import { CardNote, CardRow, DetailsCard } from '../details/DetailsCard';
 import { CONTROL_LABELS, controlHelp } from './helper-model';
 import { maxHelpersCeiling, openHelpersSettings, type OrchestrationState } from './orchestration-hooks';
 import {
-  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, AutoHelpersToggle, AUTO_HELPERS_HELP, CrossProjectToggle, DISPATCHER_HELP, DispatcherToggle, HelperCountInput, accessNote,
+  AccessSelect, CROSS_PROJECT_HELP, ControlSelect, AutoHelpersToggle, AUTO_HELPERS_HELP, CrossProjectToggle, HelperCountInput, accessNote,
 } from './OrchestrationFields';
-import { useDispatcherConnection } from '../../dispatcher/useDispatcherEnabled';
 import { TurnOffOrchestrationDialog } from './TurnOffOrchestrationDialog';
 
 const SELECT_CLASS = 'h-6 max-w-full px-1.5 rounded-md border border-surface-1 bg-ctp-crust text-xs text-ctp-text focus-ring disabled:opacity-50';
@@ -36,9 +35,8 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle }: {
   open: boolean;
   onToggle: () => void;
 }) {
-  const ids = { auto: useId(), access: useId(), control: useId(), count: useId(), crossProject: useId(), dispatcher: useId() };
-  // Connect to Dispatcher shows while the Dispatcher is turned on, with orchestration on or off (#2578).
-  const { show: showDispatcher } = useDispatcherConnection();
+  const ids = { auto: useId(), access: useId(), control: useId(), count: useId(), crossProject: useId() };
+  // Connecting to the Dispatcher is its own Details card now (#3049).
   const [countError, setCountError] = useState<string | null>(null);
   const { policy, access, saving, globalCap } = orch;
   const running = agent.status === 'running';
@@ -151,21 +149,6 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle }: {
               </span>
             </CardRow>
           </>
-        )}
-        {policy && showDispatcher && (
-          <CardRow label="Connect to Dispatcher">
-            <span className="flex flex-col items-start gap-1">
-              <DispatcherToggle
-                id={ids.dispatcher}
-                checked={policy.connectToDispatcher}
-                name={agent.name}
-                disabled={saving}
-                onChange={(on) => void orch.setConnectToDispatcher(on)}
-                testId="orchestrate-dispatcher"
-              />
-              <span className="text-ctp-overlay1">{DISPATCHER_HELP}</span>
-            </span>
-          </CardRow>
         )}
         {orch.note
           ? <CardNote><span data-testid="orchestrate-note">{orch.note}</span></CardNote>

@@ -309,8 +309,18 @@ function applyRemoval(removal: NetworkRemoval, from: string, s: MembershipState)
 /** This machine was removed: it stops being a member of every member it knew. */
 function leaveNetwork(from: string): void {
   appLog('core:annex', 'warn', 'This computer was removed from its Annex Network', { meta: { from } });
-  for (const peer of memberPeers()) hooks?.endDevice(peer.fingerprint);
+  // Ending its pairings here is leaving, not removing anyone: nothing is recorded or told to the others.
+  // Otherwise a member that hadn't heard of this machine's removal yet would be told to remove itself.
+  leaving = true;
+  try {
+    for (const peer of memberPeers()) hooks?.endDevice(peer.fingerprint);
+  } finally {
+    leaving = false;
+  }
 }
+
+/** While this machine leaves the network: the pairings it ends are its own, not removals to announce. */
+let leaving = false;
 
 function onMessage(from: string, message: NetworkMessage): void {
   if (!annexSettings.networkEnabled()) return;
@@ -431,6 +441,7 @@ export function noteLocalJoin(fingerprint: string): void {
  * included, before its connections are cut. Members that are off hear later.
  */
 export function noteLocalRemoval(fingerprint: string): void {
+  if (leaving) return;
   const peer = annexPeers.getPeer(fingerprint);
   if (peer?.role !== 'member') return;
   const s = state();

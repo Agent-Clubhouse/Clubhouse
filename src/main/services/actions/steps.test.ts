@@ -55,6 +55,24 @@ describe('step runner', () => {
     expect(d.wake).not.toHaveBeenCalled();
   });
 
+  it('a message step wakes a sleeping agent only for an owner that may wake it (D131)', async () => {
+    const owner = { kind: 'agent', agentId: 'lead' } as const;
+    const agentCtx = { ...ctx, action: { ...ctx.action, owner } };
+    const wakeRefusal = vi.fn(() => 'release-lead doesn’t have the Clubhouse permission agent.wake on that agent.');
+    const d = deps({ wakeRefusal });
+    const r = await createStepRunner(d).run({ kind: 'message', agentId: 'pm', text: 'hi' }, agentCtx);
+    expect(r).toMatchObject({ outcome: 'failed', detail: 'pm is asleep, so the message wasn’t sent. release-lead doesn’t have the Clubhouse permission agent.wake on that agent.' });
+    expect(wakeRefusal).toHaveBeenCalledWith(owner, 'pm');
+    expect(d.wake).not.toHaveBeenCalled();
+    // Awake, it gets the message without being woken.
+    runtimes.set('pm', { kind: 'chat', isRunning: () => true, getState: () => 'idle', sendMessage: vi.fn(async () => ({ delivery: 'delivered' })), onStateChange: () => () => undefined });
+    expect((await createStepRunner(d).run({ kind: 'message', agentId: 'pm', text: 'hi' }, agentCtx)).outcome).toBe('done');
+    // An owner that may wake it wakes it with the message.
+    runtimes.clear();
+    const may = deps({ wakeRefusal: () => null });
+    expect(await createStepRunner(may).run({ kind: 'message', agentId: 'pm', text: 'hi' }, agentCtx)).toMatchObject({ outcome: 'done', detail: 'Woke pm with the message' });
+  });
+
   it('fails plainly when the target is gone or can’t wake', async () => {
     expect(await createStepRunner(deps()).run({ kind: 'wake', agentId: 'gone' }, ctx)).toMatchObject({ outcome: 'failed', detail: 'The agent is gone.' });
     const d = deps({ wake: vi.fn(async () => ({ ok: false, text: 'Failed to wake agent: codex is not installed' })) });

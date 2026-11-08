@@ -35,6 +35,7 @@ import * as path from 'path';
 import { createHash } from 'crypto';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { RoutedMessagePart } from '../../../shared/chat';
+import type { AgentCardView } from '../../../shared/dispatcher-agent-card';
 import { isDisposedAgent } from '../../../shared/agent-helpers';
 import {
   agentPageExists,
@@ -144,6 +145,8 @@ export interface CardRecord {
   request?: CardRequest;
   /** When the agent last saved its card (ISO). */
   answeredAt?: string;
+  /** When the user last replaced it from Details (ISO, #3049). */
+  editedAt?: string;
 }
 
 interface CardStore {
@@ -184,12 +187,17 @@ export interface AgentCardDeps {
   /** Put the text in front of a running agent; a busy one gets it after its turn. */
   send(agentId: string, text: string, routed: RoutedMessagePart[]): Promise<CardDelivery>;
   log(level: 'info' | 'warn', message: string, meta: Record<string, unknown>): void;
+  /** These agents' cards, or what is known about them, changed: their Details cards read again (#3049). */
+  changed?(agentIds: string[]): void;
   now?(): number;
 }
 
 export type SaveCardResult =
   | { ok: true; card: Partial<AgentCardFields>; page: string }
   | { ok: false; error: string };
+
+/** A user edit from Details for an agent that isn't connected (#3049). */
+export const NOT_CONNECTED_EDIT_MESSAGE = 'Connect this agent to the Dispatcher first.';
 
 export const NOT_CONNECTED_MESSAGE =
   'You aren\'t connected to the Dispatcher, so you have no card to update. The user can turn on Connect to Dispatcher in your settings.';
@@ -211,6 +219,11 @@ export class AgentCards {
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly deps: AgentCardDeps) {}
+
+  private notify(agentIds: Iterable<string>): void {
+    const ids = [...new Set(agentIds)];
+    if (ids.length > 0) this.deps.changed?.(ids);
+  }
 
   private now(): number {
     return this.deps.now?.() ?? Date.now();
@@ -280,7 +293,7 @@ export class AgentCards {
 
     const seen = new Set<string>();
     const read = new Set<string>();
-    let changed = false;
+    const touched = new Set<string>();
     for (const project of projects) {
       let agents: DurableAgentConfig[];
       let connected: ReadonlySet<string>;
@@ -296,7 +309,7 @@ export class AgentCards {
       for (const agent of agents) {
         if (!connected.has(agent.id)) continue;
         seen.add(agent.id);
-        if (await this.syncAgent(store, agent, project, taken)) changed = true;
+        if (await this.syncAgent(store, agent, project, taken)) touched.add(agent.id);
       }
     }
 
@@ -306,9 +319,12 @@ export class AgentCards {
       if (!read.has(rec.projectPath) && listedPaths.has(rec.projectPath)) continue;
       rec.connected = false;
       delete rec.request;
-      changed = true;
+      touched.add(id);
     }
-    if (changed) await this.save();
+    if (touched.size > 0) {
+      await this.save();
+      this.notify(touched);
+    }
   }
 
   /** Returns whether the record changed. */
@@ -368,7 +384,7 @@ export class AgentCards {
   private async deliverNow(only?: string): Promise<void> {
     if (!this.deps.activeDispatcherId()) return;
     const store = await this.load();
-    let changed = false;
+    const delivered: string[] = [];
     for (const [id, rec] of Object.entries(store.agents)) {
       if (only && id !== only) continue;
       if (!rec.connected || !rec.request || rec.request.deliveredAt) continue;
@@ -384,9 +400,12 @@ export class AgentCards {
       }
       if (delivery !== 'delivered') continue;
       rec.request.deliveredAt = this.iso();
-      changed = true;
+      delivered.push(id);
     }
-    if (changed) await this.save();
+    if (delivered.length > 0) {
+      await this.save();
+      this.notify(delivered);
+    }
   }
 
   /**
@@ -417,8 +436,55 @@ export class AgentCards {
       rec.answeredAt = this.iso();
       delete rec.request;
       await this.save();
+      this.notify([agentId]);
       return { ok: true, card: parseCard(text), page: this.pageRelative(rec.page) };
     });
+  }
+
+  /**
+   * The user's edit from the agent's Dispatcher card in Details (#3049). It
+   * replaces what the agent wrote, field by field: fields left out keep what
+   * the card said, and an empty one is cleared. It answers an open request,
+   * so a late answer from the agent doesn't come in over it unasked. The agent
+   * can still update its card later with update_my_card.
+   */
+  saveUserCard(agentId: string, fields: Partial<AgentCardFields>): Promise<SaveCardResult> {
+    return this.serial(async () => {
+      if (!this.deps.activeDispatcherId()) return { ok: false, error: NOT_CONNECTED_EDIT_MESSAGE };
+      let rec = (await this.load()).agents[agentId];
+      // Just turned on: the records may not have caught up yet.
+      if (!rec?.connected) {
+        await this.syncNow();
+        rec = (await this.load()).agents[agentId];
+      }
+      if (!rec?.connected) return { ok: false, error: NOT_CONNECTED_EDIT_MESSAGE };
+      const root = this.deps.memoryRoot;
+      const existing = await readAgentCard(rec.page, root);
+      const card: Partial<AgentCardFields> = { ...(existing ? parseCard(existing) : {}) };
+      for (const [key] of FIELD_LABELS) {
+        const value = fields[key];
+        if (value !== undefined) card[key] = oneLine(value).slice(0, MAX_CARD_FIELD);
+      }
+      const text = renderCard(card);
+      if (!text) return { ok: false, error: 'Say when to reach it or what it owns.' };
+      await writeAgentCard(rec.page, text, root);
+      rec.editedAt = this.iso();
+      delete rec.request;
+      await this.save();
+      this.notify([agentId]);
+      return { ok: true, card: parseCard(text), page: this.pageRelative(rec.page) };
+    });
+  }
+
+  /** The agent's card as its Dispatcher card in Details reads it (#3049), or null when it has no record. */
+  async view(agentId: string): Promise<AgentCardView | null> {
+    const status = await this.status(agentId);
+    if (!status) return null;
+    return {
+      state: status.state,
+      card: status.card,
+      ...(status.state === 'none' && status.asking && { waitingToAsk: true }),
+    };
   }
 
   /** The agent's card as its Details card and list_agents show it, or null when it has no record. */
