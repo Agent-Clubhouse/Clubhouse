@@ -17,7 +17,8 @@ import { installFakeClis, type FakeClis } from '../chat-fake-cli';
 import { chatFixturePath } from '../../src/main/orchestrators/adapters/testing/fake-cli';
 import { launchApp, type LaunchedApp } from '../launch';
 import { untrackOpenApp } from '../e2e-cleanup';
-import { addProject } from '../smoke-helpers';
+import { addProject, assertRunLayout, createDurableAgent } from '../smoke-helpers';
+import { isNewLayout } from '../layout';
 import { enableAnnexViaPreload } from './helpers';
 
 let fakesHere: FakeClis | undefined;
@@ -79,11 +80,9 @@ async function connectMcp(env: Record<string, string | null>) {
 }
 
 async function launchDesktop(label: string, fakes: FakeClis, deviceName: string): Promise<LaunchedApp> {
-  return launchApp({
+  const app = await launchApp({
     label,
     args: ['--disable-gpu'],
-    // The classic layout's agent list and New Agent dialog, as the chat E2E drives them.
-    experimental: { newChrome: false },
     userDataFiles: {
       'orchestrator-settings.json': { enabled: ['claude-code'], autoDetected: true },
       'chat-runtime-settings.json': { 'claude-code': { mode: 'chat', driver: 'claude_stream_json' } },
@@ -91,22 +90,25 @@ async function launchDesktop(label: string, fakes: FakeClis, deviceName: string)
     },
     env: fakes.env,
   });
+  try {
+    await assertRunLayout(app.window);
+  } catch (err) {
+    untrackOpenApp(app.electronApp);
+    await app.electronApp.close().catch((): undefined => undefined);
+    throw err;
+  }
+  return app;
 }
 
 /** A durable chat agent, started: returns its id. */
 async function startAgent(app: LaunchedApp, dir: string, name: string): Promise<string> {
   const w = app.window;
   await addProject(app.electronApp, w, dir);
-  await w.locator('button:has-text("+ Agent")').first().click();
-  await expect(w.locator('h2:has-text("New Agent")')).toBeVisible({ timeout: 5_000 });
-  await w.locator('input[type="text"]').first().fill(name);
-  await w.locator('label:has-text("Runs on") select').selectOption('claude-code');
-  await w.locator('button:has-text("Create Agent")').click();
-  const item = w.locator(`[data-agent-name="${name}"][data-testid^="agent-item-durable_"]`);
-  await expect(item).toBeVisible({ timeout: 20_000 });
-  const id = (await item.getAttribute('data-testid'))!.replace(/^agent-item-/, '');
-  await item.click();
-  await expect(w.locator('[data-testid="chat-view"]')).toHaveAttribute('data-state', 'idle', { timeout: 20_000 });
+  const id = await createDurableAgent(w, { projectName: path.basename(dir), name, orchestrator: 'claude-code' });
+  // Classic opens the agent from its row; the new layout opens a created agent itself.
+  if (!(await isNewLayout(w))) await w.locator(`[data-testid="agent-item-${id}"]`).click();
+  const chat = w.locator(`[data-testid="chat-view"][data-agent-pane="${id}"][data-view-context="main"]`);
+  await expect(chat).toHaveAttribute('data-state', 'idle', { timeout: 20_000 });
   return id;
 }
 
