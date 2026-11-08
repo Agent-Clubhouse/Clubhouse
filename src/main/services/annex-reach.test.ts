@@ -22,6 +22,7 @@ describe('annex reach (#3058)', () => {
     it.each([
       '', ' ', 'https://studio.local', 'studio.local/path', 'user@studio', 'stu dio', 'studio:', 'studio:abc',
       'studio:0', 'studio:70000', '-studio', 'studio-', 'stu_dio', '[studio.local]', '[2001:db8::5]:x', 'a'.repeat(64),
+      '192.168.1', '999.1.1.1', '1.2.3.4.5', 'fe80::1%en0', '[fe80::1%en0]:9443',
     ])('refuses %j', (input) => {
       expect(parseTypedHost(input)).toBeNull();
     });
@@ -46,13 +47,13 @@ describe('annex reach (#3058)', () => {
       known: ['10.0.0.4', '192.168.1.9', 'studio.tail1234.ts.net'],
       port: 9443,
     })).toEqual([
-      { host: '192.168.1.9', port: 9443 },
-      { host: 'studio.tail1234.ts.net', port: 9443 },
-      { host: '10.0.0.4', port: 9443 },
+      { host: '192.168.1.9', port: 9443, source: 'discovered' },
+      { host: 'studio.tail1234.ts.net', port: 9443, source: 'typed' },
+      { host: '10.0.0.4', port: 9443, source: 'known' },
     ]);
     // A typed port wins over the remembered one for that host only.
     expect(reachCandidates({ typed: 'studio:7000', known: ['10.0.0.4'], port: 9443 })).toEqual([
-      { host: 'studio', port: 7000 }, { host: '10.0.0.4', port: 9443 },
+      { host: 'studio', port: 7000, source: 'typed' }, { host: '10.0.0.4', port: 9443, source: 'known' },
     ]);
     expect(reachCandidates({ known: ['10.0.0.4'] })).toEqual([]);
     expect(reachCandidates({ typed: 'not a host', port: 9443 })).toEqual([]);

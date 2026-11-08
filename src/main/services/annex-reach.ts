@@ -8,6 +8,8 @@ import { isIP } from 'net';
 export interface ReachAddress {
   host: string;
   port: number;
+  /** Where it came from: announced by discovery, typed by the person, or remembered. */
+  source?: 'discovered' | 'typed' | 'known';
 }
 
 /** How many reached or linked addresses a satellite's entry keeps. */
@@ -19,7 +21,10 @@ const HOST_LABEL = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/i;
 function isHostName(value: string): boolean {
   const name = value.endsWith('.') ? value.slice(0, -1) : value;
   if (!name || name.length > 253) return false;
-  return name.split('.').every((label) => HOST_LABEL.test(label));
+  const labels = name.split('.');
+  // All digits is an attempt at an IPv4 address (`192.168.1`, `999.1.1.1`): only a real one will do.
+  if (labels.every((label) => /^\d+$/.test(label))) return false;
+  return labels.every((label) => HOST_LABEL.test(label));
 }
 
 /**
@@ -29,7 +34,8 @@ function isHostName(value: string): boolean {
  */
 export function parseTypedHost(input: string): { host: string; port?: number } | null {
   const value = input.trim();
-  if (!value || /[\s/@?#]/.test(value)) return null;
+  // No URL parts, and no IPv6 zone (`%en0`), which a URL can't carry.
+  if (!value || /[\s/@?#%]/.test(value)) return null;
 
   let host = value;
   let portText: string | undefined;
@@ -109,17 +115,17 @@ export function reachCandidates(options: {
   port?: number;
 }): ReachAddress[] {
   const out: ReachAddress[] = [];
-  const add = (host: string | undefined, port: number | undefined): void => {
+  const add = (host: string | undefined, port: number | undefined, source: ReachAddress['source']): void => {
     if (!host || !port || port <= 0) return;
     const h = host.toLowerCase();
-    if (!out.some((a) => a.host === h && a.port === port)) out.push({ host: h, port });
+    if (!out.some((a) => a.host === h && a.port === port)) out.push({ host: h, port, source });
   };
-  if (options.discovered) add(options.discovered.host, options.discovered.port);
+  if (options.discovered) add(options.discovered.host, options.discovered.port, 'discovered');
   if (options.typed) {
     const parsed = parseTypedHost(options.typed);
-    if (parsed) add(parsed.host, parsed.port ?? options.port);
+    if (parsed) add(parsed.host, parsed.port ?? options.port, 'typed');
   }
-  for (const host of options.known ?? []) add(host, options.port);
+  for (const host of options.known ?? []) add(host, options.port, 'known');
   return out;
 }
 

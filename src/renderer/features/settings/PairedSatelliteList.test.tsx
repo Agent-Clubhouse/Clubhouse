@@ -258,8 +258,13 @@ describe('PairedSatelliteList', () => {
       expect(screen.getByTestId('annex-address-editor')).toBeInTheDocument();
     });
 
-    it('offers no address for a satellite that needs pairing again', () => {
+    it('still offers the address for a satellite that needs pairing again, since a typo can be why', () => {
       render(<PairedSatelliteList devices={[{ ...mockDisconnectedSatellite, state: 'needs-pairing' }]} onPairAgain={vi.fn()} />);
+      expect(screen.getByRole('button', { name: 'Address' })).toBeInTheDocument();
+    });
+
+    it('offers no address for an older entry with no role', () => {
+      render(<PairedSatelliteList devices={[{ ...mockDisconnectedSatellite, role: null, state: 'needs-pairing' }]} onPairAgain={vi.fn()} />);
       expect(screen.queryByRole('button', { name: 'Address' })).not.toBeInTheDocument();
     });
   });

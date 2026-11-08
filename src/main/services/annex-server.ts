@@ -5037,19 +5037,32 @@ export function republishAdvertisement(): void {
 
 /** A ListenFn for `server`. On error the server is closed, so it can listen again. */
 function listenServer(server: http.Server | https.Server, host: string): ListenFn {
-  return (port) => new Promise((resolve, reject) => {
+  const listenOn = (port: number, address: string) => new Promise<number>((resolve, reject) => {
     const onError = (err: Error) => {
       server.close();
       reject(err);
     };
     server.once('error', onError);
-    server.listen(port, host, () => {
+    server.listen(port, address, () => {
       server.removeListener('error', onError);
       const addr = server.address();
       if (addr && typeof addr === 'object') resolve(addr.port);
       else reject(new Error('Annex server has no address after listen'));
     });
   });
+  // Every interface means IPv6 too (#3058): '::' takes IPv4 and IPv6 alike. Where the
+  // system has no IPv6, fall back to IPv4 only.
+  if (host !== '0.0.0.0') return (port) => listenOn(port, host);
+  return async (port) => {
+    try {
+      return await listenOn(port, '::');
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException | null)?.code;
+      if (code !== 'EAFNOSUPPORT' && code !== 'EADDRNOTAVAIL' && code !== 'EINVAL') throw err;
+      appLog('core:annex', 'info', 'No IPv6 here; Annex listens on IPv4 only', { meta: { code } });
+      return listenOn(port, host);
+    }
+  };
 }
 
 /** Persist the bound ports for the next launch's listenPreferringPort. */

@@ -134,7 +134,8 @@ export function PairedSatelliteList({ devices, onPairAgain }: Props) {
                 Disconnect
               </Button>
             )}
-            {device.role === 'satellite' && device.state !== 'needs-pairing' && editingAddress !== device.fingerprint && (
+            {/* Also while it needs pairing again: a mistyped address can be why. */}
+            {device.role === 'satellite' && editingAddress !== device.fingerprint && (
               <Button onClick={() => setEditingAddress(device.fingerprint)} kind="ghost">
                 Address
               </Button>

@@ -155,6 +155,12 @@ interface SatelliteConnectionInternal {
   discovered?: ReachAddress | null;
   /** Which of its candidate addresses the current attempt uses. */
   candidateIndex?: number;
+  /** Where the current attempt's address came from. */
+  candidateSource?: ReachAddress['source'];
+  /** The announced address was tried since it was last announced. */
+  discoveredTried?: boolean;
+  /** Addresses that showed another certificate in this round of tries. */
+  mismatches?: number;
 }
 
 // Heartbeat constants
@@ -618,7 +624,14 @@ function haltForTlsError(sat: SatelliteConnectionInternal, err: unknown): boolea
   if (code === NEEDS_PAIRING_CODE) { haltSatellite(sat, 'pairing', NEEDS_PAIRING_MESSAGE, 'old-pairing'); return true; }
   if (code === 'CERT_HAS_EXPIRED') { haltSatellite(sat, 'pairing', CERT_EXPIRED_MESSAGE, 'cert-expired'); return true; }
   if (code === 'CERT_NOT_YET_VALID') { haltSatellite(sat, 'clock', CERT_NOT_YET_VALID_MESSAGE, 'cert-not-yet-valid'); return true; }
-  if (code && (code === annexTls.PIN_MISMATCH_CODE || MISMATCH_CODES.includes(code))) { haltSatellite(sat, 'mismatch', certMismatchMessage(sat.alias), 'cert-mismatch'); return true; }
+  if (code && (code === annexTls.PIN_MISMATCH_CODE || MISMATCH_CODES.includes(code))) {
+    // Another server at one of several addresses (a typo, or another service on that port):
+    // move on to the next. Only when every address shows another certificate does it stop.
+    sat.mismatches = (sat.mismatches ?? 0) + 1;
+    if (sat.mismatches < candidatesFor(sat).length) return false;
+    haltSatellite(sat, 'mismatch', certMismatchMessage(sat.alias), 'cert-mismatch');
+    return true;
+  }
   return false;
 }
 
@@ -747,6 +760,8 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       void readSmallBody(res).then((text) => {
         try { req.destroy(); } catch { /* telemetry-exempt: closing a refused upgrade */ }
         try { ws.terminate(); } catch { /* telemetry-exempt: closing a refused upgrade */ }
+        // Stopped or forgotten while the body arrived: this record is gone, so nothing more to do.
+        if (satellites.get(sat.fingerprint) !== sat) return;
         let code: unknown;
         try { code = (JSON.parse(text) as { error?: unknown }).error; } catch { /* telemetry-exempt: a refusal without a JSON body is handled as a plain one */ }
         const refusal = needsPairingRefusalFor(code);
@@ -765,9 +780,12 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       connectAuthMode(sat.fingerprint, 'mtls');
       setState(sat, 'connected');
       sat.reconnectAttempt = 0;
-      sat.candidateIndex = 0;
+      sat.mismatches = 0;
       // Remembered, so it's found again after a restart without waiting for discovery (#3058).
-      annexPeers.noteReached(sat.fingerprint, sat.host, sat.mainPort);
+      // A typed address is kept as typed instead: clearing it then forgets it, and its port stays its own.
+      if (sat.candidateSource === 'typed') annexPeers.updateLastSeen(sat.fingerprint);
+      else annexPeers.noteReached(sat.fingerprint, sat.host, sat.mainPort);
+      sat.candidateIndex = 0;
       startHeartbeat(sat);
     });
 
@@ -1162,6 +1180,8 @@ function scheduleReconnect(sat: SatelliteConnectionInternal): void {
   }
   // Refused, or a certificate or clock problem: retrying the same way can't help.
   if (sat.halt || sat.needsPairing) return;
+  // Stopped or forgotten: this record is no longer the satellite's.
+  if (satellites.get(sat.fingerprint) !== sat) return;
 
   // Check if auto-reconnect is enabled
   const settings = annexSettings.getSettings();
@@ -1172,10 +1192,14 @@ function scheduleReconnect(sat: SatelliteConnectionInternal): void {
 
   // Each of its addresses gets a quick try in turn; once all have failed, back off (#3058).
   const candidates = candidatesFor(sat);
-  const nextIndex = candidates.length > 0 ? ((sat.candidateIndex ?? 0) + 1) % candidates.length : 0;
+  let nextIndex = candidates.length > 0 ? ((sat.candidateIndex ?? 0) + 1) % candidates.length : 0;
+  // An address announced during that attempt goes next, at once: it's where the satellite is now.
+  const announcedNext = candidates[0]?.source === 'discovered' && !sat.discoveredTried;
+  if (announcedNext) nextIndex = 0;
+  if (nextIndex === 0) sat.mismatches = 0;
   sat.candidateIndex = nextIndex;
   let delay: number;
-  if (nextIndex !== 0) {
+  if (nextIndex !== 0 || announcedNext) {
     delay = NEXT_ADDRESS_DELAY_MS;
   } else {
     // Exponential backoff with jitter: 1s, 2s, 4s, 8s, 30s cap
@@ -1220,6 +1244,8 @@ function useCandidate(sat: SatelliteConnectionInternal, candidates: ReachAddress
   sat.candidateIndex = index;
   sat.host = candidates[index].host;
   sat.mainPort = candidates[index].port;
+  sat.candidateSource = candidates[index].source;
+  if (candidates[index].source === 'discovered') sat.discoveredTried = true;
 }
 
 /** A satellite connection record for a paired peer, not yet connected. */
@@ -1337,12 +1363,17 @@ function startDiscovery(): void {
           // disconnected satellite tries it, and the pinned certificate decides.
           const live = sat.state === 'connected' || sat.state === 'connecting';
           const hostChanged = host !== sat.host || mainPort !== sat.mainPort;
-          if (host && mainPort) sat.discovered = { host, port: mainPort };
+          if (host && mainPort && (sat.discovered?.host !== host || sat.discovered?.port !== mainPort)) {
+            sat.discovered = { host, port: mainPort };
+            sat.discoveredTried = false;
+          }
           if (hostChanged && !live) {
             sat.host = host;
             sat.mainPort = mainPort;
             sat.pairingPort = pairingPort;
             sat.candidateIndex = 0; // the announced address is the first candidate
+            sat.candidateSource = 'discovered';
+            sat.discoveredTried = true;
           }
           // After a certificate mismatch, a newly announced address gets one more try, through the same pin.
           const halted = sat.halt || sat.needsPairing;
@@ -1361,7 +1392,11 @@ function startDiscovery(): void {
         sat.host = host;
         sat.mainPort = mainPort;
         sat.pairingPort = pairingPort;
-        if (host && mainPort) sat.discovered = { host, port: mainPort };
+        if (host && mainPort) {
+          sat.discovered = { host, port: mainPort };
+          sat.candidateSource = 'discovered';
+          sat.discoveredTried = true;
+        }
 
         satellites.set(fingerprint, sat);
         broadcastSatellitesChanged();
@@ -1489,18 +1524,25 @@ export function setSatelliteHost(fingerprint: string, input: string): SetHostRes
   const peer = annexPeers.getPeer(fingerprint);
   if (!peer || peer.role === 'controller') return { ok: false, error: "That computer isn't one this computer connects to." };
   const value = input.trim();
-  if (value && !parseTypedHost(value)) {
+  const parsed = value ? parseTypedHost(value) : null;
+  if (value && !parsed) {
     return { ok: false, error: 'Type a name or address, such as studio.local, a tailnet name or 192.168.1.20, with an optional :port.' };
+  }
+  const sat = satellites.get(fingerprint);
+  if (parsed && !parsed.port && !peer.mainPort && !sat?.mainPort) {
+    return { ok: false, error: "This computer hasn't reached it yet, so add its port too, such as studio.local:9443. Its Annex settings show the port." };
   }
   annexPeers.setTypedHost(fingerprint, value || undefined);
   appLog('core:annex-client', 'info', value ? 'Typed host set for satellite' : 'Typed host cleared for satellite', { meta: { fingerprint } });
-  const sat = satellites.get(fingerprint);
-  if (!sat) { connect(fingerprint); broadcastSatellitesChanged(); return { ok: true }; }
+  // Saved either way; connecting waits for Connect to satellites.
+  if (!annexSettings.getSettings().enableClient) { broadcastSatellitesChanged(); return { ok: true }; }
+  if (!sat) { if (value) connect(fingerprint); broadcastSatellitesChanged(); return { ok: true }; }
+  // A new address is a fresh chance after "showed a different certificate": that may have been the old address.
+  if (sat.halt === 'mismatch') { sat.halt = null; sat.needsPairing = false; sat.mismatches = 0; }
   if (value && (sat.state === 'disconnected' || sat.state === 'discovering') && !sat.needsPairing) {
     // Try what was typed now: it's the first candidate unless discovery has an address.
     const candidates = candidatesFor(sat);
-    const parsed = parseTypedHost(value)!;
-    const index = candidates.findIndex((a) => a.host === parsed.host);
+    const index = candidates.findIndex((a) => a.source === 'typed');
     sat.candidateIndex = index === -1 ? 0 : index;
     sat.reconnectAttempt = 0;
     if (sat.reconnectTimer) { clearTimeout(sat.reconnectTimer); sat.reconnectTimer = null; }
@@ -2376,6 +2418,8 @@ export function resumeAllConnections(): void {
   // Waking never starts the client: with Connect to satellites off there's nothing to resume.
   if (!annexSettings.getSettings().enableClient) return;
   for (const sat of satellites.values()) {
+    // An address announced before sleep may be another network's.
+    sat.discovered = null;
     if (sat.state === 'disconnected') {
       sat.reconnectAttempt = 0; // Reset backoff on resume
       sat.candidateIndex = 0;

@@ -2601,6 +2601,74 @@ describe('annex-client', () => {
       expect(annexPeers.setTypedHost).toHaveBeenLastCalledWith(FP, undefined);
     });
 
+    const mismatch = () => Object.assign(new Error('pin'), { code: 'ERR_ANNEX_PIN_MISMATCH' });
+
+    it('goes to an address announced during an attempt next, at once, instead of the stale one again', async () => {
+      vi.useFakeTimers();
+      mockHttpGetIdentity({ fingerprint: FP, alias: 'Studio', icon: 'server', color: 'green', publicKey: 'sat-pk' });
+      annexClient.startClient();
+      expect(sockets[0].url).toBe('wss://10.0.0.4:9443/ws?client=desktop');
+      await bonjourFindCallback!(makeService({ addresses: ['192.168.1.77'], port: 9443 }));
+      sockets[0].handlers.error(refused());
+      await vi.advanceTimersByTimeAsync(300);
+      expect(sockets.map((x) => x.url)).toEqual(['wss://10.0.0.4:9443/ws?client=desktop', 'wss://192.168.1.77:9443/ws?client=desktop']);
+    });
+
+    it('moves on when one of several addresses shows another certificate, and stops only when all do', async () => {
+      vi.useFakeTimers();
+      annexClient.startClient();
+      sockets[0].handlers.error(mismatch());
+      expect(annexClient.getSatellite(FP)?.needsPairing).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(300);
+      expect(sockets[1].url).toBe('wss://10.0.0.5:9443/ws?client=desktop');
+      sockets[1].handlers.error(mismatch());
+      expect(annexClient.getSatellite(FP)).toMatchObject({ needsPairing: true, problem: { code: 'cert-mismatch' } });
+    });
+
+    it('a new address clears "showed a different certificate" and tries again', () => {
+      peer = { ...base, knownHosts: ['10.0.0.4'], mainPort: 9443 };
+      annexClient.startClient();
+      sockets[0].handlers.error(mismatch());
+      expect(annexClient.getSatellite(FP)?.needsPairing).toBe(true);
+      vi.mocked(annexPeers.setTypedHost).mockImplementation((_fp, host) => { peer = { ...peer, typedHost: host }; return true; });
+      expect(annexClient.setSatelliteHost(FP, 'studio.tail1234.ts.net').ok).toBe(true);
+      expect(sockets.at(-1)!.url).toBe('wss://studio.tail1234.ts.net:9443/ws?client=desktop');
+    });
+
+    it('asks for a port when it has never reached the satellite', () => {
+      peer = { ...base };
+      expect(annexClient.setSatelliteHost(FP, 'studio.local')).toEqual({ ok: false, error: expect.stringMatching(/add its port/) });
+      expect(annexClient.setSatelliteHost(FP, 'studio.local:9443')).toEqual({ ok: true });
+    });
+
+    it('saves a typed host without connecting while Connect to satellites is off', () => {
+      vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false } as any);
+      expect(annexClient.setSatelliteHost(FP, 'studio.local')).toEqual({ ok: true });
+      expect(annexPeers.setTypedHost).toHaveBeenCalledWith(FP, 'studio.local');
+      expect(sockets).toHaveLength(0);
+    });
+
+    it('keeps a typed address as typed: connecting through it is not remembered as a found address', () => {
+      peer = { ...base, typedHost: 'studio:7000', mainPort: 9443 };
+      annexClient.startClient();
+      expect(sockets[0].url).toBe('wss://studio:7000/ws?client=desktop');
+      sockets[0].handlers.open();
+      expect(annexPeers.noteReached).not.toHaveBeenCalled();
+      expect(annexPeers.updateLastSeen).toHaveBeenCalledWith(FP);
+    });
+
+    it('starts nothing more for a refusal that arrives after the client stopped', async () => {
+      vi.useFakeTimers();
+      annexClient.startClient();
+      const res = Object.assign(new EventEmitter(), { statusCode: 503 });
+      sockets[0].handlers['unexpected-response']({ destroy: vi.fn() }, res);
+      annexClient.stopClient();
+      res.emit('data', Buffer.from('{"error":"tls_unavailable"}'));
+      res.emit('end');
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(sockets).toHaveLength(1);
+    });
+
     it('never sets a typed host on a device that controls this machine', () => {
       peer = { ...base, role: 'controller' };
       expect(annexClient.setSatelliteHost(FP, 'studio').ok).toBe(false);
