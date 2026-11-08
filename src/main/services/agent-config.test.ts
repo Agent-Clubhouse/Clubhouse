@@ -73,6 +73,8 @@ vi.mock('./chat-idle-settings', () => ({
   setAgentIdleSleep: vi.fn(),
 }));
 
+vi.mock('./agent-runtime/chat-media-retention', () => ({ removeAgentChatMedia: vi.fn(async () => {}) }));
+
 vi.mock('./managed-agents/changed-notice', () => ({
   noteManagedSettingsChanged: vi.fn(),
 }));

@@ -74,10 +74,12 @@ vi.mock('./agent-settings-service', () => ({
   readProjectAgentDefaults: vi.fn(async () => ({})),
 }));
 vi.mock('./agent-system', () => ({ resolveOrchestrator: vi.fn() }));
+vi.mock('./agent-runtime/chat-media-retention', () => ({ removeAgentChatMedia: vi.fn(async () => {}) }));
 
 import {
   clearAgentConfigCache,
   createDurable,
+  deleteDurable,
   deleteUnregister,
   flushAgentConfig,
   flushAllAgentConfigs,
@@ -88,6 +90,7 @@ import {
   renameDurable,
   restoreFromBackup,
 } from './agent-config';
+import { removeAgentChatMedia } from './agent-runtime/chat-media-retention';
 
 const PROJECT_PATH = path.resolve('test-project');
 const CONFIG_PATH = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
@@ -334,6 +337,17 @@ describe('agent-config cross-project durable ID collisions', () => {
     expect(await projectKey(PROJECT_PATH)).toMatch(/^path:/);
     expect(await projectKey(OTHER_PATH)).toMatch(/^path:/);
     expect(await isSameProject(PROJECT_PATH, OTHER_PATH)).toBe(false);
+  });
+
+  it('removes chat media only for an agent that was really in the project (#2828)', async () => {
+    files.set(CONFIG_PATH, JSON.stringify([AGENT_A, AGENT_B]));
+    vi.mocked(removeAgentChatMedia).mockClear();
+    await deleteUnregister(OTHER_PATH, AGENT_A.id);
+    await deleteDurable(OTHER_PATH, AGENT_B.id);
+    expect(removeAgentChatMedia).not.toHaveBeenCalled();
+    await deleteUnregister(PROJECT_PATH, AGENT_A.id);
+    await deleteDurable(PROJECT_PATH, AGENT_B.id);
+    expect(vi.mocked(removeAgentChatMedia).mock.calls).toEqual([[AGENT_A.id], [AGENT_B.id]]);
   });
 
   it('releases ownership when the owning project removes the agent', async () => {
