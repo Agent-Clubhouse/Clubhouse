@@ -20,7 +20,7 @@
  * Grants are a cooperative guardrail on the Clubhouse MCP, not a sandbox.
  */
 
-import { evaluateGrant, GRANT_REFUSAL_MESSAGES, widerOrSame, type Grant, type GrantAction, type GrantCallTarget, type GrantCaller, type GrantRefusal } from '../../../shared/agent-grants';
+import { evaluateGrant, GRANT_REFUSAL_MESSAGES, widerOrSame, type Grant, type GrantAction, type GrantCallTarget, type GrantCaller, type GrantDecision, type GrantRefusal } from '../../../shared/agent-grants';
 import { defaultGrants } from '../../../shared/default-grants';
 import { isProjectAdmin } from '../../../shared/group-project-admin';
 import { CROSS_PROJECT_OFF_MESSAGE, fiveLevelOf } from '../../../shared/orchestration-policy';
@@ -235,8 +235,12 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
  * group project's board.
  */
 export function holdsGrant(agentId: string, action: GrantAction, target: GrantCallTarget): boolean {
-  const caller = callerOf(agentId);
-  return evaluateGrant({ caller, action, target }, callerGrants(agentId)).outcome === 'allow';
+  return decideGrant(agentId, action, target).outcome === 'allow';
+}
+
+/** As holdsGrant, with the whole decision: allow, ask first, or refuse. */
+export function decideGrant(agentId: string, action: GrantAction, target: GrantCallTarget): GrantDecision {
+  return evaluateGrant({ caller: callerOf(agentId), action, target }, callerGrants(agentId));
 }
 
 /**
