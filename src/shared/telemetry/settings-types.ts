@@ -48,6 +48,8 @@ export interface TelemetryDestinationEntry {
   otlp?: OtlpDestinationSettings;
   /** Framebriar (the developer's feedback service): no user fields, only the user's Off. */
   framebriar?: FramebriarDestinationSettings;
+  /** Backfill (#2920): history up to this time (ms since the epoch) was sent once, so it's never offered again. */
+  backfilledThrough?: number;
 }
 
 /**
@@ -209,3 +211,38 @@ export interface TelemetryPreviewItem {
   attributes: Record<string, string | number | boolean>;
   value?: number;
 }
+
+// ── Backfill on connect (#2920) ─────────────────────────────────────────
+
+export const BACKFILL_DAY_CHOICES = [1, 7, 30] as const;
+/** How much history to send: the last 1, 7 or 30 days before the destination was turned on, or everything kept. */
+export type BackfillRange = (typeof BACKFILL_DAY_CHOICES)[number] | 'all';
+
+export interface BackfillOffer {
+  destinationId: string;
+  /** When the destination was turned on: everything before this is history. */
+  until: number;
+  /** The oldest recorded time not yet sent to it. */
+  oldest: number;
+  /** Whole days between the oldest history and `until`, at least 1. */
+  days: number;
+  /** Bytes of record files holding that history (an upper bound on what's read). */
+  bytes: number;
+}
+
+export type BackfillState = 'running' | 'done' | 'failed' | 'cancelled';
+
+export interface BackfillStatus {
+  destinationId: string;
+  state: BackfillState;
+  spans: number;
+  logs: number;
+  metricPoints: number;
+  /** Items the destination's level, filters or limits didn't take. */
+  filtered: number;
+  /** Runs (app sessions) sent so far, of all to send. */
+  runsDone: number;
+  runsTotal: number;
+  reason?: string;
+}
+

@@ -6,6 +6,7 @@
  * Several destinations can be enabled at once, each with its own switch,
  * level and preset. Consent names every host that will receive data.
  */
+import { dismissBackfill, noteDestinationDisabled, noteDestinationEnabled } from './backfill';
 import { restartLocalRecording } from './local-control';
 import { deleteLocalSalt } from './local-salt';
 import { app } from 'electron';
@@ -368,6 +369,9 @@ export async function setEnabled(
   const entry = findDestination(settings, destinationId);
   if (!entry) return fail('unknown_destination', 'Unknown destination.');
   if (!enabled) {
+    // What it was sent live counts as sent: turning it on again offers only what came after (#2920).
+    if (entry.enabled) await noteDestinationDisabled(destinationId);
+    else dismissBackfill(destinationId);
     const clearOffline = getAdapter(entry.kind).usesOfflineQueue === true;
     const before = enabledIds(settings);
     const next = await updateTelemetrySettings((s) => withFramebriarFollowing(withDestination(s, destinationId, (d) => ({
@@ -461,6 +465,8 @@ export async function setEnabled(
   if (!ok || !getActiveDestinations().some((d) => d.id === destinationId)) {
     return fail('start_failed', getDestinationStartError(destinationId) ?? getLastStartError() ?? 'Telemetry failed to start.');
   }
+  // The user turned it on here: history recorded before now may be offered (#2920).
+  noteDestinationEnabled(destinationId, entry.kind);
   return done();
 }
 

@@ -113,6 +113,7 @@ function normalizeEntry(raw: unknown): TelemetryDestinationEntry | null {
     preset: TELEMETRY_FILTER_PRESETS.includes(r.preset as never) ? (r.preset as TelemetryDestinationEntry['preset']) : defaultEntry(kind).preset,
   };
   if (typeof r.confirmedHost === 'string') entry.confirmedHost = r.confirmedHost;
+  if (typeof r.backfilledThrough === 'number' && Number.isFinite(r.backfilledThrough) && r.backfilledThrough > 0) entry.backfilledThrough = r.backfilledThrough;
   if (kind === 'framebriar') {
     const f = (r.framebriar && typeof r.framebriar === 'object' ? r.framebriar : {}) as Record<string, unknown>;
     entry.framebriar = { userOff: f.userOff === true };

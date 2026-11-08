@@ -30,7 +30,9 @@ import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-ho
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import { BasicTracerProvider, BatchSpanProcessor, type SpanProcessor } from '@opentelemetry/sdk-trace-base';
 import {
+  AggregationTemporality,
   createAllowListAttributesProcessor,
+  InstrumentType,
   MeterProvider,
   PeriodicExportingMetricReader,
 } from '@opentelemetry/sdk-metrics';
@@ -76,6 +78,9 @@ import { classifyExportError, sanitizeAttribute } from './redaction';
 import { FlowSampler } from './sampler';
 import { sanitizeStack, type Scrubber } from './scrubber';
 import { ExportResultCode, type ExportResult } from '@opentelemetry/core';
+import type { ReadableLogRecord } from '@opentelemetry/sdk-logs';
+import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
+import { convertRecordLines } from './replay';
 import type {
   Classification,
   ExportRecord,
@@ -84,6 +89,8 @@ import type {
   FlowExtras,
   FlowOptions,
   DestinationHealthRecord,
+  ReplayReport,
+  ReplayRunOptions,
   ReplaySpan,
   SpanHandle,
   TelemetryRuntime,
@@ -499,6 +506,71 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
 
   let shutDown = false;
 
+  /**
+   * Backfill (#2920): recorded lines through the converter, then this destination's
+   * own filter, error-tail rule, limits, stamp and exporters, in batches.
+   */
+  async function replayToDestination(destinationId: string, lines: readonly string[], runOpts: ReplayRunOptions): Promise<ReplayReport> {
+    const report: ReplayReport = { ok: true, spans: 0, logs: 0, metricPoints: 0, filtered: 0, skipped: 0 };
+    const dest = destinations.find((d) => d.id === destinationId);
+    const filter = dest ? filters.get(dest.id) : undefined;
+    if (!dest || !filter || shutDown) return { ...report, ok: false, reason: 'not_enabled' };
+    const cumulative = dest.exporters.metricExporter.selectAggregationTemporality?.(InstrumentType.COUNTER) === AggregationTemporality.CUMULATIVE;
+    const converted = convertRecordLines(lines, {
+      resource: (run) => resourceFromAttributes({
+        ...opts.resourceAttributes,
+        ...(run?.appVersion && { 'service.version': run.appVersion }),
+        ...(run?.uiChrome && { 'clubhouse.ui.chrome': run.uiChrome }),
+        ...(run?.serviceInstanceId && { 'service.instance.id': run.serviceInstanceId }),
+      }),
+      temporality: cumulative ? 'cumulative' : 'delta',
+      scrub,
+      itemAttributes: userAttrs,
+      // Azure stamps metric envelopes with the export time: replayed windows would land now.
+      metrics: dest.kind !== 'azure',
+      framebriar: dest.kind === 'framebriar',
+    });
+    report.skipped = converted.skipped;
+
+    let spans = converted.spans.filter((s) => filter.span({ name: s.name, attributes: s.attributes, isError: s.status.code === SpanStatusCode.ERROR }));
+    if (filter.errorTail) {
+      // As ErrorTailSpanProcessor: at Errors level, only traces that failed.
+      const failed = new Set(converted.spans.filter((s) => s.status.code === SpanStatusCode.ERROR).map((s) => s.spanContext().traceId));
+      spans = spans.filter((s) => failed.has(s.spanContext().traceId));
+    }
+    let logs = converted.logs.filter((l) => filter.log({ name: String(l.eventName), attributes: l.attributes }));
+    const maxSpans = runOpts.maxSpans ?? opts.sessionCaps?.traces ?? 50_000;
+    const maxLogs = runOpts.maxLogs ?? opts.sessionCaps?.logs ?? 10_000;
+    report.filtered = converted.spans.length - spans.length + converted.logs.length - logs.length;
+    if (spans.length > maxSpans) { report.filtered += spans.length - maxSpans; spans = spans.slice(0, maxSpans); }
+    if (logs.length > maxLogs) { report.filtered += logs.length - maxLogs; logs = logs.slice(0, maxLogs); }
+
+    const spanExporter = new StampSpanExporter(new ObservedSpanExporter(dest.exporters.spanExporter, hooksFor(dest)), stampFor(dest));
+    const logExporter = new StampLogExporter(new ObservedLogExporter(dest.exporters.logExporter, hooksFor(dest)), stampFor(dest));
+    const metricExporter = new FilteredMetricExporter(new ObservedMetricExporter(dest.exporters.metricExporter, hooksFor(dest)), filter);
+    const send = <T>(exp: { export(items: T, cb: (r: ExportResult) => void): void }, items: T) =>
+      new Promise<boolean>((resolve) => exp.export(items, (r) => resolve(r.code === ExportResultCode.SUCCESS)));
+    const BATCH = 256;
+    const stopped = () => runOpts.signal?.aborted === true || shutDown;
+
+    for (const [items, count] of [[spans, 'spans'], [logs, 'logs']] as const) {
+      for (let i = 0; i < items.length; i += BATCH) {
+        if (stopped()) return { ...report, ok: false, reason: 'cancelled' };
+        const batch = items.slice(i, i + BATCH);
+        const ok = count === 'spans' ? await send(spanExporter, batch as ReadableSpan[]) : await send(logExporter, batch as ReadableLogRecord[]);
+        if (!ok) return { ...report, ok: false, reason: 'export_failed' };
+        report[count] += batch.length;
+      }
+    }
+    const points = converted.metrics.scopeMetrics.reduce((n, sm) => n + sm.metrics.filter((m) => filter.metric(m.descriptor.name)).reduce((k, m) => k + m.dataPoints.length, 0), 0);
+    if (points > 0) {
+      if (stopped()) return { ...report, ok: false, reason: 'cancelled' };
+      if (!await send(metricExporter, converted.metrics)) return { ...report, ok: false, reason: 'export_failed' };
+      report.metricPoints = points;
+    }
+    return report;
+  }
+
   return {
     level,
 
@@ -610,6 +682,10 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     },
 
     preview: () => [...tees.values()].flatMap((t) => t.snapshot()).sort((a, b) => a.time - b.time),
+
+    async replay(destinationId, lines, runOpts = {}) {
+      return replayToDestination(destinationId, lines, runOpts);
+    },
 
     recentExports: (sinceMs) => exportLog.filter((r) => r.at >= sinceMs),
 

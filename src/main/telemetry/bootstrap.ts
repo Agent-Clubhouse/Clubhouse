@@ -8,6 +8,7 @@
  * chunk is never imported. When on, it starts buffering facade calls and
  * loads the SDK asynchronously so it never blocks `ready`.
  */
+import type { ReplayReport, ReplayRunOptions } from './types';
 import { adoptIdentity, deleteLocalSalt } from './local-salt';
 import * as os from 'os';
 import { telemetryInstanceId as instanceId } from './instance';
@@ -590,6 +591,19 @@ export async function sendTestEvent(destinationId: string, timeoutMs = 10_000): 
   await rt.forceFlush(timeoutMs);
   const exports = rt.recentExports(t0).filter((r) => r.signal !== 'metrics' && r.destination === destinationId);
   return { ok: exports.length > 0 && exports.every((r) => r.ok), latencyMs: Date.now() - t0, exports };
+}
+
+/**
+ * Send recorded lines to one running destination (#2920 backfill), through the
+ * runtime's replay: the record converter, then that destination's own pipeline.
+ */
+export async function replayToDestination(destinationId: string, lines: readonly string[], opts: ReplayRunOptions = {}): Promise<ReplayReport> {
+  if (starting) await starting;
+  const rt = getRuntime();
+  if (!rt?.replay || !activeDestinations.some((d) => d.id === destinationId)) {
+    return { ok: false, reason: 'not_enabled', spans: 0, logs: 0, metricPoints: 0, filtered: 0, skipped: 0 };
+  }
+  return rt.replay(destinationId, lines, opts);
 }
 
 /** Resolves when an in-flight startup finishes (tests, test event). */

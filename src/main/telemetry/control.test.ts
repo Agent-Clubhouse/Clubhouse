@@ -53,6 +53,12 @@ vi.mock('./secret-store', () => ({
 }));
 
 const localSalt = vi.hoisted(() => ({ deleted: 0 }));
+const backfillCalls = vi.hoisted(() => [] as string[]);
+vi.mock('./backfill', () => ({
+  noteDestinationEnabled: (id: string) => { backfillCalls.push(`enabled:${id}`); },
+  noteDestinationDisabled: async (id: string) => { backfillCalls.push(`disabled:${id}`); },
+  dismissBackfill: (id: string) => { backfillCalls.push(`dismissed:${id}`); },
+}));
 const localRecording = vi.hoisted(() => ({ restarts: 0 }));
 vi.mock('./local-control', async (importActual) => ({ ...await importActual<typeof import('./local-control')>(), restartLocalRecording: async () => { localRecording.restarts++; } }));
 vi.mock('./local-salt', () => ({ deleteLocalSalt: () => { localSalt.deleted++; } }));
@@ -296,6 +302,15 @@ describe('telemetry settings control', () => {
     expect(state.settings.hashSalt).toBeDefined();
     expect(state.calls).toEqual(['restart:keep', 'restart:keep', 'restart:clear']);
     expect(await control.setAdvanced({ sampleRate: 2 })).toMatchObject({ ok: false, reason: 'invalid_sample_rate' });
+  });
+
+  it('notes a destination the user turned on for a backfill offer, and marks what it was sent when turned off (#2920)', async () => {
+    backfillCalls.length = 0;
+    state.secrets.connectionString = CS;
+    expect(await control.setEnabled('azure', true, { consent: true, host: HOST })).toMatchObject({ ok: true });
+    expect(backfillCalls).toEqual(['enabled:azure']);
+    expect(await control.setEnabled('azure', false)).toMatchObject({ ok: true });
+    expect(backfillCalls).toEqual(['enabled:azure', 'disabled:azure']);
   });
 
   it('shows a Phase 1 file without recorded consent as off, and asks for consent to turn it on', async () => {

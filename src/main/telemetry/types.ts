@@ -133,6 +133,32 @@ export interface TelemetryRuntime {
   destinationHealth(): Record<string, DestinationHealthRecord>;
   forceFlush(timeoutMs: number): Promise<void>;
   shutdown(timeoutMs: number): Promise<void>;
+  /**
+   * Send recorded lines (one run's, in file order) to one destination (#2920 backfill):
+   * through the record converter (replay.ts), the destination's own level, filters,
+   * error-tail rule and exporters, as live data would go. Never to another destination.
+   */
+  replay?(destinationId: string, lines: readonly string[], opts?: ReplayRunOptions): Promise<ReplayReport>;
+}
+
+export interface ReplayRunOptions {
+  /** Stops between batches; what was already sent stays sent. */
+  signal?: AbortSignal;
+  /** The most of each signal one call sends (defaults to the session caps). */
+  maxSpans?: number;
+  maxLogs?: number;
+}
+
+export interface ReplayReport {
+  ok: boolean;
+  reason?: 'not_enabled' | 'cancelled' | 'export_failed';
+  spans: number;
+  logs: number;
+  metricPoints: number;
+  /** Converted items the destination's level or filters didn't take, or past the limits. */
+  filtered: number;
+  /** Lines that didn't convert: diag, bookkeeping, unknown or unreadable. */
+  skipped: number;
 }
 
 /**
