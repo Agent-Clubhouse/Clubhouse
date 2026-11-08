@@ -15,8 +15,9 @@
 import type { ContextLimits } from '../../shared/context-window';
 import { readProviderSkills, type ChatProviderSkills } from '../../shared/chat/provider-skills';
 import { useMemo } from 'react';
-import { localizeRemoteEvent, readRemoteTranscript, remoteChat, remoteChatTarget } from './remoteChatBackend';
-import { onRemoteChatEvent } from './annexClientStore';
+import { localizeRemoteEvent, readRemoteTranscript, remoteChat, remoteChatTarget, type RemoteChatMeta } from './remoteChatBackend';
+import { satellitePrefix } from './remoteProjectStore';
+import { onRemoteChatEvent, onSatelliteSnapshot } from './annexClientStore';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { COMPACTION_SETTLED, COMPACTION_STARTED, MINIMAL_CHAT_CAPABILITIES, coalesceUpdateContent, parseRoutedText } from '../../shared/chat';
@@ -1044,6 +1045,24 @@ export function chatEventCount(agentId: string): number {
   return liveEventCounts.get(agentId) ?? 0;
 }
 
+/**
+ * Fills what a cut page from another desktop left out of the folded state:
+ * capabilities and slash commands from before the page, and the picker lists.
+ * What the events did carry wins.
+ */
+function withRemoteMeta(state: ChatViewState, meta: RemoteChatMeta): ChatViewState {
+  const controls = meta.chatControls ?? {};
+  const next = { ...state };
+  if (meta.capabilities && (!state.capabilities || state.capabilities === MINIMAL_CHAT_CAPABILITIES)) next.capabilities = meta.capabilities as unknown as ChatViewState['capabilities'];
+  if (Array.isArray(meta.slashCommands) && (!state.commands || state.commands.length === 0)) next.commands = meta.slashCommands as ChatViewState['commands'];
+  if (state.models.length === 0 && Array.isArray(controls.models)) next.models = controls.models as ChatViewState['models'];
+  if (state.efforts.length === 0 && Array.isArray(controls.efforts)) next.efforts = controls.efforts as string[];
+  if (Object.keys(state.levelNames).length === 0 && controls.levelNames && typeof controls.levelNames === 'object') next.levelNames = controls.levelNames as ChatViewState['levelNames'];
+  if (state.level === null && typeof controls.level === 'string') next.level = controls.level as ChatViewState['level'];
+  if (!state.model && typeof controls.model === 'string') next.model = controls.model;
+  return next;
+}
+
 /** True or false when main says whether a chat runtime runs the agent; undefined when it can't say. */
 async function runtimeIsLive(agentId: string): Promise<boolean | undefined> {
   try {
@@ -1102,6 +1121,8 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       // An agent on another desktop is read from there (#2390), never from this machine's chat runtime.
       const remote = remoteChatTarget(agentId);
       let remoteLive: boolean | undefined;
+      let remoteCut = false;
+      let remoteMeta: RemoteChatMeta = {};
       // Whether a chat runtime runs this agent now; asked alongside the read.
       const live = remote ? Promise.resolve(undefined) : runtimeIsLive(agentId);
       try {
@@ -1109,6 +1130,8 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
           const read = await readRemoteTranscript(agentId, tail);
           events = read.events;
           remoteLive = read.live;
+          remoteCut = read.truncated;
+          remoteMeta = read.meta;
         } else {
           events = (await window.clubhouse.chat.readTranscript(agentId, tail)) ?? [];
         }
@@ -1141,8 +1164,10 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       // Nothing runs the transcript's session any more (the app quit or
       // crashed mid-turn): what it was waiting on can't be answered.
       if (runtimeLive === false) fromTranscript = settleDeadSession(fromTranscript);
-      // A tail that came back full may have cut earlier events off.
-      const transcriptCut = tail !== undefined && events.length >= tail;
+      // What a cut page left out about the session (its start, its picker lists), from the page itself.
+      if (remote) fromTranscript = withRemoteMeta(fromTranscript, remoteMeta);
+      // A tail that came back full may have cut earlier events off; a page from another desktop says so itself.
+      const transcriptCut = remote ? remoteCut : tail !== undefined && events.length >= tail;
       // ...including the model_changed that reported the effort: show what's known.
       if (transcriptCut) fromTranscript = { ...fromTranscript, effortReported: true };
       const next = foldChatEvents(fromTranscript, agentId, buffered);
@@ -1277,5 +1302,14 @@ export function initChatEventListener(): () => void {
   const offRemote = onRemoteChatEvent((satelliteId, event) => {
     useChatStore.getState().applyEvent(localizeRemoteEvent(satelliteId, event));
   });
-  return () => { offLocal(); offRemote(); };
+  // A satellite's snapshot comes on every (re)connect: events sent while it was away aren't replayed,
+  // so each of its chats already read is read again from its page (authoritative, deduped by seq).
+  const offSnapshot = onSatelliteSnapshot((satelliteId) => {
+    const state = useChatStore.getState();
+    const prefix = satellitePrefix(satelliteId);
+    for (const id of Object.keys(state.loaded)) {
+      if (id.startsWith(prefix) && state.loaded[id]) void state.loadTranscript(id);
+    }
+  });
+  return () => { offLocal(); offRemote(); offSnapshot(); };
 }

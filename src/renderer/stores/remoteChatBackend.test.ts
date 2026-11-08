@@ -29,18 +29,30 @@ describe('chat for an agent on another desktop (#2390)', () => {
 
   it('reads the transcript from that desktop, keyed by the namespaced id, pending prompts folded in once', async () => {
     const pending = ev(3, 'permission_request', { requestId: 'p1' });
-    chatPage.mockResolvedValueOnce({ events: [ev(1, 'session_started'), pending], pendingPermissions: [pending], pendingQuestions: [], state: 'waiting_permission' });
+    chatPage.mockResolvedValueOnce({ events: [ev(1, 'session_started'), pending], pendingPermissions: [pending], pendingQuestions: [], state: 'waiting_permission', readOnly: false });
     const read = await readRemoteTranscript(NS, 50);
     expect(chatPage).toHaveBeenCalledWith(SAT, 'durable_chat', { limit: 50 });
     expect(read.events.map((e) => [e.agentId, e.seq])).toEqual([[NS, 1], [NS, 3]]);
     expect(read.live).toBe(true);
+    // A sleeping agent's page still has a state; readOnly is what says nothing runs it.
+    chatPage.mockResolvedValueOnce({ events: [], state: 'sleeping', readOnly: true });
+    expect((await readRemoteTranscript(NS)).live).toBe(false);
   });
 
   it('sends commands to that desktop with the session, and throws a refusal\'s message', async () => {
     await expect(remoteChat.send(NS, 'sess_live', 'hi', 'auto')).resolves.toEqual({ delivery: 'prompt', messageId: 'msg_1' });
     expect(chatCommand).toHaveBeenCalledWith(SAT, { type: 'chat.send', agentId: 'durable_chat', sessionId: 'sess_live', text: 'hi', delivery: 'auto' });
-    chatCommand.mockResolvedValueOnce({ status: 'rejected', error: { code: 'session_mismatch', message: 'That session ended.' } });
-    await expect(remoteChat.interrupt(NS, 'sess_live')).rejects.toThrow('That session ended.');
+    // Refusals in words, not codes.
+    chatCommand.mockResolvedValueOnce({ status: 'rejected', error: { code: 'session_mismatch', message: 'session_mismatch' } });
+    await expect(remoteChat.interrupt(NS, 'sess_live')).rejects.toThrow('That chat has moved on to a new session. Try again.');
+    chatCommand.mockResolvedValueOnce({ status: 'rejected', error: { code: 'invalid_name', message: 'That name is taken.' } });
+    await expect(remoteChat.interrupt(NS, 'sess_live')).rejects.toThrow('That name is taken.');
+    // The provider's default effort (null) is sent; a missing one isn't.
+    chatCommand.mockResolvedValue({ status: 'completed', result: {} });
+    await remoteChat.setModel(NS, 'sess_live', 'opus', null);
+    expect(chatCommand.mock.calls.at(-1)![1]).toMatchObject({ effort: null });
+    await remoteChat.setModel(NS, 'sess_live', 'opus');
+    expect(chatCommand.mock.calls.at(-1)![1]).not.toHaveProperty('effort');
     await expect(remoteChat.send(NS, null, 'hi')).rejects.toThrow(/not loaded yet/);
   });
 
@@ -72,6 +84,32 @@ describe('chat for an agent on another desktop (#2390)', () => {
     fire!({ satelliteId: SAT, type: 'chat:event', payload: { agentId: 'durable_chat', event: ev(1, 'session_started', { resumed: false }) } });
     expect(useChatStore.getState().agents[NS]?.sessionId).toBe('sess_live');
     expect(useChatStore.getState().agents.durable_chat).toBeUndefined();
+    offChat();
+    offAnnex();
+  });
+
+  it('marks a cut page as partial, and takes what it left out about the session from the page', async () => {
+    chatPage.mockResolvedValueOnce({
+      events: [ev(900, 'turn_started', { trigger: 'prompt' })], state: 'idle', readOnly: false, truncated: true,
+      capabilities: { steer: true, queue: 'client', interrupt: true }, slashCommands: [{ name: 'compact', description: 'Compact' }],
+      chatControls: { level: 'ask', levelNames: { ask: 'default' }, efforts: ['low', 'high'], models: [{ id: 'opus', label: 'Opus' }], model: 'opus' },
+    });
+    await useChatStore.getState().loadTranscript(NS);
+    const s = useChatStore.getState();
+    expect(s.partial[NS]).toBe(true);
+    expect(s.agents[NS]).toMatchObject({ capabilities: { steer: true }, commands: [{ name: 'compact' }], level: 'ask', efforts: ['low', 'high'], model: 'opus' });
+  });
+
+  it('reads a satellite\'s chats again on its next snapshot, so nothing missed while it was away is lost', async () => {
+    let fire: ((e: { satelliteId: string; type: string; payload: unknown }) => void) | null = null;
+    Object.assign(window.clubhouse.annexClient, { onSatelliteEvent: (cb: typeof fire) => { fire = cb; return () => { fire = null; }; } });
+    const { initAnnexClientListener } = await import('./annexClientStore');
+    const offAnnex = initAnnexClientListener();
+    const offChat = initChatEventListener();
+    await useChatStore.getState().loadTranscript(NS);
+    chatPage.mockClear();
+    fire!({ satelliteId: SAT, type: 'snapshot', payload: { projects: [], agents: {}, quickAgents: {} } });
+    await vi.waitFor(() => expect(chatPage).toHaveBeenCalledWith(SAT, 'durable_chat', expect.anything()));
     offChat();
     offAnnex();
   });

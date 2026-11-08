@@ -241,7 +241,8 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
       <PermissionCard
         key={permission.requestId}
         agentName={agent.name}
-        extras={state.capabilities?.permissionExtras}
+        // Another desktop's permission command carries only the choice: no plan edits or feedback (#2390).
+              extras={remote ? undefined : state.capabilities?.permissionExtras}
         request={permission}
         busy={permissionBusy}
         plan={plan}

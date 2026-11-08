@@ -11,6 +11,14 @@ import type { ChatEvent } from '../../shared/chat';
 
 const remoteChatListeners = new Set<(satelliteId: string, event: ChatEvent) => void>();
 
+const snapshotListeners = new Set<(satelliteId: string) => void>();
+
+/** Hears each snapshot from a connected satellite (it comes on every connect and reconnect), with its id. */
+export function onSatelliteSnapshot(listener: (satelliteId: string) => void): () => void {
+  snapshotListeners.add(listener);
+  return () => { snapshotListeners.delete(listener); };
+}
+
 /** Hears each chat event from a connected satellite, with its satellite id (#2390). */
 export function onRemoteChatEvent(listener: (satelliteId: string, event: ChatEvent) => void): () => void {
   remoteChatListeners.add(listener);
@@ -417,6 +425,9 @@ export function initAnnexClientListener(): () => void {
       useAnnexClientStore.setState((state) => ({
         satellitePaused: { ...state.satellitePaused, [satelliteId]: !!snap.sessionPaused },
       }));
+      for (const listener of [...snapshotListeners]) {
+        try { listener(satelliteId); } catch { /* telemetry-exempt: one listener failing must not stop the others */ }
+      }
     } else if (type === 'chat:event') {
       // A satellite chat agent's event (#2390): the chat store keys it by the namespaced agent id.
       const p = payload as { agentId?: string; event?: { agentId?: string } };
