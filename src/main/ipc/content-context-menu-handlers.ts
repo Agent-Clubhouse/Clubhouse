@@ -29,7 +29,7 @@ export function contentMenuItems(context: ContentContextMenu, contents: Electron
   if (context.editable) {
     items.push({ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' });
   } else if (context.selection) {
-    items.push({ label: 'Copy', click: () => write(context.selection!) });
+    items.push({ role: 'copy' });
   }
   return items;
 }

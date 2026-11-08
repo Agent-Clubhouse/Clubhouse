@@ -65,14 +65,28 @@ describe('content menu targets', () => {
     hit.mockReturnValue(null);
     expect(context(img, 0, 0)).toBeNull();
   });
-  it('preserves exact selected multiline text', () => {
-    const p = document.createElement('p'); p.textContent = 'first\n second'; document.body.append(p);
-    const range = document.createRange(); range.selectNodeContents(p); document.getSelection()!.addRange(range);
-    expect(context(p)?.selection).toBe('first\n second');
+  it('reports a selection under the click, but not one left elsewhere', () => {
+    document.body.innerHTML = '<p id="a">first <b>word</b> second</p><p id="b">other</p>';
+    const range = document.createRange(); range.selectNodeContents(document.querySelector('b')!); document.getSelection()!.addRange(range);
+    expect(context(document.querySelector('#a')!)?.selection).toBe(true);
+    expect(context(document.querySelector('b')!)?.selection).toBe(true);
+    expect(context(document.querySelector('#b')!)).toBeNull();
+  });
+  it('copies link destinations as written, not resolved against the app URL', () => {
+    for (const href of ['~/notes.md', '/Users/me/a.md', 'docs/readme.md', 'https://Example.com']) {
+      document.body.innerHTML = `<a href="${href}">label</a>`;
+      expect(context(document.querySelector('a')!)?.link).toBe(href);
+    }
+  });
+  it('gives non-text inputs no editing menu', () => {
+    for (const type of ['checkbox', 'radio', 'range', 'color', 'button', 'file']) {
+      const input = document.createElement('input'); input.type = type;
+      expect(context(input)).toBeNull();
+    }
   });
   it('distinguishes editable, readonly and password input', () => {
     const input = document.createElement('input'); input.value = 'example'; input.setSelectionRange(1, 4);
-    expect(context(input)).toEqual({ editable: true, selection: 'xam' });
+    expect(context(input)).toEqual({ editable: true, selection: true });
     input.readOnly = true; expect(context(input)?.editable).toBe(false);
     input.type = 'password'; expect(context(input)).toBeNull();
   });
@@ -98,7 +112,7 @@ describe('content menu targets', () => {
     listener({ target, isTrusted: true, defaultPrevented: true, preventDefault } as unknown as MouseEvent);
     expect(show).not.toHaveBeenCalled();
     listener({ target, isTrusted: true, defaultPrevented: false, preventDefault } as unknown as MouseEvent);
-    expect(preventDefault).toHaveBeenCalledOnce(); expect(show).toHaveBeenCalledWith({ link: 'https://example.com/', editable: false });
+    expect(preventDefault).toHaveBeenCalledOnce(); expect(show).toHaveBeenCalledWith({ link: 'https://example.com', editable: false });
     dispose(); expect(remove).toHaveBeenCalledWith('contextmenu', listener); add.mockRestore();
   });
 });

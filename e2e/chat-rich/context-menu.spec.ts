@@ -149,8 +149,9 @@ test('native copy menu preserves rich link, image and selection content', async 
 
     const selected = page.getByText('Selection fixture text.', { exact: true });
     await selected.evaluate(el => { const range = document.createRange(); range.selectNodeContents(el); const s = document.getSelection()!; s.removeAllRanges(); s.addRange(range); });
-    expect(await menu(selected)).toContain('Copy');
-    await choose('Copy'); await expect.poll(text).toBe('Selection fixture text.');
+    // A read-only selection uses the native copy role, so its text never crosses IPC.
+    expect(await menu(selected)).toContain('copy');
+    await choose('copy'); await expect.poll(text).toBe('Selection fixture text.');
     await page.evaluate(() => document.getSelection()?.removeAllRanges());
 
     const composerInput = dom.composer.getByRole('textbox', { name: 'Message', exact: true });
@@ -164,6 +165,8 @@ test('native copy menu preserves rich link, image and selection content', async 
     const before = await app.evaluate(() => (globalThis as ProbeGlobal).__copyMenuProbe!.calls);
     await page.getByTestId(`agent-item-${chat.agentId}`).click({ button: 'right' });
     await expect(page.getByTestId('agent-context-menu')).toBeVisible();
+    // The fallback would arrive over async IPC, so give it time to show up before asserting it did not.
+    await page.waitForTimeout(500);
     expect(await app.evaluate(() => (globalThis as ProbeGlobal).__copyMenuProbe!.calls)).toBe(before);
     await page.keyboard.press('Escape');
     expect(page.url()).toBe(urlBefore);

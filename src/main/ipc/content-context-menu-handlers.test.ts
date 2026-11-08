@@ -10,11 +10,11 @@ const wc = contents as unknown as Electron.WebContents;
 function click(item: Electron.MenuItemConstructorOptions) { item.click?.({} as Electron.MenuItem, {} as Electron.BaseWindow, {} as Electron.KeyboardEvent); }
 beforeEach(() => { mock.owner.mockReturnValue({}); mock.build.mockReturnValue({ popup: mock.popup }); contents.isDestroyed.mockReturnValue(false); contents.getZoomFactor.mockReturnValue(1); });
 describe('native copy content menu', () => {
-  it('copies the requested address and selected text separately without opening anything', async () => {
-    const items = contentMenuItems({ link: 'https://example.com/real', selection: 'visible\ntext', editable: false }, wc);
-    expect(items.map(i => i.label || i.type)).toEqual(['Copy link address', 'separator', 'Copy']);
-    click(items[0]); click(items[2]);
-    expect(mock.write.mock.calls).toEqual([['https://example.com/real'], ['visible\ntext']]);
+  it('copies the requested address, and the selection natively, without opening anything', async () => {
+    const items = contentMenuItems({ link: 'https://example.com/real', selection: true, editable: false }, wc);
+    expect(items.map(i => i.label || i.role || i.type)).toEqual(['Copy link address', 'separator', 'copy']);
+    click(items[0]);
+    expect(mock.write.mock.calls).toEqual([['https://example.com/real']]);
   });
   it('copies image pixels in the requesting web contents, not the image URL or a new fetch', () => {
     const items = contentMenuItems({ editable: false, image: { point: { x: 10, y: 23 }, address: 'https://example.com/a.png' } }, wc);
@@ -41,7 +41,7 @@ describe('native copy content menu', () => {
   });
   it('uses native editing roles, and copy-only for readonly selection', () => {
     expect(contentMenuItems({ editable: true }, wc).map(i => i.role || i.type)).toEqual(['undo', 'redo', 'separator', 'cut', 'copy', 'paste', 'selectAll']);
-    expect(contentMenuItems({ editable: false, selection: 'read only' }, wc).map(i => i.label)).toEqual(['Copy']);
+    expect(contentMenuItems({ editable: false, selection: true }, wc).map(i => i.role)).toEqual(['copy']);
   });
   it('reports asynchronous clipboard failure without content in the error', async () => {
     mock.write.mockRejectedValueOnce(new Error('private clipboard contents'));
@@ -54,6 +54,9 @@ describe('native copy content menu', () => {
     expect(isContentContextMenu({ editable: false, image: { point: { x: -1, y: 0 } } })).toBe(false);
     expect(isContentContextMenu({ editable: false, link: {} })).toBe(false);
     expect(isContentContextMenu({ editable: false, selection: 'x'.repeat(1_000_001) })).toBe(false);
+    expect(isContentContextMenu({ editable: false, selection: 'text never crosses IPC' })).toBe(false);
+    expect(isContentContextMenu({ editable: false, selection: true })).toBe(true);
+    expect(isContentContextMenu({ editable: false, link: 'x'.repeat(1_000_001) })).toBe(false);
     expect(isContentContextMenu({ editable: false, link: 'file:///tmp/a' })).toBe(true);
   });
   it('registers only an app top-frame menu and never exposes navigation/file operations', () => {

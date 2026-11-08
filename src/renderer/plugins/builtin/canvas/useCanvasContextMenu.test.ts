@@ -31,6 +31,21 @@ describe('canvas content context menu boundary', () => {
     expect(e.preventDefault).not.toHaveBeenCalled(); expect(e.stopPropagation).not.toHaveBeenCalled();
     expect(result.current.viewContextMenu).toBeNull();
   });
+  it('yields for a loaded local image even though the canvas rescales the event point', () => {
+    document.body.innerHTML = '<div data-testid="canvas-view-content"><img src="data:image/png;base64,AA=="></div>';
+    const img = document.querySelector('img')!;
+    Object.defineProperties(img, { complete: { value: true }, naturalWidth: { value: 100 } });
+    const result = setup(); const e = event(img);
+    act(() => result.current.handleViewContextMenu('view', e));
+    expect(e.preventDefault).not.toHaveBeenCalled(); expect(result.current.viewContextMenu).toBeNull();
+  });
+  it('keeps the view menu when the only selection is in another panel', () => {
+    document.body.innerHTML = '<p id="elsewhere">chat text</p><div data-testid="canvas-view-content"><div id="empty"></div></div>';
+    const range = document.createRange(); range.selectNodeContents(document.querySelector('#elsewhere')!); document.getSelection()!.addRange(range);
+    const result = setup(); const e = event(document.querySelector('#empty')!);
+    act(() => result.current.handleViewContextMenu('view', e));
+    expect(e.preventDefault).toHaveBeenCalledOnce(); expect(result.current.viewContextMenu).toEqual({ viewId: 'view', x: 12, y: 20 });
+  });
   it('keeps the frame menu and unselected empty content menu', () => {
     const result = setup(); const e = event(document.createElement('div'));
     act(() => result.current.handleViewContextMenu('view', e));
