@@ -418,9 +418,8 @@ jobs:
   build-linux:
     name: Build Linux (${{ matrix.arch }})
     needs: [verify-tag]
-    # Pinned: ubuntu-26.04's rpmbuild runs %install in a per-package BUILD
-    # subdirectory, which breaks electron-installer-redhat's `cp -r usr/*`.
-    runs-on: ubuntu-24.04
+    # build/rpm.spec.ejs copies from an absolute path, so rpm 4.20 works (#2549).
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
