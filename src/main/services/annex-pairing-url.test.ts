@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { NetworkInterfaceInfo } from 'os';
-import { buildPairingUrl, normalizeCertFingerprint, pairingHosts } from './annex-pairing-url';
+import { buildPairingUrl, normalizeCertFingerprint, pairingHosts, parsePairingUrl } from './annex-pairing-url';
 
 const CERT_HEX = 'ab'.repeat(32);
 const CERT_COLONS = Array(32).fill('AB').join(':');
@@ -98,5 +98,33 @@ describe('buildPairingUrl', () => {
     ['no PIN', { pin: '' }],
   ])('is null with %s', (_label, override) => {
     expect(buildPairingUrl({ ...parts, ...override })).toBeNull();
+  });
+});
+
+describe('parsePairingUrl', () => {
+  const parts = { hosts: ['192.168.1.20', '100.64.0.5'], port: 7432, fingerprint: 'ab:cd:ef:01:23:45:67:89:ab:cd:ef:01:23:45:67:89', certFingerprint: 'AB:'.repeat(31) + 'AB', pin: '012345', name: 'Mason’s Mac mini' };
+
+  it('reads back every part of a link the settings page shows', () => {
+    expect(parsePairingUrl(buildPairingUrl(parts)!)).toEqual({ ...parts, certFingerprint: 'ab'.repeat(32) });
+  });
+
+  it('tolerates surrounding whitespace from a paste', () => {
+    expect(parsePairingUrl(`  ${buildPairingUrl(parts)!}\n`)?.pin).toBe('012345');
+  });
+
+  it.each([
+    ['another scheme', (u: string) => u.replace('clubhousego://', 'https://')],
+    ['another version', (u: string) => u.replace('v=1', 'v=2')],
+    ['no host', (u: string) => u.replace(/host=[^&]+&/g, '')],
+    ['a bad port', (u: string) => u.replace('port=7432', 'port=0')],
+    ['a short certificate hash', (u: string) => u.replace(/cert=[0-9a-f]+/, 'cert=abcd')],
+    ['a malformed identity', (u: string) => u.replace(/id=[^&]+/, 'id=not-an-id')],
+    ['a PIN that is not six digits', (u: string) => u.replace('pin=012345', 'pin=12ab')],
+  ])('refuses a link with %s', (_label, change) => {
+    expect(parsePairingUrl(change(buildPairingUrl(parts)!))).toBeNull();
+  });
+
+  it('refuses text that is not a URL', () => {
+    expect(parsePairingUrl('012345')).toBeNull();
   });
 });

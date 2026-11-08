@@ -39,6 +39,7 @@
  * and none of the others.
  */
 
+import { accessFromLegacy } from '../../../../shared/agent-access';
 import * as path from 'path';
 import { registerGlobalTool } from '../tool-registry';
 import { isOrchestrationEnabled, onOrchestrationGateChange } from '../orchestration-gate';
@@ -473,6 +474,7 @@ async function finishHelperStart(
       // at spawn, and the config may hold another freeAgentMode.
       freeAgentMode: finalLaunch.freeAgentMode,
       permissionMode: finalLaunch.permissionMode,
+      access: accessFromLegacy(finalLaunch.freeAgentMode, finalLaunch.permissionMode),
     });
     taskTaken = false;
     result = 'started';
@@ -807,6 +809,8 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
         ...(plan && { routing: plan.routing }),
         ...(helperProvider && { orchestrator: helperProvider as OrchestratorId }),
         freeAgentMode: launch.freeAgentMode,
+        // A helper's level comes from the orchestration policy, never the app's Default access (#2761).
+        access: accessFromLegacy(launch.freeAgentMode, launch.permissionMode),
       };
       // A managed helper's setup is required: if it can't be saved, the creation fails rather than start a helper without it.
       // What start_helper changed from the template is kept for the helper's Details (D91).
@@ -1243,6 +1247,7 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
       orchestrator: provider,
       freeAgentMode: launch.freeAgentMode,
       permissionMode: launch.permissionMode,
+      access: accessFromLegacy(launch.freeAgentMode, launch.permissionMode),
       resume,
       ...(resume && { sessionId: helper.lastSessionId }),
     });
@@ -1383,7 +1388,7 @@ export function registerHelperTools(): void {
       },
     },
     (agentId, args) => guarded('start_helper', agentId, () => startHelper(agentId, args)),
-    { group: 'orchestration' },
+    { group: 'orchestration', grant: { actions: ['agent.create'], target: 'project_arg' } },
   );
 
   registerGlobalTool(
@@ -1396,7 +1401,7 @@ export function registerHelperTools(): void {
       inputSchema: { type: 'object', properties: {} },
     },
     (agentId) => guarded('list_helpers', agentId, () => listOwnHelpers(agentId)),
-    { group: 'orchestration' },
+    { group: 'orchestration', grant: { actions: ['agent.read'], target: 'my_helpers' } },
   );
 
   registerGlobalTool(
@@ -1410,7 +1415,7 @@ export function registerHelperTools(): void {
       },
     },
     (agentId, args) => guarded('sleep_helper', agentId, () => sleepHelper(agentId, args)),
-    { group: 'orchestration' },
+    { group: 'orchestration', grant: { actions: ['agent.sleep'], target: 'my_helpers' } },
   );
 
   registerGlobalTool(
@@ -1429,7 +1434,7 @@ export function registerHelperTools(): void {
       },
     },
     (agentId, args) => guarded('wake_helper', agentId, () => wakeHelper(agentId, args)),
-    { group: 'orchestration' },
+    { group: 'orchestration', grant: [{ actions: ['agent.wake'], target: 'my_helpers' }, { actions: ['agent.message'], target: 'my_helpers', ifArgs: ['message'] }] },
   );
 
   registerGlobalTool(
@@ -1443,7 +1448,7 @@ export function registerHelperTools(): void {
     },
     (agentId) => guarded('list_projects', agentId, () => listProjects(agentId)),
     // The Dispatcher (#2536) gets it too; it is in no project, so nothing is "yours".
-    { group: ['crossProject', 'dispatcher'] },
+    { group: ['crossProject', 'dispatcher'], grant: { actions: ['project.read'], target: 'all_projects' } },
   );
 
   registerGlobalTool(
@@ -1461,6 +1466,7 @@ export function registerHelperTools(): void {
       },
     },
     (agentId, args) => guarded('message_parent', agentId, () => messageParent(agentId, args)),
+    { grant: { actions: ['agent.message'], target: 'parent' } },
   );
 }
 

@@ -242,7 +242,7 @@ export function registerDispatcherTools(): void {
         return { content: [{ type: 'text', text: errorText(err) }], isError: true };
       }
     },
-    { group: 'dispatcher' },
+    { group: 'dispatcher', grant: { actions: ['agent.read'], target: 'connected' } },
   );
   registerGlobalTool(
     'inspect_helper',
@@ -274,7 +274,7 @@ export function registerDispatcherTools(): void {
         return { content: [{ type: 'text', text: errorText(err) }], isError: true };
       }
     },
-    { group: 'dispatcher' },
+    { group: 'dispatcher', grant: { actions: ['agent.read'], target: 'agent_arg' } },
   );
   // Turning the Dispatcher on or off adds or removes these tools.
   unwatchDispatcher?.();

@@ -31,7 +31,7 @@ Community plugins use `manifest.json`. Built-in plugins use TypeScript (`manifes
 | `id` | Unique identifier |
 | `name` | Display name |
 | `version` | Semver string |
-| `engine.api` | Plugin API version (current: **0.9**; 0.5 and 0.6 are deprecated) |
+| `engine.api` | Plugin API version (current: **0.9**). Clubhouse loads 0.7, 0.8 and 0.9; plugins on 0.5 or 0.6 are refused |
 | `scope` | `"project"`, `"app"`, or `"dual"` |
 
 **Optional:** `description`, `author`, `main`, `permissions`, `settingsPanel`, `externalRoots`, `allowedCommands`, `contributes`

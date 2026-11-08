@@ -1,9 +1,10 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useUIStore } from '../../stores/uiStore';
+import { useDefaultAccessStore } from '../../stores/defaultAccessStore';
 import { QuickAgentDialog } from './QuickAgentDialog';
 
 vi.mock('../../hooks/useModelOptions', () => ({
@@ -92,6 +93,9 @@ function setupStores(overrides?: { quickAgentDialogOpen?: boolean; activeProject
 describe('QuickAgentDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.clubhouse.app.getDefaultAccess = vi.fn().mockResolvedValue('ask');
+    window.clubhouse.agent.getDurableConfig = vi.fn().mockResolvedValue(null);
+    useDefaultAccessStore.setState({ defaultAccess: 'ask' });
   });
 
   it('renders nothing when dialog is closed', () => {
@@ -170,10 +174,46 @@ describe('QuickAgentDialog', () => {
     expect(screen.getByText('Model')).toBeInTheDocument();
   });
 
-  it('shows Free Agent Mode checkbox', () => {
-    setupStores();
+  it('shows the Access picker at the Default access, and starts at the level picked (#2761)', async () => {
+    window.clubhouse.app.getDefaultAccess = vi.fn().mockResolvedValue('auto');
+    const { mockSpawnQuickAgent } = setupStores();
     render(<QuickAgentDialog />);
-    expect(screen.getByText('Free Agent Mode')).toBeInTheDocument();
+    const access = screen.getByLabelText('Access') as HTMLSelectElement;
+    await waitFor(() => expect(access.value).toBe('auto'));
+    expect(screen.getByText('A check decides what needs your approval. It can be wrong.')).toBeInTheDocument();
+    expect(screen.queryByText(/Free Agent/)).not.toBeInTheDocument();
+    fireEvent.change(access, { target: { value: 'plan' } });
+    fireEvent.change(screen.getByPlaceholderText('What should this quick agent do?'), { target: { value: 'Look around' } });
+    fireEvent.click(screen.getByText('Start Agent'));
+    expect(mockSpawnQuickAgent).toHaveBeenCalledWith('proj-1', '/project1', 'Look around', 'default', undefined, 'claude-code', 'plan', undefined, undefined, { fallbackAccess: 'auto' });
+  });
+
+  it("starts at the parent's quick agent defaults, and leaves an unchanged level to the spawn", async () => {
+    window.clubhouse.agent.getDurableConfig = vi.fn().mockResolvedValue({ id: 'durable-1', quickAgentDefaults: { access: 'auto_edit' } });
+    const { mockSpawnQuickAgent } = setupStores();
+    render(<QuickAgentDialog />);
+    fireEvent.change(screen.getByDisplayValue('None (project root)'), { target: { value: 'durable-1' } });
+    const access = screen.getByLabelText('Access') as HTMLSelectElement;
+    await waitFor(() => expect(access.value).toBe('auto_edit'));
+    expect(window.clubhouse.agent.getDurableConfig).toHaveBeenCalledWith('/project1', 'durable-1');
+    fireEvent.change(screen.getByPlaceholderText('What should this quick agent do?'), { target: { value: 'Look around' } });
+    fireEvent.click(screen.getByText('Start Agent'));
+    expect(mockSpawnQuickAgent).toHaveBeenCalledWith('proj-1', '/project1', 'Look around', 'default', 'durable-1', undefined, undefined, undefined, undefined, { fallbackAccess: 'ask' });
+  });
+
+  it("keeps Access at Ask first, disabled, on a CLI that doesn't support permissions", async () => {
+    window.clubhouse.app.getDefaultAccess = vi.fn().mockResolvedValue('full_access');
+    const { mockSpawnQuickAgent } = setupStores();
+    render(<QuickAgentDialog />);
+    fireEvent.change(screen.getByDisplayValue('Claude Code'), { target: { value: 'codex' } });
+    await waitFor(() => expect(useDefaultAccessStore.getState().defaultAccess).toBe('full_access'));
+    const access = screen.getByLabelText('Access') as HTMLSelectElement;
+    expect(access.value).toBe('ask');
+    expect(access.disabled).toBe(true);
+    expect(screen.getByText('Not supported by this CLI.')).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('What should this quick agent do?'), { target: { value: 'Look around' } });
+    fireEvent.click(screen.getByText('Start Agent'));
+    expect(mockSpawnQuickAgent).toHaveBeenCalledWith('proj-1', '/project1', 'Look around', 'default', undefined, 'codex', 'ask', undefined, undefined, { fallbackAccess: 'full_access' });
   });
 
   it('shows prompt textarea', () => {
@@ -216,7 +256,10 @@ describe('QuickAgentDialog', () => {
       'default',
       undefined, // no parent
       'claude-code', // orchestrator
-      undefined, // freeAgentMode
+      undefined, // access: not picked, so the spawn resolves it
+      undefined,
+      undefined,
+      { fallbackAccess: 'ask' }, // the Default access
     );
   });
 
@@ -289,6 +332,9 @@ describe('QuickAgentDialog', () => {
       undefined,
       'claude-code',
       undefined,
+      undefined,
+      undefined,
+      { fallbackAccess: 'ask' },
     );
   });
 });

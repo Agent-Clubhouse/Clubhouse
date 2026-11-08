@@ -80,14 +80,14 @@ const samplePlugins = [
     latest: '2.0.0',
     releases: {
       '1.0.0': {
-        api: 0.5,
+        api: 0.9,
         asset: 'https://example.com/my-plugin-1.0.0.zip',
         sha256: 'abc',
         permissions: ['storage'],
         size: 1024,
       },
       '2.0.0': {
-        api: 0.5,
+        api: 0.9,
         asset: 'https://example.com/my-plugin-2.0.0.zip',
         sha256: 'def',
         permissions: ['storage'],
@@ -107,7 +107,7 @@ const samplePlugins = [
     latest: '1.0.0',
     releases: {
       '1.0.0': {
-        api: 0.5,
+        api: 0.9,
         asset: 'https://example.com/other-1.0.0.zip',
         sha256: 'ghi',
         permissions: [],
@@ -231,7 +231,7 @@ describe('plugin-update-service', () => {
       const result = await checkForPluginUpdates();
 
       expect(result.updates).toHaveLength(1);
-      expect(result.updates[0].api).toBe(0.5);
+      expect(result.updates[0].api).toBe(0.9);
     });
 
     it('skips updates with unsupported API versions', async () => {
@@ -378,7 +378,7 @@ describe('plugin-update-service', () => {
 
       const result = await checkForPluginUpdates();
 
-      // my-plugin uses API 0.5 (supported) → compatible
+      // my-plugin uses API 0.9 (supported) → compatible
       expect(result.updates).toHaveLength(1);
       expect(result.updates[0].pluginId).toBe('my-plugin');
 
@@ -400,7 +400,7 @@ describe('plugin-update-service', () => {
         latest: '3.0.0',
         releases: {
           '3.0.0': {
-            api: 0.5,
+            api: 0.9,
             asset: 'https://example.com/third-3.0.0.zip',
             sha256: 'xyz',
             permissions: [],

@@ -521,6 +521,11 @@ jobs:
           NOTES="$RELEASE_NOTES"
           BASE_URL="https://stclubhousereleases.blob.core.windows.net/releases/artifacts"
 
+          # The oldest macOS this release runs on. A client on an older one skips
+          # the update instead of installing a build that won't launch (#2924).
+          # Raise it with the Electron upgrade that raises Electron's minimum.
+          MACOS_MIN_SYSTEM_VERSION="13.0"
+
           # Write to preview.json for rc tags, latest.json for stable
           if [ "$IS_PREVIEW" = "true" ]; then
             MANIFEST_NAME="preview.json"
@@ -534,6 +539,7 @@ jobs:
             --arg message "$MESSAGE" \
             --arg notes "$NOTES" \
             --arg min_version "0.1.0" \
+            --arg macos_min "$MACOS_MIN_SYSTEM_VERSION" \
             --arg url_arm64 "${BASE_URL}/Clubhouse-${VERSION}-darwin-arm64.zip" \
             --arg sha256_arm64 "${{ needs.build-macos.outputs.sha256_arm64 }}" \
             --argjson size_arm64 ${{ needs.build-macos.outputs.size_arm64 }} \
@@ -562,12 +568,14 @@ jobs:
                 "darwin-arm64": {
                   url: $url_arm64,
                   sha256: $sha256_arm64,
-                  size: $size_arm64
+                  size: $size_arm64,
+                  minSystemVersion: $macos_min
                 },
                 "darwin-x64": {
                   url: $url_x64,
                   sha256: $sha256_x64,
-                  size: $size_x64
+                  size: $size_x64,
+                  minSystemVersion: $macos_min
                 },
                 "win32-x64": {
                   url: $url_win_x64,

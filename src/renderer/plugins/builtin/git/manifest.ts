@@ -8,7 +8,7 @@ export const manifest: PluginManifest = {
   version: '1.0.0',
   description: 'Git status, staging, commits, branches, and history.',
   author: 'Clubhouse',
-  engine: { api: 0.8 },
+  engine: { api: 0.9 },
   scope: 'project',
   permissions: ['git', 'files', 'commands', 'notifications', 'storage', 'canvas', 'projects'],
   contributes: {

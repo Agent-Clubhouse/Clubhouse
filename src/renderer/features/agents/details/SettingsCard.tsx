@@ -21,7 +21,6 @@ import { useAgentStore } from '../../../stores/agentStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { isRemoteProjectId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { Button } from '../../../components/Button';
-import { Toggle } from '../../../components/Toggle';
 import { useEffectiveOrchestrators } from '../../../hooks/useEffectiveOrchestrators';
 import { useModelOptions } from '../../../hooks/useModelOptions';
 import { useContextWindowOptions } from '../../../hooks/useContextWindowOptions';
@@ -29,7 +28,10 @@ import { ContextWindowSelect, contextSummary, contextWindowHelp, formatContextCh
 import { useAgentSettingsPages } from '../agentSettingsPages';
 import { buildOrchestratorOptions } from '../orchestrator-options';
 import { useCliChangeConfirm } from '../useCliChangeConfirm';
-import { LEVEL_LABELS } from '../chat/view-model';
+import { AccessSelect } from '../AccessSelect';
+import {
+  accessLabel as levelLabel, isLegacyFreeAgent, startableAccess, type AccessLevel, type AccessRuntime,
+} from '../../../../shared/agent-access';
 import { useChatFlag } from '../chat/chat-flag';
 import { normalizeIdleSleep } from '../../../../shared/idle-sleep';
 import { AutoSleepRow, autoSleepSummary, SELECT_CLASS, useAppIdleMinutes } from './AutoSleepRow';
@@ -73,15 +75,27 @@ export function modelLabel(model: string | null | undefined, chat?: Pick<ChatVie
   return chat?.models.find((m) => m.id === model)?.label ?? model;
 }
 
-/** Access: the chat's live level, or what Free agent mode gives the terminal. */
-export function accessLabel(
-  chat: Pick<ChatViewState, 'level' | 'levelNames'> | undefined,
-  freeAgentMode: boolean,
-  permissionsSupported: boolean,
-): string {
-  if (chat?.level) return chat.levelNames?.[chat.level] ?? LEVEL_LABELS[chat.level];
-  if (!permissionsSupported) return 'Set by the CLI';
-  return freeAgentMode ? 'Free agent' : 'Ask before edits';
+/**
+ * The level a record starts at (#2761). A record saved without `access` (a
+ * quick agent, or one on another machine) with the legacy flag on could be
+ * either level that sets it: null.
+ */
+export function recordAccess(record: { access?: AccessLevel; freeAgentMode?: boolean } | null | undefined): AccessLevel | null {
+  if (record?.access) return record.access;
+  return record?.freeAgentMode ? null : 'ask';
+}
+
+/**
+ * Access as people read it: the level it starts at, and the session's level
+ * too when the composer changed it ("Auto now, starts at Ask first"). `saved`
+ * null is a legacy record that is on at an unknown level.
+ */
+export function accessText(saved: AccessLevel | null, live: AccessLevel | null | undefined, permissionsSupported: boolean): string {
+  if (!permissionsSupported && !live) return 'Set by the CLI';
+  const start = saved ? levelLabel(saved) : 'Auto or Full access';
+  if (!live) return start;
+  if (live === saved || (!saved && isLegacyFreeAgent(live))) return levelLabel(live);
+  return `${levelLabel(live)} now, starts at ${start}`;
 }
 
 /** "Custom, 12 lines", or null for none. The Dispatcher's reads "Dispatcher" (#2557): Clubhouse writes it. */
@@ -242,15 +256,21 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
   else runsIn = runtimeName(saved?.runtimeMode);
   const modelId = chat && !asleep ? chat.model : (saved ? saved.model : agent.model);
   const model = modelLabel(modelId, asleep ? undefined : chat);
-  const freeAgent = saved ? !!saved.freeAgentMode : !!agent.freeAgentMode;
-  const access = accessLabel(asleep ? undefined : chat, freeAgent, permissionsSupported);
+  const savedLevel = recordAccess(saved ?? agent);
+  // The level a chat session starts at: the saved one, or the nearest lower one chat has.
+  const startLevel = savedLevel && chat && !asleep ? startableAccess(savedLevel, orchestrator, 'chat') : savedLevel;
+  const liveLevel = asleep ? null : chat?.level ?? null;
+  const access = accessText(startLevel, liveLevel, permissionsSupported);
+  // Asleep, the picker offers the levels of the runtime the next wake starts in, when known.
+  const accessRuntime: AccessRuntime | undefined = runsIn === 'Chat' ? 'chat' : runsIn === 'CLI' ? 'terminal' : undefined;
   // Only chat agents idle-sleep: a running chat, or a sleeping agent that wakes into chat.
   const showAutoSleep = local && (asleep ? runsIn === 'Chat' : !!chat);
   const idle = loaded ? normalizeIdleSleep(config?.idleSleep) : null;
   const summary = settingsSummary({
     runsIn,
     model,
-    access,
+    // The one line keeps the level it runs at now; the row says what it starts at.
+    access: liveLevel ? levelLabel(liveLevel) : access,
     autoSleep: showAutoSleep && idle !== null ? autoSleepSummary(idle, appMinutes) : null,
   });
   const effort = !asleep && chat?.effortReported && chat.effort ? chat.effort[0].toUpperCase() + chat.effort.slice(1) + (chat.effortIsDefault ? ' (default)' : '') : null;
@@ -372,12 +392,14 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
     {
       id: 'access', label: 'Access', editable: 'sleeping', value: access,
       control: editing && permissionsSupported ? (
-        <ToggleControl
-          label="Free agent mode"
-          text={access}
-          checked={freeAgent}
+        <AccessSelect
+          value={savedLevel ?? 'auto'}
+          providerId={orchestrator}
+          runtime={accessRuntime}
           disabled={busy('access')}
-          onChange={(v) => void save('access', { freeAgentMode: v }, { freeAgentMode: v || undefined })}
+          className={SELECT_CLASS}
+          data-testid="details-access-select"
+          onChange={(level) => void save('access', { access: level }, { access: level, freeAgentMode: isLegacyFreeAgent(level) || undefined })}
         />
       ) : undefined,
     },
@@ -447,21 +469,6 @@ function SelectControl({ label, value, options, disabled, onChange }: {
     <select aria-label={label} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} className={SELECT_CLASS}>
       {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
     </select>
-  );
-}
-
-function ToggleControl({ label, text, checked, disabled, onChange }: {
-  label: string;
-  text: string;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <span className="flex items-center gap-2">
-      <Toggle checked={checked} disabled={disabled} onChange={onChange} aria-label={label} />
-      <span>{text}</span>
-    </span>
   );
 }
 

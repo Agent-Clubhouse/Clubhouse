@@ -290,6 +290,13 @@ app.on('ready', () => {
   // The app event bus (#2950): fed from here on, then "Clubhouse started" once subscribers listen.
   void import('./services/app-event-sources').then(async ({ startAppEventSources, publishAppStarted }) => {
     await startAppEventSources();
+    // Actions (#2918) subscribe before "Clubhouse started" goes out.
+    try {
+      const { startActions } = await import('./services/actions');
+      await startActions();
+    } catch (err) {
+      appLog('core:actions', 'error', 'Actions did not start', { meta: { code: codeOf(err) } });
+    }
     publishAppStarted();
   }).catch((err) => {
     appLog('core:app-events', 'warn', 'The app event bus did not start', { meta: { code: codeOf(err) } });

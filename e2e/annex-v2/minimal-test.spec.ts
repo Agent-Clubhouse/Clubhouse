@@ -9,6 +9,8 @@ import { test, expect, _electron as electron, Page } from '@playwright/test';
 import { launchApp } from '../launch';
 import * as path from 'path';
 import * as fs from 'fs';
+import { plainPairingPortRequest, sameCertFingerprint, tryPairOverTls } from './helpers';
+import { generateTestIdentity } from './tls-test-utils';
 
 const SCREENSHOTS_DIR = path.resolve(__dirname, 'screenshots');
 fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
@@ -115,25 +117,42 @@ test('identity endpoint is accessible', async () => {
   console.log(`Identity: fingerprint=${identity.fingerprint}`);
 });
 
-test('PIN pairing works via HTTP', async () => {
+test('POST /pair on the plain pairing port is 410 update_required', async () => {
   const status = await window.evaluate(async () => {
     const w = window as any;
     return w.clubhouse.annex.getStatus();
   });
 
-  const port = status.pairingPort || status.port;
-  const response = await fetch(`http://127.0.0.1:${port}/pair`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pin: status.pin }),
+  const identity = generateTestIdentity();
+  const reply = await plainPairingPortRequest('127.0.0.1', status.pairingPort, 'POST', '/pair', {
+    pin: status.pin,
+    publicKey: identity.ed25519PublicKeyBase64,
   });
+  expect(reply.status).toBe(410);
+  expect(reply.body).toMatchObject({ error: 'update_required', message: expect.any(String) });
+  expect(reply.body).not.toHaveProperty('token');
 
-  expect(response.ok).toBe(true);
-  const result = await response.json();
-  expect(result.token).toBeTruthy();
-  expect(typeof result.token).toBe('string');
+  const peers = await window.evaluate(async () => (window as any).clubhouse.annex.listPeers());
+  expect(peers.some((p: { fingerprint: string }) => p.fingerprint === identity.fingerprint)).toBe(false);
+});
 
-  console.log(`Pairing: token=${result.token.slice(0, 8)}...`);
+test('PIN pairing works over TLS on the main port, and the PIN is then replaced', async () => {
+  const status = await window.evaluate(async () => {
+    const w = window as any;
+    return w.clubhouse.annex.getStatus();
+  });
+  expect(status.tlsEnabled).toBe(true);
+
+  const identity = generateTestIdentity();
+  const reply = await tryPairOverTls('127.0.0.1', status.port, status.pin, identity);
+  expect(reply.status).toBe(200);
+  expect(reply.body).toMatchObject({ mobileProtocolVersion: 1, pairingMode: 'persistent', fingerprint: status.fingerprint });
+  expect(sameCertFingerprint(reply.body.tlsCertificateFingerprint, status.tlsCertificateFingerprint)).toBe(true);
+
+  const after = await window.evaluate(async () => (window as any).clubhouse.annex.getStatus());
+  expect(after.pin).not.toBe(status.pin);
+
+  console.log(`Pairing: controller=${identity.fingerprint}`);
 });
 
 test('brute-force lockout after wrong PINs', async () => {
@@ -142,26 +161,18 @@ test('brute-force lockout after wrong PINs', async () => {
     return w.clubhouse.annex.getStatus();
   });
 
-  const port = status.pairingPort || status.port;
+  const identity = generateTestIdentity();
 
   // Send wrong PINs
   for (let i = 0; i < 5; i++) {
-    const response = await fetch(`http://127.0.0.1:${port}/pair`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: '0000' }),
-    });
-    // Should be 401 or 429
-    expect(response.ok).toBe(false);
+    const reply = await tryPairOverTls('127.0.0.1', status.port, '0000', identity);
+    // Should be 409 (wrong PIN) or 429 (rate limited)
+    expect([409, 429]).toContain(reply.status);
   }
 
   // The next attempt should be rate-limited (429) even with the correct PIN
-  const lockedResponse = await fetch(`http://127.0.0.1:${port}/pair`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pin: status.pin }),
-  });
-  expect(lockedResponse.status).toBe(429);
+  const locked = await tryPairOverTls('127.0.0.1', status.port, status.pin, identity);
+  expect(locked.status).toBe(429);
 
   // Unlock pairing
   await window.evaluate(async () => {

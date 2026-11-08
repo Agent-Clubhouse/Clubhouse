@@ -78,5 +78,6 @@ export function registerNotifyTools(): void {
 
       return textResult('Notification sent to the user.');
     },
+    { grant: { actions: ['user.notify'], target: 'app' } },
   );
 }

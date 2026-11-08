@@ -20,6 +20,13 @@ export interface FramebriarTelemetryExport {
 export type FramebriarTelemetrySource = () => FramebriarTelemetryExport | null;
 
 /** The export error when there's no live connection or token: nothing is sent. */
+/**
+ * Keys Framebriar never receives, on items or the resource (#2526). The install
+ * id only rotates on Delete local data, so it would link one person's records
+ * across Feedback enrollments, defeating the server's per-enrollment player id.
+ */
+export const FRAMEBRIAR_DROPPED_ATTRIBUTES: readonly string[] = ['enduser.pseudo.id', 'clubhouse.install.id'];
+
 export const FRAMEBRIAR_NOT_CONNECTED = 'Feedback is not connected';
 
 let source: FramebriarTelemetrySource | null = null;

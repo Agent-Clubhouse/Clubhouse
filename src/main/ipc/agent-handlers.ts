@@ -20,7 +20,9 @@ import * as dispatcher from '../services/dispatcher/dispatcher-service';
 import * as projectStore from '../services/project-store';
 import { listHelpersEverywhere } from '../services/helper-index';
 import * as permissionQueue from '../services/annex-permission-queue';
-import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanArg } from './validation';
+import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanArg, type ArgValidator } from './validation';
+import { isAccessLevel, type AccessLevel } from '../../shared/agent-access';
+import { withSavedAccess } from '../services/free-agent-settings';
 import { ATTR } from '../../shared/telemetry/attributes';
 import type { DeleteResult, HelperDisposeChecks, HelperInProject, Project } from '../../shared/types';
 import { disposeHelperForUser, reportDisposeDecision } from '../services/helper-dispose-decisions';
@@ -65,6 +67,13 @@ function deleteFlow<T extends DeleteResult | void>(mode: DeleteMode, fn: () => P
 type DurableConfigUpdates = Parameters<typeof agentConfig.updateDurableConfig>[2];
 
 
+/** A new agent's Access (#2761): a level, or the legacy Free Agent Mode on/off. */
+const accessRequestArg: ArgValidator<boolean | AccessLevel | undefined> = (value, argName) => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'boolean' || isAccessLevel(value)) return value;
+  throw new Error(`${argName} must be an access level or a boolean`);
+};
+
 async function createDurableAgent(
   projectPath: string,
   name: string,
@@ -72,7 +81,7 @@ async function createDurableAgent(
   model: string | undefined,
   useWorktree: boolean | undefined,
   orchestrator: string | undefined,
-  freeAgentMode: boolean | undefined,
+  access: boolean | AccessLevel | undefined,
   mcpIds: string[] | undefined,
   mcpConfigs: Record<string, Record<string, string>> | undefined,
   worktreeOptions: DurableWorktreeOptions | undefined,
@@ -88,7 +97,7 @@ async function createDurableAgent(
 
   let config: Awaited<ReturnType<typeof agentConfig.createDurable>>;
   try {
-    config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator as OrchestratorId | undefined, freeAgentMode, mcpIds, mcpConfigs, worktreeOptions);
+    config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator as OrchestratorId | undefined, access, mcpIds, mcpConfigs, worktreeOptions);
   } catch (err) {
     // worktree_failed and validation are tagged at their throw sites; anything else is a write failure.
     throw tagError(err, 'write_failed');
@@ -186,7 +195,8 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.LIST_DURABLE, withValidatedArgs(
     [stringArg()],
     async (_event, projectPath) => {
-      return agentConfig.listDurable(projectPath);
+      // Access (#2761) filled in for agents saved before it, so the renderer shows the real level.
+      return (await agentConfig.listDurable(projectPath)).map((c) => withSavedAccess(c, projectPath));
     },
   ));
 
@@ -205,14 +215,14 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(
     IPC.AGENT.CREATE_DURABLE,
     withValidatedArgs(
-      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), booleanArg({ optional: true }), arrayArg(stringArg(), { optional: true }), objectArg({ optional: true }), objectArg<Record<string, unknown>>({ optional: true })],
-      async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, worktreeOptions) => tel.flow(
+      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), accessRequestArg, arrayArg(stringArg(), { optional: true }), objectArg({ optional: true }), objectArg<Record<string, unknown>>({ optional: true })],
+      async (_event, projectPath, name, color, model, useWorktree, orchestrator, access, mcpIds, mcpConfigs, worktreeOptions) => tel.flow(
         'clubhouse.agent.create',
         { attrs: [ATTR.usesWorktree(useWorktree !== false), ATTR.orchestrator(orchestratorAttr(orchestrator))] },
         () => {
           assertCreatable(projectPath);
           return createDurableAgent(
-            projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds,
+            projectPath, name, color, model, useWorktree, orchestrator, access, mcpIds,
             mcpConfigs as Record<string, Record<string, string>> | undefined,
             worktreeOptions ? parseWorktreeOptions(worktreeOptions) : undefined,
           );
@@ -316,7 +326,8 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.GET_DURABLE_CONFIG, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
-      return agentConfig.getDurableConfig(projectPath, agentId);
+      const config = await agentConfig.getDurableConfig(projectPath, agentId);
+      return config ? withSavedAccess(config, projectPath) : config;
     },
   ));
 
@@ -551,6 +562,7 @@ export function registerAgentHandlers(): void {
         if (typeof v.projectPath !== 'string' || !v.projectPath) throw new Error(`${name}.projectPath must be a non-empty string`);
         if (typeof v.cwd !== 'string' || !v.cwd) throw new Error(`${name}.cwd must be a non-empty string`);
         if (typeof v.kind !== 'string' || !v.kind) throw new Error(`${name}.kind must be a non-empty string`);
+        if (v.access !== undefined && !isAccessLevel(v.access)) throw new Error(`${name}.access must be an access level`);
         if (v.managedTemplate !== undefined) {
           const t = v.managedTemplate as { id?: unknown; agentName?: unknown } | null;
           if (!t || typeof t.id !== 'string' || !t.id || t.id.length > 128 || typeof t.agentName !== 'string' || t.agentName.length > 200) {

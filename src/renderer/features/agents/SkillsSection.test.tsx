@@ -41,6 +41,58 @@ describe('SkillsSection', () => {
     window.clubhouse.file.showInFolder = vi.fn();
   });
 
+  describe('found on disk vs reported loaded (#2929)', () => {
+    const report = (names: string[] | null) => ({
+      supported: true,
+      report: { provider: 'claude-code' as const, driver: 'claude_agent_sdk' as const, source: 'system/init' as const, nativeSessionId: 'n', sessionId: 's', reportedAt: 0, names },
+    });
+    const disk: SkillEntry[] = [
+      { name: 'build', path: '/wt/.claude/skills/build', hasReadme: false, skillName: 'build', managed: true },
+      { name: 'notes', path: '/wt/.claude/skills/notes', hasReadme: false, skillName: 'note-taking' },
+      { name: 'stray', path: '/wt/.claude/skills/stray', hasReadme: false },
+    ];
+    beforeEach(() => { window.clubhouse.agentSettings.listSkills = vi.fn().mockResolvedValue(disk); });
+
+    it('never shows a skill as loaded from the files alone', async () => {
+      renderSkills({ providerName: 'Claude Code', scope: 'agent' });
+      expect(await screen.findByTestId('skill-evidence-build')).toHaveTextContent('Claude Code · Agent folder · Managed by Clubhouse · Loaded: not confirmed');
+      expect(screen.getByTestId('skill-evidence-stray')).toHaveTextContent('Not managed by Clubhouse · Loaded: not confirmed');
+      expect(screen.queryByText(/reports a skill by this name loaded/)).toBeNull();
+    });
+
+    it('a report with no valid list confirms nothing', async () => {
+      renderSkills({ providerName: 'Claude Code', reported: report(null) });
+      expect(await screen.findByTestId('skill-evidence-build')).toHaveTextContent('Loaded: not confirmed');
+    });
+
+    it('the evidence describes the edit button, outside its name', async () => {
+      renderSkills({ providerName: 'Claude Code' });
+      const evidence = await screen.findByTestId('skill-evidence-build');
+      const button = screen.getAllByTitle('Click to edit')[0];
+      expect(button).toHaveAttribute('aria-describedby', evidence.id);
+      expect(button).not.toHaveTextContent('Not confirmed');
+    });
+
+    it('shows a skill the provider reported, by folder or SKILL.md name, and only those', async () => {
+      renderSkills({ providerName: 'Claude Code', reported: report(['build', 'note-taking', 'plugin:other']) });
+      expect(await screen.findByTestId('skill-evidence-build')).toHaveTextContent('Claude Code reports a skill by this name loaded');
+      expect(screen.getByTestId('skill-evidence-notes')).toHaveTextContent('Claude Code reports a skill by this name loaded');
+      expect(screen.getByTestId('skill-evidence-stray')).toHaveTextContent('Loaded: not confirmed');
+    });
+
+    it('names the folder it read: the project folder for an agent without one', async () => {
+      renderSkills({ providerName: 'Codex', scope: 'project' });
+      expect(await screen.findByTestId('skill-evidence-build')).toHaveTextContent('Codex · Project folder');
+      expect(screen.getByTestId('skills-evidence-note')).toHaveTextContent('Found on disk in the project folder. A skill shows as loaded only when Codex reports one by that name for the running session');
+    });
+
+    it('says when the list stops at its limit', async () => {
+      window.clubhouse.agentSettings.listSkills = vi.fn().mockResolvedValue(Array.from({ length: 200 }, (_, i) => ({ name: `s${i}`, path: `/wt/s${i}`, hasReadme: false })));
+      renderSkills();
+      expect(await screen.findByTestId('skills-cap-note')).toHaveTextContent('Showing the first 200 folders by name.');
+    });
+  });
+
   it('passes selected identity and discards a late prior-target list', async () => {
     let finish!: (value: SkillEntry[]) => void;
     window.clubhouse.agentSettings.listSkills = vi.fn().mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; })).mockResolvedValue([{ name: 'current', path: '/b/.github/skills/current' }]);

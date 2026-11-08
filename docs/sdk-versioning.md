@@ -30,8 +30,8 @@ wip  -->  stable  -->  deprecated  -->  removed
 
 | Version | Status | Notes |
 |---------|--------|-------|
-| v0.5 | deprecated | Removal target: v0.39 |
-| v0.6 | deprecated | Removal target: v0.39 |
+| v0.5 | removed | Removed in Clubhouse 1.0 (#2757); a manifest on it is refused with a message that names the version |
+| v0.6 | removed | Removed in Clubhouse 1.0 (#2757); a manifest on it is refused with a message that names the version |
 | v0.7 | stable | Current baseline for all plugins |
 | v0.8 | stable | Canvas widgets, annex, window API |
 | v0.9 | wip | Companion agents, MCP tool contribution |

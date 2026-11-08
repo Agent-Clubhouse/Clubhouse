@@ -9,7 +9,7 @@ const SETTING_NAMES: Record<string, string> = {
   orchestrator: 'CLI',
   model: 'Model',
   effort: 'Effort',
-  freeAgentMode: 'Free Agent Mode',
+  access: 'Access',
   idleSleep: 'Auto-sleep',
   helperTemplateId: 'Helper template',
   'orchestration.orchestrate': 'Orchestration',
@@ -39,11 +39,16 @@ export function changeText(c: ManagedTemplateChange): string {
   return `~ ${settingName(c.key)} ${valueText(c.from)} → ${valueText(c.to)}`;
 }
 
-/** Main words skipped changes with the setting key; show the setting's name instead. */
-function noteText(note: string): string {
-  let out = note;
-  for (const [key, name] of Object.entries(SETTING_NAMES)) out = out.split(key).join(name);
-  return out;
+/**
+ * Main words skipped changes with the setting key ("access already Auto");
+ * show the setting's name instead. Only a key that leads a skipped change is
+ * renamed, so a part named "access-review" keeps its name.
+ */
+export function noteText(note: string): string {
+  return note.split(', ').map((part) => {
+    const m = /^(\S+) already /.exec(part);
+    return m && SETTING_NAMES[m[1]] ? `${SETTING_NAMES[m[1]]}${part.slice(m[1].length)}` : part;
+  }).join(', ');
 }
 
 const targetKey = (t: Pick<ManagedTemplatePushTarget, 'projectPath' | 'agentId'>) => `${t.projectPath}\u0000${t.agentId}`;

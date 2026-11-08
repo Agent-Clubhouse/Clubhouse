@@ -37,6 +37,7 @@ import { feedback } from './feedback';
 import { telemetry } from './telemetry';
 import { chat } from './chat';
 import { dispatcher } from './dispatcher';
+import { actions } from './actions';
 import { plugin } from './plugin';
 import { marketplace } from './marketplace';
 import { file } from './file';
@@ -87,6 +88,7 @@ describe('preload IPC bridge', () => {
       telemetry,
       chat,
       dispatcher,
+      actions,
     ];
     const expectedApi = {
       platform: api.platform,
@@ -96,7 +98,7 @@ describe('preload IPC bridge', () => {
       settings: api.settings,
       ...Object.assign({}, ...domainSlices),
     };
-    const exposed = exposedApi.value as typeof api;
+    const exposed = exposedApi.value as Record<string, unknown>;
 
     expect(exposed).toBe(api);
     expect(Object.keys(exposed).sort()).toEqual(Object.keys(expectedApi).sort());

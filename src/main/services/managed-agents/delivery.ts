@@ -8,6 +8,7 @@
  * already reads (the provider's instructions file, skills folder and MCP
  * file) and hands the MCP servers to the existing launch merge points.
  */
+import { agentAccess } from '../free-agent-settings';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -32,11 +33,11 @@ import { managedSettingsSummary } from '../../../shared/managed-settings-summary
 import { resolveOrchestrationPolicy } from '../../../shared/orchestration-policy';
 import { withClubhouseSetup, type ManagedAgentsService } from './service';
 import { withWorkingIdentity } from './builtins';
-import { skillsFolderOf } from '../../../shared/skills-folder';
+import { MANAGED_SKILLS_MANIFEST, skillsFolderOf } from '../../../shared/skills-folder';
 import { helperTemplateFor } from './helpers';
 
 /** Written beside the managed skills so a later start removes only what Clubhouse put there. */
-export const SKILLS_MANIFEST = '.clubhouse-managed-skills.json';
+export const SKILLS_MANIFEST = MANAGED_SKILLS_MANIFEST;
 /** In the worktree: the `claudeMdExcludes` entries Clubhouse added, so it replaces only those (D49). Git-excluded. */
 export const EXCLUDES_MANIFEST = '.clubhouse-managed-excludes.json';
 
@@ -96,11 +97,11 @@ export async function renderManagedInstructions(projectPath: string, agent: Dura
 }
 
 /**
- * Preview's settings summary for an agent: CLI, model, effort, Free Agent
- * Mode, orchestration and helpers. The helper template is named only when
+ * Preview's settings summary for an agent: CLI, model, effort, Access,
+ * orchestration and helpers. The helper template is named only when
  * it orchestrates; a template that can't be read is left out.
  */
-export async function managedSettingsRows(service: ManagedAgentsService, agent: DurableAgentConfig, provider: OrchestratorProvider | undefined): Promise<ManagedSettingsRow[]> {
+export async function managedSettingsRows(service: ManagedAgentsService, agent: DurableAgentConfig, provider: OrchestratorProvider | undefined, projectPath?: string): Promise<ManagedSettingsRow[]> {
   const helper = !!agent.parentAgentId;
   let helperTemplateName: string | undefined;
   if (resolveOrchestrationPolicy(agent.orchestration, { helper }).orchestrate) {
@@ -115,7 +116,7 @@ export async function managedSettingsRows(service: ManagedAgentsService, agent: 
     cliName: provider?.displayName ?? agent.orchestrator,
     model: agent.model,
     effort: agent.effort,
-    freeAgentMode: agent.freeAgentMode,
+    access: agentAccess(agent, projectPath),
     orchestration: agent.orchestration,
     helperTemplateName,
     helper,
@@ -722,6 +723,9 @@ export function setupFingerprint(agent: DurableAgentConfig, resolved: Resolved):
     parts, order,
     orchestrator: agent.orchestrator ?? null, model: agent.model ?? null, effort: agent.effort ?? null,
     freeAgentMode: agent.freeAgentMode ?? null, orchestration: agent.orchestration ?? null,
+    // Access (#2761). Left out at Ask first, and for an agent saved before it,
+    // so a fingerprint from before the upgrade still matches.
+    ...(agent.access !== undefined && agent.access !== 'ask' && { access: agent.access }),
   });
   return { fingerprint, deliveredAt: new Date().toISOString(), ...(agent.orchestrator && { orchestrator: agent.orchestrator }), parts, order };
 }
@@ -770,7 +774,7 @@ export async function deliverManagedSetup(params: {
       rawInstructions: composeManagedText(resolved),
       skills: resolved.skills.map((sk) => sk.name),
       mcps: resolved.mcps.map((m) => m.name),
-      settings: await managedSettingsRows(service, agent, provider),
+      settings: await managedSettingsRows(service, agent, provider, params.projectPath),
     },
     ...(resolved.missing.length > 0 && { missing: resolved.missing.length }),
   };
@@ -877,7 +881,7 @@ export async function previewManagedSetup(params: {
     ...extra,
     instructions,
     rawInstructions,
-    settings: await managedSettingsRows(params.service, params.agent, params.provider),
+    settings: await managedSettingsRows(params.service, params.agent, params.provider, params.projectPath),
     blocks,
     skills: resolved.skills.map((s) => ({
       id: s.id, name: s.name, skillName: s.content.skillName, files: s.content.files.length, folder: `${folderRoot}/${s.content.skillName}`.replace(/\\/g, '/'),

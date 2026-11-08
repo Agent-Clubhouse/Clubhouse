@@ -125,6 +125,6 @@ export function registerModelTools(): void {
         return { content: [{ type: 'text', text: errorText(err) }], isError: true };
       }
     },
-    { group: 'orchestration' },
+    { group: 'orchestration', grant: { actions: ['models.read'], target: 'app' } },
   );
 }

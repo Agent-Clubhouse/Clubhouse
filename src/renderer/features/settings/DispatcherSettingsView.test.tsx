@@ -16,7 +16,7 @@ const ON: DispatcherState = {
   running: false,
   agentId: 'disp',
   path: FOLDER,
-  config: { id: 'disp', name: 'Dispatcher', color: 'indigo', createdAt: 'now', orchestrator: 'codex-cli', idleSleep: 'never', runtimeMode: 'chat', freeAgentMode: true, persona: 'dispatcher' },
+  config: { id: 'disp', name: 'Dispatcher', color: 'indigo', createdAt: 'now', orchestrator: 'codex-cli', idleSleep: 'never', runtimeMode: 'chat', access: 'full_access', freeAgentMode: true, persona: 'dispatcher' },
 };
 
 const cli = (id: string, displayName: string) => ({ id, displayName, shortName: displayName, capabilities: { permissions: true } }) as unknown as OrchestratorInfo;
@@ -87,8 +87,11 @@ describe('DispatcherSettingsView', () => {
     const autoSleep = await screen.findByLabelText('Auto-sleep');
     await act(async () => { fireEvent.change(autoSleep, { target: { value: '30' } }); });
     expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith(FOLDER, 'disp', { idleSleep: 30 });
-    await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Free agent mode' })); });
-    expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith(FOLDER, 'disp', { freeAgentMode: false });
+    const access = screen.getByLabelText('Access') as HTMLSelectElement;
+    expect(access.value).toBe('full_access');
+    expect(screen.queryByText(/free agent/i)).toBeNull();
+    await act(async () => { fireEvent.change(access, { target: { value: 'auto' } }); });
+    expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith(FOLDER, 'disp', { access: 'auto' });
   });
 
   it('keeps the folder line while off, and hides the agent settings', async () => {
