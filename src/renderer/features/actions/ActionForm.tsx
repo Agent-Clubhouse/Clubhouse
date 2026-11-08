@@ -140,7 +140,7 @@ function StepEditor({ index, step, onChange, onRemove, agents, projects, canRemo
           <div className="flex gap-3">
             <div className="flex-1">
               <Field label="Provider" htmlFor={`${uid}-provider`}>
-                <select id={`${uid}-provider`} className={`${selectClass} w-full`} value={step.orchestrator} onChange={(e) => set({ orchestrator: e.target.value })}>
+                <select id={`${uid}-provider`} className={`${selectClass} w-full`} value={step.orchestrator} onChange={(e) => set({ orchestrator: e.target.value, model: '' })}>
                   <option value="">The project’s provider</option>
                   {orchestrators.map((o) => <option key={o.id} value={o.id}>{o.displayName}</option>)}
                 </select>
@@ -207,7 +207,7 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
   const owner: ActionOwner = action?.owner ?? { kind: 'user' };
 
   const save = async () => {
-    const result = draftToInput(draft, action ? action.enabled : true);
+    const result = draftToInput(draft);
     if (!result.ok) { setError(result.error); return; }
     setSaving(true);
     setError(null);
@@ -239,7 +239,13 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
 
   const eventIsGit = GIT_EVENT_KINDS.includes(draft.event);
   const eventIsApp = APP_EVENT_KINDS.includes(draft.event);
-  const sourceOptions = eventIsApp ? null : (
+  const projectEvent = draft.event === 'project.added' || draft.event === 'project.removed';
+  const sourceOptions = projectEvent ? (
+    <select id={`${uid}-source`} className={`${selectClass} w-full`} value={draft.source} onChange={(e) => set({ source: e.target.value })}>
+      <option value="">Any project</option>
+      {projects.map((p) => <option key={p.id} value={`project:${p.id}`}>{p.name}</option>)}
+    </select>
+  ) : eventIsApp ? null : (
     <AgentSelect id={`${uid}-source`} value={draft.source} onChange={(source) => set({ source })} agents={agents} projects={projects} includeProjects placeholder="Pick an agent or project" />
   );
 
@@ -331,14 +337,19 @@ export function ActionForm({ open, action, initial, onClose, onSaved }: {
         {draft.when === 'event' && (
           <>
             <Field label="What happens" htmlFor={`${uid}-event`}>
-              <select id={`${uid}-event`} className={`${selectClass} w-full`} value={draft.event} onChange={(e) => set({ event: e.target.value as ActionEventKind })}>
+              <select id={`${uid}-event`} className={`${selectClass} w-full`} value={draft.event} onChange={(e) => {
+                const event = e.target.value as ActionEventKind;
+                // App events take no agent; project events may name a project.
+                const keep = APP_EVENT_KINDS.includes(event) ? (event.startsWith('project.') && draft.source.startsWith('project:') ? draft.source : '') : draft.source.startsWith('project:') || draft.source.startsWith('agent:') ? draft.source : '';
+                set({ event, source: keep });
+              }}>
                 <optgroup label="Agent">{AGENT_EVENT_KINDS.map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}</optgroup>
                 <optgroup label="Git">{GIT_EVENT_KINDS.map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}</optgroup>
                 <optgroup label="App">{APP_EVENT_KINDS.map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}</optgroup>
               </select>
             </Field>
             {sourceOptions && (
-              <Field label={eventIsGit ? 'Repository' : 'Agent'} htmlFor={`${uid}-source`}
+              <Field label={eventIsGit ? 'Repository' : projectEvent ? 'Project' : 'Agent'} htmlFor={`${uid}-source`}
                 help={eventIsGit ? 'An agent means its worktree. A project means its folder and every agent worktree in it.' : undefined}>
                 {sourceOptions}
               </Field>

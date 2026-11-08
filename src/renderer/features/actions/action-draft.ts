@@ -29,6 +29,8 @@ export interface StepDraft {
   worktreeAgentId: string;
   /** Quick agents: empty for the project's provider. */
   orchestrator: string;
+  /** Quick agents: a model override (set over MCP; cleared when the provider changes). */
+  model: string;
   /** Quick agents: '' app default, 'standard', or 'free' (Free Agent mode). */
   access: '' | 'standard' | 'free';
 }
@@ -57,7 +59,7 @@ export interface ActionDraft {
 }
 
 export function emptyStep(kind: ActionStepKind = 'wake'): StepDraft {
-  return { kind, agentId: '', text: '', projectId: '', worktreeAgentId: '', orchestrator: '', access: '' };
+  return { kind, agentId: '', text: '', projectId: '', worktreeAgentId: '', orchestrator: '', model: '', access: '' };
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -96,7 +98,7 @@ function stepToDraft(s: ActionStep): StepDraft {
     case 'sleep': return { ...d, agentId: s.agentId };
     case 'notify': return { ...d, text: s.text };
     case 'quick': return {
-      ...d, projectId: s.projectId, worktreeAgentId: s.worktreeAgentId ?? '', text: s.prompt, orchestrator: s.orchestrator ?? '',
+      ...d, projectId: s.projectId, worktreeAgentId: s.worktreeAgentId ?? '', text: s.prompt, orchestrator: s.orchestrator ?? '', model: s.model ?? '',
       access: s.freeAgentMode === undefined ? '' : s.freeAgentMode ? 'free' : 'standard',
     };
   }
@@ -127,7 +129,7 @@ export function draftFrom(input: Partial<ActionInput>, now = Date.now()): Action
 /** The cron line the schedule part of a draft stands for. */
 export function draftCron(d: ActionDraft): string {
   if (d.preset === 'cron') return d.cron.trim();
-  const [h, m] = d.time.split(':').map(Number);
+  const [h, m] = (/^\d{1,2}:\d{2}$/.test(d.time) ? d.time : '').split(':').map(Number);
   return presetToCron(d.preset, {
     hour: Number.isFinite(h) ? h : DEFAULT_PRESET_FIELDS.hour,
     minute: d.preset === 'hourly' ? d.minute : (Number.isFinite(m) ? m : 0),
@@ -145,6 +147,7 @@ function stepFromDraft(s: StepDraft): Record<string, unknown> {
       kind: 'quick', projectId: s.projectId, prompt: s.text,
       ...(s.worktreeAgentId && { worktreeAgentId: s.worktreeAgentId }),
       ...(s.orchestrator && { orchestrator: s.orchestrator }),
+      ...(s.model && { model: s.model }),
       ...(s.access && { freeAgentMode: s.access === 'free' }),
     };
   }
@@ -157,21 +160,25 @@ function sourceFromDraft(source: string): Record<string, unknown> {
 }
 
 /** The draft as action input, or the first problem with it in plain words. */
-export function draftToInput(d: ActionDraft, enabled = true): { ok: true; input: ActionInput; error?: undefined } | { ok: false; error: string; input?: undefined } {
+export function draftToInput(d: ActionDraft, now = Date.now()): { ok: true; input: ActionInput; error?: undefined } | { ok: false; error: string; input?: undefined } {
   let trigger: Record<string, unknown>;
   if (d.when === 'schedule') {
+    if (d.preset !== 'cron' && d.preset !== 'hourly' && !/^\d{1,2}:\d{2}$/.test(d.time)) return { ok: false, error: 'Pick a time.' };
     trigger = { kind: 'schedule', preset: d.preset, cron: draftCron(d), missed: d.missed };
   } else if (d.when === 'once') {
     const at = new Date(d.onceAt).getTime();
     if (!Number.isFinite(at)) return { ok: false, error: 'Pick a date and time.' };
+    if (at <= now) return { ok: false, error: 'Pick a time in the future.' };
     trigger = { kind: 'once', at };
   } else {
     const delay = d.delay.trim() === '' ? undefined : Number(d.delay);
     if (delay !== undefined && !(Number.isInteger(delay) && delay >= 0)) return { ok: false, error: 'The wait must be a whole number of minutes.' };
     trigger = { kind: 'event', event: d.event, source: sourceFromDraft(d.source), ...(delay && { delayMinutes: delay }), ...(d.branch.trim() && { branch: d.branch.trim() }) };
   }
-  const raw = { ...(d.name.trim() && { name: d.name.trim() }), trigger, steps: d.steps.map(stepFromDraft), overlap: d.overlap, enabled };
+  const raw = { ...(d.name.trim() && { name: d.name.trim() }), trigger, steps: d.steps.map(stepFromDraft), overlap: d.overlap };
   const valid = validateActionInput(raw);
   if (!valid.ok) return { ok: false, error: valid.error };
-  return { ok: true, input: { ...valid.value, ...(valid.value.name && { name: valid.value.name }) } };
+  // No on/off state: a new action starts on, and an edit keeps what the action has now.
+  const { enabled: _enabled, name, ...rest } = valid.value;
+  return { ok: true, input: { ...rest, ...(name && { name }) } };
 }

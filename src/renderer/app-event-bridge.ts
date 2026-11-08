@@ -813,10 +813,10 @@ function initProtocolActionListener(): () => void {
 /** Actions (#2918): a toast for a mechanical failure or an action Clubhouse turned off, never for a task that went badly. */
 function initActionNoticeListener(): () => void {
   return window.clubhouse.actions.onNotice((notice) => {
-    useToastStore.getState().addToast(notice.message, 'error', {
+    useToastStore.getState().addToast(notice.message, 'error', notice.exists ? {
       label: 'Open',
       onClick: () => openActionsSettings({ cardId: notice.actionId }),
-    });
+    } : undefined);
   });
 }
 

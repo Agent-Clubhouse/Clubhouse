@@ -23,16 +23,28 @@ describe('action draft', () => {
       steps: [{ kind: 'quick' as const, projectId: 'p1', worktreeAgentId: 'lead', prompt: 'Tidy notes', freeAgentMode: false }],
       overlap: 'queue' as const,
     };
-    const r = draftToInput(draftFrom(input, NOW));
-    expect(r.ok && r.input).toEqual({ ...input, enabled: true });
+    const r = draftToInput(draftFrom(input, NOW), NOW);
+    expect(r.ok && r.input).toEqual(input);
   });
 
   it('round-trips a one-time action in local time', () => {
     const at = new Date(2026, 10, 10, 14, 15).getTime();
     const d = draftFrom({ trigger: { kind: 'once', at }, steps: [{ kind: 'notify', text: 'x' }] }, NOW);
     expect(d.onceAt).toBe(toLocalInput(at));
-    const r = draftToInput(d);
+    const r = draftToInput(d, NOW);
     expect(r.ok && r.input.trigger).toEqual({ kind: 'once', at });
+    expect(draftToInput(d, at + 1)).toEqual({ ok: false, error: 'Pick a time in the future.' });
+  });
+
+  it('keeps a quick agent model override through an edit', () => {
+    const input = { trigger: { kind: 'schedule' as const, preset: 'daily' as const, cron: '0 9 * * *', missed: 'skip' as const }, steps: [{ kind: 'quick' as const, projectId: 'p1', prompt: 'x', orchestrator: 'claude-code', model: 'opus' }] };
+    const r = draftToInput(draftFrom(input, NOW), NOW);
+    expect(r.ok && r.input.steps[0]).toMatchObject({ model: 'opus' });
+  });
+
+  it('refuses an empty time instead of saving midnight', () => {
+    const steps = [{ ...newDraft().steps[0], kind: 'notify' as const, text: 'x' }];
+    expect(draftToInput({ ...newDraft(NOW), time: '', steps }, NOW)).toEqual({ ok: false, error: 'Pick a time.' });
   });
 
   it('explains a bad custom line and a bad wait', () => {

@@ -46,7 +46,7 @@ describe('Settings > Actions', () => {
   it('turns an action off from its row', async () => {
     list = [action({})];
     render(<ActionsSettingsView />);
-    const toggle = await screen.findByRole('switch', { name: 'Turn off Morning plan' });
+    const toggle = await screen.findByRole('switch', { name: 'Morning plan' });
     fireEvent.click(toggle);
     await waitFor(() => expect(window.clubhouse.actions.setEnabled).toHaveBeenCalledWith('a1', false));
   });

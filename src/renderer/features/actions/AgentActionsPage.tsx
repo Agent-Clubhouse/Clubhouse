@@ -79,7 +79,7 @@ export function AgentActionsPage({ agentId, agentName, projectId }: { agentId: s
       {error && <div className={`${settingsHelp} mt-3`}>Couldn’t load actions. {error}</div>}
       {actions && (
         <>
-          <Group title={`Wake or message ${agentName}`} empty={`No action acts on ${agentName}.`} list={groups.targeting} />
+          <Group title={`Act on ${agentName}`} empty={`No action acts on ${agentName}.`} list={groups.targeting} />
           <Group title={`Set off by ${agentName}`} empty={`Nothing ${agentName} does sets off an action.`} list={groups.triggeredBy} />
           <Group title={`Made by ${agentName}`} empty={`${agentName} hasn’t made any actions.`} list={groups.owned} note={`Their usage counts toward ${agentName}.`} />
         </>

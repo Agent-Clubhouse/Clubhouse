@@ -109,8 +109,10 @@ export function ActionCard({ action, onClose, onEdit }: { action: ActionView; on
 
   useEffect(() => {
     let live = true;
+    setRuns(null);
+    setError(null);
     const load = () => {
-      window.clubhouse.actions.history(action.id).then((r) => { if (live) setRuns(r); }).catch((err: unknown) => {
+      window.clubhouse.actions.history(action.id).then((r) => { if (live) { setRuns(r); setError(null); } }).catch((err: unknown) => {
         // telemetry-exempt: shown on the card
         if (live) setError(ipcErrorMessage(err));
       });
@@ -120,13 +122,16 @@ export function ActionCard({ action, onClose, onEdit }: { action: ActionView; on
     return () => { live = false; off(); };
   }, [action.id]);
 
-  const act = async (fn: () => Promise<unknown>) => {
+  /** Resolves true when it worked; the error shows on the card otherwise. */
+  const act = async (fn: () => Promise<unknown>): Promise<boolean> => {
     setError(null);
     try {
       await fn();
+      return true;
     } catch (err) {
       // telemetry-exempt: shown on the card
       setError(ipcErrorMessage(err));
+      return false;
     }
   };
 
@@ -148,7 +153,7 @@ export function ActionCard({ action, onClose, onEdit }: { action: ActionView; on
     >
       <div className="max-h-[65vh] overflow-y-auto pr-1 text-[13px]">
         <div className="flex items-center gap-3">
-          <Toggle checked={action.enabled} aria-label={action.enabled ? 'Turn off' : 'Turn on'}
+          <Toggle checked={action.enabled} aria-label="Action on"
             onChange={(on) => { void act(() => window.clubhouse.actions.setEnabled(action.id, on)); }} />
           <span className="text-ctp-text" data-testid="action-card-status">{statusLine(action)}</span>
         </div>
@@ -198,7 +203,7 @@ export function ActionCard({ action, onClose, onEdit }: { action: ActionView; on
         description={`“${action.name}” will stop running. Its history goes too.`}
         confirmLabel="Delete"
         onCancel={() => setConfirmDelete(false)}
-        onConfirm={() => { setConfirmDelete(false); void act(() => window.clubhouse.actions.delete(action.id)).then(onClose); }}
+        onConfirm={() => { setConfirmDelete(false); void act(() => window.clubhouse.actions.delete(action.id)).then((ok) => { if (ok) onClose(); }); }}
       />
     </Modal>
   );

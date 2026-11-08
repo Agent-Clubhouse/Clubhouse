@@ -57,7 +57,7 @@ function ActionRow({ action, onOpen }: { action: ActionView; onOpen: () => void 
   const attention = !action.enabled ? action.offReason : action.problem;
   return (
     <li className="flex items-start gap-3 py-2.5 border-t border-surface-0" data-testid="action-row">
-      <Toggle className="mt-0.5" checked={action.enabled} aria-label={`${action.enabled ? 'Turn off' : 'Turn on'} ${action.name}`}
+      <Toggle className="mt-0.5" checked={action.enabled} aria-label={action.name}
         onChange={(on) => {
           setError(null);
           window.clubhouse.actions.setEnabled(action.id, on).catch((err: unknown) => {
@@ -100,14 +100,15 @@ export function ActionsSettingsView() {
 
   // Another surface asked for a pre-filled form or a card (an agent page, a toast).
   useEffect(() => {
-    if (!pending || !actions) return;
+    // Never over a form in progress: what was typed would be lost.
+    if (!pending || !actions || form) return;
     if (pending.cardId) setCardId(pending.cardId);
     else if (pending.editId) {
       const a = actions.find((x) => x.id === pending.editId);
       if (a) setForm({ action: a });
     } else setForm({ initial: pending.draft ?? {} });
     setPending(null);
-  }, [pending, actions, setPending]);
+  }, [pending, actions, form, setPending]);
 
   const shown = useMemo(() => filterActions(actions ?? [], filter), [actions, filter]);
   const card = cardId ? actions?.find((a) => a.id === cardId) : undefined;
