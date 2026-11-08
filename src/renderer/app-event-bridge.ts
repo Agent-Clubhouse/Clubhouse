@@ -57,8 +57,16 @@ function initWindowListeners(): (() => void)[] {
 
   // Open Settings from menu
   removers.push(
-    window.clubhouse.app.onOpenSettings(() => {
-      useUIStore.getState().toggleSettings();
+    window.clubhouse.app.onOpenSettings((page) => {
+      const ui = useUIStore.getState();
+      if (page === 'annex') {
+        // Opened for a person to add a device (#3068): Settings › Annex Network, left open.
+        ui.setSettingsContext('app');
+        ui.setSettingsSubPage('annex');
+        if (ui.explorerTab !== 'settings') ui.toggleSettings();
+        return;
+      }
+      ui.toggleSettings();
     }),
   );
 

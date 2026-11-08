@@ -59,6 +59,10 @@ Synthetic tests can't cover certificates under Electron or local network discove
 - Close Clubhouse on the receiving computer, send a message, open it again: the message arrives once, after the reconnect.
 - Remove the connection on one computer: the other computer's agent loses its tools for it once the two reconnect.
 
+**Device grants (#3068)**
+- The Dispatcher lists the devices with their names and whether each is online, and is asked before it renames, reconnects or removes one.
+- The Dispatcher's "add a device" opens Settings › Annex Network on screen, and pairing still needs a person at the new device.
+
 **Chat across desktops (#2390)**
 - Open a chat agent that runs on another desktop: its conversation shows, says which machine it's on, and streams live.
 - Send, steer, stop, approve a permission and answer a question from the controller; each lands on the other desktop.
@@ -136,4 +140,7 @@ Decisions made while building, for the maintainer to revisit. Newest last. D180 
 | D238 | Agents connect across machines only between computers in the network (members, which connect to each other both ways): not over a one-to-one pairing, where one side can't reach the other, and never with a phone. Both routes refuse any other peer. | Two-way connections and removals need both machines to reach each other; a phone has no agents. | One-to-one pairings need agent links. |
 | D250 | A member pairing dropped for never connecting is removed from the network too (#3106): its join went to the other members when it paired, so without a removal the next view brought it back. | Pairing and its undoing travel the same way. | |
 | D251 | A machine told it was removed leaves quietly: ending its own pairings records and announces no removals. Before, each pairing it ended was announced as a removal, so a member that hadn't yet heard of this machine's removal was told to remove itself, and left. | Leaving is not removing anyone. | |
+| D239 | Two grant actions for the Annex Network: See devices (`device.read`: each device's id, name, kind, whether it's online, and how it relates to this computer, never its addresses or certificate) and Manage devices (`device.manage`: rename a member, reconnect a computer this one connects to, remove a device, start adding one). Tools: `list_devices`, `rename_device`, `reconnect_device`, `remove_device`, `start_adding_device`. Each acts on this machine's own devices, so it's checked by the machine where the action happens. | The two grants #3068 names, with the same allow-only model as every other grant. | |
+| D240 | Defaults: the Dispatcher gets See devices (Allow) and Manage devices (Ask first); no other agent gets either. A person can give or take them like any grant. | #3068's defaults. | |
+| D241 | No tool finishes a pairing. `start_adding_device` opens Settings › Annex Network on this computer for a person, and returns no one-time code, link or certificate; Pair again stays a person's step too. A test checks that no registered tool pairs, takes a code or confirms a certificate. | "Finishing a pairing always needs a person on the new device." | |
 

@@ -362,6 +362,23 @@ describe('initAppEventBridge', () => {
     cleanup();
   });
 
+  it('opens Settings at Annex Network when asked for that page (#3068), and toggles Settings otherwise', () => {
+    const handler = vi.mocked(window.clubhouse.app.onOpenSettings).mock.calls.at(-1)![0] as (page?: string) => void;
+    const ui = { explorerTab: 'agents', setSettingsContext: vi.fn(), setSettingsSubPage: vi.fn(), toggleSettings: vi.fn() };
+    vi.mocked(useUIStore.getState).mockReturnValue(ui as never);
+    handler('annex');
+    expect(ui.setSettingsContext).toHaveBeenCalledWith('app');
+    expect(ui.setSettingsSubPage).toHaveBeenCalledWith('annex');
+    expect(ui.toggleSettings).toHaveBeenCalledTimes(1);
+    // Already in Settings: it stays open, on the page.
+    ui.explorerTab = 'settings';
+    handler('annex');
+    expect(ui.toggleSettings).toHaveBeenCalledTimes(1);
+    // The menu's Preferences, with no page, toggles as before.
+    handler();
+    expect(ui.toggleSettings).toHaveBeenCalledTimes(2);
+  });
+
   it('should register all window/app IPC listeners', () => {
     expect(window.clubhouse.app.onOpenSettings).toHaveBeenCalled();
     expect(window.clubhouse.app.onOpenAbout).toHaveBeenCalled();

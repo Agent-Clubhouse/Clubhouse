@@ -28,8 +28,9 @@ export const app = {
     ipcRenderer.on(IPC.APP.AGENT_ATTENTION, listener);
     return () => { ipcRenderer.removeListener(IPC.APP.AGENT_ATTENTION, listener); };
   },
-  onOpenSettings: (callback: () => void) => {
-    const listener = () => callback();
+  /** Open Settings, at `page` when one is given (an agent's start_adding_device opens Annex Network, #3068). */
+  onOpenSettings: (callback: (page?: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, page?: unknown) => callback(typeof page === 'string' ? page : undefined);
     ipcRenderer.on(IPC.APP.OPEN_SETTINGS, listener);
     return () => { ipcRenderer.removeListener(IPC.APP.OPEN_SETTINGS, listener); };
   },

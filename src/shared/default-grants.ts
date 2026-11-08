@@ -137,6 +137,8 @@ export function defaultGrants(facts: GrantCallerFacts): Grant[] {
       structural('agent.create', ANY_PROJECT), structural('project.read', ANY_PROJECT), structural('project.display', ANY_PROJECT),
       structural('project.add', ANY_PROJECT, 'ask'),
       structural('project.configure', ANY_PROJECT, 'ask'), structural('settings.app.write', APP, 'ask'),
+      // The Annex Network's devices (#3068): it sees them, and asks before it changes any.
+      structural('device.read', APP), structural('device.manage', APP, 'ask'),
     );
   }
   return out;
