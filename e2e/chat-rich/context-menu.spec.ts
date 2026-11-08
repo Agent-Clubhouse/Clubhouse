@@ -3,6 +3,7 @@ import type { Menu, PopupOptions } from 'electron';
 import * as path from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import { CHAT_MEDIA, md } from '../../src/main/orchestrators/adapters/testing/chat-script';
+import { revealAgent } from '../smoke-helpers';
 import { chatDom, expectImageLoaded, openRichChat, TURN_TIMEOUT } from './harness';
 
 interface MenuProbe {
@@ -163,7 +164,7 @@ test('native copy menu preserves rich link, image and selection content', async 
 
     // Existing agent-row menus retain control; the fallback must not open.
     const before = await app.evaluate(() => (globalThis as ProbeGlobal).__copyMenuProbe!.calls);
-    await page.getByTestId(`agent-item-${chat.agentId}`).click({ button: 'right' });
+    await (await revealAgent(page, chat.agentId)).click({ button: 'right' });
     await expect(page.getByTestId('agent-context-menu')).toBeVisible();
     // The fallback would arrive over async IPC, so give it time to show up before asserting it did not.
     await page.waitForTimeout(500);

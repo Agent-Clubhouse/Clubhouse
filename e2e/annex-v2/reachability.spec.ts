@@ -13,6 +13,7 @@ import * as path from 'path';
 import { launchApp, type LaunchedApp } from '../launch';
 import { createDisposableProfile, type DisposableProfile } from '../app-profile';
 import { untrackOpenApp } from '../e2e-cleanup';
+import { assertRunLayout } from '../smoke-helpers';
 import { enableAnnexViaPreload } from './helpers';
 
 interface Device {
@@ -55,11 +56,12 @@ test('a satellite reachable only by a typed host connects, and again after the c
   satellite = await launchApp({
     label: 'satellite',
     args: ['--disable-gpu'],
-    experimental: { newChrome: false },
     env: { CLUBHOUSE_ANNEX_LOOPBACK_ONLY: '1' },
   });
+  await assertRunLayout(satellite.window);
   controllerProfile = createDisposableProfile({ label: 'controller' });
-  controller = await launchApp({ label: 'controller', args: ['--disable-gpu'], experimental: { newChrome: false }, profile: controllerProfile });
+  controller = await launchApp({ label: 'controller', args: ['--disable-gpu'], profile: controllerProfile });
+  await assertRunLayout(controller.window);
 
   await enableAnnexViaPreload(satellite.window);
   await enableAnnexViaPreload(controller.window);
@@ -91,7 +93,8 @@ test('a satellite reachable only by a typed host connects, and again after the c
   await fs.promises.writeFile(peersFile, JSON.stringify(peers, null, 2));
 
   // Relaunch on the same profile: it connects from the typed host alone, with no discovery and no button.
-  controller = await launchApp({ label: 'controller', args: ['--disable-gpu'], experimental: { newChrome: false }, profile: controllerProfile });
+  controller = await launchApp({ label: 'controller', args: ['--disable-gpu'], profile: controllerProfile });
+  await assertRunLayout(controller.window);
   await expect.poll(async () => (await deviceOn(controller!.window, sat.fingerprint))?.state, { timeout: 60_000 }).toBe('connected');
   expect(await deviceOn(controller.window, sat.fingerprint)).toMatchObject({ typedHost: '127.0.0.1', address: `127.0.0.1:${sat.port}` });
 });

@@ -15,12 +15,20 @@ import * as fs from 'fs';
 import { launchDual, cleanupDual, type DualInstanceHandles } from './dual-launch';
 import { pairOverTls, connectWs, sameCertFingerprint, waitForOpen, waitForMessage } from './helpers';
 import { generateTestIdentity } from './tls-test-utils';
+import { openSettings, openSettingsPage } from '../smoke-helpers';
 
 const SCREENSHOTS_DIR = path.resolve(__dirname, 'screenshots');
 fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
 
 async function screenshot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: path.join(SCREENSHOTS_DIR, `${name}.png`), fullPage: true });
+}
+
+/** Settings > Annex Network, one page for the server and the controller side (#3067), on either layout. */
+async function openAnnexNetworkPage(page: Page): Promise<void> {
+  await openSettings(page);
+  await openSettingsPage(page, 'annex', 'Annex Network');
+  await expect(page.getByTestId('annex-network-toggle')).toBeVisible({ timeout: 10_000 });
 }
 
 let handles: DualInstanceHandles;
@@ -123,30 +131,16 @@ test('Phase 2: Dual-instance launch, enable, pair, connect', async () => {
   await screenshot(satellite.window, '05-after-ws-connection');
   await screenshot(controller.window, '05-controller-after-pair');
 
-  // ── Step 6: Navigate to Annex settings on satellite ───────────────────
-  console.log('\n=== Step 6: Navigate to Annex settings ===');
-  const settingsBtn = satellite.window.locator('[data-testid="nav-settings"]');
-  await settingsBtn.click();
-  await satellite.window.waitForTimeout(500);
-
-  const annexBtn = satellite.window.locator('button:has-text("Annex Server")').first();
-  if (await annexBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await annexBtn.click();
-    await satellite.window.waitForTimeout(500);
-  }
+  // ── Step 6: Open Settings > Annex Network on satellite ────────────────
+  console.log('\n=== Step 6: Open Annex Network settings ===');
+  // The WebSocket above locked the satellite; its overlay covers the sidebar until the lock clears.
+  await expect(satellite.window.getByText(/Controlled by/)).toBeHidden({ timeout: 10_000 });
+  await openAnnexNetworkPage(satellite.window);
   await screenshot(satellite.window, '06-satellite-annex-settings');
 
-  // ── Step 7: Navigate to Annex Control on controller ───────────────────
-  console.log('\n=== Step 7: Navigate to Annex Control ===');
-  const ctrlSettingsBtn = controller.window.locator('[data-testid="nav-settings"]');
-  await ctrlSettingsBtn.click();
-  await controller.window.waitForTimeout(500);
-
-  const annexControlBtn = controller.window.locator('button:has-text("Annex Control")').first();
-  if (await annexControlBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await annexControlBtn.click();
-    await controller.window.waitForTimeout(500);
-  }
+  // ── Step 7: Open Settings > Annex Network on controller ───────────────
+  console.log('\n=== Step 7: Open Annex Network settings on controller ===');
+  await openAnnexNetworkPage(controller.window);
   await screenshot(controller.window, '07-controller-annex-control');
 
   // ── Step 8: Verify peer management APIs work ──────────────────────────

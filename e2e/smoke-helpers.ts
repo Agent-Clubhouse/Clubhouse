@@ -226,6 +226,82 @@ export async function revealAgent(window: Page, agentId: string, timeout = 30_00
   return row;
 }
 
+export interface CreateDurableAgentOptions {
+  /** The project's name as the sidebar shows it. On classic the agent goes in the active project, as "+ Agent" does. */
+  projectName: string;
+  name: string;
+  /** The CLI it runs on, by orchestrator id (`claude-code`, …). */
+  orchestrator: string;
+  /** Its own worktree and branch. Off unless set, as on classic, where the checkbox starts off. */
+  worktree?: boolean;
+  /** An Access level (`full_access`, …). Unset leaves the app's Default access. */
+  access?: string;
+}
+
+/**
+ * Create a plain durable agent from the UI and return its id once its row
+ * shows. Classic: the agent list's "+ Agent" dialog. New layout: the project
+ * row's New agent button, then the New agent page with Clubhouse managed off.
+ * Both layouts make the new agent the active one.
+ */
+export async function createDurableAgent(window: Page, opts: CreateDurableAgentOptions): Promise<string> {
+  const worktree = opts.worktree ?? false;
+  const item = window.locator(`[data-agent-name="${opts.name}"][data-testid^="agent-item-durable_"]`);
+  const newLayout = await isNewLayout(window);
+  if (!newLayout) {
+    await window.locator('button:has-text("+ Agent")').first().click();
+    await expect(window.locator('h2:has-text("New Agent")')).toBeVisible({ timeout: 5_000 });
+    await window.locator('input[type="text"]').first().fill(opts.name);
+    if (worktree) await window.getByText('Use git worktree', { exact: false }).click();
+    await window.locator('label:has-text("Runs on") select').selectOption(opts.orchestrator);
+    if (opts.access) await window.getByRole('combobox', { name: 'Access', exact: true }).selectOption(opts.access);
+    await window.locator('button:has-text("Create Agent")').click();
+  } else {
+    await showProjectTree(window);
+    // The row's actions show while its header is hovered.
+    await (await projectButton(window, opts.projectName)).hover();
+    await window.getByRole('button', { name: `New agent in ${opts.projectName}`, exact: true }).click();
+    const page = window.getByTestId('new-agent-page');
+    await expect(page).toBeVisible({ timeout: 10_000 });
+
+    // A plain agent: Clubhouse managed is on by default in a fresh profile.
+    const managed = page.getByRole('switch', { name: 'Clubhouse managed' });
+    if (await managed.getAttribute('aria-checked') === 'true') await managed.click();
+    await expect(managed).toHaveAttribute('aria-checked', 'false');
+    await page.getByTestId('new-agent-name').fill(opts.name);
+    // Enabled once the project's git check is back, which decides the worktree row.
+    const submit = page.getByTestId('new-agent-submit');
+    await expect(submit).toBeEnabled({ timeout: 10_000 });
+    const runsOn = page.locator('#new-agent-orchestrator');
+    await runsOn.selectOption(opts.orchestrator);
+    await expect(runsOn).toHaveValue(opts.orchestrator);
+    // The worktree row is there only in a git project, where it starts on.
+    const ownWorktree = page.getByRole('switch', { name: 'Own worktree and branch' });
+    if (worktree) {
+      await expect(ownWorktree).toHaveAttribute('aria-checked', 'true');
+    } else if (await ownWorktree.count()) {
+      if (await ownWorktree.getAttribute('aria-checked') === 'true') await ownWorktree.click();
+      await expect(ownWorktree).toHaveAttribute('aria-checked', 'false');
+    }
+    if (opts.access) await page.getByTestId('new-agent-access').selectOption(opts.access);
+    await submit.click();
+    // A failed create keeps the page open with its reason; show that rather than a timeout.
+    await expect(async () => {
+      const error = page.getByTestId('new-agent-error');
+      if (await error.isVisible()) throw new Error(`New agent page: ${await error.textContent()}`);
+      await expect(page).toBeHidden({ timeout: 1_000 });
+    }).toPass({ timeout: 30_000 });
+  }
+  await expect(async () => {
+    // Created agents start awake. One that stopped since is in its project's sleeping fold.
+    if (newLayout && !(await item.isVisible())) {
+      for (const fold of await window.locator('[data-testid^="sleeping-fold-"][aria-expanded="false"]').all()) await fold.click();
+    }
+    await expect(item).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 20_000 });
+  return (await item.getAttribute('data-testid'))!.slice('agent-item-'.length);
+}
+
 /** Open Settings from the sidebar. On the new layout this leaves it open if it already is. */
 export async function openSettings(window: Page) {
   const titleBar = window.locator('[data-testid="title-bar"]');
