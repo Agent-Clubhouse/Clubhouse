@@ -256,6 +256,7 @@ describe('AgentSettingsView', () => {
     it('stacks every section on one page', async () => {
       renderSettings();
       expect(await screen.findByTestId('skills-section')).toBeInTheDocument();
+      expect(screen.getByTestId('agent-settings-section-grants')).toContainElement(await screen.findByTestId('agent-grants-settings'));
       expect(screen.getByRole('heading', { name: 'Quick agents' })).toBeInTheDocument();
       expect(screen.queryByTestId('agent-settings-nav')).not.toBeInTheDocument();
     });
@@ -864,6 +865,16 @@ describe('AgentSettingsView', () => {
     });
 
     const visiblePage = () => screen.getAllByTestId(/^agent-settings-page-/).filter((el) => !el.hidden);
+
+    it('gives a local agent a Clubhouse permissions page (#2971)', async () => {
+      const getGrants = vi.spyOn(window.clubhouse.agent, 'getGrants');
+      renderSettings();
+      act(() => useAgentSettingsPages.getState().setPage('grants'));
+      expect(screen.getByRole('heading', { name: 'Clubhouse permissions' })).toBeInTheDocument();
+      expect(screen.getByTestId('agent-settings-page-grants')).toContainElement(await screen.findByTestId('agent-grants-settings'));
+      expect(getGrants).toHaveBeenCalledWith('/project', 'agent-1');
+      getGrants.mockRestore();
+    });
 
     it('takes sidebar counts from the sections for an agent on another machine, the one that has those pages', async () => {
       const remoteProject = 'remote||sat-1||proj-1';
