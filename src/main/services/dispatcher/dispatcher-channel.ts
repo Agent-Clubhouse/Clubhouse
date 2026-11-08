@@ -12,9 +12,10 @@
  * coordinator, waking it when it is asleep. A report to the chat goes through
  * wakeAndDeliver here, since nothing else messages the chat.
  *
- * Seam left for #3043 (group chat): setChatDelivery replaces what reaches the
- * chat, with the rewrite step and the triage that decides what shows now,
- * later or never.
+ * The group chat (#3043) sits in setChatDelivery: dispatcher-news installs
+ * the triage that decides what shows now, later or never, and the rewrite of
+ * an agent's news. It hears of each hand-off through onHandOff, so an answer
+ * to what the person asked shows right away.
  */
 import * as agentConfig from '../agent-config';
 import * as agentSystem from '../agent-system';
@@ -25,6 +26,7 @@ import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
 import type { RoutedMessagePart } from '../../../shared/chat';
 import type { DurableAgentConfig } from '../../../shared/types';
+import type { ChatDecision, ChatHold, ChatReport } from './dispatcher-news';
 import { getDispatcherChatPath } from './dispatcher-paths';
 import { isDispatcherEnabled } from './dispatcher-settings';
 import {
@@ -66,20 +68,21 @@ export interface ChannelMessage {
 
 /**
  * Turns the coordinator's report into what reaches the chat. The default
- * passes it on as a Clubhouse notice; #3043 installs the rewrite and triage
- * here. Returning null holds it back: nothing reaches the chat.
+ * passes it on as a Clubhouse notice; the group chat (dispatcher-news)
+ * installs the triage and rewrite here. A hold, or null, keeps it back:
+ * nothing reaches the chat now.
  */
-export type ChatDelivery = (report: string) => Promise<ChannelMessage | null> | ChannelMessage | null;
+export type ChatDelivery = (report: ChatReport) => Promise<ChatDecision | null> | ChatDecision | null;
 
 /** The tag on everything the chat receives from the coordinator. The chat's instructions describe it. */
 export const CHAT_UPDATE_TAG = '[FROM:Clubhouse]';
 /** The tag on a hand-off. The coordinator's instructions describe it. */
 export const HAND_OFF_TAG = '[HAND-OFF]';
 
-export const defaultChatDelivery: ChatDelivery = (report) => ({
-  text: `${CHAT_UPDATE_TAG} Update on work you handed off. Tell the user in your own words what matters to them:\n\n${report}`,
+export const defaultChatDelivery: ChatDelivery = ({ message }) => ({
+  text: `${CHAT_UPDATE_TAG} Update on work you handed off. Tell the user in your own words what matters to them:\n\n${message}`,
   // Shown in the chat as a Clubhouse notice: nothing names where it came from.
-  routed: [{ fromClubhouse: true, text: report }],
+  routed: [{ fromClubhouse: true, text: message }],
 });
 
 let chatDelivery: ChatDelivery = defaultChatDelivery;
@@ -87,6 +90,14 @@ let chatDelivery: ChatDelivery = defaultChatDelivery;
 /** Replace the step between the coordinator's report and the chat (#3043). Null restores the default. */
 export function setChatDelivery(delivery: ChatDelivery | null): void {
   chatDelivery = delivery ?? defaultChatDelivery;
+}
+
+const handOffListeners = new Set<() => void>();
+
+/** Hear of each request the chat hands off. Returns a function that stops listening. */
+export function onHandOff(listener: () => void): () => void {
+  handOffListeners.add(listener);
+  return () => { handOffListeners.delete(listener); };
 }
 
 /** Starts in progress, so a second message waits for the first start instead of spawning again. */
@@ -180,6 +191,16 @@ export async function handOffToDispatcher(callerId: string, request: string): Pr
   const result: ChannelResult = 'text' in delivery
     ? { outcome: 'undelivered', error: delivery.text }
     : { outcome: delivery.woke ? 'started' : 'delivered' };
+  if (result.outcome === 'delivered' || result.outcome === 'started') {
+    for (const listener of handOffListeners) {
+      try {
+        listener();
+      } catch (err) {
+        // telemetry-exempt: a listener's bookkeeping; the hand-off itself went through
+        appLog(NS, 'warn', 'Hand-off listener failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+      }
+    }
+  }
   appLog(NS, 'info', 'Dispatcher hand-off', { meta: { outcome: result.outcome, length: request.length } });
   return result;
 }
@@ -189,17 +210,20 @@ export async function handOffToDispatcher(callerId: string, request: string): Pr
  * coordinator may. What reaches the chat is up to the delivery step; a
  * sleeping chat is started with it.
  */
-export async function deliverToChat(callerId: string, report: string): Promise<ChannelResult & { held?: boolean }> {
+export async function deliverToChat(callerId: string, report: string | ChatReport): Promise<ChannelResult & { held?: ChatHold['hold']; reason?: string }> {
   if (!isDispatcherAgentId(callerId)) return { outcome: 'refused', error: 'Only the Dispatcher can use this tool.' };
   const chatId = getDispatcherChatAgentId();
   if (!isDispatcherEnabled() || !chatId) return { outcome: 'off', error: 'The Dispatcher is turned off.' };
-  const message = await chatDelivery(report);
-  if (!message) {
-    appLog(NS, 'info', 'Dispatcher update held back', { meta: { length: report.length } });
-    return { outcome: 'delivered', held: true };
+  const full: ChatReport = typeof report === 'string' ? { message: report } : report;
+  const decision = await chatDelivery(full);
+  if (!decision || 'hold' in decision) {
+    const hold = decision as ChatHold | null;
+    const held = hold?.hold ?? 'never';
+    appLog(NS, 'info', 'Dispatcher update held back', { meta: { held, length: full.message.length } });
+    return { outcome: 'delivered', held, ...(hold?.reason && { reason: hold.reason }) };
   }
-  const result = await wakeAndDeliver(chatId, getDispatcherChatPath(), message, true);
-  appLog(NS, 'info', 'Dispatcher update', { meta: { outcome: result.outcome, length: report.length } });
+  const result = await wakeAndDeliver(chatId, getDispatcherChatPath(), decision, true);
+  appLog(NS, 'info', 'Dispatcher update', { meta: { outcome: result.outcome, length: full.message.length } });
   return result;
 }
 
@@ -207,4 +231,5 @@ export async function deliverToChat(callerId: string, report: string): Promise<C
 export function _resetDispatcherChannelForTesting(): void {
   chatDelivery = defaultChatDelivery;
   starting.clear();
+  handOffListeners.clear();
 }

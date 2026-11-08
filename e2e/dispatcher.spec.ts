@@ -22,6 +22,8 @@ import { addProject } from './smoke-helpers';
  *   adds the wire live, and it survives a restart;
  * - turning its switch off stops it and drops its row and wires, keeps its
  *   folder, and it comes back with the same id;
+ * - Clear chat (#3043) asks first, then starts its conversation over without
+ *   touching memory;
  * - the Dispatcher wakes a connected agent with a message over MCP, and can't
  *   sleep it mid-turn without force;
  * - an Ask-first call (#2970): the Dispatcher's change to helper presets waits
@@ -339,6 +341,17 @@ test('on by default, wire an orchestrator, restart, switch off and on, and wake 
   await expect(w.locator('[data-testid="dispatcher-view"] [data-testid="chat-view"]')).toBeVisible({ timeout: 15_000 });
   await expect(w.locator('[data-testid="title-bar"]')).toContainText('Dispatcher');
   await expect(w.locator('[data-testid="title-bar"]')).not.toContainText('dispatcher-e2e-');
+
+  // Clear chat (#3043) from its menu asks first, starts the conversation over and leaves memory alone.
+  const memoryFiles = ['index.md', 'topics/plan.md', 'topics/release.md'].map((f) => path.join(dispatcherDir(), 'memory', f));
+  const memoryBefore = await Promise.all(memoryFiles.map((f) => fs.promises.readFile(f, 'utf8')));
+  await rowItem(w).click({ button: 'right' });
+  await w.locator('[data-testid="agent-context-menu"] [data-testid="ctx-clear-chat"]').click();
+  await expect(w.locator('[data-testid="dispatcher-clear-chat-confirm"]')).toBeVisible();
+  await w.locator('[data-testid="dispatcher-clear-chat-confirm-button"]').click();
+  await expect(w.locator('[data-testid="dispatcher-clear-chat-confirm"]')).toHaveCount(0, { timeout: 15_000 });
+  await expect(w.locator('[data-testid="dispatcher-view"] [data-testid="chat-view"]')).toBeVisible();
+  expect(await Promise.all(memoryFiles.map((f) => fs.promises.readFile(f, 'utf8')))).toEqual(memoryBefore);
 });
 
 test('the Dispatcher wakes a connected agent with a message and sleeps it again', async () => {

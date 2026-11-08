@@ -2,6 +2,8 @@ import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { DispatcherState } from '../../shared/dispatcher-types';
 import * as dispatcher from '../services/dispatcher/dispatcher-service';
+import { clearDispatcherChat, type ClearChatResult } from '../services/dispatcher/dispatcher-clear-chat';
+import { installGroupChat } from '../services/dispatcher/dispatcher-news';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { restorePersistedBindings } from './mcp-binding-handlers';
 import { withValidatedArgs, booleanArg } from './validation';
@@ -17,6 +19,10 @@ export function registerDispatcherHandlers(): void {
     [booleanArg()],
     async (_event, on): Promise<DispatcherState> => dispatcher.setDispatcherEnabled(on),
   ));
+  ipcMain.handle(IPC.DISPATCHER.CLEAR_CHAT, (): Promise<ClearChatResult> => clearDispatcherChat());
+
+  // Its chat is a group chat (#3043): what reaches it is triaged, and agents' news rewritten.
+  installGroupChat();
 
   let lastApplied = '';
   dispatcher.onDispatcherChanged((state) => {

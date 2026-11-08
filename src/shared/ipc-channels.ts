@@ -666,6 +666,8 @@ export const IPC = {
   DISPATCHER: {
     GET: 'dispatcher:get',
     SET_ENABLED: 'dispatcher:set-enabled',
+    /** Starts the Dispatcher's conversation over (#3043). Memory is never touched. */
+    CLEAR_CHAT: 'dispatcher:clear-chat',
     /** Main → renderer broadcast: DispatcherState after any change. */
     CHANGED: 'dispatcher:changed',
   },
