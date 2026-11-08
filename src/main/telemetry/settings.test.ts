@@ -97,6 +97,15 @@ describe('identity', () => {
     expect(isValidIdentity({ installId: 'x', hashSalt: a.hashSalt })).toBe(false);
   });
 
+  it("adopts the local record's salt for the first identity, and makes its own for anything else (#2920)", () => {
+    const local = Buffer.alloc(32, 9).toString('base64');
+    const adopted = createIdentity(local);
+    expect(adopted.hashSalt).toBe(local);
+    expect(isValidIdentity(adopted)).toBe(true);
+    expect(createIdentity('short').hashSalt).not.toBe('short');
+    expect(createIdentity().hashSalt).not.toBe(local);
+  });
+
   it('hashes ids to 16 hex chars, stable per salt and different across salts', () => {
     const s1 = Buffer.alloc(32, 1);
     const s2 = Buffer.alloc(32, 2);

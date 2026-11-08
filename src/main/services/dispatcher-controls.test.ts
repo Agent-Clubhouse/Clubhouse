@@ -65,6 +65,18 @@ vi.mock('fs/promises', async (importOriginal) => {
   };
 });
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
+// The local telemetry record (#2920), in this test's folder: what list_orchestrator_controls reads back.
+const record = vi.hoisted(() => ({ salt: Buffer.alloc(32, 7), recorder: null as { flush(): Promise<void>; stop(): Promise<void> } | null }));
+vi.mock('../telemetry/local-control', async () => {
+  const reader = await vi.importActual<typeof import('../telemetry/local-record-reader')>('../telemetry/local-record-reader');
+  return {
+    localRecordSalt: () => record.salt,
+    readLocalEvents: async (name: Parameters<typeof reader.readRecordedEvents>[1], limit: number) => {
+      await record.recorder?.flush();
+      return reader.readRecordedEvents(path.join(state.base, 'telemetry-record'), name, limit);
+    },
+  };
+});
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => state.base }));
 vi.mock('./project-store', () => ({
@@ -1283,13 +1295,36 @@ describe('readback', () => {
     expect((await call('list_orchestrator_controls', { agent_id: 'helper' })).isError).toBe(true);
   });
 
-  it('returns the newest audit rows first, on request only', async () => {
-    await call('set_orchestrator_helpers', { agent_id: 'a', max_helpers: 2 });
-    await call('set_orchestrator_helpers', { agent_id: 'b', max_helpers: 3 });
-    expect((await controls()).audit).toBeUndefined();
-    const { audit } = await controls({ audit: 1 });
-    expect(audit).toHaveLength(1);
-    expect(audit[0].targets).toEqual(['b']);
+  it('returns the newest audit rows first, on request only, from the local telemetry record (#2920)', async () => {
+    const { createLocalRecorder } = await import('../telemetry/local-recorder');
+    const { createScrubber } = await import('../telemetry/scrubber');
+    const { setLocalSink } = await import('../telemetry/facade');
+    const recorder = createLocalRecorder({
+      dir: path.join(state.base, 'telemetry-record'), fileBase: '2026-11-08T00-00-00.000', level: 'standard', hashSalt: record.salt,
+      scrub: createScrubber({ homeDir: os.homedir(), username: 'tester', hostname: 'host' }),
+      session: { appVersion: '1.0.0', platform: 'darwin', arch: 'arm64', uiChrome: 'v2' }, flushIntervalMs: 60_000,
+    });
+    record.recorder = recorder;
+    setLocalSink(recorder);
+    try {
+      await call('set_orchestrator_helpers', { agent_id: 'a', max_helpers: 2 });
+      await call('set_orchestrator_helpers', { agent_id: 'b', max_helpers: 3 });
+      expect((await controls()).audit).toBeUndefined();
+      const { audit } = await controls({ audit: 1 });
+      expect(audit).toHaveLength(1);
+      expect(audit[0]).toMatchObject({ tool: 'set_orchestrator_helpers', actorId: 'dispatcher', targets: ['b'], outcome: 'ok', requested: { max_helpers: 3 } });
+      const both = (await controls({ audit: 5 })).audit;
+      expect(both.map((r: AuditRow) => r.targets[0])).toEqual(['b', 'a']);
+      // The ids are hashed in the file; only a known agent's hash maps back to it.
+      const files = fs.readdirSync(path.join(state.base, 'telemetry-record'));
+      const text = files.map((f) => fs.readFileSync(path.join(state.base, 'telemetry-record', f), 'utf-8')).join('');
+      expect(text).toContain('clubhouse.audit.dispatcher_control');
+      expect(text).not.toMatch(/"targets":\["b"\]/);
+    } finally {
+      setLocalSink(null);
+      record.recorder = null;
+      await recorder.stop();
+    }
   });
 });
 

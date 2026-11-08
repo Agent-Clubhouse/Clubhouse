@@ -5,9 +5,9 @@
  * telemetry signals, and is installed in the facade, only while
  * `telemetryRecording` is on too. No OpenTelemetry imports.
  */
+import { localSalt } from './local-salt';
 import * as os from 'os';
 import * as path from 'path';
-import { randomBytes } from 'crypto';
 import { app } from 'electron';
 import * as logSettings from '../services/log-settings';
 import { LOG_RETENTION_TIERS, type LocalTelemetryLevel, type LoggingSettings } from '../../shared/types';
@@ -17,6 +17,8 @@ import { getLocalSink, setLocalSink } from './facade';
 import { isValidIdentity } from './ids';
 import { createLocalRecorder, type LocalRecorder } from './local-recorder';
 import { pruneLogDir, RETENTION_INTERVAL_MS } from './local-retention';
+import { readRecordedEvents, type RecordedEvent } from './local-record-reader';
+import type { EventName } from '../../shared/telemetry/attributes';
 import { createScrubber } from './scrubber';
 import { newChromeEnabled } from '../window-chrome';
 import { enabledDestinations, getTelemetrySettings } from './settings';
@@ -128,9 +130,10 @@ function hashSalt(): Buffer {
     const s = getTelemetrySettings();
     if (isValidIdentity(s)) return Buffer.from(s.hashSalt, 'base64');
   } catch {
-    // Unreadable settings: fall through to a per-run salt.
+    // Unreadable settings: fall through to the local record's salt.
   }
-  return randomBytes(32);
+  // Kept from run to run (#2920), so hashes in older files still mean the same ids.
+  return localSalt();
 }
 
 function start(level: LocalTelemetryLevel, signals: boolean): void {
@@ -212,6 +215,25 @@ export async function restartLocalRecording(): Promise<void> {
   } catch {
     // Never break the settings action.
   }
+}
+
+/** The salt this run's local record hashes ids with (#2920), so a reader can match a known id to its hash. */
+export function localRecordSalt(): Buffer {
+  return hashSalt();
+}
+
+/**
+ * The newest recorded events of one name, newest first (#2920). Queued lines are
+ * flushed first, so a call reads what was just recorded. Empty while signals
+ * aren't recorded: there's no record to read.
+ */
+export async function readLocalEvents(name: EventName, limit: number): Promise<RecordedEvent[]> {
+  try {
+    if (recorder?.signals) await recorder.flush();
+  } catch {
+    // Read what's on disk.
+  }
+  return readRecordedEvents(getLogDir(), name, limit);
 }
 
 /** Test-only reset. */

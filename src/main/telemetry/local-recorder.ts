@@ -29,6 +29,7 @@ import {
   SDK_ATTRIBUTE_KEYS,
   SPANS,
   levelAllows,
+  type EventDef,
   type EventName,
   type MetricName,
   type SpanName,
@@ -39,6 +40,7 @@ import { DIAG_WINDOW_BYTES } from '../../shared/telemetry/diag';
 import { DEFAULT_SESSION_CAPS, SessionCaps } from './caps';
 import type { DiagRecord, DiagSink } from './diag-sink';
 import { hashId } from './ids';
+import { sanitizeLocalDetail } from './local-detail';
 import { sanitizeAttribute, type AttrValue } from './redaction';
 import { sanitizeStack, type Scrubber } from './scrubber';
 import {
@@ -389,6 +391,20 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
   }
 
   // --- Attributes ---
+
+  /** An event's local-only detail (#2920): sanitized values, and ids hashed with this run's salt. */
+  function detailOf(evOpts: EventOptions | undefined): Record<string, unknown> | undefined {
+    if (!evOpts?.detail && !evOpts?.detailIds) return undefined;
+    try {
+      const out: Record<string, unknown> = { ...sanitizeLocalDetail(evOpts.detail) };
+      for (const [key, ids] of Object.entries(evOpts.detailIds ?? {}).slice(0, 8)) {
+        if (/^[A-Za-z][\w.-]{0,63}$/.test(key) && Array.isArray(ids)) out[key] = ids.slice(0, 8).map((id) => hashId(opts.hashSalt, String(id)));
+      }
+      return Object.keys(out).length > 0 ? out : undefined;
+    } catch {
+      return undefined;
+    }
+  }
 
   function attrsOf(attrs: readonly TelAttr[] | undefined, allow?: readonly string[]): Attrs {
     const out: Attrs = {};
@@ -757,14 +773,18 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
     },
 
     event(name: EventName, attrs?: TelAttr[], evOpts?: EventOptions) {
-      if (stopped || !levelAllows(level, EVENTS[name].level) || !caps.tryAcquire('logs')) return;
+      // An audit event is the record of who changed what (#2920): every level, and never capped or dropped.
+      const audit = (EVENTS[name] as EventDef).audit === true;
+      if (stopped || (!audit && (!levelAllows(level, EVENTS[name].level) || !caps.tryAcquire('logs')))) return;
+      const detail = detailOf(evOpts);
       push(withTrace({
         t: 'event',
         ts: iso(now()),
         name,
         severity: evOpts?.severity ?? 'info',
         attrs: attrsOf(attrs),
-      }, evOpts?.trace && /^[0-9a-f]{32}$/.test(evOpts.trace.traceId) && /^[0-9a-f]{16}$/.test(evOpts.trace.spanId) ? evOpts.trace : als.getStore()));
+        ...(detail && { detail }),
+      }, evOpts?.trace && /^[0-9a-f]{32}$/.test(evOpts.trace.traceId) && /^[0-9a-f]{16}$/.test(evOpts.trace.spanId) ? evOpts.trace : als.getStore()), audit);
     },
 
     exception(error, exOpts) {

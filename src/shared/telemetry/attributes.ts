@@ -761,6 +761,13 @@ export const ATTR = {
   updatesAvailable: intAttr('clubhouse.updates.available.count'),
   updatesIncompatible: intAttr('clubhouse.updates.incompatible.count'),
   settingsKey: enumAttr('clubhouse.settings.key', SETTINGS_KEYS),
+  // Audit events (#2920): who changed what. The key and values go in the local record's detail only.
+  auditSurface: enumAttr('clubhouse.audit.surface', ['ui', 'mcp', 'mobile', 'dispatcher', 'persona', 'cli', 'system']),
+  auditScope: enumAttr('clubhouse.audit.scope', ['app', 'project', 'agent']),
+  auditOutcome: enumAttr('clubhouse.audit.outcome', ['ok', 'refused', 'error']),
+  auditTool: enumAttr('clubhouse.audit.tool', ['set_orchestrator_helpers', 'connect_orchestrators', 'disconnect_orchestrators', 'change_provider', 'preview_provider']),
+  auditActorIdHash: hashAttr('clubhouse.audit.actor.id_hash'),
+  auditTargetIdHash: hashAttr('clubhouse.audit.target.id_hash'),
   themeBuiltinId: enumAttr('clubhouse.theme.builtin_id', [...BUILTIN_THEME_IDS, 'other']),
   popoutType: enumAttr('clubhouse.popout.type', ['agent', 'canvas']),
   /**
@@ -1551,6 +1558,12 @@ export type MetricName = keyof typeof METRICS;
 
 export interface EventDef {
   readonly level: TelemetryLevel;
+  /**
+   * An audit event (#2920): local recording keeps it at every level and outside
+   * the hourly event cap, since it's the record of who changed what. Export still
+   * follows `level`.
+   */
+  readonly audit?: true;
 }
 
 export const EVENTS = {
@@ -1714,6 +1727,18 @@ export const EVENTS = {
    * Detailed: recorded locally only at the Detailed level, and exported only to destinations set to Detailed.
    */
   'clubhouse.action.run_detail': { level: 'detailed' },
+  /**
+   * A settings change or refusal, from any surface (#2920, was settings-audit.jsonl). Attributes:
+   * surface, scope, outcome, actor and target id hashes. The local record's detail adds the key,
+   * the old and new value when they're keepable (else `changed`), and the refusal code.
+   */
+  'clubhouse.audit.setting': { level: 'standard', audit: true },
+  /**
+   * One Dispatcher control call, refusals included (#2920, was dispatcher-audit.jsonl). Attributes:
+   * tool, outcome, actor and first target id hashes. The local record's detail adds every target's
+   * hash, what was requested, before and after, and the code. `list_orchestrator_controls` reads these back.
+   */
+  'clubhouse.audit.dispatcher_control': { level: 'standard', audit: true },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 

@@ -14,6 +14,8 @@
  * Off until enableSettingsAudit, at startup.
  */
 
+import { tel } from '../telemetry/facade';
+import { ATTR } from '../../shared/telemetry/attributes';
 import { AsyncLocalStorage } from 'async_hooks';
 import { createHash } from 'crypto';
 import { createAuditLog } from './bounded-audit-log';
@@ -47,9 +49,40 @@ let enabled = false;
 export const settingsAuditPath = log.path;
 export const readSettingsAudit = log.read;
 
+/**
+ * The row as a telemetry audit event (#2920): enums and hashed ids as attributes,
+ * the key, values and code in the local record's detail only. Written alongside
+ * the JSONL file until nothing reads that. Never throws.
+ */
+function recordEvent(row: SettingsAuditRow): void {
+  try {
+    tel.event('clubhouse.audit.setting', [
+      ATTR.auditSurface(row.surface), ATTR.auditScope(row.scope), ATTR.auditOutcome(row.outcome),
+      ...(row.actorId ? [ATTR.auditActorIdHash(row.actorId)] : []),
+      ...(row.targetId ? [ATTR.auditTargetIdHash(row.targetId)] : []),
+    ], {
+      severity: row.outcome === 'ok' ? 'info' : 'warn',
+      detail: {
+        key: row.key,
+        ...(row.before !== undefined && { before: row.before }),
+        ...(row.after !== undefined && { after: row.after }),
+        ...(row.changed && { changed: true }),
+        ...(row.code && { code: row.code }),
+      },
+    });
+  } catch {
+    // telemetry-exempt: the JSONL row below is still written
+  }
+}
+
+function record(row: SettingsAuditRow): Promise<boolean> {
+  recordEvent(row);
+  return log.append(row);
+}
+
 /** Never throws. False only when the record couldn't be written; the change it describes has happened. */
 export function appendSettingsAudit(row: SettingsAuditRow): Promise<boolean> {
-  return enabled ? log.append(row) : Promise.resolve(true);
+  return enabled ? record(row) : Promise.resolve(true);
 }
 
 // ── Who asked ────────────────────────────────────────────────────────────
@@ -108,7 +141,7 @@ export async function auditChanges(
       ...who, scope, key: `${prefix}.${key}`, ...(targetId && { targetId }), outcome: 'ok',
       ...(was !== undefined && now !== undefined ? { before: was, after: now } : { changed: true as const }),
     };
-    await log.append(row);
+    await record(row);
   }
 }
 
@@ -120,7 +153,7 @@ export function projectAuditTarget(projectPath: string): string {
 /** A setting that isn't a key on a record, such as a file's contents: only that it changed. */
 export async function auditChanged(scope: SettingsAuditRow['scope'], key: string, targetId?: string): Promise<void> {
   if (!enabled) return;
-  await log.append({ ...currentSettingsOrigin(), scope, key, ...(targetId && { targetId }), changed: true, outcome: 'ok' });
+  await record({ ...currentSettingsOrigin(), scope, key, ...(targetId && { targetId }), changed: true, outcome: 'ok' });
 }
 
 /** Start recording, and have the app's settings stores report to it. Called once at startup. */

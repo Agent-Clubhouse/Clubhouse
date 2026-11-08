@@ -675,3 +675,28 @@ describe('local-only distributed tracing', () => {
     expect(spans[3].parentSpanId).toBe(tc.slice(36, 52));
   });
 });
+
+describe('audit events (#2920)', () => {
+  it('records an audit event at every level and past the event cap, with its detail and hashed ids', async () => {
+    const h = harness({ level: 'errors', sessionCaps: { traces: 50_000, logs: 1 } });
+    h.rec.event('clubhouse.app.safe_mode', []);
+    for (let i = 0; i < 3; i++) {
+      h.rec.event('clubhouse.audit.dispatcher_control', [ATTR.auditTool('connect_orchestrators'), ATTR.auditOutcome('ok'), ATTR.auditActorIdHash('dispatcher')], {
+        detail: { tool: 'connect_orchestrators', requested: { two_way: true, note: 'a sentence with spaces' }, code: 'ok' },
+        detailIds: { targets: ['agent-a', 'agent-b'] },
+      });
+    }
+    // A plain standard event at level errors is still left out.
+    h.rec.event('clubhouse.ui.feature_used', []);
+    await h.rec.flush();
+    const audits = h.records().filter((r) => r.name === 'clubhouse.audit.dispatcher_control');
+    expect(audits).toHaveLength(3);
+    expect(h.records().some((r) => r.name === 'clubhouse.ui.feature_used')).toBe(false);
+    const [first] = audits;
+    expect(first.attrs['clubhouse.audit.actor.id_hash']).toMatch(/^[0-9a-f]{16}$/);
+    expect(first.detail).toEqual({ tool: 'connect_orchestrators', requested: { two_way: true }, code: 'ok', targets: [expect.stringMatching(/^[0-9a-f]{16}$/), expect.stringMatching(/^[0-9a-f]{16}$/)] });
+    expect(h.raw()).not.toContain('agent-a');
+    expect(h.raw()).not.toContain('a sentence');
+  });
+});
+

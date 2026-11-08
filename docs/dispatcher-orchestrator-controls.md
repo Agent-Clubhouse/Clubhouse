@@ -121,3 +121,10 @@ Every code in [Refusals](#refusals) comes from the service and is audited, apart
 Two refusals happen in the tool registry, before the service runs, so they leave no row: the group gate for other agents, and the check of an argument's type. Those show only in tool-call telemetry. This is an accepted limit. The same caller reaching the service directly is refused with `not_dispatcher`, and that is audited.
 
 If a row can't be written after a successful change, the change stands and the result has `audit_warning`.
+
+**In the telemetry record (#2920).** Every row is also recorded as a `clubhouse.audit.dispatcher_control` event in the local telemetry record (`docs/telemetry-otel-spec.md` §6.13). There, ids are hashed and values are kept only as short words, ids, booleans and whole numbers. `list_orchestrator_controls` with `audit` reads its rows from the record:
+- Ids are matched back to the agents Clubhouse knows. One since removed shows as `hash:<hash>`.
+- A caller-supplied value that isn't a short word or id is left out.
+- With local telemetry recording off, there are no rows to return.
+
+The JSONL file is still written until nothing reads it.

@@ -241,8 +241,11 @@ export const tel = {
   event(name: EventName, attrs?: TelAttr[], opts?: EventOptions): void {
     toLocal((l) => l.event(name, attrs, opts));
     if (opts?.localOnly) return;
+    // The local record's detail never reaches the SDK (#2920).
+    const { detail: _detail, detailIds: _detailIds, ...sdkOpts } = opts ?? {};
+    const exportOpts = opts && Object.keys(sdkOpts).length > 0 ? sdkOpts : undefined;
     // Options only when given, so plain events keep their two-argument call shape.
-    const emit = (rt: TelemetryRuntime): void => (opts ? rt.event(name, attrs, opts) : rt.event(name, attrs));
+    const emit = (rt: TelemetryRuntime): void => (exportOpts ? rt.event(name, attrs, exportOpts) : rt.event(name, attrs));
     const target = exportRuntime(EVENTS[name].level);
     if (target) emit(target);
     else if (exportPending(EVENTS[name].level)) buffer(emit);

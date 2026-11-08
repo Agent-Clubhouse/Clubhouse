@@ -6,6 +6,7 @@
  * Several destinations can be enabled at once, each with its own switch,
  * level and preset. Consent names every host that will receive data.
  */
+import { deleteLocalSalt } from './local-salt';
 import { app } from 'electron';
 import {
   TELEMETRY_CONSENT_VERSION,
@@ -620,6 +621,8 @@ export async function setAdvanced(input: AdvancedInput): Promise<TelemetryAction
 export async function resetInstallId(): Promise<TelemetryActionResult> {
   await prepare();
   await updateTelemetrySettings((s) => ({ ...s, ...createIdentity() }));
+  // A reset salt must not come back from the local record's (#2920).
+  deleteLocalSalt();
   if (isRunning()) await restartTelemetry({ clearOffline: true });
   return done();
 }

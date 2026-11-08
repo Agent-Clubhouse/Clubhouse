@@ -220,3 +220,30 @@ describe('settings stores', () => {
     warn.mockRestore();
   });
 });
+
+describe('as telemetry audit events (#2920)', () => {
+  it('records each row as clubhouse.audit.setting: enums and hashed ids as attributes, the key and values as local detail', async () => {
+    const { setLocalSink } = await import('../telemetry/facade');
+    const { passThroughSink } = await import('../telemetry/__test-utils__/producing-runtime');
+    const seen: Array<{ name: string; attrs: Array<{ key: string; value: unknown }>; opts: unknown }> = [];
+    setLocalSink({ ...passThroughSink('standard'), event: (name, attrs, opts) => seen.push({ name, attrs: (attrs ?? []) as never, opts }) });
+    try {
+      await withSettingsSurface('mcp', 'agent-1', () => auditChanges('agent', 'agent', 'a1', { model: 'opus', command: 'a' }, { model: 'sonnet', command: 'b' }, { model: 'value', command: 'changed' }));
+      await appendSettingsAudit({ surface: 'ui', scope: 'app', key: 'helper_presets', outcome: 'refused', code: 'invalid_cell' });
+    } finally {
+      setLocalSink(null);
+    }
+    expect(seen.map((e) => e.name)).toEqual(['clubhouse.audit.setting', 'clubhouse.audit.setting', 'clubhouse.audit.setting']);
+    const attrs = (i: number) => Object.fromEntries(seen[i].attrs.map((a) => [a.key, a.value]));
+    expect(attrs(0)).toEqual({
+      'clubhouse.audit.surface': 'mcp', 'clubhouse.audit.scope': 'agent', 'clubhouse.audit.outcome': 'ok',
+      'clubhouse.audit.actor.id_hash': 'agent-1', 'clubhouse.audit.target.id_hash': 'a1',
+    });
+    expect(seen[0].opts).toEqual({ severity: 'info', detail: { key: 'agent.model', before: 'opus', after: 'sonnet' } });
+    expect(seen[1].opts).toEqual({ severity: 'info', detail: { key: 'agent.command', changed: true } });
+    expect(seen[2].opts).toEqual({ severity: 'warn', detail: { key: 'helper_presets', code: 'invalid_cell' } });
+    // The JSONL file still gets every row until nothing reads it.
+    expect(await rows()).toHaveLength(3);
+  });
+});
+

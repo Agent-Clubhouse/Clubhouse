@@ -8,6 +8,7 @@
  * chunk is never imported. When on, it starts buffering facade calls and
  * loads the SDK asynchronously so it never blocks `ready`.
  */
+import { deleteLocalSalt, peekLocalSalt } from './local-salt';
 import * as os from 'os';
 import { telemetryInstanceId as instanceId } from './instance';
 import { app } from 'electron';
@@ -181,8 +182,11 @@ export function checkConfirmedHost(confirmedHost: string | undefined, host: stri
 
 async function ensureIdentity(settings: TelemetrySettings): Promise<TelemetryIdentity> {
   if (isValidIdentity(settings)) return { installId: settings.installId, hashSalt: settings.hashSalt };
-  const identity = createIdentity();
+  // The local record's salt carries over (#2920): what's recorded keeps its hashes.
+  const identity = createIdentity(peekLocalSalt());
   await updateTelemetrySettings((s) => ({ ...s, ...identity }));
+  // The identity holds it now, so deleting the identity later removes it everywhere.
+  deleteLocalSalt();
   return identity;
 }
 
@@ -555,6 +559,7 @@ export async function disableTelemetry({ deleteLocalData = false } = {}): Promis
       delete next.hashSalt;
       return next;
     });
+    deleteLocalSalt();
     // The running local recorder still holds the deleted salt.
     await restartLocalRecording();
   }
