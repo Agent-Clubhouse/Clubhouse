@@ -9,6 +9,7 @@ import { CLI_ROUTE_PREFIX, handleCliRequest } from './cli-endpoint';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import { publishFromHookEvent } from './app-event-bus';
+import { noteAgentToolCall } from './git-command-log';
 import * as permissionQueue from './annex-permission-queue';
 import { recordHookEvent, recordPermission } from '../telemetry/agent-signals';
 
@@ -363,6 +364,8 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
     annexEventBus.emitHookEvent(agentId, hookEvent as any);
     publishFromHookEvent(agentId, normalized.kind, hookEvent.message);
+    // A shell git command, for the git watcher's attribution (#2955).
+    if (normalized.kind === 'pre_tool' || normalized.kind === 'post_tool') noteAgentToolCall(agentId, normalized.toolInput);
 
     if (normalized.kind === 'permission_request') {
       handlePermissionRequest(agentId, normalized, res, provider.id);

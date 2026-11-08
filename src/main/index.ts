@@ -291,6 +291,10 @@ app.on('ready', () => {
   }).catch((err) => {
     appLog('core:app-events', 'warn', 'The app event bus did not start', { meta: { code: codeOf(err) } });
   });
+  // Commits, branch switches and remote-tracking updates for the bus (#2955).
+  void import('./services/git-watcher').then(({ startGitWatcher }) => startGitWatcher()).catch((err) => {
+    appLog('core:app-events', 'warn', 'The git watcher did not start', { meta: { code: codeOf(err) } });
+  });
   // Provider profiles were removed (#2749): one log line, once, for anyone who had saved some.
   void import('./services/provider-profiles-removed').then(({ noteRemovedProviderProfiles }) => noteRemovedProviderProfiles()).catch((err) => {
     appLog('core:agent', 'warn', 'Could not check for removed provider profiles', { meta: { code: codeOf(err) } });
@@ -491,6 +495,7 @@ setShutdownBegin(() => {
   mcpBridgeServer.stop();
   unpublishCliEndpoint();
   stopAllWatches();
+  void import('./services/git-watcher').then(({ stopGitWatcher }) => stopGitWatcher()).catch((): void => undefined);
   // Bounded; queued feedback stays on disk for the next run.
   void shutdownFeedback();
 });

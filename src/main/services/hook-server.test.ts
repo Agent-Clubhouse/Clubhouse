@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as http from 'http';
 import { agentRegistry as realRegistry } from './agent-registry';
 import { accessLevelOf } from '../../shared/orchestration-policy';
+import { recentGitCommands, resetGitCommandLog } from './git-command-log';
 
 // Track what gets sent to BrowserWindow
 const mockSend = vi.fn();
@@ -254,6 +255,18 @@ describe('hook-server', () => {
           timestamp: expect.any(Number),
         })
       );
+    });
+
+    it('notes a shell git command for the git watcher\'s attribution (#2955)', async () => {
+      resetGitCommandLog();
+      mockResolveOrchestrator.mockResolvedValue({
+        parseHookEvent: vi.fn(() => ({ ...mockNormalized, toolInput: { command: 'git commit -m x' } })),
+        toolVerb: vi.fn(),
+      });
+      await postToServer(port, '/hook/agent-1', { hook_event_name: 'PreToolUse' }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+      await new Promise((r) => setTimeout(r, 30));
+      expect(recentGitCommands().map((r) => [r.agentId, r.verbs])).toEqual([['agent-1', ['commit']]]);
+      resetGitCommandLog();
     });
 
     describe('reported permission levels and the spawn cap (#2228)', () => {
