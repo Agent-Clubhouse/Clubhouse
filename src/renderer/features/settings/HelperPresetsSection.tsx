@@ -4,6 +4,8 @@
  * time it's used. One no longer offered stays saved and shows what is used
  * instead, with Reset. These are starting choices, not measured best ones.
  * Minimum and maximum (#3044) follow Easy and Hard until a person picks one.
+ * A model whose list reports no effort levels (Copilot's can, #3085) shows that
+ * in the effort column instead of a select.
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -23,7 +25,7 @@ import { Button } from '../../components/Button';
 import { Toggle } from '../../components/Toggle';
 import { SettingsBlock, SettingsSection, settingsHelp, settingsInput } from './SettingsLayout';
 
-const PROVIDER_NAMES: Record<string, string> = { 'claude-code': 'Claude Code', 'codex-cli': 'Codex' };
+const PROVIDER_NAMES: Record<string, string> = { 'claude-code': 'Claude Code', 'codex-cli': 'Codex', 'copilot-cli': 'Copilot' };
 const LEVEL_NAMES: Record<AutoLevel, string> = { minimum: 'Minimum', easy: 'Easy', medium: 'Medium', hard: 'Hard', maximum: 'Maximum' };
 /** The model select's value for a minimum or maximum with no choice of its own. */
 const FOLLOW = '';
@@ -108,17 +110,27 @@ function PresetRow({ provider, difficulty, view, labels, busy, onSave, onReset }
           )}
           {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
         </select>
-        <select
-          aria-label={`${PROVIDER_NAMES[provider] ?? provider} ${difficulty} effort`}
-          className={`${settingsInput} w-24`}
-          disabled={busy || efforts.length === 0}
-          value={shown.effort ?? ''}
-          onChange={(e) => onSave(shown.model, e.target.value || null)}
-          data-testid={`${testId}-effort`}
-        >
-          <option value="">Default</option>
-          {efforts.map((level) => <option key={level} value={level}>{level}</option>)}
-        </select>
+        {efforts.length === 0 ? (
+          <span
+            className="w-24 text-xs text-ctp-overlay1"
+            title="This model's list reports no effort levels, so its CLI picks."
+            data-testid={`${testId}-effort-none`}
+          >
+            No effort levels
+          </span>
+        ) : (
+          <select
+            aria-label={`${PROVIDER_NAMES[provider] ?? provider} ${difficulty} effort`}
+            className={`${settingsInput} w-24`}
+            disabled={busy}
+            value={shown.effort ?? ''}
+            onChange={(e) => onSave(shown.model, e.target.value || null)}
+            data-testid={`${testId}-effort`}
+          >
+            <option value="">Default</option>
+            {efforts.map((level) => <option key={level} value={level}>{level}</option>)}
+          </select>
+        )}
         <Button kind="quiet" disabled={busy || !cell.custom} onClick={onReset} data-testid={`${testId}-reset`}>Reset</Button>
       </div>
       {note && <p className="mt-0.5 ml-[74px] text-xs text-ctp-overlay1" data-testid={`${testId}-note`}>{note}</p>}
@@ -252,6 +264,11 @@ export function HelperPresetsSection({ title = 'Presets by difficulty', autoLabe
               <p className="mt-0.5 text-xs text-ctp-overlay1" data-testid={`helper-presets-${provider}-quota`}>
                 {quotaLine(view.quota, settings!)} Limits for one model aren’t included.
               </p>
+              {view.autoCandidate === false && (
+                <p className="mt-0.5 text-xs text-ctp-overlay1" data-testid={`helper-presets-${provider}-not-candidate`}>
+                  {autoLabel} doesn’t pick {PROVIDER_NAMES[provider] ?? provider}. These are used when a helper on {PROVIDER_NAMES[provider] ?? provider} names a level.
+                </p>
+              )}
               <ul className="flex flex-col">
                 {AUTO_LEVELS.filter((level) => view.cells[level]).map((difficulty) => (
                   <PresetRow

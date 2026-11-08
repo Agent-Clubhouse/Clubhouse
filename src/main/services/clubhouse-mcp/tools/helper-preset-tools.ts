@@ -14,7 +14,7 @@
 
 import { registerGlobalTool } from '../tool-registry';
 import { HelperRoutingError, readHelperRouting, updateHelperPresets } from '../../helper-routing';
-import type { HelperRoutingUpdate } from '../../../../shared/helper-routing';
+import { PRESET_PROVIDERS, type HelperRoutingUpdate } from '../../../../shared/helper-routing';
 import type { McpToolResult } from '../types';
 
 const json = (value: unknown, isError = false): McpToolResult => ({ content: [{ type: 'text', text: JSON.stringify(value) }], ...(isError && { isError: true }) });
@@ -42,7 +42,8 @@ export function registerHelperPresetTools(): void {
       description: 'Read the helper presets: for each CLI with presets and each level, the model and effort it uses, '
         + 'whether it is custom or built in, whether it is still valid, the choices, and the revision to send with a change. '
         + 'Levels are easy, medium and hard (the difficulties start_helper takes), plus minimum and maximum, the cheapest and strongest choices. '
-        + 'An unset minimum or maximum uses easy or hard, shown by `follows`. App-wide. Changes nothing.',
+        + 'An unset minimum or maximum uses easy or hard, shown by `follows`. '
+        + 'A model whose `efforts` is empty takes effort null. `autoCandidate` says whether cli "auto" chooses that CLI (Copilot: no). App-wide. Changes nothing.',
       inputSchema: { type: 'object', properties: {} },
     },
     async () => {
@@ -57,7 +58,9 @@ export function registerHelperPresetTools(): void {
     {
       description: 'Change or reset helper presets, app-wide. Needs the app settings permission. Send the revision you read; '
         + 'a stale one changes nothing and returns the current values. cells: [{ provider, difficulty, model, effort }], '
-        + 'where difficulty is any level: minimum, easy, medium, hard or maximum; '
+        + `where provider is one of ${PRESET_PROVIDERS.join(', ')}, difficulty is any level`
+        + ': minimum, easy, medium, hard or maximum, '
+        + 'and effort is one of the model\'s efforts, or null when it lists none; '
         + 'reset: {} for all, { provider } or { provider, difficulty }. A reset minimum or maximum uses easy or hard again.',
       inputSchema: {
         type: 'object',
