@@ -24,6 +24,7 @@ import type { ChatEventDraft, ChatImage, ChatMediaAssetResult, ContentBlock } fr
 import { CHAT_MEDIA_MAX_BYTES, CHAT_MEDIA_MAX_PIXELS, CHAT_MEDIA_TYPES, isMediaAssetId, isMediaRef, mediaDimensions, sniffMediaType } from '../../../shared/chat';
 import { agentMediaDir } from './chat-transcript';
 import { appLog } from '../log-service';
+import { scheduleChatMediaPrune, touchChatMedia } from './chat-media-retention';
 
 /** More images than this on one event are dropped. */
 const MAX_IMAGES_PER_EVENT = 16;
@@ -97,6 +98,9 @@ export async function storeMedia(agentId: string, bytes: Uint8Array): Promise<Ch
     } finally {
       await fsp.rm(temp, { force: true });
     }
+    scheduleChatMediaPrune();
+  } else {
+    touchChatMedia(file);
   }
   return { type: 'image', mimeType, mediaRef, ...(size && { width: size.width, height: size.height }) };
 }
@@ -115,6 +119,7 @@ export async function readMedia(agentId: string, mediaRef: string): Promise<{ mi
   const data = new Uint8Array(await fsp.readFile(file));
   const mimeType = sniffMediaType(data);
   if (!mimeType) throw new Error('Image not available');
+  touchChatMedia(file);
   return { mimeType, data };
 }
 

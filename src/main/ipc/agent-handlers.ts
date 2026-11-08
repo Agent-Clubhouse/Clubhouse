@@ -37,6 +37,7 @@ export { parseStartCreationParams };
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { applyFinishedQuickAgentChange, hydrateFinishedQuickAgents, onFinishedQuickAgentsChange } from '../services/finished-quick-agents-store';
 import { parseFinishedQuickAgentOp } from '../../shared/finished-quick-agents';
+import { removeAgentChatMedia } from '../services/agent-runtime/chat-media-retention';
 
 type DeleteMode = Parameters<typeof ATTR.deleteMode>[0];
 
@@ -56,8 +57,13 @@ export { disposeHelperForUser, reportDisposeDecision };
  * error or a result with `ok: false` is `delete_failed`. (The save-patch
  * dialog's cancel returns before this, so it is not recorded.)
  */
-function deleteFlow<T extends DeleteResult | void>(mode: DeleteMode, fn: () => Promise<T>): Promise<T> {
-  return tel.flow('clubhouse.agent.delete', { attrs: [ATTR.deleteMode(mode)] }, () => withErrorType('delete_failed', fn), {
+function deleteFlow<T extends DeleteResult | void>(mode: DeleteMode, agentId: string, fn: () => Promise<T>): Promise<T> {
+  return tel.flow('clubhouse.agent.delete', { attrs: [ATTR.deleteMode(mode)] }, async () => {
+    const result = await withErrorType('delete_failed', fn);
+    // Its chat can't be opened any more, so nothing can show its images (#2828).
+    if (!result || result.ok) await removeAgentChatMedia(agentId);
+    return result;
+  }, {
     classify: (r) => (!r || r.ok ? 'ok' : { error: 'delete_failed' }),
   });
 }
@@ -243,7 +249,7 @@ export function registerAgentHandlers(): void {
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
       assertNotDispatcher(projectPath, agentId, 'deleted');
-      const result = await deleteFlow('standard', () => agentConfig.deleteDurable(projectPath, agentId));
+      const result = await deleteFlow('standard', agentId, () => agentConfig.deleteDurable(projectPath, agentId));
       bindingManager.unbindAgent(agentId);
       bindingManager.unbindTarget(agentId);
       broadcastSnapshotRefresh();
@@ -347,7 +353,7 @@ export function registerAgentHandlers(): void {
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
       assertNotDispatcher(projectPath, agentId, 'deleted');
-      const result = await deleteFlow('commit_push', () => agentConfig.deleteCommitAndPush(projectPath, agentId));
+      const result = await deleteFlow('commit_push', agentId, () => agentConfig.deleteCommitAndPush(projectPath, agentId));
       if (result.ok) broadcastSnapshotRefresh();
       return result;
     },
@@ -357,7 +363,7 @@ export function registerAgentHandlers(): void {
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
       assertNotDispatcher(projectPath, agentId, 'deleted');
-      const result = await deleteFlow('cleanup_branch', () => agentConfig.deleteWithCleanupBranch(projectPath, agentId));
+      const result = await deleteFlow('cleanup_branch', agentId, () => agentConfig.deleteWithCleanupBranch(projectPath, agentId));
       if (result.ok) broadcastSnapshotRefresh();
       return result;
     },
@@ -380,7 +386,7 @@ export function registerAgentHandlers(): void {
       }
 
       const filePath = result.filePath;
-      const deleteResult = await deleteFlow('save_patch', () => agentConfig.deleteSaveAsPatch(projectPath, agentId, filePath));
+      const deleteResult = await deleteFlow('save_patch', agentId, () => agentConfig.deleteSaveAsPatch(projectPath, agentId, filePath));
       if (deleteResult.ok) broadcastSnapshotRefresh();
       return deleteResult;
     },
@@ -390,7 +396,7 @@ export function registerAgentHandlers(): void {
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
       assertNotDispatcher(projectPath, agentId, 'deleted');
-      const result = await deleteFlow('force', () => agentConfig.deleteForce(projectPath, agentId));
+      const result = await deleteFlow('force', agentId, () => agentConfig.deleteForce(projectPath, agentId));
       if (result.ok) broadcastSnapshotRefresh();
       return result;
     },
@@ -400,7 +406,7 @@ export function registerAgentHandlers(): void {
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
       assertNotDispatcher(projectPath, agentId, 'deleted');
-      const result = await deleteFlow('unregister', () => agentConfig.deleteUnregister(projectPath, agentId));
+      const result = await deleteFlow('unregister', agentId, () => agentConfig.deleteUnregister(projectPath, agentId));
       if (result.ok) broadcastSnapshotRefresh();
       return result;
     },

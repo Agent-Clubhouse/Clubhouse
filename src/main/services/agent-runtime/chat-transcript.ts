@@ -10,6 +10,10 @@ import { isChatEvent, messageDisplay, type ChatEvent, type ChatSessionSummary } 
 function transcriptDir(): string {
   return path.join(app.getPath('userData'), 'agent-logs', 'chat');
 }
+/** The folder holding every agent's transcript folder. */
+export function chatTranscriptRoot(): string {
+  return transcriptDir();
+}
 function segment(id: string): string {
   return encodeURIComponent(id).replace(/\./g, '%2E');
 }

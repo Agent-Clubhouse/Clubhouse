@@ -110,6 +110,10 @@ vi.mock('../services/finished-quick-agents-store', () => ({
   onFinishedQuickAgentsChange: vi.fn(),
 }));
 
+vi.mock('../services/agent-runtime/chat-media-retention', () => ({
+  removeAgentChatMedia: vi.fn(async () => {}),
+}));
+
 vi.mock('../services/dispatcher/dispatcher-service', () => ({
   isDispatcherPath: (p: string) => p === 'dispatcher-folder',
   isDispatcherAgentId: (id: string) => id === 'disp',
@@ -120,6 +124,7 @@ import { IPC } from '../../shared/ipc-channels';
 import { CONFIG_CHANGE_DEBOUNCE_MS, registerAgentHandlers } from './agent-handlers';
 import { recordStartRequest, _resetStartRequestsForTesting } from '../services/helper-start-requests';
 import * as agentConfig from '../services/agent-config';
+import { removeAgentChatMedia } from '../services/agent-runtime/chat-media-retention';
 import * as agentCreation from '../services/agent-creation';
 import * as agentSystem from '../services/agent-system';
 import * as headlessManager from '../services/headless-manager';
@@ -321,6 +326,15 @@ describe('agent-handlers', () => {
       } as unknown as TelemetryRuntime);
     });
     afterEach(() => setProducingRuntime(null));
+
+    it('removes a deleted agent\'s chat media, and keeps it when the delete fails (#2828)', async () => {
+      vi.mocked(removeAgentChatMedia).mockClear();
+      vi.mocked(agentConfig.deleteForce).mockResolvedValueOnce({ ok: false, message: 'dirty worktree' });
+      await handlers.get(IPC.AGENT.DELETE_FORCE)!({}, '/project', 'agent-1');
+      expect(removeAgentChatMedia).not.toHaveBeenCalled();
+      await handlers.get(IPC.AGENT.DELETE_UNREGISTER)!({}, '/project', 'agent-2');
+      expect(removeAgentChatMedia).toHaveBeenCalledWith('agent-2');
+    });
 
     it('classifies deletes by result and mode', async () => {
       vi.mocked(agentConfig.deleteForce).mockResolvedValueOnce({ ok: false, message: 'dirty worktree' });
