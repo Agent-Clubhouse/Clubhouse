@@ -39,7 +39,7 @@ const PRESETS: Array<{ id: TelemetryFilterPreset; label: string; desc: string }>
   {
     id: 'user_activity',
     label: 'User activity and errors',
-    desc: 'Errors, crashes, feature use, agent and chat lifecycle and permission decisions; no high-volume spans and almost no metrics',
+    desc: 'Errors, crashes, feature use, agent runs and chat lifecycle, permission decisions, startup time and feedback steps; no high-volume spans and almost no metrics',
   },
 ];
 

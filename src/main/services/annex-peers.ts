@@ -208,6 +208,19 @@ export function recordFailedAttempt(source: string): void {
 }
 
 /**
+ * Takes back one attempt recorded for `source`, for an answer that wasn't a guess:
+ * an expired or used PIN, or a device that is already paired. A real device
+ * retrying with an old code shouldn't lock itself out.
+ */
+export function forgiveFailedAttempt(source: string): void {
+  const entry = bruteForceState.get(source);
+  if (!entry) return;
+  entry.attempts -= 1;
+  if (entry.attempts <= 0) { bruteForceState.delete(source); return; }
+  if (entry.attempts < MAX_TOTAL_ATTEMPTS) entry.lockedUntil = 0;
+}
+
+/**
  * Record a successful pairing from `source`, resetting the brute-force counter.
  */
 export function recordSuccessfulAttempt(source: string): void {

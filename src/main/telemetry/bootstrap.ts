@@ -35,6 +35,8 @@ import {
   applyExportGraduation,
   exportPermitted,
   findDestination,
+  takeDeveloperRuleSwitchedOff,
+  saveDeveloperRuleMigration,
   hasDestinationConfigured,
   migrateLegacySecrets,
   normalizeSampleRate,
@@ -51,7 +53,7 @@ import { getAdapter, resolveEntry } from './destinations/registry';
 import { getFramebriarTelemetrySource } from './destinations/framebriar-source';
 import { recordingLevel } from './filters';
 import type { TelemetryLevel } from '../../shared/telemetry/attributes';
-import type { TelemetryDestinationKind } from '../../shared/telemetry/settings-types';
+import { TELEMETRY_CONSENT_VERSION, type TelemetryDestinationKind } from '../../shared/telemetry/settings-types';
 import { previousSessionVersion, setStartupKind } from './lifecycle';
 
 const LOG_NS = 'core:telemetry';
@@ -242,6 +244,7 @@ async function start(): Promise<boolean> {
           filter: { level: entry.level, preset: entry.preset },
           copyResourceAttributes: adapter.copyResourceAttributes,
           dropAttributes: adapter.dropAttributes,
+          itemAttributes: adapter.itemAttributes,
         };
       } catch (err) {
         errors.set(entry.id, 'This destination failed to start. See the local log for details.');
@@ -368,12 +371,21 @@ export function initTelemetry(): void {
   // so startup signals are recorded even with no export destination.
   void syncLocalRecording();
   if (graduation) finishExportGraduation(graduation);
+  saveDeveloperRuleMigration()?.catch((err) => {
+    // telemetry-exempt: logged; this run uses the migrated settings and the next launch migrates again.
+    appLog(LOG_NS, 'warn', 'Could not save the developer destination migration', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+  });
   try {
     if (getTelemetrySettings().legacyDestination) void migrateLegacySecretsOnReady();
     if (!isTelemetryConfigured()) {
-      if (awaitingFramebriar(getTelemetrySettings())) holdForFramebriar();
+      const held = awaitingFramebriar(getTelemetrySettings());
+      if (held) holdForFramebriar();
+      logExportGates(held ? 'held_for_feedback' : 'not_started');
       return;
     }
+    logExportGates('starting');
   } catch {
     return;
   }
@@ -381,6 +393,36 @@ export function initTelemetry(): void {
   starting = start().finally(() => {
     starting = null;
   });
+}
+
+/**
+ * One local line at startup with every export gate (#2523): which one stops
+ * export, if any, so a quiet install can be explained from its log. Booleans
+ * and state names only, never a host, endpoint or token. The developer
+ * destination's state isn't here: Feedback restores its enrollment after this
+ * runs, so it would always read as not connected. control.ts logs it once a
+ * Feedback change syncs it ("Developer destination checked after a Feedback change").
+ * Never throws: a logging failure mustn't stop telemetry starting.
+ */
+function logExportGates(outcome: 'starting' | 'held_for_feedback' | 'not_started'): void {
+  try {
+    const settings = getTelemetrySettings();
+    const consent = settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
+    const configured = hasDestinationConfigured(settings);
+    appLog(LOG_NS, 'info', 'Telemetry export at startup', {
+      meta: {
+        outcome,
+        blockedBy: outcome === 'starting' ? null : !consent ? 'no_consent' : settings.exportSuspended !== undefined ? 'paused' : !configured ? 'no_destination_configured' : 'unknown',
+        consent,
+        paused: settings.exportSuspended ?? null,
+        enabled: enabledDestinations(settings).map((d) => d.kind),
+        configured,
+        developerRuleSwitchedOff: takeDeveloperRuleSwitchedOff(),
+      },
+    });
+  } catch {
+    // telemetry-exempt: a diagnostic line only; telemetry starts without it.
+  }
 }
 
 /** How long startup signals wait for Feedback to restore its enrollment (#2522). */

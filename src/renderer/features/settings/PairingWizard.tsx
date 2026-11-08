@@ -74,13 +74,13 @@ export function PairingWizard({ onClose, repairTarget }: PairingWizardProps) {
     setStep('verify');
   }
 
-  // "Pair again": pick the satellite once discovery finds it, then compare codes as usual.
+  // "Pair again": read the satellite's certificate code straight away (main uses its last
+  // announced address), then compare codes as usual. Pasting its link works too.
   useEffect(() => {
     if (!repairTarget || autoSelected.current || step !== 'choose') return;
-    const match = discoveredServices.find((svc) => svc.fingerprint === repairTarget.fingerprint);
-    if (!match) return;
     autoSelected.current = true;
-    void handleSelectService(match);
+    const match = discoveredServices.find((svc) => svc.fingerprint === repairTarget.fingerprint);
+    void handleSelectService(match ?? ({ ...repairTarget, icon: '', color: '', host: '', mainPort: 0, pairingPort: 0, publicKey: '' } as DiscoveredService));
   }, [repairTarget, discoveredServices, step]);
 
   function handleCodesDiffer() {

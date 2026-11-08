@@ -68,11 +68,11 @@ export const TESTED_CLI_VERSIONS: Readonly<Partial<Record<ChatDriverId, CliVersi
   // MCP bridge, no live prompt. Last live-tested on 0.163.0 on 2026-10-18
   // (resume, approvals, compaction, token usage).
   codex_app_server: { testedMax: '0.166.0' },
-  // @github/copilot-sdk 1.0.28 ships with CLI 1.0.105. The protocol check is too
+  // @github/copilot-sdk 1.0.29 ships with CLI 1.0.107. The protocol check is too
   // weak to rely on: 1.0.81 and older report the same protocol but break on this
-  // SDK (docs/copilot-sdk-driver.md "Version skew"). Tested by feature probes
-  // against a fake model, no live prompt.
-  copilot_sdk: { minVersion: '1.0.83', testedMax: '1.0.106-2' },
+  // SDK (docs/copilot-sdk-driver.md "Version skew"). Tested 2026-11-08 by feature
+  // probes against a fake model on 1.0.83, 1.0.105 and 1.0.107, no live prompt.
+  copilot_sdk: { minVersion: '1.0.83', testedMax: '1.0.107' },
 };
 
 /** Known-bad versions shipped with the app. The update manifest can add more. */

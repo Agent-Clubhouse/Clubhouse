@@ -24,6 +24,7 @@ import {
   copilotToolLocations,
   copilotToolTitle,
 } from './normalizer';
+import { markFailedCopilotWrites, markFailedCopilotWritesFromStart } from './failed-writes';
 import { loadCopilotSdk } from './sdk-loader';
 import { copilotTierEntry, type CopilotTierEntry } from '../../../shared/context-window';
 import { safeMcpErrorLine } from '../../services/mcp-error-text';
@@ -99,7 +100,10 @@ const TIER_CATALOG_TIMEOUT_MS = 8_000;
 async function connect(server: CopilotServer): Promise<CopilotClient> {
   const { CopilotClient, RuntimeConnection } = await loadCopilotSdk();
   const client = new CopilotClient({ connection: RuntimeConnection.forUri(server.uri, { connectionToken: server.connectionToken }), logLevel: 'error' });
+  markFailedCopilotWritesFromStart(client);
   await client.start();
+  // In case a future SDK connects some other way.
+  markFailedCopilotWrites(client);
   return client;
 }
 
@@ -690,7 +694,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   private onElicitation(context: ElicitationContext): Promise<ElicitationResult> | ElicitationResult {
     if (this.closing || this.finished) return { action: 'cancel' };
     if (!this.turnRunning) this.beginTurn('system');
-    const source = context.elicitationSourceDisplayName ?? context.elicitationSource ?? 'An MCP server';
+    const source = context.elicitationSource || 'An MCP server';
     const schema = context.requestedSchema;
     const hasFields = context.mode !== 'url' && !!schema && Object.keys(schema.properties).length > 0;
     const requestId = `elicit-${++this.nextRequest}`;

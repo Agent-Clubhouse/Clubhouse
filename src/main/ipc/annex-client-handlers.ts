@@ -4,8 +4,21 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import * as annexClient from '../services/annex-client';
+import * as annexServer from '../services/annex-server';
+import * as annexPeers from '../services/annex-peers';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg, booleanArg, digestSinceArg } from './validation';
 import type { DigestSince } from '../../shared/group-project-types';
+
+/**
+ * After this machine pairs with a peer as its satellite, or forgets it, that peer
+ * is no longer a controller here: cut any connection it still has to our server.
+ */
+function noLongerController(fingerprint: string | undefined): void {
+  if (!fingerprint) return;
+  annexServer.closeSocketsUnlessController(fingerprint);
+  broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeersForDisplay());
+}
 
 export function registerAnnexClientHandlers(): void {
   ipcMain.handle(IPC.ANNEX_CLIENT.GET_SATELLITES, () => {
@@ -46,7 +59,9 @@ export function registerAnnexClientHandlers(): void {
   ipcMain.handle(IPC.ANNEX_CLIENT.PAIR_WITH, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, fingerprint, pin) => {
-      return annexClient.pairWithService(fingerprint, pin);
+      const result = await annexClient.pairWithService(fingerprint, pin);
+      if (result.success) noLongerController(result.fingerprint);
+      return result;
     },
   ));
 
@@ -60,7 +75,9 @@ export function registerAnnexClientHandlers(): void {
   ipcMain.handle(IPC.ANNEX_CLIENT.PAIR_WITH_LINK, withValidatedArgs(
     [stringArg()],
     async (_event, link) => {
-      return annexClient.pairWithLink(link);
+      const result = await annexClient.pairWithLink(link);
+      if (result.success) noLongerController(result.fingerprint);
+      return result;
     },
   ));
 
@@ -143,6 +160,7 @@ export function registerAnnexClientHandlers(): void {
     [stringArg()],
     (_event, fingerprint) => {
       annexClient.forgetSatellite(fingerprint);
+      noLongerController(fingerprint);
     },
   ));
 

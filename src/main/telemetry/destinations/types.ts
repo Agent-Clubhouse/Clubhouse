@@ -49,6 +49,8 @@ export interface SdkDestination {
    * receives, after copying. Other destinations still get them.
    */
   dropAttributes?: readonly string[];
+  /** Fixed attributes added to every span and log record this destination receives. */
+  itemAttributes?: Readonly<Record<string, string | number>>;
 }
 
 /** What an adapter gets from the host when it builds exporters. */
@@ -79,6 +81,8 @@ export interface DestinationAdapter<Config = unknown> {
   copyResourceAttributes?: readonly string[];
   /** Attributes removed from spans and log records (see SdkDestination). */
   dropAttributes?: readonly string[];
+  /** Fixed attributes added to spans and log records (see SdkDestination). */
+  itemAttributes?: Readonly<Record<string, string | number>>;
   /** Items wait in a local queue when offline (Azure only today). */
   usesOfflineQueue?: boolean;
   /** Plain-words reason for a failed export, when this kind knows better than the generic text. */

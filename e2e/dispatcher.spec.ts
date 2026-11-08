@@ -23,7 +23,10 @@ import { addProject } from './smoke-helpers';
  * - turning its switch off stops it and drops its row and wires, keeps its
  *   folder, and it comes back with the same id;
  * - the Dispatcher wakes a connected agent with a message over MCP, and can't
- *   sleep it mid-turn without force.
+ *   sleep it mid-turn without force;
+ * - an Ask-first call (#2970): the Dispatcher's change to helper presets waits
+ *   in Needs you, the user allows it there, and the same call then goes through
+ *   once.
  *
  * Runs in the Chat E2E job (Linux and Windows), not the sharded E2E run:
  * nothing here differs on macOS, and it would lengthen the E2E long pole.
@@ -97,11 +100,15 @@ async function connectMcp(env: Record<string, string | null>) {
   };
   await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'e2e', version: '1' } });
   const toolNames = async (): Promise<string[]> => (await rpc('tools/list')).tools.map((t: { name: string }) => t.name);
-  const call = async (name: string, args: Record<string, unknown> = {}) => {
+  const callText = async (name: string, args: Record<string, unknown> = {}) => {
     const result = await rpc('tools/call', { name, arguments: args });
-    return { isError: !!result.isError, body: JSON.parse(result.content[0].text) };
+    return { isError: !!result.isError, text: result.content[0].text as string };
   };
-  return { toolNames, call };
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const { isError, text } = await callText(name, args);
+    return { isError, body: JSON.parse(text) };
+  };
+  return { toolNames, call, callText };
 }
 
 async function launch(experimental: Record<string, boolean> = {}, files: Record<string, unknown> = {}): Promise<LaunchedApp> {
@@ -345,6 +352,51 @@ test('the Dispatcher wakes a connected agent with a message and sleeps it again'
     expect(slept.body.status).toBe('sleeping');
     expect((await mcp.call(toolFor(awake, 'get_status')!)).body.running).toBe(false);
     expect(toolFor(await mcp.toolNames(), 'wake_agent')).toBeTruthy();
+  } finally {
+    await fs.promises.rm(fixtureDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
+test('an Ask-first call waits in Needs you, and goes through once the user allows it (#2970)', async () => {
+  const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatcher-e2e-fixture-'));
+  try {
+    fakes = await installFakeClis({ claude: await writeQuietFixture(fixtureDir) });
+    profile = createDisposableProfile({ label: 'dispatcher-ask-first' });
+    const w = (await launch()).window;
+
+    await expect(row(w)).toBeVisible({ timeout: 15_000 });
+    await expect.poll(async () => (await dispatcherConfigs()).length).toBe(1);
+    const dispatcherId = (await dispatcherConfigs())[0].id;
+
+    await rowItem(w).click();
+    await w.locator('[data-testid="dispatcher-view"] [data-testid="wake-button"]').click();
+    await expect.poll(async () => (await fakes!.report('claude').catch(() => undefined))?.env.CLUBHOUSE_AGENT_ID, { timeout: 20_000 }).toBe(dispatcherId);
+    const mcp = await connectMcp((await fakes!.report('claude')).env);
+
+    // Changing app settings is Ask first for the Dispatcher: the tool is offered, and the call asks.
+    expect(await mcp.toolNames()).toContain('set_helper_presets');
+    const { revision } = (await mcp.call('read_helper_presets')).body;
+    const args = { revision, reset: {} };
+    const asked = await mcp.callText('set_helper_presets', args);
+    expect(asked.isError).toBe(true);
+    expect(asked.text).toContain('needs the user\'s approval');
+
+    // It waits in Needs you; selecting it opens the request, and the user allows it.
+    const needsRow = w.locator(`[data-testid="needs-you-row-${dispatcherId}"]`);
+    await expect(needsRow).toBeVisible({ timeout: 10_000 });
+    await expect(needsRow).toContainText('Asks to make a call');
+    await needsRow.click();
+    const dialog = w.locator('[data-testid="grant-request-dialog"]');
+    await expect(dialog).toContainText('set_helper_presets');
+    await dialog.locator('[data-testid="grant-request-allow"]').click();
+    await expect(dialog).toBeHidden();
+    await expect(needsRow).toBeHidden();
+
+    // The same call now goes through, once.
+    const done = await mcp.call('set_helper_presets', args);
+    expect(done.isError).toBe(false);
+    expect(done.body).toMatchObject({ ok: true });
+    expect((await mcp.callText('set_helper_presets', { revision: done.body.revision, reset: {} })).text).toContain('needs the user\'s approval');
   } finally {
     await fs.promises.rm(fixtureDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
