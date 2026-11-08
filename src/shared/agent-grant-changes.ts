@@ -317,6 +317,8 @@ export const GRANT_ACTION_LABELS: Readonly<Record<GrantAction, string>> = {
   'browser.read': 'Read canvas browsers',
   'browser.act': 'Use canvas browsers',
   'grant.request': 'Ask for permissions',
+  'device.read': 'See devices',
+  'device.manage': 'Manage devices',
 };
 
 /** The heading a target's rows go under. */

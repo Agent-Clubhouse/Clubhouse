@@ -13,6 +13,29 @@ import { callKey, consumeCallApproval, recordGrantRequest } from '../grant-reque
 import { appLog } from '../log-service';
 import type { AskedAction } from './grant-check';
 
+/**
+ * A line in plain words for a tool whose arguments are ids, put above them in
+ * the request, so the person knows what they're allowing (a device by name,
+ * say, #3068). Undefined: the arguments alone.
+ */
+const describers = new Map<string, (args: Record<string, unknown>) => string | undefined>();
+
+export function describeCallsForAsk(toolName: string, describe: (args: Record<string, unknown>) => string | undefined): void {
+  describers.set(toolName, describe);
+}
+
+function describedArgs(toolName: string, args: Record<string, unknown>): string | undefined {
+  let line: string | undefined;
+  try {
+    line = describers.get(toolName)?.(args);
+  } catch {
+    // telemetry-exempt: the arguments alone still say what Allow runs
+    line = undefined;
+  }
+  const raw = argsText(args);
+  return [line, raw].filter(Boolean).join('\n\n') || undefined;
+}
+
 /** Every argument, for the user to see exactly what Allow would run. */
 function argsText(args: Record<string, unknown>): string | undefined {
   return Object.keys(args).length === 0 ? undefined : JSON.stringify(args, null, 2);
@@ -45,7 +68,7 @@ export async function askFirst(agentId: string, toolName: string, args: Record<s
   if (!projectPath) {
     return { kind: 'asked', text: 'This call needs the user\'s approval, and Clubhouse couldn\'t place your request. Ask the user directly.' };
   }
-  const details = argsText(args);
+  const details = describedArgs(toolName, args);
   if (details && details.length > GRANT_REQUEST_DETAILS_MAX) {
     return { kind: 'asked', text: 'This call needs the user\'s approval, and its arguments are too long for them to review. Make smaller calls, or ask the user directly.' };
   }
