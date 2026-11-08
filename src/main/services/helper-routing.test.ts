@@ -18,6 +18,8 @@ const W = vi.hoisted(() => ({
   quota: new Map<string, unknown>(),
   cooling: new Set<string>(),
   unavailable: new Set<string>(),
+  /** A provider with no Auto mapping at all, for the page's excluded branch. */
+  extraProvider: false,
 }));
 
 vi.mock('../orchestrators', () => {
@@ -35,7 +37,9 @@ vi.mock('../orchestrators', () => {
     acceptsModel: (m: string, l: { models: Array<{ id: string; resolvedId?: string }> }) => m === 'default' || l.models.some((e) => e.id === m || e.resolvedId === m),
   });
   const all = ['claude-code', 'codex-cli', 'copilot-cli'].map(provider);
-  return { getProvider: (id: string) => all.find((p) => p.id === id), getAllProviders: () => all };
+  const other = provider('other-cli');
+  const listed = () => (W.extraProvider ? [...all, other] : all);
+  return { getProvider: (id: string) => listed().find((p) => p.id === id), getAllProviders: listed };
 });
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./settings-store', () => ({
@@ -103,6 +107,9 @@ const live = (models: ModelInfo[]): ModelList => ({ models, source: 'live', via:
 const fallback = (models: ModelInfo[]): ModelList => ({ models, source: 'fallback', via: 'static', fetchedAt: 1000 });
 const CLAUDE = [m('default', ['low', 'medium'], { isDefault: true }), m('opus'), m('sonnet'), m('haiku')];
 const CODEX = [m('gpt-6.1-sol'), m('gpt-6.1-terra'), m('gpt-6-luna')];
+/** As Copilot's live list gave it on 2026-11-08 (#3085), trimmed: Haiku 4.5 reports no levels. */
+const FIVE = ['low', 'medium', 'high', 'xhigh', 'max'];
+const COPILOT = [m('auto', []), m('claude-haiku-5.5', FIVE), m('claude-sonnet-5.5', FIVE), m('claude-opus-5.5', FIVE), m('claude-haiku-4.5', []), m('gpt-6.1-sol', FIVE)];
 const base = { orchestratorCli: 'claude-code', projectPath: '/p' };
 
 async function plan(request: Partial<Parameters<typeof planHelperStart>[0]>) {
@@ -112,7 +119,7 @@ async function plan(request: Partial<Parameters<typeof planHelperStart>[0]>) {
 }
 
 beforeEach(() => {
-  W.lists = new Map<string, unknown>([['claude-code', live(CLAUDE)], ['codex-cli', live(CODEX)]]);
+  W.lists = new Map<string, unknown>([['claude-code', live(CLAUDE)], ['codex-cli', live(CODEX)], ['copilot-cli', live(COPILOT)]]);
   W.listCache = new Map();
   W.listCalls = [];
   W.forcedQuota = [];
@@ -128,6 +135,7 @@ beforeEach(() => {
   W.quota = new Map();
   W.cooling = new Set();
   W.unavailable = new Set();
+  W.extraProvider = false;
   _resetHelperRoutingForTesting();
 });
 
@@ -187,7 +195,7 @@ describe('planHelperStart: precedence', () => {
   });
 
   it('refuses a difficulty on a CLI with no presets, with a reason', async () => {
-    const result = await planHelperStart({ ...base, cli: 'copilot-cli', difficulty: 'easy' });
+    const result = await planHelperStart({ ...base, cli: 'other-cli', difficulty: 'easy' });
     expect(result).toMatchObject({ ok: false, code: 'auto_not_supported' });
   });
 });
@@ -252,15 +260,17 @@ describe('planHelperStart: stale and unverified presets', () => {
 });
 
 describe('readHelperRouting', () => {
-  it('returns every provider, with Copilot excluded and a reason', async () => {
+  it('returns every provider, with one that has no mapping excluded and a reason', async () => {
+    W.extraProvider = true;
     const settings = await readHelperRouting();
-    expect(Object.keys(settings.providers).sort()).toEqual(['claude-code', 'codex-cli', 'copilot-cli']);
-    expect(settings.providers['copilot-cli']).toEqual({
+    expect(Object.keys(settings.providers).sort()).toEqual(['claude-code', 'codex-cli', 'copilot-cli', 'other-cli']);
+    expect(settings.providers['other-cli']).toEqual({
       autoEligible: false, reason: 'auto_not_supported', cells: null, quota: { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
     });
     expect(settings.serverTime).toEqual(expect.any(String));
     expect(settings.providers['codex-cli']).toMatchObject({
       autoEligible: true,
+      autoCandidate: true,
       choices: { source: 'live', asOf: new Date(1000).toISOString() },
       cells: { easy: { state: 'valid', source: 'builtin', custom: null, editable: true, effective: { model: 'gpt-6-luna', effort: 'low' } } },
     });
@@ -310,10 +320,11 @@ describe('readHelperRouting with refresh (#2786)', () => {
   const forcedLines = () => vi.mocked(appLog).mock.calls.filter(([, , message]) => message === 'Helper presets: asked a CLI again');
   const SONNET_SAVED = { 'claude-code': { hard: { model: 'sonnet', effort: 'high' } } };
 
-  it('forces each preset CLI\'s list once, and its quota, and leaves Copilot alone', async () => {
+  it('forces each preset CLI\'s list once, and its quota, Copilot included (#3085), and leaves a provider with no mapping alone', async () => {
+    W.extraProvider = true;
     await readHelperRouting({ refresh: true });
-    expect(W.listCalls.filter((c) => c.refresh).map((c) => c.provider).sort()).toEqual(['claude-code', 'codex-cli']);
-    expect([...W.forcedQuota].sort()).toEqual(['claude-code', 'codex-cli']);
+    expect(W.listCalls.filter((c) => c.refresh).map((c) => c.provider).sort()).toEqual(['claude-code', 'codex-cli', 'copilot-cli']);
+    expect([...W.forcedQuota].sort()).toEqual(['claude-code', 'codex-cli', 'copilot-cli']);
   });
 
   it('without it, nothing is forced and the cached list is what cells use', async () => {
@@ -369,16 +380,17 @@ describe('readHelperRouting with refresh (#2786)', () => {
     W.forcedOutcome = 'failed';
     await readHelperRouting({ refresh: true });
     const metas = forcedLines().map(([namespace, level, , options]) => ({ namespace, level, ...options?.meta }));
-    expect(metas).toHaveLength(2);
+    expect(metas).toHaveLength(3);
     expect(metas).toEqual(expect.arrayContaining([
       { namespace: 'core:mcp', level: 'info', provider: 'claude-code', source: 'live', models: CLAUDE.length, outcome: 'quota_failed' },
       { namespace: 'core:mcp', level: 'info', provider: 'codex-cli', source: 'none', models: 0, outcome: 'list_failed+quota_failed' },
+      { namespace: 'core:mcp', level: 'info', provider: 'copilot-cli', source: 'live', models: COPILOT.length, outcome: 'quota_failed' },
     ]));
     W.lists.set('codex-cli', live(CODEX));
     W.forcedOutcome = 'not_supported';
     vi.mocked(appLog).mockClear();
     await readHelperRouting({ refresh: true });
-    expect(forcedLines().map(([, , , options]) => options?.meta?.outcome)).toEqual(['ok', 'ok']);
+    expect(forcedLines().map(([, , , options]) => options?.meta?.outcome)).toEqual(['ok', 'ok', 'ok']);
   });
 });
 
@@ -454,14 +466,14 @@ describe('updateHelperPresets', () => {
   });
 
   it.each([
-    ['Copilot', { cells: [cell({ provider: 'copilot-cli' })] }],
+    ['a provider with no mapping', { cells: [cell({ provider: 'other-cli' })] }],
     ['a bad difficulty', { cells: [cell({ difficulty: 'extreme' })] }],
     ['a model that could be an argument', { cells: [cell({ model: '-c' })] }],
     ['the CLI\'s default, which a preset can\'t be', { cells: [cell({ model: 'default', effort: null })] }],
     ['a bad effort', { cells: [cell({ effort: 'a b' })] }],
     ['nothing to do', {}],
     ['a difficulty reset with no provider', { reset: { difficulty: 'easy' } }],
-    ['a reset of an unknown provider', { reset: { provider: 'copilot-cli' } }],
+    ['a reset of an unknown provider', { reset: { provider: 'other-cli' } }],
   ])('refuses %s', async (_name, fields) => {
     expect(await refusal(update(fields))).toMatchObject({ code: 'invalid_helper_routing' });
     expect(W.revision).toBe(0);
@@ -535,7 +547,7 @@ describe('Auto minimum and maximum (#3044)', () => {
   });
 
   it('a provider without presets, or an unknown one, is auto_not_supported, so the caller picks its own fallback', async () => {
-    expect(await resolveProviderMinimum('copilot-cli')).toMatchObject({ ok: false, code: 'auto_not_supported' });
+    expect(await resolveProviderMinimum('other-cli')).toMatchObject({ ok: false, code: 'auto_not_supported' });
     expect(await resolveAutoLevel('nope', 'maximum')).toMatchObject({ ok: false, code: 'auto_not_supported' });
     expect(await resolveAutoLevel('claude-code', 'extreme' as never)).toMatchObject({ ok: false, code: 'no_valid_mapping' });
   });
@@ -606,6 +618,125 @@ describe('Auto minimum and maximum (#3044)', () => {
     const first = (await readHelperRouting()).revision;
     W.lists.set('codex-cli', live([m('gpt-6-luna'), m('gpt-6.1-sol')]));
     expect((await readHelperRouting()).revision).not.toBe(first);
+  });
+});
+
+describe('Copilot (#3085)', () => {
+  const write = (fields: Record<string, unknown>) => updateHelperPresets({ revision: helperRoutingRevision(), ...fields } as never, { surface: 'ui' });
+
+  it('resolves every level from its built-ins, with an unset minimum and maximum following Easy and Hard', async () => {
+    const expected = {
+      minimum: { model: 'claude-haiku-5.5', effort: 'low', follows: 'easy' },
+      easy: { model: 'claude-haiku-5.5', effort: 'low' },
+      medium: { model: 'claude-sonnet-5.5', effort: 'medium' },
+      hard: { model: 'claude-opus-5.5', effort: 'high' },
+      maximum: { model: 'claude-opus-5.5', effort: 'high', follows: 'hard' },
+    } as const;
+    for (const [level, cell] of Object.entries(expected)) {
+      expect(await resolveAutoLevel('copilot-cli', level as keyof typeof expected)).toEqual({
+        ok: true, provider: 'copilot-cli', level, source: 'builtin_mapping', fallback: 'none', ...cell,
+      });
+    }
+    expect(await resolveProviderMinimum('copilot-cli')).toMatchObject({ ok: true, model: 'claude-haiku-5.5', follows: 'easy' });
+    expect(await resolveProviderMaximum('copilot-cli')).toMatchObject({ ok: true, model: 'claude-opus-5.5', follows: 'hard' });
+  });
+
+  it('an unset minimum and maximum follow the person\'s own Easy and Hard', async () => {
+    W.saved = { 'copilot-cli': { easy: { model: 'claude-haiku-4.5', effort: null }, hard: { model: 'gpt-6.1-sol', effort: 'xhigh' } } };
+    expect(await resolveProviderMinimum('copilot-cli')).toEqual({
+      ok: true, provider: 'copilot-cli', level: 'minimum', model: 'claude-haiku-4.5', effort: null, source: 'custom_mapping', fallback: 'none', follows: 'easy',
+    });
+    expect(await resolveProviderMaximum('copilot-cli')).toMatchObject({ ok: true, model: 'gpt-6.1-sol', effort: 'xhigh', source: 'custom_mapping', follows: 'hard' });
+  });
+
+  it('a saved minimum and maximum are used as chosen, and a stale one falls back to its difficulty', async () => {
+    W.saved = { 'copilot-cli': { minimum: { model: 'claude-haiku-4.5', effort: null }, maximum: { model: 'gone', effort: 'high' } } };
+    expect(await resolveProviderMinimum('copilot-cli')).toEqual({
+      ok: true, provider: 'copilot-cli', level: 'minimum', model: 'claude-haiku-4.5', effort: null, source: 'custom_mapping', fallback: 'none',
+    });
+    expect(await resolveProviderMaximum('copilot-cli')).toMatchObject({ ok: true, model: 'claude-opus-5.5', effort: 'high', fallback: 'builtin_preset', follows: 'hard' });
+  });
+
+  it('a cell with no effort is valid for a model the list gives no levels, and a level on it is refused', async () => {
+    const view = (await write({ cells: [{ provider: 'copilot-cli', difficulty: 'easy', model: 'claude-haiku-4.5', effort: null }] })).providers['copilot-cli'];
+    if (!view.autoEligible) throw new Error('eligible');
+    expect(view.cells.easy).toMatchObject({ state: 'valid', source: 'custom', effective: { model: 'claude-haiku-4.5', effort: null } });
+    expect(view.cells.minimum).toMatchObject({ state: 'valid', follows: 'easy', effective: { model: 'claude-haiku-4.5', effort: null } });
+    expect(view.choices.models.find((c) => c.id === 'claude-haiku-4.5')).toEqual({ id: 'claude-haiku-4.5', label: 'claude-haiku-4.5', efforts: [] });
+    await expect(write({ cells: [{ provider: 'copilot-cli', difficulty: 'hard', model: 'claude-haiku-4.5', effort: 'low' }] })).rejects.toMatchObject({ code: 'effort_unavailable' });
+    expect(W.saved).toEqual({ 'copilot-cli': { easy: { model: 'claude-haiku-4.5', effort: null } } });
+  });
+
+  it('a list with no levels at all (the fallback) doesn\'t refuse: the built-ins are used, unverified', async () => {
+    W.lists.set('copilot-cli', fallback([m('claude-sonnet-4.5', []), m('claude-haiku-4.5', [])]));
+    const min = await resolveProviderMinimum('copilot-cli');
+    expect(min).toMatchObject({ ok: true, model: 'claude-haiku-5.5', effort: 'low', fallback: 'model_unverified', follows: 'easy', warning: expect.any(String) });
+    const view = (await readHelperRouting()).providers['copilot-cli'];
+    if (!view.autoEligible) throw new Error('eligible');
+    expect(view.choices).toMatchObject({ source: 'fallback' });
+    expect(view.cells.hard).toMatchObject({ state: 'unverified', effective: { model: 'claude-opus-5.5', effort: 'high' } });
+  });
+
+  it('refuses when nothing valid is left, and never picks the CLI default', async () => {
+    W.lists.set('copilot-cli', live([m('claude-sonnet-5.5', FIVE)]));
+    expect(await resolveProviderMaximum('copilot-cli')).toMatchObject({ ok: false, code: 'no_valid_mapping' });
+    expect(await resolveAutoLevel('copilot-cli', 'medium')).toMatchObject({ ok: true, model: 'claude-sonnet-5.5' });
+  });
+
+  it('the page shows all five levels, a mapping that cli "auto" doesn\'t choose', async () => {
+    const settings = await readHelperRouting();
+    const view = settings.providers['copilot-cli'];
+    if (!view.autoEligible) throw new Error('eligible');
+    expect(view.autoCandidate).toBe(false);
+    expect(settings.providers['claude-code']).toMatchObject({ autoEligible: true, autoCandidate: true });
+    expect(Object.keys(view.cells)).toEqual(['minimum', 'easy', 'medium', 'hard', 'maximum']);
+    expect(view.cells.easy).toMatchObject({ state: 'valid', source: 'builtin', builtin: { model: 'claude-haiku-5.5', effort: 'low' } });
+    expect(view.cells.maximum).toMatchObject({ state: 'valid', follows: 'hard', custom: null, effective: { model: 'claude-opus-5.5', effort: 'high' } });
+    // Copilot's own `auto` leaves the model to Copilot, so it isn't offered, like `default`.
+    expect(view.choices.models.map((c) => c.id)).toEqual(['claude-haiku-5.5', 'claude-sonnet-5.5', 'claude-opus-5.5', 'claude-haiku-4.5', 'gpt-6.1-sol']);
+  });
+
+  it('refuses Copilot\'s `auto` as a preset, and a saved one is stale, so a level never runs on whatever Copilot picks', async () => {
+    await expect(write({ cells: [{ provider: 'copilot-cli', difficulty: 'hard', model: 'auto', effort: null }] })).rejects.toMatchObject({ code: 'invalid_helper_routing' });
+    W.saved = { 'copilot-cli': { hard: { model: 'auto', effort: null } } };
+    expect(await resolveAutoLevel('copilot-cli', 'hard')).toMatchObject({ ok: true, model: 'claude-opus-5.5', fallback: 'builtin_preset' });
+    const view = (await readHelperRouting()).providers['copilot-cli'];
+    if (!view.autoEligible) throw new Error('eligible');
+    expect(view.cells.hard).toMatchObject({ state: 'stale', staleReason: 'model_unavailable', custom: { model: 'auto' } });
+  });
+
+  it('writes, audits and resets Copilot cells like the others', async () => {
+    await write({ cells: [{ provider: 'copilot-cli', difficulty: 'maximum', model: 'gpt-6.1-sol', effort: 'max' }] });
+    expect(W.saved).toEqual({ 'copilot-cli': { maximum: { model: 'gpt-6.1-sol', effort: 'max' } } });
+    expect(W.audit.at(-1)).toMatchObject({ key: 'helper_presets.copilot-cli.maximum', before: null, after: 'gpt-6.1-sol/max' });
+    // A difficulty set back to its built-in keeps nothing.
+    await write({ cells: [{ provider: 'copilot-cli', difficulty: 'easy', model: 'claude-haiku-5.5', effort: 'low' }] });
+    expect(W.saved).toEqual({ 'copilot-cli': { maximum: { model: 'gpt-6.1-sol', effort: 'max' } } });
+    await write({ reset: { provider: 'copilot-cli' } });
+    expect(W.saved).toEqual({});
+  });
+
+  it('a helper on Copilot can name a difficulty, which picks its preset', async () => {
+    const result = await plan({ cli: 'copilot-cli', difficulty: 'hard' });
+    expect(result).toMatchObject({ provider: 'copilot-cli', model: 'claude-opus-5.5', effort: 'high' });
+    expect(result!.routing).toMatchObject({ mode: 'preset', reason: 'preset_on_cli', source: { model: 'builtin_mapping', effort: 'builtin_mapping' } });
+  });
+
+  it('a preset with no effort passes none, so its CLI picks', async () => {
+    W.saved = { 'copilot-cli': { easy: { model: 'claude-haiku-4.5', effort: null } } };
+    const result = await plan({ cli: 'copilot-cli', difficulty: 'easy' });
+    expect(result).toMatchObject({ provider: 'copilot-cli', model: 'claude-haiku-4.5' });
+    expect(result!.effort).toBeUndefined();
+    expect(result!.routing.source.effort).toBe('cli_default');
+  });
+
+  it('cli "auto" never chooses Copilot, even when it is the only provider left, and doesn\'t read its list', async () => {
+    const on = { effective: true, source: 'app' as const, scopes: { app: { value: true, editable: true } } };
+    W.unavailable = new Set(['claude-code', 'codex-cli']);
+    const result = await planHelperStart({ ...base, cli: 'auto', difficulty: 'easy', auto: on });
+    expect(result).toMatchObject({ ok: false, code: 'no_candidate' });
+    if (result.ok === false) expect(result.message).toContain('copilot-cli: Auto doesn’t support this provider yet');
+    expect(W.listCalls.filter((c) => c.provider === 'copilot-cli')).toEqual([]);
   });
 });
 

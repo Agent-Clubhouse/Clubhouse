@@ -9,6 +9,8 @@
  *   connected to it, watch those agents and app events, and notify you. They
  *   can't start quick agents (D140): those run at Full access. It holds
  *   agent.create (#3050), so this is a rule of Actions, not a missing grant.
+ *   They may also message or wake the Dispatcher itself: that is how it is
+ *   told when something happens (its own subscriptions, #3042).
  * - An agent's actions may act on itself, its own helpers and agents it is
  *   connected to (an MCP wire from it to them), and start quick agents in its
  *   own project. They may watch the same agents, its own project and app
@@ -80,6 +82,8 @@ export function createInterimRights(facts: RightsFacts): ActionRights {
     checkStep(owner: ActionOwner, step: ActionStep): string | null {
       if (owner.kind === 'user' || owner.kind === 'app') return null;
       if (step.kind === 'notify') return null;
+      // The Dispatcher telling itself, for its subscriptions. Never putting itself to sleep.
+      if (owner.kind === 'dispatcher' && (step.kind === 'message' || step.kind === 'wake') && step.agentId === facts.dispatcherAgentId()) return null;
       if (step.kind === 'quick') {
         if (owner.kind === 'dispatcher') return 'The Dispatcher can’t start quick agents from an action yet.';
         if (owner.helper) return helperOnly(owner);

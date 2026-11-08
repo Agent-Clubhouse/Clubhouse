@@ -52,6 +52,17 @@ describe('Settings > Actions', () => {
     expect(within(rows[1]).getByText('Dispatcher')).toBeTruthy();
   });
 
+  it('shows an agent’s subscription as its own action that tells it (#3042)', async () => {
+    list = [action({
+      id: 's1', name: 'Tell the agent when main is pushed', owner: { kind: 'dispatcher' }, subscription: true,
+      trigger: { kind: 'event', event: 'agent.slept', source: { kind: 'agent', agentId: 'nobody' } },
+      steps: [{ kind: 'message', agentId: 'disp', text: 'You asked to be told when this happens.' }],
+    })];
+    render(<ActionsSettingsView />);
+    const rows = await screen.findAllByTestId('action-row');
+    expect(within(rows[0]).getByText('When an agent goes to sleep → Tell the Dispatcher')).toBeTruthy();
+  });
+
   it('turns an action off from its row', async () => {
     list = [action({})];
     render(<ActionsSettingsView />);

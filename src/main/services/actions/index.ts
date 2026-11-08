@@ -19,7 +19,8 @@ import { knownAgent, knownAgents } from '../app-event-sources';
 import { bindingManager } from '../clubhouse-mcp/binding-manager';
 import { isOrchestrationEnabled } from '../clubhouse-mcp/orchestration-gate';
 import { sleepAgent, wakeWiredAgent } from '../clubhouse-mcp/tools/agent-lifecycle';
-import { getDispatcherAgentId } from '../dispatcher/dispatcher-service';
+import { deliverToDispatcher } from '../clubhouse-mcp/tools/dispatcher-delivery';
+import { DISPATCHER_NAME, getDispatcherAgentId, getDispatcherState, isDispatcherAgentId } from '../dispatcher/dispatcher-service';
 import { appLog } from '../log-service';
 import * as notificationService from '../notification-service';
 import * as projectStore from '../project-store';
@@ -66,10 +67,16 @@ function projectLabel(p: Project): string {
   return p.displayName || p.name;
 }
 
+/** The Dispatcher's name, as people named it. It is in no project, so knownAgent doesn't have it. */
+function dispatcherName(): string {
+  return getDispatcherState().config?.name || DISPATCHER_NAME;
+}
+
 const facts: EngineFacts & { parentOf(id: string): string | undefined; agentWorktree(id: string): string | undefined } = {
-  agentExists: (id) => !!knownAgent(id),
+  // The Dispatcher counts as an agent here, so its subscriptions can message it (#3042).
+  agentExists: (id) => !!knownAgent(id) || isDispatcherAgentId(id),
   isRunning: (id) => isAgentRunning(id),
-  agentName: (id) => knownAgent(id)?.name,
+  agentName: (id) => knownAgent(id)?.name ?? (isDispatcherAgentId(id) ? dispatcherName() : undefined),
   agentProjectId: (id) => {
     const a = knownAgent(id);
     return a ? projectIdForPath(a.projectPath) : undefined;
@@ -87,6 +94,7 @@ const facts: EngineFacts & { parentOf(id: string): string | undefined; agentWork
   },
   parentOf: (id) => knownAgent(id)?.parentAgentId,
   agentWorktree: (id) => knownAgent(id)?.worktreePath,
+  dispatcherAgentId: () => getDispatcherAgentId() ?? undefined,
 };
 
 function parseToolResult(result: { content: Array<{ type: string; text?: string }>; isError?: boolean }): { ok: boolean; status?: string; messageDelivered?: boolean; text: string } {
@@ -156,6 +164,22 @@ function createEngine(): ActionsEngine {
       if (!settings.agentRequestedAttention) return { shown: false, reason: '“An agent asks for me” is off in Settings' };
       notificationService.sendNotification(title, body, !settings.playSound);
       return { shown: true };
+    },
+    // Messages to the Dispatcher take its one delivery path, which wakes it (#3037).
+    dispatcher: {
+      is: (id) => isDispatcherAgentId(id),
+      deliver: (req) => deliverToDispatcher({
+        senderId: req.senderId,
+        targetId: req.targetId,
+        targetName: req.targetName,
+        text: req.text,
+        routed: req.routed,
+        taskId: `action_${Date.now().toString(36)}`,
+        submit: true,
+        toolName: 'action',
+        args: { actionId: req.actionId },
+        fromAction: true,
+      }),
     },
   });
   return new ActionsEngine({
@@ -245,6 +269,15 @@ function requireVisible(id: string): Action {
 export function createAction(input: unknown, owner: ActionOwner): ActionView {
   const e = requireEngine();
   return view(e, e.create(input, owner));
+}
+
+/**
+ * Subscribe the owner to an event (#3042): it is told when it happens. The
+ * subscription is an action it owns, listed with the others.
+ */
+export function subscribe(input: unknown, owner: ActionOwner): ActionView {
+  const e = requireEngine();
+  return view(e, e.subscribe(input, owner));
 }
 
 export function updateAction(id: string, input: unknown): ActionView {

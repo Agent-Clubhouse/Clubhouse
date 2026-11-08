@@ -109,6 +109,7 @@
             },
             "providers": {
               "claude-code": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -235,6 +236,7 @@
                 }
               },
               "codex-cli": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -364,15 +366,132 @@
                 }
               },
               "copilot-cli": {
-                "autoEligible": false,
-                "cells": null,
+                "autoCandidate": false,
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "maximum": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "follows": "hard",
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "minimum": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "follows": "easy",
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-haiku-5.5",
+                      "label": "Claude Haiku 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-sonnet-5.5",
+                      "label": "Claude Sonnet 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-opus-5.5",
+                      "label": "Claude Opus 5.5"
+                    },
+                    {
+                      "efforts": [],
+                      "id": "claude-haiku-4.5",
+                      "label": "Claude Haiku 4.5"
+                    }
+                  ],
+                  "source": "live"
+                },
                 "quota": {
                   "asOf": null,
                   "source": "none",
                   "state": "unknown",
                   "unknownReason": "not_supported"
-                },
-                "reason": "auto_not_supported"
+                }
               }
             },
             "revision": "r2.3",
@@ -498,6 +617,7 @@
             },
             "providers": {
               "claude-code": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -624,6 +744,7 @@
                 }
               },
               "codex-cli": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -753,15 +874,132 @@
                 }
               },
               "copilot-cli": {
-                "autoEligible": false,
-                "cells": null,
+                "autoCandidate": false,
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "maximum": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "follows": "hard",
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "minimum": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "follows": "easy",
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-haiku-5.5",
+                      "label": "Claude Haiku 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-sonnet-5.5",
+                      "label": "Claude Sonnet 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-opus-5.5",
+                      "label": "Claude Opus 5.5"
+                    },
+                    {
+                      "efforts": [],
+                      "id": "claude-haiku-4.5",
+                      "label": "Claude Haiku 4.5"
+                    }
+                  ],
+                  "source": "live"
+                },
                 "quota": {
                   "asOf": null,
                   "source": "none",
                   "state": "unknown",
                   "unknownReason": "not_supported"
-                },
-                "reason": "auto_not_supported"
+                }
               }
             },
             "revision": "r2.3",
@@ -838,14 +1076,14 @@
       }
     },
     {
-      "name": "invalid_helper_routing (Copilot)",
+      "name": "invalid_helper_routing (a provider with no mapping)",
       "request": {
         "cells": [
           {
             "difficulty": "easy",
             "effort": null,
             "model": "x",
-            "provider": "copilot-cli"
+            "provider": "other-cli"
           }
         ],
         "commandId": "cmd_142",
@@ -861,7 +1099,7 @@
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_helper_routing",
-            "message": "copilot-cli has no presets."
+            "message": "other-cli has no presets."
           },
           "status": "rejected",
           "version": 1
@@ -870,9 +1108,41 @@
       }
     },
     {
+      "name": "effort_unavailable (Copilot, a model with no levels)",
+      "request": {
+        "cells": [
+          {
+            "difficulty": "hard",
+            "effort": "low",
+            "model": "claude-haiku-4.5",
+            "provider": "copilot-cli"
+          }
+        ],
+        "commandId": "cmd_143",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "revision": "r2.3",
+        "scope": "app",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_143",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "error": {
+            "code": "effort_unavailable",
+            "message": "Model \"claude-haiku-4.5\" takes no effort level. Call list_models for details."
+          },
+          "status": "rejected",
+          "version": 1
+        },
+        "status": 409
+      }
+    },
+    {
       "name": "invalid_helper_routing (project scope)",
       "request": {
-        "commandId": "cmd_143",
+        "commandId": "cmd_144",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "reset": {},
         "revision": "r2.3",
@@ -882,7 +1152,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_143",
+          "commandId": "cmd_144",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_helper_routing",
@@ -897,7 +1167,7 @@
     {
       "name": "invalid_command (nothing to do)",
       "request": {
-        "commandId": "cmd_144",
+        "commandId": "cmd_145",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r2.3",
         "scope": "app",
@@ -920,400 +1190,13 @@
     {
       "name": "accepted reset one cell",
       "request": {
-        "commandId": "cmd_145",
+        "commandId": "cmd_146",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "reset": {
           "difficulty": "easy",
           "provider": "codex-cli"
         },
         "revision": "r2.3",
-        "scope": "app",
-        "type": "helperRouting.update",
-        "version": 1
-      },
-      "response": {
-        "body": {
-          "commandId": "cmd_145",
-          "epoch": "00000000-0000-4000-8000-000000000001",
-          "result": {
-            "auto": {
-              "effective": false,
-              "reason": "not_enabled",
-              "scopes": {
-                "app": {
-                  "editable": true,
-                  "value": false
-                }
-              },
-              "source": "default"
-            },
-            "labels": {
-              "autoOff": {
-                "dispatcher_locked": "The Dispatcher doesn’t start helpers",
-                "mcp_off": "Clubhouse MCP is off for this agent",
-                "not_enabled": "It isn’t turned on",
-                "orchestration_off": "This agent doesn’t orchestrate",
-                "project_off": "This project turned it off"
-              },
-              "autoSource": {
-                "agent": "Set on this agent",
-                "app": "Set for the whole app",
-                "default": "Off unless turned on",
-                "dispatcher_locked": "Not for the Dispatcher",
-                "mcp_off": "Clubhouse MCP is off for this agent",
-                "project": "Set for this project"
-              },
-              "cell": {
-                "stale": "No longer offered",
-                "unverified": "Couldn’t be checked",
-                "valid": "Offered"
-              },
-              "fallback": {
-                "builtin_preset": "The saved choice is no longer offered, so the default was used",
-                "candidate_skipped": "Another provider was skipped",
-                "model_unverified": "The model list may be out of date, so this couldn’t be checked",
-                "none": "None",
-                "retried_after_spawn_failure": "Started on another provider after the first failed to start"
-              },
-              "generic": {
-                "unknownCode": "Clubhouse gave a reason this version can’t show"
-              },
-              "quota": {
-                "exhausted": "Limit reached",
-                "known": "Limit available",
-                "low": "Limit getting low",
-                "near_limit": "Close to the limit",
-                "unknown": "Unknown"
-              },
-              "reason": {
-                "better_quota_tier": "This provider has more of its limit left",
-                "default_order": "No reason to switch",
-                "explicit_request": "You or the orchestrator chose this",
-                "fair_rotation": "Its turn among providers with the same usage",
-                "lower_load": "Fewer helpers running on this provider",
-                "lower_pressure": "Less of this provider’s weekly limit is used",
-                "only_candidate": "The only provider available",
-                "persona_pinned": "Set by the persona",
-                "preset_on_cli": "From the helper settings for this difficulty",
-                "sticky": "Stayed on the provider chosen last",
-                "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
-              },
-              "skipped": {
-                "auto_not_supported": "Auto doesn’t support this provider yet",
-                "cli_disabled": "Turned off in Settings",
-                "cli_unavailable": "Not available on this computer",
-                "cooling_down": "It failed to start recently",
-                "no_valid_mapping": "No choice for this difficulty is offered now",
-                "quota_exhausted": "The provider reports its limit reached",
-                "quota_near_limit": "Close to its limit"
-              },
-              "unknown": {
-                "not_applicable": "This login has no plan limit",
-                "not_read": "Not checked yet",
-                "not_supported": "This provider doesn’t report it",
-                "read_failed": "Couldn’t check",
-                "stale": "Last checked too long ago"
-              },
-              "window": {
-                "fiveHour": "5-hour limit",
-                "other": "Plan limit",
-                "weekly": "Weekly limit"
-              }
-            },
-            "providers": {
-              "claude-code": {
-                "autoEligible": true,
-                "cells": {
-                  "easy": {
-                    "builtin": {
-                      "effort": "low",
-                      "model": "haiku"
-                    },
-                    "custom": null,
-                    "editable": true,
-                    "effective": {
-                      "effort": "low",
-                      "model": "haiku"
-                    },
-                    "source": "builtin",
-                    "state": "valid"
-                  },
-                  "hard": {
-                    "builtin": {
-                      "effort": "high",
-                      "model": "opus"
-                    },
-                    "custom": null,
-                    "editable": true,
-                    "effective": {
-                      "effort": "high",
-                      "model": "opus"
-                    },
-                    "source": "builtin",
-                    "state": "valid"
-                  },
-                  "maximum": {
-                    "builtin": {
-                      "effort": "high",
-                      "model": "opus"
-                    },
-                    "custom": null,
-                    "editable": true,
-                    "effective": {
-                      "effort": "high",
-                      "model": "opus"
-                    },
-                    "follows": "hard",
-                    "source": "builtin",
-                    "state": "valid"
-                  },
-                  "medium": {
-                    "builtin": {
-                      "effort": "medium",
-                      "model": "sonnet"
-                    },
-                    "custom": null,
-                    "editable": true,
-                    "effective": {
-                      "effort": "medium",
-                      "model": "sonnet"
-                    },
-                    "source": "builtin",
-                    "state": "valid"
-                  },
-                  "minimum": {
-                    "builtin": {
-                      "effort": "low",
-                      "model": "haiku"
-                    },
-                    "custom": null,
-                    "editable": true,
-                    "effective": {
-                      "effort": "low",
-                      "model": "haiku"
-                    },
-                    "follows": "easy",
-                    "source": "builtin",
-                    "state": "valid"
-                  }
-                },
-                "choices": {
-                  "asOf": "2027-01-15T08:00:00.000Z",
-                  "models": [
-                    {
-                      "efforts": [
-                        "low",
-                        "medium",
-                        "high"
-                      ],
-                      "id": "opus",
-                      "label": "Opus"
-                    },
-                    {
-                      "efforts": [
-                        "low",
-                        "medium",
-                        "high"
-                      ],
-                      "id": "sonnet",
-                      "label": "Sonnet"
-                    },
-                    {
-                      "efforts": [
-                        "low",
-                        "medium",
-                        "high"
-                      ],
-                      "id": "haiku",
-                      "label": "Haiku"
-                    }
-                  ],
-                  "source": "live"
-                },
-                "quota": {
-                  "asOf": "2027-01-15T08:00:00.000Z",
-                  "fiveHour": {
-                    "resetsAt": "2027-01-15T10:24:00.000Z",
-                    "usedPercent": 12
-                  },
-                  "limitingWindow": "weekly",
-                  "refreshAfterSeconds": 300,
-                  "resetsAt": "2027-01-18T08:00:00.000Z",
-                  "source": "cli_query",
-                  "state": "known",
-                  "weekly": {
-                    "resetsAt": "2027-01-18T08:00:00.000Z",
-                    "usedPercent": 41
-                  }
-                }
-              },
-              "codex-cli": {
-                "autoEligible": true,
-                "cells": {
-                  "easy": {
-                    "builtin": {
-                      "effort": "low",
-                      "model": "gpt-6-luna"
-                    },
-                    "custom": null,
-                    "editable": true,
-                    "effective": {
-                      "effort": "low",
-                      "model": "gpt-6-luna"
-                    },
-                    "source": "builtin",
-                    "state": "valid"
-                  },
-                  "hard": {
-                    "builtin": {
-                      "effort": "high",
-                      "model": "gpt-6.1-sol"
-                    },
-                    "custom": null,
-                    "editable": true,
-                    "effective": {
-                      "effort": "high",
-                      "model": "gpt-6.1-sol"
-                    },
-                    "source": "builtin",
-                    "state": "valid"
-                  },
-                  "maximum": {
-                    "builtin": {
-                      "effort": "high",
-                      "model": "gpt-6.1-sol"
-                    },
-                    "custom": null,
-                    "editable": true,
-                    "effective": {
-                      "effort": "high",
-                      "model": "gpt-6.1-sol"
-                    },
-                    "follows": "hard",
-                    "source": "builtin",
-                    "state": "valid"
-                  },
-                  "medium": {
-                    "builtin": {
-                      "effort": "medium",
-                      "model": "gpt-6.1-terra"
-                    },
-                    "custom": null,
-                    "editable": true,
-                    "effective": {
-                      "effort": "medium",
-                      "model": "gpt-6.1-terra"
-                    },
-                    "source": "builtin",
-                    "state": "valid"
-                  },
-                  "minimum": {
-                    "builtin": {
-                      "effort": "low",
-                      "model": "gpt-6-luna"
-                    },
-                    "custom": null,
-                    "editable": true,
-                    "effective": {
-                      "effort": "low",
-                      "model": "gpt-6-luna"
-                    },
-                    "follows": "easy",
-                    "source": "builtin",
-                    "state": "valid"
-                  }
-                },
-                "choices": {
-                  "asOf": "2027-01-15T08:00:00.000Z",
-                  "models": [
-                    {
-                      "efforts": [
-                        "low",
-                        "medium",
-                        "high"
-                      ],
-                      "id": "gpt-6.1-sol",
-                      "label": "Sol"
-                    },
-                    {
-                      "efforts": [
-                        "low",
-                        "medium",
-                        "high"
-                      ],
-                      "id": "gpt-6.1-terra",
-                      "label": "Terra"
-                    },
-                    {
-                      "efforts": [
-                        "low",
-                        "medium",
-                        "high"
-                      ],
-                      "id": "gpt-6-luna",
-                      "label": "Luna"
-                    }
-                  ],
-                  "source": "live"
-                },
-                "quota": {
-                  "asOf": "2027-01-15T08:00:00.000Z",
-                  "fiveHour": {
-                    "resetsAt": "2027-01-15T10:24:00.000Z",
-                    "usedPercent": 12
-                  },
-                  "limitingWindow": "weekly",
-                  "refreshAfterSeconds": 300,
-                  "resetsAt": "2027-01-18T08:00:00.000Z",
-                  "source": "cli_query",
-                  "state": "known",
-                  "weekly": {
-                    "resetsAt": "2027-01-18T08:00:00.000Z",
-                    "usedPercent": 41
-                  }
-                }
-              },
-              "copilot-cli": {
-                "autoEligible": false,
-                "cells": null,
-                "quota": {
-                  "asOf": null,
-                  "source": "none",
-                  "state": "unknown",
-                  "unknownReason": "not_supported"
-                },
-                "reason": "auto_not_supported"
-              }
-            },
-            "revision": "r3.3",
-            "serverTime": "2027-01-15T08:00:00.000Z"
-          },
-          "status": "completed",
-          "version": 1
-        },
-        "status": 200
-      }
-    },
-    {
-      "name": "accepted set several",
-      "request": {
-        "cells": [
-          {
-            "difficulty": "hard",
-            "effort": "high",
-            "model": "sonnet",
-            "provider": "claude-code"
-          },
-          {
-            "difficulty": "medium",
-            "effort": null,
-            "model": "gpt-6-luna",
-            "provider": "codex-cli"
-          }
-        ],
-        "commandId": "cmd_146",
-        "epoch": "00000000-0000-4000-8000-000000000001",
-        "revision": "r3.3",
         "scope": "app",
         "type": "helperRouting.update",
         "version": 1
@@ -1409,6 +1292,7 @@
             },
             "providers": {
               "claude-code": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -1430,16 +1314,13 @@
                       "effort": "high",
                       "model": "opus"
                     },
-                    "custom": {
-                      "effort": "high",
-                      "model": "sonnet"
-                    },
+                    "custom": null,
                     "editable": true,
                     "effective": {
                       "effort": "high",
-                      "model": "sonnet"
+                      "model": "opus"
                     },
-                    "source": "custom",
+                    "source": "builtin",
                     "state": "valid"
                   },
                   "maximum": {
@@ -1451,10 +1332,10 @@
                     "editable": true,
                     "effective": {
                       "effort": "high",
-                      "model": "sonnet"
+                      "model": "opus"
                     },
                     "follows": "hard",
-                    "source": "custom",
+                    "source": "builtin",
                     "state": "valid"
                   },
                   "medium": {
@@ -1538,6 +1419,7 @@
                 }
               },
               "codex-cli": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -1588,16 +1470,13 @@
                       "effort": "medium",
                       "model": "gpt-6.1-terra"
                     },
-                    "custom": {
-                      "effort": null,
-                      "model": "gpt-6-luna"
-                    },
+                    "custom": null,
                     "editable": true,
                     "effective": {
-                      "effort": null,
-                      "model": "gpt-6-luna"
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
                     },
-                    "source": "custom",
+                    "source": "builtin",
                     "state": "valid"
                   },
                   "minimum": {
@@ -1667,18 +1546,135 @@
                 }
               },
               "copilot-cli": {
-                "autoEligible": false,
-                "cells": null,
+                "autoCandidate": false,
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "maximum": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "follows": "hard",
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "minimum": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "follows": "easy",
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-haiku-5.5",
+                      "label": "Claude Haiku 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-sonnet-5.5",
+                      "label": "Claude Sonnet 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-opus-5.5",
+                      "label": "Claude Opus 5.5"
+                    },
+                    {
+                      "efforts": [],
+                      "id": "claude-haiku-4.5",
+                      "label": "Claude Haiku 4.5"
+                    }
+                  ],
+                  "source": "live"
+                },
                 "quota": {
                   "asOf": null,
                   "source": "none",
                   "state": "unknown",
                   "unknownReason": "not_supported"
-                },
-                "reason": "auto_not_supported"
+                }
               }
             },
-            "revision": "r4.3",
+            "revision": "r3.3",
             "serverTime": "2027-01-15T08:00:00.000Z"
           },
           "status": "completed",
@@ -1688,14 +1684,25 @@
       }
     },
     {
-      "name": "accepted reset one provider",
+      "name": "accepted set several",
       "request": {
+        "cells": [
+          {
+            "difficulty": "hard",
+            "effort": "high",
+            "model": "sonnet",
+            "provider": "claude-code"
+          },
+          {
+            "difficulty": "medium",
+            "effort": null,
+            "model": "gpt-6-luna",
+            "provider": "codex-cli"
+          }
+        ],
         "commandId": "cmd_147",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "reset": {
-          "provider": "claude-code"
-        },
-        "revision": "r4.3",
+        "revision": "r3.3",
         "scope": "app",
         "type": "helperRouting.update",
         "version": 1
@@ -1791,6 +1798,7 @@
             },
             "providers": {
               "claude-code": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -1812,13 +1820,16 @@
                       "effort": "high",
                       "model": "opus"
                     },
-                    "custom": null,
+                    "custom": {
+                      "effort": "high",
+                      "model": "sonnet"
+                    },
                     "editable": true,
                     "effective": {
                       "effort": "high",
-                      "model": "opus"
+                      "model": "sonnet"
                     },
-                    "source": "builtin",
+                    "source": "custom",
                     "state": "valid"
                   },
                   "maximum": {
@@ -1830,10 +1841,10 @@
                     "editable": true,
                     "effective": {
                       "effort": "high",
-                      "model": "opus"
+                      "model": "sonnet"
                     },
                     "follows": "hard",
-                    "source": "builtin",
+                    "source": "custom",
                     "state": "valid"
                   },
                   "medium": {
@@ -1917,6 +1928,7 @@
                 }
               },
               "codex-cli": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -2046,18 +2058,135 @@
                 }
               },
               "copilot-cli": {
-                "autoEligible": false,
-                "cells": null,
+                "autoCandidate": false,
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "maximum": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "follows": "hard",
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "minimum": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "follows": "easy",
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-haiku-5.5",
+                      "label": "Claude Haiku 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-sonnet-5.5",
+                      "label": "Claude Sonnet 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-opus-5.5",
+                      "label": "Claude Opus 5.5"
+                    },
+                    {
+                      "efforts": [],
+                      "id": "claude-haiku-4.5",
+                      "label": "Claude Haiku 4.5"
+                    }
+                  ],
+                  "source": "live"
+                },
                 "quota": {
                   "asOf": null,
                   "source": "none",
                   "state": "unknown",
                   "unknownReason": "not_supported"
-                },
-                "reason": "auto_not_supported"
+                }
               }
             },
-            "revision": "r5.3",
+            "revision": "r4.3",
             "serverTime": "2027-01-15T08:00:00.000Z"
           },
           "status": "completed",
@@ -2067,12 +2196,14 @@
       }
     },
     {
-      "name": "accepted reset all",
+      "name": "accepted reset one provider",
       "request": {
         "commandId": "cmd_148",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "reset": {},
-        "revision": "r5.3",
+        "reset": {
+          "provider": "claude-code"
+        },
+        "revision": "r4.3",
         "scope": "app",
         "type": "helperRouting.update",
         "version": 1
@@ -2168,6 +2299,7 @@
             },
             "providers": {
               "claude-code": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -2294,6 +2426,7 @@
                 }
               },
               "codex-cli": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -2344,13 +2477,16 @@
                       "effort": "medium",
                       "model": "gpt-6.1-terra"
                     },
-                    "custom": null,
+                    "custom": {
+                      "effort": null,
+                      "model": "gpt-6-luna"
+                    },
                     "editable": true,
                     "effective": {
-                      "effort": "medium",
-                      "model": "gpt-6.1-terra"
+                      "effort": null,
+                      "model": "gpt-6-luna"
                     },
-                    "source": "builtin",
+                    "source": "custom",
                     "state": "valid"
                   },
                   "minimum": {
@@ -2420,18 +2556,135 @@
                 }
               },
               "copilot-cli": {
-                "autoEligible": false,
-                "cells": null,
+                "autoCandidate": false,
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "maximum": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "follows": "hard",
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "minimum": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "follows": "easy",
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-haiku-5.5",
+                      "label": "Claude Haiku 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-sonnet-5.5",
+                      "label": "Claude Sonnet 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-opus-5.5",
+                      "label": "Claude Opus 5.5"
+                    },
+                    {
+                      "efforts": [],
+                      "id": "claude-haiku-4.5",
+                      "label": "Claude Haiku 4.5"
+                    }
+                  ],
+                  "source": "live"
+                },
                 "quota": {
                   "asOf": null,
                   "source": "none",
                   "state": "unknown",
                   "unknownReason": "not_supported"
-                },
-                "reason": "auto_not_supported"
+                }
               }
             },
-            "revision": "r6.3",
+            "revision": "r5.3",
             "serverTime": "2027-01-15T08:00:00.000Z"
           },
           "status": "completed",
@@ -2441,12 +2694,12 @@
       }
     },
     {
-      "name": "accepted auto off app-wide",
+      "name": "accepted reset all",
       "request": {
-        "auto": false,
         "commandId": "cmd_149",
         "epoch": "00000000-0000-4000-8000-000000000001",
-        "revision": "r6.3",
+        "reset": {},
+        "revision": "r5.3",
         "scope": "app",
         "type": "helperRouting.update",
         "version": 1
@@ -2542,6 +2795,7 @@
             },
             "providers": {
               "claude-code": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -2668,6 +2922,7 @@
                 }
               },
               "codex-cli": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -2794,15 +3049,625 @@
                 }
               },
               "copilot-cli": {
-                "autoEligible": false,
-                "cells": null,
+                "autoCandidate": false,
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "maximum": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "follows": "hard",
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "minimum": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "follows": "easy",
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-haiku-5.5",
+                      "label": "Claude Haiku 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-sonnet-5.5",
+                      "label": "Claude Sonnet 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-opus-5.5",
+                      "label": "Claude Opus 5.5"
+                    },
+                    {
+                      "efforts": [],
+                      "id": "claude-haiku-4.5",
+                      "label": "Claude Haiku 4.5"
+                    }
+                  ],
+                  "source": "live"
+                },
                 "quota": {
                   "asOf": null,
                   "source": "none",
                   "state": "unknown",
                   "unknownReason": "not_supported"
+                }
+              }
+            },
+            "revision": "r6.3",
+            "serverTime": "2027-01-15T08:00:00.000Z"
+          },
+          "status": "completed",
+          "version": 1
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "accepted auto off app-wide",
+      "request": {
+        "auto": false,
+        "commandId": "cmd_150",
+        "epoch": "00000000-0000-4000-8000-000000000001",
+        "revision": "r6.3",
+        "scope": "app",
+        "type": "helperRouting.update",
+        "version": 1
+      },
+      "response": {
+        "body": {
+          "commandId": "cmd_150",
+          "epoch": "00000000-0000-4000-8000-000000000001",
+          "result": {
+            "auto": {
+              "effective": false,
+              "reason": "not_enabled",
+              "scopes": {
+                "app": {
+                  "editable": true,
+                  "value": false
+                }
+              },
+              "source": "default"
+            },
+            "labels": {
+              "autoOff": {
+                "dispatcher_locked": "The Dispatcher doesn’t start helpers",
+                "mcp_off": "Clubhouse MCP is off for this agent",
+                "not_enabled": "It isn’t turned on",
+                "orchestration_off": "This agent doesn’t orchestrate",
+                "project_off": "This project turned it off"
+              },
+              "autoSource": {
+                "agent": "Set on this agent",
+                "app": "Set for the whole app",
+                "default": "Off unless turned on",
+                "dispatcher_locked": "Not for the Dispatcher",
+                "mcp_off": "Clubhouse MCP is off for this agent",
+                "project": "Set for this project"
+              },
+              "cell": {
+                "stale": "No longer offered",
+                "unverified": "Couldn’t be checked",
+                "valid": "Offered"
+              },
+              "fallback": {
+                "builtin_preset": "The saved choice is no longer offered, so the default was used",
+                "candidate_skipped": "Another provider was skipped",
+                "model_unverified": "The model list may be out of date, so this couldn’t be checked",
+                "none": "None",
+                "retried_after_spawn_failure": "Started on another provider after the first failed to start"
+              },
+              "generic": {
+                "unknownCode": "Clubhouse gave a reason this version can’t show"
+              },
+              "quota": {
+                "exhausted": "Limit reached",
+                "known": "Limit available",
+                "low": "Limit getting low",
+                "near_limit": "Close to the limit",
+                "unknown": "Unknown"
+              },
+              "reason": {
+                "better_quota_tier": "This provider has more of its limit left",
+                "default_order": "No reason to switch",
+                "explicit_request": "You or the orchestrator chose this",
+                "fair_rotation": "Its turn among providers with the same usage",
+                "lower_load": "Fewer helpers running on this provider",
+                "lower_pressure": "Less of this provider’s weekly limit is used",
+                "only_candidate": "The only provider available",
+                "persona_pinned": "Set by the persona",
+                "preset_on_cli": "From the helper settings for this difficulty",
+                "sticky": "Stayed on the provider chosen last",
+                "unknown_fallback": "Its usage couldn’t be checked, and the others are getting close to their limits"
+              },
+              "skipped": {
+                "auto_not_supported": "Auto doesn’t support this provider yet",
+                "cli_disabled": "Turned off in Settings",
+                "cli_unavailable": "Not available on this computer",
+                "cooling_down": "It failed to start recently",
+                "no_valid_mapping": "No choice for this difficulty is offered now",
+                "quota_exhausted": "The provider reports its limit reached",
+                "quota_near_limit": "Close to its limit"
+              },
+              "unknown": {
+                "not_applicable": "This login has no plan limit",
+                "not_read": "Not checked yet",
+                "not_supported": "This provider doesn’t report it",
+                "read_failed": "Couldn’t check",
+                "stale": "Last checked too long ago"
+              },
+              "window": {
+                "fiveHour": "5-hour limit",
+                "other": "Plan limit",
+                "weekly": "Weekly limit"
+              }
+            },
+            "providers": {
+              "claude-code": {
+                "autoCandidate": true,
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "maximum": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "opus"
+                    },
+                    "follows": "hard",
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "sonnet"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "minimum": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "haiku"
+                    },
+                    "follows": "easy",
+                    "source": "builtin",
+                    "state": "valid"
+                  }
                 },
-                "reason": "auto_not_supported"
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "opus",
+                      "label": "Opus"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "sonnet",
+                      "label": "Sonnet"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "haiku",
+                      "label": "Haiku"
+                    }
+                  ],
+                  "source": "live"
+                },
+                "quota": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "fiveHour": {
+                    "resetsAt": "2027-01-15T10:24:00.000Z",
+                    "usedPercent": 12
+                  },
+                  "limitingWindow": "weekly",
+                  "refreshAfterSeconds": 300,
+                  "resetsAt": "2027-01-18T08:00:00.000Z",
+                  "source": "cli_query",
+                  "state": "known",
+                  "weekly": {
+                    "resetsAt": "2027-01-18T08:00:00.000Z",
+                    "usedPercent": 41
+                  }
+                }
+              },
+              "codex-cli": {
+                "autoCandidate": true,
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "maximum": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "gpt-6.1-sol"
+                    },
+                    "follows": "hard",
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "gpt-6.1-terra"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "minimum": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "gpt-6-luna"
+                    },
+                    "follows": "easy",
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-sol",
+                      "label": "Sol"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6.1-terra",
+                      "label": "Terra"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high"
+                      ],
+                      "id": "gpt-6-luna",
+                      "label": "Luna"
+                    }
+                  ],
+                  "source": "live"
+                },
+                "quota": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "fiveHour": {
+                    "resetsAt": "2027-01-15T10:24:00.000Z",
+                    "usedPercent": 12
+                  },
+                  "limitingWindow": "weekly",
+                  "refreshAfterSeconds": 300,
+                  "resetsAt": "2027-01-18T08:00:00.000Z",
+                  "source": "cli_query",
+                  "state": "known",
+                  "weekly": {
+                    "resetsAt": "2027-01-18T08:00:00.000Z",
+                    "usedPercent": 41
+                  }
+                }
+              },
+              "copilot-cli": {
+                "autoCandidate": false,
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "maximum": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "follows": "hard",
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "minimum": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "follows": "easy",
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-haiku-5.5",
+                      "label": "Claude Haiku 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-sonnet-5.5",
+                      "label": "Claude Sonnet 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-opus-5.5",
+                      "label": "Claude Opus 5.5"
+                    },
+                    {
+                      "efforts": [],
+                      "id": "claude-haiku-4.5",
+                      "label": "Claude Haiku 4.5"
+                    }
+                  ],
+                  "source": "live"
+                },
+                "quota": {
+                  "asOf": null,
+                  "source": "none",
+                  "state": "unknown",
+                  "unknownReason": "not_supported"
+                }
               }
             },
             "revision": "r7.3",
@@ -2818,7 +3683,7 @@
       "name": "accepted auto off for a project",
       "request": {
         "auto": "off",
-        "commandId": "cmd_150",
+        "commandId": "cmd_151",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "proj_app",
         "revision": "r7.3",
@@ -2828,7 +3693,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_150",
+          "commandId": "cmd_151",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -2925,6 +3790,7 @@
             },
             "providers": {
               "claude-code": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -3051,6 +3917,7 @@
                 }
               },
               "codex-cli": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -3177,15 +4044,132 @@
                 }
               },
               "copilot-cli": {
-                "autoEligible": false,
-                "cells": null,
+                "autoCandidate": false,
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "maximum": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "follows": "hard",
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "minimum": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "follows": "easy",
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-haiku-5.5",
+                      "label": "Claude Haiku 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-sonnet-5.5",
+                      "label": "Claude Sonnet 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-opus-5.5",
+                      "label": "Claude Opus 5.5"
+                    },
+                    {
+                      "efforts": [],
+                      "id": "claude-haiku-4.5",
+                      "label": "Claude Haiku 4.5"
+                    }
+                  ],
+                  "source": "live"
+                },
                 "quota": {
                   "asOf": null,
                   "source": "none",
                   "state": "unknown",
                   "unknownReason": "not_supported"
-                },
-                "reason": "auto_not_supported"
+                }
               }
             },
             "revision": "r8.3",
@@ -3201,7 +4185,7 @@
       "name": "accepted project override removed (null, which never enables)",
       "request": {
         "auto": null,
-        "commandId": "cmd_151",
+        "commandId": "cmd_152",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "proj_app",
         "revision": "r8.3",
@@ -3211,7 +4195,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_151",
+          "commandId": "cmd_152",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "auto": {
@@ -3308,6 +4292,7 @@
             },
             "providers": {
               "claude-code": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -3434,6 +4419,7 @@
                 }
               },
               "codex-cli": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -3560,15 +4546,132 @@
                 }
               },
               "copilot-cli": {
-                "autoEligible": false,
-                "cells": null,
+                "autoCandidate": false,
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "maximum": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "follows": "hard",
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "minimum": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "follows": "easy",
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-haiku-5.5",
+                      "label": "Claude Haiku 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-sonnet-5.5",
+                      "label": "Claude Sonnet 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-opus-5.5",
+                      "label": "Claude Opus 5.5"
+                    },
+                    {
+                      "efforts": [],
+                      "id": "claude-haiku-4.5",
+                      "label": "Claude Haiku 4.5"
+                    }
+                  ],
+                  "source": "live"
+                },
                 "quota": {
                   "asOf": null,
                   "source": "none",
                   "state": "unknown",
                   "unknownReason": "not_supported"
-                },
-                "reason": "auto_not_supported"
+                }
               }
             },
             "revision": "r9.3",
@@ -3584,7 +4687,7 @@
       "name": "invalid_helper_routing (project can't turn it on)",
       "request": {
         "auto": true,
-        "commandId": "cmd_152",
+        "commandId": "cmd_153",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "proj_app",
         "revision": "r9.3",
@@ -3594,7 +4697,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_152",
+          "commandId": "cmd_153",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_helper_routing",
@@ -3610,7 +4713,7 @@
       "name": "invalid_helper_routing (app-wide off value)",
       "request": {
         "auto": "off",
-        "commandId": "cmd_153",
+        "commandId": "cmd_154",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r9.3",
         "scope": "app",
@@ -3619,7 +4722,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_153",
+          "commandId": "cmd_154",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "invalid_helper_routing",
@@ -3635,7 +4738,7 @@
       "name": "project_not_found",
       "request": {
         "auto": "off",
-        "commandId": "cmd_154",
+        "commandId": "cmd_155",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "missing",
         "revision": "r9.3",
@@ -3645,7 +4748,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_154",
+          "commandId": "cmd_155",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "project_not_found",
@@ -3661,7 +4764,7 @@
       "name": "helper_routing_stale (a desktop project change)",
       "request": {
         "auto": true,
-        "commandId": "cmd_155",
+        "commandId": "cmd_156",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "revision": "r9.3",
         "scope": "app",
@@ -3670,7 +4773,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_155",
+          "commandId": "cmd_156",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_routing_stale",
@@ -3764,6 +4867,7 @@
             },
             "providers": {
               "claude-code": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -3890,6 +4994,7 @@
                 }
               },
               "codex-cli": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -4016,15 +5121,132 @@
                 }
               },
               "copilot-cli": {
-                "autoEligible": false,
-                "cells": null,
+                "autoCandidate": false,
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "maximum": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "follows": "hard",
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "minimum": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "follows": "easy",
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-haiku-5.5",
+                      "label": "Claude Haiku 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-sonnet-5.5",
+                      "label": "Claude Sonnet 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-opus-5.5",
+                      "label": "Claude Opus 5.5"
+                    },
+                    {
+                      "efforts": [],
+                      "id": "claude-haiku-4.5",
+                      "label": "Claude Haiku 4.5"
+                    }
+                  ],
+                  "source": "live"
+                },
                 "quota": {
                   "asOf": null,
                   "source": "none",
                   "state": "unknown",
                   "unknownReason": "not_supported"
-                },
-                "reason": "auto_not_supported"
+                }
               }
             },
             "revision": "r10.3",
@@ -4040,7 +5262,7 @@
       "name": "helper_routing_stale (project scope, fresh values for that project)",
       "request": {
         "auto": null,
-        "commandId": "cmd_156",
+        "commandId": "cmd_157",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "projectId": "proj_app",
         "revision": "r10.3",
@@ -4050,7 +5272,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_156",
+          "commandId": "cmd_157",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "helper_routing_stale",
@@ -4152,6 +5374,7 @@
             },
             "providers": {
               "claude-code": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -4278,6 +5501,7 @@
                 }
               },
               "codex-cli": {
+                "autoCandidate": true,
                 "autoEligible": true,
                 "cells": {
                   "easy": {
@@ -4404,15 +5628,132 @@
                 }
               },
               "copilot-cli": {
-                "autoEligible": false,
-                "cells": null,
+                "autoCandidate": false,
+                "autoEligible": true,
+                "cells": {
+                  "easy": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "hard": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "maximum": {
+                    "builtin": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "high",
+                      "model": "claude-opus-5.5"
+                    },
+                    "follows": "hard",
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "medium": {
+                    "builtin": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "medium",
+                      "model": "claude-sonnet-5.5"
+                    },
+                    "source": "builtin",
+                    "state": "valid"
+                  },
+                  "minimum": {
+                    "builtin": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "custom": null,
+                    "editable": true,
+                    "effective": {
+                      "effort": "low",
+                      "model": "claude-haiku-5.5"
+                    },
+                    "follows": "easy",
+                    "source": "builtin",
+                    "state": "valid"
+                  }
+                },
+                "choices": {
+                  "asOf": "2027-01-15T08:00:00.000Z",
+                  "models": [
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-haiku-5.5",
+                      "label": "Claude Haiku 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-sonnet-5.5",
+                      "label": "Claude Sonnet 5.5"
+                    },
+                    {
+                      "efforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ],
+                      "id": "claude-opus-5.5",
+                      "label": "Claude Opus 5.5"
+                    },
+                    {
+                      "efforts": [],
+                      "id": "claude-haiku-4.5",
+                      "label": "Claude Haiku 4.5"
+                    }
+                  ],
+                  "source": "live"
+                },
                 "quota": {
                   "asOf": null,
                   "source": "none",
                   "state": "unknown",
                   "unknownReason": "not_supported"
-                },
-                "reason": "auto_not_supported"
+                }
               }
             },
             "revision": "r11.3",
