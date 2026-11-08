@@ -36,7 +36,7 @@ import { skillsFolderOf } from '../../../shared/skills-folder';
 import { helperTemplateFor } from './helpers';
 
 /** Written beside the managed skills so a later start removes only what Clubhouse put there. */
-const SKILLS_MANIFEST = '.clubhouse-managed-skills.json';
+export const SKILLS_MANIFEST = '.clubhouse-managed-skills.json';
 /** In the worktree: the `claudeMdExcludes` entries Clubhouse added, so it replaces only those (D49). Git-excluded. */
 export const EXCLUDES_MANIFEST = '.clubhouse-managed-excludes.json';
 
@@ -634,7 +634,7 @@ async function writeClaudeExcludes(worktree: string, provider: OrchestratorProvi
 }
 
 /** Where the CLI's instructions file is, relative to the worktree with forward slashes: Copilot's is in its config folder, the others' at the root. */
-function instructionsFileRel(provider: OrchestratorProvider): string {
+export function instructionsFileRel(provider: OrchestratorProvider): string {
   const conv = provider.conventions;
   return provider.id === COPILOT_ID ? forwardSlashes(path.join(conv.configDir, conv.legacyInstructionsFile)) : conv.legacyInstructionsFile;
 }
