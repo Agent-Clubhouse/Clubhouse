@@ -8,7 +8,7 @@ import type {
 import { gated, hasPermission } from './plugin-api-shared';
 import { createStorageAPI } from './plugin-api-storage';
 import { createProjectAPI, createProjectsAPI, createGitAPI } from './plugin-api-project';
-import { createUIAPI, createCommandsAPI, createEventsAPI, createHubAPI, createNavigationAPI, createWidgetsAPI } from './plugin-api-ui';
+import { createUIAPI, createCommandsAPI, createEventsAPI, createNavigationAPI, createWidgetsAPI } from './plugin-api-ui';
 import { createSettingsAPI } from './plugin-api-settings';
 import { createAgentsAPI } from './plugin-api-agents';
 import { createFilesAPI } from './plugin-api-files';
@@ -88,7 +88,6 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
       true, scopeLabel, 'agents', 'agents',
       ctx.pluginId, manifest, () => createAgentsAPI(ctx, manifest),
     ),
-    hub: createHubAPI(), // always available
     navigation: gated(
       true, scopeLabel, 'navigation', 'navigation',
       ctx.pluginId, manifest, () => createNavigationAPI(),

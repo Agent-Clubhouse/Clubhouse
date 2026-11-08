@@ -439,17 +439,9 @@ export interface PluginModule {
   deactivate?(): void | Promise<void>;
   MainPanel?: React.ComponentType<{ api: PluginAPI }>;
   SidebarPanel?: React.ComponentType<{ api: PluginAPI }>;
-  /** @deprecated The built-in Hub was removed; this export is never rendered. Kept for SDK compatibility. */
-  HubPanel?: React.ComponentType<HubPanelProps>;
   SettingsPanel?: React.ComponentType<{ api: PluginAPI }>;
   /** Global dialog panel rendered as a modal overlay (v0.7+). */
   DialogPanel?: React.ComponentType<{ api: PluginAPI; onClose: () => void }>;
-}
-
-/** @deprecated The built-in Hub was removed. Kept for SDK compatibility. */
-export interface HubPanelProps {
-  paneId: string;
-  resourceId?: string;
 }
 
 // ── Sub-API interfaces ─────────────────────────────────────────────────
@@ -702,12 +694,6 @@ export interface AgentsAPI {
   getCompanionWorkspace(): Promise<string>;
 }
 
-/** @deprecated The built-in Hub was removed; `api.hub` is an empty namespace kept for SDK compatibility. */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface HubAPI {
-  // Intentionally empty
-}
-
 export interface NavigationAPI {
   focusAgent(agentId: string): void;
   setExplorerTab(tabId: string): void;
@@ -821,10 +807,8 @@ export interface CanvasWidgetComponentProps {
 export interface PopoutEntry {
   windowId: number;
   params: {
-    type: 'agent' | 'hub' | 'canvas';
+    type: 'agent' | 'canvas';
     agentId?: string;
-    /** @deprecated Hub pop-outs no longer exist. */
-    hubId?: string;
     canvasId?: string;
     projectId?: string;
   };
@@ -834,8 +818,6 @@ export interface PopoutEntry {
 export interface PopoutState {
   popouts: PopoutEntry[];
   findAgentPopout(agentId: string): PopoutEntry | undefined;
-  /** @deprecated Hub pop-outs no longer exist; always returns undefined. */
-  findHubPopout(hubId: string): PopoutEntry | undefined;
   findCanvasPopout(canvasId: string): PopoutEntry | undefined;
 }
 
@@ -1339,8 +1321,6 @@ export interface PluginAPI {
   events: EventsAPI;
   settings: SettingsAPI;
   agents: AgentsAPI;
-  /** @deprecated The built-in Hub was removed; empty namespace kept for SDK compatibility. */
-  hub: HubAPI;
   navigation: NavigationAPI;
   widgets: WidgetsAPI;
   terminal: TerminalAPI;

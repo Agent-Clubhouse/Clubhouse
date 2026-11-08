@@ -159,7 +159,7 @@ const CONTEXT_PROPERTIES: (keyof PluginContextInfo)[] = ['mode', 'projectId', 'p
 // Top-level PluginAPI namespaces
 const PLUGIN_API_NAMESPACES: (keyof PluginAPI)[] = [
   'project', 'projects', 'git', 'storage', 'ui', 'commands', 'events',
-  'settings', 'agents', 'hub', 'navigation', 'widgets', 'terminal',
+  'settings', 'agents', 'navigation', 'widgets', 'terminal',
   'logging', 'files', 'process', 'badges', 'agentConfig', 'sounds', 'theme',
   'workspace', 'canvas', 'window', 'mcp', 'annex', 'context',
 ];
@@ -1501,12 +1501,6 @@ describe('§3 API surface area contracts — createMockAPI()', () => {
         expect(typeof api.agents[method]).toBe('function');
       });
     }
-  });
-
-  describe('api.hub surface', () => {
-    it('api.hub namespace exists', () => {
-      expect(api.hub).toBeDefined();
-    });
   });
 
   describe('api.navigation surface', () => {

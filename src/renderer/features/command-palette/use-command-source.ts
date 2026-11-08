@@ -344,16 +344,6 @@ export function useCommandSource(): CommandItem[] {
       shortcut: tabShortcut('agents'),
       execute: () => { if (activeProjectId) setExplorerTab('agents', activeProjectId); },
     });
-    // The new shell has no Home (spec §5.2).
-    if (!isNewChromeEnabled()) {
-      items.push({
-        id: 'nav:home',
-        label: 'Go to Home',
-        category: CATEGORY.commands,
-        shortcut: getShortcut(shortcuts, 'go-home'),
-        execute: () => setActiveProject(null),
-      });
-    }
     items.push({
       id: 'nav:help',
       label: 'Open help',

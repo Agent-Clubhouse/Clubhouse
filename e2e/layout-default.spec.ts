@@ -173,6 +173,7 @@ test('stable upgrader: projects, order and shortcuts come through, on the defaul
     'switch-agent-1': 'Meta+Shift+1',
     // Retired in the new layout: left out there, kept for classic.
     'switch-project-1': 'Meta+Alt+P',
+    // Go to Home was removed with Home: unused, but the saved binding stays on disk.
     'go-home': 'Meta+Shift+J',
   };
 

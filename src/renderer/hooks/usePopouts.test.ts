@@ -38,7 +38,7 @@ describe('usePopouts', () => {
 
     // Update the mock and fire the change event
     const newPopouts = [
-      { windowId: 5, params: { type: 'hub' as const, hubId: 'h1' } },
+      { windowId: 5, params: { type: 'canvas' as const, canvasId: 'c1' } },
     ];
     window.clubhouse.window.listPopouts = vi.fn().mockResolvedValue(newPopouts);
 
@@ -54,7 +54,7 @@ describe('usePopouts', () => {
   it('findAgentPopout returns matching entry', async () => {
     const mockPopouts = [
       { windowId: 1, params: { type: 'agent' as const, agentId: 'a1' } },
-      { windowId: 2, params: { type: 'hub' as const, hubId: 'h1' } },
+      { windowId: 2, params: { type: 'canvas' as const, canvasId: 'c1' } },
     ];
     window.clubhouse.window.listPopouts = vi.fn().mockResolvedValue(mockPopouts);
 
@@ -68,20 +68,10 @@ describe('usePopouts', () => {
     expect(result.current.findAgentPopout('nonexistent')).toBeUndefined();
   });
 
-  it('findHubPopout returns matching entry', async () => {
-    const mockPopouts = [
-      { windowId: 3, params: { type: 'hub' as const, hubId: 'h1' } },
-    ];
-    window.clubhouse.window.listPopouts = vi.fn().mockResolvedValue(mockPopouts);
-
+  it('has no Hub lookup, since Hub pop-outs were removed', () => {
+    window.clubhouse.window.listPopouts = vi.fn().mockResolvedValue([]);
     const { result } = renderHook(() => usePopouts());
-
-    await waitFor(() => {
-      expect(result.current.popouts.length).toBe(1);
-    });
-
-    expect(result.current.findHubPopout('h1')).toEqual(mockPopouts[0]);
-    expect(result.current.findHubPopout('other')).toBeUndefined();
+    expect('findHubPopout' in result.current).toBe(false);
   });
 
   it('findCanvasPopout returns matching entry', async () => {

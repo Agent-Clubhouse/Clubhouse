@@ -125,11 +125,11 @@ test.describe('Settings Persistence — Theme', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Toggle persistence (Show Home)
+// Display settings in the classic layout (the Home toggle was removed for v1)
 // ---------------------------------------------------------------------------
 
-test.describe('Settings Persistence — Toggle', () => {
-  test('navigate to display settings', async () => {
+test.describe('Settings Persistence — Display', () => {
+  test('classic Display settings have no Home toggle', async () => {
     const titleBar = window.locator('[data-testid="title-bar"]');
     const titleText = await titleBar.textContent();
     if (!titleText?.includes('Settings')) {
@@ -137,59 +137,8 @@ test.describe('Settings Persistence — Toggle', () => {
     }
     await navigateToDisplaySettings(window);
 
-    const viewsHeader = window.locator('text=Views').first();
-    await expect(viewsHeader).toBeVisible({ timeout: 5_000 });
-  });
-
-  test('toggling "Home" changes its state', async () => {
-    const homeToggle = window.locator('[role="switch"][aria-label="Home"]').first();
-    await expect(homeToggle).toBeVisible({ timeout: 3_000 });
-
-    const beforeState = await homeToggle.getAttribute('aria-checked');
-    await homeToggle.click();
-    await window.waitForTimeout(300);
-
-    const afterState = await homeToggle.getAttribute('aria-checked');
-    expect(afterState).not.toBe(beforeState);
-  });
-
-  test('localStorage verification for clubhouse_view_prefs', async () => {
-    const homeToggle = window.locator('[role="switch"][aria-label="Home"]').first();
-    const currentState = await homeToggle.getAttribute('aria-checked');
-
-    const storedPrefs = await window.evaluate(() => {
-      const raw = localStorage.getItem('clubhouse_view_prefs');
-      return raw ? JSON.parse(raw) : null;
-    });
-    expect(storedPrefs).not.toBeNull();
-    expect(storedPrefs.showHome).toBe(currentState === 'true');
-  });
-
-  test('toggle state persists after navigating away and back', async () => {
-    const homeToggle = window.locator('[role="switch"][aria-label="Home"]').first();
-    const stateBeforeNav = await homeToggle.getAttribute('aria-checked');
-
-    await navigateToSmokeProject(window);
-    await openSettings(window);
-    await navigateToDisplaySettings(window);
-
-    const stateAfterReturn = await window
-      .locator('[role="switch"][aria-label="Home"]')
-      .first()
-      .getAttribute('aria-checked');
-    expect(stateAfterReturn).toBe(stateBeforeNav);
-  });
-
-  test('restore original toggle state', async () => {
-    const homeToggle = window.locator('[role="switch"][aria-label="Home"]').first();
-    await expect(homeToggle).toBeVisible({ timeout: 3_000 });
-    const currentState = await homeToggle.getAttribute('aria-checked');
-
-    // Default is "true", so restore if changed
-    if (currentState === 'false') {
-      await homeToggle.click();
-      await window.waitForTimeout(300);
-    }
+    await expect(window.locator('[role="switch"][aria-label="Classic layout"]').first()).toBeVisible({ timeout: 5_000 });
+    await expect(window.locator('[role="switch"][aria-label="Home"]')).toHaveCount(0);
   });
 });
 

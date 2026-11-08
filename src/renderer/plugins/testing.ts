@@ -196,7 +196,6 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       getCompanionStatus: async () => 'none' as const,
       getCompanionWorkspace: asyncNoop as unknown as PluginAPI['agents']['getCompanionWorkspace'],
     },
-    hub: {},
     navigation: {
       focusAgent: noop,
       setExplorerTab: noop,
@@ -317,7 +316,6 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       usePopoutState: () => ({
         popouts: [],
         findAgentPopout: () => undefined,
-        findHubPopout: () => undefined,
         findCanvasPopout: () => undefined,
       }),
     },

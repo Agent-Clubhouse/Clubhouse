@@ -161,16 +161,7 @@ test.describe('Blank-Screen Prevention — Navigation', () => {
     await assertNotBlankScreen(window);
   });
 
-  test('navigating home → project → settings → help → project does not blank screen', async () => {
-    // Home
-    const homeBtn = window.locator('[data-testid="nav-home"]');
-    const homeVisible = await homeBtn.isVisible({ timeout: 3_000 }).catch(() => false);
-    if (homeVisible) {
-      await homeBtn.click();
-      await window.waitForTimeout(500);
-      await assertNotBlankScreen(window);
-    }
-
+  test('navigating project → settings → help → project does not blank screen', async () => {
     // Project
     await navigateToSmokeProject(window);
     await assertNotBlankScreen(window);

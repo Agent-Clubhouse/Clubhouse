@@ -84,11 +84,11 @@ test.afterAll(async () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Project Rail', () => {
-  test('starts on home view when no projects are active', async () => {
+  test('starts with a non-empty title when no projects are active', async () => {
     const title = await getTitleBarText();
-    // With no projects or no active project, title is "Home"
-    // (or a project may already be loaded if fixtures persisted; we just check
-    // the title bar is visible and non-empty)
+    // With no project open the title is "Clubhouse" (Home was removed for v1),
+    // or a project may already be loaded if fixtures persisted; we just check
+    // the title bar is visible and non-empty
     expect(title.length).toBeGreaterThan(0);
   });
 
@@ -347,25 +347,15 @@ test.describe('Keyboard Shortcuts', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6. Home Navigation
+// 6. No Home (removed for v1)
 // ---------------------------------------------------------------------------
 
-test.describe('Home Navigation', () => {
-  test('home button shows dashboard', async () => {
-    const homeBtn = window.locator('[data-testid="nav-home"]');
-    const homeVisible = await homeBtn.isVisible({ timeout: 3_000 }).catch(() => false);
-
-    if (homeVisible) {
-      await homeBtn.click();
-      await window.waitForTimeout(500);
-
-      const title = await getTitleBarText();
-      expect(title).toBe('Home');
-    }
+test.describe('No Home', () => {
+  test('the rail has no Home button', async () => {
+    await expect(window.locator('[data-testid="nav-home"]')).toHaveCount(0);
   });
 
-  test('clicking project from home view restores project state', async () => {
-    // From home, click project-a
+  test('clicking a project restores its saved tab', async () => {
     const projA = window.locator('[title="project-a"]').first();
     await projA.click();
     await window.waitForTimeout(500);
@@ -374,31 +364,6 @@ test.describe('Home Navigation', () => {
     expect(title).toContain('project-a');
     // Should restore to agents tab (the default/saved tab)
     expect(title).toContain('Agents');
-  });
-
-  test('settings gear on project card in home view opens project settings', async () => {
-    // Navigate to Home first
-    const homeBtn = window.locator('[data-testid="nav-home"]');
-    const homeVisible = await homeBtn.isVisible({ timeout: 3_000 }).catch(() => false);
-    if (!homeVisible) return; // Home not enabled, skip
-
-    await homeBtn.click();
-    await window.waitForTimeout(500);
-
-    let title = await getTitleBarText();
-    expect(title).toBe('Home');
-
-    // Click the gear icon on a project card — it has title="Project Settings"
-    const settingsGear = window.locator('[title="Project Settings"]').first();
-    const gearVisible = await settingsGear.isVisible({ timeout: 3_000 }).catch(() => false);
-    if (!gearVisible) return; // No project cards visible, skip
-
-    await settingsGear.click();
-    await window.waitForTimeout(500);
-
-    // Should navigate to Settings view, NOT the Agents (project root) view
-    title = await getTitleBarText();
-    expect(title).toContain('Settings');
   });
 });
 

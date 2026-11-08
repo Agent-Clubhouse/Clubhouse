@@ -88,7 +88,6 @@ describe('plugin-api-factory', () => {
       expect(api.events).toBeDefined();
       expect(api.settings).toBeDefined();
       expect(api.agents).toBeDefined();
-      expect(api.hub).toBeDefined();
       expect(api.navigation).toBeDefined();
       expect(api.widgets).toBeDefined();
       expect(api.terminal).toBeDefined();
@@ -671,12 +670,12 @@ describe('plugin-api-factory', () => {
     });
   });
 
-  // ── HubAPI ────────────────────────────────────────────────────────────
+  // ── Hub (removed) ─────────────────────────────────────────────────────
 
   describe('hub API', () => {
-    it('hub namespace exists', () => {
+    it('has no hub namespace, since the built-in Hub was removed', () => {
       const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
-      expect(api.hub).toBeDefined();
+      expect('hub' in api).toBe(false);
     });
   });
 
@@ -3141,11 +3140,6 @@ describe('plugin-api-factory', () => {
         expect(typeof api.settings.onChange).toBe('function');
       });
 
-      it('api.hub is available with empty permissions', () => {
-        const manifest = v05Manifest([]);
-        const api = createPluginAPI(makeCtx(), undefined, manifest);
-        expect(api.hub).toBeDefined();
-      });
     });
 
     // ── permissionDeniedProxy React dev-mode safety ────────────────────

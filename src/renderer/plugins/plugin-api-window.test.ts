@@ -133,7 +133,6 @@ describe('createWindowAPI', () => {
       });
       expect(result.current.findCanvasPopout('nope')).toBeUndefined();
       expect(result.current.findAgentPopout('c1')).toBeUndefined();
-      expect(result.current.findHubPopout('c1')).toBeUndefined();
     });
   });
 });

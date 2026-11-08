@@ -34,10 +34,6 @@ export function getCommandActions(): CommandAction[] {
       execute: () => useUIStore.getState().toggleHelp(),
     },
     {
-      id: 'go-home',
-      execute: () => useProjectStore.getState().setActiveProject(null),
-    },
-    {
       id: 'toggle-sidebar',
       execute: () => (isNewChromeEnabled()
         ? useChromeStore.getState().toggleSidebar()
