@@ -1,6 +1,7 @@
 import { test, expect, _electron as electron, Page } from '@playwright/test';
 import * as path from 'path';
 import { launchApp } from './launch';
+import { assertRunLayout } from './smoke-helpers';
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
@@ -40,7 +41,13 @@ async function addProject(dirPath: string) {
   });
 }
 
-/** Open the command palette via keyboard shortcut. */
+/**
+ * Open the command palette via keyboard shortcut. The palette is the same
+ * component on both layouts (App.tsx mounts it in each) and Meta+K toggles it
+ * in both shortcut sets, so the tests are shared. The window keydown handler
+ * reads Meta or Ctrl as Meta, so Meta+K works on Linux and Windows as well as
+ * macOS, where it is the real Cmd key.
+ */
 async function openPalette() {
   await window.keyboard.press('Meta+k');
   await expect(window.locator('[data-testid="command-palette-overlay"]')).toBeVisible({
@@ -73,7 +80,8 @@ async function isPaletteOpen(): Promise<boolean> {
 // ---------------------------------------------------------------------------
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
+  ({ electronApp, window } = await launchApp());
+  await assertRunLayout(window);
 
   // Add a project so the palette has project/agent entries
   await addProject(FIXTURE_A);
@@ -90,7 +98,7 @@ test.afterAll(async () => {
 test.describe('Command Palette – Open/Close', () => {
   test('opens with Cmd+K', async () => {
     await openPalette();
-    expect(await isPaletteOpen()).toBe(true);
+    await expect(window.locator('[data-testid="command-palette-overlay"] [role="dialog"]')).toHaveAttribute('aria-label', 'Command palette');
 
     // Close for next test
     await window.keyboard.press('Escape');
@@ -355,12 +363,9 @@ test.describe('Command Palette – Mouse Interaction', () => {
   test('hovering over an option selects it', async () => {
     await openPalette();
 
+    // With a project added the empty query lists many rows.
     const options = paletteOptions();
-    const count = await options.count();
-    if (count < 2) {
-      await window.keyboard.press('Escape');
-      return;
-    }
+    expect(await options.count()).toBeGreaterThanOrEqual(2);
 
     // Hover over the second option
     await options.nth(1).hover();
@@ -417,12 +422,14 @@ test.describe('Command Palette – Categories', () => {
 
 test.describe('Command Palette – Recent Commands', () => {
   test('executed command appears in recents on next open', async () => {
-    // Execute a command first
+    // Execute a command no earlier test ran (its top hit opens Display & UI
+    // settings), so the Recent entry can only come from this Enter.
     await openPalette();
-    await window.keyboard.type('>help');
+    await window.keyboard.type('>display');
     await window.waitForTimeout(200);
 
-    const _firstOptionText = await paletteOptions().first().textContent();
+    const executedText = ((await selectedOption().textContent()) ?? '').trim();
+    expect(executedText.length).toBeGreaterThan(0);
     await window.keyboard.press('Enter');
 
     // Wait for palette to close
@@ -434,20 +441,13 @@ test.describe('Command Palette – Recent Commands', () => {
     await openPalette();
     await window.waitForTimeout(200);
 
-    // Look for a "Recent" group header
-    const recentHeader = window.locator('[data-testid="command-palette-group"]', { hasText: /^Recent$/ });
-    const hasRecent = await recentHeader.isVisible({ timeout: 3_000 }).catch(() => false);
-
-    // The executed command should appear (either in the "Recent" group
-    // or boosted in the list)
-    if (hasRecent) {
-      expect(hasRecent).toBe(true);
-    } else {
-      // At minimum, the command should still be visible in results
-      const options = paletteOptions();
-      const count = await options.count();
-      expect(count).toBeGreaterThan(0);
-    }
+    // With no query, recents are listed first under a "Recent" group, and the
+    // command just run is one of them.
+    const recentGroup = window.locator('[data-testid="command-palette-overlay"] [role="group"]').filter({
+      has: window.locator('[data-testid="command-palette-group"]', { hasText: /^Recent$/ }),
+    });
+    await expect(recentGroup).toHaveCount(1, { timeout: 3_000 });
+    await expect(recentGroup.locator('[role="option"]').filter({ hasText: executedText })).toHaveCount(1);
 
     await window.keyboard.press('Escape');
   });
@@ -466,12 +466,10 @@ test.describe('Command Palette – Match Highlighting', () => {
     await window.keyboard.type('>togg');
     await window.waitForTimeout(300);
 
+    // "Toggle sidebar" is listed on both layouts.
     const options = paletteOptions();
     const count = await options.count();
-    if (count === 0) {
-      await window.keyboard.press('Escape');
-      return;
-    }
+    expect(count).toBeGreaterThan(0);
 
     // Look across visible options for one with split spans (highlighting).
     let foundHighlighted = false;

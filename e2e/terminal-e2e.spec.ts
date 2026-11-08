@@ -1,65 +1,35 @@
+/**
+ * E2E: open the project Terminal, type in it, resize, leave and come back.
+ *
+ * Runs on the new layout, and on classic in the Classic layout E2E job
+ * (#2843). On the new layout the Terminal tab is in the title bar, or in its
+ * More menu when the tabs don't all fit; clickExplorerTab handles both.
+ */
 import { test, expect, _electron as electron, Page } from '@playwright/test';
 import * as path from 'path';
 import { launchApp } from './launch';
+import {
+  addProject,
+  assertActiveProject,
+  assertRunLayout,
+  clickExplorerTab,
+  selectProject,
+} from './smoke-helpers';
+import { isNewLayout } from './layout';
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
 
 const FIXTURE_A = path.resolve(__dirname, 'fixtures/project-a');
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Stub Electron's dialog so the next pickAndAddProject resolves to `dirPath`. */
-async function stubDialogForPath(dirPath: string) {
-  await electronApp.evaluate(
-    async ({ dialog, BrowserWindow }, fixturePath) => {
-      const win =
-        BrowserWindow.getAllWindows().find(
-          (w) => !w.webContents.getURL().startsWith('devtools://'),
-        ) ?? BrowserWindow.getAllWindows()[0] ?? null;
-      BrowserWindow.getFocusedWindow = () => win;
-      dialog.showOpenDialog = async () => ({
-        canceled: false,
-        filePaths: [fixturePath],
-      });
-    },
-    dirPath,
-  );
-}
-
-/** Add a fixture project by stubbing the dialog and clicking the add button. */
-async function addProject(dirPath: string) {
-  await stubDialogForPath(dirPath);
-  const addBtn = window.locator('[data-testid="nav-add-project"]');
-  await addBtn.click();
-  const name = path.basename(dirPath);
-  await expect(window.locator(`text=${name}`).first()).toBeVisible({
-    timeout: 10_000,
-  });
-}
-
-/**
- * Click an explorer tab by dispatching a JS click event directly.
- * The project rail can overlay explorer tabs and intercept pointer events,
- * so we bypass the Playwright pointer event system entirely.
- */
-async function clickExplorerTab(testId: string) {
-  await window.waitForSelector(`[data-testid="${testId}"]`, { timeout: 10_000 });
-  await window.evaluate((tid) => {
-    const el = document.querySelector(`[data-testid="${tid}"]`) as HTMLElement;
-    if (el) el.click();
-  }, testId);
-  await window.waitForTimeout(500);
-}
+const TERMINAL_TAB = 'explorer-tab-plugin:terminal';
 
 // ---------------------------------------------------------------------------
 // Setup / Teardown
 // ---------------------------------------------------------------------------
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
+  ({ electronApp, window } = await launchApp());
+  await assertRunLayout(window);
 });
 
 test.afterAll(async () => {
@@ -73,22 +43,18 @@ test.afterAll(async () => {
 test.describe('Terminal Plugin E2E', () => {
   test('open project and navigate to terminal tab', async () => {
     // Add a project first
-    await addProject(FIXTURE_A);
+    await addProject(electronApp, window, FIXTURE_A);
 
     // Click the project to ensure it's active and UI has settled
-    const projBtn = window.locator('[title="project-a"]').first();
-    if (await projBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await projBtn.click();
-      await window.waitForTimeout(1_000);
-    }
+    await selectProject(window, 'project-a');
+    await assertActiveProject(window, 'project-a');
+    await window.waitForTimeout(1_000);
 
-    // Navigate to the terminal tab via JS click (bypasses pointer event interception)
-    await clickExplorerTab('explorer-tab-plugin:terminal');
+    await clickExplorerTab(electronApp, window, TERMINAL_TAB);
 
-    // Verify the terminal tab is now active
-    const terminalTab = window.locator(
-      '[data-testid="explorer-tab-plugin:terminal"]'
-    );
+    // Verify the terminal tab is now active. On the new layout the active tab
+    // always stays in the title bar's row, which has data-active.
+    const terminalTab = window.getByTestId(TERMINAL_TAB);
     await expect(terminalTab).toHaveAttribute('data-active', 'true', {
       timeout: 5_000,
     });
@@ -127,8 +93,8 @@ test.describe('Terminal Plugin E2E', () => {
 
     // Get current window size
     const size = await window.evaluate(() => ({
-      width: window.innerWidth,
-      height: window.innerHeight,
+      width: globalThis.innerWidth,
+      height: globalThis.innerHeight,
     }));
 
     // Resize the window significantly
@@ -164,13 +130,20 @@ test.describe('Terminal Plugin E2E', () => {
   });
 
   test('navigating away from terminal cleans up xterm', async () => {
-    // Navigate to the Agents tab via JS click
-    await clickExplorerTab('explorer-tab-agents');
+    // Navigate to the Agents tab
+    await clickExplorerTab(electronApp, window, 'explorer-tab-agents');
+
+    if (await isNewLayout(window)) {
+      // An inactive tab may move into the More menu, where it has no test id
+      // until the menu opens, so check Agents took over and Terminal's pane left.
+      await expect(window.getByTestId('explorer-tab-agents')).toHaveAttribute('aria-selected', 'true', { timeout: 5_000 });
+      await expect(window.locator(`[data-testid="${TERMINAL_TAB}"][aria-selected="true"]`)).toHaveCount(0);
+      await expect(window.getByTestId('terminal-main-panel')).toBeHidden({ timeout: 5_000 });
+      return;
+    }
 
     // The terminal tab should no longer be active
-    const terminalTab = window.locator(
-      '[data-testid="explorer-tab-plugin:terminal"]'
-    );
+    const terminalTab = window.getByTestId(TERMINAL_TAB);
     await expect(terminalTab).toHaveAttribute('data-active', 'false', {
       timeout: 5_000,
     });
@@ -178,7 +151,7 @@ test.describe('Terminal Plugin E2E', () => {
 
   test('returning to terminal tab restores session', async () => {
     // Click the terminal tab again
-    await clickExplorerTab('explorer-tab-plugin:terminal');
+    await clickExplorerTab(electronApp, window, TERMINAL_TAB);
 
     // Terminal should re-appear with previous content preserved
     const xtermElement = window.locator('[class*="xterm"]').first();
