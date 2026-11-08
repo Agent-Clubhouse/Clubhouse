@@ -45,7 +45,7 @@ import {
   type HelperLaunch,
 } from '../../shared/orchestration-policy';
 import {
-  ACCESS_LEVELS, accessForLegacyToggle, accessFromLegacy, isAccessLevel, legacyLaunchFor, savedAccess, startableAccess, type AccessLevel,
+  ACCESS_LEVELS, accessForLegacyToggle, accessFromLegacy, accessLabel, isAccessLevel, legacyLaunchFor, savedAccess, startableAccess, type AccessLevel,
 } from '../../shared/agent-access';
 
 /** The lower of two levels. */
@@ -777,6 +777,11 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // A terminal agent starts at the nearest level its CLI has a start flag for (#2761).
     if (!legacyRecord && !configUnreadable && params.access) {
       const startable = startableAccess(params.access, provider.id, 'terminal');
+      // A helper never starts above its ceiling (#3000): a CLI with no start mode at or under it
+      // (Plan, on Codex or Copilot in a terminal) can't run it, rather than run it at Ask first.
+      if (durableConfig?.parentAgentId && ACCESS_LEVELS.indexOf(startable) > ACCESS_LEVELS.indexOf(params.access)) {
+        throw tagError(new Error(`${provider.displayName} can't start at ${accessLabel(params.access)} in a terminal, and this helper can't go higher. Start it in chat, or on a CLI with that level.`), 'preflight_failed');
+      }
       if (startable !== params.access) {
         const lowered = legacyLaunchFor(startable, 'auto');
         appLog('core:agent', 'info', 'Started a terminal agent at the nearest level its CLI has', {

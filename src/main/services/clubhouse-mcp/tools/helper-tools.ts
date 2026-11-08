@@ -428,7 +428,10 @@ async function finishHelperStart(
 
     // The task and the requested level stay on the helper: a helper left
     // asleep gets the task on its next wake, and no wake goes above the level.
-    const asked = requestedAccess && helperAccessRequest(requestedAccess) ? requestedAccess as HelperRequestedAccess : null;
+    // Saved as the policy value when there is one, so an older Clubhouse after a rollback reads it (#3000).
+    const request = requestedAccess ? helperAccessRequest(requestedAccess) : undefined;
+    const asked: HelperRequestedAccess | null = !request ? null
+      : request.access === 'plan' || request.access === 'auto_edit' ? request.access : request.legacy;
     await agentConfig.setHelperStartFields(helperPath, helperId, { pendingTask: task, requestedAccess: asked });
     const provider = config.orchestrator ?? orchestrator.orchestrator;
     const launch = await resolveLaunchFor(homePath, orchestrator.id, provider, requestedAccess);

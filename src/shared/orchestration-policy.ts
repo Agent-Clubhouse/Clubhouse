@@ -380,6 +380,8 @@ export interface HelperAccessResolution extends AgentLaunchAccess {
   ceiling: AgentAccessLevel;
   /** The same ceiling on the five-level ladder (#3000): Ask first when it isn't running. */
   ceilingAccess: AccessLevel;
+  /** The policy follows the orchestrator (`same`), so a helper gets its exact level. */
+  followsOrchestrator?: boolean;
   /** True when the helper got less than the policy asked for. */
   clamped: boolean;
   /** The provider the level was ranked for. */
@@ -409,6 +411,7 @@ export function resolveHelperAccess(
     level,
     ceiling,
     ceilingAccess: fiveLevelOf(orchestratorLive),
+    ...(access === 'same' && { followsOrchestrator: true }),
     clamped: rank(level) < rank(requested),
     ...(helperProvider && { helperProvider }),
   };
@@ -458,7 +461,7 @@ export function rankHelperLaunch(
   // stay as asked, and anything higher the provider lowered starts at Ask first.
   // With nothing asked, a policy at the orchestrator's rank follows its exact level (`same`).
   const wantedAccess = request?.access
-    ?? (resolved.level === resolved.ceiling ? resolved.ceilingAccess : fiveLevelOf(launchAccessFor(resolved.level)));
+    ?? (resolved.followsOrchestrator ? resolved.ceilingAccess : fiveLevelOf(launchAccessFor(resolved.level)));
   const capped = lowerFiveLevel(wantedAccess, resolved.ceilingAccess);
   const access = launch.freeAgentMode
     ? lowerFiveLevel(capped, fiveLevelOf(launch))

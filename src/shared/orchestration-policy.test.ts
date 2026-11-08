@@ -270,6 +270,10 @@ describe('rankHelperLaunch', () => {
       expect(rankHelperLaunch(resolveHelperAccess(full, 'same', 'claude-code'), 'plan', 'claude-code')).toMatchObject({ freeAgentMode: false, access: 'plan', clamped: false });
       expect(rankHelperLaunch(resolveHelperAccess(full, 'same', 'claude-code'), 'standard', 'claude-code')).toMatchObject({ access: 'ask' });
     });
+    it('a fixed policy of standard gives Ask first, even under Auto-accept edits', () => {
+      const edits = { ...plan, access: 'auto_edit' as const };
+      expect(rankHelperLaunch(resolveHelperAccess(edits, 'standard', 'claude-code'), undefined, 'claude-code')).toMatchObject({ access: 'ask' });
+    });
     it('an orchestrator not running reads as Ask first', () => {
       expect(rankHelperLaunch(resolveHelperAccess(undefined, 'same', 'claude-code'), undefined, 'claude-code')).toMatchObject({ access: 'ask' });
     });

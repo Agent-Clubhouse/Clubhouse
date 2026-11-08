@@ -118,15 +118,17 @@ class AgentRegistry {
     const registration = this.registrations.get(agentId);
     if (!registration) return;
     const bound = Math.max(rankOf(registration.launchCap), rankOf(registration.userAccess));
-    const recorded: LaunchAccess = rankOf(access) <= bound ? { ...access } : launchAccessFor(ACCESS_LEVELS[bound]);
-    // Within a rank, the five-level level can't rise above the bound either (#3000): a CLI
-    // reporting Auto-accept edits doesn't lift an agent started at Plan.
-    const capAccess = [registration.launchCap, registration.userAccess].filter((a): a is Readonly<LaunchAccess> => !!a).map((a) => fiveLevelOf(a));
-    if (recorded.access && capAccess.length > 0) {
-      const top = capAccess.reduce((a, b) => (FIVE_LEVELS.indexOf(a) >= FIVE_LEVELS.indexOf(b) ? a : b));
-      if (FIVE_LEVELS.indexOf(recorded.access) > FIVE_LEVELS.indexOf(top)) recorded.access = top;
+    if (rankOf(access) <= bound) {
+      // Within a rank a report stands, five-level level included: below Free Agent Mode a
+      // change of mode is the person's (approving a plan, Shift+Tab), never the agent's own.
+      registration.launchAccess = { ...access };
+      return;
     }
-    registration.launchAccess = recorded;
+    // Above the bound: clamped to it, at the five-level level the bound was set at (#3000).
+    const capAccess = [registration.launchCap, registration.userAccess]
+      .filter((a): a is Readonly<LaunchAccess> => !!a && rankOf(a) === bound).map((a) => fiveLevelOf(a));
+    const top = capAccess.length > 0 ? capAccess.reduce((a, b) => (FIVE_LEVELS.indexOf(a) >= FIVE_LEVELS.indexOf(b) ? a : b)) : undefined;
+    registration.launchAccess = { ...launchAccessFor(ACCESS_LEVELS[bound]), ...(top && { access: top }) };
   }
 
   untrack(agentId: string): void {
