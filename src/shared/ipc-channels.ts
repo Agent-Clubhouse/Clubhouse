@@ -12,6 +12,8 @@ export const IPC = {
     GET_SETUP: 'managed:get-setup',
     SAVE_SETUP: 'managed:save-setup',
     UNMANAGE: 'managed:unmanage',
+    /** Switch to plain (#2927): what stays in the agent's folder, and what can come back. */
+    PREVIEW_UNMANAGE: 'managed:preview-unmanage',
     PREVIEW: 'managed:preview',
     PREVIEW_DRAFT: 'managed:preview-draft',
     MODEL_EFFORTS: 'managed:model-efforts',

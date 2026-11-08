@@ -530,6 +530,7 @@ vi.stubGlobal('clubhouse', {
     status: async () => ({ ok: true, value: { managed: false, running: false, waiting: false, changes: [], cliChanged: false } }),
     isWorking: async () => ({ ok: true, value: false }),
     dismissMigrationNotice: async () => ({ ok: true, value: undefined }),
+    previewUnmanage: async () => ({ ok: true, value: { instructions: { file: 'CLAUDE.md', exists: true, changedSince: false, addedLines: 0, before: null }, mcp: null, skills: [], excludesAdded: 0, token: 't' } }),
     restart: async () => ({ ok: true, value: { resumed: true } }),
     setClubhouseFeatures: async () => ({ ok: true, value: undefined }),
     executableBits: async (files: unknown[]) => ({ ok: true, value: files.map(() => null) }),

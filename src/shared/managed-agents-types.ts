@@ -332,6 +332,49 @@ export interface ManagedConvertPreview {
   notes: string[];
 }
 
+/**
+ * Switch to plain (#2927): what stays in the agent's folder, and what can come
+ * back from before it was managed. Read before anything is written.
+ */
+export interface ManagedPlainPreview {
+  instructions: {
+    /** Relative to the agent's folder, with forward slashes. */
+    file: string;
+    exists: boolean;
+    /** It differs from what Clubhouse wrote: edited since, by the person or an agent. */
+    changedSince: boolean;
+    /** Lines in it Clubhouse didn't write. They are kept when the earlier file comes back. */
+    addedLines: number;
+    /** The copy kept at the switch to managed, and exactly what would be written from it. */
+    before: { copy: string; result: string } | null;
+  };
+  /** Null for a CLI with no MCP file (Codex gets its servers as launch flags). */
+  mcp: {
+    file: string;
+    exists: boolean;
+    /** Servers in the file now, without the Clubhouse bridge, which every start writes. */
+    servers: string[];
+    /** Servers added since Clubhouse wrote the file. They are kept when the earlier file comes back. */
+    added: string[];
+    before: { copy: string; servers: string[]; result: string[] } | null;
+    /** Why the earlier file can't come back, when Clubhouse kept one. */
+    note?: string;
+  } | null;
+  /** Skill folders Clubhouse delivered, which stay as the person's. */
+  skills: string[];
+  /** CLAUDE.md excludes Clubhouse added to the local settings, which come out. */
+  excludesAdded: number;
+  /** The files as read. Switching refuses when they changed since. */
+  token: string;
+}
+
+export interface ManagedPlainChoice {
+  restoreInstructions?: boolean;
+  restoreMcp?: boolean;
+  /** From the preview the person saw. */
+  token?: string;
+}
+
 export type ManagedErrorCode =
   | 'not_found'
   | 'stale'

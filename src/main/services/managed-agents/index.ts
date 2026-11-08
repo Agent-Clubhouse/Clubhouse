@@ -11,12 +11,13 @@ import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
 import type { OrchestratorProvider } from '../../orchestrators/types';
 import type { DurableAgentConfig, McpServerDef } from '../../../shared/types';
-import type { ManagedAgentStatus, ManagedMcpProblem, ManagedRunningSnapshot } from '../../../shared/managed-agents-types';
+import type { ManagedAgentStatus, ManagedMcpProblem, ManagedPlainChoice, ManagedPlainPreview, ManagedRunningSnapshot } from '../../../shared/managed-agents-types';
 import { createManagedAgentsService, ManagedError, type ManagedAgentsService } from './service';
 import { createManagedStateStore, managedStateDir } from './state-store';
 import { ensureBuiltinsOnceFor } from './builtins-once';
 import { MCP_BACKUP_DIR } from './mcp-backup';
 import { keepInstructionsAtFirstStart } from './before-managed';
+import { previewSwitchToPlain, switchToPlain, type PlainDeps } from './plain';
 import * as path from 'path';
 import { delivered, failedDeliveries, forgetDelivery, mcpProblems } from './delivery-records';
 import {
@@ -253,6 +254,27 @@ export async function dismissMigrationNotice(projectPath: string, agentId: strin
 }
 
 export { forgetDelivery };
+
+// ── Switch to plain (#2927) ────────────────────────────────────────────
+
+function plainDeps(): PlainDeps {
+  return {
+    service: managedAgents(),
+    getAgent: (projectPath, agentId) => agentConfig.getDurableConfig(projectPath, agentId),
+    providerFor: async (projectPath, agent) => (await import('../agent-registry')).resolveOrchestrator(projectPath, agent.orchestrator),
+    deliveredInstructions: (agentId) => delivered.get(agentId)?.snapshot?.instructions,
+  };
+}
+
+/** What switching the agent to plain leaves in its folder, and what can come back (D98). Writes nothing. */
+export function previewPlain(projectPath: string, agentId: string): Promise<ManagedPlainPreview> {
+  return previewSwitchToPlain(plainDeps(), projectPath, agentId);
+}
+
+/** Switch a managed agent to plain, bringing back the earlier files chosen (D98). */
+export function switchPlain(projectPath: string, agentId: string, choice: ManagedPlainChoice): Promise<void> {
+  return switchToPlain(plainDeps(), projectPath, agentId, choice);
+}
 
 // ── Restart ────────────────────────────────────────────────────────────
 

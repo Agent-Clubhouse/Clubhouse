@@ -9,6 +9,8 @@ import type {
   ManagedPartContent,
   ManagedPartKind,
   ManagedPartSummary,
+  ManagedPlainChoice,
+  ManagedPlainPreview,
   ManagedPreview,
   ManagedResult,
   ManagedTemplate,
@@ -32,7 +34,10 @@ const managed = {
   consumers: (id: string) => call<ManagedPartConsumer[]>(IPC.MANAGED.CONSUMERS, id),
   getSetup: (projectPath: string, agentId: string) => call<ManagedAgentSetup | null>(IPC.MANAGED.GET_SETUP, projectPath, agentId),
   saveSetup: (projectPath: string, agentId: string, setup: SetupInput) => call<ManagedAgentSetup>(IPC.MANAGED.SAVE_SETUP, projectPath, agentId, setup),
-  unmanage: (projectPath: string, agentId: string) => call<void>(IPC.MANAGED.UNMANAGE, projectPath, agentId),
+  /** Switch to plain (#2927). Refused when the files changed since the preview the token came from. */
+  unmanage: (projectPath: string, agentId: string, choice?: ManagedPlainChoice) => call<void>(IPC.MANAGED.UNMANAGE, projectPath, agentId, choice),
+  /** What Switch to plain leaves in the agent's folder, and what can come back from before managed. Writes nothing. */
+  previewUnmanage: (projectPath: string, agentId: string) => call<ManagedPlainPreview>(IPC.MANAGED.PREVIEW_UNMANAGE, projectPath, agentId),
   preview: (projectPath: string, agentId: string, setup?: SetupInput) => call<ManagedPreview>(IPC.MANAGED.PREVIEW, projectPath, agentId, setup),
   /** What a New agent draft would get at its first start, rendered as delivery renders it. */
   previewDraft: (projectPath: string, input: { name: string; setup: SetupInput; settings?: ManagedTemplateSettings }) => call<ManagedPreview>(IPC.MANAGED.PREVIEW_DRAFT, projectPath, input),

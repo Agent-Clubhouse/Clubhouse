@@ -400,6 +400,92 @@ describe('ManagedGeneralSection', () => {
     expect(within(dialog).getByRole('button', { name: 'Switch to managed' })).toBeDisabled();
   });
 
+  it('the Switch to managed dialog says how to leave later (#2927)', async () => {
+    render(<ManagedGeneralSection projectPath="/p" agentId="ada" agentName="ada" setup={null} clubhouseFeatures isRunning={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to managed…' }));
+    const dialog = await screen.findByTestId('managed-convert-dialog');
+    expect(within(dialog).getByTestId('managed-convert-way-back').textContent).toBe('To leave later, use Switch to plain in General › Setup. It shows what stays and can bring back the instructions and MCP files ada has now.');
+  });
+
+  const plainPreview = (over: Record<string, unknown> = {}) => ({
+    instructions: { file: 'CLAUDE.md', exists: true, changedSince: true, addedLines: 1, before: { copy: '~/app/before-managed/ada/CLAUDE.md', result: '# Ours\n\nMy own line.\n' } },
+    mcp: { file: '.mcp.json', exists: true, servers: ['github', 'mine'], added: ['mine'], before: { copy: '.clubhouse-before-managed/.mcp.json', servers: ['docs'], result: ['docs', 'mine'] } },
+    skills: ['.claude/skills/build/'],
+    excludesAdded: 2,
+    token: 'tok-1',
+    ...over,
+  });
+  const managedSetup = { version: 1 as const, blocks: [], skills: [], mcps: [] };
+
+  it('Switch to plain previews what stays, offers the earlier files, and sends the choice with the preview it was made on (#2927)', async () => {
+    const previewSpy = vi.spyOn(m(), 'previewUnmanage').mockResolvedValue({ ok: true, value: plainPreview() } as never);
+    const unmanage = vi.spyOn(m(), 'unmanage').mockResolvedValue({ ok: true, value: undefined } as never);
+    render(<ManagedGeneralSection projectPath="/p" agentId="ada" agentName="ada" setup={managedSetup} clubhouseFeatures isRunning={false} />);
+    expect(screen.queryByRole('button', { name: 'Stop managing' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to plain…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Switch ada to plain' });
+    const instructions = await within(dialog).findByRole('group', { name: 'Instructions file CLAUDE.md' });
+    expect(previewSpy).toHaveBeenCalledWith('/p', 'ada');
+    expect(within(instructions).getByRole('radio', { name: /Keep the current file/ })).toBeChecked();
+    expect(within(instructions).getByText('What Clubhouse last wrote, with 1 line added since.')).toBeTruthy();
+    // The result shows before anything changes.
+    fireEvent.click(within(instructions).getByRole('radio', { name: /Bring back the file from before managed/ }));
+    expect(within(instructions).getByLabelText('The instructions file that will be written').textContent).toBe('# Ours\n\nMy own line.\n');
+    const mcp = within(dialog).getByRole('group', { name: 'MCP file .mcp.json' });
+    expect(within(mcp).getByTestId('managed-plain-mcp-result').textContent).toContain('Servers docs, mine, keeping mine added since.');
+    expect(within(dialog).getByTestId('managed-plain-skills').textContent).toBe('Skill folders stay as they are: .claude/skills/build/.');
+    expect(dialog.textContent).toContain('keeps its name, history, branch and wires. Its parts and templates stay in the library.');
+    expect(dialog.textContent).not.toContain('\u2014');
+    expect(unmanage).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Switch to plain' })); });
+    expect(unmanage).toHaveBeenCalledWith('/p', 'ada', { restoreInstructions: true, restoreMcp: false, token: 'tok-1' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('Switch to plain shows the files again when they changed since the preview (#2927)', async () => {
+    const previewSpy = vi.spyOn(m(), 'previewUnmanage')
+      .mockResolvedValueOnce({ ok: true, value: plainPreview() } as never)
+      .mockResolvedValueOnce({ ok: true, value: plainPreview({ token: 'tok-2' }) } as never);
+    const unmanage = vi.spyOn(m(), 'unmanage')
+      .mockResolvedValueOnce({ ok: false, code: 'stale', message: "ada's files changed since you opened this. Look at them again before switching." } as never)
+      .mockResolvedValueOnce({ ok: true, value: undefined } as never);
+    render(<ManagedGeneralSection projectPath="/p" agentId="ada" agentName="ada" setup={managedSetup} clubhouseFeatures isRunning={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to plain…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Switch ada to plain' });
+    await within(dialog).findByRole('group', { name: 'Instructions file CLAUDE.md' });
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Switch to plain' })); });
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('changed since you opened this');
+    expect(previewSpy).toHaveBeenCalledTimes(2);
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Switch to plain' })); });
+    expect(unmanage).toHaveBeenLastCalledWith('/p', 'ada', { restoreInstructions: false, restoreMcp: false, token: 'tok-2' });
+  });
+
+  it('Switch to plain works from the keyboard: focus moves in, the choices are radios, Esc closes (#2927)', async () => {
+    vi.spyOn(m(), 'previewUnmanage').mockResolvedValue({ ok: true, value: plainPreview() } as never);
+    render(<ManagedGeneralSection projectPath="/p" agentId="ada" agentName="ada" setup={managedSetup} clubhouseFeatures isRunning={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to plain…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Switch ada to plain' });
+    await within(dialog).findByRole('group', { name: 'Instructions file CLAUDE.md' });
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    expect(within(dialog).getAllByRole('radio').every((r) => r.tagName === 'INPUT')).toBe(true);
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('Switch to plain says when there is nothing to bring back (#2927)', async () => {
+    vi.spyOn(m(), 'previewUnmanage').mockResolvedValue({ ok: true, value: plainPreview({
+      instructions: { file: 'CLAUDE.md', exists: true, changedSince: false, addedLines: 0, before: null },
+      mcp: { file: '.mcp.json', exists: true, servers: [], added: [], before: null, note: "The MCP file from before managed isn't valid JSON, so it can't come back here." },
+      skills: [], excludesAdded: 0,
+    }) } as never);
+    render(<ManagedGeneralSection projectPath="/p" agentId="ada" agentName="ada" setup={managedSetup} clubhouseFeatures isRunning={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to plain…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Switch ada to plain' });
+    await within(dialog).findByText('Clubhouse kept no instructions file from before managed.');
+    expect(within(dialog).getAllByRole('radio')).toHaveLength(2);
+    expect(within(dialog).getByText(/isn't valid JSON/)).toBeTruthy();
+  });
+
   it('convertSummary names what becomes parts', () => {
     expect(convertSummary({ blocks: [], skills: ['a'], mcps: [] })).toBe('Becomes: skill a.');
     expect(convertSummary({ blocks: ['x', 'y'], skills: [], mcps: ['c', 'd'] })).toBe('Becomes: 2 blocks, MCP servers c, d.');
