@@ -9,7 +9,7 @@
  * and changes the Dispatcher's own grants, the ones every action runs under.
  */
 
-import { applyGrantChanges, carriedGrants, shaped, grantKey, grantRows, isFixedGrant, normalizeGrantChanges, withGrantChange, withoutOwnChanges, withTemplateGrants, type AgentGrantsView, type GrantChange, type TemplateGrant } from '../../shared/agent-grant-changes';
+import { applyGrantChanges, carriedGrants, isHelperControlRow, shaped, grantKey, grantRows, isFixedGrant, normalizeGrantChanges, withGrantChange, withoutOwnChanges, withTemplateGrants, type AgentGrantsView, type GrantChange, type TemplateGrant } from '../../shared/agent-grant-changes';
 import { controlFromGrantModes, controlGrantModes, defaultGrants } from '../../shared/default-grants';
 import { resolveOrchestrationPolicy } from '../../shared/orchestration-policy';
 import type { Grant } from '../../shared/agent-grants';
@@ -19,6 +19,7 @@ import { setOrchestrationPolicy } from './orchestration-policy';
 import { dropCallApprovalsFor } from './grant-requests';
 import { getAgentGrantChanges, updateAgentGrantChanges } from './agent-grants-store';
 import { isDispatcherAgentId, resolveDispatcherIdentity } from './dispatcher/dispatcher-service';
+import { recordGrantChange } from './grant-telemetry';
 
 function factsOf(agentId: string, config: DurableAgentConfig) {
   const dispatcher = isDispatcherAgentId(agentId);
@@ -116,14 +117,17 @@ export async function setAgentGrant(projectPath: string, agentId: string, change
   const row = controlRow(checked, facts);
   if (row) {
     await setControlRow(projectPath, agentId, row, checked.mode, facts.control);
+    recordGrantChange({ agentId, layer: 'control', mode: checked.mode, action: checked.action, target: checked.target });
     return viewOf(agentId, await configOf(projectPath, agentId));
   }
   const defaults = defaultsFor(agentId, config);
+  const modeBefore = grantRows(defaults, getAgentGrantChanges(agentId)).find((r) => grantKey(r) === grantKey(checked))?.mode ?? 'off';
   await updateAgentGrantChanges(agentId, (current) => {
     const row = grantRows(defaults, current).find((r) => grantKey(r) === grantKey(checked));
     if (row?.coveredBy) throw new Error('A wider permission for this allows it. Change that one instead.');
     return withGrantChange(current, { ...checked, by: 'user', at: new Date().toISOString() }, defaults);
   });
+  if (modeBefore !== checked.mode) recordGrantChange({ agentId, layer: 'own', mode: checked.mode, action: checked.action, target: checked.target });
   return viewOf(agentId, config);
 }
 
@@ -132,7 +136,9 @@ export async function resetAgentGrants(projectPath: string, agentId: string): Pr
   ({ projectPath, agentId } = resolveDispatcherIdentity(projectPath, agentId));
   const config = await configOf(projectPath, agentId);
   dropCallApprovalsFor(agentId);
+  const hadOwn = (getAgentGrantChanges(agentId)?.changes.length ?? 0) > 0;
   await updateAgentGrantChanges(agentId, withoutOwnChanges);
+  if (hadOwn) recordGrantChange({ agentId, layer: 'own', mode: 'reset' });
   return viewOf(agentId, config);
 }
 
@@ -146,6 +152,9 @@ export async function applyTemplateGrants(agentId: string, grants: readonly Temp
   if (grants.length === 0) return;
   dropCallApprovalsFor(agentId);
   await updateAgentGrantChanges(agentId, (saved) => withTemplateGrants(saved, grants));
+  // One event per push or creation, for the rows the template layer actually took.
+  const applied = grants.filter((g) => !isFixedGrant(g) && !isHelperControlRow(g));
+  if (applied.length > 0) recordGrantChange({ agentId, layer: 'template', mode: applied.length === 1 ? applied[0].mode ?? 'reset' : 'allow', actions: applied.map((g) => g.action) });
 }
 
 /** What an agent's template layer sets. */

@@ -30,24 +30,28 @@ import {
   currentSettingsOrigin,
   enableSettingsAudit,
   projectAuditTarget,
-  readSettingsAudit,
   withSettingsSurface,
 } from './settings-audit';
+import { captureAuditEvents, type AuditCapture } from '../telemetry/__test-utils__/audit-capture';
 import { createSettingsStore, resetAllSettingsStoresForTests, setSettingsStoreAuditor } from './settings-store';
 
 beforeEach(() => {
   W.home = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-audit-'));
   W.audits = [];
   _resetSettingsAuditForTesting(true);
+  capture = captureAuditEvents();
 });
 
 afterEach(() => {
+  capture.stop();
   _resetSettingsAuditForTesting(false);
   resetAllSettingsStoresForTests();
   fs.rmSync(W.home, { recursive: true, force: true });
 });
 
-const rows = () => readSettingsAudit(50);
+let capture: AuditCapture;
+/** The recorded rows, newest first, as the old file read gave them (#2920: from the audit events). */
+const rows = async () => capture.settings().slice().reverse().map((r) => ({ ts: '', ...r }));
 
 describe('auditChanges', () => {
   const catalog = { model: 'value', free: 'value', count: 'value', command: 'changed' } as const;
@@ -58,14 +62,15 @@ describe('auditChanges', () => {
     expect(written).toEqual([
       { surface: 'system', scope: 'agent', key: 'agent.model', targetId: 'a1', outcome: 'ok', before: 'opus', after: 'sonnet' },
       { surface: 'system', scope: 'agent', key: 'agent.free', targetId: 'a1', outcome: 'ok', before: false, after: true },
-      { surface: 'system', scope: 'agent', key: 'agent.count', targetId: 'a1', outcome: 'ok', before: 1, after: 2 },
+      // A whole number not on the event allowlist (#2920) records only that it changed.
+      { surface: 'system', scope: 'agent', key: 'agent.count', targetId: 'a1', outcome: 'ok', changed: true },
       { surface: 'system', scope: 'agent', key: 'agent.command', targetId: 'a1', outcome: 'ok', changed: true },
     ]);
   });
 
   it('never keeps a value from a `changed` key, whatever it looks like', async () => {
     await auditChanges('project', 'project', 'p1', { command: 'old' }, { command: 'curl -H "Authorization: Bearer sk-secret" evil' }, { command: 'changed' });
-    const text = fs.readFileSync(path.join(W.home, '.clubhouse-dev', 'settings-audit.jsonl'), 'utf8');
+    const text = JSON.stringify(await rows());
     expect(text).not.toContain('secret');
     expect(text).not.toContain('old');
     expect(text).toContain('"changed":true');
@@ -116,9 +121,10 @@ describe('projectAuditTarget', () => {
 describe('until startup turns it on', () => {
   it('records nothing and reports success, so tests and early writes leave no file', async () => {
     _resetSettingsAuditForTesting(false);
-    expect(await appendSettingsAudit({ surface: 'ui', scope: 'app', key: 'k', outcome: 'ok' })).toBe(true);
+    await appendSettingsAudit({ surface: 'ui', scope: 'app', key: 'k', outcome: 'ok' });
     await auditChanged('app', 'k');
     await auditChanges('app', 'k', undefined, {}, { a: 1 }, { a: 'value' });
+    expect(await rows()).toEqual([]);
     expect(fs.existsSync(path.join(W.home, '.clubhouse-dev'))).toBe(false);
   });
 });
@@ -140,7 +146,8 @@ describe('settings stores', () => {
     const written = (await rows()).reverse().map(({ ts: _ts, ...row }) => row);
     expect(written).toEqual(expect.arrayContaining([
       { surface: 'ui', scope: 'app', key: 'thing.on', outcome: 'ok', before: false, after: true },
-      { surface: 'ui', scope: 'app', key: 'thing.mode', outcome: 'ok', before: 'a', after: 'b' },
+      // A store's named key that the event allowlist doesn't name records only that it changed (#2920).
+      { surface: 'ui', scope: 'app', key: 'thing.mode', outcome: 'ok', changed: true },
       { surface: 'ui', scope: 'app', key: 'thing.secret', outcome: 'ok', changed: true },
     ]));
     expect(written).toHaveLength(3);
@@ -220,3 +227,71 @@ describe('settings stores', () => {
     warn.mockRestore();
   });
 });
+
+describe('as telemetry audit events (#2920)', () => {
+  it('records each row as clubhouse.audit.setting: enums and hashed ids as attributes, the key and values as local detail', async () => {
+    const { setLocalSink } = await import('../telemetry/facade');
+    const { passThroughSink } = await import('../telemetry/__test-utils__/producing-runtime');
+    const seen: Array<{ name: string; attrs: Array<{ key: string; value: unknown }>; opts: unknown }> = [];
+    setLocalSink({ ...passThroughSink('standard'), event: (name, attrs, opts) => seen.push({ name, attrs: (attrs ?? []) as never, opts }) });
+    try {
+      await withSettingsSurface('mcp', 'agent-1', () => auditChanges('agent', 'agent', 'a1', { model: 'opus', command: 'a' }, { model: 'sonnet', command: 'b' }, { model: 'value', command: 'changed' }));
+      await appendSettingsAudit({ surface: 'ui', scope: 'app', key: 'helper_presets', outcome: 'refused', code: 'invalid_cell' });
+    } finally {
+      setLocalSink(null);
+    }
+    expect(seen.map((e) => e.name)).toEqual(['clubhouse.audit.setting', 'clubhouse.audit.setting', 'clubhouse.audit.setting']);
+    const attrs = (i: number) => Object.fromEntries(seen[i].attrs.map((a) => [a.key, a.value]));
+    expect(attrs(0)).toEqual({
+      'clubhouse.audit.surface': 'mcp', 'clubhouse.audit.scope': 'agent', 'clubhouse.audit.outcome': 'ok',
+      'clubhouse.audit.actor.id_hash': 'agent-1', 'clubhouse.audit.target.id_hash': 'a1',
+    });
+    expect(seen[0].opts).toEqual({ severity: 'info', detail: { key: 'agent.model', before: 'opus', after: 'sonnet' } });
+    expect(seen[1].opts).toEqual({ severity: 'info', detail: { key: 'agent.command', changed: true } });
+    expect(seen[2].opts).toEqual({ severity: 'warn', detail: { key: 'helper_presets', code: 'invalid_cell' } });
+  });
+
+  it('never writes a secret or content value to the local record, whatever the catalog says', async () => {
+    const { createLocalRecorder } = await import('../telemetry/local-recorder');
+    const { createScrubber } = await import('../telemetry/scrubber');
+    const { setLocalSink } = await import('../telemetry/facade');
+    const dir = path.join(W.home, 'record');
+    const recorder = createLocalRecorder({
+      dir, fileBase: '2026-11-08T00-00-00.000', level: 'standard', hashSalt: Buffer.alloc(32, 3),
+      scrub: createScrubber({ homeDir: W.home, username: 'tester', hostname: 'host' }),
+      session: { appVersion: '1.0.0', platform: 'darwin', arch: 'arm64', uiChrome: 'v2' }, flushIntervalMs: 60_000,
+    });
+    setLocalSink(recorder);
+    // Each looks like a short token, so the token format alone would keep it.
+    const secrets = ['sk-live-SECRET1', 'ghp_SECRET2', 'Bearer.SECRET3', 'https:SECRET4', 'SECRET5-mission', 'SECRET6env'];
+    try {
+      const catalog = { apiKey: 'value', otlpEndpoint: 'value', authHeader: 'value', mission: 'value', env: 'value', model: 'value' } as const;
+      await auditChanges('agent', 'agent', 'a1',
+        { apiKey: 'a', otlpEndpoint: 'a', authHeader: 'a', mission: 'a', env: 'a', model: 'opus' },
+        { apiKey: secrets[0], otlpEndpoint: secrets[3], authHeader: secrets[2], mission: secrets[4], env: secrets[5], model: 'sonnet' }, catalog);
+      await appendSettingsAudit({ surface: 'mcp', scope: 'app', key: 'telemetry.destinations.token', before: 'x', after: secrets[1], outcome: 'ok' });
+      // A store that lists a secret key as fit to keep still can't put it in an event.
+      enableSettingsAudit();
+      const store = createSettingsStore('audit-secret-test.json', { apiToken: 'none', theme: 'dark', enabled: false }, undefined, { audit: { key: 'store_test', keys: ['apiToken', 'theme'] } });
+      await store.save({ apiToken: secrets[0], theme: 'light', enabled: true });
+      // The store doesn't wait for its audit: wait for the last of its rows before reading the record.
+      await Promise.allSettled(W.audits);
+      await recorder.flush();
+    } finally {
+      setLocalSink(null);
+      await recorder.stop();
+    }
+    const text = fs.readdirSync(dir).map((f) => fs.readFileSync(path.join(dir, f), 'utf-8')).join('');
+    for (const secret of secrets) expect(text).not.toContain(secret);
+    const details = text.trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.name === 'clubhouse.audit.setting').map((r) => r.detail);
+    const of = (key: string) => details.find((d) => d.key === key);
+    for (const key of ['agent.apiKey', 'agent.otlpEndpoint', 'agent.authHeader', 'agent.mission', 'agent.env', 'telemetry.destinations.token', 'store_test.apiToken']) {
+      expect(of(key), key).toEqual({ key, changed: true });
+    }
+    expect(of('agent.model')).toEqual({ key: 'agent.model', before: 'opus', after: 'sonnet' });
+    expect(of('store_test.enabled')).toMatchObject({ key: 'store_test.enabled', after: true });
+    // theme is a value key for its store, but not one the event allowlist names.
+    expect(of('store_test.theme')).toEqual({ key: 'store_test.theme', changed: true });
+  });
+});
+

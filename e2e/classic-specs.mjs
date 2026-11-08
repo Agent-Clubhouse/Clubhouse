@@ -29,22 +29,26 @@ export const CLASSIC_RUN_SPECS = [
   'open-project.spec.ts',
   'project-switching.spec.ts',
   'navigation.spec.ts',
-];
-
-/** Still pinned to classic, waiting to move. */
-export const PINNED_CLASSIC_SPECS = [
-  'agent-list-ui.spec.ts',
+  'start-agent.spec.ts',
   'agent-real-cli.spec.ts',
-  'annex-v2/dual-launch.ts',
-  'annex-v2/reachability.spec.ts',
+  'command-palette.spec.ts',
+  'terminal.spec.ts',
+  'terminal-e2e.spec.ts',
   'canvas-card-wheel.spec.ts',
   'canvas-create.spec.ts',
   'canvas-golden-path.spec.ts',
   'canvas-group-project-create.spec.ts',
   'canvas-startup-bindings.spec.ts',
+];
+
+/** Still pinned to classic, waiting to move. */
+export const PINNED_CLASSIC_SPECS = [
+  'agent-list-ui.spec.ts',
+  'annex-v2/chat-across-desktops.spec.ts',
+  'annex-v2/dual-launch.ts',
+  'annex-v2/reachability.spec.ts',
   'chat-fake-cli.spec.ts',
   'chat-rich/harness.ts',
-  'command-palette.spec.ts',
   'find-replace.spec.ts',
   'mermaid-preview.spec.ts',
   'onboarding.spec.ts',
@@ -52,10 +56,7 @@ export const PINNED_CLASSIC_SPECS = [
   'popout-window.spec.ts',
   'rail-hover-flyout.spec.ts',
   'rail-pin.spec.ts',
-  'start-agent.spec.ts',
   'telemetry-export.spec.ts',
-  'terminal-e2e.spec.ts',
-  'terminal.spec.ts',
 ];
 
 /** Test the layout switch itself, so they seed both layouts. */

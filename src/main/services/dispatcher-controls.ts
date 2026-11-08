@@ -17,14 +17,7 @@
 
 import { isDispatcherAgent } from './clubhouse-mcp/dispatcher-gate';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
-import {
-  appendAudit,
-  auditNames,
-  auditString,
-  readAudit,
-  type AuditRow,
-  type AuditValue,
-} from './dispatcher-audit';
+import { appendAudit, auditNames, auditString, type AuditRow, type AuditValue, readAuditFromRecord } from './dispatcher-audit';
 import {
   DISPATCHER_CONNECTION_SOURCE_ID,
   DispatcherLinkRefused,
@@ -82,7 +75,7 @@ export class DispatcherControlError extends Error {
 export const DEFAULT_CONTROLS_PAGE = 10;
 export const MAX_CONTROLS_PAGE = 25;
 
-const AUDIT_FAILED = 'The change was made, but it could not be written to the audit record.';
+const AUDIT_FAILED = 'The change was made, but local telemetry recording is off, so it is not in the audit record.';
 
 /** Run one tool call, leaving its audit row whatever happens. */
 async function audited<T extends object>(
@@ -398,6 +391,7 @@ export async function listOrchestratorControls(actorId: string, args: Record<str
     ...(next < everyone.length && { next_cursor: String(next) }),
     links,
     ...(unconfirmed.length > 0 && { unconfirmed_removals: unconfirmed }),
-    ...(auditRows > 0 && { audit: await readAudit(auditRows) }),
+    // From the local telemetry record (#2920); ids are matched back against the agents it knows.
+    ...(auditRows > 0 && { audit: await readAuditFromRecord(auditRows, [actorId, ...census.agents.keys()]) }),
   };
 }

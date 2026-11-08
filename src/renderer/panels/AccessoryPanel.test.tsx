@@ -67,8 +67,8 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
     await waitFor(() => {
       expect(window.clubhouse.app.isPreviewEligible).toHaveBeenCalled();
     });
-    expect(screen.getByText('Annex')).toBeInTheDocument();
-    expect(screen.getByText('Annex control')).toBeInTheDocument();
+    expect(screen.getByText('Annex Network')).toBeInTheDocument();
+    expect(screen.queryByText('Annex control')).not.toBeInTheDocument();
     unmount();
   });
 

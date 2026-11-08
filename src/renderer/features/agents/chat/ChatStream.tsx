@@ -11,6 +11,7 @@ import { RichLinkProvider } from './rich/RichLinks';
 import { useRichChatContent } from './rich/rich-flag';
 import { ChatMediaContext } from './rich/ChatImages';
 import { FileChipProvider } from './rich/FileChips';
+import { useRemoteChat } from './remote-chat';
 import { rendererLog } from '../../../plugins/renderer-logger';
 import { fnv1a } from '../../../../shared/telemetry/diag';
 import {
@@ -290,7 +291,9 @@ const ChatStreamInner = memo(function ChatStreamInner({
   const onJumpResultRef = useRef(onJumpResult);
   onJumpResultRef.current = onJumpResult;
   const { items, subagents, capabilities, commands } = state;
-  const rich = useRichChatContent();
+  // Rich content reads files and media by path on this machine: not for an agent on another desktop (#2390).
+  const remoteChat = useRemoteChat();
+  const rich = useRichChatContent() && !remoteChat;
   // Tool calls whose permission request is still open (only those say "waiting for approval").
   const awaitingKey = state.pendingPermissions.map((p) => p.toolCallId ?? '').join('\n');
   const awaiting = useMemo(() => new Set(awaitingKey.split('\n').filter(Boolean)), [awaitingKey]);

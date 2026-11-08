@@ -66,8 +66,10 @@ export async function addProject(electronApp: ElectronApp, window: Page, dirPath
 export async function clickExplorerTab(electronApp: ElectronApp, window: Page, testId: string) {
   try {
     if (await isNewLayout(window)) {
-      await revealTitleTab(window, testId);
-    } else if (await window.locator('[data-testid="rail-container"]').count()) {
+      await clickTitleTab(window, testId);
+      return;
+    }
+    if (await window.locator('[data-testid="rail-container"]').count()) {
       // The flyout can be wider than the rail's collapsed layout box, including
       // while it animates. The viewport's far edge leaves the whole hover region.
       const point = await window.evaluate(() => ({ x: globalThis.innerWidth - 1, y: globalThis.innerHeight / 2 }));
@@ -82,13 +84,17 @@ export async function clickExplorerTab(electronApp: ElectronApp, window: Page, t
   }
 }
 
-/** New layout: show a title bar tab, opening the More menu when it's in there. */
-async function revealTitleTab(window: Page, testId: string) {
+/**
+ * New layout: click a title bar tab, opening the More menu when it's in there.
+ * Finding and clicking retry together, because tabs that finish loading later
+ * can push this one into More between the two.
+ */
+async function clickTitleTab(window: Page, testId: string) {
   const tab = window.getByTestId(testId);
   await expect(async () => {
     const more = window.getByTestId('title-more');
     if (!(await tab.isVisible()) && await more.isVisible()) await more.click();
-    await expect(tab).toBeVisible({ timeout: 1_000 });
+    await tab.click({ timeout: 2_000 });
   }).toPass({ timeout: 20_000 });
 }
 

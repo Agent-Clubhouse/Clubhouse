@@ -1,8 +1,15 @@
+/**
+ * Group project widget on a project canvas: create, then post to its bulletin.
+ *
+ * Runs on the new layout, and on classic in the Classic layout E2E job
+ * (#2843). Only reaching the project's Canvas tab differs between them.
+ */
 import { test, expect, _electron as electron, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { launchApp } from './launch';
-import { addProject, clickExplorerTab } from './smoke-helpers';
+import { addProject, assertRunLayout, clickExplorerTab } from './smoke-helpers';
+import { isNewLayout } from './layout';
 
 const FIXTURE_PROJECT = path.resolve(__dirname, 'fixtures/project-group-project');
 const FIXTURE_STATE = path.join(FIXTURE_PROJECT, '.clubhouse');
@@ -13,9 +20,12 @@ let window: Page;
 let userDataDir: string | undefined;
 
 async function navigateToCanvas(page: Page): Promise<void> {
-  const canvasButton = page.locator('[data-testid="explorer-tab-plugin:canvas"]');
-  await expect(canvasButton).toBeVisible({ timeout: 10_000 });
-  // addProject leaves the pointer on the rail, whose hover flyout covers the tab.
+  // On the new layout the tab is in the title bar or its More menu, which
+  // clickExplorerTab opens when it has to.
+  if (!(await isNewLayout(page))) {
+    await expect(page.locator('[data-testid="explorer-tab-plugin:canvas"]')).toBeVisible({ timeout: 10_000 });
+  }
+  // On classic, addProject leaves the pointer on the rail, whose hover flyout covers the tab.
   await clickExplorerTab(electronApp, page, 'explorer-tab-plugin:canvas');
   await expect(page.locator('[data-testid="canvas-panel"]')).toBeVisible({ timeout: 10_000 });
 }
@@ -23,12 +33,12 @@ async function navigateToCanvas(page: Page): Promise<void> {
 test.beforeAll(async () => {
   fs.rmSync(FIXTURE_STATE, { recursive: true, force: true });
   ({ electronApp, window, userDataDir } = await launchApp({
-    experimental: { newChrome: false },
     // An old saved "off" is ignored: the Clubhouse MCP always runs, so group projects work.
     userDataFiles: {
       'mcp-settings.json': { enabled: false, projectDefault: false },
     },
   }));
+  await assertRunLayout(window);
   await addProject(electronApp, window, FIXTURE_PROJECT);
   await navigateToCanvas(window);
 });

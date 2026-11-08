@@ -66,6 +66,13 @@ describe('parseRendererBatch', () => {
     ]))).toEqual([]);
   });
 
+  it('never lets a renderer write an audit event, the record of who changed what (#2920)', () => {
+    expect(parseRendererBatch(batch([
+      { t: 'event', name: 'clubhouse.audit.setting', attrs: [] },
+      { t: 'event', name: 'clubhouse.audit.dispatcher_control', attrs: [] },
+    ]))).toEqual([]);
+  });
+
   it('never lets a renderer forge an exception record as a plain event', () => {
     expect(parseRendererBatch(batch([{ t: 'event', name: 'clubhouse.exception', attrs: [] }]))).toEqual([]);
   });

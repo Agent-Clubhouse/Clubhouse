@@ -10,10 +10,11 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn((ch: string, fn: (...args: unknown[]) => unknown) => { h.handlers.set(ch, fn); }) },
 }));
 
-const ON: DispatcherState = { enabled: true, flagOn: true, agentId: 'disp', path: 'dispatcher-folder', config: null };
+const ON = { enabled: true, flagOn: true, agentId: 'disp', path: 'dispatcher-folder', config: null, behavior: { level: 'standard', provider: 'claude-code', auto: { ready: true } } } as unknown as DispatcherState;
 vi.mock('../services/dispatcher/dispatcher-service', () => ({
   getDispatcherState: vi.fn(() => ON),
   setDispatcherEnabled: vi.fn(async (on: boolean) => ({ ...ON, enabled: on })),
+  setDispatcherBehavior: vi.fn(async (level: string) => ({ ...ON, behavior: { ...ON.behavior, level } })),
   onDispatcherChanged: vi.fn((l: (s: DispatcherState) => void) => { h.listener = l; return () => {}; }),
   initDispatcher: vi.fn(async () => undefined),
 }));
@@ -53,6 +54,22 @@ describe('dispatcher handlers', () => {
     expect(await h.handlers.get(IPC.DISPATCHER.SET_ENABLED)!({}, false)).toEqual({ ...ON, enabled: false });
     expect(dispatcher.setDispatcherEnabled).toHaveBeenCalledWith(false);
     await expect(Promise.resolve().then(() => h.handlers.get(IPC.DISPATCHER.SET_ENABLED)!({}, 'yes'))).rejects.toThrow();
+  });
+
+  it('setBehavior takes a level only (#3045)', async () => {
+    const state = await h.handlers.get(IPC.DISPATCHER.SET_BEHAVIOR)!({}, 'thorough') as DispatcherState;
+    expect(state.behavior.level).toBe('thorough');
+    expect(dispatcher.setDispatcherBehavior).toHaveBeenCalledWith('thorough');
+    await expect(Promise.resolve().then(() => h.handlers.get(IPC.DISPATCHER.SET_BEHAVIOR)!({}, 'extreme'))).rejects.toThrow(/Unknown Behavior/);
+    await expect(Promise.resolve().then(() => h.handlers.get(IPC.DISPATCHER.SET_BEHAVIOR)!({}, 2))).rejects.toThrow();
+    expect(dispatcher.setDispatcherBehavior).toHaveBeenCalledTimes(1);
+  });
+
+  it('a Behavior change alone doesn\'t rebuild its wires', () => {
+    h.listener!(ON);
+    h.listener!({ ...ON, behavior: { ...ON.behavior, level: 'light' } });
+    expect(broadcastToAllWindows).toHaveBeenCalledTimes(2);
+    expect(restorePersistedBindings).toHaveBeenCalledTimes(1);
   });
 
   it('broadcasts changes and rebuilds its wires only while enabled', () => {

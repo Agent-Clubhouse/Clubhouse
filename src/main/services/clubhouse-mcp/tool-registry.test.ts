@@ -31,7 +31,7 @@ import {
   setOrchestrationEnabled,
   _resetOrchestrationGateForTesting,
 } from './orchestration-gate';
-import { setDispatcherAgent, _resetDispatcherGateForTesting } from './dispatcher-gate';
+import { setDispatcherAgent, setDispatcherIdLookup, _resetDispatcherGateForTesting } from './dispatcher-gate';
 import { agentRegistry } from '../agent-registry';
 import { groupProjectRegistry } from '../group-project-registry';
 import type { McpBinding } from './types';
@@ -695,6 +695,18 @@ describe('ToolRegistry', () => {
       const tools = getScopedToolList('agent-1');
       const suffixes = tools.map(t => t.name.split('__').pop());
       expect(suffixes).toEqual(['get_status']);
+    });
+
+    it('still lists send_message for a sleeping Dispatcher, which it wakes (#3108)', () => {
+      setDispatcherIdLookup((id) => id === 'agent-2');
+      invalidateToolListCache();
+      try {
+        const suffixes = getScopedToolList('agent-1').map(t => t.name.split('__').pop());
+        expect(suffixes).toEqual(['send_message', 'get_status']);
+      } finally {
+        setDispatcherIdLookup(null);
+        invalidateToolListCache();
+      }
     });
 
     it('exposes all tools when target agent is running (in registry)', () => {

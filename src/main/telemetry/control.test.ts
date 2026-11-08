@@ -52,6 +52,10 @@ vi.mock('./secret-store', () => ({
   getSecureStorageState: async () => state.storage,
 }));
 
+const localSalt = vi.hoisted(() => ({ deleted: 0 }));
+const localRecording = vi.hoisted(() => ({ restarts: 0 }));
+vi.mock('./local-control', async (importActual) => ({ ...await importActual<typeof import('./local-control')>(), restartLocalRecording: async () => { localRecording.restarts++; } }));
+vi.mock('./local-salt', () => ({ deleteLocalSalt: () => { localSalt.deleted++; } }));
 vi.mock('./bootstrap', () => ({
   isRunning: () => state.running,
   getLastStartError: () => undefined,
@@ -280,7 +284,11 @@ describe('telemetry settings control', () => {
     await control.setFilter('azure', 'errors', 'all');
     await control.setAdvanced({ sampleRate: 0.5, otlpTemporality: 'delta' });
     const before = state.settings.installId;
+    const saltsDeleted = localSalt.deleted;
     await control.resetInstallId();
+    // A reset salt can't come back from the local record's (#2920), and local recording moves to the new one.
+    expect(localSalt.deleted).toBe(saltsDeleted + 1);
+    expect(localRecording.restarts).toBeGreaterThan(0);
     expect(state.settings).toMatchObject({ sampleRate: 0.5 });
     expect(entry('azure').level).toBe('errors');
     expect(entry('otlp').otlp?.temporality).toBe('delta');
@@ -316,6 +324,7 @@ describe('telemetry settings control', () => {
     setEntry('otlp', { enabled: true });
     await control.deleteLocalData();
     expect(entries().some((d) => d.enabled)).toBe(false);
+    // disableTelemetry({ deleteLocalData }) removes the local record's salt before restarting the recorder (#2920).
     expect(state.calls).toEqual(['disable']);
   });
 

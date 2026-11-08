@@ -675,3 +675,57 @@ describe('local-only distributed tracing', () => {
     expect(spans[3].parentSpanId).toBe(tc.slice(36, 52));
   });
 });
+
+describe('audit events (#2920)', () => {
+  it('records an audit event at every level and past the event cap, with its detail and hashed ids', async () => {
+    const h = harness({ level: 'errors', sessionCaps: { traces: 50_000, logs: 1 } });
+    h.rec.event('clubhouse.app.safe_mode', []);
+    for (let i = 0; i < 3; i++) {
+      h.rec.event('clubhouse.audit.dispatcher_control', [ATTR.auditTool('connect_orchestrators'), ATTR.auditOutcome('ok'), ATTR.auditActorIdHash('dispatcher')], {
+        detail: { tool: 'connect_orchestrators', requested: { two_way: true, note: 'a sentence with spaces' }, code: 'ok' },
+        detailIds: { targets: ['agent-a', 'agent-b'] },
+      });
+    }
+    // A plain standard event at level errors is still left out.
+    h.rec.event('clubhouse.ui.feature_used', []);
+    await h.rec.flush();
+    const audits = h.records().filter((r) => r.name === 'clubhouse.audit.dispatcher_control');
+    expect(audits).toHaveLength(3);
+    expect(h.records().some((r) => r.name === 'clubhouse.ui.feature_used')).toBe(false);
+    const [first] = audits;
+    expect(first.attrs['clubhouse.audit.actor.id_hash']).toMatch(/^[0-9a-f]{16}$/);
+    expect(first.detail).toEqual({ tool: 'connect_orchestrators', requested: { two_way: true }, code: 'ok', targets: [expect.stringMatching(/^[0-9a-f]{16}$/), expect.stringMatching(/^[0-9a-f]{16}$/)] });
+    expect(h.raw()).not.toContain('agent-a');
+    expect(h.raw()).not.toContain('a sentence');
+  });
+
+  it('flushQueued writes queued lines without ending the metric window, and exposes its salt', async () => {
+    const h = harness();
+    h.rec.count('clubhouse.app.sessions', 1);
+    h.rec.event('clubhouse.audit.setting', [ATTR.auditOutcome('ok')], { detail: { key: 'theme' } });
+    await h.rec.flushQueued();
+    expect(h.records().some((r) => r.name === 'clubhouse.audit.setting')).toBe(true);
+    expect(h.records().some((r) => r.t === 'metric')).toBe(false);
+    expect(h.rec.hashSalt.equals(SALT)).toBe(true);
+  });
+
+  it('bounds queued audit lines at twice the pending limit, counting the rest as dropped', async () => {
+    const h = harness({ maxPendingLines: 3, flushIntervalMs: 60_000 });
+    // Keep the queue from draining while the burst arrives.
+    for (let i = 0; i < 20; i++) h.rec.event('clubhouse.audit.setting', [ATTR.auditOutcome('refused')], { detail: { key: 'theme' } });
+    await h.rec.flush();
+    const audits = h.records().filter((r) => r.name === 'clubhouse.audit.setting').length;
+    // The session line shares the queue: twice the limit (6) holds it and five audit lines.
+    expect(audits).toBeGreaterThan(3);
+    expect(audits).toBeLessThan(20);
+  });
+
+  it('scrubs detail strings: a username or hostname is left out', async () => {
+    const h = harness();
+    h.rec.event('clubhouse.audit.setting', [], { detail: { key: 'theme', who: 'sam-tester', host: 'sams-laptop', fine: 'light' } });
+    await h.rec.flush();
+    const [event] = h.records().filter((r) => r.name === 'clubhouse.audit.setting');
+    expect(event.detail).toEqual({ key: 'theme', fine: 'light' });
+  });
+});
+

@@ -6,12 +6,19 @@
  * the default (agents) view. The canvas UI is never opened, so the bindings
  * can only have come from the main process's startup rebuild. The store files
  * must still match, byte for byte, what the test wrote.
+ *
+ * Runs on the new layout, and on classic in the Classic layout E2E job
+ * (#2843). A fresh profile opens on the Agents tab on both: the open tab is
+ * kept in memory only, so no saved view can bring the canvas back. With no
+ * projects the new layout shows its first-run page.
  */
 import { test, expect, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { launchApp, type ElectronApp } from './launch';
 import { createDisposableProfile, type DisposableProfile } from './app-profile';
+import { assertRunLayout } from './smoke-helpers';
+import { isNewLayout } from './layout';
 
 let electronApp: ElectronApp | undefined;
 let window: Page;
@@ -60,7 +67,8 @@ test.beforeAll(async () => {
   writeKv('canvas-instances-backup', instances);
   writeKv('canvas-active-id', 'canvas_e2e_1544');
   writeKv('canvas-wires', wires);
-  ({ electronApp, window } = await launchApp({ profile, experimental: { newChrome: false }, preserveFirstLoad: true }));
+  ({ electronApp, window } = await launchApp({ profile, preserveFirstLoad: true }));
+  await assertRunLayout(window);
 });
 
 test.afterAll(async () => {
@@ -84,6 +92,10 @@ test('wires from the app-wide canvas are bound without opening the canvas', asyn
   ]);
 
   // The canvas was never opened, so the renderer can't have bound these.
+  if (await isNewLayout(window)) {
+    // The sidebar's app-wide Canvas row is there and isn't the open view.
+    await expect(window.getByTestId('app-row-canvas')).toHaveAttribute('data-active', 'false', { timeout: 10_000 });
+  }
   await expect(window.getByTestId('canvas-controls')).toHaveCount(0);
 
   // Nothing at startup wrote to the store, not even an identical rewrite.

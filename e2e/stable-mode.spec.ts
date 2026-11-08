@@ -98,6 +98,7 @@ function installIdleCli(): { env: Record<string, string>; argvFile: string } {
         'copilot-cli': path.join(root, 'not-installed', 'copilot'),
       }),
       CLUBHOUSE_TEST_NO_MODEL_PROBES: '1',
+      CLUBHOUSE_TEST_NO_CARD_REQUESTS: '1',
     },
   };
 }
@@ -186,14 +187,14 @@ test('Preview off, fresh install: the new layout, and turning Preview on is the 
   await preview.click();
   await expect(preview).toHaveAttribute('aria-checked', 'true');
   await expect(settingsNav(w, 'Experimental')).toBeVisible({ timeout: 10_000 });
-  await expect(settingsNav(w, 'Annex')).toBeVisible();
+  await expect(settingsNav(w, 'Annex Network')).toBeVisible();
   expect(await eligible(w)).toBe(true);
   await expect.poll(() => savedPreview(profile!)).toBe(true);
 
   await preview.click();
   await expect(preview).toHaveAttribute('aria-checked', 'false');
   await expect(settingsNav(w, 'Experimental')).toHaveCount(0, { timeout: 10_000 });
-  await expect(settingsNav(w, 'Annex')).toBeVisible();
+  await expect(settingsNav(w, 'Annex Network')).toBeVisible();
   expect(await eligible(w)).toBe(false);
   await expect.poll(() => savedPreview(profile!)).toBe(false);
 });

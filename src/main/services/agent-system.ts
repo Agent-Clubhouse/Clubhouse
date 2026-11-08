@@ -352,7 +352,9 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     // Loaded here: dispatcher-service imports this module.
     try {
       const { prepareDispatcherSessionStart } = await import('./dispatcher/dispatcher-service');
-      await prepareDispatcherSessionStart(params.projectPath, params.agentId);
+      // Its Behavior's model (#3045) wins over whatever model the caller last saw.
+      const behaviorModel = await prepareDispatcherSessionStart(params.projectPath, params.agentId);
+      if (behaviorModel) params = { ...params, model: behaviorModel.model };
     } catch (err) {
       // telemetry-exempt: logged; it starts with the instructions file it already has
       appLog('core:agent', 'warn', 'Could not refresh the Dispatcher\'s instructions before its start', {
@@ -641,8 +643,10 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
       }
     }
     // Again here and before each runtime start below: a spawn can pass the
-    // entry check, then reach its runtime after shutdown began (#2053).
+    // entry check, then reach its runtime after shutdown began (#2053), or
+    // after the Dispatcher was turned off while it prepared (#3110).
     assertLaunchesOpen();
+    assertDispatcherCanStart(params);
     const startChat = async (p: SpawnAgentParams): Promise<ChatStartResult> => {
       try {
         const result = await withErrorType('chat_start_failed', () => tryStartChatAgent({
@@ -686,6 +690,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         await clearResume(params.projectPath, provider.id, params.agentId, params.sessionId, 'chat_not_found');
         params = { ...params, resume: false, sessionId: undefined };
         assertLaunchesOpen();
+        assertDispatcherCanStart(params);
         chatStart = await startChat(params);
         recordResumeOutcome(provider.id, params.agentId, 'fresh_not_found', chatStart === 'chat' ? 'chat' : 'pty');
       }
@@ -1078,8 +1083,11 @@ async function spawnPtyAgent(
   if (managed) spawnArgs.push({ beforeCreate: () => { assertLaunchesOpen(); managed.assertCanCreate(); }, onCreated: (identity: string) => { createdIdentity = identity; }, onObservedExit: () => { managedExitConfirmed = true; } });
   try {
     assertLaunchesOpen();
+    assertDispatcherCanStart(params);
     await tel.step('clubhouse.pty.spawn', () => withErrorType('pty_spawn_failed', () => ptyManager.spawn(...spawnArgs)));
   } catch (err) {
+    // Refused before a process existed (the Dispatcher turned off, #3110): no exit will restore the files injected above.
+    if (!managed && !createdIdentity && !isAgentRunning(params.agentId)) void configPipeline.restoreForAgent(params.agentId);
     if (managed && !createdIdentity) {
       try { await managed.notCreated(); } catch {
         // telemetry-exempt: preserve the known pre-creation error; unresolved durable intent stays fail-closed.

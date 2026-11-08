@@ -17,6 +17,9 @@ vi.mock('../services/annex-peers', () => ({
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 
 vi.mock('../services/annex-client', () => ({
+  requestChatPage: vi.fn(async () => ({ events: [] })),
+  requestChatSessions: vi.fn(async () => []),
+  sendChatCommand: vi.fn(async () => ({ status: 'completed' })),
   getSatellites: vi.fn(() => []),
   getDiscoveredServices: vi.fn(() => []),
   pairWithService: vi.fn(async () => ({ success: true })),
@@ -125,6 +128,15 @@ describe('annex-client-handlers', () => {
     const handler = handlers.get(IPC.ANNEX_CLIENT.FORGET_SATELLITE)!;
     handler({}, 'fp:aa:bb');
     expect(annexClient.forgetSatellite).toHaveBeenCalledWith('fp:aa:bb');
+  });
+
+  it('reads and drives a satellite\'s chat agents (#2390)', async () => {
+    await handlers.get(IPC.ANNEX_CLIENT.CHAT_PAGE)!({}, 'sat', 'agent', { limit: 20, beforeSeq: 5, other: 1 });
+    expect(annexClient.requestChatPage).toHaveBeenCalledWith('sat', 'agent', { limit: 20, beforeSeq: 5 });
+    await handlers.get(IPC.ANNEX_CLIENT.CHAT_SESSIONS)!({}, 'sat', 'agent');
+    expect(annexClient.requestChatSessions).toHaveBeenCalledWith('sat', 'agent');
+    await handlers.get(IPC.ANNEX_CLIENT.CHAT_COMMAND)!({}, 'sat', { type: 'chat.send', agentId: 'agent' });
+    expect(annexClient.sendChatCommand).toHaveBeenCalledWith('sat', { type: 'chat.send', agentId: 'agent' });
   });
 
   it('FORGET_ALL_SATELLITES delegates to annexClient.forgetAllSatellites', () => {

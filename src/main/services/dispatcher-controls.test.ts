@@ -65,6 +65,18 @@ vi.mock('fs/promises', async (importOriginal) => {
   };
 });
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
+// The local telemetry record (#2920), in this test's folder: what list_orchestrator_controls reads back.
+const record = vi.hoisted(() => ({ salt: Buffer.alloc(32, 7), recorder: null as { flush(): Promise<void>; stop(): Promise<void> } | null }));
+vi.mock('../telemetry/local-control', async () => {
+  const reader = await vi.importActual<typeof import('../telemetry/local-record-reader')>('../telemetry/local-record-reader');
+  return {
+    localRecordSalt: () => record.salt,
+    readLocalEvents: async (name: Parameters<typeof reader.readRecordedEvents>[1], limit: number) => {
+      await record.recorder?.flush();
+      return reader.readRecordedEvents(path.join(state.base, 'telemetry-record'), name, limit);
+    },
+  };
+});
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./base-dir', () => ({ getBaseDirPath: () => state.base }));
 vi.mock('./project-store', () => ({
@@ -130,7 +142,8 @@ import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { callTool, getScopedToolList, _resetForTesting } from './clubhouse-mcp/tool-registry';
 import { registerDispatcherControlTools } from './clubhouse-mcp/tools/dispatcher-control-tools';
 import { agentRegistry } from './agent-registry';
-import { auditPath, appendAudit as actualAppendAudit, readAudit as actualReadAudit, MAX_AUDIT_BYTES, _resetDispatcherAuditForTesting, type AuditRow } from './dispatcher-audit';
+import { type AuditRow } from './dispatcher-audit';
+import { captureAuditEvents, type AuditCapture } from '../telemetry/__test-utils__/audit-capture';
 import {
   dispatcherConnectionSource,
   clearUserRemoval as actualClearUserRemoval,
@@ -199,8 +212,6 @@ function ownOperation<A extends unknown[], R>(operation: (...args: A) => Promise
     return work.observe(operation.apply(this, args));
   };
 }
-const appendAudit = ownOperation(actualAppendAudit);
-const readAudit = ownOperation(actualReadAudit);
 const clearUserRemoval = ownOperation(actualClearUserRemoval);
 const isRemovalUnsaved = ownOperation(actualIsRemovalUnsaved);
 const listDispatcherLinksForUser = ownOperation(actualListDispatcherLinksForUser);
@@ -245,7 +256,7 @@ async function restart(): Promise<void> {
     for (const { agentId } of bindingManager.getAllBindings()) bindingManager.unbindAgent(agentId);
     _resetPersistedBindingSourcesForTesting();
     _resetDispatcherConnectionsForTesting();
-    _resetDispatcherAuditForTesting();
+    audit?.clear();
     startApp();
     return undefined;
   };
@@ -259,9 +270,12 @@ const call = ownOperation((name: string, args: Record<string, unknown> = {}, cal
 const isBound = (a: string, b: string) => bindingManager.getBindingsForAgent(a).some((x) => x.targetId === b);
 const storedPairs = async () => (await readDispatcherConnections()).map((c) => `${c.agentId}>${c.targetId}`);
 
+// The Dispatcher's audit rows (#2920): the audit events the local recorder receives, oldest first.
+let audit: AuditCapture | undefined;
+rawBeforeEach(() => { audit = captureAuditEvents(); });
+afterEach(() => { audit?.stop(); audit = undefined; });
 function auditRows(): AuditRow[] {
-  if (!fs.existsSync(auditPath())) return [];
-  return fs.readFileSync(auditPath(), 'utf-8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  return (audit?.controls() ?? []) as AuditRow[];
 }
 const lastAudit = () => auditRows().at(-1)!;
 
@@ -1284,13 +1298,40 @@ describe('readback', () => {
     expect((await call('list_orchestrator_controls', { agent_id: 'helper' })).isError).toBe(true);
   });
 
-  it('returns the newest audit rows first, on request only', async () => {
-    await call('set_orchestrator_helpers', { agent_id: 'a', max_helpers: 2 });
-    await call('set_orchestrator_helpers', { agent_id: 'b', max_helpers: 3 });
-    expect((await controls()).audit).toBeUndefined();
-    const { audit } = await controls({ audit: 1 });
-    expect(audit).toHaveLength(1);
-    expect(audit[0].targets).toEqual(['b']);
+  it('returns the newest audit rows first, on request only, from the local telemetry record (#2920)', async () => {
+    const { createLocalRecorder } = await import('../telemetry/local-recorder');
+    const { createScrubber } = await import('../telemetry/scrubber');
+    const { setLocalSink } = await import('../telemetry/facade');
+    const recorder = createLocalRecorder({
+      dir: path.join(state.base, 'telemetry-record'), fileBase: '2026-11-08T00-00-00.000', level: 'standard', hashSalt: record.salt,
+      scrub: createScrubber({ homeDir: os.homedir(), username: 'tester', hostname: 'host' }),
+      session: { appVersion: '1.0.0', platform: 'darwin', arch: 'arm64', uiChrome: 'v2' }, flushIntervalMs: 60_000,
+    });
+    record.recorder = recorder;
+    setLocalSink(recorder);
+    try {
+      await call('set_orchestrator_helpers', { agent_id: 'a', max_helpers: 2 });
+      await call('set_orchestrator_helpers', { agent_id: 'b', max_helpers: 3 });
+      expect((await controls()).audit).toBeUndefined();
+      const { audit } = await controls({ audit: 1 });
+      expect(audit).toHaveLength(1);
+      expect(audit[0]).toMatchObject({ tool: 'set_orchestrator_helpers', actorId: 'dispatcher', targets: ['b'], outcome: 'ok', requested: { max_helpers: 3 } });
+      const both = (await controls({ audit: 5 })).audit;
+      expect(both.map((r: AuditRow) => r.targets[0])).toEqual(['b', 'a']);
+      // A row hashed under another salt (another build's, or from before a reset) can't be matched, so it's left out.
+      fs.writeFileSync(path.join(state.base, 'telemetry-record', 'telemetry-2026-11-09T00-00-00.000.jsonl'),
+        `${JSON.stringify({ t: 'event', ts: 'later', name: 'clubhouse.audit.dispatcher_control', severity: 'info', attrs: { 'clubhouse.audit.actor.id_hash': '0123456789abcdef', 'clubhouse.audit.outcome': 'ok' }, detail: { tool: 'connect_orchestrators', targets: [] } })}\n`);
+      expect((await controls({ audit: 5 })).audit.map((r: AuditRow) => r.targets[0])).toEqual(['b', 'a']);
+      // The ids are hashed in the file; only a known agent's hash maps back to it.
+      const files = fs.readdirSync(path.join(state.base, 'telemetry-record'));
+      const text = files.map((f) => fs.readFileSync(path.join(state.base, 'telemetry-record', f), 'utf-8')).join('');
+      expect(text).toContain('clubhouse.audit.dispatcher_control');
+      expect(text).not.toMatch(/"targets":\["b"\]/);
+    } finally {
+      setLocalSink(null);
+      record.recorder = null;
+      await recorder.stop();
+    }
   });
 });
 
@@ -1303,27 +1344,11 @@ describe('audit', () => {
     expect(row.requested?.fields).toEqual(['max_helpers', 'note']);
   });
 
-  it('rotates to one older file and reads across it', async () => {
-    const big = { tool: 'x', actorId: 'dispatcher', targets: ['y'.repeat(100)], outcome: 'ok' as const };
-    fs.writeFileSync(auditPath(), `${JSON.stringify({ ts: 'old', ...big })}\n${'z'.repeat(MAX_AUDIT_BYTES)}\n`);
-    await appendAudit({ tool: 'new', actorId: 'dispatcher', targets: [], outcome: 'ok' });
-    expect(fs.existsSync(`${auditPath()}.1`)).toBe(true);
-    expect(fs.statSync(auditPath()).size).toBeLessThan(1000);
-    const rows = await readAudit(5);
-    expect(rows.map((r) => r.tool)).toEqual(['new', 'x']);
-  });
-
-  it('skips a torn line', async () => {
-    await appendAudit({ tool: 'first', actorId: 'dispatcher', targets: [], outcome: 'ok' });
-    fs.appendFileSync(auditPath(), '{"torn');
-    expect((await readAudit(5)).map((r) => r.tool)).toEqual(['first']);
-  });
-
-  it('keeps the change and warns when the row can\'t be written', async () => {
-    fs.mkdirSync(auditPath());
+  it('keeps the change and warns when local telemetry recording is off, so nothing records it', async () => {
+    audit?.stop();
     const result = JSON.parse(text(await call('set_orchestrator_helpers', { agent_id: 'a', max_helpers: 3 })));
     expect(state.policies.get('a')?.maxHelpers).toBe(3);
-    expect(result.audit_warning).toEqual(expect.stringContaining('audit record'));
+    expect(result.audit_warning).toEqual(expect.stringContaining('recording is off'));
   });
 });
 
@@ -1344,6 +1369,5 @@ describe('the store', () => {
 
   it('lives outside the Dispatcher\'s working folder', () => {
     expect(dispatcherConnectionsPath().startsWith(path.join(state.base, 'dispatcher') + path.sep)).toBe(false);
-    expect(auditPath().startsWith(path.join(state.base, 'dispatcher') + path.sep)).toBe(false);
   });
 });

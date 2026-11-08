@@ -15,6 +15,9 @@
 import type { ContextLimits } from '../../shared/context-window';
 import { readProviderSkills, type ChatProviderSkills } from '../../shared/chat/provider-skills';
 import { useMemo } from 'react';
+import { localizeRemoteEvent, readRemoteTranscript, remoteChat, remoteChatTarget, type RemoteChatMeta } from './remoteChatBackend';
+import { satellitePrefix } from './remoteProjectStore';
+import { onRemoteChatEvent, onSatelliteSnapshot } from './annexClientStore';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { COMPACTION_SETTLED, COMPACTION_STARTED, MINIMAL_CHAT_CAPABILITIES, coalesceUpdateContent, parseRoutedText } from '../../shared/chat';
@@ -1042,6 +1045,24 @@ export function chatEventCount(agentId: string): number {
   return liveEventCounts.get(agentId) ?? 0;
 }
 
+/**
+ * Fills what a cut page from another desktop left out of the folded state:
+ * capabilities and slash commands from before the page, and the picker lists.
+ * What the events did carry wins.
+ */
+function withRemoteMeta(state: ChatViewState, meta: RemoteChatMeta): ChatViewState {
+  const controls = meta.chatControls ?? {};
+  const next = { ...state };
+  if (meta.capabilities && (!state.capabilities || state.capabilities === MINIMAL_CHAT_CAPABILITIES)) next.capabilities = meta.capabilities as unknown as ChatViewState['capabilities'];
+  if (Array.isArray(meta.slashCommands) && (!state.commands || state.commands.length === 0)) next.commands = meta.slashCommands as ChatViewState['commands'];
+  if (state.models.length === 0 && Array.isArray(controls.models)) next.models = controls.models as ChatViewState['models'];
+  if (state.efforts.length === 0 && Array.isArray(controls.efforts)) next.efforts = controls.efforts as string[];
+  if (Object.keys(state.levelNames).length === 0 && controls.levelNames && typeof controls.levelNames === 'object') next.levelNames = controls.levelNames as ChatViewState['levelNames'];
+  if (state.level === null && typeof controls.level === 'string') next.level = controls.level as ChatViewState['level'];
+  if (!state.model && typeof controls.model === 'string') next.model = controls.model;
+  return next;
+}
+
 /** True or false when main says whether a chat runtime runs the agent; undefined when it can't say. */
 async function runtimeIsLive(agentId: string): Promise<boolean | undefined> {
   try {
@@ -1097,14 +1118,27 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       pendingLive.set(agentId, pending);
       set((s) => ({ loading: { ...s.loading, [agentId]: true } }));
       let events: ChatEvent[] | null = null;
+      // An agent on another desktop is read from there (#2390), never from this machine's chat runtime.
+      const remote = remoteChatTarget(agentId);
+      let remoteLive: boolean | undefined;
+      let remoteCut = false;
+      let remoteMeta: RemoteChatMeta = {};
       // Whether a chat runtime runs this agent now; asked alongside the read.
-      const live = runtimeIsLive(agentId);
+      const live = remote ? Promise.resolve(undefined) : runtimeIsLive(agentId);
       try {
-        events = (await window.clubhouse.chat.readTranscript(agentId, tail)) ?? [];
+        if (remote) {
+          const read = await readRemoteTranscript(agentId, tail);
+          events = read.events;
+          remoteLive = read.live;
+          remoteCut = read.truncated;
+          remoteMeta = read.meta;
+        } else {
+          events = (await window.clubhouse.chat.readTranscript(agentId, tail)) ?? [];
+        }
       } catch {
         // Unreadable right now: handled below by keeping what this window has.
       }
-      const runtimeLive = await live;
+      const runtimeLive = remote ? remoteLive : await live;
       if (pendingLive.get(agentId) !== pending) return; // Reset/replaced while the read was in flight.
       const buffered = pending;
       pendingLive.delete(agentId);
@@ -1130,8 +1164,10 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       // Nothing runs the transcript's session any more (the app quit or
       // crashed mid-turn): what it was waiting on can't be answered.
       if (runtimeLive === false) fromTranscript = settleDeadSession(fromTranscript);
-      // A tail that came back full may have cut earlier events off.
-      const transcriptCut = tail !== undefined && events.length >= tail;
+      // What a cut page left out about the session (its start, its picker lists), from the page itself.
+      if (remote) fromTranscript = withRemoteMeta(fromTranscript, remoteMeta);
+      // A tail that came back full may have cut earlier events off; a page from another desktop says so itself.
+      const transcriptCut = remote ? remoteCut : tail !== undefined && events.length >= tail;
       // ...including the model_changed that reported the effort: show what's known.
       if (transcriptCut) fromTranscript = { ...fromTranscript, effortReported: true };
       const next = foldChatEvents(fromTranscript, agentId, buffered);
@@ -1193,19 +1229,34 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       });
     },
 
-    send: (agentId, text, delivery, attachmentIds) => (attachmentIds?.length
-      ? window.clubhouse.chat.sendMessage(agentId, text, delivery, attachmentIds)
-      : window.clubhouse.chat.sendMessage(agentId, text, delivery)),
-    interrupt: (agentId) => window.clubhouse.chat.interrupt(agentId),
-    removeQueued: (agentId, messageIds) => (messageIds
-      ? window.clubhouse.chat.removeQueued(agentId, messageIds)
-      : window.clubhouse.chat.removeQueued(agentId)),
+    // An agent on another desktop goes through that desktop's chat commands (#2390); the rest, this machine's runtime.
+    send: (agentId, text, delivery, attachmentIds) => (remoteChatTarget(agentId)
+      ? remoteChat.send(agentId, get().agents[agentId]?.sessionId, text, delivery, attachmentIds)
+      : attachmentIds?.length
+        ? window.clubhouse.chat.sendMessage(agentId, text, delivery, attachmentIds)
+        : window.clubhouse.chat.sendMessage(agentId, text, delivery)),
+    interrupt: (agentId) => (remoteChatTarget(agentId)
+      ? remoteChat.interrupt(agentId, get().agents[agentId]?.sessionId)
+      : window.clubhouse.chat.interrupt(agentId)),
+    removeQueued: (agentId, messageIds) => (remoteChatTarget(agentId)
+      ? remoteChat.removeQueued(agentId, get().agents[agentId]?.sessionId, messageIds ?? (get().agents[agentId]?.queued ?? []).map((q) => q.messageId))
+      : messageIds
+        ? window.clubhouse.chat.removeQueued(agentId, messageIds)
+        : window.clubhouse.chat.removeQueued(agentId)),
     respondPermission: (agentId, requestId, optionId, extras) =>
-      answerOnce(agentId, requestId, () => window.clubhouse.chat.respondPermission(agentId, requestId, optionId, extras)),
+      answerOnce(agentId, requestId, () => (remoteChatTarget(agentId)
+        ? remoteChat.respondPermission(agentId, get().agents[agentId]?.sessionId, requestId, optionId)
+        : window.clubhouse.chat.respondPermission(agentId, requestId, optionId, extras))),
     answerQuestion: (agentId, requestId, answers) =>
-      answerOnce(agentId, requestId, () => window.clubhouse.chat.answerQuestion(agentId, requestId, answers)),
-    setLevel: (agentId, level) => window.clubhouse.chat.setLevel(agentId, level),
-    setModel: (agentId, modelId, effort) => window.clubhouse.chat.setModel(agentId, modelId, effort),
+      answerOnce(agentId, requestId, () => (remoteChatTarget(agentId)
+        ? remoteChat.answerQuestion(agentId, get().agents[agentId]?.sessionId, requestId, answers)
+        : window.clubhouse.chat.answerQuestion(agentId, requestId, answers))),
+    setLevel: (agentId, level) => (remoteChatTarget(agentId)
+      ? remoteChat.setLevel(agentId, get().agents[agentId]?.sessionId, level)
+      : window.clubhouse.chat.setLevel(agentId, level)),
+    setModel: (agentId, modelId, effort) => (remoteChatTarget(agentId)
+      ? remoteChat.setModel(agentId, get().agents[agentId]?.sessionId, modelId, effort)
+      : window.clubhouse.chat.setModel(agentId, modelId, effort)),
   };
 });
 
@@ -1244,7 +1295,21 @@ function mapAgents<T, U>(record: Record<string, T>, fn: (value: T, id: string) =
 
 /** Subscribe the store to live chat events from the main process. Returns the unsubscribe. */
 export function initChatEventListener(): () => void {
-  return window.clubhouse.chat.onEvent((event) => {
+  const offLocal = window.clubhouse.chat.onEvent((event) => {
     useChatStore.getState().applyEvent(event);
   });
+  // A connected desktop's chat agents, keyed by their namespaced ids (#2390).
+  const offRemote = onRemoteChatEvent((satelliteId, event) => {
+    useChatStore.getState().applyEvent(localizeRemoteEvent(satelliteId, event));
+  });
+  // A satellite's snapshot comes on every (re)connect: events sent while it was away aren't replayed,
+  // so each of its chats already read is read again from its page (authoritative, deduped by seq).
+  const offSnapshot = onSatelliteSnapshot((satelliteId) => {
+    const state = useChatStore.getState();
+    const prefix = satellitePrefix(satelliteId);
+    for (const id of Object.keys(state.loaded)) {
+      if (id.startsWith(prefix) && state.loaded[id]) void state.loadTranscript(id);
+    }
+  });
+  return () => { offLocal(); offRemote(); offSnapshot(); };
 }

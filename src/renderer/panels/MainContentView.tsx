@@ -22,8 +22,7 @@ import { PluginListSettings } from '../features/settings/PluginListSettings';
 import { AboutSettingsView } from '../features/settings/AboutSettingsView';
 import { LoggingSettingsView } from '../features/settings/LoggingSettingsView';
 import { UpdateSettingsView } from '../features/settings/UpdateSettingsView';
-import { AnnexSettingsView } from '../features/settings/AnnexSettingsView';
-import { AnnexControlSettingsView } from '../features/settings/AnnexControlSettingsView';
+import { AnnexNetworkSettingsView } from '../features/settings/AnnexNetworkSettingsView';
 import { WhatsNewSettingsView } from '../features/settings/WhatsNewSettingsView';
 import { KeyboardShortcutsSettingsView } from '../features/settings/KeyboardShortcutsSettingsView';
 import { EditorSettingsView } from '../features/settings/EditorSettingsView';
@@ -274,8 +273,8 @@ export function MainContentView() {
     if (settingsSubPage === 'editor') return <EditorSettingsView />;
     if (settingsSubPage === 'plugin-detail') return <PluginDetailSettings />;
     if (settingsSubPage === 'plugins') return <PluginListSettings />;
-    if (settingsSubPage === 'annex') return <AnnexSettingsView />;
-    if (settingsSubPage === 'annex-control') return <AnnexControlSettingsView />;
+    // One page for the whole network (#3067); the old Annex control id still opens it.
+    if (settingsSubPage === 'annex' || settingsSubPage === 'annex-control') return <AnnexNetworkSettingsView />;
     if (settingsSubPage === 'updates') return <UpdateSettingsView />;
     if (settingsSubPage === 'whats-new') return <WhatsNewSettingsView />;
     if (settingsSubPage === 'keyboard-shortcuts') return <KeyboardShortcutsSettingsView />;

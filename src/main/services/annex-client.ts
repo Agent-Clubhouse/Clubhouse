@@ -6,6 +6,7 @@
  * Stores snapshots per satellite and forwards events to the renderer via IPC.
  */
 import * as https from 'https';
+import { randomUUID } from 'crypto';
 import * as http from 'http';
 import * as net from 'net';
 import * as tls from 'tls';
@@ -87,6 +88,8 @@ export interface SatelliteConnection {
 }
 
 export interface SatelliteSnapshot {
+  /** The machine this snapshot is from (#3063). */
+  machine?: { fingerprint: string; name: string };
   projects: unknown[];
   agents: Record<string, unknown[]>;
   quickAgents: Record<string, unknown[]>;
@@ -500,6 +503,7 @@ function setState(
   // satellite's seqs start over, so caches are seeded again on reconnect.
   if (prev === 'connected' && state !== 'connected') {
     disposeRemoteBuffers(sat.id);
+    satelliteEpochs.delete(sat.fingerprint);
     // The membership channel goes with the main connection, and reopens with it.
     networkChannel.closeFor(sat.fingerprint, 'out');
   }
@@ -2026,6 +2030,98 @@ function satelliteHttpsRequest(
     if (bodyStr) req.write(bodyStr);
     req.end();
   });
+}
+
+// ---------------------------------------------------------------------------
+// Chat across desktops (#2390): a satellite's chat agents, through the same
+// pinned routes and commands its phones use (docs/mobile-control-v1.md).
+// ---------------------------------------------------------------------------
+
+/** Each connected satellite's command epoch, read from its chat pages or capabilities. */
+const satelliteEpochs = new Map<string, string>();
+
+/** The chat commands a controller may send for a satellite's agent. */
+export const REMOTE_CHAT_COMMANDS = ['chat.send', 'chat.interrupt', 'chat.queue.remove', 'chat.permission', 'chat.question', 'chat.setModel', 'chat.setLevel'] as const;
+
+/** A JSON request over the pinned connection, answering its status and body whatever the status. */
+function satelliteJson(fingerprint: string, method: 'GET' | 'POST', urlPath: string, body?: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
+  const sat = satellites.get(fingerprint);
+  if (!sat || sat.state !== 'connected') return Promise.reject(new Error('Satellite not connected'));
+  const tlsOptions = pinnedTlsOptionsFor(sat.fingerprint);
+  return new Promise((resolve, reject) => {
+    const bodyStr = body ? JSON.stringify(body) : undefined;
+    const req = https.request(satelliteUrl(sat, urlPath), {
+      ...tlsOptions,
+      method,
+      timeout: 30000,
+      ...(bodyStr && { headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) } }),
+    }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf-8');
+        noteRestRefusal(sat, res.statusCode, text);
+        let parsed: unknown = text;
+        try { parsed = JSON.parse(text); } catch { /* telemetry-exempt: the status still says what happened */ }
+        resolve({ status: res.statusCode ?? 0, body: parsed });
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
+function rememberEpoch(fingerprint: string, body: unknown): void {
+  const epoch = (body as { epoch?: unknown } | null)?.epoch;
+  if (typeof epoch === 'string' && epoch) satelliteEpochs.set(fingerprint, epoch);
+}
+
+/** A page of a satellite chat agent's transcript, with its state, pending prompts and epoch. */
+export async function requestChatPage(fingerprint: string, agentId: string, opts: { beforeSeq?: number; limit?: number } = {}): Promise<unknown> {
+  const query = new URLSearchParams();
+  if (opts.beforeSeq !== undefined) query.set('beforeSeq', String(opts.beforeSeq));
+  if (opts.limit !== undefined) query.set('limit', String(opts.limit));
+  const qs = query.toString();
+  const res = await satelliteJson(fingerprint, 'GET', `/api/v1/mobile/agents/${encodeURIComponent(agentId)}/chat${qs ? `?${qs}` : ''}`);
+  if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
+  rememberEpoch(fingerprint, res.body);
+  return res.body;
+}
+
+/** A satellite chat agent's sessions, for its history. */
+export async function requestChatSessions(fingerprint: string, agentId: string): Promise<unknown> {
+  const res = await satelliteJson(fingerprint, 'GET', `/api/v1/mobile/agents/${encodeURIComponent(agentId)}/chat/sessions`);
+  if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
+  return res.body;
+}
+
+async function currentEpoch(fingerprint: string, fresh = false): Promise<string> {
+  const known = satelliteEpochs.get(fingerprint);
+  if (known && !fresh) return known;
+  const res = await satelliteJson(fingerprint, 'GET', '/api/v1/mobile/capabilities');
+  rememberEpoch(fingerprint, res.body);
+  const epoch = satelliteEpochs.get(fingerprint);
+  if (!epoch) throw new Error('No command epoch from that computer');
+  return epoch;
+}
+
+/**
+ * Sends a chat command for a satellite's agent, and answers its receipt (a
+ * rejection is a receipt too, not a throw). A stale epoch (the satellite
+ * restarted) is read again once and the command sent again with a new id.
+ */
+export async function sendChatCommand(fingerprint: string, command: Record<string, unknown>): Promise<unknown> {
+  if (!(REMOTE_CHAT_COMMANDS as readonly unknown[]).includes(command.type)) throw new Error('Not a chat command');
+  const send = async (fresh: boolean) => {
+    const epoch = await currentEpoch(fingerprint, fresh);
+    return satelliteJson(fingerprint, 'POST', '/api/v1/mobile/commands', { ...command, version: 1, epoch, commandId: randomUUID() });
+  };
+  let res = await send(false);
+  const code = (res.body as { error?: { code?: unknown } } | null)?.error?.code;
+  if (code === 'epoch_mismatch') res = await send(true);
+  return res.body;
 }
 
 // ---------------------------------------------------------------------------

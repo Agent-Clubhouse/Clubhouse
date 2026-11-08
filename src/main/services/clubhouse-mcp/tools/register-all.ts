@@ -22,6 +22,7 @@ import { registerConnectionTools } from './connection-tools';
 import { registerActionTools } from './action-tools';
 import { registerHelperPresetTools } from './helper-preset-tools';
 import { registerGrantRequestTools } from './grant-request-tools';
+import { registerAgentCardTools } from './agent-card-tools';
 
 export function registerClubhouseMcpTools(): void {
   registerAgentTools();
@@ -43,4 +44,5 @@ export function registerClubhouseMcpTools(): void {
   registerActionTools();
   registerHelperPresetTools();
   registerGrantRequestTools();
+  registerAgentCardTools();
 }

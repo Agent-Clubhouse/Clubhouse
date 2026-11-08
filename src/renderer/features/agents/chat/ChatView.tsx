@@ -8,11 +8,14 @@
  */
 
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
+import { DispatcherBehaviorChip } from '../../dispatcher/BehaviorChip';
 import type { Agent } from '../../../../shared/types';
 import type { PermissionLevel } from '../../../../shared/chat';
 import { createChatViewState, useAnswering, type ChatViewState } from '../../../stores/chatStore';
 import { ChatHeader } from './ChatHeader';
 import { ChatHistory } from './ChatHistory';
+import { useRemoteChat } from './remote-chat';
 import { isNewChromeEnabled } from '../../../chrome/chromeFlag';
 import { ChatStream, type StreamJump } from './ChatStream';
 import { AgentDetails } from '../details/AgentDetails';
@@ -163,6 +166,8 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   const plan = permission ? planForRequest(state.items, permission) : undefined;
   const ended = isSessionEnded(state);
   const composerContext = useComposerContext(agent, state, context);
+  // The Dispatcher's composer has one Behavior chip in place of its pickers (#3045).
+  const dispatcher = isDispatcherAgent(agent);
   const rootRef = useRef<HTMLDivElement>(null);
   const columnRef = useRef<HTMLDivElement>(null);
   // The composer fits the transcript column, which the details column narrows.
@@ -190,7 +195,9 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   const openSubagent = useCallback((subagentId: string) => {
     revealDetails({ agentId: agent.id, card: 'subagents', subagentId });
   }, [revealDetails, agent.id]);
-  const review = useAgentReview(agent, `${state.turnId ?? 'idle'}:${state.state ?? ''}`, detailsAvailable);
+  // Changes review reads this machine's git: not for an agent on another desktop (#2390).
+  const remote = useRemoteChat();
+  const review = useAgentReview(agent, `${state.turnId ?? 'idle'}:${state.state ?? ''}`, detailsAvailable && !remote);
   const reviewing = detailsAvailable && review.active;
   const showInStream = useCallback((subagentId: string) => {
     setJumpMissed(null);
@@ -241,7 +248,8 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
       <PermissionCard
         key={permission.requestId}
         agentName={agent.name}
-        extras={state.capabilities?.permissionExtras}
+        // Another desktop's permission command carries only the choice: no plan edits or feedback (#2390).
+              extras={remote ? undefined : state.capabilities?.permissionExtras}
         request={permission}
         busy={permissionBusy}
         plan={plan}
@@ -291,7 +299,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           commands={state.commands}
           text={draft}
           onTextChange={setDraft}
-          attachmentAgentId={agent.id}
+          attachmentAgentId={remote ? undefined : agent.id}
           attachments={attachments}
           onAttachmentsChange={setAttachments}
           onSend={onSend}
@@ -300,6 +308,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           onModelChange={actions.setModel ? (m, e) => { void actions.setModel?.(m, e); } : undefined}
           context={composerContext}
           layout={composerLayout}
+          behaviorChip={dispatcher ? <DispatcherBehaviorChip compact={composerLayout === 'narrow'} /> : undefined}
         />
       </>
     );
@@ -315,10 +324,11 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
         onSwitchToTerminal={onSwitchToTerminal}
         switching={switching}
         detailsToggle={<>
+          {remote && <span className="h-7 px-2 text-xs text-ctp-overlay1 flex items-center" data-testid="chat-remote-machine">On {remote.machineName}</span>}
           {onBrowseHistory && <button type="button" onClick={onBrowseHistory} className="h-7 px-2 text-xs text-ctp-subtext0 hover:text-ctp-text">History</button>}
           {detailsAvailable && <DetailsToggle />}
         </>}
-        review={detailsAvailable ? review.view : undefined}
+        review={detailsAvailable && !remote ? review.view : undefined}
       />
       {context === 'main' && <HelperHeader agent={agent} />}
       {reviewing && (permission || question) && (
@@ -396,6 +406,8 @@ export interface ChatViewProps {
 /** ChatView bound to the chat store. */
 export function ChatView({ agent, onSwitchToTerminal, switching, context = 'main' }: ChatViewProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Past sessions are read from this machine's transcripts: not for an agent on another desktop (#2390).
+  const remote = useRemoteChat();
   useChatTranscript(agent.id, context === 'canvas' ? CANVAS_TRANSCRIPT_TAIL : undefined);
   const earlier = useEarlierHistory(agent.id);
   const stored = useChatState(agent.id);
@@ -417,7 +429,7 @@ export function ChatView({ agent, onSwitchToTerminal, switching, context = 'main
       switching={switching}
       context={context}
       onShowEarlier={earlier.partial ? earlier.loadAll : undefined}
-      onBrowseHistory={() => setHistoryOpen(true)}
+      onBrowseHistory={remote ? undefined : () => setHistoryOpen(true)}
     />
   );
 }

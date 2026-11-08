@@ -1,49 +1,33 @@
+/**
+ * E2E: the project Terminal tab.
+ *
+ * Runs on the new layout, and on classic in the Classic layout E2E job
+ * (#2843). On the new layout the Terminal tab is in the title bar (or its More
+ * menu) and has no list of its own: the sidebar keeps the project tree, and
+ * the selection there is the terminal's target (listTabs.ts, scope.ts).
+ */
 import { test, expect, _electron as electron, Page } from '@playwright/test';
 import * as path from 'path';
 import { launchApp } from './launch';
+import {
+  addProject,
+  assertActiveProject,
+  assertRunLayout,
+  clickExplorerTab,
+  getTitleBarText,
+  selectProject,
+} from './smoke-helpers';
+import { isNewLayout } from './layout';
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
 
 const FIXTURE_A = path.resolve(__dirname, 'fixtures/project-a');
+const TERMINAL_TAB = 'explorer-tab-plugin:terminal';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Stub Electron dialog for project picker. */
-async function stubDialogForPath(dirPath: string) {
-  await electronApp.evaluate(
-    async ({ dialog, BrowserWindow }, fixturePath) => {
-      const win =
-        BrowserWindow.getAllWindows().find(
-          (w) => !w.webContents.getURL().startsWith('devtools://'),
-        ) ?? BrowserWindow.getAllWindows()[0] ?? null;
-      BrowserWindow.getFocusedWindow = () => win;
-      dialog.showOpenDialog = async () => ({
-        canceled: false,
-        filePaths: [fixturePath],
-      });
-    },
-    dirPath,
-  );
-}
-
-/** Add a fixture project. */
-async function addProject(dirPath: string) {
-  await stubDialogForPath(dirPath);
-  const addBtn = window.locator('[data-testid="nav-add-project"]');
-  await addBtn.click();
-  const name = path.basename(dirPath);
-  await expect(window.locator(`text=${name}`).first()).toBeVisible({
-    timeout: 10_000,
-  });
-}
-
-/** Get the title bar text. */
-async function getTitleBarText(): Promise<string> {
-  return window.locator('[data-testid="title-bar"]').first().textContent() as Promise<string>;
-}
 
 /** Dismiss any notification banners that may block clicks. */
 async function dismissNotifications() {
@@ -65,25 +49,12 @@ async function dismissNotifications() {
   }
 }
 
-/**
- * Click an explorer tab by dispatching a JS click event directly.
- * The project rail can overlay explorer tabs and intercept pointer events,
- * so we bypass the Playwright pointer event system entirely.
- */
-async function clickExplorerTab(testId: string) {
-  await window.waitForSelector(`[data-testid="${testId}"]`, { timeout: 10_000 });
-  await window.evaluate((tid) => {
-    const el = document.querySelector(`[data-testid="${tid}"]`) as HTMLElement;
-    if (el) el.click();
-  }, testId);
-  await window.waitForTimeout(500);
-}
-
 /** Navigate to the terminal tab and verify it's active. */
 async function navigateToTerminal() {
-  await clickExplorerTab('explorer-tab-plugin:terminal');
+  await clickExplorerTab(electronApp, window, TERMINAL_TAB);
 
-  // Verify tab activation via title bar
+  // Verify tab activation via title bar. The new layout's breadcrumb shows the
+  // tab's title in every window width.
   await expect(window.locator('[data-testid="title-bar"]')).toContainText(
     'Terminal',
     { timeout: 10_000 },
@@ -95,16 +66,14 @@ async function navigateToTerminal() {
 // ---------------------------------------------------------------------------
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
+  ({ electronApp, window } = await launchApp());
+  await assertRunLayout(window);
 
   // Add a project so plugin tabs become available
-  await addProject(FIXTURE_A);
+  await addProject(electronApp, window, FIXTURE_A);
 
   // Ensure the project is active
-  await expect(window.locator('[data-testid="title-bar"]')).toContainText(
-    'project-a',
-    { timeout: 5_000 },
-  );
+  await assertActiveProject(window, 'project-a');
 
   // Wait for plugins and background git operations to settle
   await window.waitForTimeout(2_000);
@@ -123,14 +92,31 @@ test.afterAll(async () => {
 
 test.describe('Terminal Plugin Tab', () => {
   test('terminal tab is visible in explorer rail', async () => {
-    const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
-    await expect(terminalTab).toBeVisible({ timeout: 10_000 });
+    const terminalTab = window.getByTestId(TERMINAL_TAB);
+    if (!(await isNewLayout(window))) {
+      await expect(terminalTab).toBeVisible({ timeout: 10_000 });
+      return;
+    }
+    // New layout: in the title bar, or in its More menu when the tabs don't
+    // all fit. An overflowed tab only has its test id while More is open.
+    const more = window.getByTestId('title-more');
+    await expect(async () => {
+      if (!(await terminalTab.isVisible()) && await more.isVisible() && await more.getAttribute('aria-expanded') !== 'true') {
+        await more.click();
+      }
+      await expect(terminalTab).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 10_000 });
+    if (await more.isVisible() && await more.getAttribute('aria-expanded') === 'true') await more.click();
   });
 
   test('clicking terminal tab switches view to Terminal', async () => {
     await navigateToTerminal();
-    const title = await getTitleBarText();
+    const title = await getTitleBarText(window);
     expect(title).toContain('Terminal');
+    if (await isNewLayout(window)) {
+      // The active tab always stays in the title bar's row, never in More.
+      await expect(window.getByTestId(TERMINAL_TAB)).toHaveAttribute('aria-selected', 'true');
+    }
   });
 });
 
@@ -146,16 +132,39 @@ test.describe('Terminal Widget Rendering', () => {
     await expect(mainPanel).toBeVisible({ timeout: 15_000 });
 
     const sidebar = window.locator('[data-testid="terminal-sidebar-panel"]');
+    if (await isNewLayout(window)) {
+      // No targets list here: the sidebar keeps the project tree.
+      await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 5_000 });
+      await expect(sidebar).toHaveCount(0);
+      return;
+    }
     await expect(sidebar).toBeVisible({ timeout: 5_000 });
   });
 
   test('terminal sidebar shows Targets header and Project target', async () => {
+    test.skip(await isNewLayout(window), 'The new layout has no targets list: the sidebar selection is the target (listTabs.ts SCOPE_REPLACES_LIST), covered by the next test.');
     await navigateToTerminal();
 
     const sidebar = window.locator('[data-testid="terminal-sidebar-panel"]');
     await expect(sidebar).toBeVisible({ timeout: 10_000 });
     await expect(sidebar.locator('text=Targets')).toBeVisible({ timeout: 5_000 });
     await expect(sidebar.locator('text=Project')).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('new layout: the selected project header is the target, at the project root', async () => {
+    test.skip(!(await isNewLayout(window)), 'The new layout\'s scope target; classic picks targets from the terminal\'s own list, covered by the previous test.');
+    await navigateToTerminal();
+
+    // Select project-a's header in the tree, which stays beside the Terminal
+    // tab, so the scope (and the terminal's target) is that project.
+    await selectProject(window, 'project-a');
+    await assertActiveProject(window, 'project-a');
+    await expect(
+      window.locator('[data-testid="project-tree"] [role="treeitem"][aria-label="project-a"]'),
+    ).toHaveAttribute('aria-selected', 'true');
+    await expect(window.getByTestId('explorer-tab-plugin:terminal')).toHaveAttribute('aria-selected', 'true');
+    await expect(window.getByTestId('terminal-root-note')).toHaveText('project root', { timeout: 10_000 });
+    await expect(window.getByTestId('terminal-cwd')).toHaveAttribute('title', FIXTURE_A);
   });
 
   test('terminal spawns and shows Running status', async () => {
@@ -330,7 +339,7 @@ test.describe('Terminal Restart and Cleanup', () => {
     await expect(shellTerminal).toContainText(marker, { timeout: 10_000 });
 
     // Switch to agents tab
-    await clickExplorerTab('explorer-tab-agents');
+    await clickExplorerTab(electronApp, window, 'explorer-tab-agents');
     await expect(window.locator('[data-testid="title-bar"]')).toContainText(
       'Agents',
       { timeout: 5_000 },
@@ -355,7 +364,7 @@ test.describe('Terminal Restart and Cleanup', () => {
     await expect(mainPanel).toBeVisible({ timeout: 10_000 });
 
     // Switch to agents tab
-    await clickExplorerTab('explorer-tab-agents');
+    await clickExplorerTab(electronApp, window, 'explorer-tab-agents');
     await expect(window.locator('[data-testid="title-bar"]')).toContainText(
       'Agents',
       { timeout: 5_000 },

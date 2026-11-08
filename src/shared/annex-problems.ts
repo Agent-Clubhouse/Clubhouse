@@ -75,7 +75,7 @@ export function describeAnnexProblem(
       case 'tls-unavailable':
         return [`${name} couldn't start its secure connection.`, 'Turn Annex off and on there, then retry.'];
       case 'http-refused':
-        return [`${name} refused the connection${detail?.status ? ` (HTTP ${detail.status})` : ''}.`, 'Retry. If it keeps happening, pair again.'];
+        return [`${name} refused the connection${detail?.status ? ` (HTTP ${detail.status})` : ''}.`, 'Reconnect. If it keeps happening, pair again.'];
       case 'old-pairing':
         return ['This pairing is from an older version of Clubhouse.', 'Pair again to connect.'];
       case 'removed-there':
@@ -89,9 +89,9 @@ export function describeAnnexProblem(
       case 'not-found-yet':
         return [`${name} hasn't been found on the network yet.`, 'Check that Clubhouse is open there with Annex turned on.'];
       case 'client-off':
-        return ['Connecting to other computers is turned off here.', 'Turn on Connect to satellites in Annex control.'];
+        return ['Connecting to other computers is turned off here.', 'Turn on Annex Network in Settings.'];
       case 'connection-failed':
-        return [`Couldn't connect to ${name}.`, 'Retry. If it keeps failing, check that Annex is on there.'];
+        return [`Couldn't connect to ${name}.`, 'Reconnect. If it keeps failing, check that Annex Network is on there.'];
     }
   })();
   const action = (detail?.pairing && PAIRING_ACTIONS[code]) || text[1];

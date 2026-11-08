@@ -17,7 +17,12 @@ vi.mock('../settings-audit', async (importOriginal) => {
 });
 
 import { appLog } from '../log-service';
-import { _resetSettingsAuditForTesting, readSettingsAudit, withSettingsSurface } from '../settings-audit';
+import { _resetSettingsAuditForTesting, withSettingsSurface } from '../settings-audit';
+import { captureAuditEvents, type AuditCapture } from '../../telemetry/__test-utils__/audit-capture';
+
+let capture: AuditCapture | undefined;
+/** The recorded settings rows, newest first, from the audit events (#2920). */
+const readSettingsAudit = async (_limit: number) => (capture?.settings() ?? []).slice().reverse();
 import { composeInstructions } from './composer';
 import { instanceFromTemplate } from './structure';
 import { AssetCatalogError, assetCatalogDir, createAssetCatalogStore, installBuiltinAsset, type AssetCatalogStore, type PublicationRequest } from './store';
@@ -71,9 +76,12 @@ beforeEach(() => {
   store = makeStore();
   vi.mocked(appLog).mockClear();
   _resetSettingsAuditForTesting(true);
+  capture = captureAuditEvents();
 });
 
 afterEach(() => {
+  capture?.stop();
+  capture = undefined;
   _resetSettingsAuditForTesting(false);
   fs.rmSync(W.home, { recursive: true, force: true });
 });

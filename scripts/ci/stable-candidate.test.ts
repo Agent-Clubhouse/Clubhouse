@@ -466,7 +466,7 @@ describe('the matrix', () => {
 
   it('expects flags to take effect only with Preview on', () => {
     expect(expectedFor({ state: 'beta', preview: true, flags: true })).toMatchObject({ previewEligible: true, newChrome: true, chatEnabled: true, flagsInForce: BETA_FLAGS, settingsPages: [...ANNEX_PAGES, ...PREVIEW_PAGES], dispatcherRow: true });
-    expect(expectedFor({ state: 'beta', preview: true, flags: false })).toMatchObject({ previewEligible: true, newChrome: true, chatEnabled: true, flagsInForce: null, settingsPages: ['Annex', 'Annex control', 'Experimental'], dispatcherRow: true });
+    expect(expectedFor({ state: 'beta', preview: true, flags: false })).toMatchObject({ previewEligible: true, newChrome: true, chatEnabled: true, flagsInForce: null, settingsPages: ['Annex Network', 'Experimental'], dispatcherRow: true });
     expect(expectedFor({ state: 'fresh', preview: true, flags: true })).toMatchObject({ newChrome: true, dispatcherRow: true });
   });
 
@@ -563,10 +563,10 @@ describe('rendererProbeSource', () => {
   }
 
   it('reads the layout, the pages and main\'s decision, and leaves Settings closed', async () => {
-    const { observed, calls } = await run(['title-bar'], ['Updates', ' Experimental ', 'Annex'], '/project');
+    const { observed, calls } = await run(['title-bar'], ['Updates', ' Experimental ', 'Annex Network'], '/project');
     expect(JSON.parse(JSON.stringify(observed))).toEqual({
       eligible: false, flags: {}, newChromeLayout: false, titleBar: true, chromeTitleBar: false, chromeSidebar: false,
-      dispatcherRow: false, wakesInChat: false, settingsPages: ['Annex', 'Experimental'],
+      dispatcherRow: false, wakesInChat: false, settingsPages: ['Annex Network', 'Experimental'],
     });
     expect(calls).toEqual([['agent', 'claude-code', { projectPath: '/project', starting: true }], ['nav-settings'], ['nav-settings']].map((c) => expect.arrayContaining(c.map((v) => (typeof v === 'object' ? expect.objectContaining(v as object) : v)))));
   }, 30_000);

@@ -329,7 +329,7 @@ jq -s 'map(select(.t=="event")) as $e
 
 ## Auditing settings changes
 
-`settings-audit.jsonl` under the Clubhouse base dir: one JSON line per change or refusal, 1 MB, then one rotated file. It shares `bounded-audit-log.ts` with `dispatcher-audit.ts`. It's local and isn't sent anywhere. Reading it is by the file for now: nothing in the app shows it.
+One `clubhouse.audit.setting` event per change or refusal, in the local telemetry record (#2920, `docs/telemetry-otel-spec.md` §6.13). Its key, and its old and new values where they may be kept, are in the event's local-only detail, which no export destination gets. Nothing in the app shows it. Until #2920 part three this was `settings-audit.jsonl`, which is no longer written.
 
 **A row** has `surface`, `actorId` when an agent asked, `scope` (`app`, `project`, `agent`), `targetId`, `key`, `before` and `after` or `changed: true`, `outcome` and `code`. It uses agent and project ids. Where only a path is to hand, as with project defaults, `targetId` is a short hash of it, never the path.
 
@@ -355,7 +355,7 @@ jq -s 'map(select(.t=="event")) as $e
 
 `settings-audit-inventory.test.ts` pins this: a new settings store has to report or be named as not settings, and the writers and entry points are checked. **Not settings:** `annex-ports.json`, `finished-quick-agents.json`, `project-state.json`, `chat-cli-denylist.json`.
 
-**Not covered:** the renderer's own stores such as keyboard shortcuts, plugin storage, files edited by hand, and `dispatcher-audit.jsonl`'s own rows, which stay where they are. Project pin and inactive state isn't treated as a setting. A store's save records a key's value as saved, which can include neighbours saved at their defaults, as `docs/settings-read-mcp.md` describes.
+**Not covered:** the renderer's own stores such as keyboard shortcuts, plugin storage, files edited by hand, and the Dispatcher's control calls, which have their own audit event (`clubhouse.audit.dispatcher_control`). Project pin and inactive state isn't treated as a setting. A store's save records a key's value as saved, which can include neighbours saved at their defaults, as `docs/settings-read-mcp.md` describes.
 
 ## Phone contract
 
