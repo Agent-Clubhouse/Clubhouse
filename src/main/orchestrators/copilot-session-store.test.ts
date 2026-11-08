@@ -222,8 +222,14 @@ describe('findCopilotTranscript (#2277)', () => {
     .filter(([k, v]) => k.endsWith('Sync') && vi.isMockFunction(v) && (v as ReturnType<typeof vi.fn>).mock.calls.length > 0)
     .map(([k]) => k);
 
-  it('finds a session among thousands with a few direct probes, no store scan and no sync fs', async () => {
-    for (let i = 0; i < 3000; i++) fs.mkdirSync(path.join(store, `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`));
+  // Size doesn't matter to these assertions: a scan would still list the store
+  // and use more probes. 3,000 directories made the setup time out under load (#3029).
+  const fillStore = () => {
+    for (let i = 0; i < 300; i++) fs.mkdirSync(path.join(store, `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`));
+  };
+
+  it('finds a session among hundreds with a few direct probes, no store scan and no sync fs', async () => {
+    fillStore();
     session(A, { cwd, created: T0 });
     expect(syncCalls()).toContain('mkdirSync'); // the spies see sync calls
     vi.clearAllMocks();
@@ -238,7 +244,7 @@ describe('findCopilotTranscript (#2277)', () => {
   });
 
   it('misses in a bounded number of probes regardless of store size', async () => {
-    for (let i = 0; i < 3000; i++) fs.mkdirSync(path.join(store, `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`));
+    fillStore();
     vi.clearAllMocks();
 
     const counter = { probes: 0 };
