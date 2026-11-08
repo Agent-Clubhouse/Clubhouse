@@ -570,6 +570,10 @@ export class ChatAgentRuntime implements AgentRuntime {
       wanted = running ? 'queued' : 'prompt';
     } else if (requested === 'prompt' && running) {
       wanted = caps.steer ? 'steer' : 'queued';
+    } else if (requested === 'queued' && !running && caps.queue !== 'native' && this.queued.length === 0) {
+      // Nothing is running to end and drain the queue (the turn ended first): send it now (#3102).
+      // With items still queued, a drain is coming (the turn just ended), so it waits its turn.
+      wanted = 'prompt';
     } else {
       wanted = requested;
     }
@@ -677,6 +681,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     if (!session) return;
     const next = this.queued.shift();
     if (!next) return;
+    let failed = false;
     this.draining = true;
     try {
       this.clearIdleTimer();
@@ -689,11 +694,20 @@ export class ChatAgentRuntime implements AgentRuntime {
       if (this.session === session) await this.emitQueueState([next.messageId], 'delivered');
     } catch (err) {
       if (this.pendingTrace === next.trace) { this.pendingTrace = undefined; this.pendingTraceAssigned = false; }
-      if (this.session === session) await this.emitQueueState([next.messageId], 'failed');
-      throw err;
+      if (this.session !== session) return;
+      // Like a failed plain send, this one message fails and the session stays (#3103).
+      // telemetry-exempt: the user sees the notice; logged locally with the reason.
+      appLog('core:chat', 'warn', 'A queued chat message could not be sent', { meta: { agentId: this.agentId, error: err instanceof Error ? err.message : String(err) } });
+      // telemetry-exempt: shown to the user as a notice below.
+      await this.emitQueueState([next.messageId], 'failed');
+      const reason = err instanceof Error ? err.message : String(err);
+      await this.emit({ type: 'notice', data: { level: 'warn', code: 'queued_send_failed', message: `A queued message could not be sent: ${reason}` } });
+      failed = true;
     } finally {
       this.draining = false;
     }
+    // Nothing was sent, so no turn will end to drain the rest: go on with the next one.
+    if (failed) await this.drainQueue();
   }
 
   async interrupt(): Promise<void> {
