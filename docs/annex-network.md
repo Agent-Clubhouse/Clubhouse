@@ -9,6 +9,7 @@ Epic: #3056. Stages land in order: #3057 (peer basics), #3058 (reachability), #3
 - **Reaching a satellite** (`src/main/services/annex-reach.ts`): each satellite entry remembers where it was reached (`knownHosts`, newest first, plus the hosts in its pairing link) and its port (`mainPort`), and can hold a host the person typed (`typedHost`), such as a tailnet name. Connections are direct: every address is the satellite itself, and the pinned certificate decides.
 - **The network channel** (`src/main/services/annex-network-channel.ts`, protocol in `src/shared/annex-network-protocol.ts`): a WebSocket at `/network` on the main TLS port that carries membership only (`hello`, `members`, `member-joined`, `member-removed`, `member-renamed`). Anything else closes it with 4400.
 - **Membership** (`src/main/services/annex-network-membership.ts`): a member is a peer with role `member`, which both controls and is controlled. `annex-network.json` keeps removals (so members that were off learn of them) and which members have confirmed each join and removal.
+- **Phones** (#3062): a phone that pairs with `network: 1` is a member of kind `phone`. The contract for the iOS app is `docs/annex-network-phone.md`.
 - **A problem** (`src/shared/annex-problems.ts`) is a classified reason a connection failed, shown as two sentences: what happened, and what to do.
 
 ## Real-device checks
@@ -38,6 +39,13 @@ Synthetic tests can't cover certificates under Electron or local network discove
 - Remove C on B: A and C hear at once; C stops being a member; A's Settings shows the removal confirmed. Remove a device while another member is off: it's removed there when it comes back.
 - A member connecting to another doesn't show "Controlled by" on either screen. A phone or a one-to-one controller still does.
 - An existing one-to-one pairing from before stage 4 keeps working as it was, until it's paired again.
+
+**Stage 5 (#3062), once the iOS app adopts it**
+- Pair a phone with desktop A with Annex Network on: it lists every desktop in A's network, online ones bright, offline ones dimmed.
+- Pair desktop C with A while the phone is connected: the phone connects to C by itself.
+- From the phone, pair a new desktop D that's in no network: D joins, A and the others connect to D, and the phone lists it.
+- Remove the phone on any desktop: every desktop refuses it, and the phone forgets the network.
+- A phone in the network still shows "Controlled by" on the desktop it's connected to.
 
 ## Decision log
 
@@ -75,4 +83,9 @@ Decisions made while building, for the maintainer to revisit. Newest last. D180 
 | D207 | A join or removal made on this machine is confirmed by a member once that member's view shows it. The device list carries who confirmed and who it's waiting on (by name) until every current member has it; a removed member is listed as `removing` until then. Joins and removals made elsewhere aren't tracked here. | "The page shows where it's confirmed." | |
 | D208 | A member learns other members' addresses from their own hello and from views, and connects once it knows one (only to desktops, only with Connect to satellites on). | No pairing and no discovery needed between members. | |
 | D209 | Any member can rename any member; the newest rename wins among the members it reaches. A member's own hello carries its current name, so others pick up its own renames when they next connect. | "Rename" is one of Manage devices' actions. | Renames of others should reach members that were off. |
+| D210 | A phone joins the network by sending `network: 1` with a persistent pairing; it's a member of kind `phone`. Desktops never connect to a phone, a member phone still locks the screen like any phone, and it keeps every phone route. A session-only pairing never joins. | The phone is a member, but it's still a phone in someone's hand. | |
+| D211 | `GET /api/v1/mobile/network` lists the network as the desktop answering knows it: every member with name, kind, addresses and port (desktops), certificate fingerprint (to pin), certificate PEM (desktops, to vouch), whether that desktop is connected to it now, and removals. A phone that isn't a member sees only this desktop, with `joined: false`. | One read gives the phone everything to show and connect to. | |
+| D212 | `network:changed` over `/ws` carries the same view to member phones whenever the membership changes; the phone connects to new desktops by itself. | "Connects to new ones by itself." | |
+| D213 | Joining through the phone is one route both ways: `POST /api/v1/mobile/network/members` with member records, from a member phone. The phone sends the network's members to a desktop it just paired, and that desktop's own record to a member. Records must hold together, as with a member's word. Members may be sent exactly as listed; `online` and `self` are ignored. | A person on the new device finishes the pairing (the phone scanning its code), and nothing new to trust: the phone is already a member on both. | |
+| D214 | The contract for the iOS app is `docs/annex-network-phone.md`, with fixtures `test/fixtures/annex-mobile/network-*.json`. Capabilities gain `network` while Annex Network is on; nothing else in the phone's existing fixtures changes. | Additive: a phone that ignores it works one-to-one as before. | |
 

@@ -1,0 +1,65 @@
+{
+  "direction": "desktop-to-phone",
+  "frame": {
+    "payload": {
+      "joined": true,
+      "members": [
+        {
+          "certFingerprint": "CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD",
+          "certPem": "-----BEGIN CERTIFICATE-----\n<base64 DER>\n-----END CERTIFICATE-----\n",
+          "color": "indigo",
+          "fingerprint": "AA:BB:CC:DD",
+          "hosts": [
+            "192.168.1.9",
+            "studio.tail1234.ts.net"
+          ],
+          "icon": "computer",
+          "joinedAt": "2026-11-08T10:00:00.000Z",
+          "kind": "desktop",
+          "name": "Studio",
+          "online": true,
+          "port": 7432,
+          "publicKey": "<base64 Ed25519 SPKI DER>",
+          "self": true
+        },
+        {
+          "certFingerprint": "CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD:CD",
+          "certPem": "-----BEGIN CERTIFICATE-----\n<base64 DER>\n-----END CERTIFICATE-----\n",
+          "color": "indigo",
+          "fingerprint": "11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11",
+          "hosts": [
+            "192.168.1.9",
+            "studio.tail1234.ts.net"
+          ],
+          "icon": "computer",
+          "joinedAt": "2026-11-08T10:00:00.000Z",
+          "kind": "desktop",
+          "name": "Travel laptop",
+          "online": false,
+          "port": 7432,
+          "publicKey": "<base64 Ed25519 SPKI DER>"
+        },
+        {
+          "certFingerprint": "EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF:EF",
+          "color": "indigo",
+          "fingerprint": "mobile-fixture-identity",
+          "hosts": [],
+          "icon": "iphone",
+          "joinedAt": "2026-11-08T10:00:00.000Z",
+          "kind": "phone",
+          "name": "Mason’s iPhone",
+          "online": true,
+          "publicKey": "<base64 Ed25519 SPKI DER>"
+        }
+      ],
+      "removals": [
+        {
+          "fingerprint": "55:55:55:55:55:55:55:55:55:55:55:55:55:55:55:55",
+          "removedAt": "2026-11-08T12:00:00.000Z"
+        }
+      ],
+      "version": 1
+    },
+    "type": "network:changed"
+  }
+}

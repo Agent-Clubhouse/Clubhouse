@@ -282,4 +282,44 @@ describe('Annex Network membership (#3061)', () => {
       expect(peers.get(A.toLowerCase())?.knownHosts?.[0]).toBe('192.168.1.4');
     });
   });
+
+  describe('the phone as a member (#3062)', () => {
+    const PHONE = fp('0c');
+
+    it('takes devices a member phone vouches for, connects to desktops, and tracks the joins', () => {
+      peers.set(PHONE.toLowerCase(), memberPeer(PHONE, '0c', 'Phone', { kind: 'phone' }));
+      open = [A, B];
+      expect(membership.vouchFromPhone(PHONE, [member(N, '0e', 'New Mac')])).toEqual([N.toLowerCase()]);
+      expect(peers.get(N.toLowerCase())).toMatchObject({ role: 'member', addedBy: PHONE });
+      expect(hooks.connect).toHaveBeenCalledWith(N.toLowerCase());
+      expect(membership.joinConfirmation(N)?.waitingOn).toEqual(expect.arrayContaining([A, B]));
+      expect(broadcasts.at(-1)!.message.type).toBe('members');
+      // Known already: nothing added.
+      expect(membership.vouchFromPhone(PHONE, [member(N, '0e', 'New Mac')])).toEqual([]);
+    });
+
+    it('refuses vouching from a phone that is not a member, a desktop, or with Annex Network off', () => {
+      peers.set(PHONE.toLowerCase(), memberPeer(PHONE, '0c', 'Phone', { kind: 'phone', role: 'controller' }));
+      expect(membership.vouchFromPhone(PHONE, [member(N, '0e', 'New Mac')])).toEqual([]);
+      expect(membership.vouchFromPhone(A, [member(N, '0e', 'New Mac')])).toEqual([]);
+      peers.set(PHONE.toLowerCase(), memberPeer(PHONE, '0c', 'Phone', { kind: 'phone' }));
+      vi.mocked(annexSettings.networkEnabled).mockReturnValue(false);
+      expect(membership.vouchFromPhone(PHONE, [member(N, '0e', 'New Mac')])).toEqual([]);
+      expect(peers.has(N.toLowerCase())).toBe(false);
+    });
+
+    it('never connects to a phone it learns of', () => {
+      listener!(A, view([member(fp('0d'), '0d', 'Another phone', { kind: 'phone', hosts: [], port: undefined })]));
+      expect(peers.get(fp('0d'))).toMatchObject({ role: 'member', kind: 'phone' });
+      expect(hooks.connect).not.toHaveBeenCalled();
+    });
+
+    it('tells listeners when the membership changes', () => {
+      const heard = vi.fn();
+      const off = membership.onMembershipChanged(heard);
+      listener!(A, view([member(N, '0e', 'New Mac')]));
+      expect(heard).toHaveBeenCalled();
+      off();
+    });
+  });
 });

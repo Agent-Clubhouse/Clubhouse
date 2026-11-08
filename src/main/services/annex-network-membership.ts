@@ -62,6 +62,14 @@ function state(): MembershipState {
 /** Removals kept. A view must stay well under the protocol's limit (NETWORK_MEMBERS_MAX * 4). */
 const REMOVALS_KEPT = 200;
 
+const changeListeners = new Set<() => void>();
+
+/** Hears every change to the membership (for pushing it to phones, #3062). */
+export function onMembershipChanged(listener: () => void): () => void {
+  changeListeners.add(listener);
+  return () => { changeListeners.delete(listener); };
+}
+
 function save(next: MembershipState): void {
   if (next.removals.length > REMOVALS_KEPT) {
     next.removals = [...next.removals].sort((x, y) => Date.parse(y.removedAt) - Date.parse(x.removedAt)).slice(0, REMOVALS_KEPT);
@@ -70,6 +78,9 @@ function save(next: MembershipState): void {
     appLog('core:annex', 'warn', 'Could not save Annex Network state', { meta: { error: err instanceof Error ? err.message : String(err) } });
   });
   devicesChanged();
+  for (const listener of [...changeListeners]) {
+    try { listener(); } catch { /* telemetry-exempt: one listener failing must not stop the others */ }
+  }
 }
 
 const lower = (fp: string) => fp.toLowerCase();
@@ -336,6 +347,27 @@ function onMessage(from: string, message: NetworkMessage): void {
   }
   if (changed || confirmed) save(s);
   if (changed) sendView();
+}
+
+/**
+ * A phone that's a member vouches for devices (#3062): the network's members,
+ * sent to a desktop it just paired, or that desktop, sent to a member. Each is
+ * added as if a member had said so. Returns the fingerprints added.
+ */
+export function vouchFromPhone(phone: string, members: NetworkMember[]): string[] {
+  if (!annexSettings.networkEnabled()) return [];
+  const sender = annexPeers.getPeer(phone);
+  if (sender?.role !== 'member' || sender.kind !== 'phone') return [];
+  const s = state();
+  const added: string[] = [];
+  for (const member of members) {
+    const before = !!annexPeers.getPeer(member.fingerprint);
+    if (addMember(member, phone, s) && !before) added.push(lower(member.fingerprint));
+  }
+  for (const fp of added) s.confirmations[`join:${fp}`] = [];
+  save(s);
+  if (added.length > 0) sendView();
+  return added;
 }
 
 // ---------------------------------------------------------------------------

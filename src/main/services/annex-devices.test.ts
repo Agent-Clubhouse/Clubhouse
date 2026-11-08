@@ -3,7 +3,7 @@ import type { AnnexPeer } from '../../shared/types';
 
 vi.mock('./annex-peers', () => ({
   controlsThisMachine: (p?: { role?: string } | null) => p?.role === 'controller' || p?.role === 'member',
-  controlledFromHere: (p?: { role?: string } | null) => p?.role === 'satellite' || p?.role === 'member',
+  controlledFromHere: (p?: { role?: string; kind?: string } | null) => p?.role === 'satellite' || (p?.role === 'member' && p.kind !== 'phone'),
   listPeers: vi.fn(() => []),
   getPeer: vi.fn(),
   peerNeedsPairing: vi.fn((peer: AnnexPeer) => !peer.role || !peer.tlsCertificateFingerprint),

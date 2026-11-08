@@ -93,6 +93,7 @@ export function buildDeviceList(sources: Sources): AnnexDevice[] {
       icon: peer.icon || 'computer',
       color: peer.color || 'indigo',
       role: peer.role ?? null,
+      ...(peer.kind && { kind: peer.kind }),
       state,
       pairedAt: peer.pairedAt || '',
       lastSeen: peer.lastSeen || '',

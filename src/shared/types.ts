@@ -1191,6 +1191,8 @@ export interface AnnexDevice {
    * roles, which needs pairing again.
    */
   role: AnnexPeerRole | null;
+  /** For a network member: a computer or a phone. */
+  kind?: 'desktop' | 'phone';
   state: AnnexDeviceState;
   /** ISO time it was paired; empty when unknown. */
   pairedAt: string;

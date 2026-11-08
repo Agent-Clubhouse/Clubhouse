@@ -32,7 +32,7 @@ export function AnnexControlSettingsView() {
   }, [loadDevices]);
   // Older pairings with no role are listed on both pages, so either can pair them again.
   // Network members are here too: this machine controls them (#3061).
-  const satellites = devices.filter((d) => d.role === 'satellite' || d.role === 'member' || d.role === null);
+  const satellites = devices.filter((d) => d.role === 'satellite' || (d.role === 'member' && d.kind !== 'phone') || d.role === null);
 
   return (
     <SettingsPage title="Annex control" description="Control other Clubhouse instances on your local network.">

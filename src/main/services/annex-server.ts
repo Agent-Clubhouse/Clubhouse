@@ -51,6 +51,7 @@ import { createBonjour } from './annex-mdns';
 import { withReachableAs } from './annex-reach';
 import * as networkChannel from './annex-network-channel';
 import * as membership from './annex-network-membership';
+import { NETWORK_PROTOCOL_VERSION, parseNetworkMessage } from '../../shared/annex-network-protocol';
 import * as annexEventBus from './annex-event-bus';
 import * as annexSettings from './annex-settings';
 import { annexNetworkProfile } from './annex-network-profile';
@@ -190,6 +191,8 @@ let bonjourService: Service | null = null;
 /** Publishes the advertisement again (after a dead mDNS socket, or on wake); set while the server runs. */
 let republishBonjour: (() => void) | null = null;
 let republishTimer: ReturnType<typeof setTimeout> | null = null;
+/** Stops pushing network changes to phones. */
+let unsubMembership: (() => void) | null = null;
 /** How long to wait before replacing an mDNS socket that couldn't start. */
 const MDNS_RESTART_DELAY_MS = 30_000;
 let serverPort = 0; // Main TLS port
@@ -2349,6 +2352,14 @@ const PAIR_MESSAGES = {
   client_certificate_required: 'Pairing needs the device certificate that matches its identity.',
 } as const;
 
+/**
+ * Who may use the phone routes: a controller (or an older entry with no role), or
+ * a phone that's an Annex Network member (#3062).
+ */
+function actsAsPhoneController(peer: AnnexPeer): boolean {
+  return !peer.role || peer.role === 'controller' || (peer.role === 'member' && peer.kind === 'phone');
+}
+
 /** Phones send `pairingMode`, and older ones a phone or tablet icon; Clubhouse desktops send neither. */
 function sentByPhone(body: Record<string, unknown>): boolean {
   return body.pairingMode !== undefined || (typeof body.icon === 'string' && /phone|pad|tablet|mobile/i.test(body.icon));
@@ -2497,8 +2508,10 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
   const settings = annexSettings.getSettings();
   const now = new Date().toISOString();
   // Pairing again (same identity) stores the name it sends now, like everything else it sends.
-  // A desktop with Annex Network on asks to join (#3061); with it on here too, it's a member.
-  const joins = body.network === 1 && annexSettings.networkEnabled(settings);
+  // A desktop (#3061) or a phone (#3062) with Annex Network on asks to join; with it on here too,
+  // it's a member. A session-only pairing never joins.
+  const joins = body.network === 1 && annexSettings.networkEnabled(settings) && !sessionOnly;
+  const joinsAs: 'desktop' | 'phone' = sentByPhone(body) ? 'phone' : 'desktop';
   const pairedPeer: AnnexPeer = {
     fingerprint,
     publicKey: clientPublicKey,
@@ -2510,7 +2523,7 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     tlsCertificateFingerprint: certFingerprint,
     // It paired with us, so it controls us; as a network member each controls the other.
     role: joins ? 'member' : 'controller',
-    ...(joins && { kind: 'desktop' as const, addedBy: identity.fingerprint, tlsCertificatePem: annexTls.certificatePemFromDer(certDer) }),
+    ...(joins && { kind: joinsAs, addedBy: identity.fingerprint, tlsCertificatePem: annexTls.certificatePemFromDer(certDer) }),
   };
   // The old certificate's sockets stop counting now (the pin no longer matches), and are cut.
   if (replacesPin) {
@@ -3328,6 +3341,122 @@ async function handleMobileCanvasRoute(ctx: AnnexRouteContext, match: RegExpMatc
   sendJson(ctx.res, 200, { projectId, state: await readCanvasState(project.path) });
 }
 
+// ---------------------------------------------------------------------------
+// Annex Network for phones (#3062). Contract: docs/annex-network-phone.md.
+// ---------------------------------------------------------------------------
+
+const NETWORK_CAPABILITY = {
+  version: 1,
+  path: '/api/v1/mobile/network',
+  membersPath: '/api/v1/mobile/network/members',
+  event: 'network:changed',
+  pairField: 'network',
+} as const;
+
+/** A machine in the network as a phone sees it. */
+interface PhoneNetworkMember {
+  fingerprint: string;
+  /** Base64 Ed25519 public key; its hash is the fingerprint. */
+  publicKey: string;
+  name: string;
+  icon: string;
+  color: string;
+  kind: 'desktop' | 'phone';
+  /** Where to reach it (desktops). The pinned certificate decides whether an address is it. */
+  hosts: string[];
+  port?: number;
+  /** SHA-256 of its TLS certificate, colon-separated: pin it. */
+  certFingerprint: string;
+  /** Its certificate (PEM), so it can be vouched for to another member. Desktops only. */
+  certPem?: string;
+  /** Connected to this desktop now (this desktop itself is always online). */
+  online: boolean;
+  /** This is the desktop answering. */
+  self?: true;
+  joinedAt: string;
+}
+
+function isPhoneMember(fingerprint: string | undefined): boolean {
+  const peer = fingerprint ? findPairedPeer(fingerprint) : undefined;
+  return peer?.role === 'member' && peer.kind === 'phone';
+}
+
+/**
+ * The network as `principal` may see it. A phone that isn't a member (paired
+ * one-to-one, or Annex Network off) sees only this desktop, with `joined: false`.
+ */
+function networkForPhone(principal: string | undefined): { version: 1; joined: boolean; members: PhoneNetworkMember[]; removals: Array<{ fingerprint: string; removedAt: string }> } {
+  const joined = annexSettings.networkEnabled() && isPhoneMember(principal);
+  // Given who it's for, the view of a device that isn't a member is just this machine.
+  const view = membership.currentView(joined ? undefined : principal ?? '');
+  const selfFp = annexIdentity.getIdentity()?.fingerprint.toLowerCase();
+  const connected = new Set([...connectedPeerFingerprints(), ...networkChannel.connectedMembers()].map((f) => f.toLowerCase()));
+  const members = view.members.map((m): PhoneNetworkMember => {
+    const self = m.fingerprint.toLowerCase() === selfFp;
+    return {
+      fingerprint: m.fingerprint, publicKey: m.publicKey, name: m.name, icon: m.icon, color: m.color, kind: m.kind,
+      hosts: m.kind === 'desktop' ? m.hosts : [], ...(m.kind === 'desktop' && m.port && { port: m.port }),
+      certFingerprint: m.certFingerprint,
+      ...(m.kind === 'desktop' && m.certPem && { certPem: m.certPem }),
+      online: self || connected.has(m.fingerprint.toLowerCase()),
+      ...(self && { self: true as const }),
+      joinedAt: m.joinedAt,
+    };
+  });
+  return { version: 1, joined, members, removals: joined ? view.removals : [] };
+}
+
+async function handleMobileNetworkRoute(ctx: AnnexRouteContext): Promise<void> {
+  if (!ctx.mobilePrincipal) { sendJson(ctx.res, 403, { error: 'client_certificate_required' }); return; }
+  sendJson(ctx.res, 200, networkForPhone(ctx.mobilePrincipal));
+}
+
+/**
+ * A member phone vouches for devices: the network's members, to a desktop it
+ * just paired; or that desktop, to a member. Same checks as a member's word.
+ */
+async function handleMobileNetworkMembersRoute(ctx: AnnexRouteContext): Promise<void> {
+  if (!ctx.mobilePrincipal) { sendJson(ctx.res, 403, { error: 'client_certificate_required' }); return; }
+  let raw: string;
+  try { raw = (await readCappedBody(ctx.req, MAX_BODY_SIZE)).toString(); } catch (err) {
+    if (isBodyTooLarge(err)) { refuseOversizedBody(ctx.req, ctx.res); return; }
+    sendJson(ctx.res, 400, { error: 'invalid_json' }); return;
+  }
+  // Checked once the body is here: the phone may have been removed meanwhile.
+  if (!annexSettings.networkEnabled() || !isPhoneMember(ctx.mobilePrincipal)) { sendJson(ctx.res, 403, { error: 'not_a_member', message: "This phone isn't in this computer's Annex Network. Pair it again with Annex Network on." }); return; }
+  let members: unknown;
+  try { members = (JSON.parse(raw) as { members?: unknown }).members; } catch { sendJson(ctx.res, 400, { error: 'invalid_json' }); return; }
+  // Members as GET /api/v1/mobile/network lists them are taken as they are: what this desktop says
+  // about its own connections (`online`, `self`) isn't part of the record.
+  if (Array.isArray(members)) {
+    members = members.map((m: unknown) => {
+      if (typeof m !== 'object' || m === null) return m;
+      const { online: _online, self: _self, ...record } = m as Record<string, unknown>;
+      return record;
+    });
+  }
+  const parsed = parseNetworkMessage(JSON.stringify({ v: NETWORK_PROTOCOL_VERSION, type: 'members', members, removals: [] }));
+  if ('reason' in parsed || parsed.message.type !== 'members') { sendJson(ctx.res, 400, { error: 'invalid_members' }); return; }
+  const added = membership.vouchFromPhone(ctx.mobilePrincipal, parsed.message.members);
+  sendJson(ctx.res, 200, { added });
+}
+
+let networkPushTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Tells each member phone connected here that the network changed, with its new view. */
+function pushNetworkToPhones(): void {
+  if (networkPushTimer) return;
+  networkPushTimer = setTimeout(() => {
+    networkPushTimer = null;
+    for (const client of wss?.clients ?? []) {
+      const fp = wsPeerFingerprints.get(client);
+      if (client.readyState !== WebSocket.OPEN || !socketStillPaired(client) || !isPhoneMember(fp)) continue;
+      safeSend(client, JSON.stringify({ type: 'network:changed', payload: networkForPhone(fp) }));
+    }
+  }, 100);
+  networkPushTimer.unref?.();
+}
+
 async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<void> {
   sendJson(ctx.res, 200, {
     version: 1, epoch: mobileCommands.epoch, controlAuth: 'mtls-pinned-client',
@@ -3342,6 +3471,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     providerControl: { version: 1, preview: 'agent.providerPreview', change: 'agent.providerChange', stoppedAcknowledgment: true, strictStart: true },
     // Every agent's live state in one read, for catching up after a reconnect.
     agentState: { version: 1, path: '/api/v1/mobile/agents/state' },
+    // Annex Network (#3062): the machines in this phone's network, and joining through the phone.
+    ...(annexSettings.networkEnabled() && { network: NETWORK_CAPABILITY }),
     helperRequests: { version: 1, snapshotField: 'helperRequests', commands: ['helper.approve', 'helper.decline'] },
     chatControls: { version: 1 },
     // The composer's / menu: a live chat snapshot's `slashCommands`, updated by `commands_available` events.
@@ -3529,7 +3660,7 @@ async function handleMobileContentRoute(ctx: AnnexRouteContext, match: RegExpMat
   const authorized = () => {
     const peer = findPairedPeer(principal);
     return mobileCommands.epoch === epoch && !!peer && peer.tlsCertificateFingerprint === pin
-      && (!peer.role || peer.role === 'controller');
+      && actsAsPhoneController(peer);
   };
   try {
     const agentId = decodeURIComponent(match[1]);
@@ -3561,7 +3692,7 @@ async function handleMobileFullEventRoute(ctx: AnnexRouteContext, match: RegExpM
   const authorized = () => {
     const peer = findPairedPeer(principal);
     return mobileCommands.epoch === epoch && !!peer && peer.tlsCertificateFingerprint === pin
-      && (!peer.role || peer.role === 'controller');
+      && actsAsPhoneController(peer);
   };
   if (!authorized()) { sendJson(ctx.res, 403, { error: 'authorization_revoked' }); return; }
   try {
@@ -3883,7 +4014,7 @@ async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
     const input: unknown = JSON.parse((await readCappedBody(ctx.req, MAX_BODY_SIZE)).toString());
     // A peer can be revoked while its body is streaming; recheck before execution.
     const peer = findPairedPeer(ctx.mobilePrincipal);
-    const principal = peer && (peer.role === 'controller' || !peer.role)
+    const principal = peer && actsAsPhoneController(peer)
       && peer.tlsCertificateFingerprint === annexTls.extractPeerCertificateFingerprint(ctx.req.socket as tls.TLSSocket)
       ? ctx.mobilePrincipal : undefined;
     const epoch = mobileCommands.epoch;
@@ -3891,7 +4022,7 @@ async function handleMobileCommandRoute(ctx: AnnexRouteContext): Promise<void> {
     const assertAuthorized = () => {
       const current = principal ? findPairedPeer(principal) : undefined;
       if (mobileCommands.epoch !== epoch || !current || current.tlsCertificateFingerprint !== pin
-        || (current.role && current.role !== 'controller')) throw new MobileControlError('authorization_revoked', 403);
+        || !actsAsPhoneController(current)) throw new MobileControlError('authorization_revoked', 403);
     };
     const response = await mobileCommands.execute(principal, input, (command) => runMobileCommand(command, assertAuthorized, principal!));
     logRefusedMobileCommand(response, input);
@@ -3928,7 +4059,7 @@ async function handleMobileAttachmentRoute(ctx: AnnexRouteContext, match: RegExp
   const authorized = () => {
     const peer = findPairedPeer(principal);
     return mobileCommands.epoch === epoch && !!peer && peer.tlsCertificateFingerprint === pin
-      && (!peer.role || peer.role === 'controller');
+      && actsAsPhoneController(peer);
   };
   let bodyRead = false;
   const refuse = (status: number, error: string, retryAfterMs?: number) => {
@@ -3968,6 +4099,8 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/attachments$/, handler: handleMobileAttachmentRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/agents\/([^/]+)\/content(\?.*)?$/, handler: handleMobileContentRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/capabilities$/, handler: handleMobileCapabilitiesRoute },
+  { method: 'GET', pattern: /^\/api\/v1\/mobile\/network$/, handler: handleMobileNetworkRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/mobile\/network\/members$/, handler: handleMobileNetworkMembersRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas$/, handler: handleMobileCanvasRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas\/([^/]+)$/, handler: handleMobileCanvasRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/mobile\/pairing$/, handler: handleMobilePairingDeleteRoute },
@@ -4719,7 +4852,8 @@ export function start(): void {
     // A fellow Annex Network member doesn't lock this screen (#3061): members connect to
     // each other all the time, and each is used as one machine.
     const lockPeer = authType === 'mtls' ? findPairedPeer(wsPeerFingerprints.get(ws) ?? '') : undefined;
-    if (authType === 'mtls' && lockPeer?.role !== 'member') lockingSockets.add(ws);
+    // A phone that's a member is still a phone in someone's hand: it locks, as before (#3062).
+    if (authType === 'mtls' && (lockPeer?.role !== 'member' || lockPeer.kind === 'phone')) lockingSockets.add(ws);
     if (lockingSockets.has(ws)) {
       const fingerprint = wsPeerFingerprints.get(ws);
       const peer = lockPeer;
@@ -5000,6 +5134,8 @@ export function start(): void {
   }
 
   republishBonjour = publishBonjour;
+  unsubMembership?.();
+  unsubMembership = membership.onMembershipChanged(pushNetworkToPhones);
   // Where this machine can be reached, for its Annex Network hello.
   networkChannel.setReachProvider(() => ({ hosts: advertisedHosts(), port: serverPort }));
 
@@ -5159,6 +5295,8 @@ export function stop(): void {
   }
 
   networkChannel.setReachProvider(null);
+  unsubMembership?.();
+  unsubMembership = null;
   // Only the channels this server accepted; ones this machine's client opened are its own.
   networkChannel.closeAll('in');
 
