@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ACCESS_LEVELS, ACCESS_DESCRIPTIONS, accessForLegacyToggle, accessFromLegacy, accessLabel, accessLevelsFor,
+  ACCESS_LEVELS, ACCESS_DESCRIPTIONS, quickToolsForAccess, accessForLegacyToggle, accessFromLegacy, accessLabel, accessLevelsFor,
   isAccessLevel, legacyFreeAgentMode, legacyLaunchFor, savedAccess, startableAccess, withAccess,
 } from './agent-access';
 
@@ -117,5 +117,20 @@ describe('agent access (#2761)', () => {
       const s = { model: 'opus' } as { model: string; access?: undefined; freeAgentMode?: undefined };
       expect(withAccess(s, 'skip-all')).toBe(s);
     });
+  });
+
+  it('filters a quick agent\'s default tools by level (#3007)', () => {
+    const claude = ['Bash(git:*)', 'Bash(npm:*)', 'Bash(npx:*)', 'Read', 'Write', 'Edit', 'Glob', 'Grep'];
+    const copilot = ['shell(git:*)', 'shell(npm:*)', 'shell(npx:*)', 'read', 'edit', 'search'];
+    const codex = ['shell(git:*)', 'shell(npm:*)', 'shell(npx:*)', 'shell(*)', 'apply_patch'];
+    for (const level of ['plan', 'ask'] as const) {
+      expect(quickToolsForAccess(claude, level)).toEqual(['Read', 'Glob', 'Grep']);
+      expect(quickToolsForAccess(copilot, level)).toEqual(['read', 'search']);
+      expect(quickToolsForAccess(codex, level)).toEqual([]);
+    }
+    expect(quickToolsForAccess(claude, 'auto_edit')).toEqual(['Read', 'Write', 'Edit', 'Glob', 'Grep']);
+    expect(quickToolsForAccess(codex, 'auto_edit')).toEqual(['apply_patch']);
+    expect(quickToolsForAccess(claude, 'auto')).toEqual(claude);
+    expect(quickToolsForAccess(copilot, 'full_access')).toEqual(copilot);
   });
 });

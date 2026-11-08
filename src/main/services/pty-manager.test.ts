@@ -221,13 +221,26 @@ describe('pty-manager', () => {
       data('x'.repeat(cap)); data('\nnew'); expect(getBufferSnapshot(id).data).toBe('new');
     });
 
-    it('characterizes the UNRESOLVED zero-resync cut CSI; this is not complete split-boundary recovery', async () => {
-      const id = 'mode_cut_csi_limit'; await spawnShell(id, '/project'); const data = latestData();
+    it('skips a CSI cut at the head to its end, so the mode it sets reaches the prefix (#2743)', async () => {
+      const id = 'mode_cut_csi'; await spawnShell(id, '/project'); const data = latestData();
       data('x'.repeat(cap - 6) + '\x1b[?20'); data('04htext');
       expect(resyncOffset(getBuffer(id))).toBe(0);
-      // The introducer was evicted and no safe boundary was found. The new
-      // checkpoint deliberately does not repair/reinsert an incomplete CSI.
-      expect(getBufferSnapshot(id).data).toBe('04htext');
+      expect(getBufferSnapshot(id).data).toBe('\x1b[?2004htext');
+      expect(getBuffer(id)).toBe('04htext');
+    });
+
+    it('carries an alt-screen switch completed by the cut fragment (#2743)', async () => {
+      const id = 'mode_cut_alt'; await spawnShell(id, '/project'); const data = latestData();
+      data('x'.repeat(cap - 7) + '\x1b[?104'); data('9htext');
+      expect(getBufferSnapshot(id).data).toBe('\x1b[?1049htext');
+    });
+
+    it('replays nothing of an OSC that runs past the kept output (#2743)', async () => {
+      const id = 'mode_cut_osc'; await spawnShell(id, '/project'); const data = latestData();
+      data('x'.repeat(cap - 4) + '\x1b]0;'); data('long title\nmore title');
+      expect(getBufferSnapshot(id).data).toBe('');
+      data('\x07visible');
+      expect(getBufferSnapshot(id).data).toBe('visible');
     });
   });
 
