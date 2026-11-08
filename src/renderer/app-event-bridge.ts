@@ -13,6 +13,7 @@
 import { useAgentStore, consumeCancelled } from './stores/agentStore';
 import { useProjectStore } from './stores/projectStore';
 import { applyDurableCreationEvent } from './features/agents/durable-creation-events';
+import { effectiveOrchestratorOf } from './features/agents/effective-orchestrator';
 import { useUIStore } from './stores/uiStore';
 import { useNotificationStore } from './stores/notificationStore';
 import { useHelperDisposeRequestStore, describeHelperDispose } from './stores/helperDisposeRequestStore';
@@ -275,7 +276,7 @@ function initPtyExitListener(): () => void {
           costUsd,
           durationMs,
           toolsUsed,
-          orchestrator: agent.orchestrator || 'claude-code',
+          orchestrator: effectiveOrchestratorOf(agent, useProjectStore.getState().projects.find((p) => p.id === agent.projectId)),
           model: agent.model,
           cancelled,
           pluginMetadata: agent.pluginMetadata,

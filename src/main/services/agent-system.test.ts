@@ -175,6 +175,12 @@ vi.mock('fs/promises', () => ({
   readFile: (...args: unknown[]) => mockReadFile(...args),
 }));
 
+// The project list, where "Agents run on" is saved (#2975).
+const mockPeekProjects = vi.fn(async (): Promise<Array<{ path: string; orchestrator?: string }>> => []);
+vi.mock('./project-store', () => ({
+  peekProjects: () => mockPeekProjects(),
+}));
+
 // Mock the orchestrator registry
 const mockClaudeConventions: OrchestratorConventions = {
   configDir: '.claude',
@@ -357,6 +363,7 @@ function notSessionCapable(provider: Record<string, unknown>): void {
 describe('agent-system', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPeekProjects.mockReset().mockResolvedValue([]);
     mockHeadlessSpawn.mockImplementation((agentId: string) => {
       mockIsHeadless.mockImplementation((trackedAgentId: string) => trackedAgentId === agentId);
     });
@@ -382,9 +389,7 @@ describe('agent-system', () => {
     });
 
     it('falls back to project-level setting', async () => {
-      mockReadFile.mockResolvedValueOnce(
-        JSON.stringify({ orchestrator: 'codex-cli' })
-      );
+      mockPeekProjects.mockResolvedValueOnce([{ path: '/project', orchestrator: 'codex-cli' }]);
       const provider = await resolveOrchestrator('/project');
       expect(provider.id).toBe('codex-cli');
     });
@@ -536,10 +541,8 @@ describe('agent-system', () => {
       expect(getAgentOrchestrator('agent-1')).toBe('claude-code');
     });
 
-    it('tracks project-level orchestrator from settings.json', async () => {
-      mockReadFile.mockResolvedValueOnce(
-        JSON.stringify({ orchestrator: 'codex-cli' })
-      );
+    it('tracks the project-level orchestrator from the project list', async () => {
+      mockPeekProjects.mockResolvedValue([{ path: '/my/project', orchestrator: 'codex-cli' }]);
       await spawnAgent({
         agentId: 'agent-1',
         projectPath: '/my/project',
@@ -1502,9 +1505,7 @@ describe('agent-system', () => {
 
     it('uses tracked project-level orchestrator when spawned from settings', async () => {
       // Spawn with orchestrator resolved from project settings (codex-cli)
-      mockReadFile.mockResolvedValueOnce(
-        JSON.stringify({ orchestrator: 'codex-cli' })
-      );
+      mockPeekProjects.mockResolvedValue([{ path: '/project', orchestrator: 'codex-cli' }]);
       await spawnAgent({
         agentId: 'agent-1',
         projectPath: '/project',

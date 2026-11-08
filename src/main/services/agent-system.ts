@@ -360,6 +360,12 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     withErrorType('orchestrator_unknown', () => resolveOrchestrator(params.projectPath, params.orchestrator)),
   );
   facts.orchestrator = provider.id;
+  if (!params.orchestrator) {
+    // An agent with no CLI of its own runs on its project's "Agents run on" (#2975).
+    appLog('core:agent', 'info', 'Agent has no CLI of its own, so it starts on the project default', {
+      meta: { agentId: params.agentId, providerId: provider.id, projectDefault: (await readProjectOrchestrator(params.projectPath)) ?? null },
+    });
+  }
 
   // Copilot discovers repository hooks in every runtime, even with the Clubhouse hook server off.
   if (provider.id === 'copilot-cli') await readCopilotHooksConfig(params.cwd);

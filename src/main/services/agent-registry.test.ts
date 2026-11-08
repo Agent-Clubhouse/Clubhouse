@@ -25,6 +25,11 @@ vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
 }));
 
+const mockPeekProjects = vi.fn(async (): Promise<Array<{ path: string; orchestrator?: string }>> => []);
+vi.mock('./project-store', () => ({
+  peekProjects: () => mockPeekProjects(),
+}));
+
 import * as fsp from 'fs/promises';
 import { isOrchestrationEnabled, setOrchestrationEnabled } from './clubhouse-mcp/orchestration-gate';
 import {
@@ -162,6 +167,26 @@ describe('agent-registry', () => {
       const result = await readProjectOrchestrator('/project');
       expect(result).toBeUndefined();
     });
+
+    // #2975: "Agents run on" in project settings saves to projects.json.
+    it('reads the project\'s "Agents run on" from the project list first', async () => {
+      const project = path.resolve('/project');
+      mockPeekProjects.mockResolvedValueOnce([
+        { path: path.resolve('/other'), orchestrator: 'copilot-cli' },
+        { path: project, orchestrator: 'codex-cli' },
+      ]);
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({ orchestrator: 'copilot-cli' }));
+
+      expect(await readProjectOrchestrator(path.join(project, '.'))).toBe('codex-cli');
+    });
+
+    it('falls back to the project file when the list has no value for it, or cannot be read', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({ orchestrator: 'copilot-cli' }));
+      mockPeekProjects.mockResolvedValueOnce([{ path: path.resolve('/project') }]);
+      expect(await readProjectOrchestrator('/project')).toBe('copilot-cli');
+      mockPeekProjects.mockRejectedValueOnce(new Error('unreadable'));
+      expect(await readProjectOrchestrator('/project')).toBe('copilot-cli');
+    });
   });
 
   describe('resolveOrchestrator', () => {
@@ -186,6 +211,16 @@ describe('agent-registry', () => {
       const result = await resolveOrchestrator('/project');
       expect(result).toBe(copilotProvider);
       expect(mockGetProvider).toHaveBeenCalledWith('copilot-cli');
+    });
+
+    it('uses the project list\'s "Agents run on" for an agent with no CLI of its own (#2975)', async () => {
+      mockPeekProjects.mockResolvedValueOnce([{ path: path.resolve('/project'), orchestrator: 'codex-cli' }]);
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      const codex = { id: 'codex-cli', displayName: 'Codex' };
+      mockGetProvider.mockReturnValue(codex);
+
+      expect(await resolveOrchestrator('/project')).toBe(codex);
+      expect(mockGetProvider).toHaveBeenCalledWith('codex-cli');
     });
 
     it('falls back to default orchestrator', async () => {

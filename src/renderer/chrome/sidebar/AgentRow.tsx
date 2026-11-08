@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
 import { OrchestratorGlyph } from '../../features/agents/OrchestratorGlyph';
+import { useEffectiveOrchestrator } from '../../features/agents/effective-orchestrator';
 import { formatAgo } from '../../features/agents/states/format';
 import { useAgentStore } from '../../stores/agentStore';
 import { AgentContextMenu, OverflowIcon, useAgentRowActions, type ActionDef } from '../../features/agents/useAgentRowActions';
@@ -147,6 +148,7 @@ export const AgentRow = React.memo(function AgentRow({
   // since the name hides the text inside the row from screen readers.
   const noteId = useId();
   const rollupId = useId();
+  const orchestrator = useEffectiveOrchestrator(agent);
   const describedBy = [note && noteId, folded && rollupId].filter(Boolean).join(' ') || undefined;
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
   const sleeping = agent.status === 'sleeping';
@@ -299,7 +301,7 @@ export const AgentRow = React.memo(function AgentRow({
             <AgentAvatar agent={agent} size="2xs" />
           </span>
           <span className={`truncate ${dot === 'sleeping' ? '' : 'font-medium'}`}><MarkedText text={agent.name} query={highlight} /></span>
-          <OrchestratorGlyph orchestrator={agent.orchestrator || 'claude-code'} focusable={false} showTooltip={false} variant="row" />
+          <OrchestratorGlyph orchestrator={orchestrator} focusable={false} showTooltip={false} variant="row" />
           {(note || hasActivityTime || folded) && (
             <span className="ml-auto flex-shrink-0 flex items-center gap-2 text-xs group-hover/row:hidden">
               {note && <span id={noteId} data-testid="agent-row-note" className={dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-overlay1'}>{note}</span>}

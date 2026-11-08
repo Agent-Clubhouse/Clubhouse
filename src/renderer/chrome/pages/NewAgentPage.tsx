@@ -8,6 +8,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { newAgentOrchestrator } from '../../features/agents/effective-orchestrator';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
@@ -159,7 +160,8 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const [color, setColor] = useState<string>(AGENT_COLORS[0].id);
   const { effectiveOrchestrators } = useEffectiveOrchestrators();
   const [orchestrator, setOrchestrator] = useState('');
-  const resolvedOrchestrator = orchestrator || effectiveOrchestrators[0]?.id || 'claude-code';
+  // Until the person picks one, the project's "Agents run on" (#2975).
+  const resolvedOrchestrator = orchestrator || newAgentOrchestrator(project, effectiveOrchestrators);
   const [model, setModel] = useState('default');
   const [customModel, setCustomModel] = useState('');
   const [useWorktree, setUseWorktree] = useState(true);
