@@ -4,6 +4,7 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore } from '../../stores/headlessStore';
 import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
+import { useDefaultAccessStore } from '../../stores/defaultAccessStore';
 import { OrchestratorSettingsView } from './OrchestratorSettingsView';
 import { loadChatFlag, resetChatFlag } from '../agents/chat/chat-flag';
 import { loadRichChatContentFlag, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
@@ -63,6 +64,20 @@ describe('OrchestratorSettingsView', () => {
     it('renders Default quick agent mode dropdown', () => {
       render(<OrchestratorSettingsView />);
       expect(screen.getByText('Default quick agent mode')).toBeInTheDocument();
+    });
+
+    it('offers a Default access picker with all five levels, saving the level (#2761)', async () => {
+      const setDefaultAccess = vi.fn().mockResolvedValue(undefined);
+      useDefaultAccessStore.setState({ defaultAccess: 'ask', loadDefaultAccess: vi.fn().mockResolvedValue(undefined), setDefaultAccess });
+      render(<OrchestratorSettingsView />);
+      const picker = screen.getByLabelText('Default access') as HTMLSelectElement;
+      expect(picker.value).toBe('ask');
+      expect(Array.from(picker.options).map((o) => o.textContent)).toEqual(['Plan', 'Ask first', 'Auto-accept edits', 'Auto', 'Full access']);
+      expect(screen.getByText(/The level new agents and quick agents start at\./)).toBeInTheDocument();
+      fireEvent.change(picker, { target: { value: 'auto' } });
+      expect(setDefaultAccess).toHaveBeenCalledWith('auto');
+      expect(screen.queryByText(/free agent/i)).toBeNull();
+      expect(screen.queryByText(/skip all/i)).toBeNull();
     });
 
     it('renders Quick Agent Mode dropdown with interactive and headless options', () => {
@@ -628,9 +643,15 @@ describe('OrchestratorSettingsView', () => {
 
       it('each project override select is labelled by its row', () => {
         render(<OrchestratorSettingsView projectId="proj-1" />);
-        for (const name of ['Quick agent mode', 'Free agent permission mode', 'Session name on quit']) {
+        for (const name of ['Quick agent mode', 'Session name on quit']) {
           expect(screen.getByLabelText(name).tagName).toBe('SELECT');
         }
+      });
+
+      it('has no per-project access override (#2761)', () => {
+        render(<OrchestratorSettingsView projectId="proj-1" />);
+        expect(screen.queryByText(/free agent/i)).toBeNull();
+        expect(screen.queryByLabelText('Default access')).toBeNull();
       });
 
       it('has no MCP override: the Clubhouse MCP always runs', () => {

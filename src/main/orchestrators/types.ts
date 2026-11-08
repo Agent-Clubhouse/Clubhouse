@@ -22,6 +22,12 @@ export interface SpawnOpts {
   freeAgentMode?: boolean;
   /** Permission mode for autonomous execution: 'auto' uses Claude's auto-approve classifier, 'skip-all' bypasses all permissions */
   permissionMode?: 'auto' | 'skip-all';
+  /**
+   * Access (#2761): the level to start at. The legacy pair above is derived
+   * from it. Only a CLI with a start flag for Plan or Auto-accept edits reads
+   * it; the others start from the legacy pair, as before.
+   */
+  access?: PermissionLevel;
   /** CLI agent name to load (passed as --agent to Copilot CLI) */
   agentFile?: string;
   /** Source directory for agent file (passed as --source to Copilot CLI) */

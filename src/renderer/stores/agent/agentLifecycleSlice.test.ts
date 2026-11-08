@@ -173,6 +173,46 @@ describe('agentLifecycleSlice – spawnQuickAgent', () => {
       expect(state().agents[second].runBaseSha).toBeUndefined();
     });
   });
+
+  describe('Access (#2761)', () => {
+    const spawned = () => (window.clubhouse.agent.spawnAgent as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const parentDefaults = (quickAgentDefaults: Record<string, unknown>) => {
+      (window as any).clubhouse.agent.getDurableConfig = vi.fn().mockResolvedValue({ id: 'parent', quickAgentDefaults });
+    };
+
+    it('an explicit level wins over the parent defaults and the fallback', async () => {
+      parentDefaults({ access: 'auto' });
+      const { slice } = createTestStore();
+      await slice.spawnQuickAgent(PROJECT_ID, PROJECT_PATH, 'm', undefined, 'parent', undefined, 'plan', undefined, undefined, { fallbackAccess: 'full_access' });
+      expect(spawned()).toEqual(expect.objectContaining({ access: 'plan', freeAgentMode: false }));
+    });
+
+    it("the parent's quick agent defaults win over the fallback", async () => {
+      parentDefaults({ access: 'auto' });
+      const { slice } = createTestStore();
+      await slice.spawnQuickAgent(PROJECT_ID, PROJECT_PATH, 'm', undefined, 'parent', undefined, undefined, undefined, undefined, { fallbackAccess: 'full_access' });
+      expect(spawned()).toEqual(expect.objectContaining({ access: 'auto', freeAgentMode: true }));
+    });
+
+    it('a parent with only the legacy flag keeps it, without the fallback', async () => {
+      parentDefaults({ freeAgentMode: false });
+      const { slice } = createTestStore();
+      await slice.spawnQuickAgent(PROJECT_ID, PROJECT_PATH, 'm', undefined, 'parent', undefined, undefined, undefined, undefined, { fallbackAccess: 'full_access' });
+      expect(spawned().access).toBeUndefined();
+      expect(spawned().freeAgentMode).toBe(false);
+    });
+
+    it('the fallback applies when nothing else sets a level, and nothing is sent without one', async () => {
+      const { slice } = createTestStore();
+      await slice.spawnQuickAgent(PROJECT_ID, PROJECT_PATH, 'm', undefined, undefined, undefined, undefined, undefined, undefined, { fallbackAccess: 'auto_edit' });
+      expect(spawned()).toEqual(expect.objectContaining({ access: 'auto_edit', freeAgentMode: false }));
+
+      (window.clubhouse.agent.spawnAgent as ReturnType<typeof vi.fn>).mockClear();
+      await slice.spawnQuickAgent(PROJECT_ID, PROJECT_PATH, 'm');
+      expect(spawned().access).toBeUndefined();
+      expect(spawned().freeAgentMode).toBeUndefined();
+    });
+  });
 });
 
 describe('agentLifecycleSlice – spawnDurableAgent', () => {

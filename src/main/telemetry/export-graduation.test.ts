@@ -25,10 +25,10 @@ vi.mock('./lazy-chunks', () => chunks);
 import { TELEMETRY_SETTINGS } from '../../shared/settings-definitions';
 import * as experimentalSettings from '../services/experimental-settings';
 import { resetAllSettingsStoresForTests } from '../services/settings-store';
-import { initTelemetry, isTelemetryConfigured, whenStarted } from './bootstrap';
+import { FRAMEBRIAR_STARTUP_HOLD_MS, initTelemetry, isTelemetryConfigured, whenStarted } from './bootstrap';
 import * as control from './control';
 import { setFramebriarTelemetrySource } from './destinations/framebriar-source';
-import { getLocalSink } from './facade';
+import { abortPending, getLocalSink, isPending } from './facade';
 import { _resetLocalRecordingForTests } from './local-control';
 import { getOfflineDir } from './offline';
 import { getTelemetrySettings, migrateTelemetrySettings, type TelemetrySettings } from './settings';
@@ -162,7 +162,8 @@ describe('a setup the old gate held back ends up off', () => {
     expect(getTelemetrySettings().destinations.some((d) => d.enabled)).toBe(false);
     // The move happens after ready; the mock app is ready at once.
     await vi.waitFor(() => expect(readText(SETTINGS_FILE)).not.toContain('plaintext-value'));
-    expect(readSaved().exportGraduation).toBe(1);
+    // The file can be caught mid-write (empty), so this waits too.
+    await vi.waitFor(() => expect(readSaved().exportGraduation).toBe(1));
   });
 
   it('clears the offline queue, as turning a destination off does', async () => {
@@ -300,6 +301,56 @@ describe('Feedback connecting later', () => {
     connect();
     await control.syncFramebriarDestination();
     expect(developer().enabled).toBe(true);
+  });
+
+  describe('startup signals wait for Feedback (#2522)', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+      abortPending();
+    });
+
+    it('buffers when only Feedback is missing, then hands the buffer to the start Feedback triggers', async () => {
+      seedGate(true, true);
+      writeJson(SETTINGS_FILE, file(1, framebriar({ enabled: true, confirmedHost: FB_HOST })));
+      await launchAndWaitForMarker();
+      expect(exportAttempts()).toBe(0);
+      expect(isPending()).toBe(true);
+      connect();
+      await control.syncFramebriarDestination();
+      // The stubbed chunk refuses to load, so this start fails and drops the buffer, as any failed start does.
+      expect(chunks.loadFramebriarDestination).toHaveBeenCalled();
+      expect(isPending()).toBe(false);
+    });
+
+    it('drops the buffer when Feedback does not connect in time', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      seedGate(true, true);
+      writeJson(SETTINGS_FILE, file(1, framebriar({ enabled: true, confirmedHost: FB_HOST })));
+      await launch();
+      expect(isPending()).toBe(true);
+      vi.advanceTimersByTime(FRAMEBRIAR_STARTUP_HOLD_MS - 1);
+      expect(isPending()).toBe(true);
+      vi.advanceTimersByTime(1);
+      expect(isPending()).toBe(false);
+      expect(exportAttempts()).toBe(0);
+    });
+
+    it.each([
+      ['switched off by the user', framebriar({ confirmedHost: FB_HOST, userOff: true })],
+      ['never confirmed', framebriar({ enabled: true })],
+    ])('does not buffer when the destination is %s', async (_label, entry) => {
+      seedGate(true, true);
+      writeJson(SETTINGS_FILE, file(1, entry));
+      await launch();
+      expect(isPending()).toBe(false);
+    });
+
+    it('does not buffer without consent', async () => {
+      seedGate(true, true);
+      writeJson(SETTINGS_FILE, file(0, framebriar({ enabled: true, confirmedHost: FB_HOST })));
+      await launch();
+      expect(isPending()).toBe(false);
+    });
   });
 
   it('fresh install: nothing starts, the offer asks, and "Share" survives the next launch', async () => {

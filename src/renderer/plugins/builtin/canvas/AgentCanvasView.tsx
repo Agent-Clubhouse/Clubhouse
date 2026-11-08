@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import type { AgentCanvasView as AgentCanvasViewType, CanvasView } from './canvas-types';
 import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
+import type { AccessLevel } from '../../../../shared/agent-access';
 import { AddAgentDialog } from '../../../features/agents/AddAgentDialog';
 import { WidgetPicker, projectRows, type PickerRow, type PickerSection } from './WidgetPicker';
 import { StatusDot, DOT_LABEL } from '../../../features/agents/agent-status';
@@ -140,7 +141,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
 
   const handleCreateDurable = useCallback(async (
     name: string, color: string, model: string, useWorktree: boolean,
-    orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[],
+    orchestrator?: string, access?: AccessLevel, mcpIds?: string[],
   ) => {
     const project = activeProjectForCreate;
     if (!project) return;
@@ -153,7 +154,8 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
         model,
         useWorktree,
         orchestrator,
-        freeAgentMode,
+        // Auto and Full access need the plugin's agents.free-agent-mode permission (#2761).
+        ...(access !== undefined && { access }),
         mcpIds,
       });
       setShowCreateDialog(false);

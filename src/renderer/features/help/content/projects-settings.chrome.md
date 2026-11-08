@@ -25,8 +25,9 @@ Each setting here can follow the app-wide value or override it for this project:
 
 - **Agents run on**, the CLI for new agents. Only CLIs that are turned on and installed are listed.
 - **Quick agent mode**: interactive or headless.
-- **Free agent permission mode**: Auto or skip all permissions.
 - **Session name on quit**.
+
+New agents start at **Default access** in **Settings > Agents & providers**. Projects don't override it.
 
 ## Plugins
 

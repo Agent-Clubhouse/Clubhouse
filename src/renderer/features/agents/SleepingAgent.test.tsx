@@ -588,12 +588,12 @@ describe('SleepingAgent details (#2281)', () => {
     const model = await card.findByRole('combobox', { name: 'Model' }) as HTMLSelectElement;
     await waitFor(() => expect(model).not.toBeDisabled());
     fireEvent.change(model, { target: { value: 'opus' } });
-    fireEvent.click(card.getByRole('switch', { name: 'Free agent mode' }));
-    await waitFor(() => expect(config).toMatchObject({ model: 'opus', freeAgentMode: true }));
+    fireEvent.change(card.getByRole('combobox', { name: 'Access' }), { target: { value: 'full_access' } });
+    await waitFor(() => expect(config).toMatchObject({ model: 'opus', access: 'full_access' }));
     await waitForReady();
     fireEvent.click(screen.getByTestId('wake-button'));
     await waitFor(() => expect(mockSpawnDurableAgent).toHaveBeenCalled());
-    expect(mockSpawnDurableAgent.mock.calls[0][2]).toMatchObject({ model: 'opus', freeAgentMode: true });
+    expect(mockSpawnDurableAgent.mock.calls[0][2]).toMatchObject({ model: 'opus', access: 'full_access' });
   });
 
 });

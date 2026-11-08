@@ -142,14 +142,14 @@ describe('the allowlist', () => {
       'agent.identity': ['name', 'color', 'emoji', 'has_image'],
       'agent.cli': ['orchestrator', 'model', 'runtime'],
       'agent.persona': ['persona', 'mission'],
-      'agent.access': ['free_agent_mode', 'permission_mode'],
+      'agent.access': ['access', 'free_agent_mode', 'permission_mode'],
       'agent.mcp': ['clubhouse_mcp', 'clubhouse_bridge', 'clubhouse_mode', 'mcp_ids'],
       'agent.idle': ['idle_sleep'],
       'agent.orchestration': ['orchestrate', 'access', 'control', 'max_helpers', 'cross_project_helpers', 'connect_to_dispatcher', 'auto_helpers'],
       'project.identity': ['name', 'display_name', 'color', 'emoji', 'has_image'],
       'project.defaults': ['orchestrator', 'persona', 'mission', 'free_agent_mode', 'profile_id', 'source_control_provider', 'default_mcps'],
       'project.modes': ['clubhouse_mode', 'mcp', 'permission_mode'],
-      'app.defaults': ['idle_timeout_minutes', 'chat_enabled', 'provider_runtime', 'mcp_enabled', 'clubhouse_mode_enabled', 'permission_mode', 'global_helper_cap', 'enabled_orchestrators'],
+      'app.defaults': ['idle_timeout_minutes', 'chat_enabled', 'provider_runtime', 'mcp_enabled', 'clubhouse_mode_enabled', 'permission_mode', 'default_access', 'global_helper_cap', 'enabled_orchestrators'],
       'app.system': ['dispatcher_enabled', 'experimental_chat', 'experimental_copilot_sdk', 'experimental_copilot_legacy_acp', 'annex_server_enabled', 'annex_client_enabled'],
     });
   });
