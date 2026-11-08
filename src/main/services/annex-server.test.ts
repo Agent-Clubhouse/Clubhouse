@@ -2444,9 +2444,14 @@ describe('annex-server', () => {
       expect((await call('GET', '/api/v1/status', connected)).status).toBe(200);
       const now = Date.now();
       vi.spyOn(Date, 'now').mockReturnValue(now + annexServer._testing.PIN_TTL_MS + 1);
+      const membershipMod = await import('./annex-network-membership');
+      vi.mocked(membershipMod.noteLocalRemoval).mockClear();
       annexServer._testing.dropUnconnectedPeers();
       expect(peers.has(connected.fingerprint)).toBe(true);
       expect(peers.has(lost.fingerprint)).toBe(false);
+      // Its join may already have gone to the network: its removal goes too, so no member brings it back (#3106).
+      expect(membershipMod.noteLocalRemoval).toHaveBeenCalledWith(lost.fingerprint);
+      expect(membershipMod.noteLocalRemoval).not.toHaveBeenCalledWith(connected.fingerprint);
     });
 
     it('never drops an entry that existed before the pairing, even if it does not connect', async () => {
