@@ -65,7 +65,8 @@ function generateSelfSignedCert(fingerprint: string): TlsCertificateInfo {
   const now = new Date();
   const expires = new Date(now);
   expires.setDate(expires.getDate() + CERT_VALIDITY_DAYS);
-  cert.validity.notBefore = now;
+  // A day early, so a peer whose clock is a little behind still accepts it.
+  cert.validity.notBefore = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   cert.validity.notAfter = expires;
 
   const attrs = [{ name: 'commonName', value: fingerprint }];

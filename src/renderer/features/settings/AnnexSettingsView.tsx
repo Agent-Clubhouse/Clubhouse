@@ -14,6 +14,7 @@ export function AnnexSettingsView() {
   const saveSettings = useAnnexStore((s) => s.saveSettings);
   const loadSettings = useAnnexStore((s) => s.loadSettings);
   const regeneratePin = useAnnexStore((s) => s.regeneratePin);
+  const allowPairingAgain = useAnnexStore((s) => s.allowPairingAgain);
   const purgeServerConfig = useAnnexStore((s) => s.purgeServerConfig);
   const loadStatus = useAnnexStore((s) => s.loadStatus);
   const [confirmPurge, setConfirmPurge] = useState(false);
@@ -75,6 +76,17 @@ export function AnnexSettingsView() {
                 ? 'No devices connected'
                 : `${status.connectedCount} device${status.connectedCount !== 1 ? 's' : ''} connected`}
             />
+            {status.pairingPaused && (
+              <SettingsField
+                label="Pairing paused"
+                testId="annex-pairing-paused"
+                help="Too many wrong codes were tried, so no device can pair until you allow it again."
+              >
+                <Button onClick={allowPairingAgain} kind="primary">
+                  Allow pairing again
+                </Button>
+              </SettingsField>
+            )}
             <SettingsField
               label="Pairing PIN"
               help={(

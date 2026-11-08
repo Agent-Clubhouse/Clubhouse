@@ -691,7 +691,7 @@ async function connect(auth: 'mtls' | 'bearer' = 'mtls', opts: { iconRefs?: bool
   const ws = Object.assign(new EventEmitter(), { readyState: 1, send: vi.fn(), ping: () => {}, close: () => {} }) as FakeWs;
   if (opts.iconRefs) annexServer._testing.wsIconRefs.add(ws as never);
   annexServer._testing.wsAuthTypes.set(ws as never, auth);
-  if (auth === 'mtls') annexServer._testing.wsPeerFingerprints.set(ws as never, 'mobile-fixture-identity');
+  if (auth === 'mtls') annexServer._testing.registerPeerSocket(ws as never, 'mobile-fixture-identity', (W.peers.get('mobile-fixture-identity') as { tlsCertificateFingerprint: string }).tlsCertificateFingerprint);
   annexServer._testing.wss!.clients.add(ws as never);
   annexServer._testing.wss!.emit('connection', ws);
   await eventually(() => expect(ws.send).toHaveBeenCalled());

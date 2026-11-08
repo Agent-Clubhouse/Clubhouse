@@ -184,9 +184,14 @@ let currentPinIssuedAt = 0;
 let pinRotationTimer: ReturnType<typeof setTimeout> | null = null;
 /** How long a PIN can be used, and how long after it was used or replaced it is still recognised. */
 const PIN_TTL_MS = 10 * 60 * 1000;
-/** Wrong PINs from any address before the PIN is replaced, on top of the per-address limit. */
+/**
+ * Wrong PINs from any address, across PINs, before pairing is paused for the whole
+ * install, on top of the per-address limit. Only a successful pairing or the person
+ * reopening pairing in Settings resets it.
+ */
 const PIN_FAILURE_LIMIT = 10;
 let pinFailures = 0;
+let pairingPaused = false;
 /** PINs that paired a device, kept for their lifetime so a retry after a lost answer can be told apart from a second device. */
 interface SpentPin { pin: string; expiresAt: number; fingerprint: string; certFingerprint: string; response: Record<string, unknown> }
 const spentPins: SpentPin[] = [];
@@ -204,6 +209,8 @@ type WsAuthType = 'bearer' | 'mtls';
 const wsAuthTypes = new WeakMap<WebSocket, WsAuthType>();
 // Track peer fingerprint per WebSocket connection (for mTLS connections)
 const wsPeerFingerprints = new WeakMap<WebSocket, string>();
+/** The certificate each WebSocket authenticated with; its messages count only while the peer still pins it. */
+const wsPeerPins = new WeakMap<WebSocket, string>();
 /**
  * Shells a controller spawned over `pty:spawn-shell`, by session id (#2476).
  * Their output goes to that controller only, and they end when it disconnects.
@@ -642,13 +649,13 @@ function prunePins(now = Date.now()): void {
 }
 
 /** A new PIN. The old one, unless it was used, is remembered as expired for a while. */
-function rotatePin(reason: 'start' | 'used' | 'expired' | 'regenerated' | 'failures', broadcast = true): void {
+function rotatePin(reason: 'start' | 'used' | 'expired' | 'regenerated' | 'exposed', broadcast = true): void {
   const now = Date.now();
   prunePins(now);
-  if (currentPin && reason !== 'used' && reason !== 'start') expiredPins.push({ pin: currentPin, until: now + PIN_TTL_MS });
+  // A PIN sent in the clear is simply gone: a later try with it reads as wrong, like any other.
+  if (currentPin && (reason === 'expired' || reason === 'regenerated')) expiredPins.push({ pin: currentPin, until: now + PIN_TTL_MS });
   currentPin = generatePin();
   currentPinIssuedAt = now;
-  pinFailures = 0;
   if (pinRotationTimer) clearTimeout(pinRotationTimer);
   pinRotationTimer = null;
   // The harness switch keeps one printed PIN usable for its whole run.
@@ -660,7 +667,7 @@ function rotatePin(reason: 'start' | 'used' | 'expired' | 'regenerated' | 'failu
     }, PIN_TTL_MS);
     pinRotationTimer.unref?.();
   }
-  if (reason === 'failures') appLog('core:annex', 'warn', 'Pairing PIN replaced after too many wrong attempts');
+  if (reason === 'exposed') appLog('core:annex', 'warn', 'Pairing PIN replaced after it was sent without TLS');
   if (broadcast) broadcastToAllWindows(IPC.ANNEX.STATUS_CHANGED, getStatus());
 }
 
@@ -769,6 +776,13 @@ function readJsonBody(
   handler: (body: Record<string, unknown>) => void,
 ): void {
   readBody(req).then((raw) => {
+    // The body can arrive long after the headers were checked: act only if the peer is still paired now.
+    const recheck = authenticatePeer(req.socket);
+    if (isRefusal(recheck)) {
+      logRefusedPeer('rest', recheck, req.socket.remoteAddress);
+      sendJson(res, recheck.status, { error: recheck.error, message: recheck.message });
+      return;
+    }
     const body = parseJsonBody(raw);
     if (!body) {
       sendJson(res, 400, { error: 'invalid_json' });
@@ -2333,7 +2347,13 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
   // Pairing over plain HTTP is gone: it changes nothing, and says how to pair instead.
   if (method === 'POST' && url === '/pair') {
     recordPairServed(Date.now(), 'invalid_request');
-    req.resume();
+    // An older client sends the PIN here in the clear. That PIN is replaced, so it can't be used on TLS.
+    try {
+      const sent = parseJsonBody((await readCappedBody(req, PLAIN_PAIR_BODY_MAX_BYTES)).toString());
+      if (sent && typeof sent.pin === 'string' && comparePins(sent.pin, currentPin)) rotatePin('exposed');
+    } catch { /* telemetry-exempt: too large or unreadable; the answer is the same */
+      req.resume();
+    }
     sendJson(res, 410, {
       error: 'update_required',
       message: 'This computer only pairs over a secure connection. Update Clubhouse on the other device, then pair using this computer\'s pairing link.',
@@ -2344,11 +2364,15 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
   sendJson(res, 404, { error: 'not_found' });
 }
 
+/** An older client's pairing body is a few hundred bytes. */
+const PLAIN_PAIR_BODY_MAX_BYTES = 16 * 1024;
+
 const PAIR_MESSAGES = {
   invalid_pin: "That code doesn't match. Check the code in this computer's Annex settings and try again.",
   pin_expired: "That code has expired. Use the current code from this computer's Annex settings.",
   pin_used: "That code was already used. Show a new code in this computer's Annex settings and try again.",
   peer_already_paired: 'This device is already paired here with a different certificate. Remove it in Annex settings on this computer, then pair again.',
+  pairing_paused: "Pairing is paused after too many wrong codes. Allow pairing again in this computer's Annex settings.",
   client_certificate_required: 'Pairing needs the device certificate that matches its identity.',
 } as const;
 
@@ -2365,6 +2389,11 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     sendJson(res, status, body);
   };
   const source = req.socket.remoteAddress || 'unknown';
+  if (pairingPaused) {
+    req.resume();
+    pairReply(429, { error: 'pairing_locked', message: PAIR_MESSAGES.pairing_paused });
+    return;
+  }
   const bruteCheck = annexPeers.checkBruteForce(source);
 
   if (!bruteCheck.allowed) {
@@ -2376,6 +2405,9 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     }
     return;
   }
+  // Counted now, before the body is read, so requests held open together can't all pass the check.
+  // A successful pairing clears it.
+  annexPeers.recordFailedAttempt(source);
 
   let raw: string;
   try {
@@ -2419,9 +2451,12 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
   dropUnconnectedPeers();
   const pinCheck = checkPin(pin);
   if (pinCheck.kind === 'wrong') {
-    annexPeers.recordFailedAttempt(source);
     pinFailures++;
-    if (pinFailures >= PIN_FAILURE_LIMIT) rotatePin('failures');
+    if (pinFailures >= PIN_FAILURE_LIMIT && !pairingPaused) {
+      pairingPaused = true;
+      appLog('core:annex', 'warn', 'Pairing paused after too many wrong PINs; it stays paused until allowed again in Settings');
+      broadcastToAllWindows(IPC.ANNEX.STATUS_CHANGED, getStatus());
+    }
     pairReply(409, { error: 'invalid_pin', message: PAIR_MESSAGES.invalid_pin }); return;
   }
   if (pinCheck.kind === 'expired') { pairReply(410, { error: 'pin_expired', message: PAIR_MESSAGES.pin_expired }); return; }
@@ -2442,6 +2477,7 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
   }
 
   annexPeers.recordSuccessfulAttempt(source);
+  pinFailures = 0;
   const identity = annexIdentity.getOrCreateIdentity();
   const settings = annexSettings.getSettings();
   const now = new Date().toISOString();
@@ -2456,7 +2492,8 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     tlsCertificateFingerprint: certFingerprint,
     role: 'controller', // This peer initiated pairing → they control us
   };
-  if (replacesPin) disconnectPeer(fingerprint);
+  // The old certificate's sockets stop counting now (the pin no longer matches), and are cut.
+  if (replacesPin) closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
   if (sessionOnly) mobileSessionPeers.set(fingerprint, pairedPeer);
   else { mobileSessionPeers.delete(fingerprint); annexPeers.addPeer(pairedPeer); }
   loggedRefusals.delete(fingerprint);
@@ -2477,7 +2514,8 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
   if (!pinReusable) {
     const pinDeadline = currentPinIssuedAt + PIN_TTL_MS;
     spentPins.push({ pin: currentPin, expiresAt: pinDeadline, fingerprint, certFingerprint, response });
-    if (!previous || replacesPin || !previous.tlsCertificateFingerprint) awaitingFirstConnection.set(fingerprint, pinDeadline);
+    // Only an entry this pairing created is dropped if it never connects; an existing one is never removed this way.
+    if (!previous) awaitingFirstConnection.set(fingerprint, pinDeadline);
     rotatePin('used');
   }
   pairReply(200, response);
@@ -4024,7 +4062,23 @@ function safeSend(ws: WebSocket, data: string): boolean {
 const wsTelemetryHandshakes = new WeakMap<WebSocket, ReturnType<typeof telemetryHelloAck>>();
 const wsTelemetryPeerServices = new WeakMap<WebSocket, string>();
 
+/**
+ * Whether a WebSocket's messages still count: it is open, and its peer is still
+ * paired as a controller with the certificate the socket authenticated with. A
+ * socket closing after Remove (or a pin change) is never acted on, even if the
+ * other end ignores the close.
+ */
+function socketStillPaired(ws: WebSocket): boolean {
+  if (ws.readyState !== WebSocket.OPEN) return false;
+  if (wsAuthTypes.get(ws) !== 'mtls') return true; // Never mTLS, so control is refused below anyway.
+  const fingerprint = wsPeerFingerprints.get(ws);
+  const pin = wsPeerPins.get(ws);
+  const peer = fingerprint ? findPairedPeer(fingerprint) : undefined;
+  return !!peer && !!pin && peer.role === 'controller' && peer.tlsCertificateFingerprint === pin;
+}
+
 function handleWsMessage(ws: WebSocket, data: string): void {
+  if (!socketStillPaired(ws)) return;
   // `tc`: optional W3C traceparent from a controller with telemetry on (spec §7).
   let msg: { type?: string; payload?: Record<string, unknown>; since?: number; epoch?: unknown; tc?: unknown };
   try {
@@ -4448,6 +4502,10 @@ async function handleWakeAgentWs(
 // Server lifecycle
 // ---------------------------------------------------------------------------
 
+/** Time allowed for a request's headers, and for the whole request including its body (a phone image upload included). */
+const ANNEX_HEADERS_TIMEOUT_MS = 20_000;
+const ANNEX_REQUEST_TIMEOUT_MS = 60_000;
+
 const HTTP_STATUS_TEXT: Record<number, string> = { 401: 'Unauthorized', 403: 'Forbidden', 503: 'Service Unavailable' };
 
 /** Answers a WebSocket upgrade with a JSON error, the same body REST gives, then closes. */
@@ -4495,6 +4553,9 @@ export function start(): void {
   try {
     tlsOptions = annexTls.createTlsServerOptions(identity);
     tlsServer = https.createServer(tlsOptions, handleRequest);
+    // Bound how long a request may take to arrive, so none can be held open indefinitely.
+    tlsServer.headersTimeout = ANNEX_HEADERS_TIMEOUT_MS;
+    tlsServer.requestTimeout = ANNEX_REQUEST_TIMEOUT_MS;
   } catch (err) {
     appLog('core:annex', 'error', 'TLS server creation failed; Annex will not serve anything until it can start securely', {
       meta: { error: err instanceof Error ? err.message : String(err) },
@@ -4557,6 +4618,7 @@ export function start(): void {
       const clientKind = urlObj.searchParams.get('client');
       if (clientKind === 'mobile' || clientKind === 'desktop') wsClientKinds.set(ws, clientKind);
       wsPeerFingerprints.set(ws, peerFingerprintForWs);
+      wsPeerPins.set(ws, auth.peer.tlsCertificateFingerprint!);
       wss!.emit('connection', ws, req);
     });
   });
@@ -5003,7 +5065,9 @@ export function stop(): void {
   boundHost = '';
   currentPin = '';
   currentPinIssuedAt = 0;
+  // Turning Annex off and on in Settings also reopens pairing.
   pinFailures = 0;
+  pairingPaused = false;
   if (pinRotationTimer) clearTimeout(pinRotationTimer);
   pinRotationTimer = null;
   spentPins.length = 0;
@@ -5026,7 +5090,7 @@ export function stop(): void {
   appLog('core:annex', 'info', 'Annex server stopped');
 }
 
-export function getStatus(): AnnexStatus & { pairingPort: number; tlsEnabled: boolean } {
+export function getStatus(): AnnexStatus & { pairingPort: number; tlsEnabled: boolean; pairingPaused: boolean } {
   const settings = annexSettings.getSettings();
   const identity = annexIdentity.getPublicIdentity();
   const certFingerprint = tlsServer ? annexTls.getCertificateFingerprint() : undefined;
@@ -5041,6 +5105,7 @@ export function getStatus(): AnnexStatus & { pairingPort: number; tlsEnabled: bo
     color: settings.color,
     pairingPort,
     tlsEnabled: !!tlsServer,
+    pairingPaused,
     ...(certFingerprint ? { tlsCertificateFingerprint: certFingerprint } : {}),
     ...pairingLink(identity?.fingerprint || '', certFingerprint, settings.alias || settings.deviceName),
   };
@@ -5479,12 +5544,23 @@ export function notifySessionPause(paused: boolean): void {
   broadcastWs({ type: paused ? 'session:paused' : 'session:resumed', payload: { paused } });
 }
 
+/** Reopens pairing after it was paused for wrong PINs (Settings), with a fresh PIN. */
+export function allowPairingAgain(): void {
+  pairingPaused = false;
+  pinFailures = 0;
+  annexPeers.unlockPairing();
+  if (currentPin) rotatePin('regenerated', false);
+}
+
 /** A new PIN from Settings. Paired devices stay connected: they authenticate by certificate, not PIN. */
 export function regeneratePin(): void {
   rotatePin('regenerated', false);
 }
 
-function closePeerSockets(fingerprint: string, code: number, reason: string): void {
+/** Grace for a close frame to reach a well-behaved client before the socket is cut. */
+const REVOKED_SOCKET_GRACE_MS = 250;
+
+function closePeerSockets(fingerprint: string, code: number, reason: string, hard = false): void {
   if (!wss) return;
   for (const client of wss.clients) {
     if (wsPeerFingerprints.get(client) !== fingerprint) continue;
@@ -5492,6 +5568,13 @@ function closePeerSockets(fingerprint: string, code: number, reason: string): vo
       appLog('core:annex', 'debug', 'Failed to close peer WebSocket connection', {
         meta: { fingerprint, error: err instanceof Error ? err.message : String(err) },
       });
+    }
+    // Revoked: cut the socket rather than wait for the other end to finish the close.
+    if (hard) {
+      const timer = setTimeout(() => {
+        try { client.terminate(); } catch { /* telemetry-exempt: the socket is already gone */ }
+      }, REVOKED_SOCKET_GRACE_MS);
+      timer.unref?.();
     }
   }
 }
@@ -5514,9 +5597,20 @@ export function revokePeer(fingerprint: string): boolean {
   const removed = annexPeers.removePeer(fingerprint) || wasSession;
   awaitingFirstConnection.delete(fingerprint);
   loggedRefusals.delete(fingerprint);
-  closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired');
+  closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
   appLog('core:annex', 'info', 'Peer pairing removed', { meta: { fingerprint, removed } });
   return removed;
+}
+
+/**
+ * Cuts a peer's open sockets if it is no longer a paired controller here, for
+ * example after this machine paired with it as a satellite, or forgot it.
+ */
+export function closeSocketsUnlessController(fingerprint: string): void {
+  const peer = findPairedPeer(fingerprint);
+  if (peer?.role === 'controller' && peer.tlsCertificateFingerprint) return;
+  awaitingFirstConnection.delete(fingerprint);
+  closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
 }
 
 /** Remove every pairing and close every peer connection. */
@@ -5526,7 +5620,7 @@ export function revokeAllPeers(): void {
   annexPeers.removeAllPeers();
   awaitingFirstConnection.clear();
   loggedRefusals.clear();
-  for (const fingerprint of fingerprints) closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired');
+  for (const fingerprint of fingerprints) closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
 }
 
 /** Get the auth type of a WebSocket connection. Used by protocol V2 to gate control messages. */
@@ -5566,6 +5660,14 @@ export const _testing = {
   wsAlive,
   wsAuthTypes,
   wsPeerFingerprints,
+  wsPeerPins,
+  /** Tags a test socket as accepted for `fingerprint` with certificate `pin`, as an upgrade would. */
+  registerPeerSocket(ws: WebSocket, fingerprint: string, pin: string) {
+    wsAuthTypes.set(ws, 'mtls');
+    wsPeerFingerprints.set(ws, fingerprint);
+    wsPeerPins.set(ws, pin);
+  },
+  socketStillPaired,
   shellOwners,
   get wss() { return wss; },
   get heartbeatInterval() { return heartbeatInterval; },
