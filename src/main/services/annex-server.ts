@@ -732,6 +732,8 @@ function dropUnconnectedPeers(now = Date.now()): void {
     awaitingFirstConnection.delete(fingerprint);
     mobileSessionPeers.delete(fingerprint);
     devicesChanged();
+    // A member's join already went to the network when it paired: its removal goes too, so no member brings it back (#3106).
+    membership.noteLocalRemoval(fingerprint);
     if (annexPeers.removePeer(fingerprint)) {
       appLog('core:annex', 'info', 'Removed a pairing that never connected', { meta: { fingerprint } });
       broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeersForDisplay());
