@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
 
 const mockGetPath = vi.fn(() => '/tmp/test-app');
@@ -7,12 +7,24 @@ vi.mock('electron', () => ({
   app: { getPath: (...args: unknown[]) => mockGetPath(...args as []) },
 }));
 
+const handle = vi.hoisted(() => ({
+  writeFile: vi.fn(async () => {}),
+  sync: vi.fn(async () => {}),
+  close: vi.fn(async () => {}),
+}));
+
 vi.mock('fs', () => ({
   existsSync: vi.fn(() => false),
   readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
+  readdirSync: vi.fn(() => []),
+  rmSync: vi.fn(),
   promises: {
     writeFile: vi.fn(async () => {}),
     chmod: vi.fn(async () => {}),
+    rename: vi.fn(async () => {}),
+    rm: vi.fn(async () => {}),
+    open: vi.fn(async () => handle),
+    stat: vi.fn(async () => { throw Object.assign(new Error('missing'), { code: 'ENOENT' }); }),
   },
 }));
 
@@ -378,6 +390,101 @@ describe('file mode option', () => {
     const store = createSettingsStore<TestSettings>('plain.json', DEFAULTS);
     await store.save(DEFAULTS);
     expect(fs.promises.chmod).not.toHaveBeenCalled();
+  });
+});
+
+describe('atomic option', () => {
+  const filePath = path.join('/tmp/test-app', 'atomic.json');
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  const setPlatform = (value: string) => Object.defineProperty(process, 'platform', { ...platform, value });
+  const tempOf = (n = 0) => vi.mocked(fs.promises.open).mock.calls[n][0] as string;
+  const atomicStore = (extra: { mode?: number } = {}) =>
+    createSettingsStore<TestSettings>('atomic.json', DEFAULTS, undefined, { atomic: true, ...extra });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetPath.mockReturnValue('/tmp/test-app');
+    resetAllSettingsStoresForTests();
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', platform);
+  });
+
+  it('writes and flushes a temp file beside the target, then renames it over the target', async () => {
+    await atomicStore().save({ ...DEFAULTS, name: 'x' });
+    const tmp = tempOf();
+    expect(path.dirname(tmp)).toBe('/tmp/test-app');
+    expect(tmp).not.toBe(filePath);
+    const body = handle.writeFile.mock.calls[0][0] as unknown as string;
+    expect(JSON.parse(body).name).toBe('x');
+    expect(handle.sync.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(fs.promises.rename).mock.invocationCallOrder[0]);
+    expect(handle.close).toHaveBeenCalled();
+    expect(fs.promises.rename).toHaveBeenCalledWith(tmp, filePath);
+    expect(fs.promises.writeFile).not.toHaveBeenCalled();
+  });
+
+  it('uses a new temp name for each write', async () => {
+    const store = atomicStore();
+    await store.save({ ...DEFAULTS, count: 1 });
+    await store.save({ ...DEFAULTS, count: 2 });
+    expect(tempOf(0)).not.toBe(tempOf(1));
+  });
+
+  it.runIf(process.platform !== 'win32')('applies the mode to the temp file before the rename', async () => {
+    await atomicStore({ mode: 0o600 }).save(DEFAULTS);
+    const tmp = tempOf();
+    expect(fs.promises.open).toHaveBeenCalledWith(tmp, 'w', 0o600);
+    expect(fs.promises.chmod).toHaveBeenCalledWith(tmp, 0o600);
+    expect(vi.mocked(fs.promises.chmod).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(fs.promises.rename).mock.invocationCallOrder[0]);
+  });
+
+  it.runIf(process.platform !== 'win32')('keeps the old file\'s permissions without a mode', async () => {
+    vi.mocked(fs.promises.stat).mockResolvedValueOnce({ mode: 0o100600 } as fs.Stats);
+    await atomicStore().save(DEFAULTS);
+    expect(fs.promises.chmod).toHaveBeenCalledWith(tempOf(), 0o600);
+  });
+
+  it('removes the temp file and fails the save when the rename fails', async () => {
+    vi.mocked(fs.promises.rename).mockRejectedValueOnce(Object.assign(new Error('nope'), { code: 'EXDEV' }));
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(atomicStore().save(DEFAULTS)).rejects.toThrow('nope');
+    expect(fs.promises.rm).toHaveBeenCalledWith(tempOf(), { force: true });
+    consoleSpy.mockRestore();
+  });
+
+  it('retries a rename Windows briefly refuses', async () => {
+    setPlatform('win32');
+    vi.mocked(fs.promises.rename).mockRejectedValueOnce(Object.assign(new Error('busy'), { code: 'EPERM' }));
+    await atomicStore().save(DEFAULTS);
+    expect(fs.promises.rename).toHaveBeenCalledTimes(2);
+    expect(fs.promises.rm).not.toHaveBeenCalled();
+  });
+
+  it('does not retry elsewhere', async () => {
+    setPlatform('linux');
+    vi.mocked(fs.promises.rename).mockRejectedValueOnce(Object.assign(new Error('denied'), { code: 'EPERM' }));
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(atomicStore().save(DEFAULTS)).rejects.toThrow('denied');
+    expect(fs.promises.rename).toHaveBeenCalledTimes(1);
+    consoleSpy.mockRestore();
+  });
+
+  it('removes temp files other processes left behind when it loads, and none of its own', () => {
+    vi.mocked(fs.readdirSync).mockReturnValueOnce([
+      'atomic.json',
+      'atomic.json.tmp-1-1',
+      `atomic.json.tmp-${process.pid}-7`,
+      'other.json.tmp-1-1',
+    ] as unknown as ReturnType<typeof fs.readdirSync>);
+    atomicStore().get();
+    expect(fs.rmSync).toHaveBeenCalledTimes(1);
+    expect(fs.rmSync).toHaveBeenCalledWith(path.join('/tmp/test-app', 'atomic.json.tmp-1-1'), { force: true });
+  });
+
+  it('sweeps nothing for a store that isn\'t atomic', () => {
+    createSettingsStore<TestSettings>('plain.json', DEFAULTS).get();
+    expect(fs.readdirSync).not.toHaveBeenCalled();
   });
 });
 

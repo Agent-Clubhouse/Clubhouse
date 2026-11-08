@@ -16,7 +16,7 @@ import {
 } from '../../../shared/actions';
 import { validateActionInput } from '../../../shared/actions/validate';
 import { appLog } from '../log-service';
-import { createSettingsStore } from '../settings-store';
+import { backupUnreadableSettings, createSettingsStore } from '../settings-store';
 import type { EngineState, EngineStorage, PersistedWait, RunHistory } from './engine';
 
 interface StoredActions {
@@ -82,6 +82,20 @@ const actionsStore = createSettingsStore<StoredActions>(
   'actions.json',
   { version: 1, actions: [], state: { nextAt: {}, waits: [] } },
   (raw) => ({ version: 1, actions: sanitizeActions(raw.actions), state: sanitizeState(raw.state) }),
+  {
+    atomic: true,
+    // A file that exists but can't be read loads as no actions, and the next
+    // save would replace it. Keep a copy beside it first (#3025).
+    onLoad: (result) => {
+      if (!('error' in result) || (result.error as NodeJS.ErrnoException)?.code === 'ENOENT') return;
+      try {
+        backupUnreadableSettings('actions.json');
+      } catch (err) {
+        // telemetry-exempt: the settings store already records the reset to defaults
+        appLog('core:actions', 'error', 'Could not keep a copy of the unreadable actions file', { meta: { error: err instanceof Error ? err.message : String(err) } });
+      }
+    },
+  },
 );
 
 function logSaveError(what: string) {
@@ -162,6 +176,7 @@ const historyStore = createSettingsStore<StoredHistory>(
     }
     return { version: 1, runs };
   },
+  { atomic: true },
 );
 
 /** How long to gather history writes into one save. */
