@@ -39,7 +39,7 @@ describe('bindWireDefinition', () => {
       latest = { ...def, disabledTools: ['read_output'], instructions: { '*': 'New' } };
     });
     await bindWireDefinition({ ...def, disabledTools: ['broadcast'] }, () => latest);
-    expect(window.clubhouse.mcpBinding.setDisabledTools).toHaveBeenCalledWith('a1', 'a2', ['read_output']);
+    expect(window.clubhouse.mcpBinding.setDisabledTools).toHaveBeenCalledWith('a1', 'a2', ['read_output'], { restore: true });
     expect(window.clubhouse.mcpBinding.setInstructions).toHaveBeenCalledWith('a1', 'a2', { '*': 'New' });
   });
 

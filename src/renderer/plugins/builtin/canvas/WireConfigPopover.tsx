@@ -108,13 +108,10 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
   };
 
   const handleSavePermissions = async (disabledTools: string[]) => {
+    // This direction only: each direction of a connection has its own permissions, saved in the
+    // connection store (D129). The other direction is edited from its own wire or the Connections card.
     await setDisabledTools(binding.agentId, binding.targetId, disabledTools);
     onUpdateWireDefinition?.(binding.agentId, binding.targetId, { disabledTools });
-    // Mirror permissions to the reverse binding for bidirectional agent-to-agent wires
-    if (bidirectional && isAgentToAgent) {
-      await setDisabledTools(binding.targetId, binding.agentId, disabledTools);
-      onUpdateWireDefinition?.(binding.targetId, binding.agentId, { disabledTools });
-    }
     // Dismiss the wire popover after saving — the dismissible-layer hook is
     // disabled while the dialog is open, so we close explicitly here.
     onClose();

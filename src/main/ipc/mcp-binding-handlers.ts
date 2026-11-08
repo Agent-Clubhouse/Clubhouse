@@ -36,6 +36,8 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
 import { listConnectionSources, removeConnectionSource } from '../services/connection-sources';
 import type { ConnectionSourceKind } from '../../shared/connection-sources';
+import { applyConnectionTools, makeTwoWay, startConnectionGrants } from '../services/connection-grants';
+import { listConnectionDirections } from '../services/connection-grants-store';
 
 /**
  * Target kinds the renderer may bind. 'plugin' is left out (#2082): plugins
@@ -193,6 +195,17 @@ export function registerMcpBindingHandlers(): void {
     return listDispatcherLinksForUser();
   });
 
+  // Connection permissions (D129, #2972): the user's own surface.
+  ipcMain.handle(IPC.MCP_BINDING.GET_CONNECTION_GRANTS, withValidatedArgs([stringArg({ maxLength: 200 })], (event, agentId) => {
+    assertCallerIsAppWindow(event);
+    return listConnectionDirections(agentId as string);
+  }));
+  ipcMain.handle(IPC.MCP_BINDING.MAKE_TWO_WAY, withValidatedArgs([stringArg({ maxLength: 200 }), stringArg({ maxLength: 200 })], async (event, fromId, toId) => {
+    assertCallerIsAppWindow(event);
+    void auditChanged('agent', 'agent.mcp_binding.link', fromId as string);
+    await makeTwoWay(fromId as string, toId as string);
+  }));
+
   // Connection sources (#2744): the user's own surface.
   ipcMain.handle(IPC.MCP_BINDING.GET_CONNECTION_SOURCES, withValidatedArgs([stringArg({ maxLength: 200 })], (event, agentId) => {
     assertCallerIsAppWindow(event);
@@ -226,8 +239,8 @@ export function registerMcpBindingHandlers(): void {
   ));
 
   ipcMain.handle(IPC.MCP_BINDING.SET_DISABLED_TOOLS, withValidatedArgs(
-    [stringArg(), stringArg(), arrayArg(stringArg())],
-    (event, agentId, targetId, disabledTools) => {
+    [stringArg(), stringArg(), arrayArg(stringArg()), objectArg<{ restore?: boolean }>({ optional: true })],
+    (event, agentId, targetId, disabledTools, options) => {
       assertCallerIsAppWindow(event);
       assertNotPluginBinding(agentId as string, targetId as string);
       void auditChanged('agent', 'agent.mcp_binding.disabled_tools', agentId as string);
@@ -236,8 +249,10 @@ export function registerMcpBindingHandlers(): void {
       if (!agentRegistry.get(agentId as string)) {
         appLog('core:mcp', 'debug', 'Setting disabled tools for sleeping agent binding', { meta: { agentId, targetId } });
       }
-      bindingManager.setDisabledTools(agentId as string, targetId as string, disabledTools as string[]);
-      appLog('core:mcp', 'info', 'Binding disabled tools updated', { meta: { agentId, targetId, disabledTools } });
+      // An agent-to-agent direction's tools live in the connection store (D129); a canvas wire
+      // bound again only fills a store that has none (`restore`).
+      return applyConnectionTools(agentId as string, targetId as string, disabledTools as string[], { restore: (options as { restore?: boolean } | undefined)?.restore === true })
+        .then(() => { appLog('core:mcp', 'info', 'Binding disabled tools updated', { meta: { agentId, targetId, disabledTools } }); });
     },
   ));
 
@@ -329,6 +344,8 @@ export function restorePersistedBindings(): Promise<void> {
     // After the canvas source, so a pair the user also drew stays the user's.
     registerPersistedBindingSource(dispatcherConnectionSource);
     stopWatchingDispatcherConnections = watchDispatcherConnections(() => restorePersistedBindings());
+    // Connection permissions (D129): the store sets each direction's tools, and the user's links are a source.
+    startConnectionGrants();
     stopWatchingMcpCallers = watchMcpCallers();
   }
   return rebuildPersistedBindings().then((): void => undefined, (err): void => {

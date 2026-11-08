@@ -79,7 +79,7 @@ Your templates can set permissions too, under **Clubhouse permissions** in the t
 
 For an orchestrator, **Create agents** and **Remove helpers** follow its approval setting on the Helpers page, and changing either here changes that setting.
 
-A wire on a canvas goes one way: the agent it starts from is the sender, and the wire's tool permissions say what the sender may do. A two-way wire is two directions, and its tool permissions set both together. A new wire between two agents lets the sender read the other agent and message it. **Clear** and **Compact** start off; turn them on in the wire's tool permissions if the sender should be able to reset the other agent. Wires drawn before this, and the wires between an orchestrator and its helpers, keep what they had.
+A connection between two agents goes each way on its own: in each direction, the agent that sends is limited to the tools that direction allows. Open a connection with **Manage** on the agent's **Connections** card to see both directions side by side, turn tools on or off for each, and use **Make two-way** when it only goes one way. A canvas wire's tool permissions change the same settings, for that wire's direction. A new connection lets the sender read the other agent and message it; **Clear** and **Compact** start off. Connections from before this, and the wires between an orchestrator and its helpers, keep what they had.
 
 These permissions are a guardrail on Clubhouse, not a sandbox. Other programs running as you aren't limited by them.
 

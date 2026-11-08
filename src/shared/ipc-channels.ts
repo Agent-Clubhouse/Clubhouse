@@ -595,6 +595,10 @@ export const IPC = {
     GET_DISPATCHER_LINKS: 'mcp-binding:get-dispatcher-links',
     /** The sources behind an agent's connections (#2744). */
     GET_CONNECTION_SOURCES: 'mcp-binding:get-connection-sources',
+    /** Per-direction connection permissions touching an agent (D129, #2972). */
+    GET_CONNECTION_GRANTS: 'mcp-binding:get-connection-grants',
+    /** The user's own link for the other direction of a one-way connection (#2972). */
+    MAKE_TWO_WAY: 'mcp-binding:make-two-way',
     /** Remove one source of one connection (#2744). */
     REMOVE_CONNECTION_SOURCE: 'mcp-binding:remove-connection-source',
     /** Main→renderer: the agent id whose connection or tool count changed. */

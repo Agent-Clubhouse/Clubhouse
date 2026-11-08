@@ -25,6 +25,7 @@ import { CardNote, DetailsCard } from '../details/DetailsCard';
 import { openAgent } from './orchestration-hooks';
 import { CONNECTION_SOURCE_LABELS, type AgentConnectionSources, type ConnectionPairSources } from '../../../../shared/connection-sources';
 import { ConnectionSourcesDialog } from './ConnectionSourcesDialog';
+import type { ConnectionDirection as SavedDirection } from '../../../../shared/connection-grants';
 import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
 
 export type ConnectionDirection = 'two-way' | 'to' | 'from';
@@ -161,6 +162,7 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
   const [confirming, setConfirming] = useState<Connection | null>(null);
   // Where each connection comes from (#2744), re-read with the bindings and after a removal.
   const sources = useConnectionSources(open && !!onDisconnect, agent.id, bindings, removals);
+  const grants = useConnectionGrants(open && !!onDisconnect, agent.id, bindings, removals);
   const [managing, setManaging] = useState<Connection | null>(null);
   const pairSources = (c: Connection): ConnectionPairSources[] =>
     c.pairs.map((p) => sources?.pairs.find((s) => s.agentId === p.agentId && s.targetId === p.targetId)).filter((s): s is ConnectionPairSources => !!s);
@@ -188,7 +190,7 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
                   <span className="ml-auto flex items-center gap-2.5">
                     {onDisconnect && c.kind === 'agent' && pairSources(c).length > 0 && (
                       <button type="button" onClick={() => setManaging(c)} className="text-xs text-ctp-overlay1 hover:text-ctp-text cursor-pointer" data-testid="connection-sources">
-                        Sources
+                        Manage
                       </button>
                     )}
                     {onDisconnect && c.toolMade && c.kind !== 'agent' && (
@@ -211,6 +213,10 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
     </DetailsCard>
     {managing && (
       <ConnectionSourcesDialog
+        agentId={agent.id}
+        otherId={managing.id}
+        grants={grants}
+        liveTools={new Map(bindings.filter((b) => b.targetKind === 'agent').map((b) => [`${b.agentId}>${b.targetId}`, b.disabledTools ?? []]))}
         agentName={agent.name}
         otherName={managing.name}
         dispatcherEnd={isDispatcherAgent(agent) ? managing.name : rail[managing.id] && isDispatcherAgent(rail[managing.id]) ? agent.name : undefined}
@@ -278,6 +284,22 @@ function useConnectionSources(active: boolean, agentId: string, bindings: readon
     return () => { alive = false; };
   }, [active, agentId, bindings, removals]);
   return sources;
+}
+
+/** Saved per-direction permissions touching the agent (D129), re-read like the sources. */
+function useConnectionGrants(active: boolean, agentId: string, bindings: readonly McpBindingEntry[], removals: number): readonly SavedDirection[] {
+  const [grants, setGrants] = useState<readonly SavedDirection[]>([]);
+  useEffect(() => {
+    if (!active) { setGrants([]); return; }
+    let alive = true;
+    Promise.resolve().then(() => window.clubhouse.mcpBinding.getConnectionGrants(agentId)).then(
+      (list) => { if (alive) setGrants(list ?? []); },
+      // telemetry-exempt: the view falls back to the live bindings' lists.
+      () => { if (alive) setGrants([]); },
+    );
+    return () => { alive = false; };
+  }, [active, agentId, bindings, removals]);
+  return grants;
 }
 
 /** The Dispatcher's links, re-read like the tool pairs. Empty when they can't be read. */

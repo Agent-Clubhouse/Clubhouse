@@ -44,6 +44,15 @@ vi.mock('../services/clubhouse-mcp/tools/connection-tools', () => ({
   registerConnectionTools: vi.fn(),
 }));
 
+vi.mock('../services/connection-grants', async () => {
+  const { bindingManager } = await import('../services/clubhouse-mcp');
+  return {
+    applyConnectionTools: vi.fn(async (agentId: string, targetId: string, tools: string[]) => { bindingManager.setDisabledTools(agentId, targetId, tools); }),
+    startConnectionGrants: vi.fn(),
+    makeTwoWay: vi.fn(async () => {}),
+  };
+});
+vi.mock('../services/connection-grants-store', () => ({ listConnectionDirections: vi.fn(() => []) }));
 vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));

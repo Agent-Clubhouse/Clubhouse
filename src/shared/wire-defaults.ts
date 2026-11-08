@@ -2,12 +2,12 @@
  * What a new agent-to-agent wire lets its sender do (#2969, part of #2921).
  * A wire goes one way: its sender holds the tools, so each direction has its
  * own list. By default a sender may read the other agent and message it;
- * clearing or compacting it needs the user to turn those tools on in the
- * wire's permissions. The list is the wire's `disabledTools`, which every
- * build already honours, so an older build reading a new wire grants nothing
- * more, and wires saved before this keep exactly what they had.
+ * clearing or compacting it needs the user to turn those tools on. The list
+ * is saved in the connection store (D129) and kept on the canvas wire too, so
+ * an older build reading a new wire grants nothing more.
  */
-export const NEW_AGENT_WIRE_DISABLED_TOOLS: readonly string[] = ['clear_agent', 'compact_agent'];
+export { NEW_CONNECTION_DISABLED_TOOLS as NEW_AGENT_WIRE_DISABLED_TOOLS } from './connection-grants';
+import { NEW_CONNECTION_DISABLED_TOOLS as NEW_AGENT_WIRE_DISABLED_TOOLS } from './connection-grants';
 
 /**
  * The tools a wire about to be drawn starts with off: the default for a new

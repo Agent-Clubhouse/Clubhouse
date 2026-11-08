@@ -479,6 +479,8 @@ vi.stubGlobal('clubhouse', {
     getToolConnections: async () => [],
     getConnectionSources: async () => ({ pairs: [], unreadable: [] }),
     removeConnectionSource: async () => ({ ok: true, remaining: [], stillConnected: false }),
+    getConnectionGrants: async () => [],
+    makeTwoWay: async () => {},
     onAgentConnectionChanged: () => noop,
     registerWebview: asyncNoop,
     unregisterWebview: asyncNoop,
