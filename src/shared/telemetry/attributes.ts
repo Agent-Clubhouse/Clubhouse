@@ -408,7 +408,7 @@ export const ATTR = {
   updateTrigger: enumAttr('clubhouse.update.trigger', ['startup', 'periodic', 'manual']),
   updateChannel: enumAttr('clubhouse.update.channel', ['stable', 'preview']),
   updateResult: enumAttr('clubhouse.update.result', [
-    'up_to_date', 'available', 'dismissed', 'no_artifact', 'skipped_busy', 'disabled',
+    'up_to_date', 'available', 'dismissed', 'no_artifact', 'os_too_old', 'skipped_busy', 'disabled',
     'downloaded', 'already_downloaded', 'applied', 'failed',
   ]),
   updatePhase: enumAttr('clubhouse.update.phase', ['check', 'download', 'apply', 'apply_on_quit']),

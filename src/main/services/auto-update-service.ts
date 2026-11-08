@@ -649,6 +649,18 @@ export async function checkForUpdates(
       return status;
     }
 
+    // An update this OS can't run would replace a working install with one that won't launch (#2924).
+    const systemVersion = currentSystemVersion();
+    if (needsNewerSystem(artifact, systemVersion)) {
+      appLog('update:check', 'warn', `Update ${manifest.version} needs a newer OS; staying on ${currentVersion}`, {
+        meta: { version: manifest.version, platform: key, systemVersion, minSystemVersion: artifact.minSystemVersion },
+      });
+      setState('idle');
+      await saveSettings({ ...settings, lastCheck: new Date().toISOString() });
+      recordCheck('os_too_old');
+      return status;
+    }
+
     appLog('update:check', 'info', `Update available: ${manifest.version}`, {
       meta: { currentVersion, newVersion: manifest.version },
     });
@@ -688,6 +700,34 @@ export async function checkForUpdates(
     recordCheck('failed', err);
     return status;
   }
+}
+
+/** The OS version as Electron reports it (macOS `13.4.1`, Windows `10.0.19045`), or null outside Electron. */
+function currentSystemVersion(): string | null {
+  return typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : null;
+}
+
+/** True when the artifact names a minimum OS version and this OS is known to be below it. */
+export function needsNewerSystem(artifact: UpdateArtifact, systemVersion: string | null): boolean {
+  return !!artifact.minSystemVersion && !!systemVersion && !meetsMinSystemVersion(systemVersion, artifact.minSystemVersion);
+}
+
+/**
+ * Whether `current` is at or above `min`, comparing dotted numbers part by
+ * part (`13` equals `13.0.0`). A minimum that isn't dotted numbers sets no
+ * limit, so a bad manifest value never strands a client.
+ */
+export function meetsMinSystemVersion(current: string, min: string): boolean {
+  const parse = (v: string) => (/^\d+(\.\d+)*$/.test(v.trim()) ? v.trim().split('.').map(Number) : null);
+  const want = parse(min);
+  if (!want) return true;
+  const have = (current.match(/^\d+(\.\d+)*/)?.[0] ?? '').split('.').filter(Boolean).map(Number);
+  if (have.length === 0) return true;
+  for (let i = 0; i < Math.max(want.length, have.length); i++) {
+    const a = have[i] ?? 0, b = want[i] ?? 0;
+    if (a !== b) return a > b;
+  }
+  return true;
 }
 
 /** Exported for manual download fallback — returns the artifact URL if available. */

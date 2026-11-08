@@ -1181,6 +1181,12 @@ export interface UpdateArtifact {
   url: string;
   sha256: string;
   size?: number;
+  /**
+   * The oldest OS version this artifact runs on (macOS: `13.0`), compared with
+   * `process.getSystemVersion()`. A client below it skips the update (#2924).
+   * Absent means no limit.
+   */
+  minSystemVersion?: string;
 }
 
 export interface UpdateManifest {
