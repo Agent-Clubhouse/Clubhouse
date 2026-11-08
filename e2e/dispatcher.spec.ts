@@ -18,8 +18,9 @@ import { addProject } from './smoke-helpers';
  *   there saying why;
  * - an old Clubhouse MCP off setting is ignored: the Clubhouse MCP always runs,
  *   so the Dispatcher is on and the bridge is up;
- * - an orchestrator connects by default, Connect to Dispatcher removes and
- *   adds the wire live, and it survives a restart;
+ * - an orchestrator connects by default, the switch on its Dispatcher card
+ *   in Details (#3049) removes and adds the wire live, and it survives a
+ *   restart (the card's own flows are in dispatcher-card.spec.ts);
  * - turning its switch off stops it and drops its row and wires, keeps its
  *   folder, and it comes back with the same id;
  * - the Dispatcher wakes a connected agent with a message over MCP, and can't
@@ -199,6 +200,16 @@ async function openOrchestrateCard(w: Page): Promise<void> {
   await expect(w.locator('[data-testid="orchestrate-toggle"]')).toBeVisible();
 }
 
+/** Show Agent details for the orchestrator and expand its Dispatcher card (#3049). */
+async function openDispatcherCard(w: Page): Promise<void> {
+  await openOrchestrateCard(w);
+  const details = w.locator('[data-testid="agent-details"]');
+  if (!(await details.isVisible().catch(() => false))) await w.locator('[data-testid="agent-details-toggle"]').first().click();
+  const head = w.locator('[data-testid="details-card-dispatcher-toggle"]');
+  await expect(head).toBeVisible({ timeout: 10_000 });
+  if ((await head.getAttribute('aria-expanded')) !== 'true') await head.click();
+}
+
 /** Whether both ends of the Dispatcher ↔ orchestrator wire exist. */
 async function hasWire(w: Page, dispatcherId: string): Promise<boolean> {
   const bindings = await w.evaluate(() => window.clubhouse.mcpBinding.getBindings()) as Array<{ agentId: string; targetId: string }>;
@@ -217,7 +228,10 @@ test('a saved experimental false: no row or Connect switch, and its page says it
 
   await addProject(electronApp, w, projectDir);
   await openOrchestrateCard(w);
-  await expect(w.locator('[data-testid="orchestrate-dispatcher"]')).toHaveCount(0);
+  const details = w.locator('[data-testid="agent-details"]');
+  if (!(await details.isVisible().catch(() => false))) await w.locator('[data-testid="agent-details-toggle"]').first().click();
+  await expect(details.locator('[data-testid="details-card-orchestrate"]')).toBeVisible();
+  await expect(w.locator('[data-testid="details-card-dispatcher"]')).toHaveCount(0);
   await expect(row(w)).toHaveCount(0);
   expect(fs.existsSync(dispatcherDir())).toBe(false);
 
@@ -295,8 +309,9 @@ test('on by default, wire an orchestrator, restart, switch off and on, and wake 
   await expect(w.locator('[data-testid="title-bar"]')).toContainText('conductor');
   await expect(w.locator('[data-testid="title-bar"]')).not.toContainText('Dispatcher');
 
-  // Connected by default (#2578); Connect to Dispatcher removes and adds the wire live.
-  const connect = w.locator('[data-testid="orchestrate-dispatcher"]');
+  // Connected by default (#2578); the Dispatcher card's switch removes and adds the wire live.
+  await openDispatcherCard(w);
+  const connect = w.locator('[data-testid="dispatcher-card-switch"]');
   await expect(connect).toBeVisible();
   await expect.poll(() => hasWire(w, dispatcherId)).toBe(true);
   await connect.click();
@@ -355,8 +370,8 @@ test('the Dispatcher wakes a connected agent with a message and sleeps it again'
 
     await addProject(app!.electronApp, w, projectDir);
     // An orchestrator is connected by default (#2578).
-    await openOrchestrateCard(w);
-    await expect(w.locator('[data-testid="orchestrate-dispatcher"]')).toHaveAttribute('aria-checked', 'true');
+    await openDispatcherCard(w);
+    await expect(w.locator('[data-testid="dispatcher-card-switch"]')).toHaveAttribute('aria-checked', 'true');
     await expect.poll(() => hasWire(w, dispatcherId)).toBe(true);
 
     // Start the Dispatcher. The fake reports the bridge credentials it was given.
