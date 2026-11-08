@@ -21,6 +21,7 @@ import { resolveArgTargets } from './arg-targets';
 import { recordGrantDecision } from '../grant-telemetry';
 import { CONNECTION_TOOLS } from '../../../shared/connection-grants';
 import { localizeAgentArgs } from './agent-addresses';
+import { forwardAgentCall, remoteMachineOf } from '../annex-agent-calls';
 import { getProvider } from '../../orchestrators';
 
 /** The refusal a Dispatcher tool returns for any other agent. */
@@ -480,7 +481,8 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     if (!templates) continue;
 
     // When target agent is sleeping (not in registry), only expose status and wake tools.
-    const followsTargetState = binding.targetKind === 'agent' && !allWireTools;
+    // An agent on another machine is never in this registry: its machine knows its state and answers for it (#3064).
+    const followsTargetState = binding.targetKind === 'agent' && !allWireTools && !remoteMachineOf(binding.targetId);
     const isTargetSleeping = followsTargetState && !agentRegistry.get(binding.targetId);
     // A sleeping Dispatcher still takes messages: send_message delivers and wakes it (#3069, #3108).
     const sleepingDispatcher = isTargetSleeping && isDispatcherCoordinatorId(binding.targetId);
@@ -705,7 +707,35 @@ export async function callTool(
     if (refused) return refused;
   }
 
+  // A wire to an agent on another machine runs there, which checks it again against its own store (#3064).
+  if (binding.targetKind === 'agent' && remoteMachineOf(binding.targetId)) {
+    return forwardAgentCall(agentId, binding.targetId, binding.targetName || binding.label || 'That agent', parsed.suffix, args);
+  }
+
   return withSettingsSurface('mcp', agentId, () => template.handler(binding.targetId, agentId, args));
+}
+
+/**
+ * Runs one of this machine's agent wire tools for a caller on another machine
+ * (#3064), once that machine and this one have both checked the call. The
+ * caller has no binding here; the tool reads who it is from the call context.
+ */
+export async function runAgentToolForRemoteCaller(tool: string, targetId: string, callerId: string, args: Record<string, unknown>): Promise<McpToolResult> {
+  const template = toolTemplates.get('agent')?.find((t) => t.nameSuffix === tool);
+  if (!template) return refuse('unknown_tool', `Unknown tool action: ${tool}`);
+  const schema = template.definition.inputSchema as Record<string, unknown> | undefined;
+  const required = (schema?.required as string[]) || [];
+  for (const field of required) {
+    if (args[field] === undefined || args[field] === null) return refuse('invalid_args', `Missing required argument: ${field}`);
+  }
+  const properties = (schema?.properties as Record<string, { type?: string }>) || {};
+  for (const [key, value] of Object.entries(args)) {
+    const propSchema = properties[key];
+    if (propSchema?.type && !matchesJsonSchemaType(value, propSchema.type)) {
+      return refuse('invalid_args', `Invalid type for argument "${key}": expected ${propSchema.type}, got ${typeof value}`);
+    }
+  }
+  return withSettingsSurface('mcp', callerId, () => template.handler(targetId, callerId, args));
 }
 
 /** What the grant check needs about a wire. */

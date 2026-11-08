@@ -25,7 +25,7 @@ describe('machine-qualified agents in tool calls (#3063)', () => {
   it('refuses an agent on another machine, naming the machine', () => {
     expect(localizeAgentArgs(grant, { agent_id: `durable_a@${OTHER}` })).toEqual({
       otherMachine: OTHER,
-      message: "That agent is on another machine. Agents on other machines can't be reached from here yet.",
+      message: 'That agent is on another machine. An agent on another machine is reached through a connection the person made, with the tools it gives you.',
     });
     expect(localizeAgentArgs(grant, { agent_ids: ['durable_b', `durable_a@${OTHER}`] })).toMatchObject({ otherMachine: OTHER });
   });
@@ -45,6 +45,10 @@ describe('machine-qualified agents in tool calls (#3063)', () => {
     expect(localizeAgentArgs(group, { target_agent_id: `a@${OTHER}` })).toMatchObject({ otherMachine: OTHER });
     const helpers = { actions: ['agent.read'], target: 'my_helpers' } as unknown as ToolGrant;
     expect(localizeAgentArgs(helpers, { helper: `h@${SELF}` })).toEqual({ args: { helper: 'h' } });
+  });
+
+  it('leaves a wire call to another machine as it is: the wire leads there (#3064)', () => {
+    expect(localizeAgentArgs('called_tool' as ToolGrant, { target: `durable_a@${OTHER}`, tool: 'send_message' })).toEqual({ args: { target: `durable_a@${OTHER}`, tool: 'send_message' } });
   });
 
   it("reads this machine's identity only when a reference names a machine", () => {

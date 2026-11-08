@@ -61,6 +61,7 @@ export const CLASSIC_RUN_SPECS = [
 /** Still pinned to classic, waiting to move. */
 export const PINNED_CLASSIC_SPECS = [
   'agent-list-ui.spec.ts',
+  'annex-v2/agents-across-machines.spec.ts',
   'find-replace.spec.ts',
   'mermaid-preview.spec.ts',
   'onboarding.spec.ts',

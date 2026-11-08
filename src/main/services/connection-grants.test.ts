@@ -7,6 +7,8 @@ const state = vi.hoisted(() => ({ base: '' }));
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => state.base } }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./project-store', () => ({ peekProjects: async () => [{ path: '/p' }], onProjectsChanged: () => () => {} }));
+vi.mock('./annex-identity', () => ({ getIdentity: () => ({ fingerprint: Array(16).fill('aa').join(':') }) }));
+vi.mock('./annex-peers', () => ({ listPeers: () => [{ fingerprint: Array(16).fill('bb').join(':'), alias: 'Far', role: 'member', kind: 'desktop' }] }));
 vi.mock('./agent-config', () => ({ peekDurableConfigs: async () => [{ id: 'a', name: 'alpha' }, { id: 'b', name: 'beta' }], onAgentConfigChanged: () => () => {} }));
 state.base = fs.mkdtempSync(path.join(os.tmpdir(), 'connection-grants-'));
 
@@ -14,7 +16,7 @@ import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
   deniedConnectionTools, getConnectionDirection, listConnectionDirections, removeConnectionDirections, setConnectionTools,
 } from './connection-grants-store';
-import { applyConnectionTools, forgetConnectionAgent, makeTwoWay, removeUserLink, startConnectionGrants } from './connection-grants';
+import { applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, forgetConnectionAgent, makeTwoWay, removeUserLink, setToolsAcrossMachines, startConnectionGrants } from './connection-grants';
 import { applyPersistedBinding, markBindingRemovedByUser, rebuildPersistedBindings, _resetPersistedBindingSourcesForTesting } from './persisted-bindings';
 
 const A = { agentId: 'a' };
@@ -27,6 +29,7 @@ beforeEach(async () => {
   _resetPersistedBindingSourcesForTesting();
   await removeConnectionDirections('a');
   await removeConnectionDirections('b');
+  await removeConnectionDirections('z');
   stop = startConnectionGrants();
 });
 afterEach(() => stop());
@@ -102,5 +105,73 @@ describe('connection permissions (D129)', () => {
     await removeUserLink('b', 'a');
     await rebuildPersistedBindings();
     expect(bindingManager.getBindingsForAgent('b')).toEqual([]);
+  });
+});
+
+describe('connections with agents on other machines (#3064)', () => {
+  const FAR = Array(16).fill('bb').join(':');
+  const far = { agentId: 'z', machineId: FAR };
+
+  it('connects an agent here with one there: a link each way, new-connection tools, and a binding to its address with its name', async () => {
+    await connectAcrossMachines('a', `z@${FAR}`, { twoWay: true, name: 'Zed' });
+    expect(getConnectionDirection(A, far)).toMatchObject({ link: expect.anything(), disabledTools: ['clear_agent', 'compact_agent'] });
+    expect(getConnectionDirection(far, A)).toMatchObject({ link: expect.anything() });
+    const binding = bindingManager.getBindingsForAgent('a').find((b) => b.targetId === `z@${FAR}`);
+    expect(binding).toMatchObject({ targetKind: 'agent', targetName: 'Zed', agentName: 'alpha', disabledTools: ['clear_agent', 'compact_agent'] });
+    // The other machine's agent holds the way back: nothing is bound here for it.
+    expect(bindingManager.getBindingsForAgent(`z@${FAR}`)).toHaveLength(0);
+  });
+
+  it('a card edit on a wire to another machine saves under its machine, and the wire follows', async () => {
+    await connectAcrossMachines('a', `z@${FAR}`);
+    await applyConnectionTools('a', `z@${FAR}`, ['send_file']);
+    expect(deniedConnectionTools(A, far)).toEqual(['send_file']);
+    expect(deniedConnectionTools(A, { agentId: 'z' })).toBeUndefined();
+    await vi.waitFor(() => expect(toolsOf('a', `z@${FAR}`)).toEqual(['send_file']));
+  });
+
+  it('removes both links, and the binding goes', async () => {
+    await connectAcrossMachines('a', `z@${FAR}`, { twoWay: true });
+    await disconnectAcrossMachines('a', `z@${FAR}`);
+    expect(getConnectionDirection(A, far)?.link).toBeFalsy();
+    expect(getConnectionDirection(far, A)?.link).toBeFalsy();
+    await vi.waitFor(() => expect(bindingManager.getBindingsForAgent('a').some((b) => b.targetId === `z@${FAR}`)).toBe(false));
+  });
+
+  it('switches tools on either direction with an agent there, and refuses a direction that isn\'t linked', async () => {
+    await connectAcrossMachines('a', `z@${FAR}`, { twoWay: true });
+    await setToolsAcrossMachines('a', `z@${FAR}`, false, ['wake_agent']);
+    expect(deniedConnectionTools(far, A)).toEqual(['wake_agent']);
+    await setToolsAcrossMachines('a', `z@${FAR}`, true, []);
+    expect(deniedConnectionTools(A, far)).toEqual([]);
+    await disconnectAcrossMachines('a', `z@${FAR}`);
+    await expect(setToolsAcrossMachines('a', `z@${FAR}`, true, [])).rejects.toThrow('not connected');
+  });
+
+  it('refuses an address on this machine', async () => {
+    await expect(connectAcrossMachines('a', `b@${Array(16).fill('aa').join(':')}`)).rejects.toThrow('this computer');
+    await expect(connectAcrossMachines('a', 'b')).rejects.toThrow('this computer');
+  });
+
+  it('connects only with a computer in the network (D238)', async () => {
+    await expect(connectAcrossMachines('a', `z@${Array(16).fill('cc').join(':')}`)).rejects.toThrow('Annex Network');
+  });
+
+  it('a second connect keeps a linked direction as it is, so the other machine\'s newer edits stand', async () => {
+    await connectAcrossMachines('a', `z@${FAR}`);
+    await applyConnectionTools('a', `z@${FAR}`, []);
+    const before = getConnectionDirection(A, far)!;
+    await connectAcrossMachines('a', `z@${FAR}`);
+    expect(getConnectionDirection(A, far)).toEqual(before);
+  });
+
+  it('deleting an agent turns its links with other machines off rather than dropping them, so they hear', async () => {
+    await connectAcrossMachines('a', `z@${FAR}`, { twoWay: true });
+    await setConnectionTools(A, B, []);
+    await forgetConnectionAgent('a');
+    expect(getConnectionDirection(A, far)).toMatchObject({ disabledTools: expect.any(Array) });
+    expect(getConnectionDirection(A, far)?.link).toBeFalsy();
+    expect(getConnectionDirection(far, A)?.link).toBeFalsy();
+    expect(getConnectionDirection(A, B)).toBeUndefined();
   });
 });

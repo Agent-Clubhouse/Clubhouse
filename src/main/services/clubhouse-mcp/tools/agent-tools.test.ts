@@ -60,9 +60,11 @@ const dispatcherDelivery = vi.hoisted(() => ({
   sleepingDispatcherHint: vi.fn((_senderId: string) => 'Agent is sleeping. send_message wakes it and delivers the message.'),
 }));
 vi.mock('./dispatcher-delivery', () => dispatcherDelivery);
+const remoteCaller = vi.hoisted(() => ({ value: undefined as undefined | { name: string; machineName: string; projectName?: string; targetName?: string } }));
+vi.mock('../../annex-agent-calls', async (original) => ({ ...await original<typeof import('../../annex-agent-calls')>(), currentRemoteCaller: () => remoteCaller.value }));
 
 import { registerAgentTools, writeChunkedBracketedPaste, waitForBufferQuiescence } from './agent-tools';
-import { getScopedToolList, callTool, refusalReasonOf, buildToolName, invalidateToolListCache, _resetForTesting as resetTools } from '../tool-registry';
+import { getScopedToolList, callTool, refusalReasonOf, buildToolName, invalidateToolListCache, runAgentToolForRemoteCaller, _resetForTesting as resetTools } from '../tool-registry';
 import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
 import { setDispatcherAgent, _resetDispatcherGateForTesting } from '../dispatcher-gate';
@@ -164,6 +166,28 @@ describe('AgentTools', () => {
 
   describe('send_message', () => {
     const sendToolName = agentToolName(sourceBinding, 'send_message');
+
+    it('names a sender on another machine with its machine, never "You" (#3064)', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
+      const far = `scout@${Array(16).fill('bb').join(':')}`;
+      remoteCaller.value = { name: 'Scout', machineName: 'Studio', projectName: 'Atlas', targetName: 'Builder' };
+      try {
+        const pending = runAgentToolForRemoteCaller('send_message', 'agent-2', far, { message: 'hello', task_id: 'x1' });
+        await vi.advanceTimersByTimeAsync(1500);
+        const result = await pending;
+        expect(result.isError).toBeFalsy();
+        expect((result.content[0] as { text: string }).text).toContain('Message sent to Builder');
+        expect(mockPtyWrite.mock.calls[0][1]).toContain('[FROM:Scout@Atlas on Studio] hello');
+      } finally {
+        remoteCaller.value = undefined;
+      }
+    });
+
+    it('a call from another machine is checked against the tool\'s schema', async () => {
+      const result = await runAgentToolForRemoteCaller('send_message', 'agent-2', 'scout@x', {});
+      expect(refusalReasonOf(result)).toBe('invalid_args');
+      expect(refusalReasonOf(await runAgentToolForRemoteCaller('no_such_tool', 'agent-2', 'scout@x', {}))).toBe('unknown_tool');
+    });
 
     it('sends single-line message without bracketed paste', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });

@@ -520,6 +520,39 @@ function setState(
     meta: { fingerprint: sat.fingerprint, alias: sat.alias, ...(error ? { error } : {}) },
   });
   broadcastSatellitesChanged();
+  if (prev !== 'connected' && state === 'connected') {
+    for (const listener of [...connectedListeners]) {
+      try {
+        listener(sat.fingerprint.toLowerCase());
+      } catch {
+        // telemetry-exempt: one listener failing must not stop the others
+      }
+    }
+  }
+}
+
+const connectedListeners = new Set<(machine: string) => void>();
+
+/** Told each time a connection to a machine opens, with its lowercased fingerprint (#3064). */
+export function onSatelliteConnected(listener: (machine: string) => void): () => void {
+  connectedListeners.add(listener);
+  return () => { connectedListeners.delete(listener); };
+}
+
+function satelliteFor(machine: string): SatelliteConnectionInternal | undefined {
+  const fp = machine.toLowerCase();
+  for (const sat of satellites.values()) if (sat.fingerprint.toLowerCase() === fp) return sat;
+  return undefined;
+}
+
+/** Whether this machine is connected to `machine` now (#3064). */
+export function isMachineConnected(machine: string): boolean {
+  return satelliteFor(machine)?.state === 'connected';
+}
+
+/** The name this machine knows `machine` by. */
+export function machineAlias(machine: string): string | undefined {
+  return satelliteFor(machine)?.alias || undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -2042,6 +2075,13 @@ const satelliteEpochs = new Map<string, string>();
 
 /** The chat commands a controller may send for a satellite's agent. */
 export const REMOTE_CHAT_COMMANDS = ['chat.send', 'chat.interrupt', 'chat.queue.remove', 'chat.permission', 'chat.question', 'chat.setModel', 'chat.setLevel'] as const;
+
+/** A JSON POST to another machine over the pinned connection (#3064, agent calls and connections). */
+export function postToMachine(machine: string, urlPath: string, body: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
+  const sat = satelliteFor(machine);
+  if (!sat) return Promise.reject(new Error('Satellite not connected'));
+  return satelliteJson(sat.fingerprint, 'POST', urlPath, body);
+}
 
 /** A JSON request over the pinned connection, answering its status and body whatever the status. */
 function satelliteJson(fingerprint: string, method: 'GET' | 'POST', urlPath: string, body?: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
