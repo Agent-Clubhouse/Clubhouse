@@ -156,6 +156,8 @@ describeWhenAsked('Annex session satellite', () => {
       await writeKey({ pluginId: 'canvas', scope: 'global', key: 'canvas-instances', value: canvasesOf('app', 4), projectPath: undefined });
     }
 
+    // Both clients of the session pair with the one PIN this prints, so it stays usable.
+    annexServer._testing.setPinReusable(true);
     annexServer.start();
     await vi.waitFor(() => { if (!(annexServer.getStatus().port > 0)) throw new Error('not yet'); }, { timeout: 20_000 });
 
@@ -188,13 +190,14 @@ describeWhenAsked('Annex session satellite', () => {
             }
             if (req.url === '/state') {
               const status = annexServer.getStatus();
-              answer = { port: status.port, pairingPort: (status as { pairingPort?: number }).pairingPort };
+              answer = { port: status.port, pairingPort: status.pairingPort, pin: status.pin, pairingUrl: status.pairingUrl };
             }
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify({ ...answer, fault: S.fault, lastSeq: eventReplay.getLastSeq() }));
             if (req.url === '/stop') {
               setFault('none');
               annexServer.stop();
+              annexServer._testing.setPinReusable(false);
               control.close();
               resolve();
             }
@@ -206,7 +209,7 @@ describeWhenAsked('Annex session satellite', () => {
       });
       control.listen(0, '127.0.0.1', () => {
         const status = annexServer.getStatus();
-        console.info(`ANNEX_SESSION ${JSON.stringify({ port: status.port, pairingPort: (status as { pairingPort?: number }).pairingPort, pin: status.pin, controlPort: (control.address() as { port: number }).port })}`);
+        console.info(`ANNEX_SESSION ${JSON.stringify({ port: status.port, pairingPort: status.pairingPort, pin: status.pin, pairingUrl: status.pairingUrl, controlPort: (control.address() as { port: number }).port })}`);
       });
     });
   }, 24 * 60 * 60 * 1000);

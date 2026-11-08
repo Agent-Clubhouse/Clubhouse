@@ -28,6 +28,8 @@ export interface SatelliteConnection {
   lastError: string | null;
   /** This connection's satellite can't build a snapshot yet, and is retrying. */
   snapshotUnavailable?: boolean;
+  /** The pairing can't be used any more; `lastError` says why. Pair again to connect. */
+  needsPairing?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -49,6 +51,16 @@ export interface DiscoveredService {
 // Store
 // ---------------------------------------------------------------------------
 
+export interface PairResult {
+  success: boolean;
+  /** A plain sentence to show as is. */
+  error?: string;
+  alias?: string;
+}
+
+/** Shown when the request never reached the main process. */
+export const PAIRING_UNAVAILABLE_ERROR = "Couldn't start pairing. Try again.";
+
 interface AnnexClientStoreState {
   satellites: SatelliteConnection[];
   discoveredServices: DiscoveredService[];
@@ -56,7 +68,12 @@ interface AnnexClientStoreState {
   satellitePaused: Record<string, boolean>;
   loadSatellites: () => Promise<void>;
   loadDiscovered: () => Promise<void>;
-  pairWith: (fingerprint: string, pin: string) => Promise<{ success: boolean; error?: string }>;
+  /** Reads a discovered service's certificate fingerprint, for comparing its code before pairing. */
+  probeService: (fingerprint: string) => Promise<{ success: boolean; certFingerprint?: string; error?: string }>;
+  /** Pairs with a discovered service after `probeService`. */
+  pairWith: (fingerprint: string, pin: string) => Promise<PairResult>;
+  /** Pairs using another computer's pairing link. */
+  pairWithLink: (link: string) => Promise<PairResult>;
   connect: (fingerprint: string, bearerToken?: string) => Promise<void>;
   disconnect: (fingerprint: string) => Promise<void>;
   forgetSatellite: (fingerprint: string) => Promise<void>;
@@ -104,11 +121,27 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
     }
   },
 
+  probeService: async (fingerprint) => {
+    try {
+      return await window.clubhouse.annexClient.probeService(fingerprint);
+    } catch {
+      return { success: false, error: PAIRING_UNAVAILABLE_ERROR };
+    }
+  },
+
   pairWith: async (fingerprint, pin) => {
     try {
       return await window.clubhouse.annexClient.pairWith(fingerprint, pin);
     } catch {
-      return { success: false, error: 'IPC error' };
+      return { success: false, error: PAIRING_UNAVAILABLE_ERROR };
+    }
+  },
+
+  pairWithLink: async (link) => {
+    try {
+      return await window.clubhouse.annexClient.pairWithLink(link);
+    } catch {
+      return { success: false, error: PAIRING_UNAVAILABLE_ERROR };
     }
   },
 

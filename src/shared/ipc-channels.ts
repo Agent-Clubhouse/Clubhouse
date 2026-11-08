@@ -502,6 +502,8 @@ export const IPC = {
     SATELLITE_EVENT: 'annex-client:satellite-event',
     GET_DISCOVERED: 'annex-client:get-discovered',
     PAIR_WITH: 'annex-client:pair-with',
+    PROBE_SERVICE: 'annex-client:probe-service',
+    PAIR_WITH_LINK: 'annex-client:pair-with-link',
     DISCOVERED_CHANGED: 'annex-client:discovered-changed',
     PTY_INPUT: 'annex-client:pty-input',
     PTY_RESIZE: 'annex-client:pty-resize',

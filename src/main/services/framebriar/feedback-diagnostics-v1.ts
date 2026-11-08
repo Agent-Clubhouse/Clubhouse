@@ -41,7 +41,6 @@ export const OPERATION_BY_EVENT: ReadonlyMap<string, string> = new Map([
   ['annex.ws.snapshot_failed', 'snapshot.send'],
   ['annex.ws.broadcast_failed', 'broadcast.send'],
   ['annex.client.connecting', 'connect'],
-  ['annex.client.retry_bearer', 'connect'],
   ['annex.client.identity_failed', 'identity.fetch'],
   ['annex.client.identity_error', 'identity.fetch'],
   ['annex.client.discovery_failed', 'discovery.start'],
