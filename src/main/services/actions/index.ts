@@ -17,7 +17,8 @@ import { isAgentRunning } from '../agent-system';
 import { onAppEvent } from '../app-event-bus';
 import { knownAgent, knownAgents } from '../app-event-sources';
 import { bindingManager } from '../clubhouse-mcp/binding-manager';
-import { isOrchestrationEnabled } from '../clubhouse-mcp/orchestration-gate';
+import { isCrossProjectEnabled, isOrchestrationEnabled, orchestrationControl } from '../clubhouse-mcp/orchestration-gate';
+import { isDispatcherEnabled } from '../dispatcher/dispatcher-settings';
 import { sleepAgent, wakeWiredAgent } from '../clubhouse-mcp/tools/agent-lifecycle';
 import { deliverToDispatcher } from '../clubhouse-mcp/tools/dispatcher-delivery';
 import { DISPATCHER_NAME, getDispatcherAgentId, getDispatcherState, isDispatcherAgentId } from '../dispatcher/dispatcher-service';
@@ -140,14 +141,18 @@ function createEngine(): ActionsEngine {
     agentName: facts.agentName,
     parentOf: facts.parentOf,
     agentProjectId: facts.agentProjectId,
-    // The owner's permissions from its saved settings (it may be asleep), with its saved changes (#2960, D131).
+    // The owner's permissions as the MCP gate works them out (callerGrants): the live gate while it
+    // runs, else its saved settings, with its saved changes (#2960, D131). An off Dispatcher holds
+    // only what any agent does.
     grantsOf: (id) => {
-      const dispatcher = id === (getDispatcherAgentId() ?? undefined);
+      const known = knownAgent(id);
+      const orchestrates = !isDispatcherAgentId(id) && canStartAgents(id);
       return grantsFromFacts(id, {
-        dispatcher,
-        helper: !!knownAgent(id)?.parentAgentId,
-        orchestrates: !dispatcher && canStartAgents(id),
-        crossProject: false,
+        dispatcher: isDispatcherAgentId(id) && isDispatcherEnabled(),
+        helper: !!known?.parentAgentId,
+        orchestrates,
+        crossProject: orchestrates && (isCrossProjectEnabled(id) || known?.crossProject === true),
+        ...(orchestrates && { control: orchestrationControl(id) ?? known?.control }),
       });
     },
     agentProjectPath: (id) => knownAgent(id)?.projectPath,
@@ -169,6 +174,7 @@ function createEngine(): ActionsEngine {
       return p ? { id: p.id, path: p.path, ...(p.orchestrator && { orchestrator: p.orchestrator }), name: projectLabel(p) } : undefined;
     },
     wake: async (req) => parseToolResult(await wakeWiredAgent(req)),
+    wakeRefusal: (owner, agentId) => rights.checkStep(owner, { kind: 'wake', agentId }),
     // A person set this step up to put the agent to sleep: no mid-turn refusal after the wait.
     sleep: async (req) => parseToolResult(await sleepAgent({ ...req, force: true })),
     startQuick: (req) => startQuickAgent(req),

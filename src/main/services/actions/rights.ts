@@ -8,10 +8,13 @@
  * its saved settings so they apply while it sleeps:
  * - message, wake and sleep steps need agent.message, agent.wake and
  *   agent.sleep on the agent (itself, its helpers, its orchestrator, agents
- *   it is connected to, as its permissions say);
+ *   it is connected to, as its permissions say); a wake with a prompt needs
+ *   agent.message too, and a message step wakes a sleeping agent only for an
+ *   owner that may wake it (steps.ts asks wakeRefusal when it runs);
  * - a quick agent step needs agent.create on its project; quick agents from
  *   actions run at Full access (D140), so only an owner at Full access may
- *   start them, and never the Dispatcher;
+ *   start them, and never the Dispatcher; one in another agent's worktree
+ *   needs that agent to be the owner's helper or connected to it;
  * - a notify step needs user.notify;
  * - a trigger watching an agent needs agent.read on it, a project's events
  *   project.read on it, and app events settings.app.read.
@@ -99,8 +102,13 @@ export function createGrantRights(facts: RightsFacts): ActionRights {
         if (!facts.canStartAgents(id)) return `${ownerName(owner)} can\u2019t start agents, so its actions can\u2019t start quick agents. Turn on "Let this agent orchestrate" for it first.`;
         const ownProject = facts.agentProjectId(id);
         if (!ownProject || step.projectId !== ownProject) return `${ownerName(owner)} can\u2019t start agents in that project.`;
-        // A worktree in another project would run there, outside the agent's project.
-        if (step.worktreeAgentId && facts.agentProjectId(step.worktreeAgentId) !== ownProject) return `${ownerName(owner)} can\u2019t use that agent\u2019s worktree.`;
+        // A worktree in another project would run there, outside the agent's project. In its own
+        // project, only the worktree of an agent it works with: itself, its helper, or one connected to it.
+        if (step.worktreeAgentId) {
+          const relations = agentTarget(id, step.worktreeAgentId).relations ?? [];
+          const worksWith = relations.some((rel) => rel === 'self' || rel === 'my_helper' || rel === 'connected');
+          if (facts.agentProjectId(step.worktreeAgentId) !== ownProject || !worksWith) return `${ownerName(owner)} can\u2019t use that agent\u2019s worktree.`;
+        }
         const projectPath = facts.projectPath(step.projectId);
         const refused = holds(owner, 'agent.create', { kind: 'project', ...(projectPath && { projectPath }) }, 'in that project');
         if (refused) return refused;
@@ -113,7 +121,10 @@ export function createGrantRights(facts: RightsFacts): ActionRights {
       if (!id) return `${ownerName(owner)} can\u2019t act on that agent.`;
       // The Dispatcher's actions tell it things (#3042); they never put it to sleep.
       if (owner.kind === 'dispatcher' && step.kind === 'sleep' && step.agentId === id) return 'The Dispatcher\u2019s actions can\u2019t put it to sleep.';
-      return holds(owner, STEP_ACTION[step.kind], agentTarget(id, step.agentId), 'on that agent');
+      const target = agentTarget(id, step.agentId);
+      // A wake with a prompt also delivers it, as wake_agent's message does.
+      if (step.kind === 'wake' && step.prompt) return holds(owner, 'agent.wake', target, 'on that agent') ?? holds(owner, 'agent.message', target, 'on that agent');
+      return holds(owner, STEP_ACTION[step.kind], target, 'on that agent');
     },
 
     checkSource(owner: ActionOwner, trigger: ActionTrigger): string | null {

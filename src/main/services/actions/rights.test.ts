@@ -68,6 +68,13 @@ describe('an action does what its owner may (#2960, D131): steps', () => {
     expect(rights.checkStep(lead, { kind: 'wake', agentId: 'pm' })).toBeNull();
   });
 
+  it('a wake with a prompt also needs to message the agent', () => {
+    expect(rights.checkStep(lead, { kind: 'wake', agentId: 'h1', prompt: 'Go' })).toBeNull();
+    saved.set('lead', { changes: [{ action: 'agent.message', target: { kind: 'my_helpers' }, mode: 'off' }] });
+    expect(rights.checkStep(lead, { kind: 'wake', agentId: 'h1' })).toBeNull();
+    expect(rights.checkStep(lead, { kind: 'wake', agentId: 'h1', prompt: 'Go' })).toMatch(/agent\.message on that agent/);
+  });
+
   it('a refusal reads the same whether or not the agent exists', () => {
     expect(rights.checkStep(lead, { kind: 'message', agentId: 'qa', text: 'x' })).toBe(rights.checkStep(lead, { kind: 'message', agentId: 'nobody', text: 'x' }));
   });
@@ -87,6 +94,11 @@ describe('an action does what its owner may (#2960, D131): steps', () => {
     expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p2', prompt: 'x' })).toBe('release-lead can’t start agents in that project.');
     expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', worktreeAgentId: 'other', prompt: 'x' })).toBe('release-lead can’t use that agent’s worktree.');
     expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', worktreeAgentId: 'pm', prompt: 'x' })).toBeNull();
+    expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', worktreeAgentId: 'h1', prompt: 'x' })).toBeNull();
+    expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', worktreeAgentId: 'lead', prompt: 'x' })).toBeNull();
+    // Only the worktree of an agent it works with, and the refusal reads the same for one that doesn't exist.
+    expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', worktreeAgentId: 'qa', prompt: 'x' })).toBe('release-lead can’t use that agent’s worktree.');
+    expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', worktreeAgentId: 'nobody', prompt: 'x' })).toBe('release-lead can’t use that agent’s worktree.');
     leadAccess = 'auto_edit';
     expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', prompt: 'x' })).toBe('Agent steps run with Full access, and release-lead runs at Auto-accept edits, so its actions can’t start quick agents.');
     // Starting agents in its project is a permission too.

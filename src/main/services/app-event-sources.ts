@@ -7,6 +7,7 @@
 
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { AccessLevel } from '../../shared/agent-access';
+import { resolveOrchestrationPolicy, type OrchestrationControl } from '../../shared/orchestration-policy';
 import { agentAccess } from './free-agent-settings';
 import type { DurableAgentConfig } from '../../shared/types';
 import { listDurable, onAgentConfigChanged } from './agent-config';
@@ -25,6 +26,9 @@ export interface KnownAgent {
   orchestrates?: boolean;
   /** Its saved Access level (#2761). */
   access?: AccessLevel;
+  /** While it orchestrates: its saved cross-project helpers switch and approval setting, as its permissions read them (#2960). */
+  crossProject?: boolean;
+  control?: OrchestrationControl;
 }
 
 /** Agents that exist (created, not disposed), per project, from the last read. */
@@ -41,6 +45,7 @@ function snapshot(projectPath: string, configs: DurableAgentConfig[]): Map<strin
   const out = new Map<string, KnownAgent>();
   for (const c of configs) {
     if (!exists(c)) continue;
+    const policy = resolveOrchestrationPolicy(c.orchestration, { helper: !!c.parentAgentId });
     out.set(c.id, {
       projectPath,
       ...(c.name && { name: c.name }),
@@ -49,6 +54,7 @@ function snapshot(projectPath: string, configs: DurableAgentConfig[]): Map<strin
       ...(c.orchestration?.orchestrate === true && { orchestrates: true }),
       // As launch and Preview read it: a record from before #2761 with its project's old mode.
       access: agentAccess(c, projectPath),
+      ...(policy.orchestrate && { crossProject: policy.crossProjectHelpers, control: policy.control }),
     });
   }
   return out;
