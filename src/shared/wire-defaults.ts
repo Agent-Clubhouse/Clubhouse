@@ -8,3 +8,20 @@
  * more, and wires saved before this keep exactly what they had.
  */
 export const NEW_AGENT_WIRE_DISABLED_TOOLS: readonly string[] = ['clear_agent', 'compact_agent'];
+
+/**
+ * The tools a wire about to be drawn starts with off: the default for a new
+ * agent-to-agent pair, nothing for any other target, and nothing for a pair
+ * that already has a binding (a helper or Dispatcher wire, or a wire drawn
+ * again), whose own list must not change.
+ */
+export function newWireDisabledTools(
+  existing: ReadonlyArray<{ agentId: string; targetId: string }>,
+  agentId: string,
+  targetId: string,
+  targetKind: string,
+): string[] | undefined {
+  if (targetKind !== 'agent') return undefined;
+  if (existing.some((b) => b.agentId === agentId && b.targetId === targetId)) return undefined;
+  return [...NEW_AGENT_WIRE_DISABLED_TOOLS];
+}

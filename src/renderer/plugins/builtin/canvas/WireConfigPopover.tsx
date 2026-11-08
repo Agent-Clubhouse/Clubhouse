@@ -11,6 +11,7 @@ import { WireInstructionsDialog } from './WireInstructionsDialog';
 import { WireToolPermissionsDialog } from './WireToolPermissionsDialog';
 import { useDismissibleLayer } from './useDismissibleLayer';
 import { CANVAS_Z } from './canvas-chrome';
+import { newWireDisabledTools } from '../../../../shared/wire-defaults';
 
 interface WireConfigPopoverProps {
   binding: McpBindingEntry;
@@ -88,8 +89,11 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
         targetKind: 'agent' as const,
         label: sourceLabel,
       };
+      // A new reverse direction starts like any new agent wire (#2969); one that exists keeps its list.
+      const disabledTools = newWireDisabledTools(bindings, binding.targetId, binding.agentId, 'agent');
       await bind(binding.targetId, revTarget);
-      onAddWireDefinition?.({ agentId: binding.targetId, ...revTarget } as McpBindingEntry);
+      if (disabledTools) await setDisabledTools(binding.targetId, binding.agentId, disabledTools);
+      onAddWireDefinition?.({ agentId: binding.targetId, ...revTarget, ...(disabledTools && { disabledTools }) } as McpBindingEntry);
     }
   };
 

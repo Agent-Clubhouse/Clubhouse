@@ -6,7 +6,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import type { CanvasView, AgentCanvasView as AgentCanvasViewType, PluginCanvasView as PluginCanvasViewType, ZoneCanvasView as ZoneCanvasViewType, Position, Viewport } from './canvas-types';
 import { screenToCanvas } from './canvas-operations';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
-import { NEW_AGENT_WIRE_DISABLED_TOOLS } from '../../../../shared/wire-defaults';
+import { newWireDisabledTools } from '../../../../shared/wire-defaults';
 
 export interface WireDragState {
   /** The view initiating the drag (agent or zone). */
@@ -82,6 +82,10 @@ export function useWiring(
   const [wireDrag, setWireDrag] = useState<WireDragState | null>(null);
   const bind = useMcpBindingStore((s) => s.bind);
   const setDisabledTools = useMcpBindingStore((s) => s.setDisabledTools);
+  // Read at drop time: whether a pair already has a binding decides its default (#2969).
+  const bindings = useMcpBindingStore((s) => s.bindings);
+  const bindingsRef = useRef(bindings);
+  bindingsRef.current = bindings;
   const onAddWireDefRef = useRef(onAddWireDefinition);
   onAddWireDefRef.current = onAddWireDefinition;
   const onZoneWireRef = useRef(onZoneWire);
@@ -179,9 +183,13 @@ export function useWiring(
               projectName,
             };
             // A new agent wire lets its sender read and message; reset needs turning on (#2969).
-            const disabledTools = kind === 'agent' ? [...NEW_AGENT_WIRE_DISABLED_TOOLS] : undefined;
+            // A pair that already has a binding (a helper or Dispatcher wire) keeps its own list.
+            const existing = bindingsRef.current ?? [];
+            const disabledTools = newWireDisabledTools(existing, sourceAgentId, resolvedTargetId, kind);
             void bind(sourceAgentId, fwdTarget).then(() => {
               if (disabledTools) return setDisabledTools(sourceAgentId, resolvedTargetId, disabledTools);
+            }).catch(() => {
+              // telemetry-exempt: the wire definition keeps the list, and the reconcile loop binds it again
             });
             onAddWireDefRef.current?.({ agentId: sourceAgentId, ...fwdTarget, ...(disabledTools && { disabledTools }) });
 
@@ -195,8 +203,13 @@ export function useWiring(
                 targetName: sourceLabel,
                 projectName,
               };
-              void bind(resolvedTargetId, revTarget).then(() => setDisabledTools(resolvedTargetId, sourceAgentId, [...NEW_AGENT_WIRE_DISABLED_TOOLS]));
-              onAddWireDefRef.current?.({ agentId: resolvedTargetId, ...revTarget, disabledTools: [...NEW_AGENT_WIRE_DISABLED_TOOLS] });
+              const revDisabled = newWireDisabledTools(existing, resolvedTargetId, sourceAgentId, 'agent');
+              void bind(resolvedTargetId, revTarget).then(() => {
+                if (revDisabled) return setDisabledTools(resolvedTargetId, sourceAgentId, revDisabled);
+              }).catch(() => {
+                // telemetry-exempt: as above
+              });
+              onAddWireDefRef.current?.({ agentId: resolvedTargetId, ...revTarget, ...(revDisabled && { disabledTools: revDisabled }) });
             }
           }
         }
