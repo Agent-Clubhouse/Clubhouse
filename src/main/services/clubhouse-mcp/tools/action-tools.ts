@@ -450,8 +450,9 @@ async function guarded(tool: ActionToolName, callerId: string, args: Obj, handle
 
 /** Listed for agents that can own actions: not quick agents, nor a turned-off Dispatcher. */
 /**
- * Grant declarations (#2967): listing and creating are on `app`; reading,
- * changing and running one action are on that action (`action_arg`), so the
+ * Grant declarations (#2967): listing, reading history and creating are on
+ * `app` (agents read every action); changing and running one action are on
+ * that action (`action_arg`), so the
  * evaluator can tell the caller's own actions from a person's or another
  * agent's. Until it reads these (#2921), actionScope and rights.ts enforce
  * the same: read all, change and run only your own.
@@ -459,7 +460,6 @@ async function guarded(tool: ActionToolName, callerId: string, args: Obj, handle
 const LIST = { group: 'actions', grant: { actions: ['action.read'], target: 'app' } } as const;
 const CREATE = { group: 'actions', grant: { actions: ['action.write'], target: 'app' } } as const;
 // The action named in the arguments: its owner tells the caller's own from others'.
-const READ_ONE = { group: 'actions', grant: { actions: ['action.read'], target: 'action_arg' } } as const;
 const WRITE_ONE = { group: 'actions', grant: { actions: ['action.write'], target: 'action_arg' } } as const;
 const RUN_ONE = { group: 'actions', grant: { actions: ['action.run'], target: 'action_arg' } } as const;
 
@@ -535,6 +535,6 @@ export function registerActionTools(): void {
       inputSchema: schema(ID_FIELD, ['id']),
     },
     (callerId, args) => guarded('action_history', callerId, args, actionHistory),
-    READ_ONE,
+    LIST,
   );
 }
