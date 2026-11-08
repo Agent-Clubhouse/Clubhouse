@@ -373,6 +373,17 @@ describe('filters', () => {
     expect(f.log({ name: 'clubhouse.telemetry.disabled', attributes: {} })).toBe(true);
   });
 
+  it('user activity keeps what places a feedback report: runs, startup and the feedback lifecycle (#2524)', () => {
+    const f = compileFilter({ level: 'standard', preset: 'user_activity' }, 'framebriar');
+    expect(f.span({ name: 'clubhouse.agent.run', attributes: {} })).toBe(true);
+    expect(f.span({ name: 'clubhouse.app.startup', attributes: {} })).toBe(true);
+    for (const name of ['captured', 'submitted', 'delivered', 'connected', 'access']) {
+      expect(f.log({ name: `clubhouse.feedback.${name}`, attributes: {} })).toBe(true);
+    }
+    expect(f.log({ name: 'clubhouse.feedback.request_refused', attributes: {} })).toBe(false);
+    expect(f.metric('clubhouse.app.startup.duration')).toBe(true);
+  });
+
   it('records at the most verbose enabled level', () => {
     expect(recordingLevel(['errors', 'standard'])).toBe('standard');
     expect(recordingLevel(['errors', 'detailed'])).toBe('detailed');

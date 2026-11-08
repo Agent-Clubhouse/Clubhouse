@@ -33,10 +33,10 @@ import {
   enabledDestinations,
   getTelemetrySettings,
   applyExportGraduation,
-  developerDestinationBlocker,
   exportPermitted,
   findDestination,
   takeDeveloperRuleSwitchedOff,
+  saveDeveloperRuleMigration,
   hasDestinationConfigured,
   migrateLegacySecrets,
   normalizeSampleRate,
@@ -371,15 +371,21 @@ export function initTelemetry(): void {
   // so startup signals are recorded even with no export destination.
   void syncLocalRecording();
   if (graduation) finishExportGraduation(graduation);
+  saveDeveloperRuleMigration()?.catch((err) => {
+    // telemetry-exempt: logged; this run uses the migrated settings and the next launch migrates again.
+    appLog(LOG_NS, 'warn', 'Could not save the developer destination migration', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+  });
   try {
     if (getTelemetrySettings().legacyDestination) void migrateLegacySecretsOnReady();
     if (!isTelemetryConfigured()) {
       const held = awaitingFramebriar(getTelemetrySettings());
       if (held) holdForFramebriar();
-      logExportGates(getTelemetrySettings(), held ? 'held_for_feedback' : 'not_started');
+      logExportGates(held ? 'held_for_feedback' : 'not_started');
       return;
     }
-    logExportGates(getTelemetrySettings(), 'starting');
+    logExportGates('starting');
   } catch {
     return;
   }
@@ -392,23 +398,31 @@ export function initTelemetry(): void {
 /**
  * One local line at startup with every export gate (#2523): which one stops
  * export, if any, so a quiet install can be explained from its log. Booleans
- * and state names only, never a host, endpoint or token.
+ * and state names only, never a host, endpoint or token. The developer
+ * destination's state isn't here: Feedback restores its enrollment after this
+ * runs, so it would always read as not connected. control.ts logs it once a
+ * Feedback change syncs it ("Developer destination checked after a Feedback change").
+ * Never throws: a logging failure mustn't stop telemetry starting.
  */
-function logExportGates(settings: TelemetrySettings, outcome: 'starting' | 'held_for_feedback' | 'not_started'): void {
-  const consent = settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
-  const configured = hasDestinationConfigured(settings);
-  appLog(LOG_NS, 'info', 'Telemetry export at startup', {
-    meta: {
-      outcome,
-      blockedBy: outcome === 'starting' ? null : !consent ? 'no_consent' : settings.exportSuspended !== undefined ? 'paused' : !configured ? 'no_destination_configured' : 'unknown',
-      consent,
-      paused: settings.exportSuspended ?? null,
-      enabled: enabledDestinations(settings).map((d) => d.kind),
-      configured,
-      developer: developerDestinationBlocker(settings) ?? 'wanted',
-      developerRuleSwitchedOff: takeDeveloperRuleSwitchedOff(),
-    },
-  });
+function logExportGates(outcome: 'starting' | 'held_for_feedback' | 'not_started'): void {
+  try {
+    const settings = getTelemetrySettings();
+    const consent = settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
+    const configured = hasDestinationConfigured(settings);
+    appLog(LOG_NS, 'info', 'Telemetry export at startup', {
+      meta: {
+        outcome,
+        blockedBy: outcome === 'starting' ? null : !consent ? 'no_consent' : settings.exportSuspended !== undefined ? 'paused' : !configured ? 'no_destination_configured' : 'unknown',
+        consent,
+        paused: settings.exportSuspended ?? null,
+        enabled: enabledDestinations(settings).map((d) => d.kind),
+        configured,
+        developerRuleSwitchedOff: takeDeveloperRuleSwitchedOff(),
+      },
+    });
+  } catch {
+    // telemetry-exempt: a diagnostic line only; telemetry starts without it.
+  }
 }
 
 /** How long startup signals wait for Feedback to restore its enrollment (#2522). */

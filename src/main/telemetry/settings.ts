@@ -194,21 +194,17 @@ export function migrateTelemetrySettings(raw: Record<string, unknown>): Telemetr
 
   if (typeof settings.consentVersion !== 'number') settings.consentVersion = 0;
   if (typeof settings.sampleRate !== 'number') settings.sampleRate = 1;
-  migrateDeveloperRule(settings as unknown as TelemetrySettings);
+  lastLoadSwitchedDeveloperOff = migrateDeveloperRule(settings as unknown as TelemetrySettings);
+  if (lastLoadSwitchedDeveloperOff) developerRuleSwitchedOff = true;
   return settings as unknown as TelemetrySettings;
 }
 
 /** The developer-destination rule since #2097: it runs without another destination on. */
 export const DEVELOPER_RULE = 2;
 
-/**
- * Before #2097 the developer destination only sent while one of the user's
- * own destinations was on. Someone who confirmed it, but has none of their own
- * on, sent nothing; without this they would start sending after the update.
- * They're recorded as switched off, so it starts only when they turn it on.
- * Runs once: the marker keeps a later opt-in from being undone.
- */
 let developerRuleSwitchedOff = false;
+/** Whether the latest migrateTelemetrySettings call switched it off, for the store to save. */
+let lastLoadSwitchedDeveloperOff = false;
 
 /** Whether the #2097 migration switched the developer destination off since the last call (#2523). */
 export function takeDeveloperRuleSwitchedOff(): boolean {
@@ -217,16 +213,24 @@ export function takeDeveloperRuleSwitchedOff(): boolean {
   return was;
 }
 
-function migrateDeveloperRule(settings: TelemetrySettings): void {
-  if ((settings.developerRule ?? 0) >= DEVELOPER_RULE) return;
+/**
+ * Before #2097 the developer destination only sent while one of the user's
+ * own destinations was on. Someone who confirmed it, but has none of their own
+ * on, sent nothing; without this they would start sending after the update.
+ * They're recorded as switched off, so it starts only when they turn it on.
+ * Runs once: the marker keeps a later opt-in from being undone. When it
+ * switches the destination off, the load saves that (saveDeveloperRuleMigration),
+ * so it isn't redone, and logged, on every launch. Returns whether it did.
+ */
+function migrateDeveloperRule(settings: TelemetrySettings): boolean {
+  if ((settings.developerRule ?? 0) >= DEVELOPER_RULE) return false;
   settings.developerRule = DEVELOPER_RULE;
   const developer = settings.destinations.find((d) => d.kind === 'framebriar');
-  if (!developer?.confirmedHost || developer.framebriar?.userOff) return;
+  if (!developer?.confirmedHost || developer.framebriar?.userOff) return false;
   const ownOn = settings.destinations.some((d) => d.kind !== 'framebriar' && d.enabled);
-  if (!ownOn) {
-    developer.framebriar = { ...developer.framebriar, userOff: true };
-    developerRuleSwitchedOff = true;
-  }
+  if (ownOn) return false;
+  developer.framebriar = { ...developer.framebriar, userOff: true };
+  return true;
 }
 
 /**
@@ -400,10 +404,13 @@ const SAVED_FLAG_OUTCOME: Partial<Record<SavedFlagState, ExportGraduationOutcome
 
 /** Set when this run's load changed the settings and that hasn't been saved yet. */
 let unsavedGraduation: ExportGraduationOutcome | null = null;
+/** Set when this run's load switched the developer destination off (#2097) and that hasn't been saved yet. */
+let unsavedDeveloperRule = false;
 
 const managed = createManagedSettings<TelemetrySettings>(TELEMETRY_SETTINGS as typeof TELEMETRY_SETTINGS & { defaults: TelemetrySettings }, {
   migrate: (raw) => {
     const settings = migrateTelemetrySettings(raw);
+    if (lastLoadSwitchedDeveloperOff) unsavedDeveloperRule = true;
     const gate = readLegacyExportGate();
     const graduated = graduateExport(settings, gate);
     const state = readSavedFlagState();
@@ -439,7 +446,22 @@ export function applyExportGraduation(): { outcome: ExportGraduationOutcome; sav
   const outcome = unsavedGraduation;
   if (!outcome) return null;
   unsavedGraduation = null;
+  // This save carries the developer-rule marker and switch-off too.
+  unsavedDeveloperRule = false;
   return { outcome, saved: updateTelemetrySettings((current) => current) };
+}
+
+/**
+ * Save the developer-rule migration when this run's load switched the developer
+ * destination off and nothing has saved it yet; `null` when there's nothing to
+ * save. Without it the file keeps no marker, so every launch would redo the
+ * migration and log it as new. If the save fails, this run still uses the result.
+ */
+export function saveDeveloperRuleMigration(): Promise<unknown> | null {
+  getTelemetrySettings();
+  if (!unsavedDeveloperRule) return null;
+  unsavedDeveloperRule = false;
+  return updateTelemetrySettings((current) => current);
 }
 
 /** Where a copy of the flag file was kept, if one was. */

@@ -658,6 +658,41 @@ describe('FeedbackService (fake SDK)', () => {
         [ATTR.feedbackScreenshot(true), ATTR.feedbackAnnotated(true), ATTR.feedbackShots(2), ATTR.feedbackAccessState('connected'), ATTR.feedbackReportId('rep-1')],
         [ATTR.feedbackScreenshot(false), ATTR.feedbackAnnotated(false), ATTR.feedbackShots(0), ATTR.feedbackAccessState('connected'), ATTR.feedbackReportId('rep-1')],
       ]);
+      // A report with no trace (the fake's) emits with no event options.
+      expect(vi.mocked(rt.event).mock.calls.filter(([n]) => n === 'clubhouse.feedback.submitted').map(([, , opts]) => opts)).toEqual([undefined, undefined]);
+    });
+
+    it('emits each submit under its own report trace, concurrent sends included (#2524)', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const traces = {
+        first: { traceId: 'a'.repeat(32), spanId: '1'.repeat(16) },
+        second: { traceId: 'b'.repeat(32), spanId: '2'.repeat(16) },
+      };
+      const gates = {} as Record<keyof typeof traces, () => void>;
+      const opened = Object.fromEntries((Object.keys(traces) as Array<keyof typeof traces>).map((k) => [k, new Promise<void>((r) => { gates[k] = r; })]));
+      fb.feedback.prepare.mockImplementation(async (input: Record<string, unknown>) => {
+        const which = String(input.notes).endsWith('first') ? 'first' : 'second';
+        await opened[which];
+        const report = { id: `rep-${which}`, ...traces[which] };
+        return { report, png: null, input };
+      });
+      fb.feedback.submit.mockImplementation(async (prepared: unknown) => ({
+        id: (prepared as { report: { id: string } }).report.id, gameId: 'clubhouse', status: 'saved-local' as const, sent: false as const, diagnostics: 'unavailable' as const,
+      }));
+      const [a, b] = [await s.captureDraft(async () => null), await s.captureDraft(async () => null)];
+      const first = s.send({ draftId: a.draftId, notes: `${NOTES} first`, includeScreenshot: false });
+      const second = s.send({ draftId: b.draftId, notes: `${NOTES} second`, includeScreenshot: false });
+      // The second finishes first, so a shared "last trace" would mislabel one of them.
+      gates.second();
+      await second;
+      gates.first();
+      await first;
+      const submitted = vi.mocked(rt.event).mock.calls.filter(([n]) => n === 'clubhouse.feedback.submitted');
+      expect(submitted.map(([, attrs, opts]) => [attrs?.at(-1), opts])).toEqual([
+        [ATTR.feedbackReportId('rep-second'), { trace: traces.second }],
+        [ATTR.feedbackReportId('rep-first'), { trace: traces.first }],
+      ]);
     });
 
     it('records failed submits with an error class, never the message', async () => {

@@ -324,6 +324,28 @@ describe('Feedback connecting later', () => {
       migrateTelemetrySettings({ ...file(1, otlp(true), framebriar({ confirmedHost: FB_HOST })), developerRule: 1 });
       expect(takeDeveloperRuleSwitchedOff()).toBe(false);
     });
+
+    it('saves the switch-off at startup, so a later launch neither redoes nor reports it', async () => {
+      seedGate(true, true);
+      // Graduated already, so only the developer-rule migration changes anything on load.
+      writeJson(SETTINGS_FILE, { ...file(1, otlp(false), framebriar({ confirmedHost: FB_HOST })), developerRule: 1, exportGraduation: 1 });
+      takeDeveloperRuleSwitchedOff();
+      await launch();
+      await vi.waitFor(() => expect(readSaved().developerRule).toBe(2));
+      expect(readSaved().destinations.find((d) => d.kind === 'framebriar')?.framebriar).toEqual({ userOff: true });
+      // The next launch's load finds the marker.
+      resetAllSettingsStoresForTests();
+      expect(developerDestinationBlocker(getTelemetrySettings())).toBe('user_off');
+      expect(takeDeveloperRuleSwitchedOff()).toBe(false);
+    });
+
+    it('saves nothing at startup when the migration switched nothing off', async () => {
+      seedGate(true, true);
+      const raw = { ...file(1, otlp(false), framebriar({ confirmedHost: FB_HOST, userOff: true })), developerRule: 1, exportGraduation: 1 };
+      writeJson(SETTINGS_FILE, raw);
+      await launch();
+      expect(readSaved()).toEqual(raw);
+    });
   });
 
   describe('startup signals wait for Feedback (#2522)', () => {
