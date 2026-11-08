@@ -109,6 +109,25 @@ describe('builder tools for the Dispatcher (#2900)', () => {
     expect(saved.json).toMatchObject({ revision: part.revision + 1 });
   });
 
+  it('asks first for a part one agent and one template use, as the UI does (#3100)', async () => {
+    const part = (await call('create_agent_part', { kind: 'block', name: 'Agent and template 3100', content: { kind: 'block', content: 'one' } })).json;
+    state.agents.set('c3100', { id: 'c3100', name: 'c3100', color: 'indigo', createdAt: '', worktreePath: '/w/c3100', managed: { version: 1, blocks: [part.id], skills: [], mcps: [] } });
+    await call('save_agent_template', { name: 'Template 3100', blocks: [part.id] });
+    const first = await call('update_agent_part', { id: part.id, expectedRevision: part.revision, content: { kind: 'block', content: 'two' } });
+    expect(first.json).toMatchObject({ status: 'needs_confirmation', templates: ['Template 3100'] });
+    expect(first.json.reaches).toHaveLength(1);
+    const saved = await call('update_agent_part', { id: part.id, expectedRevision: part.revision, content: { kind: 'block', content: 'two' }, confirm: first.json.confirm });
+    expect(saved.json).toMatchObject({ revision: part.revision + 1 });
+  });
+
+  it('asks first for a part only two templates use (#3100)', async () => {
+    const part = (await call('create_agent_part', { kind: 'block', name: 'Two templates 3100', content: { kind: 'block', content: 'one' } })).json;
+    await call('save_agent_template', { name: 'Template A 3100', blocks: [part.id] });
+    await call('save_agent_template', { name: 'Template B 3100', blocks: [part.id] });
+    const first = await call('update_agent_part', { id: part.id, expectedRevision: part.revision, content: { kind: 'block', content: 'two' } });
+    expect(first.json).toMatchObject({ status: 'needs_confirmation', reaches: [] });
+  });
+
   it('has no retired built-ins: they are not installed, and nothing lists them (D99)', async () => {
     const parts = (await call('list_agent_parts', { kind: 'block' })).json as Array<{ id: string }>;
     expect(parts.map((p) => p.id)).toContain(BUILTIN_BLOCK_IDS.identity);
