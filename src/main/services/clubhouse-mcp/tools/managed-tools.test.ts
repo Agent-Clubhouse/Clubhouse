@@ -270,6 +270,18 @@ describe('templates', () => {
     expect(blocksOnly).toMatchObject({ name: 'Keeper 2', setup: { blocks: [], skills: [skill.id] }, settings: { model: 'opus' } });
   });
 
+  it('only the user sets a template\'s Clubhouse permissions, and an edit over MCP keeps them (#2971)', async () => {
+    const grants = [{ action: 'settings.app.write', target: { kind: 'app' }, mode: 'allow' }];
+    const refused = await call('save_agent_template', { name: 'Escalate', blocks: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: { grants } });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0].text).toContain('only the user');
+    expect((await call('create_managed_agent', { project: '/p', name: 'x', settings: { grants } })).isError).toBe(true);
+
+    const saved = await managedAgents().saveTemplate({ name: 'User perms', description: '', setup: { blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] }, settings: { grants: [{ action: 'agent.message', target: { kind: 'connected' }, mode: 'off' }] } });
+    const edited = (await call('save_agent_template', { id: saved.id, settings: { model: 'opus' } })).json;
+    expect(edited.settings).toEqual({ model: 'opus', grants: [{ action: 'agent.message', target: { kind: 'connected' }, mode: 'off' }] });
+  });
+
   it('push keeps the template\'s settings when the call leaves them out', async () => {
     const t = (await call('save_agent_template', { name: 'Settings stay', blocks: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: { model: 'opus', orchestration: { maxHelpers: 2 } } })).json;
     const preview = await call('push_agent_template', { id: t.id, blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] });

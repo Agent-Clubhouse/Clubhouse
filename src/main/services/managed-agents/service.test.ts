@@ -681,6 +681,37 @@ describe('template settings beyond parts (#2898)', () => {
   });
 });
 
+describe('a template\'s Clubhouse permissions (#2971)', () => {
+  const msg = { action: 'agent.message' as const, target: { kind: 'connected' as const } };
+  const settingsWrite = { action: 'settings.app.write' as const, target: { kind: 'app' as const } };
+
+  it('keeps well-formed permissions, and refuses a list that isn\'t one', async () => {
+    const t = await user(() => service.saveTemplate({
+      name: 'Quiet', description: '', setup: { blocks: [], skills: [], mcps: [] },
+      settings: { grants: [{ ...msg, mode: 'off' }] },
+    }));
+    expect(t.settings.grants).toEqual([{ ...msg, mode: 'off' }]);
+    await expect(user(() => service.previewTemplatePush(t.id, { setup: t.setup, settings: { grants: [{ action: 'root', target: { kind: 'app' }, mode: 'allow' }] as never } })))
+      .rejects.toThrow(/Clubhouse permissions/);
+  });
+
+  it('lists each permission that changes by name, and a push sets or takes away just those', async () => {
+    const t = await user(() => service.saveTemplate({
+      name: 'Perms', description: '', setup: { blocks: [], skills: [], mcps: [] },
+      settings: { grants: [{ ...msg, mode: 'off' }] },
+    }));
+    agent('a', { templateId: t.id });
+    const next = { setup: { blocks: [], skills: [], mcps: [] }, settings: { grants: [{ ...settingsWrite, mode: 'ask' as const }] } };
+    const preview = await user(() => service.previewTemplatePush(t.id, next));
+    expect(preview.changes).toEqual([
+      { kind: 'setting', key: 'grants.agent.message@connected', from: 'Off', to: 'default', label: 'Clubhouse permission: Send messages and files (Connected agents)' },
+      { kind: 'setting', key: 'grants.settings.app.write@app', from: 'default', to: 'Ask first', label: 'Clubhouse permission: Change app settings (The app)' },
+    ]);
+    const [result] = await user(() => service.pushTemplate(t.id, next, [{ projectPath: '/p', agentId: 'a' }]));
+    expect(result.settings.grants).toEqual([{ ...msg, mode: null }, { ...settingsWrite, mode: 'ask' }]);
+  });
+});
+
 describe('an effort goes only with the model it is for (D81)', () => {
   const empty = { blocks: [], skills: [], mcps: [] };
 

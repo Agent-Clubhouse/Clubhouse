@@ -75,6 +75,8 @@ When a call needs a permission set to Ask first, the agent doesn't wait. The req
 
 An agent can also ask for a permission it doesn't have, with its reason. Allowing that adds it to the agent's page, marked as set by you, where you can turn it off again.
 
+Your templates can set permissions too, under **Clubhouse permissions** in the template's settings. Agents made from the template get them, marked "From its template", and saving a change offers to push it to the agents made from it. Your own changes on an agent stay on top, and **Reset to defaults** clears only yours. A helper template's permissions never give a helper more than its orchestrator has. In **New agent**, each template says in one line what agents made from it can do through Clubhouse, and **Copy another agent** brings its permissions with it.
+
 For an orchestrator, **Create agents** and **Remove helpers** follow its approval setting on the Helpers page, and changing either here changes that setting.
 
 These permissions are a guardrail on Clubhouse, not a sandbox. Other programs running as you aren't limited by them.

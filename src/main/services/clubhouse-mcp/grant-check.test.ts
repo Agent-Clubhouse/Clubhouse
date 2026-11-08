@@ -9,7 +9,7 @@ vi.mock('../dispatcher/dispatcher-settings', async (original) => ({
 import { listToolGrants, _resetForTesting, type RegisteredToolGrant } from './tool-registry';
 import { mcpAdapter } from './mcp-adapter';
 import { registerClubhouseMcpTools } from './tools/register-all';
-import { checkToolGrant, isListable, registerActionOwnerLookup } from './grant-check';
+import { capToHolder, checkToolGrant, isListable, registerActionOwnerLookup } from './grant-check';
 import { updateAgentGrantChanges } from '../agent-grants-store';
 import { setMcpCaller, _resetMcpCallGateForTesting } from './mcp-call-gate';
 import { setOrchestrationEnabled, isOrchestrationEnabled, isCrossProjectEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
@@ -337,5 +337,20 @@ describe('Ask first (#2970)', () => {
   it('every agent can ask for a permission for itself', () => {
     const request = registerAll().find((t) => t.name === 'request_grant')!;
     for (const caller of CALLERS) expect(checkToolGrant(caller, request.grant, {}).ok).toBe(true);
+  });
+});
+
+describe('a helper template\'s permissions are capped by its orchestrator (#2971)', () => {
+  beforeEach(setupCallers);
+
+  it('passes Off, and Allow or Ask first only where the orchestrator holds it', () => {
+    const app = { kind: 'app' as const };
+    const grants = [
+      { action: 'agent.message' as const, target: { kind: 'connected' as const }, mode: 'off' as const },
+      { action: 'settings.app.write' as const, target: app, mode: 'allow' as const },
+      { action: 'models.read' as const, target: app, mode: 'allow' as const },
+      { action: 'agent.read' as const, target: { kind: 'connected' as const }, mode: 'ask' as const },
+    ];
+    expect(capToHolder('orchestrator', grants).map((g) => g.action)).toEqual(['agent.message', 'models.read', 'agent.read']);
   });
 });

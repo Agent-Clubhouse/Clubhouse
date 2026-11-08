@@ -18,7 +18,7 @@
  * Grants are a cooperative guardrail on the Clubhouse MCP, not a sandbox.
  */
 
-import { evaluateGrant, GRANT_REFUSAL_MESSAGES, type Grant, type GrantAction, type GrantCallTarget, type GrantCaller, type GrantRefusal } from '../../../shared/agent-grants';
+import { evaluateGrant, GRANT_REFUSAL_MESSAGES, widerOrSame, type Grant, type GrantAction, type GrantCallTarget, type GrantCaller, type GrantRefusal } from '../../../shared/agent-grants';
 import { defaultGrants } from '../../../shared/default-grants';
 import { isProjectAdmin } from '../../../shared/group-project-admin';
 import { agentRegistry } from '../agent-registry';
@@ -193,4 +193,19 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
 export function holdsGrant(agentId: string, action: GrantAction, target: GrantCallTarget): boolean {
   const caller: GrantCaller = { kind: 'agent', agentId, projectPath: agentRegistry.get(agentId)?.projectPath };
   return evaluateGrant({ caller, action, target }, callerGrants(agentId)).outcome === 'allow';
+}
+
+/**
+ * A helper template's permissions as its orchestrator may pass them (#2971):
+ * never more than the orchestrator holds (fixed rule 2). Off always passes, as
+ * it only narrows; Allow passes only where the orchestrator has Allow on the
+ * same or a wider target, and Ask first where it has either. Anything else is
+ * dropped, and the helper keeps its default for it.
+ */
+export function capToHolder<T extends { action: GrantAction; target: Grant['target']; mode: 'off' | 'ask' | 'allow' | null }>(holderId: string, grants: readonly T[]): T[] {
+  const held = callerGrants(holderId);
+  return grants.filter((g) => {
+    if (g.mode === 'off' || g.mode === null) return true;
+    return held.some((h) => h.action === g.action && widerOrSame(h.target, g.target) && (h.mode === 'allow' || g.mode === 'ask'));
+  });
 }

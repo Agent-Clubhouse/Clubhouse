@@ -222,7 +222,7 @@ function useManagedAgents(): { list: CopyCandidate[] | null } {
 }
 
 /** What Copy another agent reads from the picked agent's durable config, besides what the agent list has. */
-type CopiedSettings = Pick<ManagedTemplateSettings, 'access' | 'orchestration' | 'effort' | 'idleSleep' | 'helperTemplateId'>;
+type CopiedSettings = Pick<ManagedTemplateSettings, 'access' | 'orchestration' | 'effort' | 'idleSleep' | 'helperTemplateId' | 'grants'>;
 
 export function copySeed(c: { agent: Agent; setup: SetupDraft; orchestration?: OrchestrationPolicyConfig; config?: CopiedSettings }): BuilderSeed {
   const orchestration = c.config?.orchestration ?? c.orchestration;
@@ -239,6 +239,7 @@ export function copySeed(c: { agent: Agent; setup: SetupDraft; orchestration?: O
       ...(c.config?.effort && { effort: c.config.effort }),
       ...(c.config?.idleSleep && { idleSleep: c.config.idleSleep }),
       ...(c.config?.helperTemplateId && { helperTemplateId: c.config.helperTemplateId }),
+      ...(c.config?.grants?.length && { grants: c.config.grants }),
     },
   };
 }
@@ -248,7 +249,10 @@ async function copiedSettingsOf(c: CopyCandidate): Promise<CopiedSettings | unde
   try {
     const config = await window.clubhouse.agent.getDurableConfig(c.project.path, c.agent.id);
     if (!config) return undefined;
+    // Its Clubhouse permissions over the defaults (#2971). Unreadable: copied without them.
+    const grants = await window.clubhouse.agent.getGrants(c.project.path, c.agent.id).then((v) => v.carried ?? [], (): [] => []);
     return {
+      ...(grants.length > 0 && { grants: grants.map((g) => ({ action: g.action, target: g.target, mode: g.mode })) }),
       ...(config.access && { access: config.access }),
       ...(config.orchestration && { orchestration: config.orchestration }),
       ...(config.effort && { effort: config.effort }),
@@ -385,6 +389,8 @@ export function builderSettings(draft: BuilderDraft, seed: BuilderSeed, opts: { 
     orchestration,
     ...(draft.idleSleep !== 'inherit' && { idleSleep: draft.idleSleep }),
     ...(draft.helperTemplateId && { helperTemplateId: draft.helperTemplateId }),
+    // The template's or the copied agent's Clubhouse permissions go with it (#2971).
+    ...(seed.settings.grants?.length && { grants: seed.settings.grants }),
   };
 }
 

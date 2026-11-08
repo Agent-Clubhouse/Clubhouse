@@ -43,6 +43,7 @@ import {
 import { backupMcpFile, hasMcpFileToKeep, MCP_BACKUP_DIR, mcpBackupPath } from './mcp-backup';
 import { appLog } from '../log-service';
 import { skillsFolderOf } from '../../../shared/skills-folder';
+import { applyTemplateGrants } from '../agent-grants-service';
 
 export interface CreateManagedAgentInput {
   name: string;
@@ -80,6 +81,8 @@ export async function applyManagedSettings(projectPath: string, agentId: string,
     const result = await setOrchestrationPolicy(projectPath, agentId, settings.orchestration);
     if (!result.ok) throw new ManagedError('invalid', result.message);
   }
+  // The template's Clubhouse permissions (#2971), under the person's own changes.
+  if (settings.grants?.length) await applyTemplateGrants(agentId, settings.grants);
 }
 
 export async function createManagedAgent(projectPath: string, input: CreateManagedAgentInput): Promise<DurableAgentConfig> {
@@ -99,12 +102,13 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
   const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.access ?? settings.freeAgentMode);
   try {
     await service.saveSetup(projectPath, config.id, setup);
-    // What createDurable doesn't take: orchestration, effort, auto-sleep and the helper template.
+    // What createDurable doesn't take: orchestration, effort, auto-sleep, the helper template and permissions.
     const rest: ManagedTemplateSettings = {
       ...(settings.orchestration && Object.keys(settings.orchestration).length > 0 && { orchestration: settings.orchestration }),
       ...(settings.effort && { effort: settings.effort }),
       ...(settings.idleSleep && { idleSleep: settings.idleSleep }),
       ...(settings.helperTemplateId && { helperTemplateId: settings.helperTemplateId }),
+      ...(settings.grants?.length && { grants: settings.grants }),
     };
     if (Object.keys(rest).length > 0) await applyManagedSettings(projectPath, config.id, rest);
   } catch (err) {

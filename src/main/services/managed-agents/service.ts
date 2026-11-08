@@ -19,6 +19,8 @@ import type { DurableAgentConfig } from '../../../shared/types';
 import { isEffortValue } from '../../../shared/agent-helpers';
 import { normalizeIdleSleep } from '../../../shared/idle-sleep';
 import { validateOrchestrationPatch } from '../../../shared/orchestration-policy';
+import { GRANT_ACTION_LABELS, grantKey, grantTargetLabel, normalizeTemplateGrants, type GrantChange, type TemplateGrant } from '../../../shared/agent-grant-changes';
+import { carriedAgentGrants } from '../agent-grants-service';
 import {
   CLUBHOUSE_MCP_PART_ID,
   CLUBHOUSE_PART_ALWAYS_ON,
@@ -1008,7 +1010,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
           } else if (change.kind === 'remove') {
             setup = replaceIn(setup, change.id, null);
           } else if (change.kind === 'setting' && change.key !== 'effort') {
-            mergeSetting(settings, next.settings, change.key);
+            mergeSetting(settings, next.settings, change.key, current.settings);
           }
         }
         // The effort goes only with the model it is for (D81).
@@ -1112,9 +1114,20 @@ export interface TemplatePushResult {
   failed?: string;
 }
 
+/** What an agent carries over its default permissions (#2971); none when they can't be read. */
+function grantsOf(agentId: string): GrantChange[] {
+  try {
+    return carriedAgentGrants(agentId);
+  } catch {
+    // telemetry-exempt: a template saved without them gets the defaults, which the person sees on the template.
+    return [];
+  }
+}
+
 /** An agent's settings as a template carries them. `projectPath` turns a pre-#2761 Free Agent Mode into its level. */
-export function settingsOf(agent: DurableAgentConfig, projectPath?: string): ManagedTemplateSettings {
+export function settingsOf(agent: DurableAgentConfig, projectPath?: string, grants: readonly GrantChange[] = grantsOf(agent.id)): ManagedTemplateSettings {
   return {
+    ...(grants.length > 0 && { grants: grants.map((g) => ({ action: g.action, target: g.target, mode: g.mode })) }),
     ...(agent.orchestrator && { orchestrator: agent.orchestrator }),
     ...(agent.model && { model: agent.model }),
     ...(agent.effort && { effort: agent.effort }),
@@ -1131,8 +1144,10 @@ export function settingsOf(agent: DurableAgentConfig, projectPath?: string): Man
  * template never carries one.
  */
 export function templateSettingsToKeep(settings: ManagedTemplateSettings): ManagedTemplateSettings {
-  const { effort, idleSleep, helperTemplateId, ...rest } = settings;
+  const { effort, idleSleep, helperTemplateId, grants, ...rest } = settings;
   const out: ManagedTemplateSettings = withAccess({ ...rest }, getPermissionMode());
+  const kept = normalizeTemplateGrants(grants);
+  if (kept?.length) out.grants = kept;
   if (isEffortValue(effort)) out.effort = effort;
   const idle = normalizeIdleSleep(idleSleep);
   if (idle !== 'inherit') out.idleSleep = idle;
@@ -1156,6 +1171,7 @@ function labelerFor(templateName: (id: string) => string | undefined): SettingLa
     if (key === 'helperTemplateId' && typeof value === 'string') return templateName(value) ?? value;
     if (key === 'idleSleep' && typeof value === 'number') return `${value} min`;
     if (key === 'access' && isAccessLevel(value)) return accessLabel(value);
+    if (key.startsWith('grants.')) return value === 'allow' ? 'Allow' : value === 'ask' ? 'Ask first' : value === 'off' ? 'Off' : 'default';
     return settingLabel(value);
   };
 }
@@ -1170,7 +1186,18 @@ function flattenSettings(settings: ManagedTemplateSettings): Record<string, unkn
   for (const [k, v] of Object.entries(settings.orchestration ?? {})) out[`orchestration.${k}`] = v;
   if (settings.idleSleep !== undefined && settings.idleSleep !== null) out.idleSleep = settings.idleSleep;
   if (settings.helperTemplateId) out.helperTemplateId = settings.helperTemplateId;
+  // One key per permission, so the push dialog lists each one that changes (#2971).
+  for (const g of settings.grants ?? []) if (g.mode !== null) out[`grants.${grantKey(g)}`] = g.mode;
   return out;
+}
+
+/** "Clubhouse permission: Send messages and files (Connected agents)". */
+function grantChangeLabel(g: Pick<TemplateGrant, 'action' | 'target'>): string {
+  return `Clubhouse permission: ${GRANT_ACTION_LABELS[g.action] ?? g.action} (${grantTargetLabel(g.target)})`;
+}
+
+function grantByKey(settings: ManagedTemplateSettings | undefined, key: string): TemplateGrant | undefined {
+  return settings?.grants?.find((g) => `grants.${grantKey(g)}` === key);
 }
 
 /**
@@ -1178,7 +1205,15 @@ function flattenSettings(settings: ManagedTemplateSettings): Record<string, unkn
  * longer sets goes back to the default: null for orchestration fields, the
  * effort, auto-sleep and helper template, the CLI default model, Ask first. The CLI is never unset.
  */
-function mergeSetting(out: ManagedTemplateSettings, from: ManagedTemplateSettings, key: string): void {
+function mergeSetting(out: ManagedTemplateSettings, from: ManagedTemplateSettings, key: string, before?: ManagedTemplateSettings): void {
+  if (key.startsWith('grants.')) {
+    // One the template no longer sets is taken away (null); the agent goes back to its default for it.
+    const set = grantByKey(from, key);
+    const gone = set ? undefined : grantByKey(before, key);
+    const entry = set ?? (gone && { ...gone, mode: null });
+    if (entry) out.grants = [...(out.grants ?? []), { action: entry.action, target: entry.target, mode: entry.mode }];
+    return;
+  }
   if (key.startsWith('orchestration.')) {
     const k = key.slice('orchestration.'.length);
     const value = (from.orchestration as Record<string, unknown> | undefined)?.[k];
@@ -1213,7 +1248,9 @@ export function diffTemplates(
   const a = flattenSettings(current.settings);
   const b = flattenSettings(next.settings);
   for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
-    if (JSON.stringify(a[key]) !== JSON.stringify(b[key])) changes.push({ kind: 'setting', key, from: label(key, a[key]), to: label(key, b[key]) });
+    if (JSON.stringify(a[key]) === JSON.stringify(b[key])) continue;
+    const grant = key.startsWith('grants.') ? grantByKey(next.settings, key) ?? grantByKey(current.settings, key) : undefined;
+    changes.push({ kind: 'setting', key, from: label(key, a[key]), to: label(key, b[key]), ...(grant && { label: grantChangeLabel(grant) }) });
   }
   return changes;
 }
@@ -1246,6 +1283,10 @@ export function checkTemplateSettings(raw: unknown): ManagedTemplateSettings {
     && !(typeof s.idleSleep === 'number' && Number.isInteger(s.idleSleep) && s.idleSleep > 0)) bad('auto-sleep must be "never" or whole minutes');
   if (s.helperTemplateId !== undefined && s.helperTemplateId !== null
     && (typeof s.helperTemplateId !== 'string' || s.helperTemplateId.length > 128)) bad('helper template isn\'t a template id');
+  if (s.grants !== undefined) {
+    const list = normalizeTemplateGrants(s.grants);
+    if (!list || list.length !== (s.grants as unknown[]).length) bad('Clubhouse permissions aren\'t a list of an action, a target, and off, ask or allow');
+  }
   if (s.orchestration !== undefined) {
     try {
       validateOrchestrationPatch(s.orchestration);
