@@ -21,7 +21,7 @@ import type { ChatViewState } from '../../../stores/chatStore';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
-import { isDispatcherAgent, useLocalProject } from '../../dispatcher/dispatcherStore';
+import { dispatcherWiresAgentId, isDispatcherAgent, useLocalProject } from '../../dispatcher/dispatcherStore';
 import { Tooltip } from '../../../components/Tooltip';
 import { jumpToCanvas, useAgentCanvases } from './agent-canvases';
 import { getOrchestratorLabel } from '../orchestrator-colors';
@@ -222,7 +222,10 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   // Orchestration (#2232): local durable agents only; a satellite keeps its own config.
   const orchestration = useOrchestrationCards(agent, projectPath);
   const { orchestrationPath, ownConfig, helperIds, orchestrating } = orchestration;
-  const hasWires = useMcpBindingStore((s) => s.bindings.some((b) => b.agentId === agent.id || (b.targetKind === 'agent' && b.targetId === agent.id)));
+  // The Dispatcher's wires are on the id that holds them, not the chat shown here (#3036).
+  const wiresId = dispatcherWiresAgentId(agent);
+  const wiresAgent = useMemo(() => (wiresId === agent.id ? agent : { ...agent, id: wiresId }), [agent, wiresId]);
+  const hasWires = useMcpBindingStore((s) => s.bindings.some((b) => b.agentId === wiresId || (b.targetKind === 'agent' && b.targetId === wiresId)));
   // The Dispatcher has no orchestration of its own, but its wires to orchestrators show (#2538).
   const showConnections = (!!orchestrationPath && (orchestrating || hasWires)) || (isDispatcherAgent(agent) && hasWires);
   // A tool-made wire removed here is a user removal: the usual unbind, with no cause (#2230).
@@ -352,7 +355,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
 
       {showConnections && (
         <ConnectionsCard
-          agent={agent}
+          agent={wiresAgent}
           helperIds={helperIds}
           parentId={ownConfig?.parentAgentId}
           open={open('connections')}

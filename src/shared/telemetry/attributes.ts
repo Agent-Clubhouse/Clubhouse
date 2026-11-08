@@ -543,6 +543,8 @@ export const ATTR = {
     'answer_helper_question',
     // the Dispatcher (#2536)
     'list_agents', 'inspect_helper',
+    // the Dispatcher's two agents (#3036)
+    'start_work', 'read_memory', 'tell_user',
     // appearance (#2597)
     'update_project', 'update_agent',
     // settings reads (#2653)

@@ -42,7 +42,7 @@ import { AppNotices } from '../features/app/AppNotices';
 import { TruncatedLabel } from '../components/TruncatedLabel';
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
 import { DispatcherRow } from './sidebar/DispatcherRow';
-import { isDispatcherAgent, useDispatcherAgentId, useDispatcherStore } from '../features/dispatcher/dispatcherStore';
+import { dispatcherWiresAgentId, isDispatcherAgent, useDispatcherAgentId, useDispatcherStore } from '../features/dispatcher/dispatcherStore';
 import { requestCloseProject } from '../features/projects/close-project';
 import { closeDispatcher, openDispatcher } from '../features/dispatcher/dispatcherNav';
 
@@ -430,13 +430,16 @@ export function ChromeSidebar() {
   }, [pendingStarts]);
   // Agents asking for a Clubhouse permission (#2970).
   const pendingGrants = useGrantRequestStore((s) => s.requests);
+  // The Dispatcher asks under the id that holds its grants; it shows on its own row (#3036).
+  const dispatcherGrantsId = useDispatcherStore((s) => s.state?.agentId ?? null);
   const grantRequests = useMemo(() => {
     const out: Record<string, { message: string; at: number }> = {};
     for (const [agentId, list] of Object.entries(grantRequestsByAgent(pendingGrants))) {
-      out[agentId] = { message: describeGrantRequests(list), at: Date.parse(list[0].createdAt) || 0 };
+      const shownId = agentId === dispatcherGrantsId && dispatcherAgentId ? dispatcherAgentId : agentId;
+      out[shownId] = { message: describeGrantRequests(list), at: Date.parse(list[0].createdAt) || 0 };
     }
     return out;
-  }, [pendingGrants]);
+  }, [pendingGrants, dispatcherGrantsId, dispatcherAgentId]);
   // Needs you covers every host, so a blocked agent anywhere is one click away.
   // The Dispatcher is in no project, so its synthetic id is let in on its own (#2538).
   const needsProjectIds = useMemo(
@@ -551,9 +554,11 @@ export function ChromeSidebar() {
   const selectNeedsYou = useCallback((agent: Agent) => {
     // An agent asking for a Clubhouse permission opens the review dialog (#2970),
     // unless a dispose request comes first: Needs you lists that one, and one dialog opens at a time.
-    const asking = Object.values(useGrantRequestStore.getState().requests).some((r) => r.agentId === agent.id);
+    // The Dispatcher's row stands for the id its requests are under (#3036).
+    const askingId = dispatcherWiresAgentId(agent);
+    const asking = Object.values(useGrantRequestStore.getState().requests).some((r) => r.agentId === askingId);
     const disposing = !!useHelperDisposeRequestStore.getState().requests[agent.id];
-    if (asking && !disposing) useGrantRequestStore.getState().review(agent.id);
+    if (asking && !disposing) useGrantRequestStore.getState().review(askingId);
     if (isDispatcherAgent(agent)) {
       openDispatcher();
       reportChromeFeature('needs_you_select');

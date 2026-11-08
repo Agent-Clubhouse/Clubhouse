@@ -528,7 +528,7 @@ describe('resume-queue', () => {
     });
 
     describe('the Dispatcher (#2552)', () => {
-      const DISPATCHER: DispatcherState = { enabled: true, agentId: 'disp', path: 'dispatcher-dir', config: null };
+      const DISPATCHER: DispatcherState = { enabled: true, agentId: 'disp-work', path: 'dispatcher-work-dir', chatAgentId: 'disp', chatPath: 'dispatcher-dir', config: null };
       afterEach(() => useDispatcherStore.getState().setState(DISPATCHER_OFF));
 
       it('gets the synthetic project id, not its folder, when its state has loaded', async () => {

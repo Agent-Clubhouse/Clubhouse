@@ -72,6 +72,15 @@ vi.mock('../agent-config', () => ({
     Object.assign(agent, updates);
     notify(dir);
   }),
+  updateDurable: vi.fn(async (dir: string, id: string, updates: { name?: string; color?: string; icon?: string | null; emoji?: string | null }) => {
+    const agent = h.agents.get(dir)?.find((a) => a.id === id) as Record<string, unknown> | undefined;
+    if (!agent) return;
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === '') delete agent[key];
+      else agent[key] = value;
+    }
+    notify(dir);
+  }),
   onAgentConfigChanged: (l: (p: string) => void) => { h.configListeners.add(l); return () => { h.configListeners.delete(l); }; },
 }));
 
@@ -90,6 +99,7 @@ import { agentRegistry } from '../agent-registry';
 import { DISPATCHER_CLASSIC_MESSAGE } from '../../../shared/dispatcher-types';
 
 const dispatcherDir = () => path.join(h.baseDir, 'dispatcher');
+const chatDir = () => path.join(h.baseDir, 'dispatcher-chat');
 
 /** Let queued config refreshes run: they wait on real file reads. */
 const settle = () => svc._whenIdleForTesting();
@@ -113,25 +123,34 @@ beforeEach(async () => {
   await updateSettings(() => ({}));
   for (const agentId of agentRegistry.getAllRegistrations().keys()) agentRegistry.untrack(agentId);
   vi.mocked(agentConfig.createDurable).mockClear();
+  vi.mocked(agentConfig.updateDurable).mockClear();
+  vi.mocked(agentConfig.updateDurableConfig).mockClear();
   vi.mocked(agentSystem.killAgent).mockClear();
   vi.mocked(agentSystem.spawnAgent).mockClear();
 });
 
 afterEach(async () => {
-  // A config refresh still queued from this test would otherwise write into the next test's folder.
+  // A config refresh still queued would run in the next test against this deleted folder.
   await settle();
+  h.configListeners.clear();
   fs.rmSync(h.baseDir, { recursive: true, force: true });
 });
 
 describe('gating', () => {
   it('is on by default in the new layout: creates and connects, and never starts it', async () => {
     await svc.initDispatcher();
-    expect(svc.getDispatcherState()).toMatchObject({ enabled: true, savedOn: true, flagOn: true, offReason: null, running: false, agentId: 'durable_1', path: dispatcherDir() });
-    expect(agentConfig.createDurable).toHaveBeenCalledTimes(1);
+    expect(svc.getDispatcherState()).toMatchObject({
+      enabled: true, savedOn: true, flagOn: true, offReason: null, running: false, agentId: 'durable_1', path: dispatcherDir(),
+      chatAgentId: 'durable_2', chatPath: chatDir(), chatRunning: false,
+    });
+    // The Dispatcher and its chat (#3036).
+    expect(agentConfig.createDurable).toHaveBeenCalledTimes(2);
     expect(fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf-8')).toContain(svc.DISPATCHER_INSTRUCTIONS);
+    expect(fs.readFileSync(path.join(chatDir(), 'CLAUDE.md'), 'utf-8')).toContain(svc.DISPATCHER_CHAT_INSTRUCTIONS);
     // What default-on must not do: start the agent, so no tokens are spent.
     expect(agentSystem.spawnAgent).not.toHaveBeenCalled();
     expect(agentRegistry.get('durable_1')).toBeUndefined();
+    expect(agentRegistry.get('durable_2')).toBeUndefined();
     // And it saves nothing: the switch stays missing, so the default can still move.
     expect(getSettings().enabled).toBeUndefined();
   });
@@ -220,13 +239,13 @@ describe('Clubhouse MCP', () => {
 });
 
 describe('turning it on', () => {
-  it('creates the folder, its memory and one agent with the defaults', async () => {
+  it('creates the folder, its memory and its agent with the defaults, then its chat on top', async () => {
     const state = await svc.setDispatcherEnabled(true);
     expect(fs.existsSync(path.join(dispatcherDir(), 'notes'))).toBe(false);
     for (const dir of ['agents', 'timeline', 'topics']) {
       expect(fs.statSync(path.join(dispatcherDir(), 'memory', dir)).isDirectory()).toBe(true);
     }
-    expect(agentConfig.createDurable).toHaveBeenCalledTimes(1);
+    expect(agentConfig.createDurable).toHaveBeenCalledTimes(2);
     const call = vi.mocked(agentConfig.createDurable).mock.calls[0];
     const [dir, name, , model, useWorktree, orchestrator, freeAgentMode] = call;
     expect(dir).toBe(dispatcherDir());
@@ -240,6 +259,14 @@ describe('turning it on', () => {
     expect(state.config).toMatchObject({ idleSleep: 'never', runtimeMode: 'chat' });
     expect(state.config).not.toHaveProperty('mcpOverride');
     expect(state.config?.persona).toBeUndefined();
+    // The chat: its own folder, the same name, look and CLI, and the same defaults.
+    const [chatFolder, chatName, chatColor, , chatWorktree, chatOrchestrator] = vi.mocked(agentConfig.createDurable).mock.calls[1];
+    expect(chatFolder).toBe(chatDir());
+    expect(chatName).toBe(name);
+    expect(chatColor).toBe(call[2]);
+    expect(chatWorktree).toBe(false);
+    expect(chatOrchestrator).toBe('claude-code');
+    expect(h.agents.get(chatDir())?.[0]).toMatchObject({ id: state.chatAgentId, idleSleep: 'never', runtimeMode: 'chat' });
   });
 
   it('is idempotent across toggles and restarts', async () => {
@@ -247,9 +274,11 @@ describe('turning it on', () => {
     await svc.setDispatcherEnabled(true);
     svc._resetDispatcherForTesting();
     await svc.initDispatcher();
-    expect(agentConfig.createDurable).toHaveBeenCalledTimes(1);
+    expect(agentConfig.createDurable).toHaveBeenCalledTimes(2);
     expect(h.agents.get(dispatcherDir())).toHaveLength(1);
+    expect(h.agents.get(chatDir())).toHaveLength(1);
     expect(svc.getDispatcherAgentId()).toBe('durable_1');
+    expect(svc.getDispatcherChatAgentId()).toBe('durable_2');
   });
 
   it('follows the app default CLI, never assuming Claude', async () => {
@@ -300,7 +329,8 @@ describe('turning it on', () => {
     fs.mkdirSync(path.join(dispatcherDir(), 'notes'), { recursive: true });
     h.agents.set(dispatcherDir(), [{ id: 'durable_old', name: 'Dispatcher', color: 'indigo', createdAt: 'then', orchestrator: 'claude-code', persona: 'dispatcher' }]);
     await svc.setDispatcherEnabled(true);
-    expect(agentConfig.createDurable).not.toHaveBeenCalled();
+    // Only the chat is new (#3036).
+    expect(vi.mocked(agentConfig.createDurable).mock.calls.map((c) => c[0])).toEqual([chatDir()]);
     expect(svc.getDispatcherAgentId()).toBe('durable_old');
     expect(svc.isDispatcherAgentId('durable_old')).toBe(true);
     expect(fs.readFileSync(path.join(dispatcherDir(), 'CLAUDE.md'), 'utf-8')).toContain(svc.DISPATCHER_INSTRUCTIONS);
@@ -324,15 +354,20 @@ describe('turning it off', () => {
     const page = path.join(dispatcherDir(), 'memory', 'topics', 'plan.md');
     fs.writeFileSync(page, 'keep me');
     h.running.add('durable_1');
+    h.running.add('durable_2');
 
     const off = await svc.setDispatcherEnabled(false);
-    expect(agentSystem.killAgent).toHaveBeenCalledTimes(1);
+    // Both of its agents stop.
+    expect(agentSystem.killAgent).toHaveBeenCalledTimes(2);
+    expect(agentSystem.killAgent).toHaveBeenCalledWith('durable_2', chatDir(), 'claude-code');
+    expect(agentSystem.killAgent).toHaveBeenCalledWith('durable_1', dispatcherDir(), 'claude-code');
     expect(off).toMatchObject({ enabled: false, agentId: 'durable_1', path: dispatcherDir() });
     expect(fs.readFileSync(page, 'utf-8')).toBe('keep me');
 
     const on = await svc.setDispatcherEnabled(true);
     expect(on.agentId).toBe('durable_1');
-    expect(agentConfig.createDurable).toHaveBeenCalledTimes(1);
+    expect(on.chatAgentId).toBe('durable_2');
+    expect(agentConfig.createDurable).toHaveBeenCalledTimes(2);
     expect(fs.readFileSync(page, 'utf-8')).toBe('keep me');
   });
 
@@ -390,5 +425,126 @@ describe('isDispatcherPath', () => {
     expect(svc.isDispatcherPath(upper)).toBe(true);
     Object.defineProperty(process, 'platform', { value: 'linux' });
     expect(svc.isDispatcherPath(upper)).toBe(upper === dispatcherDir());
+  });
+});
+
+describe('two agents, one identity (#3036)', () => {
+  it('upgrades an existing Dispatcher: it keeps its id, and the chat is added with its name, look and settings', async () => {
+    fs.mkdirSync(path.join(dispatcherDir(), 'notes'), { recursive: true });
+    h.agents.set(dispatcherDir(), [{
+      id: 'durable_existing', name: 'Rosie', color: 'rose', emoji: '🦊', createdAt: 'then', orchestrator: 'codex-cli',
+      model: 'gpt-5', runtimeMode: 'chat', idleSleep: 'never', access: 'auto', freeAgentMode: true, lastSessionId: 'session-old',
+    }]);
+    const state = await svc.setDispatcherEnabled(true);
+    expect(state).toMatchObject({ agentId: 'durable_existing', path: dispatcherDir(), chatPath: chatDir() });
+    expect(state.chatAgentId).not.toBe('durable_existing');
+    const chat = h.agents.get(chatDir())?.[0];
+    expect(chat).toMatchObject({ name: 'Rosie', color: 'rose', emoji: '🦊', orchestrator: 'codex-cli', model: 'gpt-5', runtimeMode: 'chat', idleSleep: 'never', access: 'auto' });
+    // Its own conversation: nothing per agent is copied.
+    expect(chat?.lastSessionId).toBeUndefined();
+    expect(h.agents.get(dispatcherDir())).toHaveLength(1);
+    expect(fs.readFileSync(path.join(chatDir(), 'AGENTS.md'), 'utf-8')).toContain(svc.DISPATCHER_CHAT_INSTRUCTIONS);
+    expect(fs.readFileSync(path.join(dispatcherDir(), 'AGENTS.md'), 'utf-8')).toContain(svc.DISPATCHER_INSTRUCTIONS);
+  });
+
+  it('copies a change from either record onto the other, once', async () => {
+    await svc.setDispatcherEnabled(true);
+    await settle();
+    // Settings > Dispatcher edits the Dispatcher's own record.
+    await agentConfig.updateDurableConfig(dispatcherDir(), 'durable_1', { model: 'opus' });
+    await settle();
+    expect(h.agents.get(chatDir())?.[0].model).toBe('opus');
+    // The chat's details or a phone edit the chat's.
+    await agentConfig.updateDurable(chatDir(), 'durable_2', { name: 'Rosie', color: 'teal' });
+    await settle();
+    expect(h.agents.get(dispatcherDir())?.[0]).toMatchObject({ name: 'Rosie', color: 'teal' });
+    expect(svc.getDispatcherState().config).toMatchObject({ name: 'Rosie', color: 'teal', model: 'opus' });
+    // Settled: nothing bounces back and forth.
+    const writes = vi.mocked(agentConfig.updateDurable).mock.calls.length + vi.mocked(agentConfig.updateDurableConfig).mock.calls.length;
+    notify(dispatcherDir());
+    notify(chatDir());
+    await settle();
+    expect(vi.mocked(agentConfig.updateDurable).mock.calls.length + vi.mocked(agentConfig.updateDurableConfig).mock.calls.length).toBe(writes);
+  });
+
+  it('rewrites the chat\'s instructions for a new CLI too', async () => {
+    await svc.setDispatcherEnabled(true);
+    await agentConfig.updateDurableConfig(dispatcherDir(), 'durable_1', { orchestrator: 'copilot-cli' });
+    await settle();
+    expect(fs.readFileSync(path.join(chatDir(), '.github', 'copilot-instructions.md'), 'utf-8')).toContain(svc.DISPATCHER_CHAT_INSTRUCTIONS);
+  });
+
+  it('tells the two ids apart, and sends the chat\'s settings to the Dispatcher\'s record', async () => {
+    await svc.setDispatcherEnabled(true);
+    expect(svc.isDispatcherAgentId('durable_1')).toBe(true);
+    expect(svc.isDispatcherAgentId('durable_2')).toBe(false);
+    expect(svc.isDispatcherChatAgentId('durable_2')).toBe(true);
+    expect(svc.isDispatcherIdentityAgentId('durable_1')).toBe(true);
+    expect(svc.isDispatcherIdentityAgentId('durable_2')).toBe(true);
+    expect(svc.isDispatcherIdentityAgentId('durable_9')).toBe(false);
+    expect(svc.resolveDispatcherIdentity(chatDir(), 'durable_2')).toEqual({ projectPath: dispatcherDir(), agentId: 'durable_1' });
+    expect(svc.resolveDispatcherIdentity('/p', 'other')).toEqual({ projectPath: '/p', agentId: 'other' });
+    expect(svc.getDispatcherChatConfig()).toMatchObject({ id: 'durable_2', name: 'Dispatcher' });
+  });
+
+  it('rewrites each agent\'s instructions before its session starts, and nothing else\'s', async () => {
+    await svc.setDispatcherEnabled(true);
+    const chatFile = path.join(chatDir(), 'CLAUDE.md');
+    const ownFile = path.join(dispatcherDir(), 'CLAUDE.md');
+    fs.writeFileSync(chatFile, 'stale');
+    fs.writeFileSync(ownFile, 'stale');
+    await svc.prepareDispatcherSessionStart(chatDir(), 'durable_2');
+    expect(fs.readFileSync(chatFile, 'utf-8')).toContain(svc.DISPATCHER_CHAT_INSTRUCTIONS);
+    expect(fs.readFileSync(ownFile, 'utf-8')).toBe('stale');
+    await svc.prepareDispatcherSessionStart(dispatcherDir(), 'durable_1');
+    expect(fs.readFileSync(ownFile, 'utf-8')).toContain(svc.DISPATCHER_INSTRUCTIONS);
+    // Another agent, or an id in the wrong folder, is left alone.
+    fs.writeFileSync(chatFile, 'stale');
+    await svc.prepareDispatcherSessionStart(chatDir(), 'durable_1');
+    await svc.prepareDispatcherSessionStart('/elsewhere', 'durable_2');
+    expect(fs.readFileSync(chatFile, 'utf-8')).toBe('stale');
+  });
+
+  it('starts each session with memory as it is now, in both agents (#3038)', async () => {
+    await svc.setDispatcherEnabled(true);
+    const index = path.join(dispatcherDir(), 'memory', 'index.md');
+    fs.writeFileSync(index, '- webapp-lead owns checkout\n');
+    await svc.prepareDispatcherSessionStart(chatDir(), 'durable_2');
+    await svc.prepareDispatcherSessionStart(dispatcherDir(), 'durable_1');
+    for (const file of [path.join(chatDir(), 'CLAUDE.md'), path.join(dispatcherDir(), 'CLAUDE.md')]) {
+      const text = fs.readFileSync(file, 'utf-8');
+      expect(text).toContain('## Your memory index');
+      expect(text).toContain('- webapp-lead owns checkout');
+    }
+    // Reading never changes memory.
+    expect(fs.readFileSync(index, 'utf-8')).toBe('- webapp-lead owns checkout\n');
+  });
+
+  it('takes agents\' messages at the Dispatcher\'s own agent, never the chat (#3037)', async () => {
+    const { dispatcherInboxId, isDispatcherTarget } = await import('../clubhouse-mcp/tools/dispatcher-delivery');
+    await svc.setDispatcherEnabled(true);
+    expect(dispatcherInboxId('durable_1')).toBe('durable_1');
+    expect(dispatcherInboxId('durable_2')).toBe('durable_1');
+    expect(isDispatcherTarget('durable_1')).toBe(true);
+    expect(isDispatcherTarget('durable_2')).toBe(false);
+  });
+
+  it('conceals the calls that join its two agents, in both of their chats', async () => {
+    const { isConcealedTool } = await import('../agent-runtime/concealed-tools');
+    await svc.setDispatcherEnabled(true);
+    for (const id of ['durable_1', 'durable_2']) {
+      expect(isConcealedTool(id, 'mcp__clubhouse__start_work')).toBe(true);
+      expect(isConcealedTool(id, 'clubhouse-tell_user')).toBe(true);
+      expect(isConcealedTool(id, 'mcp__clubhouse__list_agents')).toBe(false);
+    }
+    expect(isConcealedTool('someone_else', 'mcp__clubhouse__start_work')).toBe(false);
+  });
+
+  it('keeps the chat\'s folder beside the Dispatcher\'s, never inside it', () => {
+    expect(path.dirname(svc.getDispatcherChatPath())).toBe(path.dirname(svc.getDispatcherPath()));
+    expect(svc.isDispatcherPath(chatDir())).toBe(true);
+    expect(svc.isDispatcherChatPath(chatDir())).toBe(true);
+    expect(svc.isDispatcherCoordinatorPath(chatDir())).toBe(false);
+    expect(svc.isDispatcherChatPath(dispatcherDir())).toBe(false);
   });
 });

@@ -940,7 +940,7 @@ async function catalogOrchestration(projectPath: string, durables: DurableConfig
 /** The Dispatcher can't start while it is off, though its history can still be read. */
 function isDispatcherOffForStart(agentId: string): boolean {
   const state = getDispatcherState();
-  return state.agentId === agentId && !state.enabled;
+  return state.chatAgentId === agentId && !state.enabled;
 }
 
 /** The Dispatcher as the snapshot, dispatcher:changed and the capabilities carry it: the same shape in all three. */

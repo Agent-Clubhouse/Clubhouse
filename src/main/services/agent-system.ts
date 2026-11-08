@@ -347,6 +347,19 @@ function assertDispatcherCanStart({ kind, projectPath }: SpawnAgentParams): void
 async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, managed: ManagedLaunchLease | null): Promise<void> {
   let params = inParams;
   assertDispatcherCanStart(params);
+  if (params.kind === 'durable' && isDispatcherPath(params.projectPath)) {
+    // Either of the Dispatcher's agents starts with its memory as it is now (#3036).
+    // Loaded here: dispatcher-service imports this module.
+    try {
+      const { prepareDispatcherSessionStart } = await import('./dispatcher/dispatcher-service');
+      await prepareDispatcherSessionStart(params.projectPath, params.agentId);
+    } catch (err) {
+      // telemetry-exempt: logged; it starts with the instructions file it already has
+      appLog('core:agent', 'warn', 'Could not refresh the Dispatcher\'s instructions before its start', {
+        meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
   // An agent still being created has no worktree yet, and a failed one never
   // will (#2226): refuse before anything touches its folder.
   // Read once here; the managed delivery step below uses the same read.

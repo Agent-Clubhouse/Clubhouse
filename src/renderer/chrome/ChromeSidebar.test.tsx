@@ -28,6 +28,7 @@ import { useChromeFlagStore } from './chromeFlag';
 import { useHelperStartRequestStore } from '../stores/helperStartRequestStore';
 import { useAgentDetailsStore } from '../features/agents/details/detailsStore';
 import { useDispatcherStore } from '../features/dispatcher/dispatcherStore';
+import { useGrantRequestStore } from '../stores/grantRequestStore';
 import { useDispatcherSync } from '../features/dispatcher/useDispatcherSync';
 import { DispatcherView } from '../features/dispatcher/DispatcherView';
 import { DISPATCHER_PROJECT_ID, DISPATCHER_OFF, type DispatcherState } from '../../shared/dispatcher-types';
@@ -672,7 +673,7 @@ describe('ChromeSidebar', () => {
 describe('ChromeSidebar Dispatcher (#2538)', () => {
   const dispatcher = agent('disp', DISPATCHER_PROJECT_ID, { name: 'Dispatcher', status: 'sleeping' });
   const turnOn = () => {
-    useDispatcherStore.getState().setState({ enabled: true, flagOn: true, agentId: 'disp', path: 'dispatcher-dir', config: null });
+    useDispatcherStore.getState().setState({ enabled: true, flagOn: true, agentId: 'disp-work', path: 'dispatcher-work-dir', chatAgentId: 'disp', chatPath: 'dispatcher-dir', config: null });
     useAgentStore.setState((s) => ({ agents: { ...s.agents, disp: dispatcher } }));
   };
   beforeEach(() => useUIStore.setState({ dispatcherOpen: false }));
@@ -719,6 +720,26 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
     expect(useUIStore.getState().dispatcherOpen).toBe(false);
   });
 
+  it('shows the Dispatcher\'s Ask-first request on its own row, and opens that request (#3036)', () => {
+    turnOn();
+    useGrantRequestStore.setState({ requests: { r1: {
+      requestId: 'r1', kind: 'call', agentId: 'disp-work', agentName: 'Dispatcher', projectPath: 'dispatcher-work-dir', actions: ['settings.app.write'],
+      where: 'the app', toolName: 'set_helper_presets', createdAt: '2026-11-08T00:00:00.000Z', expiresAt: '2026-11-09T00:00:00.000Z',
+    } }, reviewing: null });
+    try {
+      render(<ChromeSidebar />);
+      const section = screen.getByTestId('needs-you');
+      expect(within(section).queryByTestId('needs-you-row-disp-work')).toBeNull();
+      const row = within(section).getByTestId('needs-you-row-disp');
+      expect(row.textContent).toContain('Asks to make a call');
+      fireEvent.click(row);
+      expect(useGrantRequestStore.getState().reviewing).toBe('disp-work');
+      expect(useUIStore.getState().dispatcherOpen).toBe(true);
+    } finally {
+      useGrantRequestStore.setState({ requests: {}, reviewing: null });
+    }
+  });
+
   it('lists the Dispatcher in Needs you despite its synthetic project id, and opens its view', () => {
     turnOn();
     useAgentStore.setState((s) => ({
@@ -741,14 +762,14 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
     useAgentStore.setState((s) => ({
       agentDetailedStatus: { ...s.agentDetailedStatus, disp: { state: 'needs_permission', message: 'Wants to run: gh pr list', timestamp: 2 } },
     }));
-    useDispatcherStore.getState().setState({ ...DISPATCHER_OFF, agentId: 'disp', path: 'dispatcher-dir' });
+    useDispatcherStore.getState().setState({ ...DISPATCHER_OFF, agentId: 'disp-work', path: 'dispatcher-work-dir', chatAgentId: 'disp', chatPath: 'dispatcher-dir' });
     render(<ChromeSidebar />);
     expect(screen.queryByTestId('needs-you-row-disp')).toBeNull();
   });
 
   describe('when its agent fails to load (#2572)', () => {
     const config = { id: 'disp', name: 'Dispatcher', color: 'indigo', createdAt: '2026-10-31T00:00:00.000Z' } as DurableAgentConfig;
-    const ON: DispatcherState = { enabled: true, flagOn: true, agentId: 'disp', path: 'dispatcher-dir', config };
+    const ON: DispatcherState = { enabled: true, flagOn: true, agentId: 'disp-work', path: 'dispatcher-work-dir', chatAgentId: 'disp', chatPath: 'dispatcher-dir', config };
     const originals = { get: window.clubhouse.dispatcher.get, listDurable: window.clubhouse.agent.listDurable };
     /** The shell's pieces: the sync hook, the sidebar, and the view while it's open. */
     function Shell() {
@@ -806,7 +827,7 @@ describe('ChromeSidebar Dispatcher (#2538)', () => {
     });
 
     it('shows no row while the Dispatcher is off, even with an agent id', () => {
-      useDispatcherStore.getState().setState({ ...DISPATCHER_OFF, agentId: 'disp', path: 'dispatcher-dir' });
+      useDispatcherStore.getState().setState({ ...DISPATCHER_OFF, agentId: 'disp-work', path: 'dispatcher-work-dir', chatAgentId: 'disp', chatPath: 'dispatcher-dir' });
       useDispatcherStore.getState().setLoadError('disk unavailable');
       render(<ChromeSidebar />);
       expect(screen.queryByTestId('dispatcher-row')).toBeNull();

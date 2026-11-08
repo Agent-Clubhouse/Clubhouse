@@ -11,7 +11,7 @@ export function isAgentVisible(agentId: string, projectId: string): boolean {
 
   const { explorerTab, dispatcherOpen } = useUIStore.getState();
   // The Dispatcher's view covers the pane (#2538), so only its agent is on screen.
-  if (dispatcherOpen) return agentId === useDispatcherStore.getState().state?.agentId;
+  if (dispatcherOpen) return agentId === useDispatcherStore.getState().state?.chatAgentId;
 
   const { activeProjectId } = useProjectStore.getState();
 

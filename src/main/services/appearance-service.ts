@@ -29,7 +29,7 @@ import * as agentConfig from './agent-config';
 import { resolveLocalPath } from './agent-runtime/chat-media';
 import { resizeIcon } from './icon-images';
 import { getDispatcherPath } from './dispatcher/dispatcher-paths';
-import { getDispatcherState, isDispatcherAgentId } from './dispatcher/dispatcher-service';
+import { getDispatcherChatPath, getDispatcherState, isDispatcherAgentId, isDispatcherChatAgentId } from './dispatcher/dispatcher-service';
 import { appLog } from './log-service';
 import * as projectStore from './project-store';
 
@@ -271,7 +271,10 @@ async function resolveAgent(actor: AppearanceActor, agentId: string | undefined)
   // The Dispatcher is in no project: its config is in its own folder. Turned off, it asks as `own` from that folder.
   const projectPaths = actor.scope === 'own'
     ? [actor.projectPath]
-    : isDispatcherAgentId(id) ? [getDispatcherPath()] : (await projectStore.list()).map((p) => p.path);
+    : isDispatcherAgentId(id) ? [getDispatcherPath()]
+      // The Dispatcher's chat (#3036): a change to its look reaches the Dispatcher's record too (dispatcher-identity).
+      : isDispatcherChatAgentId(id) ? [getDispatcherChatPath()]
+        : (await projectStore.list()).map((p) => p.path);
   for (const projectPath of projectPaths) {
     const config = await agentConfig.getDurableConfig(projectPath, id);
     if (config && !isDisposedAgent(config)) return { projectPath, config };
