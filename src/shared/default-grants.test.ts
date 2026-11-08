@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { grantKey } from './agent-grant-changes';
+import type { Grant } from './agent-grants';
 import { controlFromGrantModes, controlGrantModes, defaultGrants } from './default-grants';
 import { ORCHESTRATION_CONTROLS } from './orchestration-policy';
 
@@ -28,5 +29,44 @@ describe('the approval setting as grant modes (#2970)', () => {
     expect([mode(undefined, create), mode(undefined, dispose)]).toEqual(['allow', 'allow']);
     expect([mode('ask-before-start', create), mode('ask-before-start', createAny), mode('ask-before-start', dispose)]).toEqual(['ask', 'ask', 'allow']);
     expect([mode('ask-everything', create), mode('ask-everything', dispose)]).toEqual(['ask', 'ask']);
+  });
+});
+
+describe('the Dispatcher\'s defaults (#3050, #3034)', () => {
+  const dispatcher = defaultGrants({ dispatcher: true, helper: false, orchestrates: false, crossProject: false });
+  const mode = (grants: Grant[], action: Parameters<typeof grantKey>[0]['action'], target: Parameters<typeof grantKey>[0]['target']) =>
+    grants.filter((g) => grantKey(g) === grantKey({ action, target })).map((g) => g.mode).sort().reverse()[0];
+  const connected = { kind: 'connected' } as const;
+  const anyProject = { kind: 'project', project: 'any' } as const;
+
+  it('has broad power over connected agents, plus connections', () => {
+    for (const action of ['agent.read', 'agent.message', 'agent.wake', 'agent.sleep', 'agent.reset', 'agent.display', 'agent.configure', 'connection.manage'] as const) {
+      expect(mode(dispatcher, action, connected), action).toBe('allow');
+    }
+  });
+
+  it('creates agents in any project and grants up to its own level', () => {
+    expect(mode(dispatcher, 'agent.create', anyProject)).toBe('allow');
+    expect(mode(dispatcher, 'agent.grant', { kind: 'any' })).toBe('allow');
+  });
+
+  it('asks first to add a project, change project defaults or change app settings', () => {
+    expect(mode(dispatcher, 'project.add', anyProject)).toBe('ask');
+    expect(mode(dispatcher, 'project.configure', anyProject)).toBe('ask');
+    expect(mode(dispatcher, 'settings.app.write', { kind: 'app' })).toBe('ask');
+  });
+
+  it('creates, changes and runs Actions', () => {
+    for (const action of ['action.read', 'action.write', 'action.run'] as const) expect(mode(dispatcher, action, { kind: 'any' }), action).toBe('allow');
+  });
+
+  it('no other agent adds projects by default', () => {
+    for (const facts of [
+      { dispatcher: false, helper: false, orchestrates: false, crossProject: false },
+      { dispatcher: false, helper: true, orchestrates: false, crossProject: false },
+      { dispatcher: false, helper: false, orchestrates: true, crossProject: true },
+    ]) {
+      expect(defaultGrants(facts).some((g) => g.action === 'project.add'), JSON.stringify(facts)).toBe(false);
+    }
   });
 });

@@ -39,6 +39,7 @@ export const GRANT_ACTIONS = [
   'group_project.admin',
   // Projects
   'project.read',
+  'project.add', // add or open a project (#3050): the target is the folder, which may not be a project yet
   'project.display',
   'project.configure', // how agents in it run: defaults
   // The managed agents library (#2819): shared parts and templates. Edits reach every agent using them.
@@ -67,6 +68,8 @@ export type GrantAction = (typeof GRANT_ACTIONS)[number];
  * - `connected`: agents the caller sends to on a connection. For the
  *   Dispatcher, agents with Connect to Dispatcher on.
  * - `project`: `own` (the caller's project), `any`, or one project by path.
+ *   For `project.add` the path is the folder being added, which isn't a
+ *   Clubhouse project yet; `own` never covers it (there's nothing to add).
  * - `group_project`: groups the caller is a `member` of (admins are members),
  *   or that it is an `admin` of.
  * - `group_members`: agents in a group project the caller administers.
@@ -158,7 +161,7 @@ export function isGrantAction(value: unknown): value is GrantAction {
 }
 
 /** Whether a grant's target covers what a call reaches. */
-export function targetCovers(grant: GrantTarget, caller: GrantCaller, target: GrantCallTarget): boolean {
+export function targetCovers(grant: GrantTarget, caller: GrantCaller, target: GrantCallTarget, action?: GrantAction): boolean {
   const rel = target.relations ?? [];
   switch (grant.kind) {
     case 'any': return true;
@@ -174,6 +177,12 @@ export function targetCovers(grant: GrantTarget, caller: GrantCaller, target: Gr
       return grant.role === 'member' || target.groupRole === 'admin';
     case 'project': {
       if (target.kind !== 'project' && target.kind !== 'agent') return false;
+      if (action === 'project.add') {
+        // Adding a project: only a project target, and only `any` or that exact folder.
+        if (target.kind !== 'project' || grant.project === 'own') return false;
+        if (grant.project === 'any') return true;
+        return !!target.projectPath && samePath(grant.project.path, target.projectPath);
+      }
       if (grant.project === 'any') return true;
       if (!target.projectPath) return false;
       if (grant.project === 'own') return !!caller.projectPath && samePath(caller.projectPath, target.projectPath);
@@ -225,7 +234,7 @@ export function widerOrSame(held: GrantTarget, given: GrantTarget): boolean {
  */
 export function evaluateGrant(call: GrantCall, grants: readonly Grant[], held: readonly Grant[] = grants): GrantDecision {
   if (call.caller.kind === 'user') return { outcome: 'allow' };
-  const matching = grants.filter((g) => g.action === call.action && targetCovers(g.target, call.caller, call.target));
+  const matching = grants.filter((g) => g.action === call.action && targetCovers(g.target, call.caller, call.target, call.action));
   if (matching.length === 0) return { outcome: 'refuse', reason: 'no_grant' };
   if (call.action === 'agent.grant' && (call.target.relations ?? []).includes('self')) return { outcome: 'refuse', reason: 'raise_self' };
   if (call.action === 'agent.grant' && call.change) {
