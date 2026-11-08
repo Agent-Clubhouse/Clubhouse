@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { ManagedAgentSetup } from '../../../shared/managed-agents-types';
 import { CLUBHOUSE_MCP_PART_ID } from '../../../shared/managed-agents-types';
@@ -92,8 +92,25 @@ function write(rel: string, content: string | Buffer, mode?: number) {
   if (mode !== undefined) fs.chmodSync(file, mode);
 }
 
+// Installing every built-in writes each part to disk, which ran past the test
+// timeout on a loaded Windows runner (#3122). Install them once per file and
+// copy the result in for each test; ensureBuiltins then finds them current and
+// writes nothing. Each test still has its own folder (#3027's pattern).
+let seed: string;
+beforeAll(async () => {
+  seed = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-convert-seed-'));
+  _resetSettingsAuditForTesting(false);
+  await createManagedAgentsService({
+    catalog: createAssetCatalogStore({ dir: path.join(seed, 'catalog') }),
+    state: createManagedStateStore(path.join(seed, 'managed')),
+    listProjects: async () => [], listAgents: async () => [], getAgent: async () => null, setManagedSetup: async () => {}, isRunning: () => false,
+  }).ensureBuiltins();
+});
+afterAll(() => { fs.rmSync(seed, { recursive: true, force: true }); });
+
 beforeEach(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-convert-'));
+  for (const name of fs.readdirSync(seed)) fs.cpSync(path.join(seed, name), path.join(root, name), { recursive: true });
   wt = path.join(root, 'project', '.clubhouse', 'agents', 'ada');
   fs.mkdirSync(wt, { recursive: true });
   _resetSettingsAuditForTesting(false);

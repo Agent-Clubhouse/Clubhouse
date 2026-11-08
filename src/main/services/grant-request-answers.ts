@@ -16,6 +16,7 @@ import { setAgentGrant } from './agent-grants-service';
 import { deliverHelperUpdate } from './clubhouse-mcp/tools/helper-delivery';
 import { grantRequestKey, restoreGrantRequest, takeGrantRequest } from './grant-requests';
 import { appLog } from './log-service';
+import { recordGrantRequest } from './grant-telemetry';
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -50,6 +51,7 @@ export async function answerGrantRequest(requestId: string, allow: boolean): Pro
       return { ok: false, error: errorText(err) };
     }
   }
+  recordGrantRequest({ agentId: request.agentId, kind: request.kind, outcome: allow ? 'allowed' : 'declined', actions: request.actions });
   appLog('core:mcp', 'info', allow ? 'Permission request allowed' : 'Permission request declined', {
     meta: { agentId: request.agentId, requestId, kind: request.kind },
   });

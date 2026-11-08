@@ -52,6 +52,7 @@ import { withReachableAs } from './annex-reach';
 import * as networkChannel from './annex-network-channel';
 import * as membership from './annex-network-membership';
 import { NETWORK_MESSAGE_MAX_BYTES, NETWORK_PROTOCOL_VERSION, parseNetworkMessage } from '../../shared/annex-network-protocol';
+import { parseAgentAddress, routeOf } from '../../shared/agent-address';
 import * as annexEventBus from './annex-event-bus';
 import * as annexSettings from './annex-settings';
 import { annexNetworkProfile } from './annex-network-profile';
@@ -731,6 +732,8 @@ function dropUnconnectedPeers(now = Date.now()): void {
     awaitingFirstConnection.delete(fingerprint);
     mobileSessionPeers.delete(fingerprint);
     devicesChanged();
+    // A member's join already went to the network when it paired: its removal goes too, so no member brings it back (#3106).
+    membership.noteLocalRemoval(fingerprint);
     if (annexPeers.removePeer(fingerprint)) {
       appLog('core:annex', 'info', 'Removed a pairing that never connected', { meta: { fingerprint } });
       broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeersForDisplay());
@@ -1255,6 +1258,8 @@ function assembleSnapshot(sources: SnapshotSources): BuiltSnapshot {
 
   return { icons, iconRefs, payload: {
     protocolVersion: ANNEX_PROTOCOL_VERSION,
+    // Which machine this is (#3063): its agents' addresses are `<agentId>@<fingerprint>`.
+    ...thisMachine(),
     projects,
     agents,
     quickAgents,
@@ -2356,10 +2361,12 @@ const PAIR_MESSAGES = {
 
 /**
  * Who may use the phone routes: a controller (or an older entry with no role), or
- * a phone that's an Annex Network member (#3062).
+ * an Annex Network member, phone (#3062) or computer (#2390).
  */
 function actsAsPhoneController(peer: AnnexPeer): boolean {
-  return !peer.role || peer.role === 'controller' || (peer.role === 'member' && peer.kind === 'phone');
+  // Any device that controls this machine: a phone, a desktop controller, or a network member, which
+  // reads and drives this machine's chat agents through the same routes (#2390).
+  return !peer.role || annexPeers.controlsThisMachine(peer);
 }
 
 /** Phones send `pairingMode`, and older ones a phone or tablet icon; Clubhouse desktops send neither. */
@@ -3483,6 +3490,8 @@ async function handleMobileCapabilitiesRoute(ctx: AnnexRouteContext): Promise<vo
     providerControl: { version: 1, preview: 'agent.providerPreview', change: 'agent.providerChange', stoppedAcknowledgment: true, strictStart: true },
     // Every agent's live state in one read, for catching up after a reconnect.
     agentState: { version: 1, path: '/api/v1/mobile/agents/state' },
+    // Machine-qualified agent addresses (#3063): a command's agentId may carry the machine.
+    agentAddress: { version: 1, format: '{agentId}@{machine}', snapshotField: 'machine', wrongMachineCode: 'wrong_machine' },
     // Annex Network (#3062): the machines in this phone's network, and joining through the phone.
     ...(annexSettings.networkEnabled() && { network: NETWORK_CAPABILITY }),
     helperRequests: { version: 1, snapshotField: 'helperRequests', commands: ['helper.approve', 'helper.decline'] },
@@ -3810,8 +3819,32 @@ async function handleMobileHelperRoutingRoute(ctx: AnnexRouteContext): Promise<v
   }
 }
 
-async function runMobileCommand(command: MobileCommand, assertAuthorized: () => void, principal: string): Promise<unknown> {
+/** This machine, as snapshots and addresses name it (#3063). */
+function thisMachine(): { machine?: { fingerprint: string; name: string } } {
+  const identity = annexIdentity.getIdentity();
+  if (!identity) return {};
+  const settings = annexSettings.getSettings();
+  return { machine: { fingerprint: identity.fingerprint.toLowerCase(), name: settings.alias || settings.deviceName || 'Clubhouse' } };
+}
+
+/**
+ * A command's agent may be named with its machine (`<agentId>@<machine>`, #3063).
+ * This machine's becomes the bare id; another machine's is refused, naming it,
+ * so the phone sends the command there.
+ */
+function localizeCommandAgent(command: MobileCommand): MobileCommand {
+  if (!('agentId' in command) || typeof command.agentId !== 'string') return command;
+  const address = parseAgentAddress(command.agentId);
+  const route = routeOf(address, annexIdentity.getIdentity()?.fingerprint);
+  if ('machine' in route) {
+    throw new MobileControlError('wrong_machine', 409, 'rejected', 'That agent is on another machine. Send this to that machine.', { machine: route.machine });
+  }
+  return address.agentId === command.agentId ? command : { ...command, agentId: address.agentId } as MobileCommand;
+}
+
+async function runMobileCommand(input: MobileCommand, assertAuthorized: () => void, principal: string): Promise<unknown> {
   assertAuthorized();
+  const command = localizeCommandAgent(input);
   if (command.type === 'helperRouting.update') return runHelperRoutingUpdate(command, assertAuthorized, findProjectById);
   if (command.type === 'dispatcher.setEnabled') {
     // onDispatcherChanged broadcasts dispatcher:changed and refreshes the snapshot.
@@ -5855,9 +5888,23 @@ function closePeerSockets(fingerprint: string, code: number, reason: string, har
   }
 }
 
-/** Disconnect a peer's WebSockets. It stays paired and may reconnect. */
+/**
+ * Disconnect a peer's WebSockets. A paired peer stays paired and may reconnect.
+ * A phone's session-only pairing ends here: it lasts until a desktop disconnect
+ * or Annex stops (docs/mobile-control-v1.md), so it's removed like any pairing,
+ * refreshing the device list and closing with the revoked code (#3105).
+ */
 export function disconnectPeer(fingerprint: string): void {
   appLog('core:annex', 'info', `disconnectPeer called`, { meta: { fingerprint } });
+  if (mobileSessionPeers.has(fingerprint)) {
+    // Only the session ends: a lasting pairing the same phone also holds stays, as removing one never ends the other.
+    if (!annexPeers.getPeer(fingerprint)) {
+      revokePeer(fingerprint);
+      return;
+    }
+    mobileSessionPeers.delete(fingerprint);
+    devicesChanged();
+  }
   closePeerSockets(fingerprint, 1000, 'disconnected_by_satellite');
   networkChannel.closeFor(fingerprint, 'in');
 }

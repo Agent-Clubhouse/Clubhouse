@@ -1,4 +1,5 @@
 import type { DurableAgentConfig } from './types';
+import { DEFAULT_DISPATCHER_BEHAVIOR_STATE, type DispatcherBehaviorState } from './dispatcher-behavior';
 
 /**
  * Why the Dispatcher is off, the first of these that applies:
@@ -80,6 +81,12 @@ export interface DispatcherState {
   chatPath: string | null;
   /** The chat is running. */
   chatRunning: boolean;
+  /**
+   * Behavior (#3045): the level, the provider it runs on and whether Auto
+   * gives that level its models there. The composer chip and Settings both
+   * show this, so they stay in step.
+   */
+  behavior: DispatcherBehaviorState;
 }
 
 /**
@@ -90,5 +97,5 @@ export const DISPATCHER_PROJECT_ID = '__dispatcher__';
 
 export const DISPATCHER_OFF: DispatcherState = {
   enabled: false, flagOn: true, savedOn: false, offReason: 'switch_off', classic: false, running: false, agentId: null, path: null, config: null,
-  chatAgentId: null, chatPath: null, chatRunning: false,
+  chatAgentId: null, chatPath: null, chatRunning: false, behavior: DEFAULT_DISPATCHER_BEHAVIOR_STATE,
 };

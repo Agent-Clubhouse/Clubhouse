@@ -18,7 +18,7 @@ import {
   EffortSelect, HELPER_SELECTION_HELP, HELPER_TEMPLATE_HELP, HelperSelectionSelect, HelperTemplateSelect, IDLE_SLEEP_HELP, IdleSleepSelect,
   effortHelp, useModelEfforts,
 } from '../../features/managed/settings-fields';
-import { AccessSelect, ControlSelect, DISPATCHER_HELP, DispatcherToggle } from '../../features/agents/helpers/OrchestrationFields';
+import { AccessSelect, ControlSelect, DISPATCHER_HELP } from '../../features/agents/helpers/OrchestrationFields';
 import { controlHelp } from '../../features/agents/helpers/helper-model';
 import { useDispatcherConnection } from '../../features/dispatcher/useDispatcherEnabled';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
@@ -597,11 +597,11 @@ export function BuilderStep({ name, projectName, projectPath, seed, draft, onDra
             <Rule />
             {showDispatcher && (
               <Row label="Dispatcher" help={DISPATCHER_HELP}>
-                <DispatcherToggle
+                <Toggle
                   checked={draft.connectToDispatcher ?? orchestrating}
-                  name={name}
                   onChange={(on) => change({ connectToDispatcher: on })}
-                  testId="new-agent-builder-dispatcher"
+                  aria-label={`Connect ${name} to the Dispatcher`}
+                  data-testid="new-agent-builder-dispatcher"
                 />
                 <span className="text-[13px] text-ctp-text">Connect to Dispatcher</span>
               </Row>

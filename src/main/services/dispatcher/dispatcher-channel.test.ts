@@ -46,7 +46,7 @@ import * as agentSystem from '../agent-system';
 import { deliverToDispatcher } from '../clubhouse-mcp/tools/dispatcher-delivery';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import {
-  CHAT_UPDATE_TAG, HAND_OFF_TAG, _resetDispatcherChannelForTesting, deliverToChat, handOffToDispatcher, setChatDelivery,
+  CHAT_UPDATE_TAG, HAND_OFF_TAG, _resetDispatcherChannelForTesting, deliverToChat, handOffToDispatcher, onHandOff, setChatDelivery,
 } from './dispatcher-channel';
 
 beforeEach(() => {
@@ -86,6 +86,20 @@ describe('handing work from the chat to the Dispatcher (#3036)', () => {
   it('passes on why it wasn\'t delivered, such as a wake that asks first', async () => {
     vi.mocked(deliverToDispatcher).mockResolvedValueOnce({ delivered: false, text: 'Dispatcher is asleep, so the message was not delivered. Asked the user.' });
     expect(await handOffToDispatcher('chat', 'x')).toEqual({ outcome: 'undelivered', error: 'Dispatcher is asleep, so the message was not delivered. Asked the user.' });
+  });
+
+  it('tells listeners of each hand-off that went through, and none that didn\'t', async () => {
+    const heard = vi.fn();
+    const stop = onHandOff(heard);
+    await handOffToDispatcher('chat', 'tag 1.0');
+    expect(heard).toHaveBeenCalledTimes(1);
+    vi.mocked(deliverToDispatcher).mockResolvedValueOnce({ delivered: false, text: 'no' });
+    await handOffToDispatcher('chat', 'x');
+    await handOffToDispatcher('someone', 'x');
+    expect(heard).toHaveBeenCalledTimes(1);
+    stop();
+    await handOffToDispatcher('chat', 'again');
+    expect(heard).toHaveBeenCalledTimes(1);
   });
 
   it('refuses any caller but the chat, and does nothing while the Dispatcher is off', async () => {
@@ -134,14 +148,24 @@ describe('telling the user, through the chat (#3036)', () => {
 
   it('goes through the delivery step, which can rewrite it or hold it back (#3043)', async () => {
     h.running.add('chat');
-    setChatDelivery((report) => (report.includes('routine') ? null : { text: `short: ${report}`, routed: [{ fromClubhouse: true, text: 'short' }] }));
-    expect(await deliverToChat('coordinator', 'routine progress')).toEqual({ outcome: 'delivered', held: true });
+    setChatDelivery(({ message }) => (message.includes('routine') ? null : { text: `short: ${message}`, routed: [{ fromClubhouse: true, text: 'short' }] }));
+    expect(await deliverToChat('coordinator', 'routine progress')).toEqual({ outcome: 'delivered', held: 'never' });
     expect(h.delivered).toEqual([]);
     await deliverToChat('coordinator', 'needs you');
     expect(h.delivered[0].text).toBe('short: needs you');
     setChatDelivery(null);
     await deliverToChat('coordinator', 'back to default');
     expect(h.delivered[1].text.startsWith(CHAT_UPDATE_TAG)).toBe(true);
+  });
+
+  it('passes the agent and kind on to the delivery step, and says why a report was held', async () => {
+    h.running.add('chat');
+    const seen: unknown[] = [];
+    setChatDelivery((report) => { seen.push(report); return { hold: 'later', reason: 'Held for the next check-in summary.' }; });
+    expect(await deliverToChat('coordinator', { message: 'Lint is green.', from: 'webapp-lead', kind: 'routine' }))
+      .toEqual({ outcome: 'delivered', held: 'later', reason: 'Held for the next check-in summary.' });
+    expect(seen).toEqual([{ message: 'Lint is green.', from: 'webapp-lead', kind: 'routine' }]);
+    expect(h.delivered).toEqual([]);
   });
 
   it('refuses any caller but the Dispatcher, and does nothing while it is off', async () => {

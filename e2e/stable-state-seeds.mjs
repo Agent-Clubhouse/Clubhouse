@@ -26,7 +26,7 @@ export const LAST_SESSION = '11111111-2222-4333-8444-555555555555';
 export const CHROME_STORAGE_KEY = 'clubhouse_chrome_v2';
 export const SAVED_SIDEBAR_WIDTH = 300;
 /** Settings pages every build lists, Preview or not: Annex is stable (#2811). */
-export const ANNEX_PAGES = ['Annex', 'Annex control'];
+export const ANNEX_PAGES = ['Annex Network'];
 /** Settings pages listed only with Preview on. Goobers also needs its saved flag. */
 export const PREVIEW_PAGES = ['Experimental', 'Goobers'];
 

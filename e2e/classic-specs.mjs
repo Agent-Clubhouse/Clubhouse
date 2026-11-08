@@ -34,18 +34,19 @@ export const CLASSIC_RUN_SPECS = [
   'command-palette.spec.ts',
   'terminal.spec.ts',
   'terminal-e2e.spec.ts',
-];
-
-/** Still pinned to classic, waiting to move. */
-export const PINNED_CLASSIC_SPECS = [
-  'agent-list-ui.spec.ts',
-  'annex-v2/dual-launch.ts',
-  'annex-v2/reachability.spec.ts',
   'canvas-card-wheel.spec.ts',
   'canvas-create.spec.ts',
   'canvas-golden-path.spec.ts',
   'canvas-group-project-create.spec.ts',
   'canvas-startup-bindings.spec.ts',
+];
+
+/** Still pinned to classic, waiting to move. */
+export const PINNED_CLASSIC_SPECS = [
+  'agent-list-ui.spec.ts',
+  'annex-v2/chat-across-desktops.spec.ts',
+  'annex-v2/dual-launch.ts',
+  'annex-v2/reachability.spec.ts',
   'chat-fake-cli.spec.ts',
   'chat-rich/harness.ts',
   'find-replace.spec.ts',

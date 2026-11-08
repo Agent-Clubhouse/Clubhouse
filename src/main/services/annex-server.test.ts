@@ -1774,6 +1774,15 @@ describe('annex-server', () => {
       expect(peers.get('mobile-test-identity')?.tlsCertificateFingerprint).toBe(new crypto.X509Certificate(credentials.cert).fingerprint256);
       const capability = await secureRequest('GET', '/api/v1/mobile/capabilities', undefined);
       expect(capability.body.controlAvailable).toBe(true);
+      // Disconnect leaves a lasting pairing paired: it reconnects (#3105 changes only session-only pairings).
+      annexServer.disconnectPeer('mobile-test-identity');
+      expect(peers.has('mobile-test-identity')).toBe(true);
+      expect((await secureRequest('GET', '/api/v1/mobile/capabilities', undefined)).status).toBe(200);
+      // A session pairing on top of the lasting one: Disconnect ends the session and keeps the lasting pairing.
+      expect((await secureRequest('POST', '/pair', { pin: annexServer.getStatus().pin, publicKey, pairingMode: 'session' })).status).toBe(200);
+      annexServer.disconnectPeer('mobile-test-identity');
+      expect(peers.has('mobile-test-identity')).toBe(true);
+      expect((await secureRequest('GET', '/api/v1/mobile/capabilities', undefined)).status).toBe(200);
       // A refusal is logged by code and known type, never with the command's contents (#2676).
       const marker = 'CONTENT_MARKER';
       const refused = await secureRequest('POST', '/api/v1/mobile/commands', { version: 1, epoch: capability.body.epoch, commandId: 'too-long', type: 'chat.question', agentId: 'a', sessionId: 's', requestId: 'q', answers: { [marker.padEnd(65537, 'x')]: marker } });
@@ -1861,6 +1870,15 @@ describe('annex-server', () => {
       annexServer._testing.wsPeerFingerprints.set(peerWs as any, 'mobile-test-identity');
       annexServer.revokePeer('mobile-test-identity');
       expect(peerWs.close).toHaveBeenCalledWith(annexServer.PEER_REVOKED_CLOSE_CODE, 'peer_not_paired');
+      // The desktop's Disconnect ends a session-only pairing too, so the phone can't come straight back (#3105).
+      await secureRequest('POST', '/pair', { pin: annexServer.getStatus().pin, publicKey, pairingMode: 'session' });
+      const sessionWs = Object.assign(new EventEmitter(), { readyState: 1, close: vi.fn(), send: vi.fn() });
+      annexServer._testing.wss!.clients.add(sessionWs as any);
+      annexServer._testing.wsPeerFingerprints.set(sessionWs as any, 'mobile-test-identity');
+      expect((await secureRequest('GET', '/api/v1/mobile/capabilities', undefined)).status).toBe(200);
+      annexServer.disconnectPeer('mobile-test-identity');
+      expect(sessionWs.close).toHaveBeenCalledWith(annexServer.PEER_REVOKED_CLOSE_CODE, 'peer_not_paired');
+      expect((await secureRequest('GET', '/api/v1/mobile/capabilities', undefined)).status).toBe(401);
       await secureRequest('POST', '/pair', { pin: annexServer.getStatus().pin, publicKey, pairingMode: 'session' });
       let finishSpawn!: () => void;
       vi.mocked(agentSystem.spawnAgent).mockImplementationOnce(() => new Promise<void>((resolve) => { finishSpawn = resolve; }));
@@ -2255,6 +2273,8 @@ describe('annex-server', () => {
         expect(membershipMod.noteLocalJoin).toHaveBeenCalledWith(computer.fingerprint);
         // A member may use /ws like a controller.
         expect((await call('GET', '/api/v1/status', computer)).status).toBe(200);
+        // ...and the phone routes, to read and drive this machine's chat agents (#2390).
+        expect((await call('GET', '/api/v1/mobile/capabilities', computer)).body.controlAvailable).toBe(true);
       });
 
       it("leaves phones, and desktops that don't ask, as controllers with the same answer", async () => {
@@ -2424,9 +2444,19 @@ describe('annex-server', () => {
       expect((await call('GET', '/api/v1/status', connected)).status).toBe(200);
       const now = Date.now();
       vi.spyOn(Date, 'now').mockReturnValue(now + annexServer._testing.PIN_TTL_MS + 1);
+      const membershipMod = await import('./annex-network-membership');
+      vi.mocked(membershipMod.noteLocalRemoval).mockClear();
+      // Recorded while the pairing still exists: membership reads its role then.
+      const stillPaired: boolean[] = [];
+      vi.mocked(membershipMod.noteLocalRemoval).mockImplementation((fp: string) => { stillPaired.push(peers.has(fp)); });
       annexServer._testing.dropUnconnectedPeers();
       expect(peers.has(connected.fingerprint)).toBe(true);
       expect(peers.has(lost.fingerprint)).toBe(false);
+      // Its join may already have gone to the network: its removal goes too, so no member brings it back (#3106).
+      expect(membershipMod.noteLocalRemoval).toHaveBeenCalledWith(lost.fingerprint);
+      expect(membershipMod.noteLocalRemoval).not.toHaveBeenCalledWith(connected.fingerprint);
+      expect(stillPaired).toEqual([true]);
+      vi.mocked(membershipMod.noteLocalRemoval).mockReset();
     });
 
     it('never drops an entry that existed before the pairing, even if it does not connect', async () => {

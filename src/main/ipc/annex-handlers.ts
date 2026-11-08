@@ -43,6 +43,12 @@ export function registerAnnexHandlers(): void {
   // Who this machine has heard from on the Annex Network channel (#3060).
   ipcMain.handle(IPC.ANNEX.LIST_NETWORK_MEMBERS, () => networkChannel.listMembers());
 
+  // Renames a network member everywhere (#3067).
+  ipcMain.handle(IPC.ANNEX.RENAME_DEVICE, withValidatedArgs(
+    [stringArg(), stringArg({ maxLength: 200 })],
+    (_event, fingerprint, name) => membership.renameMember(fingerprint, name),
+  ));
+
   ipcMain.handle(IPC.ANNEX.REMOVE_DEVICE, withValidatedArgs(
     [stringArg()],
     (_event, fingerprint) => {

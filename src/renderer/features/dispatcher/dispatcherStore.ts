@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Agent } from '../../../shared/types';
 import { DISPATCHER_PROJECT_ID, type DispatcherState } from '../../../shared/dispatcher-types';
+import { DEFAULT_DISPATCHER_BEHAVIOR, type DispatcherBehavior, type DispatcherBehaviorState } from '../../../shared/dispatcher-behavior';
 import { useProjectStore } from '../../stores/projectStore';
 
 /**
@@ -98,4 +99,19 @@ export function useLocalProject(projectId: string | undefined): LocalProject | u
   const project = useProjectStore((s) => s.projects.find((p) => p.id === projectId));
   const dispatcher = useDispatcherStore((s) => (isDispatcherProjectId(projectId) ? s.project : null));
   return project ?? dispatcher ?? undefined;
+}
+
+/**
+ * The Dispatcher's Behavior (#3045) as main last reported it: the level, its
+ * provider and whether Auto gives that level its models. Null until the first
+ * state lands. The composer chip and Settings both read main's state, so they
+ * stay in step.
+ */
+export function useDispatcherBehavior(): DispatcherBehaviorState | null {
+  return useDispatcherStore((s) => s.state?.behavior ?? null);
+}
+
+/** The current Behavior level, for code outside React (the group chat, #3043). Standard until the state lands. */
+export function dispatcherBehaviorLevel(): DispatcherBehavior {
+  return useDispatcherStore.getState().state?.behavior?.level ?? DEFAULT_DISPATCHER_BEHAVIOR;
 }

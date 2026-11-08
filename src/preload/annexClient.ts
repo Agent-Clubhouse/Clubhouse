@@ -36,6 +36,15 @@ export const annexClient = {
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.PTY_SPAWN_SHELL, satelliteId, sessionId, projectId),
   clipboardImage: (satelliteId: string, agentId: string, base64: string, mimeType: string): Promise<void> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.CLIPBOARD_IMAGE, satelliteId, agentId, base64, mimeType),
+  /** A page of a satellite chat agent's transcript and state (#2390). */
+  chatPage: (satelliteId: string, agentId: string, opts?: { beforeSeq?: number; limit?: number }): Promise<unknown> =>
+    ipcRenderer.invoke(IPC.ANNEX_CLIENT.CHAT_PAGE, satelliteId, agentId, opts ?? {}),
+  /** A satellite chat agent's sessions (#2390). */
+  chatSessions: (satelliteId: string, agentId: string): Promise<unknown> =>
+    ipcRenderer.invoke(IPC.ANNEX_CLIENT.CHAT_SESSIONS, satelliteId, agentId),
+  /** Sends a chat command (chat.send, chat.permission, …) for a satellite's agent; answers its receipt (#2390). */
+  chatCommand: (satelliteId: string, command: Record<string, unknown>): Promise<unknown> =>
+    ipcRenderer.invoke(IPC.ANNEX_CLIENT.CHAT_COMMAND, satelliteId, command),
   gitOperation: (satelliteId: string, projectId: string, params: { operation: string; [key: string]: unknown }): Promise<unknown> =>
     ipcRenderer.invoke(IPC.ANNEX_CLIENT.GIT_OPERATION, satelliteId, projectId, params),
   sessionList: (satelliteId: string, agentId: string, projectId: string, orchestrator?: string): Promise<unknown> =>

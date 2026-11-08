@@ -1,6 +1,7 @@
 {
   "version": 1,
   "files": [
+    "agent-address.json",
     "agent-settings-context-window.json",
     "agent-settings-dispatcher.json",
     "agent-settings-errors.json",

@@ -5,7 +5,9 @@
  * resize; the chat column moves left so no card covers a message.
  *
  * The cards, each collapsed to a one-line answer until clicked: Settings
- * (#2280), Changes, Subagents, Canvases, Orchestrate, Helpers, Connections,
+ * (#2280), Changes, Subagents, Canvases, the Dispatcher's card (#3049, titled
+ * with its name, shown while the Dispatcher is on for an agent that can
+ * connect to it), Orchestrate, Helpers, Connections,
  * Context window, MCP servers and Session. Cards the runtime can't fill
  * are left out (#2094): Subagents when the agent doesn't report them (the
  * terminal, or a driver without subagents) and Context window until the
@@ -41,8 +43,10 @@ import { describeSleep, formatAgo, formatShortDuration, formatUsd } from '../sta
 import { ConnectionsCard, type Connection } from '../helpers/ConnectionsCard';
 import { OrchestrationCardPair, useOrchestrationCards } from '../helpers/OrchestrationCards';
 import { useEffectiveOrchestrator } from '../effective-orchestrator';
+import { useDispatcherConnection } from '../../dispatcher/useDispatcherEnabled';
+import { DispatcherCard } from './DispatcherCard';
 
-export type CardId = 'changes' | 'subagents' | 'canvases' | 'orchestrate' | 'helpers' | 'connections' | 'context' | 'mcp' | 'provider-skills' | 'session' | 'actions';
+export type CardId = 'changes' | 'subagents' | 'canvases' | 'dispatcher' | 'orchestrate' | 'helpers' | 'connections' | 'context' | 'mcp' | 'provider-skills' | 'session' | 'actions';
 
 /** A worktree inside the project, as a path relative to it; null when it lives elsewhere. */
 export function relativeFolder(worktree: string | undefined, projectPath: string | undefined): string | null {
@@ -222,6 +226,9 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   // Orchestration (#2232): local durable agents only; a satellite keeps its own config.
   const orchestration = useOrchestrationCards(agent, projectPath);
   const { orchestrationPath, ownConfig, helperIds, orchestrating } = orchestration;
+  // The Dispatcher's card (#3049): while it's on, for the agents the Orchestration card is for. Helpers never connect.
+  const { show: dispatcherOn } = useDispatcherConnection();
+  const showDispatcherCard = dispatcherOn && orchestration.showOrchestrate;
   // The Dispatcher's wires are on the id that holds them, not the chat shown here (#3036).
   const wiresId = dispatcherWiresAgentId(agent);
   const wiresAgent = useMemo(() => (wiresId === agent.id ? agent : { ...agent, id: wiresId }), [agent, wiresId]);
@@ -299,9 +306,10 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         onToggle={() => toggleCard('changes')}
         cwd={cwd}
         branch={branch}
-        chat={chat ? { sessionId: chat.sessionId, refreshKey } : undefined}
+        // Checkpoints are this machine's: none for an agent on another desktop (#2390).
+        chat={chat && !isRemoteProjectId(agent.projectId) ? { sessionId: chat.sessionId, refreshKey } : undefined}
         agentId={agent.id}
-        scope={chat ? scope : 'branch'}
+        scope={chat && !isRemoteProjectId(agent.projectId) ? scope : 'branch'}
         onScope={setScope}
         onReviewAll={onReviewAll}
       />
@@ -348,6 +356,10 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
           </ul>
         )}
       </DetailsCard>
+
+      {showDispatcherCard && (
+        <DispatcherCard agent={agent} orch={orchestration.orch} open={open('dispatcher')} onToggle={() => toggleCard('dispatcher')} />
+      )}
 
       <OrchestrationCardPair agent={agent} model={orchestration} isOpen={open} onToggle={toggleCard} />
 

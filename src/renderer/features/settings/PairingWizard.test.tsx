@@ -49,7 +49,7 @@ describe('PairingWizard', () => {
 
   it('renders discovered services and the pairing link field', () => {
     render(<PairingWizard onClose={mockOnClose} />);
-    expect(screen.getByText('Add a satellite')).toBeInTheDocument();
+    expect(screen.getByText('Pair with another computer')).toBeInTheDocument();
     expect(screen.getByText('Test Machine')).toBeInTheDocument();
     expect(screen.getByLabelText('Paste pairing link')).toBeInTheDocument();
     expect(screen.getByText('Copy it from Pairing link in Annex settings on the other computer.')).toBeInTheDocument();
@@ -62,17 +62,17 @@ describe('PairingWizard', () => {
       expect(mockProbeService).toHaveBeenCalledWith('abc123');
       expect(await screen.findByTestId('pairing-certificate-code')).toHaveTextContent(CODE);
       expect(screen.getByText(/Check that this matches the certificate code in Annex settings on/)).toBeInTheDocument();
-      expect(screen.queryByLabelText('Pairing PIN')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('One-time code')).not.toBeInTheDocument();
     });
 
     it('asks for the PIN once the codes match, then pairs', async () => {
       render(<PairingWizard onClose={mockOnClose} />);
       await selectAndConfirm();
-      expect(screen.getByText(/Enter the PIN/)).toBeInTheDocument();
+      expect(screen.getByText(/Enter the one-time code/)).toBeInTheDocument();
       const pairBtn = screen.getByRole('button', { name: 'Pair' });
       expect(pairBtn).toHaveAttribute('data-kind', 'primary');
 
-      fireEvent.change(screen.getByLabelText('Pairing PIN'), { target: { value: '123456' } });
+      fireEvent.change(screen.getByLabelText('One-time code'), { target: { value: '123456' } });
       fireEvent.click(pairBtn);
       expect(await screen.findByText('Paired with Test Machine')).toBeInTheDocument();
       expect(mockPairWith).toHaveBeenCalledWith('abc123', '123456');
@@ -86,7 +86,7 @@ describe('PairingWizard', () => {
 
       expect(screen.getByText("The codes didn't match, so Test Machine wasn't paired.")).toBeInTheDocument();
       expect(screen.getByLabelText('Paste pairing link')).toBeInTheDocument();
-      expect(screen.queryByLabelText('Pairing PIN')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('One-time code')).not.toBeInTheDocument();
       expect(mockPairWith).not.toHaveBeenCalled();
     });
 
@@ -102,12 +102,12 @@ describe('PairingWizard', () => {
       mockPairWith.mockResolvedValueOnce({ success: false, error: 'That PIN has expired. Use the one shown now.' });
       render(<PairingWizard onClose={mockOnClose} />);
       await selectAndConfirm();
-      fireEvent.change(screen.getByLabelText('Pairing PIN'), { target: { value: '123456' } });
+      fireEvent.change(screen.getByLabelText('One-time code'), { target: { value: '123456' } });
       fireEvent.click(screen.getByRole('button', { name: 'Pair' }));
       expect(await screen.findByText('That PIN has expired. Use the one shown now.')).toBeInTheDocument();
 
       fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
-      expect(screen.getByLabelText('Pairing PIN')).toHaveValue('');
+      expect(screen.getByLabelText('One-time code')).toHaveValue('');
     });
   });
 

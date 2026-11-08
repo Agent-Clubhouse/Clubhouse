@@ -43,6 +43,7 @@ vi.mock('../../dispatcher/dispatcher-service', () => ({
   getDispatcherAgentId: () => 'disp',
   getDispatcherPath: () => '/home/.clubhouse/dispatcher',
   isDispatcherAgentId: (id: string) => id === 'disp',
+  isDispatcherIdentityAgentId: (id: string) => id === 'disp' || id === 'disp-chat',
   isDispatcherEnabled: () => mocks.dispatcherEnabled,
 }));
 
@@ -51,6 +52,7 @@ import {
   deliverToDispatcher, dispatcherInboxId, isDispatcherTarget, sleepingDispatcherHint, _resetDispatcherDeliveryForTesting,
   type DispatcherDeliveryRequest,
 } from './dispatcher-delivery';
+import { clearAgentMessages, findInInbox, takeAgentMessages } from '../../dispatcher/dispatcher-news-inbox';
 
 const DISPATCHER_PATH = '/home/.clubhouse/dispatcher';
 
@@ -71,6 +73,7 @@ describe('messages to the Dispatcher (#3037)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _resetDispatcherDeliveryForTesting();
+    clearAgentMessages();
     mocks.dispatcherEnabled = true;
     running = false;
     system.isAgentRunning.mockImplementation((id: string) => id === 'disp' && running);
@@ -101,6 +104,23 @@ describe('messages to the Dispatcher (#3037)', () => {
     expect(mocks.sendMessage).toHaveBeenCalledWith(req.text, { source: 'mcp', taskId: 't1', submit: false, routed: req.routed });
     expect(system.spawnAgent).not.toHaveBeenCalled();
     expect(mocks.decideGrant).not.toHaveBeenCalled();
+  });
+
+  it('keeps what an agent sent, without its routing text, for the group chat\'s rewrite (#3043)', async () => {
+    running = true;
+    await deliverToDispatcher(request());
+    expect(findInInbox('webapp-lead')).toEqual({ agentId: 'sender', name: 'webapp-lead' });
+    expect(takeAgentMessages('sender', Date.now())).toBe('checkout is fixed');
+  });
+
+  it('keeps nothing from the Dispatcher\'s own chat, or from a message that wasn\'t delivered', async () => {
+    running = true;
+    await deliverToDispatcher(request({ senderId: 'disp-chat', routed: [{ sender: { agentId: 'disp-chat', name: 'Conversation' }, text: 'wake it' }] }));
+    expect(takeAgentMessages('disp-chat', Date.now())).toBeUndefined();
+    mocks.dispatcherEnabled = false;
+    running = false;
+    await deliverToDispatcher(request());
+    expect(takeAgentMessages('sender', Date.now())).toBeUndefined();
   });
 
   it('wakes a sleeping Dispatcher from its own folder, resuming its session, with the message as its first prompt', async () => {

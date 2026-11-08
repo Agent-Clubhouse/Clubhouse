@@ -500,6 +500,7 @@ export const IPC = {
     REMOVE_DEVICE: 'annex:remove-device',
     DEVICES_CHANGED: 'annex:devices-changed',
     LIST_NETWORK_MEMBERS: 'annex:list-network-members',
+    RENAME_DEVICE: 'annex:rename-device',
     LOCK_STATE_CHANGED: 'annex:lock-state-changed',
     NOTIFY_PAUSE: 'annex:notify-pause',
     DISCONNECT_CONTROLLER: 'annex:disconnect-controller',
@@ -534,6 +535,9 @@ export const IPC = {
     PTY_SPAWN_SHELL: 'annex-client:pty-spawn-shell',
     CLIPBOARD_IMAGE: 'annex-client:clipboard-image',
     GIT_OPERATION: 'annex-client:git-operation',
+    CHAT_PAGE: 'annex-client:chat-page',
+    CHAT_SESSIONS: 'annex-client:chat-sessions',
+    CHAT_COMMAND: 'annex-client:chat-command',
     SESSION_LIST: 'annex-client:session-list',
     SESSION_TRANSCRIPT: 'annex-client:session-transcript',
     SESSION_SUMMARY: 'annex-client:session-summary',
@@ -666,8 +670,18 @@ export const IPC = {
   DISPATCHER: {
     GET: 'dispatcher:get',
     SET_ENABLED: 'dispatcher:set-enabled',
+    /** Behavior (#3045): light, standard or thorough. Resolves with the DispatcherState. */
+    SET_BEHAVIOR: 'dispatcher:set-behavior',
+    /** Starts the Dispatcher's conversation over (#3043). Memory is never touched. */
+    CLEAR_CHAT: 'dispatcher:clear-chat',
     /** Main → renderer broadcast: DispatcherState after any change. */
     CHANGED: 'dispatcher:changed',
+    /** An agent's card, for its Dispatcher card in Details (#3049). */
+    GET_AGENT_CARD: 'dispatcher:get-agent-card',
+    /** The user's edit of an agent's card from Details; it replaces what the agent wrote. */
+    SAVE_AGENT_CARD: 'dispatcher:save-agent-card',
+    /** Main → renderer: an agent's card changed (agent id). */
+    AGENT_CARD_CHANGED: 'dispatcher:agent-card-changed',
   },
   HOOK_SERVER: {
     /** Main → renderer: a list of agentIds whose hook config was changed and need restart for the change to take full effect. */

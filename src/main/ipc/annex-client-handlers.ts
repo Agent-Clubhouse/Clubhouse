@@ -164,6 +164,23 @@ export function registerAnnexClientHandlers(): void {
     },
   ));
 
+  // Chat across desktops (#2390): a satellite's chat agents through its phone routes and commands
+  ipcMain.handle(IPC.ANNEX_CLIENT.CHAT_PAGE, withValidatedArgs(
+    [stringArg(), stringArg(), objectArg({ optional: true })],
+    (_event, satelliteId, agentId, opts) => annexClient.requestChatPage(satelliteId, agentId, {
+      ...(typeof (opts as { beforeSeq?: unknown } | undefined)?.beforeSeq === 'number' && { beforeSeq: (opts as { beforeSeq: number }).beforeSeq }),
+      ...(typeof (opts as { limit?: unknown } | undefined)?.limit === 'number' && { limit: (opts as { limit: number }).limit }),
+    }),
+  ));
+  ipcMain.handle(IPC.ANNEX_CLIENT.CHAT_SESSIONS, withValidatedArgs(
+    [stringArg(), stringArg()],
+    (_event, satelliteId, agentId) => annexClient.requestChatSessions(satelliteId, agentId),
+  ));
+  ipcMain.handle(IPC.ANNEX_CLIENT.CHAT_COMMAND, withValidatedArgs(
+    [stringArg(), objectArg()],
+    (_event, satelliteId, command) => annexClient.sendChatCommand(satelliteId, command as Record<string, unknown>),
+  ));
+
   // A typed host for a satellite, such as its tailnet name (#3058)
   ipcMain.handle(IPC.ANNEX_CLIENT.SET_SATELLITE_HOST, withValidatedArgs(
     [stringArg(), stringArg({ minLength: 0, maxLength: 300 })],
