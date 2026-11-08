@@ -68,6 +68,10 @@ Synthetic tests can't cover certificates under Electron or local network discove
 - The same repository open on two computers: the sidebar suggests linking it once; Link groups it, and Keep separate never asks again.
 - Link two folders without a git remote by hand in project settings, and unlink them.
 
+**Pairing ids (#3107)**
+- Remove a device on one computer, then pair it again on another whose clock runs behind: the new pairing stays on every computer.
+- Remove a computer while it's off, pair it again, then turn it on: it stays in the network.
+
 **Chat across desktops (#2390)**
 - Open a chat agent that runs on another desktop: its conversation shows, says which machine it's on, and streams live.
 - Send, steer, stop, approve a permission and answer a question from the controller; each lands on the other desktop.
