@@ -218,6 +218,8 @@ describe('everyday flows keep working (#2968)', () => {
       expect(checkToolGrant('plain', run, { id: 'nope' })).toMatchObject({ ok: false, reason: 'no_grant' });
       // The Dispatcher keeps its v1 reach.
       expect(checkToolGrant('dispatcher', run, { id: 'persons' }).ok).toBe(true);
+      // The tool list passes no arguments: the Action isn't known yet, so it's listed and the call is checked.
+      for (const caller of CALLERS) expect(checkToolGrant(caller, run, {}).ok, `${caller} lists run_action`).toBe(true);
     } finally {
       registerActionOwnerLookup(null);
     }

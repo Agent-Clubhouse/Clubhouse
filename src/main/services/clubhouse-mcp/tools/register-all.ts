@@ -17,6 +17,7 @@ import { registerDispatcherControlTools } from './dispatcher-control-tools';
 import { registerManagedTools } from './managed-tools';
 import { registerHelperQuestionTools } from './helper-question-tools';
 import { registerConnectionTools } from './connection-tools';
+import { registerActionTools } from './action-tools';
 import { registerHelperPresetTools } from './helper-preset-tools';
 
 export function registerClubhouseMcpTools(): void {
@@ -34,5 +35,6 @@ export function registerClubhouseMcpTools(): void {
   registerManagedTools();
   registerHelperQuestionTools();
   registerConnectionTools();
+  registerActionTools();
   registerHelperPresetTools();
 }

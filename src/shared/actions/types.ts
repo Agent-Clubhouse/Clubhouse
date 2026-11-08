@@ -5,6 +5,8 @@
  * return the same shape.
  */
 
+import type { AccessLevel } from '../agent-access';
+
 // ── Triggers ────────────────────────────────────────────────────────────────
 
 /** Schedule presets. `cron` (Custom) is offered for power users and is never the default. */
@@ -119,8 +121,12 @@ export interface QuickAgentStep {
   /** Overrides. Unset uses the project's provider and model. */
   orchestrator?: string;
   model?: string;
-  /** Override for access. Unset uses the app's default. */
-  freeAgentMode?: boolean;
+  /**
+   * Access level (#2761). Unset: the app's Default access for an action a
+   * person owns, or the owning agent's own level for an agent's action.
+   * An agent's action never starts above the agent's own level.
+   */
+  access?: AccessLevel;
 }
 
 export interface SleepStep {
@@ -204,6 +210,11 @@ export interface ActionStepResult {
 export interface ActionRun {
   id: string;
   actionId: string;
+  /**
+   * Who owned the action when it ran. Kept on the run so its owner can still
+   * read it after a one-time action deleted itself. Unset on runs from before.
+   */
+  owner?: ActionOwner;
   trigger: ActionRunTrigger;
   /** Ids of the actions whose runs led to this one, oldest first. */
   chain: string[];

@@ -36,6 +36,7 @@ import {
   type ActionRunTrigger,
   type ActionStep,
   type ActionStepResult,
+  type ActionTrigger,
   type EventTrigger,
 } from '../../../shared/actions';
 import type { AppEvent } from '../app-event-bus';
@@ -105,6 +106,10 @@ export interface StepRunner {
 export interface ActionRights {
   /** Null when the owner may do this step, else the reason in plain words. */
   checkStep(owner: ActionOwner, step: ActionStep): string | null;
+  /** Null when the owner may watch what this trigger watches, else the reason in plain words. */
+  checkSource(owner: ActionOwner, trigger: ActionTrigger): string | null;
+  /** The most actions this owner may have, or null for no limit. */
+  maxActions(owner: ActionOwner): number | null;
 }
 
 export interface EngineHooks {
@@ -158,6 +163,12 @@ interface Occurrence {
   branch?: string;
   /** For the history line: "release-lead goes to sleep". */
   subject: string;
+}
+
+/** Whether two owners are the same person, Dispatcher, agent or Clubhouse. */
+function sameOwner(a: ActionOwner, b: ActionOwner): boolean {
+  if (a.kind === 'agent' || b.kind === 'agent') return a.kind === 'agent' && b.kind === 'agent' && a.agentId === b.agentId;
+  return a.kind === b.kind;
 }
 
 function hasStepTarget(step: ActionStep, agentId: string): boolean {
@@ -306,17 +317,35 @@ export class ActionsEngine {
     }
   }
 
-  private checkRights(owner: ActionOwner, steps: ActionStep[]): void {
+  /** Why the owner may not have this trigger and these steps, or null. */
+  private refusal(owner: ActionOwner, trigger: ActionTrigger, steps: ActionStep[]): string | null {
+    const source = this.deps.rights.checkSource(owner, trigger);
+    if (source) return source;
     for (const step of steps) {
       const reason = this.deps.rights.checkStep(owner, step);
-      if (reason) throw new ActionError('not_allowed', reason);
+      if (reason) return reason;
     }
+    return null;
+  }
+
+  /** Checked before the targets exist, so a refusal reads the same either way. */
+  private checkRights(owner: ActionOwner, trigger: ActionTrigger, steps: ActionStep[]): void {
+    const reason = this.refusal(owner, trigger, steps);
+    if (reason) throw new ActionError('not_allowed', reason);
+  }
+
+  private checkCount(owner: ActionOwner): void {
+    const max = this.deps.rights.maxActions(owner);
+    if (max === null) return;
+    const count = this.list().filter((a) => sameOwner(a.owner, owner)).length;
+    if (count >= max) throw new ActionError('not_allowed', `That’s ${max} actions already, the most this owner can have. Delete one first.`);
   }
 
   create(input: unknown, owner: ActionOwner): Action {
     const valid = assertActionInput(input);
+    this.checkRights(owner, valid.trigger, valid.steps);
     this.checkTargets(valid.trigger, valid.steps);
-    this.checkRights(owner, valid.steps);
+    this.checkCount(owner);
     const now = this.now();
     const action: Action = {
       id: this.newId('act'),
@@ -339,8 +368,8 @@ export class ActionsEngine {
   update(id: string, input: unknown): Action {
     const current = this.require(id);
     const valid = assertActionInput(input);
+    this.checkRights(current.owner, valid.trigger, valid.steps);
     this.checkTargets(valid.trigger, valid.steps);
-    this.checkRights(current.owner, valid.steps);
     // An edit that doesn't say keeps the on/off state: it never quietly turns back on.
     const saysEnabled = typeof input === 'object' && input !== null && typeof (input as { enabled?: unknown }).enabled === 'boolean';
     const next: Action = {
@@ -366,6 +395,8 @@ export class ActionsEngine {
 
   setEnabled(id: string, enabled: boolean): Action {
     const current = this.require(id);
+    // Turning it on checks rights again: what was allowed may not be now.
+    if (enabled) this.checkRights(current.owner, current.trigger, current.steps);
     const next: Action = { ...current, enabled, updatedAt: this.now() };
     if (enabled) {
       delete next.offReason;
@@ -723,7 +754,7 @@ export class ActionsEngine {
 
   private recordOnly(action: Action, trigger: ActionRunTrigger, chain: string[], outcome: 'skipped' | 'cancelled', reason: string): string {
     const now = this.now();
-    const run: ActionRun = { id: this.newId('run'), actionId: action.id, trigger, chain, startedAt: now, endedAt: now, outcome, reason, steps: [] };
+    const run: ActionRun = { id: this.newId('run'), actionId: action.id, owner: action.owner, trigger, chain, startedAt: now, endedAt: now, outcome, reason, steps: [] };
     if (action.owner.kind !== 'app') this.deps.history.put(run);
     this.deps.hooks?.observe?.({ type: 'run', actionId: action.id, outcome, steps: 0, chainDepth: chain.length, reason });
     this.deps.hooks?.changed?.();
@@ -787,12 +818,15 @@ export class ActionsEngine {
     starts.push(this.now());
     this.recentStarts.set(actionId, starts);
     const hidden = action.owner.kind === 'app';
-    const run: ActionRun = { id: runId, actionId, trigger, chain, startedAt: this.now(), outcome: 'running', steps: [] };
+    const run: ActionRun = { id: runId, actionId, owner: action.owner, trigger, chain, startedAt: this.now(), outcome: 'running', steps: [] };
     if (!hidden) this.deps.history.put(run);
     this.deps.hooks?.changed?.();
 
     let failure: string | undefined;
-    for (const step of action.steps) {
+    // What it watches is checked again on every run too: a mechanical failure, like a step.
+    const sourceRefused = this.deps.rights.checkSource(action.owner, action.trigger);
+    if (sourceRefused) failure = `Couldn’t run: ${sourceRefused}`;
+    for (const step of sourceRefused ? [] : action.steps) {
       // Rights are checked again on every run: what was allowed may not be now.
       const refused = this.deps.rights.checkStep(action.owner, step);
       if (refused) {

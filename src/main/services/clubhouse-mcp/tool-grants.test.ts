@@ -139,6 +139,12 @@ describe('tool grant declarations (#2967)', () => {
       remove_from_group_project: connection.manage on agent_arg
       connect_agents: connection.manage on agent_arg
       disconnect_agents: connection.manage on agent_arg
+      create_action: action.write on app
+      list_actions: action.read on app
+      update_action: action.write on action_arg
+      delete_action: action.write on action_arg
+      run_action: action.run on action_arg
+      action_history: action.read on app
       read_helper_presets: settings.app.read on app
       set_helper_presets: settings.app.write on app"
     `);

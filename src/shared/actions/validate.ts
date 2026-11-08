@@ -4,6 +4,7 @@
  * the owner may do each step, is checked by the engine.
  */
 
+import { isAccessLevel } from '../agent-access';
 import { parseCron } from './cron';
 import { cronToPresetFields, presetToCron } from './describe';
 import {
@@ -33,7 +34,9 @@ export type ActionErrorCode =
   | 'not_found'
   | 'not_allowed'
   | 'hidden'
-  | 'rate_limited';
+  | 'rate_limited'
+  /** Actions are still starting, so try again in a moment. */
+  | 'unavailable';
 
 export class ActionError extends Error {
   constructor(public readonly code: ActionErrorCode, message: string) {
@@ -157,7 +160,7 @@ export function validateStep(raw: unknown, index: number): Result<ActionStep> {
           ...(nonEmpty(raw.worktreeAgentId) && { worktreeAgentId: raw.worktreeAgentId }),
           ...(nonEmpty(raw.orchestrator) && { orchestrator: raw.orchestrator }),
           ...(nonEmpty(raw.model) && { model: raw.model }),
-          ...(typeof raw.freeAgentMode === 'boolean' && { freeAgentMode: raw.freeAgentMode }),
+          ...(isAccessLevel(raw.access) && { access: raw.access }),
         },
       };
     }
