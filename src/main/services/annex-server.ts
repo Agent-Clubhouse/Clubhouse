@@ -5895,8 +5895,13 @@ function closePeerSockets(fingerprint: string, code: number, reason: string, har
 export function disconnectPeer(fingerprint: string): void {
   appLog('core:annex', 'info', `disconnectPeer called`, { meta: { fingerprint } });
   if (mobileSessionPeers.has(fingerprint)) {
-    revokePeer(fingerprint);
-    return;
+    // Only the session ends: a lasting pairing the same phone also holds stays, as removing one never ends the other.
+    if (!annexPeers.getPeer(fingerprint)) {
+      revokePeer(fingerprint);
+      return;
+    }
+    mobileSessionPeers.delete(fingerprint);
+    devicesChanged();
   }
   closePeerSockets(fingerprint, 1000, 'disconnected_by_satellite');
   networkChannel.closeFor(fingerprint, 'in');

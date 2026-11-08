@@ -1778,6 +1778,11 @@ describe('annex-server', () => {
       annexServer.disconnectPeer('mobile-test-identity');
       expect(peers.has('mobile-test-identity')).toBe(true);
       expect((await secureRequest('GET', '/api/v1/mobile/capabilities', undefined)).status).toBe(200);
+      // A session pairing on top of the lasting one: Disconnect ends the session and keeps the lasting pairing.
+      expect((await secureRequest('POST', '/pair', { pin: annexServer.getStatus().pin, publicKey, pairingMode: 'session' })).status).toBe(200);
+      annexServer.disconnectPeer('mobile-test-identity');
+      expect(peers.has('mobile-test-identity')).toBe(true);
+      expect((await secureRequest('GET', '/api/v1/mobile/capabilities', undefined)).status).toBe(200);
       // A refusal is logged by code and known type, never with the command's contents (#2676).
       const marker = 'CONTENT_MARKER';
       const refused = await secureRequest('POST', '/api/v1/mobile/commands', { version: 1, epoch: capability.body.epoch, commandId: 'too-long', type: 'chat.question', agentId: 'a', sessionId: 's', requestId: 'q', answers: { [marker.padEnd(65537, 'x')]: marker } });
