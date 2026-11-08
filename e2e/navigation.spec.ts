@@ -222,34 +222,32 @@ test.describe('Per-Project Tab Persistence', () => {
     await expectTitleNot('Settings');
   });
 
-  test('new layout: a project keeps its tab across Settings and a switch', async () => {
+  test('new layout: closing Settings returns to the project\'s tab', async () => {
     test.skip(!(await isNewLayout(window)), 'The new layout\'s path back from Settings; classic clicks a rail project instead.');
     const filesTab = window.getByTestId('explorer-tab-plugin:files');
     const agentsTab = window.getByTestId('explorer-tab-agents');
 
-    // project-a on a tab other than Agents, so restoring it means something.
+    // project-a on a tab other than Agents, so returning to it means something.
     await selectProject(window, 'project-a');
     await clickExplorerTab(electronApp, window, 'explorer-tab-plugin:files');
     await expect(filesTab).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
 
     await window.getByTestId('nav-settings').click();
     await expect(window.getByTestId('settings-nav')).toBeVisible({ timeout: 10_000 });
-    await expect(window.getByTestId('project-tree')).toBeHidden();
     await expectTitle('Settings');
 
-    // selectProject closes Settings, then picks project-b, which never left Agents.
-    await selectProject(window, 'project-b');
-    await assertActiveProject(window, 'project-b');
-    await expect(agentsTab).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
-
-    // Back on project-a, its own tab comes back, not Settings or b's Agents.
-    await selectProject(window, 'project-a');
-    await assertActiveProject(window, 'project-a');
+    // Settings didn't replace the tab: closing it brings Files back, on project-a.
+    await window.getByTestId('nav-settings').click();
+    await expect(window.getByTestId('settings-nav')).toBeHidden({ timeout: 10_000 });
     await expect(filesTab).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
     await expectTitleNot('Settings');
 
-    // Later tests expect project-a on Agents.
+    // The sidebar's tree is reached through Agents; later tests expect it.
     await clickExplorerTab(electronApp, window, 'explorer-tab-agents');
+    await expect(agentsTab).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
+    await assertActiveProject(window, 'project-a');
+    await selectProject(window, 'project-b');
+    await assertActiveProject(window, 'project-b');
     await expect(agentsTab).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
   });
 });
