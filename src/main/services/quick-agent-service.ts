@@ -5,7 +5,7 @@
  * hear about it as it starts.
  */
 
-import type { AccessLevel } from '../../shared/agent-access';
+import { legacyFreeAgentMode, type AccessLevel } from '../../shared/agent-access';
 import { IPC } from '../../shared/ipc-channels';
 import { generateQuickAgentId } from '../../shared/agent-id';
 import { generateQuickName } from '../../shared/name-generator';
@@ -82,7 +82,8 @@ export async function startQuickAgent(p: StartQuickAgentParams): Promise<QuickAg
     prompt: p.prompt,
     model: p.model || null,
     orchestrator: p.orchestrator || null,
-    freeAgentMode: p.freeAgentMode ?? false,
+    // The legacy field phones read; spawnAgent goes by the level.
+    freeAgentMode: p.freeAgentMode ?? (p.access ? legacyFreeAgentMode(p.access) : false),
     parentAgentId: p.parentAgentId || null,
     projectId: p.project.id,
     spawnedAt: Date.now(),
@@ -98,7 +99,8 @@ export async function startQuickAgent(p: StartQuickAgentParams): Promise<QuickAg
       mission: p.prompt,
       ...(p.systemPrompt && { systemPrompt: p.systemPrompt }),
       orchestrator: p.orchestrator,
-      freeAgentMode: entry.freeAgentMode,
+      // Only when the caller gave it: a default false would override the app's Default access.
+      ...(p.freeAgentMode !== undefined && { freeAgentMode: p.freeAgentMode }),
       ...(p.access && { access: p.access }),
       ...(p.interactive && { interactive: true }),
     });

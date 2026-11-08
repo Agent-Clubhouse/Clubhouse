@@ -71,6 +71,7 @@ vi.mock('../../actions', async () => {
         agentProjectId,
         dispatcherAgentId: () => (h.dispatchers.has('dispatcher') ? 'dispatcher' : undefined),
         canStartAgents: () => true,
+        agentAccess: () => 'ask',
       }),
     });
   };
@@ -253,10 +254,11 @@ describe('action tools', () => {
   });
 
   describe('rights (review of #2952)', () => {
-    it('only people can have an action start a Free Agent mode quick agent', async () => {
-      const r = await call('agent-a', 'create_action', { trigger: DAILY, steps: [{ kind: 'quick', prompt: 'x', freeAgentMode: true }] });
+    it('an agent’s action never starts a quick agent above the agent’s own Access level', async () => {
+      const r = await call('agent-a', 'create_action', { trigger: DAILY, steps: [{ kind: 'quick', prompt: 'x', access: 'full_access' }] });
       expect(r.body.error.code).toBe('not_allowed');
-      expect(r.body.error.message).toMatch(/Only you/);
+      expect(r.body.error.message).toMatch(/runs at Ask first/);
+      expect((await call('agent-a', 'create_action', { trigger: DAILY, steps: [{ kind: 'quick', prompt: 'x', access: 'plan' }] })).isError).toBe(false);
     });
 
     it('the Dispatcher reaches only agents connected to it, and starts no quick agents', async () => {

@@ -135,6 +135,7 @@ function createEngine(): ActionsEngine {
     dispatcherAgentId: () => getDispatcherAgentId() ?? undefined,
     // The live gate for a running agent, else its saved switch (an asleep agent isn't synced to the gate).
     canStartAgents: (id) => isOrchestrationEnabled(id) || knownAgent(id)?.orchestrates === true,
+    agentAccess: (id) => knownAgent(id)?.access ?? 'ask',
   });
   const steps = createStepRunner({
     agentExists: facts.agentExists,
@@ -149,6 +150,7 @@ function createEngine(): ActionsEngine {
     // A person set this step up to put the agent to sleep: no mid-turn refusal after the wait.
     sleep: async (req) => parseToolResult(await sleepAgent({ ...req, force: true })),
     startQuick: (req) => startQuickAgent(req),
+    agentAccess: (id) => knownAgent(id)?.access ?? 'ask',
     notify: (title, body) => {
       const settings = notificationService.getSettings();
       if (!settings.enabled) return { shown: false, reason: 'notifications are off in Settings' };

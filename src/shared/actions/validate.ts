@@ -4,6 +4,7 @@
  * the owner may do each step, is checked by the engine.
  */
 
+import { isAccessLevel } from '../agent-access';
 import { parseCron } from './cron';
 import { cronToPresetFields, presetToCron } from './describe';
 import {
@@ -159,7 +160,7 @@ export function validateStep(raw: unknown, index: number): Result<ActionStep> {
           ...(nonEmpty(raw.worktreeAgentId) && { worktreeAgentId: raw.worktreeAgentId }),
           ...(nonEmpty(raw.orchestrator) && { orchestrator: raw.orchestrator }),
           ...(nonEmpty(raw.model) && { model: raw.model }),
-          ...(typeof raw.freeAgentMode === 'boolean' && { freeAgentMode: raw.freeAgentMode }),
+          ...(isAccessLevel(raw.access) && { access: raw.access }),
         },
       };
     }

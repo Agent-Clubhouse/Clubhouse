@@ -11,6 +11,7 @@ const rights = createInterimRights({
   dispatcherAgentId: () => dispatcherId,
   // Only release-lead may start helpers.
   canStartAgents: (id) => id === 'lead',
+  agentAccess: (id) => (id === 'lead' ? 'auto_edit' : 'ask'),
 });
 const lead = { kind: 'agent', agentId: 'lead' } as const;
 const helper = { kind: 'agent', agentId: 'h1', helper: true } as const;
@@ -24,9 +25,9 @@ const projectAdded = (projectId: string): ActionTrigger => ({ kind: 'event', eve
 const daily: ActionTrigger = { kind: 'schedule', preset: 'daily', cron: '0 9 * * *', missed: 'skip' };
 
 describe('interim rights: steps', () => {
-  it('lets people do anything, Free Agent mode included', () => {
+  it('lets people do anything, any Access level included', () => {
     expect(rights.checkStep(user, { kind: 'wake', agentId: 'qa' })).toBeNull();
-    expect(rights.checkStep(user, { kind: 'quick', projectId: 'p2', prompt: 'x', freeAgentMode: true })).toBeNull();
+    expect(rights.checkStep(user, { kind: 'quick', projectId: 'p2', prompt: 'x', access: 'full_access' })).toBeNull();
   });
 
   it('lets an agent act on itself, its helpers and connected agents, with one refusal for the rest', () => {
@@ -39,13 +40,14 @@ describe('interim rights: steps', () => {
     expect(rights.checkStep(lead, { kind: 'wake', agentId: 'nobody' })).toBe('release-lead can’t act on that agent.');
   });
 
-  it('keeps an agent’s quick agents in its own project, never in Free Agent mode', () => {
+  it('keeps an agent’s quick agents in its own project, at most at its own Access level', () => {
     expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', prompt: 'x' })).toBeNull();
     expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p2', prompt: 'x' })).toBe('release-lead can’t act on that project.');
     expect(rights.checkStep(lead, { kind: 'quick', projectId: 'nowhere', prompt: 'x' })).toBe('release-lead can’t act on that project.');
     expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', worktreeAgentId: 'qa', prompt: 'x' })).toBe('release-lead can’t act on that agent.');
-    expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', prompt: 'x', freeAgentMode: true })).toMatch(/Only you/);
-    expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', prompt: 'x', freeAgentMode: false })).toBeNull();
+    expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', prompt: 'x', access: 'full_access' })).toBe('release-lead runs at Auto-accept edits, so its actions can’t start a quick agent at Full access.');
+    expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', prompt: 'x', access: 'auto_edit' })).toBeNull();
+    expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', prompt: 'x', access: 'plan' })).toBeNull();
   });
 
   it('keeps a helper to itself', () => {

@@ -13,7 +13,7 @@
  *   own project. They may watch the same agents, its own project and app
  *   events.
  * - A helper's actions may act on and watch only itself, plus notify you.
- * - Only you can have an action start a quick agent in Free Agent mode.
+ * - A quick agent an agent's action starts never runs above that agent's own Access level.
  * - Anyone may notify you; it follows Settings > Notifications & alerts.
  * - Agents and the Dispatcher may own a limited number of actions.
  *
@@ -22,6 +22,7 @@
 
 import { APP_EVENT_KINDS, type ActionOwner, type ActionStep, type ActionTrigger } from '../../../shared/actions';
 import type { ActionRights } from './engine';
+import { ACCESS_LEVELS, accessLabel, type AccessLevel } from '../../../shared/agent-access';
 
 export interface RightsFacts {
   agentName(agentId: string): string | undefined;
@@ -37,6 +38,8 @@ export interface RightsFacts {
    * Starting agents from an action needs at least what starting a helper does.
    */
   canStartAgents(agentId: string): boolean;
+  /** The agent's own Access level (#2761): the most its actions' quick agents get. */
+  agentAccess(agentId: string): AccessLevel;
 }
 
 /** The most actions one owner may have. People and Clubhouse have no limit. */
@@ -76,12 +79,15 @@ export function createInterimRights(facts: RightsFacts): ActionRights {
       if (owner.kind === 'user' || owner.kind === 'app') return null;
       if (step.kind === 'notify') return null;
       if (step.kind === 'quick') {
-        if (step.freeAgentMode === true) return `Only you can have an action start a quick agent in Free Agent mode. ${ownerName(owner)} can’t.`;
         if (owner.kind === 'dispatcher') return 'The Dispatcher can’t start quick agents from an action yet.';
         if (owner.helper) return helperOnly(owner);
         if (!facts.canStartAgents(owner.agentId)) return `${ownerName(owner)} can’t start agents, so its actions can’t start quick agents. Turn on "Let this agent orchestrate" for it first.`;
         const ownProject = facts.agentProjectId(owner.agentId);
         if (!ownProject || step.projectId !== ownProject) return onProject(owner);
+        const cap = facts.agentAccess(owner.agentId);
+        if (step.access && ACCESS_LEVELS.indexOf(step.access) > ACCESS_LEVELS.indexOf(cap)) {
+          return `${ownerName(owner)} runs at ${accessLabel(cap)}, so its actions can’t start a quick agent at ${accessLabel(step.access)}.`;
+        }
       }
       const target = targetOf(step);
       if (!target || reaches(owner, target)) return null;

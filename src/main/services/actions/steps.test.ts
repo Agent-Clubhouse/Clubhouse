@@ -26,6 +26,7 @@ function deps(over: Partial<StepDeps> = {}): StepDeps {
     wake: vi.fn(async () => ({ ok: true, status: 'running', text: '{}' })),
     sleep: vi.fn(async () => ({ ok: true, status: 'sleeping', text: '{}' })),
     startQuick: vi.fn(async () => ({ id: 'quick_1', name: 'Morning' })),
+    agentAccess: () => 'auto_edit',
     notify: vi.fn(() => ({ shown: true })),
     sleepWaitMs: 20,
     ...over,
@@ -83,5 +84,17 @@ describe('step runner', () => {
   it('notifying with notifications off is not a failure', async () => {
     const d = deps({ notify: vi.fn(() => ({ shown: false, reason: 'notifications are off in Settings' })) });
     expect(await createStepRunner(d).run({ kind: 'notify', text: 'x' }, ctx)).toMatchObject({ outcome: 'done', detail: 'Not shown: notifications are off in Settings' });
+  });
+
+  it('starts an agent’s quick agent at most at the agent’s own Access level', async () => {
+    const d = deps();
+    const agentCtx = { ...ctx, action: { ...ctx.action, owner: { kind: 'agent' as const, agentId: 'lead' } } };
+    await createStepRunner(d).run({ kind: 'quick', projectId: 'p1', prompt: 'x', access: 'full_access' }, agentCtx);
+    await createStepRunner(d).run({ kind: 'quick', projectId: 'p1', prompt: 'x' }, agentCtx);
+    await createStepRunner(d).run({ kind: 'quick', projectId: 'p1', prompt: 'x', access: 'plan' }, agentCtx);
+    // A person's action: the chosen level, or none (the app's Default access).
+    await createStepRunner(d).run({ kind: 'quick', projectId: 'p1', prompt: 'x' }, ctx);
+    const levels = vi.mocked(d.startQuick).mock.calls.map((c) => c[0].access);
+    expect(levels).toEqual(['auto_edit', 'auto_edit', 'plan', undefined]);
   });
 });

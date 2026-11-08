@@ -6,6 +6,7 @@
  */
 
 import { isDisposedAgent } from '../../shared/agent-helpers';
+import { savedAccess, type AccessLevel } from '../../shared/agent-access';
 import type { DurableAgentConfig } from '../../shared/types';
 import { listDurable, onAgentConfigChanged } from './agent-config';
 import { onAgentExit } from './agent-exit-broadcast';
@@ -21,6 +22,8 @@ export interface KnownAgent {
   worktreePath?: string;
   /** Its saved "Let this agent orchestrate" switch. */
   orchestrates?: boolean;
+  /** Its saved Access level (#2761). */
+  access?: AccessLevel;
 }
 
 /** Agents that exist (created, not disposed), per project, from the last read. */
@@ -43,6 +46,7 @@ function snapshot(projectPath: string, configs: DurableAgentConfig[]): Map<strin
       ...(c.parentAgentId && { parentAgentId: c.parentAgentId }),
       ...(c.worktreePath && { worktreePath: c.worktreePath }),
       ...(c.orchestration?.orchestrate === true && { orchestrates: true }),
+      access: savedAccess(c, undefined),
     });
   }
   return out;
