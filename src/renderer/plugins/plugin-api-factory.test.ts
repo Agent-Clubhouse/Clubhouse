@@ -4403,6 +4403,12 @@ describe('plugin-api-factory', () => {
 
     it('is not seen by Promise.prototype.then or Map.prototype.get patched after the host loaded', async () => {
       const seen: unknown[] = [];
+      // The patches see the whole realm, the test runner's module mocks included, which throw
+      // when serialized. Only what serializes is kept: a secret or token is a string or sits in
+      // a plain object, so the check below still sees it.
+      const keep = (v: unknown) => {
+        try { JSON.stringify(v, (_k, x) => (x instanceof Map || x instanceof Set ? [...x] : x)); seen.push(v); } catch { /* a module mock */ }
+      };
       // Plain stubs: vi.fn itself calls .then on returned promises to record results.
       const issuedFor: string[] = [];
       pluginMcp.claimIssuer = (() => Promise.resolve('issuer-secret')) as never;
@@ -4417,14 +4423,14 @@ describe('plugin-api-factory', () => {
       // eslint-disable-next-line no-extend-native
       Promise.prototype.then = function (this: Promise<unknown>, onValue?: unknown, onError?: unknown) {
         const wrap = typeof onValue === 'function'
-          ? (v: unknown) => { seen.push(v); return (onValue as (v: unknown) => unknown)(v); }
+          ? (v: unknown) => { keep(v); return (onValue as (v: unknown) => unknown)(v); }
           : onValue;
         return realThen.call(this, wrap as never, onError as never);
       } as typeof Promise.prototype.then;
       // eslint-disable-next-line no-extend-native
       Map.prototype.get = function (this: Map<unknown, unknown>, key: unknown) {
         const v = realGet.call(this, key);
-        seen.push(v);
+        keep(v);
         return v;
       };
       try {
