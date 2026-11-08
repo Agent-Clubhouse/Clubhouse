@@ -9,6 +9,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { effectiveOrchestratorOf, newAgentOrchestrator } from '../../features/agents/effective-orchestrator';
+import { startingProject } from '../starting-project';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
@@ -127,15 +128,8 @@ function useStartingProject(request: NewAgentRequest, projects: Project[]): { id
   const lastProjectId = useChromeStore((s) => s.lastProjectId);
   // Decided once per open: later navigation doesn't move the picker.
   const [start] = useState(() => {
-    const has = (id: string | null | undefined): id is string => !!id && projects.some((p) => p.id === id);
-    if (has(request.projectId)) return { id: request.projectId, why: '' };
-    if (projects.length === 1) return { id: projects[0].id, why: '' };
-    // On Canvas, Review, Settings or Help no project is highlighted in the sidebar.
-    const projectInView = explorerTab !== 'settings' && explorerTab !== 'help' && !explorerTab.startsWith('plugin:app:');
-    if (projectInView && has(activeProjectId)) return { id: activeProjectId, why: 'selected in the sidebar' };
-    if (has(lastProjectId)) return { id: lastProjectId, why: 'the last project you used' };
-    if (has(activeProjectId)) return { id: activeProjectId, why: 'the last project you used' };
-    return { id: projects[0]?.id ?? '', why: '' };
+    const { id, why } = startingProject(projects, { requested: request.projectId, activeProjectId, explorerTab, lastProjectId });
+    return { id, why };
   });
   return start;
 }
