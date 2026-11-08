@@ -15,7 +15,7 @@ import { UtilityTerminal } from './UtilityTerminal';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
 import { EmojiPicker } from '../../components/EmojiPicker';
 import { SkillsSection } from './SkillsSection';
-import { effectiveProviderOf, reportedSkillsFor } from './details/reported-skills';
+import { reportedSkillsFor } from './details/reported-skills';
 import { useChatStore } from '../../stores/chatStore';
 import { McpJsonSection } from './McpJsonSection';
 import { AgentAvatar } from './AgentAvatar';
@@ -163,8 +163,7 @@ export function AgentSettingsView({ agent }: Props) {
   // behaves consistently with agent creation.
   const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
   const { effectiveOrchestrators } = useEffectiveOrchestrators();
-  // The CLI the agent runs on: its own, else the project's default, as main resolves it (#2929).
-  const agentOrchestrator = effectiveProviderOf(agent, projects.find((p) => p.id === agent.projectId)) ?? 'claude-code';
+  const agentOrchestrator = agent.orchestrator || 'claude-code';
   const chatView = useChatStore((s) => s.agents[agent.id]);
   const reportedSkills = reportedSkillsFor(agent, chatView, projects.find((p) => p.id === agent.projectId));
   // Scope the model list to *this agent's* orchestrator, not the project default —
@@ -1168,7 +1167,7 @@ export function AgentSettingsView({ agent }: Props) {
       pathLabel={skillsPathLabel}
       providerName={orchestratorName === 'this CLI' ? undefined : orchestratorName}
       scope={agent.worktreePath ? 'agent' : 'project'}
-      reported={reportedSkills}
+      reported={isRunning ? reportedSkills : undefined}
       hideTitle={pageMode}
       onDirtyChange={sectionCallbacks.skillsDirty}
       onCountChange={sectionCallbacks.skillsCount}

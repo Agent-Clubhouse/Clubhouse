@@ -2,6 +2,7 @@ import { parseMcpJson } from '../../shared/mcp-config';
 import { auditChanges, projectAuditTarget, type AuditKeyFormat } from './settings-audit';
 import { noteRoutingPolicyChanged } from './helper-routing-changes';
 import * as fsp from 'fs/promises';
+import { constants as fsConstants } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { McpServerEntry, SkillEntry, AgentTemplateEntry, PermissionsConfig, ProjectAgentDefaults, LaunchWrapperConfig, McpCatalogEntry, WrapperCatalogSnapshot } from '../../shared/types';
@@ -12,7 +13,7 @@ import { validateCommandPrefix } from './command-prefix-validation';
 const LOG_NS = 'core:agent-settings';
 
 import { UnsupportedPermissionRulesError } from './permission-rules-error';
-import { MANAGED_SKILLS_MANIFEST, skillsFolderOf } from '../../shared/skills-folder';
+import { MANAGED_SKILLS_MANIFEST, MAX_LISTED_SKILLS, skillsFolderOf } from '../../shared/skills-folder';
 export { UnsupportedPermissionRulesError } from './permission-rules-error';
 
 /** Check whether an error is a filesystem "file not found" (ENOENT). */
@@ -119,8 +120,7 @@ export async function readMcpConfig(worktreePath: string, conv?: SettingsConvent
   return [...projectServers, ...uniqueGlobal];
 }
 
-/** Skills listed per folder, at most; the rest aren't read (#2929: discovery is bounded). */
-export const MAX_LISTED_SKILLS = 200;
+export { MAX_LISTED_SKILLS };
 /** How much of a SKILL.md is read for its front matter `name`. */
 const FRONT_MATTER_BYTES = 8192;
 
@@ -135,17 +135,31 @@ async function managedSkillFolders(skillsDir: string): Promise<Set<string>> {
   }
 }
 
-/** The front matter `name` of a SKILL.md, from its first few KB. Reads text; never runs anything. */
+/** The `name` in front matter text, or undefined. Quoted or bare, without a trailing comment. */
+export function frontMatterNameOf(text: string): string | undefined {
+  const m = /^---\n([\s\S]*?)\n---/.exec(text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n'));
+  const raw = m && /^name:[ \t]*(.*)$/m.exec(m[1])?.[1].trim();
+  if (!raw) return undefined;
+  const quoted = /^"([^"]*)"$/.exec(raw) ?? /^'([^']*)'$/.exec(raw);
+  const name = quoted ? quoted[1] : raw.replace(/[ \t]+#.*$/, '');
+  return name.trim() || undefined;
+}
+
+/**
+ * The front matter `name` of a SKILL.md, from its first few KB. Reads text;
+ * never runs anything, and reads only a regular file, so a link out of the
+ * folder (or to a pipe) isn't followed.
+ */
 async function frontMatterName(skillPath: string): Promise<string | undefined> {
   let handle: Awaited<ReturnType<typeof fsp.open>> | undefined;
   try {
-    handle = await fsp.open(path.join(skillPath, 'SKILL.md'), 'r');
+    const file = path.join(skillPath, 'SKILL.md');
+    if (!(await fsp.lstat(file)).isFile()) return undefined;
+    // No following a link swapped in after the check, and no waiting on a pipe (where the platform has the flags).
+    handle = await fsp.open(file, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0));
     const buf = Buffer.alloc(FRONT_MATTER_BYTES);
     const { bytesRead } = await handle.read(buf, 0, FRONT_MATTER_BYTES, 0);
-    const text = buf.subarray(0, bytesRead).toString('utf-8').replace(/\r\n/g, '\n');
-    const m = /^---\n([\s\S]*?)\n---/.exec(text);
-    const name = m && /^name:\s*["']?([^"'\n]+?)["']?\s*$/m.exec(m[1])?.[1];
-    return name || undefined;
+    return frontMatterNameOf(buf.subarray(0, bytesRead).toString('utf-8'));
   } catch {
     // telemetry-exempt: no SKILL.md, or not readable: the folder name stands.
     return undefined;
@@ -165,7 +179,9 @@ export async function listSkills(worktreePath: string, conv?: SettingsConvention
   const skillsDir = path.join(worktreePath, skillsFolderOf(c));
   try {
     const entries = await fsp.readdir(skillsDir, { withFileTypes: true });
-    const dirs = entries.filter((e) => e.isDirectory()).slice(0, MAX_LISTED_SKILLS);
+    const all = entries.filter((e) => e.isDirectory()).sort((a, b) => a.name.localeCompare(b.name));
+    if (all.length > MAX_LISTED_SKILLS) appLog(LOG_NS, 'info', 'Skills list cut to its limit', { meta: { found: all.length, shown: MAX_LISTED_SKILLS } });
+    const dirs = all.slice(0, MAX_LISTED_SKILLS);
     const managed = await managedSkillFolders(skillsDir);
     return Promise.all(dirs.map(async (e) => {
       const skillPath = path.join(skillsDir, e.name);
