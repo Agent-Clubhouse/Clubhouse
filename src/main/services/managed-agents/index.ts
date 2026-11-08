@@ -166,7 +166,7 @@ export async function quickLaunchFor(
   const branch = await getCurrentBranch(cwd).catch((): null => null);
   const launch = await quickManagedLaunch({
     service: managedAgents(), projectPath, cwd, agentId, agentName: template.agentName, templateId: template.id, branch,
-    addParts: template.addParts, removeParts: template.removeParts,
+    addParts: template.addParts, removeParts: template.removeParts, mcpLaunchFlags: !!provider.buildMcpArgs,
   });
   if (launch.changes.added.length > 0 || launch.changes.removed.length > 0) {
     // Ids only: what this one launch changed from its template (#2928). Nothing is saved.

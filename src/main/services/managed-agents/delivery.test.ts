@@ -405,12 +405,16 @@ describe('quickManagedLaunch (D25)', () => {
       const msg = (p: Promise<unknown>) => p.then(() => 'ok', (e: Error) => e.message);
       expect(await msg(launch(template.id, { removeParts: [CLUBHOUSE_MCP_PART_ID] }))).toContain('stays in every setup');
       expect(await msg(launch(template.id, { addParts: ['no-such-part'] }))).toContain('isn\'t in the library');
-      expect(await msg(launch(template.id, { removeParts: [BUILTIN_BLOCK_IDS.basics] }))).toContain('nothing to leave out');
+      // Leaving out what the template doesn't have (any more) is nothing to do.
+      expect((await launch(template.id, { removeParts: [BUILTIN_BLOCK_IDS.basics] })).changes).toEqual({ added: [], removed: [] });
+      // No skills for a quick agent, and no MCP server for a CLI that takes none at launch.
+      const skill = await user(() => service.createPart({ name: 'Notes', content: { kind: 'skill', skillName: 'notes', files: [{ path: 'SKILL.md', content: '# Notes' }] } }));
+      expect(await msg(launch(template.id, { addParts: [skill.id] }))).toContain('gets no skills');
+      const other = await user(() => service.createPart({ name: 'Other', content: { kind: 'mcp', serverKey: 'other', transport: 'stdio', command: 'npx' } }));
+      expect(await msg(user(() => quickManagedLaunch({ service, projectPath: project, cwd: project, agentId: 'q', agentName: 'q', templateId: template.id, addParts: [other.id], mcpLaunchFlags: false })))).toContain('only from the folder');
+      expect((await launch(template.id, { addParts: [other.id] })).servers).toHaveProperty('other');
       expect(await msg(launch(template.id, { addParts: Array.from({ length: 51 }, () => tone.id) }))).toContain('at most 50');
-      // Two skills that install to one folder: refused, as a save would be.
-      const a = await user(() => service.createPart({ name: 'A', content: { kind: 'skill', skillName: 'same', files: [{ path: 'SKILL.md', content: '# A' }] } }));
-      const b = await user(() => service.createPart({ name: 'B', content: { kind: 'skill', skillName: 'same', files: [{ path: 'SKILL.md', content: '# B' }] } }));
-      expect(await msg(launch(template.id, { addParts: [a.id, b.id] }))).not.toBe('ok');
+
     });
   });
 });

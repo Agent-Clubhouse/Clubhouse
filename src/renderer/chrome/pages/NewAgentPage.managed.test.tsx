@@ -518,26 +518,28 @@ describe('NewAgentPage, a quick agent from a template (D25)', () => {
     const select = await screen.findByTestId('new-agent-quick-template') as HTMLSelectElement;
     await waitFor(() => expect(select.disabled).toBe(false));
     fireEvent.change(select, { target: { value: 'custom-workiq' } });
-    // The template's parts, ticked, without the Clubhouse part every setup has.
+    // The template's parts, ticked, without the Clubhouse part every setup has. Claude Code takes no MCP
+    // servers at launch, so the template's WorkIQ isn't listed and none can be added.
     const parts = await screen.findByTestId('quick-run-parts');
-    await waitFor(() => expect(parts.textContent).toContain('WorkIQ'));
-    expect(parts.textContent).toContain('Identity');
+    await waitFor(() => expect(parts.textContent).toContain('Identity'));
+    expect(parts.textContent).not.toContain('WorkIQ');
     expect(parts.textContent).not.toContain('Clubhouse');
+    expect(Array.from((screen.getByTestId('quick-run-add') as HTMLSelectElement).options).map((o) => o.textContent)).toEqual(['Add a part…', 'Tone']);
     expect(screen.getByTestId('quick-run-summary').textContent).toBe('The template as it is. Untick a part to leave it out of this run, or add one.');
-    fireEvent.click(screen.getByRole('checkbox', { name: /WorkIQ/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Identity/ }));
     fireEvent.change(screen.getByTestId('quick-run-add'), { target: { value: 'b-tone' } });
     expect(screen.getByRole('checkbox', { name: /Tone/ })).toBeChecked();
-    expect(screen.getByTestId('quick-run-summary').textContent).toBe('WorkIQ reader template, plus Tone, minus WorkIQ. For this run only: the template doesn’t change.');
+    expect(screen.getByTestId('quick-run-summary').textContent).toBe('WorkIQ reader template, plus Tone, minus Identity. For this run only: the template doesn’t change.');
     // Another template starts clean, and so does coming back.
     fireEvent.change(select, { target: { value: 'custom-other' } });
     fireEvent.change(select, { target: { value: 'custom-workiq' } });
     expect(screen.getByTestId('quick-run-summary').textContent).toBe('The template as it is. Untick a part to leave it out of this run, or add one.');
-    fireEvent.click(screen.getByRole('checkbox', { name: /WorkIQ/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Identity/ }));
     fireEvent.change(screen.getByTestId('quick-run-add'), { target: { value: 'b-tone' } });
     typeMission();
     fireEvent.click(screen.getByTestId('new-agent-submit'));
     await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalled());
-    expect(spawnQuickAgent.mock.calls[0][9]).toEqual({ managedTemplateId: 'custom-workiq', addParts: ['b-tone'], removeParts: ['p-workiq'] });
+    expect(spawnQuickAgent.mock.calls[0][9]).toEqual({ managedTemplateId: 'custom-workiq', addParts: ['b-tone'], removeParts: ['b-identity'] });
   });
 
   it('None starts a quick agent with no template', async () => {

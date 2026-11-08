@@ -796,13 +796,16 @@ export interface QuickManagedLaunch {
  * working Identity), with this launch's parts added and left out (#2928,
  * D102). Only parts a person could put in a setup themselves: library parts
  * that exist and aren't retired, never the Clubhouse MCP part left out, and
- * the result passes the checks a saved setup does. Throws before anything
- * starts. The template is only read.
+ * the result passes the checks a saved setup does. No skill is added (a quick
+ * agent gets none) and no MCP server for a CLI that takes none at launch.
+ * Leaving out a part the template no longer has is nothing to do. Throws
+ * before anything starts. The template is only read.
  */
 export async function quickRunSetup(
   service: ManagedAgentsService,
   working: { blocks: string[]; skills: string[]; mcps: string[] },
   choice: { addParts?: string[]; removeParts?: string[] },
+  opts: { mcpLaunchFlags?: boolean } = {},
 ): Promise<{ setup: { blocks: string[]; skills: string[]; mcps: string[] }; changes: QuickRunChanges }> {
   const add = choice.addParts ?? [];
   const remove = choice.removeParts ?? [];
@@ -814,11 +817,9 @@ export async function quickRunSetup(
   // Either Identity id names the one the quick agent gets.
   const asWorking = (id: string) => (id === BUILTIN_BLOCK_IDS.identity ? BUILTIN_BLOCK_IDS.identityHelper : id);
   const inTemplate = new Set([...working.blocks, ...working.skills, ...working.mcps]);
-  const drop = new Set(remove.map(asWorking));
-  if (drop.has(CLUBHOUSE_MCP_PART_ID)) throw new ManagedError('invalid', 'The Clubhouse MCP part stays in every setup.');
-  for (const id of drop) {
-    if (!inTemplate.has(id)) throw new ManagedError('invalid', `${live[id]?.name ?? 'That part'} isn't in the template, so there is nothing to leave out.`);
-  }
+  if (remove.map(asWorking).includes(CLUBHOUSE_MCP_PART_ID)) throw new ManagedError('invalid', 'The Clubhouse MCP part stays in every setup.');
+  // A part the template no longer has (deleted, or taken out since the form opened) is already left out.
+  const drop = new Set(remove.map(asWorking).filter((id) => inTemplate.has(id)));
   const setup = {
     blocks: working.blocks.filter((id) => !drop.has(id)),
     skills: working.skills.filter((id) => !drop.has(id)),
@@ -830,16 +831,19 @@ export async function quickRunSetup(
     const entry = live[id];
     // What a person can add to a setup: a part in the library, not one an app update retired.
     if (!entry || entry.owner.kind !== 'library' || builtinPart(id)?.retired) throw new ManagedError('not_found', 'A part to add isn\'t in the library.');
-    const list = entry.kind === 'block' ? setup.blocks : entry.kind === 'skill' ? setup.skills : entry.kind === 'mcp' ? setup.mcps : null;
+    if (entry.kind === 'skill') throw new ManagedError('invalid', 'A quick agent gets no skills, since it has no folder of its own.');
+    if (entry.kind === 'mcp' && opts.mcpLaunchFlags === false) throw new ManagedError('invalid', 'This CLI reads MCP servers only from the folder\'s own MCP file, so a quick agent can\'t get one added.');
+    const list = entry.kind === 'block' ? setup.blocks : entry.kind === 'mcp' ? setup.mcps : null;
     if (!list) throw new ManagedError('not_found', 'A part to add isn\'t in the library.');
     if (!list.includes(id)) list.push(id);
     if ((!inTemplate.has(id) || drop.has(id)) && !added.includes(id)) added.push(id);
   }
   // Left out and added back is no change either way.
   const changes = { added: added.filter((id) => !drop.has(id)), removed: [...drop].filter((id) => !added.includes(id)) };
-  // The checks a saved setup passes (two skills with one folder, parts that exist), so a launch can't do what a save couldn't.
-  const checked = await service.checkSetup(setup);
-  return { setup: { blocks: checked.blocks, skills: checked.skills, mcps: checked.mcps }, changes };
+  // The checks a saved setup passes (parts that exist), so a launch can't do what a save couldn't. Skills
+  // aren't checked: a quick agent gets none, and the launch without changes doesn't check them either.
+  const checked = await service.checkSetup({ ...setup, skills: [] });
+  return { setup: { blocks: checked.blocks, skills: setup.skills, mcps: checked.mcps }, changes };
 }
 
 /**
@@ -861,12 +865,14 @@ export async function quickManagedLaunch(params: {
   /** This launch's part changes (#2928). */
   addParts?: string[];
   removeParts?: string[];
+  /** The CLI takes MCP servers at launch. False: none can be added. */
+  mcpLaunchFlags?: boolean;
 }): Promise<QuickManagedLaunch> {
   // setupFromTemplate keeps only the parts that still exist, so what it dropped
   // is what's missing: the template's own list minus what came back.
   const template = await params.service.getTemplate(params.templateId);
   const { setup: fromTemplate } = await params.service.setupFromTemplate(params.templateId);
-  const { setup, changes } = await quickRunSetup(params.service, withWorkingIdentity(fromTemplate), params);
+  const { setup, changes } = await quickRunSetup(params.service, withWorkingIdentity(fromTemplate), params, { mcpLaunchFlags: params.mcpLaunchFlags });
   const resolved = await resolveSetup(params.service, { version: 1, ...setup });
   const partCount = (s: { blocks: string[]; skills: string[]; mcps: string[] }) => s.blocks.length + s.skills.length + s.mcps.length;
   const dropped = partCount(template.setup) - partCount(fromTemplate);

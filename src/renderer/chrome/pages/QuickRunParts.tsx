@@ -4,12 +4,14 @@
  * from the library. It is the preview: what's ticked is what the run gets.
  * Nothing is saved; the template, the library and the next launch don't
  * change. Skills aren't listed, since a quick agent has no folder of its own
- * to get them (D25).
+ * to get them (D25), and MCP servers only for a CLI that takes them at
+ * launch. Blocks show as the run gets them: the working Identity in place of
+ * the durable one.
  */
-import { useId } from 'react';
-import { CLUBHOUSE_MCP_PART_ID, isListed, type ManagedPartSummary, type ManagedTemplate } from '../../../shared/managed-agents-types';
+import { useEffect, useId } from 'react';
+import { CLUBHOUSE_MCP_PART_ID, IDENTITY_BLOCK_ID, isListed, workingIdentityBlocks, type ManagedPartSummary, type ManagedTemplate } from '../../../shared/managed-agents-types';
 import type { QuickRunChanges } from '../../../shared/types';
-import { useManagedParts } from '../../features/managed/managedApi';
+import { useManagedParts, useManagedTemplates } from '../../features/managed/managedApi';
 import { builtFromLine } from '../../features/managed/attribution';
 import { Row, selectClass } from './newAgentUi';
 
@@ -21,22 +23,40 @@ export function quickRunSummary(template: Pick<ManagedTemplate, 'name'>, changes
   return `${builtFromLine(template.name, changes, nameOf)}. For this run only: the template doesn’t change.`;
 }
 
-export function QuickRunParts({ template, value, onChange, disabled }: {
+export function QuickRunParts({ template: picked, value, onChange, disabled, mcpLaunchFlags }: {
   template: ManagedTemplate;
   value: QuickRunChanges;
   onChange: (next: QuickRunChanges) => void;
   disabled: boolean;
+  /** The CLI takes MCP servers at launch; without that, a quick agent gets none (D25). */
+  mcpLaunchFlags: boolean;
 }) {
   const addId = useId();
   const blocks = useManagedParts('block');
   const mcps = useManagedParts('mcp');
+  // The template as it is now, not as it was when picked.
+  const template = useManagedTemplates().value?.find((t) => t.id === picked.id) ?? picked;
   const library = [...(blocks.value ?? []), ...(mcps.value ?? [])];
   const byId = new Map(library.map((p) => [p.id, p]));
   const nameOf = (id: string) => byId.get(id)?.name;
-  const inTemplate = [...template.setup.blocks, ...template.setup.mcps.filter((id) => id !== CLUBHOUSE_MCP_PART_ID)];
+  const isMcp = (id: string) => byId.get(id)?.kind === 'mcp';
+  const inTemplate = [
+    ...workingIdentityBlocks(template.setup.blocks),
+    ...(mcpLaunchFlags ? template.setup.mcps.filter((id) => id !== CLUBHOUSE_MCP_PART_ID) : []),
+  ];
   const listedIds = [...inTemplate, ...value.added];
-  // What a person could add to a setup: library parts that are offered, not already here.
-  const addable = (list: ManagedPartSummary[] | null) => (list ?? []).filter((p) => isListed(p) && p.id !== CLUBHOUSE_MCP_PART_ID && !listedIds.includes(p.id));
+  // What a person could add to a setup: library parts that are offered, not already here. The durable
+  // Identity never: the run gets the working one in its place.
+  const addable = (list: ManagedPartSummary[] | null) => (list ?? []).filter((p) => isListed(p) && p.id !== CLUBHOUSE_MCP_PART_ID && p.id !== IDENTITY_BLOCK_ID && !listedIds.includes(p.id));
+  const loaded = blocks.value !== null && mcps.value !== null;
+  // Only changes that reach the run: no MCP server for a CLI without launch flags (picked after the parts),
+  // and nothing left out that the template no longer has.
+  useEffect(() => {
+    if (!loaded) return;
+    const added = mcpLaunchFlags ? value.added : value.added.filter((id) => !isMcp(id));
+    const removed = value.removed.filter((id) => inTemplate.includes(id));
+    if (added.length !== value.added.length || removed.length !== value.removed.length) onChange({ added, removed });
+  });
   const toggle = (id: string, keep: boolean) => {
     if (value.added.includes(id)) {
       if (!keep) onChange({ ...value, added: value.added.filter((x) => x !== id) });
@@ -99,7 +119,7 @@ export function QuickRunParts({ template, value, onChange, disabled }: {
               {addable(blocks.value).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </optgroup>
           )}
-          {addable(mcps.value).length > 0 && (
+          {mcpLaunchFlags && addable(mcps.value).length > 0 && (
             <optgroup label="MCP servers">
               {addable(mcps.value).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </optgroup>

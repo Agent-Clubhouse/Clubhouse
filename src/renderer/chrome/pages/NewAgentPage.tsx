@@ -589,7 +589,13 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
               />
             )}
             {quickTemplates && quickTemplate && quickTemplate.id === quickTemplateId && (
-              <QuickRunParts template={quickTemplate} value={quickChanges} onChange={setQuickChanges} disabled={busy} />
+              <QuickRunParts
+                template={quickTemplate}
+                value={quickChanges}
+                onChange={setQuickChanges}
+                disabled={busy}
+                mcpLaunchFlags={selectedOrch?.mcpLaunchFlags === true}
+              />
             )}
             <Rule />
             <Row label="Runs in" htmlFor="new-agent-runs-in" help="Or inside a durable agent’s worktree, so it works on that branch.">
