@@ -1084,6 +1084,8 @@ async function spawnPtyAgent(
     assertDispatcherCanStart(params);
     await tel.step('clubhouse.pty.spawn', () => withErrorType('pty_spawn_failed', () => ptyManager.spawn(...spawnArgs)));
   } catch (err) {
+    // Refused before a process existed (the Dispatcher turned off, #3110): no exit will restore the files injected above.
+    if (!managed && !createdIdentity && !isAgentRunning(params.agentId)) void configPipeline.restoreForAgent(params.agentId);
     if (managed && !createdIdentity) {
       try { await managed.notCreated(); } catch {
         // telemetry-exempt: preserve the known pre-creation error; unresolved durable intent stays fail-closed.

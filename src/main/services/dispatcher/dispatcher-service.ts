@@ -54,6 +54,7 @@ import { DISPATCHER_CLASSIC_MESSAGE } from '../../../shared/dispatcher-types';
 import { getDispatcherChatPath, getDispatcherPath, isDispatcherChatPath, isDispatcherCoordinatorPath } from './dispatcher-paths';
 import { isEmptyMirror, mirrorUpdates } from './dispatcher-identity';
 import { registerConcealedTools } from '../agent-runtime/concealed-tools';
+import { hasChatStartInFlight } from '../agent-runtime/chat-spawn';
 import { dispatcherEnablement, getSettings as getDispatcherSettings, isDispatcherEnabled, updateSettings } from './dispatcher-settings';
 import { setDispatcherIdLookup } from '../clubhouse-mcp/dispatcher-gate';
 
@@ -317,7 +318,8 @@ async function writeInstructions(agent: DurableAgentConfig, dir: string = getDis
 }
 
 async function stopAgent(agent: DurableAgentConfig, dir: string = getDispatcherPath()): Promise<void> {
-  if (!agentSystem.isAgentRunning(agent.id)) return;
+  // A chat start still in progress isn't running yet, but killAgent cancels it (#3110).
+  if (!agentSystem.isAgentRunning(agent.id) && !hasChatStartInFlight(agent.id)) return;
   appLog(NS, 'info', 'Stopping the Dispatcher', { meta: { agentId: agent.id } });
   await agentSystem.killAgent(agent.id, dir, agent.orchestrator);
 }
