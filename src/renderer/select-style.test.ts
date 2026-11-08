@@ -1,4 +1,3 @@
-/* eslint-disable no-restricted-syntax -- reads the stylesheet: the cascade layer a rule sits in can't be checked in jsdom */
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
