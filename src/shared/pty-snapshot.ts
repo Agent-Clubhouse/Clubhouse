@@ -9,6 +9,7 @@
  * of its data, and the replay resizes the target terminal at those points so
  * every byte is interpreted at the size it was written for.
  */
+import type { PtyInputModeTracker } from './pty-input-modes';
 
 /** The PTY size in effect from `offset` (UTF-16 index into the data) onward. */
 export interface PtySnapshotSize {
@@ -116,4 +117,17 @@ export function resyncOffset(data: string): number {
     if (ch === 0x0a) return i + 1;
   }
   return 0;
+}
+
+/**
+ * Where a replay of history whose head was evicted starts. A sequence or
+ * control string cut by eviction is skipped to its end, using the parser
+ * state `head` carried through the evicted output, so a mode it sets still reaches
+ * the replay prefix (#2743). From there, the usual resync moves to the next
+ * escape or line feed. When the fragment runs to the end of what's kept, the
+ * terminal would print none of it, so neither does the replay.
+ */
+export function replayStart(head: Pick<PtyInputModeTracker, 'sequenceEnd'>, raw: string): number {
+  const end = head.sequenceEnd(raw);
+  return end === undefined ? raw.length : end + resyncOffset(raw.slice(end));
 }
