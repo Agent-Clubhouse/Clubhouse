@@ -66,6 +66,24 @@ describe('Copilot hook document boundary', () => {
     expect(await fsp.readdir(path.dirname(file))).toEqual([`hooks.json${LEGACY_PERMISSIONS_BACKUP_SUFFIX}`]);
   });
 
+  it('moves a legacy file once when two agents start in the folder together', async () => {
+    const content = JSON.stringify({ permissions: { allow: ['Read'] } });
+    const { root, file } = await fixture(content);
+    expect(await Promise.all([readCopilotHooksConfig(root), readCopilotHooksConfig(root)])).toEqual([null, null]);
+    expect(await fsp.readdir(path.dirname(file))).toEqual([`hooks.json${LEGACY_PERMISSIONS_BACKUP_SUFFIX}`]);
+  });
+
+  it('keeps an earlier backup, using a new name for the next one', async () => {
+    const first = JSON.stringify({ permissions: { allow: ['Read'] } });
+    const second = JSON.stringify({ permissions: { deny: ['WebFetch'] } });
+    const { root, file } = await fixture(first);
+    await readCopilotHooksConfig(root);
+    await fsp.writeFile(file, second);
+    await readCopilotHooksConfig(root);
+    expect(await fsp.readFile(`${file}${LEGACY_PERMISSIONS_BACKUP_SUFFIX}`, 'utf8')).toBe(first);
+    expect(await fsp.readFile(`${file}${LEGACY_PERMISSIONS_BACKUP_SUFFIX}-2`, 'utf8')).toBe(second);
+  });
+
   it('writes a valid hook document where a legacy permissions file was', async () => {
     const { root, file } = await fixture(JSON.stringify({ permissions: { allow: ['Read'] } }));
     await new CopilotCliProvider().writeHooksConfig(root, 'http://127.0.0.1:9999/hook');
