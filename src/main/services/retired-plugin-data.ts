@@ -31,7 +31,7 @@ async function exists(p: string): Promise<boolean> {
   try {
     await fsp.access(p);
     return true;
-  } catch {
+  } catch { // telemetry-exempt: a missing path is the answer, not a failure
     return false;
   }
 }
@@ -101,7 +101,7 @@ export async function buildRetiredPluginExport(pluginId: string, opts: RetiredPl
       const text = await fsp.readFile(full, 'utf-8');
       try {
         files[key] = JSON.parse(text);
-      } catch {
+      } catch { // telemetry-exempt: a file that isn't JSON is exported as text
         files[key] = text;
       }
     }
@@ -121,8 +121,7 @@ export async function noteRetiredPlugins(opts: RetiredPluginDataOptions & { mark
   try {
     const parsed = JSON.parse(await fsp.readFile(opts.markerFile, 'utf-8'));
     if (Array.isArray(parsed)) logged = parsed.filter((id): id is string => typeof id === 'string');
-  } catch {
-    // No marker yet, or unreadable.
+  } catch { // telemetry-exempt: no marker yet, or unreadable; the lines are logged again
   }
   const noted: string[] = [];
   for (const pluginId of Object.keys(RETIRED_PLUGINS)) {
@@ -134,7 +133,7 @@ export async function noteRetiredPlugins(opts: RetiredPluginDataOptions & { mark
         meta: { pluginId, installed, dataDirs: locations.map((l) => l.dir) },
       });
       noted.push(pluginId);
-    } catch (err) {
+    } catch (err) { // telemetry-exempt: logged; the check is best effort and retried next launch
       appLog('core:plugins', 'warn', `Couldn't check data for retired plugin "${pluginId}"`, {
         meta: { pluginId, error: err instanceof Error ? err.message : String(err) },
       });
@@ -144,8 +143,7 @@ export async function noteRetiredPlugins(opts: RetiredPluginDataOptions & { mark
     try {
       await fsp.mkdir(path.dirname(opts.markerFile), { recursive: true });
       await fsp.writeFile(opts.markerFile, JSON.stringify([...logged, ...noted]), 'utf-8');
-    } catch {
-      // Logged again next launch; harmless.
+    } catch { // telemetry-exempt: the lines are logged again next launch; harmless
     }
   }
   return noted;
