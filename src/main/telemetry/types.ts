@@ -147,6 +147,13 @@ export interface ReplayRunOptions {
   /** The most of each signal one call sends (defaults to the session caps). */
   maxSpans?: number;
   maxLogs?: number;
+  /**
+   * When a run is sent in slices: the traces in the whole run that failed, so the
+   * error-tail rule decides as it would for the whole run, and an opaque state the
+   * runtime keeps cumulative totals in. Pass a new state for each run.
+   */
+  errorTraceIds?: ReadonlySet<string>;
+  state?: { totals?: unknown };
 }
 
 export interface ReplayReport {

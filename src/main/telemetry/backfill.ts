@@ -140,20 +140,62 @@ export function cancelBackfill(destinationId: string): void {
   running.get(destinationId)?.abort.abort();
 }
 
-function lineTime(line: string): number | undefined {
+interface Parsed { line: string; t: number; kind: 'span' | 'log' | 'metric'; traceId?: string; failed?: boolean }
+
+const KIND: Record<string, Parsed['kind']> = { span: 'span', event: 'log', exception: 'log', metric: 'metric' };
+
+/** A line the converter can send, with its time and kind. Diag and bookkeeping lines are left here. */
+function parse(line: string): Parsed | undefined {
   try {
-    const ts = (JSON.parse(line) as { ts?: unknown }).ts;
-    const ms = typeof ts === 'string' ? Date.parse(ts) : NaN;
-    return Number.isFinite(ms) ? ms : undefined;
+    const r = JSON.parse(line) as { t?: unknown; ts?: unknown; traceId?: unknown; outcome?: unknown };
+    const kind = typeof r.t === 'string' ? KIND[r.t] : undefined;
+    const t = typeof r.ts === 'string' ? Date.parse(r.ts) : NaN;
+    if (!kind || !Number.isFinite(t)) return undefined;
+    return { line, t, kind, ...(typeof r.traceId === 'string' && { traceId: r.traceId }), ...(r.outcome === 'error' && { failed: true }) };
   } catch {
     return undefined;
   }
 }
 
+/** The most lines in one slice: one exporter call, the runtime's batch size. */
+const SLICE = 256;
+
+/**
+ * A run's lines as slices sent one at a time: in time order, each of one kind, so
+ * each is exactly one export the destination confirms or not. A slice never
+ * splits lines with the same time, so resuming after the last confirmed time
+ * skips nothing and repeats nothing.
+ */
+function slicesOf(lines: Parsed[]): Parsed[][] {
+  const out: Parsed[][] = [];
+  let current: Parsed[] = [];
+  for (const p of lines) {
+    const last = current[current.length - 1];
+    if (last && (p.kind !== last.kind || current.length >= SLICE) && p.t !== last.t) {
+      out.push(current);
+      current = [];
+    }
+    current.push(p);
+  }
+  if (current.length > 0) out.push(current);
+  return out;
+}
+
+async function markSent(destinationId: string, through: number): Promise<void> {
+  await updateTelemetrySettings((s) => ({
+    ...s,
+    destinations: s.destinations.map((d) => (d.id === destinationId ? { ...d, backfilledThrough: Math.max(d.backfilledThrough ?? 0, through) } : d)),
+  }));
+}
+
 /**
  * The user accepted: send history from `range` days before the destination was
- * turned on (or everything kept), not before what was already sent. Runs in the
+ * turned on (or everything kept), after what was already sent. Runs in the
  * background; `getBackfillStatus` reports it. Resolves once it has started.
+ *
+ * What's marked sent (`backfilledThrough`) advances only past slices the
+ * destination's exporter confirmed. After a failure or a cancel the offer stays,
+ * and starting again resumes after the last confirmed slice.
  */
 export async function startBackfill(destinationId: string, range: BackfillRange, onChange?: (status: BackfillStatus) => void): Promise<{ ok: boolean; reason?: string }> {
   const pending = enabledAt.get(destinationId);
@@ -161,14 +203,11 @@ export async function startBackfill(destinationId: string, range: BackfillRange,
   if (running.has(destinationId)) return { ok: false, reason: 'already_running' };
   const until = pending.until;
   const from = range === 'all' ? 0 : until - range * DAY_MS;
-  const since = Math.max(from, sentThrough(destinationId));
-  const files = (await historyFiles(since, until)).reverse();
-  // A file from a run before `since` may still hold lines after it; lines are filtered by time below.
+  const files = (await historyFiles(Math.max(from, sentThrough(destinationId)), until)).reverse();
   const runs = [...new Set(files.map((f) => f.run))];
   const status: BackfillStatus = { destinationId, state: 'running', spans: 0, logs: 0, metricPoints: 0, filtered: 0, runsDone: 0, runsTotal: runs.length };
   const abort = new AbortController();
   running.set(destinationId, { abort, status });
-  enabledAt.delete(destinationId);
   finished.delete(destinationId);
   const changed = () => { try { onChange?.({ ...status }); } catch { /* a listener must never stop the send */ } };
   changed();
@@ -177,37 +216,52 @@ export async function startBackfill(destinationId: string, range: BackfillRange,
     try {
       for (const run of runs) {
         if (abort.signal.aborted) { status.state = 'cancelled'; break; }
-        const lines: string[] = [];
+        // Read again for each run: a resumed send starts after the last confirmed slice.
+        const after = sentThrough(destinationId);
+        let session: string | undefined;
+        const parsed: Parsed[] = [];
+        // Every line of the run, for the error-tail decision; only those in the window are sent.
+        const failedTraces = new Set<string>();
         for (const f of files.filter((x) => x.run === run)) {
           const text = await fsp.readFile(f.file, 'utf-8').catch(() => '');
           for (const line of text.split('\n')) {
             if (!line) continue;
-            // The session line says how the run was recorded; every other line counts only inside the window.
-            if (line.startsWith('{"t":"session"')) { lines.push(line); continue; }
-            const t = lineTime(line);
-            if (t !== undefined && t >= since && t < until) lines.push(line);
+            if (line.startsWith('{"t":"session"')) { session ??= line; continue; }
+            const p = parse(line);
+            if (!p) continue;
+            if (p.failed && p.traceId) failedTraces.add(p.traceId);
+            if (p.t >= from && p.t > after && p.t < until) parsed.push(p);
           }
         }
-        const report = await replayToDestination(destinationId, lines, { signal: abort.signal });
-        status.spans += report.spans;
-        status.logs += report.logs;
-        status.metricPoints += report.metricPoints;
-        status.filtered += report.filtered;
-        if (!report.ok) {
-          status.state = report.reason === 'cancelled' ? 'cancelled' : 'failed';
-          status.reason = report.reason;
-          break;
+        // Stable: lines with the same time keep their file order.
+        parsed.sort((a, b) => a.t - b.t);
+        const state = {};
+        for (const slice of slicesOf(parsed)) {
+          if (abort.signal.aborted) { status.state = 'cancelled'; break; }
+          const lines = session ? [session, ...slice.map((p) => p.line)] : slice.map((p) => p.line);
+          const report = await replayToDestination(destinationId, lines, { signal: abort.signal, errorTraceIds: failedTraces, state });
+          status.spans += report.spans;
+          status.logs += report.logs;
+          status.metricPoints += report.metricPoints;
+          status.filtered += report.filtered;
+          if (!report.ok) {
+            status.state = report.reason === 'cancelled' ? 'cancelled' : 'failed';
+            status.reason = report.reason;
+            break;
+          }
+          // Confirmed: everything up to this slice's time is sent.
+          await markSent(destinationId, slice[slice.length - 1].t);
+          changed();
         }
+        if (status.state !== 'running') break;
         status.runsDone++;
         changed();
       }
       if (status.state === 'running') {
         status.state = 'done';
-        // Sent once: never offered again, even after the destination is turned off and on.
-        await updateTelemetrySettings((s) => ({
-          ...s,
-          destinations: s.destinations.map((d) => (d.id === destinationId ? { ...d, backfilledThrough: Math.max(d.backfilledThrough ?? 0, until) } : d)),
-        }));
+        // Nothing left before the destination was turned on: never offered again.
+        await markSent(destinationId, until);
+        enabledAt.delete(destinationId);
       }
     } catch (err) {
       // telemetry-exempt: the status says it failed; nothing more is sent and it never retries on its own

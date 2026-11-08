@@ -313,6 +313,13 @@ describe('telemetry settings control', () => {
     expect(backfillCalls).toEqual(['enabled:azure', 'disabled:azure']);
   });
 
+  it('never notes an offer when export comes on without the user turning a destination on: Feedback reconnecting or a resume (#2920)', async () => {
+    backfillCalls.length = 0;
+    await control.syncFramebriarDestination();
+    await control.resumeExport();
+    expect(backfillCalls.filter((c) => c.startsWith('enabled:'))).toEqual([]);
+  });
+
   it('shows a Phase 1 file without recorded consent as off, and asks for consent to turn it on', async () => {
     state.settings = { ...state.settings, consentVersion: 0 };
     setEntry('azure', { enabled: true });

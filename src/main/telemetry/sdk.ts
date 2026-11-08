@@ -80,7 +80,7 @@ import { sanitizeStack, type Scrubber } from './scrubber';
 import { ExportResultCode, type ExportResult } from '@opentelemetry/core';
 import type { ReadableLogRecord } from '@opentelemetry/sdk-logs';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
-import { convertRecordLines } from './replay';
+import { convertRecordLines, type RunningTotals } from './replay';
 import type {
   Classification,
   ExportRecord,
@@ -529,13 +529,14 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       // Azure stamps metric envelopes with the export time: replayed windows would land now.
       metrics: dest.kind !== 'azure',
       framebriar: dest.kind === 'framebriar',
+      ...(runOpts.state && { totals: (runOpts.state.totals ??= new Map()) as RunningTotals }),
     });
     report.skipped = converted.skipped;
 
     let spans = converted.spans.filter((s) => filter.span({ name: s.name, attributes: s.attributes, isError: s.status.code === SpanStatusCode.ERROR }));
     if (filter.errorTail) {
       // As ErrorTailSpanProcessor: at Errors level, only traces that failed.
-      const failed = new Set(converted.spans.filter((s) => s.status.code === SpanStatusCode.ERROR).map((s) => s.spanContext().traceId));
+      const failed = runOpts.errorTraceIds ?? new Set(converted.spans.filter((s) => s.status.code === SpanStatusCode.ERROR).map((s) => s.spanContext().traceId));
       spans = spans.filter((s) => failed.has(s.spanContext().traceId));
     }
     let logs = converted.logs.filter((l) => filter.log({ name: String(l.eventName), attributes: l.attributes }));

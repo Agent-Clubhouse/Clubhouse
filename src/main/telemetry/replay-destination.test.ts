@@ -102,4 +102,16 @@ describe('runtime replay to one destination (#2920 backfill)', () => {
     expect(report.spans).toBe(1);
     expect(report.filtered).toBe(2);
   });
+
+  it("carries a run's cumulative totals from one slice to the next when given a state", async () => {
+    const cumulative: Sink = { ...sink(), metrics: new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE) };
+    const r = start([dest('otlp', 'otlp', cumulative, 'standard')]);
+    const counter = (startMs: number, sum: number) => JSON.stringify({ t: 'metric', ts: 'x', name: 'clubhouse.app.sessions', kind: 'counter', startMs, durationMs: 60_000, attrs: { 'clubhouse.startup.kind': 'cold' }, sum });
+    const state = {};
+    await r.replay!('otlp', [session, counter(T0, 2)], { state });
+    await r.replay!('otlp', [session, counter(T0 + 60_000, 3)], { state });
+    const values = cumulative.metrics.getMetrics().flatMap((rm) => rm.scopeMetrics.flatMap((sm) => sm.metrics.flatMap((m) => m.dataPoints.map((p) => p.value))));
+    expect(values).toEqual([2, 5]);
+  });
 });
+
