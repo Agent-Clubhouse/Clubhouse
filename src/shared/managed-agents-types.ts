@@ -64,10 +64,13 @@ export interface ManagedPartSummary {
   description: string;
   builtin: boolean;
   /**
-   * A retired built-in (#2902): still installed and delivered to agents and
-   * templates that list it, but hidden from the library and from new choices.
+   * A retired built-in (#2902) that couldn't become a copy yet, because some
+   * project's agents couldn't be read (D99): still installed and delivered,
+   * hidden from the library and from new choices.
    */
   retired?: true;
+  /** The person's copy of a built-in an app update retired (D99): visible and editable like any custom part. */
+  fromRetiredBuiltin?: true;
   revision: number;
   updatedAt: string;
   /** Who last changed it, when not the person: for example "Dispatcher". */
@@ -188,10 +191,12 @@ export interface ManagedTemplate {
   description: string;
   builtin: boolean;
   /**
-   * A retired built-in template (#2902): agents made from it keep working and
-   * it still resolves by id, but New agent and the template lists hide it.
+   * A retired built-in template (#2902). Since D99 it is never listed or
+   * read: whatever used it switches to a custom copy.
    */
   retired?: true;
+  /** A custom copy of a built-in template an app update retired: the built-in's id (D99). */
+  fromRetiredBuiltin?: string;
   setup: Omit<ManagedAgentSetup, 'version' | 'templateId'>;
   settings: ManagedTemplateSettings;
   updatedAt?: string;

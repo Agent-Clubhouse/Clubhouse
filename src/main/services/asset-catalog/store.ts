@@ -261,6 +261,19 @@ export function installBuiltinAsset(store: object, input: BuiltinInstall): Promi
   return install(input);
 }
 
+const builtinRemovers = new WeakMap<object, (input: { assetId: string; expectedRevision: number }) => Promise<void>>();
+
+/**
+ * The only way to remove a built-in: one an app update retired (D99). Like
+ * installBuiltinAsset, not on the store, and Clubhouse itself only. Refused
+ * while anything in the catalog still refers to it.
+ */
+export function removeBuiltinAsset(store: object, input: { assetId: string; expectedRevision: number }): Promise<void> {
+  const remove = builtinRemovers.get(store);
+  if (!remove) throw new TypeError('not an asset catalog store');
+  return remove(input);
+}
+
 /** Main-internal frozen input. Never expose through the catalog IPC or agent tools. */
 export interface FrozenActivation {
   pinId: string;
@@ -843,6 +856,23 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
       await commitIndex({ ...index, assets: { ...index.assets, [entry.id]: entry } });
       await auditCommitted('app', 'assetCatalog.builtin', entry.id);
       return entry;
+    }));
+  }
+
+  function removeBuiltin(input: { assetId: string; expectedRevision: number }): Promise<void> {
+    return guarded({ scope: 'app', key: 'assetCatalog.builtin', targetId: isAssetId(input.assetId) ? input.assetId : undefined }, () => serial(async () => {
+      if (currentSettingsOrigin().surface !== 'system') throw new AssetCatalogError('agent_not_permitted');
+      const index = await loadIndex();
+      const entry = getLiveEntry(index, input.assetId);
+      if (entry.source.kind !== 'builtin') throw new AssetCatalogError('asset_exists', { assetId: entry.id });
+      if (input.expectedRevision !== entry.headRevision) {
+        throw new AssetCatalogError('stale_revision', { assetId: entry.id, expected: input.expectedRevision, current: entry.headRevision });
+      }
+      if (hasHardReference(listConsumers(index, entry.id))) throw new AssetCatalogError('asset_in_use', { assetId: entry.id });
+      const next = pruneTombstones(tombstoned(index, entry, now()));
+      await commitIndex(next);
+      await auditCommitted('app', `assetCatalog.${entry.kind}.deleted`, entry.id);
+      await sweepAfterCommit(next);
     }));
   }
 
@@ -1521,5 +1551,6 @@ export function createAssetCatalogStore(options: AssetCatalogStoreOptions) {
     },
   });
   builtinInstallers.set(api, installBuiltin);
+  builtinRemovers.set(api, removeBuiltin);
   return api;
 }

@@ -59,7 +59,8 @@ beforeEach(async () => {
 describe('built-ins', () => {
   it('installs every built-in once and leaves an unchanged one alone on a second run', async () => {
     const blocks = await user(() => service.listParts('block'));
-    expect(blocks.filter((b) => b.builtin).map((b) => b.id).sort()).toEqual(builtinParts().filter((p) => p.kind === 'block').map((p) => p.id).sort());
+    // Every built-in block but the retired ones, which are never installed (D99).
+    expect(blocks.filter((b) => b.builtin).map((b) => b.id).sort()).toEqual(builtinParts().filter((p) => p.kind === 'block' && !p.retired).map((p) => p.id).sort());
     const before = (await user(() => service.getPart(BUILTIN_BLOCK_IDS.identity))).revision;
     await service.ensureBuiltins();
     expect((await user(() => service.getPart(BUILTIN_BLOCK_IDS.identity))).revision).toBe(before);
@@ -83,13 +84,15 @@ describe('built-ins', () => {
     expect((await user(() => fresh.listParts('skill'))).map((p) => p.id)).toContain(BUILTIN_SKILL_IDS.validate);
   });
 
-  it('ships the built-ins from the maintainer\'s builder review (#2902), with the cut ones retired (D71)', async () => {
+  it('ships the built-ins from the maintainer\'s builder review (#2902), without the cut ones (D71, D99)', async () => {
     const blocks = (await user(() => service.listParts('block'))).filter((b) => b.builtin);
     expect(blocks.filter(isListed).map((b) => b.name)).toEqual([
       'Clubhouse basics', 'Developer', 'Group project lead', 'Group projects', 'Helper', 'Identity', 'Identity (working)',
       'Merging', 'Orchestrator', 'Product owner', 'Pull requests', 'Quality assurance', 'Researcher',
     ]);
-    expect(blocks.filter((b) => b.retired).map((b) => b.id).sort()).toEqual([
+    expect(blocks.filter((b) => b.retired)).toEqual([]);
+    // The cut ones are in the manifest, retired, so an install that had them can turn them into copies.
+    expect(BUILTIN_MANIFEST.blocks.filter((b) => b.retired).map((b) => b.id).sort()).toEqual([
       BUILTIN_BLOCK_IDS.reviewer, BUILTIN_BLOCK_IDS.developerMerge, BUILTIN_BLOCK_IDS.developerPr, BUILTIN_BLOCK_IDS.projectManager,
     ].sort());
     const templates = await user(() => service.listTemplates());
@@ -98,7 +101,8 @@ describe('built-ins', () => {
       'Developer (Full Merge)', 'Developer (No Merge)',
       'Product Owner', 'Researcher', 'Helper', 'Developer helper', 'Research helper', 'QA helper',
     ]);
-    expect(templates.filter((t) => t.retired).map((t) => t.id)).toEqual(['builtin-template-project-manager']);
+    expect(templates.filter((t) => t.retired)).toEqual([]);
+    expect(builtinTemplates().filter((t) => t.retired).map((t) => t.id)).toEqual(['builtin-template-project-manager']);
     expect(DEFAULT_HELPER_TEMPLATE_ID).toBe('builtin-template-helper');
     expect(await service.defaultHelperTemplateId()).toBe('builtin-template-helper');
   });
@@ -126,8 +130,9 @@ describe('built-ins', () => {
     expect(skills.filter(isListed).map((p) => p.name)).toEqual([
       'Build', 'Lint', 'Post result to parent', 'Post result to the board', 'Post result to the pull request', 'Test', 'Validate',
     ]);
-    // The generic Post result was cut: hidden, still installed and delivered to agents that have it (D71).
-    expect(skills.filter((p) => p.retired).map((p) => p.id)).toEqual([BUILTIN_SKILL_IDS.postResult]);
+    // The generic Post result was cut: retired in the manifest, not installed (D99).
+    expect(skills.filter((p) => p.retired)).toEqual([]);
+    expect(BUILTIN_MANIFEST.skills.filter((sk) => sk.retired).map((sk) => sk.id)).toEqual([BUILTIN_SKILL_IDS.postResult]);
     const validate = await user(() => service.getPart(BUILTIN_SKILL_IDS.validate));
     expect(validate).toMatchObject({ builtin: true, kind: 'skill' });
     expect(validate.description).not.toBe('');
@@ -202,7 +207,7 @@ describe('built-ins', () => {
 
   it('installs every post-result variant as post-result/, so a setup carries only one (#2902)', async () => {
     const S = BUILTIN_SKILL_IDS;
-    const variants = [S.postResult, S.postResultParent, S.postResultBoard, S.postResultPr];
+    const variants = [S.postResultParent, S.postResultBoard, S.postResultPr];
     for (const id of variants) {
       const part = await user(() => service.getPart(id));
       expect(part.content.kind === 'skill' && part.content.skillName, id).toBe('post-result');
@@ -245,31 +250,6 @@ describe('built-ins', () => {
   it('keeps the Identity line the E2E specs look for', () => {
     const identity = builtinParts().find((p) => p.id === BUILTIN_BLOCK_IDS.identity)!;
     expect((identity.payload as { content: string }).content.split('\n')[0]).toBe('You are @@AgentName, an agent working in Clubhouse.');
-  });
-
-  it('a retired built-in is hidden from listings but still resolves, builds a setup and keeps its agents (D71)', async () => {
-    const parts = await user(() => service.listParts('block'));
-    const pm = parts.find((p) => p.id === BUILTIN_BLOCK_IDS.projectManager)!;
-    expect(pm).toMatchObject({ builtin: true, retired: true });
-    expect(parts.filter(isListed).map((p) => p.id)).not.toContain(pm.id);
-    expect(parts.find((p) => p.id === BUILTIN_BLOCK_IDS.identity)!.retired).toBeUndefined();
-    const read = await user(() => service.getPart(pm.id));
-    expect(read.retired).toBe(true);
-    expect(read.content.kind === 'block' && read.content.content.length).toBeGreaterThan(0);
-
-    const template = await user(() => service.getTemplate('builtin-template-project-manager'));
-    expect(template.retired).toBe(true);
-    const { setup } = await user(() => service.setupFromTemplate(template.id));
-    expect(setup.blocks).toEqual([BUILTIN_BLOCK_IDS.identity, BUILTIN_BLOCK_IDS.basics, BUILTIN_BLOCK_IDS.projectManager]);
-    agent('a', setup);
-    const listed = await user(() => service.listTemplates());
-    expect(listed.find((t) => t.id === template.id)!.usedBy).toBe(1);
-    expect((await user(() => service.listParts('block'))).find((p) => p.id === pm.id)!.usedBy.map((c) => c.agentId)).toEqual(['a']);
-    // Its agent's setup still saves: the part is installed.
-    expect((await user(() => service.saveSetup('/p', 'a', setup))).blocks).toContain(pm.id);
-    // A second install leaves it in place.
-    await service.ensureBuiltins();
-    expect((await user(() => service.getPart(pm.id))).revision).toBe(read.revision);
   });
 
   it('frees a retired built-in\'s name for new parts and templates (D71)', async () => {

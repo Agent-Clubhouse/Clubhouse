@@ -1306,6 +1306,45 @@ export async function peekDurableConfigs(projectPath: string): Promise<readonly 
   return [];
 }
 
+/**
+ * peekDurableConfigs, also saying whether the agents could be read, for a
+ * change that must not act on a project it can't see (D99). Not readable: the
+ * project folder is missing or can't be read (an unmounted drive), or
+ * agents.json or its backup is there but can't be read or doesn't parse into
+ * agents. A readable folder with neither file has no agents. Changes nothing.
+ */
+export async function peekDurableConfigsChecked(projectPath: string): Promise<{ agents: readonly DurableAgentConfig[]; readable: boolean }> {
+  const entry = configCache.get(projectPath);
+  if (entry) return { agents: entry.agents, readable: true };
+  try {
+    if (!(await fsp.stat(projectPath)).isDirectory()) return { agents: [], readable: false };
+  } catch {
+    // telemetry-exempt: the caller is told the project couldn't be read
+    return { agents: [], readable: false };
+  }
+  let present = false;
+  for (const file of [agentsConfigPath(projectPath), agentsBackupPath(projectPath)]) {
+    let raw: string;
+    try {
+      raw = await fsp.readFile(file, 'utf-8');
+    } catch (err) {
+      // telemetry-exempt: no file is no agents; any other error means it couldn't be read, which the caller is told
+      if (!isMissingFileError(err)) present = true;
+      continue;
+    }
+    present = true;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed)) continue;
+      const valid = parsed.filter(isAgentRecord);
+      if (valid.length > 0 || parsed.length === 0) return { agents: valid, readable: true };
+    } catch {
+      // telemetry-exempt: a file that doesn't parse; the caller is told it couldn't be read
+    }
+  }
+  return { agents: [], readable: !present };
+}
+
 /** What the catalog said about a saved context choice, checked before an update touches the agent. */
 interface ContextWindowPreflight {
   /** The project's CLI, for an agent with none of its own. */

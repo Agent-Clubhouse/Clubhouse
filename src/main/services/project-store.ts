@@ -482,6 +482,32 @@ export async function peekProjects(): Promise<Project[]> {
   return [];
 }
 
+/**
+ * peekProjects, also saying whether the list could be read (D99): not when
+ * projects.json or its backup is there but neither reads and parses. With
+ * neither file there are no projects. Changes nothing.
+ */
+export async function peekProjectsChecked(): Promise<{ projects: Project[]; readable: boolean }> {
+  let present = false;
+  for (const name of ['projects.json', 'projects.json.bak']) {
+    let raw: string;
+    try {
+      raw = await fsp.readFile(path.join(getBaseDirPath(), name), 'utf-8');
+    } catch (err) {
+      // telemetry-exempt: no file is no projects; any other error means it couldn't be read, which the caller is told
+      if ((err as NodeJS.ErrnoException | null)?.code !== 'ENOENT') present = true;
+      continue;
+    }
+    present = true;
+    try {
+      return { projects: migrate(JSON.parse(raw)).store.projects, readable: true };
+    } catch {
+      // telemetry-exempt: a file that doesn't parse; the caller is told it couldn't be read
+    }
+  }
+  return { projects: [], readable: !present };
+}
+
 export async function add(dirPath: string): Promise<Project> {
   const name = path.basename(dirPath);
   const id = `proj_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;

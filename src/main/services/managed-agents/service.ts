@@ -9,7 +9,7 @@
  * two can't drift (#2900).
  */
 import { canonicalHash } from '../asset-catalog/planner';
-import { AssetCatalogError, installBuiltinAsset, type AssetCatalogStore } from '../asset-catalog/store';
+import { AssetCatalogError, installBuiltinAsset, removeBuiltinAsset, type AssetCatalogStore } from '../asset-catalog/store';
 import { auditChanged, auditChanges, currentSettingsOrigin, withSettingsSurface } from '../settings-audit';
 import { appLog } from '../log-service';
 import type { AssetPayload, BlockAssetPayload, CatalogEntry, McpAssetPayload, SkillAssetPayload } from '../../../shared/asset-catalog-types';
@@ -57,6 +57,18 @@ export interface ManagedAgentsDeps {
   onChanged?(): void;
   /** Called after an agent stops being managed, to remove what Clubhouse added to its folder for itself. Never throws. */
   onUnmanaged?(projectPath: string, agent: DurableAgentConfig): Promise<void>;
+  /** Like listProjects, saying whether the list could be read. Retired built-ins are removed only when it could (D99). */
+  listProjectsChecked?(): Promise<{ projects: Array<{ path: string; name: string }>; readable: boolean }>;
+  /** Like listAgents, saying whether the project's agents could be read (D99). */
+  listAgentsChecked?(projectPath: string): Promise<{ agents: readonly DurableAgentConfig[]; readable: boolean }>;
+  /** Set an agent's own helper template, when a retired built-in template it names becomes a copy (D99). */
+  setHelperTemplate?(projectPath: string, agentId: string, templateId: string): Promise<void>;
+  /**
+   * Called after a retired built-in in an agent's setup was swapped for its
+   * copy (D99), with the setup before and after. Delivery is the same, so a
+   * running session's record can follow and no setup-changed bar shows.
+   */
+  onSetupRemapped?(projectPath: string, agent: DurableAgentConfig, before: ManagedAgentSetup, after: ManagedAgentSetup): Promise<void>;
 }
 
 const KINDS: ManagedPartKind[] = ['block', 'skill', 'mcp'];
@@ -287,7 +299,8 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
   async function allTemplates(): Promise<ManagedTemplate[]> {
     const s = await state.read();
     // A custom template saved before the Clubhouse part was required reads as having it.
-    return [...BUILTIN_TEMPLATES.values(), ...Object.values(s.templates).map(withClubhousePartIn)];
+    // Retired built-in templates are gone: what used one has its own copy (D99).
+    return [...BUILTIN_TEMPLATES.values()].filter(isListed).concat(Object.values(s.templates).map(withClubhousePartIn));
   }
 
   async function summarize(entry: CatalogEntry, consumers?: ManagedPartConsumer[], templates?: ManagedTemplate[]): Promise<ManagedPartSummary> {
@@ -307,6 +320,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       description: builtin ? (BUILTINS.get(entry.id)?.description ?? '') : (meta.description ?? ''),
       builtin,
       ...(builtin && BUILTINS.get(entry.id)?.retired && { retired: true as const }),
+      ...(!builtin && meta.fromRetiredBuiltin && { fromRetiredBuiltin: true as const }),
       revision: entry.headRevision,
       updatedAt: head?.savedAt ?? entry.createdAt,
       ...(meta.updatedBy && { updatedBy: meta.updatedBy }),
@@ -330,7 +344,8 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
   }
 
   async function uniqueName(kind: ManagedPartKind, wanted: string, exceptId?: string): Promise<string> {
-    const names = new Set(Object.values(await liveEntries()).filter((e) => e.kind === kind && e.id !== exceptId).map((e) => e.name.toLowerCase()));
+    // A retired built-in's name is free (D71): its copy takes the same name (D99).
+    const names = new Set(Object.values(await liveEntries()).filter((e) => e.kind === kind && e.id !== exceptId && !isRetiredBuiltin(e)).map((e) => e.name.toLowerCase()));
     if (!names.has(wanted.toLowerCase())) return wanted;
     for (let n = 2; n < 1000; n++) {
       const candidate = `${wanted} ${n}`;
@@ -368,6 +383,166 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     return written;
   }
 
+  /**
+   * Write an agent's setup with a retired built-in swapped for its copy. What
+   * start_helper changed (D91) follows the swap, so the line in Details stays.
+   */
+  async function rewriteSetup(projectPath: string, agent: DurableAgentConfig, next: ManagedAgentSetup, from: string, to: string): Promise<void> {
+    const before = agent.managed!;
+    const swap = (ids: string[]) => ids.map((x) => (x === from ? to : x));
+    const helperChanges = before.helperChanges && { added: swap(before.helperChanges.added), removed: swap(before.helperChanges.removed) };
+    const written = await writeAgentSetup(projectPath, agent.id, next, { before: agent, ...(helperChanges && { helperChanges }) });
+    await deps.onSetupRemapped?.(projectPath, agent, before, written);
+  }
+
+  /** `wanted`, or with a number after it when a listed template already has that name. */
+  function freeName(wanted: string, taken: Set<string>): string {
+    if (!taken.has(wanted.toLowerCase())) return wanted;
+    for (let n = 2; n < 1000; n++) if (!taken.has(`${wanted} ${n}`.toLowerCase())) return `${wanted} ${n}`;
+    return `${wanted} ${Date.now()}`;
+  }
+
+  /**
+   * Built-ins an app update retired become the person's own copies (D99,
+   * revising D71). Every agent and custom template that uses a retired
+   * built-in part or template switches to a custom copy with the same name
+   * and content, marked as coming from a retired built-in, visible and
+   * editable in the library. A retired built-in part nothing uses is
+   * removed, and a retired built-in template is no longer listed. Runs with
+   * every built-in install, so a later update's retirements are handled the
+   * same way; once a retired built-in is gone there is nothing left to do.
+   * The copy holds the same text, so what an agent is delivered doesn't
+   * change. While a project's agents can't be read, the retired parts stay
+   * installed, so none of its agents loses one; a later start tries again.
+   */
+  async function adoptRetiredBuiltins(): Promise<void> {
+    const retiredParts = [...BUILTINS.values()].filter((p) => p.retired);
+    const retiredTemplates = [...BUILTIN_TEMPLATES.values()].filter((t) => t.retired);
+    if (retiredParts.length === 0 && retiredTemplates.length === 0) return;
+
+    // "No agents" and "couldn't read them" differ here: a project that couldn't be read keeps the retired parts.
+    const registered = deps.listProjectsChecked ? await deps.listProjectsChecked() : { projects: await deps.listProjects(), readable: true };
+    let incomplete = !registered.readable;
+    const agents: Array<{ projectPath: string; agent: DurableAgentConfig }> = [];
+    for (const project of registered.projects) {
+      try {
+        const read = deps.listAgentsChecked ? await deps.listAgentsChecked(project.path) : { agents: await deps.listAgents(project.path), readable: true };
+        if (!read.readable) incomplete = true;
+        for (const agent of read.agents) agents.push({ projectPath: project.path, agent });
+      } catch (err) {
+        // telemetry-exempt: logged below with the other unreadable projects; the retired parts stay installed.
+        incomplete = true;
+        appLog('core:managed', 'warn', 'Could not read a project\'s agents while adopting retired built-ins', { meta: { error: err instanceof Error ? err.message : String(err) } });
+      }
+    }
+    if (incomplete) appLog('core:managed', 'warn', 'Some projects or their agents could not be read; retired built-ins stay installed until they can', { meta: { projects: registered.projects.length } });
+    const current = new Map(agents.map(({ projectPath, agent }) => [`${projectPath}\0${agent.id}`, { projectPath, agent }]));
+    const s0 = await state.read();
+    const copies: Record<string, string> = { ...(s0.retiredCopies ?? {}) };
+
+    // ── Templates first, so a template copy's parts are switched with the rest below ──
+    for (const t of retiredTemplates) {
+      const madeFrom = agents.filter(({ agent }) => agent.managed?.templateId === t.id);
+      const helperOf = agents.filter(({ agent }) => agent.helperTemplateId === t.id);
+      const s = await state.read();
+      const inTemplates = Object.values(s.templates).some((x) => x.settings.helperTemplateId === t.id);
+      const isDefault = s.defaultHelperTemplateId === t.id;
+      if (madeFrom.length === 0 && helperOf.length === 0 && !inTemplates && !isDefault) continue;
+      let copyId = copies[t.id] && s.templates[copies[t.id]] ? copies[t.id] : null;
+      if (!copyId) {
+        const id = `template-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
+        await state.update((st) => {
+          const taken = new Set([...BUILTIN_TEMPLATES.values(), ...Object.values(st.templates)].filter((x) => isListed(x)).map((x) => x.name.toLowerCase()));
+          st.templates[id] = {
+            id, name: freeName(t.name, taken), description: t.description, builtin: false,
+            setup: structuredClone(t.setup), settings: structuredClone(t.settings),
+            updatedAt: new Date().toISOString(), fromRetiredBuiltin: t.id,
+          };
+          st.retiredCopies = { ...(st.retiredCopies ?? {}), [t.id]: id };
+        });
+        await auditManaged('managed.template.saved', id);
+        copyId = id;
+        copies[t.id] = id;
+      }
+      await state.update((st) => {
+        for (const x of Object.values(st.templates)) if (x.settings.helperTemplateId === t.id) x.settings.helperTemplateId = copyId!;
+        if (st.defaultHelperTemplateId === t.id) st.defaultHelperTemplateId = copyId!;
+      });
+      for (const { projectPath, agent } of madeFrom) {
+        const fresh = await deps.getAgent(projectPath, agent.id);
+        if (!fresh?.managed || fresh.managed.templateId !== t.id) continue;
+        await rewriteSetup(projectPath, fresh, { ...fresh.managed, templateId: copyId! }, t.id, copyId!);
+      }
+      for (const { projectPath, agent } of helperOf) await deps.setHelperTemplate?.(projectPath, agent.id, copyId);
+      appLog('core:managed', 'info', 'A retired built-in template became a custom copy', { meta: { builtinId: t.id, copyId, agents: madeFrom.length + helperOf.length } });
+    }
+
+    // ── Parts ──
+    const live = await liveEntries();
+    const listed = [...BUILTIN_TEMPLATES.values()].filter((t) => isListed(t));
+    for (const part of retiredParts) {
+      // A built-in template still offered can't change, so the part it lists stays installed.
+      if (listed.some((t) => listOf({ version: 1, ...t.setup }, part.kind).includes(part.id))) {
+        appLog('core:managed', 'warn', 'A retired built-in part is still in a built-in template; it stays', { meta: { id: part.id } });
+        continue;
+      }
+      const entry = live[part.id];
+      const users = [...current.values()].filter(({ agent }) => agent.managed && listOf(agent.managed, part.kind).includes(part.id));
+      const s = await state.read();
+      const inTemplates = Object.values(s.templates).some((t) => listOf({ version: 1, ...t.setup }, part.kind).includes(part.id));
+      if (users.length > 0 || inTemplates) {
+        let copyId = copies[part.id] && live[copies[part.id]] ? copies[part.id] : null;
+        if (!copyId) {
+          // What agents get now: the installed text, or the shipped text when it was never installed here.
+          const payload = entry ? await catalog.readRevision(entry.id, entry.headRevision) : part.payload;
+          // A copy made before the app stopped, and never recorded: it is this one, so it isn't made twice.
+          const cutShort = (await state.read()).retiredPending?.[part.id];
+          const orphan = cutShort && Object.values(live).find((e) => e.kind === part.kind && e.source.kind !== 'builtin'
+            && e.name === cutShort.name && e.createdAt >= cutShort.at && !s.parts[e.id]);
+          let made = false;
+          if (orphan) {
+            copyId = orphan.id;
+          } else {
+            const name = await uniqueName(part.kind, part.name);
+            // The intent first: the catalog commits the copy before managed state can say what it is.
+            await state.update((st) => { st.retiredPending = { ...(st.retiredPending ?? {}), [part.id]: { name, at: new Date().toISOString() } }; });
+            copyId = (await catalog.createAsset({ kind: part.kind, name, payload: payload as AssetPayload })).id;
+            made = true;
+          }
+          const id = copyId;
+          await state.update((st) => {
+            st.parts[id] = { ...(part.description && { description: part.description }), fromRetiredBuiltin: part.id };
+            st.retiredCopies = { ...(st.retiredCopies ?? {}), [part.id]: id };
+            if (st.retiredPending) delete st.retiredPending[part.id];
+          });
+          if (made) await auditManaged('managed.part.created', id);
+          copies[part.id] = id;
+        }
+        for (const { projectPath, agent } of users) {
+          const fresh = await deps.getAgent(projectPath, agent.id);
+          if (!fresh?.managed || !listOf(fresh.managed, part.kind).includes(part.id)) continue;
+          await rewriteSetup(projectPath, fresh, replaceIn(fresh.managed, part.id, copyId), part.id, copyId!);
+        }
+        await state.update((st) => {
+          for (const t of Object.values(st.templates)) {
+            const swap = (ids: string[]) => ids.map((x) => (x === part.id ? copyId! : x)).filter((x, i, all) => all.indexOf(x) === i);
+            t.setup = { blocks: swap(t.setup.blocks), skills: swap(t.setup.skills), mcps: swap(t.setup.mcps) };
+          }
+        });
+        appLog('core:managed', 'info', 'A retired built-in part became a custom copy', { meta: { builtinId: part.id, copyId, agents: users.length } });
+      }
+      if (entry && !incomplete) {
+        try {
+          await removeBuiltinAsset(catalog, { assetId: part.id, expectedRevision: entry.headRevision });
+          await auditManaged('managed.part.deleted', part.id);
+        } catch (err) {
+          // telemetry-exempt: logged with the catalog's code; it stays installed and hidden, and a later start tries again.
+          appLog('core:managed', 'warn', 'A retired built-in part could not be removed; it stays hidden', { meta: { id: part.id, code: err instanceof AssetCatalogError ? err.code : 'unknown' } });
+        }
+      }
+    }
+  }
+
   const api = {
     /** Install or update the built-in parts. Startup only: runs as Clubhouse itself. */
     async ensureBuiltins(): Promise<void> {
@@ -376,6 +551,8 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       await withSettingsSurface('system', undefined, async () => {
         const index = await catalog.read();
         for (const part of BUILTINS.values()) {
+          // A retired built-in is never installed or updated: what uses it gets its own copy below (D99).
+          if (part.retired) continue;
           const existing = index.assets[part.id];
           if (existing && existing.source.kind !== 'builtin') continue;
           if (existing && !existing.deletedAt) {
@@ -393,7 +570,15 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
             appLog('core:managed', 'error', 'A built-in agent part could not be installed; skipped', { meta: { id: part.id, code: err instanceof AssetCatalogError ? err.code : 'unknown' } });
           }
         }
+        try {
+          await adoptRetiredBuiltins();
+        } catch (err) {
+          // telemetry-exempt: logged with the catalog's code; the call throws so a later start tries again.
+          failed.push('retired built-ins');
+          appLog('core:managed', 'error', 'Retired built-ins could not become custom copies', { meta: { code: err instanceof AssetCatalogError ? err.code : err instanceof Error ? err.message : 'unknown' } });
+        }
       });
+      if (failed.length > 0) changed();
       if (failed.length > 0) throw new Error(`Built-in agent parts could not be installed: ${failed.join(', ')}`);
     },
 
@@ -846,7 +1031,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     async defaultHelperTemplateId(): Promise<string> {
       const s = await state.read();
       const id = s.defaultHelperTemplateId;
-      if (id && (BUILTIN_TEMPLATES.has(id) || s.templates[id])) return id;
+      if (id && ((BUILTIN_TEMPLATES.has(id) && isListed(BUILTIN_TEMPLATES.get(id)!)) || s.templates[id])) return id;
       return DEFAULT_HELPER_TEMPLATE_ID;
     },
 
@@ -889,11 +1074,12 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     },
 
     /** Read a part's head content, for delivery. */
-    async headContent(id: string): Promise<{ entry: CatalogEntry; content: ManagedPartContent; droppedEnvValues: string[] } | null> {
+    async headContent(id: string): Promise<{ entry: CatalogEntry; content: ManagedPartContent; droppedEnvValues: string[]; fromRetiredBuiltin?: true } | null> {
       const live = await liveEntries();
       const entry = live[id];
       if (!entry) return null;
-      return { entry, ...(await readHead(entry)) };
+      const retiredCopy = entry.source.kind !== 'builtin' && !!(await state.read()).parts[id]?.fromRetiredBuiltin;
+      return { entry, ...(await readHead(entry)), ...(retiredCopy && { fromRetiredBuiltin: true as const }) };
     },
 
     async liveEntries(): Promise<Record<string, CatalogEntry>> {
