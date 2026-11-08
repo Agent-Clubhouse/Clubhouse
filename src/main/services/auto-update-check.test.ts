@@ -68,7 +68,7 @@ vi.mock('./agent-runtime/chat-version-policy', () => ({ applyRemoteCliDenylist: 
 // Imports
 // ---------------------------------------------------------------------------
 
-import { checkForUpdates, meetsMinSystemVersion, needsNewerSystem } from './auto-update-service';
+import { _setStatusForTesting, checkForUpdates, meetsMinSystemVersion, needsNewerSystem } from './auto-update-service';
 import { appLog } from './log-service';
 
 // ---------------------------------------------------------------------------
@@ -243,6 +243,25 @@ describe('checkForUpdates', () => {
       expect(meetsMinSystemVersion('26.1', '13.0')).toBe(true);
       expect(meetsMinSystemVersion('13.0', 'not a version')).toBe(true);
       expect(meetsMinSystemVersion('', '13.0')).toBe(true);
+    });
+  });
+
+  describe('an update already downloaded (#3104)', () => {
+    const ready = { state: 'ready' as const, availableVersion: '0.99.0', releaseNotes: null, releaseMessage: null, downloadProgress: 100, downloadPath: '/tmp/Clubhouse-0.99.0.zip', error: null, artifactUrl: 'https://example.com/Clubhouse-0.99.0.zip' };
+    afterEach(() => _setStatusForTesting({ ...ready, state: 'idle', availableVersion: null, downloadPath: null, artifactUrl: null, downloadProgress: 0 } as never));
+
+    it('stays ready when a later check fails', async () => {
+      _setStatusForTesting(ready as never);
+      mockHttpsGet(500, 'Internal Server Error');
+      const result = await checkForUpdates(false, 'periodic');
+      expect(result).toMatchObject({ state: 'ready', availableVersion: '0.99.0', artifactUrl: ready.artifactUrl, error: null });
+    });
+
+    it('stays ready when the newest manifest has no artifact for this platform', async () => {
+      _setStatusForTesting(ready as never);
+      mockHttpsGet(200, JSON.stringify(makeManifest('99.1.0', { artifacts: { 'fake-platform-fake-arch': { url: 'x', sha256: 'y' } } })));
+      const result = await checkForUpdates(false, 'periodic');
+      expect(result).toMatchObject({ state: 'ready', availableVersion: '0.99.0' });
     });
   });
 

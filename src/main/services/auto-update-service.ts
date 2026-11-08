@@ -654,7 +654,9 @@ export async function checkForUpdates(
       appLog('update:check', 'warn', `No artifact for platform ${key}`, {
         meta: { version: manifest.version, availableKeys: Object.keys(manifest.artifacts) },
       });
-      setState('idle');
+      // An update already downloaded stays ready (#3104).
+      if (readyBefore) setState('ready', readyBefore);
+      else setState('idle');
       recordCheck('no_artifact');
       return status;
     }
@@ -713,7 +715,10 @@ export async function checkForUpdates(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     appLog('update:check', 'error', `Update check failed: ${msg}`);
-    setState('error', { error: msg });
+    // A failed check (offline after sleep, a 5xx) or a failed newer download leaves the
+    // update already downloaded ready, so the banner and install-on-quit keep it (#3104).
+    if (readyBefore) setState('ready', readyBefore);
+    else setState('error', { error: msg });
     recordCheck('failed', err);
     return status;
   }
