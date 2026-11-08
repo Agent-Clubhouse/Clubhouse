@@ -850,8 +850,10 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
     },
 
     /**
-     * Stop managing an agent. It keeps the last files Clubhouse wrote, except
+     * Clear an agent's setup. It keeps the last files Clubhouse wrote, except
      * the settings Clubhouse added for itself, which onUnmanaged removes.
+     * Switch to plain (`plain.ts`, D98) calls this, then brings back the
+     * earlier files the person chose.
      */
     async unmanage(projectPath: string, agentId: string): Promise<void> {
       const agent = await deps.getAgent(projectPath, agentId);

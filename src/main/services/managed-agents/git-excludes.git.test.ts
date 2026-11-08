@@ -124,7 +124,7 @@ describe('root files of managed agents (D97)', () => {
     await refreshManagedExcludes(project, deps);
     expect(ignored(project, 'CLAUDE.md')).toBe(true);
 
-    // Stop managing it.
+    // Switch it to plain.
     delete one.managed;
     await refreshManagedExcludes(project, deps);
     expect(ignored(project, 'CLAUDE.md')).toBe(false);
