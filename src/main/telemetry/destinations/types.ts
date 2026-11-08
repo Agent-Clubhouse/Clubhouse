@@ -44,6 +44,11 @@ export interface SdkDestination {
    * attributes. Metrics are left alone.
    */
   copyResourceAttributes?: readonly string[];
+  /**
+   * Attribute keys removed from every span and log record this destination
+   * receives, after copying. Other destinations still get them.
+   */
+  dropAttributes?: readonly string[];
 }
 
 /** What an adapter gets from the host when it builds exporters. */
@@ -72,6 +77,8 @@ export interface DestinationAdapter<Config = unknown> {
   createExporters(config: Config, entry: TelemetryDestinationEntry, ctx: DestinationContext): Promise<DestinationExporters>;
   /** Resource attributes to copy onto spans and log records (see SdkDestination). */
   copyResourceAttributes?: readonly string[];
+  /** Attributes removed from spans and log records (see SdkDestination). */
+  dropAttributes?: readonly string[];
   /** Items wait in a local queue when offline (Azure only today). */
   usesOfflineQueue?: boolean;
   /** Plain-words reason for a failed export, when this kind knows better than the generic text. */

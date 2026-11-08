@@ -566,6 +566,14 @@ async function fetchBestManifest(previewChannel: boolean): Promise<ManifestResul
 
   // Pick whichever is newer. isNewerVersion handles prerelease suffixes
   // (rc, -beta.N) and considers a stable release newer than its prerelease.
+  // One this OS can't run loses to one it can (#2924).
+  const runnable = (m: UpdateManifest) => {
+    const artifact = m.artifacts?.[platformKey()];
+    return !artifact || !needsNewerSystem(artifact, currentSystemVersion());
+  };
+  if (runnable(preview) !== runnable(stable)) {
+    return runnable(preview) ? { manifest: preview, sourceUrl: PREVIEW_UPDATE_URL } : { manifest: stable, sourceUrl: UPDATE_URL };
+  }
   if (isNewerVersion(preview.version, stable.version)) {
     return { manifest: preview, sourceUrl: PREVIEW_UPDATE_URL };
   }
@@ -589,6 +597,8 @@ export async function checkForUpdates(
   const recordCheck = (result: Parameters<typeof recordUpdateCheck>[0]['result'], error?: unknown): void =>
     recordUpdateCheck({ startMs: checkStartMs, trigger, preview: settings.previewChannel, result, error });
 
+  // An update already downloaded, kept if the newest one turns out to need a newer OS.
+  const readyBefore = status.state === 'ready' ? { ...status } : null;
   setState('checking');
   appLog('update:check', 'info', 'Checking for updates', {
     meta: { manual, currentVersion: app.getVersion(), previewChannel: settings.previewChannel },
@@ -649,6 +659,25 @@ export async function checkForUpdates(
       return status;
     }
 
+    // An update this OS can't run would replace a working install with one that won't launch (#2924).
+    const systemVersion = currentSystemVersion();
+    if (needsNewerSystem(artifact, systemVersion)) {
+      appLog('update:check', 'warn', `Update ${manifest.version} needs a newer OS; staying on ${currentVersion}`, {
+        meta: { version: manifest.version, platform: key, systemVersion, minSystemVersion: artifact.minSystemVersion },
+      });
+      if (readyBefore && readyBefore.availableVersion !== manifest.version) {
+        // An earlier update already downloaded for this OS stays ready.
+        setState('ready', readyBefore);
+      } else {
+        // Downloaded before its minimum was known, this OS can't run it.
+        if (readyBefore) await clearPendingUpdateInfo();
+        setState('idle', readyBefore ? { availableVersion: null, downloadPath: null, artifactUrl: null, downloadProgress: 0 } : undefined);
+      }
+      await saveSettings({ ...settings, lastCheck: new Date().toISOString() });
+      recordCheck('os_too_old');
+      return status;
+    }
+
     appLog('update:check', 'info', `Update available: ${manifest.version}`, {
       meta: { currentVersion, newVersion: manifest.version },
     });
@@ -690,6 +719,34 @@ export async function checkForUpdates(
   }
 }
 
+/** The OS version as Electron reports it (macOS `13.4.1`, Windows `10.0.19045`), or null outside Electron. */
+function currentSystemVersion(): string | null {
+  return typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : null;
+}
+
+/** True when the artifact names a minimum OS version and this OS is known to be below it. */
+export function needsNewerSystem(artifact: UpdateArtifact, systemVersion: string | null): boolean {
+  return !!artifact.minSystemVersion && !!systemVersion && !meetsMinSystemVersion(systemVersion, artifact.minSystemVersion);
+}
+
+/**
+ * Whether `current` is at or above `min`, comparing dotted numbers part by
+ * part (`13` equals `13.0.0`). A minimum that isn't dotted numbers sets no
+ * limit, so a bad manifest value never strands a client.
+ */
+export function meetsMinSystemVersion(current: string, min: string): boolean {
+  const parse = (v: string) => (/^\d+(\.\d+)*$/.test(v.trim()) ? v.trim().split('.').map(Number) : null);
+  const want = parse(min);
+  if (!want) return true;
+  const have = (current.match(/^\d+(\.\d+)*/)?.[0] ?? '').split('.').filter(Boolean).map(Number);
+  if (have.length === 0) return true;
+  for (let i = 0; i < Math.max(want.length, have.length); i++) {
+    const a = have[i] ?? 0, b = want[i] ?? 0;
+    if (a !== b) return a > b;
+  }
+  return true;
+}
+
 /** Exported for manual download fallback — returns the artifact URL if available. */
 export function getArtifactUrl(): string | null {
   return status.artifactUrl;
@@ -716,7 +773,7 @@ async function downloadUpdate(
       if (valid) {
         appLog('update:download', 'info', 'Update already downloaded and verified');
         recordUpdateDownload({ startMs: downloadStartMs, result: 'already_downloaded' });
-        await writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url });
+        await writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url, ...(artifact.minSystemVersion && { minSystemVersion: artifact.minSystemVersion }) });
         setState('ready', {
           availableVersion: version,
           releaseNotes,
@@ -770,7 +827,7 @@ async function downloadUpdate(
 
     appLog('update:download', 'info', 'Update verified and ready to install');
     recordUpdateDownload({ startMs: downloadStartMs, result: 'downloaded' });
-    await writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url });
+    await writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url, ...(artifact.minSystemVersion && { minSystemVersion: artifact.minSystemVersion }) });
     setState('ready', {
       downloadProgress: 100,
       downloadPath: destPath,
@@ -1108,6 +1165,8 @@ interface PendingUpdateInfo {
   releaseNotes: string | null;
   releaseMessage: string | null;
   artifactUrl?: string | null;
+  /** The artifact's minimum OS version, checked again when the update is restored (#2924). */
+  minSystemVersion?: string;
 }
 
 function pendingUpdateInfoPath(): string {
@@ -1363,7 +1422,12 @@ export async function startPeriodicChecks(): Promise<void> {
     (pending.downloadPath && await pathExists(pending.downloadPath))
   );
   if (pending && pendingReady) {
-    if (isNewerVersion(pending.version, currentVersion)) {
+    if (needsNewerSystem({ url: '', sha256: '', minSystemVersion: pending.minSystemVersion }, currentSystemVersion())) {
+      appLog('update:restore', 'warn', 'Not restoring a pending update this OS is too old for', {
+        meta: { version: pending.version, systemVersion: currentSystemVersion(), minSystemVersion: pending.minSystemVersion },
+      });
+      await clearPendingUpdateInfo();
+    } else if (isNewerVersion(pending.version, currentVersion)) {
       appLog('update:restore', 'info', 'Restoring pending update from previous session', {
         meta: { version: pending.version },
       });

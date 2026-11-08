@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 import { settingsChanged, themeChanged } from '../telemetry/feature-events';
 
-vi.mock('../services/free-agent-settings', () => ({ getSettings: vi.fn(() => ({})), saveSettings: vi.fn(async () => {}) }));
+vi.mock('../services/free-agent-settings');
 vi.mock('../services/orchestration-settings', () => ({
   getAutoHelpers: vi.fn(() => false), getSettings: vi.fn(() => ({ globalHelperCap: 7 })), saveSettings: vi.fn(async () => {}) }));
 const orchestrationBroadcast = vi.hoisted(() => vi.fn());
@@ -315,7 +315,6 @@ describe('app-handlers', () => {
     [IPC.APP.SAVE_NOTIFICATION_SETTINGS, 'notifications'],
     [IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, 'orchestrators'],
     [IPC.APP.SAVE_HEADLESS_SETTINGS, 'headless'],
-    [IPC.APP.SAVE_FREE_AGENT_SETTINGS, 'free_agent'],
     [IPC.APP.SAVE_BADGE_SETTINGS, 'badge'],
     [IPC.APP.SAVE_CLIPBOARD_SETTINGS, 'clipboard'],
     [IPC.APP.SAVE_UPDATE_SETTINGS, 'update'],
@@ -326,6 +325,12 @@ describe('app-handlers', () => {
   ])('%s reports clubhouse.settings.changed with key %s', async (channel, key) => {
     await handleHandlers.get(channel)!({}, {});
     expect(settingsChanged).toHaveBeenCalledWith(key);
+  });
+
+  it('SET_DEFAULT_ACCESS saves the level and reports clubhouse.settings.changed with key free_agent (#2761)', async () => {
+    await handleHandlers.get(IPC.APP.SET_DEFAULT_ACCESS)!({}, 'auto_edit');
+    expect(settingsChanged).toHaveBeenCalledWith('free_agent');
+    await expect(handleHandlers.get(IPC.APP.SET_DEFAULT_ACCESS)!({}, 'bypass')).rejects.toThrow(/level must be one of/);
   });
 
   it('SAVE_EXPERIMENTAL_SETTINGS lets the Dispatcher follow its flag (#2535)', async () => {

@@ -8,7 +8,7 @@ export const manifest: PluginManifest = {
   version: '0.1.0',
   description: 'Write and display markdown notes on the canvas.',
   author: 'Clubhouse',
-  engine: { api: 0.8 },
+  engine: { api: 0.9 },
   scope: 'project',
   permissions: ['canvas', 'widgets', 'storage', 'theme'],
   contributes: {

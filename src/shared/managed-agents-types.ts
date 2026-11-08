@@ -165,6 +165,9 @@ export interface ManagedTemplateSettings {
   model?: string;
   /** The reasoning effort level, for the model these settings run (the agent's `effort`). */
   effort?: string | null;
+  /** Access (#2761): the level agents made from it start at. */
+  access?: import('./agent-access').AccessLevel;
+  /** Legacy Free Agent Mode, derived from `access` and still written for a rollback. Read only when `access` is missing. */
   freeAgentMode?: boolean;
   orchestration?: OrchestrationPolicyConfig;
   /** Auto-sleep: minutes idle before a chat session sleeps, or `never` (the agent's `idleSleep`). */
@@ -305,7 +308,7 @@ export interface ManagedPreview {
   instructions: string;
   /** The same text with wildcards as written, for "Show wildcards". */
   rawInstructions?: string;
-  /** CLI, model, effort, Free Agent Mode, orchestration and helpers. */
+  /** CLI, model, effort, Access, orchestration and helpers. */
   settings?: ManagedSettingsRow[];
   /** Set while the agent runs and its next start differs from what its session started with. */
   running?: ManagedRunningSnapshot;

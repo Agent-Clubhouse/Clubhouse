@@ -1,28 +1,44 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAnnexClientStore, type DiscoveredService } from '../../stores/annexClientStore';
+import { certificateCode } from '../../../shared/annex-certificate-code';
 import { settingsInput } from './SettingsLayout';
 import { Button } from '../../components/Button';
 
-type WizardStep = 'scanning' | 'pin-entry' | 'result';
+type WizardStep = 'choose' | 'probing' | 'verify' | 'pin-entry' | 'result';
+
+/** The satellite to pair again, when the wizard opens from "Pair again". */
+export interface RepairTarget {
+  fingerprint: string;
+  alias: string;
+}
 
 interface PairingWizardProps {
   onClose: () => void;
+  repairTarget?: RepairTarget;
 }
 
-export function PairingWizard({ onClose }: PairingWizardProps) {
+export function PairingWizard({ onClose, repairTarget }: PairingWizardProps) {
   const discoveredServices = useAnnexClientStore((s) => s.discoveredServices);
   const loadDiscovered = useAnnexClientStore((s) => s.loadDiscovered);
   const scan = useAnnexClientStore((s) => s.scan);
+  const probeService = useAnnexClientStore((s) => s.probeService);
   const pairWith = useAnnexClientStore((s) => s.pairWith);
+  const pairWithLink = useAnnexClientStore((s) => s.pairWithLink);
 
-  const [step, setStep] = useState<WizardStep>('scanning');
+  const [step, setStep] = useState<WizardStep>('choose');
+  const [link, setLink] = useState('');
   const [selectedService, setSelectedService] = useState<DiscoveredService | null>(null);
+  const [code, setCode] = useState<string | null>(null);
   const [pin, setPin] = useState('');
   const [pairing, setPairing] = useState(false);
+  const [notice, setNotice] = useState('');
   const [resultMessage, setResultMessage] = useState('');
   const [resultSuccess, setResultSuccess] = useState(false);
+  /** Where "Try again" goes after a failure. */
+  const [retryStep, setRetryStep] = useState<'choose' | 'pin-entry'>('choose');
 
   const pinInputRef = useRef<HTMLInputElement>(null);
+  const autoSelected = useRef(false);
 
   useEffect(() => {
     loadDiscovered();
@@ -35,77 +51,186 @@ export function PairingWizard({ onClose }: PairingWizardProps) {
     }
   }, [step]);
 
-  function handleSelectService(svc: DiscoveredService) {
-    setSelectedService(svc);
-    setPin('');
-    setStep('pin-entry');
-  }
-
-  function handleRefresh() {
-    scan();
-  }
-
-  async function handlePair() {
-    if (!selectedService || pin.length < 4) return;
-    setPairing(true);
-    const result = await pairWith(selectedService.fingerprint, pin);
-    setPairing(false);
-    setResultSuccess(result.success);
-    setResultMessage(result.success ? `Paired with ${selectedService.alias}` : result.error || 'Pairing failed');
+  function showResult(success: boolean, message: string, retry: 'choose' | 'pin-entry') {
+    setResultSuccess(success);
+    setResultMessage(message);
+    setRetryStep(retry);
     setStep('result');
   }
 
-  function handlePinKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Enter') {
-      handlePair();
+  async function handleSelectService(svc: DiscoveredService) {
+    setSelectedService(svc);
+    setPin('');
+    setCode(null);
+    setNotice('');
+    setStep('probing');
+    const probe = await probeService(svc.fingerprint);
+    const probedCode = probe.success ? certificateCode(probe.certFingerprint) : null;
+    if (!probedCode) {
+      showResult(false, probe.error || `Couldn't read the certificate code from ${svc.alias}. Try again.`, 'choose');
+      return;
+    }
+    setCode(probedCode);
+    setStep('verify');
+  }
+
+  // "Pair again": pick the satellite once discovery finds it, then compare codes as usual.
+  useEffect(() => {
+    if (!repairTarget || autoSelected.current || step !== 'choose') return;
+    const match = discoveredServices.find((svc) => svc.fingerprint === repairTarget.fingerprint);
+    if (!match) return;
+    autoSelected.current = true;
+    void handleSelectService(match);
+  }, [repairTarget, discoveredServices, step]);
+
+  function handleCodesDiffer() {
+    const alias = selectedService?.alias || 'that computer';
+    setSelectedService(null);
+    setCode(null);
+    setNotice(`The codes didn't match, so ${alias} wasn't paired.`);
+    setStep('choose');
+  }
+
+  async function handlePair() {
+    if (!selectedService || pin.length < 4 || pairing) return;
+    setPairing(true);
+    const result = await pairWith(selectedService.fingerprint, pin);
+    setPairing(false);
+    if (result.success) {
+      showResult(true, `Paired with ${result.alias || selectedService.alias}`, 'choose');
+    } else {
+      setPin('');
+      showResult(false, result.error || 'Pairing failed. Try again.', 'pin-entry');
     }
   }
 
+  async function handlePairWithLink() {
+    const trimmed = link.trim();
+    if (!trimmed || pairing) return;
+    setPairing(true);
+    const result = await pairWithLink(trimmed);
+    setPairing(false);
+    if (result.success) {
+      setLink('');
+      showResult(true, `Paired with ${result.alias || 'that computer'}`, 'choose');
+    } else {
+      showResult(false, result.error || 'Pairing failed. Try again.', 'choose');
+    }
+  }
+
+  function backToChoose() {
+    setSelectedService(null);
+    setCode(null);
+    setStep('choose');
+  }
+
+  let title = `Pair with ${selectedService?.alias || 'service'}`;
+  if (step === 'choose') title = repairTarget ? `Pair again with ${repairTarget.alias}` : 'Add a satellite';
+  if (step === 'result') title = 'Pairing result';
+
   return (
-    <div className="py-2.5 border-t border-surface-0">
+    <div className="py-2.5 border-t border-surface-0" data-testid="pairing-wizard">
       <div className="flex items-center justify-between mb-2">
-        <div className="text-[13px] font-semibold text-ctp-text">
-          {step === 'scanning' && 'Discovered services'}
-          {step === 'pin-entry' && `Pair with ${selectedService?.alias || 'service'}`}
-          {step === 'result' && 'Pairing result'}
-        </div>
+        <div className="text-[13px] font-semibold text-ctp-text">{title}</div>
         <Button onClick={onClose} kind="quiet">
           Close
         </Button>
       </div>
 
-      {step === 'scanning' && (
-        <>
-          {discoveredServices.length === 0 ? (
-            <p className="text-xs text-ctp-overlay1 py-2">
-              No services found on the network. Make sure the satellite has Annex turned on.
+      {step === 'choose' && (
+        <div className="space-y-3">
+          {notice && <p className="text-xs text-ctp-overlay1">{notice}</p>}
+
+          <div className="space-y-1.5">
+            <label htmlFor="annex-pairing-link" className="block text-[13px] text-ctp-text">
+              Paste pairing link
+            </label>
+            <p className="text-xs text-ctp-overlay1">
+              Copy it from Pairing link in Annex settings on the other computer.
             </p>
-          ) : (
-            <ul className="mb-2">
-              {discoveredServices.map((svc) => (
-                <li key={svc.fingerprint} className="border-t border-surface-0 first:border-t-0">
-                  <button
-                    type="button"
-                    onClick={() => handleSelectService(svc)}
-                    className="w-full text-left flex items-center gap-3 px-2 py-1.5 rounded-md hover:bg-surface-0
-                      transition-colors cursor-pointer group focus-ring"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[13px] text-ctp-text truncate">{svc.alias}</div>
-                      <div className="text-xs text-ctp-overlay1 font-mono truncate">{svc.host}</div>
-                    </div>
-                    <span className="text-xs text-ctp-overlay1 group-hover:text-ctp-text transition-colors">
-                      Pair
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <Button onClick={handleRefresh} kind="ghost">
-            Refresh
-          </Button>
-        </>
+            <div className="flex gap-2">
+              <input
+                id="annex-pairing-link"
+                type="text"
+                value={link}
+                onChange={(e) => setLink(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handlePairWithLink(); }}
+                placeholder="clubhousego://pair?…"
+                spellCheck={false}
+                className={`${settingsInput} flex-1 min-w-0 font-mono`}
+              />
+              <Button
+                onClick={handlePairWithLink}
+                disabled={pairing || link.trim() === ''}
+                kind="primary"
+              >
+                {pairing ? 'Pairing…' : 'Pair'}
+              </Button>
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[13px] text-ctp-text mb-1">Discovered on this network</div>
+            {discoveredServices.length === 0 ? (
+              <p className="text-xs text-ctp-overlay1 py-2">
+                No services found on the network. Make sure the satellite has Annex turned on.
+              </p>
+            ) : (
+              <ul className="mb-2">
+                {discoveredServices.map((svc) => (
+                  <li key={svc.fingerprint} className="border-t border-surface-0 first:border-t-0">
+                    <button
+                      type="button"
+                      onClick={() => handleSelectService(svc)}
+                      className="w-full text-left flex items-center gap-3 px-2 py-1.5 rounded-md hover:bg-surface-0
+                        transition-colors cursor-pointer group focus-ring"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] text-ctp-text truncate">{svc.alias}</div>
+                        <div className="text-xs text-ctp-overlay1 font-mono truncate">{svc.host}</div>
+                      </div>
+                      <span className="text-xs text-ctp-overlay1 group-hover:text-ctp-text transition-colors">
+                        Pair
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <Button onClick={() => scan()} kind="ghost">
+              Refresh
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {step === 'probing' && (
+        <p className="text-xs text-ctp-overlay1">
+          Reading the certificate code from {selectedService?.alias}…
+        </p>
+      )}
+
+      {step === 'verify' && (
+        <div className="space-y-2">
+          <p className="text-xs text-ctp-overlay1">
+            Check that this matches the certificate code in Annex settings on{' '}
+            <span className="text-ctp-text">{selectedService?.alias}</span>.
+          </p>
+          <div
+            className="text-[13px] font-mono text-ctp-text tracking-widest select-all"
+            data-testid="pairing-certificate-code"
+          >
+            {code}
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={() => { setPin(''); setStep('pin-entry'); }} kind="primary">
+              Codes match
+            </Button>
+            <Button onClick={handleCodesDiffer} kind="ghost">
+              They don&apos;t match
+            </Button>
+          </div>
+        </div>
       )}
 
       {step === 'pin-entry' && (
@@ -121,7 +246,7 @@ export function PairingWizard({ onClose }: PairingWizardProps) {
               maxLength={6}
               value={pin}
               onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-              onKeyDown={handlePinKeyDown}
+              onKeyDown={(e) => { if (e.key === 'Enter') handlePair(); }}
               placeholder="000000"
               aria-label="Pairing PIN"
               className={`${settingsInput} w-[140px] tracking-widest text-center font-mono`}
@@ -133,10 +258,7 @@ export function PairingWizard({ onClose }: PairingWizardProps) {
             >
               {pairing ? 'Pairing…' : 'Pair'}
             </Button>
-            <Button
-              onClick={() => { setStep('scanning'); setSelectedService(null); }}
-              kind="quiet"
-            >
+            <Button onClick={backToChoose} kind="quiet">
               Back
             </Button>
           </div>
@@ -151,7 +273,7 @@ export function PairingWizard({ onClose }: PairingWizardProps) {
           <div className="flex gap-2">
             {!resultSuccess && (
               <Button
-                onClick={() => { setPin(''); setStep('pin-entry'); }}
+                onClick={() => (retryStep === 'pin-entry' ? setStep('pin-entry') : backToChoose())}
                 kind="ghost"
               >
                 Try again

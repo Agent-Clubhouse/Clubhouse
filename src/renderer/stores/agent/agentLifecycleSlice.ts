@@ -1,4 +1,5 @@
 import { Agent, DeleteResult, HelperCascadeResult, HelperDisposeBlock, HelperInProject } from '../../../shared/types';
+import { isLegacyFreeAgent, type AccessLevel } from '../../../shared/agent-access';
 import { generateQuickAgentId } from '../../../shared/agent-id';
 import { generateQuickName } from '../../../shared/name-generator';
 import { expandTemplate, AgentContext } from '../../../shared/template-engine';
@@ -24,7 +25,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
       set({ resumingAgents: {} });
     },
 
-    spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId, orchestrator, freeAgentMode, pluginMetadata, cwdOverride, options) => {
+    spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId, orchestrator, accessRequest, pluginMetadata, cwdOverride, options) => {
       const agentId = generateQuickAgentId();
       const name = generateQuickName();
 
@@ -51,7 +52,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
 
       // Fetch quick agent defaults from parent durable agent
       let quickDefaults:
-        | { systemPrompt?: string; allowedTools?: string[]; defaultModel?: string; freeAgentMode?: boolean }
+        | { systemPrompt?: string; allowedTools?: string[]; defaultModel?: string; freeAgentMode?: boolean; access?: AccessLevel }
         | undefined;
       if (parentAgentId) {
         try {
@@ -74,8 +75,15 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
 
       const isHeadless = useHeadlessStore.getState().getProjectMode(projectPath) === 'headless';
 
-      // Resolve free agent mode: explicit param > parent's quickDefaults
-      const resolvedFreeAgentMode = freeAgentMode ?? quickDefaults?.freeAgentMode;
+      // Access (#2761): an explicit level or legacy on/off > the parent's quick agent defaults
+      // > the caller's fallback (a form's Default access). A legacy on/off is sent as is, for
+      // main to map with the old mode.
+      const defaultsSetAccess = quickDefaults?.access !== undefined || quickDefaults?.freeAgentMode !== undefined;
+      const resolvedAccess: AccessLevel | undefined = typeof accessRequest === 'string' ? accessRequest
+        : accessRequest !== undefined ? undefined
+          : quickDefaults?.access ?? (defaultsSetAccess ? undefined : options?.fallbackAccess);
+      const resolvedFreeAgentMode = resolvedAccess !== undefined ? isLegacyFreeAgent(resolvedAccess)
+        : typeof accessRequest === 'boolean' ? accessRequest : quickDefaults?.freeAgentMode;
 
       // This launch's part changes from its template (#2928): kept on the agent for Details and Retry, never saved.
       const quickChanges = options?.managedTemplateId && (options.addParts?.length || options.removeParts?.length)
@@ -94,6 +102,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         orchestrator: resolvedOrchestrator,
         headless: isHeadless || undefined,
         freeAgentMode: resolvedFreeAgentMode || undefined,
+        ...(resolvedAccess && { access: resolvedAccess }),
         pluginMetadata,
         runCwd: cwd,
         ...(options?.managedTemplateId && { managedTemplateId: options.managedTemplateId }),
@@ -148,6 +157,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
           allowedTools: quickDefaults?.allowedTools,
           orchestrator: resolvedOrchestrator,
           freeAgentMode: resolvedFreeAgentMode,
+          ...(resolvedAccess && { access: resolvedAccess }),
           ...(options?.managedTemplateId && {
             managedTemplate: {
               id: options.managedTemplateId, agentName: name,
@@ -201,6 +211,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         model: config.model,
         orchestrator: config.orchestrator,
         freeAgentMode: config.freeAgentMode || undefined,
+        access: config.access,
         mcpIds: config.mcpIds,
         resuming: resume || undefined,
         // Also config-only, and replaced with the rest: a helper keeps its
@@ -230,6 +241,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
           model: config.model,
           mission,
           orchestrator: config.orchestrator,
+          // Main starts it at its saved Access (#2761); a level filled in for display isn't sent.
           freeAgentMode: config.freeAgentMode,
           resume,
           sessionId: resume ? config.lastSessionId : undefined,
@@ -307,7 +319,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
       get().removeAgent(id);
     },
 
-    registerCreatingAgent: (projectId, name, color, orchestrator, freeAgentMode) => {
+    registerCreatingAgent: (projectId, name, color, orchestrator, access) => {
       const tempId = `creating_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const agent: Agent = {
         id: tempId,
@@ -317,7 +329,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         status: 'creating',
         color,
         orchestrator: orchestrator || undefined,
-        freeAgentMode: freeAgentMode || undefined,
+        ...(access && { access, freeAgentMode: isLegacyFreeAgent(access) || undefined }),
       };
       set((s) => ({
         agents: { ...s.agents, [tempId]: agent },

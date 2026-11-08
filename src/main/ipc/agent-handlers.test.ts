@@ -18,6 +18,7 @@ vi.mock('electron', () => ({
 
 const configChange = vi.hoisted(() => ({ listener: null as ((projectPath: string) => void) | null }));
 
+vi.mock('../services/free-agent-settings');
 vi.mock('../services/agent-config', () => ({
   onAgentConfigChanged: (listener: (projectPath: string) => void) => { configChange.listener = listener; return () => {}; },
   listDurable: vi.fn(() => [{ id: 'a1', name: 'Bot' }]),
@@ -180,7 +181,8 @@ describe('agent-handlers', () => {
     const handler = handlers.get(IPC.AGENT.LIST_DURABLE)!;
     const result = await handler({}, '/project');
     expect(agentConfig.listDurable).toHaveBeenCalledWith('/project');
-    expect(result).toEqual([{ id: 'a1', name: 'Bot' }]);
+    // Access (#2761) is filled in for agents saved before it.
+    expect(result).toEqual([{ id: 'a1', name: 'Bot', access: 'ask' }]);
   });
 
   it('GET_RUNNING_STATUSES delegates to agentSystem.getRunningAgentIds', async () => {
@@ -361,7 +363,7 @@ describe('agent-handlers', () => {
     const handler = handlers.get(IPC.AGENT.GET_DURABLE_CONFIG)!;
     const result = await handler({}, '/project', 'agent-1');
     expect(agentConfig.getDurableConfig).toHaveBeenCalledWith('/project', 'agent-1');
-    expect(result).toEqual({ id: 'agent-1', model: 'default' });
+    expect(result).toEqual({ id: 'agent-1', model: 'default', access: 'ask' });
   });
 
   it('UPDATE_DURABLE_CONFIG delegates to agentConfig.updateDurableConfig', async () => {

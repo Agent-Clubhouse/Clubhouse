@@ -3,6 +3,7 @@ import type { McpCatalogEntry, Project, QuickRunChanges } from '../../../shared/
 import { CLUBHOUSE_MCP_PART_ID, isListed, type ManagedTemplate, type ManagedTemplateSettings } from '../../../shared/managed-agents-types';
 import { AGENT_COLORS, generateDurableName } from '../../../shared/name-generator';
 import { validateAgentGitName } from '../../../shared/agent-name';
+import type { AccessLevel } from '../../../shared/agent-access';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
@@ -10,13 +11,15 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
+import { AccessSelect, accessHelp } from '../../features/agents/AccessSelect';
+import { useQuickAgentAccess } from '../../features/agents/useQuickAgentAccess';
 import { Toggle } from '../../components/Toggle';
 import { Button } from '../../components/Button';
 import { Tooltip } from '../../components/Tooltip';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
 import { createDurableAgent } from '../../features/agents/create-agent';
 import { ManagedUiError, useManagedTemplates } from '../../features/managed/managedApi';
-import { createManagedDurableAgent, type ManagedAgentInput } from '../../features/managed/create-managed-agent';
+import { createManagedDurableAgent, settingsAccess, type ManagedAgentInput } from '../../features/managed/create-managed-agent';
 import type { SetupDraft } from '../../features/managed/ManagedBuilder';
 import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { useChromeStore, settleNewAgent, type NewAgentRequest } from '../chromeStore';
@@ -161,7 +164,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const [customModel, setCustomModel] = useState('');
   const [useWorktree, setUseWorktree] = useState(true);
   const [isGit, setIsGit] = useState<boolean | null>(null);
-  const [freeAgentMode, setFreeAgentMode] = useState(false);
+  const [pickedAccess, setPickedAccess] = useState<AccessLevel | null>(null);
   const [mcpCatalog, setMcpCatalog] = useState<McpCatalogEntry[]>([]);
   const [selectedMcps, setSelectedMcps] = useState<string[]>([]);
   const [mission, setMission] = useState('');
@@ -192,10 +195,15 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
 
   // A quick agent under a durable one runs in its worktree with its orchestrator.
   const parent = parentAgentId ? agents[parentAgentId] : undefined;
+  // Access (#2761) starts at the app's Default access (a quick agent in a durable agent's
+  // worktree: that agent's quick agent defaults) until the person or a template picks one.
+  const { start: startAccess, defaultAccess } = useQuickAgentAccess(project?.path, !durable && parentAgentId ? parentAgentId : undefined);
   const runOrchestrator = !durable && parent?.orchestrator ? parent.orchestrator : resolvedOrchestrator;
   const { options: modelOptions, loading: modelsLoading } = useModelOptions(runOrchestrator, project?.path);
   const selectedOrch = allOrchestrators.find((o) => o.id === runOrchestrator);
   const supportsPermissions = selectedOrch?.capabilities?.permissions ?? false;
+  // A CLI without permission support starts at Ask first.
+  const access: AccessLevel = supportsPermissions ? pickedAccess ?? startAccess : 'ask';
   const avail = availability[runOrchestrator];
   const durableAgents = useMemo(
     () => Object.values(agents).filter((a) => a.projectId === projectId && a.kind === 'durable'),
@@ -211,7 +219,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const projectPath = project?.path;
 
   /**
-   * A template fills in the CLI, model and Free Agent Mode it sets. Each can still be changed.
+   * A template fills in the CLI, model and Access it sets. Each can still be changed.
    * Its model only when it belongs to the CLI that will run: the template's own CLI, or
    * one of the current CLI's models when the CLI stays (a parent fixes it, the template's
    * CLI isn't available, or the template names none).
@@ -221,12 +229,13 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
     setQuickTemplate(t);
     setQuickChanges(NO_QUICK_CHANGES);
     if (!t) return;
-    const { orchestrator: cli, model: m, freeAgentMode: free } = t.settings;
+    const { orchestrator: cli, model: m } = t.settings;
+    const level = settingsAccess(t.settings);
     const switchCli = !!cli && !parent && effectiveOrchestrators.some((o) => o.id === cli);
     if (switchCli) setOrchestrator(cli);
     const willRun = switchCli ? cli : runOrchestrator;
     if (m && ((cli && cli === willRun) || modelOptions.some((o) => o.id === m))) setModel(m);
-    if (free !== undefined) setFreeAgentMode(free);
+    if (level) setPickedAccess(level);
   };
   useEffect(() => {
     if (!projectPath) return;
@@ -339,7 +348,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
           model: resolvedModel,
           useWorktree: !!isGit && useWorktree,
           orchestrator: resolvedOrchestrator,
-          freeAgentMode: (supportsPermissions && freeAgentMode) || undefined,
+          access,
           mcpIds: selectedMcps.length > 0 ? selectedMcps : undefined,
           clubhouseFeatures: !remote && !clubhouseFeatures ? false : undefined,
         },
@@ -359,17 +368,18 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
         resolvedModel,
         parentAgentId || undefined,
         parentAgentId ? undefined : resolvedOrchestrator,
-        (supportsPermissions && freeAgentMode) || undefined,
+        // Only a level the person or a template picked; otherwise spawnQuickAgent resolves
+        // it from the parent's quick agent defaults, then the Default access.
+        supportsPermissions ? pickedAccess ?? undefined : 'ask',
       ] as const;
-      // Without a template the call is the same as before the flag.
-      (quickTemplates && quickTemplateId
-        ? spawnQuick(...args, undefined, undefined, {
+      spawnQuick(...args, undefined, undefined, {
+        fallbackAccess: defaultAccess,
+        ...(quickTemplates && quickTemplateId && {
           managedTemplateId: quickTemplateId,
           ...(quickChanges.added.length > 0 && { addParts: quickChanges.added }),
           ...(quickChanges.removed.length > 0 && { removeParts: quickChanges.removed }),
-        })
-        : spawnQuick(...args)
-      ).then((id) => finish(target.id, id))
+        }),
+      }).then((id) => finish(target.id, id))
         .catch((err) => {
           reportChromeActionFailed('agent_start', err);
           failed(`Couldn't start the agent: ${err instanceof Error ? err.message : String(err)}`);
@@ -656,13 +666,21 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
         )}
 
         {!isManaged && <Row
-          label="Permissions"
+          label="Access"
+          htmlFor="new-agent-access"
           help={!supportsPermissions
             ? `${selectedOrch?.displayName ?? 'This CLI'} doesn't support it.`
-            : durable ? 'Uses the configured Free agent permission mode. Enable only if you trust this agent with the project.' : 'Uses the configured Free agent permission mode.'}
+            : accessHelp(access)}
         >
-          <Toggle checked={supportsPermissions && freeAgentMode} onChange={setFreeAgentMode} disabled={!supportsPermissions} aria-label="Free Agent Mode" />
-          <span className={`text-[13px] ${supportsPermissions ? 'text-ctp-text' : 'text-ctp-overlay1'}`}>Free Agent Mode</span>
+          <AccessSelect
+            id="new-agent-access"
+            value={access}
+            providerId={runOrchestrator}
+            disabled={!supportsPermissions}
+            onChange={setPickedAccess}
+            className={`${selectClass} w-40 disabled:opacity-60 disabled:cursor-not-allowed`}
+            data-testid="new-agent-access"
+          />
         </Row>}
 
         {durable && !isManaged && mcpCatalog.length > 0 && (

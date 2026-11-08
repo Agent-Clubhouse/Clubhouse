@@ -180,4 +180,35 @@ describe('PairedSatelliteList', () => {
     const confirmButtons = screen.getAllByRole('button', { name: 'Confirm' });
     expect(confirmButtons.length).toBeGreaterThanOrEqual(1);
   });
+
+  describe('needs pairing again', () => {
+    const needsPairing: SatelliteConnection = {
+      ...mockDisconnectedSatellite,
+      lastError: 'This pairing is from an older version of Clubhouse. Pair again to connect.',
+      needsPairing: true,
+    };
+
+    it('says so in plain text with the reason', () => {
+      render(<PairedSatelliteList satellites={[needsPairing]} onPairAgain={vi.fn()} />);
+      expect(screen.getByText('Needs pairing again')).toBeInTheDocument();
+      expect(screen.getByText('This pairing is from an older version of Clubhouse. Pair again to connect.')).toBeInTheDocument();
+      expect(screen.queryByText('Offline')).not.toBeInTheDocument();
+    });
+
+    it('offers Pair again instead of Retry', () => {
+      const onPairAgain = vi.fn();
+      render(<PairedSatelliteList satellites={[needsPairing]} onPairAgain={onPairAgain} />);
+      expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Pair again' }));
+      expect(onPairAgain).toHaveBeenCalledWith(needsPairing);
+      expect(mockRetry).not.toHaveBeenCalled();
+    });
+
+    it('still lets the person forget it', () => {
+      render(<PairedSatelliteList satellites={[needsPairing]} onPairAgain={vi.fn()} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Forget' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+      expect(mockForgetSatellite).toHaveBeenCalledWith('fp-456');
+    });
+  });
 });

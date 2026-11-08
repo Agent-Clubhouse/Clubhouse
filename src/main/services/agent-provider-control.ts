@@ -10,7 +10,8 @@ import { readProjectAgentDefaults } from './agent-settings-service';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import { isChatEnabled, resolveRuntimeMode } from './chat-runtime-settings';
 import { resolveChatDriver } from './agent-runtime/chat-drivers';
-import { getPermissionMode } from './free-agent-settings';
+import { agentAccess } from './free-agent-settings';
+import { accessLevelsFor } from '../../shared/agent-access';
 import { MobileControlError } from './mobile-control';
 import type { DurableAgentConfig } from '../../shared/types';
 
@@ -48,7 +49,7 @@ export async function previewAgentProvider(projectPath: string, agentId: string,
   const blocked = state !== 'sleeping' ? `agent_${state}`
     : hasSessionCaptureFailure(agentId) ? 'session_capture_failed'
     : !availability.available ? 'orchestrator_unavailable'
-      : ((providerId !== current.id && ((defaults?.permissions?.deny?.length ?? 0) > 0 || (defaults?.permissions?.allow?.length ?? 0) > 0)) || !provider.getCapabilities().permissions || (config.freeAgentMode && getPermissionMode(projectPath) === 'auto' && providerId !== 'claude-code')) ? 'incompatible_permissions'
+      : ((providerId !== current.id && ((defaults?.permissions?.deny?.length ?? 0) > 0 || (defaults?.permissions?.allow?.length ?? 0) > 0)) || !provider.getCapabilities().permissions || !accessLevelsFor(providerId, mode.mode === 'chat' ? 'chat' : 'terminal').includes(agentAccess(config, projectPath))) ? 'incompatible_permissions'
         : mode.mode === 'chat' && (!isChatEnabled() || !resolveChatDriver(providerId, mode.driver)) ? 'incompatible_runtime'
           : instructions !== 'equivalent' ? 'instructions_not_equivalent' : null;
   await actor.assertAuthorized();
@@ -57,7 +58,7 @@ export async function previewAgentProvider(projectPath: string, agentId: string,
   if (hash(fresh) !== hash(config) || agentTransitionGeneration(agentId) !== generation) return fail('stale_state');
   // Secrets and source text participate only in this opaque precondition; neither is returned/logged.
   const expectedState = hash([actor.key, projectPath, config, tokenGeneration ?? generation, providerId, current.id, state,
-    defaults, mode, getPermissionMode(projectPath), instructionFingerprint, blocked]);
+    defaults, mode, agentAccess(config, projectPath), instructionFingerprint, blocked]);
   return {
     agentId, savedProvider: current.id, activeProvider, provider: providerId, state, expectedState,
     available: availability.available, availabilityMeaning: 'local_cli_only' as const,

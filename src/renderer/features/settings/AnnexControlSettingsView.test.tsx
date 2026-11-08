@@ -20,6 +20,8 @@ function resetStores() {
     forgetSatellite: vi.fn(),
     connect: vi.fn(),
     pairWith: vi.fn(),
+    pairWithLink: vi.fn(),
+    probeService: vi.fn().mockResolvedValue({ success: false, error: 'offline' }),
     getDiscovered: vi.fn().mockResolvedValue([]),
     discoveredServices: [],
     loadDiscovered: vi.fn(),
@@ -168,6 +170,24 @@ describe('AnnexControlSettingsView', () => {
       expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
       fireEvent.click(addBtn);
       expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('pair again', () => {
+    it('opens the wizard for a satellite that needs pairing again', () => {
+      useAnnexClientStore.setState({
+        satellites: [{
+          id: 'sat-1', fingerprint: 'fp-1', alias: 'Studio Mac', icon: 'computer', color: 'indigo',
+          state: 'disconnected', host: '', mainPort: 0, pairingPort: 0, snapshot: null,
+          lastError: 'This pairing is from an older version of Clubhouse. Pair again to connect.',
+          needsPairing: true,
+        }],
+      });
+      render(<AnnexControlSettingsView />);
+      expect(screen.queryByTestId('pairing-wizard')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Pair again' }));
+      expect(screen.getByTestId('pairing-wizard')).toBeInTheDocument();
+      expect(screen.getByText('Pair again with Studio Mac')).toBeInTheDocument();
     });
   });
 });

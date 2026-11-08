@@ -254,7 +254,8 @@ describe('previewManagedSetup', () => {
       { key: 'cli', label: 'CLI', value: 'Claude Code' },
       { key: 'model', label: 'Model', value: 'opus' },
       { key: 'effort', label: 'Effort', value: 'high' },
-      { key: 'freeAgentMode', label: 'Free Agent Mode', value: 'On' },
+      // Saved before #2761, with the old mode at its default (skip-all).
+      { key: 'access', label: 'Access', value: 'Full access' },
       { key: 'orchestration', label: 'Orchestration', value: 'Can start helpers' },
       { key: 'helpers', label: 'Helpers', value: 'Up to 3 at once, Smart selection, no approvals' },
       { key: 'helperTemplate', label: 'Helper template', value: 'Helper' },
