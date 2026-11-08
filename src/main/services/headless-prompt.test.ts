@@ -157,8 +157,16 @@ describe.runIf(process.platform === 'win32')('runHeadlessPrompt through a .cmd s
     let pid: number | undefined;
     try {
       const run = runHeadlessPrompt({ provider: 'fake', model: 'm', prompt: 'x', timeoutMs: 8_000 }, { provider: () => provider, workDir, spawn });
-      await expect.poll(() => fs.existsSync(pidFile), { timeout: 7_000, interval: 50 }).toBe(true);
-      pid = Number(fs.readFileSync(pidFile, 'utf8'));
+      // The file exists a moment before the pid is in it.
+      const readPid = (): number => {
+        try {
+          return Number(fs.readFileSync(pidFile, 'utf8')) || 0;
+        } catch {
+          return 0;
+        }
+      };
+      await expect.poll(readPid, { timeout: 7_000, interval: 50 }).toBeGreaterThan(0);
+      pid = readPid();
       expect(pid).not.toBe(children[children.length - 1].pid); // the CLI is cmd.exe's child, not ours
       expect(await run).toEqual({ ok: false, error: 'It took too long.' });
       await expect.poll(() => alive(pid!), { timeout: 10_000, interval: 100 }).toBe(false);
