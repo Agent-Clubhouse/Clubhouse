@@ -52,12 +52,28 @@ export function isAutoBoundLevel(value: unknown): value is AutoBoundLevel {
 /** Recorded on each decision, so telemetry can tell which values produced it. */
 export const HELPER_ROUTING_POLICY_VERSION = 2;
 
-/** The providers presets are defined for. Copilot's list reports no per-model efforts. */
-export const PRESET_PROVIDERS = ['claude-code', 'codex-cli'] as const;
+/**
+ * The providers with an Auto mapping: presets for every level, which
+ * `difficulty` and `resolveAutoLevel` use. Copilot joined in #3085. Its model
+ * list may report no efforts for a model, so a Copilot cell can have none.
+ */
+export const PRESET_PROVIDERS = ['claude-code', 'codex-cli', 'copilot-cli'] as const;
 export type PresetProvider = (typeof PRESET_PROVIDERS)[number];
 
 export function isPresetProvider(value: unknown): value is PresetProvider {
   return (PRESET_PROVIDERS as readonly unknown[]).includes(value);
+}
+
+/**
+ * The providers `cli: "auto"` chooses between. A subset of PRESET_PROVIDERS:
+ * Copilot has a mapping but isn't a candidate (#3085), since that is a routing
+ * decision of its own, and it has no quota source to balance on.
+ */
+export const AUTO_CANDIDATE_PROVIDERS = ['claude-code', 'codex-cli'] as const satisfies readonly PresetProvider[];
+export type AutoCandidateProvider = (typeof AUTO_CANDIDATE_PROVIDERS)[number];
+
+export function isAutoCandidateProvider(value: unknown): value is AutoCandidateProvider {
+  return (AUTO_CANDIDATE_PROVIDERS as readonly unknown[]).includes(value);
 }
 
 export interface PresetCell {
@@ -84,6 +100,14 @@ export const BUILTIN_PRESETS: Readonly<Record<PresetProvider, ProviderPresets>> 
     easy: { model: 'gpt-6-luna', effort: 'low' },
     medium: { model: 'gpt-6.1-terra', effort: 'medium' },
     hard: { model: 'gpt-6.1-sol', effort: 'high' },
+  },
+  // Copilot's own ids for the Claude family, at the same levels as Claude Code's.
+  // Its live list (the SDK's models.list) reports these levels for them; its
+  // fallback list reports none, so there a cell shows as unverified.
+  'copilot-cli': {
+    easy: { model: 'claude-haiku-5.5', effort: 'low' },
+    medium: { model: 'claude-sonnet-5.5', effort: 'medium' },
+    hard: { model: 'claude-opus-5.5', effort: 'high' },
   },
 };
 
@@ -309,12 +333,19 @@ export interface PresetCellView {
 export interface PresetChoice {
   id: string;
   label: string;
+  /** Empty when the list reports no levels for the model: a cell then takes no effort, and its CLI picks. */
   efforts: string[];
 }
 
 export type ProviderRoutingView =
   | {
+    /** The provider has an Auto mapping: presets for every level. */
     autoEligible: true;
+    /**
+     * Whether `cli: "auto"` chooses between it and the others. Copilot has a
+     * mapping but isn't a candidate (#3085). Older desktops don't send it.
+     */
+    autoCandidate: boolean;
     quota: QuotaView;
     choices: { source: 'live' | 'fallback'; asOf: string | null; models: PresetChoice[] };
     /** Every Auto level. A client from before #3044 reads only the difficulties. */
