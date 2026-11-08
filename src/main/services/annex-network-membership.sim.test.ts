@@ -59,6 +59,7 @@ vi.mock('./annex-peers', () => ({
 vi.mock('./annex-network-channel', () => ({
   localMember: vi.fn(() => member(FPS[current], current === 'A' ? '0a' : '0b', current, '2026-01-01T00:00:00.000Z')),
   setMembersProvider: vi.fn((p: () => unknown) => { worlds[current].provider = p; }),
+  setSelfPairingProvider: vi.fn(),
   onNetworkMessage: vi.fn((l: (from: string, m: NetworkMessage) => void) => { worlds[current].listener = l; return () => {}; }),
   broadcast: vi.fn((message: NetworkMessage, to: (f: string) => boolean = () => true) => {
     const from = current;

@@ -47,8 +47,15 @@ export interface NetworkMember {
   hosts: string[];
   /** Its main TLS port, when it runs a server. */
   port?: number;
-  /** ISO time it joined, as the member that added it saw it. */
+  /** ISO time it joined, as the member that added it saw it. Set with `pairingId`, and moves only with it. */
   joinedAt: string;
+  /**
+   * The pairing that put it in the network (#3107): made once, by the member
+   * that paired it, and carried unchanged by every member. Pairing again makes
+   * a new one. Absent on a record a member hasn't learned the id for yet (the
+   * desktop it just paired with, until that desktop's view arrives).
+   */
+  pairingId?: string;
 }
 
 /** A removal, kept so a member that was off learns of it. */
@@ -56,6 +63,14 @@ export interface NetworkRemoval {
   fingerprint: string;
   /** ISO time it was removed. */
   removedAt: string;
+  /**
+   * The pairing it ended (#3107). A removal ends that pairing, and any older
+   * one, never a later one. Absent when the remover never learned the device's
+   * pairing (or in records from before it existed): then it compares by time.
+   */
+  pairingId?: string;
+  /** That pairing's `joinedAt`, to order it against a pairing a member hasn't heard of. */
+  joinedAt?: string;
 }
 
 export type NetworkMessage =
@@ -94,7 +109,14 @@ function isTime(value: unknown): value is string {
   return typeof value === 'string' && value.length <= 40 && !Number.isNaN(Date.parse(value));
 }
 
-const MEMBER_KEYS = ['fingerprint', 'publicKey', 'certFingerprint', 'certPem', 'name', 'icon', 'color', 'kind', 'hosts', 'port', 'joinedAt'] as const;
+const MEMBER_KEYS = ['fingerprint', 'publicKey', 'certFingerprint', 'certPem', 'name', 'icon', 'color', 'kind', 'hosts', 'port', 'joinedAt', 'pairingId'] as const;
+
+/** A pairing id: what `randomUUID` makes, or anything as plain and short. */
+const PAIRING_ID = /^[A-Za-z0-9-]{8,64}$/;
+
+function isPairingId(value: unknown): boolean {
+  return value === undefined || (typeof value === 'string' && PAIRING_ID.test(value));
+}
 
 function isMember(value: unknown): value is NetworkMember {
   if (!isObject(value) || !onlyKeys(value, MEMBER_KEYS)) return false;
@@ -106,12 +128,13 @@ function isMember(value: unknown): value is NetworkMember {
   if (value.kind !== 'desktop' && value.kind !== 'phone') return false;
   if (!Array.isArray(value.hosts) || value.hosts.length > 8 || !value.hosts.every((h) => isText(h, 255))) return false;
   if (value.port !== undefined && (!Number.isInteger(value.port) || (value.port as number) <= 0 || (value.port as number) > 65535)) return false;
-  return isTime(value.joinedAt);
+  return isTime(value.joinedAt) && isPairingId(value.pairingId);
 }
 
 function isRemoval(value: unknown): value is NetworkRemoval {
-  return isObject(value) && onlyKeys(value, ['fingerprint', 'removedAt'])
-    && typeof value.fingerprint === 'string' && FINGERPRINT.test(value.fingerprint) && isTime(value.removedAt);
+  return isObject(value) && onlyKeys(value, ['fingerprint', 'removedAt', 'pairingId', 'joinedAt'])
+    && typeof value.fingerprint === 'string' && FINGERPRINT.test(value.fingerprint) && isTime(value.removedAt)
+    && isPairingId(value.pairingId) && (value.joinedAt === undefined || isTime(value.joinedAt));
 }
 
 /**
