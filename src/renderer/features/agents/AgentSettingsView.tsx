@@ -18,7 +18,8 @@ import { SkillsSection } from './SkillsSection';
 import { McpJsonSection } from './McpJsonSection';
 import { AgentAvatar } from './AgentAvatar';
 import type { AgentRuntimeMode } from '../../../shared/chat';
-import { Toggle } from '../../components/Toggle';
+import { AccessSelect, accessHelp, useDefaultAccess } from './AccessSelect';
+import { isLegacyFreeAgent, type AccessLevel, type AccessRuntime } from '../../../shared/agent-access';
 import { Button } from '../../components/Button';
 import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAction';
 import { useToastStore } from '../../stores/toastStore';
@@ -319,10 +320,10 @@ export function AgentSettingsView({ agent }: Props) {
     await updateAgent(agent.id, { emoji: null }, activeProject.path);
   };
 
-  const handleFreeAgentModeChange = async (enabled: boolean) => {
+  const handleAccessChange = async (level: AccessLevel) => {
     if (!projectPath) return;
-    setFreeAgentMode(enabled);
-    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { freeAgentMode: enabled });
+    setAccess(level);
+    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { access: level });
     // Update in-memory store so UI reflects immediately
     useAgentStore.setState((s) => {
       const existing = s.agents[agent.id];
@@ -330,7 +331,7 @@ export function AgentSettingsView({ agent }: Props) {
       return {
         agents: {
           ...s.agents,
-          [agent.id]: { ...existing, freeAgentMode: enabled || undefined },
+          [agent.id]: { ...existing, access: level, freeAgentMode: isLegacyFreeAgent(level) || undefined },
         },
       };
     });
@@ -353,7 +354,7 @@ export function AgentSettingsView({ agent }: Props) {
     });
   };
 
-  // A managed agent's model, Free Agent Mode and effort can change while it runs: they
+  // A managed agent's model, access and effort can change while it runs: they
   // apply at its next start, and the setup-changed bar offers Restart (D7, D18).
   // Its CLI still waits for it to stop, as for any agent.
   const lockedWhileRunning = isRunning && !managedSetup;
@@ -458,8 +459,8 @@ export function AgentSettingsView({ agent }: Props) {
   const [permSaving, setPermSaving] = useState(false);
   const [permLoaded, setPermLoaded] = useState(false);
 
-  // Free Agent Mode state (main agent)
-  const [freeAgentMode, setFreeAgentMode] = useState(agent.freeAgentMode ?? false);
+  // Access (#2761): the level the agent starts at. A record without one reads as Ask first until its config loads.
+  const [access, setAccess] = useState<AccessLevel>(agent.access ?? 'ask');
 
   // Quick Agent Defaults state
   const [qadSystemPrompt, setQadSystemPrompt] = useState('');
@@ -467,7 +468,9 @@ export function AgentSettingsView({ agent }: Props) {
   const [qadDefaultModel, setQadDefaultModel] = useState('');
   const [qadCustomModel, setQadCustomModel] = useState('');
   const [qadSavedModel, setQadSavedModel] = useState('');
-  const [qadBase, setQadBase] = useState({ systemPrompt: '', allowedTools: '', savedModel: '', freeAgentMode: false });
+  // `access` is the level saved in the quick agent defaults; none means quick agents start at this agent's level.
+  // `freeAgentMode` alone is a legacy save, kept as is unless the picker changes it.
+  const [qadBase, setQadBase] = useState<{ systemPrompt: string; allowedTools: string; savedModel: string; access?: AccessLevel; freeAgentMode?: boolean }>({ systemPrompt: '', allowedTools: '', savedModel: '' });
 
   // Split the raw persisted model ids into dropdown selection + custom text box.
   // Deliberately gated on `modelOptionsLoading` and re-run when MODEL_OPTIONS
@@ -491,7 +494,10 @@ export function AgentSettingsView({ agent }: Props) {
     // Intentionally keyed on the option list identity rather than isKnownModel,
     // which is re-created every render.
   }, [savedModel, qadSavedModel, modelOptionsLoading, MODEL_OPTIONS]);
-  const [qadFreeAgentMode, setQadFreeAgentMode] = useState(false);
+  // A level picked here; null keeps what the defaults saved.
+  const [qadAccess, setQadAccess] = useState<AccessLevel | null>(null);
+  // With no level saved, quick agents start at the app's Default access (#2761).
+  const defaultAccess = useDefaultAccess();
   const [qadDirty, setQadDirty] = useState(false);
   const [qadSaving, setQadSaving] = useState(false);
   const [qadLoaded, setQadLoaded] = useState(false);
@@ -592,19 +598,20 @@ export function AgentSettingsView({ agent }: Props) {
             systemPrompt: defaults.systemPrompt || '',
             allowedTools: (defaults.allowedTools || []).join('\n'),
             savedModel: defaults.defaultModel || '',
-            freeAgentMode: defaults.freeAgentMode ?? false,
+            access: defaults.access,
+            freeAgentMode: defaults.freeAgentMode,
           };
           setQadSystemPrompt(base.systemPrompt);
           setQadAllowedTools(base.allowedTools);
           setQadSavedModel(base.savedModel);
-          setQadFreeAgentMode(base.freeAgentMode);
+          setQadAccess(null);
           setQadBase(base);
         }
         setQadDirty(false);
         // Sync agent model from disk — disk is the source of truth. Classification
         // into known-vs-custom is left to the effect that waits on MODEL_OPTIONS.
         setSavedModel(config?.model || 'default');
-        setFreeAgentMode(config?.freeAgentMode ?? false);
+        setAccess(config?.access ?? (config?.freeAgentMode ? 'auto' : 'ask'));
         setQadLoaded(true);
       } catch {
         setQadLoaded(true);
@@ -762,15 +769,19 @@ export function AgentSettingsView({ agent }: Props) {
     if (tools.length > 0) defaults.allowedTools = tools;
     const resolvedQadModel = qadDefaultModel === 'custom' ? qadCustomModel.trim() : qadDefaultModel;
     if (resolvedQadModel && resolvedQadModel !== 'default') defaults.defaultModel = resolvedQadModel;
-    if (qadFreeAgentMode) defaults.freeAgentMode = true;
+    const qadSaved = qadAccess !== null ? { access: qadAccess, freeAgentMode: isLegacyFreeAgent(qadAccess) } : { access: qadBase.access, freeAgentMode: qadBase.freeAgentMode };
+    if (qadSaved.access) defaults.access = qadSaved.access;
+    if (qadSaved.freeAgentMode) defaults.freeAgentMode = true;
     try {
       await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { quickAgentDefaults: defaults });
       setQadBase({
         systemPrompt: qadSystemPrompt,
         allowedTools: qadAllowedTools,
         savedModel: resolvedQadModel && resolvedQadModel !== 'default' ? resolvedQadModel : '',
-        freeAgentMode: qadFreeAgentMode,
+        access: qadSaved.access,
+        freeAgentMode: qadSaved.freeAgentMode || undefined,
       });
+      setQadAccess(null);
       setQadDirty(false);
     } finally {
       setQadSaving(false);
@@ -861,7 +872,7 @@ export function AgentSettingsView({ agent }: Props) {
   const discardQad = () => {
     setQadSystemPrompt(qadBase.systemPrompt);
     setQadAllowedTools(qadBase.allowedTools);
-    setQadFreeAgentMode(qadBase.freeAgentMode);
+    setQadAccess(null);
     setQadSavedModel(qadBase.savedModel);
     if (qadBase.savedModel && !isKnownModel(qadBase.savedModel)) {
       setQadDefaultModel('custom');
@@ -929,9 +940,15 @@ export function AgentSettingsView({ agent }: Props) {
     </div>
   );
 
-  const freeAgentModeHelp = !permissionsSupported
-    ? `Not supported by ${orchestratorName}.`
-    : 'Handle permissions using the configured Free agent permission mode.';
+  // What the quick agent picker shows: a level picked here, else the saved one, else the app's Default access,
+  // which quick agents start at when nothing is saved. A legacy save with only the flag on starts at the old
+  // mode's level: this agent's, when it is on too (main read it with the same mode), else Auto as the shared
+  // reading has it.
+  const qadLegacyOn: AccessLevel = isLegacyFreeAgent(access) ? access : 'auto';
+  const qadNotSet = qadAccess === null && qadBase.access === undefined && qadBase.freeAgentMode === undefined;
+  const qadShown: AccessLevel = qadAccess ?? qadBase.access ?? (qadBase.freeAgentMode ? qadLegacyOn : qadBase.freeAgentMode === false ? 'ask' : defaultAccess);
+  // The levels offered are the runtime's when one is saved; with the provider default, either runtime's.
+  const accessRuntime: AccessRuntime | undefined = chatFlagEnabled && runtimeMode ? runtimeMode : undefined;
 
   // Runtime: on General for a plain agent, on Settings for a managed one (#2895).
   const runtimeFields = (
@@ -1029,17 +1046,19 @@ export function AgentSettingsView({ agent }: Props) {
         <HandshakeRetry projectPath={projectPath} agentId={agent.id} provider={agentOrchestrator} runtime={runtimeMode} />
       )}
       <Field
-        label="Free Agent Mode"
-        help={freeAgentMode && permissionsSupported
-          ? <span className="text-ctp-error">Permissions follow the configured Free agent permission mode.</span>
-          : freeAgentModeHelp}
-        testId="agent-settings-free-agent-mode"
+        label="Access"
+        htmlFor="agent-settings-access"
+        help={permissionsSupported ? `${accessHelp(access)} Where it starts. The chat composer can change it for one session.` : `Set by ${orchestratorName}.`}
+        testId="agent-settings-access"
       >
-        <Toggle
-          checked={freeAgentMode}
-          onChange={handleFreeAgentModeChange}
+        <AccessSelect
+          id="agent-settings-access"
+          value={access}
+          onChange={(level) => void handleAccessChange(level)}
+          providerId={agentOrchestrator}
+          runtime={accessRuntime}
           disabled={lockedWhileRunning || !permissionsSupported}
-          aria-label="Free Agent Mode"
+          className={selectClass}
         />
       </Field>
     </>
@@ -1260,14 +1279,20 @@ export function AgentSettingsView({ agent }: Props) {
         </select>
       </Field>
       <Field
-        label="Free Agent Mode"
-        help={permissionsSupported ? 'Quick agents skip permission prompts.' : `Not supported by ${orchestratorName}.`}
+        label="Access"
+        htmlFor="agent-settings-qad-access"
+        help={!permissionsSupported ? `Set by ${orchestratorName}.`
+          : qadNotSet ? `Not set, so quick agents start at the app's Default access. ${accessHelp(qadShown)}`
+            : `Quick agents start at this level. ${accessHelp(qadShown)}`}
       >
-        <Toggle
-          checked={qadFreeAgentMode}
-          onChange={(v) => { setQadFreeAgentMode(v); setQadDirty(true); }}
+        <AccessSelect
+          id="agent-settings-qad-access"
+          aria-label="Quick agent access"
+          value={qadShown}
+          onChange={(level) => { setQadAccess(level); setQadDirty(true); }}
+          providerId={agentOrchestrator}
           disabled={isRunning || !permissionsSupported}
-          aria-label="Quick agent Free Agent Mode"
+          className={selectClass}
         />
       </Field>
       <div className="h-2.5" />

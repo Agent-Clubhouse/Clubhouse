@@ -1,4 +1,6 @@
 import { hasSessionCaptureFailure } from './session-capture-barrier';
+import { accessFromLegacy, legacyFreeAgentMode, type AccessLevel } from '../../shared/agent-access';
+import { getPermissionMode, quickAgentAccess } from './free-agent-settings';
 import { waitForAgentStopped } from './agent-system';
 import { previewAgentProvider, changeAgentProvider, persistGuidedSessionCapture } from './agent-provider-control';
 import { withAgentTransition } from './agent-transition';
@@ -2011,7 +2013,7 @@ async function handleSpawnQuickAgent(
   let cwd = project.path;
   let defaultOrchestrator = project.orchestrator || 'claude-code';
   let defaultModel: string | undefined;
-  let defaultFreeAgentMode = false;
+  let defaultAccess: AccessLevel = 'ask';
   let systemPrompt: string | undefined;
 
   if (parentAgentId) {
@@ -2023,7 +2025,7 @@ async function handleSpawnQuickAgent(
     cwd = parentInfo.config.worktreePath || project.path;
     defaultOrchestrator = parentInfo.config.orchestrator || defaultOrchestrator;
     defaultModel = parentInfo.config.quickAgentDefaults?.defaultModel || parentInfo.config.model;
-    defaultFreeAgentMode = parentInfo.config.quickAgentDefaults?.freeAgentMode ?? parentInfo.config.freeAgentMode ?? false;
+    defaultAccess = quickAgentAccess(parentInfo.config, parentInfo.project.path);
     systemPrompt = (body.systemPrompt as string | undefined) || parentInfo.config.quickAgentDefaults?.systemPrompt;
   }
 
@@ -2031,7 +2033,9 @@ async function handleSpawnQuickAgent(
   const name = generateQuickName();
   const model = (body.model as string | undefined) || defaultModel;
   const orchestrator = (body.orchestrator as string | undefined) || defaultOrchestrator;
-  const freeAgentMode = (body.freeAgentMode as boolean | undefined) ?? defaultFreeAgentMode;
+  // Access (#2761): a phone's on/off maps to a level; otherwise the parent's quick agent level.
+  const access = typeof body.freeAgentMode === 'boolean' ? accessFromLegacy(body.freeAgentMode, getPermissionMode(project.path)) : defaultAccess;
+  const freeAgentMode = legacyFreeAgentMode(access);
 
   // Track the quick agent
   const tracked: TrackedQuickAgent = {
@@ -2075,6 +2079,7 @@ async function handleSpawnQuickAgent(
       systemPrompt,
       orchestrator,
       freeAgentMode,
+      access,
     });
 
     tracked.status = 'running';
@@ -2948,7 +2953,7 @@ async function handleDurableCreationRoute(ctx: AnnexRouteContext, match: RegExpM
         body.model as string | undefined,
         body.useWorktree !== false,
         body.orchestrator as string | undefined,
-        body.freeAgentMode as boolean | undefined,
+        typeof body.freeAgentMode === 'boolean' ? body.freeAgentMode : undefined,
         body.mcpIds as string[] | undefined,
       );
       broadcastSnapshotRefresh();

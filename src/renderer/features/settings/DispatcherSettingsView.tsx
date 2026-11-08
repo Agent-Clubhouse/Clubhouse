@@ -19,6 +19,8 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { ipcErrorMessage } from '../../utils/ipc-error';
 import { useAppIdleMinutes, SELECT_CLASS } from '../agents/details/AutoSleepRow';
 import { useCliChangeConfirm } from '../agents/useCliChangeConfirm';
+import { AccessSelect, accessHelp } from '../agents/AccessSelect';
+import type { AccessLevel } from '../../../shared/agent-access';
 import { useDispatcherRead } from '../dispatcher/useDispatcherEnabled';
 import { SettingsField, SettingsPage, SettingsSection, settingsError, settingsHelp } from './SettingsLayout';
 
@@ -120,6 +122,8 @@ export function DispatcherSettingsView() {
   const minutes: number[] = [...AGENT_IDLE_SLEEP_MINUTES];
   if (typeof idle === 'number' && !minutes.includes(idle)) minutes.push(idle);
   minutes.sort((a, b) => a - b);
+  // A config saved before #2761 has only the legacy flag: on reads as Auto, as the CLIs read an unset mode.
+  const access: AccessLevel = config?.access ?? (config?.freeAgentMode ? 'auto' : 'ask');
   const permissionsSupported = allOrchestrators.find((o) => o.id === orchestrator)?.capabilities.permissions ?? true;
 
   return (
@@ -224,12 +228,16 @@ export function DispatcherSettingsView() {
             </select>
           </SettingsField>
           {permissionsSupported && (
-            <SettingsField label="Free agent mode" help="Runs without asking for permission. Turn it off to approve its tool calls.">
-              <Toggle
-                aria-label="Free agent mode"
-                checked={!!config.freeAgentMode}
+            <SettingsField label="Access" help={accessHelp(access)} htmlFor="dispatcher-access">
+              <AccessSelect
+                id="dispatcher-access"
+                className={SELECT_CLASS}
+                value={access}
+                providerId={orchestrator || undefined}
+                runtime={config.runtimeMode}
                 disabled={saving}
-                onChange={(on) => void save({ freeAgentMode: on })}
+                onChange={(level) => void save({ access: level })}
+                data-testid="dispatcher-access"
               />
             </SettingsField>
           )}

@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AddAgentDialog } from './AddAgentDialog';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { useDefaultAccessStore } from '../../stores/defaultAccessStore';
 
 vi.mock('../../../shared/name-generator', () => ({
   generateDurableName: () => 'test-agent',
@@ -54,6 +55,8 @@ describe('AddAgentDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStores();
+    window.clubhouse.app.getDefaultAccess = vi.fn().mockResolvedValue('ask');
+    useDefaultAccessStore.setState({ defaultAccess: 'ask' });
   });
 
   it('renders without crash', () => {
@@ -88,16 +91,18 @@ describe('AddAgentDialog', () => {
     expect(screen.getByText('Use git worktree')).toBeInTheDocument();
   });
 
-  it('renders free agent mode checkbox', () => {
+  it('renders the Access picker with the levels the CLI has (#2761)', () => {
     render(<AddAgentDialog {...defaultProps} />);
-    expect(screen.getByText('Free Agent Mode')).toBeInTheDocument();
+    const access = screen.getByLabelText('Access') as HTMLSelectElement;
+    expect([...access.options].map((o) => o.textContent)).toEqual(['Plan', 'Ask first', 'Auto-accept edits', 'Auto', 'Full access']);
+    expect(screen.queryByText(/Free Agent/)).not.toBeInTheDocument();
   });
 
   it('calls onCreate on form submit', () => {
     render(<AddAgentDialog {...defaultProps} />);
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledWith(
-      'test-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined,
+      'test-agent', 'indigo', 'default', false, 'claude-code', 'ask', undefined,
     );
   });
 
@@ -128,7 +133,7 @@ describe('AddAgentDialog', () => {
     fireEvent.change(input, { target: { value: 'my-custom-agent' } });
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledWith(
-      'my-custom-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined,
+      'my-custom-agent', 'indigo', 'default', false, 'claude-code', 'ask', undefined,
     );
   });
 
@@ -138,7 +143,7 @@ describe('AddAgentDialog', () => {
     fireEvent.click(checkbox);
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledWith(
-      'test-agent', 'indigo', 'default', true, 'claude-code', undefined, undefined,
+      'test-agent', 'indigo', 'default', true, 'claude-code', 'ask', undefined,
     );
   });
 
@@ -162,7 +167,7 @@ describe('AddAgentDialog', () => {
     expect(screen.queryByTestId('add-agent-name-error')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledWith(
-      'My Agent', 'indigo', 'default', false, 'claude-code', undefined, undefined,
+      'My Agent', 'indigo', 'default', false, 'claude-code', 'ask', undefined,
     );
   });
 
@@ -170,7 +175,7 @@ describe('AddAgentDialog', () => {
     render(<AddAgentDialog {...defaultProps} />);
     expect(screen.queryByTestId('add-agent-persona-select')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('Create Agent'));
-    expect(defaultProps.onCreate).toHaveBeenCalledWith('test-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined);
+    expect(defaultProps.onCreate).toHaveBeenCalledWith('test-agent', 'indigo', 'default', false, 'claude-code', 'ask', undefined);
   });
 
   describe('error surfacing (#1564)', () => {
@@ -193,18 +198,36 @@ describe('AddAgentDialog', () => {
     });
   });
 
-  describe('Free Agent Mode default-off (#1567)', () => {
-    it('renders the Free Agent Mode checkbox unchecked on mount', () => {
+  describe('Access starts at the Default access (#1567, #2761)', () => {
+    it('starts at Ask first when that is the Default access', () => {
       render(<AddAgentDialog {...defaultProps} />);
-      const checkbox = screen.getByRole('checkbox', { name: /free agent mode/i });
-      expect(checkbox).not.toBeChecked();
+      expect((screen.getByLabelText('Access') as HTMLSelectElement).value).toBe('ask');
     });
 
-    it('submits with freeAgentMode undefined when the toggle is never touched', () => {
+    it('starts at the Default access and submits the level picked', async () => {
+      window.clubhouse.app.getDefaultAccess = vi.fn().mockResolvedValue('auto');
       render(<AddAgentDialog {...defaultProps} />);
+      const access = screen.getByLabelText('Access') as HTMLSelectElement;
+      await waitFor(() => expect(access.value).toBe('auto'));
+      expect(screen.getByText('A check decides what needs your approval. It can be wrong.')).toBeInTheDocument();
       fireEvent.click(screen.getByText('Create Agent'));
-      const freeAgentModeArg = (defaultProps.onCreate as any).mock.calls[0][5];
-      expect(freeAgentModeArg).toBeUndefined();
+      expect((defaultProps.onCreate as any).mock.calls[0][5]).toBe('auto');
+      fireEvent.change(access, { target: { value: 'full_access' } });
+      fireEvent.click(screen.getByText('Create Agent'));
+      expect((defaultProps.onCreate as any).mock.calls[1][5]).toBe('full_access');
+    });
+
+    it("stays at Ask first, disabled, for a CLI that doesn't support permissions", async () => {
+      window.clubhouse.app.getDefaultAccess = vi.fn().mockResolvedValue('full_access');
+      useOrchestratorStore.setState({ allOrchestrators: [{ id: 'claude-code', displayName: 'Claude Code', shortName: 'CC', capabilities: { permissions: false } }] as never });
+      render(<AddAgentDialog {...defaultProps} />);
+      await waitFor(() => expect(useDefaultAccessStore.getState().defaultAccess).toBe('full_access'));
+      const access = screen.getByLabelText('Access') as HTMLSelectElement;
+      expect(access.value).toBe('ask');
+      expect(access.disabled).toBe(true);
+      expect(screen.getByText('Not supported by this CLI.')).toBeInTheDocument();
+      fireEvent.click(screen.getByText('Create Agent'));
+      expect((defaultProps.onCreate as any).mock.calls[0][5]).toBe('ask');
     });
   });
 
