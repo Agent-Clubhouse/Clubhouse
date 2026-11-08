@@ -95,6 +95,7 @@ import {
   takeStartRequest,
 } from '../../helper-start-requests';
 import { McpArgError, optionalString } from './validation';
+import { accessCeilingRefusal } from '../access-ceiling';
 import { _resetHelperDeliveryForTesting, deliverHelperUpdate, deliverNow } from './helper-delivery';
 import { checkHelperEffort, checkHelperModel } from '../../model-check';
 import { AUTO_CLI, autoOffRefusal, decideAutoPlan, planHelperStart, readHelperAuto, startDecisionRecord, type AutoLoad, type StartPlan } from '../../helper-routing';
@@ -642,6 +643,11 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     }
   }
   if (!isOrchestrationEnabled(orchestratorId)) return refused('orchestration is off for its orchestrator.');
+  // A level asked for above the orchestrator's own is refused (D126). One that comes from its
+  // helper policy is still lowered to its level at launch, with a note.
+  const asked = args.access && args.access !== 'same' ? helperAccessRequest(args.access)?.access : undefined;
+  const aboveOwn = accessCeilingRefusal(orchestratorId, asked, 'start a helper', { fix: 'Leave access out (or use same) for your own level, or ask the user.' });
+  if (aboveOwn) throw new McpArgError(aboveOwn);
   const { projectPath: homePath, config: orchestrator } = await resolveCaller(orchestratorId);
 
   // Checked before anything is created, with the checks saving it runs: a helper never starts without its setup.
@@ -1387,7 +1393,7 @@ export function registerHelperTools(): void {
               'easy: mechanical, well specified, easy to check. medium: normal feature or bug work in a known area with clear acceptance. ' +
               'hard: ambiguous, cross-cutting, concurrency, security or data-loss risk, or a mistake that is costly to catch.',
           },
-          access: { type: 'string', enum: ['same', ...FIVE_LEVELS, ...ACCESS_LEVELS], description: 'Access level: same (default), or a lower one: plan, ask, auto_edit, auto or full_access (standard, auto and bypass still work). Never more than yours.' },
+          access: { type: 'string', enum: ['same', ...FIVE_LEVELS, ...ACCESS_LEVELS], description: 'Access level: same (default), or a lower one: plan, ask, auto_edit, auto or full_access (standard, auto and bypass still work). A level above yours is refused.' },
           branchFrom: { type: 'string', description: 'Optional branch or commit the helper\'s branch starts from. Defaults to HEAD.' },
           folder: { type: 'string', description: 'Optional folder name under .clubhouse/agents/. Defaults to the name.' },
           project: {
