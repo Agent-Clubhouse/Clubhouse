@@ -414,7 +414,7 @@ describe('atomic option', () => {
   it('writes and flushes a temp file beside the target, then renames it over the target', async () => {
     await atomicStore().save({ ...DEFAULTS, name: 'x' });
     const tmp = tempOf();
-    expect(path.dirname(tmp)).toBe('/tmp/test-app');
+    expect(path.dirname(tmp)).toBe(path.dirname(filePath));
     expect(tmp).not.toBe(filePath);
     const body = handle.writeFile.mock.calls[0][0] as unknown as string;
     expect(JSON.parse(body).name).toBe('x');
