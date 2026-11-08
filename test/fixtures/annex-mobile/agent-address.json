@@ -7,7 +7,7 @@
   },
   "wrongMachine": {
     "body": {
-      "commandId": "cmd_184",
+      "commandId": "cmd_other_machine",
       "epoch": "00000000-0000-4000-8000-000000000001",
       "error": {
         "code": "wrong_machine",

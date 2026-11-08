@@ -2754,7 +2754,8 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(snapshot.payload.machine).toEqual({ fingerprint: NET.self.fingerprint, name: 'Studio Mac' });
     // A command for an agent on another machine is refused, naming the machine to send it to.
     const other = Array(16).fill('bb').join(':');
-    const refused = await command('common:agent on another machine', { type: 'agent.stop', agentId: `durable_chat@${other}` });
+    // Its own commandId: the numbered ones before it can differ by platform.
+    const refused = await command('common:agent on another machine', { type: 'agent.stop', agentId: `durable_chat@${other}` }, { commandId: 'cmd_other_machine' });
     expect(refused.body).toMatchObject({ status: 'rejected', error: { code: 'wrong_machine' }, machine: other });
     fixtures.set('agent-address.json', { snapshotField: { machine: snapshot.payload.machine }, wrongMachine: refused });
   });
