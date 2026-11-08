@@ -545,6 +545,34 @@ describe('NewAgentPage, a quick agent from a template (D25)', () => {
     expect(spawnQuickAgent.mock.calls[0][9]).toEqual({ managedTemplateId: 'custom-workiq', fallbackAccess: 'ask', addParts: ['b-tone'], removeParts: ['b-identity'] });
   });
 
+  it('a template\'s Access goes when another template without one, or None, is picked, unless the person changed it (#2999)', async () => {
+    const free = { ...serverTemplate, id: 'custom-free', name: 'Free', settings: { access: 'full_access' } };
+    const bare = { ...serverTemplate, id: 'custom-bare', name: 'Bare', settings: {} };
+    vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [free, bare] } as never);
+    openWith({ kind: 'quick' });
+    const select = await screen.findByTestId('new-agent-quick-template') as HTMLSelectElement;
+    await waitFor(() => expect(select.disabled).toBe(false));
+    const access = () => (screen.getByTestId('new-agent-access') as HTMLSelectElement).value;
+    const before = access();
+    fireEvent.change(select, { target: { value: 'custom-free' } });
+    expect(access()).toBe('full_access');
+    fireEvent.change(select, { target: { value: 'custom-bare' } });
+    expect(access()).toBe(before);
+    fireEvent.change(select, { target: { value: 'custom-free' } });
+    fireEvent.change(select, { target: { value: '' } });
+    expect(access()).toBe(before);
+    // The person's own choice stays.
+    fireEvent.change(select, { target: { value: 'custom-free' } });
+    fireEvent.change(screen.getByTestId('new-agent-access'), { target: { value: 'auto' } });
+    fireEvent.change(select, { target: { value: 'custom-bare' } });
+    expect(access()).toBe('auto');
+    // A level the person already had stays theirs when a template sets the same one.
+    fireEvent.change(screen.getByTestId('new-agent-access'), { target: { value: 'full_access' } });
+    fireEvent.change(select, { target: { value: 'custom-free' } });
+    fireEvent.change(select, { target: { value: '' } });
+    expect(access()).toBe('full_access');
+  });
+
   it('None starts a quick agent with no template', async () => {
     vi.spyOn(m(), 'listTemplates').mockResolvedValue({ ok: true, value: [serverTemplate] } as never);
     openWith({ kind: 'quick' });
