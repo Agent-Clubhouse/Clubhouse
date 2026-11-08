@@ -11,6 +11,9 @@
 //                          a kill ends the process (startup cancellation tests)
 //   FAKE_CLAUDE_OMIT_INIT_VERSION  leave claude_code_version out of the initialize response, as older CLIs do
 //   FAKE_CLAUDE_VERSION  what `--version` prints (default "2.1.300-fake (Claude Code)")
+//   FAKE_CLAUDE_MCP_FAILED  init also lists `workiq` as failed with no error, and `mcp_status`
+//                          gives its error (a token on the first line, a stack after it)
+//                          and its config with an env value, which must never reach the chat
 //
 // Scripted turns (user text):
 //   hello  partial deltas, then the assistant text, then a success result
@@ -56,6 +59,16 @@ let model = argValue('--model') ?? 'claude-fake-1';
 let effort = argValue('--effort') ?? 'medium';
 const sessionId = argValue('--resume') && !argv.includes('--fork-session') ? argValue('--resume') : 'fake-session-1';
 let initSent = false;
+const mcpServers = [
+  { name: 'clubhouse', status: 'connected', serverInfo: { name: 'clubhouse', version: '1.0.0' } },
+  { name: 'github', status: 'needs-auth' },
+  ...(process.env.FAKE_CLAUDE_MCP_FAILED ? [{
+    name: 'workiq',
+    status: 'failed',
+    error: 'MCP error -32000: Connection closed (Authorization: Bearer fake-secret-token-123456)\n    at Client.connect (client.js:1:1)',
+    config: { type: 'stdio', command: 'workiq-mcp', env: { WORKIQ_TENANT: 'fake-tenant-value' } },
+  }] : []),
+];
 let msgCounter = 0;
 let helloCount = 0;
 let ctlCounter = 0;
@@ -110,7 +123,7 @@ function ensureInit() {
     claude_code_version: '2.1.300-fake',
     cwd: process.cwd(),
     tools: ['Bash', 'Read', 'Edit'],
-    mcp_servers: [{ name: 'clubhouse', status: 'connected' }, { name: 'github', status: 'needs-auth' }],
+    mcp_servers: mcpServers.map(({ name, status }) => ({ name, status })),
     model,
     permissionMode,
     slash_commands: ['compact', 'review'],
@@ -287,6 +300,9 @@ function onControlRequest(msg) {
         },
         behaviors: null,
       });
+      return;
+    case 'mcp_status':
+      respond(id, { mcpServers });
       return;
     case 'interrupt':
       respond(id, {});
