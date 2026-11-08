@@ -1182,8 +1182,9 @@ export interface UpdateArtifact {
   sha256: string;
   size?: number;
   /**
-   * The oldest OS version this artifact runs on (macOS: `13.0`), compared with
-   * `process.getSystemVersion()`. A client below it skips the update (#2924).
+   * The oldest OS version this artifact runs on, compared part by part with
+   * `process.getSystemVersion()`: macOS `13.0`; Windows `10.0.<build>`, since
+   * Windows 11 still reports 10.0. A client below it skips the update (#2924).
    * Absent means no limit.
    */
   minSystemVersion?: string;

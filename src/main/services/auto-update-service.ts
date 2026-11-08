@@ -566,6 +566,14 @@ async function fetchBestManifest(previewChannel: boolean): Promise<ManifestResul
 
   // Pick whichever is newer. isNewerVersion handles prerelease suffixes
   // (rc, -beta.N) and considers a stable release newer than its prerelease.
+  // One this OS can't run loses to one it can (#2924).
+  const runnable = (m: UpdateManifest) => {
+    const artifact = m.artifacts?.[platformKey()];
+    return !artifact || !needsNewerSystem(artifact, currentSystemVersion());
+  };
+  if (runnable(preview) !== runnable(stable)) {
+    return runnable(preview) ? { manifest: preview, sourceUrl: PREVIEW_UPDATE_URL } : { manifest: stable, sourceUrl: UPDATE_URL };
+  }
   if (isNewerVersion(preview.version, stable.version)) {
     return { manifest: preview, sourceUrl: PREVIEW_UPDATE_URL };
   }
@@ -589,6 +597,8 @@ export async function checkForUpdates(
   const recordCheck = (result: Parameters<typeof recordUpdateCheck>[0]['result'], error?: unknown): void =>
     recordUpdateCheck({ startMs: checkStartMs, trigger, preview: settings.previewChannel, result, error });
 
+  // An update already downloaded, kept if the newest one turns out to need a newer OS.
+  const readyBefore = status.state === 'ready' ? { ...status } : null;
   setState('checking');
   appLog('update:check', 'info', 'Checking for updates', {
     meta: { manual, currentVersion: app.getVersion(), previewChannel: settings.previewChannel },
@@ -655,7 +665,14 @@ export async function checkForUpdates(
       appLog('update:check', 'warn', `Update ${manifest.version} needs a newer OS; staying on ${currentVersion}`, {
         meta: { version: manifest.version, platform: key, systemVersion, minSystemVersion: artifact.minSystemVersion },
       });
-      setState('idle');
+      if (readyBefore && readyBefore.availableVersion !== manifest.version) {
+        // An earlier update already downloaded for this OS stays ready.
+        setState('ready', readyBefore);
+      } else {
+        // Downloaded before its minimum was known, this OS can't run it.
+        if (readyBefore) await clearPendingUpdateInfo();
+        setState('idle', readyBefore ? { availableVersion: null, downloadPath: null, artifactUrl: null, downloadProgress: 0 } : undefined);
+      }
       await saveSettings({ ...settings, lastCheck: new Date().toISOString() });
       recordCheck('os_too_old');
       return status;
@@ -756,7 +773,7 @@ async function downloadUpdate(
       if (valid) {
         appLog('update:download', 'info', 'Update already downloaded and verified');
         recordUpdateDownload({ startMs: downloadStartMs, result: 'already_downloaded' });
-        await writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url });
+        await writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url, ...(artifact.minSystemVersion && { minSystemVersion: artifact.minSystemVersion }) });
         setState('ready', {
           availableVersion: version,
           releaseNotes,
@@ -810,7 +827,7 @@ async function downloadUpdate(
 
     appLog('update:download', 'info', 'Update verified and ready to install');
     recordUpdateDownload({ startMs: downloadStartMs, result: 'downloaded' });
-    await writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url });
+    await writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url, ...(artifact.minSystemVersion && { minSystemVersion: artifact.minSystemVersion }) });
     setState('ready', {
       downloadProgress: 100,
       downloadPath: destPath,
@@ -1148,6 +1165,8 @@ interface PendingUpdateInfo {
   releaseNotes: string | null;
   releaseMessage: string | null;
   artifactUrl?: string | null;
+  /** The artifact's minimum OS version, checked again when the update is restored (#2924). */
+  minSystemVersion?: string;
 }
 
 function pendingUpdateInfoPath(): string {
@@ -1403,7 +1422,12 @@ export async function startPeriodicChecks(): Promise<void> {
     (pending.downloadPath && await pathExists(pending.downloadPath))
   );
   if (pending && pendingReady) {
-    if (isNewerVersion(pending.version, currentVersion)) {
+    if (needsNewerSystem({ url: '', sha256: '', minSystemVersion: pending.minSystemVersion }, currentSystemVersion())) {
+      appLog('update:restore', 'warn', 'Not restoring a pending update this OS is too old for', {
+        meta: { version: pending.version, systemVersion: currentSystemVersion(), minSystemVersion: pending.minSystemVersion },
+      });
+      await clearPendingUpdateInfo();
+    } else if (isNewerVersion(pending.version, currentVersion)) {
       appLog('update:restore', 'info', 'Restoring pending update from previous session', {
         meta: { version: pending.version },
       });
