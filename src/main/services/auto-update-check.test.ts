@@ -257,7 +257,8 @@ describe('checkForUpdates', () => {
       expect(result).toMatchObject({ state: 'ready', availableVersion: '0.99.0', artifactUrl: ready.artifactUrl, error: null });
     });
 
-    it('stays ready when a newer version fails to download', async () => {
+    // Windows hands the download to Squirrel, so there is no download of ours to fail.
+    it.skipIf(process.platform === 'win32')('stays ready when a newer version fails to download', async () => {
       _setStatusForTesting(ready as never);
       let call = 0;
       httpsGetSpy.mockImplementation((_url: string, _opts: unknown, cb: (res: unknown) => void) => {
