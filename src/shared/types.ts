@@ -1338,7 +1338,43 @@ export type BuiltinThemeId =
   | 'dracula'
   | 'tokyo-night'
   | 'gruvbox-dark'
-  | 'cyberpunk';
+  | 'cyberpunk'
+  // The seven Workshop packs (#2753), in src/renderer/themes/packs.
+| 'maple'
+| 'harvest'
+| 'pumpkin-spice'
+| 'amber-forest'
+| 'twilight-ember'
+| 'frost'
+| 'evergreen'
+| 'northern-lights'
+| 'snowfall'
+| 'polar-night'
+| 'cherry-blossom'
+| 'spring-meadow'
+| 'wisteria'
+| 'daffodil'
+| 'moonlit-garden'
+| 'sunset-beach'
+| 'ocean-breeze'
+| 'tropical'
+| 'golden-hour'
+| 'midnight-swim'
+| 'coral-reef'
+| 'tide-pool'
+| 'pacific'
+| 'deep-sea'
+| 'abyssal'
+| 'redmond'
+| 'mountain-view'
+| 'cupertino'
+| 'ai-lab'
+| 'seattle'
+| 'neon-cyberpunk'
+| 'synthwave'
+| 'neon-tokyo'
+| 'electric'
+| 'vaporwave';
 
 /** Theme IDs — builtin themes plus any plugin-contributed themes. */
 export type ThemeId = BuiltinThemeId | (string & {});
@@ -1444,6 +1480,8 @@ export interface ThemeDefinition {
   fonts?: ThemeFonts;
   /** CSS gradients (experimental). */
   gradients?: ThemeGradients;
+  /** The collection a built-in theme came in, such as `Winter` (#2753). Unset for the original built-ins. */
+  collection?: string;
 }
 
 export interface GitStatusFile {
