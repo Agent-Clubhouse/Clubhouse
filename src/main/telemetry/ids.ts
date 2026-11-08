@@ -18,9 +18,14 @@ export interface TelemetryIdentity {
   hashSalt: string;
 }
 
-/** A fresh install id and salt. Reset always rotates both together. */
-export function createIdentity(): TelemetryIdentity {
-  return { installId: randomUUID(), hashSalt: randomBytes(32).toString('base64') };
+/**
+ * A fresh install id and salt. Reset always rotates both together. The first
+ * identity passes the local record's salt (#2920), so hashes already recorded
+ * keep matching.
+ */
+export function createIdentity(hashSalt?: string): TelemetryIdentity {
+  const adopted = hashSalt && Buffer.from(hashSalt, 'base64').length === 32 ? hashSalt : undefined;
+  return { installId: randomUUID(), hashSalt: adopted ?? randomBytes(32).toString('base64') };
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;

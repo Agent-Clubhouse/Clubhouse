@@ -329,7 +329,7 @@ jq -s 'map(select(.t=="event")) as $e
 
 ## Auditing settings changes
 
-`settings-audit.jsonl` under the Clubhouse base dir: one JSON line per change or refusal, 1 MB, then one rotated file. It shares `bounded-audit-log.ts` with `dispatcher-audit.ts`. It's local and isn't sent anywhere. Reading it is by the file for now: nothing in the app shows it.
+`settings-audit.jsonl` under the Clubhouse base dir: one JSON line per change or refusal, 1 MB, then one rotated file. It shares `bounded-audit-log.ts` with `dispatcher-audit.ts`. It's local and isn't sent anywhere. Reading it is by the file for now: nothing in the app shows it. Each row is also recorded as a `clubhouse.audit.setting` event in the local telemetry record (#2920, `docs/telemetry-otel-spec.md` §6.13), and the file goes once nothing reads it.
 
 **A row** has `surface`, `actorId` when an agent asked, `scope` (`app`, `project`, `agent`), `targetId`, `key`, `before` and `after` or `changed: true`, `outcome` and `code`. It uses agent and project ids. Where only a path is to hand, as with project defaults, `targetId` is a short hash of it, never the path.
 

@@ -8,6 +8,7 @@
  * chunk is never imported. When on, it starts buffering facade calls and
  * loads the SDK asynchronously so it never blocks `ready`.
  */
+import { adoptIdentity, deleteLocalSalt } from './local-salt';
 import * as os from 'os';
 import { telemetryInstanceId as instanceId } from './instance';
 import { app } from 'electron';
@@ -24,7 +25,7 @@ import {
   tel,
 } from './facade';
 import { restartLocalRecording, syncLocalRecording } from './local-control';
-import { createIdentity, isValidIdentity, type TelemetryIdentity } from './ids';
+import { isValidIdentity, type TelemetryIdentity } from './ids';
 import { deleteOfflineData, getOfflineDir, OFFLINE_PRUNE_INTERVAL_MS, pruneOfflineDir } from './offline';
 import { buildResourceAttributes, type ResourceInputs } from './resource';
 import { newChromeEnabled } from '../window-chrome';
@@ -181,9 +182,8 @@ export function checkConfirmedHost(confirmedHost: string | undefined, host: stri
 
 async function ensureIdentity(settings: TelemetrySettings): Promise<TelemetryIdentity> {
   if (isValidIdentity(settings)) return { installId: settings.installId, hashSalt: settings.hashSalt };
-  const identity = createIdentity();
-  await updateTelemetrySettings((s) => ({ ...s, ...identity }));
-  return identity;
+  // The local record's salt carries over (#2920): what's recorded keeps its hashes.
+  return adoptIdentity(async (identity) => { await updateTelemetrySettings((s) => ({ ...s, ...identity })); });
 }
 
 function startOfflinePrune(): void {
@@ -555,6 +555,7 @@ export async function disableTelemetry({ deleteLocalData = false } = {}): Promis
       delete next.hashSalt;
       return next;
     });
+    deleteLocalSalt();
     // The running local recorder still holds the deleted salt.
     await restartLocalRecording();
   }

@@ -5,9 +5,10 @@
  * telemetry signals, and is installed in the facade, only while
  * `telemetryRecording` is on too. No OpenTelemetry imports.
  */
+import { randomBytes } from 'crypto';
+import { localSalt } from './local-salt';
 import * as os from 'os';
 import * as path from 'path';
-import { randomBytes } from 'crypto';
 import { app } from 'electron';
 import * as logSettings from '../services/log-settings';
 import { LOG_RETENTION_TIERS, type LocalTelemetryLevel, type LoggingSettings } from '../../shared/types';
@@ -17,6 +18,8 @@ import { getLocalSink, setLocalSink } from './facade';
 import { isValidIdentity } from './ids';
 import { createLocalRecorder, type LocalRecorder } from './local-recorder';
 import { pruneLogDir, RETENTION_INTERVAL_MS } from './local-retention';
+import { readRecordedEvents, type RecordedEvent } from './local-record-reader';
+import type { EventName } from '../../shared/telemetry/attributes';
 import { createScrubber } from './scrubber';
 import { newChromeEnabled } from '../window-chrome';
 import { enabledDestinations, getTelemetrySettings } from './settings';
@@ -128,9 +131,10 @@ function hashSalt(): Buffer {
     const s = getTelemetrySettings();
     if (isValidIdentity(s)) return Buffer.from(s.hashSalt, 'base64');
   } catch {
-    // Unreadable settings: fall through to a per-run salt.
+    // Unreadable settings: fall through to the local record's salt.
   }
-  return randomBytes(32);
+  // Kept from run to run (#2920), so hashes in older files still mean the same ids.
+  return localSalt();
 }
 
 function start(level: LocalTelemetryLevel, signals: boolean): void {
@@ -147,7 +151,8 @@ function start(level: LocalTelemetryLevel, signals: boolean): void {
     fileBase: now.toISOString().replace(/:/g, '-').replace(/Z$/, ''),
     level,
     signals,
-    hashSalt: hashSalt(),
+    // A diag-only recorder hashes nothing, so it needs no saved salt (#2920).
+    hashSalt: signals ? hashSalt() : randomBytes(32),
     scrub: createScrubber({ homeDir: os.homedir(), username, hostname: os.hostname() }),
     session: { appVersion: app.getVersion(), platform: process.platform, arch: process.arch, uiChrome: newChromeEnabled() ? 'v2' : 'legacy' },
     onRotate: () => void runRetention(),
@@ -212,6 +217,29 @@ export async function restartLocalRecording(): Promise<void> {
   } catch {
     // Never break the settings action.
   }
+}
+
+/**
+ * The salt the running recorder hashes ids with (#2920), so a reader can match a
+ * known id to its hash. None while signals aren't recorded. Never creates one.
+ */
+export function localRecordSalt(): Buffer | undefined {
+  return recorder?.signals ? recorder.hashSalt : undefined;
+}
+
+/**
+ * The newest recorded events of one name, newest first (#2920). Queued lines are
+ * written first (without ending the metric window), so a call reads what was just
+ * recorded. Empty while signals aren't recorded, as the setting says.
+ */
+export async function readLocalEvents(name: EventName, limit: number): Promise<RecordedEvent[]> {
+  if (!recorder?.signals) return [];
+  try {
+    await recorder.flushQueued();
+  } catch {
+    // Read what's on disk.
+  }
+  return readRecordedEvents(getLogDir(), name, limit);
 }
 
 /** Test-only reset. */

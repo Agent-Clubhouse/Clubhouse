@@ -1298,7 +1298,7 @@ The `tel.*` signals are also written to local files, so flow timings and classif
 - **Migration.** Runs once per install, on the first start with this build. If export was set up to send Detailed data (consent recorded and an enabled destination at Detailed, read after the §6.8 graduation has switched off any setup the old experiment gate held back), the local level becomes Detailed, so nobody silently loses data. Either way the run is recorded in `telemetryLevelMigrated: true`, so a later choice by the user is never overridden.
 
 - **Setting.** Settings → Logging → **Record telemetry signals** (labelled **Record telemetry locally** before #2312), stored as `telemetryRecording` in `logging-settings.json`. On by default (a file without the key counts as on). It only runs while **Record locally** (`enabled`, labelled **Write logs** before #2312) is on; turning either off stops recording the signals at once, flushing what was queued. The namespace and minimum-level filters do not apply to signals: those are for diag lines. The recorder itself runs while **Record locally** is on, for diag lines (below); with **Record telemetry signals** off it records diag lines only, is not installed in the facade, and its file starts at the first diag line. Switching **Record telemetry signals** restarts the recorder (a new file); a level change restarts it only while it records signals. Since the recorder runs with signals off too, so does the hourly retention pass.
-- **No SDK, no network.** `local-recorder.ts` is part of the main bundle and imports no OpenTelemetry. `local-control.ts` installs it in the facade synchronously from `initTelemetry()`, so startup signals are recorded too. It never creates an install id or `telemetry-settings.json`: it uses the install's hash salt when one exists (local hashes then match exported ones) and a per-run random salt otherwise. `recordAppSession` takes the previous version from the session record (`telemetry-session.json`, written whenever signals are produced), so the startup kind is the same with export on or off.
+- **No SDK, no network.** `local-recorder.ts` is part of the main bundle and imports no OpenTelemetry. `local-control.ts` installs it in the facade synchronously from `initTelemetry()`, so startup signals are recorded too. It never creates an install id or `telemetry-settings.json`: it uses the install's hash salt when one exists (local hashes then match exported ones), and otherwise a local-only salt kept in `telemetry-local-salt.json` from run to run (§6.13). `recordAppSession` takes the previous version from the session record (`telemetry-session.json`, written whenever signals are produced), so the startup kind is the same with export on or off.
 - **Same protections as export.** Attributes go through `sanitizeAttribute` (registry keys only, enum/int/bool/hash/version formats, the scrubber, the 128-character cap), `hash` attributes through `hashId`, exception types through the same identifier check, and stacks through `sanitizeStack`. Exception messages, log messages and `meta` are never written in signal lines (diag lines, below, carry redacted text and are never exported). Metric dimensions are limited to each metric's declared attributes, as the SDK's views do.
 - **Level.** Standard by default (`LOCAL_RECORDING_LEVEL`), Detailed opt-in; see Levels above.
 - **Facade.** The recorder is a second consumer next to the SDK runtime (`setLocalSink`). Flows and steps are wrapped inside the SDK's span, so the SDK sees the same callback result and its span handle still receives every attribute. The unclean-exit check keeps its `telemetry-session.json` while recording. A sink that throws is caught in the facade and never stops the SDK call after it. Diag lines carry the recorder's own `traceId`/`spanId`, which match the spans in the same telemetry file.
@@ -1341,12 +1341,48 @@ The `tel.*` signals are also written to local files, so flow timings and classif
 |---|---|
 | `session` | `v` (format version, 3), `ts`, `appVersion`, `platform`, `arch`, `uiChrome` (the `clubhouse.ui.chrome` value, `legacy` or `v2`), `level`, `signals?` (`false` when only diag lines are recorded). First line of the first file. |
 | `span` | `ts` (end), `name`, `traceId`, `spanId`, `parentSpanId?`, `startMs`, `durationMs`, `outcome` (`ok`/`error`/`cancelled`/...), `errorType?`, `attrs` |
-| `event` | `ts`, `name`, `severity` (`info`/`warn`/`error`/`fatal`), `traceId?`, `spanId?`, `attrs` |
+| `event` | `ts`, `name`, `severity` (`info`/`warn`/`error`/`fatal`), `traceId?`, `spanId?`, `attrs`, `detail?` (local only, §6.13) |
 | `exception` | `ts`, `type` (class name only), `stack` (sanitized frames), `traceId?`, `spanId?`, `attrs` (origin, handled, extras) |
 | `metric` | `ts` (window end), `name`, `kind`, `unit?`, `startMs`, `durationMs`, `attrs`, `overflow?`; counters `sum`; histograms `count`, `sum`, `min`, `max`; gauges `value` (last) |
 | `diag` | `ts`, `ns`, `level` (`debug`/`info`/`warn`/`error`/`fatal`), `msg`, `meta?`, `window?` (`main`/`popout`, renderer lines only), `traceId?`, `spanId?`. Local only and redacted, see Diagnostic lines. |
 | `evicted` | `ts`, `files`, `bytes`, `maxBytes`. This run's oldest chunks were deleted to stay within its rolling budget; recording continues. |
 | `dropped` | `ts`, `traces`, `logs`, `lines`, `diag`, `diagPriority?` (how many of `diag` were priority events, when any): counts dropped since the previous `dropped` line. Written each metric window (60 s), when an hourly cap window ends, at exit flushes and at stop, only when non-zero. |
+
+### 6.13 Audit events in the record ([#2920](https://github.com/Agent-Clubhouse/Clubhouse/issues/2920))
+
+The local record is also the record of who changed what. There's no separate audit stream and no Activity page (maintainer, 2026-11-07). This section covers the first part: the settings and Dispatcher audit rows become telemetry events, and `list_orchestrator_controls` reads them back from the record. While nothing else reads them, the old `settings-audit.jsonl` and `dispatcher-audit.jsonl` are still written alongside; they go once nothing reads them.
+
+**The events.**
+- `clubhouse.audit.setting`: a settings change or refusal, from any surface. Attributes: `clubhouse.audit.surface`, `clubhouse.audit.scope`, `clubhouse.audit.outcome`, and the actor and target id hashes. Detail: `key`, then `before` and `after` when the value is keepable, else `changed: true`, then `code`.
+- `clubhouse.audit.dispatcher_control`: one Dispatcher control call, refusals included. Attributes: `clubhouse.audit.tool`, `clubhouse.audit.outcome`, the actor id hash and the first target's. Detail: `tool`, `requested`, `before`, `after`, `code`, and `targets`, every target's id hash.
+
+**Decisions**, with the defaults taken. They're open to the maintainer:
+- **Rich locally, filtered on export** (#2920 item 4). An event may carry a `detail` object that's written to the local record only. The facade never hands it to the SDK, so no export destination or backfill gets it. It holds what the export schema can't, such as a setting's key and its old and new values.
+  - It's held to the settings audit's rule (`local-detail.ts`): booleans, whole numbers, null, short words or ids (`^[\w.:[\]-]{1,64}$`), lists of up to 8 of those, and one level of nesting.
+  - A string the recorder's scrubber would change (a username, hostname, address or home path) is left out. So is a token-shaped secret: well-known key prefixes, JWTs, and any run of 32 or more characters with no dot.
+  - Anything else is left out, so names, paths, commands and free text never reach the file.
+  - Ids in the detail are hashed like `hash` attributes (`detailIds`).
+  - **Secret and content values are never recorded, even locally.** The token format doesn't keep secrets out: an API key, bearer token or header value can look like a short id. So `clubhouse.audit.setting` carries a setting's old and new values only when two checks pass (`eventKeepsValues` in `settings-audit.ts`):
+    - The key is on an allowlist: the key's last part is named in `EVENT_VALUE_KEYS` (CLI, model, effort, access, idle sleep, colour, template and the like), or its family is `orchestration.` or `helper_presets.`. A boolean is allowed too, since it can't hold anything but itself.
+    - The key's name doesn't look secret or content-bearing: token, secret, password, credential, auth, header, cookie, API, private or access key, endpoint, URL, env, args, command, mission, prompt or instructions. This check wins over the allowlist and over booleans.
+
+    Every other key records only `changed: true`. That's on top of each row's own catalog, which already keeps values only for keys it marks as values.
+  - **Backfill must drop the detail.** The detail is local by construction. A replay of the local record to a destination (#2920 part four) must strip `detail` from every line, and its tests must show that.
+- **Ids stay hashed locally.** Without an install identity, local recording keeps one salt from run to run in `telemetry-local-salt.json`: 0600, next to `telemetry-settings.json`, and holding the salt only, never an install id.
+  - The first install identity adopts that salt and the file is removed, so hashes recorded before export was set up match exported ones, and a later backfill needs no rehashing.
+  - Resetting the install id and "Delete local telemetry data" both remove it.
+  - Readers match a hash back by hashing the ids they know with the running recorder's salt (`localRecordSalt()`, which never creates one).
+    - An id that matches none, such as an agent since removed, shows as `hash:<hash>`.
+    - A Dispatcher row whose actor doesn't match was hashed under another salt (another build's, or from before a reset), so it's left out.
+  - A diag-only recorder (signals off) hashes nothing, so it makes no salt file. Resetting the install id restarts local recording, so the recorder moves to the new salt. The salt file is removed only once the new identity is saved, so a failed save adopts it again next time.
+- **Audit events aren't capped locally.** `EventDef.audit` marks them. Local recording keeps them at every level and outside the hourly event cap. They may also go past the pending-line limit, up to twice that limit; past that they're dropped and counted like any line. Retention and the per-run budget still apply. Export follows their `standard` level like any event.
+  - Only main records them: the renderer protocol refuses audit events, so a renderer can't write the record of who changed what.
+  - With **Record locally** or **Record telemetry signals** off they aren't recorded: the switch still turns local recording off completely, as #2920 recommends. Then `list_orchestrator_controls` returns no audit rows.
+
+**Reading back.** `readLocalEvents(name, limit)` (`local-control.ts`, on `local-record-reader.ts`) does three things:
+- It writes the queued lines (`flushQueued`, which doesn't end the metric window).
+- It reads `telemetry-*.jsonl` newest file first, up to 32 MB of files, and stops once it has `limit` events.
+- It returns nothing while signals aren't recorded. `list_orchestrator_controls` with `audit: N` uses it. Its rows keep the old shape: `ts`, `tool`, `actorId`, `targets`, `requested`, `before`, `after`, `outcome` and `code`.
 
 ## 7. Annex satellites and controllers
 
