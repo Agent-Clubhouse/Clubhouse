@@ -310,6 +310,17 @@ describe('ChatAgentRuntime', () => {
       expect(runtime.getQueueState().queuedMessageIds).toEqual([ids[2]]);
     });
 
+    it('a message queued as a turn ends waits behind the queue, not ahead of it (#3102)', async () => {
+      const { driver, runtime, ids } = await queuedRuntime();
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+      // Before the drain runs: the state may already read idle, but the queue still holds items.
+      const late = await runtime.sendMessage('late', { source: 'user', delivery: 'queued' });
+      await flush();
+      expect(late.delivery).toBe('queued');
+      expect(sentTexts(driver)).toEqual(['one']);
+      expect(runtime.getQueueState().queuedMessageIds).toEqual([ids[1], ids[2], late.messageId]);
+    });
+
     it('sends a message asked to queue as a prompt when nothing is running (#3102)', async () => {
       const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli', STEERLESS);
       const { runtime } = makeRuntime(driver);
@@ -1011,7 +1022,7 @@ describe('ChatAgentRuntime', () => {
     expect(permissionQueue.listPendingForAgent('agent-1')).toEqual([]);
   });
 
-  it('closes the CLI when handling an event throws', async () => {
+  it('closes the CLI when handling turn_ended throws', async () => {
     const driver = new FakeChatDriver('copilot_sdk', 'copilot-cli', STEERLESS);
     const { runtime, onEnded } = makeRuntime(driver);
     await runtime.start();
