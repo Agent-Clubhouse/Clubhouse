@@ -283,6 +283,7 @@ function initPtyExitListener(): () => void {
           baseSha: agent.runBaseSha,
           startedAt,
           freeAgentMode: agent.freeAgentMode,
+          ...(agent.access && { access: agent.access }),
           toolCalls,
           inputTokens,
           outputTokens,

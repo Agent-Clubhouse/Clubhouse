@@ -55,7 +55,6 @@ describe('ProjectAgentDefaultsSection', () => {
       expect(await screen.findByRole('heading', { name: 'Default instructions' })).toBeInTheDocument();
       expect(screen.getByText('Default permissions')).toBeInTheDocument();
       expect(screen.getByText('Default .mcp.json')).toBeInTheDocument();
-      expect(screen.getByText('Free agent mode by default')).toBeInTheDocument();
     });
 
     it('shows Save button always', async () => {
@@ -119,18 +118,18 @@ describe('ProjectAgentDefaultsSection', () => {
     });
   });
 
-  describe('free agent mode', () => {
-    it('shows warning when free agent mode is enabled', async () => {
+  describe('access (#2761)', () => {
+    it('has no project free agent default, and drops a saved one on save', async () => {
+      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({ instructions: 'Default instructions', freeAgentMode: true });
       renderSection();
-      await screen.findByText('Free agent mode by default');
-
-      const toggle = screen.getByRole('switch', { name: 'Free agent mode by default' });
-      expect(toggle).toHaveAttribute('aria-checked', 'false');
-      expect(screen.getByText('Start new agents with the configured Free agent permission mode.')).toBeInTheDocument();
-      fireEvent.click(toggle);
-      expect(toggle).toHaveAttribute('aria-checked', 'true');
-
-      expect(await screen.findByText(/configured Free agent permission mode/)).toBeInTheDocument();
+      await screen.findByRole('heading', { name: 'Default instructions' });
+      expect(screen.queryByText(/free agent/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole('switch', { name: /free agent/i })).not.toBeInTheDocument();
+      fireEvent.change(screen.getByDisplayValue('Default instructions'), { target: { value: 'Updated instructions' } });
+      fireEvent.click(screen.getByText('Save defaults'));
+      await waitFor(() => expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalled());
+      const written = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0][1] as Record<string, unknown>;
+      expect(written).not.toHaveProperty('freeAgentMode');
     });
   });
 

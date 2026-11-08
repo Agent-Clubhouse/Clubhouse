@@ -37,6 +37,12 @@ describe('Framebriar session on the resource', () => {
     expect(resource.attributes).toEqual({ 'service.name': 'clubhouse' });
   });
 
+  it('leaves the install id off the resource view, keeping it on the shared resource (#2526)', () => {
+    const resource = { attributes: { 'service.name': 'clubhouse', 'clubhouse.install.id': 'install-1', 'enduser.pseudo.id': 'install-1' } };
+    expect(sessionResourceView('s-1')(resource).attributes).toEqual({ 'service.name': 'clubhouse', 'session.id': 's-1' });
+    expect(resource.attributes['clubhouse.install.id']).toBe('install-1');
+  });
+
   it('stamps spans, logs and metrics for this destination only', () => {
     const { seen, exporters } = recorder();
     const wrapped = withSessionId(exporters, 's-9');
@@ -149,8 +155,9 @@ describe('Framebriar destination adapter', () => {
     expect(describeTestFailure({ errorMessage: FRAMEBRIAR_NOT_CONNECTED } as never, 'framebriar')).toMatch(/Feedback isn't connected/);
   });
 
-  it('copies install id, layout and channel onto events', () => {
-    expect(getAdapter('framebriar').copyResourceAttributes).toEqual(['clubhouse.install.id', 'clubhouse.ui.chrome', 'clubhouse.channel']);
+  it('copies layout and channel onto events, and drops the install id (#2526)', () => {
+    expect(getAdapter('framebriar').copyResourceAttributes).toEqual(['clubhouse.ui.chrome', 'clubhouse.channel']);
+    expect(getAdapter('framebriar').dropAttributes).toEqual(['enduser.pseudo.id', 'clubhouse.install.id']);
     expect(getAdapter('framebriar').label).toBe('Clubhouse developer');
   });
 });

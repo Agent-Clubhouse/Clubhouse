@@ -14,7 +14,7 @@ Check these in order:
 
 It's waiting for you to approve something. Click it under **Needs you** at the top of the sidebar, read the request in the pane, and approve or deny it.
 
-To be asked less, use headless mode or Free Agent Mode for quick agents.
+To be asked less, use headless mode for quick agents, or give the agent a higher **Access** level, such as **Auto-accept edits** or **Auto**. With Auto, a check decides what needs your approval, and it can be wrong.
 
 ## A plugin doesn't appear
 

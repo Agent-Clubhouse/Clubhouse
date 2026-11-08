@@ -186,6 +186,9 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
       } else {
         args.push('--permission-mode', 'auto');
       }
+    } else if (opts.access === 'plan' || opts.access === 'auto_edit') {
+      // Access (#2761): the two levels below Free Agent Mode with a start flag.
+      args.push('--permission-mode', opts.access === 'plan' ? 'plan' : 'acceptEdits');
     }
 
     if (opts.model && opts.model !== 'default') {

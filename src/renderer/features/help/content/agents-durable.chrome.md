@@ -5,11 +5,11 @@ Durable agents are for ongoing work. Each keeps its own Git worktree and branch,
 ## Creating one
 
 1. Click **New** at the top of the sidebar and choose **Durable agent…**. Or hover a project and click its **+** button.
-2. Set the **Name** and **Color**. With **Clubhouse managed** on, choose **Start with template** or **Build from scratch** to pick its instructions, skills and MCP servers. Turn it off for a plain agent: set its **Runs on** and **Model**, and optionally its **MCP servers** and **Free Agent Mode**. A plain agent keeps its own files, so Clubhouse Mode is off for it.
+2. Set the **Name** and **Color**. With **Clubhouse managed** on, choose **Start with template** or **Build from scratch** to pick its instructions, skills and MCP servers. Turn it off for a plain agent: set its **Runs on** and **Model**, and optionally its **MCP servers** and **Access**. A plain agent keeps its own files, so Clubhouse Mode is off for it.
 3. Leave **Use git worktree** on to give the agent its own branch.
 4. Click **Create agent**. The agent appears under its project and starts right away. Select it to give it work.
 
-Templates are in **Settings > Managed agents > Templates**.
+Templates are in **Settings > Managed agents > Templates**. A template can set the agent's **Access**. Otherwise a new agent starts at your **Default access**. See **Access** below.
 
 ## Waking a sleeping agent
 
@@ -37,6 +37,7 @@ Open **Settings** from the agent's row menu or hover card.
 | **Appearance** | Name, color and icon |
 | **Runs on** and **Model** | The CLI and model the agent uses. Changes apply the next time it starts or wakes. |
 | **Runtime** | Chat or CLI. Hidden when **Chat view** is off in **Settings > Agents & providers**. |
+| **Access** | The level the agent starts at. See **Access** below. |
 | **Instructions**, **Skills** and **MCP servers** | A Clubhouse managed agent's parts: the blocks it reads in order, the skills copied into its folder and the MCP servers it gets |
 | **Helpers** | Whether the agent orchestrates, and how it starts and disposes of helpers |
 | **Quick agents** | What quick agents started from this agent inherit |
@@ -45,6 +46,26 @@ Open **Settings** from the agent's row menu or hover card.
 A plain agent has only **General**, **Helpers** and **Quick agents** here. It keeps its instructions, skills, MCP servers and permissions in its own files, and the classic layout still edits them in the app.
 
 An agent that used Clubhouse Mode or a persona switches to managed on its own at its next start, keeping what it has now, and says so in its settings under **General > Setup**. Any other agent made before Clubhouse-managed agents can switch there, or with others in **Settings > Managed agents > Switch agents**.
+
+## Access
+
+Each agent has one **Access** setting: the level its CLI starts at.
+
+| Level | What the agent does |
+|-------|---------------------|
+| **Plan** | Reads and plans. Makes no changes. |
+| **Ask first** | Asks before edits and commands. |
+| **Auto-accept edits** | Makes file edits without asking. Asks before commands. |
+| **Auto** | A check decides what needs your approval. It can be wrong. |
+| **Full access** | Runs everything without asking. |
+
+New agents start at **Default access** in **Settings > Agents & providers**. It starts at Ask first until you change it. You can pick another level when you create an agent, and change it later in the agent's settings or its details card while it sleeps. The hover card and details card show the level as plain text.
+
+Each CLI only lists the levels it can start at. Claude Code has all five. In the terminal, Codex CLI has Ask first, Auto and Full access, and Copilot CLI has Ask first and Full access. In chat, each CLI offers the levels its chat connection supports. If an agent's level isn't one its CLI can start at where it runs, it starts at the nearest lower level that it can.
+
+Auto isn't a promise of safety. The check can let through something you would have stopped.
+
+Changing the level in a chat's composer applies to that session only. The agent's saved Access doesn't change, and when the two differ the details card shows both, for example "Auto now, starts at Ask first".
 
 ## Deleting
 

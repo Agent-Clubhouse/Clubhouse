@@ -253,6 +253,22 @@ describe('ClaudeCodeProvider', () => {
       expect(args).not.toContain('--permission-mode');
     });
 
+    it.each([
+      ['plan', 'plan'],
+      ['auto_edit', 'acceptEdits'],
+    ] as const)('starts at %s with --permission-mode %s (#2761)', async (access, mode) => {
+      const { args } = await provider.buildSpawnCommand({ cwd: '/p', freeAgentMode: false, permissionMode: 'skip-all', access });
+      expect(args[args.indexOf('--permission-mode') + 1]).toBe(mode);
+      expect(args).not.toContain('--dangerously-skip-permissions');
+    });
+
+    it('lets the legacy pair decide for the three legacy levels (#2761)', async () => {
+      const full = await provider.buildSpawnCommand({ cwd: '/p', freeAgentMode: true, permissionMode: 'skip-all', access: 'full_access' });
+      expect(full.args).toContain('--dangerously-skip-permissions');
+      const ask = await provider.buildSpawnCommand({ cwd: '/p', freeAgentMode: false, access: 'ask' });
+      expect(ask.args).not.toContain('--permission-mode');
+    });
+
     it('does not add permission flags when freeAgentMode is undefined', async () => {
       const { args } = await provider.buildSpawnCommand({ cwd: '/p' });
       expect(args).not.toContain('--dangerously-skip-permissions');

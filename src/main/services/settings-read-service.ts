@@ -18,6 +18,7 @@
  * close the tool gate), and never asks a CLI for its models or availability.
  */
 
+import { accessFromLegacy } from '../../shared/agent-access';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import { COPILOT_SDK_FLAG } from '../../shared/chat';
 import { DISPATCHER_PROJECT_ID } from '../../shared/dispatcher-types';
@@ -257,6 +258,15 @@ const AGENT_SECTIONS: ReadonlyArray<Section<AgentContext>> = [
   {
     name: 'agent.access',
     fields: [
+      // Access (#2761): the saved level, and the level the running session started at.
+      ['access', ({ config, path }) => {
+        const running = agentRegistry.get(config.id)?.launchAccess;
+        return {
+          stored: config.access ?? null,
+          effective: running ? accessFromLegacy(running.freeAgentMode, running.permissionMode) : freeAgentSettings.agentAccess(config, path),
+          source: config.access === undefined && config.freeAgentMode === undefined ? 'default' : 'agent',
+        };
+      }],
       ['free_agent_mode', ({ config, view }) => {
         const running = agentRegistry.get(config.id);
         const supported = view.settings.freeAgentMode.editable !== 'never';
@@ -385,6 +395,7 @@ const APP_SECTIONS: ReadonlyArray<Section<AppContext>> = [
       ['mcp_enabled', alwaysOn],
       ['clubhouse_mode_enabled', retired],
       ['permission_mode', ({ files }) => appValue(files.freeAgent, 'defaultMode', freeAgentSettings.getSettings().defaultMode)],
+      ['default_access', ({ files }) => appValue(files.freeAgent, 'defaultAccess', freeAgentSettings.getDefaultAccess())],
       ['global_helper_cap', ({ files }) => {
         const effective = orchestrationSettings.getGlobalHelperCap();
         const value = appValue(files.orchestration, 'globalHelperCap', effective);

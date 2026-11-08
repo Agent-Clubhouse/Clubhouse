@@ -4,7 +4,6 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { AgentRow, HOVER_OPEN_MS } from './AgentRow';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
-import { useFreeAgentSettingsStore } from '../../stores/freeAgentSettingsStore';
 import { createChatViewState, useChatStore } from '../../stores/chatStore';
 import type { Agent } from '../../../shared/types';
 
@@ -51,14 +50,34 @@ describe('AgentRow identity and activity', () => {
     expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['auto', 'skip-all'] as const)('describes Free Agent Mode without guessing the permission level with %s configured', (mode) => {
-    useFreeAgentSettingsStore.setState({ defaultMode: mode, projectOverrides: {} });
+  it.each([
+    [{ access: 'full_access', freeAgentMode: true }, 'Full access'],
+    [{ access: 'auto', freeAgentMode: true }, 'Auto'],
+    [{ access: 'plan' }, 'Plan'],
+    [{}, 'Ask first'],
+    // A record from before #2761 that only says it's on.
+    [{ freeAgentMode: true }, 'Auto or Full access'],
+  ] as const)('puts no access marker on the row and shows access as plain text in the hover card (%o)', (over, label) => {
     vi.useFakeTimers();
-    const { row } = setup(durable({ freeAgentMode: true }));
-    expect(screen.getByRole('img', { name: 'Free Agent Mode: permissions follow the configured mode' })).toBeInTheDocument();
+    const { row } = setup(durable(over as Partial<Agent>));
+    expect(screen.queryByRole('img', { name: /free agent|access/i })).toBeNull();
+    expect(row.querySelector('.bg-ctp-error')).toBeNull();
     fireEvent.mouseEnter(row);
     act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
-    expect(screen.getByTestId('agent-hover-card')).toHaveTextContent('Free Agent Mode, permissions follow the configured mode');
+    const card = screen.getByTestId('agent-hover-card');
+    expect(card).toHaveTextContent(`Access${label}`);
+    expect(card).not.toHaveTextContent(/free agent/i);
+    expect(card.querySelector('.text-ctp-error')).toBeNull();
+  });
+
+  it('shows the chat session\'s level in the hover card while chat runs the agent', () => {
+    vi.useFakeTimers();
+    useChatStore.setState((s) => ({ agents: { ...s.agents, a1: { ...createChatViewState('a1'), level: 'auto' } }, live: { ...s.live, a1: true } }));
+    const { row } = setup(durable({ status: 'running', access: 'ask' }));
+    fireEvent.mouseEnter(row);
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    expect(screen.getByTestId('agent-hover-card')).toHaveTextContent('AccessAuto');
+    useChatStore.setState((s) => ({ live: { ...s.live, a1: false } }));
   });
 
   it('opens only the row hover card when hovering its provider glyph', () => {

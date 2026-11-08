@@ -9,6 +9,7 @@
  *   the main window via IPC — no local state modification.
  * - Periodic reconciliation (every 30 seconds) catches any missed events.
  */
+import type { AccessLevel } from '../../../shared/agent-access';
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { CanvasWorkspace } from '../../plugins/builtin/canvas/CanvasWorkspace';
 import type { CanvasView, CanvasViewType, Viewport, Position, Size } from '../../plugins/builtin/canvas/canvas-types';
@@ -92,6 +93,7 @@ function createPopoutApi(projectId?: string): PluginAPI {
       useWorktree?: boolean;
       orchestrator?: string;
       freeAgentMode?: boolean;
+      access?: AccessLevel;
       mcpIds?: string[];
     }): Promise<string> => {
       const targetProjectId = options.projectId || projectId;
@@ -107,7 +109,7 @@ function createPopoutApi(projectId?: string): PluginAPI {
         model,
         options.useWorktree ?? false,
         options.orchestrator,
-        options.freeAgentMode,
+        options.access ?? options.freeAgentMode,
         options.mcpIds,
       );
       const agentId = await useAgentStore.getState().spawnDurableAgent(
