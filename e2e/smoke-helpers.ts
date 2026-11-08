@@ -226,6 +226,25 @@ export async function revealAgent(window: Page, agentId: string, timeout = 30_00
   return row;
 }
 
+/**
+ * New layout: open the New agent page from a project row's "New agent in"
+ * button. The button shows only while the row is hovered, and a re-render can
+ * take the hover away before the click lands, so hover and click retry
+ * together until the page is open.
+ */
+export async function openNewAgentPage(window: Page, projectName: string) {
+  await showProjectTree(window);
+  const header = await projectButton(window, projectName);
+  const button = window.getByRole('button', { name: `New agent in ${projectName}`, exact: true });
+  const page = window.getByTestId('new-agent-page');
+  await expect(async () => {
+    if (await page.isVisible()) return;
+    await header.hover();
+    await button.click({ timeout: 2_000 });
+    await expect(page).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+}
+
 export interface CreateDurableAgentOptions {
   /** The project's name as the sidebar shows it. On classic the agent goes in the active project, as "+ Agent" does. */
   projectName: string;
@@ -257,12 +276,8 @@ export async function createDurableAgent(window: Page, opts: CreateDurableAgentO
     if (opts.access) await window.getByRole('combobox', { name: 'Access', exact: true }).selectOption(opts.access);
     await window.locator('button:has-text("Create Agent")').click();
   } else {
-    await showProjectTree(window);
-    // The row's actions show while its header is hovered.
-    await (await projectButton(window, opts.projectName)).hover();
-    await window.getByRole('button', { name: `New agent in ${opts.projectName}`, exact: true }).click();
+    await openNewAgentPage(window, opts.projectName);
     const page = window.getByTestId('new-agent-page');
-    await expect(page).toBeVisible({ timeout: 10_000 });
 
     // A plain agent: Clubhouse managed is on by default in a fresh profile.
     const managed = page.getByRole('switch', { name: 'Clubhouse managed' });

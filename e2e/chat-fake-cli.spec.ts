@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { installFakeClis, type FakeClis } from './chat-fake-cli';
 import { launchApp } from './launch';
-import { addProject, assertRunLayout, projectButton, showProjectTree } from './smoke-helpers';
+import { addProject, assertRunLayout, openNewAgentPage } from './smoke-helpers';
 import { isNewLayout } from './layout';
 import type { ChatFixtureCli } from '../src/main/orchestrators/adapters/testing/fake-cli';
 
@@ -83,13 +83,8 @@ async function createAgent(window: Page, dir: string, name: string, orchestrator
     await window.locator('button:has-text("Create Agent")').click();
     return;
   }
-  // The project row's actions show while the pointer is on it.
-  const project = path.basename(dir);
-  await showProjectTree(window);
-  await (await projectButton(window, project)).hover();
-  await window.getByRole('button', { name: `New agent in ${project}`, exact: true }).click();
+  await openNewAgentPage(window, path.basename(dir));
   const page = window.getByTestId('new-agent-page');
-  await expect(page).toBeVisible({ timeout: 10_000 });
 
   // A plain agent: Clubhouse managed is on by default in a fresh profile.
   const managed = page.getByRole('switch', { name: 'Clubhouse managed' });
@@ -141,7 +136,7 @@ async function openChat(p: ProviderCase, fixture: string) {
     return { electronApp, window, chat };
   } catch (err) {
     // The tests close the app only once this returns.
-    await electronApp.close().catch(() => undefined);
+    await electronApp.close().catch((): undefined => undefined);
     throw err;
   }
 }
