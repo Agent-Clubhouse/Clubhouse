@@ -28,7 +28,8 @@ import { startQuickAgent } from '../quick-agent-service';
 import { createActionsStorage, createRunHistory } from './actions-store';
 import { ActionsEngine, type EngineFacts, type EngineObservation } from './engine';
 import { matchProjectRef } from './project-ref';
-import { createInterimRights } from './rights';
+import { createGrantRights } from './rights';
+import { grantsFromFacts } from '../agent-grants-service';
 import { createStepRunner } from './steps';
 
 export { ActionError };
@@ -134,15 +135,28 @@ function broadcastChanged(): void {
 }
 
 function createEngine(): ActionsEngine {
-  const rights = createInterimRights({
+  const canStartAgents = (id: string) => isOrchestrationEnabled(id) || knownAgent(id)?.orchestrates === true;
+  const rights = createGrantRights({
     agentName: facts.agentName,
     parentOf: facts.parentOf,
     agentProjectId: facts.agentProjectId,
+    // The owner's permissions from its saved settings (it may be asleep), with its saved changes (#2960, D131).
+    grantsOf: (id) => {
+      const dispatcher = id === (getDispatcherAgentId() ?? undefined);
+      return grantsFromFacts(id, {
+        dispatcher,
+        helper: !!knownAgent(id)?.parentAgentId,
+        orchestrates: !dispatcher && canStartAgents(id),
+        crossProject: false,
+      });
+    },
+    agentProjectPath: (id) => knownAgent(id)?.projectPath,
+    projectPath: (id) => projectById(id)?.path,
     isConnected: (from, to) => bindingManager.getBindingsForAgent(from).some((b) => b.targetKind === 'agent' && b.targetId === to),
     // The Dispatcher's wires exist only while it is on, so an off Dispatcher reaches no one.
     dispatcherAgentId: () => getDispatcherAgentId() ?? undefined,
     // The live gate for a running agent, else its saved switch (an asleep agent isn't synced to the gate).
-    canStartAgents: (id) => isOrchestrationEnabled(id) || knownAgent(id)?.orchestrates === true,
+    canStartAgents,
     agentAccess: (id) => knownAgent(id)?.access ?? 'ask',
   });
   const steps = createStepRunner({

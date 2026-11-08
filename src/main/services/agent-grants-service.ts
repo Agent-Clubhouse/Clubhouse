@@ -10,7 +10,7 @@
  */
 
 import { applyGrantChanges, carriedGrants, isHelperControlRow, shaped, grantKey, grantRows, isFixedGrant, normalizeGrantChanges, withGrantChange, withoutOwnChanges, withTemplateGrants, type AgentGrantsView, type GrantChange, type TemplateGrant } from '../../shared/agent-grant-changes';
-import { controlFromGrantModes, controlGrantModes, defaultGrants } from '../../shared/default-grants';
+import { controlFromGrantModes, controlGrantModes, defaultGrants, type GrantCallerFacts } from '../../shared/default-grants';
 import { resolveOrchestrationPolicy } from '../../shared/orchestration-policy';
 import type { Grant } from '../../shared/agent-grants';
 import type { DurableAgentConfig } from '../../shared/types';
@@ -91,6 +91,14 @@ function viewOf(agentId: string, config: DurableAgentConfig): AgentGrantsView {
 export async function readAgentGrants(projectPath: string, agentId: string): Promise<AgentGrantsView> {
   ({ projectPath, agentId } = resolveDispatcherIdentity(projectPath, agentId));
   return viewOf(agentId, await configOf(projectPath, agentId));
+}
+
+/**
+ * An agent's grants from facts the caller already has (the Actions module's
+ * agent cache, #2960), synchronously: its defaults and saved changes.
+ */
+export function grantsFromFacts(agentId: string, facts: GrantCallerFacts): Grant[] {
+  return applyGrantChanges(defaultGrants(facts), getAgentGrantChanges(agentId));
 }
 
 /** The grants an agent holds now, defaults and changes together. */
