@@ -17,6 +17,7 @@ import { mcpCallAccess, mcpCallerKind } from './mcp-call-gate';
 import { CROSS_PROJECT_OFF_MESSAGE, MCP_CALLER_UNKNOWN_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
 import { checkToolGrant, isListable, type GrantCheck, type GrantCheckWire } from './grant-check';
 import { askFirst } from './ask-first';
+import { resolveArgTargets } from './arg-targets';
 import { getProvider } from '../../orchestrators';
 
 /** The refusal a Dispatcher tool returns for any other agent. */
@@ -561,7 +562,7 @@ export async function callTool(
       }
     }
     // After the argument checks, as for wire tools: the user is never asked about a call that would fail on its arguments.
-    const granted = checkToolGrant(agentId, globalTool.grant, args);
+    const granted = checkToolGrant(agentId, globalTool.grant, args, undefined, await resolveArgTargets(agentId, globalTool.grant, args));
     if (granted.ok === false) {
       const refused = await grantRefusal(agentId, toolName, granted, args);
       if (refused) return refused;
@@ -657,7 +658,7 @@ export async function callTool(
     }
   }
 
-  const granted = checkToolGrant(agentId, template.grant, args, wireOf(binding));
+  const granted = checkToolGrant(agentId, template.grant, args, wireOf(binding), await resolveArgTargets(agentId, template.grant, args));
   if (granted.ok === false) {
     const refused = await grantRefusal(agentId, toolName, granted, args);
     if (refused) return refused;

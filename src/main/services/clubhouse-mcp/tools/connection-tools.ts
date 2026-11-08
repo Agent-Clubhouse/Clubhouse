@@ -362,7 +362,7 @@ export function registerConnectionTools(): void {
       },
       required: ['name'],
     },
-  }, handleCreateGroupProject, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg' } });
+  }, handleCreateGroupProject, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['members'] } } });
 
   registerGlobalTool('add_to_group_project', {
     description: 'Add you or one of your helpers to a group project. The membership is saved and comes back when Clubhouse restarts.',
@@ -374,7 +374,7 @@ export function registerConnectionTools(): void {
       },
       required: ['project', 'helper'],
     },
-  }, handleAddToGroupProject, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg' } });
+  }, handleAddToGroupProject, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['helper'] } } });
 
   registerGlobalTool('remove_from_group_project', {
     description: 'Remove you or one of your helpers from a group project. Memberships made on the canvas stay; change those on the canvas.',
@@ -386,7 +386,7 @@ export function registerConnectionTools(): void {
       },
       required: ['project', 'helper'],
     },
-  }, handleRemoveFromGroupProject, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg' } });
+  }, handleRemoveFromGroupProject, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['helper'] } } });
 
   registerGlobalTool('connect_agents', {
     description:
@@ -401,7 +401,7 @@ export function registerConnectionTools(): void {
       },
       required: ['from', 'to'],
     },
-  }, handleConnectAgents, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg' } });
+  }, handleConnectAgents, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['from', 'to'] } } });
 
   registerGlobalTool('disconnect_agents', {
     description:
@@ -416,5 +416,5 @@ export function registerConnectionTools(): void {
       },
       required: ['from', 'to'],
     },
-  }, handleDisconnectAgents, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg' } });
+  }, handleDisconnectAgents, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg', from: { args: ['from', 'to'] } } });
 }

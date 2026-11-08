@@ -10,9 +10,11 @@
  * read, clear or compact it), and nothing connected to the Dispatcher can
  * reset it.
  *
- * Targets named in a call's arguments (`agent_arg`, `project_arg`) aren't
- * resolved here yet: their tools keep their own handler checks until those
- * move into this check (#2974). Plugin tools get no new access, and
+ * Targets named in a call's arguments (`agent_arg`, `project_arg`) are
+ * resolved before the check at call time (arg-targets.ts, #2974), from the
+ * arguments each declaration names. One that doesn't resolve is left to the
+ * tool, which says it wasn't found; the tools' own checks still run behind
+ * this one until the tool groups go too. Plugin tools get no new access, and
  * call_wire_tool's inner call is checked as its own tool.
  *
  * Grants are a cooperative guardrail on the Clubhouse MCP, not a sandbox.
@@ -29,7 +31,8 @@ import { mcpCallerParent } from './mcp-call-gate';
 import { getAgentGrantChanges } from '../agent-grants-store';
 import { applyGrantChanges } from '../../../shared/agent-grant-changes';
 import { isCrossProjectEnabled, isOrchestrationEnabled, orchestrationControl } from './orchestration-gate';
-import { toolGrantDeclarations, type ToolGrant, type ToolGrantTarget } from './tool-grants';
+import { toolGrantDeclarations, type ToolGrant, type ToolGrantDeclaration, type ToolGrantTarget } from './tool-grants';
+import type { ArgTargets } from './arg-targets';
 import type { McpBinding } from './types';
 
 /** One action a call needs that is set to Ask first, and where (in the caller's terms). */
@@ -76,6 +79,13 @@ function boundTarget(agentId: string, wire: GrantCheckWire): GrantCallTarget | n
 }
 
 /** The target a declaration names, resolved for this call. Null: not checked here (see the file comment). */
+function resolveTargets(agentId: string, d: ToolGrantDeclaration, wire: GrantCheckWire | undefined, args: Record<string, unknown>, argTargets?: ArgTargets): GrantCallTarget[] {
+  // Named in the arguments: resolved before the check, at call time only (arg-targets.ts).
+  if (d.target === 'agent_arg' || d.target === 'project_arg') return argTargets?.get(d) ?? [];
+  const one = resolveTarget(agentId, d.target, wire, args);
+  return one ? [one] : [];
+}
+
 function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantCheckWire | undefined, args: Record<string, unknown>): GrantCallTarget | null {
   switch (target) {
     case 'bound': return wire ? boundTarget(agentId, wire) : null;
@@ -105,7 +115,7 @@ function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantChec
     }
     case 'agent_arg':
     case 'project_arg':
-      return null;
+      return null; // resolveTargets takes these from the call's resolved arguments
   }
 }
 
@@ -140,6 +150,7 @@ export function whereText(target: GrantCallTarget): string {
     case 'project': return 'projects';
     case 'library': return 'the parts and templates library';
     case 'app': return 'the app';
+    case 'agent': return 'that agent';
     default: return 'this target';
   }
 }
@@ -186,7 +197,7 @@ export function callerGrants(agentId: string): Grant[] {
  * needs. A tool registered without a declaration (tests only; real tools
  * can't) is let through.
  */
-export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, args: Record<string, unknown>, wire?: GrantCheckWire): GrantCheck {
+export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, args: Record<string, unknown>, wire?: GrantCheckWire, argTargets?: ArgTargets): GrantCheck {
   if (!grant) return OK;
   const declarations = toolGrantDeclarations(grant)
     .filter((d) => !d.ifArgs || d.ifArgs.some((a) => args[a] !== undefined && args[a] !== null));
@@ -196,12 +207,12 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
   // A refusal wins over an ask: there's no point asking the user for a call that would fail anyway.
   const asks: AskedAction[] = [];
   for (const d of declarations) {
-    const target = resolveTarget(agentId, d.target, wire, args);
-    if (!target) continue;
-    for (const action of d.actions) {
-      const decision = evaluateGrant({ caller, action, target }, grants);
-      if (decision.outcome === 'refuse') return { ok: false, reason: decision.reason, message: refusalMessage(decision.reason, action, target) };
-      if (decision.outcome === 'ask' && !d.askHandledByTool) asks.push({ action, where: whereText(target) });
+    for (const target of resolveTargets(agentId, d, wire, args, argTargets)) {
+      for (const action of d.actions) {
+        const decision = evaluateGrant({ caller, action, target }, grants);
+        if (decision.outcome === 'refuse') return { ok: false, reason: decision.reason, message: refusalMessage(decision.reason, action, target) };
+        if (decision.outcome === 'ask' && !d.askHandledByTool) asks.push({ action, where: whereText(target) });
+      }
     }
   }
   if (asks.length > 0) {

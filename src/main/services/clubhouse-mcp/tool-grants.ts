@@ -86,6 +86,16 @@ export interface ToolGrantDeclaration {
    * (a handed-off helper's work is already taken), and still doesn't.
    */
   askHandledByTool?: true;
+  /**
+   * For `agent_arg` and `project_arg` (#2974): the arguments that name the
+   * target, each an id, a name or a path, or a list of them. `project`: the
+   * argument that places a name (an agent named in that project). `missing`:
+   * what a call that names none reaches, `caller` (itself, or its own project)
+   * or nothing to check. `all`: a boolean argument meaning every agent or
+   * every project. Without `from` the target isn't resolved, and the tool's
+   * own checks stand alone.
+   */
+  from?: { args: readonly string[]; project?: string; missing?: 'caller'; all?: string };
 }
 
 /**
