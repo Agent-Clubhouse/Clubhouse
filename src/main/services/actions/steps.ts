@@ -12,6 +12,12 @@
  *   the action, in the project root or another agent's worktree.
  * - Sleep: a chat agent mid-turn is given up to 10 minutes to finish first.
  * - Notify: a Clubhouse notification, following Notifications & alerts.
+ * - The Dispatcher as a wake or message target (its own subscriptions,
+ *   #3042) goes through deliverToDispatcher, the one path for messages to it
+ *   (#3037), which wakes it when it is asleep.
+ *
+ * A run an event set off says what happened, so a subscriber knows why it
+ * was told ("What happened: web is pushed, pulled or fetched (main).").
  */
 
 import { QUICK_STEP_ACCESS, type ActionStep, type ActionStepResult } from '../../../shared/actions';
@@ -32,8 +38,23 @@ export interface StepDeps {
   sleep(req: { callerId: string; targetId: string; targetName: string }): Promise<{ ok: boolean; status?: string; text: string }>;
   startQuick(req: { project: { id: string; path: string }; cwd: string; prompt: string; orchestrator: string; model?: string; access: AccessLevel; headless: true; name: string }): Promise<{ id: string; name: string }>;
   notify(title: string, body: string): { shown: boolean; reason?: string };
+  /** The Dispatcher, reached only through its one delivery path. Unset: no agent is the Dispatcher. */
+  dispatcher?: {
+    is(agentId: string): boolean;
+    deliver(req: DispatcherStepDelivery): Promise<{ delivered: true; woke: boolean } | { delivered: false; text: string }>;
+  };
   /** For tests: how long sleep waits for a busy turn. */
   sleepWaitMs?: number;
+}
+
+export interface DispatcherStepDelivery {
+  /** Whose grants the wake follows: the owning agent, or the Dispatcher itself for its own and Clubhouse's actions. */
+  senderId: string;
+  targetId: string;
+  targetName: string;
+  actionId: string;
+  text: string;
+  routed: RoutedMessagePart[];
 }
 
 const BUSY: ReadonlySet<ChatSessionState> = new Set(['starting', 'running', 'waiting_permission', 'waiting_input']);
@@ -70,12 +91,21 @@ function waitForIdle(targetId: string, ms: number): Promise<void> {
   });
 }
 
-/** The text an agent receives, tagged so it knows an action sent it. */
-export function actionMessage(actionName: string, text: string): { text: string; routed: RoutedMessagePart[] } {
+/**
+ * The text an agent receives, tagged so it knows an action sent it. A run an
+ * event set off adds what happened.
+ */
+export function actionMessage(actionName: string, text: string, happened?: string): { text: string; routed: RoutedMessagePart[] } {
+  const what = happened ? `\nWhat happened: ${happened}.` : '';
   return {
-    text: `[Clubhouse action “${actionName}”] ${text}`,
-    routed: [{ fromClubhouse: true, text: `Action “${actionName}”: ${text}` }],
+    text: `[Clubhouse action “${actionName}”] ${text}${what}`,
+    routed: [{ fromClubhouse: true, text: `Action “${actionName}”: ${text}${what}` }],
   };
+}
+
+/** The event that set the run off, in plain words, or undefined for schedules and Run now. */
+function happenedOf(ctx: StepContext): string | undefined {
+  return ctx.trigger?.kind === 'event' ? ctx.trigger.detail : undefined;
 }
 
 export function createStepRunner(deps: StepDeps): StepRunner {
@@ -89,7 +119,8 @@ export function createStepRunner(deps: StepDeps): StepRunner {
     const callerId = `action:${ctx.action.id}`;
     // Its next events count as caused by this run, for loop protection.
     setAgentChain(id, ctx.chain);
-    const msg = text ? actionMessage(ctx.action.name, text) : undefined;
+    const msg = text ? actionMessage(ctx.action.name, text, happenedOf(ctx)) : undefined;
+    if (deps.dispatcher?.is(id)) return toDispatcher(step, ctx, id, name, msg);
     if (deps.isRunning(id)) {
       if (!msg) return done(step, `${name} was already awake`, { agentId: id });
       const delivery = await deliver(id, msg.text, msg.routed);
@@ -103,6 +134,31 @@ export function createStepRunner(deps: StepDeps): StepRunner {
     if (result.status === 'starting' && msg) return fail(step, `Couldn’t deliver the message: ${name} was already starting.`, id);
     if (msg && result.messageDelivered === false) return fail(step, `Couldn’t deliver the message to ${name}.`, id);
     return done(step, msg ? `Woke ${name} with the message` : `Woke ${name}`, { agentId: id });
+  }
+
+  /** A wake or message for the Dispatcher, through its one delivery path (#3037). */
+  async function toDispatcher(step: ActionStep, ctx: StepContext, id: string, name: string, msg: { text: string; routed: RoutedMessagePart[] } | undefined): Promise<ActionStepResult> {
+    if (!msg && deps.isRunning(id)) return done(step, `${name} was already awake`, { agentId: id });
+    const owner = ctx.action.owner;
+    const body = msg ?? actionMessage(ctx.action.name, 'This action woke you.', happenedOf(ctx));
+    try {
+      const delivery = await deps.dispatcher!.deliver({
+        // An agent's action wakes the Dispatcher only as far as that agent may (#2921).
+        senderId: owner.kind === 'agent' ? owner.agentId : id,
+        targetId: id,
+        targetName: name,
+        actionId: ctx.action.id,
+        text: body.text,
+        routed: body.routed,
+      });
+      if (delivery.delivered === false) return fail(step, `Couldn’t deliver the message: ${delivery.text}`, id);
+      if (!msg) return done(step, `Woke ${name}`, { agentId: id });
+      return done(step, delivery.woke ? `Woke ${name} with the message` : `Sent the message to ${name}`, { agentId: id });
+    } catch (err) {
+      // telemetry-exempt: the reason is the step's result, shown and toasted
+      if (isAgentStoppingError(err)) return fail(step, `Couldn’t deliver the message: ${name} was going to sleep.`, id);
+      return fail(step, `Couldn’t deliver the message to ${name}: ${err instanceof Error ? err.message : String(err)}`, id);
+    }
   }
 
   return {

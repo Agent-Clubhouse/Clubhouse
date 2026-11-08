@@ -7,6 +7,10 @@ const cell = (fields: Partial<PresetCellView> = {}): PresetCellView => ({
   effective: { model: 'opus', effort: 'high' }, source: 'builtin', state: 'valid', custom: null, builtin: { model: 'opus', effort: 'high' }, editable: true, ...fields,
 });
 
+const copilotCell = (fields: Partial<PresetCellView> = {}): PresetCellView => cell({
+  effective: { model: 'claude-sonnet-5.5', effort: 'medium' }, builtin: { model: 'claude-sonnet-5.5', effort: 'medium' }, ...fields,
+});
+
 const SERVER_TIME = '2027-01-15T08:10:00.000Z';
 let providerQuota: QuotaView;
 
@@ -23,6 +27,7 @@ function settings(
     providers: {
       'claude-code': {
         autoEligible: true,
+        autoCandidate: true,
         quota: providerQuota,
         choices: { source: 'live', asOf: null, models: [{ id: 'opus', label: 'Opus', efforts: ['low', 'high'] }, { id: 'sonnet', label: 'Sonnet', efforts: ['medium'] }] },
         cells: {
@@ -33,7 +38,22 @@ function settings(
           maximum: cell({ follows: 'hard', ...bounds.maximum }),
         },
       },
-      'copilot-cli': { autoEligible: false, reason: 'auto_not_supported', quota: { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null }, cells: null },
+      // Copilot (#3085): a mapping, not an Auto candidate, and a model list that may report no levels.
+      'copilot-cli': {
+        autoEligible: true,
+        autoCandidate: false,
+        quota: { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
+        choices: { source: 'live', asOf: null, models: [{ id: 'claude-sonnet-5.5', label: 'Claude Sonnet 5.5', efforts: ['low', 'medium', 'high'] }, { id: 'claude-haiku-4.5', label: 'Claude Haiku 4.5', efforts: [] }] },
+        cells: {
+          minimum: copilotCell({ follows: 'easy' }),
+          easy: copilotCell(),
+          medium: copilotCell(),
+          hard: copilotCell(),
+          maximum: copilotCell({ follows: 'hard' }),
+        },
+      },
+      // A provider with no mapping at all is still left off the page.
+      'other-cli': { autoEligible: false, reason: 'auto_not_supported', quota: { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null }, cells: null },
     },
   };
 }
@@ -54,10 +74,11 @@ describe('HelperPresetsSection (#2671)', () => {
     expect(screen.getByText(/balances counts, not cost/)).toBeTruthy();
   });
 
-  it('lists Claude\'s presets and doesn\'t offer Copilot', async () => {
+  it('lists Claude\'s presets and leaves out a provider with no mapping', async () => {
     render(<HelperPresetsSection />);
     expect(await screen.findByTestId('helper-presets-claude-code')).toBeTruthy();
-    expect(screen.queryByTestId('helper-presets-copilot-cli')).toBeNull();
+    expect(screen.queryByTestId('helper-presets-other-cli')).toBeNull();
+    expect(screen.queryByTestId('helper-presets-claude-code-not-candidate')).toBeNull();
     expect((screen.getByTestId('helper-preset-claude-code-hard-model') as HTMLSelectElement).value).toBe('opus');
     expect(screen.getByText(/starting choices/)).toBeTruthy();
   });
@@ -311,6 +332,62 @@ describe('HelperPresetsSection (#2671)', () => {
       expect((await screen.findByTestId('helper-preset-claude-code-maximum-note')).textContent).toBe('No longer offered. Using opus until you change it.');
       expect(select('helper-preset-claude-code-maximum-model').value).toBe('gone');
       expect((screen.getByTestId('helper-preset-claude-code-maximum-reset') as HTMLButtonElement).disabled).toBe(false);
+    });
+  });
+
+  describe('Copilot (#3085)', () => {
+    const copilotWith = (cells: Partial<Record<'minimum' | 'easy' | 'medium' | 'hard' | 'maximum', Partial<PresetCellView>>>) => {
+      const shown = settings();
+      const copilot = shown.providers['copilot-cli'];
+      if (!copilot.autoEligible) throw new Error('eligible');
+      for (const [level, fields] of Object.entries(cells)) Object.assign(copilot.cells[level as 'easy'], fields);
+      return shown;
+    };
+
+    it('lists all five levels under Copilot, and says Auto doesn\'t pick it', async () => {
+      render(<HelperPresetsSection />);
+      expect((await screen.findByTestId('helper-presets-copilot-cli')).textContent).toContain('Copilot');
+      const rows = screen.getAllByTestId(/^helper-preset-copilot-cli-[a-z]+$/).map((row) => row.dataset.testid);
+      expect(rows).toEqual(['minimum', 'easy', 'medium', 'hard', 'maximum'].map((level) => `helper-preset-copilot-cli-${level}`));
+      expect((screen.getByTestId('helper-preset-copilot-cli-minimum-model') as HTMLSelectElement).selectedOptions[0].textContent).toBe('Same as Easy (Claude Sonnet 5.5)');
+      expect((screen.getByTestId('helper-preset-copilot-cli-maximum-model') as HTMLSelectElement).selectedOptions[0].textContent).toBe('Same as Hard (Claude Sonnet 5.5)');
+      expect(screen.getByTestId('helper-presets-copilot-cli-not-candidate').textContent).toBe('Auto provider doesn’t pick Copilot. These are used when a helper on Copilot names a level.');
+      expect((screen.getByTestId('helper-preset-copilot-cli-hard-effort') as HTMLSelectElement).value).toBe('medium');
+    });
+
+    it('says a model has no effort levels instead of offering choices', async () => {
+      const none = { custom: { model: 'claude-haiku-4.5', effort: null }, effective: { model: 'claude-haiku-4.5', effort: null }, source: 'custom' as const };
+      app().getHelperRouting.mockResolvedValue(copilotWith({ easy: none }));
+      render(<HelperPresetsSection />);
+      const cellText = await screen.findByTestId('helper-preset-copilot-cli-easy-effort-none');
+      expect(cellText.textContent).toBe('No effort levels');
+      expect(screen.queryByTestId('helper-preset-copilot-cli-easy-effort')).toBeNull();
+      expect(screen.queryByTestId('helper-preset-copilot-cli-easy-note')).toBeNull();
+      // Other rows still offer their model's levels.
+      expect(screen.getByTestId('helper-preset-copilot-cli-medium-effort')).toBeTruthy();
+    });
+
+    it('picking a model with no levels saves it with no effort', async () => {
+      render(<HelperPresetsSection />);
+      fireEvent.change(await screen.findByTestId('helper-preset-copilot-cli-hard-model'), { target: { value: 'claude-haiku-4.5' } });
+      await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith({
+        revision: 'r1.0', cells: [{ provider: 'copilot-cli', difficulty: 'hard', model: 'claude-haiku-4.5', effort: null }],
+      }));
+    });
+
+    it('still shows a saved level on a model the list gives none', async () => {
+      const saved = { custom: { model: 'claude-haiku-4.5', effort: 'low' }, effective: { model: 'claude-haiku-4.5', effort: 'low' }, source: 'custom' as const };
+      app().getHelperRouting.mockResolvedValue(copilotWith({ hard: saved }));
+      render(<HelperPresetsSection />);
+      expect((await screen.findByTestId('helper-preset-copilot-cli-hard-effort') as HTMLSelectElement).value).toBe('low');
+      expect(screen.queryByTestId('helper-preset-copilot-cli-hard-effort-none')).toBeNull();
+    });
+
+    it('resets a Copilot cell like the others', async () => {
+      app().getHelperRouting.mockResolvedValue(copilotWith({ maximum: { source: 'custom', custom: { model: 'claude-sonnet-5.5', effort: 'high' }, follows: undefined } }));
+      render(<HelperPresetsSection />);
+      fireEvent.click(await screen.findByTestId('helper-preset-copilot-cli-maximum-reset'));
+      await waitFor(() => expect(app().updateHelperRouting).toHaveBeenCalledWith({ revision: 'r1.0', reset: { provider: 'copilot-cli', difficulty: 'maximum' } }));
     });
   });
 

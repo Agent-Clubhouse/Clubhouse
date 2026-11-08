@@ -77,7 +77,9 @@ Cells are app-scope in v1. Reset removes overrides per cell, per provider or for
 
 **Fallback.** Custom cell, then the built-in cell if valid (`builtin_preset`), then the next provider (Auto only, `candidate_skipped`), then a refusal with `no_valid_mapping` naming each cell and reason. Neither mode falls back to the CLI's default model, because a `hard` task on an unknown default is a silent substitute. Saved values are never rewritten. Settings and the phone show a stale cell with Reset.
 
-**Copilot** is excluded from `preset` and `auto`, with reason `auto_not_supported`: its list reports no per-model efforts, and no quota source has been researched. Explicit Copilot starts are untouched.
+**Copilot** (#3085) has presets, so a helper on Copilot can name a difficulty (`preset` mode) and `resolveAutoLevel` covers it. Its built-ins are Copilot's ids for the Claude family: `claude-haiku-5.5` low, `claude-sonnet-5.5` medium and `claude-opus-5.5` high. Its live list (the SDK's models.list) reports each model's levels, though some models report none, and its fallback list reports none at all. A cell for a model with no levels has `effort: null` and is valid; a level on it is refused against a live list. Settings shows "No effort levels" in place of the effort picker for such a model.
+
+Copilot is still excluded from `auto`, with reason `auto_not_supported`: whether `cli: "auto"` should choose it is a routing decision of its own, and it has no quota source to balance on. `AUTO_CANDIDATE_PROVIDERS` lists the providers Auto chooses between, and the page's `autoCandidate` says the same per provider.
 
 ## Minimum and maximum (#3044)
 
@@ -94,7 +96,7 @@ They are mapping levels only. `start_helper`'s `difficulty` still takes `easy`, 
 - **Stale.** A saved one no longer offered falls back to its difficulty, with `builtin_preset`. If that has nothing valid either, it resolves to `no_valid_mapping`. Never the CLI's default.
 - **Storage.** Sparse overrides in `orchestration-settings`, next to the difficulties. Files from before have none, so they read unchanged and nothing is migrated.
 - **Page and phone.** `cells` has all five levels. An unset minimum or maximum shows its difficulty's cell with `follows: "easy"` or `"hard"` and `custom: null`; `follows` also marks a stale saved one that is using its difficulty. `builtin` is the followed difficulty's built-in. Writes and resets take the level names in `difficulty`; a reset makes it follow again. The phone capability adds `levels`, and `difficulties` stays the three.
-- **Resolver.** `resolveAutoLevel(provider, level)` in `services/helper-routing.ts`, with `resolveProviderMinimum` and `resolveProviderMaximum`, returns the model, effort, source, fallback and `follows`, or `auto_not_supported` for a provider without presets (Copilot today) and `no_valid_mapping`. It doesn't depend on the Auto provider switch, which only governs choosing between providers.
+- **Resolver.** `resolveAutoLevel(provider, level)` in `services/helper-routing.ts`, with `resolveProviderMinimum` and `resolveProviderMaximum`, returns the model, effort, source, fallback and `follows`, or `auto_not_supported` for a provider without presets and `no_valid_mapping`. Copilot is covered (#3085). It doesn't depend on the Auto provider switch, which only governs choosing between providers.
 
 ## Inputs
 
@@ -388,10 +390,14 @@ App-wide preset editing from the phone is in scope.
      "custom":null,"builtin":{"model":"gpt-6.1-sol","effort":"high"},"editable":true},
     "medium":{"effective":{"model":"gpt-6.1-terra","effort":"medium"},"source":"builtin","fallback":"builtin_preset","state":"stale","staleReason":"model_unavailable",
      "custom":{"model":"gone","effort":"high"},"builtin":{"model":"gpt-6.1-terra","effort":"medium"},"editable":true}}},
-  "copilot-cli":{"autoEligible":false,"reason":"auto_not_supported","quota":{"state":"unknown","unknownReason":"not_supported","asOf":null},"cells":null}}}
+  "copilot-cli":{"autoEligible":true,"autoCandidate":false,"quota":{"state":"unknown","unknownReason":"not_supported","asOf":null},
+   "choices":{"source":"live","asOf":"…","models":[{"id":"claude-haiku-4.5","label":"Claude Haiku 4.5","efforts":[]}]},
+   "cells":{"easy":{"effective":{"model":"claude-haiku-4.5","effort":null},"source":"custom","state":"valid",
+     "custom":{"model":"claude-haiku-4.5","effort":null},"builtin":{"model":"claude-haiku-5.5","effort":"low"},"editable":true},…}},
+  "other-cli":{"autoEligible":false,"reason":"auto_not_supported","quota":{"state":"unknown","unknownReason":"not_supported","asOf":null},"cells":null}}}
 ```
 
-A cell with nothing valid has `effective: null`. Until the `auto` mode is advertised, `autoEligible` only says whether a provider has presets. With `agentId`, stage 2 also returns `agent:{usable,reason?}`, where `reason` is `dispatcher_locked` or `orchestration_off`. The `auto` block appears from stage 4 and `quota` from stage 3. `source` under `auto` is `agent`, `project`, `app`, `default`, `mcp_off` or `dispatcher_locked`, and `auto.reason` is set whenever `effective` is false.
+A cell with nothing valid has `effective: null`. `autoEligible` says whether a provider has presets, and `autoCandidate` whether `cli: "auto"` chooses it (Copilot: false, #3085). With `agentId`, stage 2 also returns `agent:{usable,reason?}`, where `reason` is `dispatcher_locked` or `orchestration_off`. The `auto` block appears from stage 4 and `quota` from stage 3. `source` under `auto` is `agent`, `project`, `app`, `default`, `mcp_off` or `dispatcher_locked`, and `auto.reason` is set whenever `effective` is false.
 
 **Revisions.** The full snapshot has `helperRoutingRevision`, and a `helper_routing:changed` event carries `{revision}`, so an open or cached page knows to refetch. The revision moves when a saved value changes, when an app-wide read finds that a cell's state changed, or when something that decides Auto changes: a project's `off` from any surface, an orchestrator's switch, or Clubhouse MCP. It doesn't move for a quota sample, and no snapshot is broadcast for one. It is opaque to a client. A list changing doesn't make a write stale: only a saved value does.
 
@@ -450,7 +456,7 @@ A cell with nothing valid has `effective: null`. Until the `auto` mode is advert
 
 **Held starts.** The helper request gets `requestedRouting`, with no resolved choice. `no_valid_mapping` is checked before holding, so the person isn't asked about a start that can't run, and again at approval, since a cell can go stale meanwhile. If it fails at approval, `helper.approve` returns 409 with `status: "rejected"`, because nothing was created, `error.code: "no_valid_mapping"`, a sentence for a person in `error.message`, and no `routing`. The request is used up, the orchestrator is told why, and a snapshot without the row is sent, in either order with the receipt. A phone shows the sentence and offers no retry. The same `commandId` replays the receipt, and a new one gets 404 `helper_request_not_found`, so nothing can be created twice. Only a helper that starts gets `routing`.
 
-**Fixtures:** the capability at each stage, and absent; each quota state, including `near_limit` with quota remaining, `exhausted` as reported, and `unknown` with and without a stale `asOf`; a limiting window with another window unreadable; an explicit override (Sol, `explicit_request`, `balanced: false`); a preset on a CLI; a persona pin; project-disabled; `dispatcher_locked`; a stale preset falling back to built-in; stale with nothing valid; Copilot excluded; a held approval failing with `no_valid_mapping`; context `reset` and `not_applied`; a stale-write 409 and reset results; labels, including an unknown code; the revision in the snapshot and the changed event.
+**Fixtures:** the capability at each stage, and absent; each quota state, including `near_limit` with quota remaining, `exhausted` as reported, and `unknown` with and without a stale `asOf`; a limiting window with another window unreadable; an explicit override (Sol, `explicit_request`, `balanced: false`); a preset on a CLI; a persona pin; project-disabled; `dispatcher_locked`; a stale preset falling back to built-in; stale with nothing valid; Copilot's mapping and a Copilot cell with no effort; a held approval failing with `no_valid_mapping`; context `reset` and `not_applied`; a stale-write 409 and reset results; labels, including an unknown code; the revision in the snapshot and the changed event.
 
 ## Where Auto is off
 

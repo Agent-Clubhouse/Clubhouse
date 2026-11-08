@@ -630,6 +630,47 @@ describe('applyAgentDefaults', () => {
     expect(written.permissions.deny).toEqual(['WebFetch']);
   });
 
+  it('fills the new agent\'s @@ wildcards in instructions, permission rules and MCP JSON (#2439)', async () => {
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+      if (String(p).includes('settings.json') && !String(p).includes('settings.local')) {
+        return JSON.stringify({
+          defaults: {},
+          quickOverrides: {},
+          agentDefaults: {
+            instructions: 'You are @@AgentName on @@StandbyBranch, in @@Path. @@Mission stays.',
+            permissions: { allow: ['Read(@@Path**)', 'Bash(git checkout @@StandbyBranch)'], deny: ['Read(../**)'] },
+            mcpJson: '{"mcpServers":{"x":{"command":"run","args":["@@AgentName"]}}}',
+          },
+        });
+      }
+      return '{}';
+    });
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+
+    await applyAgentDefaults(WORKTREE, PROJECT, undefined, undefined, { agentName: 'bold-falcon', standbyBranch: 'bold-falcon/standby', agentPath: '.clubhouse/agents/bold-falcon/' });
+
+    const written = (end: string) => String(vi.mocked(fsp.writeFile).mock.calls.find((c) => String(c[0]).endsWith(end))![1]);
+    expect(written('CLAUDE.md')).toBe('You are bold-falcon on bold-falcon/standby, in .clubhouse/agents/bold-falcon/. @@Mission stays.');
+    expect(JSON.parse(written('settings.local.json')).permissions).toEqual({
+      allow: ['Read(.clubhouse/agents/bold-falcon/**)', 'Bash(git checkout bold-falcon/standby)'],
+      deny: ['Read(../**)'],
+    });
+    expect(written('.mcp.json')).toContain('"bold-falcon"');
+  });
+
+  it('escapes filled values inside MCP JSON, so a quote in a name or command keeps it valid (#2439)', async () => {
+    vi.mocked(fsp.readFile).mockImplementation(async () => JSON.stringify({
+      defaults: {}, quickOverrides: {},
+      agentDefaults: { mcpJson: '{"mcpServers":{"x":{"command":"@@BuildCommand","args":["@@AgentName"]}}}' },
+    }));
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    await applyAgentDefaults(WORKTREE, PROJECT, undefined, undefined, { agentName: 'say "hi"', standbyBranch: 'b', agentPath: 'p/', buildCommand: '"C:\\tools\\build.cmd"' });
+    const json = String(vi.mocked(fsp.writeFile).mock.calls.find((c) => String(c[0]).endsWith('.mcp.json'))![1]);
+    expect(JSON.parse(json).mcpServers.x).toEqual({ command: '"C:\\tools\\build.cmd"', args: ['say "hi"'] });
+  });
+
   it('writes mcp.json when default is set', async () => {
     const mcpContent = '{"mcpServers": {"test": {"command": "npx"}}}';
     vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
