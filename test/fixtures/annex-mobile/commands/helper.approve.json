@@ -311,7 +311,7 @@
     {
       "name": "no_candidate",
       "request": {
-        "commandId": "cmd_161",
+        "commandId": "cmd_162",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "hstart_00000000-0000-4000-8000-000000000016",
         "type": "helper.approve",
@@ -319,7 +319,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_161",
+          "commandId": "cmd_162",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "no_candidate",
@@ -334,7 +334,7 @@
     {
       "name": "accepted start, with a warning",
       "request": {
-        "commandId": "cmd_162",
+        "commandId": "cmd_163",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "hstart_00000000-0000-4000-8000-000000000017",
         "type": "helper.approve",
@@ -342,7 +342,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_162",
+          "commandId": "cmd_163",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "result": {
             "approved": true,
@@ -364,7 +364,7 @@
     {
       "name": "auto_off",
       "request": {
-        "commandId": "cmd_163",
+        "commandId": "cmd_164",
         "epoch": "00000000-0000-4000-8000-000000000001",
         "requestId": "hstart_00000000-0000-4000-8000-000000000018",
         "type": "helper.approve",
@@ -372,7 +372,7 @@
       },
       "response": {
         "body": {
-          "commandId": "cmd_163",
+          "commandId": "cmd_164",
           "epoch": "00000000-0000-4000-8000-000000000001",
           "error": {
             "code": "auto_off",

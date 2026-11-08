@@ -42,6 +42,7 @@ describe('helper routing', () => {
     expect(BUILTIN_PRESETS).toEqual({
       'claude-code': { easy: { model: 'haiku', effort: 'low' }, medium: { model: 'sonnet', effort: 'medium' }, hard: { model: 'opus', effort: 'high' } },
       'codex-cli': { easy: { model: 'gpt-6-luna', effort: 'low' }, medium: { model: 'gpt-6.1-terra', effort: 'medium' }, hard: { model: 'gpt-6.1-sol', effort: 'high' } },
+      'copilot-cli': { easy: { model: 'claude-haiku-5.5', effort: 'low' }, medium: { model: 'claude-sonnet-5.5', effort: 'medium' }, hard: { model: 'claude-opus-5.5', effort: 'high' } },
     });
   });
 
@@ -49,8 +50,13 @@ describe('helper routing', () => {
     expect(normalizeSavedPresets({
       'claude-code': { hard: { model: 'opus', effort: 'max' }, easy: { model: 'has space', effort: 'low' }, nope: { model: 'opus' } },
       'codex-cli': { easy: { model: 'x', effort: 'BAD;' }, hard: { model: 'y' } },
+      'copilot-cli': { easy: { model: 'x', effort: null }, hard: { model: 'y', effort: 'BAD;' } },
+      'other-cli': { easy: { model: 'x', effort: null } },
+    })).toEqual({
+      'claude-code': { hard: { model: 'opus', effort: 'max' } },
+      'codex-cli': { hard: { model: 'y', effort: null } },
       'copilot-cli': { easy: { model: 'x', effort: null } },
-    })).toEqual({ 'claude-code': { hard: { model: 'opus', effort: 'max' } }, 'codex-cli': { hard: { model: 'y', effort: null } } });
+    });
     for (const raw of [null, 'x', [], 3]) expect(normalizeSavedPresets(raw)).toEqual({});
   });
 

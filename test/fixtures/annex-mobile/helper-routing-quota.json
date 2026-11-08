@@ -196,6 +196,7 @@
         "epoch": "00000000-0000-4000-8000-000000000001",
         "providers": {
           "claude-code": {
+            "autoCandidate": true,
             "autoEligible": true,
             "cells": {
               "easy": {
@@ -313,6 +314,7 @@
             }
           },
           "codex-cli": {
+            "autoCandidate": true,
             "autoEligible": true,
             "cells": {
               "easy": {
@@ -439,15 +441,132 @@
             }
           },
           "copilot-cli": {
-            "autoEligible": false,
-            "cells": null,
+            "autoCandidate": false,
+            "autoEligible": true,
+            "cells": {
+              "easy": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "claude-haiku-5.5"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "claude-haiku-5.5"
+                },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "hard": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "claude-opus-5.5"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "claude-opus-5.5"
+                },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "claude-opus-5.5"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "claude-opus-5.5"
+                },
+                "follows": "hard",
+                "source": "builtin",
+                "state": "valid"
+              },
+              "medium": {
+                "builtin": {
+                  "effort": "medium",
+                  "model": "claude-sonnet-5.5"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "medium",
+                  "model": "claude-sonnet-5.5"
+                },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "claude-haiku-5.5"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "claude-haiku-5.5"
+                },
+                "follows": "easy",
+                "source": "builtin",
+                "state": "valid"
+              }
+            },
+            "choices": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "models": [
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max"
+                  ],
+                  "id": "claude-haiku-5.5",
+                  "label": "Claude Haiku 5.5"
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max"
+                  ],
+                  "id": "claude-sonnet-5.5",
+                  "label": "Claude Sonnet 5.5"
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max"
+                  ],
+                  "id": "claude-opus-5.5",
+                  "label": "Claude Opus 5.5"
+                },
+                {
+                  "efforts": [],
+                  "id": "claude-haiku-4.5",
+                  "label": "Claude Haiku 4.5"
+                }
+              ],
+              "source": "live"
+            },
             "quota": {
               "asOf": null,
               "source": "none",
               "state": "unknown",
               "unknownReason": "not_supported"
-            },
-            "reason": "auto_not_supported"
+            }
           }
         },
         "revision": "r6.3",
@@ -472,6 +591,7 @@
         "epoch": "00000000-0000-4000-8000-000000000001",
         "providers": {
           "claude-code": {
+            "autoCandidate": true,
             "autoEligible": true,
             "cells": {
               "easy": {
@@ -598,6 +718,7 @@
             }
           },
           "codex-cli": {
+            "autoCandidate": true,
             "autoEligible": true,
             "cells": {
               "easy": {
@@ -724,15 +845,132 @@
             }
           },
           "copilot-cli": {
-            "autoEligible": false,
-            "cells": null,
+            "autoCandidate": false,
+            "autoEligible": true,
+            "cells": {
+              "easy": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "claude-haiku-5.5"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "claude-haiku-5.5"
+                },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "hard": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "claude-opus-5.5"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "claude-opus-5.5"
+                },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "maximum": {
+                "builtin": {
+                  "effort": "high",
+                  "model": "claude-opus-5.5"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "high",
+                  "model": "claude-opus-5.5"
+                },
+                "follows": "hard",
+                "source": "builtin",
+                "state": "valid"
+              },
+              "medium": {
+                "builtin": {
+                  "effort": "medium",
+                  "model": "claude-sonnet-5.5"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "medium",
+                  "model": "claude-sonnet-5.5"
+                },
+                "source": "builtin",
+                "state": "valid"
+              },
+              "minimum": {
+                "builtin": {
+                  "effort": "low",
+                  "model": "claude-haiku-5.5"
+                },
+                "custom": null,
+                "editable": true,
+                "effective": {
+                  "effort": "low",
+                  "model": "claude-haiku-5.5"
+                },
+                "follows": "easy",
+                "source": "builtin",
+                "state": "valid"
+              }
+            },
+            "choices": {
+              "asOf": "2027-01-15T08:00:00.000Z",
+              "models": [
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max"
+                  ],
+                  "id": "claude-haiku-5.5",
+                  "label": "Claude Haiku 5.5"
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max"
+                  ],
+                  "id": "claude-sonnet-5.5",
+                  "label": "Claude Sonnet 5.5"
+                },
+                {
+                  "efforts": [
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max"
+                  ],
+                  "id": "claude-opus-5.5",
+                  "label": "Claude Opus 5.5"
+                },
+                {
+                  "efforts": [],
+                  "id": "claude-haiku-4.5",
+                  "label": "Claude Haiku 4.5"
+                }
+              ],
+              "source": "live"
+            },
             "quota": {
               "asOf": null,
               "source": "none",
               "state": "unknown",
               "unknownReason": "not_supported"
-            },
-            "reason": "auto_not_supported"
+            }
           }
         },
         "revision": "r6.3",

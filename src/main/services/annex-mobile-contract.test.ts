@@ -1748,7 +1748,13 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
       ({ models, source, via: source === 'live' ? 'handshake' : 'static', fetchedAt: NOW });
     const codex = (models = [level('gpt-6.1-sol', 'Sol'), level('gpt-6.1-terra', 'Terra'), level('gpt-6-luna', 'Luna')]) =>
       ({ models, source: 'live', via: 'handshake', fetchedAt: NOW });
-    const lists: Record<string, unknown> = { 'claude-code': claude(), 'codex-cli': codex() };
+    // Copilot (#3085): a live list where one model reports no effort levels.
+    const FIVE = ['low', 'medium', 'high', 'xhigh', 'max'];
+    const copilot = () => ({
+      models: [level('claude-haiku-5.5', 'Claude Haiku 5.5', FIVE), level('claude-sonnet-5.5', 'Claude Sonnet 5.5', FIVE), level('claude-opus-5.5', 'Claude Opus 5.5', FIVE), level('claude-haiku-4.5', 'Claude Haiku 4.5', [])],
+      source: 'live', via: 'handshake', fetchedAt: NOW,
+    });
+    const lists: Record<string, unknown> = { 'claude-code': claude(), 'codex-cli': codex(), 'copilot-cli': copilot() };
     // What each CLI says about its limits: a healthy plan unless a case says otherwise.
     const inDays = (days: number) => NOW + days * 86_400_000;
     const plan = (usedPercent: number, extra: object = {}) => ({ kind: 'windows', windows: [
@@ -1759,7 +1765,8 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     W.providers = Object.fromEntries(['claude-code', 'codex-cli', 'copilot-cli'].map((id) => [id, {
       id,
       checkAvailability: async () => ({ available: true }),
-      ...(id !== 'copilot-cli' && { listModels: async () => lists[id], readPlanQuota: () => quotas[id]() }),
+      listModels: async () => lists[id],
+      ...(id !== 'copilot-cli' && { readPlanQuota: () => quotas[id]() }),
     }]));
     const ROUTE = '/api/v1/mobile/helper-routing';
     const FAMILIES = ['reason', 'fallback', 'skipped', 'quota', 'unknown', 'window', 'autoSource', 'autoOff', 'cell', 'generic'];
@@ -1769,9 +1776,13 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const bare = await exchange('GET', ROUTE);
     expect(Object.keys(bare.response.body.labels)).toEqual(FAMILIES);
     expect(cell(bare, 'codex-cli', 'hard')).toMatchObject({ effective: { model: 'gpt-6.1-sol', effort: 'high' }, source: 'builtin', state: 'valid', custom: null });
-    expect(bare.response.body.providers['copilot-cli']).toEqual({
-      autoEligible: false, reason: 'auto_not_supported', cells: null, quota: { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
+    // Copilot has a mapping (#3085), which cli "auto" doesn't choose, and no quota source.
+    expect(bare.response.body.providers['copilot-cli']).toMatchObject({
+      autoEligible: true, autoCandidate: false, quota: { state: 'unknown', unknownReason: 'not_supported', source: 'none', asOf: null },
     });
+    expect(bare.response.body.providers['codex-cli']).toMatchObject({ autoEligible: true, autoCandidate: true });
+    expect(cell(bare, 'copilot-cli', 'hard')).toMatchObject({ effective: { model: 'claude-opus-5.5', effort: 'high' }, source: 'builtin', state: 'valid' });
+    expect(cell(bare, 'copilot-cli', 'minimum')).toMatchObject({ effective: { model: 'claude-haiku-5.5', effort: 'low' }, follows: 'easy', custom: null });
     const revision = bare.response.body.revision;
     const cases: Record<string, unknown> = { bare };
     cases.project = await exchange('GET', `${ROUTE}?projectId=proj_app`);
@@ -1785,6 +1796,13 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     W.dispatcher.enabled = false;
     cases.agentNotFound = await exchange('GET', `${ROUTE}?agentId=missing`);
     cases.projectNotFound = await exchange('GET', `${ROUTE}?projectId=missing`);
+
+    // A Copilot cell with no effort, on a model whose list reports no levels: valid, and the minimum follows it.
+    W.presets = { 'copilot-cli': { easy: { model: 'claude-haiku-4.5', effort: null } } };
+    cases.copilotNoEffort = await exchange('GET', ROUTE);
+    expect(cell(cases.copilotNoEffort as typeof bare, 'copilot-cli', 'easy')).toMatchObject({ state: 'valid', source: 'custom', effective: { model: 'claude-haiku-4.5', effort: null } });
+    expect(cell(cases.copilotNoEffort as typeof bare, 'copilot-cli', 'minimum')).toMatchObject({ state: 'valid', follows: 'easy', effective: { model: 'claude-haiku-4.5', effort: null } });
+    expect((cases.copilotNoEffort as typeof bare).response.body.providers['copilot-cli'].choices.models.at(-1)).toEqual({ id: 'claude-haiku-4.5', label: 'Claude Haiku 4.5', efforts: [] });
 
     // A saved choice no longer offered: the built-in is used, and it says so. Nothing is rewritten.
     W.presets = { 'codex-cli': { hard: { model: 'gone', effort: 'high' } } };
@@ -1824,7 +1842,8 @@ describe('Annex mobile contract fixtures', { timeout: TEST_TIMEOUT_MS }, () => {
     const current = set.body.result.revision;
     await command('model_unavailable', write({ revision: current, cells: [{ provider: 'codex-cli', difficulty: 'easy', model: 'gone', effort: 'low' }] }));
     await command('effort_unavailable', write({ revision: current, cells: [{ provider: 'codex-cli', difficulty: 'easy', model: 'gpt-6-luna', effort: 'ultra' }] }));
-    await command('invalid_helper_routing (Copilot)', write({ revision: current, cells: [{ provider: 'copilot-cli', difficulty: 'easy', model: 'x', effort: null }] }));
+    await command('invalid_helper_routing (a provider with no mapping)', write({ revision: current, cells: [{ provider: 'other-cli', difficulty: 'easy', model: 'x', effort: null }] }));
+    await command('effort_unavailable (Copilot, a model with no levels)', write({ revision: current, cells: [{ provider: 'copilot-cli', difficulty: 'hard', model: 'claude-haiku-4.5', effort: 'low' }] }));
     await command('invalid_helper_routing (project scope)', { type: 'helperRouting.update', scope: 'project', revision: current, reset: {} });
     await command('invalid_command (nothing to do)', write({ revision: current }));
     const cellReset = await command('accepted reset one cell', write({ revision: current, reset: { provider: 'codex-cli', difficulty: 'easy' } }));
