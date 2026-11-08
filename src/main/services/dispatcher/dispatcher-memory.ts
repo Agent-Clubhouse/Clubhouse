@@ -265,12 +265,25 @@ export async function readAgentPage(agent: string, root?: string): Promise<Agent
   return text === null ? null : parseAgentPage(text);
 }
 
+/** Pending writes per page file, so two writers in this process never interleave a read and a write. */
+const pageLocks = new Map<string, Promise<unknown>>();
+
+function withPageLock<T>(file: string, fn: () => Promise<T>): Promise<T> {
+  const run = (pageLocks.get(file) ?? Promise.resolve()).then(fn, fn);
+  const tail = run.catch((): void => undefined);
+  pageLocks.set(file, tail);
+  void tail.then(() => { if (pageLocks.get(file) === tail) pageLocks.delete(file); });
+  return run;
+}
+
 async function writeAgentSection(agent: string, section: keyof AgentPage, text: string, root?: string): Promise<AgentPage> {
   await ensureMemoryLayout(root);
-  const current = (await readAgentPage(agent, root)) ?? { card: '', notes: '' };
-  const next = { ...current, [section]: text };
-  await writeFileAtomic(agentPagePath(agent, root), renderAgentPage(agent, next));
-  return parseAgentPage(renderAgentPage(agent, next));
+  return withPageLock(agentPagePath(agent, root), async () => {
+    const current = (await readAgentPage(agent, root)) ?? { card: '', notes: '' };
+    const next = { ...current, [section]: text };
+    await writeFileAtomic(agentPagePath(agent, root), renderAgentPage(agent, next));
+    return parseAgentPage(renderAgentPage(agent, next));
+  });
 }
 
 /** Replace the agent's card, keeping the Dispatcher's notes. */
@@ -281,6 +294,63 @@ export function writeAgentCard(agent: string, card: string, root?: string): Prom
 /** Replace the Dispatcher's notes on an agent, keeping the agent's card. */
 export function writeAgentNotes(agent: string, notes: string, root?: string): Promise<AgentPage> {
   return writeAgentSection(agent, 'notes', notes, root);
+}
+
+/**
+ * The card section of a page whose agent hasn't answered (#3041). Written when
+ * Clubhouse first asks, so the page reads the same as the agent's Details card.
+ */
+export const AGENT_CARD_PLACEHOLDER = 'No description yet.';
+
+/** The agent's own card, or null when the page is missing, empty or still the placeholder. */
+export async function readAgentCard(agent: string, root?: string): Promise<string | null> {
+  const page = await readAgentPage(agent, root);
+  if (!page) return null;
+  return page.card && page.card !== AGENT_CARD_PLACEHOLDER ? page.card : null;
+}
+
+/** Whether the agent has a page at all, card or not. */
+export async function agentPageExists(agent: string, root?: string): Promise<boolean> {
+  return (await readIfExists(agentPagePath(agent, root))) !== null;
+}
+
+/** Give the agent a page with the placeholder card, unless it has one. Never changes a page that exists. */
+export async function ensureAgentPage(agent: string, root?: string): Promise<void> {
+  await ensureMemoryLayout(root);
+  const file = agentPagePath(agent, root);
+  await withPageLock(file, async () => {
+    if ((await readIfExists(file)) !== null) return;
+    await writeFileAtomic(file, renderAgentPage(agent, { card: AGENT_CARD_PLACEHOLDER, notes: '' }));
+  });
+}
+
+/**
+ * Move an agent's page to a new name (a rename of the agent or its project),
+ * keeping both sections. When a page already has the new name, the moved card
+ * replaces its card and the two sets of notes are kept, the old page's last.
+ */
+export async function moveAgentPage(from: string, to: string, root?: string): Promise<void> {
+  const fromFile = agentPagePath(from, root);
+  const toFile = agentPagePath(to, root);
+  if (fromFile === toFile) {
+    // Same file, new title.
+    await withPageLock(toFile, async () => {
+      const page = await readAgentPage(from, root);
+      if (page) await writeFileAtomic(toFile, renderAgentPage(to, page));
+    });
+    return;
+  }
+  // Both pages locked, always in the same order, so two moves can't wait on each other.
+  const [first, second] = [fromFile, toFile].sort();
+  await withPageLock(first, () => withPageLock(second, async () => {
+    const moved = await readAgentPage(from, root);
+    if (!moved) return;
+    const existing = await readAgentPage(to, root);
+    const notes = [existing?.notes, moved.notes].filter((n): n is string => !!n).join('\n\n');
+    const card = moved.card && moved.card !== AGENT_CARD_PLACEHOLDER ? moved.card : existing?.card || moved.card;
+    await writeFileAtomic(toFile, renderAgentPage(to, { card, notes }));
+    await fsp.rm(fromFile, { force: true });
+  }));
 }
 
 // ── Topics ─────────────────────────────────────────────────────────────────

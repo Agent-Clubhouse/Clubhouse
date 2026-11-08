@@ -10,6 +10,12 @@ import {
   INDEX_CUT_NOTE,
   DEFAULT_INDEX,
   AGENT_NOTES_HEADING,
+  AGENT_CARD_PLACEHOLDER,
+  agentPageExists,
+  agentPagePath,
+  ensureAgentPage,
+  moveAgentPage,
+  readAgentCard,
   capIndex,
   ensureMemoryLayout,
   loadIndex,
@@ -142,5 +148,40 @@ describe('topic pages', () => {
     await writeTopic('Release 1.0', { status: 'unconfirmed', source: 'chat\nwith a newline', body }, root);
     expect(fs.existsSync(path.join(root, 'topics', 'release-1.0.md'))).toBe(true);
     expect(await readTopic('Release 1.0', root)).toEqual({ status: 'unconfirmed', source: 'chat with a newline', body });
+  });
+});
+
+describe('agent pages for cards (#3041)', () => {
+  it('gives an agent a placeholder card once, and never overwrites a page', async () => {
+    await ensureAgentPage('lead', root);
+    expect(await readAgentPage('lead', root)).toEqual({ card: AGENT_CARD_PLACEHOLDER, notes: '' });
+    expect(await readAgentCard('lead', root)).toBeNull();
+    await writeAgentCard('lead', 'What it\'s for: Leads.', root);
+    await ensureAgentPage('lead', root);
+    expect(await readAgentCard('lead', root)).toBe('What it\'s for: Leads.');
+    expect(await agentPageExists('nobody', root)).toBe(false);
+  });
+
+  it('moves a page to a new name, keeping both sections', async () => {
+    await writeAgentCard('lead (webapp)', 'card', root);
+    await writeAgentNotes('lead (webapp)', 'notes', root);
+    await moveAgentPage('lead (webapp)', 'web-lead (webapp)', root);
+    expect(await readAgentPage('lead (webapp)', root)).toBeNull();
+    expect(await readAgentPage('web-lead (webapp)', root)).toEqual({ card: 'card', notes: 'notes' });
+    expect(fs.readFileSync(agentPagePath('web-lead (webapp)', root), 'utf-8').startsWith('# web-lead (webapp)\n')).toBe(true);
+  });
+
+  it('merges into a page that already has the new name: the moved card, and both sets of notes', async () => {
+    await writeAgentCard('old', 'new card', root);
+    await writeAgentNotes('old', 'old notes', root);
+    await writeAgentCard('new', 'stale card', root);
+    await writeAgentNotes('new', 'earlier notes', root);
+    await moveAgentPage('old', 'new', root);
+    expect(await readAgentPage('new', root)).toEqual({ card: 'new card', notes: 'earlier notes\n\nold notes' });
+  });
+
+  it('keeps the card and notes when card and notes are written at once', async () => {
+    await Promise.all([writeAgentCard('lead', 'card', root), writeAgentNotes('lead', 'notes', root)]);
+    expect(await readAgentPage('lead', root)).toEqual({ card: 'card', notes: 'notes' });
   });
 });
