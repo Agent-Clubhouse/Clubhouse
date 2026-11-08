@@ -83,6 +83,13 @@ export function setReachProvider(provider: (() => { hosts: string[]; port: numbe
   reachProvider = provider;
 }
 
+let selfPairingProvider: (() => { id: string; joinedAt: string } | undefined) | null = null;
+
+/** Says which pairing put this machine in its network (#3107), once membership knows it. */
+export function setSelfPairingProvider(provider: (() => { id: string; joinedAt: string } | undefined) | null): void {
+  selfPairingProvider = provider;
+}
+
 /** This machine as a network member. Null before it has an identity. */
 export function localMember(): NetworkMember | null {
   const identity = annexIdentity.getIdentity();
@@ -108,7 +115,11 @@ export function localMember(): NetworkMember | null {
     kind: 'desktop',
     hosts: (reach?.hosts ?? []).slice(0, 8),
     ...(reach && reach.port > 0 && { port: reach.port }),
-    joinedAt: identity.createdAt,
+    // Its pairing into the network, once known: the same id and time every member has for it.
+    ...(() => {
+      const pairing = selfPairingProvider?.();
+      return pairing ? { joinedAt: pairing.joinedAt, pairingId: pairing.id } : { joinedAt: identity.createdAt };
+    })(),
   };
 }
 

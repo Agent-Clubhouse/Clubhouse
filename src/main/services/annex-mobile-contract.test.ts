@@ -163,16 +163,22 @@ const NET = vi.hoisted(() => {
     joinedAt: '2026-11-08T10:00:00.000Z', ...extra,
   });
   // Real-format fingerprints, so a phone can send these records back exactly as listed.
-  const self = record(Array(16).fill('aa').join(':'), 'Studio', 'desktop');
+  const self = record(Array(16).fill('aa').join(':'), 'Studio', 'desktop', { pairingId: '6f1c2a3e-0000-4000-8000-00000000aaaa' });
   return {
     self,
-    network: { members: [self, record(Array(16).fill('11').join(':'), 'Travel laptop', 'desktop'), record(Array(16).fill('ef').join(':'), 'Mason’s iPhone', 'phone')], removals: [{ fingerprint: Array(16).fill('55').join(':'), removedAt: '2026-11-08T12:00:00.000Z' }] },
+    network: { members: [self, record(Array(16).fill('11').join(':'), 'Travel laptop', 'desktop', { pairingId: '6f1c2a3e-0000-4000-8000-000000001111' }), record(Array(16).fill('ef').join(':'), 'Mason’s iPhone', 'phone', { pairingId: '6f1c2a3e-0000-4000-8000-00000000efef' })], removals: [{ fingerprint: Array(16).fill('55').join(':'), removedAt: '2026-11-08T12:00:00.000Z', pairingId: '6f1c2a3e-0000-4000-8000-000000005555', joinedAt: '2026-11-05T09:00:00.000Z' }] },
     vouched: { added: [Array(16).fill('dd').join(':')], skipped: [{ fingerprint: Array(16).fill('11').join(':'), reason: 'member' }] },
     onChange: null as null | (() => void),
   };
 });
 vi.mock('./annex-network-membership', () => ({
   noteLocalJoin: vi.fn(),
+  // Pairing ids (#3107): fixed, so answers and fixtures don't change from run to run.
+  ownPairing: vi.fn(() => undefined),
+  readPairing: (v: { id?: unknown; joinedAt?: unknown } | null | undefined) => (v && typeof v.id === 'string' && typeof v.joinedAt === 'string' ? { id: v.id, joinedAt: v.joinedAt } : undefined),
+  pairingForJoiner: vi.fn((_fp: string, offered?: { id: string; joinedAt: string }) => offered ?? { id: '6f1c2a3e-0000-4000-8000-00000000a001', joinedAt: '2026-11-08T10:00:00.000Z' }),
+  ensureOwnPairing: vi.fn(() => ({ id: '6f1c2a3e-0000-4000-8000-00000000aaaa', joinedAt: '2026-11-01T09:00:00.000Z' })),
+  adoptOwnPairing: vi.fn(),
   noteLocalRemoval: vi.fn(),
   currentView: (to?: string) => (to === undefined ? NET.network : { members: [NET.self], removals: [] }),
   vouchFromPhone: vi.fn(() => NET.vouched),
