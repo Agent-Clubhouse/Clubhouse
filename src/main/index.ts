@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { app, BrowserWindow, ipcMain, powerMonitor, session, net, protocol } from 'electron';
 import { cleanupTranscriptStaging } from './services/agent-runtime/chat-transcript';
+import { scheduleChatMediaPrune } from './services/agent-runtime/chat-media-retention';
 import { registerAllHandlers } from './ipc';
 import { configurePluginMcpHost } from './ipc/plugin-mcp-handlers';
 import { startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
@@ -245,6 +246,8 @@ installClientCertificatePolicy(app);
 
 app.on('ready', () => {
   void cleanupTranscriptStaging();
+  // Chat media is capped across agents (#2828); check once a few minutes after startup.
+  scheduleChatMediaPrune(5 * 60_000);
   // Pre-warm the shell environment cache in background so the first agent
   // wake doesn't pay the 500ms–2s login shell penalty.
   preWarmShellEnvironment();
