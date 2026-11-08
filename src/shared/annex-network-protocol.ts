@@ -15,8 +15,8 @@ export const NETWORK_PROTOCOL_VERSION = 1;
 /** The WebSocket path on the main TLS port. */
 export const NETWORK_CHANNEL_PATH = '/network';
 
-/** Largest message accepted, in bytes. A member list of 64 devices fits easily. */
-export const NETWORK_MESSAGE_MAX_BYTES = 64 * 1024;
+/** Largest message accepted, in bytes. A member list of 64 devices, certificates included, fits. */
+export const NETWORK_MESSAGE_MAX_BYTES = 512 * 1024;
 
 /** Most members a list may carry. One person's devices; this is a sanity bound. */
 export const NETWORK_MEMBERS_MAX = 64;
@@ -34,6 +34,11 @@ export interface NetworkMember {
   publicKey: string;
   /** SHA-256 of its TLS certificate, colon-separated hex. */
   certFingerprint: string;
+  /**
+   * Its TLS certificate (PEM), so a member that hasn't met it can pin it (#3061).
+   * Must hash to `certFingerprint`; a receiver checks that before trusting it.
+   */
+  certPem?: string;
   name: string;
   icon: string;
   color: string;
@@ -89,13 +94,14 @@ function isTime(value: unknown): value is string {
   return typeof value === 'string' && value.length <= 40 && !Number.isNaN(Date.parse(value));
 }
 
-const MEMBER_KEYS = ['fingerprint', 'publicKey', 'certFingerprint', 'name', 'icon', 'color', 'kind', 'hosts', 'port', 'joinedAt'] as const;
+const MEMBER_KEYS = ['fingerprint', 'publicKey', 'certFingerprint', 'certPem', 'name', 'icon', 'color', 'kind', 'hosts', 'port', 'joinedAt'] as const;
 
 function isMember(value: unknown): value is NetworkMember {
   if (!isObject(value) || !onlyKeys(value, MEMBER_KEYS)) return false;
   if (typeof value.fingerprint !== 'string' || !FINGERPRINT.test(value.fingerprint)) return false;
   if (!isText(value.publicKey, 512)) return false;
   if (typeof value.certFingerprint !== 'string' || !CERT_FINGERPRINT.test(value.certFingerprint)) return false;
+  if (value.certPem !== undefined && (!isText(value.certPem, 6000) || !(value.certPem as string).startsWith('-----BEGIN CERTIFICATE-----'))) return false;
   if (!isText(value.name, 200) || !isText(value.icon, 64) || !isText(value.color, 64)) return false;
   if (value.kind !== 'desktop' && value.kind !== 'phone') return false;
   if (!Array.isArray(value.hosts) || value.hosts.length > 8 || !value.hosts.every((h) => isText(h, 255))) return false;

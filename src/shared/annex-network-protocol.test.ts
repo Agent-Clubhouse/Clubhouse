@@ -27,6 +27,7 @@ describe('Annex Network protocol (#3060)', () => {
     ['member-removed', { v: 1, type: 'member-removed', removal: { fingerprint: FP, removedAt: '2026-11-08T11:00:00Z' } }],
     ['member-renamed', { v: 1, type: 'member-renamed', fingerprint: FP, name: 'Studio 2', at: '2026-11-08T11:00:00Z' }],
     ['hello without a port (no server)', { v: 1, type: 'hello', member: { ...member, port: undefined, hosts: [] } }],
+    ['a member with its certificate', { v: 1, type: 'member-joined', member: { ...member, certPem: '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n' } }],
   ])('accepts %s', (_name, message) => {
     expect(parseNetworkMessage(json(message))).toEqual({ ok: true, message: JSON.parse(json(message)) });
   });
@@ -47,6 +48,8 @@ describe('Annex Network protocol (#3060)', () => {
     ['an unknown kind', { v: 1, type: 'hello', member: { ...member, kind: 'server' } }],
     ['too many hosts', { v: 1, type: 'hello', member: { ...member, hosts: Array(9).fill('h') } }],
     ['a bad port', { v: 1, type: 'hello', member: { ...member, port: 70000 } }],
+    ['a certificate that is not PEM', { v: 1, type: 'hello', member: { ...member, certPem: 'MIIB...' } }],
+    ['an oversized certificate', { v: 1, type: 'hello', member: { ...member, certPem: `-----BEGIN CERTIFICATE-----${'A'.repeat(6000)}` } }],
     ['an empty name', { v: 1, type: 'hello', member: { ...member, name: '' } }],
     ['a bad time', { v: 1, type: 'member-removed', removal: { fingerprint: FP, removedAt: 'yesterday' } }],
     ['members that is not a list', { v: 1, type: 'members', members: member, removals: [] }],

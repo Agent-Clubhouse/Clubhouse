@@ -88,8 +88,10 @@ export function localMember(): NetworkMember | null {
   const identity = annexIdentity.getIdentity();
   if (!identity) return null;
   let certFingerprint: string;
+  let certPem: string;
   try {
-    certFingerprint = annexTls.certificateFingerprint(annexTls.getOrCreateCert(identity).certPem);
+    certPem = annexTls.getOrCreateCert(identity).certPem;
+    certFingerprint = annexTls.certificateFingerprint(certPem);
   } catch { // telemetry-exempt: no certificate yet, so nothing to say hello with
     return null;
   }
@@ -99,6 +101,7 @@ export function localMember(): NetworkMember | null {
     fingerprint: identity.fingerprint,
     publicKey: identity.publicKey,
     certFingerprint,
+    certPem,
     name: (settings.alias || settings.deviceName || 'Clubhouse').slice(0, 200),
     icon: settings.icon || 'computer',
     color: settings.color || 'indigo',

@@ -14,7 +14,7 @@ vi.mock('./annex-identity', () => ({
 }));
 vi.mock('./annex-settings', () => ({ getSettings: vi.fn(() => ({ alias: 'This Mac', deviceName: 'Clubhouse on This Mac', icon: 'computer', color: 'indigo' })) }));
 vi.mock('./annex-tls', () => ({
-  getOrCreateCert: vi.fn(() => ({ certPem: 'SELF-PEM' })),
+  getOrCreateCert: vi.fn(() => ({ certPem: '-----BEGIN CERTIFICATE-----\nSELF\n-----END CERTIFICATE-----\n' })),
   certificateFingerprint: vi.fn(() => SELF_CERT),
   sameCertificateFingerprint: (a?: string, b?: string) => !!a && !!b && a.replace(/:/g, '').toLowerCase() === b.replace(/:/g, '').toLowerCase(),
   extractPeerFingerprint: vi.fn(),
