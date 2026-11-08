@@ -11,8 +11,9 @@ import { addProject } from './smoke-helpers';
  * Clubhouse-managed agents (#2819) at the UI level,
  * over a fake `claude`, so no tokens are spent: the parts library in Settings,
  * New agent from a built-in template, the agent's builder pages and Preview, a
- * part switch that survives leaving settings, and the instructions file its
- * first start writes.
+ * part switch that survives leaving settings, the instructions file its
+ * first start writes, and its Clubhouse permissions page (#2971): a change
+ * saves to the app's data folder, and Reset to defaults clears it.
  *
  * Runs in the Chat E2E job (Linux and Windows), not the sharded E2E run:
  * nothing here differs on macOS, and it would lengthen the E2E long pole.
@@ -49,7 +50,7 @@ function makeProject(): string {
   return dir;
 }
 
-interface SavedAgent { name: string; worktreePath?: string; managed?: { blocks: string[]; mcps: string[]; templateId?: string } }
+interface SavedAgent { id: string; name: string; worktreePath?: string; managed?: { blocks: string[]; mcps: string[]; templateId?: string } }
 
 async function savedAgent(): Promise<SavedAgent | undefined> {
   const list = JSON.parse(await fs.promises.readFile(path.join(projectDir!, '.clubhouse', 'agents.json'), 'utf8')) as SavedAgent[];
@@ -104,6 +105,8 @@ test('parts library, New agent from a template, its builder pages and Preview, t
   await expect(w.locator('[data-testid="new-agent-submit"]')).toBeEnabled({ timeout: 10_000 });
   await w.locator('[data-testid="new-agent-submit"]').click();
   const template = w.locator(`[data-testid="managed-template-${TEMPLATE_ID}"]`);
+  // What agents from it can do through Clubhouse, in one line (#2971).
+  await expect(template.locator(`[data-testid="managed-template-grants-${TEMPLATE_ID}"] summary`)).toContainText('Through Clubhouse it can read and message agents');
   await template.getByRole('button', { name: 'Create from Researcher' }).click();
   await expect(page).toBeHidden({ timeout: 30_000 });
   await expect(w.locator(`[data-agent-name="${AGENT}"]`).first()).toBeVisible({ timeout: 15_000 });
@@ -139,4 +142,22 @@ test('parts library, New agent from a template, its builder pages and Preview, t
   await expect(w.locator('[data-testid="agent-settings-nav"]')).toBeHidden();
   await openAgentSettingsPage(w, 'mcp');
   await expect(mcpSwitch()).toHaveAttribute('aria-checked', 'true');
+
+  // Clubhouse permissions (#2971): a change saves to the app's data folder, never the project, and Reset clears it.
+  await openAgentSettingsPage(w, 'grants');
+  const grantsPage = w.locator('[data-testid="agent-settings-page-grants"]');
+  const message = grantsPage.getByRole('radiogroup', { name: 'Send messages and files (Connected agents)' });
+  await expect(message.getByRole('radio', { name: 'Allow' })).toBeChecked();
+  await message.getByRole('radio', { name: 'Off' }).click();
+  const agentId = (await savedAgent())!.id;
+  const grantsFile = path.join(app.userDataDir, 'agent-grants.json');
+  await expect.poll(async () => {
+    const saved = JSON.parse(await fs.promises.readFile(grantsFile, 'utf8').catch(() => '{}'));
+    return saved.agents?.[agentId]?.changes?.map((c: { action: string; mode: string }) => `${c.action}:${c.mode}`);
+  }).toEqual(['agent.message:off']);
+  expect(JSON.stringify(await savedAgent())).not.toContain('agent.message');
+  await expect(message.getByRole('radio', { name: 'Off' })).toBeChecked();
+  await grantsPage.locator('[data-testid="agent-grants-reset"]').click();
+  await expect(message.getByRole('radio', { name: 'Allow' })).toBeChecked();
+  await expect.poll(async () => JSON.parse(await fs.promises.readFile(grantsFile, 'utf8')).agents?.[agentId]).toBeUndefined();
 });

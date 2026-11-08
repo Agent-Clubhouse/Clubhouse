@@ -15,6 +15,8 @@ import {
 import { Button } from '../../components/Button';
 import { reportChromeActionFailed } from '../../chrome/telemetry';
 import { Field, SectionHeading } from './agentSettingsUi';
+import { GrantRequestList } from './GrantRequestList';
+import { useGrantRequestStore } from '../../stores/grantRequestStore';
 
 const MODES: ReadonlyArray<{ mode: GrantChangeMode; label: string }> = [
   { mode: 'off', label: 'Off' },
@@ -27,9 +29,10 @@ const TARGET_ORDER: ReadonlyArray<GrantTarget['kind']> = [
   'self', 'parent', 'my_helpers', 'connected', 'group_project', 'group_members', 'project', 'app', 'any',
 ];
 
-const SOURCE_LABEL: Record<GrantRow['source'], string | undefined> = {
+export const SOURCE_LABEL: Record<GrantRow['source'], string | undefined> = {
   every_agent: 'Every agent',
   structural: 'Built in',
+  template: 'From its template',
   user: 'Set by you',
   dispatcher: 'Set by Dispatcher',
   none: undefined,
@@ -179,8 +182,8 @@ export function AgentGrantsSettings({ agent, projectPath, refreshKey = 0 }: {
   return (
     <div data-testid="agent-grants-settings">
       {intro}
-      <div className="flex items-center gap-3 min-h-[28px]">
-        <p className="flex-1 min-w-0 text-xs text-ctp-overlay1">Ask first refuses for now, until Clubhouse can ask you in Needs you.</p>
+      <WaitingRequests agentId={agent.id} agentName={agent.name} onAnswered={() => setLoadAttempt((n) => n + 1)} />
+      <div className="flex items-center justify-end gap-3 min-h-[28px]">
         {changed && (
           <Button onClick={() => void reset()} disabled={resetting} data-testid="agent-grants-reset">Reset to defaults</Button>
         )}
@@ -213,6 +216,18 @@ export function AgentGrantsSettings({ agent, projectPath, refreshKey = 0 }: {
   );
 }
 
+/** Requests waiting on the user (#2970), above the rows they'd change. */
+function WaitingRequests({ agentId, agentName, onAnswered }: { agentId: string; agentName: string; onAnswered: () => void }) {
+  const waiting = useGrantRequestStore((s) => Object.values(s.requests).some((r) => r.agentId === agentId));
+  if (!waiting) return null;
+  return (
+    <section aria-label="Waiting for you" data-testid="agent-grants-waiting">
+      <SectionHeading title="Waiting for you" />
+      <GrantRequestList agentId={agentId} agentName={agentName} onAnswered={onAnswered} />
+    </section>
+  );
+}
+
 /** The heading of the wider row that allows this one, when there is one (#2971). */
 function coveredLabel(view: AgentGrantsView | null, row: GrantRow): string | undefined {
   if (!row.coveredBy || !view) return undefined;
@@ -220,11 +235,13 @@ function coveredLabel(view: AgentGrantsView | null, row: GrantRow): string | und
   return wider ? grantTargetLabel(wider.target) : undefined;
 }
 
-function GrantRowField({ row, targetLabel, coveredBy, mode, disabled, error, onChange }: {
+export function GrantRowField({ row, targetLabel, coveredBy, note, mode, disabled, error, onChange }: {
   row: GrantRow;
   targetLabel: string;
   /** A wider row allows this action: this row's own setting would change nothing. */
   coveredBy?: string;
+  /** Set elsewhere: why, in place of the choices being changeable. */
+  note?: string;
   mode: GrantChangeMode;
   disabled: boolean;
   error: string | undefined;
@@ -232,12 +249,13 @@ function GrantRowField({ row, targetLabel, coveredBy, mode, disabled, error, onC
 }) {
   const name = useId();
   const actionLabel = GRANT_ACTION_LABELS[row.action];
-  const off = disabled || row.fixed || !!coveredBy;
+  const off = disabled || row.fixed || !!coveredBy || !!note;
   return (
     <div data-testid={`agent-grant-row-${grantKey(row)}`}>
       <Field label={actionLabel} help={SOURCE_LABEL[row.source]}>
         {row.fixed && <span className="text-xs text-ctp-overlay1">Always on</span>}
         {coveredBy && <span className="text-xs text-ctp-overlay1">Allowed by {coveredBy}. Change it there.</span>}
+        {note && <span className="text-xs text-ctp-overlay1">{note}</span>}
         <div role="radiogroup" aria-label={`${actionLabel} (${targetLabel})`} className="flex items-center gap-3">
           {MODES.map((m) => (
             <label

@@ -31,14 +31,26 @@ afterEach(async () => {
   }
 });
 
-/** A `copilot` on disk that replays a fixture. */
+/** A `copilot` on disk that replays a fixture, by name or by the path of a derived copy. */
 async function fakeCopilot(name: string): Promise<{ fake: FakeCli; binary: string }> {
-  const fake = await createFakeCli(chatFixturePath('copilot-sdk', name));
+  const fixture = path.isAbsolute(name) ? name : chatFixturePath('copilot-sdk', name);
+  const fake = await createFakeCli(fixture);
   cleanups.push(() => fake.dispose());
   const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'copilot-sdk-replay-'));
   cleanups.push(() => fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
-  const shims = await writeFakeCliShims(dir, { copilot: { fixture: chatFixturePath('copilot-sdk', name), report: fake.reportPath } });
+  const shims = await writeFakeCliShims(dir, { copilot: { fixture, report: fake.reportPath } });
   return { fake, binary: shims.copilot };
+}
+
+/** A copy of a committed fixture with one string replaced, in a temporary directory. */
+function derivedFixture(name: string, from: string, to: string): string {
+  const text = fs.readFileSync(chatFixturePath('copilot-sdk', name), 'utf8');
+  expect(text.split(from)).toHaveLength(2);
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'copilot-sdk-derived-'));
+  cleanups.push(() => fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+  const file = path.join(dir, `${name}.jsonl`);
+  fs.writeFileSync(file, text.replace(from, to));
+  return file;
 }
 
 // The fixtures were recorded logged out, with a provider standing in for a login.
@@ -275,7 +287,8 @@ describe('CopilotSdkChatDriver sessions against fake Copilot', () => {
     await say(session, 'hi');
     await drafts.waitFor({ type: 'turn_ended' });
     await say(session, 'ask');
-    const gate = (await drafts.waitFor({ type: 'permission_request' })).data as { requestId: string; description: string };
+    const gate = (await drafts.waitFor({ type: 'permission_request' })).data as { requestId: string; title: string; description: string };
+    expect(gate.title).toBe('asker is asking');
     expect(gate.description).toBe('Who are you?');
     await session.respondPermission(gate.requestId, 'accept');
     const form = (await drafts.waitFor({ type: 'question' })).data as { requestId: string };
@@ -290,6 +303,19 @@ describe('CopilotSdkChatDriver sessions against fake Copilot', () => {
     await drafts.waitFor({ type: 'turn_ended' });
     await say(session, 'ask');
     const gate = (await drafts.waitFor({ type: 'permission_request' })).data as { requestId: string };
+    await session.respondPermission(gate.requestId, 'decline');
+    await drafts.waitFor({ type: 'turn_ended', turnId: 'turn-2' });
+    await expectComplete(session, fake);
+  });
+
+  it('elicitation with an empty source: the card names a generic MCP server, not " is asking"', async () => {
+    const fixture = derivedFixture('elicitation-decline', '"elicitationSource":"asker"', '"elicitationSource":""');
+    const { fake, session, drafts } = await start(fixture, { level: 'full_access' });
+    await say(session, 'hi');
+    await drafts.waitFor({ type: 'turn_ended' });
+    await say(session, 'ask');
+    const gate = (await drafts.waitFor({ type: 'permission_request' })).data as { requestId: string; title: string };
+    expect(gate.title).toBe('An MCP server is asking');
     await session.respondPermission(gate.requestId, 'decline');
     await drafts.waitFor({ type: 'turn_ended', turnId: 'turn-2' });
     await expectComplete(session, fake);
@@ -349,7 +375,7 @@ describe('CopilotSdkChatDriver sessions against fake Copilot', () => {
     expect(unhandled).toEqual([]);
   });
 
-  it('a send just after the connection breaks fails through its own promise, and the stray copy is marked (#2706)', async () => {
+  it('a send just after the connection breaks fails through its own promise and leaves no stray rejection (#2706)', async () => {
     const { session } = await start('multi-turn');
     const unhandled: unknown[] = [];
     const onUnhandled = (reason: unknown) => unhandled.push(reason);
@@ -370,9 +396,9 @@ describe('CopilotSdkChatDriver sessions against fake Copilot', () => {
     } finally {
       process.off('unhandledRejection', onUnhandled);
     }
-    // vscode-jsonrpc still leaves its copy, and main can tell it apart from a real error.
-    expect(unhandled.length).toBeGreaterThan(0);
-    expect(unhandled.every(isFailedCopilotWrite)).toBe(true);
+    // vscode-jsonrpc 10 only rejects the request's promise; 8.2.1 also left a
+    // second, unhandled copy (failed-writes.ts).
+    expect(unhandled).toEqual([]);
   });
 
   it('schema-drift: unknown events, fields and requests are tolerated, and the unknown request is refused', async () => {

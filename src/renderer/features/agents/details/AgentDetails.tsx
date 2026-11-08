@@ -40,6 +40,7 @@ import type { LastSessionInfo } from '../states/useLastSession';
 import { describeSleep, formatAgo, formatShortDuration, formatUsd } from '../states/format';
 import { ConnectionsCard, type Connection } from '../helpers/ConnectionsCard';
 import { OrchestrationCardPair, useOrchestrationCards } from '../helpers/OrchestrationCards';
+import { useEffectiveOrchestrator } from '../effective-orchestrator';
 
 export type CardId = 'changes' | 'subagents' | 'canvases' | 'orchestrate' | 'helpers' | 'connections' | 'context' | 'mcp' | 'provider-skills' | 'session' | 'actions';
 
@@ -200,6 +201,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const hook = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
   const orchestrators = useOrchestratorStore((s) => s.allOrchestrators);
+  const agentCli = useEffectiveOrchestrator(agent);
 
   // Chat refreshes when a turn starts or ends, or the agent commits, pushes
   // or rebases mid-turn; the terminal when its hook status moves on.
@@ -231,7 +233,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const now = useNow(running && !!spawnedAt);
 
   const open = (id: CardId) => openCards.has(id);
-  const providerId = chat?.provider ?? agent.orchestrator ?? 'claude-code';
+  const providerId = chat?.provider ?? agentCli;
   const provider = getOrchestratorLabel(providerId, orchestrators);
 
   // Subagents: only when the agent reports them.

@@ -1,6 +1,7 @@
 /**
  * Builder tools (#2900), in the `dispatcher` tool group: every builder
  * action as a Clubhouse MCP tool, so the
+ * (list_agent_templates and list_agent_parts are also an orchestrator's, #3001)
  * Dispatcher can manage agent parts, templates and managed agents for the
  * person. They call the same service the UI does. Shared edits, deleting a
  * part in use and template pushes are preview-then-commit: the first call
@@ -17,11 +18,17 @@ import { withDispatcherCatalogWrites } from '../../asset-catalog/store';
 import { managedAgents, restartManagedAgent, statusFor } from '../../managed-agents';
 import { applyManagedSettings, createManagedAgent } from '../../managed-agents/agents';
 import { previewManagedSetup } from '../../managed-agents/delivery';
-import { ManagedError } from '../../managed-agents/service';
+import { checkTemplateSettings, ManagedError } from '../../managed-agents/service';
 import { resolveOrchestrator } from '../../agent-system';
+import { getDefaultAccess, getPermissionMode } from '../../free-agent-settings';
+import { callerAccess, withAccess, type AccessLevel } from '../../../../shared/agent-access';
+import { isDispatcherAgent } from '../dispatcher-gate';
+import { isCrossProjectEnabled } from '../orchestration-gate';
 import { optionalBoolean, optionalString, requireString } from './validation';
 import { CLUBHOUSE_MCP_PART_ID, CLUBHOUSE_PART_ALWAYS_ON, isListed, type ManagedPartContent, type ManagedPartKind, type ManagedTemplateSettings } from '../../../../shared/managed-agents-types';
 import type { Project } from '../../../../shared/types';
+import { agentRegistry } from '../../agent-registry';
+import { capToHolder } from '../grant-check';
 
 const ACTOR = 'Dispatcher';
 const KINDS: ManagedPartKind[] = ['block', 'skill', 'mcp'];
@@ -71,6 +78,19 @@ function objectArg<T>(args: Record<string, unknown>, key: string): T | undefined
   if (v === undefined) return undefined;
   if (!v || typeof v !== 'object' || Array.isArray(v)) throw new ArgError(`${key} must be an object`);
   return v as T;
+}
+
+/**
+ * Template settings from a call. Clubhouse permissions aren't taken (#2971):
+ * only the user sets what agents made from a template may do, so an agent
+ * can't grant through a template more than it holds. A template's saved
+ * permissions are kept through an edit that replaces its other settings.
+ */
+function settingsArg(args: Record<string, unknown>, keep?: ManagedTemplateSettings): ManagedTemplateSettings | undefined {
+  const settings = objectArg<ManagedTemplateSettings>(args, 'settings');
+  if (settings && 'grants' in settings) throw new ArgError('settings.grants: only the user sets a template\'s Clubhouse permissions, in Settings. Leave it out.');
+  if (!settings) return undefined;
+  return keep?.grants?.length ? { ...settings, grants: keep.grants } : settings;
 }
 function contentArg(args: Record<string, unknown>, kind?: ManagedPartKind): ManagedPartContent | undefined {
   const c = objectArg<Record<string, unknown>>(args, 'content');
@@ -152,6 +172,28 @@ function asDispatcher<T>(callerId: string, fn: () => Promise<T>): Promise<T> {
 
 type Handler = (callerId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
 
+/**
+ * Builder reads an orchestrator also gets (#3001): the templates and parts start_helper can
+ * name when the person lets orchestrators choose helper templates. Every other builder tool
+ * is the Dispatcher's.
+ */
+const ORCHESTRATOR_READS = new Set(['list_agent_templates', 'list_agent_parts']);
+
+/**
+ * An orchestrator's read of the library (#3001): only while the person lets orchestrators
+ * choose helper templates, which is what it is for, and showing only the agents in its own
+ * project unless cross-project helpers is on. The Dispatcher sees everything.
+ */
+async function orchestratorScope(callerId: string): Promise<((projectPath: string) => boolean) | null> {
+  if (isDispatcherAgent(callerId)) return null;
+  if (!(await managedAgents().helperTemplateChoice())) {
+    throw new ArgError('Orchestrators read the part library and templates only when the person lets them choose helper templates (Settings, Managed agents, Helpers). start_helper uses the default helper template.');
+  }
+  if (isCrossProjectEnabled(callerId)) return null;
+  const own = agentRegistry.get(callerId)?.projectPath;
+  return (projectPath) => !!own && projectPath === own;
+}
+
 function tool(name: string, grant: ToolGrant, description: string, properties: Record<string, unknown>, required: string[], handler: Handler): void {
   registerGlobalTool(name, { description, inputSchema: { type: 'object', properties, required } }, async (callerId, args) => {
     try {
@@ -164,7 +206,7 @@ function tool(name: string, grant: ToolGrant, description: string, properties: R
       appLog('core:mcp', 'warn', `${name} failed`, { meta: { callerId, error: err instanceof Error ? err.message : String(err) } });
       return fail(err instanceof Error ? err.message : String(err));
     }
-  }, { group: 'dispatcher', grant });
+  }, { group: ORCHESTRATOR_READS.has(name) ? ['dispatcher', 'orchestration'] : 'dispatcher', grant });
 }
 
 const S = { type: 'string' } as const;
@@ -179,11 +221,13 @@ export function registerManagedTools(): void {
   tool('list_agent_parts', { actions: ['library.read'], target: 'library' },
     'List the agent part library: instruction blocks, skills or MCP servers. Each part says whether it is built in, a short preview, and which agents and templates use it. Parts are used by reference: an edit reaches every agent using it at its next start. Retired built-ins are left out; agents that use one still get it, and get_agent_part reads it. source "builtin" or "custom" lists only those, as the library\'s source filter does.',
     { kind: { ...S, description: 'block, skill or mcp' }, source: { ...S, description: 'Optional: builtin or custom. Leave out for both.' } }, ['kind'],
-    async (_c, args) => {
+    async (callerId, args) => {
       const kind = kindArg(args);
       const source = optionalString(args, 'source');
       if (source !== undefined && source !== 'builtin' && source !== 'custom') throw new ArgError('source must be builtin or custom');
-      const parts = (await svc().listParts(kind)).filter(isListed);
+      const inScope = await orchestratorScope(callerId);
+      const parts = (await svc().listParts(kind)).filter(isListed)
+        .map((p) => (inScope ? { ...p, usedBy: p.usedBy.filter((u) => inScope(u.projectPath)) } : p));
       return json(source === undefined ? parts : parts.filter((p) => p.builtin === (source === 'builtin')));
     });
 
@@ -305,26 +349,43 @@ export function registerManagedTools(): void {
       return json(await previewManagedSetup({ service: svc(), projectPath: t.project.path, agent, provider }));
     });
 
+  /**
+   * Template settings as a caller sent them: a level it names wins over the legacy
+   * flag it read back beside it, so lowering a level never comes out higher (#2997, D103).
+   * A new template has no level yet for a bare legacy flag to keep.
+   */
+  const sentSettings = (settings: ManagedTemplateSettings, from: ManagedTemplateSettings | undefined): ManagedTemplateSettings => {
+    // Refused as sent (an unknown level, a flag that isn't on/off), before anything reads them as a level.
+    checkTemplateSettings(settings);
+    return callerAccess(settings, from ? levelOf(from) : undefined, getPermissionMode());
+  };
+  const levelOf = (s: ManagedTemplateSettings | undefined): AccessLevel =>
+    (s ? withAccess(s, getPermissionMode()).access : undefined) ?? getDefaultAccess();
+
   tool('list_agent_templates', { actions: ['library.read'], target: 'library' }, 'List templates (built-in and custom) with their parts, settings and how many agents were made from each. Retired built-in templates are left out; agents made from one keep working.',
     {}, [],
-    async () => json((await svc().listTemplates()).filter(isListed)));
+    async (callerId) => {
+      await orchestratorScope(callerId);
+      return json((await svc().listTemplates()).filter(isListed));
+    });
 
   tool('save_agent_template', { actions: ['template.write'], target: 'library' },
-    'Create a custom template (name required), or edit one by id. Editing an id keeps every field you leave out as saved; settings, when given, replaces the template\'s settings as a whole. Editing changes future agents only; use push_agent_template to apply it to agents made from it. settings: orchestrator, model, effort, freeAgentMode, orchestration {...}, idleSleep (minutes or "never"), helperTemplateId.',
+    'Create a custom template (name required), or edit one by id. Editing an id keeps every field you leave out as saved; settings, when given, replaces the template\'s settings as a whole. Editing changes future agents only; use push_agent_template to apply it to agents made from it. settings: orchestrator, model, effort, access (plan, ask, auto_edit, auto or full_access), orchestration {...}, idleSleep (minutes or "never"), helperTemplateId. A legacy freeAgentMode beside access is ignored.',
     { id: S, name: S, description: S, blocks: IDS, skills: IDS, mcps: IDS, settings: OBJ }, [],
     async (callerId, args) => {
       const id = optionalString(args, 'id');
-      const settings = objectArg<ManagedTemplateSettings>(args, 'settings');
       if (!id) {
+        const settings = settingsArg(args);
         const input = {
           name: requireString(args, 'name'), description: optionalString(args, 'description') ?? '',
           setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') },
-          settings: settings ?? {},
+          settings: settings ? sentSettings(settings, undefined) : {},
         };
         return json(keptClubhousePart(input.setup.mcps, await asDispatcher(callerId, () => svc().saveTemplate(input))));
       }
       // An edit merges what the call gave into the saved template.
       const current = await svc().getTemplate(id);
+      const settings = settingsArg(args, current.settings);
       const input = {
         id,
         name: optionalString(args, 'name') ?? current.name,
@@ -334,7 +395,7 @@ export function registerManagedTools(): void {
           skills: idListOr(args, 'skills', current.setup.skills),
           mcps: idListOr(args, 'mcps', current.setup.mcps),
         },
-        settings: settings ?? current.settings,
+        settings: settings ? sentSettings(settings, current.settings) : current.settings,
       };
       return json(keptClubhousePart(input.setup.mcps, await asDispatcher(callerId, () => svc().saveTemplate(input))));
     });
@@ -345,9 +406,10 @@ export function registerManagedTools(): void {
     async (callerId, args) => {
       const id = requireString(args, 'id');
       const current = await svc().getTemplate(id);
+      const sent = settingsArg(args, current.settings);
       const next = {
         setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') },
-        settings: objectArg<ManagedTemplateSettings>(args, 'settings') ?? current.settings,
+        settings: sent ? sentSettings(sent, current.settings) : current.settings,
       };
       const preview = await svc().previewTemplatePush(id, next);
       const chosen = [...new Set(idList(args, 'agents'))].sort();
@@ -415,8 +477,16 @@ export function registerManagedTools(): void {
         ...(plain && { managed: false as const }),
         templateId: optionalString(args, 'templateId'),
         ...(hasSetup && { setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') } }),
-        settings: objectArg<ManagedTemplateSettings>(args, 'settings'),
+        settings: settingsArg(args),
       };
+      // A template's Clubhouse permissions pass only as far as the caller holds them (#2971, fixed rule 2).
+      if (input.templateId) {
+        const template = await svc().getTemplate(input.templateId);
+        if (template.settings.grants?.length) {
+          const elsewhere = agentRegistry.get(callerId)?.projectPath !== project.path;
+          input.settings = { ...(input.settings ?? {}), grants: capToHolder(callerId, template.settings.grants, { elsewhere }) };
+        }
+      }
       // Created asleep: nothing here spawns, so the whole creation can run under the grant.
       const config = await asDispatcher(callerId, () => createManagedAgent(project.path, input));
       return json({ id: config.id, name: config.name, project: project.name, managed: !!config.managed, status: 'sleeping' });

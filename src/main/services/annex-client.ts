@@ -131,6 +131,8 @@ interface SatelliteConnectionInternal {
   reconnectAttempt: number;
   /** Refused as not (or no longer) paired: no automatic reconnects until it's paired again. */
   needsPairing: boolean;
+  /** Why automatic reconnects stopped, if they did. A mismatch may still try a newly announced address once. */
+  halt?: 'pairing' | 'mismatch' | 'clock' | null;
   heartbeatInterval: ReturnType<typeof setInterval> | null;
   pongTimeout: ReturnType<typeof setTimeout> | null;
 }
@@ -302,7 +304,7 @@ function fetchSatelliteBuffer(sat: SatelliteConnectionInternal, agentId: string)
         return;
       }
       if (res.statusCode !== 200) {
-        res.resume();
+        drainRefusal(sat, res);
         once(null);
         return;
       }
@@ -530,14 +532,22 @@ const NEEDS_PAIRING_CODE = 'ERR_ANNEX_NEEDS_PAIRING';
 const NEEDS_PAIRING_MESSAGE = 'This pairing is from an older version of Clubhouse. Pair again to connect.';
 const PEER_NOT_PAIRED_MESSAGE = 'This computer is no longer paired there. Pair again to connect.';
 const CERT_EXPIRED_MESSAGE = "The satellite's certificate has expired. Pair again to connect.";
+const CERT_NOT_YET_VALID_MESSAGE = "The satellite's certificate isn't valid yet. Check the date and time on both computers, then retry.";
+const certMismatchMessage = (alias: string) => `${alias} showed a different certificate. If it was reset, pair again.`;
+/** TLS errors meaning the server showed a certificate other than the pinned one. */
+const MISMATCH_CODES = ['DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'ERR_TLS_CERT_ALTNAME_INVALID'];
 
 function satelliteUrl(sat: SatelliteConnectionInternal, urlPath: string, scheme: 'https' | 'wss' = 'https'): string {
   return `${scheme}://${bracketHost(sat.host)}:${sat.mainPort}${urlPath}`;
 }
 
-/** Stops trying a satellite that refused this pairing, until it's paired again. */
-function markNeedsPairing(sat: SatelliteConnectionInternal, message: string): void {
-  sat.needsPairing = true;
+/**
+ * Stops automatic reconnects. `pairing` and `mismatch` show the satellite as needing
+ * pairing again; `clock` only waits for the person to retry.
+ */
+function haltSatellite(sat: SatelliteConnectionInternal, kind: 'pairing' | 'mismatch' | 'clock', message: string): void {
+  sat.halt = kind;
+  sat.needsPairing = kind !== 'clock';
   stopHeartbeat(sat);
   if (sat.reconnectTimer) {
     clearTimeout(sat.reconnectTimer);
@@ -548,8 +558,12 @@ function markNeedsPairing(sat: SatelliteConnectionInternal, message: string): vo
     sat.ws = null;
     try { ws.terminate(); } catch { /* telemetry-exempt: closing a socket that may be gone */ }
   }
-  appLog('core:annex-client', 'warn', `${sat.alias} needs to be paired again: ${message}`, { meta: { fingerprint: sat.fingerprint } });
+  appLog('core:annex-client', 'warn', `Stopped reconnecting to ${sat.alias}: ${message}`, { meta: { fingerprint: sat.fingerprint } });
   setState(sat, 'disconnected', message);
+}
+
+function markNeedsPairing(sat: SatelliteConnectionInternal, message: string): void {
+  haltSatellite(sat, 'pairing', message);
 }
 
 /** The refusal codes that mean pairing again is the only way back. */
@@ -559,12 +573,29 @@ function needsPairingMessageFor(code: unknown): string | null {
   return null;
 }
 
-/** A TLS error that pairing again fixes, rather than waiting. */
-function needsPairingMessageForTlsError(err: unknown): string | null {
+/** A TLS error that waiting won't fix: stop, and say what will. */
+function haltForTlsError(sat: SatelliteConnectionInternal, err: unknown): boolean {
   const code = (err as { code?: string } | null)?.code;
-  if (code === NEEDS_PAIRING_CODE) return NEEDS_PAIRING_MESSAGE;
-  if (code === 'CERT_HAS_EXPIRED') return CERT_EXPIRED_MESSAGE;
-  return null;
+  if (code === NEEDS_PAIRING_CODE) { haltSatellite(sat, 'pairing', NEEDS_PAIRING_MESSAGE); return true; }
+  if (code === 'CERT_HAS_EXPIRED') { haltSatellite(sat, 'pairing', CERT_EXPIRED_MESSAGE); return true; }
+  if (code === 'CERT_NOT_YET_VALID') { haltSatellite(sat, 'clock', CERT_NOT_YET_VALID_MESSAGE); return true; }
+  if (code && (code === annexTls.PIN_MISMATCH_CODE || MISMATCH_CODES.includes(code))) { haltSatellite(sat, 'mismatch', certMismatchMessage(sat.alias)); return true; }
+  return false;
+}
+
+/** A REST answer of 401 needs_pairing or peer_not_paired means what it does on the WebSocket. */
+function noteRestRefusal(sat: SatelliteConnectionInternal, status: number | undefined, text: string): void {
+  if (status !== 401) return;
+  let code: unknown;
+  try { code = (JSON.parse(text) as { error?: unknown }).error; } catch { /* telemetry-exempt: not JSON, so not a pairing refusal */ }
+  const message = needsPairingMessageFor(code);
+  if (message) markNeedsPairing(sat, message);
+}
+
+/** Drains a non-200 REST answer, noting a pairing refusal. */
+function drainRefusal(sat: SatelliteConnectionInternal, res: http.IncomingMessage): void {
+  if (res.statusCode !== 401) { res.resume(); return; }
+  void readSmallBody(res).then((text) => noteRestRefusal(sat, res.statusCode, text));
 }
 
 function readSmallBody(res: http.IncomingMessage): Promise<string> {
@@ -644,6 +675,7 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
     return;
   }
   sat.needsPairing = false;
+  sat.halt = null;
   setState(sat, 'connecting');
   connectStarted(sat.fingerprint, sat.host);
 
@@ -728,12 +760,8 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
 
     ws.on('error', (err) => {
       if (sat.ws !== ws) return;
-      const pairAgain = needsPairingMessageForTlsError(err);
-      if (pairAgain) { markNeedsPairing(sat, pairAgain); return; }
-      const code = (err as { code?: string } | null)?.code;
-      const errorText = code === annexTls.PIN_MISMATCH_CODE || code === 'DEPTH_ZERO_SELF_SIGNED_CERT' || code === 'SELF_SIGNED_CERT_IN_CHAIN'
-        ? 'Peer certificate mismatch'
-        : (err && typeof err === 'object' && 'message' in err) ? String((err as Error).message) : String(err);
+      if (haltForTlsError(sat, err)) { sat.ws = null; return; }
+      const errorText = (err && typeof err === 'object' && 'message' in err) ? String((err as Error).message) : String(err);
 
       // Downgrade to 'warn' after 3 consecutive reconnect attempts to reduce log noise
       const level = sat.reconnectAttempt >= 3 ? 'warn' : 'error';
@@ -1080,8 +1108,8 @@ function scheduleReconnect(sat: SatelliteConnectionInternal): void {
     clearTimeout(sat.reconnectTimer);
     sat.reconnectTimer = null;
   }
-  // Refused as not paired: retrying can't help, only pairing again.
-  if (sat.needsPairing) return;
+  // Refused, or a certificate or clock problem: retrying the same way can't help.
+  if (sat.halt || sat.needsPairing) return;
 
   // Check if auto-reconnect is enabled
   const settings = annexSettings.getSettings();
@@ -1171,7 +1199,9 @@ function startDiscovery(): void {
             sat.mainPort = mainPort;
             sat.pairingPort = pairingPort;
           }
-          if (sat.state === 'disconnected' && !sat.needsPairing && sat.host && sat.mainPort) {
+          // After a certificate mismatch, a newly announced address gets one more try, through the same pin.
+          const halted = sat.halt || sat.needsPairing;
+          if (sat.state === 'disconnected' && (!halted || (sat.halt === 'mismatch' && hostChanged)) && sat.host && sat.mainPort) {
             connectToSatellite(sat);
           }
           return;
@@ -1356,6 +1386,7 @@ export function retry(fingerprint: string): void {
   if (sat && sat.state === 'disconnected') {
     sat.reconnectAttempt = 0;
     sat.needsPairing = false;
+    sat.halt = null;
     connectToSatellite(sat);
   }
 }
@@ -1429,7 +1460,7 @@ export function requestFileTree(fingerprint: string, projectId: string, options?
   return new Promise<unknown[]>((resolve) => {
     const url = satelliteUrl(sat, `/api/v1/projects/${encodeURIComponent(projectId)}/files/tree${qs}`);
     const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
-      if (res.statusCode !== 200) { res.resume(); resolve([]); return; }
+      if (res.statusCode !== 200) { drainRefusal(sat, res); resolve([]); return; }
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => {
@@ -1462,7 +1493,7 @@ export function requestFileRead(fingerprint: string, projectId: string, path: st
     const url = satelliteUrl(sat, `/api/v1/projects/${encodeURIComponent(projectId)}/files/read${qs}`);
     const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
       if (res.statusCode === 404) { res.resume(); reject(new Error('File not found')); return; }
-      if (res.statusCode !== 200) { res.resume(); reject(new Error(`HTTP ${res.statusCode}`)); return; }
+      if (res.statusCode !== 200) { drainRefusal(sat, res); reject(new Error(`HTTP ${res.statusCode}`)); return; }
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
@@ -1496,7 +1527,7 @@ export function requestBulletinDigest(fingerprint: string, groupProjectId: strin
   return new Promise<unknown[]>((resolve) => {
     const url = satelliteUrl(sat, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/digest${qs}`);
     const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
-      if (res.statusCode !== 200) { res.resume(); resolve([]); return; }
+      if (res.statusCode !== 200) { drainRefusal(sat, res); resolve([]); return; }
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => {
@@ -1531,7 +1562,7 @@ export function requestBulletinTopicMessages(fingerprint: string, groupProjectId
   return new Promise<unknown[]>((resolve) => {
     const url = satelliteUrl(sat, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/topics/${encodeURIComponent(topic)}${qs}`);
     const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
-      if (res.statusCode !== 200) { res.resume(); resolve([]); return; }
+      if (res.statusCode !== 200) { drainRefusal(sat, res); resolve([]); return; }
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => {
@@ -1590,7 +1621,7 @@ export function requestBulletinAllMessages(
   return new Promise<unknown[]>((resolve) => {
     const url = satelliteUrl(sat, `/api/v1/group-projects/${encodeURIComponent(groupProjectId)}/bulletin/messages${qs}`);
     const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
-      if (res.statusCode !== 200) { res.resume(); resolve([]); return; }
+      if (res.statusCode !== 200) { drainRefusal(sat, res); resolve([]); return; }
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => {
@@ -1770,6 +1801,7 @@ function satelliteHttpsRequest(
           try { resolve(JSON.parse(text)); }
           catch { resolve(text); }
         } else {
+          noteRestRefusal(sat, res.statusCode, text);
           reject(new Error(`HTTP ${res.statusCode}: ${text.slice(0, 200)}`));
         }
       });
@@ -1932,7 +1964,7 @@ export async function requestWorktreeStatus(
     `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/worktree-status`);
 }
 
-export interface PairResultForUi { success: boolean; error?: string; alias?: string }
+export interface PairResultForUi { success: boolean; error?: string; alias?: string; fingerprint?: string }
 
 /** Certificates read from discovered services, waiting for the person to compare and enter a PIN. */
 const probedCertificates = new Map<string, annexTls.PinnedCertificate & { host: string; port: number }>();
@@ -1942,12 +1974,16 @@ const probedCertificates = new Map<string, annexTls.PinnedCertificate & { host: 
  * its code with the one in that computer's Annex settings before sending a PIN.
  */
 export async function probeService(fingerprint: string): Promise<{ success: boolean; certFingerprint?: string; error?: string }> {
+  // A discovered service, or a satellite that needs pairing again at its last announced address.
   const discovered = discoveredServices.get(fingerprint);
-  if (!discovered) return { success: false, error: 'Service not found. It may have gone offline.' };
-  if (!discovered.mainPort) return { success: false, error: 'That computer did not say where to connect.' };
+  const known = satellites.get(fingerprint);
+  const host = discovered?.host || known?.host;
+  const port = discovered?.mainPort || known?.mainPort;
+  if (!discovered && !known) return { success: false, error: 'Service not found. It may have gone offline.' };
+  if (!host || !port) return { success: false, error: "That computer hasn't been found on the network yet. Paste its pairing link instead." };
   try {
-    const cert = await annexTls.probePeerCertificate(discovered.host, discovered.mainPort);
-    probedCertificates.set(fingerprint, { ...cert, host: discovered.host, port: discovered.mainPort });
+    const cert = await annexTls.probePeerCertificate(host, port);
+    probedCertificates.set(fingerprint, { ...cert, host, port });
     return { success: true, certFingerprint: cert.fingerprint };
   } catch (err) { // telemetry-exempt: shown to the person pairing
     return { success: false, error: err instanceof Error ? err.message : 'Could not reach that computer' };
@@ -1965,13 +2001,13 @@ export function pairWithService(fingerprint: string, pin: string): Promise<PairR
 async function pairWithServiceImpl(fingerprint: string, pin: string): Promise<PairResultForUi> {
   const probed = probedCertificates.get(fingerprint);
   if (!probed) return { success: false, error: "Check the computer's certificate code first." };
-  const discovered = discoveredServices.get(fingerprint);
+  const pairingPort = discoveredServices.get(fingerprint)?.pairingPort ?? satellites.get(fingerprint)?.pairingPort ?? 0;
   return pairOverTls({
     host: probed.host,
     port: probed.port,
     pinned: { certPem: probed.certPem, fingerprint: probed.fingerprint },
     expectedFingerprint: fingerprint,
-    pairingPort: discovered?.pairingPort ?? 0,
+    pairingPort,
     pin,
   });
 }
@@ -2107,7 +2143,7 @@ async function pairOverTls(target: {
   connectToSatellite(sat);
 
   appLog('core:annex-client', 'info', 'Paired with satellite', { meta: { fingerprint, alias } });
-  return { success: true, alias };
+  return { success: true, alias, fingerprint };
 }
 
 function pinnedJsonPost(host: string, port: number, urlPath: string, tlsOptions: tls.ConnectionOptions, data: unknown): Promise<{ status: number; body: string }> {

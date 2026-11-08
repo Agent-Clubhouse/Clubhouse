@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { AnnexControlSettingsView } from './AnnexControlSettingsView';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useAnnexStore } from '../../stores/annexStore';
@@ -186,8 +186,9 @@ describe('AnnexControlSettingsView', () => {
       render(<AnnexControlSettingsView />);
       expect(screen.queryByTestId('pairing-wizard')).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Pair again' }));
-      expect(screen.getByTestId('pairing-wizard')).toBeInTheDocument();
-      expect(screen.getByText('Pair again with Studio Mac')).toBeInTheDocument();
+      const wizard = screen.getByTestId('pairing-wizard');
+      // It goes straight to reading that satellite's certificate code.
+      expect(within(wizard).getAllByText(/Studio Mac/).length).toBeGreaterThan(0);
     });
   });
 });

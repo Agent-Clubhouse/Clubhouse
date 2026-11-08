@@ -1,12 +1,17 @@
 /**
  * Failed writes to a Copilot CLI that is going away (#2706).
  *
- * vscode-jsonrpc 8.2.1 `sendRequest` writes from an async promise executor.
- * When the write fails it rejects the caller's promise with a
- * MessageWriteError, which the caller handles, and then rethrows the write's
- * own error from the executor. Nothing holds the executor's promise, so that
- * second copy reaches `process.on('unhandledRejection')`. The SDK only quiets
- * these once it has seen the connection close, and a write can fail first.
+ * vscode-jsonrpc 8.2.1 (Copilot SDK 1.0.28) `sendRequest` rejected the
+ * caller's promise with a MessageWriteError and then rethrew the write's own
+ * error from its async promise executor. Nothing held that promise, so the
+ * second copy reached `process.on('unhandledRejection')`.
+ *
+ * vscode-jsonrpc 10.0.0 (SDK 1.0.29) only rejects the caller's promise and
+ * logs, and catches failed response writes too, so `sendRequest` leaves no
+ * stray copy. The marking stays as a guard: `sendNotification` still rethrows
+ * the writer's error to its caller, so a notification the SDK sends without
+ * catching it (it sends none today) or a later jsonrpc that rethrows again
+ * would bring the stray rejection back, and these hooks would still catch it.
  *
  * The driver marks each error its writer throws, and main's rejection handler
  * logs a marked one as a warning instead of reporting a main process error.

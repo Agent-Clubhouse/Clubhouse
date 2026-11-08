@@ -42,11 +42,24 @@ No save or configuration read probes a server.
 
 The JSON editor does not read or write `.codex/config.toml`. Existing TOML helpers
 serialize definitions and strip/inject individual sections; they are not a TOML
-parser. Chat therefore retains canonical project JSON delivery for Codex and emits
-a visible notice that local TOML servers are not delivered by this path. Chat
-preparation leaves the local TOML bytes, including unrelated settings, untouched;
-the live bridge is supplied directly to the driver. This change does not implement
-all-provider local MCP editing or migrate existing files.
+parser. So for an unmanaged Codex agent, Clubhouse delivers the project MCP JSON
+defaults and doesn't pass the servers in the agent's own `.codex/config.toml`.
+
+Codex reads that file itself, as its project config layer, but only for a
+folder its user config trusts. Probed on Codex 0.163 with `config/read`: a
+trusted folder's `mcp_servers` show in the effective config, and an untrusted
+one's layer is disabled. So whether those servers reach a chat depends on
+Codex's trust setting, which Clubhouse doesn't check.
+
+Clubhouse writes the project MCP defaults into a new Codex worktree's
+`.codex/config.toml` itself, and older versions wrote the bridge there. So
+chat shows an `mcp_configuration` notice only when that file lists a server
+that is neither the bridge nor one of the project servers chat delivers,
+naming those servers (#2849). Chat preparation leaves the file's bytes,
+including unrelated settings, untouched, and the live bridge goes to the
+driver directly. A managed Codex agent gets its MCP parts as `-c` launch
+flags in the terminal and session config in chat. Codex can still add a
+trusted folder's project-layer servers on top of those.
 
 The same JSON configuration rules apply on macOS, Linux and Windows. Validation
 uses synthetic configuration and an in-memory driver, with no provider/server

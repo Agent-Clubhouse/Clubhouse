@@ -12,6 +12,7 @@ import { Toggle } from '../../components/Toggle';
 import { SettingsField, SettingsPage, SettingsSection, settingsError, settingsHelp, settingsInput } from '../settings/SettingsLayout';
 import { ManagedBuilder, type SetupDraft } from './ManagedBuilder';
 import { TemplatePushDialog } from './TemplatePushDialog';
+import { TemplateGrantsSection } from './TemplateGrantsSection';
 import { settingsAccess } from './create-managed-agent';
 import { errorText, managed, unwrap, useManagedTemplates } from './managedApi';
 import { changedLine } from './attribution';
@@ -338,6 +339,10 @@ function TemplateEditor({ initial, onDone }: { initial: TemplateDraft; onDone: (
           />
         </SettingsField>
         <p className={`${settingsHelp} py-2 border-t border-surface-0`}>Agents made from a template always get their own worktree and branch, so there is no workspace setting.</p>
+      </SettingsSection>
+
+      <SettingsSection title="Clubhouse permissions">
+        <TemplateGrantsSection settings={settings} onChange={(grants) => setSetting({ grants })} />
       </SettingsSection>
 
       {push && (

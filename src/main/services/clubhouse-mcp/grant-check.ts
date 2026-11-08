@@ -18,7 +18,7 @@
  * Grants are a cooperative guardrail on the Clubhouse MCP, not a sandbox.
  */
 
-import { evaluateGrant, GRANT_REFUSAL_MESSAGES, type Grant, type GrantAction, type GrantCallTarget, type GrantCaller, type GrantRefusal } from '../../../shared/agent-grants';
+import { evaluateGrant, GRANT_REFUSAL_MESSAGES, widerOrSame, type Grant, type GrantAction, type GrantCallTarget, type GrantCaller, type GrantRefusal } from '../../../shared/agent-grants';
 import { defaultGrants } from '../../../shared/default-grants';
 import { isProjectAdmin } from '../../../shared/group-project-admin';
 import { agentRegistry } from '../agent-registry';
@@ -26,11 +26,23 @@ import { isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
 import { mcpCallerParent } from './mcp-call-gate';
 import { getAgentGrantChanges } from '../agent-grants-store';
 import { applyGrantChanges } from '../../../shared/agent-grant-changes';
-import { isCrossProjectEnabled, isOrchestrationEnabled } from './orchestration-gate';
+import { isCrossProjectEnabled, isOrchestrationEnabled, orchestrationControl } from './orchestration-gate';
 import { toolGrantDeclarations, type ToolGrant, type ToolGrantTarget } from './tool-grants';
 import type { McpBinding } from './types';
 
-export type GrantCheck = { ok: true } | { ok: false; reason: GrantRefusal | 'ask_first'; message: string };
+/** One action a call needs that is set to Ask first, and where (in the caller's terms). */
+export interface AskedAction { action: GrantAction; where: string }
+
+export type GrantCheck =
+  | { ok: true }
+  | { ok: false; reason: GrantRefusal; message: string }
+  /** Every action is allowed or Ask first, and at least one asks: the user decides (#2970). */
+  | { ok: false; reason: 'ask_first'; message: string; asks: AskedAction[] };
+
+/** Whether a tool is listed: allowed, or one the agent can ask for. */
+export function isListable(check: GrantCheck): boolean {
+  return check.ok === true || check.reason === 'ask_first';
+}
 
 const OK: GrantCheck = { ok: true };
 
@@ -67,6 +79,7 @@ function resolveTarget(agentId: string, target: ToolGrantTarget, wire: GrantChec
     case 'bound': return wire ? boundTarget(agentId, wire) : null;
     // Members of a group project its admins act on: the caller must administer the bound group.
     case 'group_members': return { kind: 'agent', relations: wire && isProjectAdmin(wire.groupMetadata, agentId) ? ['group_member'] : [] };
+    case 'self': return { kind: 'agent', relations: ['self'] };
     case 'parent': return { kind: 'agent', relations: ['parent'] };
     case 'my_helpers': return { kind: 'agent', relations: ['my_helper'] };
     case 'connected': return { kind: 'agent', relations: ['connected'] };
@@ -99,7 +112,7 @@ export function registerActionOwnerLookup(lookup: ActionOwnerLookup | null): voi
 }
 
 /** Where a refused call was aimed, in the caller's terms. Never says whether a target exists. */
-function whereText(target: GrantCallTarget): string {
+export function whereText(target: GrantCallTarget): string {
   const rel = target.relations ?? [];
   if (target.isDispatcher && rel.includes('connected')) return 'the Dispatcher';
   if (rel.includes('parent')) return 'your orchestrator';
@@ -137,6 +150,7 @@ export function callerGrants(agentId: string): Grant[] {
     helper: mcpCallerParent(agentId) !== undefined,
     orchestrates: !tracked && isOrchestrationEnabled(agentId),
     crossProject: !tracked && isCrossProjectEnabled(agentId),
+    control: orchestrationControl(agentId),
   }), getAgentGrantChanges(agentId));
 }
 
@@ -153,15 +167,19 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
   if (declarations.length === 0) return OK;
   const caller: GrantCaller = { kind: 'agent', agentId, projectPath: agentRegistry.get(agentId)?.projectPath };
   const grants = callerGrants(agentId);
+  // A refusal wins over an ask: there's no point asking the user for a call that would fail anyway.
+  const asks: AskedAction[] = [];
   for (const d of declarations) {
     const target = resolveTarget(agentId, d.target, wire, args);
     if (!target) continue;
     for (const action of d.actions) {
       const decision = evaluateGrant({ caller, action, target }, grants);
       if (decision.outcome === 'refuse') return { ok: false, reason: decision.reason, message: refusalMessage(decision.reason, action, target) };
-      // No default grant on a tool is Ask first yet; requests in Needs you come with #2970.
-      if (decision.outcome === 'ask') return { ok: false, reason: 'ask_first', message: 'This needs the user\'s approval, and asking isn\'t available yet.' };
+      if (decision.outcome === 'ask' && !d.askHandledByTool) asks.push({ action, where: whereText(target) });
     }
+  }
+  if (asks.length > 0) {
+    return { ok: false, reason: 'ask_first', asks, message: 'This call needs the user\'s approval first.' };
   }
   return OK;
 }
@@ -175,4 +193,30 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
 export function holdsGrant(agentId: string, action: GrantAction, target: GrantCallTarget): boolean {
   const caller: GrantCaller = { kind: 'agent', agentId, projectPath: agentRegistry.get(agentId)?.projectPath };
   return evaluateGrant({ caller, action, target }, callerGrants(agentId)).outcome === 'allow';
+}
+
+/**
+ * Permissions as an agent may pass them on, through a helper template or a
+ * template it creates an agent from (#2971): never more than it holds (fixed
+ * rule 2). Each entry is capped, not dropped, since dropping one would leave
+ * the new agent at its default, which can be more: Allow becomes Ask first
+ * where the holder only has Ask first, and Off where it has neither; Off always
+ * passes. `elsewhere`: the new agent is in another project, so its own project
+ * counts as one the holder needs on any project.
+ */
+export function capToHolder<T extends { action: GrantAction; target: Grant['target']; mode: 'off' | 'ask' | 'allow' | null }>(
+  holderId: string,
+  grants: readonly T[],
+  options: { elsewhere?: boolean } = {},
+): T[] {
+  const held = callerGrants(holderId);
+  const rank = { off: 0, ask: 1, allow: 2 } as const;
+  return grants.map((g) => {
+    if (g.mode === 'off' || g.mode === null) return g;
+    const target = options.elsewhere && g.target.kind === 'project' && g.target.project === 'own' ? { kind: 'project' as const, project: 'any' as const } : g.target;
+    const best = held
+      .filter((h) => h.action === g.action && widerOrSame(h.target, target))
+      .reduce<'off' | 'ask' | 'allow'>((m, h) => (rank[h.mode] > rank[m] ? h.mode : m), 'off');
+    return rank[best] >= rank[g.mode] ? g : { ...g, mode: best };
+  });
 }

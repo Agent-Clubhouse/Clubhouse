@@ -136,6 +136,91 @@ export function latestRecoveryCopy(filename: string): string | undefined {
   return latest;
 }
 
+let tempFileCounter = 0;
+
+const tempPrefix = (filePath: string): string => `${filePath}.tmp-`;
+
+/**
+ * Windows can refuse a rename while another process (often a virus scanner or
+ * the search indexer) has the file open. Retry with backoff for about 3 seconds.
+ */
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+const RENAME_RETRY_DELAYS_MS = [50, 100, 200, 400, 800, 1500];
+
+async function renameOver(from: string, to: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fs.promises.rename(from, to);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      const delay = RENAME_RETRY_DELAYS_MS[attempt];
+      if (process.platform !== 'win32' || delay === undefined || !code || !RENAME_RETRY_CODES.has(code)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
+/** The target's permission bits, to carry over to its replacement. */
+async function existingMode(filePath: string): Promise<number | undefined> {
+  try {
+    return (await fs.promises.stat(filePath)).mode & 0o777;
+  } catch {
+    // telemetry-exempt: no file yet, so the new one gets the default permissions
+    return undefined;
+  }
+}
+
+/**
+ * Write `body` to a temp file beside `filePath`, flush it to disk, then rename
+ * it over `filePath`. The flush keeps a power loss from committing the rename
+ * before the data. The replacement gets `mode`, or the old file's permissions.
+ */
+async function replaceFile(filePath: string, body: string, mode: number | undefined): Promise<void> {
+  const tmp = `${tempPrefix(filePath)}${process.pid}-${++tempFileCounter}`;
+  const keep = mode ?? (process.platform === 'win32' ? undefined : await existingMode(filePath));
+  try {
+    const handle = await fs.promises.open(tmp, 'w', keep ?? 0o666);
+    try {
+      await handle.writeFile(body, 'utf-8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    // The create mode is subject to the umask. No-op on Windows, where POSIX modes don't apply.
+    if (keep != null && process.platform !== 'win32') await fs.promises.chmod(tmp, keep);
+    await renameOver(tmp, filePath);
+  } catch (err) {
+    await fs.promises.rm(tmp, { force: true }).catch((): void => undefined);
+    throw err;
+  }
+}
+
+/**
+ * Remove temp files a crash left beside `filePath`, from other processes only:
+ * this one's own may still be in flight.
+ */
+function sweepTempFiles(filePath: string): void {
+  const dir = path.dirname(filePath);
+  const prefix = path.basename(tempPrefix(filePath));
+  const own = `${prefix}${process.pid}-`;
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    // telemetry-exempt: nothing to sweep when the folder can't be listed
+    return;
+  }
+  for (const name of names) {
+    if (!name.startsWith(prefix) || name.startsWith(own)) continue;
+    try {
+      fs.rmSync(path.join(dir, name), { force: true });
+    } catch {
+      // telemetry-exempt: a leftover temp file is harmless; the next launch tries again
+    }
+  }
+}
+
 export function createSettingsStore<T>(
   filename: string,
   defaults: T,
@@ -151,6 +236,14 @@ export function createSettingsStore<T>(
      * (telemetry's migration must hold for the run even if it can't be saved).
      */
     rollBackFailedSaves?: boolean;
+    /**
+     * Write a temp file next to the target, flush it, then rename it over the
+     * target, so a crash or power loss mid-write leaves the old file whole
+     * instead of a torn one that loads as defaults. Temp files left by a crash
+     * are removed at the next load. A symlinked file is replaced by a regular
+     * one. Off by default; turned on store by store.
+     */
+    atomic?: boolean;
   },
 ): SettingsStore<T> {
   // Resolve filePath lazily on each access. `createSettingsStore` runs at
@@ -185,6 +278,7 @@ export function createSettingsStore<T>(
 
   function loadSettings(): void {
     const filePath = getFilePath();
+    if (options?.atomic) sweepTempFiles(filePath);
     try {
       const raw = fs.readFileSync(filePath, 'utf-8');
       cachedSettings = parseSettings(raw);
@@ -216,6 +310,10 @@ export function createSettingsStore<T>(
         console.warn(`[settings-store] Previous write to ${filename} failed:`, err instanceof Error ? err.message : err);
       })
       .then(() => persist.timed('settings', async () => {
+        if (options?.atomic) {
+          await replaceFile(filePath, serialized, options.mode);
+          return;
+        }
         if (options?.mode == null) {
           await fs.promises.writeFile(filePath, serialized, 'utf-8');
           return;

@@ -3,6 +3,8 @@ import { generateDurableName, AGENT_COLORS } from '../../../shared/name-generato
 import { validateAgentGitName } from '../../../shared/agent-name';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { useProjectStore } from '../../stores/projectStore';
+import { newAgentOrchestrator } from './effective-orchestrator';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { Modal } from '../../components/Modal';
 import { Spinner } from '../../components/Spinner';
@@ -31,7 +33,9 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const availability = useOrchestratorStore((s) => s.availability);
   const { effectiveOrchestrators: enabledOrchestrators } = useEffectiveOrchestrators();
-  const [orchestrator, setOrchestrator] = useState(enabledOrchestrators[0]?.id || 'claude-code');
+  // Starts on the project's "Agents run on" (#2975).
+  const project = useProjectStore((s) => s.projects.find((p) => p.path === projectPath));
+  const [orchestrator, setOrchestrator] = useState(() => newAgentOrchestrator(project, enabledOrchestrators));
   const selectedAvail = availability[orchestrator];
   const { options: MODEL_OPTIONS, loading: modelsLoading } = useModelOptions(orchestrator);
 

@@ -442,11 +442,11 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
   // ── MCP args ───────────────────────────────────────────────────────────
 
   /**
-   * Codex reads `mcp_servers` only from `$CODEX_HOME/config.toml` — never from
-   * a project-level `.codex/config.toml`.  Verified directly: the same table is
-   * invisible in-repo and visible under CODEX_HOME.  So the TOML that
-   * materialisation writes into the worktree does not reach Codex, and `-c`
-   * config overrides at launch are the only path that does.
+   * Codex reads `mcp_servers` from `$CODEX_HOME/config.toml`, and from a
+   * project-level `.codex/config.toml` only when its user config trusts that
+   * folder (probed on Codex 0.163 with config/read, #2849). So the TOML that
+   * materialisation writes into the worktree reaches Codex only in a trusted
+   * folder, and `-c` config overrides at launch are the path that always does.
    *
    * `-c key=value` takes dot-notation with TOML-typed values.
    */

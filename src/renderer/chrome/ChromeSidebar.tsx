@@ -29,6 +29,7 @@ import { SCOPE_FOLLOWING_TABS } from './scope';
 import { selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './sidebar/treeModel';
 import { useHelperDisposeRequestStore, describeHelperDispose } from '../stores/helperDisposeRequestStore';
 import { useHelperStartRequestStore, startRequestsByOrchestrator, describeHelperStarts } from '../stores/helperStartRequestStore';
+import { describeGrantRequests, grantRequestsByAgent, useGrantRequestStore } from '../stores/grantRequestStore';
 import { useAgentDetailsStore } from '../features/agents/details/detailsStore';
 import { HostSwitcher, LOCAL_HOST } from './sidebar/HostSwitcher';
 import { useClickOutside } from './sidebar/useClickOutside';
@@ -427,6 +428,15 @@ export function ChromeSidebar() {
     }
     return out;
   }, [pendingStarts]);
+  // Agents asking for a Clubhouse permission (#2970).
+  const pendingGrants = useGrantRequestStore((s) => s.requests);
+  const grantRequests = useMemo(() => {
+    const out: Record<string, { message: string; at: number }> = {};
+    for (const [agentId, list] of Object.entries(grantRequestsByAgent(pendingGrants))) {
+      out[agentId] = { message: describeGrantRequests(list), at: Date.parse(list[0].createdAt) || 0 };
+    }
+    return out;
+  }, [pendingGrants]);
   // Needs you covers every host, so a blocked agent anywhere is one click away.
   // The Dispatcher is in no project, so its synthetic id is let in on its own (#2538).
   const needsProjectIds = useMemo(
@@ -434,9 +444,9 @@ export function ChromeSidebar() {
     [localProjectIds, dispatcherAgentId],
   );
   const needs = useMemo(() => mergeNeedsAttention(
-    selectNeedsAttention(agents, detailed, needsProjectIds, disposeRequests, startRequests),
+    selectNeedsAttention(agents, detailed, needsProjectIds, disposeRequests, startRequests, grantRequests),
     selectRemoteNeedsAttention(satellites, satelliteProjects, remoteAgents, remoteDetailed),
-  ), [agents, detailed, needsProjectIds, disposeRequests, startRequests, satellites, satelliteProjects, remoteAgents, remoteDetailed]);
+  ), [agents, detailed, needsProjectIds, disposeRequests, startRequests, grantRequests, satellites, satelliteProjects, remoteAgents, remoteDetailed]);
   const needsByHost = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const item of needs) counts[item.hostId ?? LOCAL_HOST] = (counts[item.hostId ?? LOCAL_HOST] ?? 0) + 1;
@@ -539,6 +549,11 @@ export function ChromeSidebar() {
   }, [openAgent]);
 
   const selectNeedsYou = useCallback((agent: Agent) => {
+    // An agent asking for a Clubhouse permission opens the review dialog (#2970),
+    // unless a dispose request comes first: Needs you lists that one, and one dialog opens at a time.
+    const asking = Object.values(useGrantRequestStore.getState().requests).some((r) => r.agentId === agent.id);
+    const disposing = !!useHelperDisposeRequestStore.getState().requests[agent.id];
+    if (asking && !disposing) useGrantRequestStore.getState().review(agent.id);
     if (isDispatcherAgent(agent)) {
       openDispatcher();
       reportChromeFeature('needs_you_select');
