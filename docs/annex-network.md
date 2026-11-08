@@ -59,6 +59,11 @@ Synthetic tests can't cover certificates under Electron or local network discove
 - Close Clubhouse on the receiving computer, send a message, open it again: the message arrives once, after the reconnect.
 - Remove the connection on one computer: the other computer's agent loses its tools for it once the two reconnect.
 
+**Sidebar (#3065)**
+- With two computers connected, both computers' agents show in one list, the other's with its name; Show narrows to one, and back.
+- Merge a project with the same project on the other computer, then Split it: only the sidebar changes.
+- Turn the other computer off: its agents stay, dimmed, and their chats open.
+
 **Chat across desktops (#2390)**
 - Open a chat agent that runs on another desktop: its conversation shows, says which machine it's on, and streams live.
 - Send, steer, stop, approve a permission and answer a question from the controller; each lands on the other desktop.
@@ -136,4 +141,8 @@ Decisions made while building, for the maintainer to revisit. Newest last. D180 
 | D238 | Agents connect across machines only between computers in the network (members, which connect to each other both ways): not over a one-to-one pairing, where one side can't reach the other, and never with a phone. Both routes refuse any other peer. | Two-way connections and removals need both machines to reach each other; a phone has no agents. | One-to-one pairings need agent links. |
 | D250 | A member pairing dropped for never connecting is removed from the network too (#3106): its join went to the other members when it paired, so without a removal the next view brought it back. | Pairing and its undoing travel the same way. | |
 | D251 | A machine told it was removed leaves quietly: ending its own pairings records and announces no removals. Before, each pairing it ended was announced as a removal, so a member that hadn't yet heard of this machine's removal was told to remove itself, and left. | Leaving is not removing anyone. | |
+| D243 | The sidebar lists every machine's projects and agents in one list (#3065): this machine's projects first in their order, then each other machine's, machines by name. An agent on another machine carries a short machine label; this machine's carry none. The host pill is gone; selecting a project or agent on another machine shows that machine's views, and one here brings this machine back. | One list, as the epic decided; the host still follows what's selected for the views that need one. | |
+| D244 | Show is a dropdown (All computers, This computer, each computer with its state and how many agents wait on it) that only narrows the list. It's remembered on this machine, and falls back to All when its computer is unpaired. | Works with any number of computers. | |
+| D245 | Merge with… links two projects (or their groups) into one sidebar group, under this machine's project when it has one, with every machine's agents in it; Split per machine undoes it and remembers the pair as kept separate. Merge and the linking of #3066 are the same link, kept per machine in this machine's storage. Projects that are removed, or on a computer that's unpaired, leave their groups. Each agent still runs on its own machine. | Split and merge "only change the sidebar". | |
+| D246 | Another machine's projects show what can be done from here: open, select, collapse, pin, and their agents' chats. New agent, settings, close, reordering, marking inactive and the terminal are left out for them. An offline machine's agents stay listed, dimmed, saying "offline" instead of a time. | Offline is normal, and their chats stay readable. | |
 

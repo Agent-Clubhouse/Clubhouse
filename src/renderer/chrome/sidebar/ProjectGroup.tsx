@@ -127,6 +127,10 @@ export interface ProjectGroupProps {
   onSetInactive?: (projectId: string, inactive: boolean) => void;
   /** Agents are in Recent order: dragging a row says how to reorder instead (#2116). */
   onAgentReorderHint?: () => void;
+  /** For an agent on another machine: a short label for it, and whether that machine is offline (#3065). */
+  agentMachine?: (agent: Agent) => { label?: string; offline?: boolean } | undefined;
+  /** More project menu items, after the project's own: Merge with… and Split per machine (#3065). */
+  extraMenuItems?: MenuItem[];
   /** Tree depth of the header: 1, or 2 inside the idle row. */
   level?: number;
   /** Agents whose helpers are folded away (#2231). */
@@ -175,7 +179,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     onSelectProject, onToggleCollapsed, onTogglePinned, onToggleFold, onCloseFold, onToggleSleepingPinned, onNewAgent,
     onSelectAgent, onOpenTerminal, onSelectCompleted, onDismissCompleted, onClearCompleted, dragHandlers, dropIndicator, draggable = true,
     onMoveProject, canMoveUp, canMoveDown, onOpenSettings, onCloseProject, onReorderAgents, level = 1, parentKey,
-    sortedByRecent, inSection, onSetInactive, onAgentReorderHint,
+    sortedByRecent, inSection, onSetInactive, onAgentReorderHint, agentMachine, extraMenuItems,
   } = props;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const armRefocus = useRefocusAfterMove();
@@ -295,7 +299,10 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
         detailed={detailed[agent.id]}
         projectPath={project.path}
         onOpenTerminal={onOpenTerminal}
-        active={agent.id === activeAgentId && isActiveProject}
+        // A linked group's agents are in other projects too (#3066): each is active by its own project.
+        active={agent.id === activeAgentId && (isActiveProject || agent.projectId === activeProjectId)}
+        machine={agentMachine?.(agent)?.label}
+        offline={agentMachine?.(agent)?.offline}
         indent={indent}
         level={level + depth}
         parentKey={parentKey}
@@ -344,6 +351,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     ...(onNewAgent ? [{ id: 'new-agent', label: 'New agent…', onSelect: () => onNewAgent(project.id) }] : []),
     ...(onOpenSettings ? [{ id: 'settings', label: 'Project settings', onSelect: () => onOpenSettings(project.id) }] : []),
     ...(onCloseProject ? [{ id: 'close-project', label: 'Close project', onSelect: () => onCloseProject(project.id) }] : []),
+    ...(extraMenuItems ?? []),
   ];
   const openMenu = (x: number, y: number) => {
     setMenu({ x, y });

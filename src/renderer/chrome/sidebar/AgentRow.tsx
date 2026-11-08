@@ -67,6 +67,10 @@ interface AgentRowProps {
   /** Helpers working, for the folded roll-up. */
   helperWorking?: number;
   onToggleHelpers?: (agentId: string) => void;
+  /** A short label for the machine the agent runs on, when it isn't this one (#3065). */
+  machine?: string;
+  /** Its machine is offline: the row is dimmed and says so instead of a time; its chat stays readable. */
+  offline?: boolean;
 }
 
 const Caret = ({ open }: { open: boolean }) => (
@@ -133,7 +137,7 @@ function ActivityTime({ at, label }: { at: number; label: string }) {
 
 export const AgentRow = React.memo(function AgentRow({
   agent, dot, detailed, active, indent, projectPath, onSelect, onOpenTerminal, level = 2, parentKey, extraActions, highlight, drag, dropEdge,
-  helperCount = 0, helpersExpanded = true, helperNeeds = 0, helperWorking = 0, onToggleHelpers,
+  helperCount = 0, helpersExpanded = true, helperNeeds = 0, helperWorking = 0, onToggleHelpers, machine, offline = false,
 }: AgentRowProps) {
   // A durable agent being created (#2226) can take up to a minute while its worktree is made.
   const couldntStart = !!agent.creationFailed && agent.status === 'error';
@@ -154,7 +158,7 @@ export const AgentRow = React.memo(function AgentRow({
   const sleeping = agent.status === 'sleeping';
   const activityAt = sleeping ? Date.parse(agent.lastSleep?.at ?? '') : detailed?.timestamp ?? spawnedAt;
   // A folded parent shows its helpers' roll-up in place of its own time.
-  const hasActivityTime = !folded && activityAt !== undefined && Number.isFinite(activityAt);
+  const hasActivityTime = !folded && !offline && activityAt !== undefined && Number.isFinite(activityAt);
   const timeLabel = sleeping ? 'Sleeping since' : detailed ? 'Last activity' : 'Started';
   const rowRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -239,7 +243,8 @@ export const AgentRow = React.memo(function AgentRow({
         } : undefined}
         className={`group/row relative w-full h-[30px] flex-shrink-0 rounded-md flex items-center cursor-pointer transition-colors duration-100 ${
           active ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext1 hover:bg-surface-0/60 hover:text-ctp-text'
-        }`}
+        }${offline ? ' opacity-60' : ''}`}
+        data-offline={offline || undefined}
       >
         {dropEdge && (
           <div
@@ -302,8 +307,10 @@ export const AgentRow = React.memo(function AgentRow({
           </span>
           <span className={`truncate ${dot === 'sleeping' ? '' : 'font-medium'}`}><MarkedText text={agent.name} query={highlight} /></span>
           <OrchestratorGlyph orchestrator={orchestrator} focusable={false} showTooltip={false} variant="row" />
-          {(note || hasActivityTime || folded) && (
+          {(note || hasActivityTime || folded || machine || offline) && (
             <span className="ml-auto flex-shrink-0 flex items-center gap-2 text-xs group-hover/row:hidden">
+              {machine && <span data-testid="agent-row-machine" className="text-ctp-overlay1 truncate max-w-[72px]">{machine}</span>}
+              {offline && <span data-testid="agent-row-offline" className="text-ctp-overlay1">offline</span>}
               {note && <span id={noteId} data-testid="agent-row-note" className={dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-overlay1'}>{note}</span>}
               {folded && <HelperRollup id={rollupId} count={helperCount} needs={helperNeeds} working={helperWorking} />}
               {hasActivityTime && <ActivityTime at={activityAt} label={timeLabel} />}

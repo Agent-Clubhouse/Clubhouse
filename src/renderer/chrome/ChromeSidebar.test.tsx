@@ -19,6 +19,7 @@ import { useAnnexClientStore } from '../stores/annexClientStore';
 import { useRemoteProjectStore, namespacedAgentId, namespacedProjectId } from '../stores/remoteProjectStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useChromeStore, SIDEBAR_DEFAULT, syncProjectScopeWithActiveAgent } from './chromeStore';
+import { useNetworkSidebarStore, _resetNetworkSidebarForTesting } from './sidebar/networkSidebarStore';
 import { useAgentSettingsPages } from '../features/agents/agentSettingsPages';
 import type { PluginManifest, PluginSource } from '../../shared/plugin-types';
 import type { Agent } from '../../shared/types';
@@ -78,6 +79,7 @@ beforeEach(() => {
   usePluginStore.setState({ plugins: {}, appEnabled: [] });
   useChromeStore.setState({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
   useUIStore.setState({ activeHostId: null });
+  _resetNetworkSidebarForTesting();
   useAnnexClientStore.setState({ satellites: [] });
   useRemoteProjectStore.setState({ satelliteProjects: {}, remoteAgents: {}, remoteAgentDetailedStatus: {}, remoteProjectIcons: {} });
 });
@@ -607,9 +609,13 @@ describe('ChromeSidebar', () => {
       });
     });
 
-    it('shows the host switcher once a satellite is paired', () => {
+    it('lists every machine\'s projects and agents together, a remote agent with its machine and this machine\'s with none (#3065)', () => {
       render(<ChromeSidebar />);
-      expect(screen.getByTestId('host-switcher').textContent).toContain('Local');
+      expect(screen.getByTestId('project-p1')).toBeTruthy();
+      expect(screen.getByTestId(`project-${rp}`)).toBeTruthy();
+      expect(within(screen.getByTestId(`agent-item-${ra}`)).getByTestId('agent-row-machine').textContent).toBe('Studio');
+      expect(within(screen.getByTestId('agent-item-a1')).queryByTestId('agent-row-machine')).toBeNull();
+      expect(screen.queryByTestId('host-switcher')).toBeNull();
     });
 
     it('lists blocked agents from every host, tagged with the host', () => {
@@ -628,26 +634,64 @@ describe('ChromeSidebar', () => {
       expect(useUIStore.getState().explorerTab).toBe('agents');
     });
 
-    it('shows the satellite’s projects, read-only, while it is the host', () => {
-      useUIStore.setState({ activeHostId: 's1' });
-      useProjectStore.setState({ activeProjectId: null });
+    it('leaves out what changes a project here for another machine\'s projects, and keeps New for this one\'s', () => {
       render(<ChromeSidebar />);
-      expect(screen.getByTestId(`project-${rp}`)).toBeTruthy();
-      expect(screen.queryByTestId('project-p1')).toBeNull();
-      expect(screen.getByTestId(`agent-item-${ra}`)).toBeTruthy();
-      expect(screen.queryByLabelText('New agent in Site')).toBeNull();
-      expect((screen.getByTestId('chrome-new') as HTMLButtonElement).disabled).toBe(true);
+      expect(within(screen.getByTestId(`project-group-${rp}`)).queryByLabelText('New agent in Site')).toBeNull();
+      expect(within(screen.getByTestId('project-group-p3')).getByLabelText('New agent in Site')).toBeTruthy();
+      expect((screen.getByTestId('chrome-new') as HTMLButtonElement).disabled).toBe(false);
+      fireEvent.contextMenu(screen.getByTestId(`project-${rp}`));
+      expect(screen.queryByTestId('project-menu-settings')).toBeNull();
     });
 
-    it('switches back to Local from the menu', () => {
-      useUIStore.setState({ activeHostId: 's1' });
-      useProjectStore.setState({ activeProjectId: rp });
+    it('narrows to one computer with Show, and back to all', () => {
       render(<ChromeSidebar />);
-      fireEvent.click(screen.getByTestId('host-switcher'));
-      fireEvent.click(screen.getByTestId('host-menu-local'));
-      expect(useUIStore.getState().activeHostId).toBeNull();
-      expect(useProjectStore.getState().activeProjectId).toBeNull();
+      fireEvent.click(screen.getByTestId('show-menu'));
+      fireEvent.click(screen.getByTestId('show-s1'));
+      expect(screen.queryByTestId('project-p1')).toBeNull();
+      expect(screen.getByTestId(`project-${rp}`)).toBeTruthy();
+      expect(screen.getByTestId('show-menu').textContent).toContain('Studio');
+      fireEvent.click(screen.getByTestId('show-menu'));
+      fireEvent.click(screen.getByTestId('show-local'));
       expect(screen.getByTestId('project-p1')).toBeTruthy();
+      expect(screen.queryByTestId(`project-${rp}`)).toBeNull();
+      fireEvent.click(screen.getByTestId('show-menu'));
+      fireEvent.click(screen.getByTestId('show-all'));
+      expect(screen.getByTestId('project-p1')).toBeTruthy();
+      expect(screen.getByTestId(`project-${rp}`)).toBeTruthy();
+    });
+
+    it('merges a project with another machine\'s into one group, and splits it again; only the sidebar changes', () => {
+      render(<ChromeSidebar />);
+      fireEvent.contextMenu(screen.getByTestId('project-p3'));
+      fireEvent.click(screen.getByText('Merge with…'));
+      fireEvent.click(within(screen.getByTestId('project-merge-menu')).getByText('Site on Studio'));
+      // One group, under this machine's project, with both machines' agents.
+      expect(screen.queryByTestId(`project-${rp}`)).toBeNull();
+      expect(within(screen.getByTestId('project-group-p3')).getByTestId(`agent-item-${ra}`)).toBeTruthy();
+      expect(useNetworkSidebarStore.getState().links).toEqual([['p3', rp]]);
+      expect(useProjectStore.getState().projects.map((p) => p.id)).toEqual(['p1', 'p2', 'p3']);
+      fireEvent.contextMenu(screen.getByTestId('project-p3'));
+      fireEvent.click(screen.getByText('Split per machine'));
+      expect(screen.getByTestId(`project-${rp}`)).toBeTruthy();
+      expect(useNetworkSidebarStore.getState().links).toEqual([]);
+    });
+
+    it('keeps an offline machine\'s agents listed, dimmed, saying offline instead of a time', () => {
+      useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => ({ ...x, state: 'disconnected' as const })) }));
+      render(<ChromeSidebar />);
+      const row = screen.getByTestId(`agent-item-${ra}`);
+      expect(row.getAttribute('data-offline')).toBe('true');
+      expect(within(row).getByTestId('agent-row-offline').textContent).toBe('offline');
+      expect(screen.getByTestId('agent-item-a1').getAttribute('data-offline')).toBeNull();
+    });
+
+    it('selecting another machine\'s project shows that machine, and this machine\'s brings it back', () => {
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId(`project-${rp}`));
+      expect(useUIStore.getState().activeHostId).toBe('s1');
+      fireEvent.click(screen.getByTestId('project-p2'));
+      expect(useUIStore.getState().activeHostId).toBeNull();
+      expect(useProjectStore.getState().activeProjectId).toBe('p2');
     });
 
     it('forgets an unpaired satellite’s pins, but keeps them while it is only offline', () => {
@@ -661,11 +705,11 @@ describe('ChromeSidebar', () => {
       expect(useChromeStore.getState().pinnedProjectIds).toEqual(['p1']);
     });
 
-    it('opens Annex settings for pairing', () => {
+    it('opens Annex Network settings from Show', () => {
       render(<ChromeSidebar />);
-      fireEvent.click(screen.getByTestId('host-switcher'));
-      fireEvent.click(screen.getByText('Pair a satellite…'));
-      expect(useUIStore.getState()).toMatchObject({ explorerTab: 'settings', settingsContext: 'app', settingsSubPage: 'annex-control' });
+      fireEvent.click(screen.getByTestId('show-menu'));
+      fireEvent.click(screen.getByText('Annex Network settings'));
+      expect(useUIStore.getState()).toMatchObject({ explorerTab: 'settings', settingsContext: 'app', settingsSubPage: 'annex' });
     });
   });
 });
