@@ -12,7 +12,7 @@ import { groupProjectRegistry } from '../group-project-registry';
 import { deniedGroupProjectTools } from '../../../shared/group-project-admin';
 import { appLog } from '../log-service';
 import { isCrossProjectEnabled, isOrchestrationEnabled, onOrchestrationGateChange } from './orchestration-gate';
-import { dispatcherGateVersion, isDispatcherAgent, isDispatcherChatAgent, isTrackedDispatcher } from './dispatcher-gate';
+import { dispatcherGateVersion, isDispatcherAgent, isDispatcherChatAgent, isDispatcherCoordinatorId, isTrackedDispatcher } from './dispatcher-gate';
 import { mcpCallAccess, mcpCallerKind } from './mcp-call-gate';
 import { CROSS_PROJECT_OFF_MESSAGE, MCP_CALLER_UNKNOWN_MESSAGE, ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
 import { checkToolGrant, isListable, type GrantCheck, type GrantCheckWire } from './grant-check';
@@ -459,6 +459,8 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     // When target agent is sleeping (not in registry), only expose status and wake tools.
     const followsTargetState = binding.targetKind === 'agent' && !allWireTools;
     const isTargetSleeping = followsTargetState && !agentRegistry.get(binding.targetId);
+    // A sleeping Dispatcher still takes messages: send_message delivers and wakes it (#3069, #3108).
+    const sleepingDispatcher = isTargetSleeping && isDispatcherCoordinatorId(binding.targetId);
 
     // For group projects, the project's admin role governs the privileged
     // toolset (admins get them, non-admins don't), combined with any per-wire
@@ -472,7 +474,7 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
       : new Set<string>(binding.disabledTools ?? []);
 
     for (const template of templates) {
-      if (isTargetSleeping && !SLEEPING_TARGET_TOOLS.has(template.nameSuffix)) {
+      if (isTargetSleeping && !SLEEPING_TARGET_TOOLS.has(template.nameSuffix) && !(sleepingDispatcher && template.nameSuffix === 'send_message')) {
         continue;
       }
       if (followsTargetState && !isTargetSleeping && template.nameSuffix === 'wake_agent') {

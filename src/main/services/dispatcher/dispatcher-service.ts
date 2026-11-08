@@ -55,6 +55,7 @@ import { getDispatcherChatPath, getDispatcherPath, isDispatcherChatPath, isDispa
 import { isEmptyMirror, mirrorUpdates } from './dispatcher-identity';
 import { registerConcealedTools } from '../agent-runtime/concealed-tools';
 import { dispatcherEnablement, getSettings as getDispatcherSettings, isDispatcherEnabled, updateSettings } from './dispatcher-settings';
+import { setDispatcherIdLookup } from '../clubhouse-mcp/dispatcher-gate';
 
 export {
   getDispatcherPath, getDispatcherChatPath, getDispatcherNotesPath, getDispatcherNotesArchivePath, getDispatcherMemoryPath,
@@ -75,6 +76,7 @@ export const DISPATCHER_NAME = 'Dispatcher';
 export const DISPATCHER_INTERNAL_TOOLS: ReadonlySet<string> = new Set(['start_work', 'tell_user']);
 
 /** The coordinator's config as last read from disk; null before the Dispatcher was first created. */
+
 let config: DurableAgentConfig | null = null;
 /** The chat's config as last read from disk; null before it was first created. */
 let chatConfig: DurableAgentConfig | null = null;
@@ -102,6 +104,8 @@ export function getDispatcherAgentId(): string | null {
 export function isDispatcherAgentId(agentId: string | undefined | null): boolean {
   return !!agentId && agentId === config?.id;
 }
+// So the tool registry can tell a sleeping Dispatcher target apart (#3108).
+setDispatcherIdLookup(isDispatcherAgentId);
 
 /** The id of the agent the user talks to as the Dispatcher, or null before it was first created. */
 export function getDispatcherChatAgentId(): string | null {

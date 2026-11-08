@@ -46,6 +46,21 @@ export function isTrackedDispatcher(agentId: string): boolean {
   return dispatcherAgents.has(agentId) || chatAgents.has(agentId);
 }
 
+let coordinatorLookup: ((agentId: string) => boolean) | null = null;
+
+/**
+ * dispatcher-service tells the gate how to recognize the Dispatcher's agent,
+ * asleep or awake, without the registry importing it (it imports agent-system).
+ */
+export function setDispatcherIdLookup(lookup: ((agentId: string) => boolean) | null): void {
+  coordinatorLookup = lookup;
+}
+
+/** Whether an agent id is the Dispatcher's (the coordinator's), whether or not it's running. */
+export function isDispatcherCoordinatorId(agentId: string): boolean {
+  return coordinatorLookup?.(agentId) ?? false;
+}
+
 /** Whether an agent ran as the Dispatcher's chat, on or off. */
 export function isTrackedDispatcherChat(agentId: string): boolean {
   return chatAgents.has(agentId);
