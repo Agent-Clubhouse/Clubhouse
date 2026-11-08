@@ -45,8 +45,13 @@ import {
   type HelperLaunch,
 } from '../../shared/orchestration-policy';
 import {
-  accessForLegacyToggle, accessFromLegacy, isAccessLevel, legacyLaunchFor, savedAccess, type AccessLevel,
+  ACCESS_LEVELS, accessForLegacyToggle, accessFromLegacy, isAccessLevel, legacyLaunchFor, savedAccess, startableAccess, type AccessLevel,
 } from '../../shared/agent-access';
+
+/** The lower of two levels. */
+function lowerAccess(a: AccessLevel, b: AccessLevel): AccessLevel {
+  return ACCESS_LEVELS.indexOf(a) <= ACCESS_LEVELS.indexOf(b) ? a : b;
+}
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
@@ -488,8 +493,14 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     }
     // Access (#2761): the level this start uses.
     let access: AccessLevel = configUnreadable ? 'ask' : spawnAccess(params, durableConfig, legacyMode);
+    // An agent saved before #2761 that nobody has given a level yet starts exactly
+    // as before: below Free Agent Mode with the old mode, which Copilot reads,
+    // and at any level the CLI took before. Everything else starts at its level:
+    // below Free Agent Mode with the mode at auto, and clamped to the levels the
+    // CLI has (below, once the runtime is known).
+    const legacyRecord = !configUnreadable && !isAccessLevel(params.access) && !!durableConfig && !isAccessLevel(durableConfig.access);
     // Unreadable config starts at standard with the mode pinned, as before #2761.
-    let launch = configUnreadable ? launchAccessFor('standard') : legacyLaunchFor(access, legacyMode);
+    let launch = configUnreadable ? launchAccessFor('standard') : legacyLaunchFor(access, legacyRecord ? legacyMode : 'auto');
     // A disposed helper keeps its row but has no worktree to run in (#2224).
     if (isDisposedAgent(durableConfig)) {
       throw tagError(new Error(`${durableConfig?.name ?? 'This agent'} was disposed and can't be started`), 'preflight_failed');
@@ -498,7 +509,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
     if (params.kind === 'durable' && durableConfig?.parentAgentId) {
       const capped = await capHelperLaunch(params.projectPath, params.agentId, { ...durableConfig, parentAgentId: durableConfig.parentAgentId }, provider.id, launch);
       if (capped.freeAgentMode !== launch.freeAgentMode || capped.permissionMode !== launch.permissionMode) {
-        access = accessFromLegacy(capped.freeAgentMode, capped.permissionMode);
+        // Only ever lower: a level below the cap (Plan) stays.
+        access = lowerAccess(access, accessFromLegacy(capped.freeAgentMode, capped.permissionMode));
         launch = { freeAgentMode: capped.freeAgentMode, permissionMode: capped.permissionMode };
       }
       // The helper ceiling has three ranks; the levels between them stay at or under it.
@@ -654,7 +666,9 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
         agentId: params.agentId,
         noSessionPersistence: true,
         freeAgentMode: params.freeAgentMode,
-        permissionMode,
+        // A headless run can't ask, so it runs on its own: below Full access at
+        // Auto, where a check decides, never skipping every prompt (#2761).
+        permissionMode: params.access === 'full_access' ? 'skip-all' : 'auto',
         access: params.access,
       });
 
@@ -750,6 +764,18 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts, ma
 
     // Fall back to PTY mode
     facts.runtime = 'pty';
+    // A terminal agent starts at the nearest level its CLI has a start flag for (#2761).
+    if (!legacyRecord && !configUnreadable && params.access) {
+      const startable = startableAccess(params.access, provider.id, 'terminal');
+      if (startable !== params.access) {
+        const lowered = legacyLaunchFor(startable, 'auto');
+        appLog('core:agent', 'info', 'Started a terminal agent at the nearest level its CLI has', {
+          meta: { agentId: params.agentId, provider: provider.id, saved: params.access, level: startable },
+        });
+        params = { ...params, access: startable, freeAgentMode: lowered.freeAgentMode, permissionMode: lowered.permissionMode };
+        agentRegistry.reportLaunchAccess(params.agentId, lowered);
+      }
+    }
     await spawnPtyAgent(params, provider, allowedTools, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts, managed, quickManaged);
     if (!managed || ptyManager.isRunning(params.agentId)) broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
   } catch (err) {

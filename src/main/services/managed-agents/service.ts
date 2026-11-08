@@ -953,7 +953,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
       const changes = withEffortFollowingModel(diffTemplates(current, next, (pid) => live[pid]?.name ?? pid, label), next.settings, label);
       const agents = (await managedAgents()).filter(({ agent }) => agent.managed?.templateId === id);
       const targets = agents.map(({ projectPath, agent }) => {
-        const appliesHere = (c: ManagedTemplateChange) => pushApplies(c, agent, changes, next.settings, label);
+        const appliesHere = (c: ManagedTemplateChange) => pushApplies(c, agent, changes, next.settings, label, projectPath);
         const applicable = changes.filter(appliesHere);
         const skipped = changes.filter((c) => !appliesHere(c));
         return {
@@ -989,7 +989,7 @@ export function createManagedAgentsService(deps: ManagedAgentsDeps) {
         const agent = await deps.getAgent(target.projectPath, target.agentId);
         if (!agent?.managed || agent.managed.templateId !== id) continue;
         // Nothing applies (it already has every change): skipped, and not saved again.
-        if (!changes.some((c) => pushApplies(c, agent, changes, next.settings, label))) {
+        if (!changes.some((c) => pushApplies(c, agent, changes, next.settings, label, target.projectPath))) {
           settingsOut.push({ ...target, settings: {}, changed: false });
           continue;
         }
@@ -1212,12 +1212,12 @@ export function diffTemplates(
   return changes;
 }
 
-function applies(change: ManagedTemplateChange, agent: DurableAgentConfig, label: SettingLabeler = (_key, value) => settingLabel(value)): boolean {
+function applies(change: ManagedTemplateChange, agent: DurableAgentConfig, label: SettingLabeler = (_key, value) => settingLabel(value), projectPath?: string): boolean {
   const setup = agent.managed!;
   if (change.kind === 'add') return !listOf(setup, change.part).includes(change.id);
   if (change.kind === 'remove') return listOf(setup, change.part).includes(change.id);
   if (change.kind === 'order') return false;
-  const flat = flattenSettings(settingsOf(agent));
+  const flat = flattenSettings(settingsOf(agent, projectPath));
   return label(change.key, flat[change.key]) !== change.to;
 }
 
@@ -1287,8 +1287,8 @@ function withEffortFollowingModel(changes: ManagedTemplateChange[], next: Manage
   return [...changes, { kind: 'setting', key: 'effort', from: 'reset by the new model', to: label('effort', next.effort), followsModel: true }];
 }
 
-function pushApplies(change: ManagedTemplateChange, agent: DurableAgentConfig, changes: ManagedTemplateChange[], next: ManagedTemplateSettings, label: SettingLabeler): boolean {
-  if (change.kind !== 'setting' || change.key !== 'effort') return applies(change, agent, label);
+function pushApplies(change: ManagedTemplateChange, agent: DurableAgentConfig, changes: ManagedTemplateChange[], next: ManagedTemplateSettings, label: SettingLabeler, projectPath?: string): boolean {
+  if (change.kind !== 'setting' || change.key !== 'effort') return applies(change, agent, label, projectPath);
   const o = effortOutcome(agent, changes, next);
   if (o.send !== undefined) return o.resets || label('effort', o.send) !== label('effort', agent.effort);
   // No effort sent: it changes only when a new model clears one it has.

@@ -30,6 +30,7 @@ beforeEach(() => {
   spawnQuickAgent = vi.fn().mockResolvedValue('q-new');
   window.clubhouse.project.checkGit = vi.fn().mockResolvedValue(true);
   window.clubhouse.app.getDefaultAccess = vi.fn().mockResolvedValue('ask');
+  window.clubhouse.agent.getDurableConfig = vi.fn().mockResolvedValue(null);
   useDefaultAccessStore.setState({ defaultAccess: 'ask' });
   useProjectStore.setState({ projects: projects as never, activeProjectId: 'p1', projectIcons: {} });
   useAgentStore.setState({
@@ -143,7 +144,7 @@ describe('NewAgentPage', () => {
     expect(submit.disabled).toBe(true);
     fireEvent.change(mission, { target: { value: 'Fix the build' } });
     fireEvent.keyDown(mission, { key: 'Enter', metaKey: true });
-    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalledWith('p1', '/tmp/ch', 'Fix the build', 'default', undefined, 'claude-code', 'ask'));
+    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalledWith('p1', '/tmp/ch', 'Fix the build', 'default', undefined, 'claude-code', undefined, undefined, undefined, { fallbackAccess: 'ask' }));
   });
 
   it("runs a quick agent in a durable agent's worktree from the picked project", async () => {
@@ -154,7 +155,22 @@ describe('NewAgentPage', () => {
     fireEvent.change(screen.getByLabelText('Runs in'), { target: { value: 'a1' } });
     fireEvent.change(screen.getByTestId('new-agent-mission'), { target: { value: 'Run tests' } });
     await submitWhenReady();
-    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalledWith('p2', '/tmp/gb', 'Run tests', 'default', 'a1', undefined, 'ask'));
+    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalledWith('p2', '/tmp/gb', 'Run tests', 'default', 'a1', undefined, undefined, undefined, undefined, { fallbackAccess: 'ask' }));
+  });
+
+  it("starts a quick agent in a durable agent's worktree at that agent's quick agent defaults, leaving the level to the spawn", async () => {
+    window.clubhouse.agent.getDurableConfig = vi.fn().mockResolvedValue({ id: 'a1', quickAgentDefaults: { access: 'auto' } });
+    render(<NewAgentPage request={req({ kind: 'quick' })} />);
+    fireEvent.click(screen.getByTestId('new-agent-project'));
+    fireEvent.click(screen.getByRole('option', { name: /Goobers/ }));
+    const access = screen.getByLabelText('Access') as HTMLSelectElement;
+    expect(access.value).toBe('ask');
+    fireEvent.change(screen.getByLabelText('Runs in'), { target: { value: 'a1' } });
+    await waitFor(() => expect(access.value).toBe('auto'));
+    expect(window.clubhouse.agent.getDurableConfig).toHaveBeenCalledWith('/tmp/gb', 'a1');
+    fireEvent.change(screen.getByTestId('new-agent-mission'), { target: { value: 'Run tests' } });
+    await submitWhenReady();
+    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalledWith('p2', '/tmp/gb', 'Run tests', 'default', 'a1', undefined, undefined, undefined, undefined, { fallbackAccess: 'ask' }));
   });
 
   it('Access starts at the Default access and can be changed (#2761)', async () => {
@@ -180,7 +196,8 @@ describe('NewAgentPage', () => {
     await waitFor(() => expect((screen.getByLabelText('Access') as HTMLSelectElement).value).toBe('full_access'));
     fireEvent.change(screen.getByTestId('new-agent-mission'), { target: { value: 'Fix the build' } });
     await submitWhenReady();
-    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalledWith('p1', '/tmp/ch', 'Fix the build', 'default', undefined, 'claude-code', 'full_access'));
+    // Left at the Default access, the level goes as the fallback, for the spawn to resolve.
+    await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalledWith('p1', '/tmp/ch', 'Fix the build', 'default', undefined, 'claude-code', undefined, undefined, undefined, { fallbackAccess: 'full_access' }));
   });
 
   it("keeps Access at Ask first, disabled, for a CLI that doesn't support permissions", async () => {

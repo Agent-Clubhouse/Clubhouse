@@ -11,7 +11,8 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
-import { AccessSelect, accessHelp, useDefaultAccess } from '../../features/agents/AccessSelect';
+import { AccessSelect, accessHelp } from '../../features/agents/AccessSelect';
+import { useQuickAgentAccess } from '../../features/agents/useQuickAgentAccess';
 import { Toggle } from '../../components/Toggle';
 import { Button } from '../../components/Button';
 import { Tooltip } from '../../components/Tooltip';
@@ -162,8 +163,6 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const [customModel, setCustomModel] = useState('');
   const [useWorktree, setUseWorktree] = useState(true);
   const [isGit, setIsGit] = useState<boolean | null>(null);
-  // Access (#2761) starts at the app's Default access until the person or a template picks one.
-  const defaultAccess = useDefaultAccess();
   const [pickedAccess, setPickedAccess] = useState<AccessLevel | null>(null);
   const [mcpCatalog, setMcpCatalog] = useState<McpCatalogEntry[]>([]);
   const [selectedMcps, setSelectedMcps] = useState<string[]>([]);
@@ -192,12 +191,15 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
 
   // A quick agent under a durable one runs in its worktree with its orchestrator.
   const parent = parentAgentId ? agents[parentAgentId] : undefined;
+  // Access (#2761) starts at the app's Default access (a quick agent in a durable agent's
+  // worktree: that agent's quick agent defaults) until the person or a template picks one.
+  const { start: startAccess, defaultAccess } = useQuickAgentAccess(project?.path, !durable && parentAgentId ? parentAgentId : undefined);
   const runOrchestrator = !durable && parent?.orchestrator ? parent.orchestrator : resolvedOrchestrator;
   const { options: modelOptions, loading: modelsLoading } = useModelOptions(runOrchestrator, project?.path);
   const selectedOrch = allOrchestrators.find((o) => o.id === runOrchestrator);
   const supportsPermissions = selectedOrch?.capabilities?.permissions ?? false;
   // A CLI without permission support starts at Ask first.
-  const access: AccessLevel = supportsPermissions ? pickedAccess ?? defaultAccess : 'ask';
+  const access: AccessLevel = supportsPermissions ? pickedAccess ?? startAccess : 'ask';
   const avail = availability[runOrchestrator];
   const durableAgents = useMemo(
     () => Object.values(agents).filter((a) => a.projectId === projectId && a.kind === 'durable'),
@@ -360,13 +362,14 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
         resolvedModel,
         parentAgentId || undefined,
         parentAgentId ? undefined : resolvedOrchestrator,
-        access,
+        // Only a level the person or a template picked; otherwise spawnQuickAgent resolves
+        // it from the parent's quick agent defaults, then the Default access.
+        supportsPermissions ? pickedAccess ?? undefined : 'ask',
       ] as const;
-      // Without a template the call is the same as before the flag.
-      (quickTemplates && quickTemplateId
-        ? spawnQuick(...args, undefined, undefined, { managedTemplateId: quickTemplateId })
-        : spawnQuick(...args)
-      ).then((id) => finish(target.id, id))
+      spawnQuick(...args, undefined, undefined, {
+        fallbackAccess: defaultAccess,
+        ...(quickTemplates && quickTemplateId && { managedTemplateId: quickTemplateId }),
+      }).then((id) => finish(target.id, id))
         .catch((err) => {
           reportChromeActionFailed('agent_start', err);
           failed(`Couldn't start the agent: ${err instanceof Error ? err.message : String(err)}`);

@@ -1,6 +1,7 @@
 import { claudeContextWindowOptions } from '../../../shared/context-window';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { useDefaultAccessStore } from '../../stores/defaultAccessStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
@@ -902,11 +903,13 @@ describe('AgentSettingsView', () => {
       });
     });
 
-    it('shows quick agents at this agent\'s level until one is picked, then saves the level', async () => {
+    it('shows quick agents at the app\'s Default access until one is picked, then saves the level', async () => {
       (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ access: 'auto_edit', quickAgentDefaults: { systemPrompt: 'Hi' } });
+      const defaultAccess = vi.spyOn(window.clubhouse.app, 'getDefaultAccess').mockResolvedValue('plan');
       renderSettings();
       const picker = await screen.findByLabelText('Quick agent access') as HTMLSelectElement;
-      await waitFor(() => expect(picker.value).toBe('auto_edit'));
+      await waitFor(() => expect(picker.value).toBe('plan'));
+      expect(screen.getByText("Not set, so quick agents start at the app's Default access. Reads and plans. Makes no changes.")).toBeInTheDocument();
       fireEvent.change(picker, { target: { value: 'full_access' } });
       fireEvent.click(screen.getByRole('button', { name: 'Save' }));
       await waitFor(() => {
@@ -914,6 +917,9 @@ describe('AgentSettingsView', () => {
           '/project', 'agent-1', { quickAgentDefaults: { systemPrompt: 'Hi', access: 'full_access', freeAgentMode: true } },
         );
       });
+      expect(screen.getByText('Quick agents start at this level. Runs everything without asking.')).toBeInTheDocument();
+      defaultAccess.mockRestore();
+      useDefaultAccessStore.setState({ defaultAccess: 'ask' });
     });
 
     it('keeps a legacy quick agent default as saved when the picker is untouched', async () => {

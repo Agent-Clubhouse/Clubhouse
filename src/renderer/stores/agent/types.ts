@@ -76,8 +76,13 @@ export interface AgentLifecycleSlice {
     pluginMetadata?: Record<string, string>,
     /** Run in this directory instead of the parent's worktree (e.g. retry in the same worktree). */
     cwdOverride?: string,
-    /** Clubhouse-managed agents (#2893): start it from this template. */
-    options?: { managedTemplateId?: string },
+    /**
+     * Clubhouse-managed agents (#2893): start it from this template.
+     * `fallbackAccess` (#2761): the level used when neither `access` nor the
+     * parent's quick agent defaults give one. A form passes the app's Default
+     * access; plugins pass none, so their agents start at Ask first.
+     */
+    options?: { managedTemplateId?: string; fallbackAccess?: AccessLevel },
   ) => Promise<string>;
   spawnDurableAgent: (
     projectId: string,

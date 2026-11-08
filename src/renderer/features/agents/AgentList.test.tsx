@@ -186,6 +186,7 @@ describe('AgentList dropdown', () => {
     beforeEach(() => {
       withQuickChildButton = true;
       window.clubhouse.app.getDefaultAccess = vi.fn().mockResolvedValue('auto');
+      window.clubhouse.agent.getDurableConfig = vi.fn().mockResolvedValue(null);
       useDefaultAccessStore.setState({ defaultAccess: 'ask' });
     });
     afterEach(() => { withQuickChildButton = false; });
@@ -201,7 +202,21 @@ describe('AgentList dropdown', () => {
       const input = screen.getByPlaceholderText('What should this quick agent do?');
       fireEvent.change(input, { target: { value: 'Fix it' } });
       await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }); });
-      expect(spawn).toHaveBeenCalledWith('proj-1', '/project', 'Fix it', 'default', 'agent-1', undefined, 'full_access');
+      expect(spawn).toHaveBeenCalledWith('proj-1', '/project', 'Fix it', 'default', 'agent-1', undefined, 'full_access', undefined, undefined, { fallbackAccess: 'auto' });
+    });
+
+    it("starts at the parent's quick agent defaults and leaves an unchanged level to the spawn", async () => {
+      window.clubhouse.agent.getDurableConfig = vi.fn().mockResolvedValue({ id: 'agent-1', quickAgentDefaults: { access: 'plan' } });
+      const spawn = useAgentStore.getState().spawnQuickAgent as ReturnType<typeof vi.fn>;
+      render(<AgentList />);
+      fireEvent.click(screen.getByTestId('quick-child-agent-1'));
+      const access = await screen.findByTestId('quick-mission-access') as HTMLSelectElement;
+      await waitFor(() => expect(access.value).toBe('plan'));
+      expect(window.clubhouse.agent.getDurableConfig).toHaveBeenCalledWith('/project', 'agent-1');
+      const input = screen.getByPlaceholderText('What should this quick agent do?');
+      fireEvent.change(input, { target: { value: 'Fix it' } });
+      await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }); });
+      expect(spawn).toHaveBeenCalledWith('proj-1', '/project', 'Fix it', 'default', 'agent-1', undefined, undefined, undefined, undefined, { fallbackAccess: 'auto' });
     });
 
     it("stays at Ask first, disabled, on a CLI that doesn't support permissions", async () => {
@@ -216,7 +231,7 @@ describe('AgentList dropdown', () => {
       const input = screen.getByPlaceholderText('What should this quick agent do?');
       fireEvent.change(input, { target: { value: 'Fix it' } });
       await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }); });
-      expect(spawn).toHaveBeenCalledWith('proj-1', '/project', 'Fix it', 'default', 'agent-1', undefined, 'ask');
+      expect(spawn).toHaveBeenCalledWith('proj-1', '/project', 'Fix it', 'default', 'agent-1', undefined, 'ask', undefined, undefined, { fallbackAccess: 'auto' });
     });
   });
 });

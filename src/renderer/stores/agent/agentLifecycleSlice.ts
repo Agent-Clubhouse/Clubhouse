@@ -75,10 +75,13 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
 
       const isHeadless = useHeadlessStore.getState().getProjectMode(projectPath) === 'headless';
 
-      // Access (#2761): an explicit level or legacy on/off > the parent's quick agent defaults.
-      // A legacy on/off is sent as is, for main to map with the old mode.
+      // Access (#2761): an explicit level or legacy on/off > the parent's quick agent defaults
+      // > the caller's fallback (a form's Default access). A legacy on/off is sent as is, for
+      // main to map with the old mode.
+      const defaultsSetAccess = quickDefaults?.access !== undefined || quickDefaults?.freeAgentMode !== undefined;
       const resolvedAccess: AccessLevel | undefined = typeof accessRequest === 'string' ? accessRequest
-        : accessRequest === undefined ? quickDefaults?.access : undefined;
+        : accessRequest !== undefined ? undefined
+          : quickDefaults?.access ?? (defaultsSetAccess ? undefined : options?.fallbackAccess);
       const resolvedFreeAgentMode = resolvedAccess !== undefined ? isLegacyFreeAgent(resolvedAccess)
         : typeof accessRequest === 'boolean' ? accessRequest : quickDefaults?.freeAgentMode;
 
@@ -227,8 +230,8 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
           model: config.model,
           mission,
           orchestrator: config.orchestrator,
+          // Main starts it at its saved Access (#2761); a level filled in for display isn't sent.
           freeAgentMode: config.freeAgentMode,
-          ...(config.access && { access: config.access }),
           resume,
           sessionId: resume ? config.lastSessionId : undefined,
         });

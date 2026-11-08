@@ -18,7 +18,7 @@ import { SkillsSection } from './SkillsSection';
 import { McpJsonSection } from './McpJsonSection';
 import { AgentAvatar } from './AgentAvatar';
 import type { AgentRuntimeMode } from '../../../shared/chat';
-import { AccessSelect, accessHelp } from './AccessSelect';
+import { AccessSelect, accessHelp, useDefaultAccess } from './AccessSelect';
 import { isLegacyFreeAgent, type AccessLevel, type AccessRuntime } from '../../../shared/agent-access';
 import { Button } from '../../components/Button';
 import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAction';
@@ -496,6 +496,8 @@ export function AgentSettingsView({ agent }: Props) {
   }, [savedModel, qadSavedModel, modelOptionsLoading, MODEL_OPTIONS]);
   // A level picked here; null keeps what the defaults saved.
   const [qadAccess, setQadAccess] = useState<AccessLevel | null>(null);
+  // With no level saved, quick agents start at the app's Default access (#2761).
+  const defaultAccess = useDefaultAccess();
   const [qadDirty, setQadDirty] = useState(false);
   const [qadSaving, setQadSaving] = useState(false);
   const [qadLoaded, setQadLoaded] = useState(false);
@@ -938,11 +940,13 @@ export function AgentSettingsView({ agent }: Props) {
     </div>
   );
 
-  // What the quick agent picker shows: a level picked here, else the saved one, else this agent's own (main starts
-  // them at it). A legacy save with only the flag on starts at the old mode's level: this agent's, when it is on too
-  // (main read it with the same mode), else Auto as the shared reading has it.
+  // What the quick agent picker shows: a level picked here, else the saved one, else the app's Default access,
+  // which quick agents start at when nothing is saved. A legacy save with only the flag on starts at the old
+  // mode's level: this agent's, when it is on too (main read it with the same mode), else Auto as the shared
+  // reading has it.
   const qadLegacyOn: AccessLevel = isLegacyFreeAgent(access) ? access : 'auto';
-  const qadShown: AccessLevel = qadAccess ?? qadBase.access ?? (qadBase.freeAgentMode ? qadLegacyOn : access);
+  const qadNotSet = qadAccess === null && qadBase.access === undefined && qadBase.freeAgentMode === undefined;
+  const qadShown: AccessLevel = qadAccess ?? qadBase.access ?? (qadBase.freeAgentMode ? qadLegacyOn : qadBase.freeAgentMode === false ? 'ask' : defaultAccess);
   // The levels offered are the runtime's when one is saved; with the provider default, either runtime's.
   const accessRuntime: AccessRuntime | undefined = chatFlagEnabled && runtimeMode ? runtimeMode : undefined;
 
@@ -1277,7 +1281,9 @@ export function AgentSettingsView({ agent }: Props) {
       <Field
         label="Access"
         htmlFor="agent-settings-qad-access"
-        help={permissionsSupported ? `Quick agents start at this level. ${accessHelp(qadShown)}` : `Set by ${orchestratorName}.`}
+        help={!permissionsSupported ? `Set by ${orchestratorName}.`
+          : qadNotSet ? `Not set, so quick agents start at the app's Default access. ${accessHelp(qadShown)}`
+            : `Quick agents start at this level. ${accessHelp(qadShown)}`}
       >
         <AccessSelect
           id="agent-settings-qad-access"

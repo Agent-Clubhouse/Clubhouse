@@ -482,7 +482,7 @@ describe('NewAgentPage, a quick agent from a template (D25)', () => {
     expect(call[2]).toBe('Summarize the inbox');
     expect(call[3]).toBe('opus');
     expect(call[6]).toBe('full_access');
-    expect(call[9]).toEqual({ managedTemplateId: 'custom-workiq' });
+    expect(call[9]).toEqual({ managedTemplateId: 'custom-workiq', fallbackAccess: 'ask' });
   });
 
   it('leaves the model alone when the template\'s model is for a CLI that won\'t run', async () => {
@@ -517,7 +517,7 @@ describe('NewAgentPage, a quick agent from a template (D25)', () => {
     typeMission();
     fireEvent.click(screen.getByTestId('new-agent-submit'));
     await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalled());
-    expect(spawnQuickAgent.mock.calls[0][9]).toBeUndefined();
+    expect(spawnQuickAgent.mock.calls[0][9]).toEqual({ fallbackAccess: 'ask' });
   });
 });
 

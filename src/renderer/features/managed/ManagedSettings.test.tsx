@@ -292,7 +292,7 @@ describe('Templates page', () => {
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Lead' } });
     const access = screen.getByLabelText('Access') as HTMLSelectElement;
     expect(access.value).toBe('');
-    expect(screen.getByText('Not set: an agent made from it starts at the Default access.')).toBeTruthy();
+    expect(screen.getByText('Not set, so an agent made from it starts at the Default access.')).toBeTruthy();
     expect([...access.options].map((o) => o.textContent)).toEqual(['Not set', 'Plan', 'Ask first', 'Auto-accept edits', 'Auto', 'Full access']);
     expect(screen.queryByText(/Free Agent/)).toBeNull();
     fireEvent.change(screen.getByLabelText('CLI'), { target: { value: 'other' } });

@@ -1,4 +1,5 @@
 import { app } from 'electron';
+import { isAccessLevel } from '../../shared/agent-access';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { appLog } from './log-service';
@@ -106,7 +107,8 @@ export async function captureSessionState(
       model: meta?.model,
       permissionMode,
       freeAgentMode: config?.freeAgentMode,
-      ...(config ? { access: freeAgentSettings.agentAccess(config, reg.projectPath) } : {}),
+      // Only a level someone saved: an agent from before #2761 resumes from the legacy pair, exactly as before.
+      ...(isAccessLevel(config?.access) ? { access: config.access } : {}),
     });
   }
 

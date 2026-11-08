@@ -245,7 +245,7 @@ function TemplateEditor({ initial, onDone }: { initial: TemplateDraft; onDone: (
           htmlFor="managed-template-access"
           help={accessUnsupported
             ? `${cliInfo?.displayName ?? 'This CLI'} doesn't support it.`
-            : accessValue ? ACCESS_DESCRIPTIONS[accessValue] : 'Not set: an agent made from it starts at the Default access.'}
+            : accessValue ? ACCESS_DESCRIPTIONS[accessValue] : 'Not set, so an agent made from it starts at the Default access.'}
           disabled={accessUnsupported}
         >
           <select

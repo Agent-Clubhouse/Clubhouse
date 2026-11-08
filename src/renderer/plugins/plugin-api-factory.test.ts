@@ -2915,6 +2915,20 @@ describe('plugin-api-factory', () => {
         expect(mockAgent.createDurable).not.toHaveBeenCalled();
       });
 
+      it('without the permission, starts at Ask first and refuses a level above it (#2761)', async () => {
+        const manifestWithoutFreeAgent = makeAllPermsManifest({
+          permissions: ALL_PLUGIN_PERMISSIONS.filter((p) => p !== 'agents.free-agent-mode'),
+        });
+        mockAgent.createDurable.mockResolvedValue({ id: 'new-agent', name: 'x' });
+        vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
+        const api = createPluginAPI(makeCtx(), undefined, manifestWithoutFreeAgent);
+        await expect(api.agents.createDurable({ name: 'x', color: 'red', access: 'auto_edit' })).rejects.toThrow(/free-agent-mode/);
+        await api.agents.createDurable({ name: 'x', color: 'red' });
+        expect(mockAgent.createDurable).toHaveBeenLastCalledWith('/projects/my-project', 'x', 'red', undefined, false, undefined, 'ask', undefined);
+        await api.agents.createDurable({ name: 'x', color: 'red', access: 'plan' });
+        expect(mockAgent.createDurable).toHaveBeenLastCalledWith('/projects/my-project', 'x', 'red', undefined, false, undefined, 'plan', undefined);
+      });
+
       it('still succeeds with freeAgentMode when the permission is granted (#1564)', async () => {
         const durableConfig = { id: 'new-agent', name: 'free-agent' };
         mockAgent.createDurable.mockResolvedValue(durableConfig);

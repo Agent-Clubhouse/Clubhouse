@@ -9,7 +9,7 @@ import type {
   ModelOption,
   Disposable,
 } from '../../shared/plugin-types';
-import { ACCESS_LEVELS, isAccessLevel, isLegacyFreeAgent, type AccessLevel } from '../../shared/agent-access';
+import { ACCESS_LEVELS, isAccessLevel, type AccessLevel } from '../../shared/agent-access';
 import { hasPermission } from './plugin-api-shared';
 import { useAgentStore } from '../stores/agentStore';
 import { getAgentStatus, onChatStatusChange } from '../features/agents/agent-status-store';
@@ -77,7 +77,8 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
       if (options.freeAgentMode && !hasPermission(manifest, 'agents.free-agent-mode')) {
         throw new Error(`Plugin '${ctx.pluginId}' requires 'agents.free-agent-mode' permission to use freeAgentMode`);
       }
-      if (options.access !== undefined && isLegacyFreeAgent(options.access) && !hasPermission(manifest, 'agents.free-agent-mode')) {
+      const elevated = hasPermission(manifest, 'agents.free-agent-mode');
+      if (options.access !== undefined && ACCESS_LEVELS.indexOf(options.access) > ACCESS_LEVELS.indexOf('ask') && !elevated) {
         throw new Error(`Plugin '${ctx.pluginId}' requires 'agents.free-agent-mode' permission to start an agent at ${options.access}`);
       }
       if (options.structuredMode !== undefined) {
@@ -105,7 +106,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
       const config = await window.clubhouse.agent.createDurable(
         projectPath, options.name, options.color, model, options.useWorktree ?? false, options.orchestrator,
         // Without the permission a plugin's agent never starts above Ask first, whatever the Default access (#2761).
-        options.access ?? options.freeAgentMode ?? (hasPermission(manifest, 'agents.free-agent-mode') ? undefined : false), options.mcpIds,
+        options.access ?? (elevated ? options.freeAgentMode : 'ask'), options.mcpIds,
       );
       return useAgentStore.getState().spawnDurableAgent(projectId, projectPath, config, false);
     },

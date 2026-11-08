@@ -724,4 +724,19 @@ describe('applying settings a template or the builder carries (#2895)', () => {
     expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/p', 'made', { effort: 'high', idleSleep: 'never', helperTemplateId: 'builtin-template-quality-assurance' });
     expect(orchestrationPolicy.setOrchestrationPolicy).toHaveBeenCalledWith('/p', 'made', { orchestrate: true, maxHelpers: 3 });
   });
+
+  it('a caller\'s legacy off wins over a template\'s level (#2761)', async () => {
+    const t = await user(() => service.saveTemplate({
+      name: 'Free', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: { orchestrator: 'claude-code', access: 'full_access' },
+    }));
+    vi.mocked(agentConfig.createDurable).mockImplementation(async (_p, name) => {
+      const made: DurableAgentConfig = { id: 'made2', name, color: 'indigo', createdAt: '2026-11-07T00:00:00.000Z', worktreePath: wt };
+      h.agents.set('made2', made);
+      return made;
+    });
+    await user(() => createManagedAgent('/p', { name: 'off', color: 'indigo', templateId: t.id, settings: { freeAgentMode: false } }));
+    expect(agentConfig.createDurable).toHaveBeenLastCalledWith('/p', 'off', 'indigo', undefined, true, 'claude-code', 'ask');
+    await user(() => createManagedAgent('/p', { name: 'tmpl', color: 'indigo', templateId: t.id }));
+    expect(agentConfig.createDurable).toHaveBeenLastCalledWith('/p', 'tmpl', 'indigo', undefined, true, 'claude-code', 'full_access');
+  });
 });

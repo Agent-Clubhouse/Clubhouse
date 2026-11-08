@@ -18,7 +18,8 @@ import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 import { EmptyState } from '../../components/EmptyState';
 import { requestLeaveAgentSettings } from './agentSettingsPages';
 import { createDurableAgent } from './create-agent';
-import { AccessSelect, accessHelp, useDefaultAccess } from './AccessSelect';
+import { AccessSelect, accessHelp } from './AccessSelect';
+import { useQuickAgentAccess } from './useQuickAgentAccess';
 import type { AccessLevel } from '../../../shared/agent-access';
 import { buildAgentForest, forestSiblingGroups, helperRollup, localParentId, moveWithinGroup, type AgentNode } from '../../chrome/sidebar/treeModel';
 import { OtherProjectParentLine } from './helpers/OtherProjectParentLine';
@@ -138,8 +139,9 @@ function AgentListInner() {
   const [mission, setMission] = useState('');
   const [quickModel, setQuickModel] = useState('default');
   const [quickOrchestrator, setQuickOrchestrator] = useState('');
-  // Access (#2761) for the quick form: the app's Default access until the person picks one.
-  const defaultAccess = useDefaultAccess();
+  // Access (#2761) for the quick form: the parent's quick agent defaults, else the app's
+  // Default access, until the person picks one.
+  const { start: quickStartAccess, defaultAccess } = useQuickAgentAccess(activeProject?.path, quickTargetParentId ?? undefined);
   const [quickPickedAccess, setQuickPickedAccess] = useState<AccessLevel | null>(null);
   const missionInputRef = useRef<HTMLInputElement>(null);
   const dropdownBtnRef = useRef<HTMLDivElement>(null);
@@ -334,13 +336,22 @@ function AgentListInner() {
     setActiveAgent(agentId, activeProjectId ?? undefined);
   }), [selectCompleted, setActiveAgent, activeProjectId]);
 
-  /** The CLI a quick agent will run on, and the Access it starts at: Ask first on a CLI without permission support. */
-  const quickRun = (parentId: string | null): { orchId: string | undefined; supportsPermissions: boolean; access: AccessLevel } => {
+  /**
+   * The CLI a quick agent will run on, the Access the picker shows, and the level to
+   * send: only one the person picked (Ask first on a CLI without permission support),
+   * else none, so spawnQuickAgent resolves it from the parent's defaults or the fallback.
+   */
+  const quickRun = (parentId: string | null): { orchId: string | undefined; supportsPermissions: boolean; access: AccessLevel; requested: AccessLevel | undefined } => {
     const orchId = parentId
       ? agents[parentId]?.orchestrator || enabledOrchestrators[0]?.id
       : quickOrchestrator || enabledOrchestrators[0]?.id;
     const supportsPermissions = allOrchestrators.find((o) => o.id === orchId)?.capabilities?.permissions ?? false;
-    return { orchId, supportsPermissions, access: supportsPermissions ? quickPickedAccess ?? defaultAccess : 'ask' };
+    return {
+      orchId,
+      supportsPermissions,
+      access: supportsPermissions ? quickPickedAccess ?? quickStartAccess : 'ask',
+      requested: supportsPermissions ? quickPickedAccess ?? undefined : 'ask',
+    };
   };
 
   const handleMissionSubmit = async () => {
@@ -348,10 +359,13 @@ function AgentListInner() {
     const selectedModel = quickModel;
     const parentId = quickTargetParentId;
     const selectedOrchestrator = quickOrchestrator || undefined;
-    const { access } = quickRun(parentId);
+    const { requested } = quickRun(parentId);
     setShowMissionInput(false);
     try {
-      await spawnQuickAgent(activeProject.id, activeProject.path, mission.trim(), selectedModel, parentId || undefined, parentId ? undefined : selectedOrchestrator, access);
+      await spawnQuickAgent(
+        activeProject.id, activeProject.path, mission.trim(), selectedModel, parentId || undefined, parentId ? undefined : selectedOrchestrator,
+        requested, undefined, undefined, { fallbackAccess: defaultAccess },
+      );
     } catch (err) {
       console.error('Failed to spawn quick agent:', err);
       useToastStore.getState().addToast(`Failed to create agent: ${err instanceof Error ? err.message : String(err)}`, 'error');

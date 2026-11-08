@@ -1519,12 +1519,17 @@ async function updateDurableConfigInner(
   // Access (#2761): the level is saved, and the legacy flag is written beside it.
   // A legacy on/off alone (an older phone) moves to the nearest level.
   if (updates.access !== undefined || updates.freeAgentMode !== undefined) {
+    const current = agentAccess(agent, projectPath);
     const level = isAccessLevel(updates.access)
       ? updates.access
-      : accessForLegacyToggle(agentAccess(agent, projectPath), updates.freeAgentMode === true, getPermissionMode(projectPath));
-    agent.access = level;
-    if (legacyFreeAgentMode(level)) agent.freeAgentMode = true;
-    else delete agent.freeAgentMode;
+      : accessForLegacyToggle(current, updates.freeAgentMode === true, getPermissionMode(projectPath));
+    // A legacy on/off that changes nothing leaves an agent saved before #2761 as it was,
+    // so its setup fingerprint and its launch stay exactly as before.
+    if (isAccessLevel(updates.access) || agent.access !== undefined || level !== current) {
+      agent.access = level;
+      if (legacyFreeAgentMode(level)) agent.freeAgentMode = true;
+      else delete agent.freeAgentMode;
+    }
   }
   if (updates.lastSleep !== undefined) {
     if (updates.lastSleep) {

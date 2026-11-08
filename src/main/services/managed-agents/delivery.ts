@@ -101,7 +101,7 @@ export async function renderManagedInstructions(projectPath: string, agent: Dura
  * orchestration and helpers. The helper template is named only when
  * it orchestrates; a template that can't be read is left out.
  */
-export async function managedSettingsRows(service: ManagedAgentsService, agent: DurableAgentConfig, provider: OrchestratorProvider | undefined): Promise<ManagedSettingsRow[]> {
+export async function managedSettingsRows(service: ManagedAgentsService, agent: DurableAgentConfig, provider: OrchestratorProvider | undefined, projectPath?: string): Promise<ManagedSettingsRow[]> {
   const helper = !!agent.parentAgentId;
   let helperTemplateName: string | undefined;
   if (resolveOrchestrationPolicy(agent.orchestration, { helper }).orchestrate) {
@@ -116,7 +116,7 @@ export async function managedSettingsRows(service: ManagedAgentsService, agent: 
     cliName: provider?.displayName ?? agent.orchestrator,
     model: agent.model,
     effort: agent.effort,
-    access: agentAccess(agent),
+    access: agentAccess(agent, projectPath),
     orchestration: agent.orchestration,
     helperTemplateName,
     helper,
@@ -774,7 +774,7 @@ export async function deliverManagedSetup(params: {
       rawInstructions: composeManagedText(resolved),
       skills: resolved.skills.map((sk) => sk.name),
       mcps: resolved.mcps.map((m) => m.name),
-      settings: await managedSettingsRows(service, agent, provider),
+      settings: await managedSettingsRows(service, agent, provider, params.projectPath),
     },
     ...(resolved.missing.length > 0 && { missing: resolved.missing.length }),
   };
@@ -881,7 +881,7 @@ export async function previewManagedSetup(params: {
     ...extra,
     instructions,
     rawInstructions,
-    settings: await managedSettingsRows(params.service, params.agent, params.provider),
+    settings: await managedSettingsRows(params.service, params.agent, params.provider, params.projectPath),
     blocks,
     skills: resolved.skills.map((s) => ({
       id: s.id, name: s.name, skillName: s.content.skillName, files: s.content.files.length, folder: `${folderRoot}/${s.content.skillName}`.replace(/\\/g, '/'),

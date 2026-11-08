@@ -4,6 +4,8 @@
  * They combine the managed-agents service with agent config and
  * orchestration policy.
  */
+import { withAccess } from '../../../shared/agent-access';
+import { getPermissionMode } from '../free-agent-settings';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as agentConfig from '../agent-config';
@@ -84,7 +86,9 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
   if (input.managed === false) return createPlainAgent(projectPath, input);
   const service = managedAgents();
   const base = input.templateId ? await service.setupFromTemplate(input.templateId) : null;
-  const settings: ManagedTemplateSettings = { ...(base?.settings ?? {}), ...(input.settings ?? {}) };
+  // The caller's own Access wins over the template's, a legacy on/off included (#2761): settle its level before merging.
+  const own = input.settings ? withAccess(input.settings, getPermissionMode(projectPath)) : {};
+  const settings: ManagedTemplateSettings = { ...(base?.settings ?? {}), ...own };
   if (base?.settings.orchestration || input.settings?.orchestration) {
     settings.orchestration = { ...(base?.settings.orchestration ?? {}), ...(input.settings?.orchestration ?? {}) };
   }

@@ -870,6 +870,20 @@ describe('agent-system', () => {
       delete (mockProvider as any).buildHeadlessCommand;
     });
 
+    it.each([
+      [undefined, 'auto'],
+      ['ask', 'auto'],
+      ['full_access', 'skip-all'],
+    ] as const)('a headless quick agent at %s runs with mode %s, never skipping prompts below Full access (#2761)', async (access, mode) => {
+      mockGetSpawnMode.mockReturnValue('headless');
+      mockGetPermissionMode.mockReturnValue('skip-all');
+      mockProvider.buildHeadlessCommand = vi.fn(() => Promise.resolve(null)) as never;
+      await spawnAgent({ agentId: 'hq', projectPath: '/project', cwd: '/project', kind: 'quick', mission: 'm', ...(access && { access }) }).catch(() => {});
+      expect(mockProvider.buildHeadlessCommand).toHaveBeenCalledWith(expect.objectContaining({ permissionMode: mode }));
+      delete (mockProvider as any).buildHeadlessCommand;
+      untrackAgent('hq');
+    });
+
     it('propagates the original error after cleanup on spawn failure', async () => {
       const originalError = new Error('specific spawn error');
       mockProvider.buildSpawnCommand.mockRejectedValueOnce(originalError);
@@ -3420,10 +3434,23 @@ describe('helper launch ceiling on the normal spawn path', () => {
     expect(lastBuild()).toMatchObject({ freeAgentMode: false, access: 'ask' });
   });
 
-  it('a durable agent starts at its saved level, with the legacy pair derived (#2761)', async () => {
+  it('a durable agent starts at its saved level, with the legacy pair derived and the mode at auto (#2761)', async () => {
     mockGetDurableConfig.mockImplementation((async () => ({ id: 'helper-1', name: 'plain', access: 'plan' })) as never);
     await wake({ freeAgentMode: false });
-    expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'skip-all', access: 'plan' });
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'auto', access: 'plan' });
+  });
+
+  it('an agent saved before #2761 starts exactly as before, with the old mode below Free Agent Mode', async () => {
+    mockGetDurableConfig.mockImplementation((async () => ({ id: 'helper-1', name: 'old' })) as never);
+    await wake();
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'skip-all', access: 'ask' });
+  });
+
+  it('a helper saved at Plan stays at Plan when its ceiling lowers the legacy pair', async () => {
+    orchestratorLive = undefined;
+    mockGetDurableConfig.mockImplementation((async () => helper({ freeAgentMode: undefined, access: 'plan' })) as never);
+    await wake();
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, access: 'plan' });
   });
 
   it('a helper whose orchestrator is in another project gets the orchestrator\'s ceiling from there', async () => {
