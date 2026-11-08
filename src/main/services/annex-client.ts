@@ -12,6 +12,7 @@ import * as tls from 'tls';
 import type Bonjour from 'bonjour-service';
 import type { Browser, Service as RemoteService } from 'bonjour-service';
 import { createBonjour } from './annex-mdns';
+import * as networkChannel from './annex-network-channel';
 import { formatAddress, parseTypedHost, rankAddresses, reachCandidates, rememberHost, type ReachAddress } from './annex-reach';
 import { WebSocket } from 'ws';
 import * as annexIdentity from './annex-identity';
@@ -599,6 +600,7 @@ function haltSatellite(sat: SatelliteConnectionInternal, kind: 'pairing' | 'mism
     sat.ws = null;
     try { ws.terminate(); } catch { /* telemetry-exempt: closing a socket that may be gone */ }
   }
+  if (kind !== 'clock') networkChannel.closeFor(sat.fingerprint);
   appLog('core:annex-client', 'warn', `Stopped reconnecting to ${sat.alias}: ${message}`, { meta: { fingerprint: sat.fingerprint } });
   setState(sat, 'disconnected', message, { code: problem });
 }
@@ -786,6 +788,8 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       if (sat.candidateSource === 'typed') annexPeers.updateLastSeen(sat.fingerprint);
       else annexPeers.noteReached(sat.fingerprint, sat.host, sat.mainPort);
       sat.candidateIndex = 0;
+      // The membership channel (#3060), to the same address and certificate.
+      networkChannel.connectTo(sat.fingerprint, sat.host, sat.mainPort, pinnedTlsOptionsFor(sat.fingerprint));
       startHeartbeat(sat);
     });
 
@@ -1577,6 +1581,7 @@ export function forgetSatellite(fingerprint: string): void {
   }
   disposeRemoteBuffers(fingerprint);
   annexPeers.removePeer(fingerprint);
+  networkChannel.closeFor(fingerprint);
   broadcastSatellitesChanged();
 }
 

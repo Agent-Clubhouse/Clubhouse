@@ -9,6 +9,7 @@ import * as annexPeers from '../services/annex-peers';
 import * as annexIdentity from '../services/annex-identity';
 import * as annexTls from '../services/annex-tls';
 import * as annexDevices from '../services/annex-devices';
+import * as networkChannel from '../services/annex-network-channel';
 import { onDevicesChanged } from '../services/annex-device-signal';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -27,6 +28,9 @@ export function registerAnnexHandlers(): void {
   onDevicesChanged(() => broadcastToAllWindows(IPC.ANNEX.DEVICES_CHANGED, annexDevices.listDevices()));
 
   ipcMain.handle(IPC.ANNEX.LIST_DEVICES, () => annexDevices.listDevices());
+
+  // Who this machine has heard from on the Annex Network channel (#3060).
+  ipcMain.handle(IPC.ANNEX.LIST_NETWORK_MEMBERS, () => networkChannel.listMembers());
 
   ipcMain.handle(IPC.ANNEX.REMOVE_DEVICE, withValidatedArgs(
     [stringArg()],

@@ -49,6 +49,7 @@ import type Bonjour from 'bonjour-service';
 import type { Service } from 'bonjour-service';
 import { createBonjour } from './annex-mdns';
 import { withReachableAs } from './annex-reach';
+import * as networkChannel from './annex-network-channel';
 import * as annexEventBus from './annex-event-bus';
 import * as annexSettings from './annex-settings';
 import { annexNetworkProfile } from './annex-network-profile';
@@ -4632,7 +4633,8 @@ export function start(): void {
     }
     const urlObj = new URL(req.url || '/', `http://${req.headers.host}`);
 
-    if (urlObj.pathname !== '/ws') {
+    const forNetwork = networkChannel.isNetworkUpgrade(urlObj.pathname);
+    if (urlObj.pathname !== '/ws' && !forNetwork) {
       socket.destroy();
       return;
     }
@@ -4646,6 +4648,12 @@ export function start(): void {
       });
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
+      return;
+    }
+
+    // The Annex Network channel (#3060): membership only, from a pinned peer of either role.
+    if (forNetwork) {
+      networkChannel.handleNetworkUpgrade(req, socket, head);
       return;
     }
 
@@ -4974,6 +4982,8 @@ export function start(): void {
   }
 
   republishBonjour = publishBonjour;
+  // Where this machine can be reached, for its Annex Network hello.
+  networkChannel.setReachProvider(() => ({ hosts: advertisedHosts(), port: serverPort }));
 
   // Reuse last launch's ports so a paired phone can reconnect without re-pairing.
   const lastPorts = annexSettings.getLastPorts();
@@ -5129,6 +5139,9 @@ export function stop(): void {
     wss.close();
     wss = null;
   }
+
+  networkChannel.setReachProvider(null);
+  networkChannel.closeAll();
 
   // Un-publish mDNS
   republishBonjour = null;
@@ -5692,6 +5705,7 @@ export function revokePeer(fingerprint: string): boolean {
   // What it fetched whole was for this pairing: pairing again starts over (#2731).
   forgetReviewedBy(fingerprint);
   closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
+  networkChannel.closeFor(fingerprint);
   appLog('core:annex', 'info', 'Peer pairing removed', { meta: { fingerprint, removed } });
   return removed;
 }
@@ -5714,7 +5728,10 @@ export function revokeAllPeers(): void {
   annexPeers.removeAllPeers();
   awaitingFirstConnection.clear();
   loggedRefusals.clear();
-  for (const fingerprint of fingerprints) closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
+  for (const fingerprint of fingerprints) {
+    closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
+    networkChannel.closeFor(fingerprint);
+  }
 }
 
 /** Identities with an open, still-paired WebSocket to this server: the devices connected to this machine. */

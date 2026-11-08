@@ -7,6 +7,7 @@ Epic: #3056. Stages land in order: #3057 (peer basics), #3058 (reachability), #3
 - **A device** is anything paired with this machine, phone or computer, keyed by its identity fingerprint. `annex-peers.json` holds one entry per device with its pinned certificate and its role (it controls this machine, or this machine controls it).
 - **The device list** (`src/main/services/annex-devices.ts`) is every paired device with where it stands: `connected`, `connecting`, `offline` or `needs-pairing`, and a problem when one is known. Settings is built from it. IPC: `annex:list-devices`, `annex:remove-device`, `annex:devices-changed`.
 - **Reaching a satellite** (`src/main/services/annex-reach.ts`): each satellite entry remembers where it was reached (`knownHosts`, newest first, plus the hosts in its pairing link) and its port (`mainPort`), and can hold a host the person typed (`typedHost`), such as a tailnet name. Connections are direct: every address is the satellite itself, and the pinned certificate decides.
+- **The network channel** (`src/main/services/annex-network-channel.ts`, protocol in `src/shared/annex-network-protocol.ts`): a WebSocket at `/network` on the main TLS port that carries membership only (`hello`, `members`, `member-joined`, `member-removed`, `member-renamed`). Anything else closes it with 4400.
 - **A problem** (`src/shared/annex-problems.ts`) is a classified reason a connection failed, shown as two sentences: what happened, and what to do.
 
 ## Real-device checks
@@ -26,6 +27,10 @@ Synthetic tests can't cover certificates under Electron or local network discove
 - Put "Also reachable at" on a Mac and pair a phone from its QR code: the phone can reach it over the tailnet.
 - A network with IPv6 only between the two computers: discovery connects over IPv6.
 - Switch Wi-Fi networks, sleep and wake, and turn a VPN on and off with Annex running: no "Uncaught exception" in the log, and the advertisement comes back.
+
+**Stage 3 (#3060)**
+- Pair two desktops: each lists the other as a member it hears from (`listNetworkMembers`).
+- Remove the pairing on either: the channel closes at once on both.
 
 ## Decision log
 
@@ -48,4 +53,9 @@ Decisions made while building, for the maintainer to revisit. Newest last.
 | D192 | "Also reachable at" on this machine is added last to its pairing link and the phone's routes, but not when the server is bound to one address. | A phone or computer pairing over the LAN learns the tailnet name for later. The link's contract only adds hosts. | Older Clubhouse Go builds stumble on a host name in the list. |
 | D193 | mDNS socket errors are logged at warn, at most once a minute per kind, and never thrown. A socket that can't start is replaced after 30 s; the advertisement is published again on wake. (#1921) | They reached `uncaughtException` after network changes. | |
 | D194 | Waking the machine no longer starts discovery while Connect to satellites is off. | It used to rescan regardless of the setting. | |
+| D195 | The membership channel is a separate WebSocket path (`/network`) on the main TLS port, in its own module that imports nothing that controls a machine. `/ws` is unchanged. | Membership can't reach control by construction, not just by a check. One port, so reachability (#3058) covers both. | |
+| D196 | `/network` accepts a pinned peer of either role, where `/ws` accepts only a controller. Older pairings are refused with `needs_pairing` until paired again. | Membership isn't control, and every member will need to talk to every other (#3061). | |
+| D197 | Every message is parsed against a closed schema: a known type, this version (`v: 1`), no extra fields, bounded sizes (64 KB a message, 64 members). Anything else closes the channel (4400; 4426 for another version) and is logged without its content. | "Membership only" holds whatever a peer sends. | A newer member needs a field older ones refuse: bump `v`. |
+| D198 | The first message each way is `hello`, and it must name the identity and certificate the connection authenticated with. Each message is acted on only while the sender is still paired with that certificate, so a removal ends the channel at once. A channel silent for 10 s without a hello is closed. | A member can only speak for itself. | |
+| D199 | In this stage the controller opens the channel to each satellite once its main connection opens, and both sides only record what they hear (`listNetworkMembers`). Stage 4 acts on it. | Ships the channel on its own, as the epic allows. | |
 
