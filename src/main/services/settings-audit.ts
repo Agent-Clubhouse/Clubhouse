@@ -14,6 +14,8 @@
  * Off until enableSettingsAudit, at startup.
  */
 
+import { tel } from '../telemetry/facade';
+import { ATTR } from '../../shared/telemetry/attributes';
 import { AsyncLocalStorage } from 'async_hooks';
 import { createHash } from 'crypto';
 import { createAuditLog } from './bounded-audit-log';
@@ -47,9 +49,71 @@ let enabled = false;
 export const settingsAuditPath = log.path;
 export const readSettingsAudit = log.read;
 
+/**
+ * Settings whose old and new values a telemetry audit event may carry (#2920):
+ * by the key's last part, or its family. An allowlist, checked on top of each
+ * row's own catalog: anything not named here records only that it changed.
+ * Each holds an enum, a level, a whole number, a colour or an opaque id.
+ */
+const EVENT_VALUE_KEYS: ReadonlySet<string> = new Set([
+  'orchestrator', 'model', 'contextWindow', 'freeAgentMode', 'access', 'runtimeMode', 'idleSleep', 'effort',
+  'helperTemplateId', 'sourceControlProvider', 'color', 'profileId', 'persona', 'helperAuto', 'managed', 'templateId',
+  'clubhouseFeatures', 'defaultMode', 'defaultAccess', 'provider', 'globalHelperCap', 'themeId',
+  'defaultHelperTemplate', 'helperTemplateChoice',
+]);
+const EVENT_VALUE_FAMILIES = ['orchestration.', 'helper_presets.'];
+/**
+ * A key whose name says it may hold a secret or content never carries a value,
+ * even if listed above or a boolean: destination endpoints, headers and tokens,
+ * env, args, keys, credentials, and free text such as a mission.
+ */
+const SECRET_OR_CONTENT_NAME = /token|secret|passw|credential|auth|header|cookie|api[_-]?key|private[_-]?key|access[_-]?key|\.key$|endpoint|url|env|args|command|mission|prompt|instruction/i;
+
+/** May an event carry this row's before and after? */
+export function eventKeepsValues(row: Pick<SettingsAuditRow, 'key' | 'before' | 'after'>): boolean {
+  if (SECRET_OR_CONTENT_NAME.test(row.key)) return false;
+  const last = row.key.slice(row.key.lastIndexOf('.') + 1);
+  if (EVENT_VALUE_KEYS.has(last) || EVENT_VALUE_FAMILIES.some((f) => row.key.startsWith(f))) return true;
+  // A switch can't hold anything but itself.
+  const isSwitch = (v: unknown) => v === undefined || v === null || typeof v === 'boolean';
+  return isSwitch(row.before) && isSwitch(row.after) && (typeof row.before === 'boolean' || typeof row.after === 'boolean');
+}
+
+/**
+ * The row as a telemetry audit event (#2920): enums and hashed ids as attributes,
+ * the key, values and code in the local record's detail only. Values go in only
+ * when `eventKeepsValues` allows; otherwise the detail says `changed`. Written
+ * alongside the JSONL file until nothing reads that. Never throws.
+ */
+function recordEvent(row: SettingsAuditRow): void {
+  try {
+    tel.event('clubhouse.audit.setting', [
+      ATTR.auditSurface(row.surface), ATTR.auditScope(row.scope), ATTR.auditOutcome(row.outcome),
+      ...(row.actorId ? [ATTR.auditActorIdHash(row.actorId)] : []),
+      ...(row.targetId ? [ATTR.auditTargetIdHash(row.targetId)] : []),
+    ], {
+      severity: row.outcome === 'ok' ? 'info' : 'warn',
+      detail: {
+        key: row.key,
+        ...(eventKeepsValues(row)
+          ? { ...(row.before !== undefined && { before: row.before }), ...(row.after !== undefined && { after: row.after }), ...(row.changed && { changed: true }) }
+          : (row.before !== undefined || row.after !== undefined || row.changed) && { changed: true }),
+        ...(row.code && { code: row.code }),
+      },
+    });
+  } catch {
+    // telemetry-exempt: the JSONL row below is still written
+  }
+}
+
+function record(row: SettingsAuditRow): Promise<boolean> {
+  recordEvent(row);
+  return log.append(row);
+}
+
 /** Never throws. False only when the record couldn't be written; the change it describes has happened. */
 export function appendSettingsAudit(row: SettingsAuditRow): Promise<boolean> {
-  return enabled ? log.append(row) : Promise.resolve(true);
+  return enabled ? record(row) : Promise.resolve(true);
 }
 
 // ── Who asked ────────────────────────────────────────────────────────────
@@ -108,7 +172,7 @@ export async function auditChanges(
       ...who, scope, key: `${prefix}.${key}`, ...(targetId && { targetId }), outcome: 'ok',
       ...(was !== undefined && now !== undefined ? { before: was, after: now } : { changed: true as const }),
     };
-    await log.append(row);
+    await record(row);
   }
 }
 
@@ -120,7 +184,7 @@ export function projectAuditTarget(projectPath: string): string {
 /** A setting that isn't a key on a record, such as a file's contents: only that it changed. */
 export async function auditChanged(scope: SettingsAuditRow['scope'], key: string, targetId?: string): Promise<void> {
   if (!enabled) return;
-  await log.append({ ...currentSettingsOrigin(), scope, key, ...(targetId && { targetId }), changed: true, outcome: 'ok' });
+  await record({ ...currentSettingsOrigin(), scope, key, ...(targetId && { targetId }), changed: true, outcome: 'ok' });
 }
 
 /** Start recording, and have the app's settings stores report to it. Called once at startup. */

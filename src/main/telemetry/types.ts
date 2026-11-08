@@ -42,7 +42,19 @@ export interface EventOptions {
   trace?: TraceIds;
   /** Written to the local recording only; never handed to any export destination, whatever its level or preset. */
   localOnly?: boolean;
+  /**
+   * Detail for the local record only (#2920): short words, ids, booleans and
+   * whole numbers, held to `sanitizeLocalDetail`. Never handed to the SDK, so
+   * no export destination or backfill gets it.
+   */
+  detail?: LocalDetail;
+  /** Opaque ids for the local record's detail, written hashed with the same salt as `hash` attributes. */
+  detailIds?: Readonly<Record<string, readonly string[]>>;
 }
+
+/** A value the local detail keeps. Strings must be a short word or id (`LOCAL_DETAIL_TOKEN`). */
+export type LocalDetailValue = boolean | number | string | null | readonly string[];
+export type LocalDetail = Readonly<Record<string, LocalDetailValue | Readonly<Record<string, LocalDetailValue>>>>;
 
 export interface TraceIds {
   traceId: string;

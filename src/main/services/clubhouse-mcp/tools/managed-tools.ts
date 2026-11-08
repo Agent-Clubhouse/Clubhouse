@@ -273,7 +273,8 @@ export function registerManagedTools(): void {
         part.usedBy.map((c) => c.agentId).sort(), part.templates.map((t) => t.id).sort());
       const given = optionalString(args, 'confirm');
       if (given) redeemConfirm(callerId, given, digest);
-      else if (part.usedBy.length > 1) {
+      // The UI's rule (needsImpactDialog, D93): agents and templates together, so a template's future agents count (#3100).
+      else if (part.usedBy.length + part.templates.length > 1) {
         return json({ status: 'needs_confirmation', confirm: issueConfirm(callerId, digest),
           reaches: part.usedBy.map((c) => ({ agent: c.agentName, project: c.projectName, running: c.running })),
           templates: part.templates.map((t) => t.name),

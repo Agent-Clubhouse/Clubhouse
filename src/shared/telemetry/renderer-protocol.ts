@@ -8,11 +8,13 @@
  */
 import {
   ERROR_TYPES,
+  EVENTS,
   OUTCOMES,
   getAttributeSpec,
   isKnownEvent,
   isKnownMetric,
   isKnownSpan,
+  type EventDef,
   type EventName,
   type MetricName,
   type Outcome,
@@ -207,6 +209,8 @@ export function parseRendererItem(raw: unknown): RendererItem | undefined {
       if (typeof raw.name !== 'string' || !isKnownEvent(raw.name)) return undefined;
       // Exception records go through `t: 'exception'`, never as a raw event.
       if (raw.name === 'clubhouse.exception') return undefined;
+      // Audit events (#2920) come only from main, where the change happens: a renderer can't write the record of who changed what.
+      if ((EVENTS[raw.name] as EventDef).audit) return undefined;
       return { t: 'event', name: raw.name, attrs };
     }
     case 'exception': {
