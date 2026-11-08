@@ -812,7 +812,7 @@ export function Composer(props: ComposerProps) {
             type="button"
             disabled={empty || disabled}
             onClick={() => submit(modes.primary)}
-            className="h-7 flex items-center gap-1.5 px-2.5 rounded-md bg-ctp-accent text-ctp-crust text-[12px] font-medium disabled:opacity-40 whitespace-nowrap"
+            className="h-7 flex items-center gap-1.5 px-2.5 rounded-md bg-ctp-accent text-ctp-on-accent text-[12px] font-medium disabled:opacity-40 whitespace-nowrap"
             data-testid="chat-send-primary"
           >
             {ACTION_LABELS[modes.primary]}{!line && <> <KeyHint>⏎</KeyHint></>}
@@ -847,7 +847,7 @@ export function Composer(props: ComposerProps) {
           disabled={empty || disabled}
           onClick={() => submit('send')}
           aria-label="Send"
-          className="w-[30px] h-[30px] rounded-lg bg-ctp-accent text-ctp-crust grid place-items-center disabled:opacity-40"
+          className="w-[30px] h-[30px] rounded-lg bg-ctp-accent text-ctp-on-accent grid place-items-center disabled:opacity-40"
           data-testid="chat-send"
         >
           <UpIcon />

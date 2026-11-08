@@ -524,7 +524,7 @@ function PreviewPanel({
         <button
           onClick={onImport}
           disabled={importing}
-          className="w-full px-3 py-1.5 text-xs font-medium bg-ctp-accent text-ctp-base rounded-md hover:bg-ctp-accent/90 disabled:opacity-50 transition-colors"
+          className="w-full px-3 py-1.5 text-xs font-medium bg-ctp-accent text-ctp-on-accent rounded-md hover:bg-ctp-accent/90 disabled:opacity-50 transition-colors"
           data-testid="blueprint-preview-import"
         >
           {importing ? 'Importing...' : 'Import Blueprint'}

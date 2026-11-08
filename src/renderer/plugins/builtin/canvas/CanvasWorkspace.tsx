@@ -752,7 +752,7 @@ export function CanvasWorkspace({
           const badgeY = primaryView.position.y + multiDragDelta.dy - 8;
           return (
             <div
-              className="absolute pointer-events-none bg-ctp-accent text-ctp-base text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center"
+              className="absolute pointer-events-none bg-ctp-accent text-ctp-on-accent text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center"
               style={{ left: badgeX, top: badgeY, zIndex: CANVAS_Z.worldBadge }}
               data-testid="canvas-multi-drag-badge"
             >

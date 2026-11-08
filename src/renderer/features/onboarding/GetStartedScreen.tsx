@@ -45,7 +45,7 @@ export function GetStartedScreen({ onGetStarted, onOpenHelp, onOpenExtensibility
       <button
         onClick={onGetStarted}
         data-testid="onboarding-get-started-btn"
-        className="px-6 py-3 text-sm font-medium rounded-lg bg-ctp-accent hover:bg-ctp-accent/80 text-white transition-colors cursor-pointer w-full"
+        className="px-6 py-3 text-sm font-medium rounded-lg bg-ctp-accent hover:bg-ctp-accent/80 text-ctp-on-accent transition-colors cursor-pointer w-full"
       >
         Get Started
       </button>

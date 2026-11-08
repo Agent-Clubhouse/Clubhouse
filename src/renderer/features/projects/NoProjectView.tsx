@@ -34,7 +34,7 @@ export function NoProjectView() {
       </p>
       <button
         onClick={() => pickAndAddProject()}
-        className="px-4 py-2 rounded-lg bg-ctp-accent text-white text-sm font-medium hover:opacity-90 transition-opacity cursor-pointer"
+        className="px-4 py-2 rounded-lg bg-ctp-accent text-ctp-on-accent text-sm font-medium hover:opacity-90 transition-opacity cursor-pointer"
       >
         Add Project
       </button>

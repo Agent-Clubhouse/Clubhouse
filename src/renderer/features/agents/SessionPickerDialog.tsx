@@ -106,7 +106,7 @@ function SessionRow({
           <button
             onClick={() => onResume(session.sessionId)}
             data-testid={`resume-session-${idx}`}
-            className="px-2.5 py-1 text-xs rounded bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer transition-colors font-medium"
+            className="px-2.5 py-1 text-xs rounded bg-ctp-accent text-ctp-on-accent hover:bg-ctp-accent/80 cursor-pointer transition-colors font-medium"
           >
             Resume
           </button>

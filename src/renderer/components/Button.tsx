@@ -12,7 +12,7 @@ import type { ComponentProps, ReactNode } from 'react';
 export type ButtonKind = 'primary' | 'ghost' | 'quiet' | 'danger' | 'danger-solid';
 
 const KIND: Record<ButtonKind, string> = {
-  primary: 'bg-ctp-accent border-ctp-accent text-ctp-crust enabled:hover:bg-ctp-accent/90',
+  primary: 'bg-ctp-accent border-ctp-accent text-ctp-on-accent enabled:hover:bg-ctp-accent/90',
   ghost: 'bg-transparent border-surface-1 text-ctp-subtext1 enabled:hover:bg-surface-0 enabled:hover:text-ctp-text',
   quiet: 'bg-transparent border-transparent text-ctp-subtext1 enabled:hover:bg-surface-0 enabled:hover:text-ctp-text',
   danger: 'bg-transparent border-surface-1 text-ctp-red enabled:hover:bg-surface-0',
