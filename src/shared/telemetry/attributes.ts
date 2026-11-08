@@ -408,7 +408,7 @@ export const ATTR = {
   updateTrigger: enumAttr('clubhouse.update.trigger', ['startup', 'periodic', 'manual']),
   updateChannel: enumAttr('clubhouse.update.channel', ['stable', 'preview']),
   updateResult: enumAttr('clubhouse.update.result', [
-    'up_to_date', 'available', 'dismissed', 'no_artifact', 'skipped_busy', 'disabled',
+    'up_to_date', 'available', 'dismissed', 'no_artifact', 'os_too_old', 'skipped_busy', 'disabled',
     'downloaded', 'already_downloaded', 'applied', 'failed',
   ]),
   updatePhase: enumAttr('clubhouse.update.phase', ['check', 'download', 'apply', 'apply_on_quit']),
@@ -731,7 +731,7 @@ export const ATTR = {
   pluginIdHash: hashAttr('clubhouse.plugin.id_hash'),
   pluginOrigin: enumAttr('clubhouse.plugin.origin', ['builtin', 'marketplace', 'sideloaded']),
   pluginScope: enumAttr('clubhouse.plugin.scope', ['project', 'app', 'dual']),
-  /** The manifest's `engine.api` (0.5, 0.9, ...) as a string; unsupported versions become `other`. */
+  /** The manifest's `engine.api` (0.7, 0.9, ...) as a string; unsupported versions become `other`. */
   pluginApiVersion: enumAttr('clubhouse.plugin.api_version', PLUGIN_API_VERSION_VALUES),
   attempt: intAttr('clubhouse.attempt'),
   pluginProtocolResult: enumAttr('clubhouse.plugin.protocol.result', ['ok', 'denied', 'not_found']),

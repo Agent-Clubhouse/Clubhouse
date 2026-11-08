@@ -171,7 +171,7 @@ export function registerBrowserTools(): void {
     id: 'browser.navigate',
     category: 'browser',
     label: 'Navigate',
-    mcp: { targetKind: 'browser', nameSuffix: 'navigate' },
+    mcp: { targetKind: 'browser', nameSuffix: 'navigate', grant: { actions: ['browser.act'], target: 'bound' } },
     description: 'Navigate the browser widget to a URL.',
     inputSchema: {
       type: 'object',
@@ -203,7 +203,7 @@ export function registerBrowserTools(): void {
     id: 'browser.screenshot',
     category: 'browser',
     label: 'Screenshot',
-    mcp: { targetKind: 'browser', nameSuffix: 'screenshot' },
+    mcp: { targetKind: 'browser', nameSuffix: 'screenshot', grant: { actions: ['browser.read'], target: 'bound' } },
     description: 'Take a screenshot of the browser widget.',
     inputSchema: { type: 'object', properties: {} },
     handler: async (targetId, agentId) => {
@@ -236,7 +236,7 @@ export function registerBrowserTools(): void {
     id: 'browser.get_console',
     category: 'browser',
     label: 'Get Console',
-    mcp: { targetKind: 'browser', nameSuffix: 'get_console' },
+    mcp: { targetKind: 'browser', nameSuffix: 'get_console', grant: { actions: ['browser.read'], target: 'bound' } },
     description: 'Get recent console log messages from the browser widget.',
     inputSchema: {
       type: 'object',
@@ -262,7 +262,7 @@ export function registerBrowserTools(): void {
     id: 'browser.click',
     category: 'browser',
     label: 'Click',
-    mcp: { targetKind: 'browser', nameSuffix: 'click' },
+    mcp: { targetKind: 'browser', nameSuffix: 'click', grant: { actions: ['browser.act'], target: 'bound' } },
     description: 'Click an element in the browser widget by CSS selector.',
     inputSchema: {
       type: 'object',
@@ -309,7 +309,7 @@ export function registerBrowserTools(): void {
     id: 'browser.type',
     category: 'browser',
     label: 'Type',
-    mcp: { targetKind: 'browser', nameSuffix: 'type' },
+    mcp: { targetKind: 'browser', nameSuffix: 'type', grant: { actions: ['browser.act'], target: 'bound' } },
     description: 'Type text into a focused element in the browser widget.',
     inputSchema: {
       type: 'object',
@@ -357,7 +357,7 @@ export function registerBrowserTools(): void {
     id: 'browser.evaluate',
     category: 'browser',
     label: 'Evaluate JavaScript',
-    mcp: { targetKind: 'browser', nameSuffix: 'evaluate' },
+    mcp: { targetKind: 'browser', nameSuffix: 'evaluate', grant: { actions: ['browser.act'], target: 'bound' } },
     description: 'Evaluate a JavaScript expression in the browser widget page context.',
     inputSchema: {
       type: 'object',
@@ -422,7 +422,7 @@ export function registerBrowserTools(): void {
     id: 'browser.get_page_content',
     category: 'browser',
     label: 'Get Page Content',
-    mcp: { targetKind: 'browser', nameSuffix: 'get_page_content' },
+    mcp: { targetKind: 'browser', nameSuffix: 'get_page_content', grant: { actions: ['browser.read'], target: 'bound' } },
     description: 'Get the HTML content of the page or a specific element.',
     inputSchema: {
       type: 'object',
@@ -464,7 +464,7 @@ export function registerBrowserTools(): void {
     id: 'browser.get_accessibility_tree',
     category: 'browser',
     label: 'Get Accessibility Tree',
-    mcp: { targetKind: 'browser', nameSuffix: 'get_accessibility_tree' },
+    mcp: { targetKind: 'browser', nameSuffix: 'get_accessibility_tree', grant: { actions: ['browser.read'], target: 'bound' } },
     description: 'Get the accessibility tree of the browser widget page.',
     inputSchema: {
       type: 'object',

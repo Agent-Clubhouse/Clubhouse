@@ -1,3 +1,5 @@
+import { installContentContextMenu } from './content-context-menu';
+import { IPC } from '../shared/ipc-channels';
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { settingsChannels } from '../shared/settings-definitions';
 import { pty } from './pty';
@@ -88,3 +90,8 @@ export const api = {
 export type ClubhouseAPI = typeof api;
 
 contextBridge.exposeInMainWorld('clubhouse', api);
+
+// Only the app's top frame installs the native content-menu fallback.
+if (typeof globalThis.window !== 'undefined' && globalThis.window.top === globalThis.window) {
+  installContentContextMenu(globalThis.window, (context) => ipcRenderer.invoke(IPC.APP.CONTENT_CONTEXT_MENU, context));
+}

@@ -13,7 +13,7 @@ Quick fixes for frequently encountered problems.
 
 The orange ring means the agent is **waiting for permission approval**. Open the agent's CLI view, review the request, and click **Approve** or **Deny**.
 
-To reduce interruptions: enable headless mode or Free Agent mode for quick agents.
+To reduce interruptions: enable headless mode for quick agents, or give the agent a higher **Access** level, such as **Auto-accept edits** or **Auto**. Auto uses a check to decide what needs your approval, and the check can be wrong.
 
 ## Plugin Not Appearing
 

@@ -39,6 +39,7 @@ import { usePendingPermissionStore } from './stores/pendingPermissionStore';
 import { showStructuredModeRemovedNotice } from './services/structured-mode-removal-notice';
 import { showCopilotAcpRemovedNotice } from './services/copilot-acp-removal-notice';
 import { showRetiredPluginNotices } from './services/retired-plugin-notice';
+import { showRemovedPluginApiNotice } from './services/removed-plugin-api-notice';
 import { showChatDefaultTip } from './features/agents/chat/chat-default-tip';
 import { isDispatcherAgent, isDispatcherProjectId, useDispatcherStore } from './features/dispatcher/dispatcherStore';
 import { DISPATCHER_PROJECT_ID } from '../shared/dispatcher-types';
@@ -282,6 +283,7 @@ function initPtyExitListener(): () => void {
           baseSha: agent.runBaseSha,
           startedAt,
           freeAgentMode: agent.freeAgentMode,
+          ...(agent.access && { access: agent.access }),
           toolCalls,
           inputTokens,
           outputTokens,
@@ -839,6 +841,7 @@ export function initAppEventBridge(): () => void {
   showStructuredModeRemovedNotice().catch(() => { /* best-effort one-time notice */ })
     .then(() => showCopilotAcpRemovedNotice()).catch(() => { /* best-effort one-time notice */ });
   showRetiredPluginNotices().catch(() => { /* best-effort one-time notice */ });
+  showRemovedPluginApiNotice().catch(() => { /* best-effort one-time notice */ });
   // The one call site for the first-launch Chat tip: a welcome intro (#2814) can run first or gate it here.
   showChatDefaultTip().catch(() => { /* best-effort one-time tip; asked again next launch */ });
   cleanups.push(initKeyboardShortcuts());

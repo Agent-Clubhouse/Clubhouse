@@ -1,3 +1,4 @@
+import { registerContentContextMenu } from './content-context-menu-handlers';
 import { enableSettingsAudit } from '../services/settings-audit';
 import { registerPtyHandlers } from './pty-handlers';
 import { registerProjectHandlers } from './project-handlers';
@@ -73,6 +74,7 @@ export function registerAllHandlers(): void {
   registerSkillBundleHandlers();
   registerManagedAgentsHandlers();
   registerAppHandlers();
+  registerContentContextMenu();
   registerPluginHandlers();
   registerPluginMcpHandlers();
   registerProcessHandlers();

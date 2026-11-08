@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { PluginListSettings } from './PluginListSettings';
 import { usePluginStore } from '../../plugins/plugin-store';
+import { DEPRECATED_PLUGIN_API_VERSIONS } from '../../../shared/marketplace-types';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { usePluginUpdateStore } from '../../stores/pluginUpdateStore';
@@ -31,7 +32,7 @@ beforeEach(() => {
           id: 'test-builtin',
           name: 'Test Builtin',
           version: '1.0.0',
-          engine: { api: 0.5 },
+          engine: { api: 0.9 },
           scope: 'project',
         },
         status: 'activated',
@@ -114,7 +115,7 @@ describe('PluginListSettings', () => {
             id: 'market-plug',
             name: 'Market Plugin',
             version: '1.0.0',
-            engine: { api: 0.5 },
+            engine: { api: 0.9 },
             scope: 'app',
           },
           status: 'activated',
@@ -138,7 +139,7 @@ describe('PluginListSettings', () => {
             id: 'comm-plug',
             name: 'Community Plugin',
             version: '1.0.0',
-            engine: { api: 0.5 },
+            engine: { api: 0.9 },
             scope: 'app',
           },
           status: 'activated',
@@ -370,11 +371,11 @@ describe('PluginListSettings', () => {
       usePluginStore.setState({
         plugins: {
           'plug-a': {
-            manifest: { id: 'plug-a', name: 'Plugin A', version: '1.0.0', engine: { api: 0.5 }, scope: 'app' },
+            manifest: { id: 'plug-a', name: 'Plugin A', version: '1.0.0', engine: { api: 0.9 }, scope: 'app' },
             status: 'activated', source: 'community', pluginPath: '/plugins/plug-a',
           },
           'plug-b': {
-            manifest: { id: 'plug-b', name: 'Plugin B', version: '1.0.0', engine: { api: 0.5 }, scope: 'app' },
+            manifest: { id: 'plug-b', name: 'Plugin B', version: '1.0.0', engine: { api: 0.9 }, scope: 'app' },
             status: 'activated', source: 'community', pluginPath: '/plugins/plug-b',
           },
         },
@@ -383,8 +384,8 @@ describe('PluginListSettings', () => {
       } as any);
       usePluginUpdateStore.setState({
         updates: [
-          { pluginId: 'plug-a', pluginName: 'Plugin A', currentVersion: '1.0.0', latestVersion: '2.0.0', assetUrl: '', sha256: '', size: 0, api: 0.5 },
-          { pluginId: 'plug-b', pluginName: 'Plugin B', currentVersion: '1.0.0', latestVersion: '2.0.0', assetUrl: '', sha256: '', size: 0, api: 0.5 },
+          { pluginId: 'plug-a', pluginName: 'Plugin A', currentVersion: '1.0.0', latestVersion: '2.0.0', assetUrl: '', sha256: '', size: 0, api: 0.9 },
+          { pluginId: 'plug-b', pluginName: 'Plugin B', currentVersion: '1.0.0', latestVersion: '2.0.0', assetUrl: '', sha256: '', size: 0, api: 0.9 },
         ],
       });
       render(<PluginListSettings />);
@@ -395,7 +396,7 @@ describe('PluginListSettings', () => {
       usePluginStore.setState({
         plugins: {
           'updatable': {
-            manifest: { id: 'updatable', name: 'Updatable Plugin', version: '1.0.0', engine: { api: 0.5 }, scope: 'app' },
+            manifest: { id: 'updatable', name: 'Updatable Plugin', version: '1.0.0', engine: { api: 0.9 }, scope: 'app' },
             status: 'activated', source: 'marketplace', pluginPath: '/plugins/updatable',
           },
         },
@@ -404,7 +405,7 @@ describe('PluginListSettings', () => {
       } as any);
       usePluginUpdateStore.setState({
         updates: [
-          { pluginId: 'updatable', pluginName: 'Updatable Plugin', currentVersion: '1.0.0', latestVersion: '2.0.0', assetUrl: '', sha256: '', size: 0, api: 0.5 },
+          { pluginId: 'updatable', pluginName: 'Updatable Plugin', currentVersion: '1.0.0', latestVersion: '2.0.0', assetUrl: '', sha256: '', size: 0, api: 0.9 },
         ],
       });
       render(<PluginListSettings />);
@@ -417,7 +418,7 @@ describe('PluginListSettings', () => {
       usePluginStore.setState({
         plugins: {
           'updating-plug': {
-            manifest: { id: 'updating-plug', name: 'Updating Plugin', version: '1.0.0', engine: { api: 0.5 }, scope: 'app' },
+            manifest: { id: 'updating-plug', name: 'Updating Plugin', version: '1.0.0', engine: { api: 0.9 }, scope: 'app' },
             status: 'activated', source: 'community', pluginPath: '/plugins/updating-plug',
           },
         },
@@ -426,7 +427,7 @@ describe('PluginListSettings', () => {
       } as any);
       usePluginUpdateStore.setState({
         updates: [
-          { pluginId: 'updating-plug', pluginName: 'Updating Plugin', currentVersion: '1.0.0', latestVersion: '2.0.0', assetUrl: '', sha256: '', size: 0, api: 0.5 },
+          { pluginId: 'updating-plug', pluginName: 'Updating Plugin', currentVersion: '1.0.0', latestVersion: '2.0.0', assetUrl: '', sha256: '', size: 0, api: 0.9 },
         ],
         updating: { 'updating-plug': 'downloading' },
       });
@@ -441,7 +442,7 @@ describe('PluginListSettings', () => {
       usePluginStore.setState({
         plugins: {
           'error-plug': {
-            manifest: { id: 'error-plug', name: 'Error Plugin', version: '1.0.0', engine: { api: 0.5 }, scope: 'app' },
+            manifest: { id: 'error-plug', name: 'Error Plugin', version: '1.0.0', engine: { api: 0.9 }, scope: 'app' },
             status: 'activated', source: 'community', pluginPath: '/plugins/error-plug',
           },
         },
@@ -461,7 +462,7 @@ describe('PluginListSettings', () => {
       usePluginStore.setState({
         plugins: {
           'pending-plug': {
-            manifest: { id: 'pending-plug', name: 'Pending Plugin', version: '2.0.0', engine: { api: 0.5 }, scope: 'app', permissions: ['storage', 'process'] },
+            manifest: { id: 'pending-plug', name: 'Pending Plugin', version: '2.0.0', engine: { api: 0.9 }, scope: 'app', permissions: ['storage', 'process'] },
             status: 'pending-approval' as const,
             source: 'community',
             pluginPath: '/plugins/pending-plug',
@@ -488,11 +489,16 @@ describe('PluginListSettings', () => {
       expect(screen.queryByTitle('View permissions')).not.toBeInTheDocument();
     });
 
-    it('shows a deprecation line for plugins on an old API', () => {
-      render(<PluginListSettings />);
-      expect(screen.getByTestId('deprecated-api-test-builtin')).toHaveTextContent(
-        'Uses plugin API 0.5, which stops loading in v0.39.',
-      );
+    it('shows a deprecation line for plugins on a deprecated API', () => {
+      DEPRECATED_PLUGIN_API_VERSIONS[0.9] = 'v2.0';
+      try {
+        render(<PluginListSettings />);
+        expect(screen.getByTestId('deprecated-api-test-builtin')).toHaveTextContent(
+          'Uses plugin API 0.9, which stops loading in v2.0.',
+        );
+      } finally {
+        delete DEPRECATED_PLUGIN_API_VERSIONS[0.9];
+      }
     });
 
     it('shows no action line for a plugin on a current API', () => {
@@ -563,7 +569,7 @@ describe('PluginListSettings', () => {
             pluginPath: '/builtin/group-project',
           },
           'test-builtin': {
-            manifest: { id: 'test-builtin', name: 'Test Builtin', version: '1.0.0', engine: { api: 0.5 }, scope: 'project' },
+            manifest: { id: 'test-builtin', name: 'Test Builtin', version: '1.0.0', engine: { api: 0.9 }, scope: 'project' },
             status: 'activated',
             source: 'builtin',
             pluginPath: '/builtin/test',

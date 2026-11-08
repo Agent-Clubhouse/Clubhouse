@@ -17,6 +17,15 @@ import { RETIRED_EXPERIMENTAL_FLAGS, stripRetiredPluginIds } from './retired-plu
 import { ATTR, isTelemetryEnabled, tel } from '../telemetry';
 import type { Classification } from '../telemetry/facade';
 
+/**
+ * The `engine.api` an incompatible manifest declares, kept on its registry
+ * entry so Settings and the removed-API notice can name the version (0 if none).
+ */
+function declaredApiVersion(rawManifest: unknown): number {
+  const engine = (rawManifest as { engine?: { api?: unknown } } | null)?.engine;
+  return typeof engine?.api === 'number' ? engine.api : 0;
+}
+
 const activeContexts = new Map<string, PluginContext>();
 
 // ── Activation timeouts ───────────────────────────────────────────────
@@ -336,7 +345,7 @@ export async function initializePluginSystem(): Promise<void> {
               id: derivedId,
               name: (rawManifest as Record<string, unknown>)?.name as string || 'Unknown Plugin',
               version: (rawManifest as Record<string, unknown>)?.version as string || '0.0.0',
-              engine: { api: 0 },
+              engine: { api: declaredApiVersion(rawManifest) },
               scope: 'project',
             };
             store.registerPlugin(partialManifest, source, pluginPath, 'incompatible', result.errors.join('; '));
@@ -965,7 +974,12 @@ export async function hotReloadPlugin(pluginId: string): Promise<void> {
     rendererLog('core:plugins', 'error', `Updated plugin ${pluginId} has invalid manifest`, {
       meta: { errors: validation.errors },
     });
-    store.setPluginStatus(pluginId, 'incompatible', validation.errors.join('; '));
+    // Keep the refused update's API version on the entry, so Settings and the
+    // removed-API notice name the version that was refused, not the old one.
+    store.registerPlugin(
+      { ...entry.manifest, engine: { ...entry.manifest.engine, api: declaredApiVersion(discovered.manifest) } },
+      entry.source, entry.pluginPath, 'incompatible', validation.errors.join('; '),
+    );
     return;
   }
 
@@ -1127,7 +1141,7 @@ export async function discoverNewPlugins(): Promise<string[]> {
         id: id || pluginPath.replace(/\/+$/, '').split('/').pop() || 'unknown',
         name: (rawManifest as Record<string, unknown>)?.name as string || 'Unknown Plugin',
         version: (rawManifest as Record<string, unknown>)?.version as string || '0.0.0',
-        engine: { api: 0 },
+        engine: { api: declaredApiVersion(rawManifest) },
         scope: 'project',
       };
       store.registerPlugin(partialManifest, source, pluginPath, 'incompatible', result.errors.join('; '));
@@ -1251,7 +1265,7 @@ export async function refreshCommunityPlugins(opts?: {
         id,
         name: (rawManifest as Record<string, unknown>)?.name as string || 'Unknown Plugin',
         version: (rawManifest as Record<string, unknown>)?.version as string || '0.0.0',
-        engine: { api: 0 },
+        engine: { api: declaredApiVersion(rawManifest) },
         scope: 'project',
       };
       store.registerPlugin(partialManifest, source, pluginPath, 'incompatible', validation.errors.join('; '));

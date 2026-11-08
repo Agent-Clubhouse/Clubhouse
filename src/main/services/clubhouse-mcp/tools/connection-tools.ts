@@ -362,7 +362,7 @@ export function registerConnectionTools(): void {
       },
       required: ['name'],
     },
-  }, handleCreateGroupProject, options);
+  }, handleCreateGroupProject, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg' } });
 
   registerGlobalTool('add_to_group_project', {
     description: 'Add you or one of your helpers to a group project. The membership is saved and comes back when Clubhouse restarts.',
@@ -374,7 +374,7 @@ export function registerConnectionTools(): void {
       },
       required: ['project', 'helper'],
     },
-  }, handleAddToGroupProject, options);
+  }, handleAddToGroupProject, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg' } });
 
   registerGlobalTool('remove_from_group_project', {
     description: 'Remove you or one of your helpers from a group project. Memberships made on the canvas stay; change those on the canvas.',
@@ -386,7 +386,7 @@ export function registerConnectionTools(): void {
       },
       required: ['project', 'helper'],
     },
-  }, handleRemoveFromGroupProject, options);
+  }, handleRemoveFromGroupProject, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg' } });
 
   registerGlobalTool('connect_agents', {
     description:
@@ -401,7 +401,7 @@ export function registerConnectionTools(): void {
       },
       required: ['from', 'to'],
     },
-  }, handleConnectAgents, options);
+  }, handleConnectAgents, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg' } });
 
   registerGlobalTool('disconnect_agents', {
     description:
@@ -416,5 +416,5 @@ export function registerConnectionTools(): void {
       },
       required: ['from', 'to'],
     },
-  }, handleDisconnectAgents, options);
+  }, handleDisconnectAgents, { ...options, grant: { actions: ['connection.manage'], target: 'agent_arg' } });
 }

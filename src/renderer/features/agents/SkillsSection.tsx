@@ -1,8 +1,10 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useId } from 'react';
 import { SkillEntry } from '../../../shared/types';
 import { SettingsMonacoEditor } from '../../components/SettingsMonacoEditor';
 import { Button } from '../../components/Button';
 import { useReportDirty } from './agentSettingsPages';
+import { loadedState, type ReportedSkills } from './details/reported-skills';
+import { MAX_LISTED_SKILLS } from '../../../shared/skills-folder';
 
 interface Props {
   worktreePath: string;
@@ -17,6 +19,12 @@ interface Props {
   onDirtyChange?: (dirty: boolean) => void;
   /** Items in the list, for the sidebar. */
   onCountChange?: (count: number) => void;
+  /** The provider the agent runs on, by name ("Claude Code"). */
+  providerName?: string;
+  /** Whose folder this is: the agent's worktree, or the project's for an agent without one. */
+  scope?: 'agent' | 'project';
+  /** What the provider reported loaded for the running session (#2929). Never inferred from the files. */
+  reported?: ReportedSkills;
 }
 
 type View = 'list' | 'create' | 'edit';
@@ -25,7 +33,8 @@ export function SkillsSection(props: Props) {
   return <SkillsTarget key={JSON.stringify([props.worktreePath, props.projectPath, props.agentId, props.pathLabel])} {...props} />;
 }
 
-function SkillsTarget({ worktreePath, projectPath, agentId, disabled, refreshKey, pathLabel, hideTitle, onDirtyChange, onCountChange }: Props) {
+function SkillsTarget({ worktreePath, projectPath, agentId, disabled, refreshKey, pathLabel, hideTitle, onDirtyChange, onCountChange, providerName = 'the provider', scope = 'agent', reported }: Props) {
+  const evidenceId = useId();
   const active = useRef(true);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const [skills, setSkills] = useState<SkillEntry[]>([]);
@@ -166,24 +175,40 @@ function SkillsTarget({ worktreePath, projectPath, agentId, disabled, refreshKey
         </Button>
       </div>
 
-      <p className="text-xs text-ctp-overlay1 mb-2">Worktree files. This list does not confirm which skills the provider loaded.</p>
+      <p className="text-xs text-ctp-overlay1 mb-2" data-testid="skills-evidence-note">
+        Found on disk in {scope === 'agent' ? 'the agent’s folder' : 'the project folder'}. A skill shows as loaded only when {providerName} reports one by that name for the running session, and {providerName} doesn’t say which folder it came from.
+      </p>
+      {skills.length >= MAX_LISTED_SKILLS && (
+        <p className="text-xs text-ctp-overlay1 mb-2" data-testid="skills-cap-note">Showing the first {MAX_LISTED_SKILLS} folders by name.</p>
+      )}
       {skills.length === 0 ? (
         <p className="text-xs text-ctp-overlay1 py-2">No skills defined.</p>
       ) : (
         <div>
-          {skills.map((skill) => (
+          {skills.map((skill, i) => (
             <div
               key={skill.name}
               className="min-h-[30px] py-1 flex items-center justify-between border-t border-surface-0"
             >
-              <button
-                onClick={() => handleEdit(skill.name)}
-                className="text-[13px] text-ctp-text font-mono truncate hover:text-ctp-accent cursor-pointer transition-colors text-left"
-                title="Click to edit"
-              >
-                {skill.name}
-                <span className="block text-[11px] text-ctp-overlay1 truncate" title={skill.path}>{skill.path}</span>
-              </button>
+              <div className="min-w-0">
+                <button
+                  onClick={() => handleEdit(skill.name)}
+                  className="block max-w-full text-[13px] text-ctp-text font-mono truncate hover:text-ctp-accent cursor-pointer transition-colors text-left"
+                  title="Click to edit"
+                  aria-describedby={`${evidenceId}-${i}`}
+                >
+                  {skill.name}
+                  <span className="block text-[11px] text-ctp-overlay1 truncate" title={skill.path}>{skill.path}</span>
+                </button>
+                <span id={`${evidenceId}-${i}`} className="block text-[11px] text-ctp-overlay1" data-testid={`skill-evidence-${skill.name}`}>
+                  {[
+                    providerName.charAt(0).toUpperCase() + providerName.slice(1),
+                    scope === 'agent' ? 'Agent folder' : 'Project folder',
+                    skill.managed ? 'Managed by Clubhouse' : 'Not managed by Clubhouse',
+                    loadedState(skill, reported?.report?.names) === 'reported' ? `${providerName} reports a skill by this name loaded` : 'Loaded: not confirmed',
+                  ].join(' · ')}
+                </span>
+              </div>
               <div className="flex gap-1 flex-shrink-0 ml-2">
                 <Button
                   kind="quiet"

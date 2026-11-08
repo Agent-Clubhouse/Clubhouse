@@ -174,6 +174,7 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
       ...(fresh && entry.mission ? { mission: entry.mission } : {}),
       permissionMode: entry.permissionMode,
       freeAgentMode: entry.freeAgentMode ?? durableConfig?.freeAgentMode,
+      ...(entry.access ? { access: entry.access } : {}),
     });
 
     // Clear the resuming spinner overlay and mark resume complete
@@ -212,6 +213,7 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
           // No mission on resume (#2074), here as on the first attempt
           permissionMode: entry.permissionMode,
           freeAgentMode: entry.freeAgentMode ?? fallbackConfig?.freeAgentMode,
+          ...(entry.access ? { access: entry.access } : {}),
         });
         useAgentStore.setState((s) => {
           const agent = s.agents[entry.agentId];

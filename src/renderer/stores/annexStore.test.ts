@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { AnnexSettings, AnnexStatus } from '../../shared/types';
+import type { AnnexPeerListing, AnnexSettings, AnnexStatus } from '../../shared/types';
 
 // ---------- IPC mock ----------
 const mockAnnex = {
@@ -8,6 +8,9 @@ const mockAnnex = {
   getStatus: vi.fn<() => Promise<AnnexStatus>>(),
   regeneratePin: vi.fn<() => Promise<AnnexStatus>>(),
   onStatusChanged: vi.fn<(cb: (status: AnnexStatus) => void) => () => void>(),
+  listPeers: vi.fn<() => Promise<AnnexPeerListing[]>>(),
+  removePeer: vi.fn<(fingerprint: string) => Promise<boolean>>(),
+  onPeersChanged: vi.fn<(cb: (peers: AnnexPeerListing[]) => void) => () => void>(),
 };
 
 Object.defineProperty(globalThis, 'window', {
@@ -15,7 +18,7 @@ Object.defineProperty(globalThis, 'window', {
   writable: true,
 });
 
-import { useAnnexStore, initAnnexListener } from './annexStore';
+import { useAnnexStore, initAnnexListener, subscribeAnnexPeers } from './annexStore';
 
 // ---------- helpers ----------
 function getState() {
@@ -176,6 +179,60 @@ describe('annexStore', () => {
       callback!(pushed);
 
       expect(getState().status).toEqual(pushed);
+    });
+  });
+
+  // ---- peers ----
+  describe('peers', () => {
+    const PHONE: AnnexPeerListing = {
+      fingerprint: 'fp-phone', publicKey: 'pk', alias: 'Phone', icon: 'phone', color: 'indigo',
+      pairedAt: '2026-11-01T00:00:00Z', lastSeen: '2026-11-07T00:00:00Z', role: 'controller', needsPairing: false,
+    };
+    const LAPTOP: AnnexPeerListing = { ...PHONE, fingerprint: 'fp-laptop', alias: 'Laptop', needsPairing: true };
+
+    beforeEach(() => {
+      useAnnexStore.setState({ peers: [] });
+    });
+
+    it('loadPeers fills the list', async () => {
+      mockAnnex.listPeers.mockResolvedValueOnce([PHONE, LAPTOP]);
+      await getState().loadPeers();
+      expect(getState().peers).toEqual([PHONE, LAPTOP]);
+    });
+
+    it('loadPeers keeps the list when IPC fails', async () => {
+      useAnnexStore.setState({ peers: [PHONE] });
+      mockAnnex.listPeers.mockRejectedValueOnce(new Error('fail'));
+      await getState().loadPeers();
+      expect(getState().peers).toEqual([PHONE]);
+    });
+
+    it('removePeer calls IPC and drops the row', async () => {
+      useAnnexStore.setState({ peers: [PHONE, LAPTOP] });
+      mockAnnex.removePeer.mockResolvedValueOnce(true);
+      await getState().removePeer('fp-phone');
+      expect(mockAnnex.removePeer).toHaveBeenCalledWith('fp-phone');
+      expect(getState().peers).toEqual([LAPTOP]);
+    });
+
+    it('removePeer keeps the row when IPC fails', async () => {
+      useAnnexStore.setState({ peers: [PHONE] });
+      mockAnnex.removePeer.mockRejectedValueOnce(new Error('fail'));
+      await getState().removePeer('fp-phone');
+      expect(getState().peers).toEqual([PHONE]);
+    });
+
+    it('subscribeAnnexPeers applies broadcasts and returns the unsubscribe', () => {
+      let callback: ((peers: AnnexPeerListing[]) => void) | undefined;
+      const unsub = vi.fn();
+      mockAnnex.onPeersChanged.mockImplementationOnce((cb) => {
+        callback = cb;
+        return unsub;
+      });
+      const cleanup = subscribeAnnexPeers();
+      callback!([LAPTOP]);
+      expect(getState().peers).toEqual([LAPTOP]);
+      expect(cleanup).toBe(unsub);
     });
   });
 });

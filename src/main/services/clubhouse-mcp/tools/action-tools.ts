@@ -432,7 +432,14 @@ async function guarded(tool: ActionToolName, callerId: string, args: Obj, handle
 }
 
 /** Listed for agents that can own actions: not quick agents, nor a turned-off Dispatcher. */
-const ACTIONS_GROUP = { group: 'actions' } as const;
+/**
+ * Grant declarations (#2967): actions are the app's, so every target is
+ * `app`. Who may see or change which action is still the interim rule in
+ * actionScope and rights.ts until the evaluator reads these (#2921).
+ */
+const READ = { group: 'actions', grant: { actions: ['action.read'], target: 'app' } } as const;
+const WRITE = { group: 'actions', grant: { actions: ['action.write'], target: 'app' } } as const;
+const RUN = { group: 'actions', grant: { actions: ['action.run'], target: 'app' } } as const;
 
 function schema(properties: Obj, required: string[] = []): McpToolDefinition['inputSchema'] {
   return { type: 'object', properties, ...(required.length > 0 && { required }) };
@@ -450,7 +457,7 @@ export function registerActionTools(): void {
       inputSchema: schema(ACTION_FIELDS, ['trigger', 'steps']),
     },
     (callerId, args) => guarded('create_action', callerId, args, createAction),
-    ACTIONS_GROUP,
+    WRITE,
   );
   registerGlobalTool(
     'list_actions',
@@ -461,7 +468,7 @@ export function registerActionTools(): void {
       inputSchema: schema({}),
     },
     (callerId, args) => guarded('list_actions', callerId, args, (scope) => listActions(scope)),
-    ACTIONS_GROUP,
+    READ,
   );
   registerGlobalTool(
     'update_action',
@@ -473,7 +480,7 @@ export function registerActionTools(): void {
       inputSchema: schema({ ...ID_FIELD, ...ACTION_FIELDS }, ['id']),
     },
     (callerId, args) => guarded('update_action', callerId, args, updateAction),
-    ACTIONS_GROUP,
+    WRITE,
   );
   registerGlobalTool(
     'delete_action',
@@ -484,7 +491,7 @@ export function registerActionTools(): void {
       inputSchema: schema(ID_FIELD, ['id']),
     },
     (callerId, args) => guarded('delete_action', callerId, args, deleteAction),
-    ACTIONS_GROUP,
+    WRITE,
   );
   registerGlobalTool(
     'run_action',
@@ -495,7 +502,7 @@ export function registerActionTools(): void {
       inputSchema: schema(ID_FIELD, ['id']),
     },
     (callerId, args) => guarded('run_action', callerId, args, runAction),
-    ACTIONS_GROUP,
+    RUN,
   );
   registerGlobalTool(
     'action_history',
@@ -506,6 +513,6 @@ export function registerActionTools(): void {
       inputSchema: schema(ID_FIELD, ['id']),
     },
     (callerId, args) => guarded('action_history', callerId, args, actionHistory),
-    ACTIONS_GROUP,
+    READ,
   );
 }

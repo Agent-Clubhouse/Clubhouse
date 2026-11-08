@@ -102,7 +102,7 @@ export function registerAgentTools(): void {
     mcpAdapter.registerMcpCommand({
       id: change ? 'agent.changeProvider' : 'agent.previewProvider', category: 'agent',
       label: change ? 'Change Provider' : 'Preview Provider',
-      mcp: { targetKind: 'agent', nameSuffix: change ? 'change_provider' : 'preview_provider', group: 'dispatcher' },
+      mcp: { targetKind: 'agent', nameSuffix: change ? 'change_provider' : 'preview_provider', group: 'dispatcher', grant: { actions: ['agent.configure'], target: 'bound' } },
       description: change
         ? 'Save the previewed provider for this sleeping connected orchestrator. Requires expectedState from preview_provider. Never stops, wakes, resumes across providers, or changes access/model policy. Old sessions remain in history.'
         : 'Preview a provider change for this connected orchestrator: active versus saved provider, local CLI availability, instruction compatibility, reset settings and an expectedState token. Sleep separately first; unavailable or incompatible targets are blocked.',
@@ -121,7 +121,7 @@ export function registerAgentTools(): void {
     id: 'agent.sendMessage',
     category: 'agent',
     label: 'Send Message',
-    mcp: { targetKind: 'agent', nameSuffix: 'send_message' },
+    mcp: { targetKind: 'agent', nameSuffix: 'send_message', grant: { actions: ['agent.message'], target: 'bound' } },
     description:
       'Send a message to the linked agent. The message is injected as input to the agent and submitted.\n\n' +
       'IMPORTANT — this is asynchronous. The target agent will process the message on its own timeline ' +
@@ -219,7 +219,7 @@ export function registerAgentTools(): void {
     id: 'agent.getStatus',
     category: 'agent',
     label: 'Get Agent Status',
-    mcp: { targetKind: 'agent', nameSuffix: 'get_status' },
+    mcp: { targetKind: 'agent', nameSuffix: 'get_status', grant: { actions: ['agent.read'], target: 'bound' } },
     description: 'Get the current status of the linked agent.',
     inputSchema: {
       type: 'object',
@@ -253,7 +253,7 @@ export function registerAgentTools(): void {
     id: 'agent.readOutput',
     category: 'agent',
     label: 'Read Agent Output',
-    mcp: { targetKind: 'agent', nameSuffix: 'read_output' },
+    mcp: { targetKind: 'agent', nameSuffix: 'read_output', grant: { actions: ['agent.read'], target: 'bound' } },
     description:
         'Read recent output from the linked agent.\n\n' +
         'Use this to poll for responses after send_message. The output is a raw terminal buffer ' +
@@ -307,7 +307,7 @@ export function registerAgentTools(): void {
     id: 'agent.checkConnectivity',
     category: 'agent',
     label: 'Check Connectivity',
-    mcp: { targetKind: 'agent', nameSuffix: 'check_connectivity' },
+    mcp: { targetKind: 'agent', nameSuffix: 'check_connectivity', grant: { actions: ['agent.read'], target: 'bound' } },
     description:
         'Check whether communication with the linked agent is bidirectional or unidirectional.\n\n' +
         'Returns a JSON object with:\n' +
@@ -375,7 +375,7 @@ export function registerAgentTools(): void {
     id: 'agent.sendFile',
     category: 'agent',
     label: 'Send File',
-    mcp: { targetKind: 'agent', nameSuffix: 'send_file' },
+    mcp: { targetKind: 'agent', nameSuffix: 'send_file', grant: { actions: ['agent.message'], target: 'bound' } },
     description:
         'Send a message to the linked agent via a temp file.\n\n' +
         'The message content is written to a temporary file on disk and the agent receives a ' +
@@ -478,7 +478,7 @@ export function registerAgentTools(): void {
     id: 'agent.clearAgent',
     category: 'agent',
     label: 'Clear Agent Context',
-    mcp: { targetKind: 'agent', nameSuffix: 'clear_agent' },
+    mcp: { targetKind: 'agent', nameSuffix: 'clear_agent', grant: { actions: ['agent.reset'], target: 'bound' } },
     description:
         'Send a /clear command to the linked agent, clearing its conversation context.\n\n' +
         'Injects /clear directly into the agent\'s CLI. Use this when the agent\'s context ' +
@@ -514,7 +514,7 @@ export function registerAgentTools(): void {
     id: 'agent.compactAgent',
     category: 'agent',
     label: 'Compact Agent Context',
-    mcp: { targetKind: 'agent', nameSuffix: 'compact_agent' },
+    mcp: { targetKind: 'agent', nameSuffix: 'compact_agent', grant: { actions: ['agent.reset'], target: 'bound' } },
     description:
         'Send a /compact command to the linked agent, compacting its conversation context.\n\n' +
         'Injects /compact directly into the agent\'s CLI. Use this when the agent\'s context ' +
@@ -550,7 +550,7 @@ export function registerAgentTools(): void {
     id: 'agent.wakeAgent',
     category: 'agent',
     label: 'Wake Agent',
-    mcp: { targetKind: 'agent', nameSuffix: 'wake_agent', group: 'dispatcher' },
+    mcp: { targetKind: 'agent', nameSuffix: 'wake_agent', group: 'dispatcher', grant: [{ actions: ['agent.wake'], target: 'bound' }, { actions: ['agent.message'], target: 'bound', ifArgs: ['message'] }] },
     description:
       'Wake the linked agent if it is sleeping. It resumes its last session when it has one, at its own access level.\n\n' +
       'An optional message is delivered as its first prompt, tagged like send_message, so include what to do and why. ' +
@@ -579,7 +579,7 @@ export function registerAgentTools(): void {
     id: 'agent.sleepAgent',
     category: 'agent',
     label: 'Sleep Agent',
-    mcp: { targetKind: 'agent', nameSuffix: 'sleep_agent', group: 'dispatcher' },
+    mcp: { targetKind: 'agent', nameSuffix: 'sleep_agent', group: 'dispatcher', grant: { actions: ['agent.sleep'], target: 'bound' } },
     description:
       'Put the linked agent to sleep. Returns once it has stopped, or already_sleeping if it was. Its session stays; wake_agent resumes it.\n\n' +
       'Without force, this refuses a chat agent that is mid-turn and any agent in the CLI view, whose turn state is unknown. ' +
@@ -626,6 +626,7 @@ export function registerAgentTools(): void {
       }
       return callTool(agentId, buildToolName(binding, String(args.tool)), (args.arguments as Record<string, unknown>) ?? {});
     },
-    { group: 'fixedToolList' },
+    // Checked as the wire tool it calls: callTool runs again with that tool.
+    { group: 'fixedToolList', grant: 'called_tool' },
   );
 }

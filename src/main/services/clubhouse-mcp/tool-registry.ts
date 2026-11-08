@@ -5,6 +5,7 @@
 
 import { withSettingsSurface } from '../settings-audit';
 import type { McpToolDefinition, McpToolResult, McpBinding, BindingTargetKind } from './types';
+import type { ToolGrant } from './tool-grants';
 import { bindingManager } from './binding-manager';
 import { agentRegistry } from '../agent-registry';
 import { groupProjectRegistry } from '../group-project-registry';
@@ -116,6 +117,12 @@ function groupRefusal(group: ToolGroups): McpToolResult {
 }
 
 export interface ToolRegistrationOptions {
+  /**
+   * The grant actions a call needs and where its target comes from (#2967).
+   * Required: a tool can't be registered without one. Declarations only for
+   * now: nothing allows or refuses a call by it yet.
+   */
+  grant: ToolGrant;
   /** Gate the tool behind a tool group, or several. */
   group?: ToolGroups;
   /**
@@ -135,6 +142,8 @@ export interface ToolTemplate {
   nameSuffix: string;
   definition: Omit<McpToolDefinition, 'name'>;
   handler: (targetId: string, agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
+  /** What a call needs, as in {@link ToolRegistrationOptions.grant}. */
+  grant: ToolGrant;
   group?: ToolGroups;
 }
 
@@ -201,6 +210,7 @@ const SLEEPING_TARGET_TOOLS: ReadonlySet<string> = new Set(['get_status', 'wake_
 const globalTools = new Map<string, {
   definition: McpToolDefinition;
   handler: (agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
+  grant?: ToolGrant;
   group?: ToolGroups;
   when?: ToolCondition;
 }>();
@@ -248,7 +258,7 @@ export function registerToolTemplate(
   nameSuffix: string,
   definition: Omit<McpToolDefinition, 'name'>,
   handler: (targetId: string, agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>,
-  options: ToolRegistrationOptions = {},
+  options: ToolRegistrationOptions,
 ): void {
   let templates = toolTemplates.get(targetKind);
   if (!templates) {
@@ -258,7 +268,12 @@ export function registerToolTemplate(
   if (templates.some(t => t.nameSuffix === nameSuffix)) {
     throw new Error(`Duplicate tool template nameSuffix "${nameSuffix}" for targetKind "${targetKind}"`);
   }
-  templates.push({ nameSuffix, definition, handler, ...(options.group && { group: options.group }) });
+  // `options?.`: test-only tools may register without options; real tools can't (typecheck, tool-grants.test).
+  templates.push({
+    nameSuffix, definition, handler,
+    grant: options?.grant,
+    ...(options?.group && { group: options.group }),
+  });
 }
 
 /**
@@ -285,15 +300,46 @@ export function registerGlobalTool(
   name: string,
   definition: Omit<McpToolDefinition, 'name'>,
   handler: (agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>,
-  options: ToolRegistrationOptions = {},
+  options: ToolRegistrationOptions,
 ): void {
+  // `options?.`: test-only tools may register without options; real tools can't (typecheck, tool-grants.test).
   globalTools.set(name, {
     definition: { ...definition, name },
     handler,
-    ...(options.group && { group: options.group }),
-    ...(options.when && { when: options.when }),
+    ...(options?.grant && { grant: options.grant }),
+    ...(options?.group && { group: options.group }),
+    ...(options?.when && { when: options.when }),
   });
   invalidateToolListCache();
+}
+
+/** One registered tool and its grant declaration, for the declaration table and the evaluator. */
+export interface RegisteredToolGrant {
+  /** 'global', or the target kind of a template. */
+  kind: 'global' | BindingTargetKind;
+  /** The global tool's name, or the template's name suffix. */
+  name: string;
+  /** Undefined only for a tool registered without one (tests). */
+  grant: ToolGrant | undefined;
+}
+
+/**
+ * Every registered global tool and tool template with its grant declaration
+ * (#2967), templates first by target kind. Target-scoped templates (plugins)
+ * are listed under their kind once per target.
+ */
+export function listToolGrants(): RegisteredToolGrant[] {
+  const out: RegisteredToolGrant[] = [];
+  for (const [kind, templates] of toolTemplates) {
+    for (const t of templates) out.push({ kind, name: t.nameSuffix, grant: t.grant });
+  }
+  for (const [kind, byTarget] of targetTemplates) {
+    for (const [, templates] of byTarget) {
+      for (const t of templates) out.push({ kind, name: t.nameSuffix, grant: t.grant });
+    }
+  }
+  for (const [name, tool] of globalTools) out.push({ kind: 'global', name, grant: tool.grant });
+  return out;
 }
 
 /** Whether every global tool's condition is on, one character each: part of the cache key. */

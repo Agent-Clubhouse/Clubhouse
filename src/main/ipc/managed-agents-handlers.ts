@@ -153,6 +153,7 @@ export function registerManagedAgentsHandlers(): void {
         ...(settings.orchestrator && { orchestrator: settings.orchestrator }),
         ...(settings.model && settings.model !== 'default' && { model: settings.model }),
         ...(settings.effort && { effort: settings.effort }),
+        ...(settings.access && { access: settings.access }),
         ...(settings.freeAgentMode && { freeAgentMode: true }),
         ...(settings.orchestration && { orchestration: settings.orchestration }),
         ...(settings.helperTemplateId && { helperTemplateId: settings.helperTemplateId }),

@@ -9,23 +9,11 @@ import { IPC } from '../../shared/ipc-channels';
 import { watchMcpCallers } from '../services/orchestration-policy';
 import { bindingManager, bridgeServer } from '../services/clubhouse-mcp';
 import type { BindingTargetKind } from '../services/clubhouse-mcp';
-import { registerAgentTools } from '../services/clubhouse-mcp/tools/agent-tools';
-import { registerBrowserTools, registerWebview, unregisterWebview } from '../services/clubhouse-mcp/tools/browser-tools';
-import { registerGroupProjectTools } from '../services/clubhouse-mcp/tools/group-project-tools';
-import { registerNotifyTools } from '../services/clubhouse-mcp/tools/notify-tools';
-import { registerHelperDisposeTools } from '../services/clubhouse-mcp/tools/helper-dispose-tools';
-import { registerHelperQuestionTools } from '../services/clubhouse-mcp/tools/helper-question-tools';
+import { registerClubhouseMcpTools } from '../services/clubhouse-mcp/tools/register-all';
+import { registerWebview, unregisterWebview } from '../services/clubhouse-mcp/tools/browser-tools';
 import { findMainWindow } from './window-handlers';
-import { registerHelperTools, watchHelperStartRequests } from '../services/clubhouse-mcp/tools/helper-tools';
-import { registerModelTools } from '../services/clubhouse-mcp/tools/model-tools';
-import { registerDispatcherTools } from '../services/clubhouse-mcp/tools/dispatcher-tools';
-import { registerAppearanceTools } from '../services/clubhouse-mcp/tools/appearance-tools';
-import { registerSettingsReadTools } from '../services/clubhouse-mcp/tools/settings-read-tools';
-import { registerDispatcherControlTools } from '../services/clubhouse-mcp/tools/dispatcher-control-tools';
-import { registerManagedTools } from '../services/clubhouse-mcp/tools/managed-tools';
-import { registerActionTools } from '../services/clubhouse-mcp/tools/action-tools';
+import { watchHelperStartRequests } from '../services/clubhouse-mcp/tools/helper-tools';
 import { onDisposeRequestsChanged } from '../services/helper-dispose-requests';
-import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import { agentRegistry } from '../services/agent-registry';
 import { bootstrapGroupProjectAdmin } from '../services/group-project-admin-service';
 import { appLog } from '../services/log-service';
@@ -96,21 +84,8 @@ export function registerMcpBindingHandlers(): void {
   if (handlersRegistered) return; // Already registered — idempotent
   handlersRegistered = true;
 
-  // Register tool templates
-  registerAgentTools();
-  registerBrowserTools();
-  registerGroupProjectTools();
-  registerNotifyTools();
-  registerHelperDisposeTools();
-  registerHelperTools();
-  registerModelTools();
-  registerDispatcherTools();
-  registerAppearanceTools();
-  registerSettingsReadTools();
-  registerDispatcherControlTools();
-  registerManagedTools();
-  registerActionTools();
-  registerHelperQuestionTools();
+  // Register every Clubhouse MCP tool
+  registerClubhouseMcpTools();
   // Running chat sessions report plan limits between reads (#2671).
   watchSessionQuota();
   // Held helper starts (#2234) go to the main window only, for Needs you.
@@ -121,7 +96,6 @@ export function registerMcpBindingHandlers(): void {
   onDisposeRequestsChanged((change) => {
     if (change.kind === 'closed' && !change.replaced) findMainWindow()?.webContents.send(IPC.AGENT.HELPER_DISPOSE_REQUEST_CLOSED, change.helperId);
   });
-  registerConnectionTools();
 
   appLog('core:mcp', 'info', 'MCP binding handlers registered');
 

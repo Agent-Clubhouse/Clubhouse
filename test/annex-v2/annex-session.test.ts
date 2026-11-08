@@ -82,7 +82,7 @@ describeWhenAsked('one Annex session, phone and desktop controller together', ()
   const satelliteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'annex-session-satellite-'));
   const phone = phoneIdentity();
   let server: ChildProcess;
-  let info: { port: number; pairingPort: number; pin: string; controlPort: number };
+  let info: { port: number; pairingPort: number; pin: string; pairingUrl: string; controlPort: number };
   let fingerprint = '';
 
   /** A frame and the bytes it came in. A phone's socket stays open across steps. */
@@ -184,10 +184,9 @@ describeWhenAsked('one Annex session, phone and desktop controller together', ()
     info = await startSatellite();
     annexClient.startClient();
     await until(() => C.found !== null);
-    C.found!({ host: '127.0.0.1', port: info.port, addresses: ['127.0.0.1'], referer: { address: '127.0.0.1' }, txt: { pairingPort: String(info.pairingPort) } });
-    await until(() => annexClient.getDiscoveredServices().length > 0);
-    fingerprint = annexClient.getDiscoveredServices()[0].fingerprint;
-    expect(await annexClient.pairWithService(fingerprint, info.pin)).toMatchObject({ success: true });
+    // The controller pairs by the satellite's pairing link, and the phone with the same PIN.
+    fingerprint = new URL(info.pairingUrl).searchParams.get('id')!.toLowerCase();
+    expect(await annexClient.pairWithLink(info.pairingUrl)).toMatchObject({ success: true });
     expect(await pairPhone()).toBe(200);
   }, 120_000);
 
