@@ -19,8 +19,9 @@ import type { DurableAgentConfig } from '../../../shared/types';
 import { isEffortValue } from '../../../shared/agent-helpers';
 import { normalizeIdleSleep } from '../../../shared/idle-sleep';
 import { validateOrchestrationPatch } from '../../../shared/orchestration-policy';
-import { GRANT_ACTION_LABELS, grantKey, grantTargetLabel, normalizeTemplateGrants, type GrantChange, type TemplateGrant } from '../../../shared/agent-grant-changes';
-import { carriedAgentGrants } from '../agent-grants-service';
+import { GRANT_ACTION_LABELS, grantKey, grantTargetLabel, isFixedGrant, isHelperControlRow, normalizeTemplateGrants, type GrantChange, type TemplateGrant } from '../../../shared/agent-grant-changes';
+import type { GrantAction } from '../../../shared/agent-grants';
+import { carriedAgentGrants, templateLayerGrants } from '../agent-grants-service';
 import {
   CLUBHOUSE_MCP_PART_ID,
   CLUBHOUSE_PART_ALWAYS_ON,
@@ -1114,6 +1115,12 @@ export interface TemplatePushResult {
   failed?: string;
 }
 
+/** A fixed row or a Helper control row: well-formed, but never kept in a template. */
+function isDroppedQuietly(g: unknown): boolean {
+  const e = g as { action?: GrantAction; target?: TemplateGrant['target'] };
+  return !!e?.action && !!e.target && (isFixedGrant(e as TemplateGrant) || isHelperControlRow(e as TemplateGrant));
+}
+
 /** What an agent carries over its default permissions (#2971); none when they can't be read. */
 function grantsOf(agentId: string): GrantChange[] {
   try {
@@ -1260,8 +1267,20 @@ function applies(change: ManagedTemplateChange, agent: DurableAgentConfig, label
   if (change.kind === 'add') return !listOf(setup, change.part).includes(change.id);
   if (change.kind === 'remove') return listOf(setup, change.part).includes(change.id);
   if (change.kind === 'order') return false;
-  const flat = flattenSettings(settingsOf(agent, projectPath));
+  // A permission is compared with what the agent's template layer sets, not with the person's own change over it (#2971).
+  const flat = change.key.startsWith('grants.')
+    ? flattenSettings({ grants: templateGrantsOf(agent.id) })
+    : flattenSettings(settingsOf(agent, projectPath));
   return label(change.key, flat[change.key]) !== change.to;
+}
+
+function templateGrantsOf(agentId: string): GrantChange[] {
+  try {
+    return templateLayerGrants(agentId);
+  } catch {
+    // telemetry-exempt: counted as not set, so the push writes it.
+    return [];
+  }
 }
 
 /**
@@ -1284,8 +1303,10 @@ export function checkTemplateSettings(raw: unknown): ManagedTemplateSettings {
   if (s.helperTemplateId !== undefined && s.helperTemplateId !== null
     && (typeof s.helperTemplateId !== 'string' || s.helperTemplateId.length > 128)) bad('helper template isn\'t a template id');
   if (s.grants !== undefined) {
-    const list = normalizeTemplateGrants(s.grants);
-    if (!list || list.length !== (s.grants as unknown[]).length) bad('Clubhouse permissions aren\'t a list of an action, a target, and off, ask or allow');
+    // Fixed rows and Helper control's rows are dropped quietly when kept; anything malformed refuses the call.
+    const wellFormed = Array.isArray(s.grants)
+      && (s.grants as unknown[]).every((g) => normalizeTemplateGrants([g])?.length === 1 || isDroppedQuietly(g));
+    if (!wellFormed) bad('Clubhouse permissions aren\'t a list of an action, a target, and off, ask or allow');
   }
   if (s.orchestration !== undefined) {
     try {
@@ -1355,7 +1376,7 @@ function describeAlready(change: ManagedTemplateChange): string {
   if (change.kind === 'add') return `already has ${change.name}`;
   if (change.kind === 'remove') return `already has no ${change.name}`;
   if (change.kind === 'order') return 'order not pushed';
-  return `${change.key} already ${change.to}`;
+  return `${change.label ?? change.key} already ${change.to}`;
 }
 
 function refuseSkillFolderClash(skills: Array<{ name: string; skillName: string }>): void {

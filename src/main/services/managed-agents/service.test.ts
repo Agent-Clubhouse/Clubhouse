@@ -13,6 +13,7 @@ import { createAssetCatalogStore, installBuiltinAsset } from '../asset-catalog/s
 import { withSettingsSurface, _resetSettingsAuditForTesting } from '../settings-audit';
 import { createManagedStateStore } from './state-store';
 import { createManagedAgentsService, diffTemplates, ManagedError, type ManagedAgentsService } from './service';
+import { updateAgentGrantChanges } from '../agent-grants-store';
 import { BUILTIN_BLOCK_IDS, BUILTIN_MANIFEST, BUILTIN_SKILL_IDS, builtinParts, builtinTemplates, DEFAULT_HELPER_TEMPLATE_ID } from './builtins';
 import { BUILTIN_SKILL_TEXT, BUILTIN_TEXT } from './builtin-text/index';
 
@@ -709,6 +710,24 @@ describe('a template\'s Clubhouse permissions (#2971)', () => {
     ]);
     const [result] = await user(() => service.pushTemplate(t.id, next, [{ projectPath: '/p', agentId: 'a' }]));
     expect(result.settings.grants).toEqual([{ ...msg, mode: null }, { ...settingsWrite, mode: 'ask' }]);
+  });
+
+  it('counts a permission change by the agent\'s template layer, not the person\'s own change over it', async () => {
+    const t = await user(() => service.saveTemplate({
+      name: 'Layered', description: '', setup: { blocks: [], skills: [], mcps: [] }, settings: { grants: [{ ...msg, mode: 'off' }] },
+    }));
+    agent('a', { templateId: t.id });
+    agent('b', { templateId: t.id });
+    await updateAgentGrantChanges('a', () => ({ changes: [{ ...msg, mode: 'ask', by: 'user' }], template: [{ ...msg, mode: 'off' }] }));
+    await updateAgentGrantChanges('b', () => ({ changes: [], template: [{ ...msg, mode: 'ask' }] }));
+    try {
+      const preview = await user(() => service.previewTemplatePush(t.id, { setup: t.setup, settings: { grants: [{ ...msg, mode: 'ask' }] } }));
+      expect(preview.targets.find((x) => x.agentId === 'a')).toMatchObject({ applicable: 1 });
+      expect(preview.targets.find((x) => x.agentId === 'b')).toMatchObject({ applicable: 0, note: 'Clubhouse permission: Send messages and files (Connected agents) already Ask first' });
+    } finally {
+      await updateAgentGrantChanges('a', () => undefined);
+      await updateAgentGrantChanges('b', () => undefined);
+    }
   });
 });
 

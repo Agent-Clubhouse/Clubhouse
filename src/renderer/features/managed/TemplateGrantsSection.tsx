@@ -7,19 +7,13 @@
  */
 
 import { useMemo } from 'react';
-import { grantKey, grantRows, type GrantChangeMode, type GrantRow, type TemplateGrant } from '../../../shared/agent-grant-changes';
+import { grantKey, grantRows, isHelperControlRow, type GrantChangeMode, type GrantRow, type TemplateGrant } from '../../../shared/agent-grant-changes';
 import { defaultGrants } from '../../../shared/default-grants';
 import { templateGrantFacts } from '../../../shared/grant-summary';
 import type { ManagedTemplateSettings } from '../../../shared/managed-agents-types';
 import { SectionHeading } from '../agents/agentSettingsUi';
 import { GrantRowField, groupGrantRows } from '../agents/AgentGrantsSettings';
 import { settingsHelp } from '../settings/SettingsLayout';
-
-/** The rows Helper control sets: an orchestrator's start and remove permissions. */
-function followsControl(row: Pick<GrantRow, 'action' | 'target'>): boolean {
-  return (row.action === 'agent.create' && row.target.kind === 'project' && (row.target.project === 'own' || row.target.project === 'any'))
-    || (row.action === 'agent.dispose' && row.target.kind === 'my_helpers');
-}
 
 /** The template's list with one row set; back to the default drops it. */
 export function withTemplateRow(grants: readonly TemplateGrant[] | undefined, row: GrantRow, mode: GrantChangeMode, defaultMode: GrantChangeMode): TemplateGrant[] | undefined {
@@ -53,7 +47,7 @@ export function TemplateGrantsSection({ settings, onChange }: {
               key={grantKey(row)}
               row={row}
               targetLabel={group.label}
-              note={followsControl(row) ? 'Follows Helper control.' : undefined}
+              note={isHelperControlRow(row) ? 'Follows Helper control.' : undefined}
               mode={row.mode}
               disabled={false}
               error={undefined}

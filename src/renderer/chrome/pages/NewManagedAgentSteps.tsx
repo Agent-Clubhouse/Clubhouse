@@ -29,6 +29,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { IS_MAC, Row, Rule, Segmented, footerLinkClass, inputClass, selectClass, tabPanelProps } from './newAgentUi';
 import { templateGrantSummary } from '../../../shared/grant-summary';
+import type { GrantChange } from '../../../shared/agent-grant-changes';
 
 /**
  * The managed steps of New agent (#2893): Start with template, the builder
@@ -82,10 +83,13 @@ export function templateSummary(t: Pick<ManagedTemplate, 'setup' | 'settings'>):
 /**
  * What agents made from a template can do through Clubhouse (#2971): one
  * line, and the full list by target when expanded. From the same default
- * grants the call-time check uses.
+ * grants the call-time check uses, with the template's own over them.
  */
 function TemplateGrants({ template }: { template: Pick<ManagedTemplate, 'id' | 'settings'> }) {
-  const { line, groups } = useMemo(() => templateGrantSummary(template.settings.orchestration), [template.settings.orchestration]);
+  const { line, groups } = useMemo(
+    () => templateGrantSummary(template.settings.orchestration, template.settings.grants),
+    [template.settings.orchestration, template.settings.grants],
+  );
   return (
     <details className="text-xs text-ctp-overlay1 leading-normal" data-testid={`managed-template-grants-${template.id}`}>
       <summary className="cursor-pointer select-none hover:text-ctp-subtext1">{line}</summary>
@@ -250,7 +254,11 @@ async function copiedSettingsOf(c: CopyCandidate): Promise<CopiedSettings | unde
     const config = await window.clubhouse.agent.getDurableConfig(c.project.path, c.agent.id);
     if (!config) return undefined;
     // Its Clubhouse permissions over the defaults (#2971). Unreadable: copied without them.
-    const grants = await window.clubhouse.agent.getGrants(c.project.path, c.agent.id).then((v) => v.carried ?? [], (): [] => []);
+    const grants = await Promise.resolve()
+      .then(() => window.clubhouse.agent.getGrants(c.project.path, c.agent.id))
+      .then((v) => v?.carried ?? [])
+      // telemetry-exempt: copied without its permissions; the rest of its settings still copy.
+      .catch((): GrantChange[] => []);
     return {
       ...(grants.length > 0 && { grants: grants.map((g) => ({ action: g.action, target: g.target, mode: g.mode })) }),
       ...(config.access && { access: config.access }),

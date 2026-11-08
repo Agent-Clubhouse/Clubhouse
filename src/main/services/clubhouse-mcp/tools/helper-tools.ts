@@ -822,7 +822,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
       // What start_helper changed from the template is kept for the helper's Details (D91).
       const { settings: templateSettings, helperChanges, ...setup } = managedHelper;
       // The helper template's Clubhouse permissions, capped by what the orchestrator holds (#2971).
-      const helperGrants = capToHolder(orchestratorId, templateSettings?.grants ?? []);
+      const helperGrants = capToHolder(orchestratorId, templateSettings?.grants ?? [], { elsewhere: target.cross });
       started = await startDurableCreation(target.path, params, {
         inject: async (created) => {
           await managedAgents().saveSetup(target.path, created.id, setup, { helperChanges });

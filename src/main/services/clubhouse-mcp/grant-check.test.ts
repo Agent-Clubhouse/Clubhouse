@@ -343,14 +343,35 @@ describe('Ask first (#2970)', () => {
 describe('a helper template\'s permissions are capped by its orchestrator (#2971)', () => {
   beforeEach(setupCallers);
 
-  it('passes Off, and Allow or Ask first only where the orchestrator holds it', () => {
+  it('caps each entry to what the orchestrator holds, never dropping one (which would leave a wider default)', async () => {
     const app = { kind: 'app' as const };
+    const connected = { kind: 'connected' as const };
     const grants = [
-      { action: 'agent.message' as const, target: { kind: 'connected' as const }, mode: 'off' as const },
+      { action: 'agent.message' as const, target: connected, mode: 'off' as const },
       { action: 'settings.app.write' as const, target: app, mode: 'allow' as const },
       { action: 'models.read' as const, target: app, mode: 'allow' as const },
-      { action: 'agent.read' as const, target: { kind: 'connected' as const }, mode: 'ask' as const },
+      { action: 'agent.read' as const, target: connected, mode: 'ask' as const },
     ];
-    expect(capToHolder('orchestrator', grants).map((g) => g.action)).toEqual(['agent.message', 'models.read', 'agent.read']);
+    expect(capToHolder('orchestrator', grants).map((g) => `${g.action}:${g.mode}`))
+      .toEqual(['agent.message:off', 'settings.app.write:off', 'models.read:allow', 'agent.read:ask']);
+    // An orchestrator that only asks passes Ask first; one with it Off passes Off.
+    await updateAgentGrantChanges('orchestrator', () => ({ changes: [
+      { action: 'models.read', target: app, mode: 'ask' },
+      { action: 'agent.read', target: connected, mode: 'off' },
+    ] }));
+    try {
+      expect(capToHolder('orchestrator', grants).map((g) => `${g.action}:${g.mode}`))
+        .toEqual(['agent.message:off', 'settings.app.write:off', 'models.read:ask', 'agent.read:off']);
+    } finally {
+      await updateAgentGrantChanges('orchestrator', () => undefined);
+    }
+  });
+
+  it('in another project, its own project needs the orchestrator to hold any project', () => {
+    const own = [{ action: 'project.read' as const, target: { kind: 'project' as const, project: 'own' as const }, mode: 'allow' as const }];
+    expect(capToHolder('plain', own)[0].mode).toBe('allow');
+    expect(capToHolder('plain', own, { elsewhere: true })[0].mode).toBe('off');
+    // The cross-project orchestrator holds project.read on any project.
+    expect(capToHolder('orchestrator', own, { elsewhere: true })[0].mode).toBe('allow');
   });
 });

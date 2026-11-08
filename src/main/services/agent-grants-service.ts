@@ -6,7 +6,7 @@
  * surfaces call this.
  */
 
-import { applyGrantChanges, carriedGrants, grantKey, grantRows, isFixedGrant, normalizeGrantChanges, withGrantChange, withoutOwnChanges, withTemplateGrants, type AgentGrantsView, type GrantChange, type TemplateGrant } from '../../shared/agent-grant-changes';
+import { applyGrantChanges, carriedGrants, shaped, grantKey, grantRows, isFixedGrant, normalizeGrantChanges, withGrantChange, withoutOwnChanges, withTemplateGrants, type AgentGrantsView, type GrantChange, type TemplateGrant } from '../../shared/agent-grant-changes';
 import { controlFromGrantModes, controlGrantModes, defaultGrants } from '../../shared/default-grants';
 import { resolveOrchestrationPolicy } from '../../shared/orchestration-policy';
 import type { Grant } from '../../shared/agent-grants';
@@ -56,8 +56,9 @@ async function setControlRow(projectPath: string, agentId: string, row: 'create'
   if (!result.ok) throw new Error(result.message);
   // A change saved on this row before it followed the setting would win over it: drop it.
   await updateAgentGrantChanges(agentId, (saved) => {
+    // Only the person's own: the template's layer stays as it is.
     const changes = saved?.changes.filter((c) => controlRow(c, { orchestrates: true, crossProject: true }) !== row) ?? [];
-    return changes.length > 0 ? { ...saved, changes } : undefined;
+    return shaped(changes, saved?.template);
   });
 }
 
@@ -138,6 +139,11 @@ export async function applyTemplateGrants(agentId: string, grants: readonly Temp
   if (grants.length === 0) return;
   dropCallApprovalsFor(agentId);
   await updateAgentGrantChanges(agentId, (saved) => withTemplateGrants(saved, grants));
+}
+
+/** What an agent's template layer sets. */
+export function templateLayerGrants(agentId: string): GrantChange[] {
+  return getAgentGrantChanges(agentId)?.template ?? [];
 }
 
 /** What an agent carries over its defaults, for Save as template. */

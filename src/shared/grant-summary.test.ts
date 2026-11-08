@@ -20,6 +20,16 @@ describe('what agents from a template can do through Clubhouse (#2971)', () => {
     expect(grantSummaryLine(templateGrantFacts({ orchestrate: true, control: 'ask-before-start' }))).toContain('asking you before starting one');
   });
 
+  it('counts the template\'s own permissions', () => {
+    const off = [{ action: 'agent.message' as const, target: { kind: 'connected' as const }, mode: 'off' as const }];
+    expect(templateGrantSummary(undefined, off).line).toBe('Through Clubhouse it can read agents it\'s connected to.');
+    const none = [...off, { action: 'agent.read' as const, target: { kind: 'connected' as const }, mode: 'off' as const }];
+    expect(templateGrantSummary(undefined, none).line).toBe('Through Clubhouse it can\'t read or message the agents it\'s connected to.');
+    expect(templateGrantSummary({ orchestrate: true }, none).line).toBe('Through Clubhouse it can start and manage its own helpers.');
+    const extra = templateGrantSummary(undefined, [{ action: 'settings.app.write', target: { kind: 'app' }, mode: 'ask' }]);
+    expect(extra.groups.find((g) => g.label === 'The app')?.actions).toContain('Change app settings (asks first)');
+  });
+
   it('lists every default grant by target, marking Ask first', () => {
     const { groups } = templateGrantSummary({ orchestrate: true, control: 'ask-before-start' });
     const helpers = groups.find((g) => g.label === 'Its helpers');

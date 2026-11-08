@@ -52,6 +52,16 @@ export function targetKey(t: GrantTarget): string {
 }
 
 /**
+ * The rows an orchestrator's approval setting (Helper control) sets: starting
+ * helpers (agent.create on its own or any project) and removing them
+ * (agent.dispose on its helpers). A template never sets these itself (#2971).
+ */
+export function isHelperControlRow(g: { action: GrantAction; target: GrantTarget }): boolean {
+  return (g.action === 'agent.create' && g.target.kind === 'project' && (g.target.project === 'own' || g.target.project === 'any'))
+    || (g.action === 'agent.dispose' && g.target.kind === 'my_helpers');
+}
+
+/**
  * Grants nobody can turn off: a helper always reaches its orchestrator to
  * report (#2921, "agent.message on parent (fixed)"). Shown greyed.
  */
@@ -84,7 +94,7 @@ export function applyGrantChanges(defaults: readonly Grant[], saved: AgentGrantC
 export function carriedGrants(saved: AgentGrantChanges | undefined): GrantChange[] {
   const out = new Map<string, GrantChange>();
   for (const c of [...(saved?.template ?? []), ...(saved?.changes ?? [])]) {
-    if (!isFixedGrant(c)) out.set(grantKey(c), { action: c.action, target: c.target, mode: c.mode });
+    if (!isFixedGrant(c) && !isHelperControlRow(c)) out.set(grantKey(c), { action: c.action, target: c.target, mode: c.mode });
   }
   return [...out.values()];
 }
@@ -96,14 +106,15 @@ export function carriedGrants(saved: AgentGrantChanges | undefined): GrantChange
 export function withTemplateGrants(saved: AgentGrantChanges | undefined, grants: readonly TemplateGrant[]): AgentGrantChanges | undefined {
   const layer = new Map((saved?.template ?? []).map((c) => [grantKey(c), c]));
   for (const g of grants) {
-    if (isFixedGrant(g)) continue;
+    if (isFixedGrant(g) || isHelperControlRow(g)) continue;
     if (g.mode === null) layer.delete(grantKey(g));
     else layer.set(grantKey(g), { action: g.action, target: g.target, mode: g.mode });
   }
   return shaped(saved?.changes ?? [], [...layer.values()]);
 }
 
-function shaped(changes: GrantChange[], template: GrantChange[] | undefined): AgentGrantChanges | undefined {
+/** A saved value from its two layers; undefined when both are empty. */
+export function shaped(changes: GrantChange[], template: GrantChange[] | undefined): AgentGrantChanges | undefined {
   if (changes.length === 0 && !template?.length) return undefined;
   return { changes, ...(template?.length && { template }) };
 }
@@ -136,7 +147,7 @@ export function normalizeTemplateGrants(raw: unknown, forPush = false): Template
     if (mode === null && !forPush) continue;
     if (mode !== null && mode !== 'allow' && mode !== 'ask' && mode !== 'off') continue;
     const g: TemplateGrant = { action, target: rebuildTarget(target), mode: mode as TemplateGrant['mode'] };
-    if (!isFixedGrant(g)) out.set(grantKey(g), g);
+    if (!isFixedGrant(g) && !isHelperControlRow(g)) out.set(grantKey(g), g);
   }
   return [...out.values()];
 }

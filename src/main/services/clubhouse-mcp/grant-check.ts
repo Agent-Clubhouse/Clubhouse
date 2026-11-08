@@ -196,16 +196,27 @@ export function holdsGrant(agentId: string, action: GrantAction, target: GrantCa
 }
 
 /**
- * A helper template's permissions as its orchestrator may pass them (#2971):
- * never more than the orchestrator holds (fixed rule 2). Off always passes, as
- * it only narrows; Allow passes only where the orchestrator has Allow on the
- * same or a wider target, and Ask first where it has either. Anything else is
- * dropped, and the helper keeps its default for it.
+ * Permissions as an agent may pass them on, through a helper template or a
+ * template it creates an agent from (#2971): never more than it holds (fixed
+ * rule 2). Each entry is capped, not dropped, since dropping one would leave
+ * the new agent at its default, which can be more: Allow becomes Ask first
+ * where the holder only has Ask first, and Off where it has neither; Off always
+ * passes. `elsewhere`: the new agent is in another project, so its own project
+ * counts as one the holder needs on any project.
  */
-export function capToHolder<T extends { action: GrantAction; target: Grant['target']; mode: 'off' | 'ask' | 'allow' | null }>(holderId: string, grants: readonly T[]): T[] {
+export function capToHolder<T extends { action: GrantAction; target: Grant['target']; mode: 'off' | 'ask' | 'allow' | null }>(
+  holderId: string,
+  grants: readonly T[],
+  options: { elsewhere?: boolean } = {},
+): T[] {
   const held = callerGrants(holderId);
-  return grants.filter((g) => {
-    if (g.mode === 'off' || g.mode === null) return true;
-    return held.some((h) => h.action === g.action && widerOrSame(h.target, g.target) && (h.mode === 'allow' || g.mode === 'ask'));
+  const rank = { off: 0, ask: 1, allow: 2 } as const;
+  return grants.map((g) => {
+    if (g.mode === 'off' || g.mode === null) return g;
+    const target = options.elsewhere && g.target.kind === 'project' && g.target.project === 'own' ? { kind: 'project' as const, project: 'any' as const } : g.target;
+    const best = held
+      .filter((h) => h.action === g.action && widerOrSame(h.target, target))
+      .reduce<'off' | 'ask' | 'allow'>((m, h) => (rank[h.mode] > rank[m] ? h.mode : m), 'off');
+    return rank[best] >= rank[g.mode] ? g : { ...g, mode: best };
   });
 }

@@ -113,6 +113,9 @@ describe('a template\'s layer (#2971)', () => {
     expect(normalizeTemplateGrants([{ ...msg, mode: null }])).toEqual([]);
     expect(normalizeTemplateGrants([{ ...msg, mode: null }], true)).toEqual([{ ...msg, mode: null }]);
     expect(normalizeTemplateGrants('x')).toBeUndefined();
+    // Helper control's rows never enter a template.
+    expect(normalizeTemplateGrants([{ action: 'agent.create', target: { kind: 'project', project: 'own' }, mode: 'allow' }, { action: 'agent.dispose', target: { kind: 'my_helpers' }, mode: 'ask' }])).toEqual([]);
+    expect(withTemplateGrants(undefined, [{ action: 'agent.dispose', target: { kind: 'my_helpers' }, mode: 'off' }])).toBeUndefined();
   });
 
   it('carries the template\'s and its own, its own winning, for Copy and Save as template', () => {
