@@ -7,7 +7,7 @@ import * as path from 'path';
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
 import { appLog } from './log-service';
-import { buildRetiredPluginExport, findRetiredPluginData, noteRetiredPlugins } from './retired-plugin-data';
+import { buildRetiredPluginExport, findRetiredPluginData, noteRetiredPlugins, RetiredExportTooLargeError } from './retired-plugin-data';
 
 function touch(file: string, content = '{}'): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -68,6 +68,32 @@ describe('retired plugin data (#2756)', () => {
     expect(exported.locations[0].files['kv/lounge-state.json']).toEqual(loungeState);
     expect(exported.locations[0].files['notes.txt']).toBe('not json');
     expect(snapshot(root)).toEqual(before);
+  });
+
+  it('never follows a symlinked data folder or a symlink inside one', async () => {
+    const outside = path.join(root, 'home-folder');
+    touch(path.join(outside, 'secret.txt'), 'private');
+    fs.mkdirSync(globalDir, { recursive: true });
+    fs.symlinkSync(outside, path.join(globalDir, 'lounge'), 'dir');
+    touch(path.join(projectPath, '.clubhouse', 'plugin-data-local', 'lounge', 'kv', 'lounge-state.json'), JSON.stringify(loungeState));
+    fs.symlinkSync(path.join(outside, 'secret.txt'), path.join(projectPath, '.clubhouse', 'plugin-data-local', 'lounge', 'link.txt'), 'file');
+
+    const found = await findRetiredPluginData('lounge', opts);
+    expect(found.locations.map((l) => l.scope)).toEqual(['project-local']);
+
+    const exported = await buildRetiredPluginExport('lounge', opts);
+    expect(Object.keys(exported.locations[0].files)).toEqual(['kv/lounge-state.json']);
+    expect(JSON.stringify(exported)).not.toContain('private');
+  });
+
+  it('refuses an export past the total size cap, with a message the person can act on', async () => {
+    touch(path.join(globalDir, 'lounge', 'kv', 'a.json'), JSON.stringify({ pad: 'x'.repeat(600) }));
+    touch(path.join(globalDir, 'lounge', 'kv', 'b.json'), JSON.stringify({ pad: 'y'.repeat(600) }));
+
+    await expect(buildRetiredPluginExport('lounge', opts, new Date(), 1000)).rejects.toThrow(RetiredExportTooLargeError);
+    await expect(buildRetiredPluginExport('lounge', opts, new Date(), 1000)).rejects.toThrow('Use Show in folder');
+    // Under the cap it exports both.
+    expect(Object.keys((await buildRetiredPluginExport('lounge', opts, new Date(), 10_000)).locations[0].files)).toHaveLength(2);
   });
 
   it('logs once per installed or data-holding retired plugin, then never again', async () => {
