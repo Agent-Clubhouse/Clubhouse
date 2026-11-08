@@ -90,7 +90,14 @@ async function launch(): Promise<void> {
 
 async function launchAndWaitForMarker(): Promise<void> {
   await launch();
-  await vi.waitFor(() => expect(readSaved().exportGraduation).toBe(1));
+  // A Phase 1 file is written twice: the marker, then the secret move after
+  // ready, which launch() doesn't wait for. Wait for both, so nothing writes
+  // while a test reads (#2985).
+  await vi.waitFor(() => {
+    const saved = readSaved();
+    expect(saved.exportGraduation).toBe(1);
+    expect(saved).not.toHaveProperty('legacyDestination');
+  });
 }
 
 /** The stored destinations with `off` applied: what a switched-off setup should hold. */
@@ -160,10 +167,15 @@ describe('a setup the old gate held back ends up off', () => {
     writeJson(SETTINGS_FILE, raw);
     await launch();
     expect(getTelemetrySettings().destinations.some((d) => d.enabled)).toBe(false);
-    // The move happens after ready; the mock app is ready at once.
-    await vi.waitFor(() => expect(readText(SETTINGS_FILE)).not.toContain('plaintext-value'));
-    // The file can be caught mid-write (empty), so this waits too.
-    await vi.waitFor(() => expect(readSaved().exportGraduation).toBe(1));
+    // The move happens after ready; the mock app is ready at once. One whole,
+    // parsed file: an empty one caught mid-write doesn't contain the value either.
+    await vi.waitFor(() => {
+      const text = readText(SETTINGS_FILE);
+      const saved = JSON.parse(text);
+      expect(saved).not.toHaveProperty('legacyDestination');
+      expect(text).not.toContain('plaintext-value');
+      expect(saved.exportGraduation).toBe(1);
+    });
   });
 
   it('clears the offline queue, as turning a destination off does', async () => {
@@ -179,8 +191,12 @@ describe('a setup the old gate held back ends up off', () => {
     seedGate(false, true);
     writeJson(SETTINGS_FILE, file(1, { ...otlp(true), level: 'detailed' }, framebriar()));
     await launchAndWaitForMarker();
-    await vi.waitFor(() => expect(JSON.parse(readText('logging-settings.json')).telemetryLevelMigrated).toBe(true));
-    expect(JSON.parse(readText('logging-settings.json')).telemetryLevel).not.toBe('detailed');
+    // Read inside the retry: the store writes in place, so a read can catch the file empty (#2985).
+    await vi.waitFor(() => {
+      const logging = JSON.parse(readText('logging-settings.json'));
+      expect(logging.telemetryLevelMigrated).toBe(true);
+      expect(logging.telemetryLevel).not.toBe('detailed');
+    });
   });
 });
 
@@ -445,7 +461,7 @@ describe('opting in after the migration', () => {
     expect(otlpEntry().enabled).toBe(true);
 
     await vi.waitFor(() => expect(readSaved().exportGraduation).toBe(1));
-    expect(JSON.parse(readText('experimental-settings.json')).telemetry).toBe(true);
+    await vi.waitFor(() => expect(JSON.parse(readText('experimental-settings.json')).telemetry).toBe(true));
     await launch();
     expect(otlpEntry()).toMatchObject({ enabled: true, confirmedHost: LOOPBACK_HOST });
     expect(exportAttempts()).toBe(1);
