@@ -34,7 +34,7 @@ vi.mock('bonjour-service', () => ({
 }));
 
 // The membership channel has its own tests (annex-network-channel.test.ts).
-vi.mock('./annex-network-channel', () => ({ connectTo: vi.fn(), closeFor: vi.fn() }));
+vi.mock('./annex-network-channel', () => ({ connectTo: vi.fn(), closeFor: vi.fn(), closeAll: vi.fn() }));
 
 vi.mock('ws', () => ({
   WebSocket: class {

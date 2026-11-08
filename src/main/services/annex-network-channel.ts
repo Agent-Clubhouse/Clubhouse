@@ -71,6 +71,8 @@ let wss: WebSocketServer | null = null;
 
 /** How long a channel may stay silent before its hello, before it's closed. */
 const HELLO_TIMEOUT_MS = 10_000;
+/** A ping this often; no pong by the next one and the channel is dead (sleep, a network change). */
+const HEARTBEAT_MS = 30_000;
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -127,7 +129,7 @@ export function hasChannel(fingerprint: string): boolean {
 /** Members this machine has heard from, for Settings and tests. */
 export function listMembers(): AnnexNetworkMemberListing[] {
   const connected = connectedMembers();
-  return [...views.entries()].map(([fingerprint, view]) => ({
+  return [...views.entries()].filter(([fingerprint]) => !!annexPeers.getPeer(fingerprint)).map(([fingerprint, view]) => ({
     fingerprint,
     name: view.member.name,
     kind: view.member.kind,
@@ -178,6 +180,8 @@ export function authenticateMember(socket: unknown): { ok: true; peer: AnnexPeer
 
 function send(ch: Channel, message: NetworkMessage): void {
   if (ch.ws.readyState !== WebSocket.OPEN) return;
+  // Never tell a removed or re-pinned device anything, even one that stays silent.
+  if (!stillPaired(ch)) { refuse(ch, NETWORK_CLOSE_NOT_MEMBERSHIP, 'peer_not_paired', 'not paired'); return; }
   try { ch.ws.send(JSON.stringify(message)); } catch { /* telemetry-exempt: a closing socket; its close handler cleans up */ }
 }
 
@@ -204,9 +208,18 @@ export function localMembers(): NetworkMember[] {
   const self = localMember();
   if (self) out.push(self);
   for (const ch of channels) {
-    if (ch.member && !out.some((m) => m.fingerprint === ch.member!.fingerprint)) out.push(ch.member);
+    if (ch.member && stillPaired(ch) && !out.some((m) => m.fingerprint === ch.member!.fingerprint)) out.push(ch.member);
   }
   return out;
+}
+
+/** The member's public key is the one its fingerprint is the hash of. */
+function keyMatches(member: NetworkMember): boolean {
+  try {
+    return annexIdentity.computeFingerprint(member.publicKey).toLowerCase() === member.fingerprint.toLowerCase();
+  } catch { // telemetry-exempt: a key that can't be read doesn't match
+    return false;
+  }
 }
 
 function handle(ch: Channel, data: RawData, isBinary: boolean): void {
@@ -225,6 +238,7 @@ function handle(ch: Channel, data: RawData, isBinary: boolean): void {
     // The first message must say who this is, and match how it authenticated.
     if (message.type !== 'hello'
       || message.member.fingerprint.toLowerCase() !== ch.fingerprint.toLowerCase()
+      || !keyMatches(message.member)
       || !annexTls.sameCertificateFingerprint(message.member.certFingerprint, ch.certFingerprint)) {
       refuse(ch, NETWORK_CLOSE_NOT_MEMBERSHIP, 'membership_only', 'hello does not match the connection');
       return;
@@ -253,9 +267,18 @@ function attach(ws: WebSocket, fingerprint: string, certFingerprint: string, dir
     if (!ch.member) refuse(ch, NETWORK_CLOSE_NOT_MEMBERSHIP, 'membership_only', 'no hello');
   }, HELLO_TIMEOUT_MS);
   helloTimer.unref?.();
+  let alive = true;
+  ws.on('pong', () => { alive = true; });
+  const heartbeat = setInterval(() => {
+    if (!alive) { refuse(ch, NETWORK_CLOSE_NOT_MEMBERSHIP, 'timeout', 'no pong'); return; }
+    alive = false;
+    try { ws.ping(); } catch { /* telemetry-exempt: a closing socket; its close handler cleans up */ }
+  }, HEARTBEAT_MS);
+  heartbeat.unref?.();
   ws.on('message', (data, isBinary) => handle(ch, data, isBinary));
   ws.on('close', () => {
     clearTimeout(helloTimer);
+    clearInterval(heartbeat);
     channels.delete(ch);
   });
   ws.on('error', (err) => {
@@ -289,6 +312,8 @@ export function handleNetworkUpgrade(req: IncomingMessage, socket: Duplex, head:
   }
   wss ??= new WebSocketServer({ noServer: true, maxPayload: NETWORK_MESSAGE_MAX_BYTES });
   wss.handleUpgrade(req, socket, head, (ws) => {
+    // One incoming channel per device: a new one replaces the old (it reconnected, or the old is dead).
+    closeFor(auth.peer.fingerprint, 'in');
     const ch = attach(ws, auth.peer.fingerprint, auth.certFingerprint, 'in');
     sendHello(ch);
   });
@@ -303,7 +328,8 @@ export function handleNetworkUpgrade(req: IncomingMessage, socket: Duplex, head:
  * Does nothing if one is already open or opening to it.
  */
 export function connectTo(fingerprint: string, host: string, port: number, tlsOptions: tls.ConnectionOptions): void {
-  for (const ch of channels) if (ch.fingerprint === fingerprint && ch.direction === 'out') return;
+  // The main connection just opened, so any older outgoing channel is from before: replace it.
+  closeFor(fingerprint, 'out');
   const peer = annexPeers.getPeer(fingerprint);
   if (!peer?.tlsCertificateFingerprint || annexPeers.peerNeedsPairing(peer) || !host || !port) return;
   const authority = net.isIPv6(host) ? `[${host}]` : host;
@@ -316,10 +342,14 @@ export function connectTo(fingerprint: string, host: string, port: number, tlsOp
   });
 }
 
-/** Closes every channel to or from a device (removed, forgotten, or disconnected). */
-export function closeFor(fingerprint: string): void {
+/**
+ * Closes channels with a device: `out` ones this machine opened, `in` ones it
+ * accepted, or both. A device no longer paired is also forgotten from what's heard.
+ */
+export function closeFor(fingerprint: string, direction: 'in' | 'out' | 'both' = 'both'): void {
+  if (!annexPeers.getPeer(fingerprint)) views.delete(fingerprint);
   for (const ch of [...channels]) {
-    if (ch.fingerprint !== fingerprint) continue;
+    if (ch.fingerprint !== fingerprint || (direction !== 'both' && ch.direction !== direction)) continue;
     try { ch.ws.close(NETWORK_CLOSE_NOT_MEMBERSHIP, 'peer_not_paired'); } catch { /* telemetry-exempt: already closing */ }
     const ws = ch.ws;
     const timer = setTimeout(() => { try { ws.terminate(); } catch { /* telemetry-exempt: already gone */ } }, 250);
@@ -328,11 +358,16 @@ export function closeFor(fingerprint: string): void {
   }
 }
 
-/** Closes every channel, for when Annex stops. */
-export function closeAll(): void {
-  for (const ch of [...channels]) closeFor(ch.fingerprint);
-  wss?.close();
-  wss = null;
+/**
+ * Closes every channel in one direction: `in` when this machine's server stops,
+ * `out` when its client does. Each side's channels belong to it.
+ */
+export function closeAll(direction: 'in' | 'out' | 'both' = 'both'): void {
+  for (const ch of [...channels]) closeFor(ch.fingerprint, direction);
+  if (direction !== 'out') {
+    wss?.close();
+    wss = null;
+  }
 }
 
 /** Test helper. */

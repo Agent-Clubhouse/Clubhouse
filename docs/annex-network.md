@@ -34,7 +34,7 @@ Synthetic tests can't cover certificates under Electron or local network discove
 
 ## Decision log
 
-Decisions made while building, for the maintainer to revisit. Newest last.
+Decisions made while building, for the maintainer to revisit. Newest last. D180 to D199 were the range set for this epic's first stages; later stages continue from D200.
 
 | # | Decision | Why | Revisit if |
 |---|---|---|---|
@@ -56,6 +56,7 @@ Decisions made while building, for the maintainer to revisit. Newest last.
 | D195 | The membership channel is a separate WebSocket path (`/network`) on the main TLS port, in its own module that imports nothing that controls a machine. `/ws` is unchanged. | Membership can't reach control by construction, not just by a check. One port, so reachability (#3058) covers both. | |
 | D196 | `/network` accepts a pinned peer of either role, where `/ws` accepts only a controller. Older pairings are refused with `needs_pairing` until paired again. | Membership isn't control, and every member will need to talk to every other (#3061). | |
 | D197 | Every message is parsed against a closed schema: a known type, this version (`v: 1`), no extra fields, bounded sizes (64 KB a message, 64 members). Anything else closes the channel (4400; 4426 for another version) and is logged without its content. | "Membership only" holds whatever a peer sends. | A newer member needs a field older ones refuse: bump `v`. |
-| D198 | The first message each way is `hello`, and it must name the identity and certificate the connection authenticated with. Each message is acted on only while the sender is still paired with that certificate, so a removal ends the channel at once. A channel silent for 10 s without a hello is closed. | A member can only speak for itself. | |
+| D198 | The first message each way is `hello`, and it must name the identity and certificate the connection authenticated with. Each message is acted on only while the sender is still paired with that certificate, so a removal ends the channel at once. A channel silent for 10 s without a hello is closed, and the hello's public key must hash to its fingerprint. Nothing is sent to, or passed on about, a device that is no longer paired with that certificate. | A member can only speak for itself. | |
+| D200 | Channels are pinged every 30 s and closed when a pong doesn't come. One channel each way per device: a new incoming one replaces the old, and the client's outgoing one opens and closes with its main connection. Each side owns its own: stopping the server closes the channels it accepted, stopping the client the ones it opened; removal or a re-pin closes both. | A sleeping or moved peer otherwise leaves a dead channel that blocks a new one. | |
 | D199 | In this stage the controller opens the channel to each satellite once its main connection opens, and both sides only record what they hear (`listNetworkMembers`). Stage 4 acts on it. | Ships the channel on its own, as the epic allows. | |
 

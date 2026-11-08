@@ -497,7 +497,11 @@ function setState(
   sat.state = state;
   // Output sent while disconnected is in neither cache, and a restarted
   // satellite's seqs start over, so caches are seeded again on reconnect.
-  if (prev === 'connected' && state !== 'connected') disposeRemoteBuffers(sat.id);
+  if (prev === 'connected' && state !== 'connected') {
+    disposeRemoteBuffers(sat.id);
+    // The membership channel goes with the main connection, and reopens with it.
+    networkChannel.closeFor(sat.fingerprint, 'out');
+  }
   if (state === 'disconnected') {
     // The reason text stays local; it only picks the registry enum.
     if (prev === 'connected') recordDisconnect(disconnectReasonFor(error));
@@ -600,7 +604,7 @@ function haltSatellite(sat: SatelliteConnectionInternal, kind: 'pairing' | 'mism
     sat.ws = null;
     try { ws.terminate(); } catch { /* telemetry-exempt: closing a socket that may be gone */ }
   }
-  if (kind !== 'clock') networkChannel.closeFor(sat.fingerprint);
+  if (kind !== 'clock') networkChannel.closeFor(sat.fingerprint, 'out');
   appLog('core:annex-client', 'warn', `Stopped reconnecting to ${sat.alias}: ${message}`, { meta: { fingerprint: sat.fingerprint } });
   setState(sat, 'disconnected', message, { code: problem });
 }
@@ -2338,6 +2342,8 @@ async function pairOverTls(target: {
   if (discoveredServices.delete(fingerprint)) broadcastDiscoveredChanged();
   const previous = satellites.get(fingerprint);
   if (previous) disconnectSatellite(previous);
+  // Paired again (perhaps with a new certificate): nothing from the old pairing carries over.
+  networkChannel.closeFor(fingerprint);
 
   const sat: SatelliteConnectionInternal = {
     id: fingerprint,
@@ -2398,6 +2404,7 @@ export function forgetAllSatellites(): void {
   }
   satellites.clear();
   seededBuffers.clear();
+  networkChannel.closeAll('out');
   // Only our satellites: devices that control this machine are managed in Annex settings.
   for (const peer of annexPeers.listPeers()) {
     if (peer.role !== 'controller') annexPeers.removePeer(peer.fingerprint);
@@ -2451,6 +2458,7 @@ export function stopClient(): void {
   satellites.clear();
   seededBuffers.clear();
   discoveredServices.clear();
+  networkChannel.closeAll('out');
   stopDiscovery();
 }
 

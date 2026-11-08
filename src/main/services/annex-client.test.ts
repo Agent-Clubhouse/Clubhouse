@@ -41,7 +41,7 @@ vi.mock('bonjour-service', () => ({
 }));
 
 // The membership channel has its own tests (annex-network-channel.test.ts).
-vi.mock('./annex-network-channel', () => ({ connectTo: vi.fn(), closeFor: vi.fn() }));
+vi.mock('./annex-network-channel', () => ({ connectTo: vi.fn(), closeFor: vi.fn(), closeAll: vi.fn() }));
 
 vi.mock('ws', () => ({
   WebSocket: WebSocketMock,
@@ -2670,6 +2670,17 @@ describe('annex-client', () => {
       res.emit('end');
       await vi.advanceTimersByTimeAsync(60_000);
       expect(sockets).toHaveLength(1);
+    });
+
+    it('opens the membership channel with the main connection, and closes it when that drops (#3060)', async () => {
+      const channelMod = await import('./annex-network-channel');
+      annexClient.startClient();
+      sockets[0].handlers.open();
+      expect(channelMod.connectTo).toHaveBeenCalledWith(FP, '10.0.0.4', 9443, expect.objectContaining({ pinned: true }));
+      annexClient.disconnect(FP);
+      expect(channelMod.closeFor).toHaveBeenCalledWith(FP, 'out');
+      annexClient.stopClient();
+      expect(channelMod.closeAll).toHaveBeenCalledWith('out');
     });
 
     it('never sets a typed host on a device that controls this machine', () => {

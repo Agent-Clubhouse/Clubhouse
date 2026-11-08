@@ -2506,7 +2506,10 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     role: 'controller', // This peer initiated pairing → they control us
   };
   // The old certificate's sockets stop counting now (the pin no longer matches), and are cut.
-  if (replacesPin) closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
+  if (replacesPin) {
+    closePeerSockets(fingerprint, PEER_REVOKED_CLOSE_CODE, 'peer_not_paired', true);
+    networkChannel.closeFor(fingerprint);
+  }
   if (sessionOnly) { mobileSessionPeers.set(fingerprint, pairedPeer); devicesChanged(); }
   else { mobileSessionPeers.delete(fingerprint); annexPeers.addPeer(pairedPeer); }
   loggedRefusals.delete(fingerprint);
@@ -5141,7 +5144,8 @@ export function stop(): void {
   }
 
   networkChannel.setReachProvider(null);
-  networkChannel.closeAll();
+  // Only the channels this server accepted; ones this machine's client opened are its own.
+  networkChannel.closeAll('in');
 
   // Un-publish mDNS
   republishBonjour = null;
@@ -5687,6 +5691,7 @@ function closePeerSockets(fingerprint: string, code: number, reason: string, har
 export function disconnectPeer(fingerprint: string): void {
   appLog('core:annex', 'info', `disconnectPeer called`, { meta: { fingerprint } });
   closePeerSockets(fingerprint, 1000, 'disconnected_by_satellite');
+  networkChannel.closeFor(fingerprint, 'in');
 }
 
 /** Close code for a peer whose pairing was removed; reconnecting gets 401 peer_not_paired. */

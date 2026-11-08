@@ -10,6 +10,7 @@ vi.mock('ws', () => ({ WebSocket: { OPEN: 1, CLOSED: 3 }, WebSocketServer: vi.fn
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('./annex-identity', () => ({
   getIdentity: vi.fn(() => ({ fingerprint: SELF_FP, publicKey: 'self-pk', createdAt: '2026-11-01T00:00:00.000Z' })),
+  computeFingerprint: vi.fn((key: string) => (key === 'peer-pk' ? FP : key === 'self-pk' ? SELF_FP : 'ff:ff')),
 }));
 vi.mock('./annex-settings', () => ({ getSettings: vi.fn(() => ({ alias: 'This Mac', deviceName: 'Clubhouse on This Mac', icon: 'computer', color: 'indigo' })) }));
 vi.mock('./annex-tls', () => ({
@@ -31,6 +32,8 @@ import { appLog } from './log-service';
 class FakeSocket extends EventEmitter {
   readyState = 1;
   sent: unknown[] = [];
+  pings = 0;
+  ping() { this.pings++; }
   closed: { code: number; reason: string } | null = null;
   send(data: string) { this.sent.push(JSON.parse(data)); }
   close(code: number, reason: string) { this.closed = { code, reason }; this.readyState = 3; }
@@ -135,6 +138,57 @@ describe('Annex Network channel (#3060)', () => {
     const b = open();
     b.deliver({ v: 1, type: 'hello', member: { ...remote, certFingerprint: SELF_CERT } });
     expect(b.closed?.code).toBe(4400);
+  });
+
+  it('refuses a hello whose public key is not the one its fingerprint is the hash of', () => {
+    const ws = open();
+    ws.deliver({ v: 1, type: 'hello', member: { ...remote, publicKey: 'someone-elses-key' } });
+    expect(ws.closed?.code).toBe(4400);
+  });
+
+  it('pings, keeps a channel that answers, and closes one that stops answering (sleep, a network change)', () => {
+    vi.useFakeTimers();
+    try {
+      const ws = open();
+      ws.deliver(hello);
+      vi.advanceTimersByTime(30_000);
+      expect(ws.pings).toBe(1);
+      ws.emit('pong');
+      vi.advanceTimersByTime(30_000);
+      expect(ws.closed).toBeNull();
+      vi.advanceTimersByTime(30_000);
+      expect(ws.closed).toEqual({ code: 4400, reason: 'timeout' });
+      expect(channel.connectedMembers().size).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('never passes on or lists a device once it is re-pinned or removed, even if it stays silent', () => {
+    const ws = open();
+    ws.deliver(hello);
+    expect(channel.localMembers().map((m) => m.fingerprint)).toContain(FP);
+    peers.set(FP, { fingerprint: FP, role: 'satellite', tlsCertificateFingerprint: SELF_CERT });
+    expect(channel.localMembers().map((m) => m.fingerprint)).not.toContain(FP);
+    peers.delete(FP);
+    expect(channel.listMembers()).toEqual([]);
+  });
+
+  it('closes only the direction asked for', () => {
+    const incoming = open('in');
+    const outgoing = open('out');
+    channel.closeFor(FP, 'out');
+    expect(outgoing.closed).not.toBeNull();
+    expect(incoming.closed).toBeNull();
+    channel.closeAll('in');
+    expect(incoming.closed).not.toBeNull();
+  });
+
+  it('forgets what a device said once it is removed and its channels closed', () => {
+    const ws = open();
+    ws.deliver(hello);
+    expect(channel.memberViews().has(FP)).toBe(true);
+    peers.delete(FP);
+    channel.closeFor(FP);
+    expect(channel.memberViews().has(FP)).toBe(false);
   });
 
   it('refuses a first message that is not hello, and a second hello', () => {

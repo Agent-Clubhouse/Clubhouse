@@ -3,8 +3,8 @@
  *
  * - Two desktops pair for real, and each then hears the other on `/network`.
  * - A paired identity that sends anything but membership on `/network` (a
- *   terminal input, an agent start) is cut off with 4400, and the satellite
- *   runs nothing.
+ *   terminal input, an agent start, a hello for someone else) is cut off
+ *   with 4400.
  * - A stranger can't open the channel at all.
  */
 import { test, expect, type Page } from '@playwright/test';
@@ -68,7 +68,7 @@ test('two desktops hear each other on the membership channel', async () => {
   await expect.poll(() => heard(controller.window, sat.fingerprint), { timeout: 30_000 }).toBe(true);
 });
 
-test('anything but membership closes the channel, and nothing runs', async () => {
+test('anything but membership closes the channel with 4400', async () => {
   const sat = await status(handles.satellite.window);
   const identity = generateTestIdentity();
   await pairOverTls('127.0.0.1', sat.port, (await status(handles.satellite.window)).pin, identity);
