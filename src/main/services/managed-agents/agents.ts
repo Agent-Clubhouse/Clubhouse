@@ -4,7 +4,7 @@
  * They combine the managed-agents service with agent config and
  * orchestration policy.
  */
-import { callerAccess, isAccessLevel, withAccess } from '../../../shared/agent-access';
+import { accessFromLegacy, callerAccess, isAccessLevel, withAccess, type AccessLevel } from '../../../shared/agent-access';
 import { getDefaultAccess, getPermissionMode } from '../free-agent-settings';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -62,6 +62,20 @@ export interface CreateManagedAgentInput {
 }
 
 /**
+ * Asked with the Access a new agent will have and where it comes from, before
+ * anything is made; throws to refuse (D126: an agent never sets Access above its own).
+ */
+export type NewAgentAccessCheck = (level: AccessLevel, from: 'settings' | 'template' | 'default') => void;
+
+/** The level a createDurable access argument gives: a level, a legacy on/off, or unset for the Default access. */
+function newAgentLevel(projectPath: string, access: boolean | AccessLevel | undefined): AccessLevel {
+  if (typeof access === 'boolean') return accessFromLegacy(access, getPermissionMode(projectPath));
+  return access ?? getDefaultAccess();
+}
+
+const namesAccess = (s: ManagedTemplateSettings | undefined) => s?.access !== undefined || s?.freeAgentMode !== undefined;
+
+/**
  * Apply settings a template or the builder carries, to the agent's own
  * settings, where each is always stored. Unset fields are left alone, and
  * `null` puts one back to its default. The effort goes in the same write as
@@ -85,8 +99,8 @@ export async function applyManagedSettings(projectPath: string, agentId: string,
   if (settings.grants?.length) await applyTemplateGrants(agentId, settings.grants);
 }
 
-export async function createManagedAgent(projectPath: string, input: CreateManagedAgentInput): Promise<DurableAgentConfig> {
-  if (input.managed === false) return createPlainAgent(projectPath, input);
+export async function createManagedAgent(projectPath: string, input: CreateManagedAgentInput, checkAccess?: NewAgentAccessCheck): Promise<DurableAgentConfig> {
+  if (input.managed === false) return createPlainAgent(projectPath, input, checkAccess);
   const service = managedAgents();
   const base = input.templateId ? await service.setupFromTemplate(input.templateId) : null;
   // The caller's own Access wins over the template's (#2761): a level it names, or a legacy on/off that keeps
@@ -103,6 +117,7 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
   const setup: Omit<ManagedAgentSetup, 'version'> = input.setup
     ? { ...input.setup, ...(input.templateId && { templateId: input.templateId }) }
     : base?.setup ?? { blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] };
+  checkAccess?.(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), namesAccess(input.settings) ? 'settings' : namesAccess(base?.settings) ? 'template' : 'default');
   // Managed agents always get their own folder: a worktree in a git project, a plain folder otherwise.
   const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.access ?? settings.freeAgentMode);
   try {
@@ -128,9 +143,11 @@ export async function createManagedAgent(projectPath: string, input: CreateManag
  * A plain agent the same way as a managed one, minus the setup: its own
  * folder, the settings given, and nothing Clubhouse writes into it at start.
  */
-async function createPlainAgent(projectPath: string, input: CreateManagedAgentInput): Promise<DurableAgentConfig> {
+async function createPlainAgent(projectPath: string, input: CreateManagedAgentInput, checkAccess?: NewAgentAccessCheck): Promise<DurableAgentConfig> {
   if (input.templateId || input.setup) throw new ManagedError('invalid', 'A plain agent has no template or parts.');
   const settings = input.settings ?? {};
+  if (settings.access !== undefined && !isAccessLevel(settings.access)) throw new ManagedError('invalid', 'access must be plan, ask, auto_edit, auto or full_access.');
+  checkAccess?.(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), namesAccess(settings) ? 'settings' : 'default');
   const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.access ?? settings.freeAgentMode);
   if (settings.orchestration && Object.keys(settings.orchestration).length > 0) {
     try {

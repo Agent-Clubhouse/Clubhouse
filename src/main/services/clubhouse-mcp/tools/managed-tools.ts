@@ -22,6 +22,7 @@ import { checkTemplateSettings, ManagedError } from '../../managed-agents/servic
 import { resolveOrchestrator } from '../../agent-system';
 import { getDefaultAccess, getPermissionMode } from '../../free-agent-settings';
 import { callerAccess, withAccess, type AccessLevel } from '../../../../shared/agent-access';
+import { accessCeilingRefusal } from '../access-ceiling';
 import { isDispatcherAgent } from '../dispatcher-gate';
 import { isCrossProjectEnabled } from '../orchestration-gate';
 import { optionalBoolean, optionalString, requireString } from './validation';
@@ -412,6 +413,14 @@ export function registerManagedTools(): void {
         setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') },
         settings: sent ? sentSettings(sent, current.settings) : current.settings,
       };
+      // A push that changes the template's Access sets it on every agent it reaches: never above the caller's own (D126).
+      // Dropping the level sends them to the Default access.
+      const before = withAccess(current.settings, getPermissionMode()).access;
+      const pushedLevel = withAccess(next.settings, getPermissionMode()).access ?? (before ? getDefaultAccess() : undefined);
+      if (pushedLevel && pushedLevel !== before) {
+        const refused = accessCeilingRefusal(callerId, pushedLevel, 'push a template that sets agents');
+        if (refused) throw new ArgError(refused);
+      }
       const preview = await svc().previewTemplatePush(id, next);
       const chosen = [...new Set(idList(args, 'agents'))].sort();
       const unknown = chosen.filter((a) => !preview.targets.some((t) => t.agentId === a));
@@ -488,8 +497,18 @@ export function registerManagedTools(): void {
           input.settings = { ...(input.settings ?? {}), grants: capToHolder(callerId, template.settings.grants, { elsewhere }) };
         }
       }
+      // No agent makes another with more Access than it runs at (D126).
+      const checkAccess = (level: AccessLevel, from: 'settings' | 'template' | 'default') => {
+        const refused = from === 'settings'
+          ? accessCeilingRefusal(callerId, level, 'create an agent')
+          : accessCeilingRefusal(callerId, level, 'create an agent', {
+            from: from === 'template' ? 'The template' : 'The Default access for new agents',
+            fix: 'Pass settings.access at or below your level, or ask the user to create it.',
+          });
+        if (refused) throw new ArgError(refused);
+      };
       // Created asleep: nothing here spawns, so the whole creation can run under the grant.
-      const config = await asDispatcher(callerId, () => createManagedAgent(project.path, input));
+      const config = await asDispatcher(callerId, () => createManagedAgent(project.path, input, checkAccess));
       return json({ id: config.id, name: config.name, project: project.name, managed: !!config.managed, status: 'sleeping' });
     });
 

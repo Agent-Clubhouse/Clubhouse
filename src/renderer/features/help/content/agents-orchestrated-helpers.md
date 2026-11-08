@@ -75,6 +75,8 @@ A helper never gets more access than its orchestrator has right now, on the full
 | **Same as**, with the orchestrator's name | The orchestrator's live level. This is the default, so an orchestrator with **Full access** starts helpers with full access. |
 | **Ask first**, **Auto** or **Full access** | That level, or the ceiling if it's lower |
 
+When an orchestrator asks `start_helper` for a level above its own, the start is refused and says both levels. A level from the **Helpers get** setting is lowered to the ceiling instead, since you chose it.
+
 A helper's level is lowered until its CLI's own flags fit under the ceiling. Copilot CLI helpers only run at Ask first or Full access, so under an orchestrator at Auto they start at Ask first. When a helper gets less than it asked for, `start_helper` says so.
 
 When the orchestrator wakes a helper with `wake_helper`, Clubhouse checks the ceiling again and never raises the helper above the access the orchestrator asked for when it started it. Permission prompts from a helper's own tool calls follow the helper's level as usual. The orchestrator can't answer them for you.

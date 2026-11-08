@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../../shared/types';
 
 const state = vi.hoisted(() => ({
@@ -554,5 +554,75 @@ describe('an orchestrator reads the library (#3001)', () => {
       setOrchestrationEnabled('orch', false);
       agentRegistry.untrack('orch');
     }
+  });
+});
+
+describe('no agent sets Access above its own (D126)', () => {
+  /** The Dispatcher running at this level, or not running. */
+  const runAt = async (access: 'plan' | 'auto' | 'full_access' | null) => {
+    const { agentRegistry } = await import('../../agent-registry');
+    agentRegistry.untrack('dispatcher');
+    agentRegistry.register('dispatcher', { projectPath: '/proj', orchestrator: 'claude-code', runtime: 'pty' });
+    if (access) agentRegistry.setLaunchCap('dispatcher', { freeAgentMode: access !== 'plan', access });
+  };
+  afterEach(async () => { (await import('../../agent-registry')).agentRegistry.untrack('dispatcher'); });
+
+  it('creating an agent: a level named above the caller\'s is refused, naming both, and nothing is made', async () => {
+    await runAt('auto');
+    const r = await call('create_managed_agent', { project: 'Clubhouse', name: 'too-high', settings: { access: 'full_access' } });
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toBe('You run at Auto, so you can\'t create an agent at Full access: an agent never sets Access above its own. Use Auto or lower, or ask the user to set it.');
+    expect(state.agents.has('new-too-high')).toBe(false);
+    // A plain agent the same way, and the legacy flag maps to its level first.
+    expect((await call('create_managed_agent', { project: 'Clubhouse', name: 'plain-high', managed: false, settings: { access: 'full_access' } })).isError).toBe(true);
+    expect(state.agents.has('new-plain-high')).toBe(false);
+    // At or below its own goes ahead.
+    expect((await call('create_managed_agent', { project: 'Clubhouse', name: 'same', settings: { access: 'auto' } })).isError).toBeFalsy();
+    expect((await call('create_managed_agent', { project: 'Clubhouse', name: 'lower', managed: false, settings: { access: 'plan' } })).isError).toBeFalsy();
+  });
+
+  it('creating from a template that sets more: refused, saying so and how to go ahead', async () => {
+    await runAt('full_access');
+    const t = (await call('save_agent_template', { name: 'Wide open', blocks: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: { access: 'full_access' } })).json;
+    await runAt('auto');
+    const r = await call('create_managed_agent', { project: 'Clubhouse', name: 'from-wide', templateId: t.id });
+    expect(r.content[0].text).toBe('You run at Auto, so you can\'t create an agent at Full access: an agent never sets Access above its own. The template sets Full access. Pass settings.access at or below your level, or ask the user to create it.');
+    expect(state.agents.has('new-from-wide')).toBe(false);
+    const ok = await call('create_managed_agent', { project: 'Clubhouse', name: 'from-wide-lower', templateId: t.id, settings: { access: 'auto' } });
+    expect(ok.isError).toBeFalsy();
+  });
+
+  it('a caller not running reads as Ask first', async () => {
+    await runAt(null);
+    expect((await call('create_managed_agent', { project: 'Clubhouse', name: 'auto-one', settings: { access: 'auto' } })).isError).toBe(true);
+    expect((await call('create_managed_agent', { project: 'Clubhouse', name: 'ask-one', settings: { access: 'ask' } })).isError).toBeFalsy();
+  });
+
+  it('a template push that raises the level above the caller\'s is refused; one that leaves it alone or lowers it goes ahead', async () => {
+    await runAt('auto');
+    const t = (await call('save_agent_template', { name: 'Team', blocks: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: { access: 'ask' } })).json;
+    const base = { id: t.id, blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] };
+    const raised = await call('push_agent_template', { ...base, settings: { access: 'full_access' } });
+    expect(raised.isError).toBe(true);
+    expect(raised.content[0].text).toMatch(/^You run at Auto, so you can't push a template that sets agents at Full access/);
+    expect((await call('push_agent_template', { ...base, settings: { access: 'auto' } })).isError).toBeFalsy();
+    // A template already above the caller can still have its parts pushed: the level isn't changing.
+    await runAt('full_access');
+    const wide = (await call('save_agent_template', { name: 'Already open', blocks: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: { access: 'full_access' } })).json;
+    await runAt('auto');
+    expect((await call('push_agent_template', { id: wide.id, blocks: [BUILTIN_BLOCK_IDS.identity], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID] })).isError).toBeFalsy();
+  });
+
+  it('a push that drops the level sends agents to the Default access, which is checked too', async () => {
+    await runAt('auto');
+    const t = (await call('save_agent_template', { name: 'Planned', blocks: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: { access: 'plan' } })).json;
+    const drop = { id: t.id, blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: {} };
+    // The Default access here is Ask first: above a caller at Plan.
+    await runAt('plan');
+    const r = await call('push_agent_template', drop);
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/^You run at Plan, so you can't push a template that sets agents at Ask first/);
+    await runAt('auto');
+    expect((await call('push_agent_template', drop)).isError).toBeFalsy();
   });
 });

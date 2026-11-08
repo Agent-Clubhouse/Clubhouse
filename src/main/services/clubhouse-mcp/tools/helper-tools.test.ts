@@ -264,6 +264,8 @@ function addAgent(config: Partial<DurableAgentConfig> & { id: string }): Durable
 function runAgent(id: string, orchestrate = false): void {
   running.add(id);
   agentRegistry.register(id, { projectPath: PROJECT, orchestrator: 'claude-code', runtime: 'chat' });
+  // It runs at Auto, as `live` starts (the level D126 compares a requested Access with).
+  agentRegistry.setLaunchCap(id, { freeAgentMode: true, permissionMode: 'auto' });
   // As spawnAgent does: the gate learns whether it's a helper, and whose (the grant check's parent, #2968).
   setMcpCaller(id, PROJECT, agents.get(id));
   setOrchestrationEnabled(id, orchestrate);
@@ -441,11 +443,13 @@ describe('start_helper', () => {
     expect(spawn).toHaveProperty('permissionMode', 'auto');
   });
 
-  it('clamps a requested access to the resolved ceiling, and lowers it when asked', async () => {
+  it('refuses a requested access above the orchestrator\'s own, naming both, and lowers it when asked (D126)', async () => {
     controllableCreation();
-    const higher = parse(await callTool('orch', 'start_helper', { name: 'a', task: 't', access: 'bypass' }));
-    expect(higher.access).toBe('auto');
-    expect(higher.accessNote).toBeDefined();
+    const higher = await callTool('orch', 'start_helper', { name: 'a', task: 't', access: 'bypass' });
+    expect(higher.isError).toBe(true);
+    expect(higher.content[0].text).toBe('You run at Auto, so you can\'t start a helper at Full access: an agent never sets Access above its own. Leave access out (or use same) for your own level, or ask the user.');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+    expect((await callTool('orch', 'start_helper', { name: 'a3', task: 't', access: 'auto' })).isError).toBeFalsy();
 
     const lower = parse(await callTool('orch', 'start_helper', { name: 'b', task: 't', access: 'standard' }));
     expect(lower.access).toBe('standard');
