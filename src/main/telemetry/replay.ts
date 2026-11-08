@@ -47,6 +47,9 @@ import { FRAMEBRIAR_ONLY_ATTRIBUTES } from './destinations/framebriar-source';
 import { sanitizeAttribute } from './redaction';
 import type { Scrubber } from './scrubber';
 
+/** Cumulative totals per series, for a destination that wants cumulative metrics. */
+export type RunningTotals = Map<string, { start: HrTime; sum: number; count: number; min: number; max: number }>;
+
 /** The scope every Clubhouse signal is recorded under (sdk.ts `SCOPE`). */
 export const RECORD_SCOPE = 'clubhouse';
 /** How the recorder aggregates metrics: one window's sum, count or last value per line. */
@@ -72,6 +75,12 @@ export interface ReplayOptions {
   metrics?: boolean;
   /** This is the developer destination, which may get `FRAMEBRIAR_ONLY_ATTRIBUTES`. */
   framebriar?: boolean;
+  /**
+   * One run's cumulative totals, kept by the caller across calls when it sends a
+   * run in slices (backfill). Given, a session line doesn't reset them: the caller
+   * passes a new map for each run.
+   */
+  totals?: RunningTotals;
   /** The temporality the destination's metric exporter wants. */
   temporality: 'delta' | 'cumulative';
   /** The scrubber used on export, applied again to every string attribute. */
@@ -153,7 +162,7 @@ export function convertRecordLines(lines: readonly string[], opts: ReplayOptions
   const logs: ReadableLogRecord[] = [];
   const metrics = new Map<string, MetricData>();
   // Cumulative running totals per series, from the run's first window.
-  const totals = new Map<string, { start: HrTime; sum: number; count: number; min: number; max: number }>();
+  const totals: RunningTotals = opts.totals ?? new Map();
   let skipped = 0;
   let session: Line | undefined;
   let how: ReturnType<typeof recordedWith>;
@@ -177,7 +186,7 @@ export function convertRecordLines(lines: readonly string[], opts: ReplayOptions
       // A new run: its own resource, and cumulative totals start again.
       resource = opts.resource(runOf(session));
       resources.push(resource);
-      totals.clear();
+      if (!opts.totals) totals.clear();
       continue;
     }
     if (!how && session === undefined) {
