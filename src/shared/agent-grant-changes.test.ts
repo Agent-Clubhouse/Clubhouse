@@ -123,3 +123,19 @@ describe('a template\'s layer (#2971)', () => {
       .toEqual([{ ...msg, mode: 'allow' }, { ...settings, mode: 'ask' }]);
   });
 });
+
+describe('the Dispatcher-only target (#3037)', () => {
+  const target = { kind: 'connected' as const, onlyDispatcher: true };
+
+  it('has its own key and label', () => {
+    expect(grantKey({ action: 'agent.wake', target })).toBe('agent.wake@connected:dispatcher');
+    expect(grantTargetLabel(target)).toBe('The Dispatcher, when connected');
+  });
+
+  it('survives a save and read back, and Off removes the default', () => {
+    const saved = normalizeGrantChanges({ changes: [{ action: 'agent.wake', target, mode: 'off' }] });
+    expect(saved?.changes[0].target).toEqual(target);
+    expect(has(applyGrantChanges(helperDefaults, saved), 'agent.wake@connected:dispatcher')).toBe(false);
+    expect(has(helperDefaults, 'agent.wake@connected:dispatcher')).toBe(true);
+  });
+});

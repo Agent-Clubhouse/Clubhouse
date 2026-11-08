@@ -79,8 +79,11 @@ export type GrantTarget =
   | { kind: 'self' }
   | { kind: 'parent' }
   | { kind: 'my_helpers' }
-  /** `excludeDispatcher`: not the Dispatcher, which nothing connected to it may reset (#2921 gap fix). */
-  | { kind: 'connected'; excludeDispatcher?: boolean }
+  /**
+   * `excludeDispatcher`: not the Dispatcher, which nothing connected to it may reset (#2921 gap fix).
+   * `onlyDispatcher`: the Dispatcher alone, which a message from a connected agent wakes (#3037).
+   */
+  | { kind: 'connected'; excludeDispatcher?: boolean; onlyDispatcher?: boolean }
   | { kind: 'project'; project: 'own' | 'any' | { path: string } }
   | { kind: 'group_project'; role: 'member' | 'admin' }
   | { kind: 'group_members' }
@@ -168,7 +171,8 @@ export function targetCovers(grant: GrantTarget, caller: GrantCaller, target: Gr
     case 'self': return rel.includes('self');
     case 'parent': return rel.includes('parent');
     case 'my_helpers': return rel.includes('my_helper');
-    case 'connected': return rel.includes('connected') && !(grant.excludeDispatcher && target.isDispatcher);
+    case 'connected':
+      return rel.includes('connected') && !(grant.excludeDispatcher && target.isDispatcher) && !(grant.onlyDispatcher && !target.isDispatcher);
     case 'group_members': return rel.includes('group_member');
     case 'app': return target.kind === 'app';
     case 'action': return target.kind === 'action' && target.actionId === grant.id;
@@ -211,7 +215,10 @@ function holds(held: readonly Grant[], given: Grant): boolean {
 export function widerOrSame(held: GrantTarget, given: GrantTarget): boolean {
   if (held.kind === 'any') return true;
   if (held.kind !== given.kind) return false;
-  if (held.kind === 'connected' && given.kind === 'connected') return !held.excludeDispatcher || !!given.excludeDispatcher;
+  if (held.kind === 'connected' && given.kind === 'connected') {
+    if (held.onlyDispatcher) return !!given.onlyDispatcher;
+    return !held.excludeDispatcher || !!given.excludeDispatcher;
+  }
   if (held.kind === 'project' && given.kind === 'project') {
     return held.project === 'any' || JSON.stringify(held.project) === JSON.stringify(given.project);
   }
