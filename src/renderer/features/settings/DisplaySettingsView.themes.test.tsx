@@ -60,8 +60,10 @@ describe('theme picker with 44 built-ins and plugin themes (#2754)', () => {
   it('shows every built-in and plugin theme, grouped by where it comes from', () => {
     show([...builtinIds, ...pluginIds]);
     expect(cards()).toHaveLength(49);
-    const headings = within(screen.getByTestId('theme-picker')).getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    const headings = within(screen.getByTestId('theme-picker')).getAllByRole('heading', { level: 4 }).map((h) => h.textContent);
     expect(headings).toEqual(['Clubhouse', 'Fall', 'Winter', 'Spring', 'Summer', 'Ocean', 'Tech Modern', 'Neon', 'Acme Themes', 'Beta Colors']);
+    // Every group is a named region, Tech Modern's space included.
+    for (const name of ['Clubhouse', 'Tech Modern', 'Acme Themes']) expect(screen.getByRole('region', { name })).toBeInTheDocument();
     const winter = screen.getByRole('region', { name: 'Winter' });
     expect(within(winter).getAllByRole('button').map((b) => b.textContent)).toEqual(['Frost', 'Evergreen', 'Northern Lights', 'Snowfall', 'Polar Night']);
   });
@@ -71,6 +73,7 @@ describe('theme picker with 44 built-ins and plugin themes (#2754)', () => {
     expect(screen.getByTestId('current-theme')).toHaveTextContent('Using Frost, from Winter.');
     fireEvent.change(search(), { target: { value: 'acme' } });
     expect(cards().map((c) => c.textContent)).toEqual(['Dusk', 'Dawn', 'Ember']);
+    expect(screen.getByRole('status')).toHaveTextContent('3 themes');
     fireEvent.change(search(), { target: { value: 'polar' } });
     expect(cards().map((c) => c.textContent)).toEqual(['Polar Night']);
   });
@@ -94,6 +97,7 @@ describe('theme picker with 44 built-ins and plugin themes (#2754)', () => {
     expect(screen.getByTestId('current-theme')).toHaveTextContent("It's hidden by the search or filter.");
     fireEvent.click(screen.getByRole('button', { name: 'Show all themes' }));
     expect(search()).toHaveValue('');
+    expect(search()).toHaveFocus();
     expect(cards()).toHaveLength(49);
     expect(screen.getByTestId('theme-card-nord')).toHaveAttribute('aria-pressed', 'true');
   });
@@ -103,7 +107,10 @@ describe('theme picker with 44 built-ins and plugin themes (#2754)', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Show' }), { target: { value: 'light' } });
     fireEvent.change(search(), { target: { value: 'synthwave' } });
     expect(screen.getByTestId('theme-picker-empty')).toHaveTextContent('No themes match "synthwave" among light themes.');
+    expect(screen.getByRole('status')).toHaveTextContent('No themes match');
     fireEvent.click(screen.getByRole('button', { name: 'Clear search and filter' }));
+    expect(search()).toHaveFocus();
+    expect(screen.getByRole('status')).toHaveTextContent('');
     expect(screen.getByRole('combobox', { name: 'Show' })).toHaveValue('all');
     expect(cards()).toHaveLength(49);
   });
@@ -122,6 +129,13 @@ describe('theme picker with 44 built-ins and plugin themes (#2754)', () => {
     expect(screen.getByTestId('theme-card-maple')).toHaveFocus();
     await user.keyboard('{Enter}');
     expect(setTheme).toHaveBeenCalledWith('maple');
+  });
+
+  it('says when the saved theme is not installed, and marks the theme that is showing', () => {
+    useThemeStore.setState({ theme: BUILTIN_THEMES['catppuccin-mocha'] });
+    show([...builtinIds, ...pluginIds], 'plugin:gone-pack:old');
+    expect(screen.getByTestId('current-theme')).toHaveTextContent("Your saved theme isn't installed, so Catppuccin Mocha is showing. Pick a theme below.");
+    expect(screen.getByTestId('theme-card-catppuccin-mocha')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('keeps the selection it is given when filters change', () => {

@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { getTheme } from '../../themes';
 import { usePluginStore } from '../../plugins/plugin-store';
@@ -155,13 +155,16 @@ function ThemeCard({ theme, selected, gradientsEnabled, onPick }: { theme: Theme
  * and grouped by where it comes from (#2754). The current theme is named
  * above the list, so it stays findable when a search hides its card.
  */
-function ThemePicker({ themeId, availableThemeIds, gradientsEnabled, onPick }: {
+function ThemePicker({ themeId, applied, availableThemeIds, gradientsEnabled, onPick }: {
   themeId: ThemeId;
+  /** The theme showing, which is the fallback when the saved one isn't installed. */
+  applied: ThemeDefinition;
   availableThemeIds: ThemeId[];
   gradientsEnabled: boolean;
   onPick: (id: ThemeId) => void;
 }) {
   const [query, setQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
   const [kind, setKind] = useState<ThemeKindFilter>('all');
   const plugins = usePluginStore((s) => s.plugins);
   const idBase = useId();
@@ -174,12 +177,18 @@ function ThemePicker({ themeId, availableThemeIds, gradientsEnabled, onPick }: {
   const current = themes.find((t) => t.id === themeId);
   const currentShown = groups.some((g) => g.themes.some((t) => t.id === themeId));
   const filtered = query.trim() !== '' || kind !== 'all';
-  const clear = () => { setQuery(''); setKind('all'); };
+  // The button pressed goes away, so focus goes back to the search.
+  const clear = () => { setQuery(''); setKind('all'); searchRef.current?.focus(); };
+  const shownCount = groups.reduce((n, g) => n + g.themes.length, 0);
+  // A saved theme that isn't installed (a removed plugin, a pack theme from before #2753) shows the fallback.
+  const missing = !current;
+  const markedId = missing ? applied.id : themeId;
 
   return (
     <div data-testid="theme-picker">
       <div className="flex flex-wrap items-center gap-2 mb-2">
         <input
+          ref={searchRef}
           type="search"
           aria-label="Search themes"
           placeholder="Search themes"
@@ -196,6 +205,14 @@ function ThemePicker({ themeId, availableThemeIds, gradientsEnabled, onPick }: {
           {(Object.keys(KIND_LABELS) as ThemeKindFilter[]).map((k) => <option key={k} value={k}>{KIND_LABELS[k]}</option>)}
         </select>
       </div>
+      <p role="status" className="sr-only" data-testid="theme-picker-status">
+        {filtered ? (shownCount === 0 ? 'No themes match' : `${shownCount} ${shownCount === 1 ? 'theme' : 'themes'}`) : ''}
+      </p>
+      {missing && (
+        <p className={`${settingsHelp} mb-3`} data-testid="current-theme">
+          Your saved theme isn't installed, so {applied.name} is showing. Pick a theme below.
+        </p>
+      )}
       {current && (
         <p className={`${settingsHelp} mb-3`} data-testid="current-theme">
           Using {current.name}, from {themeSource(current, pluginName).label}.
@@ -214,20 +231,18 @@ function ThemePicker({ themeId, availableThemeIds, gradientsEnabled, onPick }: {
         </div>
       ) : (
         <div className="flex flex-col gap-4">
-          {groups.map((group) => {
-            const headingId = `${idBase}-${group.key}`;
+          {groups.map((group, i) => {
+            // From the position: a key like "collection:Tech Modern" has a space, which aria-labelledby splits on.
+            const headingId = `${idBase}-group-${i}`;
             return (
               <section key={group.key} aria-labelledby={headingId} data-testid={`theme-group-${group.key}`}>
-                <h3 id={headingId} className="text-xs font-medium text-ctp-subtext1 mb-1.5">
-                  {group.label}
-                  {filtered && <span className="ml-1.5 font-normal text-ctp-overlay1">{group.themes.length}</span>}
-                </h3>
+                <h4 id={headingId} className="text-xs font-medium text-ctp-subtext1 mb-1.5">{group.label}</h4>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
                   {group.themes.map((theme) => (
                     <ThemeCard
                       key={theme.id}
                       theme={theme}
-                      selected={theme.id === themeId}
+                      selected={theme.id === markedId}
                       gradientsEnabled={gradientsEnabled}
                       onPick={() => onPick(theme.id)}
                     />
@@ -245,6 +260,7 @@ function ThemePicker({ themeId, availableThemeIds, gradientsEnabled, onPick }: {
 export function DisplaySettingsView() {
   const themeId = useThemeStore((s) => s.themeId);
   const setTheme = useThemeStore((s) => s.setTheme);
+  const appliedTheme = useThemeStore((s) => s.theme);
   const availableThemeIds = useThemeStore((s) => s.availableThemeIds);
   // The sidebar's view settings belong to the new layout; the classic rail has none since Home was removed.
   const newChrome = useChromeFlagStore((s) => s.enabled);
@@ -285,7 +301,7 @@ export function DisplaySettingsView() {
           </SettingsBlock>
         )}
         <SettingsBlock>
-          <ThemePicker themeId={themeId} availableThemeIds={availableThemeIds} gradientsEnabled={gradientsEnabled} onPick={setTheme} />
+          <ThemePicker themeId={themeId} applied={appliedTheme} availableThemeIds={availableThemeIds} gradientsEnabled={gradientsEnabled} onPick={setTheme} />
         </SettingsBlock>
       </SettingsSection>
     </SettingsPage>
