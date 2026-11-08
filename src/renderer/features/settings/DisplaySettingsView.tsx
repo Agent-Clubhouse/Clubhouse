@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { getTheme } from '../../themes';
+import { usePluginStore } from '../../plugins/plugin-store';
+import type { ThemeDefinition, ThemeId } from '../../../shared/types';
+import { groupThemes, themeSource, type ThemeKindFilter } from './theme-picker';
 import { useChromeFlagStore, NEW_CHROME_FLAG } from '../../chrome/chromeFlag';
 import { useChromeStore, SIDEBAR_SORTS, type SidebarSort } from '../../chrome/chromeStore';
 import { IDLE_DAY_CHOICES } from '../../chrome/projectActivity';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
 import { Button } from '../../components/Button';
 import { Toggle } from '../../components/Toggle';
-import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsError, settingsHelp, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
 
 /**
  * The way back to the classic layout, saved as the newChrome flag (on = false).
@@ -113,6 +116,132 @@ function SidebarSortSetting({ kind }: { kind: 'project' | 'agent' }) {
   );
 }
 
+const KIND_LABELS: Record<ThemeKindFilter, string> = { all: 'All themes', dark: 'Dark', light: 'Light' };
+
+/** One theme, drawn in its own colors. */
+function ThemeCard({ theme, selected, gradientsEnabled, onPick }: { theme: ThemeDefinition; selected: boolean; gradientsEnabled: boolean; onPick: () => void }) {
+  const hasGradient = gradientsEnabled && theme.gradients?.background;
+  const cardStyle: React.CSSProperties = {
+    backgroundColor: theme.colors.base,
+    ...(hasGradient ? { backgroundImage: theme.gradients!.background } : {}),
+  };
+  const nameStyle: React.CSSProperties = {
+    color: theme.colors.text,
+    ...(gradientsEnabled && theme.fonts?.ui ? { fontFamily: theme.fonts.ui } : {}),
+  };
+  return (
+    <button
+      onClick={onPick}
+      type="button"
+      aria-pressed={selected}
+      data-testid={`theme-card-${theme.id}`}
+      className={`flex flex-col rounded-lg border-2 p-3 transition-colors cursor-pointer focus-ring ${
+        selected ? 'border-ctp-accent' : 'border-surface-1 hover:border-surface-2'
+      }`}
+      style={cardStyle}
+    >
+      <div className="flex gap-1.5 mb-2" aria-hidden="true">
+        {[theme.colors.mantle, theme.colors.surface0, theme.colors.text, theme.colors.accent].map((color, i) => (
+          <div key={i} className="w-5 h-5 rounded-full" style={{ backgroundColor: color }} />
+        ))}
+      </div>
+      <span className="text-xs font-medium text-left" style={nameStyle}>{theme.name}</span>
+    </button>
+  );
+}
+
+/**
+ * Every built-in and plugin theme, searchable, filterable by light or dark,
+ * and grouped by where it comes from (#2754). The current theme is named
+ * above the list, so it stays findable when a search hides its card.
+ */
+function ThemePicker({ themeId, availableThemeIds, gradientsEnabled, onPick }: {
+  themeId: ThemeId;
+  availableThemeIds: ThemeId[];
+  gradientsEnabled: boolean;
+  onPick: (id: ThemeId) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [kind, setKind] = useState<ThemeKindFilter>('all');
+  const plugins = usePluginStore((s) => s.plugins);
+  const idBase = useId();
+  const pluginName = (pluginId: string) => plugins[pluginId]?.manifest.name;
+  const themes = useMemo(
+    () => availableThemeIds.map((id) => getTheme(id)).filter((t): t is ThemeDefinition => !!t),
+    [availableThemeIds],
+  );
+  const groups = groupThemes(themes, { query, kind, pluginName });
+  const current = themes.find((t) => t.id === themeId);
+  const currentShown = groups.some((g) => g.themes.some((t) => t.id === themeId));
+  const filtered = query.trim() !== '' || kind !== 'all';
+  const clear = () => { setQuery(''); setKind('all'); };
+
+  return (
+    <div data-testid="theme-picker">
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <input
+          type="search"
+          aria-label="Search themes"
+          placeholder="Search themes"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className={`${settingsInput} flex-1 min-w-[10rem]`}
+        />
+        <select
+          aria-label="Show"
+          value={kind}
+          onChange={(e) => setKind(e.target.value as ThemeKindFilter)}
+          className={`${settingsInput} cursor-pointer`}
+        >
+          {(Object.keys(KIND_LABELS) as ThemeKindFilter[]).map((k) => <option key={k} value={k}>{KIND_LABELS[k]}</option>)}
+        </select>
+      </div>
+      {current && (
+        <p className={`${settingsHelp} mb-3`} data-testid="current-theme">
+          Using {current.name}, from {themeSource(current, pluginName).label}.
+          {!currentShown && (
+            <>
+              {' '}It's hidden by the search or filter.{' '}
+              <button type="button" onClick={clear} className="underline text-ctp-text focus-ring rounded-sm cursor-pointer">Show all themes</button>
+            </>
+          )}
+        </p>
+      )}
+      {groups.length === 0 ? (
+        <div data-testid="theme-picker-empty">
+          <p className={settingsHelp}>No themes match{query.trim() ? ` "${query.trim()}"` : ''}{kind !== 'all' ? ` among ${kind} themes` : ''}.</p>
+          <Button kind="ghost" onClick={clear} className="mt-2">Clear search and filter</Button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {groups.map((group) => {
+            const headingId = `${idBase}-${group.key}`;
+            return (
+              <section key={group.key} aria-labelledby={headingId} data-testid={`theme-group-${group.key}`}>
+                <h3 id={headingId} className="text-xs font-medium text-ctp-subtext1 mb-1.5">
+                  {group.label}
+                  {filtered && <span className="ml-1.5 font-normal text-ctp-overlay1">{group.themes.length}</span>}
+                </h3>
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
+                  {group.themes.map((theme) => (
+                    <ThemeCard
+                      key={theme.id}
+                      theme={theme}
+                      selected={theme.id === themeId}
+                      gradientsEnabled={gradientsEnabled}
+                      onPick={() => onPick(theme.id)}
+                    />
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DisplaySettingsView() {
   const themeId = useThemeStore((s) => s.themeId);
   const setTheme = useThemeStore((s) => s.setTheme);
@@ -156,67 +285,7 @@ export function DisplaySettingsView() {
           </SettingsBlock>
         )}
         <SettingsBlock>
-          <div className="grid grid-cols-2 gap-2">
-            {availableThemeIds.map((id) => {
-              const theme = getTheme(id);
-              if (!theme) return null;
-              const selected = id === themeId;
-              const hasGradient = gradientsEnabled && theme.gradients?.background;
-              const cardStyle: React.CSSProperties = {
-                backgroundColor: theme.colors.base,
-                ...(hasGradient ? { backgroundImage: theme.gradients!.background } : {}),
-              };
-              const nameStyle: React.CSSProperties = {
-                color: theme.colors.text,
-                ...(gradientsEnabled && theme.fonts?.ui ? { fontFamily: theme.fonts.ui } : {}),
-              };
-              return (
-                <button
-                  key={id}
-                  onClick={() => setTheme(id)}
-                  type="button"
-                  aria-pressed={selected}
-                  className={`flex flex-col rounded-lg border-2 p-3 transition-colors cursor-pointer focus-ring ${
-                    selected
-                      ? 'border-ctp-accent'
-                      : 'border-surface-1 hover:border-surface-2'
-                  }`}
-                  style={cardStyle}
-                >
-                  {/* Color swatches */}
-                  <div className="flex gap-1.5 mb-2">
-                    <div
-                      className="w-5 h-5 rounded-full"
-                      style={{ backgroundColor: theme.colors.mantle }}
-                      title="Mantle"
-                    />
-                    <div
-                      className="w-5 h-5 rounded-full"
-                      style={{ backgroundColor: theme.colors.surface0 }}
-                      title="Surface"
-                    />
-                    <div
-                      className="w-5 h-5 rounded-full"
-                      style={{ backgroundColor: theme.colors.text }}
-                      title="Text"
-                    />
-                    <div
-                      className="w-5 h-5 rounded-full"
-                      style={{ backgroundColor: theme.colors.accent }}
-                      title="Accent"
-                    />
-                  </div>
-                  {/* Theme name */}
-                  <span
-                    className="text-xs font-medium text-left"
-                    style={nameStyle}
-                  >
-                    {theme.name}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          <ThemePicker themeId={themeId} availableThemeIds={availableThemeIds} gradientsEnabled={gradientsEnabled} onPick={setTheme} />
         </SettingsBlock>
       </SettingsSection>
     </SettingsPage>
