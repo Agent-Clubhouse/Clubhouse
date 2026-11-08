@@ -26,7 +26,7 @@ import { persist } from '../telemetry/persist';
 import { normalizeIdleSleep } from '../../shared/idle-sleep';
 import { setAgentIdleSleep } from './chat-idle-settings';
 import { assertAgentGitName, validateAgentGitName } from '../../shared/agent-name';
-import { ACCESS_LEVELS, type AgentAccessLevel, type OrchestrationPolicyConfig } from '../../shared/orchestration-policy';
+import { helperAccessRequest, type HelperRequestedAccess, type OrchestrationPolicyConfig } from '../../shared/orchestration-policy';
 import { uncommittedPorcelain } from './clubhouse-owned-files';
 import { isDispatcherPath } from './dispatcher/dispatcher-paths';
 import { CLUBHOUSE_MCP_PART_ID, type ManagedAgentSetup, type ManagedMigration, type ManagedMigrationFailure } from '../../shared/managed-agents-types';
@@ -653,7 +653,7 @@ export function normalizeHelperFields(agents: DurableAgentConfig[]): number {
       delete record.pendingTask;
       changed.add(agent.id);
     }
-    if ('requestedAccess' in record && !(ACCESS_LEVELS as readonly unknown[]).includes(record.requestedAccess)) {
+    if ('requestedAccess' in record && !helperAccessRequest(record.requestedAccess)) {
       delete record.requestedAccess;
       changed.add(agent.id);
     }
@@ -3331,7 +3331,7 @@ async function setClubhouseFeaturesInner(projectPath: string, agentId: string, o
 /** What start_helper keeps on a helper (#2227). null clears a field; undefined leaves it. */
 export interface HelperStartFields {
   pendingTask?: string | null;
-  requestedAccess?: AgentAccessLevel | null;
+  requestedAccess?: HelperRequestedAccess | null;
   /** What became of a context choice at the start, recorded on the helper's `routing`. */
   routingContext?: HelperContextStatus;
 }
