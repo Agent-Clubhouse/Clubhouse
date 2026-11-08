@@ -56,7 +56,7 @@ export async function dispatcherProviderControl(callerId: string, targetId: stri
       const project = (await projectStore.list()).find((p) => p.path === projectPath);
       if (project) broadcastToAllWindows(IPC.WINDOW.REQUEST_DURABLE_RELOAD, project.id);
     }
-    return { ...result, ...(!audited && { audit_warning: 'The result could not be written to the audit record.' }) };
+    return { ...result, ...(!audited && { audit_warning: 'Local telemetry recording is off, so this is not in the audit record.' }) };
   } catch (err) {
     const code = err instanceof MobileControlError ? err.code : 'provider_control_failed';
     await appendAudit({ tool: suffix, actorId: callerId, targets: [auditString(targetId)], outcome: 'refused', code });

@@ -10,6 +10,7 @@ Epic: #3056. Stages land in order: #3057 (peer basics), #3058 (reachability), #3
 - **The network channel** (`src/main/services/annex-network-channel.ts`, protocol in `src/shared/annex-network-protocol.ts`): a WebSocket at `/network` on the main TLS port that carries membership only (`hello`, `members`, `member-joined`, `member-removed`, `member-renamed`). Anything else closes it with 4400.
 - **Membership** (`src/main/services/annex-network-membership.ts`): a member is a peer with role `member`, which both controls and is controlled. `annex-network.json` keeps removals (so members that were off learn of them) and which members have confirmed each join and removal.
 - **Phones** (#3062): a phone that pairs with `network: 1` is a member of kind `phone`. The contract for the iOS app is `docs/annex-network-phone.md`.
+- **Agent addresses** (`src/shared/agent-address.ts`, #3063): `<agentId>@<machine fingerprint>`; a bare id means this machine. Converts to and from the renderer's `remote||<machine>||<agentId>`.
 - **A problem** (`src/shared/annex-problems.ts`) is a classified reason a connection failed, shown as two sentences: what happened, and what to do.
 
 ## Real-device checks
@@ -46,6 +47,9 @@ Synthetic tests can't cover certificates under Electron or local network discove
 - From the phone, pair a new desktop D that's in no network: D joins, A and the others connect to D, and the phone lists it.
 - Remove the phone on any desktop: every desktop refuses it, and the phone forgets the network.
 - A phone in the network still shows "Controlled by" on the desktop it's connected to.
+
+**Stage 6 (#3063)**
+- An agent calling a tool with another agent's address on this machine (`id@<this machine's fingerprint>`) works as with the bare id; with another machine's, it's told that machine can't be reached from here yet.
 
 ## Decision log
 
@@ -88,4 +92,7 @@ Decisions made while building, for the maintainer to revisit. Newest last. D180 
 | D212 | `network:changed` over `/ws` carries the same view to member phones whenever the membership changes or a connection comes or goes; the phone connects to new desktops by itself. A removed phone is sent its last view, with itself in `removals`, before its connections close (4401). Phones never confirm joins or removals (they don't use the membership channel), so nothing waits on them. | "Connects to new ones by itself." | |
 | D213 | Joining through the phone is one route both ways: `POST /api/v1/mobile/network/members` with member records, from a member phone. The phone sends the network's members to a desktop it just paired, and that desktop's own record to a member. Records must hold together, as with a member's word. Members may be sent exactly as listed; `online` and `self` are ignored. It counts as a fresh join (a person is joining them now), so an earlier removal doesn't stop it. The answer lists what was added and why anything wasn't (`member`, `one-to-one`, `self`, `invalid`). A phone is told apart from a computer by `pairingMode`, which the contract requires when joining. | A person on the new device finishes the pairing (the phone scanning its code), and nothing new to trust: the phone is already a member on both. | |
 | D214 | The contract for the iOS app is `docs/annex-network-phone.md`, with fixtures `test/fixtures/annex-mobile/network-*.json`. Capabilities gain `network` while Annex Network is on; nothing else in the phone's existing fixtures changes. | Additive: a phone that ignores it works one-to-one as before. | |
+| D215 | An agent's address is `<agentId>@<machine>`, the machine being its identity fingerprint (lowercased). A bare id means this machine, so every reference that exists keeps working. Agent ids never contain `@`, and anything after the last `@` that isn't a fingerprint is part of the id. | Readable, sortable, and the same on every machine. | |
+| D216 | Tool calls: arguments a tool's grant names as agents are localized before the grant check, so tools and checks see bare ids: an `agent_arg` declaration's list (`from`/`to` when it has none), `target_agent_id` for group members, `helper` for helpers, and `target` for call_wire_tool. One naming another machine is refused (`other_machine`, without saying which machine) until stage 7 (#3064) routes it. | One place for every tool, no tool changed. | A new agent target reads another argument. |
+| D217 | Phones: snapshots carry `machine`; a command's `agentId` may be an address; another machine's is refused with `wrong_machine` and the `machine` to send it to. Capabilities announce `agentAddress`. | The phone keeps one connection per desktop and routes by machine itself. | |
 

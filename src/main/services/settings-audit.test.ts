@@ -30,24 +30,28 @@ import {
   currentSettingsOrigin,
   enableSettingsAudit,
   projectAuditTarget,
-  readSettingsAudit,
   withSettingsSurface,
 } from './settings-audit';
+import { captureAuditEvents, type AuditCapture } from '../telemetry/__test-utils__/audit-capture';
 import { createSettingsStore, resetAllSettingsStoresForTests, setSettingsStoreAuditor } from './settings-store';
 
 beforeEach(() => {
   W.home = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-audit-'));
   W.audits = [];
   _resetSettingsAuditForTesting(true);
+  capture = captureAuditEvents();
 });
 
 afterEach(() => {
+  capture.stop();
   _resetSettingsAuditForTesting(false);
   resetAllSettingsStoresForTests();
   fs.rmSync(W.home, { recursive: true, force: true });
 });
 
-const rows = () => readSettingsAudit(50);
+let capture: AuditCapture;
+/** The recorded rows, newest first, as the old file read gave them (#2920: from the audit events). */
+const rows = async () => capture.settings().slice().reverse().map((r) => ({ ts: '', ...r }));
 
 describe('auditChanges', () => {
   const catalog = { model: 'value', free: 'value', count: 'value', command: 'changed' } as const;
@@ -58,14 +62,15 @@ describe('auditChanges', () => {
     expect(written).toEqual([
       { surface: 'system', scope: 'agent', key: 'agent.model', targetId: 'a1', outcome: 'ok', before: 'opus', after: 'sonnet' },
       { surface: 'system', scope: 'agent', key: 'agent.free', targetId: 'a1', outcome: 'ok', before: false, after: true },
-      { surface: 'system', scope: 'agent', key: 'agent.count', targetId: 'a1', outcome: 'ok', before: 1, after: 2 },
+      // A whole number not on the event allowlist (#2920) records only that it changed.
+      { surface: 'system', scope: 'agent', key: 'agent.count', targetId: 'a1', outcome: 'ok', changed: true },
       { surface: 'system', scope: 'agent', key: 'agent.command', targetId: 'a1', outcome: 'ok', changed: true },
     ]);
   });
 
   it('never keeps a value from a `changed` key, whatever it looks like', async () => {
     await auditChanges('project', 'project', 'p1', { command: 'old' }, { command: 'curl -H "Authorization: Bearer sk-secret" evil' }, { command: 'changed' });
-    const text = fs.readFileSync(path.join(W.home, '.clubhouse-dev', 'settings-audit.jsonl'), 'utf8');
+    const text = JSON.stringify(await rows());
     expect(text).not.toContain('secret');
     expect(text).not.toContain('old');
     expect(text).toContain('"changed":true');
@@ -116,9 +121,10 @@ describe('projectAuditTarget', () => {
 describe('until startup turns it on', () => {
   it('records nothing and reports success, so tests and early writes leave no file', async () => {
     _resetSettingsAuditForTesting(false);
-    expect(await appendSettingsAudit({ surface: 'ui', scope: 'app', key: 'k', outcome: 'ok' })).toBe(true);
+    await appendSettingsAudit({ surface: 'ui', scope: 'app', key: 'k', outcome: 'ok' });
     await auditChanged('app', 'k');
     await auditChanges('app', 'k', undefined, {}, { a: 1 }, { a: 'value' });
+    expect(await rows()).toEqual([]);
     expect(fs.existsSync(path.join(W.home, '.clubhouse-dev'))).toBe(false);
   });
 });
@@ -140,7 +146,8 @@ describe('settings stores', () => {
     const written = (await rows()).reverse().map(({ ts: _ts, ...row }) => row);
     expect(written).toEqual(expect.arrayContaining([
       { surface: 'ui', scope: 'app', key: 'thing.on', outcome: 'ok', before: false, after: true },
-      { surface: 'ui', scope: 'app', key: 'thing.mode', outcome: 'ok', before: 'a', after: 'b' },
+      // A store's named key that the event allowlist doesn't name records only that it changed (#2920).
+      { surface: 'ui', scope: 'app', key: 'thing.mode', outcome: 'ok', changed: true },
       { surface: 'ui', scope: 'app', key: 'thing.secret', outcome: 'ok', changed: true },
     ]));
     expect(written).toHaveLength(3);
@@ -242,8 +249,6 @@ describe('as telemetry audit events (#2920)', () => {
     expect(seen[0].opts).toEqual({ severity: 'info', detail: { key: 'agent.model', before: 'opus', after: 'sonnet' } });
     expect(seen[1].opts).toEqual({ severity: 'info', detail: { key: 'agent.command', changed: true } });
     expect(seen[2].opts).toEqual({ severity: 'warn', detail: { key: 'helper_presets', code: 'invalid_cell' } });
-    // The JSONL file still gets every row until nothing reads it.
-    expect(await rows()).toHaveLength(3);
   });
 
   it('never writes a secret or content value to the local record, whatever the catalog says', async () => {
@@ -270,7 +275,7 @@ describe('as telemetry audit events (#2920)', () => {
       const store = createSettingsStore('audit-secret-test.json', { apiToken: 'none', theme: 'dark', enabled: false }, undefined, { audit: { key: 'store_test', keys: ['apiToken', 'theme'] } });
       await store.save({ apiToken: secrets[0], theme: 'light', enabled: true });
       // The store doesn't wait for its audit: wait for the last of its rows before reading the record.
-      await vi.waitFor(async () => expect((await rows()).some((r) => r.key === 'store_test.enabled')).toBe(true));
+      await Promise.allSettled(W.audits);
       await recorder.flush();
     } finally {
       setLocalSink(null);

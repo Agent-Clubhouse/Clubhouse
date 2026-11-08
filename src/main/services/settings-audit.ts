@@ -1,7 +1,7 @@
 /**
- * The audit record of settings changes (#2671), one JSON line per change or
- * refusal, in `settings-audit.jsonl` under the Clubhouse base dir. Bounded: 1 MB,
- * then one rotated file. docs/helper-auto-routing.md lists what it covers.
+ * The audit record of settings changes (#2671): one `clubhouse.audit.setting`
+ * event per change or refusal, in the local telemetry record (#2920,
+ * docs/telemetry-otel-spec.md §6.13). docs/helper-auto-routing.md lists what it covers.
  *
  * It hooks where settings are written, not where they're asked for, so a new way
  * to reach a writer is covered without doing anything. Who asked comes from
@@ -18,7 +18,6 @@ import { tel } from '../telemetry/facade';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { AsyncLocalStorage } from 'async_hooks';
 import { createHash } from 'crypto';
-import { createAuditLog } from './bounded-audit-log';
 import { setSettingsStoreAuditor } from './settings-store';
 
 export type SettingsAuditSurface = 'ui' | 'mcp' | 'mobile' | 'dispatcher' | 'persona' | 'cli' | 'system';
@@ -40,14 +39,9 @@ export interface SettingsAuditRow {
   code?: string;
 }
 
-export const MAX_SETTINGS_AUDIT_READ = 50;
-
-const log = createAuditLog<SettingsAuditRow>('settings-audit.jsonl', (row) => ({ key: row.key }), MAX_SETTINGS_AUDIT_READ);
 
 let enabled = false;
 
-export const settingsAuditPath = log.path;
-export const readSettingsAudit = log.read;
 
 /**
  * Settings whose old and new values a telemetry audit event may carry (#2920):
@@ -82,8 +76,7 @@ export function eventKeepsValues(row: Pick<SettingsAuditRow, 'key' | 'before' | 
 /**
  * The row as a telemetry audit event (#2920): enums and hashed ids as attributes,
  * the key, values and code in the local record's detail only. Values go in only
- * when `eventKeepsValues` allows; otherwise the detail says `changed`. Written
- * alongside the JSONL file until nothing reads that. Never throws.
+ * when `eventKeepsValues` allows; otherwise the detail says `changed`. Never throws.
  */
 function recordEvent(row: SettingsAuditRow): void {
   try {
@@ -102,18 +95,17 @@ function recordEvent(row: SettingsAuditRow): void {
       },
     });
   } catch {
-    // telemetry-exempt: the JSONL row below is still written
+    // telemetry-exempt: the record is best effort; the change it describes has happened
   }
 }
 
-function record(row: SettingsAuditRow): Promise<boolean> {
+async function record(row: SettingsAuditRow): Promise<void> {
   recordEvent(row);
-  return log.append(row);
 }
 
-/** Never throws. False only when the record couldn't be written; the change it describes has happened. */
-export function appendSettingsAudit(row: SettingsAuditRow): Promise<boolean> {
-  return enabled ? record(row) : Promise.resolve(true);
+/** Never throws. */
+export async function appendSettingsAudit(row: SettingsAuditRow): Promise<void> {
+  if (enabled) await record(row);
 }
 
 // ── Who asked ────────────────────────────────────────────────────────────
@@ -204,7 +196,6 @@ export function enableSettingsAudit(): void {
 
 /** For testing. */
 export function _resetSettingsAuditForTesting(on = false): void {
-  log.reset();
   enabled = on;
   setSettingsStoreAuditor(null);
 }
