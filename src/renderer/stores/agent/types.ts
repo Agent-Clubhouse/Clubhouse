@@ -10,6 +10,14 @@ import {
   HelperDeleteChoice,
 } from '../../../shared/types';
 
+/** A quick agent from a template (#2893), with this launch's part changes (#2928). */
+export interface QuickSpawnOptions {
+  managedTemplateId?: string;
+  fallbackAccess?: AccessLevel;
+  addParts?: string[];
+  removeParts?: string[];
+}
+
 export type DeleteMode = 'commit-push' | 'cleanup-branch' | 'save-patch' | 'force' | 'unregister';
 
 export interface AgentUISlice {
@@ -77,12 +85,13 @@ export interface AgentLifecycleSlice {
     /** Run in this directory instead of the parent's worktree (e.g. retry in the same worktree). */
     cwdOverride?: string,
     /**
-     * Clubhouse-managed agents (#2893): start it from this template.
-     * `fallbackAccess` (#2761): the level used when neither `access` nor the
-     * parent's quick agent defaults give one. A form passes the app's Default
-     * access; plugins pass none, so their agents start at Ask first.
+     * Clubhouse-managed agents (#2893): start it from this template, with this
+     * launch's part changes (#2928). `fallbackAccess` (#2761): the level used
+     * when neither `access` nor the parent's quick agent defaults give one. A
+     * form passes the app's Default access; plugins pass none, so their agents
+     * start at Ask first.
      */
-    options?: { managedTemplateId?: string; fallbackAccess?: AccessLevel },
+    options?: QuickSpawnOptions,
   ) => Promise<string>;
   spawnDurableAgent: (
     projectId: string,
