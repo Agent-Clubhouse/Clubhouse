@@ -39,6 +39,7 @@ import { buildAgentMap, commandForRequest, diffsForRequest, implementLevel, isRu
 import { HelperHeader } from '../helpers/HelperHeader';
 import { SetupChangedBar } from '../../managed/SetupChangedBar';
 import { groupChatState, useGroupChatContext } from '../../dispatcher/group-chat';
+import { DispatcherChatIntro } from '../../dispatcher/DispatcherIntro';
 
 /** Where a ChatView is shown; several can show the same agent at once. */
 export type ChatViewContext = 'main' | 'popout' | 'canvas' | 'plugin';
@@ -233,6 +234,15 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
     })();
   };
 
+  // The Dispatcher opens by introducing itself, with things to ask (#3048). Not while the transcript loads.
+  // Kept stable across renders, so the memoized stream doesn't redraw for it.
+  const sendRef = useRef(onSend);
+  sendRef.current = onSend;
+  const dispatcherIntro = useMemo(
+    () => (dispatcher && !loading ? <DispatcherChatIntro name={agent.name} disabled={ended} onPick={(text) => sendRef.current(text, 'send')} /> : undefined),
+    [dispatcher, loading, agent.name, ended],
+  );
+
   const onImplement = (level: PermissionLevel) => {
     void (async () => {
       // Implementing in the old level would run the plan unapproved (or not at all).
@@ -364,6 +374,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
             announce={context !== 'canvas'}
             onShowEarlier={onShowEarlier}
             groupChat={groupChat}
+            emptyState={dispatcherIntro}
           />
           {/* An approval card is capped so it can't squeeze the transcript out (#2412): the card and the lists
               above it scroll inside the cap. The composer is never capped or wrapped: its menus open upward. */}

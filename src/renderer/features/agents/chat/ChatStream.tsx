@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { memo, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { ChatCapabilities, ChatMcpServer } from '../../../../shared/chat';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { stripTaskMarker } from '../../../../shared/chat';
@@ -203,6 +203,8 @@ export interface ChatStreamProps {
   latestRequest?: number;
   /** Saved conversations cannot invite the user to send a message. */
   emptyMessage?: string;
+  /** Shown in place of emptyMessage when there's nothing to show: the Dispatcher's intro (#3048). */
+  emptyState?: ReactNode;
   /** The agent's name. Saved history leaves it out: the agent's record has it, while it exists. */
   agentName?: string;
   /** The Dispatcher's group chat (#3043): agents' interjections stay separate rows. */
@@ -267,6 +269,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
   announce = true,
   latestRequest = 0,
   emptyMessage = 'No messages yet. Send one to start.',
+  emptyState,
   onShowEarlier,
   agentName,
   groupChat = false,
@@ -750,9 +753,9 @@ const ChatStreamInner = memo(function ChatStreamInner({
             Show earlier
           </button>
         )}
-        {blocks.length === 0 && (
+        {blocks.length === 0 && (emptyState ?? (
           <div className="text-center text-[13px] text-ctp-overlay0 py-10">{emptyMessage}</div>
-        )}
+        ))}
         <TranscriptExpansionProvider store={expansionStore}>
           <RichLinkProvider agentId={state.agentId}>
           <FileChipProvider agentId={rich ? state.agentId : null}>
