@@ -65,6 +65,16 @@ import { behaviorAuto, getDispatcherBehavior, resolveDispatcherModels, saveDispa
 import { onHelperRoutingChanged } from '../helper-routing';
 import type { DispatcherBehavior, DispatcherRole } from '../../../shared/dispatcher-behavior';
 import { setDispatcherIdLookup } from '../clubhouse-mcp/dispatcher-gate';
+import { DEFAULT_DISPATCHER_NAME } from '../../../shared/dispatcher-name';
+import { personalityInstructions } from '../../../shared/dispatcher-personality';
+import type { DispatcherSetupInput, DispatcherSetupStatus } from '../../../shared/dispatcher-setup';
+import {
+  decideDispatcherSetup,
+  getDispatcherPersonality,
+  getDispatcherSetup,
+  saveDispatcherPersonality,
+  saveDispatcherSetupStatus,
+} from './dispatcher-setup';
 
 export {
   getDispatcherPath, getDispatcherChatPath, getDispatcherNotesPath, getDispatcherNotesArchivePath, getDispatcherMemoryPath,
@@ -72,13 +82,15 @@ export {
 } from './dispatcher-paths';
 export { isDispatcherEnabled, DISPATCHER_FLAG } from './dispatcher-settings';
 export { getDispatcherBehavior, getDispatcherBehaviorPlan, onDispatcherBehaviorChanged } from './dispatcher-behavior';
+export { getDispatcherPersonality, getDispatcherSetup } from './dispatcher-setup';
 
 const NS = 'core:dispatcher';
 /** What the Dispatcher's instructions file holds. Clubhouse owns it: there is no project or user copy. */
 export const DISPATCHER_INSTRUCTIONS: string = dispatcherInstructions;
 /** What the chat's instructions file holds (#3036). Clubhouse owns it too. */
 export const DISPATCHER_CHAT_INSTRUCTIONS: string = dispatcherChatInstructions;
-export const DISPATCHER_NAME = 'Dispatcher';
+/** Its default name; the one constant is in shared/dispatcher-name.ts. */
+export const DISPATCHER_NAME = DEFAULT_DISPATCHER_NAME;
 /**
  * The Clubhouse MCP tools that join its two agents (#3036). No chat shows a
  * call to them, on any provider, desktop or phone (concealed-tools).
@@ -90,7 +102,10 @@ export const DISPATCHER_INTERNAL_TOOLS: ReadonlySet<string> = new Set(['start_wo
 let config: DurableAgentConfig | null = null;
 /** The chat's config as last read from disk; null before it was first created. */
 let chatConfig: DurableAgentConfig | null = null;
-/** The CLI whose instructions file was last written in each folder, so a CLI change rewrites it. */
+/**
+ * What each folder's instructions file was last written for (instructionsKey),
+ * so a CLI change rewrites it, and for the chat a new name too.
+ */
 const instructionsWrittenFor = new Map<string, string>();
 /** Every change runs after the previous one, so two toggles can't race a create. */
 let queue: Promise<unknown> = Promise.resolve();
@@ -198,6 +213,8 @@ export function getDispatcherState(): DispatcherState {
     chatPath: chatConfig ? getDispatcherChatPath() : null,
     chatRunning,
     behavior: behaviorState(),
+    personality: getDispatcherPersonality(),
+    setup: getDispatcherSetup(),
   };
 }
 
@@ -294,6 +311,76 @@ export async function setDispatcherBehavior(level: DispatcherBehavior): Promise<
       if (queuedIn === generation) await applyBehavior(behaviorTargets(), { live: true });
     });
   }
+  return getDispatcherState();
+}
+
+/**
+ * Change its personality from setup, Settings or a phone (#3047). Saves it
+ * and rewrites the chat's instructions file, which a session reads when it
+ * starts: a running chat picks it up at its next start.
+ */
+export async function setDispatcherPersonality(value: unknown): Promise<DispatcherState> {
+  if (await saveDispatcherPersonality(value)) {
+    emitChanged();
+    await enqueue(rewriteChatInstructions);
+  }
+  return getDispatcherState();
+}
+
+async function rewriteChatInstructions(): Promise<void> {
+  if (chatConfig && isDispatcherEnabled()) await writeInstructions(chatConfig, getDispatcherChatPath());
+}
+
+/**
+ * Where first-run setup stands (#3047): `later` when the user chose Set up
+ * later, so the chat offers it again, or `done` when that offer is put away.
+ */
+export async function setDispatcherSetupStatus(status: Exclude<DispatcherSetupStatus, 'pending'>): Promise<DispatcherState> {
+  if (await saveDispatcherSetupStatus(status)) emitChanged();
+  return getDispatcherState();
+}
+
+/**
+ * Finish first-run setup (#3047): its name, look, provider, Behavior and
+ * personality in one go. The name and look go on the record Settings edits,
+ * and are copied onto the chat's as any change is. A new provider resets the
+ * model, as Settings' CLI change does, and Behavior gives both agents theirs.
+ * Starts nothing.
+ */
+export async function completeDispatcherSetup(input: DispatcherSetupInput): Promise<DispatcherState> {
+  if (!isDispatcherEnabled()) throw new Error('Turn on the Dispatcher first, in Settings > Dispatcher.');
+  if (!getProvider(input.provider)) throw new Error(`${input.provider} isn’t a provider Clubhouse knows.`);
+  await enqueue(async () => {
+    const coordinator = config ?? await readConfig();
+    if (!coordinator) throw new Error('The Dispatcher isn’t set up on disk yet. Try again in a moment.');
+    const dir = getDispatcherPath();
+    await agentConfig.updateDurable(dir, coordinator.id, {
+      name: input.name,
+      color: input.color,
+      // An image replaces an emoji; a record has one or the other.
+      ...(typeof input.image === 'string' && { emoji: null }),
+    });
+    if (typeof input.image === 'string') await agentConfig.saveAgentIcon(dir, coordinator.id, input.image);
+    else if (input.image === null && coordinator.icon) await agentConfig.removeAgentIcon(dir, coordinator.id);
+    if (input.provider !== (coordinator.orchestrator ?? defaultDispatcherOrchestrator())) {
+      await agentConfig.updateDurableConfig(dir, coordinator.id, { orchestrator: input.provider as OrchestratorId, model: 'default' });
+    }
+    await saveDispatcherPersonality(input.personality);
+    await saveDispatcherSetupStatus('done');
+    // Read both records back, copy the identity onto the chat and write its instructions with the new name and personality.
+    await refreshAfterChange(dir);
+    await rewriteChatInstructions();
+  });
+  appLog(NS, 'info', 'Dispatcher setup finished', {
+    meta: { provider: input.provider, behavior: input.behavior, preset: input.personality.preset, image: input.image === undefined ? 'kept' : input.image ? 'new' : 'removed' },
+  });
+  // Saves the level and gives both agents their models for it, on the provider just chosen.
+  await saveDispatcherBehavior(input.behavior);
+  const queuedIn = generation;
+  void enqueue(async () => {
+    if (queuedIn === generation) await applyBehavior(behaviorTargets(), { live: true });
+  });
+  emitChanged();
   return getDispatcherState();
 }
 
@@ -426,8 +513,22 @@ async function writeInstructions(agent: DurableAgentConfig, dir: string = getDis
     appLog(NS, 'warn', 'No provider to write Dispatcher instructions for', { meta: { orchestrator: providerId } });
     return;
   }
-  await provider.writeInstructions(dir, await withDispatcherMemory(isDispatcherChatPath(dir) ? DISPATCHER_CHAT_INSTRUCTIONS : DISPATCHER_INSTRUCTIONS));
-  instructionsWrittenFor.set(dir, provider.id);
+  await provider.writeInstructions(dir, await withDispatcherMemory(isDispatcherChatPath(dir) ? chatInstructions(agent) : DISPATCHER_INSTRUCTIONS));
+  instructionsWrittenFor.set(dir, instructionsKey(agent, dir));
+}
+
+/**
+ * The chat's instructions (#3047): Clubhouse's text, then its name and the
+ * personality exactly as the user wrote it. The memory index goes after.
+ */
+export function chatInstructions(agent: Pick<DurableAgentConfig, 'name'>): string {
+  return `${DISPATCHER_CHAT_INSTRUCTIONS.trimEnd()}\n\n${personalityInstructions(agent.name, getDispatcherPersonality())}\n`;
+}
+
+/** What an instructions file depends on besides memory: the CLI, and for the chat its name. */
+function instructionsKey(agent: DurableAgentConfig, dir: string): string {
+  const provider = agent.orchestrator ?? defaultDispatcherOrchestrator() ?? '';
+  return isDispatcherChatPath(dir) ? `${provider}\n${agent.name}` : provider;
 }
 
 async function stopAgent(agent: DurableAgentConfig, dir: string = getDispatcherPath()): Promise<void> {
@@ -445,7 +546,10 @@ async function reconcile(): Promise<void> {
   watchChanges();
   const { enabled, savedOn } = dispatcherEnablement();
   if (enabled) {
+    const existedBefore = !!(await readConfig());
     config = await ensureCreated();
+    // First-run setup (#3047): decided once, and an upgrade when its agent was already there.
+    await decideDispatcherSetup(existedBefore);
     chatConfig = await ensureChat(config);
     await writeInstructions(config);
     await writeInstructions(chatConfig, getDispatcherChatPath());
@@ -477,7 +581,7 @@ async function refreshAfterChange(changedDir: string): Promise<void> {
   chatConfig = chat;
   if (isDispatcherEnabled()) {
     for (const [agent, dir] of [[coordinator, getDispatcherPath()], [chat, chatDir]] as const) {
-      if (agent && (agent.orchestrator ?? defaultDispatcherOrchestrator()) !== instructionsWrittenFor.get(dir)) await writeInstructions(agent, dir);
+      if (agent && instructionsKey(agent, dir) !== instructionsWrittenFor.get(dir)) await writeInstructions(agent, dir);
     }
   }
   emitChanged();

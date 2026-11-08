@@ -682,6 +682,16 @@ export const IPC = {
     SET_BEHAVIOR: 'dispatcher:set-behavior',
     /** Starts the Dispatcher's conversation over (#3043). Memory is never touched. */
     CLEAR_CHAT: 'dispatcher:clear-chat',
+    /** Personality (#3047): `{ preset, text }`. Resolves with the DispatcherState. */
+    SET_PERSONALITY: 'dispatcher:set-personality',
+    /** First-run setup (#3047): saves name, look, provider, Behavior and personality. Resolves with the DispatcherState. */
+    COMPLETE_SETUP: 'dispatcher:complete-setup',
+    /** First-run setup (#3047): `later` (Set up later) or `done` (offer put away). Resolves with the DispatcherState. */
+    SET_SETUP_STATUS: 'dispatcher:set-setup-status',
+    /** Setup's Try it out (#3047): one sample question to the chosen model. Contacts no agent. */
+    TRY_PERSONALITY: 'dispatcher:try-personality',
+    /** Setup's Behavior step (#3047): whether Auto gives a level its models on a provider not saved yet. */
+    CHECK_BEHAVIOR: 'dispatcher:check-behavior',
     /** Main → renderer broadcast: DispatcherState after any change. */
     CHANGED: 'dispatcher:changed',
     /** An agent's card, for its Dispatcher card in Details (#3049). */

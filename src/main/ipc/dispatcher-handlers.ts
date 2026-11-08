@@ -9,7 +9,9 @@ import { restorePersistedBindings } from './mcp-binding-handlers';
 import { withValidatedArgs, booleanArg, objectArg, stringArg } from './validation';
 import { cleanCardEdit, type AgentCardFields, type AgentCardView } from '../../shared/dispatcher-agent-card';
 import { onAgentCardChanged, readAgentCardView, saveAgentCardEdit } from '../services/dispatcher/dispatcher-agent-card-source';
-import { isDispatcherBehavior } from '../../shared/dispatcher-behavior';
+import { isDispatcherBehavior, type DispatcherBehaviorAuto } from '../../shared/dispatcher-behavior';
+import { cleanSetupInput, cleanTryItOutRequest, type TryItOutResult } from '../../shared/dispatcher-setup';
+import { checkDispatcherBehavior, tryDispatcherPersonality } from '../services/dispatcher/dispatcher-setup';
 
 let registered = false;
 
@@ -30,6 +32,35 @@ export function registerDispatcherHandlers(): void {
     },
   ));
   ipcMain.handle(IPC.DISPATCHER.CLEAR_CHAT, (): Promise<ClearChatResult> => clearDispatcherChat());
+
+  // Personality and first-run setup (#3047).
+  ipcMain.handle(IPC.DISPATCHER.SET_PERSONALITY, withValidatedArgs(
+    [objectArg()],
+    async (_event, personality): Promise<DispatcherState> => dispatcher.setDispatcherPersonality(personality),
+  ));
+  ipcMain.handle(IPC.DISPATCHER.COMPLETE_SETUP, withValidatedArgs(
+    [objectArg()],
+    async (_event, input): Promise<DispatcherState> => dispatcher.completeDispatcherSetup(cleanSetupInput(input)),
+  ));
+  ipcMain.handle(IPC.DISPATCHER.SET_SETUP_STATUS, withValidatedArgs(
+    [stringArg()],
+    async (_event, status): Promise<DispatcherState> => {
+      if (status !== 'later' && status !== 'done') throw new Error(`Unknown setup status: ${status}. Use later or done.`);
+      return dispatcher.setDispatcherSetupStatus(status);
+    },
+  ));
+  // Runs one prompt on a model and never touches an agent.
+  ipcMain.handle(IPC.DISPATCHER.TRY_PERSONALITY, withValidatedArgs(
+    [objectArg()],
+    async (_event, req): Promise<TryItOutResult> => tryDispatcherPersonality(cleanTryItOutRequest(req)),
+  ));
+  ipcMain.handle(IPC.DISPATCHER.CHECK_BEHAVIOR, withValidatedArgs(
+    [stringArg({ maxLength: 200 }), stringArg()],
+    async (_event, provider, level): Promise<DispatcherBehaviorAuto> => {
+      if (!isDispatcherBehavior(level)) throw new Error(`Unknown Behavior: ${level}. Use light, standard or thorough.`);
+      return checkDispatcherBehavior(provider, level);
+    },
+  ));
 
   // Its chat is a group chat (#3043): what reaches it is triaged, and agents' news rewritten.
   installGroupChat();

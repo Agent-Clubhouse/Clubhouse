@@ -4,6 +4,8 @@ import { newChromeEnabled } from '../../window-chrome';
 import { resolveDispatcherEnablement, type DispatcherEnablement } from '../../../shared/dispatcher-types';
 import { isGraduatedFlagOn } from '../../../shared/graduated-flags';
 import type { DispatcherBehavior } from '../../../shared/dispatcher-behavior';
+import type { DispatcherPersonality } from '../../../shared/dispatcher-personality';
+import type { DispatcherSetupState } from '../../../shared/dispatcher-setup';
 
 /** A saved experimental flag from before the Dispatcher graduated. Read, never written or offered. */
 export const DISPATCHER_FLAG = 'dispatcher';
@@ -13,6 +15,13 @@ export interface DispatcherSettings {
   enabled?: boolean;
   /** Behavior (#3045): Light, Standard or Thorough. Missing or unknown reads as Standard. */
   behavior?: DispatcherBehavior;
+  /** Personality (#3047): the text for its chat's instructions and its preset. Missing reads as Concise. */
+  personality?: DispatcherPersonality;
+  /**
+   * First-run setup (#3047). Missing until the Dispatcher is first turned on
+   * in a version that has setup, which saves `pending` and whether it is an upgrade.
+   */
+  setup?: DispatcherSetupState;
 }
 
 const store = createSettingsStore<DispatcherSettings>('dispatcher-settings.json', {}, undefined, { audit: { key: 'dispatcher' } });

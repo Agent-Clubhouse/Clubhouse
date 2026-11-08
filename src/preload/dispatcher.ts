@@ -2,7 +2,9 @@ import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { DispatcherState } from '../shared/dispatcher-types';
 import type { AgentCardFields, AgentCardView } from '../shared/dispatcher-agent-card';
-import type { DispatcherBehavior } from '../shared/dispatcher-behavior';
+import type { DispatcherBehavior, DispatcherBehaviorAuto } from '../shared/dispatcher-behavior';
+import type { DispatcherPersonality } from '../shared/dispatcher-personality';
+import type { DispatcherSetupInput, TryItOutRequest, TryItOutResult } from '../shared/dispatcher-setup';
 
 export const dispatcher = {
   dispatcher: {
@@ -13,6 +15,17 @@ export const dispatcher = {
     setBehavior: (level: DispatcherBehavior): Promise<DispatcherState> => ipcRenderer.invoke(IPC.DISPATCHER.SET_BEHAVIOR, level),
     /** Starts its conversation over (#3043): now if it's running, else at its next start. Memory stays. */
     clearChat: (): Promise<{ cleared: 'now' | 'next_start' }> => ipcRenderer.invoke(IPC.DISPATCHER.CLEAR_CHAT),
+    /** Sets its personality (#3047); its chat reads it at its next start. Resolves with the state afterwards. */
+    setPersonality: (personality: DispatcherPersonality): Promise<DispatcherState> => ipcRenderer.invoke(IPC.DISPATCHER.SET_PERSONALITY, personality),
+    /** Finishes first-run setup (#3047). Resolves with the state afterwards. */
+    completeSetup: (input: DispatcherSetupInput): Promise<DispatcherState> => ipcRenderer.invoke(IPC.DISPATCHER.COMPLETE_SETUP, input),
+    /** Set up later, or put the offer away (#3047). Resolves with the state afterwards. */
+    setSetupStatus: (status: 'later' | 'done'): Promise<DispatcherState> => ipcRenderer.invoke(IPC.DISPATCHER.SET_SETUP_STATUS, status),
+    /** Try it out (#3047): one sample question to the chosen model, with nothing saved and no agent contacted. */
+    tryPersonality: (req: TryItOutRequest): Promise<TryItOutResult> => ipcRenderer.invoke(IPC.DISPATCHER.TRY_PERSONALITY, req),
+    /** Whether Auto gives a level its models on a provider (#3047), for setup before anything is saved. */
+    checkBehavior: (provider: string, level: DispatcherBehavior): Promise<DispatcherBehaviorAuto> =>
+      ipcRenderer.invoke(IPC.DISPATCHER.CHECK_BEHAVIOR, provider, level),
     onChanged: (callback: (state: DispatcherState) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, state: DispatcherState) => callback(state);
       ipcRenderer.on(IPC.DISPATCHER.CHANGED, listener);
