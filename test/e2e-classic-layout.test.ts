@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import * as path from 'path';
 import { classicRunSeedOver } from '../e2e/layout';
@@ -42,9 +42,22 @@ describe('E2E classic layout lists (#2843)', () => {
     }
   });
 
-  it('keep the classic-only specs out of every other run', () => {
-    const config = readFileSync(path.resolve(E2E_DIR, '..', 'playwright.config.ts'), 'utf8');
-    expect(config).toMatch(/classicRun \? \[\] : CLASSIC_ONLY_SPECS\.map/);
+  it('keep the classic-only specs out of every other run, and run them in the classic one', async () => {
+    const load = async (env: Record<string, string | undefined>) => {
+      vi.resetModules();
+      for (const [k, v] of Object.entries(env)) vi.stubEnv(k, v as string);
+      try {
+        return (await import('../playwright.config')).default as { testIgnore?: string[]; testMatch?: string[] };
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    };
+    const globs = CLASSIC_ONLY_SPECS.map((spec) => `**/${spec}`);
+    const normal = await load({ CLUBHOUSE_E2E_LAYOUT: undefined, PLAYWRIGHT_CLASSIC_SHARD: undefined });
+    expect(normal.testIgnore).toEqual(expect.arrayContaining(globs));
+    const classic = await load({ CLUBHOUSE_E2E_LAYOUT: 'classic', PLAYWRIGHT_CLASSIC_SHARD: undefined });
+    for (const glob of globs) expect(classic.testIgnore ?? []).not.toContain(glob);
+    expect(classic.testMatch).toEqual(expect.arrayContaining(globs));
   });
 
   it('match the job that runs them on classic', () => {
@@ -67,6 +80,7 @@ describe('E2E classic layout lists (#2843)', () => {
     expect(classicTestMatch('1', { 1: ['a.spec.ts'] })).toEqual(['**/a.spec.ts']);
     expect(() => classicTestMatch('2', { 1: ['a.spec.ts'] })).toThrow(/has shards 1/);
     expect(() => classicTestMatch('1', { 1: [] })).toThrow(/no specs/);
+    expect(classicTestMatch(undefined, { 1: ['a.spec.ts'], 2: ['b.spec.ts'] })).toEqual(['**/a.spec.ts', '**/b.spec.ts']);
   });
 
   it('seed classic over a reused profile by merging, and leave an unreadable or chosen file alone', () => {

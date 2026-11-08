@@ -93,10 +93,13 @@ export const CLASSIC_ONLY_SPECS = [
 export const LAYOUT_SWITCH_SPECS = ['layout-default.spec.ts'];
 
 /**
- * One classic shard's specs as `testMatch` globs. An unknown or empty shard
- * throws, rather than running everything or nothing.
+ * One classic shard's specs as `testMatch` globs, or every classic spec when no
+ * shard is given (a local run of one spec: CLUBHOUSE_E2E_LAYOUT=classic npx
+ * playwright test e2e/rail-pin.spec.ts). An unknown or empty shard throws,
+ * rather than running everything or nothing.
  */
 export function classicTestMatch(shard, shards = CLASSIC_SHARDS) {
+  if (shard === undefined || shard === '') return Object.values(shards).flat().map((spec) => `**/${spec}`);
   const specs = shards[shard];
   if (!specs) throw new Error(`${CLASSIC_SHARD_ENV} is ${shard}, and e2e/classic-specs.mjs has shards ${Object.keys(shards).join(', ')}`);
   if (specs.length === 0) throw new Error(`Classic shard ${shard} in e2e/classic-specs.mjs has no specs`);
