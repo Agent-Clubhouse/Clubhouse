@@ -235,11 +235,13 @@ function addMember(input: NetworkMember, from: string, s: MembershipState): bool
       ? [...new Set([...member.hosts, ...(existing.knownHosts ?? [])])].slice(0, 6)
       : [...new Set([...(existing.knownHosts ?? []), ...member.hosts])].slice(0, 6);
     const port = own ? member.port || existing.mainPort : existing.mainPort || member.port;
-    const joinedAt = Date.parse(member.joinedAt) > Date.parse(existing.pairedAt) ? member.joinedAt : existing.pairedAt;
+    // A newer join comes from a member that paired it again; a device's own word about its join doesn't move it,
+    // so its own clock can't outlast a removal.
+    const joinedAt = !own && Date.parse(member.joinedAt) > Date.parse(existing.pairedAt) ? member.joinedAt : existing.pairedAt;
     const name = own && member.name !== existing.alias ? member.name : existing.alias;
     const moved = hosts.join() !== (existing.knownHosts ?? []).join() || port !== existing.mainPort;
     // Paired again since with a new certificate (the pairing member checked its binding): pin the new one.
-    const repinned = Date.parse(member.joinedAt) > Date.parse(existing.pairedAt)
+    const repinned = !own && Date.parse(member.joinedAt) > Date.parse(existing.pairedAt)
       && !annexTls.sameCertificateFingerprint(member.certFingerprint, existing.tlsCertificateFingerprint) && proves(member);
     if (moved || repinned || joinedAt !== existing.pairedAt || name !== existing.alias) {
       annexPeers.addPeer({
@@ -494,10 +496,11 @@ export function joinConfirmation(fingerprint: string): NetworkConfirmation | nul
   return key in s.confirmations ? confirmationFor(key, fingerprint, s) : null;
 }
 
-/** Removals that haven't reached every member yet. */
+/** Removals made on this machine that haven't reached every member yet (ones heard from others aren't tracked here). */
 export function pendingRemovals(): NetworkConfirmation[] {
   const s = state();
   return s.removals
+    .filter((r) => `remove:${lower(r.fingerprint)}` in s.confirmations)
     .map((r) => ({ ...confirmationFor(`remove:${lower(r.fingerprint)}`, r.fingerprint, s), name: s.removedNames[lower(r.fingerprint)], kind: s.removedKinds?.[lower(r.fingerprint)] }))
     .filter((c) => c.waitingOn.length > 0);
 }
