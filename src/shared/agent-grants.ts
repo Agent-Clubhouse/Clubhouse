@@ -76,7 +76,8 @@ export type GrantTarget =
   | { kind: 'self' }
   | { kind: 'parent' }
   | { kind: 'my_helpers' }
-  | { kind: 'connected' }
+  /** `excludeDispatcher`: not the Dispatcher, which nothing connected to it may reset (#2921 gap fix). */
+  | { kind: 'connected'; excludeDispatcher?: boolean }
   | { kind: 'project'; project: 'own' | 'any' | { path: string } }
   | { kind: 'group_project'; role: 'member' | 'admin' }
   | { kind: 'group_members' }
@@ -110,8 +111,10 @@ export interface GrantCaller {
  * how a target agent stands to the caller; the rest places the target.
  */
 export interface GrantCallTarget {
-  kind: 'agent' | 'project' | 'group_project' | 'app' | 'library';
+  kind: 'agent' | 'browser' | 'project' | 'group_project' | 'app' | 'library';
   relations?: ReadonlyArray<'self' | 'parent' | 'my_helper' | 'connected' | 'group_member'>;
+  /** The target agent is the Dispatcher. */
+  isDispatcher?: boolean;
   /** The project the target agent lives in, or the project itself. */
   projectPath?: string;
   /** For a group project target: the caller's role in it. */
@@ -156,7 +159,7 @@ export function targetCovers(grant: GrantTarget, caller: GrantCaller, target: Gr
     case 'self': return rel.includes('self');
     case 'parent': return rel.includes('parent');
     case 'my_helpers': return rel.includes('my_helper');
-    case 'connected': return rel.includes('connected');
+    case 'connected': return rel.includes('connected') && !(grant.excludeDispatcher && target.isDispatcher);
     case 'group_members': return rel.includes('group_member');
     case 'app': return target.kind === 'app';
     case 'group_project':

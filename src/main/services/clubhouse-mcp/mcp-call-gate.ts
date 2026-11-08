@@ -28,6 +28,8 @@ export type McpCallAccess = 'open' | 'closed';
 export type McpCallerKind = 'quick' | 'durable' | 'helper' | 'unreadable';
 
 const callers = new Map<string, McpCallerKind>();
+/** A helper's orchestrator, for the grant check's `parent` (#2968). */
+const parents = new Map<string, string>();
 /** What each caller last resolved to, so a change refreshes its tool list once. */
 const lastAccess = new Map<string, McpCallAccess>();
 
@@ -53,12 +55,19 @@ export function setMcpCaller(agentId: string, projectPath: string, config: Pick<
     recordCaller(agentId, projectPath, 'quick');
     return;
   }
+  if (config?.parentAgentId) parents.set(agentId, config.parentAgentId);
+  else parents.delete(agentId);
   recordCaller(agentId, projectPath, config?.parentAgentId ? 'helper' : 'durable');
 }
 
 /** A durable agent whose config couldn't be read at start: closed until setMcpCaller has one. */
 export function setMcpCallerUnreadable(agentId: string, projectPath: string): void {
   recordCaller(agentId, projectPath, 'unreadable');
+}
+
+/** A running helper's orchestrator, or undefined. */
+export function mcpCallerParent(agentId: string): string | undefined {
+  return parents.get(agentId);
 }
 
 /** What this running agent was recorded as. */
@@ -77,11 +86,13 @@ function recordCaller(agentId: string, projectPath: string, kind: McpCallerKind)
 /** The agent stopped. */
 export function forgetMcpCaller(agentId: string): void {
   callers.delete(agentId);
+  parents.delete(agentId);
   lastAccess.delete(agentId);
 }
 
 /** For testing: forget every agent. */
 export function _resetMcpCallGateForTesting(): void {
   callers.clear();
+  parents.clear();
   lastAccess.clear();
 }
