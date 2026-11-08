@@ -7,6 +7,15 @@
 import { create } from 'zustand';
 import { useRemoteProjectStore } from './remoteProjectStore';
 import type { SatelliteSnapshot } from '../../shared/types';
+import type { ChatEvent } from '../../shared/chat';
+
+const remoteChatListeners = new Set<(satelliteId: string, event: ChatEvent) => void>();
+
+/** Hears each chat event from a connected satellite, with its satellite id (#2390). */
+export function onRemoteChatEvent(listener: (satelliteId: string, event: ChatEvent) => void): () => void {
+  remoteChatListeners.add(listener);
+  return () => { remoteChatListeners.delete(listener); };
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -408,6 +417,14 @@ export function initAnnexClientListener(): () => void {
       useAnnexClientStore.setState((state) => ({
         satellitePaused: { ...state.satellitePaused, [satelliteId]: !!snap.sessionPaused },
       }));
+    } else if (type === 'chat:event') {
+      // A satellite chat agent's event (#2390): the chat store keys it by the namespaced agent id.
+      const p = payload as { agentId?: string; event?: { agentId?: string } };
+      if (p?.event && typeof p.event === 'object') {
+        for (const listener of [...remoteChatListeners]) {
+          try { listener(satelliteId, p.event as never); } catch { /* telemetry-exempt: one listener failing must not stop the others */ }
+        }
+      }
     } else if (type === 'pty:data') {
       const p = payload as { agentId: string; data: string; seq?: number };
       enqueuePtyData(satelliteId, p.agentId, p.data, typeof p.seq === 'number' ? p.seq : undefined);

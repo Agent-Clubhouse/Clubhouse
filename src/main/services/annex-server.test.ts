@@ -2255,6 +2255,8 @@ describe('annex-server', () => {
         expect(membershipMod.noteLocalJoin).toHaveBeenCalledWith(computer.fingerprint);
         // A member may use /ws like a controller.
         expect((await call('GET', '/api/v1/status', computer)).status).toBe(200);
+        // ...and the phone routes, to read and drive this machine's chat agents (#2390).
+        expect((await call('GET', '/api/v1/mobile/capabilities', computer)).body.controlAvailable).toBe(true);
       });
 
       it("leaves phones, and desktops that don't ask, as controllers with the same answer", async () => {

@@ -15,6 +15,8 @@
 import type { ContextLimits } from '../../shared/context-window';
 import { readProviderSkills, type ChatProviderSkills } from '../../shared/chat/provider-skills';
 import { useMemo } from 'react';
+import { localizeRemoteEvent, readRemoteTranscript, remoteChat, remoteChatTarget } from './remoteChatBackend';
+import { onRemoteChatEvent } from './annexClientStore';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { COMPACTION_SETTLED, COMPACTION_STARTED, MINIMAL_CHAT_CAPABILITIES, coalesceUpdateContent, parseRoutedText } from '../../shared/chat';
@@ -1097,14 +1099,23 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       pendingLive.set(agentId, pending);
       set((s) => ({ loading: { ...s.loading, [agentId]: true } }));
       let events: ChatEvent[] | null = null;
+      // An agent on another desktop is read from there (#2390), never from this machine's chat runtime.
+      const remote = remoteChatTarget(agentId);
+      let remoteLive: boolean | undefined;
       // Whether a chat runtime runs this agent now; asked alongside the read.
-      const live = runtimeIsLive(agentId);
+      const live = remote ? Promise.resolve(undefined) : runtimeIsLive(agentId);
       try {
-        events = (await window.clubhouse.chat.readTranscript(agentId, tail)) ?? [];
+        if (remote) {
+          const read = await readRemoteTranscript(agentId, tail);
+          events = read.events;
+          remoteLive = read.live;
+        } else {
+          events = (await window.clubhouse.chat.readTranscript(agentId, tail)) ?? [];
+        }
       } catch {
         // Unreadable right now: handled below by keeping what this window has.
       }
-      const runtimeLive = await live;
+      const runtimeLive = remote ? remoteLive : await live;
       if (pendingLive.get(agentId) !== pending) return; // Reset/replaced while the read was in flight.
       const buffered = pending;
       pendingLive.delete(agentId);
@@ -1193,19 +1204,34 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       });
     },
 
-    send: (agentId, text, delivery, attachmentIds) => (attachmentIds?.length
-      ? window.clubhouse.chat.sendMessage(agentId, text, delivery, attachmentIds)
-      : window.clubhouse.chat.sendMessage(agentId, text, delivery)),
-    interrupt: (agentId) => window.clubhouse.chat.interrupt(agentId),
-    removeQueued: (agentId, messageIds) => (messageIds
-      ? window.clubhouse.chat.removeQueued(agentId, messageIds)
-      : window.clubhouse.chat.removeQueued(agentId)),
+    // An agent on another desktop goes through that desktop's chat commands (#2390); the rest, this machine's runtime.
+    send: (agentId, text, delivery, attachmentIds) => (remoteChatTarget(agentId)
+      ? remoteChat.send(agentId, get().agents[agentId]?.sessionId, text, delivery, attachmentIds)
+      : attachmentIds?.length
+        ? window.clubhouse.chat.sendMessage(agentId, text, delivery, attachmentIds)
+        : window.clubhouse.chat.sendMessage(agentId, text, delivery)),
+    interrupt: (agentId) => (remoteChatTarget(agentId)
+      ? remoteChat.interrupt(agentId, get().agents[agentId]?.sessionId)
+      : window.clubhouse.chat.interrupt(agentId)),
+    removeQueued: (agentId, messageIds) => (remoteChatTarget(agentId)
+      ? remoteChat.removeQueued(agentId, get().agents[agentId]?.sessionId, messageIds ?? (get().agents[agentId]?.queued ?? []).map((q) => q.messageId))
+      : messageIds
+        ? window.clubhouse.chat.removeQueued(agentId, messageIds)
+        : window.clubhouse.chat.removeQueued(agentId)),
     respondPermission: (agentId, requestId, optionId, extras) =>
-      answerOnce(agentId, requestId, () => window.clubhouse.chat.respondPermission(agentId, requestId, optionId, extras)),
+      answerOnce(agentId, requestId, () => (remoteChatTarget(agentId)
+        ? remoteChat.respondPermission(agentId, get().agents[agentId]?.sessionId, requestId, optionId)
+        : window.clubhouse.chat.respondPermission(agentId, requestId, optionId, extras))),
     answerQuestion: (agentId, requestId, answers) =>
-      answerOnce(agentId, requestId, () => window.clubhouse.chat.answerQuestion(agentId, requestId, answers)),
-    setLevel: (agentId, level) => window.clubhouse.chat.setLevel(agentId, level),
-    setModel: (agentId, modelId, effort) => window.clubhouse.chat.setModel(agentId, modelId, effort),
+      answerOnce(agentId, requestId, () => (remoteChatTarget(agentId)
+        ? remoteChat.answerQuestion(agentId, get().agents[agentId]?.sessionId, requestId, answers)
+        : window.clubhouse.chat.answerQuestion(agentId, requestId, answers))),
+    setLevel: (agentId, level) => (remoteChatTarget(agentId)
+      ? remoteChat.setLevel(agentId, get().agents[agentId]?.sessionId, level)
+      : window.clubhouse.chat.setLevel(agentId, level)),
+    setModel: (agentId, modelId, effort) => (remoteChatTarget(agentId)
+      ? remoteChat.setModel(agentId, get().agents[agentId]?.sessionId, modelId, effort)
+      : window.clubhouse.chat.setModel(agentId, modelId, effort)),
   };
 });
 
@@ -1244,7 +1270,12 @@ function mapAgents<T, U>(record: Record<string, T>, fn: (value: T, id: string) =
 
 /** Subscribe the store to live chat events from the main process. Returns the unsubscribe. */
 export function initChatEventListener(): () => void {
-  return window.clubhouse.chat.onEvent((event) => {
+  const offLocal = window.clubhouse.chat.onEvent((event) => {
     useChatStore.getState().applyEvent(event);
   });
+  // A connected desktop's chat agents, keyed by their namespaced ids (#2390).
+  const offRemote = onRemoteChatEvent((satelliteId, event) => {
+    useChatStore.getState().applyEvent(localizeRemoteEvent(satelliteId, event));
+  });
+  return () => { offLocal(); offRemote(); };
 }
