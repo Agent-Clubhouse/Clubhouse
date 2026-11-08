@@ -58,8 +58,8 @@ import {
   type TraceIds,
 } from './types';
 
-/** 2: adds `diag` lines, `dropped.diag` and `session.signals` (#2299). 3: adds `session.uiChrome`. */
-export const LOCAL_FORMAT_VERSION = 3;
+/** 2: adds `diag` lines, `dropped.diag` and `session.signals` (#2299). 3: adds `session.uiChrome`. 4: adds `session.scope` and `session.temporality`, for replay (#2920). */
+export const LOCAL_FORMAT_VERSION = 4;
 export const LOCAL_FILE_PREFIX = 'telemetry-';
 export const LOCAL_FLUSH_INTERVAL_MS = 2_000;
 export const LOCAL_FLUSH_AT_LINES = 100;
@@ -728,6 +728,9 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
       arch: opts.session.arch,
       uiChrome: opts.session.uiChrome,
       level,
+      // v4 (#2920): what replay needs to rebuild OpenTelemetry data without guessing (replay.ts).
+      scope: 'clubhouse',
+      temporality: 'delta',
     };
     if (!signals) record.signals = false;
     push(record, true);
