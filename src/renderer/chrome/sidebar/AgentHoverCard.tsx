@@ -5,6 +5,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { liveChatAgent, useChatStore } from '../../stores/chatStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { getOrchestratorLabel, formatModelLabel } from '../../features/agents/orchestrator-colors';
+import { useEffectiveOrchestrator } from '../../features/agents/effective-orchestrator';
 import type { ActionDef } from '../../features/agents/useAgentRowActions';
 import { relativeTo } from '../scope';
 import { DOT_LABEL, StatusDot } from '../../features/agents/agent-status';
@@ -74,7 +75,8 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
   const turnStartedAt = useChatStore((s) => liveChatAgent(s, agent.id)?.turnStartedAt ?? null);
   // The chat session's level, which the composer can change for this session.
   const liveLevel = useChatStore((s) => liveChatAgent(s, agent.id)?.level ?? null);
-  const permissionsSupported = allOrchestrators.find((o) => o.id === (agent.orchestrator || 'claude-code'))?.capabilities.permissions ?? true;
+  const orchestrator = useEffectiveOrchestrator(agent);
+  const permissionsSupported = allOrchestrators.find((o) => o.id === orchestrator)?.capabilities.permissions ?? true;
   // A chat agent's Working time is its turn's, as in the chat header (#2197).
   const since = chatState === 'running' && turnStartedAt ? turnStartedAt : spawnedAt;
   const running = agent.status === 'running' && since;
@@ -121,7 +123,7 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
       )}
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
         <Row label="Runs on">
-          {getOrchestratorLabel(agent.orchestrator || 'claude-code', allOrchestrators)}, {formatModelLabel(agent.model)}
+          {getOrchestratorLabel(orchestrator, allOrchestrators)}, {formatModelLabel(agent.model)}
         </Row>
         {agent.branch && <Row label="Branch"><span className="font-mono">{agent.branch}</span></Row>}
         {worktree && <Row label="Worktree"><Tooltip content={agent.worktreePath} disabled={worktree === agent.worktreePath}><span className="font-mono">{worktree}</span></Tooltip></Row>}

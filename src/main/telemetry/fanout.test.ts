@@ -167,6 +167,29 @@ describe('multi-destination fan-out', () => {
     expect(b.logs.getFinishedLogRecords()[0].attributes).not.toHaveProperty('enduser.pseudo.id');
   });
 
+  it('keeps the report id for the developer destination only, whatever the other kinds list (#2524)', async () => {
+    const sinks = { azure: sink(), otlp: sink(), framebriar: sink(), other: sink() };
+    const r = start(Object.entries(sinks).map(([kind, s]) => dest(kind, kind, s, 'standard')));
+    const id = '0b5c6a2e-1f3d-4c8e-9a7b-2d4e6f8a0c1e';
+    r.event('clubhouse.feedback.submitted', [ATTR.feedbackReportId(id)]);
+    await r.forceFlush(1000);
+    const reportId = (s: Sink) => s.logs.getFinishedLogRecords()[0].attributes['feedback.report.id'];
+    expect(reportId(sinks.framebriar)).toBe(id);
+    for (const s of [sinks.azure, sinks.otlp, sinks.other]) expect(reportId(s)).toBeUndefined();
+  });
+
+  it('emits an event under a given trace and span, linking it to them (#2524)', async () => {
+    const a = sink();
+    const r = start([dest('azure', 'azure', a, 'standard')]);
+    const ids = { traceId: '0af7651916cd43dd8448eb211c80319c', spanId: 'b7ad6b7169203331' };
+    r.event('clubhouse.feedback.submitted', [], { trace: ids });
+    r.event('clubhouse.feedback.delivered', [], { trace: { traceId: 'not-hex', spanId: 'x' } });
+    await r.forceFlush(1000);
+    const [linked, unlinked] = a.logs.getFinishedLogRecords();
+    expect(linked.spanContext).toMatchObject(ids);
+    expect(unlinked.spanContext).toBeUndefined();
+  });
+
   it('drops them from span exception events too (#2526)', async () => {
     const a = sink();
     const b = sink();
@@ -348,6 +371,17 @@ describe('filters', () => {
     expect(f.metric('clubhouse.goobers.polls')).toBe(false);
     expect(f.log({ name: 'clubhouse.telemetry.enabled', attributes: {} })).toBe(true);
     expect(f.log({ name: 'clubhouse.telemetry.disabled', attributes: {} })).toBe(true);
+  });
+
+  it('user activity keeps what places a feedback report: runs, startup and the feedback lifecycle (#2524)', () => {
+    const f = compileFilter({ level: 'standard', preset: 'user_activity' }, 'framebriar');
+    expect(f.span({ name: 'clubhouse.agent.run', attributes: {} })).toBe(true);
+    expect(f.span({ name: 'clubhouse.app.startup', attributes: {} })).toBe(true);
+    for (const name of ['captured', 'submitted', 'delivered', 'connected', 'access']) {
+      expect(f.log({ name: `clubhouse.feedback.${name}`, attributes: {} })).toBe(true);
+    }
+    expect(f.log({ name: 'clubhouse.feedback.request_refused', attributes: {} })).toBe(false);
+    expect(f.metric('clubhouse.app.startup.duration')).toBe(true);
   });
 
   it('records at the most verbose enabled level', () => {

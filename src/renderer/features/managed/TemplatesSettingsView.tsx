@@ -309,9 +309,9 @@ function TemplateEditor({ initial, onDone }: { initial: TemplateDraft; onDone: (
             onChange={(next) => setOrch({ control: next })}
           />
         </SettingsField>
-        <SettingsField label="Helper access" htmlFor="managed-template-access" help="Never more than the agent has when a helper starts." disabled={!orchestrate}>
+        <SettingsField label="Helper access" htmlFor="managed-template-helper-access" help="Never more than the agent has when a helper starts." disabled={!orchestrate}>
           <AccessSelect
-            id="managed-template-access"
+            id="managed-template-helper-access"
             value={orch.access ?? ORCHESTRATION_DEFAULTS.access}
             access={null}
             running={false}

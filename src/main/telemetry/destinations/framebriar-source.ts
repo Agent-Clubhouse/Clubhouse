@@ -27,6 +27,9 @@ export type FramebriarTelemetrySource = () => FramebriarTelemetryExport | null;
  */
 export const FRAMEBRIAR_DROPPED_ATTRIBUTES: readonly string[] = ['enduser.pseudo.id', 'clubhouse.install.id'];
 
+/** Keys only the developer destination receives; the SDK drops them for every other destination kind (#2524). */
+export const FRAMEBRIAR_ONLY_ATTRIBUTES: readonly string[] = ['feedback.report.id'];
+
 export const FRAMEBRIAR_NOT_CONNECTED = 'Feedback is not connected';
 
 let source: FramebriarTelemetrySource | null = null;

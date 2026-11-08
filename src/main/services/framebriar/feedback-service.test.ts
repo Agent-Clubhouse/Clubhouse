@@ -647,7 +647,7 @@ describe('FeedbackService (fake SDK)', () => {
       ]);
     });
 
-    it('records a submit: screenshot, annotated, shot count and access state', async () => {
+    it('records a submit: screenshot, annotated, shot count, access state and the report id (#2524)', async () => {
       const { create } = fakeSdk();
       const s = service(create);
       const shot = pngOf(4, 3, 'shot');
@@ -655,8 +655,43 @@ describe('FeedbackService (fake SDK)', () => {
       await s.send({ draftId: draft.draftId, notes: NOTES, includeScreenshot: true, annotatedPng: pngOf(4, 3, 'ink').toString('base64') });
       await s.send({ draftId: (await s.captureDraft(async () => null)).draftId, notes: NOTES, includeScreenshot: false });
       expect(named('clubhouse.feedback.submitted')).toEqual([
-        [ATTR.feedbackScreenshot(true), ATTR.feedbackAnnotated(true), ATTR.feedbackShots(2), ATTR.feedbackAccessState('connected')],
-        [ATTR.feedbackScreenshot(false), ATTR.feedbackAnnotated(false), ATTR.feedbackShots(0), ATTR.feedbackAccessState('connected')],
+        [ATTR.feedbackScreenshot(true), ATTR.feedbackAnnotated(true), ATTR.feedbackShots(2), ATTR.feedbackAccessState('connected'), ATTR.feedbackReportId('rep-1')],
+        [ATTR.feedbackScreenshot(false), ATTR.feedbackAnnotated(false), ATTR.feedbackShots(0), ATTR.feedbackAccessState('connected'), ATTR.feedbackReportId('rep-1')],
+      ]);
+      // A report with no trace (the fake's) emits with no event options.
+      expect(vi.mocked(rt.event).mock.calls.filter(([n]) => n === 'clubhouse.feedback.submitted').map(([, , opts]) => opts)).toEqual([undefined, undefined]);
+    });
+
+    it('emits each submit under its own report trace, concurrent sends included (#2524)', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const traces = {
+        first: { traceId: 'a'.repeat(32), spanId: '1'.repeat(16) },
+        second: { traceId: 'b'.repeat(32), spanId: '2'.repeat(16) },
+      };
+      const gates = {} as Record<keyof typeof traces, () => void>;
+      const opened = Object.fromEntries((Object.keys(traces) as Array<keyof typeof traces>).map((k) => [k, new Promise<void>((r) => { gates[k] = r; })]));
+      fb.feedback.prepare.mockImplementation(async (input: Record<string, unknown>) => {
+        const which = String(input.notes).endsWith('first') ? 'first' : 'second';
+        await opened[which];
+        const report = { id: `rep-${which}`, ...traces[which] };
+        return { report, png: null, input };
+      });
+      fb.feedback.submit.mockImplementation(async (prepared: unknown) => ({
+        id: (prepared as { report: { id: string } }).report.id, gameId: 'clubhouse', status: 'saved-local' as const, sent: false as const, diagnostics: 'unavailable' as const,
+      }));
+      const [a, b] = [await s.captureDraft(async () => null), await s.captureDraft(async () => null)];
+      const first = s.send({ draftId: a.draftId, notes: `${NOTES} first`, includeScreenshot: false });
+      const second = s.send({ draftId: b.draftId, notes: `${NOTES} second`, includeScreenshot: false });
+      // The second finishes first, so a shared "last trace" would mislabel one of them.
+      gates.second();
+      await second;
+      gates.first();
+      await first;
+      const submitted = vi.mocked(rt.event).mock.calls.filter(([n]) => n === 'clubhouse.feedback.submitted');
+      expect(submitted.map(([, attrs, opts]) => [attrs?.at(-1), opts])).toEqual([
+        [ATTR.feedbackReportId('rep-second'), { trace: traces.second }],
+        [ATTR.feedbackReportId('rep-first'), { trace: traces.first }],
       ]);
     });
 
@@ -793,7 +828,7 @@ describe('FeedbackService (fake SDK)', () => {
       ]);
     });
 
-    it('never puts notes, image bytes, the invitation or the report id in telemetry', async () => {
+    it('never puts notes, image bytes or the invitation in telemetry; the report id only as feedback.report.id', async () => {
       const { create, opts } = fakeSdk();
       const s = service(create);
       await s.connect(INVITE);
@@ -802,8 +837,15 @@ describe('FeedbackService (fake SDK)', () => {
       await s.send({ draftId: draft.draftId, notes: NOTES, includeScreenshot: true });
       opts().onReceipt!({ id: 'rep-1' });
       const all = JSON.stringify(events());
-      for (const secret of [NOTES, INVITE, 'rep-1', ink, PNG.toString('latin1'), draft.draftId, 'data:image']) expect(all).not.toContain(secret);
-      for (const [, attrs] of events()) for (const a of attrs as Array<{ kind: string }>) expect(['enum', 'int', 'bool']).toContain(a.kind);
+      for (const secret of [NOTES, INVITE, ink, PNG.toString('latin1'), draft.draftId, 'data:image']) expect(all).not.toContain(secret);
+      for (const [, attrs] of events()) {
+        for (const a of attrs as Array<{ key: string; kind: string }>) {
+          if (a.key === 'feedback.report.id') expect(a.kind).toBe('uuid');
+          else expect(['enum', 'int', 'bool']).toContain(a.kind);
+        }
+      }
+      // Only the submitted event carries it, and only the developer destination keeps it (registry).
+      expect(events().filter(([, attrs]) => JSON.stringify(attrs).includes('rep-1')).map(([name]) => name)).toEqual(['clubhouse.feedback.submitted']);
     });
   });
 

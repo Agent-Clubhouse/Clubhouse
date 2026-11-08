@@ -169,12 +169,45 @@ export function untrackAgent(agentId: string): void {
   dropRunningSnapshot(agentId);
 }
 
-/** Read the project-level orchestrator setting from .clubhouse/settings.json */
+/**
+ * The project's "Agents run on" CLI (#2975). Project settings save it in
+ * projects.json, so that comes first. A value in the project's own
+ * .clubhouse/settings.json, which nothing writes now, is the fallback.
+ */
 export async function readProjectOrchestrator(projectPath: string): Promise<OrchestratorId | undefined> {
+  return (await readRegisteredOrchestrator(projectPath)) ?? (await readProjectFileOrchestrator(projectPath));
+}
+
+const unknownProjectClis = new Set<string>();
+
+async function readRegisteredOrchestrator(projectPath: string): Promise<OrchestratorId | undefined> {
+  try {
+    // Loaded on use: project-store pulls in settings services that load this module.
+    const { peekProjects } = await import('./project-store');
+    const target = path.resolve(projectPath);
+    const project = (await peekProjects()).find((p) => path.resolve(p.path) === target);
+    const id = project?.orchestrator || undefined;
+    // A CLI that was removed (OpenCode, #1004) can still be saved there. It
+    // was never read before #2975, so it mustn't stop agents starting now.
+    if (id && !getProvider(id as OrchestratorId)) {
+      if (!unknownProjectClis.has(id)) {
+        unknownProjectClis.add(id);
+        appLog('core:agent', 'warn', 'Project "Agents run on" names a CLI this app does not have; using the default', { meta: { orchestratorId: id } });
+      }
+      return undefined;
+    }
+    return id as OrchestratorId | undefined;
+  } catch {
+    // telemetry-exempt: an unreadable list falls back like a project with no setting
+    return undefined;
+  }
+}
+
+async function readProjectFileOrchestrator(projectPath: string): Promise<OrchestratorId | undefined> {
   try {
     const settingsPath = path.join(projectPath, '.clubhouse', 'settings.json');
     const raw = JSON.parse(await fsp.readFile(settingsPath, 'utf-8'));
-    return raw.orchestrator as OrchestratorId | undefined;
+    return (raw.orchestrator || undefined) as OrchestratorId | undefined;
   } catch {
     return undefined;
   }
@@ -183,7 +216,7 @@ export async function readProjectOrchestrator(projectPath: string): Promise<Orch
 /**
  * Resolve which orchestrator to use with cascading priority:
  * 1. Agent-level override (if provided)
- * 2. Project-level setting
+ * 2. The project's "Agents run on" (readProjectOrchestrator)
  * 3. App default ('claude-code')
  */
 export async function resolveOrchestrator(
