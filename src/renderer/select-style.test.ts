@@ -20,6 +20,7 @@ describe('the shared select style', () => {
     expect(body).toMatch(/background-image:\s*var\(--select-chevron\);/);
     expect(body).toMatch(/background-repeat:\s*no-repeat;/);
     expect(body).toMatch(/background-position:\s*right 0\.625rem center;/);
+    expect(body).toMatch(/background-size:\s*12px;/);
   });
 
   it('sits outside every layer, so a padding utility such as px-2 doesn\'t put the text under the chevron', () => {
