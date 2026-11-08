@@ -44,6 +44,7 @@ import { useManagedParts, useManagedSetup, useManagedStatus, useManagedTemplates
 import { builtFromLine } from '../../managed/attribution';
 import { legacyLine, legacyUse, migrationFailedLine } from '../../managed/legacy';
 import { SetupCard } from './SetupCard';
+import { useEffectiveOrchestrator } from '../effective-orchestrator';
 
 /**
  * When a row's setting can change: at any time (applied live), only while the
@@ -231,7 +232,7 @@ function AgentSettingsCard({ agent, chat, projectPath, provider }: SettingsCardP
   const local = agent.kind === 'durable' && !remote && !!projectPath;
   const { config, loaded, update } = useDurableConfig(local ? projectPath : undefined, agent.id);
   const appMinutes = useAppIdleMinutes();
-  const orchestrator = agent.orchestrator ?? 'claude-code';
+  const orchestrator = useEffectiveOrchestrator(agent);
   const permissionsSupported = useOrchestratorStore((s) => s.allOrchestrators.find((o) => o.id === orchestrator)?.capabilities.permissions ?? true);
   // An unmanaged agent that still names a persona is offered the switch (#2901).
   const unmanaged = local && loaded && !!config && !config.managed && !isDispatcherAgent(agent);

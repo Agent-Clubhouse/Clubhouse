@@ -171,6 +171,7 @@ describe('agent-registry', () => {
     // #2975: "Agents run on" in project settings saves to projects.json.
     it('reads the project\'s "Agents run on" from the project list first', async () => {
       const project = path.resolve('/project');
+      mockGetProvider.mockImplementation((id: string) => ({ id }));
       mockPeekProjects.mockResolvedValueOnce([
         { path: path.resolve('/other'), orchestrator: 'copilot-cli' },
         { path: project, orchestrator: 'codex-cli' },
@@ -178,6 +179,18 @@ describe('agent-registry', () => {
       vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({ orchestrator: 'copilot-cli' }));
 
       expect(await readProjectOrchestrator(path.join(project, '.'))).toBe('codex-cli');
+    });
+
+    it('skips a project value naming a CLI the app no longer has, so agents still start', async () => {
+      mockGetProvider.mockImplementation((id: string) => (id === 'opencode' ? undefined : { id }));
+      mockPeekProjects.mockResolvedValue([{ path: path.resolve('/project'), orchestrator: 'opencode' }]);
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+
+      expect(await readProjectOrchestrator('/project')).toBeUndefined();
+      expect((await resolveOrchestrator('/project')).id).toBe('claude-code');
+      expect(mockAppLog).toHaveBeenCalledWith('core:agent', 'warn', expect.stringContaining('does not have'), { meta: { orchestratorId: 'opencode' } });
+      mockPeekProjects.mockReset().mockResolvedValue([]);
+      mockGetProvider.mockReset();
     });
 
     it('falls back to the project file when the list has no value for it, or cannot be read', async () => {

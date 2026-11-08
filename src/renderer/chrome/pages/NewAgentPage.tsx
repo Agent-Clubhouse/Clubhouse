@@ -8,7 +8,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
-import { newAgentOrchestrator } from '../../features/agents/effective-orchestrator';
+import { effectiveOrchestratorOf, newAgentOrchestrator } from '../../features/agents/effective-orchestrator';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
@@ -200,7 +200,8 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   // Access (#2761) starts at the app's Default access (a quick agent in a durable agent's
   // worktree: that agent's quick agent defaults) until the person or a template picks one.
   const { start: startAccess, defaultAccess } = useQuickAgentAccess(project?.path, !durable && parentAgentId ? parentAgentId : undefined);
-  const runOrchestrator = !durable && parent?.orchestrator ? parent.orchestrator : resolvedOrchestrator;
+  // A parent with no CLI of its own runs on the project's, and so does its quick agent (#2975).
+  const runOrchestrator = !durable && parent ? effectiveOrchestratorOf(parent, project, allOrchestrators) : resolvedOrchestrator;
   const { options: modelOptions, loading: modelsLoading } = useModelOptions(runOrchestrator, project?.path);
   const selectedOrch = allOrchestrators.find((o) => o.id === runOrchestrator);
   const supportsPermissions = selectedOrch?.capabilities?.permissions ?? false;

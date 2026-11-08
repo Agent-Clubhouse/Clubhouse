@@ -166,7 +166,7 @@ export function AgentSettingsView({ agent }: Props) {
   // behaves consistently with agent creation.
   const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
   const { effectiveOrchestrators } = useEffectiveOrchestrators();
-  const agentOrchestrator = effectiveOrchestratorOf(agent, projects.find((p) => p.id === agent.projectId));
+  const agentOrchestrator = effectiveOrchestratorOf(agent, projects.find((p) => p.id === agent.projectId), allOrchestrators);
   const chatView = useChatStore((s) => s.agents[agent.id]);
   const reportedSkills = reportedSkillsFor(agent, chatView, projects.find((p) => p.id === agent.projectId));
   // Scope the model list to *this agent's* orchestrator, not the project default —

@@ -165,13 +165,25 @@ export async function readProjectOrchestrator(projectPath: string): Promise<Orch
   return (await readRegisteredOrchestrator(projectPath)) ?? (await readProjectFileOrchestrator(projectPath));
 }
 
+const unknownProjectClis = new Set<string>();
+
 async function readRegisteredOrchestrator(projectPath: string): Promise<OrchestratorId | undefined> {
   try {
     // Loaded on use: project-store pulls in settings services that load this module.
     const { peekProjects } = await import('./project-store');
     const target = path.resolve(projectPath);
     const project = (await peekProjects()).find((p) => path.resolve(p.path) === target);
-    return (project?.orchestrator || undefined) as OrchestratorId | undefined;
+    const id = project?.orchestrator || undefined;
+    // A CLI that was removed (OpenCode, #1004) can still be saved there. It
+    // was never read before #2975, so it mustn't stop agents starting now.
+    if (id && !getProvider(id as OrchestratorId)) {
+      if (!unknownProjectClis.has(id)) {
+        unknownProjectClis.add(id);
+        appLog('core:agent', 'warn', 'Project "Agents run on" names a CLI this app does not have; using the default', { meta: { orchestratorId: id } });
+      }
+      return undefined;
+    }
+    return id as OrchestratorId | undefined;
   } catch {
     // telemetry-exempt: an unreadable list falls back like a project with no setting
     return undefined;
