@@ -74,17 +74,17 @@ export interface ActionScope {
 }
 
 /**
- * Who the caller is to Actions. Interim rule until the permission model's
- * grants land (#2921):
+ * Who the caller is to Actions:
  * - The Dispatcher owns what it creates, and sees and changes every action
  *   people and agents can see.
  * - Any other agent owns what it creates, and sees and changes only those.
- * - A helper's actions are marked as a helper's: its steps may act only on
- *   itself (rights.ts), and they are deleted when it is disposed.
+ * - A helper's actions are marked as a helper's, with a lower cap, and are
+ *   deleted when it is disposed.
  * - A quick agent can't own actions: it ends when its task does.
- * What each step may do and what a trigger may watch, and how many actions
- * an owner may have, are the rest of the interim rule: rights.ts, which the
- * engine checks on create, update, turning on and every run.
+ * What each step may do and what a trigger may watch follow the owner's
+ * Clubhouse permissions, and how many actions an owner may have is a rule of
+ * Actions: rights.ts, which the engine checks on create, update, turning on
+ * and every run (#2960, D131).
  */
 export function actionScope(callerId: string): ActionScope {
   if (isDispatcherAgent(callerId)) {

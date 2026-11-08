@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { ManagedAgentSetup } from '../../../shared/managed-agents-types';
 import { CLUBHOUSE_MCP_PART_ID, isListed } from '../../../shared/managed-agents-types';
@@ -36,14 +36,10 @@ async function expectCode(p: Promise<unknown>, code: string) {
   await p.catch((err) => expect((err as ManagedError).code).toBe(code));
 }
 
-beforeEach(async () => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-agents-'));
-  _resetSettingsAuditForTesting(false);
-  agents = new Map();
-  running = new Set();
-  service = createManagedAgentsService({
-    catalog: createAssetCatalogStore({ dir: path.join(root, 'catalog') }),
-    state: createManagedStateStore(path.join(root, 'managed')),
+function serviceAt(dir: string): ManagedAgentsService {
+  return createManagedAgentsService({
+    catalog: createAssetCatalogStore({ dir: path.join(dir, 'catalog') }),
+    state: createManagedStateStore(path.join(dir, 'managed')),
     listProjects: async () => [{ path: '/p', name: 'Project' }],
     listAgents: async () => [...agents.values()],
     getAgent: async (_p, id) => agents.get(id) ?? null,
@@ -54,6 +50,29 @@ beforeEach(async () => {
     },
     isRunning: (id) => running.has(id),
   });
+}
+
+// Installing every built-in writes each part to disk, which ran past the 10s
+// hook timeout on a loaded Windows runner (#3122). Install them once per file
+// and copy the result in for each test; ensureBuiltins then finds them current
+// and writes nothing. Each test still has its own folder (#3027's pattern).
+let seed: string;
+beforeAll(async () => {
+  seed = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-agents-seed-'));
+  _resetSettingsAuditForTesting(false);
+  agents = new Map();
+  running = new Set();
+  await serviceAt(seed).ensureBuiltins();
+});
+afterAll(() => { fs.rmSync(seed, { recursive: true, force: true }); });
+
+beforeEach(async () => {
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-agents-'));
+  _resetSettingsAuditForTesting(false);
+  agents = new Map();
+  running = new Set();
+  for (const name of fs.readdirSync(seed)) fs.cpSync(path.join(seed, name), path.join(root, name), { recursive: true });
+  service = serviceAt(root);
   await service.ensureBuiltins();
 });
 

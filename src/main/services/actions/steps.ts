@@ -20,7 +20,7 @@
  * was told ("What happened: web is pushed, pulled or fetched (main).").
  */
 
-import { QUICK_STEP_ACCESS, type ActionStep, type ActionStepResult } from '../../../shared/actions';
+import { QUICK_STEP_ACCESS, type ActionOwner, type ActionStep, type ActionStepResult } from '../../../shared/actions';
 import type { ChatSessionState, RoutedMessagePart } from '../../../shared/chat';
 import { setAgentChain } from '../app-event-bus';
 import { getAgentRuntime, isAgentStoppingError } from '../agent-runtime';
@@ -43,6 +43,12 @@ export interface StepDeps {
     is(agentId: string): boolean;
     deliver(req: DispatcherStepDelivery): Promise<{ delivered: true; woke: boolean } | { delivered: false; text: string }>;
   };
+  /**
+   * Why the owner may not wake this agent, or null. A message step finds its
+   * agent asleep: it wakes it only if the owner may (D131), as send_message
+   * never wakes a sleeping agent. Unset: always may.
+   */
+  wakeRefusal?(owner: ActionOwner, agentId: string): string | null;
   /** For tests: how long sleep waits for a busy turn. */
   sleepWaitMs?: number;
 }
@@ -128,6 +134,8 @@ export function createStepRunner(deps: StepDeps): StepRunner {
       if (delivery === 'stopping') return fail(step, `Couldn’t deliver the message: ${name} was going to sleep.`, id);
       // It went to sleep in between: wake it with the message below.
     }
+    const refused = step.kind === 'message' ? deps.wakeRefusal?.(ctx.action.owner, id) : null;
+    if (refused) return fail(step, `${name} is asleep, so the message wasn\u2019t sent. ${refused}`, id);
     const result = await deps.wake({ callerId, targetId: id, targetName: name, ...(msg && { mission: msg.text, missionRouted: msg.routed }) });
     if (!result.ok) return fail(step, `Couldn’t wake ${name}: ${result.text}`, id);
     if (result.status === 'stopping') return fail(step, `Couldn’t wake ${name}: it was still going to sleep.`, id);

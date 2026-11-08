@@ -339,3 +339,73 @@ describe('an agent that doesn\'t answer', () => {
     expect(await cards.status('durable_lead')).toMatchObject({ state: 'ready', text: 'What it\'s for: Leads the web app.' });
   });
 });
+
+describe('the agent\'s Dispatcher card in Details (#3049)', () => {
+  let changes: string[];
+  beforeEach(() => {
+    changes = [];
+    cards = new AgentCards({ ...deps(), changed: (ids) => { changes.push(...ids); } });
+  });
+
+  it('reads as the card shows it: asking, waiting for an asleep agent, ready, or no record', async () => {
+    expect(await cards.view('durable_lead')).toBeNull();
+    connect('durable_lead');
+    connect('durable_qa');
+    state.running.delete('durable_qa');
+    await cards.sync();
+    expect(await cards.view('durable_lead')).toEqual({ state: 'asking', card: null });
+    expect(await cards.view('durable_qa')).toEqual({ state: 'none', card: null, waitingToAsk: true });
+    await cards.saveOwnCard('durable_lead', { contactWhen: 'For planning.' });
+    expect(await cards.view('durable_lead')).toEqual({ state: 'ready', card: { contactWhen: 'For planning.' } });
+  });
+
+  it('tells Details when a card is asked for, delivered, answered or disconnected', async () => {
+    connect('durable_lead');
+    state.running.delete('durable_lead');
+    await cards.sync();
+    expect(changes).toEqual(['durable_lead']);
+    state.running.add('durable_lead');
+    await cards.deliver('durable_lead');
+    expect(changes).toEqual(['durable_lead', 'durable_lead']);
+    await cards.saveOwnCard('durable_lead', { owns: 'web/' });
+    expect(changes).toHaveLength(3);
+    // Nothing changed: no word.
+    await cards.sync();
+    expect(changes).toHaveLength(3);
+    state.connected.delete('durable_lead');
+    await cards.sync();
+    expect(changes).toHaveLength(4);
+  });
+
+  it('a user edit replaces what the agent wrote field by field, keeps its notes, and answers an open request', async () => {
+    connect('durable_lead');
+    await cards.sync();
+    await writeAgentNotes('lead (webapp)', 'Owns the roadmap.', root);
+    expect(await cards.view('durable_lead')).toMatchObject({ state: 'asking' });
+
+    const result = await cards.saveUserCard('durable_lead', { contactWhen: 'Checkout\nquestions', owns: 'web/' });
+    expect(result).toMatchObject({ ok: true, card: { contactWhen: 'Checkout questions', owns: 'web/' } });
+    expect(await cards.view('durable_lead')).toEqual({ state: 'ready', card: { contactWhen: 'Checkout questions', owns: 'web/' } });
+    expect((await readAgentPage('lead (webapp)', root))?.notes).toBe('Owns the roadmap.');
+    expect(changes.at(-1)).toBe('durable_lead');
+
+    // It keeps what the agent said it is for, and clears a field left empty.
+    await cards.saveOwnCard('durable_lead', { purpose: 'Leads the web app.' });
+    await cards.saveUserCard('durable_lead', { owns: '' });
+    expect(await cards.view('durable_lead')).toEqual({ state: 'ready', card: { purpose: 'Leads the web app.', contactWhen: 'Checkout questions' } });
+  });
+
+  it('takes an edit right after turning on, before the records caught up, and refuses one for an agent that isn\'t connected', async () => {
+    expect(await cards.saveUserCard('durable_lead', { owns: 'web/' })).toMatchObject({ ok: false });
+    connect('durable_lead');
+    expect(await cards.saveUserCard('durable_lead', { owns: 'web/' })).toMatchObject({ ok: true });
+    state.dispatcherId = null;
+    expect(await cards.saveUserCard('durable_lead', { owns: 'api/' })).toMatchObject({ ok: false });
+  });
+
+  it('refuses an edit that leaves the card empty', async () => {
+    connect('durable_lead');
+    await cards.sync();
+    expect(await cards.saveUserCard('durable_lead', { contactWhen: '  ', owns: '' })).toMatchObject({ ok: false });
+  });
+});
