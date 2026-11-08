@@ -35,9 +35,11 @@ import {
   type ActionRun,
   type ActionRunTrigger,
   type ActionStep,
+  type ActionStepKind,
   type ActionStepResult,
   type ActionTrigger,
   type EventTrigger,
+  type MissedRunRule,
 } from '../../../shared/actions';
 import type { AppEvent } from '../app-event-bus';
 
@@ -123,13 +125,52 @@ export interface EngineHooks {
   observe?(event: EngineObservation): void;
 }
 
-export type EngineObservation =
-  | { type: 'trigger'; actionId: string; trigger: ActionRunTrigger['kind'] }
-  | { type: 'wait'; actionId: string; what: 'started' | 'restarted' | 'cancelled' | 'fired' | 'dropped' }
-  | { type: 'overlap'; actionId: string; what: 'skipped' | 'queued' }
-  | { type: 'limit'; actionId: string; what: 'chain' | 'self' | 'hourly' }
-  | { type: 'catch_up'; actionId: string; missed: number; rule: string }
-  | { type: 'run'; actionId: string; outcome: ActionRun['outcome']; steps: number; chainDepth: number; reason?: string };
+/**
+ * Why a run was skipped, cancelled or failed, as a closed code. The words
+ * stay in history; telemetry takes only the code.
+ */
+export type RunReasonCode =
+  | 'self_trigger'
+  | 'chain_limit'
+  | 'overlap'
+  | 'hourly_limit'
+  | 'missed'
+  | 'condition_changed'
+  | 'turned_off'
+  | 'edited'
+  | 'deleted'
+  | 'rights_refused'
+  | 'step_failed'
+  | 'step_threw';
+
+/** Every observation names the action and its owner. */
+interface ObservedAction {
+  actionId: string;
+  owner: ActionOwner;
+}
+
+export type EngineObservation = ObservedAction & (
+  | { type: 'trigger'; trigger: ActionRunTrigger['kind']; event?: ActionEventKind; delayed?: boolean }
+  | { type: 'wait'; what: 'started' | 'restarted' | 'cancelled' | 'fired' | 'dropped'; event?: ActionEventKind }
+  | { type: 'overlap'; what: 'skipped' | 'queued'; trigger: ActionRunTrigger['kind'] }
+  | { type: 'limit'; what: 'chain' | 'self' | 'hourly'; chainDepth: number }
+  | { type: 'catch_up'; missed: number; rule: MissedRunRule }
+  | {
+    type: 'run';
+    outcome: ActionRun['outcome'];
+    trigger: ActionRunTrigger['kind'];
+    steps: number;
+    stepResults: Array<{ kind: ActionStepKind; outcome: ActionStepResult['outcome'] }>;
+    chainDepth: number;
+    durationMs: number;
+    reason?: string;
+    reasonCode?: RunReasonCode;
+  }
+);
+
+/** An observation without the fields every one carries, filled in from the action. */
+type WithoutAction<O> = O extends unknown ? Omit<O, keyof ObservedAction> : never;
+type ObservationBody = WithoutAction<EngineObservation>;
 
 export interface EngineDeps {
   clock: EngineClock;
@@ -222,6 +263,17 @@ export class ActionsEngine {
   constructor(private readonly deps: EngineDeps) {}
 
   private now(): number { return this.deps.clock.now(); }
+
+  /** Tell the observer (telemetry). It never affects a run. */
+  private observe(action: Action, body: ObservationBody): void {
+    const observe = this.deps.hooks?.observe;
+    if (!observe) return;
+    try {
+      observe({ ...body, actionId: action.id, owner: action.owner } as EngineObservation);
+    } catch {
+      // telemetry-exempt: an observer can't break the engine
+    }
+  }
 
   private newId(prefix: string): string {
     if (this.deps.newId) return `${prefix}_${this.deps.newId()}`;
@@ -386,7 +438,7 @@ export class ActionsEngine {
     if (next.enabled) delete next.offReason;
     this.actions.set(id, next);
     this.dropWaits(id);
-    this.cancelQueued(id, 'The action was edited before this run started');
+    this.cancelQueued(id, 'edited', 'The action was edited before this run started');
     delete this.state.nextAt[id];
     if (next.enabled && next.trigger.kind === 'schedule') this.armSchedule(next);
     this.persist();
@@ -405,7 +457,7 @@ export class ActionsEngine {
     this.actions.set(id, next);
     if (!enabled) {
       this.dropWaits(id);
-      this.cancelQueued(id, 'The action was turned off before this run started');
+      this.cancelQueued(id, 'turned_off', 'The action was turned off before this run started');
       delete this.state.nextAt[id];
     } else if (next.trigger.kind === 'schedule') {
       // Turning it back on doesn't run the times it was off for.
@@ -416,27 +468,34 @@ export class ActionsEngine {
   }
 
   remove(id: string): void {
-    this.require(id);
+    const action = this.require(id);
     this.actions.delete(id);
     this.dropWaits(id);
     delete this.state.nextAt[id];
-    // A run going now finishes; nothing queued behind it starts.
+    // A run going now finishes; nothing queued behind it starts. The action is
+    // gone, so these are observed as cancelled but not written to history.
     const queue = this.running.get(id);
-    if (queue) queue.length = 0;
+    for (const q of queue?.splice(0) ?? []) {
+      this.observe(action, {
+        type: 'run', outcome: 'cancelled', trigger: q.trigger.kind, steps: 0, stepResults: [],
+        chainDepth: q.chain.length, durationMs: 0, reasonCode: 'deleted',
+      });
+    }
     this.persist();
   }
 
   /** Drop runs waiting behind a running one, recording them as cancelled. */
-  private cancelQueued(id: string, reason: string): void {
+  private cancelQueued(id: string, reasonCode: RunReasonCode, reason: string): void {
     const queue = this.running.get(id);
     const action = this.actions.get(id);
     if (!queue?.length || !action) return;
-    for (const q of queue.splice(0)) this.recordOnly(action, q.trigger, q.chain, 'cancelled', reason);
+    for (const q of queue.splice(0)) this.recordOnly(action, q.trigger, q.chain, 'cancelled', reasonCode, reason);
   }
 
   /** Run now, as a normal run. Works on an action that is off. Returns the run id. */
   runNow(id: string): string {
     const action = this.require(id);
+    this.observe(action, { type: 'trigger', trigger: 'manual' });
     return this.fire(action, { kind: 'manual', at: this.now(), detail: 'Run now' }, []);
   }
 
@@ -451,7 +510,7 @@ export class ActionsEngine {
     const next: Action = { ...action, enabled: false, offReason: reason, updatedAt: this.now() };
     this.actions.set(action.id, next);
     this.dropWaits(action.id);
-    this.cancelQueued(action.id, reason);
+    this.cancelQueued(action.id, 'turned_off', reason);
     delete this.state.nextAt[action.id];
     this.persist();
     if (action.enabled && action.owner.kind !== 'app') this.deps.hooks?.turnedOff?.(next, reason);
@@ -510,7 +569,7 @@ export class ActionsEngine {
         // One-time actions delete themselves as they fire; the run stays in history.
         this.actions.delete(action.id);
         this.dropWaits(action.id);
-        this.deps.hooks?.observe?.({ type: 'trigger', actionId: action.id, trigger: 'once' });
+        this.observe(action, { type: 'trigger', trigger: 'once' });
         this.fire(action, { kind: 'once', at: t.at, ...(now - t.at > SCHEDULE_GRACE_MS && { detail: 'Ran late: Clubhouse was closed or asleep at the set time' }) }, []);
         dirty = true;
         continue;
@@ -539,7 +598,7 @@ export class ActionsEngine {
   private runScheduleTimes(action: Action, due: number, now: number): void {
     if (action.trigger.kind !== 'schedule') return;
     if (now - due <= SCHEDULE_GRACE_MS) {
-      this.deps.hooks?.observe?.({ type: 'trigger', actionId: action.id, trigger: 'schedule' });
+      this.observe(action, { type: 'trigger', trigger: 'schedule' });
       this.fire(action, { kind: 'schedule', at: due }, []);
       return;
     }
@@ -548,15 +607,18 @@ export class ActionsEngine {
     // The most recent missed times, newest last: "once" runs the latest, "each" the last 10.
     const missed = parsed.ok ? latestMissedTimes(parsed.spec, due, now, MAX_MISSED_RUNS) : [due];
     const rule = action.trigger.missed;
-    this.deps.hooks?.observe?.({ type: 'catch_up', actionId: action.id, missed: missed.length, rule });
+    this.observe(action, { type: 'catch_up', missed: missed.length, rule });
     if (rule === 'skip') {
       const n = missed.length;
-      this.recordOnly(action, { kind: 'catch_up', at: missed[missed.length - 1] ?? due }, [], 'skipped',
+      this.recordOnly(action, { kind: 'catch_up', at: missed[missed.length - 1] ?? due }, [], 'skipped', 'missed',
         `Skipped ${n === 1 ? 'a scheduled time' : `${n >= MAX_MISSED_RUNS ? `${MAX_MISSED_RUNS} or more` : n} scheduled times`} missed while Clubhouse was closed or asleep`);
       return;
     }
     const times = rule === 'once' ? missed.slice(-1) : missed;
-    for (const at of times) this.fire(action, { kind: 'catch_up', at, detail: 'Missed while Clubhouse was closed or asleep' }, [], { forceQueue: true });
+    for (const at of times) {
+      this.observe(action, { type: 'trigger', trigger: 'catch_up' });
+      this.fire(action, { kind: 'catch_up', at, detail: 'Missed while Clubhouse was closed or asleep' }, [], { forceQueue: true });
+    }
   }
 
   // ── Events ──
@@ -652,7 +714,7 @@ export class ActionsEngine {
   private onMatch(action: Action, trigger: EventTrigger, occ: Occurrence, chain: string[]): void {
     const branchText = occ.branch === '*' ? 'many branches' : occ.branch;
     const detail = `${occ.subject} ${eventPhrase(occ.kind)}${branchText ? ` (${branchText})` : ''}`;
-    this.deps.hooks?.observe?.({ type: 'trigger', actionId: action.id, trigger: 'event' });
+    this.observe(action, { type: 'trigger', trigger: 'event', event: trigger.event, delayed: !!trigger.delayMinutes });
     if (!trigger.delayMinutes) {
       this.fire(action, { kind: 'event', at: this.now(), detail }, chain);
       return;
@@ -669,7 +731,7 @@ export class ActionsEngine {
     };
     this.state.waits = this.state.waits.filter((w) => w !== existing);
     this.state.waits.push(wait);
-    this.deps.hooks?.observe?.({ type: 'wait', actionId: action.id, what: existing ? 'restarted' : 'started' });
+    this.observe(action, { type: 'wait', what: existing ? 'restarted' : 'started', event: trigger.event });
     this.saveState();
     this.armTimer();
   }
@@ -695,15 +757,15 @@ export class ActionsEngine {
     if (!action?.enabled) return;
     if (!this.conditionHolds(action, wait)) {
       if (atLaunch) {
-        this.deps.hooks?.observe?.({ type: 'wait', actionId: action.id, what: 'dropped' });
+        this.observe(action, { type: 'wait', what: 'dropped', ...(action.trigger.kind === 'event' && { event: action.trigger.event }) });
         return;
       }
-      this.deps.hooks?.observe?.({ type: 'wait', actionId: action.id, what: 'cancelled' });
-      this.recordOnly(action, { kind: 'event', at: wait.startedAt, detail: wait.detail }, wait.chain, 'cancelled',
+      this.observe(action, { type: 'wait', what: 'cancelled', ...(action.trigger.kind === 'event' && { event: action.trigger.event }) });
+      this.recordOnly(action, { kind: 'event', at: wait.startedAt, detail: wait.detail }, wait.chain, 'cancelled', 'condition_changed',
         'What set it off no longer held when the wait ended');
       return;
     }
-    this.deps.hooks?.observe?.({ type: 'wait', actionId: action.id, what: 'fired' });
+    this.observe(action, { type: 'wait', what: 'fired', ...(action.trigger.kind === 'event' && { event: action.trigger.event }) });
     this.fire(action, { kind: 'event', at: wait.startedAt, detail: wait.detail }, wait.chain);
   }
 
@@ -723,7 +785,8 @@ export class ActionsEngine {
     const before = this.state.waits.length;
     const kept = this.state.waits.filter((w) => {
       if (!pred(w)) return true;
-      if (observe) this.deps.hooks?.observe?.({ type: 'wait', actionId: w.actionId, what: 'cancelled' });
+      const action = observe ? this.actions.get(w.actionId) : undefined;
+      if (action) this.observe(action, { type: 'wait', what: 'cancelled', ...(action.trigger.kind === 'event' && { event: action.trigger.event }) });
       return false;
     });
     if (kept.length === before) return;
@@ -752,11 +815,11 @@ export class ActionsEngine {
 
   // ── Runs ──
 
-  private recordOnly(action: Action, trigger: ActionRunTrigger, chain: string[], outcome: 'skipped' | 'cancelled', reason: string): string {
+  private recordOnly(action: Action, trigger: ActionRunTrigger, chain: string[], outcome: 'skipped' | 'cancelled', reasonCode: RunReasonCode, reason: string): string {
     const now = this.now();
     const run: ActionRun = { id: this.newId('run'), actionId: action.id, owner: action.owner, trigger, chain, startedAt: now, endedAt: now, outcome, reason, steps: [] };
     if (action.owner.kind !== 'app') this.deps.history.put(run);
-    this.deps.hooks?.observe?.({ type: 'run', actionId: action.id, outcome, steps: 0, chainDepth: chain.length, reason });
+    this.observe(action, { type: 'run', outcome, trigger: trigger.kind, steps: 0, stepResults: [], chainDepth: chain.length, durationMs: 0, reason, reasonCode });
     this.deps.hooks?.changed?.();
     return run.id;
   }
@@ -771,27 +834,27 @@ export class ActionsEngine {
   /** Start a run, or skip or queue it. Returns the run id. */
   private fire(action: Action, trigger: ActionRunTrigger, chain: string[], opts: { forceQueue?: boolean } = {}): string {
     if (chain.includes(action.id)) {
-      this.deps.hooks?.observe?.({ type: 'limit', actionId: action.id, what: 'self' });
-      return this.recordOnly(action, trigger, chain, 'skipped', 'It can’t set itself off');
+      this.observe(action, { type: 'limit', what: 'self', chainDepth: chain.length });
+      return this.recordOnly(action, trigger, chain, 'skipped', 'self_trigger', 'It can’t set itself off');
     }
     if (chain.length >= MAX_CHAIN_DEPTH) {
-      this.deps.hooks?.observe?.({ type: 'limit', actionId: action.id, what: 'chain' });
-      return this.recordOnly(action, trigger, chain, 'skipped', `Stopped a chain of ${MAX_CHAIN_DEPTH} actions setting each other off`);
+      this.observe(action, { type: 'limit', what: 'chain', chainDepth: chain.length });
+      return this.recordOnly(action, trigger, chain, 'skipped', 'chain_limit', `Stopped a chain of ${MAX_CHAIN_DEPTH} actions setting each other off`);
     }
     const runId = this.newId('run');
     const queue = this.running.get(action.id);
     if (queue) {
       if ((action.overlap === 'queue' || opts.forceQueue) && queue.length < MAX_QUEUED_RUNS) {
         queue.push({ trigger, chain, runId });
-        this.deps.hooks?.observe?.({ type: 'overlap', actionId: action.id, what: 'queued' });
+        this.observe(action, { type: 'overlap', what: 'queued', trigger: trigger.kind });
         return runId;
       }
-      this.deps.hooks?.observe?.({ type: 'overlap', actionId: action.id, what: 'skipped' });
-      return this.recordOnly(action, trigger, chain, 'skipped', 'The last run was still going');
+      this.observe(action, { type: 'overlap', what: 'skipped', trigger: trigger.kind });
+      return this.recordOnly(action, trigger, chain, 'skipped', 'overlap', 'The last run was still going');
     }
     if (!this.underHourlyLimit(action.id)) {
-      this.deps.hooks?.observe?.({ type: 'limit', actionId: action.id, what: 'hourly' });
-      return this.recordOnly(action, trigger, chain, 'skipped', `Ran ${MAX_RUNS_PER_HOUR} times in the last hour`);
+      this.observe(action, { type: 'limit', what: 'hourly', chainDepth: chain.length });
+      return this.recordOnly(action, trigger, chain, 'skipped', 'hourly_limit', `Ran ${MAX_RUNS_PER_HOUR} times in the last hour`);
     }
     this.running.set(action.id, []);
     this.execute(action, trigger, chain, runId).catch(() => {
@@ -823,28 +886,36 @@ export class ActionsEngine {
     this.deps.hooks?.changed?.();
 
     let failure: string | undefined;
+    let failureCode: RunReasonCode | undefined;
     // What it watches is checked again on every run too: a mechanical failure, like a step.
     const sourceRefused = this.deps.rights.checkSource(action.owner, action.trigger);
-    if (sourceRefused) failure = `Couldn’t run: ${sourceRefused}`;
+    if (sourceRefused) {
+      failure = `Couldn’t run: ${sourceRefused}`;
+      failureCode = 'rights_refused';
+    }
     for (const step of sourceRefused ? [] : action.steps) {
       // Rights are checked again on every run: what was allowed may not be now.
       const refused = this.deps.rights.checkStep(action.owner, step);
       if (refused) {
         failure = `Couldn’t run: ${refused}`;
+        failureCode = 'rights_refused';
         run.steps.push({ kind: step.kind, outcome: 'failed', detail: refused });
         break;
       }
       let result: ActionStepResult;
+      let threw = false;
       try {
         result = await this.deps.steps.run(step, { action, runId, chain: [...chain, actionId] });
       } catch (err) {
         // telemetry-exempt: recorded on the run and reported as a mechanical failure below
+        threw = true;
         result = { kind: step.kind, outcome: 'failed', detail: err instanceof Error ? err.message : String(err) };
       }
       run.steps.push(result);
       if (!hidden) this.deps.history.put({ ...run, steps: [...run.steps] });
       if (result.outcome === 'failed') {
         failure = result.detail;
+        failureCode = threw ? 'step_threw' : 'step_failed';
         break;
       }
     }
@@ -853,7 +924,17 @@ export class ActionsEngine {
     run.outcome = failure ? 'failed' : 'done';
     if (failure) run.reason = failure;
     if (!hidden) this.deps.history.put({ ...run, steps: [...run.steps] });
-    this.deps.hooks?.observe?.({ type: 'run', actionId, outcome: run.outcome, steps: run.steps.length, chainDepth: chain.length, ...(failure && { reason: failure }) });
+    this.observe(action, {
+      type: 'run',
+      outcome: run.outcome,
+      trigger: trigger.kind,
+      steps: run.steps.length,
+      stepResults: run.steps.map((s) => ({ kind: s.kind, outcome: s.outcome })),
+      chainDepth: chain.length,
+      durationMs: run.endedAt - run.startedAt,
+      ...(failure && { reason: failure }),
+      ...(failureCode && { reasonCode: failureCode }),
+    });
 
     const current = this.actions.get(actionId);
     if (!current) {
@@ -878,14 +959,16 @@ export class ActionsEngine {
     const latest = this.actions.get(actionId);
     if (!nextRun || !latest) return null;
     if (!latest.enabled && nextRun.trigger.kind !== 'manual') {
-      this.recordOnly(latest, nextRun.trigger, nextRun.chain, 'cancelled', 'The action was turned off before this run started');
-      for (const rest of queue?.splice(0) ?? []) this.recordOnly(latest, rest.trigger, rest.chain, 'cancelled', 'The action was turned off before this run started');
+      this.recordOnly(latest, nextRun.trigger, nextRun.chain, 'cancelled', 'turned_off', 'The action was turned off before this run started');
+      for (const rest of queue?.splice(0) ?? []) this.recordOnly(latest, rest.trigger, rest.chain, 'cancelled', 'turned_off', 'The action was turned off before this run started');
       return null;
     }
     if (!this.underHourlyLimit(actionId)) {
       const reason = `Ran ${MAX_RUNS_PER_HOUR} times in the last hour`;
-      this.recordOnly(latest, nextRun.trigger, nextRun.chain, 'skipped', reason);
-      for (const rest of queue?.splice(0) ?? []) this.recordOnly(latest, rest.trigger, rest.chain, 'skipped', reason);
+      for (const dropped of [nextRun, ...(queue?.splice(0) ?? [])]) {
+        this.observe(latest, { type: 'limit', what: 'hourly', chainDepth: dropped.chain.length });
+        this.recordOnly(latest, dropped.trigger, dropped.chain, 'skipped', 'hourly_limit', reason);
+      }
       return null;
     }
     return { action: latest, run: nextRun };
