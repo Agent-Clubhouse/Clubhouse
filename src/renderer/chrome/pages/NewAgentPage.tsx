@@ -232,8 +232,13 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
     setQuickTemplate(t);
     setQuickChanges(NO_QUICK_CHANGES);
     const level = t ? settingsAccess(t.settings) : undefined;
-    if (!level && templateAccess.current && pickedAccess === templateAccess.current) setPickedAccess(null);
-    templateAccess.current = level ?? null;
+    if (!level) {
+      if (templateAccess.current && pickedAccess === templateAccess.current) setPickedAccess(null);
+      templateAccess.current = null;
+    } else if (pickedAccess !== level) {
+      // Only a level the template changed is the template's to take back; one already picked stays the person's.
+      templateAccess.current = level;
+    }
     if (!t) return;
     const { orchestrator: cli, model: m } = t.settings;
     const switchCli = !!cli && !parent && effectiveOrchestrators.some((o) => o.id === cli);
@@ -242,6 +247,10 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
     if (m && ((cli && cli === willRun) || modelOptions.some((o) => o.id === m))) setModel(m);
     if (level) setPickedAccess(level);
   };
+  // Leaving Quick (Durable, or a project without quick templates) takes the template, and the level it filled in, with it.
+  useEffect(() => {
+    if (!quickTemplates && quickTemplateId) pickQuickTemplate(null);
+  }, [quickTemplates]);
   useEffect(() => {
     if (!projectPath) return;
     let cancelled = false;

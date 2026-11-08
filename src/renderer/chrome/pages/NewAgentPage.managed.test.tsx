@@ -566,6 +566,11 @@ describe('NewAgentPage, a quick agent from a template (D25)', () => {
     fireEvent.change(screen.getByTestId('new-agent-access'), { target: { value: 'auto' } });
     fireEvent.change(select, { target: { value: 'custom-bare' } });
     expect(access()).toBe('auto');
+    // A level the person already had stays theirs when a template sets the same one.
+    fireEvent.change(screen.getByTestId('new-agent-access'), { target: { value: 'full_access' } });
+    fireEvent.change(select, { target: { value: 'custom-free' } });
+    fireEvent.change(select, { target: { value: '' } });
+    expect(access()).toBe('full_access');
   });
 
   it('None starts a quick agent with no template', async () => {
