@@ -1507,7 +1507,9 @@ export function connect(fingerprint: string): void {
     satellites.set(fingerprint, sat);
   }
 
-  if (sat.state !== 'disconnected') {
+  // Waiting to be found with no address yet: an address learned since (a member's hello) is worth a try.
+  const waitingWithoutAddress = sat.state === 'discovering' && !sat.host;
+  if (sat.state !== 'disconnected' && !waitingWithoutAddress) {
     appLog('core:annex-client', 'info', 'Satellite already connecting/connected', { meta: { fingerprint } });
     return;
   }
@@ -1579,6 +1581,8 @@ export function disconnect(fingerprint: string): void {
  */
 export function forgetSatellite(fingerprint: string): void {
   appLog('core:annex-client', 'info', 'Forgetting satellite', { meta: { fingerprint } });
+  // A network member is removed everywhere, not just here (#3061).
+  membership.noteLocalRemoval(fingerprint);
   const sat = satellites.get(fingerprint);
   if (sat) {
     disconnectSatellite(sat);
@@ -2413,7 +2417,10 @@ export function forgetAllSatellites(): void {
   networkChannel.closeAll('out');
   // Only our satellites: devices that control this machine are managed in Annex settings.
   for (const peer of annexPeers.listPeers()) {
-    if (peer.role !== 'controller') annexPeers.removePeer(peer.fingerprint);
+    if (peer.role === 'controller') continue;
+    // A network member is removed everywhere, not just here (#3061).
+    membership.noteLocalRemoval(peer.fingerprint);
+    annexPeers.removePeer(peer.fingerprint);
   }
   probedCertificates.clear();
   discoveredServices.clear();

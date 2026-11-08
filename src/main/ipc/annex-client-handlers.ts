@@ -172,7 +172,10 @@ export function registerAnnexClientHandlers(): void {
 
   // Forget all satellites (disconnect all + remove all peers + clear state)
   ipcMain.handle(IPC.ANNEX_CLIENT.FORGET_ALL_SATELLITES, () => {
+    const forgotten = annexPeers.listPeers().filter((p) => p.role !== 'controller').map((p) => p.fingerprint);
     annexClient.forgetAllSatellites();
+    // Members also had connections to this machine: cut those too.
+    for (const fingerprint of forgotten) noLongerController(fingerprint);
   });
 
   // File system proxy: read file tree from satellite

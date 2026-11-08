@@ -149,6 +149,7 @@ export function listDevices(): AnnexDevice[] {
 export function removeDevice(fingerprint: string): boolean {
   const peer = annexPeers.getPeer(fingerprint);
   // A network member is removed everywhere: every member hears before its connections are cut (#3061).
+  // (forgetSatellite and revokePeer record it too; it's recorded once.)
   if (peer?.role === 'member') membership.noteLocalRemoval(fingerprint);
   // This machine's own connection to it, if it's (or was found as) a satellite here.
   const wasSatellite = annexPeers.controlledFromHere(peer) || annexClient.getSatellite(fingerprint) !== null;

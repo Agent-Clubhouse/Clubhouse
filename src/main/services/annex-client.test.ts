@@ -42,7 +42,7 @@ vi.mock('bonjour-service', () => ({
 
 // The membership channel has its own tests (annex-network-channel.test.ts).
 vi.mock('./annex-network-channel', () => ({ connectTo: vi.fn(), closeFor: vi.fn(), closeAll: vi.fn() }));
-vi.mock('./annex-network-membership', () => ({ noteLocalJoin: vi.fn() }));
+vi.mock('./annex-network-membership', () => ({ noteLocalJoin: vi.fn(), noteLocalRemoval: vi.fn() }));
 
 vi.mock('ws', () => ({
   WebSocket: WebSocketMock,
@@ -2685,6 +2685,22 @@ describe('annex-client', () => {
       expect(channelMod.closeFor).toHaveBeenCalledWith(FP, 'out');
       annexClient.stopClient();
       expect(channelMod.closeAll).toHaveBeenCalledWith('out');
+    });
+
+    it('connects a member waiting to be found as soon as it has an address (#3061)', () => {
+      peer = { ...base, role: 'member' };
+      annexClient.connect(FP);
+      expect(annexClient.getSatellite(FP)?.state).toBe('discovering');
+      expect(sockets).toHaveLength(0);
+      peer = { ...base, role: 'member', knownHosts: ['10.0.0.8'], mainPort: 9443 };
+      annexClient.connect(FP);
+      expect(sockets.map((x) => x.url)).toEqual(['wss://10.0.0.8:9443/ws?client=desktop']);
+    });
+
+    it('forgetting a network member removes it everywhere first (#3061)', async () => {
+      const membershipMod = await import('./annex-network-membership');
+      annexClient.forgetSatellite(FP);
+      expect(membershipMod.noteLocalRemoval).toHaveBeenCalledWith(FP);
     });
 
     it('never sets a typed host on a device that controls this machine', () => {

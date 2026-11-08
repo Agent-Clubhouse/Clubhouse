@@ -146,7 +146,7 @@ vi.mock('./finished-quick-agents-store', async () => {
 });
 // Real sockets on loopback only; never advertise fixtures on the LAN.
 // Membership has its own tests (annex-network-membership.test.ts).
-vi.mock('./annex-network-membership', () => ({ noteLocalJoin: vi.fn() }));
+vi.mock('./annex-network-membership', () => ({ noteLocalJoin: vi.fn(), noteLocalRemoval: vi.fn() }));
 
 vi.mock('./annex-network-profile', async (importOriginal) => ({
   ...await importOriginal<typeof import('./annex-network-profile')>(),

@@ -217,4 +217,69 @@ describe('Annex Network membership (#3061)', () => {
     expect(peers.has(N.toLowerCase())).toBe(true);
     expect(hooks.connect).not.toHaveBeenCalled();
   });
+
+  describe('after review', () => {
+    it('ignores an old removal of this machine once it has joined again', () => {
+      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'New Mac'));
+      membership.noteLocalJoin(N); // this machine paired (again) now
+      listener!(B, view([member(B, '0b', 'Laptop')], [{ fingerprint: SELF, removedAt: '2026-01-01T00:00:00.000Z' }]));
+      expect(hooks.endDevice).not.toHaveBeenCalled();
+      expect(membership.currentView().removals).toEqual([]);
+    });
+
+    it('takes a newer join from a view, so an older removal no longer removes it, and drops that removal', () => {
+      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'New Mac', { pairedAt: '2026-11-08T08:00:00.000Z' }));
+      listener!(A, view([member(N, '0e', 'New Mac', { joinedAt: '2026-11-08T12:00:00.000Z' })]));
+      expect(peers.get(N.toLowerCase())?.pairedAt).toBe('2026-11-08T12:00:00.000Z');
+      listener!(B, view([], [{ fingerprint: N, removedAt: '2026-11-08T10:00:00.000Z' }]));
+      expect(hooks.endDevice).not.toHaveBeenCalled();
+      // A stale removal held here is dropped once a newer join is seen.
+      listener!(B, view([member(N, '0e', 'New Mac', { joinedAt: '2026-11-08T13:00:00.000Z' })], []));
+      expect(membership.currentView().removals.map((r) => r.fingerprint)).not.toContain(N);
+    });
+
+    it("never ends a one-to-one pairing on a member's word", () => {
+      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'Phone', { role: 'controller' }));
+      listener!(A, { v: 1, type: 'member-removed', removal: { fingerprint: N, removedAt: '2026-11-08T12:00:00.000Z' } });
+      expect(hooks.endDevice).not.toHaveBeenCalled();
+      expect(peers.has(N.toLowerCase())).toBe(true);
+    });
+
+    it('tells a device that is not a member only about this machine', () => {
+      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'One-to-one', { role: 'satellite' }));
+      expect(membership.currentView(N).members.map((m) => m.name)).toEqual(['This Mac']);
+      expect(membership.currentView(A).members.map((m) => m.name)).toEqual(['This Mac', 'Studio', 'Laptop']);
+      vi.mocked(annexSettings.networkEnabled).mockReturnValue(false);
+      expect(membership.currentView(A).members.map((m) => m.name)).toEqual(['This Mac']);
+    });
+
+    it('tracks confirmations only for joins and removals made here', () => {
+      listener!(A, view([member(A, '0a', 'Studio'), member(B, '0b', 'Laptop')]));
+      expect(membership.joinConfirmation(B)).toBeNull();
+    });
+
+    it('keeps at most 200 removals, newest first', () => {
+      const many = Array.from({ length: 230 }, (_, i) => ({ fingerprint: Array.from({ length: 16 }, () => (i % 250).toString(16).padStart(2, '0')).join(':').replace(/^../, (i >> 4).toString(16).padStart(2, '0')), removedAt: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString() }));
+      listener!(A, view([], many.slice(0, 100)));
+      listener!(A, view([], many.slice(100)));
+      const kept = membership.currentView().removals;
+      expect(kept.length).toBeLessThanOrEqual(200);
+      expect(kept.map((r) => r.removedAt)).toContain(many[229].removedAt);
+    });
+
+    it('records a removal made here once, however many paths report it', () => {
+      peers.set(N.toLowerCase(), memberPeer(N, '0e', 'New Mac'));
+      open = [A, B, N];
+      membership.noteLocalRemoval(N);
+      membership.noteLocalRemoval(N);
+      expect(broadcasts.filter((b) => b.message.type === 'member-removed')).toHaveLength(1);
+    });
+
+    it("takes a member's own hello as where it is now, and its name", () => {
+      peers.set(A.toLowerCase(), memberPeer(A, '0a', 'Studio', { knownHosts: ['10.0.0.2', 'a', 'b', 'c', 'd', 'e'], mainPort: 9443 }));
+      listener!(A, { v: 1, type: 'hello', member: member(A, '0a', 'Studio Pro', { hosts: ['192.168.1.4'], port: 7000 }) });
+      expect(peers.get(A.toLowerCase())).toMatchObject({ alias: 'Studio Pro', mainPort: 7000 });
+      expect(peers.get(A.toLowerCase())?.knownHosts?.[0]).toBe('192.168.1.4');
+    });
+  });
 });

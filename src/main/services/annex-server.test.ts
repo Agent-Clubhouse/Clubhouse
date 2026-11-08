@@ -88,7 +88,7 @@ vi.mock('./mobile-agents', () => ({
 // Real HTTP sockets in this suite must never expose test fixtures to the LAN.
 // Bonjour itself is mocked below; retain its branch coverage independently.
 // Membership has its own tests (annex-network-membership.test.ts).
-vi.mock('./annex-network-membership', () => ({ noteLocalJoin: vi.fn() }));
+vi.mock('./annex-network-membership', () => ({ noteLocalJoin: vi.fn(), noteLocalRemoval: vi.fn() }));
 
 vi.mock('./annex-network-profile', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./annex-network-profile')>();

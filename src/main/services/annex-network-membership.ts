@@ -47,6 +47,8 @@ interface MembershipState {
   renamedAt: Record<string, string>;
   /** Names of removed devices, for showing where a removal is confirmed. */
   removedNames: Record<string, string>;
+  /** When this machine last joined a network by pairing (ISO): an older removal of it is stale. */
+  selfJoinedAt?: string;
 }
 
 const EMPTY: MembershipState = { removals: [], confirmations: {}, renamedAt: {}, removedNames: {} };
@@ -54,10 +56,16 @@ const store = createSettingsStore<MembershipState>('annex-network.json', EMPTY, 
 
 function state(): MembershipState {
   const s = store.get();
-  return { removals: s.removals ?? [], confirmations: s.confirmations ?? {}, renamedAt: s.renamedAt ?? {}, removedNames: s.removedNames ?? {} };
+  return { removals: s.removals ?? [], confirmations: s.confirmations ?? {}, renamedAt: s.renamedAt ?? {}, removedNames: s.removedNames ?? {}, ...(s.selfJoinedAt && { selfJoinedAt: s.selfJoinedAt }) };
 }
 
+/** Removals kept. A view must stay well under the protocol's limit (NETWORK_MEMBERS_MAX * 4). */
+const REMOVALS_KEPT = 200;
+
 function save(next: MembershipState): void {
+  if (next.removals.length > REMOVALS_KEPT) {
+    next.removals = [...next.removals].sort((x, y) => Date.parse(y.removedAt) - Date.parse(x.removedAt)).slice(0, REMOVALS_KEPT);
+  }
   void Promise.resolve(store.save(next)).catch((err: unknown) => {
     appLog('core:annex', 'warn', 'Could not save Annex Network state', { meta: { error: err instanceof Error ? err.message : String(err) } });
   });
@@ -115,11 +123,18 @@ export function memberPeers(): AnnexPeer[] {
   return annexPeers.listPeers().filter((p) => p.role === 'member' && !annexPeers.peerNeedsPairing(p));
 }
 
-/** Everything this machine knows: itself, its members, and the removals it has seen. */
-export function currentView(): { members: NetworkMember[]; removals: NetworkRemoval[] } {
+/**
+ * Everything this machine knows: itself, its members, and the removals it has
+ * seen. Given `to`, a device that isn't a member (or with Annex Network off)
+ * hears only about this machine.
+ */
+export function currentView(to?: string): { members: NetworkMember[]; removals: NetworkRemoval[] } {
   const members: NetworkMember[] = [];
   const self = networkChannel.localMember();
   if (self) members.push(self);
+  if (to !== undefined && (!annexSettings.networkEnabled() || annexPeers.getPeer(to)?.role !== 'member')) {
+    return { members, removals: [] };
+  }
   for (const peer of memberPeers()) {
     const m = toMember(peer);
     if (m) members.push(m);
@@ -127,12 +142,16 @@ export function currentView(): { members: NetworkMember[]; removals: NetworkRemo
   return { members, removals: state().removals };
 }
 
+/** Only members hear about the network. */
+function toMembers(): (fp: string) => boolean {
+  const members = new Set(memberPeers().map((p) => lower(p.fingerprint)));
+  return (fp) => members.has(lower(fp));
+}
+
 function sendView(): void {
   if (!annexSettings.networkEnabled()) return;
   const view = currentView();
-  const members = new Set(memberPeers().map((p) => lower(p.fingerprint)));
-  networkChannel.broadcast({ v: NETWORK_PROTOCOL_VERSION, type: 'members', members: view.members, removals: view.removals },
-    (fp) => members.has(lower(fp)));
+  networkChannel.broadcast({ v: NETWORK_PROTOCOL_VERSION, type: 'members', members: view.members, removals: view.removals }, toMembers());
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +184,13 @@ function isSelf(fingerprint: string): boolean {
   return !!self && lower(self.fingerprint) === lower(fingerprint);
 }
 
+/** Removals this machine tracks confirmations for (it made them). */
+function removalKeys(s: MembershipState): Record<string, true> {
+  const out: Record<string, true> = {};
+  for (const key of Object.keys(s.confirmations)) if (key.startsWith('remove:')) out[key.slice(7)] = true;
+  return out;
+}
+
 function confirm(s: MembershipState, key: string, by: string): boolean {
   const list = s.confirmations[key] ?? [];
   if (list.some((fp) => lower(fp) === lower(by))) return false;
@@ -179,20 +205,31 @@ function confirm(s: MembershipState, key: string, by: string): boolean {
 /** Adds a member another member vouched for. Returns whether anything changed. */
 function addMember(member: NetworkMember, from: string, s: MembershipState): boolean {
   if (isSelf(member.fingerprint) || removedSince(member, s)) return false;
+  // A join newer than a removal we keep makes that removal stale: stop passing it on.
+  const stale = removalOf(member.fingerprint, s);
+  if (stale && Date.parse(stale.removedAt) < Date.parse(member.joinedAt)) {
+    s.removals = s.removals.filter((r) => r !== stale);
+  }
   const existing = annexPeers.getPeer(member.fingerprint);
   if (existing) {
     // One-to-one pairings keep working as they are until they're paired again.
-    if (existing.role !== 'member') return false;
-    // A member we know: learn new addresses for it (from its own hello, or a member's view).
-    const hosts = [...new Set([...(existing.knownHosts ?? []), ...member.hosts])].slice(0, 6);
-    const port = existing.mainPort || member.port;
-    if (hosts.length !== (existing.knownHosts ?? []).length || port !== existing.mainPort) {
-      annexPeers.addPeer({ ...existing, knownHosts: hosts, ...(port && { mainPort: port }) });
+    if (existing.role !== 'member') return !!stale;
+    // A member we know: learn a newer join, and new addresses. Its own hello says where it is now.
+    const own = lower(from) === lower(member.fingerprint);
+    const hosts = own
+      ? [...new Set([...member.hosts, ...(existing.knownHosts ?? [])])].slice(0, 6)
+      : [...new Set([...(existing.knownHosts ?? []), ...member.hosts])].slice(0, 6);
+    const port = own ? member.port || existing.mainPort : existing.mainPort || member.port;
+    const joinedAt = Date.parse(member.joinedAt) > Date.parse(existing.pairedAt) ? member.joinedAt : existing.pairedAt;
+    const name = own && member.name !== existing.alias ? member.name : existing.alias;
+    const moved = hosts.join() !== (existing.knownHosts ?? []).join() || port !== existing.mainPort;
+    if (moved || joinedAt !== existing.pairedAt || name !== existing.alias) {
+      annexPeers.addPeer({ ...existing, knownHosts: hosts, pairedAt: joinedAt, alias: name, ...(port && { mainPort: port }) });
       // Now there's somewhere to reach it (connecting to one already connected does nothing).
-      if ((existing.kind ?? 'desktop') === 'desktop' && port && annexSettings.getSettings().enableClient) hooks?.connect(lower(existing.fingerprint));
+      if (moved && (existing.kind ?? 'desktop') === 'desktop' && port && annexSettings.getSettings().enableClient) hooks?.connect(lower(existing.fingerprint));
       return true;
     }
-    return false;
+    return !!stale;
   }
   if (!proves(member)) {
     appLog('core:annex', 'warn', 'Ignored a network member whose record does not prove itself', { meta: { fingerprint: member.fingerprint, from } });
@@ -226,13 +263,16 @@ function applyRemoval(removal: NetworkRemoval, from: string, s: MembershipState)
   const peer = annexPeers.getPeer(removal.fingerprint);
   // A later join beats an earlier removal.
   if (peer && peer.role === 'member' && Date.parse(peer.pairedAt) > Date.parse(removal.removedAt)) return false;
+  // A removal of this machine from before it last joined is stale.
+  if (isSelf(removal.fingerprint) && s.selfJoinedAt && Date.parse(removal.removedAt) <= Date.parse(s.selfJoinedAt)) return false;
   s.removals = [...s.removals.filter((r) => lower(r.fingerprint) !== lower(removal.fingerprint)), removal];
-  confirm(s, `remove:${lower(removal.fingerprint)}`, from);
+  if (lower(removal.fingerprint) in removalKeys(s)) confirm(s, `remove:${lower(removal.fingerprint)}`, from);
   if (isSelf(removal.fingerprint)) {
     leaveNetwork(from);
     return true;
   }
-  if (peer) {
+  // Only a member is removed by another member's word; a one-to-one pairing stays.
+  if (peer?.role === 'member') {
     s.removedNames[lower(removal.fingerprint)] = peer.alias;
     appLog('core:annex', 'info', 'A device was removed from the network by another member', { meta: { fingerprint: removal.fingerprint, from } });
     hooks?.endDevice(removal.fingerprint);
@@ -270,12 +310,14 @@ function onMessage(from: string, message: NetworkMessage): void {
       for (const member of message.members) changed = addMember(member, from, s) || changed;
       // What this sender's view shows is confirmed by it.
       const theirs = new Set(message.members.map((m) => lower(m.fingerprint)));
+      // Only joins and removals this machine made are tracked.
       for (const peer of memberPeers()) {
-        if (theirs.has(lower(peer.fingerprint))) confirmed = confirm(s, `join:${lower(peer.fingerprint)}`, from) || confirmed;
+        const key = `join:${lower(peer.fingerprint)}`;
+        if (key in s.confirmations && theirs.has(lower(peer.fingerprint))) confirmed = confirm(s, key, from) || confirmed;
       }
       for (const removal of message.removals) {
         const ours = removalOf(removal.fingerprint, s);
-        if (ours && Date.parse(removal.removedAt) >= Date.parse(ours.removedAt)) {
+        if (ours && `remove:${lower(removal.fingerprint)}` in s.confirmations && Date.parse(removal.removedAt) >= Date.parse(ours.removedAt)) {
           confirmed = confirm(s, `remove:${lower(removal.fingerprint)}`, from) || confirmed;
         }
       }
@@ -307,6 +349,9 @@ export function noteLocalJoin(fingerprint: string): void {
   s.removals = s.removals.filter((r) => lower(r.fingerprint) !== lower(fingerprint));
   s.confirmations[`join:${lower(fingerprint)}`] = [];
   delete s.confirmations[`remove:${lower(fingerprint)}`];
+  // This machine joined (or rejoined) now: any removal of it from before is stale.
+  s.selfJoinedAt = new Date().toISOString();
+  s.removals = s.removals.filter((r) => !isSelf(r.fingerprint));
   save(s);
   sendView();
 }
@@ -319,13 +364,17 @@ export function noteLocalRemoval(fingerprint: string): void {
   const peer = annexPeers.getPeer(fingerprint);
   if (peer?.role !== 'member') return;
   const s = state();
+  // Already removed since it joined (by this path a moment ago, or by another member): once is enough.
+  const known = removalOf(fingerprint, s);
+  if (known && Date.parse(known.removedAt) >= Date.parse(peer.pairedAt)) return;
   const removal: NetworkRemoval = { fingerprint: lower(fingerprint), removedAt: new Date().toISOString() };
   s.removals = [...s.removals.filter((r) => lower(r.fingerprint) !== lower(fingerprint)), removal];
   s.confirmations[`remove:${lower(fingerprint)}`] = [];
   s.removedNames[lower(fingerprint)] = peer.alias;
   delete s.confirmations[`join:${lower(fingerprint)}`];
   save(s);
-  networkChannel.broadcast({ v: NETWORK_PROTOCOL_VERSION, type: 'member-removed', removal });
+  // Every member, the removed one included (it's still a member until its connections are cut).
+  networkChannel.broadcast({ v: NETWORK_PROTOCOL_VERSION, type: 'member-removed', removal }, toMembers());
   sendView();
 }
 
@@ -339,7 +388,7 @@ export function renameMember(fingerprint: string, name: string): boolean {
   const s = state();
   s.renamedAt[lower(fingerprint)] = at;
   save(s);
-  networkChannel.broadcast({ v: NETWORK_PROTOCOL_VERSION, type: 'member-renamed', fingerprint: peer.fingerprint, name: trimmed, at });
+  networkChannel.broadcast({ v: NETWORK_PROTOCOL_VERSION, type: 'member-renamed', fingerprint: peer.fingerprint, name: trimmed, at }, toMembers());
   return true;
 }
 

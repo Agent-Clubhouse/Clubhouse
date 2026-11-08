@@ -4666,7 +4666,8 @@ export function start(): void {
 
     // The Annex Network channel (#3060): membership only, from a pinned peer of either role.
     if (forNetwork) {
-      networkChannel.handleNetworkUpgrade(req, socket, head);
+      // A pairing that connects here first counts as connected, like one on /ws.
+      networkChannel.handleNetworkUpgrade(req, socket, head, (fp) => { awaitingFirstConnection.delete(fp); });
       return;
     }
 
@@ -5716,6 +5717,8 @@ export const PEER_REVOKED_CLOSE_CODE = 4401;
  * is refused with 401 peer_not_paired, then its open sockets close.
  */
 export function revokePeer(fingerprint: string): boolean {
+  // A network member is removed everywhere: every member hears before it's cut off (#3061).
+  membership.noteLocalRemoval(fingerprint);
   const wasSession = mobileSessionPeers.delete(fingerprint);
   if (wasSession) devicesChanged();
   const removed = annexPeers.removePeer(fingerprint) || wasSession;
