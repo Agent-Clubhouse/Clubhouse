@@ -127,17 +127,6 @@ export interface ToolRegistrationOptions {
   grant: ToolGrant;
   /** Gate the tool behind a tool group, or several. */
   group?: ToolGroups;
-  /**
-   * Gate the tool on app state as well as its group, such as an experimental
-   * flag: listed only while `isOn` returns true, and refused with `refusal`
-   * otherwise. Read at every listing and every call.
-   */
-  when?: ToolCondition;
-}
-
-export interface ToolCondition {
-  isOn: () => boolean;
-  refusal: string;
 }
 
 export interface ToolTemplate {
@@ -214,7 +203,6 @@ const globalTools = new Map<string, {
   handler: (agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
   grant?: ToolGrant;
   group?: ToolGroups;
-  when?: ToolCondition;
 }>();
 
 /** Maximum length for wire instruction strings before truncation. */
@@ -310,7 +298,6 @@ export function registerGlobalTool(
     handler,
     ...(options?.grant && { grant: options.grant }),
     ...(options?.group && { group: options.group }),
-    ...(options?.when && { when: options.when }),
   });
   invalidateToolListCache();
 }
@@ -346,12 +333,9 @@ export function listToolGrants(): RegisteredToolGrant[] {
   return out;
 }
 
-/** Whether every global tool's condition is on, one character each: part of the cache key. */
+/** Part of the cache key: which agents are the Dispatcher, since a wire to it lists no reset tools (#2968). */
 function conditionsKey(): string {
-  // Which agents are the Dispatcher: a wire to it lists no reset tools (#2968).
-  let key = `d${dispatcherGateVersion()}:`;
-  for (const [, tool] of globalTools) if (tool.when) key += tool.when.isOn() ? '1' : '0';
-  return key;
+  return `d${dispatcherGateVersion()}`;
 }
 
 /** True if `name` is a registered global tool. */
@@ -528,7 +512,6 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
   // Append global tools (available regardless of bindings, unless gated by a group)
   for (const [, tool] of globalTools) {
     if (!groupAllows(tool.group, agentId)) continue;
-    if (tool.when && !tool.when.isOn()) continue;
     if (!isListable(checkToolGrant(agentId, tool.grant, {}))) continue;
     tools.push(tool.definition);
   }
@@ -560,10 +543,6 @@ export async function callTool(
         meta: { agentId, toolName, group: globalTool.group },
       });
       return groupRefusal(globalTool.group);
-    }
-    if (globalTool.when && !globalTool.when.isOn()) {
-      appLog('core:mcp', 'info', 'Tool call refused: the tool is turned off', { meta: { agentId, toolName } });
-      return refuse('group_off', globalTool.when.refusal);
     }
     const schema = globalTool.definition.inputSchema;
     if (schema && typeof schema === 'object') {
