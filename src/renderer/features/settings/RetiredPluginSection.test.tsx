@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { RetiredPluginSection } from './RetiredPluginSection';
+import { RetiredPluginDataSection, RetiredPluginSection } from './RetiredPluginSection';
+import { usePluginStore } from '../../plugins/plugin-store';
 
 const LOUNGE_DIR = '/home/u/.clubhouse/plugin-data/lounge';
 
@@ -33,5 +34,32 @@ describe('RetiredPluginSection (#2756)', () => {
     render(<RetiredPluginSection pluginId="kanboss" />);
     fireEvent.click(await screen.findByTestId('retired-plugin-export'));
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent("Couldn't export: EACCES"));
+  });
+
+  it('lists an uninstalled retired plugin that left data, so it can still be exported', async () => {
+    usePluginStore.setState({ plugins: {} });
+    vi.spyOn(window.clubhouse.plugin, 'findRetiredData').mockImplementation(async (id: string) => (
+      id === 'lounge' ? { installed: false, locations: [{ scope: 'global', dir: LOUNGE_DIR }] } : { installed: false, locations: [] }
+    ));
+    const exportData = vi.spyOn(window.clubhouse.plugin, 'exportRetiredData').mockResolvedValue({ canceled: true });
+
+    render(<RetiredPluginDataSection />);
+
+    expect(await screen.findByText('Retired plugin data')).toBeInTheDocument();
+    expect(await screen.findByTestId('retired-plugin-section-lounge')).toBeInTheDocument();
+    expect(screen.queryByTestId('retired-plugin-section-kanboss')).toBeNull();
+    fireEvent.click(await screen.findByTestId('retired-plugin-export'));
+    expect(exportData).toHaveBeenCalledWith('lounge');
+  });
+
+  it('leaves out a retired plugin that is still installed (its own page has the data) and renders nothing without data', async () => {
+    usePluginStore.setState({ plugins: { lounge: { manifest: { id: 'lounge', name: 'Lounge' } } } as any });
+    const find = vi.spyOn(window.clubhouse.plugin, 'findRetiredData').mockResolvedValue({ installed: false, locations: [] });
+
+    const { container } = render(<RetiredPluginDataSection />);
+
+    await waitFor(() => expect(find).toHaveBeenCalledTimes(2));
+    expect(find).not.toHaveBeenCalledWith('lounge');
+    expect(container).toBeEmptyDOMElement();
   });
 });

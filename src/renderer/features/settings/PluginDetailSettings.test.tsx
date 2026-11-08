@@ -109,12 +109,12 @@ describe('PluginDetailSettings', () => {
     });
 
     const { unmount } = render(<PluginDetailSettings />);
-    expect(await screen.findByTestId('retired-plugin-section')).toBeInTheDocument();
+    expect(await screen.findByTestId('retired-plugin-section-lounge')).toBeInTheDocument();
     unmount();
 
     useUIStore.setState({ pluginSettingsId: 'test-plugin' });
     render(<PluginDetailSettings />);
-    expect(screen.queryByTestId('retired-plugin-section')).toBeNull();
+    expect(screen.queryByTestId(/^retired-plugin-section/)).toBeNull();
   });
 
   it('shows permissions section when plugin has permissions', () => {

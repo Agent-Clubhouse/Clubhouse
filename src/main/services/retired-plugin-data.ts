@@ -36,6 +36,19 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
+/**
+ * True for a directory that is not a symlink. A data folder that links
+ * elsewhere (say, to a home folder) is never followed, so an export can't
+ * read beyond what the plugin wrote.
+ */
+async function isRealDirectory(p: string): Promise<boolean> {
+  try {
+    return (await fsp.lstat(p)).isDirectory();
+  } catch { // telemetry-exempt: a missing path is the answer, not a failure
+    return false;
+  }
+}
+
 /** Where a retired plugin's data lives on this machine, in the order a person would look. */
 export async function findRetiredPluginData(pluginId: string, opts: RetiredPluginDataOptions): Promise<{
   installed: boolean;
@@ -49,7 +62,7 @@ export async function findRetiredPluginData(pluginId: string, opts: RetiredPlugi
   }
   const locations: RetiredDataLocation[] = [];
   for (const candidate of candidates) {
-    if (await exists(candidate.dir)) locations.push(candidate);
+    if (await isRealDirectory(candidate.dir)) locations.push(candidate);
   }
   return { installed: await exists(path.join(opts.communityPluginsDir, pluginId)), locations };
 }
@@ -80,24 +93,42 @@ export interface RetiredDataExport {
 }
 
 const MAX_EXPORT_FILE_BYTES = 10 * 1024 * 1024;
+export const MAX_EXPORT_TOTAL_BYTES = 50 * 1024 * 1024;
+
+/** Thrown when the files to inline would exceed MAX_EXPORT_TOTAL_BYTES; its message is shown to the person. */
+export class RetiredExportTooLargeError extends Error {
+  constructor() {
+    super('This data is more than 50 MB, too much for one export file. Use Show in folder to copy the folders instead.');
+    this.name = 'RetiredExportTooLargeError';
+  }
+}
 
 /**
  * A readable copy of everything a retired plugin stored: JSON files parsed,
- * anything else as text. Files over 10 MB are listed but not inlined.
+ * anything else as text. Symlinks are skipped, files over 10 MB are listed
+ * but not inlined, and past 50 MB in all it refuses (RetiredExportTooLargeError).
  */
-export async function buildRetiredPluginExport(pluginId: string, opts: RetiredPluginDataOptions, now = new Date()): Promise<RetiredDataExport> {
+export async function buildRetiredPluginExport(
+  pluginId: string,
+  opts: RetiredPluginDataOptions,
+  now = new Date(),
+  maxTotalBytes = MAX_EXPORT_TOTAL_BYTES,
+): Promise<RetiredDataExport> {
   const { locations } = await findRetiredPluginData(pluginId, opts);
   const out: RetiredDataExport = { plugin: pluginId, name: RETIRED_PLUGINS[pluginId].name, exportedAt: now.toISOString(), locations: [] };
+  let total = 0;
   for (const location of locations) {
     const files: Record<string, unknown> = {};
     for (const rel of await listFiles(location.dir)) {
       const key = rel.split(path.sep).join('/');
       const full = path.join(location.dir, rel);
-      const { size } = await fsp.stat(full);
+      const { size } = await fsp.lstat(full);
       if (size > MAX_EXPORT_FILE_BYTES) {
         files[key] = `(not included: ${size} bytes; the file is at ${full})`;
         continue;
       }
+      total += size;
+      if (total > maxTotalBytes) throw new RetiredExportTooLargeError();
       const text = await fsp.readFile(full, 'utf-8');
       try {
         files[key] = JSON.parse(text);
