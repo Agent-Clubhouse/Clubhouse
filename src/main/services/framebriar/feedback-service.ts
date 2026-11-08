@@ -302,8 +302,8 @@ export class FeedbackService {
   private readonly received: string[] = [];
   /** Drafts already saved as reports, so a late Send on one can say what really happened. */
   private readonly sentDrafts = new Set<string>();
-  /** The trace and span of the report send() just saved, for its telemetry event. */
-  private submittedTrace: { traceId: string; spanId: string } | undefined;
+  /** Each saved report's trace and span, for its telemetry event, keyed by send()'s result. */
+  private readonly submittedTraces = new WeakMap<object, { traceId: string; spanId: string }>();
   private readonly excerpts = new Set<FramebriarTelemetry>();
   private readonly listeners = new Set<(status: FeedbackStatus) => void>();
   private readonly now: () => number;
@@ -625,7 +625,6 @@ export class FeedbackService {
     const shots = this.drafts.get(input.draftId)?.shots.length ?? 0;
     const inReport = this.deps.reportDiagnosticsField === true;
     try {
-      this.submittedTrace = undefined;
       const result = await this.sendInner(input, inReport);
       if (result.status === 'enrollment-changed') {
         this.log('info', 'Feedback reopened after an enrollment change', { ...meta, reopenedDraftId: result.draft.draftId });
@@ -639,7 +638,7 @@ export class FeedbackService {
       this.log('info', 'Feedback saved for delivery', { ...meta, id: result.id, status: result.status, state, diagnostics: result.diagnostics ? diagnosticsBreadcrumbCode(result.diagnostics) : null });
       recordFeedbackSubmitted({
         screenshot: input.includeScreenshot, annotated: input.includeScreenshot && input.annotatedPng !== undefined, shots, accessState: state ?? 'stopped',
-        reportId: result.id, ...(this.submittedTrace && { trace: this.submittedTrace }),
+        reportId: result.id, ...(this.submittedTraces.has(result) && { trace: this.submittedTraces.get(result)! }),
       });
       return result;
     } catch (err) {
@@ -758,12 +757,14 @@ export class FeedbackService {
     if (inReport) this.afterSave(() => this.emit());
     else this.emit();
     const { traceId, spanId } = prepared.report as { traceId?: string; spanId?: string };
-    this.submittedTrace = traceId && spanId ? { traceId, spanId } : undefined;
+
     // Never `attached`: those lines are already in the report, and would go twice.
     if (outcome.status === 'queued') {
       this.sendExcerpt(fb, ack.id, draft.diagnostics.lines, traceId && spanId ? { traceId, spanId } : {});
     }
-    return { id: ack.id, status: ack.status, diagnostics: outcome, ...(draft.earlierMayDeliver && { earlierMayDeliver: true as const }) };
+    const result = { id: ack.id, status: ack.status, diagnostics: outcome, ...(draft.earlierMayDeliver && { earlierMayDeliver: true as const }) };
+    if (traceId && spanId) this.submittedTraces.set(result, { traceId, spanId });
+    return result;
   }
 
   /**

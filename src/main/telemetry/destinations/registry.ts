@@ -16,7 +16,7 @@
  */
 import type { TelemetryDestinationEntry, TelemetryDestinationKind } from '../../../shared/telemetry/settings-types';
 import { loadAzureDestination, loadFramebriarDestination, loadOtlpDestination } from '../lazy-chunks';
-import { currentFramebriarExport, FRAMEBRIAR_DROPPED_ATTRIBUTES, FRAMEBRIAR_NOT_CONNECTED, FRAMEBRIAR_ONLY_ATTRIBUTES, setBoundFramebriarSession, type FramebriarTelemetryExport } from './framebriar-source';
+import { currentFramebriarExport, FRAMEBRIAR_DROPPED_ATTRIBUTES, FRAMEBRIAR_NOT_CONNECTED, setBoundFramebriarSession, type FramebriarTelemetryExport } from './framebriar-source';
 import type { TelemetrySecrets } from '../secret-store';
 import {
   resolveDestination,
@@ -57,7 +57,6 @@ const azure: DestinationAdapter<AzureDestinationConfig> = {
   },
   usesOfflineQueue: true,
   describeFailure: azureFailure,
-  dropAttributes: FRAMEBRIAR_ONLY_ATTRIBUTES,
 };
 
 const otlp: DestinationAdapter<OtlpDestinationConfig> = {
@@ -74,7 +73,6 @@ const otlp: DestinationAdapter<OtlpDestinationConfig> = {
       temporality: entry.otlp?.temporality ?? 'cumulative',
     });
   },
-  dropAttributes: FRAMEBRIAR_ONLY_ATTRIBUTES,
 };
 
 /**

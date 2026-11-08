@@ -24,6 +24,7 @@ import {
   type Histogram,
   type Span,
 } from '@opentelemetry/api';
+import { FRAMEBRIAR_ONLY_ATTRIBUTES } from './destinations/framebriar-source';
 import { SeverityNumber } from '@opentelemetry/api-logs';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 import { resourceFromAttributes } from '@opentelemetry/resources';
@@ -329,7 +330,8 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
   const stampFor = (dest: SdkDestination) => ({
     attributes: { ...dest.itemAttributes, 'clubhouse.telemetry.level': dest.filter.level },
     copyResourceAttributes: dest.copyResourceAttributes ?? [],
-    dropAttributes: dest.dropAttributes ?? [],
+    // Report ids and the like reach the developer destination only, whatever an adapter lists (#2524).
+    dropAttributes: dest.kind === 'framebriar' ? dest.dropAttributes ?? [] : [...(dest.dropAttributes ?? []), ...FRAMEBRIAR_ONLY_ATTRIBUTES],
   });
 
   // --- Traces ---

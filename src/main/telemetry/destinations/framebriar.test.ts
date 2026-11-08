@@ -159,10 +159,8 @@ describe('Framebriar destination adapter', () => {
   it('copies layout, channel, schema, OS and Electron versions onto events, and drops the install id (#2526, #2525)', () => {
     expect(getAdapter('framebriar').copyResourceAttributes).toEqual(['clubhouse.ui.chrome', 'clubhouse.channel', 'clubhouse.telemetry.schema', 'os.version', 'clubhouse.electron.version']);
     expect(getAdapter('framebriar').itemAttributes).toEqual({ 'app.telemetry.schema_version': TELEMETRY_SCHEMA_VERSION });
-    // The report id goes to the developer destination only (#2524).
+    // The report id goes to the developer destination only; the SDK drops it for the rest (fanout.test.ts).
     expect(getAdapter('framebriar').dropAttributes).not.toContain('feedback.report.id');
-    expect(getAdapter('azure').dropAttributes).toEqual(['feedback.report.id']);
-    expect(getAdapter('otlp').dropAttributes).toEqual(['feedback.report.id']);
     expect(getAdapter('framebriar').dropAttributes).toEqual(['enduser.pseudo.id', 'clubhouse.install.id']);
     expect(getAdapter('framebriar').label).toBe('Clubhouse developer');
   });

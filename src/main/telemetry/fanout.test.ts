@@ -167,6 +167,17 @@ describe('multi-destination fan-out', () => {
     expect(b.logs.getFinishedLogRecords()[0].attributes).not.toHaveProperty('enduser.pseudo.id');
   });
 
+  it('keeps the report id for the developer destination only, whatever the other kinds list (#2524)', async () => {
+    const sinks = { azure: sink(), otlp: sink(), framebriar: sink(), other: sink() };
+    const r = start(Object.entries(sinks).map(([kind, s]) => dest(kind, kind, s, 'standard')));
+    const id = '0b5c6a2e-1f3d-4c8e-9a7b-2d4e6f8a0c1e';
+    r.event('clubhouse.feedback.submitted', [ATTR.feedbackReportId(id)]);
+    await r.forceFlush(1000);
+    const reportId = (s: Sink) => s.logs.getFinishedLogRecords()[0].attributes['feedback.report.id'];
+    expect(reportId(sinks.framebriar)).toBe(id);
+    for (const s of [sinks.azure, sinks.otlp, sinks.other]) expect(reportId(s)).toBeUndefined();
+  });
+
   it('emits an event under a given trace and span, linking it to them (#2524)', async () => {
     const a = sink();
     const r = start([dest('azure', 'azure', a, 'standard')]);
