@@ -8,9 +8,13 @@ import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import type * as fsTypes from 'node:fs';
 import * as fs from 'node:fs';
+import * as fsp from 'fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Each test spawns several git processes, which can crawl on a loaded machine.
+vi.setConfig({ testTimeout: 30_000 });
 
 const chatListeners: Array<(event: unknown) => void> = [];
 let projects: Array<{ id: string; path: string }> = [];
@@ -29,10 +33,19 @@ vi.mock('./project-store', () => ({
   onProjectsChanged: vi.fn(() => () => undefined),
 }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+// Real fs, with readFile watched for the order and number of reads.
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  const readFile = vi.fn(actual.readFile);
+  return { ...actual, default: { ...actual, readFile }, readFile };
+});
 
+import { appLog } from './log-service';
 import { onAppEvent, resetAppEventBus, type AppEvent, type AppEventInput } from './app-event-bus';
-import { resetGitCommandLog, type GitCommandRecord } from './git-command-log';
-import { GitWatcher, readRefs, resolveGitDirs, startGitWatcher, stopGitWatcher } from './git-watcher';
+import { noteAgentToolCall, resetGitCommandLog } from './git-command-log';
+import {
+  GitWatcher, MANY_BRANCHES, readRefs, resolveGitDirs, startGitWatcher, stopGitWatcher, type GitWatcherOptions,
+} from './git-watcher';
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', [
@@ -88,26 +101,29 @@ function fakeWatch(dir: string, onChange: () => void): fsTypes.FSWatcher {
 }
 
 let events: AppEventInput[];
-let records: GitCommandRecord[];
 let cwds: Record<string, string>;
 let watcher: GitWatcher | null;
 
-function newWatcher(extra: { maxRepos?: number; pollMs?: number } = {}): GitWatcher {
+function newWatcher(extra: Partial<GitWatcherOptions> = {}): GitWatcher {
   watcher = new GitWatcher({
     publish: (e) => events.push(e),
     debounceMs: 20,
     pollMs: 0,
     watch: fakeWatch,
+    watchRemovableDirs: true,
     agentCwd: (id) => cwds[id],
-    recentCommands: () => records,
     ...extra,
   });
   return watcher;
 }
 
+/** An agent's shell ran this command (as a hook would note it). */
+function ran(agentId: string, command: string, cwd?: string): void {
+  noteAgentToolCall(agentId, { command }, { cwd });
+}
+
 beforeEach(() => {
   events = [];
-  records = [];
   cwds = {};
   watches = [];
   watcher = null;
@@ -149,6 +165,20 @@ describe('reading repos', () => {
     expect(packed.ok).toBe(true);
     expect([...packed.refs].sort()).toEqual([...loose.refs].sort());
     expect(packed.refs.get('refs/heads/main')).toBe(git(repo, 'rev-parse', 'main'));
+  });
+
+  it('reads loose refs before packed-refs, so a pack in between never shows an older value', async () => {
+    const { repo } = makeRepo();
+    git(repo, 'pack-refs', '--all');
+    commit(repo, 'b.txt');
+    const read = vi.mocked(fsp.readFile);
+    read.mockClear();
+    const refs = await readRefs(path.join(repo, '.git'));
+    const files = read.mock.calls.map((c) => path.basename(String(c[0])));
+    expect(files.indexOf('main')).toBeGreaterThanOrEqual(0);
+    expect(files.indexOf('main')).toBeLessThan(files.indexOf('packed-refs'));
+    // The loose value (newer) wins over the packed one.
+    expect(refs.refs.get('refs/heads/main')).toBe(git(repo, 'rev-parse', 'main'));
   });
 });
 
@@ -233,8 +263,8 @@ describe('GitWatcher', () => {
   it('names the agent that just ran the command in its worktree, and nobody in the project root around it', async () => {
     const { repo, wt } = makeRepo();
     cwds = { a1: wt };
-    records = [{ agentId: 'a1', verbs: ['commit'], at: Date.now() }];
     await newWatcher().setPaths([repo, wt]);
+    ran('a1', 'git commit -am x');
     commit(wt, 'b.txt');
     await watcher!.rescan();
     commit(repo, 'c.txt');
@@ -245,10 +275,35 @@ describe('GitWatcher', () => {
     ]);
   });
 
+  it('credits one command once: a later commit with no new command names nobody', async () => {
+    const { repo, wt } = makeRepo();
+    await newWatcher().setPaths([repo, wt]);
+    ran('a1', 'git commit -m x', wt);
+    commit(wt, 'b.txt');
+    await watcher!.rescan();
+    commit(wt, 'c.txt');
+    await watcher!.rescan();
+    expect(events).toEqual([
+      { type: 'git.commit', repoPath: wt, branch: 'agent', agentId: 'a1' },
+      { type: 'git.commit', repoPath: wt, branch: 'agent' },
+    ]);
+  });
+
+  it('uses the hook\'s cwd and git -C over where the agent started', async () => {
+    const { repo, wt } = makeRepo();
+    // The agent started in the project root but committed in its worktree.
+    cwds = { a1: repo };
+    await newWatcher().setPaths([repo, wt]);
+    ran('a1', 'git -C .clubhouse/agents/a1 commit -m x', repo);
+    commit(wt, 'b.txt');
+    await watcher!.rescan();
+    expect(events).toEqual([{ type: 'git.commit', repoPath: wt, branch: 'agent', agentId: 'a1' }]);
+  });
+
   it('attributes a command run in a subfolder of the worktree', async () => {
     const { repo, wt } = makeRepo();
-    records = [{ agentId: 'a1', verbs: ['commit'], cwd: path.join(wt, 'src'), at: Date.now() }];
     await newWatcher().setPaths([repo, wt]);
+    ran('a1', 'git commit -m x', path.join(wt, 'src'));
     commit(wt, 'b.txt');
     await watcher!.rescan();
     expect(events).toEqual([{ type: 'git.commit', repoPath: wt, branch: 'agent', agentId: 'a1' }]);
@@ -256,8 +311,8 @@ describe('GitWatcher', () => {
 
   it('only names an agent for a matching command', async () => {
     const { repo, wt } = makeRepo();
-    records = [{ agentId: 'a1', verbs: ['push'], cwd: wt, at: Date.now() }];
     await newWatcher().setPaths([repo, wt]);
+    ran('a1', 'git push', wt);
     commit(wt, 'b.txt');
     await watcher!.rescan();
     expect(events).toEqual([{ type: 'git.commit', repoPath: wt, branch: 'agent' }]);
@@ -266,11 +321,86 @@ describe('GitWatcher', () => {
   it('names the pushing agent and its worktree for a remote update', async () => {
     const { repo, wt } = makeRepo();
     addRemote(repo);
-    records = [{ agentId: 'a1', verbs: ['push'], cwd: wt, at: Date.now() }];
+    ran('a1', 'git push origin main', wt);
     await newWatcher().setPaths([repo, wt]);
     git(wt, 'push', '-q', 'origin', 'main');
     await watcher!.rescan();
     expect(events).toEqual([{ type: 'git.remote_updated', repoPath: wt, branch: 'main', remote: 'origin', agentId: 'a1' }]);
+  });
+
+  it('reports a big push as one event for the remote plus the checked-out branches, attributed once', async () => {
+    const { repo, wt } = makeRepo();
+    addRemote(repo);
+    for (let i = 0; i < 25; i++) git(repo, 'branch', `b${i}`);
+    await newWatcher().setPaths([repo, wt]);
+    ran('a1', 'git push --all origin', wt);
+    git(wt, 'push', '-q', '--all', 'origin');
+    await watcher!.rescan();
+    const sorted = [...events].sort((a, b) => ('branch' in a && 'branch' in b ? a.branch.localeCompare(b.branch) : 0));
+    expect(sorted).toEqual([
+      { type: 'git.remote_updated', repoPath: wt, branch: MANY_BRANCHES, remote: 'origin', agentId: 'a1' },
+      { type: 'git.remote_updated', repoPath: wt, branch: 'agent', remote: 'origin', agentId: 'a1' },
+      { type: 'git.remote_updated', repoPath: wt, branch: 'main', remote: 'origin', agentId: 'a1' },
+    ]);
+  });
+
+  it('on Windows, leaves folders that deleting an agent removes to the poll', async () => {
+    const { repo, wt } = makeRepo();
+    addRemote(repo);
+    git(repo, 'branch', 'feature/x');
+    git(repo, 'push', '-q', 'origin', 'feature/x');
+    await newWatcher({ watchRemovableDirs: false }).setPaths([repo, wt]);
+    const common = fs.realpathSync.native(path.join(repo, '.git'));
+    expect(watches.map((w) => w.dir).sort()).toEqual([
+      common,
+      path.join(common, 'refs'),
+      path.join(common, 'refs', 'heads'),
+      path.join(common, 'refs', 'remotes'),
+      path.join(common, 'refs', 'remotes', 'origin'),
+    ].sort());
+    // A switch in the linked worktree (its HEAD folder unwatched) still shows on a read.
+    git(wt, 'checkout', '-q', '-b', 'other');
+    await watcher!.pollOnce();
+    expect(events).toEqual([{ type: 'git.branch_switched', repoPath: wt, branch: 'other', previousBranch: 'agent' }]);
+  });
+
+  it('skips a poll\'s full read when nothing looks changed, and reads when something did', async () => {
+    const { repo } = makeRepo();
+    await newWatcher().setPaths([repo]);
+    // Let the mtimes of the baseline settle behind us.
+    await new Promise((r) => setTimeout(r, 20));
+    vi.mocked(fsp.readFile).mockClear();
+    await watcher!.pollOnce();
+    expect(vi.mocked(fsp.readFile)).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+    commit(repo, 'b.txt');
+    await watcher!.pollOnce();
+    expect(events).toEqual([{ type: 'git.commit', repoPath: repo, branch: 'main' }]);
+  });
+
+  it('watches one worktree once though it is registered under two spellings', async () => {
+    const { repo } = makeRepo();
+    const link = path.join(tempDir(), 'link');
+    fs.symlinkSync(repo, link, process.platform === 'win32' ? 'junction' : 'dir');
+    await newWatcher().setPaths([repo, link]);
+    commit(repo, 'b.txt');
+    await watcher!.rescan();
+    expect(events).toEqual([{ type: 'git.commit', repoPath: repo, branch: 'main' }]);
+  });
+
+  it('logs and skips a reftable repo', async () => {
+    const repo = tempDir();
+    fs.mkdirSync(path.join(repo, '.git', 'refs', 'heads'), { recursive: true });
+    fs.writeFileSync(path.join(repo, '.git', 'HEAD'), 'ref: refs/heads/.invalid\n');
+    fs.writeFileSync(path.join(repo, '.git', 'config'), '[core]\n\trepositoryformatversion = 1\n[extensions]\n\trefStorage = reftable\n');
+    vi.mocked(appLog).mockClear();
+    const w = newWatcher();
+    await w.setPaths([repo]);
+    await w.setPaths([repo]);
+    expect(w.watchedDirCount()).toBe(0);
+    expect(vi.mocked(appLog).mock.calls.filter((c) => String(c[2]).includes('reftable'))).toHaveLength(1);
+    await w.rescan();
+    expect(events).toEqual([]);
   });
 
   it('caps the repos it watches', async () => {

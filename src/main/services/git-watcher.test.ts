@@ -6,7 +6,9 @@ vi.mock('./agent-runtime/chat-event-bus', () => ({ onChatEvent: vi.fn(() => () =
 vi.mock('./project-store', () => ({ list: vi.fn(async () => []), onProjectsChanged: vi.fn(() => () => undefined) }));
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 
-import { diffSnapshots, parseHead, parsePackedRefs, type RepoSnapshot, type WorktreeState } from './git-watcher';
+import {
+  MANY_BRANCHES, coalesceRemoteUpdates, diffSnapshots, parseHead, parsePackedRefs, type RepoSnapshot, type WorktreeState,
+} from './git-watcher';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -37,6 +39,28 @@ describe('parseHead', () => {
     expect(parseHead('ref: refs/heads/feature/x\n')).toBe('feature/x');
     expect(parseHead(`${A}\n`)).toBeNull();
     expect(parseHead('ref: refs/remotes/origin/main\n')).toBeNull();
+  });
+
+  it('never reports reftable\'s placeholder branch', () => {
+    expect(parseHead('ref: refs/heads/.invalid\n')).toBeNull();
+  });
+});
+
+describe('coalesceRemoteUpdates', () => {
+  const many = (remote: string, n: number) => Array.from({ length: n }, (_, i) => ({ remote, branch: `b${i}` }));
+
+  it('reports each branch up to the cap', () => {
+    expect(coalesceRemoteUpdates(many('origin', 3), new Set(), 3)).toEqual(many('origin', 3));
+  });
+
+  it('past the cap, reports the remote once plus its checked-out branches, per remote', () => {
+    const changes = [...many('origin', 2000), ...many('up', 2)];
+    expect(coalesceRemoteUpdates(changes, new Set(['b7', 'nope']), 20)).toEqual([
+      { remote: 'origin', branch: 'b7' },
+      { remote: 'origin', branch: MANY_BRANCHES },
+      { remote: 'up', branch: 'b0' },
+      { remote: 'up', branch: 'b1' },
+    ]);
   });
 });
 

@@ -263,9 +263,12 @@ describe('hook-server', () => {
         parseHookEvent: vi.fn(() => ({ ...mockNormalized, toolInput: { command: 'git commit -m x' } })),
         toolVerb: vi.fn(),
       });
-      await postToServer(port, '/hook/agent-1', { hook_event_name: 'PreToolUse' }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+      const body = { hook_event_name: 'PreToolUse', cwd: '/my/project/sub', tool_use_id: 'toolu_1' };
+      await postToServer(port, '/hook/agent-1', body, { 'X-Clubhouse-Nonce': VALID_NONCE });
+      // The post hook of the same call is not noted again.
+      await postToServer(port, '/hook/agent-1', { ...body, hook_event_name: 'PostToolUse' }, { 'X-Clubhouse-Nonce': VALID_NONCE });
       await new Promise((r) => setTimeout(r, 30));
-      expect(recentGitCommands().map((r) => [r.agentId, r.verbs])).toEqual([['agent-1', ['commit']]]);
+      expect(recentGitCommands().map((r) => [r.agentId, r.verb, r.cwd])).toEqual([['agent-1', 'commit', '/my/project/sub']]);
       resetGitCommandLog();
     });
 
