@@ -158,6 +158,9 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
   'IPC.FEEDBACK.STATUS_CHANGED',
   // Dispatcher state is broadcast main→renderer from dispatcher-service.ts.
   'IPC.DISPATCHER.CHANGED',
+  // Actions changes and notices are broadcast main→renderer from services/actions.
+  'IPC.ACTIONS.CHANGED',
+  'IPC.ACTIONS.NOTICE',
 ]);
 
 /**
