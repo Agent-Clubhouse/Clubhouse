@@ -27,11 +27,20 @@ export function closeDispatcher(): void {
   useUIStore.getState().setDispatcherOpen(false);
 }
 
-/** Settings > Dispatcher (#2535), where its CLI, model and runtime are set. */
+/** Settings > Dispatcher (#2535), where its CLI, Behavior and runtime are set. */
 export function openDispatcherSettings(): void {
   closeDispatcher();
   const ui = useUIStore.getState();
   ui.setSettingsContext('app');
   ui.setSettingsSubPage('dispatcher');
+  if (ui.explorerTab !== 'settings') ui.toggleSettings();
+}
+
+/** "Set up Auto" (#3045): Settings > Helpers, where the Auto mapping is chosen per provider. */
+export function openAutoSettings(): void {
+  closeDispatcher();
+  const ui = useUIStore.getState();
+  ui.setSettingsContext('app');
+  ui.setSettingsSubPage('helpers');
   if (ui.explorerTab !== 'settings') ui.toggleSettings();
 }

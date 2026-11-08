@@ -670,6 +670,8 @@ export const IPC = {
   DISPATCHER: {
     GET: 'dispatcher:get',
     SET_ENABLED: 'dispatcher:set-enabled',
+    /** Behavior (#3045): light, standard or thorough. Resolves with the DispatcherState. */
+    SET_BEHAVIOR: 'dispatcher:set-behavior',
     /** Main → renderer broadcast: DispatcherState after any change. */
     CHANGED: 'dispatcher:changed',
   },

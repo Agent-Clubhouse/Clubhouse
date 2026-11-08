@@ -17,6 +17,10 @@ const ON: DispatcherState = {
   agentId: 'disp',
   path: FOLDER,
   config: { id: 'disp', name: 'Dispatcher', color: 'indigo', createdAt: 'now', orchestrator: 'codex-cli', idleSleep: 'never', runtimeMode: 'chat', access: 'full_access', freeAgentMode: true, persona: 'dispatcher' },
+  chatAgentId: 'disp-chat',
+  chatPath: 'dispatcher-chat-folder',
+  chatRunning: false,
+  behavior: { level: 'standard', provider: 'codex-cli', auto: { ready: true } },
 };
 
 const cli = (id: string, displayName: string) => ({ id, displayName, shortName: displayName, capabilities: { permissions: true } }) as unknown as OrchestratorInfo;
@@ -34,11 +38,16 @@ beforeEach(() => {
     return state;
   });
   window.clubhouse.dispatcher.onChanged = vi.fn((cb) => { emit = cb; return () => { emit = null; }; });
+  window.clubhouse.dispatcher.setBehavior = vi.fn(async (level) => {
+    state = { ...state, behavior: { ...state.behavior, level } };
+    emit?.(state);
+    return state;
+  });
   window.clubhouse.agent.updateDurableConfig = vi.fn(async () => undefined);
   window.clubhouse.agent.getModelOptions = vi.fn(async () => [{ id: 'default', label: 'Default' }, { id: 'gpt-5', label: 'GPT-5' }]) as never;
   useOrchestratorStore.setState({
     enabled: ['claude-code', 'codex-cli'],
-    allOrchestrators: [cli('claude-code', 'Claude Code'), cli('copilot-cli', 'Copilot CLI'), cli('codex-cli', 'Codex CLI')],
+    allOrchestrators: [cli('claude-code', 'Claude Code'), cli('copilot-cli', 'Copilot CLI'), cli('codex-cli', 'Codex CLI'), cli('future-cli', 'Future CLI')],
     loadSettings: async () => {},
   });
 });
@@ -181,6 +190,55 @@ describe('DispatcherSettingsView', () => {
     expect(help).toContain('can’t be turned back on');
     await act(async () => { fireEvent.click(on); });
     expect(window.clubhouse.dispatcher.setEnabled).toHaveBeenCalledWith(false);
+  });
+
+  describe('Behavior (#3045)', () => {
+    it('replaces the Model field, and saves through main', async () => {
+      state = ON;
+      render(<DispatcherSettingsView />);
+      const behavior = await screen.findByLabelText('Behavior') as HTMLSelectElement;
+      expect(screen.queryByLabelText('Model')).toBeNull();
+      expect(behavior.value).toBe('standard');
+      expect([...behavior.options].map((o) => o.textContent)).toEqual(['Light', 'Standard', 'Thorough']);
+      await act(async () => { fireEvent.change(behavior, { target: { value: 'thorough' } }); });
+      expect(window.clubhouse.dispatcher.setBehavior).toHaveBeenCalledWith('thorough');
+      await waitFor(() => expect((screen.getByLabelText('Behavior') as HTMLSelectElement).value).toBe('thorough'));
+      expect(screen.getByText(/Checks in frequently/)).toBeInTheDocument();
+      expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+    });
+
+    it('follows a change made from the composer chip', async () => {
+      state = ON;
+      render(<DispatcherSettingsView />);
+      await screen.findByLabelText('Behavior');
+      await act(async () => { emit?.({ ...ON, behavior: { ...ON.behavior, level: 'light' } }); });
+      expect((screen.getByLabelText('Behavior') as HTMLSelectElement).value).toBe('light');
+    });
+
+    it('offers Set up Auto only where the mapping can fix it', async () => {
+      state = { ...ON, behavior: { level: 'thorough', provider: 'codex-cli', auto: { ready: false, code: 'no_valid_mapping' } } };
+      const { unmount } = render(<DispatcherSettingsView />);
+      expect(await screen.findByTestId('dispatcher-behavior-setup-auto')).toBeInTheDocument();
+      expect(screen.getByTestId('dispatcher-behavior-auto-note').textContent).toContain('Codex CLI');
+      unmount();
+
+      state = { ...ON, behavior: { level: 'standard', provider: 'future-cli', auto: { ready: false, code: 'auto_not_supported' } } };
+      render(<DispatcherSettingsView />);
+      expect((await screen.findByTestId('dispatcher-behavior-auto-note')).textContent).toContain('Auto doesn’t support Future CLI yet');
+      expect(screen.queryByTestId('dispatcher-behavior-setup-auto')).toBeNull();
+      // The level can still change: it still sets how often it checks in.
+      expect((screen.getByLabelText('Behavior') as HTMLSelectElement).disabled).toBe(false);
+    });
+
+    it('shows a failed change as an alert and keeps the saved level', async () => {
+      state = ON;
+      window.clubhouse.dispatcher.setBehavior = vi.fn().mockRejectedValue(new Error('disk full'));
+      render(<DispatcherSettingsView />);
+      const behavior = await screen.findByLabelText('Behavior');
+      await act(async () => { fireEvent.change(behavior, { target: { value: 'light' } }); });
+      expect((await screen.findByTestId('dispatcher-behavior-error')).textContent).toBe('Couldn’t change it. disk full');
+      expect((screen.getByLabelText('Behavior') as HTMLSelectElement).value).toBe('standard');
+    });
   });
 
   describe('help text in every combination', () => {
