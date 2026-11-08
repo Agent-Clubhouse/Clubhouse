@@ -16,7 +16,6 @@ import {
   type OverlapRule,
   type SchedulePreset,
 } from '../../../shared/actions';
-import type { AccessLevel } from '../../../shared/agent-access';
 
 export type WhenKind = 'schedule' | 'event' | 'once';
 
@@ -32,8 +31,6 @@ export interface StepDraft {
   orchestrator: string;
   /** Quick agents: a model override (set over MCP; cleared when the provider changes). */
   model: string;
-  /** Quick agents: an Access level (#2761), or '' for the default. */
-  access: '' | AccessLevel;
 }
 
 export interface ActionDraft {
@@ -60,7 +57,7 @@ export interface ActionDraft {
 }
 
 export function emptyStep(kind: ActionStepKind = 'wake'): StepDraft {
-  return { kind, agentId: '', text: '', projectId: '', worktreeAgentId: '', orchestrator: '', model: '', access: '' };
+  return { kind, agentId: '', text: '', projectId: '', worktreeAgentId: '', orchestrator: '', model: '' };
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -100,7 +97,6 @@ function stepToDraft(s: ActionStep): StepDraft {
     case 'notify': return { ...d, text: s.text };
     case 'quick': return {
       ...d, projectId: s.projectId, worktreeAgentId: s.worktreeAgentId ?? '', text: s.prompt, orchestrator: s.orchestrator ?? '', model: s.model ?? '',
-      access: s.access ?? '',
     };
   }
 }
@@ -149,7 +145,6 @@ function stepFromDraft(s: StepDraft): Record<string, unknown> {
       ...(s.worktreeAgentId && { worktreeAgentId: s.worktreeAgentId }),
       ...(s.orchestrator && { orchestrator: s.orchestrator }),
       ...(s.model && { model: s.model }),
-      ...(s.access && { access: s.access }),
     };
   }
 }

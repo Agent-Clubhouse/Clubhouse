@@ -2,6 +2,7 @@ import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { AgentMcpConnection, DispatcherLink } from '../shared/types';
 import type { McpUnbindCause, McpUnbindResult } from '../shared/mcp-unbind';
+import type { AgentConnectionSources, ConnectionSourceKind, RemoveConnectionSourceResult } from '../shared/connection-sources';
 
 export const mcpBinding = {
   mcpBinding: {
@@ -27,6 +28,12 @@ export const mcpBinding = {
   /** Links the Dispatcher made that the user may remove, suspended ones included (#2661). */
   getDispatcherLinks: (): Promise<DispatcherLink[]> =>
     ipcRenderer.invoke(IPC.MCP_BINDING.GET_DISPATCHER_LINKS),
+  /** The sources behind an agent's connections, both directions (#2744). */
+  getConnectionSources: (agentId: string): Promise<AgentConnectionSources> =>
+    ipcRenderer.invoke(IPC.MCP_BINDING.GET_CONNECTION_SOURCES, agentId),
+  /** Remove one source of one connection; others stay (#2744). */
+  removeConnectionSource: (agentId: string, targetId: string, kind: ConnectionSourceKind): Promise<RemoveConnectionSourceResult> =>
+    ipcRenderer.invoke(IPC.MCP_BINDING.REMOVE_CONNECTION_SOURCE, agentId, targetId, kind),
   getAgentConnection: (agentId: string): Promise<AgentMcpConnection | null> =>
     ipcRenderer.invoke(IPC.MCP_BINDING.GET_AGENT_CONNECTION, agentId),
   onAgentConnectionChanged: (callback: (agentId: string) => void) => {

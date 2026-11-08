@@ -142,7 +142,9 @@ Helpers aren't wired to each other automatically. The orchestrator can connect t
 
 These tools only reach the orchestrator and its own helpers, in any project. Connections and memberships they make are saved and come back after a restart. `disconnect_agents` only removes wires made with `connect_agents`. Wires drawn on the canvas, and the wires between an orchestrator and its helpers, stay.
 
-The **Connections** card in an agent's details lists its wires. Wires made by the connection tools have **Disconnect**. Others are read-only. A connection you remove stays removed, even after a restart.
+The **Connections** card in an agent's details lists its wires. Hover a row to see where it comes from: a canvas wire, a helper and its orchestrator, **Connect to Dispatcher**, or a link an orchestrator or the Dispatcher made. One connection can have several sources, and it stays while any of them does.
+
+**Sources** on a row lists each one with what removing it changes. You can remove a link an orchestrator or the Dispatcher made, or turn off **Connect to Dispatcher**, there; removing one leaves the others, and the dialog says whether they're still connected. Canvas wires are removed on their canvas, and a helper stays connected to its orchestrator until it's disposed. A link you remove stays removed, even after a restart. A group project membership made by the connection tools still has **Disconnect**.
 
 ## Where an agent's policy comes from
 

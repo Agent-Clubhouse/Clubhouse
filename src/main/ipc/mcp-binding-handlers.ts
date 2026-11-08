@@ -34,6 +34,8 @@ import { dispatcherWireBindingSource, watchDispatcherWires } from '../services/d
 import { dispatcherConnectionSource, isRemovalUnsaved, listDispatcherLinksForUser, watchDispatcherConnections } from '../services/dispatcher-connections';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
+import { listConnectionSources, removeConnectionSource } from '../services/connection-sources';
+import type { ConnectionSourceKind } from '../../shared/connection-sources';
 
 /**
  * Target kinds the renderer may bind. 'plugin' is left out (#2082): plugins
@@ -190,6 +192,19 @@ export function registerMcpBindingHandlers(): void {
     assertCallerIsAppWindow(event);
     return listDispatcherLinksForUser();
   });
+
+  // Connection sources (#2744): the user's own surface.
+  ipcMain.handle(IPC.MCP_BINDING.GET_CONNECTION_SOURCES, withValidatedArgs([stringArg({ maxLength: 200 })], (event, agentId) => {
+    assertCallerIsAppWindow(event);
+    return listConnectionSources(agentId as string);
+  }));
+  ipcMain.handle(IPC.MCP_BINDING.REMOVE_CONNECTION_SOURCE, withValidatedArgs(
+    [stringArg({ maxLength: 200 }), stringArg({ maxLength: 200 }), stringArg({ maxLength: 40 })],
+    (event, agentId, targetId, kind) => {
+      assertCallerIsAppWindow(event);
+      return removeConnectionSource(agentId as string, targetId as string, kind as ConnectionSourceKind);
+    },
+  ));
 
   ipcMain.handle(IPC.MCP_BINDING.SET_INSTRUCTIONS, withValidatedArgs(
     [stringArg(), stringArg(), objectArg<Record<string, string>>()],

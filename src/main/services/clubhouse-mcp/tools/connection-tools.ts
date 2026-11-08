@@ -30,6 +30,7 @@ import { bootstrapGroupProjectAdmin } from '../../group-project-admin-service';
 import {
   claimSourceBinding,
   isBindingRemovedByUser,
+  isSourceRemovedByUser,
   rebuildPersistedBindings,
   releaseSourceBinding,
   type PersistedBinding,
@@ -169,7 +170,8 @@ function entryFor(callerId: string, scope: CallerScope, binding: PersistedBindin
  */
 async function connect(callerId: string, scope: CallerScope, bindings: PersistedBinding[]): Promise<Array<'created' | 'existing' | 'removed' | 'invalid'>> {
   // A pair the user removed this session stays removed: only the user can draw it again.
-  const refused = bindings.find((b) => isBindingRemovedByUser(b.agentId, b.targetId));
+  // Or one whose orchestrator link the user removed from the Connections card (#2744).
+  const refused = bindings.find((b) => isBindingRemovedByUser(b.agentId, b.targetId) || isSourceRemovedByUser(ORCHESTRATOR_CONNECTION_SOURCE_ID, b.agentId, b.targetId));
   if (refused) {
     throw new ConnectionScopeError(`The user removed this connection. ${refused.agentName} → ${refused.targetName} stays disconnected until the user connects it again.`);
   }

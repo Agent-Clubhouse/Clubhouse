@@ -19,6 +19,7 @@ import {
   nextCronTimes,
   parseCron,
   suggestActionName,
+  QUICK_STEP_ACCESS,
   type ActionEventKind,
   type ActionInput,
   type ActionOwner,
@@ -28,7 +29,7 @@ import {
   type OverlapRule,
   type SchedulePreset,
 } from '../../../shared/actions';
-import { ACCESS_LEVELS, accessLabel } from '../../../shared/agent-access';
+import { accessLabel } from '../../../shared/agent-access';
 import { Button } from '../../components/Button';
 import { Modal } from '../../components/Modal';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
@@ -138,26 +139,14 @@ function StepEditor({ index, step, onChange, onRemove, agents, projects, canRemo
               {worktreeAgents.map((a) => <option key={a.id} value={a.id}>{a.name}’s worktree</option>)}
             </select>
           </Field>
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <Field label="Provider" htmlFor={`${uid}-provider`}>
-                <select id={`${uid}-provider`} className={`${selectClass} w-full`} value={step.orchestrator} onChange={(e) => set({ orchestrator: e.target.value, model: '' })}>
-                  <option value="">The project’s provider</option>
-                  {orchestrators.map((o) => <option key={o.id} value={o.id}>{o.displayName}</option>)}
-                </select>
-              </Field>
-            </div>
-            <div className="flex-1">
-              <Field label="Access" htmlFor={`${uid}-access`}>
-                <select id={`${uid}-access`} className={`${selectClass} w-full`} value={step.access} onChange={(e) => set({ access: e.target.value as StepDraft['access'] })}>
-                  <option value="">Default</option>
-                  {ACCESS_LEVELS.map((l) => <option key={l} value={l}>{accessLabel(l)}</option>)}
-                </select>
-              </Field>
-            </div>
-          </div>
-          <div className={`${settingsHelp} mt-1`}>
-            Default is your Default access for actions you made. An action an agent made never starts a quick agent above that agent’s own access.
+          <Field label="Provider" htmlFor={`${uid}-provider`}>
+            <select id={`${uid}-provider`} className={`${selectClass} w-full`} value={step.orchestrator} onChange={(e) => set({ orchestrator: e.target.value, model: '' })}>
+              <option value="">The project’s provider</option>
+              {orchestrators.map((o) => <option key={o.id} value={o.id}>{o.displayName}</option>)}
+            </select>
+          </Field>
+          <div className={`${settingsHelp} mt-1`} data-testid="action-form-quick-access">
+            Agent steps run with {accessLabel(QUICK_STEP_ACCESS)}, so they never stop to ask.
           </div>
         </>
       )}
