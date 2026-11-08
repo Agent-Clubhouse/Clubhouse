@@ -18,12 +18,14 @@
  * Grants are a cooperative guardrail on the Clubhouse MCP, not a sandbox.
  */
 
-import { evaluateGrant, GRANT_REFUSAL_MESSAGES, type Grant, type GrantCallTarget, type GrantCaller, type GrantRefusal } from '../../../shared/agent-grants';
+import { evaluateGrant, GRANT_REFUSAL_MESSAGES, type Grant, type GrantAction, type GrantCallTarget, type GrantCaller, type GrantRefusal } from '../../../shared/agent-grants';
 import { defaultGrants } from '../../../shared/default-grants';
 import { isProjectAdmin } from '../../../shared/group-project-admin';
 import { agentRegistry } from '../agent-registry';
 import { isDispatcherAgent, isTrackedDispatcher } from './dispatcher-gate';
 import { mcpCallerParent } from './mcp-call-gate';
+import { getAgentGrantChanges } from '../agent-grants-store';
+import { applyGrantChanges } from '../../../shared/agent-grant-changes';
 import { isCrossProjectEnabled, isOrchestrationEnabled } from './orchestration-gate';
 import { toolGrantDeclarations, type ToolGrant, type ToolGrantTarget } from './tool-grants';
 import type { McpBinding } from './types';
@@ -124,15 +126,15 @@ function refusalMessage(reason: GrantRefusal, action: string, target: GrantCallT
   return `You don't have the Clubhouse permission ${action} on ${where}.${hint} Only the user can grant it; ask them if you need it.`;
 }
 
-/** A running agent's default grants, from what the gates know about it. */
+/** A running agent's grants: its defaults, from what the gates know about it, with a person's changes (#2971). */
 export function callerGrants(agentId: string): Grant[] {
   const tracked = isTrackedDispatcher(agentId);
-  return defaultGrants({
+  return applyGrantChanges(defaultGrants({
     dispatcher: isDispatcherAgent(agentId),
     helper: mcpCallerParent(agentId) !== undefined,
     orchestrates: !tracked && isOrchestrationEnabled(agentId),
     crossProject: !tracked && isCrossProjectEnabled(agentId),
-  });
+  }), getAgentGrantChanges(agentId));
 }
 
 /**
@@ -159,4 +161,15 @@ export function checkToolGrant(agentId: string, grant: ToolGrant | undefined, ar
     }
   }
   return OK;
+}
+
+/**
+ * Whether a running agent holds a grant for this action on this target, as a
+ * call would be checked. For work Clubhouse does on an agent's behalf outside
+ * a tool call: routing a helper's question to its orchestrator, or polling a
+ * group project's board.
+ */
+export function holdsGrant(agentId: string, action: GrantAction, target: GrantCallTarget): boolean {
+  const caller: GrantCaller = { kind: 'agent', agentId, projectPath: agentRegistry.get(agentId)?.projectPath };
+  return evaluateGrant({ caller, action, target }, callerGrants(agentId)).outcome === 'allow';
 }

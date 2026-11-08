@@ -10,6 +10,7 @@ import { listToolGrants, _resetForTesting, type RegisteredToolGrant } from './to
 import { mcpAdapter } from './mcp-adapter';
 import { registerClubhouseMcpTools } from './tools/register-all';
 import { checkToolGrant, registerActionOwnerLookup } from './grant-check';
+import { updateAgentGrantChanges } from '../agent-grants-store';
 import { setMcpCaller, _resetMcpCallGateForTesting } from './mcp-call-gate';
 import { setOrchestrationEnabled, isOrchestrationEnabled, isCrossProjectEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
 import { setDispatcherAgent, isDispatcherAgent, isTrackedDispatcher, _resetDispatcherGateForTesting } from './dispatcher-gate';
@@ -240,5 +241,39 @@ describe('a refused call says what is missing (#2968)', () => {
     const toDispatcher = checkToolGrant('plain', clear.grant, {}, { binding: { targetKind: 'agent', targetId: 'dispatcher' } });
     if (toDispatcher.ok === false) expect(toDispatcher.message).toContain('agent.reset on the Dispatcher');
     else throw new Error('expected a refusal');
+  });
+});
+
+describe('a person\'s changes reach the next call (#2971)', () => {
+  beforeEach(setupCallers);
+
+  it('Allow on app settings writes opens set_helper_presets; Off on reading connected agents closes get_status', async () => {
+    const tools = registerAll();
+    const presets = tools.find((t) => t.name === 'set_helper_presets')!;
+    const status = tools.find((t) => t.kind === 'agent' && t.name === 'get_status')!;
+    const wire = { binding: { targetKind: 'agent' as const, targetId: 'peer' } };
+    expect(checkToolGrant('plain', presets.grant, {}).ok).toBe(false);
+    expect(checkToolGrant('plain', status.grant, {}, wire).ok).toBe(true);
+    await updateAgentGrantChanges('plain', () => ({ changes: [
+      { action: 'settings.app.write', target: { kind: 'app' }, mode: 'allow' },
+      { action: 'agent.read', target: { kind: 'connected' }, mode: 'off' },
+    ] }));
+    expect(checkToolGrant('plain', presets.grant, {}).ok).toBe(true);
+    expect(checkToolGrant('plain', status.grant, {}, wire)).toMatchObject({ ok: false, reason: 'no_grant' });
+    await updateAgentGrantChanges('plain', () => undefined);
+    expect(checkToolGrant('plain', presets.grant, {}).ok).toBe(false);
+  });
+
+  it('an explicit grant on one person\'s Action opens just that one (#2918)', async () => {
+    registerActionOwnerLookup((args) => (typeof args.id === 'string' ? { actionId: args.id } : undefined));
+    try {
+      const run = { actions: ['action.run'] as const, target: 'action_arg' as const };
+      await updateAgentGrantChanges('plain', () => ({ changes: [{ action: 'action.run', target: { kind: 'action', id: 'persons' }, mode: 'allow' }] }));
+      expect(checkToolGrant('plain', run, { id: 'persons' }).ok).toBe(true);
+      expect(checkToolGrant('plain', run, { id: 'other' }).ok).toBe(false);
+    } finally {
+      registerActionOwnerLookup(null);
+      await updateAgentGrantChanges('plain', () => undefined);
+    }
   });
 });
