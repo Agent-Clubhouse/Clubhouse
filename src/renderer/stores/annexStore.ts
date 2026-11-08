@@ -42,6 +42,8 @@ interface AnnexStoreState {
   loadDevices: () => Promise<void>;
   /** Removes a device and ends its connections at once, whichever way it's paired. */
   removeDevice: (fingerprint: string) => Promise<void>;
+  /** Renames a network member everywhere (#3067). */
+  renameDevice: (fingerprint: string, name: string) => Promise<void>;
 }
 
 export const useAnnexStore = create<AnnexStoreState>((set) => ({
@@ -126,6 +128,16 @@ export const useAnnexStore = create<AnnexStoreState>((set) => ({
       await window.clubhouse.annex.removePeer(fingerprint);
       // The fresh list arrives via onPeersChanged; drop it here too so the row goes at once.
       set((state) => ({ peers: state.peers.filter((p) => p.fingerprint !== fingerprint) }));
+    } catch {
+      // Error handled in main
+    }
+  },
+
+  renameDevice: async (fingerprint: string, name: string) => {
+    try {
+      await window.clubhouse.annex.renameDevice(fingerprint, name);
+      // The fresh list arrives via onDevicesChanged; show the name at once.
+      set((state) => ({ devices: state.devices.map((d) => (d.fingerprint === fingerprint ? { ...d, alias: name } : d)) }));
     } catch {
       // Error handled in main
     }

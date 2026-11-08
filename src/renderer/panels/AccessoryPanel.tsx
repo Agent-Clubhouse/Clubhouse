@@ -64,9 +64,8 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
     { label: 'Keyboard shortcuts', page: 'keyboard-shortcuts' },
     { label: 'Notifications & alerts', page: 'notifications' },
     { label: 'Plugins', page: 'plugins' },
-    // Annex is stable (#1151), so its pages show with Preview off too (#2811).
-    { label: 'Annex', page: 'annex' },
-    { label: 'Annex control', page: 'annex-control' },
+    // Annex is stable (#1151), so its page shows with Preview off too (#2811). One page for the network (#3067).
+    { label: 'Annex Network', page: 'annex' },
     ...(showGoobers ? [{ label: 'Goobers', page: 'goobers' as SettingsSubPage }] : []),
     { label: 'Updates', page: 'updates' },
     { label: 'Logging', page: 'logging' },

@@ -47,6 +47,7 @@ vi.mock('../services/annex-network-channel', () => ({ listMembers: vi.fn(() => [
 const membershipInit = vi.hoisted(() => ({ hooks: null as null | { connect: (fp: string) => void; endDevice: (fp: string) => void } }));
 vi.mock('../services/annex-network-membership', () => ({
   initNetworkMembership: vi.fn((h: { connect: (fp: string) => void; endDevice: (fp: string) => void }) => { membershipInit.hooks = h; }),
+  renameMember: vi.fn(() => true),
 }));
 
 vi.mock('../services/annex-devices', () => ({
@@ -251,6 +252,12 @@ describe('annex-handlers', () => {
     // Revoked first, so a removed phone is told while it's still known.
     expect(vi.mocked(annexServer.revokePeer).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(annexClient.forgetSatellite).mock.invocationCallOrder[0]);
     expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX.PEERS_CHANGED, []);
+  });
+
+  it('RENAME_DEVICE renames a network member everywhere (#3067)', async () => {
+    const membershipMod = await import('../services/annex-network-membership');
+    expect(handlers.get(IPC.ANNEX.RENAME_DEVICE)!({}, 'fp:m', 'Studio')).toBe(true);
+    expect(membershipMod.renameMember).toHaveBeenCalledWith('fp:m', 'Studio');
   });
 
   it('LIST_NETWORK_MEMBERS answers with who this machine has heard from', () => {
