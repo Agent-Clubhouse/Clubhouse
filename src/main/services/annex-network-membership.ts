@@ -18,6 +18,7 @@
  *   certificate fingerprint. Direct only: members connect to each other, never
  *   through another.
  */
+import { randomUUID } from 'crypto';
 import { createSettingsStore } from './settings-store';
 import type { AnnexPeer } from '../../shared/types';
 import {
@@ -51,6 +52,8 @@ interface MembershipState {
   removedKinds?: Record<string, 'desktop' | 'phone'>;
   /** When this machine last joined a network by pairing (ISO): an older removal of it is stale. */
   selfJoinedAt?: string;
+  /** The pairing that put this machine in its network (#3107), as members know it. */
+  selfPairing?: { id: string; joinedAt: string };
 }
 
 const EMPTY: MembershipState = { removals: [], confirmations: {}, renamedAt: {}, removedNames: {} };
@@ -58,7 +61,11 @@ const store = createSettingsStore<MembershipState>('annex-network.json', EMPTY, 
 
 function state(): MembershipState {
   const s = store.get();
-  return { removals: s.removals ?? [], confirmations: s.confirmations ?? {}, renamedAt: s.renamedAt ?? {}, removedNames: s.removedNames ?? {}, removedKinds: s.removedKinds ?? {}, ...(s.selfJoinedAt && { selfJoinedAt: s.selfJoinedAt }) };
+  return {
+    removals: s.removals ?? [], confirmations: s.confirmations ?? {}, renamedAt: s.renamedAt ?? {}, removedNames: s.removedNames ?? {}, removedKinds: s.removedKinds ?? {},
+    ...(s.selfJoinedAt && { selfJoinedAt: s.selfJoinedAt }),
+    ...(s.selfPairing && { selfPairing: s.selfPairing }),
+  };
 }
 
 /** Removals kept. A view must stay well under the protocol's limit (NETWORK_MEMBERS_MAX * 4). */
@@ -105,6 +112,7 @@ let unsubscribe: (() => void) | null = null;
 export function initNetworkMembership(h: Hooks): void {
   hooks = h;
   networkChannel.setMembersProvider(currentView);
+  networkChannel.setSelfPairingProvider(() => state().selfPairing);
   unsubscribe?.();
   unsubscribe = networkChannel.onNetworkMessage(onMessage);
 }
@@ -128,6 +136,7 @@ function toMember(peer: AnnexPeer): NetworkMember | null {
     hosts: (peer.knownHosts ?? []).slice(0, 8),
     ...(peer.mainPort && peer.mainPort > 0 && { port: peer.mainPort }),
     joinedAt: peer.pairedAt || new Date(0).toISOString(),
+    ...(peer.pairingId && { pairingId: peer.pairingId }),
   };
 }
 
@@ -186,10 +195,104 @@ function removalOf(fingerprint: string, s: MembershipState = state()): NetworkRe
   return s.removals.find((r) => lower(r.fingerprint) === lower(fingerprint));
 }
 
-/** Removed after it joined: a removal wins over the join it followed, and loses to a later join. */
-function removedSince(member: { fingerprint: string; joinedAt: string }, s: MembershipState): boolean {
+/** A pairing into the network: its id (when known) and its join time, set together and never moved apart (#3107). */
+interface Pairing { pairingId?: string; joinedAt: string }
+
+const pairingOf = (peer: AnnexPeer): Pairing => ({ pairingId: peer.pairingId, joinedAt: peer.pairedAt || new Date(0).toISOString() });
+
+/** Whether `a` is a later pairing than `b`: another id, joined later. The same id is the same pairing. */
+function laterPairing(a: Pairing, b: Pairing): boolean {
+  if (a.pairingId && a.pairingId === b.pairingId) return false;
+  return Date.parse(a.joinedAt) > Date.parse(b.joinedAt);
+}
+
+/**
+ * Whether a removal ends a pairing: the one it names, or an older one; never a
+ * later one (#3107). A record whose pairing isn't known yet (a desktop this
+ * machine just paired with) counts as the one named. A removal from before
+ * removals named their pairing is compared by its time.
+ */
+function endsPairing(removal: NetworkRemoval, pairing: Pairing): boolean {
+  if (removal.pairingId) {
+    if (!pairing.pairingId || pairing.pairingId === removal.pairingId) return true;
+    return !!removal.joinedAt && Date.parse(pairing.joinedAt) <= Date.parse(removal.joinedAt);
+  }
+  return Date.parse(removal.removedAt) >= Date.parse(pairing.joinedAt);
+}
+
+/** Whether a kept removal covers one that arrives: it ends a later pairing, or the same one no earlier. */
+function covers(known: NetworkRemoval, incoming: NetworkRemoval): boolean {
+  if (known.pairingId && incoming.pairingId && known.pairingId !== incoming.pairingId && known.joinedAt && incoming.joinedAt) {
+    return Date.parse(known.joinedAt) > Date.parse(incoming.joinedAt);
+  }
+  return Date.parse(known.removedAt) >= Date.parse(incoming.removedAt);
+}
+
+/** Removed since it joined: a removal ends the pairing it names and older ones, never a later one. */
+function removedSince(member: Pairing & { fingerprint: string }, s: MembershipState): boolean {
   const removal = removalOf(member.fingerprint, s);
-  return !!removal && Date.parse(removal.removedAt) >= Date.parse(member.joinedAt);
+  return !!removal && endsPairing(removal, member);
+}
+
+/** Learns which pairing put this machine in its network, from a member's record of it. */
+function learnSelfPairing(member: NetworkMember, s: MembershipState): boolean {
+  // When it isn't known, or the network has a later pairing of this machine (a phone joined it again on a
+  // desktop that had removed it). Nobody mints for a member that offers its own pairing, so a later one is real.
+  if (!member.pairingId) return false;
+  const known = s.selfPairing;
+  if (known && !laterPairing(member, { pairingId: known.id, joinedAt: known.joinedAt })) return false;
+  s.selfPairing = { id: member.pairingId, joinedAt: member.joinedAt };
+  return true;
+}
+
+/** A pairing as the pairing exchange carries it: an id and its join time. */
+export interface PairingRecord { id: string; joinedAt: string }
+
+const PAIRING_ID = /^[A-Za-z0-9-]{8,64}$/;
+
+/** A pairing record that holds together, from a pairing request or answer. */
+export function readPairing(value: unknown): PairingRecord | undefined {
+  const v = value as { id?: unknown; joinedAt?: unknown } | null;
+  if (!v || typeof v.id !== 'string' || !PAIRING_ID.test(v.id) || typeof v.joinedAt !== 'string' || Number.isNaN(Date.parse(v.joinedAt))) return undefined;
+  return { id: v.id, joinedAt: v.joinedAt };
+}
+
+/** This machine's own pairing into its network, if it has one. */
+export function ownPairing(): PairingRecord | undefined {
+  return state().selfPairing;
+}
+
+/** This machine's own pairing, made now when it has none: the first machine of a network starts it (#3107). */
+export function ensureOwnPairing(): PairingRecord {
+  const s = state();
+  if (s.selfPairing) return s.selfPairing;
+  s.selfPairing = { id: randomUUID(), joinedAt: new Date().toISOString() };
+  save(s);
+  return s.selfPairing;
+}
+
+/**
+ * The pairing a device joining here gets (#3107): the one it already has in the
+ * network, if it says so and no removal here ends it, so a member pairing with
+ * another desktop keeps its pairing; otherwise a new one, made here, once.
+ */
+export function pairingForJoiner(fingerprint: string, offered: PairingRecord | undefined): PairingRecord {
+  const removal = removalOf(fingerprint);
+  const held = annexPeers.getPeer(fingerprint);
+  // A later pairing of it already known here stands over an older one it offers.
+  if (held?.role === 'member' && held.pairingId && offered && laterPairing(pairingOf(held), { pairingId: offered.id, joinedAt: offered.joinedAt })) {
+    return { id: held.pairingId, joinedAt: held.pairedAt };
+  }
+  if (offered && !(removal && endsPairing(removal, { pairingId: offered.id, joinedAt: offered.joinedAt }))) return offered;
+  return { id: randomUUID(), joinedAt: new Date().toISOString() };
+}
+
+/** Takes this machine's own pairing from a pairing answer (#3107): what the member it paired with says it is. */
+export function adoptOwnPairing(pairing: PairingRecord): void {
+  const s = state();
+  if (s.selfPairing?.id === pairing.id) return;
+  s.selfPairing = pairing;
+  save(s);
 }
 
 function isSelf(fingerprint: string): boolean {
@@ -219,10 +322,11 @@ function confirm(s: MembershipState, key: string, by: string): boolean {
 function addMember(input: NetworkMember, from: string, s: MembershipState): boolean {
   // One spelling of a fingerprint everywhere: the protocol takes either case.
   const member: NetworkMember = { ...input, fingerprint: lower(input.fingerprint) };
-  if (isSelf(member.fingerprint) || removedSince(member, s)) return false;
-  // A join newer than a removal we keep makes that removal stale: stop passing it on.
+  if (isSelf(member.fingerprint)) return learnSelfPairing(member, s);
+  if (removedSince(member, s)) return false;
+  // A pairing later than the one a kept removal ended makes that removal stale: stop passing it on.
   const stale = removalOf(member.fingerprint, s);
-  if (stale && Date.parse(stale.removedAt) < Date.parse(member.joinedAt)) {
+  if (stale && !endsPairing(stale, member)) {
     s.removals = s.removals.filter((r) => r !== stale);
   }
   const existing = annexPeers.getPeer(member.fingerprint);
@@ -235,17 +339,20 @@ function addMember(input: NetworkMember, from: string, s: MembershipState): bool
       ? [...new Set([...member.hosts, ...(existing.knownHosts ?? [])])].slice(0, 6)
       : [...new Set([...(existing.knownHosts ?? []), ...member.hosts])].slice(0, 6);
     const port = own ? member.port || existing.mainPort : existing.mainPort || member.port;
-    // A newer join comes from a member that paired it again; a device's own word about its join doesn't move it,
-    // so its own clock can't outlast a removal.
-    const joinedAt = !own && Date.parse(member.joinedAt) > Date.parse(existing.pairedAt) ? member.joinedAt : existing.pairedAt;
+    // Its pairing moves only with a pairing id (#3107): the one it hadn't learned yet, or a later pairing (paired
+    // again). A record without one (a member's own clock, or a desktop's stamp from pairing with it) never moves it.
+    const adopt = !!member.pairingId && (!existing.pairingId || laterPairing(member, pairingOf(existing)));
+    const joinedAt = adopt ? member.joinedAt : existing.pairedAt;
+    const pairingId = adopt ? member.pairingId : existing.pairingId;
     const name = own && member.name !== existing.alias ? member.name : existing.alias;
     const moved = hosts.join() !== (existing.knownHosts ?? []).join() || port !== existing.mainPort;
     // Paired again since with a new certificate (the pairing member checked its binding): pin the new one.
-    const repinned = !own && Date.parse(member.joinedAt) > Date.parse(existing.pairedAt)
+    const repinned = adopt && !!existing.pairingId && pairingId !== existing.pairingId
       && !annexTls.sameCertificateFingerprint(member.certFingerprint, existing.tlsCertificateFingerprint) && proves(member);
-    if (moved || repinned || joinedAt !== existing.pairedAt || name !== existing.alias) {
+    if (moved || repinned || joinedAt !== existing.pairedAt || pairingId !== existing.pairingId || name !== existing.alias) {
       annexPeers.addPeer({
         ...existing, knownHosts: hosts, pairedAt: joinedAt, alias: name, ...(port && { mainPort: port }),
+        ...(pairingId && { pairingId }),
         ...(repinned && { tlsCertificateFingerprint: member.certFingerprint, tlsCertificatePem: member.certPem }),
       });
       // Now there's somewhere to reach it (connecting to one already connected does nothing).
@@ -265,6 +372,7 @@ function addMember(input: NetworkMember, from: string, s: MembershipState): bool
     icon: member.icon,
     color: member.color,
     pairedAt: member.joinedAt,
+    ...(member.pairingId && { pairingId: member.pairingId }),
     lastSeen: '',
     role: 'member',
     kind: member.kind,
@@ -282,16 +390,23 @@ function addMember(input: NetworkMember, from: string, s: MembershipState): bool
 /** Applies a removal. Returns whether anything changed. */
 function applyRemoval(removal: NetworkRemoval, from: string, s: MembershipState): boolean {
   const known = removalOf(removal.fingerprint, s);
-  if (known && Date.parse(known.removedAt) >= Date.parse(removal.removedAt)) return false;
+  if (known && covers(known, removal)) return false;
   const peer = annexPeers.getPeer(removal.fingerprint);
-  // A later join beats an earlier removal.
-  if (peer && peer.role === 'member' && Date.parse(peer.pairedAt) > Date.parse(removal.removedAt)) return false;
-  // A removal of this machine from before it last joined is stale.
-  if (isSelf(removal.fingerprint) && s.selfJoinedAt && Date.parse(removal.removedAt) <= Date.parse(s.selfJoinedAt)) return false;
+  // A pairing later than the one it ended stays (#3107): the device was paired again since.
+  if (peer && peer.role === 'member' && !endsPairing(removal, pairingOf(peer))) return false;
+  // A removal of this machine from before it last joined is stale: by its pairing when both name one, else by time.
+  if (isSelf(removal.fingerprint)) {
+    const self = s.selfPairing;
+    if (removal.pairingId && self) {
+      if (!endsPairing(removal, { pairingId: self.id, joinedAt: self.joinedAt })) return false;
+    } else if (s.selfJoinedAt && Date.parse(removal.removedAt) <= Date.parse(s.selfJoinedAt)) {
+      return false;
+    }
+  }
   s.removals = [...s.removals.filter((r) => lower(r.fingerprint) !== lower(removal.fingerprint)), removal];
   if (lower(removal.fingerprint) in removalKeys(s)) confirm(s, `remove:${lower(removal.fingerprint)}`, from);
   if (isSelf(removal.fingerprint)) {
-    leaveNetwork(from);
+    leaveNetwork(from, s);
     return true;
   }
   // Only a member is removed by another member's word; a one-to-one pairing stays.
@@ -307,7 +422,7 @@ function applyRemoval(removal: NetworkRemoval, from: string, s: MembershipState)
 }
 
 /** This machine was removed: it stops being a member of every member it knew. */
-function leaveNetwork(from: string): void {
+function leaveNetwork(from: string, s: MembershipState): void {
   appLog('core:annex', 'warn', 'This computer was removed from its Annex Network', { meta: { from } });
   // Ending its pairings here is leaving, not removing anyone: nothing is recorded or told to the others.
   // Otherwise a member that hadn't heard of this machine's removal yet would be told to remove itself.
@@ -317,13 +432,19 @@ function leaveNetwork(from: string): void {
   } finally {
     leaving = false;
   }
+  // Its pairing ended with it: pairing again makes a new one (#3107). Cleared on the state the caller saves.
+  delete s.selfPairing;
+  left = true;
 }
 
 /** While this machine leaves the network: the pairings it ends are its own, not removals to announce. */
 let leaving = false;
+/** This machine left the network while handling the current message. */
+let left = false;
 
 function onMessage(from: string, message: NetworkMessage): void {
   if (!annexSettings.networkEnabled()) return;
+  left = false;
   // Only members speak for the network. One-to-one pairings are heard, not followed.
   const sender = annexPeers.getPeer(from);
   if (sender?.role !== 'member') return;
@@ -343,6 +464,11 @@ function onMessage(from: string, message: NetworkMessage): void {
       break;
     case 'members': {
       for (const removal of message.removals) changed = applyRemoval(removal, from, s) || changed;
+      // Removed: this machine has left, so the rest of the view (its members, the sender) isn't taken back in.
+      if (left) {
+        save(s);
+        return;
+      }
       for (const member of message.members) changed = addMember(member, from, s) || changed;
       // What this sender's view shows is confirmed by it.
       const theirs = new Set(message.members.map((m) => lower(m.fingerprint)));
@@ -353,7 +479,8 @@ function onMessage(from: string, message: NetworkMessage): void {
       }
       for (const removal of message.removals) {
         const ours = removalOf(removal.fingerprint, s);
-        if (ours && `remove:${lower(removal.fingerprint)}` in s.confirmations && Date.parse(removal.removedAt) >= Date.parse(ours.removedAt)) {
+        // Theirs confirms ours when it ends the same pairing or a later one (#3107).
+        if (ours && `remove:${lower(removal.fingerprint)}` in s.confirmations && covers(removal, ours)) {
           confirmed = confirm(s, `remove:${lower(removal.fingerprint)}`, from) || confirmed;
         }
       }
@@ -402,8 +529,11 @@ export function vouchFromPhone(phone: string, members: NetworkMember[]): VouchRe
     if (existing && existing.role !== 'member') { result.skipped.push({ fingerprint: fp, reason: 'one-to-one' }); continue; }
     if (existing) { result.skipped.push({ fingerprint: fp, reason: 'member' }); continue; }
     if (!proves(input)) { result.skipped.push({ fingerprint: fp, reason: 'invalid' }); continue; }
+    // It keeps the pairing it has in the network; one a removal here ended (or none) is a new pairing, made here (#3107).
+    const removal = removalOf(fp, s);
+    const keeps = input.pairingId && !(removal && endsPairing(removal, input));
     s.removals = s.removals.filter((r) => lower(r.fingerprint) !== fp);
-    if (addMember({ ...input, joinedAt: now }, phone, s)) {
+    if (addMember(keeps ? input : { ...input, joinedAt: now, pairingId: randomUUID() }, phone, s)) {
       result.added.push(fp);
       s.confirmations[`join:${fp}`] = [];
     }
@@ -447,8 +577,13 @@ export function noteLocalRemoval(fingerprint: string): void {
   const s = state();
   // Already removed since it joined (by this path a moment ago, or by another member): once is enough.
   const known = removalOf(fingerprint, s);
-  if (known && Date.parse(known.removedAt) >= Date.parse(peer.pairedAt)) return;
-  const removal: NetworkRemoval = { fingerprint: lower(fingerprint), removedAt: new Date().toISOString() };
+  if (known && endsPairing(known, pairingOf(peer))) return;
+  // Named by the pairing it ends, so a later pairing anywhere is never undone by it (#3107).
+  const pairing = pairingOf(peer);
+  const removal: NetworkRemoval = {
+    fingerprint: lower(fingerprint), removedAt: new Date().toISOString(),
+    ...(pairing.pairingId && { pairingId: pairing.pairingId }), joinedAt: pairing.joinedAt,
+  };
   s.removals = [...s.removals.filter((r) => lower(r.fingerprint) !== lower(fingerprint)), removal];
   s.confirmations[`remove:${lower(fingerprint)}`] = [];
   s.removedNames[lower(fingerprint)] = peer.alias;

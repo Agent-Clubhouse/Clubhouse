@@ -2529,18 +2529,23 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
   const joins = body.network === 1 && annexSettings.networkEnabled(settings) && !sessionOnly;
   // Phones send pairingMode (the contract asks them to when joining); Clubhouse desktops never do.
   const joinsAs: 'desktop' | 'phone' = body.pairingMode !== undefined || sentByPhone(body) ? 'phone' : 'desktop';
+  // Its pairing into the network (#3107): the one it already has, if it says so and no removal here ends it, else
+  // a new one made here; and this machine's own, which the first machine of a network starts now.
+  const joinerPairing = joins ? membership.pairingForJoiner(fingerprint, membership.readPairing(body.selfPairing)) : undefined;
+  const ownPairing = joins ? membership.ensureOwnPairing() : undefined;
   const pairedPeer: AnnexPeer = {
     fingerprint,
     publicKey: clientPublicKey,
     alias: pairedDeviceAlias(body.alias, settings, sentByPhone(body), fingerprint),
     icon: typeof body.icon === 'string' && body.icon ? body.icon : 'computer',
     color: typeof body.color === 'string' && body.color ? body.color : 'indigo',
-    pairedAt: now,
+    pairedAt: joinerPairing?.joinedAt ?? now,
     lastSeen: now,
     tlsCertificateFingerprint: certFingerprint,
     // It paired with us, so it controls us; as a network member each controls the other.
     role: joins ? 'member' : 'controller',
-    ...(joins && { kind: joinsAs, addedBy: identity.fingerprint, tlsCertificatePem: annexTls.certificatePemFromDer(certDer) }),
+    // A member's pairing gets its id here, once: every member carries it with this join time (#3107).
+    ...(joins && { kind: joinsAs, addedBy: identity.fingerprint, tlsCertificatePem: annexTls.certificatePemFromDer(certDer), pairingId: joinerPairing!.id }),
   };
   // The old certificate's sockets stop counting now (the pin no longer matches), and are cut.
   if (replacesPin) {
@@ -2566,6 +2571,8 @@ async function handleTlsPair(req: http.IncomingMessage, res: http.ServerResponse
     fingerprint: identity.fingerprint,
     // Only for a device that asked: answers to everyone else are unchanged.
     ...(joins && { network: 1 }),
+    // Its pairing, to keep as its own, and this machine's, to record it by (#3107).
+    ...(joinerPairing && ownPairing && { pairing: joinerPairing, serverPairing: ownPairing }),
   };
   if (!pinReusable) {
     const pinDeadline = currentPinIssuedAt + PIN_TTL_MS;
@@ -3388,6 +3395,8 @@ interface PhoneNetworkMember {
   certPem?: string;
   /** Connected to this desktop now (this desktop itself is always online). */
   online: boolean;
+  /** The pairing that put it in the network (#3107); a removal names the pairing it ends. */
+  pairingId?: string;
   /** This is the desktop answering. */
   self?: true;
   joinedAt: string;
@@ -3402,7 +3411,7 @@ function isPhoneMember(fingerprint: string | undefined): boolean {
  * The network as `principal` may see it. A phone that isn't a member (paired
  * one-to-one, or Annex Network off) sees only this desktop, with `joined: false`.
  */
-function networkForPhone(principal: string | undefined): { version: 1; joined: boolean; members: PhoneNetworkMember[]; removals: Array<{ fingerprint: string; removedAt: string }> } {
+function networkForPhone(principal: string | undefined): { version: 1; joined: boolean; members: PhoneNetworkMember[]; removals: Array<{ fingerprint: string; removedAt: string; pairingId?: string; joinedAt?: string }> } {
   const joined = annexSettings.networkEnabled() && isPhoneMember(principal);
   // Given who it's for, the view of a device that isn't a member is just this machine.
   const view = membership.currentView(joined ? undefined : principal ?? '');
@@ -3418,6 +3427,7 @@ function networkForPhone(principal: string | undefined): { version: 1; joined: b
       online: self || connected.has(m.fingerprint.toLowerCase()),
       ...(self && { self: true as const }),
       joinedAt: m.joinedAt,
+      ...(m.pairingId && { pairingId: m.pairingId }),
     };
   });
   return { version: 1, joined, members, removals: joined ? view.removals : [] };
