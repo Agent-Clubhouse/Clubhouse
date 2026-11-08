@@ -9,6 +9,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { resetChatFlagCache } from '../agents/chat/AgentRuntimePane';
 import { RICH_CHAT_CONTENT_FLAG, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
+import { ManagedGitExcludesSection } from '../managed/ManagedGitExcludesSection';
 import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsHelp, settingsError, SETTING_NOT_SAVED_TEXT } from './SettingsLayout';
 import type { FreeAgentPermissionMode, SourceControlProvider } from '../../../shared/types';
 import { type AgentRuntimeMode, type ChatRuntimeSettings } from '../../../shared/chat';
@@ -576,6 +577,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
       </SettingsSection>
 
       <ProjectAgentDefaultsSection projectPath={project.path} />
+      <ManagedGitExcludesSection projectPath={project.path} />
     </>
   );
 }
