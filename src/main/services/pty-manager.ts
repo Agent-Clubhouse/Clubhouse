@@ -348,8 +348,10 @@ export function getBufferSnapshot(agentId: string): PtyBufferSnapshot {
   const startSeq = session.outputSeq - raw.length;
   const truncated = session.evictedChars > 0;
   const skip = truncated ? replayStart(session.headInputModes, raw) : 0;
+  // The skipped fragment may complete an alt-screen switch begun in evicted output.
+  const altScreen = truncated && altScreenAfter(session.evictedTail + raw.slice(0, skip), session.headAltScreen);
   const prefix = truncated
-    ? (session.headAltScreen ? '\x1b[?1049h' : '') + session.headInputModes.replayPrefix(raw.slice(0, skip))
+    ? (altScreen ? '\x1b[?1049h' : '') + session.headInputModes.replayPrefix(raw.slice(0, skip))
     : '';
   const sizes: PtySnapshotSize[] = [];
   for (const entry of session.sizeLog) {

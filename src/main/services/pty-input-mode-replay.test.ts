@@ -12,7 +12,7 @@ function fresh() { const terminal = new Terminal({ cols: 40, rows: 5, scrollback
 function state(terminal: Terminal) {
   const buffer = terminal.buffer.active;
   return { screen: Array.from({ length: terminal.rows }, (_, i) => buffer.getLine(buffer.baseY + i)?.translateToString(true)),
-    x: buffer.cursorX, y: buffer.cursorY, cursor: terminal.modes.applicationCursorKeysMode, paste: terminal.modes.bracketedPasteMode };
+    x: buffer.cursorX, y: buffer.cursorY, cursor: terminal.modes.applicationCursorKeysMode, paste: terminal.modes.bracketedPasteMode, type: buffer.type };
 }
 afterEach(() => { for (const terminal of terminals) terminal.dispose(); terminals.length = 0; headless.disposeAll(); });
 
@@ -76,6 +76,7 @@ describe('a sequence or control string cut by eviction (#2743)', () => {
     ['cut after ESC alone', '\x1b', '[?2004htext'],
     ['cut OSC never ended', '\x1b]0;ti', 'tle text'],
     ['cut between sequences', on, 'text'],
+    ['astral character ends a cut CSI', '\x1b[', '\u{1F600}text'],
   ] as const)('replays like the full stream: %s', async (_name, evicted, retained) => {
     const head = new PtyInputModeTracker(); head.feed(evicted);
     const start = replayStart(head, retained);

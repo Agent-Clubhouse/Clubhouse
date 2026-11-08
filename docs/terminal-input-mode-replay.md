@@ -37,13 +37,18 @@ string. `replayStart` (`src/shared/pty-snapshot.ts`) uses it:
   replay starts at it.
 - An OSC, DCS or other string that runs past the end of the kept output
   replays nothing, since the terminal would print none of it.
+- An alt-screen switch completed by the skipped fragment is carried in the
+  prefix too.
 
 The in-memory xterm oracle cases in `pty-input-mode-replay.test.ts` compare
 each of these with the full stream.
 
 ## Remaining limits
 
-C0 controls executed in the middle of a cut sequence (a line feed inside a
-CSI, say) are skipped with it. This makes no claim for other terminal modes,
+C0 and C1 controls executed in the middle of a cut sequence (a line feed
+inside a CSI, or NEL) are skipped with it. When a string runs past the kept
+output, the replay terminal starts in ground state, so the rest of that string
+arriving live afterwards prints as text where the original terminal swallows
+it. That needs all of the kept output to sit inside one unterminated string. This makes no claim for other terminal modes,
 historical resize reconstruction in an activation mirror, OS PTYs or Go's
 paste/key encoding. There is no live-terminal or phone acceptance here.

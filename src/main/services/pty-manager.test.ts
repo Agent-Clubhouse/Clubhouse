@@ -229,6 +229,12 @@ describe('pty-manager', () => {
       expect(getBuffer(id)).toBe('04htext');
     });
 
+    it('carries an alt-screen switch completed by the cut fragment (#2743)', async () => {
+      const id = 'mode_cut_alt'; await spawnShell(id, '/project'); const data = latestData();
+      data('x'.repeat(cap - 7) + '\x1b[?104'); data('9htext');
+      expect(getBufferSnapshot(id).data).toBe('\x1b[?1049htext');
+    });
+
     it('replays nothing of an OSC that runs past the kept output (#2743)', async () => {
       const id = 'mode_cut_osc'; await spawnShell(id, '/project'); const data = latestData();
       data('x'.repeat(cap - 4) + '\x1b]0;'); data('long title\nmore title');

@@ -42,7 +42,11 @@ export class PtyInputModeTracker {
       const code = data.charCodeAt(i);
       if (code === 0x1b || code === 0x9b || code === 0x90 || code === 0x9d || code === 0x98 || code === 0x9e || code === 0x9f) return i;
       probe.feed(data[i]!);
-      if (probe.state === 'ground') return i + 1;
+      if (probe.state === 'ground') {
+        // xterm swallows a whole character; never start between a surrogate pair's halves.
+        const low = data.charCodeAt(i + 1);
+        return code >= 0xd800 && code <= 0xdbff && low >= 0xdc00 && low <= 0xdfff ? i + 2 : i + 1;
+      }
     }
     return undefined;
   }
