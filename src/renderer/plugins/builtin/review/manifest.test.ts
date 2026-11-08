@@ -18,7 +18,7 @@ describe('review manifest', () => {
   });
 
   it('targets engine.api 0.8', () => {
-    expect(manifest.engine.api).toBe(0.8);
+    expect(manifest.engine.api).toBe(0.9);
   });
 
   it('contributes tab with full layout', () => {

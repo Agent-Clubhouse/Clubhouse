@@ -17,8 +17,8 @@ describe('terminal plugin manifest', () => {
     expect(manifest.scope).toBe('project');
   });
 
-  it('targets API v0.8', () => {
-    expect(manifest.engine.api).toBe(0.8);
+  it('targets API v0.9', () => {
+    expect(manifest.engine.api).toBe(0.9);
   });
 
   it('declares required permissions including canvas', () => {

@@ -8,7 +8,7 @@ export const manifest: PluginManifest = {
   version: '1.0.0',
   description: 'Interactive shell terminal scoped to each project.',
   author: 'Clubhouse',
-  engine: { api: 0.8 },
+  engine: { api: 0.9 },
   scope: 'project',
   permissions: ['terminal', 'commands', 'agents', 'canvas', 'annex', 'projects'],
   contributes: {

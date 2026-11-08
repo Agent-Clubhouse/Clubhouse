@@ -88,7 +88,7 @@ export const LOCAL_DIAG_PRIORITY_EVENTS: Readonly<Record<string, readonly string
   'core:annex': [
     'WebSocket upgrade accepted',
     'WebSocket upgrade rejected — invalid origin',
-    'WebSocket upgrade rejected — unauthorized',
+    'Refused a connection that is not a paired controller',
     'WebSocket client disconnected',
     'Heartbeat: terminating unresponsive WebSocket client',
     'Failed to send snapshot on connect',

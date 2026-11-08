@@ -105,7 +105,7 @@ function makeManifest(overrides?: Partial<PluginManifest>): PluginManifest {
     id: 'test-plugin',
     name: 'Test Plugin',
     version: '1.0.0',
-    engine: { api: 0.5 },
+    engine: { api: 0.9 },
     scope: 'project',
     permissions: [],
     contributes: {
@@ -196,10 +196,31 @@ describe('plugin-loader', () => {
       expect(store.plugins['bad-plugin'].status).toBe('incompatible');
     });
 
+    it('refuses a community plugin on a removed API, naming the version, and keeps the version on its entry (#2757)', async () => {
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        {
+          manifest: { id: 'old-tool', name: 'Old Tool', version: '1.2.0', engine: { api: 0.6 }, scope: 'project', permissions: [], contributes: { help: {} } },
+          pluginPath: '/plugins/old-tool',
+          fromMarketplace: true,
+        },
+      ]);
+      mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
+        if (req.key === 'external-plugins-enabled') return true;
+        return undefined;
+      });
+
+      await initializePluginSystem();
+
+      const entry = usePluginStore.getState().plugins['old-tool'];
+      expect(entry.status).toBe('incompatible');
+      expect(entry.manifest.engine.api).toBe(0.6);
+      expect(entry.error).toBe("This plugin uses plugin API 0.6, which was removed in Clubhouse 1.0. Clubhouse loads plugins built for API 0.7, 0.8 or 0.9. Install an update built for one of those, or ask the plugin's author for one.");
+    });
+
     it('registers an installed retired Workshop plugin as incompatible, saying why, and never activates it (#2756)', async () => {
       mockPlugin.discoverCommunity.mockResolvedValue([
         {
-          manifest: { id: 'lounge', name: 'Lounge', version: '2.1.0', engine: { api: 0.8 }, scope: 'app', permissions: [], contributes: { help: {} } },
+          manifest: { id: 'lounge', name: 'Lounge', version: '2.1.0', engine: { api: 0.6 }, scope: 'app', permissions: [], contributes: { help: {} } },
           pluginPath: '/plugins/lounge',
           fromMarketplace: true,
         },
@@ -212,10 +233,12 @@ describe('plugin-loader', () => {
 
       await initializePluginSystem();
 
+      // Retirement wins over the API version: one message, about the retirement.
       const entry = usePluginStore.getState().plugins['lounge'];
       expect(entry.status).toBe('incompatible');
       expect(entry.manifest.name).toBe('Lounge');
       expect(entry.error).toContain('Lounge was retired');
+      expect(entry.error).not.toContain('plugin API 0.6');
       expect(usePluginStore.getState().modules['lounge']).toBeUndefined();
     });
 
@@ -453,21 +476,21 @@ describe('plugin-loader', () => {
         id: 'hub',
         name: 'Hub',
         scope: 'dual',
-        engine: { api: 0.6 },
+        engine: { api: 0.9 },
         permissions: ['commands', 'storage', 'agents', 'projects', 'widgets', 'navigation', 'notifications'],
       });
       const terminalManifest = makeManifest({
         id: 'terminal',
         name: 'Terminal',
         scope: 'project',
-        engine: { api: 0.6 },
+        engine: { api: 0.9 },
         permissions: ['terminal', 'commands', 'agents'],
       });
       const filesManifest = makeManifest({
         id: 'files',
         name: 'Files',
         scope: 'project',
-        engine: { api: 0.6 },
+        engine: { api: 0.9 },
         permissions: ['files', 'files.watch', 'git', 'commands', 'notifications', 'storage'],
       });
 
@@ -1662,6 +1685,25 @@ describe('plugin-loader', () => {
 
       expect(usePluginStore.getState().plugins['vanished'].status).toBe('errored');
       expect(usePluginStore.getState().plugins['vanished'].error).toContain('not found');
+    });
+
+    it('an update on a removed API is refused, and the entry names the refused version (#2757)', async () => {
+      const manifest = makeManifest({ id: 'downgraded', scope: 'app', engine: { api: 0.8 } });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/downgraded', 'registered');
+      await activatePlugin('downgraded');
+
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'downgraded', scope: 'app', version: '2.0.0', engine: { api: 0.6 } }), pluginPath: '/plugins/downgraded', fromMarketplace: false },
+      ]);
+
+      await hotReloadPlugin('downgraded');
+
+      const entry = usePluginStore.getState().plugins['downgraded'];
+      expect(entry.status).toBe('incompatible');
+      expect(entry.manifest.engine.api).toBe(0.6);
+      expect(entry.source).toBe('community');
+      expect(entry.pluginPath).toBe('/plugins/downgraded');
+      expect(entry.error).toContain('plugin API 0.6, which was removed in Clubhouse 1.0');
     });
 
     it('re-activates app-level plugin when no contexts were active', async () => {

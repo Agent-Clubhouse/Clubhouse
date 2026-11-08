@@ -11,7 +11,8 @@
  * Certificate and key are stored alongside the identity in annex-identity.json.
  */
 import * as tls from 'tls';
-import { X509Certificate } from 'crypto';
+import { isIP } from 'net';
+import { X509Certificate, createHash, createPrivateKey, createPublicKey, sign, verify } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import forge from 'node-forge';
@@ -159,18 +160,104 @@ export function createTlsServerOptions(identity: AnnexIdentity): tls.TlsOptions 
   };
 }
 
+/** A peer's TLS certificate as stored at pairing: the PEM and its SHA-256. */
+export interface PinnedCertificate {
+  certPem: string;
+  fingerprint: string;
+}
+
+/** Error code a pinned connection fails with when the server shows another certificate. */
+export const PIN_MISMATCH_CODE = 'ERR_ANNEX_PIN_MISMATCH';
+
+/** Same SHA-256, whatever the colons or case. */
+export function sameCertificateFingerprint(a: string | undefined, b: string | undefined): boolean {
+  const norm = (value: string | undefined) => value?.replace(/[:\s]/g, '').toLowerCase() ?? '';
+  const x = norm(a);
+  return /^[0-9a-f]{64}$/.test(x) && x === norm(b);
+}
+
+/** SHA-256 of a certificate's DER bytes, in the same form as `getCertificateFingerprint`. */
+export function certificateFingerprint(cert: string | Buffer): string {
+  return new X509Certificate(cert).fingerprint256;
+}
+
+/** PEM for certificate DER bytes, as read off a socket. */
+export function certificatePemFromDer(der: Buffer): string {
+  return new X509Certificate(der).toString();
+}
+
 /**
- * Create TLS client options for connecting to a peer's TLS server.
- * We present our certificate and verify the peer cert fingerprint after the
- * socket opens, before treating the connection as authenticated.
+ * TLS options for every outbound connection to a paired peer. The server must
+ * show exactly the pinned certificate, checked by Node during the handshake,
+ * before anything is written. Validity dates are enforced too.
  */
-export function createTlsClientOptions(identity: AnnexIdentity): tls.ConnectionOptions {
+export function createPinnedTlsClientOptions(identity: AnnexIdentity, pinned: PinnedCertificate): tls.ConnectionOptions {
+  if (!sameCertificateFingerprint(certificateFingerprint(pinned.certPem), pinned.fingerprint)) {
+    throw Object.assign(new Error('Stored certificate does not match its fingerprint'), { code: PIN_MISMATCH_CODE });
+  }
   const cert = getOrCreateCert(identity);
   return {
     cert: cert.certPem,
     key: cert.keyPem,
-    rejectUnauthorized: false, // Client verifies the peer fingerprint before accepting the socket
+    ca: [pinned.certPem],
+    rejectUnauthorized: true,
+    // The pin replaces hostname checks: addresses are only hints.
+    checkServerIdentity: (_host, peer) => (peer?.raw?.length && sameCertificateFingerprint(certificateFingerprint(peer.raw), pinned.fingerprint)
+      ? undefined
+      : Object.assign(new Error('Peer certificate does not match the pinned certificate'), { code: PIN_MISMATCH_CODE })),
   };
+}
+
+const CERT_BINDING_CONTEXT = 'annex-cert-binding/v1';
+
+function certBindingMessage(certDer: Buffer): Buffer {
+  return Buffer.concat([Buffer.from(CERT_BINDING_CONTEXT, 'utf8'), createHash('sha256').update(certDer).digest()]);
+}
+
+/** Signs this instance's TLS certificate with its identity key, so a peer can tell the two belong together. */
+export function signCertBinding(identity: AnnexIdentity): string {
+  const der = new X509Certificate(getOrCreateCert(identity).certPem).raw;
+  const key = createPrivateKey({ key: Buffer.from(identity.privateKey, 'base64'), format: 'der', type: 'pkcs8' });
+  return sign(null, certBindingMessage(der), key).toString('base64');
+}
+
+/** Whether `signature` is the identity key's binding for this certificate. */
+export function verifyCertBinding(publicKeyBase64: string, certDer: Buffer, signature: unknown): boolean {
+  if (typeof signature !== 'string' || !signature) return false;
+  try {
+    const key = createPublicKey({ key: Buffer.from(publicKeyBase64, 'base64'), format: 'der', type: 'spki' });
+    if (key.asymmetricKeyType !== 'ed25519') return false;
+    return verify(null, certBindingMessage(certDer), key, Buffer.from(signature, 'base64'));
+  } catch { // telemetry-exempt: a malformed key or signature is a binding that doesn't verify
+    return false;
+  }
+}
+
+/**
+ * Reads the certificate a TLS server shows, and sends it nothing. Used only
+ * before pairing, to compare with the pairing link or the code in the other
+ * computer's Settings. Everything after uses the pinned options.
+ */
+export function probePeerCertificate(host: string, port: number, timeoutMs = 5000): Promise<PinnedCertificate> {
+  return new Promise((resolve, reject) => {
+    // Unverified on purpose: the caller compares the result before trusting it.
+    const socket = tls.connect({ host, port, rejectUnauthorized: false, ...(isIP(host) ? {} : { servername: host }) });
+    const fail = (err: Error) => { socket.destroy(); reject(err); };
+    socket.setTimeout(timeoutMs, () => fail(new Error('Timed out reaching that computer')));
+    socket.once('error', fail);
+    socket.once('secureConnect', () => {
+      const raw = socket.getPeerCertificate()?.raw;
+      socket.destroy();
+      if (!raw?.length) { reject(new Error('That computer showed no certificate')); return; }
+      resolve({ certPem: certificatePemFromDer(raw), fingerprint: certificateFingerprint(raw) });
+    });
+  });
+}
+
+/** The DER bytes of the certificate the other end of this socket showed. */
+export function extractPeerCertificateDer(socket: tls.TLSSocket): Buffer | undefined {
+  const raw = socket.getPeerCertificate()?.raw;
+  return raw?.length ? raw : undefined;
 }
 
 /**

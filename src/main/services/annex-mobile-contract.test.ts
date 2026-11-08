@@ -247,6 +247,8 @@ vi.mock('./annex-tls', async (importOriginal) => {
     createTlsServerOptions: () => W.tls,
     extractPeerFingerprint: actual.extractPeerFingerprint,
     extractPeerCertificateFingerprint: actual.extractPeerCertificateFingerprint,
+    extractPeerCertificateDer: actual.extractPeerCertificateDer,
+    verifyCertBinding: actual.verifyCertBinding,
     getCertificateFingerprint: () => W.tlsFingerprint,
   };
 });
@@ -258,6 +260,7 @@ vi.mock('./annex-peers', () => ({
   getPeer: (fp: string) => W.peers.get(fp),
   updateLastSeen: () => {},
   listPeers: () => [...W.peers.values()],
+  listPeersForDisplay: () => [...W.peers.values()].map((peer) => ({ ...peer, needsPairing: false })),
   removePeer: (fp: string) => { W.peers.delete(fp); },
   removeAllPeers: () => { W.peers.clear(); },
   unlockPairing: () => {},

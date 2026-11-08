@@ -42,7 +42,7 @@ export function AnnexPairingQr({ url, hosts, port }: Props) {
       testId="annex-pairing-qr"
       help={(
         <span>
-          Scan with Clubhouse Go, or with the iPhone Camera. The code includes this session&apos;s PIN; regenerate the PIN to invalidate it.
+          Scan with Clubhouse Go, or with the iPhone Camera. The code includes the PIN and changes with it.
           {hosts.length > 0 && (
             <>
               <br />

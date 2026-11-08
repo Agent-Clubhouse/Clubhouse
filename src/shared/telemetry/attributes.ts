@@ -729,7 +729,7 @@ export const ATTR = {
   pluginIdHash: hashAttr('clubhouse.plugin.id_hash'),
   pluginOrigin: enumAttr('clubhouse.plugin.origin', ['builtin', 'marketplace', 'sideloaded']),
   pluginScope: enumAttr('clubhouse.plugin.scope', ['project', 'app', 'dual']),
-  /** The manifest's `engine.api` (0.5, 0.9, ...) as a string; unsupported versions become `other`. */
+  /** The manifest's `engine.api` (0.7, 0.9, ...) as a string; unsupported versions become `other`. */
   pluginApiVersion: enumAttr('clubhouse.plugin.api_version', PLUGIN_API_VERSION_VALUES),
   attempt: intAttr('clubhouse.attempt'),
   pluginProtocolResult: enumAttr('clubhouse.plugin.protocol.result', ['ok', 'denied', 'not_found']),
