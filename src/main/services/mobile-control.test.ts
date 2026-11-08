@@ -244,6 +244,19 @@ describe('mobile validation and chat dispatch', () => {
     }
     expect(vi.mocked(rt.respondPermission).mock.calls).toEqual(options.map((o) => ['p', o.optionId]));
   });
+  it('approves a large request only for a device that fetched it whole, with the options it was sent (#2731)', async () => {
+    const options = [{ optionId: 'once', kind: 'allow_once' }, { optionId: 'no', kind: 'reject_once' }];
+    const rt = runtime([event('permission_request', { requestId: 'big', title: 'Write', rawInput: { content: 'x'.repeat(300 * 1024) }, options })]);
+    rt.getPendingPermissionOptions = () => options as never;
+    const cmd = { ...command(new MobileCommandService(), { type: 'chat.permission', requestId: 'big', optionId: 'once' }), reviewedDigest: 'sha256:d' };
+    const reviewed = vi.fn(() => true);
+    await expect(executeChatCommand(cmd as any, rt, async () => true)).rejects.toMatchObject({ code: 'incomplete_representation' });
+    expect(await executeChatCommand(cmd as any, rt, async () => true, () => {}, undefined, reviewed)).toEqual({ answered: true, requestId: 'big' });
+    expect(reviewed).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ requestId: 'big' }) }), 'sha256:d');
+    // The agent would act on options the phone wasn't sent, so what it fetched isn't what it would approve.
+    rt.getPendingPermissionOptions = () => [{ optionId: 'once', kind: 'allow_always' }] as never;
+    await expect(executeChatCommand(cmd as any, rt, async () => true, () => {}, undefined, reviewed)).rejects.toMatchObject({ code: 'incomplete_representation' });
+  });
   it('rejects approval already settled while its transcript entry is still pending', async () => {
     const rt = runtime([event('permission_request', { requestId: 'p', options: [{ optionId: 'once', kind: 'allow_once' }] })]);
     rt.getPendingPermissionOptions = () => undefined;

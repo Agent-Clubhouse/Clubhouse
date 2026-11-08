@@ -121,13 +121,14 @@ export interface QuickAgentStep {
   /** Overrides. Unset uses the project's provider and model. */
   orchestrator?: string;
   model?: string;
-  /**
-   * Access level (#2761). Unset: the app's Default access for an action a
-   * person owns, or the owning agent's own level for an agent's action.
-   * An agent's action never starts above the agent's own level.
-   */
-  access?: AccessLevel;
 }
+
+/**
+ * The Access level every quick agent an action starts runs at, headless, so a
+ * scheduled run never stops at a prompt (#3033). Only people and agents that
+ * themselves run at this level may have actions that start them.
+ */
+export const QUICK_STEP_ACCESS: AccessLevel = 'full_access';
 
 export interface SleepStep {
   kind: 'sleep';

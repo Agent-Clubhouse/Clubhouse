@@ -1,17 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { ActionTrigger } from '../../../shared/actions';
+import type { AccessLevel } from '../../../shared/agent-access';
 import { MAX_ACTIONS, createInterimRights } from './rights';
 
 let dispatcherId: string | undefined = 'disp';
+let leadAccess: AccessLevel = 'full_access';
 const rights = createInterimRights({
   agentName: (id) => ({ lead: 'release-lead', h1: 'helper-1', qa: 'qa', pm: 'pm' } as Record<string, string>)[id],
   parentOf: (id) => (id === 'h1' ? 'lead' : undefined),
-  isConnected: (from, to) => (from === 'lead' && to === 'pm') || (from === 'disp' && (to === 'lead' || to === 'pm')),
+  isConnected: (from, to) => (from === 'lead' && (to === 'pm' || to === 'other')) || (from === 'disp' && (to === 'lead' || to === 'pm')),
   agentProjectId: (id) => (id === 'other' ? 'p2' : 'p1'),
   dispatcherAgentId: () => dispatcherId,
   // Only release-lead may start helpers.
   canStartAgents: (id) => id === 'lead',
-  agentAccess: (id) => (id === 'lead' ? 'auto_edit' : 'ask'),
+  agentAccess: (id) => (id === 'lead' ? leadAccess : 'ask'),
+});
+beforeEach(() => {
+  leadAccess = 'full_access';
+  dispatcherId = 'disp';
 });
 const lead = { kind: 'agent', agentId: 'lead' } as const;
 const helper = { kind: 'agent', agentId: 'h1', helper: true } as const;
@@ -40,14 +46,33 @@ describe('interim rights: steps', () => {
     expect(rights.checkStep(lead, { kind: 'wake', agentId: 'nobody' })).toBe('release-lead can’t act on that agent.');
   });
 
-  it('keeps an agent’s quick agents in its own project, at most at its own Access level', () => {
+  it('keeps an agent’s quick agents in its own project, and only for an agent at Full access', () => {
     expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', prompt: 'x' })).toBeNull();
     expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p2', prompt: 'x' })).toBe('release-lead can’t act on that project.');
     expect(rights.checkStep(lead, { kind: 'quick', projectId: 'nowhere', prompt: 'x' })).toBe('release-lead can’t act on that project.');
     expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', worktreeAgentId: 'qa', prompt: 'x' })).toBe('release-lead can’t act on that agent.');
-    expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', prompt: 'x', access: 'full_access' })).toBe('release-lead runs at Auto-accept edits, so its actions can’t start a quick agent at Full access.');
-    expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', prompt: 'x', access: 'auto_edit' })).toBeNull();
-    expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', prompt: 'x', access: 'plan' })).toBeNull();
+    for (const level of ['plan', 'ask', 'auto_edit', 'auto'] as const) {
+      leadAccess = level;
+      expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', prompt: 'x' })).toMatch(/^Agent steps run with Full access, and release-lead runs at .+, so its actions can’t start quick agents\.$/);
+    }
+    leadAccess = 'auto_edit';
+    expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', prompt: 'x' })).toBe('Agent steps run with Full access, and release-lead runs at Auto-accept edits, so its actions can’t start quick agents.');
+    // Other steps don't depend on the agent's level.
+    expect(rights.checkStep(lead, { kind: 'wake', agentId: 'pm' })).toBeNull();
+    leadAccess = 'full_access';
+    expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', prompt: 'x' })).toBeNull();
+  });
+
+  it('keeps an agent’s quick agent out of a worktree in another project', () => {
+    // release-lead is connected to both; pm is in its project, "other" in p2.
+    expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', worktreeAgentId: 'pm', prompt: 'x' })).toBeNull();
+    expect(rights.checkStep(lead, { kind: 'quick', projectId: 'p1', worktreeAgentId: 'other', prompt: 'x' })).toBe('release-lead can’t act on that agent.');
+  });
+
+  it('lets a person’s action start quick agents whatever anyone’s level', () => {
+    leadAccess = 'plan';
+    expect(rights.checkStep(user, { kind: 'quick', projectId: 'p1', prompt: 'x' })).toBeNull();
+    leadAccess = 'full_access';
   });
 
   it('keeps a helper to itself', () => {

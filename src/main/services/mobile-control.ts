@@ -29,7 +29,7 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'chat.send': ['agentId', 'sessionId', 'text', 'delivery', 'attachmentIds'],
   'chat.interrupt': ['agentId', 'sessionId'],
   'chat.queue.remove': ['agentId', 'sessionId', 'messageIds'],
-  'chat.permission': ['agentId', 'sessionId', 'requestId', 'optionId'],
+  'chat.permission': ['agentId', 'sessionId', 'requestId', 'optionId', 'reviewedDigest'],
   'chat.question': ['agentId', 'sessionId', 'requestId', 'answers'],
   'chat.setModel': ['agentId', 'sessionId', 'model', 'effort'],
   'chat.setLevel': ['agentId', 'sessionId', 'level'],
@@ -50,7 +50,7 @@ export const MOBILE_COMMAND_FIELDS: Readonly<Record<MobileCommand['type'], reado
   'helperRouting.update': ['revision', 'scope', 'projectId', 'cells', 'reset', 'auto'],
 };
 /** Fields a command may leave out. Every agent.update setting is optional, but it needs at least one. */
-const OPTIONAL = new Set(['delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort', 'cells', 'reset', 'expectedProvider', 'expectedSessionId', 'waitForStopped']);
+const OPTIONAL = new Set(['reviewedDigest', 'delivery', 'message', 'resume', 'model', 'orchestrator', 'attachmentIds', 'force', 'effort', 'cells', 'reset', 'expectedProvider', 'expectedSessionId', 'waitForStopped']);
 const ROUTING_OPTIONAL = new Set(['projectId', 'auto']);
 const CREATE_OPTIONAL = new Set(['orchestrator', 'model', 'persona', 'freeAgentMode', 'useWorktree', 'mcpIds', 'branchName', 'branchFrom', 'folderName', 'orchestration']);
 export const isOptionalCommandField = (type: MobileCommand['type'], key: string): boolean =>
@@ -223,7 +223,10 @@ export function chatControls(events: ChatEvent[], caps: ChatCapabilities | undef
 /** Content blocks for a peer's uploaded attachment ids; throws when one isn't usable. */
 export type MobileAttachmentResolver = (ids: string[], caps: ChatCapabilities | undefined) => Promise<ContentBlock[]>;
 
-export async function executeChatCommand(command: Extract<MobileCommand, { sessionId: string }>, runtime: AgentRuntime | undefined, canSend: () => Promise<boolean>, assertCurrent: () => void = () => {}, resolveAttachments?: MobileAttachmentResolver): Promise<unknown> {
+/** Did the device sending this approval fetch this whole request and quote its digest back (#2731)? */
+export type ReviewedCheck = (request: Extract<ChatEvent, { type: 'permission_request' }>, quotedDigest: string | undefined) => boolean;
+
+export async function executeChatCommand(command: Extract<MobileCommand, { sessionId: string }>, runtime: AgentRuntime | undefined, canSend: () => Promise<boolean>, assertCurrent: () => void = () => {}, resolveAttachments?: MobileAttachmentResolver, wasReviewed: ReviewedCheck = () => false): Promise<unknown> {
   assertCurrent();
   if (!runtime || runtime.kind !== 'chat' || !runtime.isRunning()) throw new MobileControlError('not_chat');
   if (runtime.getSessionId?.() !== command.sessionId) throw new MobileControlError('session_mismatch');
@@ -263,7 +266,11 @@ export async function executeChatCommand(command: Extract<MobileCommand, { sessi
     // Follows what was sent: a phone can't approve what it was only shown part of. Denying needs no review.
     // The record of what was sent doesn't survive a restart, so work out the total's share again.
     boundPendingPermissions(pending.pendingPermissions);
-    if (request && option && !DENY_OPTION_KINDS.has(option.kind) && isIncompletePermission(request, runtime.getPendingPermissionOptions?.(command.requestId))) {
+    // A device that fetched the whole request (#2731) has seen it, as long as the agent would act on the options it was sent.
+    const liveOptions = runtime.getPendingPermissionOptions?.(command.requestId);
+    const fetchedWhole = !!request && wasReviewed(request, command.reviewedDigest)
+      && (!liveOptions || JSON.stringify(liveOptions) === JSON.stringify(request.data.options));
+    if (request && option && !DENY_OPTION_KINDS.has(option.kind) && !fetchedWhole && isIncompletePermission(request, liveOptions)) {
       throw new MobileControlError('incomplete_representation', 409, 'rejected', hasSupportedDeny(request.data.options) ? INCOMPLETE_APPROVE_REFUSED : INCOMPLETE_APPROVE_REFUSED_DESKTOP_ONLY);
     }
     if (!option || !activeOption || activeOption.kind !== option.kind) throw new MobileControlError('pending_request_not_found');

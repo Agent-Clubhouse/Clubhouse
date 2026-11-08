@@ -1788,6 +1788,35 @@ describe('annex-server', () => {
       const forged = await secureRequest('POST', '/api/v1/mobile/commands', { ...input, commandId: 'forged' }, impostor);
       expect(forged.status).toBe(401); expect(forged.body.error).toBe('peer_not_paired');
       expect((await secureRequest('POST', '/api/v1/agents/a/wake', {}, impostor)).status).toBe(401);
+      // The whole of a large permission request (#2731): fetching it lets this phone approve it.
+      const bigInput = { file_path: '/x', content: 'y'.repeat(400 * 1024) };
+      const options = [{ optionId: 'ok', kind: 'allow_once', name: 'Allow' }, { optionId: 'no', kind: 'reject_once', name: 'Deny' }];
+      const large = { v: 1, type: 'permission_request', agentId: 'a', sessionId: 's', seq: 7, ts: Date.now(), data: { requestId: 'big', title: 'Write x', toolName: 'Write', rawInput: bigInput, options } };
+      let transcript: unknown[] = [large];
+      const respondPermission = vi.fn(async () => {});
+      registerChatRuntime({ kind: 'chat', agentId: 'a', isRunning: () => true, getState: () => 'waiting_permission', getSessionId: () => 's',
+        readTranscript: async () => ({ events: transcript }), getPendingPermissionOptions: () => options, respondPermission } as never);
+      try {
+        const approve = (commandId: string, reviewedDigest?: string, client = credentials) => secureRequest('POST', '/api/v1/mobile/commands',
+          { version: 1, epoch: capability.body.epoch, commandId, type: 'chat.permission', agentId: 'a', sessionId: 's', requestId: 'big', optionId: 'ok', ...(reviewedDigest && { reviewedDigest }) }, client);
+        expect((await approve('before-fetch')).body.error.code).toBe('incomplete_representation');
+        expect(capability.body.fullEvents).toMatchObject({ version: 1, approvalField: 'reviewedDigest' });
+        expect((await secureRequest('GET', '/api/v1/mobile/agents/a/chat/events/7?sessionId=s', undefined, impostor)).status).toBe(401);
+        expect((await secureRequest('GET', '/api/v1/mobile/agents/a/chat/events/7', undefined)).status).toBe(400);
+        expect((await secureRequest('GET', '/api/v1/mobile/agents/a/chat/events/8?sessionId=s', undefined)).status).toBe(404);
+        const full = await secureRequest('GET', '/api/v1/mobile/agents/a/chat/events/7?sessionId=s', undefined);
+        expect(full.status).toBe(200);
+        expect(full.body.event.data.rawInput).toEqual(bigInput);
+        expect(full.body.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+        // A digest it didn't get is refused, and so is the right one once the request changed under it.
+        expect((await approve('wrong-digest', `sha256:${'0'.repeat(64)}`)).body.error.code).toBe('incomplete_representation');
+        transcript = [{ ...large, data: { ...large.data, rawInput: { ...bigInput, content: 'z'.repeat(400 * 1024) } } }];
+        expect((await approve('changed', full.body.digest)).body.error.code).toBe('incomplete_representation');
+        transcript = [large];
+        const approved = await approve('after-fetch', full.body.digest);
+        expect(approved.body).toMatchObject({ status: 'completed', result: { answered: true, requestId: 'big' } });
+        expect(respondPermission).toHaveBeenCalledWith('big', 'ok');
+      } finally { clearChatRuntimes(); }
       peers.clear();
       expect((await secureRequest('POST', '/api/v1/mobile/commands', { ...input, commandId: 'revoked' })).status).toBe(401);
       expect(agentSystem.spawnAgent).toHaveBeenCalledTimes(1);

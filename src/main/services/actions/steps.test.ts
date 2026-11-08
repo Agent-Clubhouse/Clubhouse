@@ -7,7 +7,7 @@ vi.mock('../agent-runtime', () => ({
 }));
 
 import { resetAppEventBus } from '../app-event-bus';
-import { createStepRunner, headlessKeepsLevel, type StepDeps } from './steps';
+import { createStepRunner, type StepDeps } from './steps';
 import type { StepContext } from './engine';
 
 const ctx: StepContext = {
@@ -26,8 +26,6 @@ function deps(over: Partial<StepDeps> = {}): StepDeps {
     wake: vi.fn(async () => ({ ok: true, status: 'running', text: '{}' })),
     sleep: vi.fn(async () => ({ ok: true, status: 'sleeping', text: '{}' })),
     startQuick: vi.fn(async () => ({ id: 'quick_1', name: 'Morning' })),
-    agentAccess: () => 'auto_edit',
-    defaultAccess: () => 'full_access',
     notify: vi.fn(() => ({ shown: true })),
     sleepWaitMs: 20,
     ...over,
@@ -87,25 +85,14 @@ describe('step runner', () => {
     expect(await createStepRunner(d).run({ kind: 'notify', text: 'x' }, ctx)).toMatchObject({ outcome: 'done', detail: 'Not shown: notifications are off in Settings' });
   });
 
-  it('starts an agent’s quick agent at most at the agent’s own Access level', async () => {
+  it('starts every quick agent headless at Full access, whoever owns the action', async () => {
     const d = deps();
     const agentCtx = { ...ctx, action: { ...ctx.action, owner: { kind: 'agent' as const, agentId: 'lead' } } };
-    await createStepRunner(d).run({ kind: 'quick', projectId: 'p1', prompt: 'x', access: 'full_access' }, agentCtx);
     await createStepRunner(d).run({ kind: 'quick', projectId: 'p1', prompt: 'x' }, agentCtx);
-    await createStepRunner(d).run({ kind: 'quick', projectId: 'p1', prompt: 'x', access: 'plan' }, agentCtx);
-    // A person's action: the chosen level, or none (the app's Default access).
-    await createStepRunner(d).run({ kind: 'quick', projectId: 'p1', prompt: 'x' }, ctx);
-    const calls = vi.mocked(d.startQuick).mock.calls.map((c) => [c[0].access, !!c[0].interactive]);
-    // Below Auto runs where it can ask (#3002); a person's step with no level gets the Default access.
-    expect(calls).toEqual([['auto_edit', true], ['auto_edit', true], ['plan', true], ['full_access', false]]);
-  });
-
-  it('runs headless only where the headless run keeps the level', () => {
-    expect(headlessKeepsLevel('claude-code', 'ask')).toBe(false);
-    expect(headlessKeepsLevel('claude-code', 'auto')).toBe(true);
-    expect(headlessKeepsLevel('codex-cli', 'full_access')).toBe(true);
-    // Copilot's headless run allows everything.
-    expect(headlessKeepsLevel('copilot-cli', 'auto')).toBe(false);
-    expect(headlessKeepsLevel('copilot-cli', 'full_access')).toBe(true);
+    await createStepRunner(d).run({ kind: 'quick', projectId: 'p1', prompt: 'x', orchestrator: 'copilot-cli' }, ctx);
+    const calls = vi.mocked(d.startQuick).mock.calls.map((c) => c[0]);
+    expect(calls.map((c) => c.access)).toEqual(['full_access', 'full_access']);
+    expect(calls.map((c) => c.headless)).toEqual([true, true]);
+    expect(calls.some((c) => 'interactive' in c)).toBe(false);
   });
 });
