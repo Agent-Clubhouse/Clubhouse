@@ -33,11 +33,11 @@ import { managedSettingsSummary } from '../../../shared/managed-settings-summary
 import { resolveOrchestrationPolicy } from '../../../shared/orchestration-policy';
 import { builtinPart, ManagedError, withClubhouseSetup, type ManagedAgentsService } from './service';
 import { BUILTIN_BLOCK_IDS, withWorkingIdentity } from './builtins';
-import { skillsFolderOf } from '../../../shared/skills-folder';
+import { MANAGED_SKILLS_MANIFEST, skillsFolderOf } from '../../../shared/skills-folder';
 import { helperTemplateFor } from './helpers';
 
 /** Written beside the managed skills so a later start removes only what Clubhouse put there. */
-export const SKILLS_MANIFEST = '.clubhouse-managed-skills.json';
+export const SKILLS_MANIFEST = MANAGED_SKILLS_MANIFEST;
 /** In the worktree: the `claudeMdExcludes` entries Clubhouse added, so it replaces only those (D49). Git-excluded. */
 export const EXCLUDES_MANIFEST = '.clubhouse-managed-excludes.json';
 
