@@ -134,6 +134,12 @@ describe('grant check parity (#2968)', () => {
       }
     }
     // message_parent was listed for every agent and refused by its handler without a parent.
-    expect(diffs.sort()).toEqual(['dispatcher: message_parent', 'orchestrator: message_parent', 'plain: message_parent']);
+    // set_helper_presets (#2785) is new, and needs settings.app.write, which no agent holds with Allow yet.
+    expect(diffs.sort()).toEqual([
+      'dispatcher: message_parent', 'dispatcher: set_helper_presets',
+      'helper: set_helper_presets',
+      'orchestrator: message_parent', 'orchestrator: set_helper_presets',
+      'plain: message_parent', 'plain: set_helper_presets',
+    ]);
   });
 });
