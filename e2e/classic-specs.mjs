@@ -26,6 +26,9 @@ export const CLASSIC_RUN_SPECS = [
   'smoke-agent-lifecycle.spec.ts',
   'smoke-blank-screen.spec.ts',
   'smoke-settings-persistence.spec.ts',
+  'open-project.spec.ts',
+  'project-switching.spec.ts',
+  'navigation.spec.ts',
 ];
 
 /** Still pinned to classic, waiting to move. */
@@ -45,12 +48,9 @@ export const PINNED_CLASSIC_SPECS = [
   'command-palette.spec.ts',
   'find-replace.spec.ts',
   'mermaid-preview.spec.ts',
-  'navigation.spec.ts',
   'onboarding.spec.ts',
-  'open-project.spec.ts',
   'plugin-system.spec.ts',
   'popout-window.spec.ts',
-  'project-switching.spec.ts',
   'rail-hover-flyout.spec.ts',
   'rail-pin.spec.ts',
   'start-agent.spec.ts',

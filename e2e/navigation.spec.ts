@@ -1,6 +1,23 @@
+/**
+ * E2E: navigation between projects, tabs, Settings and Help.
+ *
+ * Runs on the new layout, and on classic in the Classic layout E2E job
+ * (#2843). Where the two layouts differ, a test branches on the layout, or
+ * each layout has its own test and skips the other's.
+ */
 import { test, expect, _electron as electron, Page } from '@playwright/test';
 import * as path from 'path';
 import { launchApp } from './launch';
+import {
+  addProject,
+  assertActiveProject,
+  assertRunLayout,
+  clickExplorerTab,
+  projectButton,
+  selectProject,
+  showProjectTree,
+} from './smoke-helpers';
+import { isNewLayout } from './layout';
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
@@ -12,67 +29,32 @@ const FIXTURE_B = path.resolve(__dirname, 'fixtures/project-b');
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Stub Electron's dialog so the next pickAndAddProject resolves to `dirPath`. */
-async function stubDialogForPath(dirPath: string) {
-  await electronApp.evaluate(
-    async ({ dialog, BrowserWindow }, fixturePath) => {
-      const win =
-        BrowserWindow.getAllWindows().find(
-          (w) => !w.webContents.getURL().startsWith('devtools://'),
-        ) ?? BrowserWindow.getAllWindows()[0] ?? null;
-      BrowserWindow.getFocusedWindow = () => win;
-      dialog.showOpenDialog = async () => ({
-        canceled: false,
-        filePaths: [fixturePath],
-      });
-    },
-    dirPath,
-  );
+/**
+ * The title bar's text. On the new layout this is the breadcrumb, which shows
+ * Settings, Help or the project's tab ("Agents" with no agent open) in every
+ * window width, but drops the project name below 1100px. So project names are
+ * checked with assertActiveProject, never here.
+ */
+const titleBar = () => window.locator('[data-testid="title-bar"]').first();
+
+async function expectTitle(text: string) {
+  await expect(titleBar()).toContainText(text, { timeout: 5_000 });
 }
 
-/** Add a fixture project by stubbing the dialog and clicking the add button. */
-async function addProject(dirPath: string) {
-  await stubDialogForPath(dirPath);
-  const addBtn = window.locator('[data-testid="nav-add-project"]');
-  await addBtn.click();
-  // Wait for the project to appear in the rail
-  const name = path.basename(dirPath);
-  await expect(window.locator(`text=${name}`).first()).toBeVisible({
-    timeout: 10_000,
-  });
+async function expectTitleNot(text: string) {
+  await expect(titleBar()).not.toContainText(text, { timeout: 5_000 });
 }
 
-/** Read a value from a Zustand store in the renderer. */
-async function evalStore<T>(expression: string): Promise<T> {
-  return window.evaluate(expression) as Promise<T>;
-}
-
-/** Get the current explorer tab from the UI store. */
-async function _getExplorerTab(): Promise<string> {
-  return evalStore<string>(
-    `window.__zustand_uiStore?.getState?.()?.explorerTab ?? document.querySelector('[data-testid="title-bar"]')?.textContent ?? ''`,
-  );
-}
-
-/** Get the title bar text. */
-async function getTitleBarText(): Promise<string> {
-  return window.locator('[data-testid="title-bar"]').first().textContent() as Promise<string>;
-}
+/** New layout: the sidebar's "Agents" crumb, shown while Settings, Help or a tab's list has the sidebar. */
+const sidebarCrumbBack = () => window.getByTestId('list-breadcrumb').getByRole('button', { name: 'Agents', exact: true });
 
 // ---------------------------------------------------------------------------
 // Setup / Teardown
 // ---------------------------------------------------------------------------
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp({ experimental: { newChrome: false } }));
-
-  // Expose Zustand stores globally so tests can inspect state via evaluate().
-  await window.evaluate(() => {
-    // A small shim: zustand stores are module-scoped, so we attach them.
-    // The stores are already imported; we just need a global handle.
-    // We'll set these from the renderer's global scope in App.tsx via an
-    // init flag, but for e2e we can simply read them from the module cache.
-  });
+  ({ electronApp, window } = await launchApp());
+  await assertRunLayout(window);
 });
 
 test.afterAll(async () => {
@@ -80,12 +62,12 @@ test.afterAll(async () => {
 });
 
 // ---------------------------------------------------------------------------
-// 1. Project Rail — Basic Navigation
+// 1. Project Rail (the project tree on the new layout): basic navigation
 // ---------------------------------------------------------------------------
 
 test.describe('Project Rail', () => {
   test('starts with a non-empty title when no projects are active', async () => {
-    const title = await getTitleBarText();
+    const title = await titleBar().textContent() ?? '';
     // With no project open the title is "Clubhouse" (Home was removed for v1),
     // or a project may already be loaded if fixtures persisted; we just check
     // the title bar is visible and non-empty
@@ -93,42 +75,23 @@ test.describe('Project Rail', () => {
   });
 
   test('add first project and verify it becomes active', async () => {
-    await addProject(FIXTURE_A);
-
-    // Title bar updates asynchronously after the project appears in the rail.
-    // Use toContainText with a timeout to avoid a point-in-time read race on Windows CI.
-    await expect(window.locator('[data-testid="title-bar"]')).toContainText(
-      'project-a',
-      { timeout: 5_000 },
-    );
+    await addProject(electronApp, window, FIXTURE_A);
+    await assertActiveProject(window, 'project-a');
   });
 
   test('add second project and verify it becomes active', async () => {
-    await addProject(FIXTURE_B);
-
-    const title = await getTitleBarText();
-    expect(title).toContain('project-b');
+    await addProject(electronApp, window, FIXTURE_B);
+    await assertActiveProject(window, 'project-b');
   });
 
   test('clicking project-a in rail switches back', async () => {
-    // project-a should be visible in the rail via its title attribute
-    const projA = window.locator('[title="project-a"]').first();
-    await projA.click();
-
-    await expect(window.locator('[data-testid="title-bar"]')).toContainText(
-      'project-a',
-      { timeout: 5_000 },
-    );
+    await selectProject(window, 'project-a');
+    await assertActiveProject(window, 'project-a');
   });
 
   test('clicking project-b in rail switches to it', async () => {
-    const projB = window.locator('[title="project-b"]').first();
-    await projB.click();
-
-    await expect(window.locator('[data-testid="title-bar"]')).toContainText(
-      'project-b',
-      { timeout: 5_000 },
-    );
+    await selectProject(window, 'project-b');
+    await assertActiveProject(window, 'project-b');
   });
 });
 
@@ -139,15 +102,25 @@ test.describe('Project Rail', () => {
 test.describe('Explorer Tabs', () => {
   test('defaults to agents tab', async () => {
     // Make sure a project is active
-    const projA = window.locator('[title="project-a"]').first();
-    await projA.click();
+    await selectProject(window, 'project-a');
     await window.waitForTimeout(500);
 
-    const title = await getTitleBarText();
-    expect(title).toContain('Agents');
+    await expectTitle('Agents');
+    if (await isNewLayout(window)) {
+      // The active tab always stays in the title bar's row, never in More.
+      await expect(window.getByTestId('explorer-tab-agents')).toHaveAttribute('aria-selected', 'true');
+    }
   });
 
   test('agents tab shows agent list or no-active-agent placeholder', async () => {
+    if (await isNewLayout(window)) {
+      // The tree is the agent list, and with the project's header selected
+      // (no agent open) the pane is the project's start page.
+      await expect(window.getByTestId('agent-list')).toBeVisible({ timeout: 5_000 });
+      await expect(window.getByTestId('start-page')).toBeVisible({ timeout: 5_000 });
+      return;
+    }
+
     // Either the agent-list panel or the no-active-agent view should be visible
     const agentList = window.locator('[data-testid="agent-list"]');
     const noAgent = window.locator('[data-testid="no-active-agent"]');
@@ -159,40 +132,42 @@ test.describe('Explorer Tabs', () => {
   });
 
   test('settings toggle opens settings view', async () => {
-    const settingsBtn = window.locator('[data-testid="nav-settings"]');
-    await settingsBtn.click();
+    await window.locator('[data-testid="nav-settings"]').click();
     await window.waitForTimeout(500);
 
-    const title = await getTitleBarText();
-    expect(title).toContain('Settings');
+    await expectTitle('Settings');
+    if (await isNewLayout(window)) await expect(window.getByTestId('settings-nav')).toBeVisible();
   });
 
   test('settings toggle again returns to previous tab', async () => {
-    const settingsBtn = window.locator('[data-testid="nav-settings"]');
-    await settingsBtn.click();
+    await window.locator('[data-testid="nav-settings"]').click();
     await window.waitForTimeout(500);
 
-    const title = await getTitleBarText();
     // Should return to agents (or whatever the previous tab was)
-    expect(title).not.toContain('Settings');
+    await expectTitleNot('Settings');
+    if (await isNewLayout(window)) {
+      await expectTitle('Agents');
+      await expect(window.getByTestId('project-tree')).toBeVisible();
+    }
   });
 
   test('help toggle opens help view', async () => {
-    const helpBtn = window.locator('[data-testid="nav-help"]');
-    await helpBtn.click();
+    await window.locator('[data-testid="nav-help"]').click();
     await window.waitForTimeout(500);
 
-    const title = await getTitleBarText();
-    expect(title).toContain('Help');
+    await expectTitle('Help');
+    if (await isNewLayout(window)) await expect(window.getByTestId('help-nav')).toBeVisible();
   });
 
   test('help toggle again returns to previous tab', async () => {
-    const helpBtn = window.locator('[data-testid="nav-help"]');
-    await helpBtn.click();
+    await window.locator('[data-testid="nav-help"]').click();
     await window.waitForTimeout(500);
 
-    const title = await getTitleBarText();
-    expect(title).not.toContain('Help');
+    await expectTitleNot('Help');
+    if (await isNewLayout(window)) {
+      await expectTitle('Agents');
+      await expect(window.getByTestId('project-tree')).toBeVisible();
+    }
   });
 });
 
@@ -203,86 +178,100 @@ test.describe('Explorer Tabs', () => {
 test.describe('Per-Project Tab Persistence', () => {
   test('switching project restores its saved tab', async () => {
     // Navigate to project-a -> agents tab (default)
-    const projA = window.locator('[title="project-a"]').first();
-    await projA.click();
+    await selectProject(window, 'project-a');
     await window.waitForTimeout(500);
-
-    let title = await getTitleBarText();
-    expect(title).toContain('project-a');
-    expect(title).toContain('Agents');
+    await assertActiveProject(window, 'project-a');
+    await expectTitle('Agents');
 
     // Navigate to project-b
-    const projB = window.locator('[title="project-b"]').first();
-    await projB.click();
+    await selectProject(window, 'project-b');
     await window.waitForTimeout(500);
+    await assertActiveProject(window, 'project-b');
 
-    title = await getTitleBarText();
-    expect(title).toContain('project-b');
-
-    // Switch back to project-a — should still be on agents
-    await projA.click();
+    // Switch back to project-a, which should still be on agents
+    await selectProject(window, 'project-a');
     await window.waitForTimeout(500);
-
-    title = await getTitleBarText();
-    expect(title).toContain('project-a');
-    expect(title).toContain('Agents');
+    await assertActiveProject(window, 'project-a');
+    await expectTitle('Agents');
   });
 
   test('new project defaults to agents tab', async () => {
     // project-b was never explicitly set to a tab, so it should default to agents
-    const projB = window.locator('[title="project-b"]').first();
-    await projB.click();
+    await selectProject(window, 'project-b');
     await window.waitForTimeout(500);
 
-    const title = await getTitleBarText();
-    expect(title).toContain('Agents');
+    await expectTitle('Agents');
   });
 
   test('settings view does not override saved project tab', async () => {
+    test.skip(await isNewLayout(window), 'Clicks a rail project while Settings is open; on the new layout Settings takes the sidebar, so no project row is there to click.');
     // Go to project-a (should be on agents)
-    const projA = window.locator('[title="project-a"]').first();
-    await projA.click();
+    await selectProject(window, 'project-a');
     await window.waitForTimeout(500);
 
     // Open settings
-    const settingsBtn = window.locator('[data-testid="nav-settings"]');
-    await settingsBtn.click();
+    await window.locator('[data-testid="nav-settings"]').click();
+    await window.waitForTimeout(500);
+    await expectTitle('Settings');
+
+    // Now switch to project-b, which should restore project-b's tab, not settings
+    await selectProject(window, 'project-b');
     await window.waitForTimeout(500);
 
-    let title = await getTitleBarText();
-    expect(title).toContain('Settings');
+    await assertActiveProject(window, 'project-b');
+    await expectTitleNot('Settings');
+  });
 
-    // Now switch to project-b — should restore project-b's tab, not settings
-    const projB = window.locator('[title="project-b"]').first();
-    await projB.click();
-    await window.waitForTimeout(500);
+  test('new layout: a project keeps its tab across Settings and a switch', async () => {
+    test.skip(!(await isNewLayout(window)), 'The new layout\'s path back from Settings; classic clicks a rail project instead.');
+    const filesTab = window.getByTestId('explorer-tab-plugin:files');
+    const agentsTab = window.getByTestId('explorer-tab-agents');
 
-    title = await getTitleBarText();
-    expect(title).toContain('project-b');
-    expect(title).not.toContain('Settings');
+    // project-a on a tab other than Agents, so restoring it means something.
+    await selectProject(window, 'project-a');
+    await clickExplorerTab(electronApp, window, 'explorer-tab-plugin:files');
+    await expect(filesTab).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
+
+    await window.getByTestId('nav-settings').click();
+    await expect(window.getByTestId('settings-nav')).toBeVisible({ timeout: 10_000 });
+    await expect(window.getByTestId('project-tree')).toBeHidden();
+    await expectTitle('Settings');
+
+    // selectProject closes Settings, then picks project-b, which never left Agents.
+    await selectProject(window, 'project-b');
+    await assertActiveProject(window, 'project-b');
+    await expect(agentsTab).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
+
+    // Back on project-a, its own tab comes back, not Settings or b's Agents.
+    await selectProject(window, 'project-a');
+    await assertActiveProject(window, 'project-a');
+    await expect(filesTab).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
+    await expectTitleNot('Settings');
+
+    // Later tests expect project-a on Agents.
+    await clickExplorerTab(electronApp, window, 'explorer-tab-agents');
+    await expect(agentsTab).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
   });
 });
 
 // ---------------------------------------------------------------------------
-// 4. Cross-Project Agent Guard (store-level)
+// 4. Cross-Project Agent Guard
 // ---------------------------------------------------------------------------
 
 test.describe('Cross-Project Agent Guard', () => {
   test('agent from project-a is not shown when project-b is active', async () => {
-    // Inject a fake agent for project-a into the agent store via renderer evaluate
-    const _projAId = await window.evaluate(() => {
-      // Find project-a's ID from the project store
-      // @ts-ignore - accessing Zustand store from window context
-      const _stores = (window as any).__zustand_stores;
-      // Fallback: read from the DOM or just return a placeholder
-      return null;
-    });
-
-    // Even without injecting agents, we can verify structurally:
     // When on project-b, the main content should never show an agent from project-a
-    const projB = window.locator('[title="project-b"]').first();
-    await projB.click();
+    await selectProject(window, 'project-b');
     await window.waitForTimeout(500);
+
+    if (await isNewLayout(window)) {
+      // With project-b's header selected the pane is project-b's own start page.
+      await assertActiveProject(window, 'project-b');
+      const startPage = window.getByTestId('start-page');
+      await expect(startPage).toBeVisible({ timeout: 5_000 });
+      await expect(startPage.getByRole('heading', { level: 1 })).toHaveText('project-b');
+      return;
+    }
 
     // The no-active-agent placeholder should be visible (no agents in project-b)
     // or the agent list should only show project-b agents
@@ -295,7 +284,7 @@ test.describe('Cross-Project Agent Guard', () => {
     // If a terminal is shown, verify it's for the right project
     // If no agent, the guard is working correctly
     if (!terminalVisible) {
-      // No terminal showing — expected for a project with no agents
+      // No terminal showing, as expected for a project with no agents
       expect(noAgentVisible).toBe(true);
     }
   });
@@ -307,12 +296,13 @@ test.describe('Cross-Project Agent Guard', () => {
 
 test.describe('Keyboard Shortcuts', () => {
   test('Cmd+Shift+N switches between projects by ordinal position', async () => {
+    test.skip(await isNewLayout(window), 'The new layout has no switch-project shortcuts; there Cmd+Option+1-9 switch agents and Cmd+1-9 select tabs.');
     // Get the list of project buttons in the rail to determine order
     const projectBtns = window.locator('[data-testid^="project-"]');
     const count = await projectBtns.count();
 
     if (count < 2) {
-      // Not enough projects to test switching — skip
+      // Not enough projects to test switching, so skip
       return;
     }
 
@@ -323,23 +313,17 @@ test.describe('Keyboard Shortcuts', () => {
     // Switch to the second project first
     await projectBtns.nth(1).click();
     await window.waitForTimeout(500);
-
-    let title = await getTitleBarText();
-    expect(title).toContain(secondTitle!);
+    await expectTitle(secondTitle!);
 
     // Press Cmd+Option+1 to switch to first project
     await window.keyboard.press('Meta+Alt+1');
     await window.waitForTimeout(500);
-
-    title = await getTitleBarText();
-    expect(title).toContain(firstTitle!);
+    await expectTitle(firstTitle!);
 
     // Press Cmd+Option+2 to switch to second project
     await window.keyboard.press('Meta+Alt+2');
     await window.waitForTimeout(500);
-
-    title = await getTitleBarText();
-    expect(title).toContain(secondTitle!);
+    await expectTitle(secondTitle!);
   });
 
   // Note: Cmd+9 is not tested here because Chromium intercepts it at the
@@ -352,18 +336,17 @@ test.describe('Keyboard Shortcuts', () => {
 
 test.describe('No Home', () => {
   test('the rail has no Home button', async () => {
+    // Neither layout has Home any more.
     await expect(window.locator('[data-testid="nav-home"]')).toHaveCount(0);
   });
 
   test('clicking a project restores its saved tab', async () => {
-    const projA = window.locator('[title="project-a"]').first();
-    await projA.click();
+    await selectProject(window, 'project-a');
     await window.waitForTimeout(500);
 
-    const title = await getTitleBarText();
-    expect(title).toContain('project-a');
+    await assertActiveProject(window, 'project-a');
     // Should restore to agents tab (the default/saved tab)
-    expect(title).toContain('Agents');
+    await expectTitle('Agents');
   });
 });
 
@@ -373,46 +356,67 @@ test.describe('No Home', () => {
 
 test.describe('Settings Context', () => {
   test('opening settings from project-a then clicking project-b exits settings', async () => {
+    test.skip(await isNewLayout(window), 'Clicks a rail project while Settings is open; on the new layout Settings takes the sidebar, so no project row is there to click.');
     // Navigate to project-a
-    const projA = window.locator('[title="project-a"]').first();
-    await projA.click();
+    await selectProject(window, 'project-a');
     await window.waitForTimeout(500);
 
     // Open settings
-    const settingsBtn = window.locator('[data-testid="nav-settings"]');
-    await settingsBtn.click();
+    await window.locator('[data-testid="nav-settings"]').click();
+    await window.waitForTimeout(500);
+    await expectTitle('Settings');
+
+    // Click project-b, which should exit settings and show project-b's view
+    await selectProject(window, 'project-b');
     await window.waitForTimeout(500);
 
-    let title = await getTitleBarText();
-    expect(title).toContain('Settings');
-
-    // Click project-b — should exit settings and show project-b's view
-    const projB = window.locator('[title="project-b"]').first();
-    await projB.click();
-    await window.waitForTimeout(500);
-
-    title = await getTitleBarText();
-    expect(title).toContain('project-b');
-    expect(title).not.toContain('Settings');
+    await assertActiveProject(window, 'project-b');
+    await expectTitleNot('Settings');
   });
 
   test('opening help then clicking a project exits help', async () => {
+    test.skip(await isNewLayout(window), 'Clicks a rail project while Help is open; on the new layout Help takes the sidebar, so no project row is there to click.');
     // Open help
-    const helpBtn = window.locator('[data-testid="nav-help"]');
-    await helpBtn.click();
+    await window.locator('[data-testid="nav-help"]').click();
+    await window.waitForTimeout(500);
+    await expectTitle('Help');
+
+    // Click project-a, which should exit help
+    await selectProject(window, 'project-a');
     await window.waitForTimeout(500);
 
-    let title = await getTitleBarText();
-    expect(title).toContain('Help');
+    await assertActiveProject(window, 'project-a');
+    await expectTitleNot('Help');
+  });
 
-    // Click project-a — should exit help
-    const projA = window.locator('[title="project-a"]').first();
-    await projA.click();
-    await window.waitForTimeout(500);
+  test('new layout: the sidebar\'s Agents crumb leaves Settings and Help for the project tree', async () => {
+    test.skip(!(await isNewLayout(window)), 'The new layout\'s sidebar crumb; classic keeps the rail beside Settings and Help.');
+    const tree = window.getByTestId('project-tree');
 
-    title = await getTitleBarText();
-    expect(title).toContain('project-a');
-    expect(title).not.toContain('Help');
+    // Settings from project-a, back by the crumb, then project-b from the tree.
+    await selectProject(window, 'project-a');
+    await window.getByTestId('nav-settings').click();
+    await expect(window.getByTestId('settings-nav')).toBeVisible({ timeout: 10_000 });
+    await expectTitle('Settings');
+    await sidebarCrumbBack().click();
+    await expect(window.getByTestId('settings-nav')).toBeHidden({ timeout: 10_000 });
+    await expect(tree).toBeVisible();
+    await expectTitleNot('Settings');
+    await (await projectButton(window, 'project-b')).click();
+    await assertActiveProject(window, 'project-b');
+    await expectTitle('Agents');
+
+    // Help, back by the crumb, then project-a from the tree.
+    await window.getByTestId('nav-help').click();
+    await expect(window.getByTestId('help-nav')).toBeVisible({ timeout: 10_000 });
+    await expectTitle('Help');
+    await sidebarCrumbBack().click();
+    await expect(window.getByTestId('help-nav')).toBeHidden({ timeout: 10_000 });
+    await expect(tree).toBeVisible();
+    await expectTitleNot('Help');
+    await (await projectButton(window, 'project-a')).click();
+    await assertActiveProject(window, 'project-a');
+    await expectTitle('Agents');
   });
 });
 
@@ -422,8 +426,9 @@ test.describe('Settings Context', () => {
 
 test.describe('Rapid Switching', () => {
   test('rapid back-and-forth does not corrupt state', async () => {
-    const projA = window.locator('[title="project-a"]').first();
-    const projB = window.locator('[title="project-b"]').first();
+    if (await isNewLayout(window)) await showProjectTree(window);
+    const projA = await projectButton(window, 'project-a');
+    const projB = await projectButton(window, 'project-b');
 
     // Rapidly switch 5 times
     for (let i = 0; i < 5; i++) {
@@ -435,10 +440,9 @@ test.describe('Rapid Switching', () => {
     await window.waitForTimeout(1_000);
 
     // Should be on project-b (last click)
-    const title = await getTitleBarText();
-    expect(title).toContain('project-b');
+    await assertActiveProject(window, 'project-b');
 
     // Should be on a valid tab (agents)
-    expect(title).toContain('Agents');
+    await expectTitle('Agents');
   });
 });
