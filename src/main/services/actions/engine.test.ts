@@ -607,5 +607,152 @@ describe('rights on sources, counts and turning on (#2952)', () => {
     await flush();
     expect(engine.get(a.id)).toBeUndefined();
     expect(history(a.id)[0]).toMatchObject({ outcome: 'done', owner: lead });
+
+describe('observations (for telemetry)', () => {
+  type Obs = Parameters<NonNullable<EngineHooks['observe']>>[0];
+  const observed = (hooks: { observe: ReturnType<typeof vi.fn> }): Obs[] => hooks.observe.mock.calls.map((c) => c[0] as Obs);
+
+  it('reports Run now as a manual trigger, and the run with its trigger, owner, steps and duration', async () => {
+    const { engine, hooks, clock } = setup({
+      stepImpl: async (step) => { clock.t += 500; return { kind: step.kind, outcome: 'done', detail: 'ok' }; },
+    });
+    engine.start();
+    const a = engine.create({ trigger: weekdays9, steps: [notify, { kind: 'wake', agentId: 'pm' }] }, { kind: 'dispatcher' });
+    engine.runNow(a.id);
+    await flush();
+    expect(observed(hooks)).toEqual([
+      { type: 'trigger', trigger: 'manual', actionId: a.id, owner: { kind: 'dispatcher' } },
+      {
+        type: 'run', outcome: 'done', trigger: 'manual', steps: 2,
+        stepResults: [{ kind: 'notify', outcome: 'done' }, { kind: 'wake', outcome: 'done' }],
+        chainDepth: 0, durationMs: 1000, actionId: a.id, owner: { kind: 'dispatcher' },
+      },
+    ]);
+  });
+
+  it('gives a run stopped by the hourly limit a closed reason code', async () => {
+    const { engine, hooks } = setup();
+    engine.start();
+    const a = engine.create({ trigger: weekdays9, steps: [notify] }, user);
+    for (let i = 0; i < 61; i++) { engine.runNow(a.id); await flush(); }
+    const runs = observed(hooks).filter((o) => o.type === 'run');
+    expect(runs.at(-1)).toMatchObject({ outcome: 'skipped', reasonCode: 'hourly_limit', steps: 0 });
+    expect(observed(hooks)).toContainEqual(expect.objectContaining({ type: 'limit', what: 'hourly', chainDepth: 0 }));
+  });
+
+  it('codes a rights refusal and a step that threw', async () => {
+    // Created while allowed, refused on the run.
+    let blocked = false;
+    const refused = setup({ refuse: () => (blocked ? 'pm can no longer put qa to sleep.' : null) });
+    refused.engine.start();
+    const r = refused.engine.create({ trigger: weekdays9, steps: [{ kind: 'sleep', agentId: 'pm' }] }, user);
+    blocked = true;
+    refused.engine.runNow(r.id);
+    await flush();
+    expect(observed(refused.hooks).find((o) => o.type === 'run')).toMatchObject({ outcome: 'failed', reasonCode: 'rights_refused' });
+
+    const threw = setup({
+      stepImpl: async (step) => { if (step.kind === 'sleep') throw new Error('boom'); return { kind: step.kind, outcome: 'done', detail: 'ok' }; },
+    });
+    threw.engine.start();
+    const a = threw.engine.create({ trigger: weekdays9, steps: [{ kind: 'sleep', agentId: 'pm' }] }, user);
+    threw.engine.runNow(a.id);
+    await flush();
+    expect(observed(threw.hooks).find((o) => o.type === 'run')).toMatchObject({ outcome: 'failed', reasonCode: 'step_threw', stepResults: [{ kind: 'sleep', outcome: 'failed' }] });
+  });
+
+  it('reports catch-up, then a catch_up trigger for each missed time it runs, marked as Clubhouse’s own', async () => {
+    const action: Action = {
+      id: 'a1', name: 'Morning', trigger: { ...weekdays9, missed: 'each' }, steps: [notify], overlap: 'skip',
+      owner: { kind: 'app' }, enabled: true, createdAt: 0, updatedAt: 0,
+    };
+    const { engine, hooks } = setup({ actions: [action], state: { nextAt: { a1: new Date(2026, 10, 2, 9, 0).getTime() }, waits: [] } });
+    engine.start();
+    await flush(); await flush();
+    const obs = observed(hooks);
+    expect(obs[0]).toEqual({ type: 'catch_up', missed: 5, rule: 'each', actionId: 'a1', owner: { kind: 'app' } });
+    expect(obs.filter((o) => o.type === 'trigger' && o.trigger === 'catch_up')).toHaveLength(5);
+  });
+
+  it('reports a delayed event trigger, its wait and its cancellation with the event kind', async () => {
+    const { engine, event, clock, hooks, running } = setup();
+    engine.start();
+    const a = engine.create({ trigger: { kind: 'event', event: 'agent.slept', source: { kind: 'agent', agentId: 'lead' }, delayMinutes: 30 }, steps: [notify] }, user);
+    event({ type: 'agent.asleep', agentId: 'lead' });
+    running.add('lead');
+    await clock.advance(31 * MIN);
+    const owner = { actionId: a.id, owner: user };
+    expect(observed(hooks)).toEqual([
+      { type: 'trigger', trigger: 'event', event: 'agent.slept', delayed: true, ...owner },
+      { type: 'wait', what: 'started', event: 'agent.slept', ...owner },
+      { type: 'wait', what: 'cancelled', event: 'agent.slept', ...owner },
+      expect.objectContaining({ type: 'run', outcome: 'cancelled', trigger: 'event', reasonCode: 'condition_changed', ...owner }),
+    ]);
+  });
+
+  function heldSteps() {
+    const state = { hold: false, releases: [] as Array<() => void> };
+    const stepImpl = (step: ActionStep) => new Promise<ActionStepResult>((resolve) => {
+      const done = () => resolve({ kind: step.kind, outcome: 'done', detail: 'ok' });
+      if (state.hold) state.releases.push(done);
+      else done();
+    });
+    return { state, stepImpl };
+  }
+
+  it('reports the hourly limit for queued runs dropped when they come up', async () => {
+    const { state, stepImpl } = heldSteps();
+    const { engine, hooks, history } = setup({ stepImpl });
+    engine.start();
+    const a = engine.create({ trigger: weekdays9, steps: [notify], overlap: 'queue' }, user);
+    for (let i = 0; i < 59; i++) { engine.runNow(a.id); await flush(); }
+    state.hold = true;
+    engine.runNow(a.id); // the 60th run this hour
+    await flush();
+    engine.runNow(a.id);
+    engine.runNow(a.id);
+    hooks.observe.mockClear();
+    state.releases.forEach((r) => r());
+    await flush();
+    const obs = observed(hooks);
+    expect(obs.filter((o) => o.type === 'limit')).toEqual([
+      { type: 'limit', what: 'hourly', chainDepth: 0, actionId: a.id, owner: user },
+      { type: 'limit', what: 'hourly', chainDepth: 0, actionId: a.id, owner: user },
+    ]);
+    expect(obs.filter((o) => o.type === 'run' && o.reasonCode === 'hourly_limit')).toHaveLength(2);
+    expect(history(a.id).filter((r) => r.outcome === 'skipped')).toHaveLength(2);
+  });
+
+  it('observes queued runs of a deleted action as cancelled, without history', async () => {
+    const { state, stepImpl } = heldSteps();
+    state.hold = true;
+    const { engine, hooks, history } = setup({ stepImpl });
+    engine.start();
+    const a = engine.create({ trigger: weekdays9, steps: [notify], overlap: 'queue' }, user);
+    engine.runNow(a.id);
+    await flush();
+    engine.runNow(a.id);
+    engine.runNow(a.id);
+    hooks.observe.mockClear();
+    engine.remove(a.id);
+    expect(observed(hooks)).toEqual([0, 1].map(() => ({
+      type: 'run', outcome: 'cancelled', trigger: 'manual', steps: 0, stepResults: [], chainDepth: 0, durationMs: 0,
+      reasonCode: 'deleted', actionId: a.id, owner: user,
+    })));
+    state.releases.forEach((r) => r());
+    await flush();
+    // Only the run that was going finishes; nothing queued starts or is written.
+    expect(history(a.id).map((r) => r.outcome)).toEqual(['done']);
+    expect(observed(hooks).filter((o) => o.type === 'run').map((o) => o.type === 'run' && o.outcome)).toEqual(['cancelled', 'cancelled', 'done']);
+  });
+
+  it('a throwing observer never breaks a run', async () => {
+    const { engine, hooks, history } = setup();
+    hooks.observe.mockImplementation(() => { throw new Error('telemetry broke'); });
+    engine.start();
+    const a = engine.create({ trigger: weekdays9, steps: [notify] }, user);
+    engine.runNow(a.id);
+    await flush();
+    expect(history(a.id)).toMatchObject([{ outcome: 'done' }]);
   });
 });

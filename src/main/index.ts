@@ -51,6 +51,7 @@ import { configuredRecordingLevel } from './telemetry/bootstrap';
 import { installAgentTelemetry } from './telemetry/agent-telemetry';
 import { installChatTelemetry } from './telemetry/chat-telemetry';
 import { installHelperUsageTelemetry } from './telemetry/helper-usage';
+import { installActionsTelemetry } from './telemetry/actions-telemetry';
 import { getBaseDirPath } from './services/base-dir';
 import { installIpcTelemetry } from './telemetry/ipc-telemetry';
 import { installOsSessionEndFlush } from './os-session-end';
@@ -292,7 +293,9 @@ app.on('ready', () => {
     await startAppEventSources();
     // Actions (#2918) subscribe before "Clubhouse started" goes out.
     try {
-      const { startActions } = await import('./services/actions');
+      const { startActions, observeActions } = await import('./services/actions');
+      // Telemetry listens first, so the "Clubhouse started" triggers are counted. It never changes a run.
+      installActionsTelemetry(observeActions);
       await startActions();
     } catch (err) {
       appLog('core:actions', 'error', 'Actions did not start', { meta: { code: codeOf(err) } });
