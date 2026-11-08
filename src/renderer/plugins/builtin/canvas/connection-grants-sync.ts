@@ -7,12 +7,13 @@
  * bound (main's store wins over the copy).
  */
 
-import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
+/** What this needs of a canvas wire definition. */
+interface WireDef { agentId: string; targetId: string; disabledTools?: string[] }
 
 interface WireStore {
   getState(): {
-    wireDefinitions: McpBindingEntry[];
-    updateWireDefinition: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => void;
+    wireDefinitions: readonly WireDef[];
+    updateWireDefinition: (agentId: string, targetId: string, updates: { disabledTools: string[] }) => void;
   };
 }
 

@@ -186,7 +186,7 @@ export function useWiring(
             // A pair that already has a binding (a helper or Dispatcher wire) keeps its own list.
             const existing = bindingsRef.current ?? [];
             const disabledTools = newWireDisabledTools(existing, sourceAgentId, resolvedTargetId, kind);
-            void bind(sourceAgentId, fwdTarget).then(() => {
+            void Promise.resolve(bind(sourceAgentId, fwdTarget)).then(() => {
               if (disabledTools) return setDisabledTools(sourceAgentId, resolvedTargetId, disabledTools);
             }).catch(() => {
               // telemetry-exempt: the wire definition keeps the list, and the reconcile loop binds it again
@@ -204,7 +204,7 @@ export function useWiring(
                 projectName,
               };
               const revDisabled = newWireDisabledTools(existing, resolvedTargetId, sourceAgentId, 'agent');
-              void bind(resolvedTargetId, revTarget).then(() => {
+              void Promise.resolve(bind(resolvedTargetId, revTarget)).then(() => {
                 if (revDisabled) return setDisabledTools(resolvedTargetId, sourceAgentId, revDisabled);
               }).catch(() => {
                 // telemetry-exempt: as above
