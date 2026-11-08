@@ -85,6 +85,12 @@ export interface PersistedBindingSource {
    * collect, so the bindings may not match what this source listed.
    */
   afterRebuild?(complete: boolean): void;
+  /**
+   * Its collect only reads (no state a watcher relies on), so the
+   * Connections card may call it to see what it lists now (#2744). Without
+   * it, the card uses what the source listed at the last rebuild.
+   */
+  readOnlyCollect?: true;
 }
 
 /** A collect that could only check part of its store. */
@@ -131,6 +137,11 @@ const removedByUser = new Set<string>();
 const ownedBySource = new Map<string, Map<string, { agentId: string; targetId: string }>>();
 /** Pruning source id → the pairs it listed (or could not check) on its last successful collect. */
 const heldBySource = new Map<string, Set<string>>();
+/**
+ * Every source id → the pairs it listed at the last rebuild, kept current by
+ * claims and releases; null when that collect failed (#2744).
+ */
+const lastListedBySource = new Map<string, Set<string> | null>();
 /**
  * Pruning source id → pairs claimed ({@link claimSourceBinding}) since the
  * running rebuild started. That run's collect may predate the claim, so it
@@ -192,6 +203,19 @@ export function onBindingRemovedByUser(listener: BindingRemovedByUserListener): 
   return () => { removedByUserListeners.delete(listener); };
 }
 
+/**
+ * The user removed one source of a pair this session (#2744) while another
+ * source still holds it: that source may not add it again until the user
+ * draws the pair. Cleared when they do.
+ */
+const removedFromSource = new Set<string>();
+export function markSourceRemovedByUser(sourceId: string, agentId: string, targetId: string): void {
+  removedFromSource.add(`${sourceId}\u0001${pairKey(agentId, targetId)}`);
+}
+export function isSourceRemovedByUser(sourceId: string, agentId: string, targetId: string): boolean {
+  return removedFromSource.has(`${sourceId}\u0001${pairKey(agentId, targetId)}`);
+}
+
 /** True when the user removed this pair through the renderer this session. */
 export function isBindingRemovedByUser(agentId: string, targetId: string): boolean {
   return removedByUser.has(pairKey(agentId, targetId));
@@ -200,6 +224,7 @@ export function isBindingRemovedByUser(agentId: string, targetId: string): boole
 /** The user drew this wire (renderer bind): rebuilds may restore it again. */
 export function clearBindingRemovedByUser(agentId: string, targetId: string): void {
   removedByUser.delete(pairKey(agentId, targetId));
+  for (const entry of [...removedFromSource]) if (entry.endsWith(`\u0001${pairKey(agentId, targetId)}`)) removedFromSource.delete(entry);
   releaseOwnership(pairKey(agentId, targetId));
   for (const listener of [...drawnByUserListeners]) {
     try {
@@ -250,6 +275,43 @@ export function keepHeldBinding(agentId: string, targetId: string): boolean {
     owned.set(key, { agentId, targetId });
   }
   return held;
+}
+
+/**
+ * Which sources list each pair (#2744). A source whose collect only reads
+ * (the canvas) is asked now; every other source answers with what it listed
+ * at the last rebuild, kept current by claims and releases, since calling its
+ * collect outside a rebuild would change state its watcher relies on. A
+ * source whose last collect failed, or that hasn't been read yet, is
+ * reported as unreadable.
+ */
+export async function collectSourcesByPair(): Promise<{ bySource: Map<string, Set<string>>; failed: string[] }> {
+  const bySource = new Map<string, Set<string>>();
+  const failed: string[] = [];
+  for (const source of [...sources.values()]) {
+    if (source.readOnlyCollect) {
+      try {
+        const collected = await source.collect();
+        const bindings = Array.isArray(collected) ? collected : collected.bindings;
+        const keys = new Set(bindings.map((b) => pairKey(b.agentId, b.targetId)));
+        if (!Array.isArray(collected)) for (const u of collected.unverified ?? []) keys.add(pairKey(u.agentId, u.targetId));
+        bySource.set(source.id, keys);
+      } catch {
+        // telemetry-exempt: reported to the caller as a source that couldn't be read
+        failed.push(source.id);
+      }
+      continue;
+    }
+    const listed = lastListedBySource.get(source.id);
+    if (listed) bySource.set(source.id, new Set(listed));
+    else failed.push(source.id);
+  }
+  return { bySource, failed };
+}
+
+/** The key collectSourcesByPair uses for a pair. */
+export function persistedPairKey(agentId: string, targetId: string): string {
+  return pairKey(agentId, targetId);
 }
 
 /**
@@ -375,6 +437,7 @@ export function claimSourceBinding(sourceId: string, binding: PersistedBinding):
       heldBySource.set(sourceId, held);
     }
     held.add(key);
+    lastListedBySource.get(sourceId)?.add(key);
     let claimed = claimedDuringRun.get(sourceId);
     if (!claimed) {
       claimed = new Set();
@@ -412,6 +475,7 @@ export function claimSourceBinding(sourceId: string, binding: PersistedBinding):
 export function releaseSourceBinding(sourceId: string, agentId: string, targetId: string): 'unbound' | 'kept' | 'absent' {
   const key = pairKey(agentId, targetId);
   heldBySource.get(sourceId)?.delete(key);
+  lastListedBySource.get(sourceId)?.delete(key);
   claimedDuringRun.get(sourceId)?.delete(key);
   const bound = bindingManager.getBindingsForAgent(agentId).some((b) => b.targetId === targetId);
   const owned = ownedBySource.get(sourceId);
@@ -457,6 +521,7 @@ async function rebuildSource(source: PersistedBindingSource): Promise<SourceRun>
     appLog('core:mcp', 'warn', 'Persisted binding source failed; its bindings wait for the renderer', {
       meta: { source: source.id, error: result.error },
     });
+    lastListedBySource.set(source.id, null);
     return { source, result, listed: null, unverified };
   }
   result.collected = bindings.length;
@@ -478,6 +543,7 @@ async function rebuildSource(source: PersistedBindingSource): Promise<SourceRun>
   if (source.prune) {
     heldBySource.set(source.id, new Set([...listed, ...unverified, ...(claimedDuringRun.get(source.id) ?? [])]));
   }
+  lastListedBySource.set(source.id, new Set([...listed, ...unverified, ...(claimedDuringRun.get(source.id) ?? [])]));
   return { source, result, listed, unverified };
 }
 
@@ -576,6 +642,8 @@ export function _resetPersistedBindingSourcesForTesting(): void {
   restoredPairs.clear();
   ownedBySource.clear();
   heldBySource.clear();
+  lastListedBySource.clear();
+  removedFromSource.clear();
   claimedDuringRun.clear();
   removedByUser.clear();
 }
