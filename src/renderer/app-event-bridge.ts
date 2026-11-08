@@ -19,6 +19,7 @@ import { useHelperDisposeRequestStore, describeHelperDispose } from './stores/he
 import { useHelperStartRequestStore } from './stores/helperStartRequestStore';
 import { useFilePreviewStore } from './stores/filePreviewStore';
 import { useToastStore } from './stores/toastStore';
+import { openActionsSettings } from './features/actions/useActions';
 import { useQuickAgentStore } from './stores/quickAgentStore';
 import { handleShortcutKeydown } from './shortcut-dispatch';
 import { pluginEventBus } from './plugins/plugin-events';
@@ -811,6 +812,16 @@ function initProtocolActionListener(): () => void {
   return removeListener;
 }
 
+/** Actions (#2918): a toast for a mechanical failure or an action Clubhouse turned off, never for a task that went badly. */
+function initActionNoticeListener(): () => void {
+  return window.clubhouse.actions.onNotice((notice) => {
+    useToastStore.getState().addToast(notice.message, 'error', notice.exists ? {
+      label: 'Open',
+      onClick: () => openActionsSettings({ cardId: notice.actionId }),
+    } : undefined);
+  });
+}
+
 export function initAppEventBridge(): () => void {
   // Tear down previous subscriptions to prevent accumulation on re-init
   previousCleanup?.();
@@ -835,6 +846,7 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initActiveAgentSound());
   cleanups.push(initNotificationClearing());
   cleanups.push(initAgentAttentionListener());
+  cleanups.push(initActionNoticeListener());
   cleanups.push(initStaleStatusCleanup());
 
   // One after the other: each reads the flags and saves them back without its own marker.
