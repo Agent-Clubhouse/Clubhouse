@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import * as path from 'path';
 import { classicRunSeedOver } from '../e2e/layout';
-import { CLASSIC_SHARDS, CLASSIC_RUN_SPECS, LAYOUT_SWITCH_SPECS, PINNED_CLASSIC_SPECS, classicTestMatch } from '../e2e/classic-specs.mjs';
+import { CLASSIC_ONLY_SPECS, CLASSIC_SHARDS, CLASSIC_RUN_SPECS, LAYOUT_SWITCH_SPECS, classicTestMatch } from '../e2e/classic-specs.mjs';
 
 const E2E_DIR = path.resolve(__dirname, '..', 'e2e');
 const PIN = /newChrome:\s*false/;
@@ -19,25 +19,32 @@ function e2eSources(dir = E2E_DIR): string[] {
 describe('E2E classic layout lists (#2843)', () => {
   const sources = e2eSources();
 
-  it('allow only the listed files to pin the classic layout', () => {
+  it('allow only the classic-only specs and the layout switch spec to pin the classic layout', () => {
     // e2e/layout.ts is what seeds classic for the classic run.
     const pinning = sources
       .filter((file) => file !== 'layout.ts' && PIN.test(readFileSync(path.join(E2E_DIR, file), 'utf8')))
       .sort();
-    expect(pinning).toEqual([...PINNED_CLASSIC_SPECS, ...LAYOUT_SWITCH_SPECS].sort());
+    expect(pinning).toEqual([...CLASSIC_ONLY_SPECS, ...LAYOUT_SWITCH_SPECS].sort());
   });
 
   it('list only files that exist, each once', () => {
-    const listed = [...CLASSIC_RUN_SPECS, ...PINNED_CLASSIC_SPECS, ...LAYOUT_SWITCH_SPECS];
+    const listed = [...CLASSIC_RUN_SPECS, ...LAYOUT_SWITCH_SPECS];
+    for (const spec of CLASSIC_ONLY_SPECS) expect(CLASSIC_RUN_SPECS, `${spec} runs in the Classic layout job`).toContain(spec);
     for (const file of listed) expect(existsSync(path.join(E2E_DIR, file)), file).toBe(true);
     expect(new Set(listed).size).toBe(listed.length);
   });
 
-  it('run on classic only specs that leave the layout to the run', () => {
+  it('run on classic, besides the classic-only specs, only specs that leave the layout to the run', () => {
     for (const spec of CLASSIC_RUN_SPECS) {
       expect(spec.endsWith('.spec.ts'), spec).toBe(true);
+      if (CLASSIC_ONLY_SPECS.includes(spec)) continue;
       expect(PIN.test(readFileSync(path.join(E2E_DIR, spec), 'utf8')), spec).toBe(false);
     }
+  });
+
+  it('keep the classic-only specs out of every other run', () => {
+    const config = readFileSync(path.resolve(E2E_DIR, '..', 'playwright.config.ts'), 'utf8');
+    expect(config).toMatch(/classicRun \? \[\] : CLASSIC_ONLY_SPECS\.map/);
   });
 
   it('match the job that runs them on classic', () => {
