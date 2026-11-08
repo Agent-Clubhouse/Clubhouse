@@ -134,6 +134,8 @@ A command's `agentId` may be an address. The bare id still means the desktop the
 { "status": "rejected", "error": { "code": "wrong_machine", "message": "…" }, "machine": "bb:…" }
 ```
 
+Only a command's `agentId` takes an address; routes with an agent id in the path (`/api/v1/mobile/agents/{agentId}/…`) take the bare id. Keep the form a command was first sent with when retrying its `commandId`: the receipt is tied to the command as sent, so the other form gets `command_conflict`.
+
 Fixture: `agent-address.json`.
 
 ## Order of work for the app

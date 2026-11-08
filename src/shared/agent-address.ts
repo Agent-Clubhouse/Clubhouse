@@ -68,5 +68,5 @@ export function addressFromNamespacedId(id: string): AgentAddress | null {
 
 /** The renderer namespaced id for an address on another machine; a local one is its bare id. */
 export function namespacedIdFromAddress(address: AgentAddress): string {
-  return address.machine ? `${NS_PREFIX}${address.machine}${NS_SEP}${address.agentId}` : address.agentId;
+  return address.machine ? `${NS_PREFIX}${address.machine.toLowerCase()}${NS_SEP}${address.agentId}` : address.agentId;
 }
