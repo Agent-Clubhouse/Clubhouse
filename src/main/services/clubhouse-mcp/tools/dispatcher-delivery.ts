@@ -25,7 +25,8 @@ import * as agentConfig from '../../agent-config';
 import { agentRegistry } from '../../agent-registry';
 import { getAgentRuntime } from '../../agent-runtime';
 import * as agentSystem from '../../agent-system';
-import { getDispatcherAgentId, getDispatcherPath, isDispatcherAgentId, isDispatcherEnabled } from '../../dispatcher/dispatcher-service';
+import { getDispatcherAgentId, getDispatcherPath, isDispatcherAgentId, isDispatcherEnabled, isDispatcherIdentityAgentId } from '../../dispatcher/dispatcher-service';
+import { recordAgentMessage } from '../../dispatcher/dispatcher-news-inbox';
 import { appLog } from '../../log-service';
 import { askFirst } from '../ask-first';
 import { decideGrant } from '../grant-check';
@@ -114,7 +115,23 @@ function errorText(err: unknown): string {
  */
 export function deliverToDispatcher(req: DispatcherDeliveryRequest): Promise<DispatcherDelivery> {
   const inboxId = dispatcherInboxId(req.targetId);
-  return inOrder(inboxId, () => deliver(inboxId, req));
+  return inOrder(inboxId, async () => {
+    const delivery = await deliver(inboxId, req);
+    if (delivery.delivered) recordForGroupChat(req);
+    return delivery;
+  });
+}
+
+/**
+ * Keep an agent's own words for the group chat's rewrite step (#3043). The
+ * Dispatcher's chat handing work over isn't news from an agent.
+ */
+function recordForGroupChat(req: DispatcherDeliveryRequest): void {
+  if (isDispatcherIdentityAgentId(req.senderId)) return;
+  const own = req.routed.filter((p) => p.sender?.agentId === req.senderId);
+  const text = own.length ? own.map((p) => p.text).join('\n\n') : req.text;
+  const name = own[0]?.sender?.name ?? req.routed.find((p) => p.sender)?.sender?.name ?? req.senderId;
+  recordAgentMessage(req.senderId, name, text);
 }
 
 async function deliver(inboxId: string, req: DispatcherDeliveryRequest): Promise<DispatcherDelivery> {

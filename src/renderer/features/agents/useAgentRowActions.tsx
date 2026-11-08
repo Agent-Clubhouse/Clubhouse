@@ -4,6 +4,7 @@ import type { Agent } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
 import { isDispatcherAgent, useLocalProject } from '../dispatcher/dispatcherStore';
 import { openDispatcherSettings } from '../dispatcher/dispatcherNav';
+import { requestClearChat } from '../dispatcher/ClearChat';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { wakeDurableAgent, type WakeMode } from './wake-durable-agent';
@@ -181,6 +182,8 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
     else openAgentSettings(agent.id);
   }, [agent.id, openAgentSettings, isDispatcher]);
 
+  const handleClearChat = useCallback(() => requestClearChat(agent.name), [agent.name]);
+
   const restartManaged = useCallback((fresh: boolean) => {
     if (!activeProject) return;
     void requestManagedRestart({ projectPath: activeProject.path, agentId: agent.id, agentName: agent.name }, { fresh });
@@ -277,6 +280,24 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
       });
     }
 
+    // Priority 4: Clear chat (#3043). The Dispatcher's conversation starts over; its memory stays.
+    if (isDispatcher && !isRemote) {
+      list.push({
+        id: 'clear-chat',
+        label: 'Clear chat',
+        icon: (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            <path d="M9 9l6 6" />
+            <path d="M15 9l-6 6" />
+          </svg>
+        ),
+        hoverColor: 'hover:text-ctp-accent',
+        visible: true,
+        handler: handleClearChat,
+      });
+    }
+
     // Priority 4a: Restart a running managed agent, resuming its conversation or starting a new one.
     if (canRestartManaged) {
       const restartIcon = (
@@ -326,7 +347,7 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
     }
 
     return list;
-  }, [agent.status, agent.kind, isDurable, isRemote, isDispatcher, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeNewSession, handlePopOut, handleSpawnChild, handleSettings, canRestartManaged, handleRestart, handleRestartFresh, handleDelete]);
+  }, [agent.status, agent.kind, isDurable, isRemote, isDispatcher, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeNewSession, handlePopOut, handleSpawnChild, handleSettings, handleClearChat, canRestartManaged, handleRestart, handleRestartFresh, handleDelete]);
 
   return actions;
 }
