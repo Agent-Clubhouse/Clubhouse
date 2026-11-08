@@ -599,7 +599,8 @@ export async function checkForUpdates(
 
   // An update already downloaded, kept if the newest one turns out to need a newer OS.
   const readyBefore = status.state === 'ready' ? { ...status } : null;
-  setState('checking');
+  // A background check leaves a ready update showing, and installable at quit, until it decides (#3104).
+  if (!readyBefore || manual) setState('checking');
   appLog('update:check', 'info', 'Checking for updates', {
     meta: { manual, currentVersion: app.getVersion(), previewChannel: settings.previewChannel },
   });
@@ -631,7 +632,11 @@ export async function checkForUpdates(
       appLog('update:check', 'info', 'App is up to date', {
         meta: { currentVersion, latestVersion: manifest.version },
       });
-      setState('idle');
+      if (readyBefore) {
+        // The ready one was pulled (or the channel moved back): don't install it at quit or on relaunch.
+        await clearPendingUpdateInfo();
+        setState('idle', { availableVersion: null, downloadPath: null, artifactUrl: null, downloadProgress: 0 });
+      } else setState('idle');
       await saveSettings({ ...settings, lastCheck: new Date().toISOString() });
       recordCheck('up_to_date');
       return status;
@@ -710,13 +715,16 @@ export async function checkForUpdates(
     recordCheck('available');
     // macOS/Linux: download the artifact ourselves
     await downloadUpdate(manifest.version, manifest.releaseNotes || null, manifest.releaseMessage || null, artifact);
+    // downloadUpdate reports its own failure as `error`. An older update still on disk stays
+    // ready; a failed one for the same version may have removed that very file, so not then.
+    if (status.state === 'error' && readyBefore && readyBefore.availableVersion !== manifest.version) setState('ready', readyBefore);
 
     return status;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     appLog('update:check', 'error', `Update check failed: ${msg}`);
-    // A failed check (offline after sleep, a 5xx) or a failed newer download leaves the
-    // update already downloaded ready, so the banner and install-on-quit keep it (#3104).
+    // A failed check (offline after sleep, a 5xx) leaves the update already downloaded
+    // ready, so the banner and install-on-quit keep it (#3104).
     if (readyBefore) setState('ready', readyBefore);
     else setState('error', { error: msg });
     recordCheck('failed', err);
