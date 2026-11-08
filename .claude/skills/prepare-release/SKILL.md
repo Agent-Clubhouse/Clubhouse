@@ -25,11 +25,11 @@ Automates the release preparation workflow: analyze changes since the last relea
 3. **Check for prerelease suffix:**
    If the current `package.json` version carries a prerelease suffix (`-beta.N`; `release.yml` rejects any other shape, including `-rc.N`), the target stable version **is** the base version with the suffix stripped. Do not apply minor or patch bump logic; record the prerelease base version as the target (e.g., `0.41.0-beta.5` → `0.41.0`) and continue to Phase 4 so the user can review and confirm it. This mirrors the promotion path documented in `prepare-beta/SKILL.md:199-207`.
 
-4. **Find the last tagged release:**
+4. **Find the last stable release:**
    ```bash
-   git tag --list 'v*' --sort=-v:refname | head -1
+   git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1
    ```
-   This is the baseline. All commits between this tag and `HEAD` are candidates. (Only used if the current version is already a clean release; skipped for prerelease promotion.)
+   This is the baseline. All commits between this tag and `HEAD` are candidates. Stable notes always start from the previous stable tag, never a beta: `--sort=-v:refname` puts `v0.42.0-beta.14` above `v0.42.0`, so without the filter a patch release would be diffed from a beta. (Only used if the current version is already a clean release; skipped for prerelease promotion.)
 
 5. **Collect commits since the last tag:**
    ```bash
