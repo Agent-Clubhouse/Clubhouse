@@ -629,11 +629,6 @@ function noticeApprovalNeeded(orchestrator: DurableAgentConfig, args: HelperStar
  */
 async function runHelperStart(orchestratorId: string, args: HelperStartArgs, approvedIn?: string): Promise<StartOutcome> {
   validateStartArgs(args);
-  // A level asked for above the orchestrator's own is refused (D126). One that comes from its
-  // helper policy is still lowered to its level at launch, with a note.
-  const asked = args.access && args.access !== 'same' ? helperAccessRequest(args.access)?.access : undefined;
-  const aboveOwn = accessCeilingRefusal(orchestratorId, asked, 'start a helper', { fix: `Leave access out (or use same) for your own level, or ask the user.` });
-  if (aboveOwn) throw new McpArgError(aboveOwn);
   // Clubhouse-managed helpers (#2899): every helper is built from a template
   // and never gets a persona, so the persona is dropped before anything plans
   // or checks with it.
@@ -648,6 +643,11 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     }
   }
   if (!isOrchestrationEnabled(orchestratorId)) return refused('orchestration is off for its orchestrator.');
+  // A level asked for above the orchestrator's own is refused (D126). One that comes from its
+  // helper policy is still lowered to its level at launch, with a note.
+  const asked = args.access && args.access !== 'same' ? helperAccessRequest(args.access)?.access : undefined;
+  const aboveOwn = accessCeilingRefusal(orchestratorId, asked, 'start a helper', { fix: 'Leave access out (or use same) for your own level, or ask the user.' });
+  if (aboveOwn) throw new McpArgError(aboveOwn);
   const { projectPath: homePath, config: orchestrator } = await resolveCaller(orchestratorId);
 
   // Checked before anything is created, with the checks saving it runs: a helper never starts without its setup.

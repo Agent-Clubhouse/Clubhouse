@@ -1450,6 +1450,21 @@ describe('start approvals', () => {
     expect(listStartRequests()).toHaveLength(3);
   });
 
+  it('approving a held start checks the level again: an orchestrator now below what it asked for is refused (D126)', async () => {
+    const id = await ask({ name: 'impl-api', task: 'Build the API', access: 'auto' });
+    // It now runs at Ask first.
+    agentRegistry.untrack('orch');
+    agentRegistry.register('orch', { projectPath: PROJECT, orchestrator: 'claude-code', runtime: 'chat' });
+    agentRegistry.setLaunchCap('orch', { freeAgentMode: false, access: 'ask' });
+    setMcpCaller('orch', PROJECT, agents.get('orch'));
+    setOrchestrationEnabled('orch', true);
+    const result = await approveHelperStart(PROJECT, id);
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('run at Ask first');
+    expect(result.message).toContain('at Auto');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
   it('approve runs exactly one start, with the limit and access checks, and tells the orchestrator', async () => {
     const id = await ask({ name: 'impl-api', task: 'Build the API', access: 'standard' });
     const creation = controllableCreation();

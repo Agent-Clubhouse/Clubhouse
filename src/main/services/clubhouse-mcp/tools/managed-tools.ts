@@ -413,12 +413,13 @@ export function registerManagedTools(): void {
         setup: { blocks: idList(args, 'blocks'), skills: idList(args, 'skills'), mcps: idList(args, 'mcps') },
         settings: sent ? sentSettings(sent, current.settings) : current.settings,
       };
-      // A push that changes the template's Access sets it on every agent it reaches: never above the caller's own (D126).
-      // Dropping the level sends them to the Default access.
+      // A push that changes the template's saved Access sets it on the agents it reaches: never above the
+      // caller's own (D126). Dropping the level sends them to the Default access, even one equal to the old level.
       const before = withAccess(current.settings, getPermissionMode()).access;
-      const pushedLevel = withAccess(next.settings, getPermissionMode()).access ?? (before ? getDefaultAccess() : undefined);
-      if (pushedLevel && pushedLevel !== before) {
-        const refused = accessCeilingRefusal(callerId, pushedLevel, 'push a template that sets agents');
+      const sentLevel = withAccess(next.settings, getPermissionMode()).access;
+      if (sentLevel !== before) {
+        const refused = accessCeilingRefusal(callerId, sentLevel ?? getDefaultAccess(), 'push a template that sets agents',
+          sentLevel ? {} : { from: 'Leaving the level out means the Default access for new agents, which' });
         if (refused) throw new ArgError(refused);
       }
       const preview = await svc().previewTemplatePush(id, next);

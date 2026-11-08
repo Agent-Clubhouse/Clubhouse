@@ -573,7 +573,7 @@ describe('no agent sets Access above its own (D126)', () => {
     expect(r.isError).toBe(true);
     expect(r.content[0].text).toBe('You run at Auto, so you can\'t create an agent at Full access: an agent never sets Access above its own. Use Auto or lower, or ask the user to set it.');
     expect(state.agents.has('new-too-high')).toBe(false);
-    // A plain agent the same way, and the legacy flag maps to its level first.
+    // A plain agent the same way.
     expect((await call('create_managed_agent', { project: 'Clubhouse', name: 'plain-high', managed: false, settings: { access: 'full_access' } })).isError).toBe(true);
     expect(state.agents.has('new-plain-high')).toBe(false);
     // At or below its own goes ahead.
@@ -590,6 +590,29 @@ describe('no agent sets Access above its own (D126)', () => {
     expect(state.agents.has('new-from-wide')).toBe(false);
     const ok = await call('create_managed_agent', { project: 'Clubhouse', name: 'from-wide-lower', templateId: t.id, settings: { access: 'auto' } });
     expect(ok.isError).toBeFalsy();
+  });
+
+  it('a legacy flag is read as creation reads it, from the Default access, and one that isn\'t on/off is refused', async () => {
+    const { setDefaultAccess } = await import('../../free-agent-settings');
+    await runAt('auto');
+    await setDefaultAccess('full_access');
+    try {
+      // On keeps a Default that is already on: Full access, above Auto.
+      const on = await call('create_managed_agent', { project: 'Clubhouse', name: 'legacy-on', managed: false, settings: { freeAgentMode: true } });
+      expect(on.content[0].text).toMatch(/^You run at Auto, so you can't create an agent at Full access/);
+      expect(state.agents.has('new-legacy-on')).toBe(false);
+      for (const freeAgentMode of ['x', 1]) {
+        const odd = await call('create_managed_agent', { project: 'Clubhouse', name: 'legacy-odd', managed: false, settings: { freeAgentMode } });
+        expect(odd.isError).toBe(true);
+        expect(odd.content[0].text).toContain('freeAgentMode must be true or false');
+      }
+      expect(state.agents.has('new-legacy-odd')).toBe(false);
+      // With nothing named, the Default access itself is checked.
+      const bare = await call('create_managed_agent', { project: 'Clubhouse', name: 'bare', managed: false });
+      expect(bare.content[0].text).toContain('The Default access for new agents sets Full access.');
+    } finally {
+      await setDefaultAccess('ask');
+    }
   });
 
   it('a caller not running reads as Ask first', async () => {
@@ -624,5 +647,19 @@ describe('no agent sets Access above its own (D126)', () => {
     expect(r.content[0].text).toMatch(/^You run at Plan, so you can't push a template that sets agents at Ask first/);
     await runAt('auto');
     expect((await call('push_agent_template', drop)).isError).toBeFalsy();
+  });
+
+  it('dropping a level equal to the Default access is checked too: agents set lower would be raised to it', async () => {
+    const { setDefaultAccess } = await import('../../free-agent-settings');
+    await runAt('auto');
+    const t = (await call('save_agent_template', { name: 'At the default', blocks: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: { access: 'auto' } })).json;
+    await setDefaultAccess('auto');
+    try {
+      await runAt(null);
+      const r = await call('push_agent_template', { id: t.id, blocks: [], skills: [], mcps: [CLUBHOUSE_MCP_PART_ID], settings: {} });
+      expect(r.content[0].text).toBe('You run at Ask first, so you can\'t push a template that sets agents at Auto: an agent never sets Access above its own. Leaving the level out means the Default access for new agents, which sets Auto. Use Ask first or lower, or ask the user to set it.');
+    } finally {
+      await setDefaultAccess('ask');
+    }
   });
 });

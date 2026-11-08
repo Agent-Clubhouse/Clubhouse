@@ -4,8 +4,8 @@
  * They combine the managed-agents service with agent config and
  * orchestration policy.
  */
-import { accessFromLegacy, callerAccess, isAccessLevel, withAccess, type AccessLevel } from '../../../shared/agent-access';
-import { getDefaultAccess, getPermissionMode } from '../free-agent-settings';
+import { callerAccess, isAccessLevel, withAccess, type AccessLevel } from '../../../shared/agent-access';
+import { accessForNewAgent, getDefaultAccess, getPermissionMode } from '../free-agent-settings';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as agentConfig from '../agent-config';
@@ -67,10 +67,9 @@ export interface CreateManagedAgentInput {
  */
 export type NewAgentAccessCheck = (level: AccessLevel, from: 'settings' | 'template' | 'default') => void;
 
-/** The level a createDurable access argument gives: a level, a legacy on/off, or unset for the Default access. */
+/** The level a createDurable access argument gives, worked out as creation does: a level, a legacy on/off, or unset for the Default access. */
 function newAgentLevel(projectPath: string, access: boolean | AccessLevel | undefined): AccessLevel {
-  if (typeof access === 'boolean') return accessFromLegacy(access, getPermissionMode(projectPath));
-  return access ?? getDefaultAccess();
+  return accessForNewAgent(typeof access === 'boolean' ? { freeAgentMode: access } : { access }, projectPath);
 }
 
 const namesAccess = (s: ManagedTemplateSettings | undefined) => s?.access !== undefined || s?.freeAgentMode !== undefined;
@@ -147,6 +146,7 @@ async function createPlainAgent(projectPath: string, input: CreateManagedAgentIn
   if (input.templateId || input.setup) throw new ManagedError('invalid', 'A plain agent has no template or parts.');
   const settings = input.settings ?? {};
   if (settings.access !== undefined && !isAccessLevel(settings.access)) throw new ManagedError('invalid', 'access must be plan, ask, auto_edit, auto or full_access.');
+  if (settings.freeAgentMode !== undefined && typeof settings.freeAgentMode !== 'boolean') throw new ManagedError('invalid', 'freeAgentMode must be true or false.');
   checkAccess?.(newAgentLevel(projectPath, settings.access ?? settings.freeAgentMode), namesAccess(settings) ? 'settings' : 'default');
   const config = await agentConfig.createDurable(projectPath, input.name, input.color, settings.model, true, settings.orchestrator, settings.access ?? settings.freeAgentMode);
   if (settings.orchestration && Object.keys(settings.orchestration).length > 0) {
