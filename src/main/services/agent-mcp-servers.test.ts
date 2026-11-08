@@ -16,7 +16,7 @@ vi.mock('./agent-settings-service', async (importOriginal) => ({
 }));
 
 import { appLog } from './log-service';
-import { PROJECT_MCP_JSON_INVALID_NOTICE, resolveAgentMcpServers, resolveProjectMcpServers } from './agent-mcp-servers';
+import { PROJECT_MCP_JSON_INVALID_NOTICE, resolveAgentMcpServers, resolveProjectMcpServers, tomlListsMcpServers } from './agent-mcp-servers';
 
 const conventions = { configDir: '.claude', mcpConfigFile: '.mcp.json', localSettingsFile: 'settings.local.json' } as never;
 let worktree: string;
@@ -82,5 +82,23 @@ describe('project MCP JSON that is not JSON (D10)', () => {
   it('still fails on JSON that is not a valid MCP configuration', async () => {
     h.defaults = { mcpJson: JSON.stringify({ servers: {} }) };
     await expect(resolveProjectMcpServers('/project', agent())).rejects.toThrow(/mcpServers/);
+  });
+});
+
+describe('tomlListsMcpServers (#2849)', () => {
+  it('finds a server table, quoted or bare, other than the Clubhouse bridge', () => {
+    expect(tomlListsMcpServers('[mcp_servers.linear]\ncommand = "npx"\n')).toBe(true);
+    expect(tomlListsMcpServers('model = "o3"\n\n  [ mcp_servers."my server" ]\n')).toBe(true);
+    expect(tomlListsMcpServers('[mcp_servers.docs.env]\nKEY = "v"\n')).toBe(true);
+    expect(tomlListsMcpServers('[mcp_servers]\nlinear = { command = "npx" }\n')).toBe(true);
+    expect(tomlListsMcpServers('mcp_servers = { linear = { command = "npx" } }\n')).toBe(true);
+    expect(tomlListsMcpServers('[mcp_servers.clubhouse]\ncommand = "node"\n[mcp_servers.linear]\ncommand = "npx"\n')).toBe(true);
+  });
+
+  it('ignores the bridge alone, other tables and comments', () => {
+    expect(tomlListsMcpServers('')).toBe(false);
+    expect(tomlListsMcpServers('model = "o3"\n[profiles.fast]\nmodel = "o4"\n')).toBe(false);
+    expect(tomlListsMcpServers('[mcp_servers.clubhouse]\ncommand = "node"\n[mcp_servers.clubhouse.env]\nX = "1"\n')).toBe(false);
+    expect(tomlListsMcpServers('# [mcp_servers.linear]\n')).toBe(false);
   });
 });

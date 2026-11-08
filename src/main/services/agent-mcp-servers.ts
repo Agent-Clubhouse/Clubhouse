@@ -3,12 +3,35 @@
  * code takes them: launch flags in the terminal (agent-system), SDK options in
  * chat (chat-spawn). A managed agent gets exactly its MCP parts (#2896).
  */
+import * as fsp from 'fs/promises';
+import * as path from 'path';
 import { parseMcpJson } from '../../shared/mcp-config';
 import type { DurableAgentConfig, McpServerDef } from '../../shared/types';
 import { replaceWildcards } from '../../shared/wildcard-replacer';
 import { readLocalMcpJson, readProjectAgentDefaults, type SettingsConventions } from './agent-settings-service';
 import { buildWildcardContext, resolveAgentCommands, resolveSourceControlProvider } from './agent-wildcards';
 import { appLog } from './log-service';
+
+/**
+ * What an unmanaged Codex agent is told when its own .codex/config.toml lists
+ * MCP servers (#2849). Clubhouse has no TOML reader, so it doesn't pass them.
+ * Codex itself loads them from the project config layer, but only for a
+ * folder its user config trusts (probed on Codex 0.163 with config/read).
+ */
+export const LOCAL_TOML_MCP_NOTICE = 'This agent\'s .codex/config.toml lists MCP servers. Clubhouse doesn\'t pass them to Codex, so Codex loads them only if it trusts this folder. The agent also gets the project\'s MCP servers. The file is left as it is.';
+
+/**
+ * Whether a Codex TOML file lists an MCP server other than the Clubhouse
+ * bridge, which older versions wrote there themselves. Not a TOML parser: it
+ * looks for `[mcp_servers.<name>]` headers, a bare `[mcp_servers]` table or an
+ * `mcp_servers =` key.
+ */
+export function tomlListsMcpServers(toml: string): boolean {
+  for (const m of toml.matchAll(/^[ \t]*\[[ \t]*mcp_servers[ \t]*\.[ \t]*(?:"([^"]*)"|'([^']*)'|([A-Za-z0-9_-]+))/gm)) {
+    if ((m[1] ?? m[2] ?? m[3]) !== 'clubhouse') return true;
+  }
+  return /^[ \t]*\[[ \t]*mcp_servers[ \t]*\]/m.test(toml) || /^[ \t]*mcp_servers[ \t]*=/m.test(toml);
+}
 
 /** What an agent is told when the project MCP JSON isn't JSON (D10). */
 export const PROJECT_MCP_JSON_INVALID_NOTICE = 'The project MCP configuration isn\'t valid JSON, so its servers were left out. Conditional wildcards (@@If) are no longer processed; edit the project MCP configuration to fix it.';
@@ -63,9 +86,16 @@ export async function resolveAgentMcpServers(
 ): Promise<Record<string, McpServerDef>> {
   if (agent?.managed) return resolveProjectMcpServers(projectPath, agent);
   const fromProject = () => resolveProjectMcpServers(projectPath, agent, local.onNotice);
-  // No TOML reader exists here. Preserve canonical delivery and make the limitation visible.
+  // No TOML reader exists here: project defaults are delivered, and a local
+  // file that lists servers gets a notice. One with none says nothing (#2849).
   if (local.conventions.settingsFormat === 'toml') {
-    local.onNotice?.('Local TOML MCP configuration is not supported by chat preparation. Chat uses project MCP JSON defaults; local TOML servers are not delivered by this path. The local file is preserved.');
+    let toml = '';
+    try {
+      toml = await fsp.readFile(path.join(local.cwd, local.conventions.mcpConfigFile), 'utf-8');
+    } catch {
+      // telemetry-exempt: no readable local file means no local servers to mention
+    }
+    if (tomlListsMcpServers(toml)) local.onNotice?.(LOCAL_TOML_MCP_NOTICE);
     return fromProject();
   }
   const raw = await readLocalMcpJson(local.cwd, local.conventions);

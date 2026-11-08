@@ -48,6 +48,7 @@ import { clearChatRuntimes } from './index';
 import { appendChatEvent } from './chat-transcript';
 import { clearDriverHealth } from './chat-driver-health';
 import { injectClubhouseMcp } from '../clubhouse-mcp/injection';
+import { LOCAL_TOML_MCP_NOTICE } from '../agent-mcp-servers';
 
 const conventions = { configDir: '.github', skillsDir: 'skills', agentTemplatesDir: 'agents', mcpConfigFile: '.github/mcp.json', localSettingsFile: 'hooks.json' };
 const copilot = { id: 'copilot-cli', conventions, getBinaryPath: () => '/synthetic/copilot', writeInstructions: vi.fn() } as unknown as OrchestratorProvider;
@@ -189,6 +190,22 @@ describe('#2849 effective-provider save → chat prepare (no provider/server)', 
     expect(driver.last.startOptions!.mcpServers).toEqual({ ...projectMap, clubhouse: { command: 'synthetic-live-bridge' } });
     expect(await fs.readFile(file, 'utf8')).toBe(bytes);
     expect(injectClubhouseMcp).not.toHaveBeenCalled();
-    expect(appendChatEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'notice', data: expect.objectContaining({ code: 'mcp_configuration', message: expect.stringContaining('local TOML servers are not delivered') }) }));
+    expect(appendChatEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'notice', data: expect.objectContaining({ code: 'mcp_configuration', message: LOCAL_TOML_MCP_NOTICE }) }));
+  });
+  // #2849: the notice is for a file that lists servers, not every Codex start.
+  it.each([
+    ['no local file', null],
+    ['a local file with no MCP servers', 'model = "unrelated"\n'],
+    ['only the Clubhouse bridge an older version wrote', '[mcp_servers.clubhouse]\ncommand = "node"\n'],
+  ])('says nothing about local TOML with %s', async (_name, bytes) => {
+    if (bytes !== null) {
+      const file = path.join(cwd, '.codex/config.toml');
+      await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, bytes);
+    }
+    const codex = { ...copilot, id: 'codex-cli', conventions: { ...conventions, mcpConfigFile: '.codex/config.toml', settingsFormat: 'toml' } } as OrchestratorProvider;
+    const driver = new FakeChatDriver('codex_app_server', 'codex-cli'); registerChatDriver(driver);
+    expect(await tryStartChatAgent({ agentId: agent.id, projectPath: root, cwd, kind: 'durable', permissionMode: 'auto' }, codex, undefined, agent)).toBe('chat');
+    expect(driver.last.startOptions!.mcpServers).toEqual({ ...projectMap, clubhouse: { command: 'synthetic-live-bridge' } });
+    expect(JSON.stringify(vi.mocked(appendChatEvent).mock.calls)).not.toContain('.codex/config.toml');
   });
 });
