@@ -12,6 +12,7 @@ Epic: #3056. Stages land in order: #3057 (peer basics), #3058 (reachability), #3
 - **Phones** (#3062): a phone that pairs with `network: 1` is a member of kind `phone`. The contract for the iOS app is `docs/annex-network-phone.md`.
 - **Agent addresses** (`src/shared/agent-address.ts`, #3063): `<agentId>@<machine fingerprint>`; a bare id means this machine. Converts to and from the renderer's `remote||<machine>||<agentId>`.
 - **Chat across desktops** (#2390): a controller reads and drives a satellite's chat agents through the same pinned routes and commands phones use (`docs/mobile-control-v1.md`). In the renderer, `stores/remoteChatBackend.ts` is the chat store's backend for namespaced (`remote||…`) agents.
+- **Agents across machines** (`src/main/services/annex-agent-calls.ts`, #3064): a connection to an agent on another machine is a binding whose target is its address. Its tool calls go to that machine (`POST /api/v1/network/agent-call`), which checks them against its own connection store (D129) and runs them with the same tool code. Each direction that involves another machine is kept on both machines and sent on every connect (`POST /api/v1/network/connections`). The Connections card lists them under "On other computers" and connects to an agent on a connected computer.
 - **A problem** (`src/shared/annex-problems.ts`) is a classified reason a connection failed, shown as two sentences: what happened, and what to do.
 
 ## Real-device checks
@@ -50,7 +51,13 @@ Synthetic tests can't cover certificates under Electron or local network discove
 - A phone in the network still shows "Controlled by" on the desktop it's connected to.
 
 **Stage 6 (#3063)**
-- An agent calling a tool with another agent's address on this machine (`id@<this machine's fingerprint>`) works as with the bare id; with another machine's, it's told that machine can't be reached from here yet.
+- An agent calling a tool with another agent's address on this machine (`id@<this machine's fingerprint>`) works as with the bare id; with another machine's, it's told such an agent is reached through a connection.
+
+**Stage 7 (#3064)**
+- Connect an agent on one computer to an agent on another from the Connections card, both ways. Each sends the other a message and reads its status; the receiver sees the sender's name and computer.
+- Turn a tool off on the receiving computer's side of the connection: the sender's call is refused, whatever the sender's computer shows.
+- Close Clubhouse on the receiving computer, send a message, open it again: the message arrives once, after the reconnect.
+- Remove the connection on one computer: the other computer's agent loses its tools for it once the two reconnect.
 
 **Chat across desktops (#2390)**
 - Open a chat agent that runs on another desktop: its conversation shows, says which machine it's on, and streams live.
@@ -118,4 +125,12 @@ Decisions made while building, for the maintainer to revisit. Newest last. D180 
 | D227 | The switch shows on while either half runs (an older server-only phone setup, or client-only), with every section; turning it off stops both, and on starts both. It saves on top of what main has saved, so a click before the page loads or after a reset keeps the names. | An older setup isn't shown as off while a phone is connected, and still has its pairing code. | |
 | D228 | Reconnect and Pair again show only while this computer connects to others; Disconnect only on a one-to-one satellite, since a member may be connected from its side too. Pair again opens by the device list, and also covers older entries with no role. | No button that does nothing or quietly starts half of Annex. | |
 | D229 | "Forget all satellites" has no counterpart: devices are removed one at a time, or everything goes with Reset. | A network rarely has more than a few devices; fewer ways to lose every pairing. | Someone needs to drop every computer and keep the phone. |
+| D230 | A connection to an agent on another machine is a binding whose target id is that agent's address, from the user's link in the connection store (a persisted binding source of its own, `network-connections`). Its tools are listed and checked like any wire's; a call runs on the target's machine, not here. | One kind of wire, so grants, disabled tools, listings and call_wire_tool all work unchanged. | |
+| D231 | The receiving machine is the gate (D129): it runs a call only when its own store has the user's link for that direction (sender = the agent on the calling machine, as the pinned certificate names it) and the tool isn't off there. The sending machine checks the caller's own grants first, as for a local wire. Only computers that control the receiver may call (a phone has no agents). | "Checked by the machine that receives the call"; a sender can't speak for a third machine's agent. | |
+| D232 | Tools another machine's agent may call: the connection tools (status, output, connectivity, message, file, clear, compact) and wake. Provider changes, sleep and the rest stay on one machine. | What a connection carries locally, plus the epic's "message, wake and read". | Another machine needs sleep or provider control. |
+| D233 | Limits, per link on the receiving machine: 30 calls a minute per direction, and 40 messages (send_message and send_file, both ways) between one pair of agents in ten minutes, after which that pair is paused for the rest of the window. Local wires have no limits yet. | Stops two agents on two machines from messaging each other forever, without getting in the way of normal use. | Real use hits them. |
+| D234 | Each direction that involves another machine is kept on both machines: the sender's for its tools, the receiver's for its check. Every connect, and every change while connected, sends the other machine its share with both ends naming their machine; the newer `updatedAt` wins, and only directions between the two machines are taken. The store gained `listAllConnectionDirections` and `putConnectionDirection` (writes an entry as given, keeping its time). | No new sync channel; a machine that was off catches up when it connects. | Two machines' clocks are far apart. |
+| D235 | A machine that's offline: send_message and send_file wait in `annex-agent-outbox.json` (200 at most, a week at most) and go in order on the next connect, and the sender is told; status, output and connectivity answer "offline"; clear, compact and wake are refused. | "Connections pause and messages wait", without queuing actions whose moment has passed. | |
+| D236 | The receiver sees "<name>@<project> on <machine>", the machine being what the receiver calls the sender's computer. Reply instructions follow a connection back, as locally. | Never "You", and the machine name the person knows here. | |
+| D237 | The Connections card lists connections with agents on other computers under "On other computers", with a picker for durable agents on computers this one is connected to (both ways by default) and Remove, which removes both directions. The canvas doesn't draw them yet. | The card is where a connection's directions live (#2972). | Canvas support for remote agents. |
 

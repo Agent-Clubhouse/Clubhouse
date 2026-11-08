@@ -53,6 +53,7 @@ vi.mock('../services/connection-grants', async () => {
   };
 });
 vi.mock('../services/connection-grants-store', () => ({ listConnectionDirections: vi.fn(() => []) }));
+vi.mock('../services/annex-agent-calls', () => ({ startAgentCalls: vi.fn(() => () => {}) }));
 vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));

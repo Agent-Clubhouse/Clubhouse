@@ -36,6 +36,12 @@ export const mcpBinding = {
   /** Make a one-way connection two-way: the user's own link for the other direction (#2972). */
   makeTwoWay: (fromAgentId: string, toAgentId: string): Promise<void> =>
     ipcRenderer.invoke(IPC.MCP_BINDING.MAKE_TWO_WAY, fromAgentId, toAgentId),
+  /** Connect an agent here with one on another machine (`agentId@machine`), one way or both (#3064). */
+  connectAcrossMachines: (agentId: string, address: string, options: { twoWay?: boolean; name?: string }): Promise<void> =>
+    ipcRenderer.invoke(IPC.MCP_BINDING.CONNECT_ACROSS_MACHINES, agentId, address, options),
+  /** Remove the user's links between an agent here and one on another machine, both ways (#3064). */
+  disconnectAcrossMachines: (agentId: string, address: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.MCP_BINDING.DISCONNECT_ACROSS_MACHINES, agentId, address),
   /** Wires the orchestrator connection tools made and alone own; the user may remove these (#2232). */
   getToolConnections: (): Promise<Array<{ agentId: string; targetId: string }>> =>
     ipcRenderer.invoke(IPC.MCP_BINDING.GET_TOOL_CONNECTIONS),

@@ -37,8 +37,22 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
 import { listConnectionSources, removeConnectionSource } from '../services/connection-sources';
 import type { ConnectionSourceKind } from '../../shared/connection-sources';
-import { applyConnectionTools, makeTwoWay, startConnectionGrants } from '../services/connection-grants';
+import { applyConnectionTools, connectAcrossMachines, disconnectAcrossMachines, makeTwoWay, startConnectionGrants } from '../services/connection-grants';
 import { listConnectionDirections } from '../services/connection-grants-store';
+import { startAgentCalls } from '../services/annex-agent-calls';
+import * as annexClient from '../services/annex-client';
+import { runAgentToolForRemoteCaller } from '../services/clubhouse-mcp/tool-registry';
+import * as projectStore from '../services/project-store';
+import * as agentConfig from '../services/agent-config';
+
+/** An agent's name and project here, for another machine's view of a call or connection (#3064). */
+async function describeAgentHere(agentId: string): Promise<{ name: string; projectName?: string } | undefined> {
+  for (const project of await projectStore.peekProjects()) {
+    const agent = (await agentConfig.peekDurableConfigs(project.path)).find((a) => a.id === agentId);
+    if (agent) return { name: agent.name, projectName: project.displayName || project.name };
+  }
+  return undefined;
+}
 
 /**
  * Target kinds the renderer may bind. 'plugin' is left out (#2082): plugins
@@ -195,6 +209,23 @@ export function registerMcpBindingHandlers(): void {
     assertCallerIsAppWindow(event);
     return listDispatcherLinksForUser();
   });
+
+  // Agents across machines (#3064): the user connects an agent here with one on another machine.
+  ipcMain.handle(IPC.MCP_BINDING.CONNECT_ACROSS_MACHINES, withValidatedArgs(
+    [stringArg({ maxLength: 200 }), stringArg({ maxLength: 400 }), objectArg({ optional: true })],
+    async (event, agentId, address, options) => {
+      assertCallerIsAppWindow(event);
+      const o = (options ?? {}) as { twoWay?: unknown; name?: unknown };
+      await connectAcrossMachines(agentId as string, address as string, {
+        twoWay: o.twoWay === true,
+        ...(typeof o.name === 'string' && o.name.length <= 200 && { name: o.name }),
+      });
+    },
+  ));
+  ipcMain.handle(IPC.MCP_BINDING.DISCONNECT_ACROSS_MACHINES, withValidatedArgs([stringArg({ maxLength: 200 }), stringArg({ maxLength: 400 })], async (event, agentId, address) => {
+    assertCallerIsAppWindow(event);
+    await disconnectAcrossMachines(agentId as string, address as string);
+  }));
 
   // Connection permissions (D129, #2972): the user's own surface.
   ipcMain.handle(IPC.MCP_BINDING.GET_CONNECTION_GRANTS, withValidatedArgs([stringArg({ maxLength: 200 })], (event, agentId) => {
@@ -353,6 +384,17 @@ export function restorePersistedBindings(): Promise<void> {
       notify: (from, to, disabledTools) => broadcastToAllWindows(IPC.MCP_BINDING.CONNECTION_GRANTS_CHANGED, from, to, disabledTools),
     });
     stopWatchingMcpCallers = watchMcpCallers();
+    // Agents across machines (#3064): calls to and from other machines' agents, and the connections between them.
+    startAgentCalls({
+      transport: {
+        connected: (machine) => annexClient.isMachineConnected(machine),
+        post: (machine, urlPath, body) => annexClient.postToMachine(machine, urlPath, body),
+        machineName: (machine) => annexClient.machineAlias(machine),
+        onConnected: (listener) => annexClient.onSatelliteConnected(listener),
+      },
+      runTool: runAgentToolForRemoteCaller,
+      describeLocalAgent: describeAgentHere,
+    });
   }
   return rebuildPersistedBindings().then((): void => undefined, (err): void => {
     appLog('core:mcp', 'error', 'Persisted binding rebuild failed', {

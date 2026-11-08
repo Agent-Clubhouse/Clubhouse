@@ -44,6 +44,7 @@ export const CLASSIC_RUN_SPECS = [
 /** Still pinned to classic, waiting to move. */
 export const PINNED_CLASSIC_SPECS = [
   'agent-list-ui.spec.ts',
+  'annex-v2/agents-across-machines.spec.ts',
   'annex-v2/chat-across-desktops.spec.ts',
   'annex-v2/dual-launch.ts',
   'annex-v2/reachability.spec.ts',

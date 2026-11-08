@@ -11,6 +11,7 @@ import { mcpAdapter } from '../mcp-adapter';
 import { bindingManager } from '../binding-manager';
 import { isDispatcherAgent, isTrackedDispatcher } from '../dispatcher-gate';
 import { agentRegistry } from '../../agent-registry';
+import { currentRemoteCaller } from '../../annex-agent-calls';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
 import { requireString, optionalString, numberWithDefault } from './validation';
@@ -45,9 +46,13 @@ export function buildSenderLabel(agentId: string, senderName: string, projectNam
  */
 function buildTaggedMessage(agentId: string, targetId: string, message: string, taskId: string): { text: string; routed: RoutedMessagePart[]; senderLabel: string; targetName: string; isBidirectional: boolean } {
   const sourceBinding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
-  const senderName = sourceBinding?.agentName || agentId;
-  const senderLabel = buildSenderLabel(agentId, senderName, sourceBinding?.projectName);
-  const targetName = sourceBinding?.targetName || targetId;
+  // A caller on another machine has no binding here: its machine said who it is (#3064).
+  const remote = currentRemoteCaller();
+  const senderName = remote ? `${remote.name} on ${remote.machineName}` : sourceBinding?.agentName || agentId;
+  const senderLabel = remote
+    ? (remote.projectName ? `${remote.name}@${remote.projectName} on ${remote.machineName}` : senderName)
+    : buildSenderLabel(agentId, senderName, sourceBinding?.projectName);
+  const targetName = sourceBinding?.targetName || remote?.targetName || targetId;
 
   // Check if the target has a reverse binding back to the caller
   const reverseBinding = bindingManager.getBindingsForAgent(targetId).find(b => b.targetId === agentId);

@@ -16,6 +16,9 @@
  * - listConnectionDirections(agentId): every entry touching an agent;
  * - listLinkedDirections(): every direction the user linked (Make two-way);
  * - removeConnectionDirections(agentId): drop an agent's entries (deleted);
+ * - listAllConnectionDirections(): every entry (Stage 7 sends another machine its share);
+ * - putConnectionDirection(direction): write one entry as given, keeping its
+ *   `updatedAt` (Stage 7: another machine's newer copy of a direction with it);
  * - onConnectionGrantsChanged(listener): told after each write.
  * A write updates the live binding's disabled tools, so calls are checked
  * against the store with the existing call path.
@@ -73,22 +76,38 @@ export function listConnectionDirections(agentId: string): ConnectionDirection[]
   return entries().filter((d) => d.from.agentId === agentId || d.to.agentId === agentId);
 }
 
+/** Every entry. */
+export function listAllConnectionDirections(): ConnectionDirection[] {
+  return entries();
+}
+
 /** Every direction the user made a link for. */
 export function listLinkedDirections(): ConnectionDirection[] {
   return entries().filter((d) => !!d.link);
 }
 
-async function updateDirection(from: AgentAddress, to: AgentAddress, fn: (current: ConnectionDirection | undefined) => ConnectionDirection | null): Promise<ConnectionDirection | null> {
+/** What an update returns to leave the entry as it is, telling no one. */
+const UNCHANGED = Symbol('unchanged');
+
+async function updateDirection(from: AgentAddress, to: AgentAddress, fn: (current: ConnectionDirection | undefined) => ConnectionDirection | null | typeof UNCHANGED): Promise<ConnectionDirection | null> {
   if (!writable()) throw new Error('This connection file was saved by a newer Clubhouse, so this one won’t change it.');
   let next: ConnectionDirection | null = null;
+  let changed = true;
   await store.update((file) => {
     const list = (Array.isArray(file.directions) ? file.directions : []).map(normalizeConnectionDirection).filter((d): d is ConnectionDirection => !!d);
     const key = directionKey(from, to);
     const current = list.find((d) => directionKey(d.from, d.to) === key);
-    next = fn(current);
+    const result = fn(current);
+    if (result === UNCHANGED) {
+      changed = false;
+      next = current ?? null;
+      return file;
+    }
+    next = result;
     const rest = list.filter((d) => directionKey(d.from, d.to) !== key);
     return { version: CONNECTION_GRANTS_VERSION, directions: next ? [...rest, next] : rest };
   });
+  if (!changed) return next;
   for (const listener of [...listeners]) {
     try {
       listener(from, to);
@@ -121,12 +140,34 @@ export function setConnectionLink(from: AgentAddress, to: AgentAddress, on: bool
   });
 }
 
-/** Drop every entry of a deleted agent. */
-export async function removeConnectionDirections(agentId: string): Promise<void> {
+/**
+ * Write one direction as given, `updatedAt` included, when it's newer than the
+ * entry here (decided under the store's lock): another machine's copy of a
+ * direction between it and this one (#3064, D234). Returns whether it was written.
+ */
+export async function putConnectionDirection(direction: ConnectionDirection): Promise<boolean> {
+  let applied = false;
+  await updateDirection(direction.from, direction.to, (current) => {
+    if (current && Date.parse(current.updatedAt) >= Date.parse(direction.updatedAt)) return UNCHANGED;
+    applied = true;
+    return direction;
+  });
+  return applied;
+}
+
+/**
+ * Drop every entry of a deleted agent. `keepOtherMachines`: an entry with an
+ * agent on another machine stays (its link already off), so that machine hears
+ * of the removal rather than bringing the link back (#3064).
+ */
+export async function removeConnectionDirections(agentId: string, options: { keepOtherMachines?: boolean } = {}): Promise<void> {
   if (!writable()) return;
   await store.update((file) => {
     const list = (Array.isArray(file.directions) ? file.directions : []).map(normalizeConnectionDirection).filter((d): d is ConnectionDirection => !!d);
-    return { version: CONNECTION_GRANTS_VERSION, directions: list.filter((d) => d.from.agentId !== agentId && d.to.agentId !== agentId) };
+    return {
+      version: CONNECTION_GRANTS_VERSION,
+      directions: list.filter((d) => (d.from.agentId !== agentId && d.to.agentId !== agentId) || (options.keepOtherMachines && (!!d.from.machineId || !!d.to.machineId))),
+    };
   });
 }
 

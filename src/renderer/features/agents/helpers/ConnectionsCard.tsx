@@ -27,6 +27,8 @@ import { CONNECTION_SOURCE_LABELS, type AgentConnectionSources, type ConnectionP
 import { ConnectionSourcesDialog } from './ConnectionSourcesDialog';
 import type { ConnectionDirection as SavedDirection } from '../../../../shared/connection-grants';
 import { isDispatcherAgent } from '../../dispatcher/dispatcherStore';
+import { parseAgentAddress } from '../../../../shared/agent-address';
+import { RemoteConnections } from './RemoteConnections';
 
 export type ConnectionDirection = 'two-way' | 'to' | 'from';
 
@@ -76,6 +78,8 @@ export function agentConnections(
     .map((l) => ({ agentId: l.agentId, targetId: l.targetId, targetKind: 'agent', label: l.targetName, agentName: l.agentName, targetName: l.targetName }));
   const familyOf = (id: string): Connection['family'] => (family.helperIds.has(id) ? 'helper' : id === family.parentId ? 'parent' : null);
   for (const b of [...bindings, ...suspended]) {
+    // A wire to an agent on another machine is listed with those (#3064).
+    if (parseAgentAddress(b.targetId).machine) continue;
     if (b.agentId === agentId) {
       const existing = rows.get(b.targetId);
       if (existing) {
@@ -212,6 +216,7 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
           })}
         </ul>
       )}
+      {onDisconnect && <RemoteConnections agent={agent} grants={grants} onChanged={() => setRemovals((n) => n + 1)} />}
     </DetailsCard>
     {managing && (
       <ConnectionSourcesDialog

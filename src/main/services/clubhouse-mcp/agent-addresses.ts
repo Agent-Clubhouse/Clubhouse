@@ -49,7 +49,11 @@ export function localizeAgentArgs(grant: ToolGrant | undefined, args: Record<str
     const value = args[name];
     if (typeof value === 'string') {
       const local = localize(value);
-      if (typeof local !== 'string') return refusal(local.machine);
+      // call_wire_tool's target is a wire, which may lead to another machine (#3064): its address stays as it is.
+      if (typeof local !== 'string') {
+        if (grant === 'called_tool') continue;
+        return refusal(local.machine);
+      }
       out[name] = local;
     } else if (Array.isArray(value)) {
       const list: unknown[] = [];
@@ -67,5 +71,5 @@ export function localizeAgentArgs(grant: ToolGrant | undefined, args: Record<str
 
 /** Says no more than that it's another machine: a refusal never says whether a target exists. */
 function refusal(machine: string): LocalizedArgs {
-  return { otherMachine: machine, message: "That agent is on another machine. Agents on other machines can't be reached from here yet." };
+  return { otherMachine: machine, message: 'That agent is on another machine. An agent on another machine is reached through a connection the person made, with the tools it gives you.' };
 }
