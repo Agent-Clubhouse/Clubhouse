@@ -690,7 +690,7 @@ export class CopilotSdkChatSession implements ChatDriverSession {
   private onElicitation(context: ElicitationContext): Promise<ElicitationResult> | ElicitationResult {
     if (this.closing || this.finished) return { action: 'cancel' };
     if (!this.turnRunning) this.beginTurn('system');
-    const source = context.elicitationSourceDisplayName ?? context.elicitationSource ?? 'An MCP server';
+    const source = context.elicitationSource ?? 'An MCP server';
     const schema = context.requestedSchema;
     const hasFields = context.mode !== 'url' && !!schema && Object.keys(schema.properties).length > 0;
     const requestId = `elicit-${++this.nextRequest}`;
