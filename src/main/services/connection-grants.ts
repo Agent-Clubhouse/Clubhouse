@@ -16,7 +16,7 @@ import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
   deniedConnectionTools, getConnectionDirection, listLinkedDirections, onConnectionGrantsChanged,
-  setConnectionLink, setConnectionTools,
+  listConnectionDirections, setConnectionLink, setConnectionTools,
 } from './connection-grants-store';
 import { appLog } from './log-service';
 import { recordConnectionChange } from './grant-telemetry';
@@ -24,10 +24,30 @@ import * as agentConfig from './agent-config';
 import * as projectStore from './project-store';
 import { clearBindingRemovedByUser, registerPersistedBindingSource, rebuildPersistedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
 import { removeConnectionDirections } from './connection-grants-store';
+import { formatAgentAddress, parseAgentAddress, routeOf } from '../../shared/agent-address';
+import * as annexIdentity from './annex-identity';
+import { isNetworkComputer, remoteAgentName, rememberRemoteAgentName } from './annex-agent-calls';
 
 export const USER_CONNECTION_SOURCE_ID = 'user-connections';
+/** The user's links to agents on other machines (#3064). */
+export const NETWORK_CONNECTION_SOURCE_ID = 'network-connections';
 
 const local = (agentId: string): AgentAddress => ({ agentId });
+
+/**
+ * A binding end as a store address: a bare id is this machine's, and so is an
+ * address naming this machine; another machine's keeps its machine (#3064).
+ */
+export function connectionEnd(id: string): AgentAddress {
+  const address = parseAgentAddress(id);
+  const route = routeOf(address, address.machine ? annexIdentity.getIdentity()?.fingerprint : undefined);
+  return 'machine' in route ? { agentId: address.agentId, machineId: route.machine } : { agentId: address.agentId };
+}
+
+/** The binding target id for a store address: the bare id here, `agentId@machine` elsewhere. */
+export function bindingTargetOf(end: AgentAddress): string {
+  return end.machineId ? formatAgentAddress({ agentId: end.agentId, machine: end.machineId }) : end.agentId;
+}
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -39,13 +59,13 @@ function restoreTools(agentId: string, targetId: string, targetKind: BindingTarg
     bindingManager.setDisabledTools(agentId, targetId, legacy);
     return;
   }
-  const saved = deniedConnectionTools(local(agentId), local(targetId));
+  const saved = deniedConnectionTools(local(agentId), connectionEnd(targetId));
   if (saved) {
     bindingManager.setDisabledTools(agentId, targetId, saved);
     return;
   }
   bindingManager.setDisabledTools(agentId, targetId, legacy);
-  void setConnectionTools(local(agentId), local(targetId), legacy).then(() => {
+  void setConnectionTools(local(agentId), connectionEnd(targetId), legacy).then(() => {
     recordConnectionChange({ fromAgentId: agentId, toAgentId: targetId, disabledTools: legacy, migrated: true });
   }, (err) => {
     // telemetry-exempt: logged; the live binding already has the list, and the next restore tries again
@@ -68,7 +88,7 @@ export async function applyConnectionTools(agentId: string, targetId: string, di
   }
   if (options.restore) {
     // A canvas wire bound again only fills a store that has nothing, live binding or not.
-    const saved = deniedConnectionTools(local(agentId), local(targetId));
+    const saved = deniedConnectionTools(local(agentId), connectionEnd(targetId));
     if (saved) {
       if (binding) bindingManager.setDisabledTools(agentId, targetId, saved);
       return saved;
@@ -78,8 +98,8 @@ export async function applyConnectionTools(agentId: string, targetId: string, di
     return disabledTools;
   }
   // An edit (the canvas popover, the Connections card), or a sleeping agent's wire: the store, then the binding follows.
-  const before = deniedConnectionTools(local(agentId), local(targetId));
-  await setConnectionTools(local(agentId), local(targetId), disabledTools);
+  const before = deniedConnectionTools(local(agentId), connectionEnd(targetId));
+  await setConnectionTools(local(agentId), connectionEnd(targetId), disabledTools);
   // Recorded only when it changed something: the popover saving the same list again isn't a change.
   const same = before !== undefined && before.length === new Set(disabledTools).size && disabledTools.every((t) => before.includes(t));
   if (!same) recordConnectionChange({ fromAgentId: agentId, toAgentId: targetId, disabledTools });
@@ -106,6 +126,77 @@ const userConnectionSource: PersistedBindingSource = {
     }));
   },
 };
+
+/**
+ * The user's links from an agent here to one on another machine (#3064). The
+ * target's name is the one its machine gave; the binding's id is its address.
+ */
+const networkConnectionSource: PersistedBindingSource = {
+  id: NETWORK_CONNECTION_SOURCE_ID,
+  prune: true,
+  async collect() {
+    const linked = listLinkedDirections().filter((d) => !d.from.machineId && !!d.to.machineId);
+    if (linked.length === 0) return [];
+    const names = await agentNames();
+    return linked.filter((d) => names.has(d.from.agentId)).map((d): PersistedBinding => {
+      const targetId = bindingTargetOf(d.to);
+      const targetName = remoteAgentName(targetId) ?? d.to.agentId;
+      return {
+        agentId: d.from.agentId,
+        targetId,
+        targetKind: 'agent',
+        label: targetName,
+        targetName,
+        ...(names.get(d.from.agentId) && { agentName: names.get(d.from.agentId) }),
+        ...(d.disabledTools.length > 0 && { disabledTools: d.disabledTools }),
+      };
+    });
+  },
+};
+
+/**
+ * Connect an agent here with an agent on another machine (#3064): the user's
+ * link from here to there, and with `twoWay` the one back, each starting like
+ * a new connection. The other machine gets both when it's next connected.
+ */
+export async function connectAcrossMachines(agentId: string, address: string, options: { twoWay?: boolean; name?: string } = {}): Promise<void> {
+  const other = connectionEnd(address);
+  if (!other.machineId) throw new Error('That agent is on this computer.');
+  if (!isNetworkComputer(other.machineId)) throw new Error('Agents connect only with computers in this Annex Network.');
+  if (options.name) await rememberRemoteAgentName(bindingTargetOf(other), options.name);
+  const link = async (from: AgentAddress, to: AgentAddress) => {
+    // A direction already linked keeps its tools and its time, so the other machine's newer edits stand.
+    if (getConnectionDirection(from, to)?.link) return;
+    await setConnectionTools(from, to, [...NEW_CONNECTION_DISABLED_TOOLS]);
+    await setConnectionLink(from, to, true);
+  };
+  await link(local(agentId), other);
+  if (options.twoWay) await link(other, local(agentId));
+  await rebuildPersistedBindings();
+}
+
+/**
+ * Set the tools turned off on one direction between an agent here and one on
+ * another machine (#3064): `outgoing` from here to there, else from there to
+ * here. The other machine gets the change when connected.
+ */
+export async function setToolsAcrossMachines(agentId: string, address: string, outgoing: boolean, disabledTools: string[]): Promise<void> {
+  const other = connectionEnd(address);
+  if (!other.machineId) throw new Error('That agent is on this computer.');
+  const [from, to] = outgoing ? [local(agentId), other] : [other, local(agentId)];
+  if (!getConnectionDirection(from, to)?.link) throw new Error('Those agents are not connected that way.');
+  await setConnectionTools(from, to, disabledTools);
+}
+
+/** Remove the user's links between an agent here and one on another machine, both ways. */
+export async function disconnectAcrossMachines(agentId: string, address: string): Promise<void> {
+  const other = connectionEnd(address);
+  if (!other.machineId) throw new Error('That agent is on this computer.');
+  for (const [from, to] of [[local(agentId), other], [other, local(agentId)]] as const) {
+    if (getConnectionDirection(from, to)?.link) await setConnectionLink(from, to, false);
+  }
+  await rebuildPersistedBindings();
+}
 
 /** Every direction with the user's link, on this machine. */
 function allLinked(): ConnectionDirection[] {
@@ -151,7 +242,16 @@ let notifyRenderer: ((from: string, to: string, disabledTools: string[]) => void
 
 /** An agent was deleted: its directions go, and nothing binds them again. */
 export async function forgetConnectionAgent(agentId: string): Promise<void> {
-  await removeConnectionDirections(agentId).catch((err) => {
+  // A link with an agent on another machine is turned off, not dropped, so that machine hears of it (#3064).
+  for (const d of listConnectionDirections(agentId)) {
+    if ((d.from.machineId || d.to.machineId) && d.link) {
+      await setConnectionLink(d.from, d.to, false).catch((err) => {
+        // telemetry-exempt: logged; the entry goes below either way
+        appLog('core:mcp', 'warn', 'Could not turn off a deleted agent\u2019s link with another machine', { meta: { agentId, error: errorText(err) } });
+      });
+    }
+  }
+  await removeConnectionDirections(agentId, { keepOtherMachines: true }).catch((err) => {
     appLog('core:mcp', 'warn', 'Could not drop a deleted agent\u2019s connection permissions', { meta: { agentId, error: errorText(err) } });
   });
 }
@@ -159,15 +259,23 @@ export async function forgetConnectionAgent(agentId: string): Promise<void> {
 export function startConnectionGrants(options: { notify?: (from: string, to: string, disabledTools: string[]) => void } = {}): () => void {
   notifyRenderer = options.notify ?? null;
   bindingManager.setConnectionToolsSource(
-    (agentId, targetId, targetKind) => (targetKind === 'agent' ? deniedConnectionTools(local(agentId), local(targetId)) : undefined),
+    (agentId, targetId, targetKind) => (targetKind === 'agent' ? deniedConnectionTools(local(agentId), connectionEnd(targetId)) : undefined),
     restoreTools,
   );
   const unregister = registerPersistedBindingSource(userConnectionSource);
+  const unregisterNetwork = registerPersistedBindingSource(networkConnectionSource);
   const unsubscribe = onConnectionGrantsChanged((from, to) => {
-    if (from.machineId || to.machineId) return;
+    // A direction from another machine has no binding here: that machine's agent holds it (#3064).
+    if (from.machineId) {
+      notifyRenderer?.(bindingTargetOf(from), to.agentId, getConnectionDirection(from, to)?.disabledTools ?? []);
+      return;
+    }
     const entry = getConnectionDirection(from, to);
-    bindingManager.setDisabledTools(from.agentId, to.agentId, entry?.disabledTools ?? []);
-    notifyRenderer?.(from.agentId, to.agentId, entry?.disabledTools ?? []);
+    const targetId = bindingTargetOf(to);
+    bindingManager.setDisabledTools(from.agentId, targetId, entry?.disabledTools ?? []);
+    notifyRenderer?.(from.agentId, targetId, entry?.disabledTools ?? []);
+    // A link to or from another machine comes and goes with the store, which another machine may write.
+    if (to.machineId) void rebuildPersistedBindings().catch(() => {});
   });
   // Names and deletions: the user's links follow agents and projects, as the other sources do.
   let pending: ReturnType<typeof setTimeout> | null = null;
@@ -180,6 +288,7 @@ export function startConnectionGrants(options: { notify?: (from: string, to: str
   return () => {
     bindingManager.setConnectionToolsSource(null, null);
     unregister();
+    unregisterNetwork();
     unsubscribe();
     for (const u of unwatch) u();
     if (pending) clearTimeout(pending);

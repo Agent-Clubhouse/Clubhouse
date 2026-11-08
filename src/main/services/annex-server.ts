@@ -51,6 +51,7 @@ import { createBonjour } from './annex-mdns';
 import { withReachableAs } from './annex-reach';
 import * as networkChannel from './annex-network-channel';
 import * as membership from './annex-network-membership';
+import * as agentCalls from './annex-agent-calls';
 import { NETWORK_MESSAGE_MAX_BYTES, NETWORK_PROTOCOL_VERSION, parseNetworkMessage } from '../../shared/annex-network-protocol';
 import { parseAgentAddress, routeOf } from '../../shared/agent-address';
 import * as annexEventBus from './annex-event-bus';
@@ -3452,6 +3453,50 @@ async function handleMobileNetworkMembersRoute(ctx: AnnexRouteContext): Promise<
   sendJson(ctx.res, 200, membership.vouchFromPhone(ctx.mobilePrincipal, parsed.message.members));
 }
 
+/**
+ * Another computer's agents calling this one's, and the connections between
+ * them (#3064): only a computer in this machine's network (D238), never a phone
+ * or a one-to-one pairing.
+ */
+function agentCallPeer(ctx: AnnexRouteContext): string | null {
+  const fp = ctx.mobilePrincipal;
+  if (!fp || mobileSessionPeers.has(fp)) return null;
+  return agentCalls.isNetworkComputer(fp) ? fp : null;
+}
+
+async function readAgentCallBody(ctx: AnnexRouteContext): Promise<unknown | undefined> {
+  let raw: string;
+  try { raw = (await readCappedBody(ctx.req, agentCalls.AGENT_CALL_MAX_BYTES)).toString(); } catch (err) {
+    if (isBodyTooLarge(err)) { refuseOversizedBody(ctx.req, ctx.res); return undefined; }
+    sendJson(ctx.res, 400, { error: 'invalid_json' }); return undefined;
+  }
+  try { return JSON.parse(raw); } catch { sendJson(ctx.res, 400, { error: 'invalid_json' }); return undefined; }
+}
+
+async function handleNetworkAgentCallRoute(ctx: AnnexRouteContext): Promise<void> {
+  const machine = agentCallPeer(ctx);
+  if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only a computer in this Annex Network can call agents here.' }); return; }
+  const body = await readAgentCallBody(ctx);
+  if (body === undefined) return;
+  // Checked again once the body is here: the peer may have been removed meanwhile.
+  if (ctx.requireMtls()) return;
+  const outcome = await agentCalls.receiveAgentCall(machine, body);
+  if ('result' in outcome) sendJson(ctx.res, 200, { result: outcome.result });
+  else sendJson(ctx.res, outcome.status, { error: outcome.error, message: outcome.message });
+}
+
+async function handleNetworkConnectionsRoute(ctx: AnnexRouteContext): Promise<void> {
+  const machine = agentCallPeer(ctx);
+  if (!machine) { ctx.req.resume(); sendJson(ctx.res, 403, { error: 'not_a_computer', message: 'Only a computer in this Annex Network can share connections here.' }); return; }
+  const body = await readAgentCallBody(ctx);
+  if (body === undefined) return;
+  if (ctx.requireMtls()) return;
+  const outcome = await agentCalls.receiveDirections(machine, body);
+  // Answered with this machine's own share, so the sender has it even if this one can't reach it.
+  if ('applied' in outcome) sendJson(ctx.res, 200, { ...outcome, directions: await agentCalls.shareForAnswer(machine) });
+  else sendJson(ctx.res, outcome.status, { error: outcome.error, message: outcome.message });
+}
+
 /** Sends a phone its network view on every connection it has open here, at once. */
 function tellPhoneNow(fingerprint: string): void {
   const frame = JSON.stringify({ type: 'network:changed', payload: networkForPhone(fingerprint) });
@@ -4146,6 +4191,8 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/capabilities$/, handler: handleMobileCapabilitiesRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/network$/, handler: handleMobileNetworkRoute },
   { method: 'POST', pattern: /^\/api\/v1\/mobile\/network\/members$/, handler: handleMobileNetworkMembersRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/agent-call$/, handler: handleNetworkAgentCallRoute },
+  { method: 'POST', pattern: /^\/api\/v1\/network\/connections$/, handler: handleNetworkConnectionsRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas$/, handler: handleMobileCanvasRoute },
   { method: 'GET', pattern: /^\/api\/v1\/mobile\/canvas\/([^/]+)$/, handler: handleMobileCanvasRoute },
   { method: 'DELETE', pattern: /^\/api\/v1\/mobile\/pairing$/, handler: handleMobilePairingDeleteRoute },
