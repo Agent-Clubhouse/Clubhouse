@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableAgentConfig } from '../../../shared/types';
 import type { ManagedAgentSetup } from '../../../shared/managed-agents-types';
 import { CLUBHOUSE_MCP_PART_ID } from '../../../shared/managed-agents-types';
@@ -128,8 +128,25 @@ function agent(projectPath: string, id: string, over: Partial<DurableAgentConfig
 }
 const get = (projectPath: string, id: string) => h.projects.get(projectPath)!.get(id)!;
 
+// A switch installs every built-in first, which writes each part to disk and
+// ran past the test timeout on a loaded Windows runner (#3122). Install them
+// once per file and copy the result in for each test; ensureBuiltins then finds
+// them current and writes nothing. Each test still has its own folder (#3027's pattern).
+let seed: string;
+beforeAll(async () => {
+  seed = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-auto-seed-'));
+  _resetSettingsAuditForTesting(false);
+  await createManagedAgentsService({
+    catalog: createAssetCatalogStore({ dir: path.join(seed, 'catalog') }),
+    state: createManagedStateStore(path.join(seed, 'managed')),
+    listProjects: async () => [], listAgents: async () => [], getAgent: async () => null, setManagedSetup: async () => {}, isRunning: () => false,
+  }).ensureBuiltins();
+});
+afterAll(() => { fs.rmSync(seed, { recursive: true, force: true }); });
+
 beforeEach(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-auto-'));
+  for (const name of fs.readdirSync(seed)) fs.cpSync(path.join(seed, name), path.join(root, name), { recursive: true });
   _resetSettingsAuditForTesting(false);
   _resetAutoMigrateForTesting();
   vi.mocked(appLog).mockClear();
@@ -369,7 +386,8 @@ describe('the startup pass (D59)', () => {
       inFlight++;
       expect(inFlight).toBe(1);
       order.push(id);
-      await new Promise((r) => setTimeout(r, 5));
+      // Give any second switch the chance to start, without a real wait.
+      await new Promise((r) => setImmediate(r));
       try { return await saveSetup(p, id, setup); } finally { inFlight--; }
     });
 
