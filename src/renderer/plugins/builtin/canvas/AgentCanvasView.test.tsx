@@ -399,7 +399,7 @@ describe('AgentCanvasView', () => {
       await waitFor(() => expect(onUpdate).toHaveBeenCalled());
     });
 
-    it('passes Auto to api.agents.createDurable as the legacy freeAgentMode on', async () => {
+    it('passes the Access level to api.agents.createDurable (#2761)', async () => {
       const view = makeView({ agentId: null });
       const onUpdate = vi.fn();
       const createDurableSpy = vi.fn(async () => 'agent-new-id');
@@ -417,13 +417,13 @@ describe('AgentCanvasView', () => {
       expect(createDurableSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           orchestrator: 'claude-code',
-          freeAgentMode: true,
+          access: 'auto',
         }),
       );
       expect((createDurableSpy.mock.calls[0] as unknown[])[0]).not.toHaveProperty('structuredMode');
     });
 
-    it('passes Ask first as freeAgentMode off, and no level as none', async () => {
+    it('passes Ask first as a level, and no level as none', async () => {
       const createDurableSpy = vi.fn(async () => 'agent-new-id');
       const api = stubApi({
         projects: [{ id: 'proj-1', name: 'Proj', path: '/tmp/proj' }],
@@ -433,14 +433,14 @@ describe('AgentCanvasView', () => {
       fireEvent.click(screen.getByTestId('canvas-create-agent'));
       fireEvent.click(screen.getByTestId('stub-add-agent-submit-ask'));
       await waitFor(() => expect(createDurableSpy).toHaveBeenCalledTimes(1));
-      expect((createDurableSpy.mock.calls[0] as unknown[])[0]).toEqual(expect.objectContaining({ freeAgentMode: false }));
+      expect((createDurableSpy.mock.calls[0] as unknown[])[0]).toEqual(expect.objectContaining({ access: 'ask' }));
       unmount();
 
       render(<AgentCanvasView view={makeView({ agentId: null })} api={api} onUpdate={vi.fn()} />);
       fireEvent.click(screen.getByTestId('canvas-create-agent'));
       fireEvent.click(screen.getByTestId('stub-add-agent-submit'));
       await waitFor(() => expect(createDurableSpy).toHaveBeenCalledTimes(2));
-      expect((createDurableSpy.mock.calls[1] as unknown[])[0]).not.toHaveProperty('freeAgentMode');
+      expect((createDurableSpy.mock.calls[1] as unknown[])[0]).not.toHaveProperty('access');
     });
   });
 

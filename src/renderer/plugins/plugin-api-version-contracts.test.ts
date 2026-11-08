@@ -2030,9 +2030,10 @@ describe('§7 ALL_PLUGIN_PERMISSIONS exhaustiveness', () => {
     expect(set.size).toBe(ALL_PLUGIN_PERMISSIONS.length);
   });
 
-  it('describes the free-agent permission without assuming all prompts are bypassed', async () => {
+  it('describes the free-agent permission by Access level, without assuming all prompts are bypassed (#2761)', async () => {
     const { PERMISSION_DESCRIPTIONS } = await import('../../shared/plugin-types');
-    expect(PERMISSION_DESCRIPTIONS['agents.free-agent-mode']).toContain('configured Free Agent permission mode');
+    expect(PERMISSION_DESCRIPTIONS['agents.free-agent-mode']).toContain('Auto or Full access');
+    expect(PERMISSION_DESCRIPTIONS['agents.free-agent-mode']).not.toContain('Free Agent');
     expect(PERMISSION_DESCRIPTIONS['agents.free-agent-mode']).not.toContain('all permissions bypassed');
   });
 
